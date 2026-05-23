@@ -1,0 +1,38 @@
+package com.iridium126.createtricks.ponder;
+
+import com.iridium126.createtricks.CreateTricks;
+import com.simibubi.create.infrastructure.ponder.AllCreatePonderTags;
+
+import net.createmod.ponder.api.registration.PonderPlugin;
+import net.createmod.ponder.api.registration.PonderTagRegistrationHelper;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.ItemLike;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+
+public class CreateTricksPonderPlugin implements PonderPlugin {
+	private static final ResourceLocation SPELL_CONSTRUCT_BLOCK =
+			ResourceLocation.fromNamespaceAndPath("trickster", "spell_construct");
+	private static final ResourceLocation MODULAR_SPELL_CONSTRUCT_BLOCK =
+			ResourceLocation.fromNamespaceAndPath("trickster", "modular_spell_construct");
+
+	@Override
+	public String getModId() {
+		return CreateTricks.MODID;
+	}
+
+	@Override
+	public void registerTags(PonderTagRegistrationHelper<ResourceLocation> helper) {
+		PonderTagRegistrationHelper<ItemLike> itemHelper =
+				helper.withKeyFunction(itemLike -> BuiltInRegistries.ITEM.getKey(itemLike.asItem()));
+
+		Block spellConstruct = BuiltInRegistries.BLOCK.get(SPELL_CONSTRUCT_BLOCK);
+		if (spellConstruct != null && spellConstruct != Blocks.AIR)
+			itemHelper.addToTag(AllCreatePonderTags.DISPLAY_TARGETS).add(spellConstruct);
+
+		Block modularSpellConstruct = BuiltInRegistries.BLOCK.get(MODULAR_SPELL_CONSTRUCT_BLOCK);
+		if (modularSpellConstruct != null && modularSpellConstruct != Blocks.AIR)
+			itemHelper.addToTag(AllCreatePonderTags.DISPLAY_TARGETS).add(modularSpellConstruct);
+	}
+}

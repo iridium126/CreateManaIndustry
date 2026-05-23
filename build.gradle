@@ -38,6 +38,10 @@ repositories {
         name = "Sinytra"
         url = "https://maven.sinytra.org/"
     }
+    maven {
+        name = "Create"
+        url = "https://maven.createmod.net"
+    }
 }
 
 base {
@@ -151,6 +155,7 @@ dependencies {
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
 
     implementation "curse.maven:create-328085:7963363"
+    compileOnly "net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}"
 
     implementation "curse.maven:accessories-938917:7583320"
     implementation "curse.maven:owo-lib-532610:6785734"
