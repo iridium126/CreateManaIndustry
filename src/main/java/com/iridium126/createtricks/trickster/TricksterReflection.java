@@ -45,6 +45,7 @@ public final class TricksterReflection {
 	static Method manaComponentPoolMethod;
 	static Method manaComponentWithMethod;
 	static Method manaPoolMakeCloneMethod;
+	static Method manaPoolGetManaMethod;
 	static Method mutableManaPoolRefillMethod;
 	static Method itemStackGetComponentMethod;
 	static Method itemStackSetComponentMethod;
@@ -111,6 +112,7 @@ public final class TricksterReflection {
 			manaComponentPoolMethod = manaComponentClass.getMethod("pool");
 			manaComponentWithMethod = manaComponentClass.getMethod("with", manaPoolClass);
 			manaPoolMakeCloneMethod = manaPoolClass.getMethod("makeClone", Level.class);
+			manaPoolGetManaMethod = manaPoolClass.getMethod("getMana");
 			mutableManaPoolRefillMethod = mutableManaPoolClass.getMethod("refill", float.class, Level.class);
 
 			itemStackGetComponentMethod = ItemStack.class.getMethod("get", DataComponentType.class);
@@ -122,6 +124,25 @@ public final class TricksterReflection {
 			chargeAvailable = false;
 		}
 		return chargeAvailable;
+	}
+
+	public static float getMana(ItemStack stack) {
+		if (!ensureChargeInit() || stack == null || stack.isEmpty())
+			return 0;
+
+		try {
+			Object component = itemStackGetComponentMethod.invoke(stack, manaComponentType);
+			if (component == null)
+				return 0;
+
+			Object pool = manaComponentPoolMethod.invoke(component);
+			if (pool == null)
+				return 0;
+
+			return (float) manaPoolGetManaMethod.invoke(pool);
+		} catch (ReflectiveOperationException e) {
+			return 0;
+		}
 	}
 
 	public static void syncExecutors(BlockEntity be) {

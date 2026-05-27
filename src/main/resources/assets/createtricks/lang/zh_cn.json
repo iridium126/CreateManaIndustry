@@ -4,5 +4,7 @@
   "block.createtricks.stress_mana_converter": "动力注魔台",
   "item.createtricks.stress_mana_converter": "动力注魔台",
   "itemGroup.createtricks": "Create: Tricks",
+  "fluid.createtricks.liquid_mana": "液态魔力",
+  "item.createtricks.liquid_mana_bucket": "液态魔力桶",
   "createtricks.stress_mana_converter.stress_per_rpm": "每 RPM 应力消耗"
 }

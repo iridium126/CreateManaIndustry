@@ -13,15 +13,22 @@ public final class Config {
 			.comment("Mana added per stress unit consumed each tick when converting kinetic stress into knot mana.")
 			.defineInRange("manaPerStress", 1.0, 0.0, 1000000.0);
 
+	private static final ModConfigSpec.IntValue MANA_PER_BUCKET = BUILDER
+			.comment("The amount of mana contained in one bucket (1000mB) of Liquid Mana.")
+			.defineInRange("manaPerBucket", 1000, 1, 1000000);
+
 	public static final ModConfigSpec SPEC = BUILDER.build();
 
 	public static double manaPerStress = 1.0;
+	public static int manaPerBucket = 1000;
 
 	private Config() {}
 
 	@SubscribeEvent
 	static void onLoad(ModConfigEvent event) {
-		if (event.getConfig().getSpec() == SPEC)
+		if (event.getConfig().getSpec() == SPEC) {
 			manaPerStress = MANA_PER_STRESS.get();
+			manaPerBucket = MANA_PER_BUCKET.get();
+		}
 	}
 }
