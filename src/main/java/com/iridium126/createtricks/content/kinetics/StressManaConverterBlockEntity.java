@@ -15,8 +15,8 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class StressManaConverterBlockEntity extends KineticBlockEntity {
-	public static final int MIN_STRESS_PER_RPM = 1;
-	public static final int MAX_STRESS_PER_RPM = 128;
+	public static final int MIN_STRESS_PER_RPM = 4;
+	public static final int MAX_STRESS_PER_RPM = 256;
 	public static final int DEFAULT_STRESS_PER_RPM = 4;
 
 	private ScrollValueBehaviour stressPerRpm;

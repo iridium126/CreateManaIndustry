@@ -43,8 +43,8 @@ public class CreateTricks {
 
 	public CreateTricks(IEventBus modEventBus, ModContainer modContainer) {
 		REGISTRATE.registerEventListeners(modEventBus);
+		modEventBus.addListener(CreateTricksCapabilities::register);
 		CreateTricksCreativeModeTabs.register(modEventBus);
-		CreateTricksRecipeTypes.register(modEventBus);
 		CreateTricksBlocks.register();
 		CreateTricksFluids.register();
 		CreateTricksBlockEntityTypes.register();

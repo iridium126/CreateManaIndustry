@@ -11,16 +11,16 @@ public final class Config {
 
 	private static final ModConfigSpec.DoubleValue MANA_PER_STRESS = BUILDER
 			.comment("Mana added per stress unit consumed each tick when converting kinetic stress into knot mana.")
-			.defineInRange("manaPerStress", 1.0, 0.0, 1000000.0);
+			.defineInRange("manaPerStress", 0.001, 0.0, 1000000.0);
 
 	private static final ModConfigSpec.IntValue MANA_PER_BUCKET = BUILDER
 			.comment("The amount of mana contained in one bucket (1000mB) of Liquid Mana.")
-			.defineInRange("manaPerBucket", 1000, 1, 1000000);
+			.defineInRange("manaPerBucket", 2048, 1, 1000000);
 
 	public static final ModConfigSpec SPEC = BUILDER.build();
 
-	public static double manaPerStress = 1.0;
-	public static int manaPerBucket = 1000;
+	public static double manaPerStress = 0.001;
+	public static int manaPerBucket = 2048;
 
 	private Config() {}
 
