@@ -46,8 +46,11 @@ public final class TemporaryStress {
 
 			iterator.remove();
 			BlockEntity be = level.getBlockEntity(entry.getKey());
-			if (be instanceof KineticBlockEntity kinetic)
+			if (be instanceof KineticBlockEntity kinetic) {
+				Set<KineticBlockEntity> affected = collectNetworkMembers(kinetic);
 				updateGeneratedRotation(kinetic);
+				syncAll(affected);
+			}
 		}
 	}
 
@@ -173,23 +176,29 @@ public final class TemporaryStress {
 
 	private static void sync(KineticBlockEntity be) {
 		be.setChanged();
-		syncNetwork(be);
+		syncAll(collectNetworkMembers(be));
+		syncBlock(be);
+	}
+
+	private static Set<KineticBlockEntity> collectNetworkMembers(KineticBlockEntity be) {
+		if (!be.hasNetwork())
+			return Set.of(be);
+		return new HashSet<>(be.getOrCreateNetwork().members.keySet());
+	}
+
+	private static void syncAll(Set<KineticBlockEntity> members) {
+		for (KineticBlockEntity member : members)
+			syncBlock(member);
+	}
+
+	private static void syncBlock(KineticBlockEntity be) {
+		be.setChanged();
 		if (be instanceof SyncedBlockEntity synced)
 			synced.sendData();
 		Level level = be.getLevel();
 		if (level != null && !level.isClientSide) {
 			BlockState state = be.getBlockState();
 			level.sendBlockUpdated(be.getBlockPos(), state, state, 2);
-		}
-	}
-
-	private static void syncNetwork(KineticBlockEntity be) {
-		if (!be.hasNetwork())
-			return;
-		Set<KineticBlockEntity> members = new HashSet<>(be.getOrCreateNetwork().members.keySet());
-		for (KineticBlockEntity member : members) {
-			if (member != be && member instanceof SyncedBlockEntity synced)
-				synced.sendData();
 		}
 	}
 
