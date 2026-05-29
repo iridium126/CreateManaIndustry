@@ -63,10 +63,18 @@ public abstract class EncasedCogVisualMixin extends KineticBlockEntityVisual<Kin
 			createtricks$deleteStressedModels();
 
 		rotatingModel.setVisible(!active);
-		if (rotatingTopShaft != null)
+		if (!active)
+			createtricks$stopInstance(rotatingModel);
+		if (rotatingTopShaft != null) {
 			rotatingTopShaft.setVisible(!active);
-		if (rotatingBottomShaft != null)
+			if (!active)
+				createtricks$stopInstance(rotatingTopShaft);
+		}
+		if (rotatingBottomShaft != null) {
 			rotatingBottomShaft.setVisible(!active);
+			if (!active)
+				createtricks$stopInstance(rotatingBottomShaft);
+		}
 	}
 
 	@Inject(method = "updateLight", at = @At("RETURN"))
@@ -124,16 +132,26 @@ public abstract class EncasedCogVisualMixin extends KineticBlockEntityVisual<Kin
 	@Unique
 	private void createtricks$deleteStressedModels() {
 		if (createtricks$stressedCog != null) {
+			createtricks$stopInstance(createtricks$stressedCog);
 			createtricks$stressedCog.delete();
 			createtricks$stressedCog = null;
 		}
 		if (createtricks$stressedTopShaft != null) {
+			createtricks$stopInstance(createtricks$stressedTopShaft);
 			createtricks$stressedTopShaft.delete();
 			createtricks$stressedTopShaft = null;
 		}
 		if (createtricks$stressedBottomShaft != null) {
+			createtricks$stopInstance(createtricks$stressedBottomShaft);
 			createtricks$stressedBottomShaft.delete();
 			createtricks$stressedBottomShaft = null;
 		}
+	}
+
+	@Unique
+	private void createtricks$stopInstance(RotatingInstance instance) {
+		instance.setup(blockEntity, 0)
+			.setPosition(getVisualPosition())
+			.setChanged();
 	}
 }

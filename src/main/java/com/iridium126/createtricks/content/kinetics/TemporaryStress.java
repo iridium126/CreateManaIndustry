@@ -17,6 +17,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
 
 public final class TemporaryStress {
 	public static final String NBT_KEY = "CreateTricksTemporaryStress";
@@ -207,6 +208,11 @@ public final class TemporaryStress {
 		be.setChanged();
 		if (be instanceof SyncedBlockEntity synced)
 			synced.sendData();
+		Level level = be.getLevel();
+		if (level != null && !level.isClientSide) {
+			BlockState state = be.getBlockState();
+			level.sendBlockUpdated(be.getBlockPos(), state, state, 2);
+		}
 	}
 
 	private static final class StressState {

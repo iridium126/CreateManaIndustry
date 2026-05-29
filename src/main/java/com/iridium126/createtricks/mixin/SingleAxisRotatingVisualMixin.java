@@ -44,10 +44,17 @@ public abstract class SingleAxisRotatingVisualMixin<T extends KineticBlockEntity
 				.setPosition(getVisualPosition())
 				.setChanged();
 		if (!active && createtricks$stressedModel != null) {
+			createtricks$stressedModel.setup(blockEntity, 0)
+				.setPosition(getVisualPosition())
+				.setChanged();
 			createtricks$stressedModel.delete();
 			createtricks$stressedModel = null;
 		}
 		rotatingModel.setVisible(!active);
+		if (!active)
+			rotatingModel.setup(blockEntity, 0)
+				.setPosition(getVisualPosition())
+				.setChanged();
 	}
 
 	@Inject(method = "updateLight", at = @At("RETURN"))
