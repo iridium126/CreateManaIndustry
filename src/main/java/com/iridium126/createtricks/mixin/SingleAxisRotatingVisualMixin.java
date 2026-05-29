@@ -30,9 +30,6 @@ public abstract class SingleAxisRotatingVisualMixin<T extends KineticBlockEntity
 	@Unique
 	private RotatingInstance createtricks$stressedModel;
 
-	@Unique
-	private boolean createtricks$stressedModelActive;
-
 	protected SingleAxisRotatingVisualMixin(VisualizationContext context, T blockEntity, float partialTick) {
 		super(context, blockEntity, partialTick);
 	}
@@ -40,8 +37,8 @@ public abstract class SingleAxisRotatingVisualMixin<T extends KineticBlockEntity
 	@Inject(method = "update", at = @At("RETURN"))
 	private void createtricks$updateStressedModel(float pt, CallbackInfo ci) {
 		boolean active = TemporaryStress.isActive(blockEntity);
-		if (active)
-			createtricks$ensureStressedModel();
+		if (active && createtricks$stressedModel == null)
+			createtricks$createStressedModel();
 		if (createtricks$stressedModel != null)
 			createtricks$stressedModel.setup(blockEntity)
 				.setPosition(getVisualPosition())
@@ -49,7 +46,6 @@ public abstract class SingleAxisRotatingVisualMixin<T extends KineticBlockEntity
 		if (!active && createtricks$stressedModel != null) {
 			createtricks$stressedModel.delete();
 			createtricks$stressedModel = null;
-			createtricks$stressedModelActive = false;
 		}
 		rotatingModel.setVisible(!active);
 	}
@@ -66,16 +62,12 @@ public abstract class SingleAxisRotatingVisualMixin<T extends KineticBlockEntity
 			createtricks$stressedModel.delete();
 	}
 
-	private void createtricks$ensureStressedModel() {
-		if (createtricks$stressedModelActive)
-			return;
-
+	private void createtricks$createStressedModel() {
 		var partial = TemporaryStressModel.rotatingBlockModel(blockEntity);
 		if (partial == null)
 			return;
 
 		createtricks$stressedModel = instancerProvider().instancer(AllInstanceTypes.ROTATING, Models.partial(partial))
 			.createInstance();
-		createtricks$stressedModelActive = true;
 	}
 }

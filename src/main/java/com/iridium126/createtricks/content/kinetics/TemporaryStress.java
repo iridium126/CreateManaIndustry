@@ -8,7 +8,6 @@ import com.simibubi.create.content.kinetics.KineticNetwork;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import com.simibubi.create.foundation.blockEntity.SyncedBlockEntity;
 
-import dev.engine_room.flywheel.lib.visualization.VisualizationHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
@@ -86,12 +85,10 @@ public final class TemporaryStress {
 			CompoundTag stressTag = tag.getCompound(NBT_KEY);
 			CLIENT_STATES.put(be.getBlockPos().immutable(),
 					new StressState(stressTag.getFloat("Stress"), stressTag.getFloat("Speed"), stressTag.getInt("Ticks")));
-			VisualizationHelper.queueUpdate(be);
 			return;
 		}
 
-		if (CLIENT_STATES.remove(be.getBlockPos()) != null)
-			VisualizationHelper.queueUpdate(be);
+		CLIENT_STATES.remove(be.getBlockPos());
 	}
 
 	private static StressState getState(KineticBlockEntity be) {
