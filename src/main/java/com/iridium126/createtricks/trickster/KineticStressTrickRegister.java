@@ -17,7 +17,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 public final class KineticStressTrickRegister {
 	private static volatile boolean registered;
 
-	private KineticStressTrickRegister() {}
+	private KineticStressTrickRegister() {
+	}
 
 	public static void register() {
 		if (registered)
@@ -30,7 +31,7 @@ public final class KineticStressTrickRegister {
 			}
 
 			Object pattern = TricksterReflection.patternOfMethod.invoke(null,
-					(Object) new int[] {8, 5, 2, 1, 0, 3, 4, 7, 8, 5, 2});
+					(Object) new int[] { 1, 0, 2, 3, 4, 5, 6, 8, 7 });
 			Object trick = TricksterReflection.loadArgumentTrickCtor.newInstance(pattern, 0);
 
 			Method getSignaturesMethod = trick.getClass().getMethod("getSignatures");
@@ -63,7 +64,7 @@ public final class KineticStressTrickRegister {
 		};
 		return Proxy.newProxyInstance(
 				TricksterReflection.signatureClass.getClassLoader(),
-				new Class<?>[] {TricksterReflection.signatureClass},
+				new Class<?>[] { TricksterReflection.signatureClass },
 				handler);
 	}
 
