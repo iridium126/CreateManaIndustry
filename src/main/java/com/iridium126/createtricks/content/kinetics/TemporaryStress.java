@@ -14,6 +14,8 @@ import com.simibubi.create.content.kinetics.base.IRotate.StressImpact;
 import com.simibubi.create.foundation.blockEntity.SyncedBlockEntity;
 import com.simibubi.create.foundation.utility.CreateLang;
 
+import dev.engine_room.flywheel.api.visualization.VisualManager;
+import dev.engine_room.flywheel.api.visualization.VisualizationManager;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -100,14 +102,31 @@ public final class TemporaryStress {
 		if (level == null)
 			return;
 		StressKey key = StressKey.of(level, be.getBlockPos());
+		boolean wasActive = isActive(be);
 		if (tag.contains(NBT_KEY)) {
 			CompoundTag stressTag = tag.getCompound(NBT_KEY);
 			CLIENT_STATES.put(key,
 					new StressState(stressTag.getFloat("Stress"), stressTag.getFloat("Speed"), stressTag.getInt("Ticks")));
+			if (!wasActive)
+				rebuildVisual(be);
 			return;
 		}
 
 		CLIENT_STATES.remove(key);
+		if (wasActive)
+			rebuildVisual(be);
+	}
+
+	private static void rebuildVisual(KineticBlockEntity be) {
+		Level level = be.getLevel();
+		if (level == null)
+			return;
+		VisualizationManager manager = VisualizationManager.get(level);
+		if (manager == null)
+			return;
+		VisualManager<BlockEntity> visuals = manager.blockEntities();
+		visuals.queueRemove(be);
+		visuals.queueAdd(be);
 	}
 
 	public static boolean isSource(KineticBlockEntity be) {

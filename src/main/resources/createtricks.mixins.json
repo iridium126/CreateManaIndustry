@@ -6,11 +6,9 @@
     "GenericItemFillingContextMixin",
     "GenericItemEmptyingContextMixin",
     "BracketedKineticBlockEntityRendererMixin",
-    "EncasedCogRendererMixin",
     "EncasedCogVisualMixin",
     "KineticBlockEntityAccessor",
     "KineticBlockEntityMixin",
-    "KineticBlockEntityRendererMixin",
     "KineticBlockEntitySyncMixin",
     "SingleAxisRotatingVisualMixin",
     "TricksterSpellConstructSyncMixin"

@@ -5,15 +5,12 @@ import org.jetbrains.annotations.Nullable;
 import com.iridium126.createtricks.CreateTricksPartialModels;
 import com.simibubi.create.AllBlocks;
 import com.simibubi.create.AllPartialModels;
-import com.simibubi.create.content.kinetics.base.HorizontalKineticBlock;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
-import com.simibubi.create.content.kinetics.simpleRelays.AbstractSimpleShaftBlock;
 import com.simibubi.create.content.kinetics.simpleRelays.ICogWheel;
 
 import dev.engine_room.flywheel.lib.model.baked.PartialModel;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
 public final class TemporaryStressModel {
 	private TemporaryStressModel() {}
@@ -72,6 +69,21 @@ public final class TemporaryStressModel {
 		return null;
 	}
 
+	public static PartialModel replacementOrSelf(BlockEntity be, PartialModel model) {
+		PartialModel replacement = replacement(be, model);
+		return replacement == null ? model : replacement;
+	}
+
+	public static boolean hasReplacement(PartialModel model) {
+		return model == CreateTricksPartialModels.STRESS_MANA_CONVERTER_INNER
+				|| model == AllPartialModels.SHAFT
+				|| model == AllPartialModels.SHAFT_HALF
+				|| model == AllPartialModels.COGWHEEL
+				|| model == AllPartialModels.SHAFTLESS_COGWHEEL
+				|| model == AllPartialModels.SHAFTLESS_LARGE_COGWHEEL
+				|| model == AllPartialModels.COGWHEEL_SHAFT;
+	}
+
 	@Nullable
 	public static PartialModel rotatingBlockModel(KineticBlockEntity be) {
 		BlockState state = be.getBlockState();
@@ -81,10 +93,6 @@ public final class TemporaryStressModel {
 			return shaft(be);
 		if (ICogWheel.isLargeCog(state))
 			return shaftlessLargeCogwheel(be);
-		if (state.hasProperty(HorizontalKineticBlock.HORIZONTAL_FACING)
-				|| state.hasProperty(AbstractSimpleShaftBlock.AXIS)
-				|| state.hasProperty(BlockStateProperties.AXIS))
-			return shaft(be);
 		return null;
 	}
 }

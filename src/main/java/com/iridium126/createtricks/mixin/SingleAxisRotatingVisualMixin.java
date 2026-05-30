@@ -1,70 +1,56 @@
 package com.iridium126.createtricks.mixin;
 
-import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import com.iridium126.createtricks.CreateTricksPartialModels;
-import com.simibubi.create.AllPartialModels;
-import com.iridium126.createtricks.content.kinetics.TemporaryStress;
+import com.iridium126.createtricks.content.kinetics.TemporaryStressModel;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
-import com.simibubi.create.content.kinetics.base.KineticBlockEntityVisual;
-import com.simibubi.create.content.kinetics.base.RotatingInstance;
 import com.simibubi.create.content.kinetics.base.SingleAxisRotatingVisual;
 
 import dev.engine_room.flywheel.api.visual.BlockEntityVisual;
 import dev.engine_room.flywheel.api.visualization.VisualizationContext;
 import dev.engine_room.flywheel.lib.model.Models;
+import dev.engine_room.flywheel.lib.model.baked.PartialModel;
 import dev.engine_room.flywheel.lib.visualization.SimpleBlockEntityVisualizer;
+import net.minecraft.core.Direction;
 
 @Mixin(value = SingleAxisRotatingVisual.class, remap = false)
-public abstract class SingleAxisRotatingVisualMixin<T extends KineticBlockEntity> extends KineticBlockEntityVisual<T> {
-	@Shadow
-	@Final
-	protected RotatingInstance rotatingModel;
-
-	@Unique
-	private boolean createtricks$wasActive;
-
-	protected SingleAxisRotatingVisualMixin(VisualizationContext context, T blockEntity, float partialTick) {
-		super(context, blockEntity, partialTick);
+public abstract class SingleAxisRotatingVisualMixin {
+	@Inject(method = "of", at = @At("HEAD"), cancellable = true)
+	private static <T extends KineticBlockEntity> void createtricks$useStressedModel(PartialModel partial,
+			CallbackInfoReturnable<SimpleBlockEntityVisualizer.Factory<T>> cir) {
+		if (TemporaryStressModel.hasReplacement(partial))
+			cir.setReturnValue((context, be, partialTick) -> createtricks$create(context, be, partialTick, partial));
 	}
 
-	@Inject(method = "of", at = @At("HEAD"), cancellable = true)
-	private static <T extends KineticBlockEntity> void createtricks$useStressedCogwheel(
+	@Inject(method = "ofZ", at = @At("HEAD"), cancellable = true)
+	private static <T extends KineticBlockEntity> void createtricks$useStressedZModel(PartialModel partial,
 			CallbackInfoReturnable<SimpleBlockEntityVisualizer.Factory<T>> cir) {
-		cir.setReturnValue(SingleAxisRotatingVisualMixin::createtricks$create);
+		if (TemporaryStressModel.hasReplacement(partial))
+			cir.setReturnValue((context, be, partialTick) -> createtricks$createZ(context, be, partialTick, partial));
 	}
 
 	@Inject(method = "shaft", at = @At("HEAD"), cancellable = true)
 	private static <T extends KineticBlockEntity> void createtricks$useStressedShaft(VisualizationContext context, T be,
 			float partialTick, CallbackInfoReturnable<SingleAxisRotatingVisual<T>> cir) {
-		if (!TemporaryStress.isActive(be))
-			return;
 		cir.setReturnValue(new SingleAxisRotatingVisual<>(context, be, partialTick,
-				Models.partial(CreateTricksPartialModels.STRESSED_SHAFT)));
+				Models.partial(TemporaryStressModel.shaft(be))));
 	}
 
 	@Unique
-	private static <T extends KineticBlockEntity> BlockEntityVisual<? super T> createtricks$create(
-			VisualizationContext context, T be, float partialTick) {
-		return new SingleAxisRotatingVisual<>(context, be, partialTick, TemporaryStress.isActive(be)
-				? Models.partial(CreateTricksPartialModels.STRESSED_COGWHEEL)
-				: Models.partial(AllPartialModels.COGWHEEL));
+	private static <T extends KineticBlockEntity> BlockEntityVisual<? super T> createtricks$create(VisualizationContext context,
+			T be, float partialTick, PartialModel partial) {
+		return new SingleAxisRotatingVisual<>(context, be, partialTick,
+				Models.partial(TemporaryStressModel.replacementOrSelf(be, partial)));
 	}
 
-	@Inject(method = "update", at = @At("RETURN"))
-	private void createtricks$updateStressedModel(float pt, CallbackInfo ci) {
-		boolean active = TemporaryStress.isActive(blockEntity);
-		if (createtricks$wasActive && !active)
-			rotatingModel.setup(blockEntity, 0)
-				.setPosition(getVisualPosition())
-				.setChanged();
-		createtricks$wasActive = active;
+	@Unique
+	private static <T extends KineticBlockEntity> BlockEntityVisual<? super T> createtricks$createZ(VisualizationContext context,
+			T be, float partialTick, PartialModel partial) {
+		return new SingleAxisRotatingVisual<>(context, be, partialTick, Direction.SOUTH,
+				Models.partial(TemporaryStressModel.replacementOrSelf(be, partial)));
 	}
 }
