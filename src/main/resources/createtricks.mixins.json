@@ -8,6 +8,7 @@
     "BracketedKineticBlockEntityRendererMixin",
     "EncasedCogRendererMixin",
     "EncasedCogVisualMixin",
+    "KineticBlockEntityAccessor",
     "KineticBlockEntityMixin",
     "KineticBlockEntityRendererMixin",
     "KineticBlockEntitySyncMixin",
