@@ -5,20 +5,17 @@
   "mixins": [
     "GenericItemFillingContextMixin",
     "GenericItemEmptyingContextMixin",
-    "BracketedKineticBlockEntityRendererMixin",
-    "EncasedCogRendererMixin",
-    "GearboxRendererMixin",
     "KineticBlockEntityAccessor",
     "KineticBlockEntityMixin",
-    "KineticBlockEntityRendererMixin",
     "KineticBlockEntitySyncMixin",
     "KineticBlockEntityVisualMixin",
     "ModelsMixin",
-    "SplitShaftRendererMixin",
     "TricksterSpellConstructSyncMixin"
   ],
   "client": [
-    "LiquidBlockRendererMixin"
+    "CachedBuffersMixin",
+    "LiquidBlockRendererMixin",
+    "SafeBlockEntityRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1
