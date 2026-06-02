@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import com.iridium126.createtricks.content.kinetics.TemporaryStress;
 import com.iridium126.createtricks.content.kinetics.TemporaryStressModel;
 import com.iridium126.createtricks.content.kinetics.TemporaryStressRenderContext;
+import com.simibubi.create.AllBlocks;
 import com.simibubi.create.content.kinetics.base.IRotate;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 
@@ -62,6 +63,8 @@ public class CachedBuffersMixin {
 		if (!(be instanceof KineticBlockEntity kinetic) || !TemporaryStress.isActive(kinetic))
 			return;
 		PartialModel model = TemporaryStressModel.rotatingBlockModel(kinetic);
+		if (model == null && AllBlocks.SHAFT.has(toRender))
+			model = TemporaryStressModel.shaft(kinetic);
 		if (model == null)
 			return;
 		Axis axis = ((IRotate) kinetic.getBlockState().getBlock()).getRotationAxis(kinetic.getBlockState());
