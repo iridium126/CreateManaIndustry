@@ -10,7 +10,8 @@
     "KineticBlockEntitySyncMixin",
     "KineticBlockEntityVisualMixin",
     "ModelsMixin",
-    "TricksterSpellConstructSyncMixin"
+    "TricksterSpellConstructSyncMixin",
+    "TrickBlunderExceptionMixin"
   ],
   "client": [
     "CachedBuffersMixin",

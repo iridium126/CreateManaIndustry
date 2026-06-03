@@ -11,4 +11,8 @@ public class InvalidKineticTargetBlunder extends TrickBlunderException {
 		super(source);
 		this.pos = pos;
 	}
+
+	public BlockPos getPos() {
+		return pos;
+	}
 }
