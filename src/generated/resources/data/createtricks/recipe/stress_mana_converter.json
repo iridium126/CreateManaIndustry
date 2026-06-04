@@ -1,0 +1,27 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": {
+      "item": "minecraft:amethyst_block"
+    },
+    "B": {
+      "item": "create:brass_block"
+    },
+    "C": {
+      "item": "create:cogwheel"
+    },
+    "L": {
+      "item": "createtricks:liquid_mana_bucket"
+    }
+  },
+  "pattern": [
+    "AAA",
+    "LCL",
+    "BBB"
+  ],
+  "result": {
+    "count": 1,
+    "id": "createtricks:stress_mana_converter"
+  }
+}

@@ -5,6 +5,7 @@ import static com.iridium126.createtricks.CreateTricks.REGISTRATE;
 import java.util.function.Consumer;
 
 import com.tterrag.registrate.util.entry.FluidEntry;
+import com.tterrag.registrate.util.nullness.NonNullBiConsumer;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.dispenser.BlockSource;
@@ -45,6 +46,7 @@ public class CreateTricksFluids {
 					.properties(p -> p.lightLevel($ -> 0))
 					.build()
 					.bucket()
+					.model(NonNullBiConsumer.noop())
 					.onRegister(CreateTricksFluids::registerFluidDispenseBehavior)
 					.tag(Tags.Items.BUCKETS)
 					.build()
