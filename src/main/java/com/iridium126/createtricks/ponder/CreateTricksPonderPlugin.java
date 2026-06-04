@@ -16,6 +16,8 @@ public class CreateTricksPonderPlugin implements PonderPlugin {
 			ResourceLocation.fromNamespaceAndPath("trickster", "spell_construct");
 	private static final ResourceLocation MODULAR_SPELL_CONSTRUCT_BLOCK =
 			ResourceLocation.fromNamespaceAndPath("trickster", "modular_spell_construct");
+	private static final ResourceLocation CHARGING_ARRAY_BLOCK =
+			ResourceLocation.fromNamespaceAndPath("trickster", "charging_array");
 
 	@Override
 	public String getModId() {
@@ -27,12 +29,20 @@ public class CreateTricksPonderPlugin implements PonderPlugin {
 		PonderTagRegistrationHelper<ItemLike> itemHelper =
 				helper.withKeyFunction(itemLike -> BuiltInRegistries.ITEM.getKey(itemLike.asItem()));
 
+		Block chargingArray = BuiltInRegistries.BLOCK.get(CHARGING_ARRAY_BLOCK);
+		if (chargingArray != null && chargingArray != Blocks.AIR)
+			itemHelper.addToTag(AllCreatePonderTags.ARM_TARGETS).add(chargingArray);
+
 		Block spellConstruct = BuiltInRegistries.BLOCK.get(SPELL_CONSTRUCT_BLOCK);
-		if (spellConstruct != null && spellConstruct != Blocks.AIR)
+		if (spellConstruct != null && spellConstruct != Blocks.AIR) {
 			itemHelper.addToTag(AllCreatePonderTags.DISPLAY_TARGETS).add(spellConstruct);
+			itemHelper.addToTag(AllCreatePonderTags.ARM_TARGETS).add(spellConstruct);
+		}
 
 		Block modularSpellConstruct = BuiltInRegistries.BLOCK.get(MODULAR_SPELL_CONSTRUCT_BLOCK);
-		if (modularSpellConstruct != null && modularSpellConstruct != Blocks.AIR)
+		if (modularSpellConstruct != null && modularSpellConstruct != Blocks.AIR) {
 			itemHelper.addToTag(AllCreatePonderTags.DISPLAY_TARGETS).add(modularSpellConstruct);
+			itemHelper.addToTag(AllCreatePonderTags.ARM_TARGETS).add(modularSpellConstruct);
+		}
 	}
 }
