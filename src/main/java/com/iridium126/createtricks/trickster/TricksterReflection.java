@@ -238,6 +238,26 @@ public final class TricksterReflection {
 		return stack != null && !stack.isEmpty() && isKnotItem(stack.getItem());
 	}
 
+	public static boolean isTricksterKnotBlockEntity(BlockEntity be) {
+		if (!ensureChargeInit() || be == null)
+			return false;
+		return chargingArrayBlockEntityClass.isInstance(be)
+				|| spellConstructBlockEntityClass.isInstance(be)
+				|| modularSpellConstructBlockEntityClass.isInstance(be);
+	}
+
+	public static boolean isSpellConstructBlockEntity(BlockEntity be) {
+		if (!ensureChargeInit() || be == null)
+			return false;
+		return spellConstructBlockEntityClass.isInstance(be);
+	}
+
+	public static boolean isModularSpellConstructBlockEntity(BlockEntity be) {
+		if (!ensureChargeInit() || be == null)
+			return false;
+		return modularSpellConstructBlockEntityClass.isInstance(be);
+	}
+
 	public static boolean hasInfiniteMana(ItemStack stack) {
 		if (!ensureChargeInit() || stack == null || stack.isEmpty())
 			return false;
