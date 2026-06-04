@@ -29,7 +29,6 @@ public class CreateTricksClient {
     @SubscribeEvent
 	private static void onClientSetup(FMLClientSetupEvent event) {
 		event.enqueueWork(() -> {
-			CreateTricksPartialModels.init();
 			//ItemBlockRenderTypes.setRenderLayer(CreateTricksFluids.LIQUID_MANA.get(), RenderType.translucent());
 			//ItemBlockRenderTypes.setRenderLayer(CreateTricksFluids.LIQUID_MANA.getSource(), RenderType.translucent());
 			PonderIndex.addPlugin(new CreateTricksPonderPlugin());

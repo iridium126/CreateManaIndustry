@@ -50,6 +50,7 @@ public class CreateTricks {
 		CreateTricksFluids.register();
 		CreateTricksBlockEntityTypes.register();
 		KineticStressTrickRegister.register();
+		CreateTricksPartialModels.register();
 		modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON, Config.SPEC);
 	}
 

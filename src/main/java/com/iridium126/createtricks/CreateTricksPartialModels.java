@@ -18,5 +18,5 @@ public final class CreateTricksPartialModels {
 		return PartialModel.of(CreateTricks.modLoc("block/" + path));
 	}
 
-	public static void init() {}
+	public static void register() {}
 }
