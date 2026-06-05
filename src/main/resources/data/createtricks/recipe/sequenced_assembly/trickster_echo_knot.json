@@ -1,0 +1,51 @@
+{
+  "type": "create:sequenced_assembly",
+  "ingredient": {
+    "item": "minecraft:echo_shard"
+  },
+  "loops": 32,
+  "results": [
+    {
+      "id": "trickster:echo_knot"
+    }
+  ],
+  "sequence": [
+    {
+      "type": "create:deploying",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_knot"
+        },
+        {
+          "item": "minecraft:glass"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1000,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_knot"
+        }
+      ]
+    }
+  ],
+  "transitional_item": {
+    "id": "createtricks:incomplete_knot"
+  }
+}

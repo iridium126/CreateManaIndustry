@@ -1,0 +1,51 @@
+{
+  "type": "create:sequenced_assembly",
+  "ingredient": {
+    "item": "minecraft:emerald"
+  },
+  "loops": 1,
+  "results": [
+    {
+      "id": "trickster:emerald_knot"
+    }
+  ],
+  "sequence": [
+    {
+      "type": "create:deploying",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_knot"
+        },
+        {
+          "item": "minecraft:glass"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 250,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_knot"
+        }
+      ]
+    }
+  ],
+  "transitional_item": {
+    "id": "createtricks:incomplete_knot"
+  }
+}
