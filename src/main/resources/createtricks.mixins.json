@@ -11,7 +11,8 @@
     "KineticBlockEntityVisualMixin",
     "ModelsMixin",
     "TricksterSpellConstructSyncMixin",
-    "TrickBlunderExceptionMixin"
+    "TrickBlunderExceptionMixin",
+    "MechanicalPressKnotMixin"
   ],
   "client": [
     "CachedBuffersMixin",

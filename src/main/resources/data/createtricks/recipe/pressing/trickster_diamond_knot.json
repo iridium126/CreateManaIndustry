@@ -1,0 +1,13 @@
+{
+  "type": "create:pressing",
+  "ingredients": [
+    {
+      "item": "trickster:diamond_knot"
+    }
+  ],
+  "results": [
+    {
+      "id": "trickster:cracked_diamond_knot"
+    }
+  ]
+}

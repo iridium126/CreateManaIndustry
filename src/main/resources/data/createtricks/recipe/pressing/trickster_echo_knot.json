@@ -1,0 +1,13 @@
+{
+  "type": "create:pressing",
+  "ingredients": [
+    {
+      "item": "trickster:echo_knot"
+    }
+  ],
+  "results": [
+    {
+      "id": "trickster:cracked_echo_knot"
+    }
+  ]
+}

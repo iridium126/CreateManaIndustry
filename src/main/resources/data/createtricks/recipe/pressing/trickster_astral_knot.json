@@ -1,0 +1,13 @@
+{
+  "type": "create:pressing",
+  "ingredients": [
+    {
+      "item": "trickster:astral_knot"
+    }
+  ],
+  "results": [
+    {
+      "id": "trickster:cracked_astral_knot"
+    }
+  ]
+}
