@@ -1,0 +1,609 @@
+{
+  "type": "create:sequenced_assembly",
+  "ingredient": {
+    "item": "minecraft:echo_shard"
+  },
+  "results": [
+    {
+      "id": "trickster:echo_knot"
+    }
+  ],
+  "sequence": [
+    {
+      "type": "create:deploying",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "item": "minecraft:glass"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_echo_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_echo_knot"
+        }
+      ]
+    }
+  ],
+  "transitional_item": {
+    "id": "createtricks:incomplete_echo_knot"
+  },
+  "loops": 1
+}

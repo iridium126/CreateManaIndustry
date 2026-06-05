@@ -1,0 +1,105 @@
+{
+  "type": "create:sequenced_assembly",
+  "ingredient": {
+    "item": "minecraft:diamond"
+  },
+  "results": [
+    {
+      "id": "trickster:diamond_knot"
+    }
+  ],
+  "sequence": [
+    {
+      "type": "create:deploying",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_diamond_knot"
+        },
+        {
+          "item": "minecraft:glass"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_diamond_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_diamond_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_diamond_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_diamond_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_diamond_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_diamond_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_diamond_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_diamond_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_diamond_knot"
+        }
+      ]
+    }
+  ],
+  "transitional_item": {
+    "id": "createtricks:incomplete_diamond_knot"
+  },
+  "loops": 1
+}

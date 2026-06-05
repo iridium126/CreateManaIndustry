@@ -1,0 +1,32 @@
+{
+  "type": "create:sequenced_assembly",
+  "ingredient": {
+    "item": "minecraft:quartz"
+  },
+  "results": [
+    {
+      "id": "trickster:quartz_knot"
+    }
+  ],
+  "sequence": [
+    {
+      "type": "create:deploying",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_quartz_knot"
+        },
+        {
+          "item": "minecraft:glass"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_quartz_knot"
+        }
+      ]
+    }
+  ],
+  "transitional_item": {
+    "id": "createtricks:incomplete_quartz_knot"
+  }
+}

@@ -49,6 +49,7 @@ public class CreateTricks {
 		CreateTricksBlocks.register();
 		CreateTricksFluids.register();
 		CreateTricksBlockEntityTypes.register();
+		CreateTricksItems.register();
 		KineticStressTrickRegister.register();
 		CreateTricksPartialModels.register();
 		modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON, Config.SPEC);
