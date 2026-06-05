@@ -3,7 +3,6 @@
   "ingredient": {
     "item": "minecraft:emerald"
   },
-  "loops": 1,
   "results": [
     {
       "id": "trickster:emerald_knot"
@@ -47,5 +46,6 @@
   ],
   "transitional_item": {
     "id": "createtricks:incomplete_emerald_knot"
-  }
+  },
+  "loops": 1
 }

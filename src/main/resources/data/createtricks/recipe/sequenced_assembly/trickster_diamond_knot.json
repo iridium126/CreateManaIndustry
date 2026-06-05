@@ -3,7 +3,6 @@
   "ingredient": {
     "item": "minecraft:diamond"
   },
-  "loops": 1,
   "results": [
     {
       "id": "trickster:diamond_knot"
@@ -43,9 +42,64 @@
           "id": "createtricks:incomplete_diamond_knot"
         }
       ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_diamond_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_diamond_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_diamond_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_diamond_knot"
+        }
+      ]
+    },
+    {
+      "type": "create:filling",
+      "ingredients": [
+        {
+          "item": "createtricks:incomplete_diamond_knot"
+        },
+        {
+          "type": "neoforge:single",
+          "amount": 1,
+          "fluid": "createtricks:liquid_mana"
+        }
+      ],
+      "results": [
+        {
+          "id": "createtricks:incomplete_diamond_knot"
+        }
+      ]
     }
   ],
   "transitional_item": {
     "id": "createtricks:incomplete_diamond_knot"
-  }
+  },
+  "loops": 1
 }

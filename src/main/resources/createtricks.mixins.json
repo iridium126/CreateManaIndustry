@@ -3,7 +3,7 @@
   "package": "com.iridium126.createtricks.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "FillingRecipeMixin",
+    "FillingBySpoutMixin",
     "GenericItemFillingContextMixin",
     "GenericItemEmptyingContextMixin",
     "KineticBlockEntityAccessor",
