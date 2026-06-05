@@ -69,6 +69,7 @@ public final class TricksterReflection {
 	static Method spellSourceGetWorldMethod;
 	static Method getCrackedVersionMethod;
 	static Method transferPropertiesToCrackedMethod;
+	static Method getCreationCostMethod;
 
 	private record ManaAccess(Object component, Object pool) {
 	}
@@ -151,6 +152,7 @@ public final class TricksterReflection {
 
 			getCrackedVersionMethod = knotItemClass.getMethod("getCrackedVersion");
 			transferPropertiesToCrackedMethod = knotItemClass.getMethod("transferPropertiesToCracked", Level.class, ItemStack.class, ItemStack.class);
+			getCreationCostMethod = knotItemClass.getMethod("getCreationCost");
 			chargeAvailable = true;
 		} catch (Throwable t) {
 			CreateTricks.LOGGER.warn("Trickster charge integration unavailable", t);
@@ -241,6 +243,16 @@ public final class TricksterReflection {
 
 	public static boolean isKnotStack(ItemStack stack) {
 		return stack != null && !stack.isEmpty() && isKnotItem(stack.getItem());
+	}
+
+	public static float getCreationCost(Item item, float fallback) {
+		if (!ensureChargeInit() || item == null || !knotItemClass.isInstance(item))
+			return fallback;
+		try {
+			return (float) getCreationCostMethod.invoke(item);
+		} catch (ReflectiveOperationException e) {
+			return fallback;
+		}
 	}
 
 	public static ItemStack applyKnotTransfer(Level level, ItemStack input, ItemStack output) {
