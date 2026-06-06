@@ -25,6 +25,14 @@ public class CogwheelChainData {
 		return nodes.isEmpty() ? BlockPos.ZERO : nodes.get(0).pos();
 	}
 
+	public CogwheelChainNode getCogwheelNode() {
+		return nodes.stream().filter(CogwheelChainNode::isCogwheel).findFirst().orElse(null);
+	}
+
+	public CogwheelChainNode getKineticsCoreNode() {
+		return nodes.stream().filter(CogwheelChainNode::isKineticsCore).findFirst().orElse(null);
+	}
+
 	public boolean containsPos(BlockPos pos) {
 		return nodes.stream().anyMatch(n -> n.pos().equals(pos));
 	}

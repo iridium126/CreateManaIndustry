@@ -10,15 +10,12 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.simibubi.create.foundation.render.RenderTypes;
 
-import dev.engine_room.flywheel.lib.transform.TransformStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.phys.Vec3;
@@ -69,98 +66,82 @@ public final class CogwheelChainRenderer {
 
 	private static void renderChainLoop(PoseStack ms, MultiBufferSource buffer, Level level,
 			Vec3 camera, List<CogwheelChainNode> nodes) {
-		if (nodes.size() < 2)
+		if (nodes.size() != 2)
 			return;
 
-		for (int i = 0; i < nodes.size(); i++) {
-			int next = (i + 1) % nodes.size();
-			CogwheelChainNode from = nodes.get(i);
-			CogwheelChainNode to = nodes.get(next);
+		CogwheelChainNode first = nodes.get(0);
+		CogwheelChainNode second = nodes.get(1);
+		if (!first.canLinkTo(second))
+			return;
 
-			Vec3 start = Vec3.atCenterOf(from.pos());
-			Vec3 end = Vec3.atCenterOf(to.pos());
+		CogwheelChainNode cogwheel = first.isCogwheel() ? first : second;
+		CogwheelChainNode core = first.isKineticsCore() ? first : second;
+		Vec3 cogwheelCenter = CogwheelChainNodes.getRenderPosition(level, cogwheel);
+		Vec3 coreCenter = CogwheelChainNodes.getRenderPosition(level, core);
 
-			renderChainSegment(ms, buffer, level, camera, start, end, from.pos(), to.pos());
-		}
+		renderTrapezoidChain(ms, buffer, level, camera, cogwheelCenter, coreCenter, cogwheel, core);
 	}
 
-	private static void renderChainSegment(PoseStack ms, MultiBufferSource buffer, Level level,
-			Vec3 camera, Vec3 start, Vec3 end, BlockPos startPos, BlockPos endPos) {
-		Vec3 diff = end.subtract(start);
-		float yaw = (float) (Mth.RAD_TO_DEG * Mth.atan2(diff.x, diff.z));
-		float pitch = (float) (Mth.RAD_TO_DEG * Mth.atan2(diff.y,
-			diff.multiply(1, 0, 1).length()));
-		float length = (float) start.distanceTo(end);
+	private static void renderTrapezoidChain(PoseStack ms, MultiBufferSource buffer, Level level,
+			Vec3 camera, Vec3 cogwheelCenter, Vec3 coreCenter,
+			CogwheelChainNode cogwheel, CogwheelChainNode core) {
+		Vec3 centerDiff = coreCenter.subtract(cogwheelCenter);
+		if (centerDiff.lengthSqr() < 1e-6)
+			return;
+
+		Vec3 direction = centerDiff.normalize();
+		Vec3 side = direction.cross(new Vec3(0, 1, 0));
+		if (side.lengthSqr() < 1e-6)
+			side = new Vec3(1, 0, 0);
+		else
+			side = side.normalize();
+
+		Vec3 cogwheelEdge = cogwheelCenter.add(direction.scale(CogwheelChainNodes.getRadius(cogwheel)));
+		Vec3 coreEdge = coreCenter.subtract(direction.scale(CogwheelChainNodes.getRadius(core)));
+		double cogwheelHalfWidth = CogwheelChainNodes.getChainWidth(cogwheel) / 2;
+		double coreHalfWidth = CogwheelChainNodes.getChainWidth(core) / 2;
 
 		int light1 = LightTexture.pack(
-			level.getBrightness(LightLayer.BLOCK, startPos),
-			level.getBrightness(LightLayer.SKY, startPos));
+			level.getBrightness(LightLayer.BLOCK, cogwheel.pos()),
+			level.getBrightness(LightLayer.SKY, cogwheel.pos()));
 		int light2 = LightTexture.pack(
-			level.getBrightness(LightLayer.BLOCK, endPos),
-			level.getBrightness(LightLayer.SKY, endPos));
+			level.getBrightness(LightLayer.BLOCK, core.pos()),
+			level.getBrightness(LightLayer.SKY, core.pos()));
 
-		Vec3 startOffset = start.subtract(camera);
-
-		ms.pushPose();
-		var chain = TransformStack.of(ms);
-		chain.translate(startOffset.x, startOffset.y, startOffset.z);
-		chain.rotateYDegrees(yaw);
-		chain.rotateXDegrees(90 - pitch);
-		chain.rotateYDegrees(45);
-		chain.translate(0, 8f / 16f, 0);
-
-		renderCrossChain(ms, buffer, length, light1, light2);
-
-		ms.popPose();
+		Vec3 cogwheelLeft = cogwheelEdge.add(side.scale(cogwheelHalfWidth));
+		Vec3 cogwheelRight = cogwheelEdge.subtract(side.scale(cogwheelHalfWidth));
+		Vec3 coreLeft = coreEdge.add(side.scale(coreHalfWidth));
+		Vec3 coreRight = coreEdge.subtract(side.scale(coreHalfWidth));
+		renderTaperedQuad(ms, buffer, camera, cogwheelLeft, cogwheelRight, coreRight, coreLeft, light1, light2);
 	}
 
-	private static void renderCrossChain(PoseStack ms, MultiBufferSource buffer,
-			float length, int light1, int light2) {
-		float radius = 1.5f / 16f;
-		float minV = 0;
-		float maxV = length;
-		float minU = 0;
-		float maxU = 3f / 16f;
-		float uOffset = 3f / 16f;
-
+	private static void renderTaperedQuad(PoseStack ms, MultiBufferSource buffer, Vec3 camera,
+			Vec3 cogwheelLeft, Vec3 cogwheelRight, Vec3 coreRight, Vec3 coreLeft,
+			int cogwheelLight, int coreLight) {
 		ms.pushPose();
-		ms.translate(0.5D, 0.0D, 0.5D);
+		ms.translate(-camera.x, -camera.y, -camera.z);
 
 		VertexConsumer vc = buffer.getBuffer(RenderTypes.chain(CHAIN_TEXTURE));
 		PoseStack.Pose pose = ms.last();
 		Matrix4f matrix = pose.pose();
+		float length = (float) cogwheelLeft.distanceTo(coreLeft);
 
-		// Plane 1 along Z-axis + back face
-		renderQuad(matrix, pose, vc, 0, length,
-			0, radius, 0, -radius,
-			minU, maxU, minV, maxV, light1, light2);
-		renderQuad(matrix, pose, vc, 0, length,
-			0, -radius, 0, radius,
-			minU, maxU, minV, maxV, light1, light2);
+		addVertex(matrix, pose, vc, cogwheelLeft, 0, 0, cogwheelLight);
+		addVertex(matrix, pose, vc, cogwheelRight, 1, 0, cogwheelLight);
+		addVertex(matrix, pose, vc, coreRight, 1, length, coreLight);
+		addVertex(matrix, pose, vc, coreLeft, 0, length, coreLight);
 
-		// Plane 2 along X-axis + back face
-		renderQuad(matrix, pose, vc, 0, length,
-			radius, 0, -radius, 0,
-			minU + uOffset, maxU + uOffset, minV, maxV, light1, light2);
-		renderQuad(matrix, pose, vc, 0, length,
-			-radius, 0, radius, 0,
-			minU + uOffset, maxU + uOffset, minV, maxV, light1, light2);
+		addVertex(matrix, pose, vc, coreLeft, 0, length, coreLight);
+		addVertex(matrix, pose, vc, coreRight, 1, length, coreLight);
+		addVertex(matrix, pose, vc, cogwheelRight, 1, 0, cogwheelLight);
+		addVertex(matrix, pose, vc, cogwheelLeft, 0, 0, cogwheelLight);
 
 		ms.popPose();
 	}
 
-	private static void renderQuad(Matrix4f matrix, PoseStack.Pose pose, VertexConsumer vc,
-			float minY, float maxY, float minX, float minZ, float maxX, float maxZ,
-			float minU, float maxU, float minV, float maxV, int light1, int light2) {
-		addVertex(matrix, pose, vc, maxY, minX, minZ, maxU, minV, light2);
-		addVertex(matrix, pose, vc, minY, minX, minZ, maxU, maxV, light1);
-		addVertex(matrix, pose, vc, minY, maxX, maxZ, minU, maxV, light1);
-		addVertex(matrix, pose, vc, maxY, maxX, maxZ, minU, minV, light2);
-	}
-
-	private static void addVertex(Matrix4f matrix, PoseStack.Pose pose, VertexConsumer vc,
-			float y, float x, float z, float u, float v, int light) {
-		vc.addVertex(matrix, x, y, z)
+	private static void addVertex(Matrix4f matrix, PoseStack.Pose pose, VertexConsumer vc, Vec3 position,
+			float u, float v, int light) {
+		vc.addVertex(matrix, (float) position.x, (float) position.y, (float) position.z)
 			.setColor(1.0f, 1.0f, 1.0f, 1.0f)
 			.setUv(u, v)
 			.setOverlay(OverlayTexture.NO_OVERLAY)

@@ -4,27 +4,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.iridium126.createtricks.CreateTricks;
-import com.iridium126.createtricks.content.items.KineticsSpellCoreItem;
 import com.simibubi.create.AllItems;
-import com.simibubi.create.content.kinetics.simpleRelays.ICogWheel;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.Container;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -32,9 +23,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 @EventBusSubscriber(modid = CreateTricks.MODID, value = Dist.CLIENT)
 public final class CogwheelChainHandler {
 
-	private static final int MAX_NODES = 64;
 	private static final int MAX_CHAIN_DISTANCE = 32;
-	private static final String MODULAR_SPELL_CONSTRUCT_BLOCK = "dev.enjarai.trickster.block.ModularSpellConstructBlock";
 
 	private static final List<CogwheelChainNode> buildingNodes = new ArrayList<>();
 	private static boolean isBuilding = false;
@@ -57,7 +46,6 @@ public final class CogwheelChainHandler {
 		LocalPlayer player = (LocalPlayer) event.getEntity();
 		Level level = player.level();
 		BlockPos pos = event.getPos();
-		BlockState state = level.getBlockState(pos);
 
 		// Wrench + sneak: remove chain
 		if (player.isShiftKeyDown() && isWrench(player)) {
@@ -65,7 +53,7 @@ public final class CogwheelChainHandler {
 			if (!chains.isEmpty()) {
 				PacketDistributor.sendToServer(
 					new CogwheelChainPayloads.BreakChainPayload(chains.get(0).getControllerPos()));
-				event.setCanceled(true);
+				cancelVanillaUse(event);
 				cancelBuilding();
 				return;
 			}
@@ -75,11 +63,11 @@ public final class CogwheelChainHandler {
 		if (!player.getMainHandItem().is(Items.CHAIN))
 			return;
 
-		CogwheelChainNode node = tryCreateNode(level, pos, state);
+		CogwheelChainNode node = CogwheelChainNodes.tryCreate(level, pos, event.getHitVec());
 		if (node == null)
 			return;
 
-		event.setCanceled(true);
+		cancelVanillaUse(event);
 
 		if (!isBuilding) {
 			buildingNodes.clear();
@@ -90,42 +78,38 @@ public final class CogwheelChainHandler {
 			return;
 		}
 
-		// Check if completing loop
-		if (buildingNodes.size() >= 2 && node.pos().equals(buildingNodes.get(0).pos())) {
-			// Complete the loop - send to server
-			PacketDistributor.sendToServer(
-				new CogwheelChainPayloads.PlaceChainPayload(new ArrayList<>(buildingNodes)));
-			player.displayClientMessage(
-				Component.translatable("createtricks.cogwheel_chain.placed"), true);
+		if (buildingNodes.size() != 1) {
 			cancelBuilding();
 			return;
 		}
 
-		// Check duplicates
-		for (CogwheelChainNode existing : buildingNodes) {
-			if (existing.pos().equals(node.pos()))
-				return;
+		CogwheelChainNode first = buildingNodes.get(0);
+		if (!first.canLinkTo(node)) {
+			player.displayClientMessage(
+				Component.translatable("createtricks.cogwheel_chain.invalid_pair"), true);
+			return;
 		}
 
 		// Check distance
-		BlockPos lastPos = buildingNodes.get(buildingNodes.size() - 1).pos();
-		if (lastPos.distManhattan(node.pos()) > MAX_CHAIN_DISTANCE) {
+		if (first.pos().distManhattan(node.pos()) > MAX_CHAIN_DISTANCE) {
 			player.displayClientMessage(
 				Component.translatable("createtricks.cogwheel_chain.too_far"), true);
 			return;
 		}
 
-		// Check max nodes
-		if (buildingNodes.size() >= MAX_NODES) {
+		if (!CogwheelChainClientData.getChainsAt(first.pos()).isEmpty()
+			|| !CogwheelChainClientData.getChainsAt(node.pos()).isEmpty()) {
 			player.displayClientMessage(
-				Component.translatable("createtricks.cogwheel_chain.too_many"), true);
+				Component.translatable("createtricks.cogwheel_chain.already_linked"), true);
 			return;
 		}
 
 		buildingNodes.add(node);
 		player.displayClientMessage(
-			Component.translatable("createtricks.cogwheel_chain.added",
-				buildingNodes.size()), true);
+			Component.translatable("createtricks.cogwheel_chain.placed"), true);
+		PacketDistributor.sendToServer(
+			new CogwheelChainPayloads.PlaceChainPayload(new ArrayList<>(buildingNodes)));
+		cancelBuilding();
 	}
 
 	@SubscribeEvent
@@ -148,48 +132,9 @@ public final class CogwheelChainHandler {
 		buildingNodes.clear();
 	}
 
-	private static CogwheelChainNode tryCreateNode(Level level, BlockPos pos, BlockState state) {
-		// Check Create cogwheel
-		if (ICogWheel.isSmallCog(state) || ICogWheel.isLargeCog(state)) {
-			Direction.Axis axis = getAxis(state);
-			boolean isLarge = ICogWheel.isLargeCog(state);
-			return new CogwheelChainNode(pos, axis, isLarge);
-		}
-
-		// Check spell construct with kinetics core
-		if (isSpellConstructWithCore(level, pos)) {
-			return new CogwheelChainNode(pos, Direction.Axis.Y, false);
-		}
-
-		return null;
-	}
-
-	private static Direction.Axis getAxis(BlockState state) {
-		try {
-			return state.getValue(BlockStateProperties.AXIS);
-		} catch (IllegalArgumentException e) {
-			return Direction.Axis.Y;
-		}
-	}
-
-	private static boolean isSpellConstructWithCore(Level level, BlockPos pos) {
-		BlockState state = level.getBlockState(pos);
-		try {
-			if (!Class.forName(MODULAR_SPELL_CONSTRUCT_BLOCK).isInstance(state.getBlock()))
-				return false;
-		} catch (ClassNotFoundException e) {
-			return false;
-		}
-
-		BlockEntity be = level.getBlockEntity(pos);
-		if (!(be instanceof Container container))
-			return false;
-
-		for (int slot = 1; slot < container.getContainerSize(); slot++) {
-			if (KineticsSpellCoreItem.is(container.getItem(slot)))
-				return true;
-		}
-		return false;
+	private static void cancelVanillaUse(PlayerInteractEvent.RightClickBlock event) {
+		event.setCanceled(true);
+		event.setCancellationResult(InteractionResult.SUCCESS);
 	}
 
 	private static boolean isWrench(LocalPlayer player) {

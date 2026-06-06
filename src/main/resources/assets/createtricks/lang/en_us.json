@@ -19,9 +19,9 @@
   "tooltip.createtricks.variable": "Variable",
   "tooltip.createtricks.variable_impact": "Variable Impact",
   "trickster.trick.createtricks.temporary_kinetic_stress": "Kinetic Stress Ploy",
-  "createtricks.cogwheel_chain.started": "Chain building started - right-click more cogwheels",
-  "createtricks.cogwheel_chain.added": "Added node %1$s to chain",
+  "createtricks.cogwheel_chain.started": "Chain building started - right-click the matching kinetics core or cogwheel",
   "createtricks.cogwheel_chain.placed": "Chain placed!",
   "createtricks.cogwheel_chain.too_far": "Target is too far away",
-  "createtricks.cogwheel_chain.too_many": "Too many nodes in chain"
+  "createtricks.cogwheel_chain.invalid_pair": "Chains can only link one cogwheel to one kinetics core",
+  "createtricks.cogwheel_chain.already_linked": "One endpoint is already linked"
 }

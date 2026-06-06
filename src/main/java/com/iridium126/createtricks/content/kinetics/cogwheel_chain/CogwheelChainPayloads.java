@@ -44,6 +44,8 @@ public final class CogwheelChainPayloads {
 					buf.writeLong(node.pos().asLong());
 					ByteBufCodecs.VAR_INT.encode(buf, node.axis().ordinal());
 					buf.writeBoolean(node.isLarge());
+					ByteBufCodecs.VAR_INT.encode(buf, node.type().ordinal());
+					ByteBufCodecs.VAR_INT.encode(buf, node.slot());
 				}
 			},
 			buf -> {
@@ -53,7 +55,10 @@ public final class CogwheelChainPayloads {
 					BlockPos pos = BlockPos.of(buf.readLong());
 					Direction.Axis axis = Direction.Axis.values()[ByteBufCodecs.VAR_INT.decode(buf)];
 					boolean isLarge = buf.readBoolean();
-					nodes.add(new CogwheelChainNode(pos, axis, isLarge));
+					CogwheelChainNode.Type type =
+						CogwheelChainNode.Type.values()[ByteBufCodecs.VAR_INT.decode(buf)];
+					int slot = ByteBufCodecs.VAR_INT.decode(buf);
+					nodes.add(new CogwheelChainNode(pos, axis, isLarge, type, slot));
 				}
 				return new PlaceChainPayload(nodes);
 			}
@@ -96,6 +101,8 @@ public final class CogwheelChainPayloads {
 						buf.writeLong(node.pos().asLong());
 						ByteBufCodecs.VAR_INT.encode(buf, node.axis().ordinal());
 						buf.writeBoolean(node.isLarge());
+						ByteBufCodecs.VAR_INT.encode(buf, node.type().ordinal());
+						ByteBufCodecs.VAR_INT.encode(buf, node.slot());
 					}
 				}
 			},
@@ -109,7 +116,10 @@ public final class CogwheelChainPayloads {
 						BlockPos pos = BlockPos.of(buf.readLong());
 						Direction.Axis axis = Direction.Axis.values()[ByteBufCodecs.VAR_INT.decode(buf)];
 						boolean isLarge = buf.readBoolean();
-						nodes.add(new CogwheelChainNode(pos, axis, isLarge));
+						CogwheelChainNode.Type type =
+							CogwheelChainNode.Type.values()[ByteBufCodecs.VAR_INT.decode(buf)];
+						int slot = ByteBufCodecs.VAR_INT.decode(buf);
+						nodes.add(new CogwheelChainNode(pos, axis, isLarge, type, slot));
 					}
 					chains.add(new CogwheelChainData(nodes));
 				}
@@ -130,7 +140,21 @@ public final class CogwheelChainPayloads {
 				return;
 			if (!(player.level() instanceof ServerLevel serverLevel))
 				return;
-			if (payload.nodes().size() < 2)
+			if (payload.nodes().size() != 2)
+				return;
+			CogwheelChainNode first = payload.nodes().get(0);
+			CogwheelChainNode second = payload.nodes().get(1);
+			if (!first.canLinkTo(second))
+				return;
+			if (first.pos().distManhattan(second.pos()) > 32)
+				return;
+			if (!CogwheelChainNodes.isValidEndpoint(serverLevel, first)
+				|| !CogwheelChainNodes.isValidEndpoint(serverLevel, second))
+				return;
+
+			CogwheelChainSavedData savedData = CogwheelChainSavedData.get(serverLevel);
+			if (!savedData.getChainsAt(first.pos()).isEmpty()
+				|| !savedData.getChainsAt(second.pos()).isEmpty())
 				return;
 
 			int needed = payload.nodes().size();
@@ -154,7 +178,6 @@ public final class CogwheelChainPayloads {
 			}
 
 			CogwheelChainData chain = new CogwheelChainData(payload.nodes());
-			CogwheelChainSavedData savedData = CogwheelChainSavedData.get(serverLevel);
 			savedData.addChain(chain);
 			syncToNearby(serverLevel, savedData);
 		});
