@@ -21,7 +21,9 @@
     "CachedBuffersMixin",
     "LiquidBlockRendererMixin",
     "ModularSpellConstructBlockEntityRendererMixin",
-    "SafeBlockEntityRendererMixin"
+    "SafeBlockEntityRendererMixin",
+    "bnb.CogwheelChainBlockEntityRendererMixin",
+    "bnb.RenderedChainPathNodeMixin"
   ],
   "injectors": {
     "defaultRequire": 1

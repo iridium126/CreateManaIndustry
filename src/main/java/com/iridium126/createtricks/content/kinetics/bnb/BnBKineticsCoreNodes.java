@@ -19,6 +19,8 @@ import net.minecraft.world.phys.Vec3;
 
 public final class BnBKineticsCoreNodes {
 	public static final int NO_SLOT = -1;
+	public static final double BNB_SMALL_COGWHEEL_RADIUS = 0.5;
+	public static final double KINETICS_CORE_RADIUS = 0.14;
 
 	private static final String MODULAR_SPELL_CONSTRUCT_BLOCK =
 		"dev.enjarai.trickster.block.ModularSpellConstructBlock";
@@ -92,6 +94,30 @@ public final class BnBKineticsCoreNodes {
 			return false;
 
 		return isKineticsCore(container.getItem(slot));
+	}
+
+	public static Vec3 getNearestCoreCenter(Level level, BlockPos pos, Vec3 target) {
+		if (!isModularSpellConstruct(level, pos))
+			return Vec3.atCenterOf(pos);
+
+		BlockEntity be = level.getBlockEntity(pos);
+		if (!(be instanceof Container container))
+			return Vec3.atCenterOf(pos);
+
+		Vec3 nearest = Vec3.atCenterOf(pos);
+		double nearestDistance = Double.MAX_VALUE;
+		for (int slot = 1; slot < container.getContainerSize(); slot++) {
+			if (!isKineticsCore(container.getItem(slot)))
+				continue;
+
+			Vec3 center = getCoreCenter(level, pos, slot);
+			double distance = center.distanceToSqr(target);
+			if (distance < nearestDistance) {
+				nearest = center;
+				nearestDistance = distance;
+			}
+		}
+		return nearest;
 	}
 
 	private static boolean isKineticsCore(ItemStack stack) {
