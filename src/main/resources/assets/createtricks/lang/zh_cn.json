@@ -18,5 +18,10 @@
   "tooltip.createtricks.stress_range": "%1$s-%2$sx RPM",
   "tooltip.createtricks.variable": "可变",
   "tooltip.createtricks.variable_impact": "可变负载",
-  "trickster.trick.createtricks.temporary_kinetic_stress": "动力应力戏法"
+  "trickster.trick.createtricks.temporary_kinetic_stress": "动力应力戏法",
+  "createtricks.cogwheel_chain.started": "链条构建已开始 - 右键点击更多齿轮",
+  "createtricks.cogwheel_chain.added": "已添加第 %1$s 个节点到链条",
+  "createtricks.cogwheel_chain.placed": "链条已放置！",
+  "createtricks.cogwheel_chain.too_far": "目标太远了",
+  "createtricks.cogwheel_chain.too_many": "链条节点过多"
 }
