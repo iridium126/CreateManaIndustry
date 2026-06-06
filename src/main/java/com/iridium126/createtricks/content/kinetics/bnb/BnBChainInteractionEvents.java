@@ -15,15 +15,18 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
-import net.minecraft.world.item.Items;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 public final class BnBChainInteractionEvents {
 	private static final int MAX_CHAIN_DISTANCE = 32;
@@ -46,8 +49,8 @@ public final class BnBChainInteractionEvents {
 		KineticsCoreCogwheelNode core = BnBKineticsCoreNodes.tryCreate(level, event.getPos(), event.getHitVec());
 		if (core != null) {
 			cancelVanillaUse(event);
-			if (!level.isClientSide()) {
-				PENDING_CORES.put(player.getUUID(), core);
+			PENDING_CORES.put(player.getUUID(), core);
+			if (level.isClientSide()) {
 				player.displayClientMessage(Component.translatable("createtricks.bnb_chain.started"), true);
 			}
 			return;
@@ -57,14 +60,17 @@ public final class BnBChainInteractionEvents {
 		if (pendingCore == null)
 			return;
 
-		if (!BnBReflect.isValidBlockTarget(level.getBlockState(event.getPos())))
+		if (!BnBReflect.isValidLinkTarget(level, event.getPos()))
 			return;
 
 		cancelVanillaUse(event);
-		if (level.isClientSide())
-			return;
-
 		PENDING_CORES.remove(player.getUUID());
+		if (level.isClientSide()) {
+			PacketDistributor.sendToServer(new BnBChainPayloads.LinkCorePayload(
+				pendingCore.pos(), pendingCore.slot(), event.getPos(), event.getHand().ordinal()));
+			return;
+		}
+
 		if (pendingCore.pos().distManhattan(event.getPos()) > MAX_CHAIN_DISTANCE) {
 			player.displayClientMessage(Component.translatable("createtricks.bnb_chain.too_far"), true);
 			return;
@@ -78,6 +84,48 @@ public final class BnBChainInteractionEvents {
 		if (!player.hasInfiniteMaterials())
 			player.getItemInHand(event.getHand()).shrink(1);
 		player.displayClientMessage(Component.translatable("createtricks.bnb_chain.placed"), true);
+	}
+
+	static void placeFromClient(ServerPlayer player, BlockPos corePos, int slot, BlockPos targetPos, InteractionHand hand) {
+		Level level = player.level();
+		if (!player.getItemInHand(hand).is(Items.CHAIN))
+			return;
+
+		KineticsCoreCogwheelNode core = BnBKineticsCoreNodes.create(level, corePos, slot);
+		if (core == null)
+			return;
+
+		if (core.pos().distManhattan(targetPos) > MAX_CHAIN_DISTANCE) {
+			player.displayClientMessage(Component.translatable("createtricks.bnb_chain.too_far"), true);
+			return;
+		}
+
+		if (!BnBReflect.isValidLinkTarget(level, targetPos)) {
+			player.displayClientMessage(Component.translatable("createtricks.bnb_chain.invalid_pair"), true);
+			return;
+		}
+
+		if (!placeOrExtendBnBChain(level, targetPos, core, player)) {
+			player.displayClientMessage(Component.translatable("createtricks.bnb_chain.invalid_pair"), true);
+			return;
+		}
+
+		if (!player.hasInfiniteMaterials())
+			player.getItemInHand(hand).shrink(1);
+		player.displayClientMessage(Component.translatable("createtricks.bnb_chain.placed"), true);
+	}
+
+	static boolean trySendPendingCoreLink(Player player, Level level, BlockPos targetPos, int handOrdinal) {
+		KineticsCoreCogwheelNode pendingCore = PENDING_CORES.get(player.getUUID());
+		if (pendingCore == null)
+			return false;
+		if (!BnBReflect.isValidLinkTarget(level, targetPos))
+			return false;
+
+		PENDING_CORES.remove(player.getUUID());
+		PacketDistributor.sendToServer(new BnBChainPayloads.LinkCorePayload(
+			pendingCore.pos(), pendingCore.slot(), targetPos, handOrdinal));
+		return true;
 	}
 
 	private static boolean placeOrExtendBnBChain(Level level, BlockPos cogwheelPos, KineticsCoreCogwheelNode core, Player player) {
@@ -184,13 +232,27 @@ public final class BnBChainInteractionEvents {
 			}
 		}
 
+		static boolean isValidLinkTarget(Level level, BlockPos pos) {
+			return isValidBlockTarget(level.getBlockState(pos)) || isCogwheelChainBlockEntity(level.getBlockEntity(pos));
+		}
+
 		static boolean isLargeBlockTarget(BlockState state) throws ReflectiveOperationException {
+			Class<?> chainBlockClass = Class.forName("com.kipti.bnb.content.cogwheel_chain.block.CogwheelChainBlock");
+			if (chainBlockClass.isInstance(state.getBlock()))
+				return (Boolean) chainBlockClass.getMethod("isLargeChainCog").invoke(state.getBlock());
+
 			return (Boolean) Class.forName(PLACING_CHAIN)
 				.getMethod("isLargeBlockTarget", BlockState.class)
 				.invoke(null, state);
 		}
 
 		static boolean hasSmallCogwheelOffset(BlockState state) throws ReflectiveOperationException {
+			Class<?> chainBlockClass = Class.forName("com.kipti.bnb.content.cogwheel_chain.block.CogwheelChainBlock");
+			if (chainBlockClass.isInstance(state.getBlock())) {
+				BlockState sourceState = (BlockState) chainBlockClass.getMethod("getSourceBlockState").invoke(state.getBlock());
+				return hasSmallCogwheelOffset(sourceState);
+			}
+
 			return (Boolean) Class.forName(PLACING_CHAIN)
 				.getMethod("hasSmallCogwheelOffset", BlockState.class)
 				.invoke(null, state);

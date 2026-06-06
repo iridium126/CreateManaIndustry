@@ -13,6 +13,7 @@ import com.iridium126.createtricks.content.kinetics.bnb.BnBKineticsCoreNodes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
 @Mixin(targets = "com.kipti.bnb.content.cogwheel_chain.graph.CogwheelChain", remap = false)
@@ -63,24 +64,37 @@ public abstract class CogwheelChainMixin {
 
 	private static boolean isValidChainCogwheel(BlockState state, Object node) throws ReflectiveOperationException {
 		Class<?> placingChainClass = Class.forName("com.kipti.bnb.content.cogwheel_chain.graph.PlacingCogwheelChain");
-		boolean validTarget = (Boolean) placingChainClass.getMethod("isValidBlockTarget", BlockState.class).invoke(null, state);
-		if (!validTarget)
-			return false;
 
 		boolean nodeLarge = isLarge(node);
 		boolean nodeOffset = offsetForSmallCogwheel(node);
 		Direction.Axis nodeAxis = rotationAxis(node);
 
-		boolean stateLarge = (Boolean) placingChainClass.getMethod("isLargeBlockTarget", BlockState.class).invoke(null, state);
-		boolean stateOffset = (Boolean) placingChainClass.getMethod("hasSmallCogwheelOffset", BlockState.class).invoke(null, state);
-		Direction.Axis stateAxis;
-		try {
-			stateAxis = state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS);
-		} catch (IllegalArgumentException e) {
-			stateAxis = Direction.Axis.Y;
+		Block block = state.getBlock();
+		Class<?> chainBlockClass = Class.forName("com.kipti.bnb.content.cogwheel_chain.block.CogwheelChainBlock");
+		boolean stateLarge;
+		boolean stateOffset;
+		Direction.Axis stateAxis = getAxis(state);
+		if (chainBlockClass.isInstance(block)) {
+			BlockState sourceState = (BlockState) chainBlockClass.getMethod("getSourceBlockState").invoke(block);
+			stateLarge = (Boolean) chainBlockClass.getMethod("isLargeChainCog").invoke(block);
+			stateOffset = (Boolean) placingChainClass.getMethod("hasSmallCogwheelOffset", BlockState.class).invoke(null, sourceState);
+		} else {
+			boolean validTarget = (Boolean) placingChainClass.getMethod("isValidBlockTarget", BlockState.class).invoke(null, state);
+			if (!validTarget)
+				return false;
+			stateLarge = (Boolean) placingChainClass.getMethod("isLargeBlockTarget", BlockState.class).invoke(null, state);
+			stateOffset = (Boolean) placingChainClass.getMethod("hasSmallCogwheelOffset", BlockState.class).invoke(null, state);
 		}
 
 		return nodeAxis == stateAxis && nodeLarge == stateLarge && nodeOffset == stateOffset;
+	}
+
+	private static Direction.Axis getAxis(BlockState state) {
+		try {
+			return state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS);
+		} catch (IllegalArgumentException e) {
+			return Direction.Axis.Y;
+		}
 	}
 
 	private static BlockPos localPos(Object node) throws ReflectiveOperationException {

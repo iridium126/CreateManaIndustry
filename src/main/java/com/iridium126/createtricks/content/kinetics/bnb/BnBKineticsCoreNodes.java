@@ -29,6 +29,12 @@ public final class BnBKineticsCoreNodes {
 		int slot = getTargetKineticsCoreSlot(level, pos, hit);
 		if (slot == NO_SLOT)
 			return null;
+		return create(level, pos, slot);
+	}
+
+	public static KineticsCoreCogwheelNode create(Level level, BlockPos pos, int slot) {
+		if (!hasKineticsCoreInSlot(level, pos, slot))
+			return null;
 		return new KineticsCoreCogwheelNode(pos, getFacing(level, pos).getAxis(), slot, getCoreCenter(level, pos, slot));
 	}
 
@@ -73,6 +79,19 @@ public final class BnBKineticsCoreNodes {
 				count++;
 		}
 		return count;
+	}
+
+	public static boolean hasKineticsCoreInSlot(Level level, BlockPos pos, int slot) {
+		if (!isModularSpellConstruct(level, pos))
+			return false;
+
+		BlockEntity be = level.getBlockEntity(pos);
+		if (!(be instanceof Container container))
+			return false;
+		if (slot < 1 || slot >= container.getContainerSize())
+			return false;
+
+		return isKineticsCore(container.getItem(slot));
 	}
 
 	private static boolean isKineticsCore(ItemStack stack) {

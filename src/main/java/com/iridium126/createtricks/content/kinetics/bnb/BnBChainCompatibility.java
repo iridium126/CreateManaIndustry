@@ -3,6 +3,8 @@ package com.iridium126.createtricks.content.kinetics.bnb;
 import com.iridium126.createtricks.CreateTricks;
 
 import net.neoforged.fml.ModList;
+import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.neoforge.common.NeoForge;
 
 public final class BnBChainCompatibility {
@@ -23,6 +25,8 @@ public final class BnBChainCompatibility {
 		}
 
 		NeoForge.EVENT_BUS.register(BnBChainInteractionEvents.class);
+		if (FMLEnvironment.dist == Dist.CLIENT)
+			BnBChainClientEvents.register();
 		CreateTricks.LOGGER.info("Create: Bits 'n' Bobs cogwheel chain compatibility enabled");
 	}
 }
