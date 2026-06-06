@@ -167,6 +167,7 @@ dependencies {
     localRuntime "dev.engine-room.flywheel:flywheel-neoforge-${minecraft_version}:${flywheel_version}"
     compileOnly "com.tterrag.registrate:Registrate:${registrate_version}"
     compileOnly "net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}"
+    implementation "curse.maven:create-bits-n-bobs-1398383:7591460"
 
     implementation "curse.maven:accessories-938917:7583320"
     implementation "curse.maven:owo-lib-532610:6785734"
