@@ -23,7 +23,7 @@ public class CreateTricksMixinPlugin implements IMixinConfigPlugin {
 	@Override
 	public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
 		if (mixinClassName.contains(".bnb."))
-			return FMLLoader.getLoadingModList().getModFileById(BNB_MOD_ID) != null && classExists(targetClassName);
+			return FMLLoader.getLoadingModList().getModFileById(BNB_MOD_ID) != null;
 		return true;
 	}
 
@@ -40,13 +40,4 @@ public class CreateTricksMixinPlugin implements IMixinConfigPlugin {
 
 	@Override
 	public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {}
-
-	private static boolean classExists(String className) {
-		try {
-			Class.forName(className, false, Thread.currentThread().getContextClassLoader());
-			return true;
-		} catch (ClassNotFoundException e) {
-			return false;
-		}
-	}
 }

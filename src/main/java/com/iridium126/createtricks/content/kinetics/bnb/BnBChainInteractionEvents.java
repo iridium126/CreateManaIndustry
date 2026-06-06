@@ -82,8 +82,8 @@ public final class BnBChainInteractionEvents {
 
 	private static boolean placeOrExtendBnBChain(Level level, BlockPos cogwheelPos, KineticsCoreCogwheelNode core, Player player) {
 		try {
-			BlockEntity be = level.getBlockEntity(cogwheelPos);
-			if (!BnBReflect.isCogwheelChainBlockEntity(be))
+			BlockEntity be = BnBReflect.getOrCreateChainBlockEntity(level, cogwheelPos);
+			if (be == null)
 				return false;
 
 			if (BnBReflect.countCoreLinks(level, core.pos()) >= BnBKineticsCoreNodes.getKineticsCoreCount(level, core.pos())) {
@@ -213,6 +213,26 @@ public final class BnBChainInteractionEvents {
 			}
 		}
 
+		static BlockEntity getOrCreateChainBlockEntity(Level level, BlockPos pos) throws ReflectiveOperationException {
+			BlockEntity be = level.getBlockEntity(pos);
+			if (isCogwheelChainBlockEntity(be))
+				return be;
+
+			BlockState state = level.getBlockState(pos);
+			if (!isValidBlockTarget(state))
+				return null;
+
+			Object chainState = Class.forName("com.kipti.bnb.content.cogwheel_chain.block.CogwheelChainBlock")
+				.getMethod("getChainState", BlockState.class, boolean.class, Direction.Axis.class)
+				.invoke(null, state, isLargeBlockTarget(state), getRotationAxis(state));
+			if (!(chainState instanceof BlockState blockState))
+				return null;
+
+			level.setBlockAndUpdate(pos, blockState);
+			be = level.getBlockEntity(pos);
+			return isCogwheelChainBlockEntity(be) ? be : null;
+		}
+
 		static Object resolveController(Level level, BlockPos pos, Object be) throws ReflectiveOperationException {
 			if (isController(be))
 				return be;
@@ -323,6 +343,13 @@ public final class BnBChainInteractionEvents {
 		}
 
 		static void sendData(Object be) throws ReflectiveOperationException {
+			if (be instanceof BlockEntity blockEntity) {
+				blockEntity.setChanged();
+				if (blockEntity.getLevel() != null) {
+					BlockState state = blockEntity.getBlockState();
+					blockEntity.getLevel().sendBlockUpdated(blockEntity.getBlockPos(), state, state, 3);
+				}
+			}
 			be.getClass().getMethod("sendData").invoke(be);
 		}
 
