@@ -82,6 +82,20 @@ public final class CogwheelChainNodes {
 		return node.isLarge() ? LARGE_COGWHEEL_CHAIN_WIDTH : SMALL_COGWHEEL_CHAIN_WIDTH;
 	}
 
+	public static Vec3 getVisualAxis(Level level, CogwheelChainNode node) {
+		if (node.isCogwheel())
+			return axisVector(node.axis());
+		return Vec3.atLowerCornerOf(getFacing(level, node.pos()).getNormal());
+	}
+
+	private static Vec3 axisVector(Direction.Axis axis) {
+		return switch (axis) {
+			case X -> new Vec3(1, 0, 0);
+			case Y -> new Vec3(0, 1, 0);
+			case Z -> new Vec3(0, 0, 1);
+		};
+	}
+
 	private static Direction.Axis getAxis(BlockState state) {
 		try {
 			return state.getValue(BlockStateProperties.AXIS);
