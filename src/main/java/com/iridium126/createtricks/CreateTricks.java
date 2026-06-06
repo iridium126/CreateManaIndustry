@@ -5,7 +5,7 @@ import org.slf4j.Logger;
 import com.iridium126.createtricks.content.kinetics.StressManaConverterBlock;
 import com.iridium126.createtricks.content.kinetics.StressManaConverterBlockEntity;
 import com.iridium126.createtricks.content.kinetics.StressRangeTooltipModifier;
-import com.iridium126.createtricks.content.kinetics.cogwheel_chain.CogwheelChainPayloads;
+import com.iridium126.createtricks.content.kinetics.bnb.BnBChainCompatibility;
 import com.iridium126.createtricks.trickster.KineticStressTrickRegister;
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.foundation.data.CreateRegistrate;
@@ -46,7 +46,6 @@ public class CreateTricks {
 	public CreateTricks(IEventBus modEventBus, ModContainer modContainer) {
 		REGISTRATE.registerEventListeners(modEventBus);
 		modEventBus.addListener(CreateTricksCapabilities::register);
-		modEventBus.addListener(CogwheelChainPayloads::register);
 		CreateTricksCreativeModeTabs.register(modEventBus);
 		CreateTricksBlocks.register();
 		CreateTricksFluids.register();
@@ -54,6 +53,7 @@ public class CreateTricks {
 		CreateTricksItems.register();
 		KineticStressTrickRegister.register();
 		CreateTricksPartialModels.register();
+		BnBChainCompatibility.register();
 		modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON, Config.SPEC);
 	}
 

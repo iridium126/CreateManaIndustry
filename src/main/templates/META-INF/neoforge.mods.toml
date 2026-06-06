@@ -94,3 +94,8 @@ config="${mod_id}.mixins.json"
     ordering="AFTER"
     side="BOTH"
 
+[[dependencies.${mod_id}]]
+    modId="bits_n_bobs"
+    type="optional"
+    ordering="AFTER"
+    side="BOTH"
