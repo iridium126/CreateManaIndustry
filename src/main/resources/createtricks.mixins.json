@@ -15,7 +15,10 @@
     "TricksterSpellConstructSyncMixin",
     "TrickBlunderExceptionMixin",
     "MechanicalPressKnotMixin",
-    "bnb.CogwheelChainMixin"
+    "bnb.CogwheelChainMixin",
+    "bnb.CogwheelChainPlaceInLevelMixin",
+    "bnb.CogwheelChainPlacementInteractionMixin",
+    "bnb.PlacingCogwheelChainMixin"
   ],
   "client": [
     "CachedBuffersMixin",
