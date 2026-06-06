@@ -10,4 +10,7 @@ import com.simibubi.create.content.kinetics.base.KineticEffectHandler;
 public interface KineticBlockEntityAccessor {
 	@Accessor("effects")
 	KineticEffectHandler createtricks$getEffects();
+
+	@Accessor("source")
+	net.minecraft.core.BlockPos createtricks$getSource();
 }

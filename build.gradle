@@ -172,7 +172,7 @@ dependencies {
     implementation "curse.maven:owo-lib-532610:6785734"
 
     // Add Connector to the launch classpath
-    additionalRuntimeClasspath "org.sinytra:connector:2.0.0-beta.10+1.21.1"
+    additionalRuntimeClasspath "org.sinytra:connector:2.0.0-beta.12+1.21.1"
     // Add FFAPI dependency
     compileOnly "curse.maven:forgified-fabric-api-889079:7658611"
     runtimeOnly "curse.maven:forgified-fabric-api-889079:7658611"
