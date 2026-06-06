@@ -2,10 +2,17 @@ package com.iridium126.createtricks;
 
 import static com.iridium126.createtricks.CreateTricks.REGISTRATE;
 
+import com.iridium126.createtricks.content.items.KineticsSpellCoreItem;
 import com.simibubi.create.content.processing.sequenced.SequencedAssemblyItem;
 import com.tterrag.registrate.util.entry.ItemEntry;
 
+import net.minecraft.world.item.Item;
+
 public final class CreateTricksItems {
+	public static final ItemEntry<Item> KINETICS_SPELL_CORE =
+			REGISTRATE.item("kinetics_spell_core", KineticsSpellCoreItem::create)
+				.register();
+
 	public static final ItemEntry<SequencedAssemblyItem> INCOMPLETE_AMETHYST_KNOT =
 			incompleteKnot("incomplete_amethyst_knot");
 	public static final ItemEntry<SequencedAssemblyItem> INCOMPLETE_QUARTZ_KNOT =

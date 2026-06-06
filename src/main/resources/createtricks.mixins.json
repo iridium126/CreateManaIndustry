@@ -18,6 +18,7 @@
   "client": [
     "CachedBuffersMixin",
     "LiquidBlockRendererMixin",
+    "ModularSpellConstructBlockEntityRendererMixin",
     "SafeBlockEntityRendererMixin"
   ],
   "injectors": {
