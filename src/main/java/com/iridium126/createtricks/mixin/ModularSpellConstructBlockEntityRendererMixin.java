@@ -4,6 +4,7 @@ import java.lang.reflect.Field;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Coerce;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
@@ -19,18 +20,15 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.Direction;
 import net.minecraft.world.Container;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.Property;
 
 @Mixin(targets = "dev.enjarai.trickster.render.ModularSpellConstructBlockEntityRenderer")
 public abstract class ModularSpellConstructBlockEntityRendererMixin {
-	private static final BlockState COGWHEEL_STATE = AllBlocks.COGWHEEL.getDefaultState()
-			.setValue(BlockStateProperties.AXIS, Direction.Axis.Y);
 	private static final String MODULAR_SPELL_CONSTRUCT_BLOCK = "dev.enjarai.trickster.block.ModularSpellConstructBlock";
 
 	@Inject(method = "render", at = @At("TAIL"), remap = false)
-	private void createtricks$renderKineticsCores(Object entity, float partialTicks,
+	private void createtricks$renderKineticsCores(@Coerce Object entity, float partialTicks,
 			PoseStack matrices, MultiBufferSource vertexConsumers, int light, int overlay, CallbackInfo ci) {
 		if (!(entity instanceof Container inventory) || !(entity instanceof BlockEntity blockEntity))
 			return;
@@ -82,7 +80,8 @@ public abstract class ModularSpellConstructBlockEntityRendererMixin {
 		matrices.scale(0.28f, 0.28f, 0.28f);
 		matrices.translate(-0.5f, -0.5f, -0.5f);
 
-		CachedBuffers.partial(AllPartialModels.COGWHEEL, COGWHEEL_STATE)
+		CachedBuffers.partial(AllPartialModels.COGWHEEL, AllBlocks.COGWHEEL.getDefaultState()
+				.setValue(BlockStateProperties.AXIS, Direction.Axis.Y))
 			.light(light)
 			.renderInto(matrices, vertexConsumers.getBuffer(RenderType.solid()));
 
