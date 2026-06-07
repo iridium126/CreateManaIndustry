@@ -18,7 +18,8 @@
     "bnb.CogwheelChainMixin",
     "bnb.CogwheelChainPlaceInLevelMixin",
     "bnb.CogwheelChainPlacementInteractionMixin",
-    "bnb.PlacingCogwheelChainMixin"
+    "bnb.PlacingCogwheelChainMixin",
+    "bnb.PlaceCogwheelChainPacketMixin"
   ],
   "client": [
     "CachedBuffersMixin",

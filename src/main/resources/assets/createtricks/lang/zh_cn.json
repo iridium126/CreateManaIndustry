@@ -19,9 +19,6 @@
   "tooltip.createtricks.variable": "可变",
   "tooltip.createtricks.variable_impact": "可变负载",
   "trickster.trick.createtricks.temporary_kinetic_stress": "动力应力戏法",
-  "createtricks.bnb_chain.started": "已选择动力核心 - 右键点击 BnB 齿轮链节点",
-  "createtricks.bnb_chain.placed": "动力核心已链接到 BnB 齿轮链",
-  "createtricks.bnb_chain.too_far": "目标太远了",
-  "createtricks.bnb_chain.invalid_pair": "动力核心只能链接到 BnB 齿轮链节点",
-  "createtricks.bnb_chain.already_linked": "该 Modular Spell Construct 的每个动力核心都已有链接"
+  "createtricks.bnb_chain.already_linked": "该模块化法术组构台的动力法术核心已有链接",
+  "createtricks.bnb_chain.no_core": "该模块化法术组构台没有动力法术核心可链接"
 }

@@ -23,5 +23,6 @@
   "createtricks.bnb_chain.placed": "Kinetics core linked to BnB cogwheel chain",
   "createtricks.bnb_chain.too_far": "Target is too far away",
   "createtricks.bnb_chain.invalid_pair": "Kinetics cores can only link to BnB cogwheel chain nodes",
-  "createtricks.bnb_chain.already_linked": "This Modular Spell Construct already has one link per kinetics core"
+  "createtricks.bnb_chain.already_linked": "This Modular Spell Construct already has one link per kinetics core",
+  "createtricks.bnb_chain.no_core": "This Modular Spell Construct has no kinetics core to link"
 }

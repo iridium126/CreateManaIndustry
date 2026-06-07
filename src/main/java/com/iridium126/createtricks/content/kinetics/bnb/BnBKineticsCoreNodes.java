@@ -1,6 +1,7 @@
 package com.iridium126.createtricks.content.kinetics.bnb;
 
 import java.lang.reflect.Field;
+import java.util.List;
 
 import org.joml.Vector3f;
 
@@ -22,6 +23,8 @@ public final class BnBKineticsCoreNodes {
 	public static final int NO_SLOT = -1;
 	public static final double BNB_SMALL_COGWHEEL_RADIUS = 0.5;
 	public static final double KINETICS_CORE_RADIUS = 0.14;
+
+	public static final ThreadLocal<Boolean> LAST_NODE_IS_SPELL = new ThreadLocal<>();
 
 	private static final String MODULAR_SPELL_CONSTRUCT_BLOCK =
 		"dev.enjarai.trickster.block.ModularSpellConstructBlock";
@@ -119,6 +122,40 @@ public final class BnBKineticsCoreNodes {
 			}
 		}
 		return nearest;
+	}
+
+	public static boolean isAlreadyLinked(Level level, BlockPos pos) {
+		if (!isModularSpellConstruct(level, pos))
+			return false;
+
+		int searchRadius = 8;
+		for (BlockPos checkPos : BlockPos.betweenClosed(
+			pos.offset(-searchRadius, -searchRadius, -searchRadius),
+			pos.offset(searchRadius, searchRadius, searchRadius))) {
+			BlockEntity be = level.getBlockEntity(checkPos);
+			if (be == null)
+				continue;
+			try {
+				Class<?> chainBEClass = Class.forName("com.kipti.bnb.content.cogwheel_chain.block.CogwheelChainBlockEntity");
+				if (!chainBEClass.isInstance(be))
+					continue;
+				boolean isController = (Boolean) chainBEClass.getMethod("isController").invoke(be);
+				if (!isController)
+					continue;
+				Object chain = chainBEClass.getMethod("getChain").invoke(be);
+				if (chain == null)
+					continue;
+				BlockPos immutableCheckPos = checkPos.immutable();
+				@SuppressWarnings("unchecked")
+				List<Object> nodes = (List<Object>) chain.getClass().getMethod("getChainPathCogwheelNodes").invoke(chain);
+				for (Object node : nodes) {
+					BlockPos localPos = (BlockPos) node.getClass().getMethod("localPos").invoke(node);
+					if (immutableCheckPos.offset(localPos).equals(pos))
+						return true;
+				}
+			} catch (ReflectiveOperationException ignored) {}
+		}
+		return false;
 	}
 
 	private static boolean isKineticsCore(ItemStack stack) {
