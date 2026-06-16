@@ -7,6 +7,7 @@
   "itemGroup.createtricks": "Create: Tricks",
   "block.createtricks.liquid_mana": "Liquid Mana",
   "item.createtricks.liquid_mana_bucket": "Liquid Mana Bucket",
+  "item.createtricks.kinetics_spell_core": "Kinetics Spell Core",
   "item.createtricks.incomplete_amethyst_knot": "Incomplete Amethyst Knot",
   "item.createtricks.incomplete_astral_knot": "Incomplete Astral Knot",
   "item.createtricks.incomplete_diamond_knot": "Incomplete Diamond Knot",
@@ -17,5 +18,11 @@
   "tooltip.createtricks.stress_range": "%1$s-%2$s SU/RPM",
   "tooltip.createtricks.variable": "Variable",
   "tooltip.createtricks.variable_impact": "Variable Impact",
-  "trickster.trick.createtricks.temporary_kinetic_stress": "Kinetic Stress Ploy"
+  "trickster.trick.createtricks.temporary_kinetic_stress": "Kinetic Stress Ploy",
+  "createtricks.bnb_chain.started": "Kinetics core selected - right-click a BnB cogwheel chain node",
+  "createtricks.bnb_chain.placed": "Kinetics core linked to BnB cogwheel chain",
+  "createtricks.bnb_chain.too_far": "Target is too far away",
+  "createtricks.bnb_chain.invalid_pair": "Kinetics cores can only link to BnB cogwheel chain nodes",
+  "createtricks.bnb_chain.already_linked": "This Modular Spell Construct already has one link per kinetics core",
+  "createtricks.bnb_chain.no_core": "This Modular Spell Construct has no kinetics core to link"
 }

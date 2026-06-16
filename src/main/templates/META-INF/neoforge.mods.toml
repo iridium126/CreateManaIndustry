@@ -85,12 +85,20 @@ config="${mod_id}.mixins.json"
 [[dependencies.${mod_id}]]
     modId="create"
     type="required"
+    versionRange="[6.0.10,)"
     ordering="AFTER"
     side="BOTH"
 
 [[dependencies.${mod_id}]]
     modId="trickster"
     type="required"
+    versionRange="[2.0.0-beta.35,)"
     ordering="AFTER"
     side="BOTH"
 
+[[dependencies.${mod_id}]]
+    modId="bits_n_bobs"
+    type="optional"
+    versionRange="0.0.44"
+    ordering="AFTER"
+    side="BOTH"
