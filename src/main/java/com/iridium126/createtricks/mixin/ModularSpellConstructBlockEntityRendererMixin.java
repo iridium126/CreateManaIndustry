@@ -8,19 +8,14 @@ import org.spongepowered.asm.mixin.injection.Coerce;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import com.iridium126.createtricks.client.render.KineticsSpellCoreRenderer;
 import com.iridium126.createtricks.content.items.KineticsSpellCoreItem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
-import com.simibubi.create.AllBlocks;
-import com.simibubi.create.AllPartialModels;
-
-import net.createmod.catnip.render.CachedBuffers;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.Direction;
 import net.minecraft.world.Container;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.Property;
 
 @Mixin(targets = "dev.enjarai.trickster.render.ModularSpellConstructBlockEntityRenderer")
@@ -43,7 +38,7 @@ public abstract class ModularSpellConstructBlockEntityRendererMixin {
 
 		for (int slot = 1; slot < inventory.getContainerSize(); slot++) {
 			if (KineticsSpellCoreItem.is(inventory.getItem(slot)))
-				renderCogwheelCore(age, slot, partialTicks, matrices, vertexConsumers, light);
+				renderCogwheelCore(age, slot, partialTicks, matrices, vertexConsumers, light, overlay);
 		}
 
 		matrices.popPose();
@@ -69,7 +64,7 @@ public abstract class ModularSpellConstructBlockEntityRendererMixin {
 	}
 
 	private static void renderCogwheelCore(int age, int slot, float partialTicks,
-			PoseStack matrices, MultiBufferSource vertexConsumers, int light) {
+			PoseStack matrices, MultiBufferSource vertexConsumers, int light, int overlay) {
 		int index = slot - 1;
 		int x = index % 2;
 		int z = index / 2;
@@ -80,10 +75,7 @@ public abstract class ModularSpellConstructBlockEntityRendererMixin {
 		matrices.scale(0.28f, 0.28f, 0.28f);
 		matrices.translate(-0.5f, -0.5f, -0.5f);
 
-		CachedBuffers.partial(AllPartialModels.COGWHEEL, AllBlocks.COGWHEEL.getDefaultState()
-				.setValue(BlockStateProperties.AXIS, Direction.Axis.Y))
-			.light(light)
-			.renderInto(matrices, vertexConsumers.getBuffer(RenderType.solid()));
+		KineticsSpellCoreRenderer.render(matrices, vertexConsumers, light, overlay);
 
 		matrices.popPose();
 	}

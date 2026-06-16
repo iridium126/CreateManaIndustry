@@ -5,6 +5,7 @@ import static com.iridium126.createtricks.CreateTricks.REGISTRATE;
 import com.iridium126.createtricks.content.items.KineticsSpellCoreItem;
 import com.simibubi.create.content.processing.sequenced.SequencedAssemblyItem;
 import com.tterrag.registrate.util.entry.ItemEntry;
+import com.tterrag.registrate.util.nullness.NonNullBiConsumer;
 
 import net.minecraft.world.item.Item;
 
@@ -34,6 +35,7 @@ public final class CreateTricksItems {
 
 	private static ItemEntry<SequencedAssemblyItem> incompleteKnot(String name) {
 		return REGISTRATE.item(name, SequencedAssemblyItem::new)
+				.model(NonNullBiConsumer.noop())
 				.register();
 	}
 }

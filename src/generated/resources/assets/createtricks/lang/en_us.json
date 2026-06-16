@@ -1,5 +1,12 @@
 {
   "block.createtricks.liquid_mana": "Liquid Mana",
   "block.createtricks.stress_mana_converter": "Stress Mana Converter",
+  "item.createtricks.incomplete_amethyst_knot": "Incomplete Amethyst Knot",
+  "item.createtricks.incomplete_astral_knot": "Incomplete Astral Knot",
+  "item.createtricks.incomplete_diamond_knot": "Incomplete Diamond Knot",
+  "item.createtricks.incomplete_echo_knot": "Incomplete Echo Knot",
+  "item.createtricks.incomplete_emerald_knot": "Incomplete Emerald Knot",
+  "item.createtricks.incomplete_quartz_knot": "Incomplete Quartz Knot",
+  "item.createtricks.kinetics_spell_core": "Kinetics Spell Core",
   "item.createtricks.liquid_mana_bucket": "Liquid Mana Bucket"
 }
