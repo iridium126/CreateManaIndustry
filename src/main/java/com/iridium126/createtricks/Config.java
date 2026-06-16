@@ -17,10 +17,15 @@ public final class Config {
 			.comment("The amount of mana contained in one bucket (1000mB) of Liquid Mana.")
 			.defineInRange("manaPerBucket", 2048, 1, 1000000);
 
+	private static final ModConfigSpec.DoubleValue KINETIC_STRESS_TRICK_MANA_MULTIPLIER = BUILDER
+			.comment("The multiplier applied to the kinetic stress mana trick when costing mana.")
+			.defineInRange("kineticStressTrickManaMultiplier", 2.0, 0.0, 1000000.0);
+
 	public static final ModConfigSpec SPEC = BUILDER.build();
 
 	public static double manaPerStress = 0.001;
 	public static int manaPerBucket = 2048;
+	public static double kineticStressTrickManaMultiplier = 2.0;
 
 	private Config() {}
 
@@ -29,6 +34,7 @@ public final class Config {
 		if (event.getConfig().getSpec() == SPEC) {
 			manaPerStress = MANA_PER_STRESS.get();
 			manaPerBucket = MANA_PER_BUCKET.get();
+			kineticStressTrickManaMultiplier = KINETIC_STRESS_TRICK_MANA_MULTIPLIER.get();
 		}
 	}
 }

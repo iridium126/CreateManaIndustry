@@ -3,15 +3,33 @@ package com.iridium126.createtricks;
 import static com.iridium126.createtricks.CreateTricks.REGISTRATE;
 
 import com.iridium126.createtricks.content.items.KineticsSpellCoreItem;
+import com.simibubi.create.AllBlocks;
 import com.simibubi.create.content.processing.sequenced.SequencedAssemblyItem;
+import com.tterrag.registrate.providers.RegistrateRecipeProvider;
 import com.tterrag.registrate.util.entry.ItemEntry;
 import com.tterrag.registrate.util.nullness.NonNullBiConsumer;
 
+import net.minecraft.data.recipes.RecipeCategory;
+import net.minecraft.data.recipes.ShapedRecipeBuilder;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 
 public final class CreateTricksItems {
 	public static final ItemEntry<Item> KINETICS_SPELL_CORE =
 			REGISTRATE.item("kinetics_spell_core", KineticsSpellCoreItem::create)
+				.recipe((c, p) -> {
+					ShapedRecipeBuilder.shaped(RecipeCategory.MISC, c.get())
+							.define('L', Items.LEATHER)
+							.define('G', Items.GOLD_INGOT)
+							.define('T', Items.TUFF)
+							.define('C', AllBlocks.COGWHEEL.asItem())
+							.define('M', CreateTricksFluids.LIQUID_MANA.getBucket().get())
+							.pattern("LGL")
+							.pattern("TCT")
+							.pattern("TMT")
+							.unlockedBy("has_liquid_mana", RegistrateRecipeProvider.has(CreateTricksFluids.LIQUID_MANA.getBucket().get()))
+							.save(p, CreateTricks.modLoc(c.getName()));
+				})
 				.register();
 
 	public static final ItemEntry<SequencedAssemblyItem> INCOMPLETE_AMETHYST_KNOT =
