@@ -1,6 +1,7 @@
 {
   "required": true,
   "package": "com.iridium126.createtricks.mixin",
+  "plugin": "com.iridium126.createtricks.mixin.CreateTricksMixinPlugin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "FillingBySpoutMixin",
@@ -11,15 +12,25 @@
     "KineticBlockEntitySyncMixin",
     "KineticBlockEntityVisualMixin",
     "DirectionalShaftHalvesBlockEntityMixin",
+    "KineticsSpellCoreItemMixin",
     "ModelsMixin",
     "TricksterSpellConstructSyncMixin",
     "TrickBlunderExceptionMixin",
-    "MechanicalPressKnotMixin"
+    "MechanicalPressKnotMixin",
+    "bnb.CogwheelChainMixin",
+    "bnb.CogwheelChainPlaceInLevelMixin",
+    "bnb.CogwheelChainBlockEntityStressMixin",
+    "bnb.CogwheelChainPlacementInteractionMixin",
+    "bnb.PlacingCogwheelChainMixin",
+    "bnb.PlaceCogwheelChainPacketMixin"
   ],
   "client": [
     "CachedBuffersMixin",
     "LiquidBlockRendererMixin",
-    "SafeBlockEntityRendererMixin"
+    "ModularSpellConstructBlockEntityRendererMixin",
+    "SafeBlockEntityRendererMixin",
+    "bnb.CogwheelChainBlockEntityRendererMixin",
+    "bnb.RenderedChainPathNodeMixin"
   ],
   "injectors": {
     "defaultRequire": 1

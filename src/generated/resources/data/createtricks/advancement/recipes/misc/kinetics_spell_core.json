@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_liquid_mana": {
+      "conditions": {
+        "items": [
+          {
+            "items": "createtricks:liquid_mana_bucket"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "createtricks:kinetics_spell_core"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_liquid_mana"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "createtricks:kinetics_spell_core"
+    ]
+  }
+}

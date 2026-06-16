@@ -7,6 +7,7 @@
   "itemGroup.createtricks": "机械动力: 戏法",
   "block.createtricks.liquid_mana": "液态魔力",
   "item.createtricks.liquid_mana_bucket": "液态魔力桶",
+  "item.createtricks.kinetics_spell_core": "动力法术核心",
   "item.createtricks.incomplete_amethyst_knot": "未完成紫水晶晶结",
   "item.createtricks.incomplete_astral_knot": "未完成星辰晶结",
   "item.createtricks.incomplete_diamond_knot": "未完成钻石晶结",
@@ -17,5 +18,7 @@
   "tooltip.createtricks.stress_range": "%1$s-%2$sx RPM",
   "tooltip.createtricks.variable": "可变",
   "tooltip.createtricks.variable_impact": "可变负载",
-  "trickster.trick.createtricks.temporary_kinetic_stress": "动力应力戏法"
+  "trickster.trick.createtricks.temporary_kinetic_stress": "动力应力戏法",
+  "createtricks.bnb_chain.already_linked": "该模块化法术组构台的动力法术核心已有链接",
+  "createtricks.bnb_chain.no_core": "该模块化法术组构台没有动力法术核心可链接"
 }

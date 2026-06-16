@@ -104,7 +104,7 @@ public final class KineticStressTrickRegister {
 		if (!(be instanceof KineticBlockEntity kinetic))
 			throw new InvalidKineticTargetBlunder(trick, pos);
 
-		float manaCost = (float) (Config.manaPerStress * stressMagnitude * durationTicks);
+		float manaCost = (float) (Config.manaPerStress * stressMagnitude * durationTicks * Config.kineticStressTrickManaMultiplier);
 		TricksterReflection.spellContextUseManaMethod.invoke(spellContext, trick, manaCost);
 		float speed = (float) speedInput;
 		TemporaryStress.apply(kinetic, speed < 0 ? -stressMagnitude : stressMagnitude, speed, durationTicks);
