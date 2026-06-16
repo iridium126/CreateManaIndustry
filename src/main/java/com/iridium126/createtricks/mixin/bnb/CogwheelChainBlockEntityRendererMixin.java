@@ -9,10 +9,11 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createtricks.content.kinetics.bnb.BnBChainRenderContext;
+import com.iridium126.createtricks.content.kinetics.bnb.BnBReflection;
 import com.mojang.blaze3d.vertex.PoseStack;
 
-import net.minecraft.core.BlockPos;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 @Mixin(targets = "com.kipti.bnb.content.cogwheel_chain.block.CogwheelChainBlockEntityRenderer", remap = false)
@@ -43,41 +44,28 @@ public class CogwheelChainBlockEntityRendererMixin {
 	 * speed and direction as the chain.
 	 */
 	private static void createtricks$populateChainAngularVelocities(Object blockEntity) {
-		try {
-			if (!(blockEntity instanceof BlockEntity be))
-				return;
-			Class<?> chainBEClass = Class.forName(
-					"com.kipti.bnb.content.cogwheel_chain.block.CogwheelChainBlockEntity");
-			if (!chainBEClass.isInstance(be))
-				return;
+		if (!(blockEntity instanceof BlockEntity be))
+			return;
+		if (!BnBReflection.isChainBE(be) || !BnBReflection.isController(be))
+			return;
 
-			boolean isController = (Boolean) chainBEClass.getMethod("isController").invoke(be);
-			if (!isController)
-				return;
+		Object chain = BnBReflection.getChain(be);
+		if (chain == null)
+			return;
 
-			Object chain = chainBEClass.getMethod("getChain").invoke(be);
-			if (chain == null)
-				return;
+		float speed = BnBReflection.getSpeed(be);
+		List<Object> nodes = BnBReflection.getChainPathCogwheelNodes(chain);
+		BlockPos controllerPos = be.getBlockPos();
 
-			float speed = (Float) chainBEClass.getMethod("getSpeed").invoke(be);
+		for (Object node : nodes) {
+			// Use each node's own sideFactor — not the controller's
+			// chainRotationFactor — so adjacent gears in the chain rotate in
+			// opposite directions where appropriate.
+			float sideFactor = BnBReflection.sideFactor(node);
+			float angularVelocity = (float) (Math.PI * sideFactor * speed / -300.0f);
 
-			@SuppressWarnings("unchecked")
-			List<Object> nodes = (List<Object>) chain.getClass()
-					.getMethod("getChainPathCogwheelNodes").invoke(chain);
-			BlockPos controllerPos = be.getBlockPos();
-
-			for (Object node : nodes) {
-				// Use each node's own sideFactor — not the controller's
-				// chainRotationFactor — so adjacent gears in the chain rotate in
-				// opposite directions where appropriate.
-				float sideFactor = (Float) node.getClass().getMethod("sideFactor").invoke(node);
-				float angularVelocity = (float) (Math.PI * sideFactor * speed / -300.0f);
-
-				BlockPos localPos = (BlockPos) node.getClass().getMethod("localPos").invoke(node);
-				BlockPos nodeWorldPos = controllerPos.offset(localPos);
-				BnBChainRenderContext.putChainAngularVelocity(nodeWorldPos, angularVelocity);
-			}
-		} catch (ReflectiveOperationException ignored) {
+			BlockPos nodeWorldPos = controllerPos.offset(BnBReflection.localPos(node));
+			BnBChainRenderContext.putChainAngularVelocity(nodeWorldPos, angularVelocity);
 		}
 	}
 }

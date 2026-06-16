@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.iridium126.createtricks.content.kinetics.bnb.BnBKineticsCoreNodes;
+import com.iridium126.createtricks.content.kinetics.bnb.BnBReflection;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 
 import net.minecraft.core.BlockPos;
@@ -32,9 +33,6 @@ public abstract class CogwheelChainBlockEntityStressMixin {
 	/** Stress impact (SU per RPM) contributed by each kinetics spell core. */
 	private static final float STRESS_PER_CORE = 4.0f;
 
-	private static final String COGWHEEL_CHAIN_BE_CLASS =
-			"com.kipti.bnb.content.cogwheel_chain.block.CogwheelChainBlockEntity";
-
 	@Shadow
 	protected float lastStressApplied;
 
@@ -45,54 +43,34 @@ public abstract class CogwheelChainBlockEntityStressMixin {
 	 */
 	@Inject(method = "calculateStressApplied", at = @At("RETURN"), cancellable = true, remap = false)
 	private void createtricks$addKineticsCoreStress(CallbackInfoReturnable<Float> cir) {
-		// Only act on CogwheelChainBlockEntity instances; everything else is a no-op.
-		Class<?> chainBEClass;
-		try {
-			chainBEClass = Class.forName(COGWHEEL_CHAIN_BE_CLASS);
-		} catch (ClassNotFoundException e) {
+		if (!BnBReflection.isChainBE(this))
 			return;
-		}
-		if (!chainBEClass.isInstance(this))
+		if (!BnBReflection.isController(this))
+			return;
+
+		Object chain = BnBReflection.getChain(this);
+		if (chain == null)
 			return;
 
 		KineticBlockEntity kbe = (KineticBlockEntity) (Object) this;
 		if (kbe.getLevel() == null)
 			return;
 
-		try {
-			Object self = chainBEClass.cast(this);
+		List<Object> nodes = BnBReflection.getChainPathCogwheelNodes(chain);
+		BlockPos controllerPos = kbe.getBlockPos();
 
-			// Only the controller participates in stress; slaves follow.
-			boolean isController = (Boolean) chainBEClass.getMethod("isController").invoke(self);
-			if (!isController)
-				return;
-
-			Object chain = chainBEClass.getMethod("getChain").invoke(self);
-			if (chain == null)
-				return;
-
-			@SuppressWarnings("unchecked")
-			List<Object> nodes = (List<Object>) chain.getClass()
-					.getMethod("getChainPathCogwheelNodes").invoke(chain);
-			BlockPos controllerPos = kbe.getBlockPos();
-
-			int coreCount = 0;
-			for (Object node : nodes) {
-				BlockPos localPos = (BlockPos) node.getClass().getMethod("localPos").invoke(node);
-				BlockPos nodeWorldPos = controllerPos.offset(localPos);
-				if (BnBKineticsCoreNodes.isModularSpellConstruct(kbe.getLevel(), nodeWorldPos)) {
-					coreCount += BnBKineticsCoreNodes.getKineticsCoreCount(kbe.getLevel(), nodeWorldPos);
-				}
+		int coreCount = 0;
+		for (Object node : nodes) {
+			BlockPos nodeWorldPos = controllerPos.offset(BnBReflection.localPos(node));
+			if (BnBKineticsCoreNodes.isModularSpellConstruct(kbe.getLevel(), nodeWorldPos)) {
+				coreCount += BnBKineticsCoreNodes.getKineticsCoreCount(kbe.getLevel(), nodeWorldPos);
 			}
+		}
 
-			if (coreCount > 0) {
-				float totalStress = cir.getReturnValueF() + coreCount * STRESS_PER_CORE;
-				// Keep lastStressApplied in sync so NBT serialisation and
-				// network initialisation also reflect the core stress.
-				lastStressApplied = totalStress;
-				cir.setReturnValue(totalStress);
-			}
-		} catch (ReflectiveOperationException ignored) {
+		if (coreCount > 0) {
+			float totalStress = cir.getReturnValueF() + coreCount * STRESS_PER_CORE;
+			lastStressApplied = totalStress;
+			cir.setReturnValue(totalStress);
 		}
 	}
 }

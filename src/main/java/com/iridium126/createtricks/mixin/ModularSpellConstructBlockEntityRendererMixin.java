@@ -1,7 +1,5 @@
 package com.iridium126.createtricks.mixin;
 
-import java.lang.reflect.Field;
-
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Coerce;
@@ -12,6 +10,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import com.iridium126.createtricks.client.render.KineticsSpellCoreRenderer;
 import com.iridium126.createtricks.content.items.KineticsSpellCoreItem;
 import com.iridium126.createtricks.content.kinetics.bnb.BnBChainRenderContext;
+import com.iridium126.createtricks.content.kinetics.bnb.BnBReflection;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import net.createmod.catnip.animation.AnimationTickHolder;
@@ -21,12 +20,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.properties.Property;
 
 @Mixin(targets = "dev.enjarai.trickster.render.ModularSpellConstructBlockEntityRenderer")
 public abstract class ModularSpellConstructBlockEntityRendererMixin {
-	private static final String MODULAR_SPELL_CONSTRUCT_BLOCK = "dev.enjarai.trickster.block.ModularSpellConstructBlock";
-
 	/**
 	 * Intercepts the coreStack assignment in the first rendering loop (the one that
 	 * draws sprite-based core models). When the stack is a kinetics_spell_core,
@@ -68,14 +64,14 @@ public abstract class ModularSpellConstructBlockEntityRendererMixin {
 	}
 
 	private static Direction getFacing(BlockEntity blockEntity) {
-		try {
-			Field facingField = Class.forName(MODULAR_SPELL_CONSTRUCT_BLOCK).getField("FACING");
-			@SuppressWarnings("unchecked")
-			Property<Direction> facingProperty = (Property<Direction>) facingField.get(null);
-			return blockEntity.getBlockState().getValue(facingProperty);
-		} catch (ReflectiveOperationException | ClassCastException e) {
-			return Direction.UP;
+		var prop = BnBReflection.facingProperty();
+		if (prop != null) {
+			try {
+				return blockEntity.getBlockState().getValue(prop);
+			} catch (IllegalArgumentException e) {
+			}
 		}
+		return Direction.UP;
 	}
 
 	private static void renderCogwheelCore(int slot, PoseStack matrices, MultiBufferSource vertexConsumers,
