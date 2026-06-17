@@ -21,7 +21,7 @@ public final class CreateTricksBlocks {
 			.block("stress_mana_converter", StressManaConverterBlock::new)
 			.initialProperties(() -> Blocks.IRON_BLOCK)
 			.properties(p -> p.mapColor(MapColor.TERRACOTTA_YELLOW))
-			.blockstate(new StressManaConverterGenerator()::generate)
+			.blockstate(StressManaConverterGenerator.directionalBlockState())
 			.transform(TagGen.pickaxeOnly())
 			.item()
 			.transform(ModelGen.customItemModel())

@@ -1,36 +1,33 @@
 package com.iridium126.createtricks.content.kinetics;
 
 import com.simibubi.create.foundation.data.AssetLookup;
-import com.simibubi.create.foundation.data.SpecialBlockStateGen;
 import com.tterrag.registrate.providers.DataGenContext;
 import com.tterrag.registrate.providers.RegistrateBlockstateProvider;
+import com.tterrag.registrate.util.nullness.NonNullBiConsumer;
 
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.client.model.generators.ModelFile;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.neoforged.neoforge.client.model.generators.ConfiguredModel;
 
-public class StressManaConverterGenerator extends SpecialBlockStateGen {
+public class StressManaConverterGenerator {
+	public static <T extends Block> NonNullBiConsumer<DataGenContext<Block, T>, RegistrateBlockstateProvider> directionalBlockState() {
+        return (ctx, prov) -> directionalModel(ctx, prov);
+    }
 
-	@Override
-	protected int getXRotation(BlockState state) {
-		return state.getValue(StressManaConverterBlock.FACING) == Direction.DOWN ? 180 : 0;
-	}
-
-	@Override
-	protected int getYRotation(BlockState state) {
-		return state.getValue(StressManaConverterBlock.FACING)
-			.getAxis()
-			.isVertical() ? 0 : horizontalAngle(state.getValue(StressManaConverterBlock.FACING));
-	}
-
-	@Override
-	public <T extends Block> ModelFile getModel(DataGenContext<Block, T> ctx, RegistrateBlockstateProvider prov,
-		BlockState state) {
-		return state.getValue(StressManaConverterBlock.FACING)
-			.getAxis()
-			.isVertical() ? AssetLookup.partialBaseModel(ctx, prov, "vertical")
-				: AssetLookup.partialBaseModel(ctx, prov);
+	public static <T extends Block> void directionalModel(DataGenContext<Block, T> ctx, RegistrateBlockstateProvider prov) {
+		prov.getVariantBuilder(ctx.get())
+                .forAllStatesExcept(state -> {
+            Direction dir = state.getValue(BlockStateProperties.FACING);
+            return ConfiguredModel.builder()
+                    .modelFile(AssetLookup.partialBaseModel(ctx, prov))
+                    .rotationX(dir == Direction.DOWN ? 270
+                            : dir.getAxis()
+                            .isHorizontal() ? 0 : 90)
+                    .rotationY(dir.getAxis()
+                            .isVertical() ? 90 : (((int) dir.toYRot()) + 360) % 360)
+                    .build();
+        }, BlockStateProperties.WATERLOGGED, BlockStateProperties.POWERED);
 	}
 
 }
