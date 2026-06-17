@@ -1,4 +1,4 @@
-package com.iridium126.createtricks.content.kinetics;
+package com.iridium126.createtricks.content.kinetics.stressmanaconverter;
 
 import static net.minecraft.ChatFormatting.AQUA;
 import static net.minecraft.ChatFormatting.GRAY;

@@ -1,4 +1,4 @@
-package com.iridium126.createtricks.content.kinetics;
+package com.iridium126.createtricks.content.kinetics.stressmanaconverter;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.simibubi.create.foundation.blockEntity.behaviour.ValueBoxTransform;

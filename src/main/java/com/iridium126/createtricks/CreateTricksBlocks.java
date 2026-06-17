@@ -2,8 +2,8 @@ package com.iridium126.createtricks;
 
 import static com.iridium126.createtricks.CreateTricks.REGISTRATE;
 
-import com.iridium126.createtricks.content.kinetics.StressManaConverterBlock;
-import com.iridium126.createtricks.content.kinetics.StressManaConverterGenerator;
+import com.iridium126.createtricks.content.kinetics.stressmanaconverter.StressManaConverterBlock;
+import com.iridium126.createtricks.content.kinetics.stressmanaconverter.StressManaConverterGenerator;
 import com.simibubi.create.AllBlocks;
 import com.simibubi.create.foundation.data.ModelGen;
 import com.simibubi.create.foundation.data.TagGen;

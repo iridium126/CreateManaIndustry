@@ -1,4 +1,4 @@
-package com.iridium126.createtricks.content.kinetics;
+package com.iridium126.createtricks.content.kinetics.stressmanaconverter;
 
 import com.simibubi.create.foundation.data.AssetLookup;
 import com.tterrag.registrate.providers.DataGenContext;

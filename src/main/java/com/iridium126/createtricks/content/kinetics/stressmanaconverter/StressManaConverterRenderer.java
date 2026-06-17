@@ -1,4 +1,4 @@
-package com.iridium126.createtricks.content.kinetics;
+package com.iridium126.createtricks.content.kinetics.stressmanaconverter;
 
 import com.iridium126.createtricks.CreateTricksPartialModels;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntityRenderer;

@@ -2,8 +2,8 @@ package com.iridium126.createtricks;
 
 import static com.iridium126.createtricks.CreateTricks.REGISTRATE;
 
-import com.iridium126.createtricks.content.kinetics.StressManaConverterBlockEntity;
-import com.iridium126.createtricks.content.kinetics.StressManaConverterRenderer;
+import com.iridium126.createtricks.content.kinetics.stressmanaconverter.StressManaConverterBlockEntity;
+import com.iridium126.createtricks.content.kinetics.stressmanaconverter.StressManaConverterRenderer;
 import com.simibubi.create.content.kinetics.base.OrientedRotatingVisual;
 import com.tterrag.registrate.util.entry.BlockEntityEntry;
 

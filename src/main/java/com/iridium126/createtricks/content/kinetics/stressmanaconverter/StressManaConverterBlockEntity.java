@@ -1,4 +1,4 @@
-package com.iridium126.createtricks.content.kinetics;
+package com.iridium126.createtricks.content.kinetics.stressmanaconverter;
 
 import java.util.List;
 

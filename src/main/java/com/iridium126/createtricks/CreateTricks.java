@@ -2,9 +2,9 @@ package com.iridium126.createtricks;
 
 import org.slf4j.Logger;
 
-import com.iridium126.createtricks.content.kinetics.StressManaConverterBlock;
-import com.iridium126.createtricks.content.kinetics.StressManaConverterBlockEntity;
-import com.iridium126.createtricks.content.kinetics.StressRangeTooltipModifier;
+import com.iridium126.createtricks.content.kinetics.stressmanaconverter.StressManaConverterBlock;
+import com.iridium126.createtricks.content.kinetics.stressmanaconverter.StressManaConverterBlockEntity;
+import com.iridium126.createtricks.content.kinetics.stressmanaconverter.StressRangeTooltipModifier;
 import com.iridium126.createtricks.trickster.KineticStressTrickRegister;
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.foundation.data.CreateRegistrate;
