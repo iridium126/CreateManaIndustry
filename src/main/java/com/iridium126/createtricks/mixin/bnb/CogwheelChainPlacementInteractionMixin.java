@@ -20,6 +20,7 @@ import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChainCandidat
 import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PlacingCogwheelChain;
 import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PlacingCogwheelNode;
 import com.kipti.bnb.content.kinetics.cogwheel_chain.placement.ChainInteractionFailedException;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.placement.CogwheelChainPlacementInteraction;
 import com.kipti.bnb.content.kinetics.cogwheel_chain.types.CogwheelChainType;
 
 @Mixin(targets = "com.kipti.bnb.content.kinetics.cogwheel_chain.placement.CogwheelChainPlacementInteraction", remap = false)
@@ -27,8 +28,7 @@ public abstract class CogwheelChainPlacementInteractionMixin {
 
 	/**
 	 * Before {@code rightClickForChain} processes a click, check whether the
-	 * previous node was a spell construct and set the thread-local flag so
-	 * {@code PlacingCogwheelChainMixin} can bypass the normal validation.
+	 * previous node was a spell construct and set the thread-local flag.
 	 */
 	@Inject(method = "rightClickForChain",
 		at = @At(value = "INVOKE",
@@ -39,7 +39,7 @@ public abstract class CogwheelChainPlacementInteractionMixin {
 		ClientLevel level, BlockPos hitPos, BlockState targetedState,
 		CogwheelChainCandidate targetedCandidate, CogwheelChainType heldChainType,
 		ItemStack chainItemInHand, LocalPlayer player, CallbackInfo ci) {
-		PlacingCogwheelChain chain = lookupBuildingChain();
+		PlacingCogwheelChain chain = CogwheelChainPlacementInteraction.getCurrentBuildingChain();
 		if (chain != null) {
 			PlacingCogwheelNode lastNode = chain.getLastNode();
 			if (lastNode != null && BnBKineticsCoreNodes.isModularSpellConstruct(level, lastNode.pos())) {
@@ -74,11 +74,8 @@ public abstract class CogwheelChainPlacementInteractionMixin {
 	}
 
 	/**
-	 * Handle spell construct right-click interaction. Injected into the void
-	 * {@code onClickInput} before the private {@code onRightClick} is called.
-	 * If the target is a spell construct that has no kinetics core or is
-	 * already linked, show an error message, cancel the rest of
-	 * {@code onClickInput}, and mark the event as handled.
+	 * Handle spell construct right-click interaction. Injected into
+	 * {@code onClickInput} before {@code onRightClick} is called.
 	 */
 	@Inject(method = "onClickInput",
 		at = @At(value = "INVOKE",
@@ -95,7 +92,7 @@ public abstract class CogwheelChainPlacementInteractionMixin {
 
 		BlockPos pos = hit.getBlockPos();
 
-		PlacingCogwheelChain chain = lookupBuildingChain();
+		PlacingCogwheelChain chain = CogwheelChainPlacementInteraction.getCurrentBuildingChain();
 		if (chain != null) {
 			PlacingCogwheelNode lastNode = chain.getLastNode();
 			if (lastNode != null && !lastNode.pos().equals(pos)
@@ -122,21 +119,6 @@ public abstract class CogwheelChainPlacementInteractionMixin {
 					Component.translatable("createtricks.bnb_chain.already_linked"), true);
 			ci.cancel();
 			event.setCanceled(true);
-			return;
-		}
-	}
-
-	/**
-	 * Reflectively calls the BnB {@code getCurrentBuildingChain} getter.
-	 * Named so it does not collide with the target class' own public method.
-	 */
-	private static PlacingCogwheelChain lookupBuildingChain() {
-		try {
-			Class<?> clazz = Class.forName(
-				"com.kipti.bnb.content.kinetics.cogwheel_chain.placement.CogwheelChainPlacementInteraction");
-			return (PlacingCogwheelChain) clazz.getMethod("getCurrentBuildingChain").invoke(null);
-		} catch (ReflectiveOperationException e) {
-			return null;
 		}
 	}
 }

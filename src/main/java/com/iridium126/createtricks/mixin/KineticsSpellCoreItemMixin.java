@@ -9,6 +9,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.iridium126.createtricks.content.items.KineticsSpellCoreItem;
 import com.iridium126.createtricks.content.kinetics.bnb.BnBReflection;
+import com.iridium126.createtricks.content.kinetics.bnb.ChainSpeedCache;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChain;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PathedCogwheelNode;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -44,18 +47,14 @@ public abstract class KineticsSpellCoreItemMixin {
 		cir.setReturnValue(Math.max(1, (int) (speed / 32.0f * originalLimit)));
 	}
 
-	// -----------------------------------------------------------------------
-	// Speed lookup — cached per tick via BnBReflection (avoids O(n³) scans)
-	// -----------------------------------------------------------------------
-
 	private static float getConnectedChainSpeed(Level level, BlockPos spellPos) {
 		long gameTime = level.getGameTime();
-		float cached = BnBReflection.getCachedChainSpeed(spellPos, gameTime);
+		float cached = ChainSpeedCache.getCachedChainSpeed(spellPos, gameTime);
 		if (cached >= 0)
 			return cached;
 
 		float speed = scanConnectedChainSpeed(level, spellPos);
-		BnBReflection.putCachedChainSpeed(spellPos, speed, gameTime);
+		ChainSpeedCache.putCachedChainSpeed(spellPos, speed, gameTime);
 		return speed;
 	}
 
@@ -70,15 +69,15 @@ public abstract class KineticsSpellCoreItemMixin {
 			if (!BnBReflection.isController(be))
 				continue;
 
-			Object chain = BnBReflection.getChain(be);
+			CogwheelChain chain = BnBReflection.getChain(be);
 			if (chain == null)
 				continue;
 
-			List<Object> nodes = BnBReflection.getChainPathCogwheelNodes(chain);
+			List<PathedCogwheelNode> nodes = chain.getChainPathCogwheelNodes();
 			BlockPos controllerPos = be.getBlockPos();
 
-			for (Object node : nodes) {
-				if (controllerPos.offset(BnBReflection.localPos(node)).equals(spellPos))
+			for (PathedCogwheelNode node : nodes) {
+				if (controllerPos.offset(node.localPos()).equals(spellPos))
 					return Math.abs(BnBReflection.getSpeed(be));
 			}
 		}

@@ -29,6 +29,9 @@ public final class BnBKineticsCoreNodes {
 	private static final String MODULAR_SPELL_CONSTRUCT_BLOCK =
 		"dev.enjarai.trickster.block.ModularSpellConstructBlock";
 
+	private static volatile boolean facingInitTried;
+	private static Property<Direction> cachedFacingProperty;
+
 	private BnBKineticsCoreNodes() {}
 
 	public static KineticsCoreCogwheelNode tryCreate(Level level, BlockPos pos, BlockHitResult hit) {
@@ -41,7 +44,8 @@ public final class BnBKineticsCoreNodes {
 	public static KineticsCoreCogwheelNode create(Level level, BlockPos pos, int slot) {
 		if (!hasKineticsCoreInSlot(level, pos, slot))
 			return null;
-		return new KineticsCoreCogwheelNode(pos, getFacing(level, pos).getAxis(), slot, getCoreCenter(level, pos, slot));
+		return new KineticsCoreCogwheelNode(pos, getFacing(level, pos).getAxis(), slot,
+				getCoreCenter(level, pos, slot));
 	}
 
 	public static boolean isModularSpellConstruct(Level level, BlockPos pos) {
@@ -133,20 +137,16 @@ public final class BnBKineticsCoreNodes {
 			pos.offset(-searchRadius, -searchRadius, -searchRadius),
 			pos.offset(searchRadius, searchRadius, searchRadius))) {
 			BlockEntity be = level.getBlockEntity(checkPos);
-			if (be == null)
-				continue;
-			if (!BnBReflection.isChainBE(be))
+			if (be == null || !BnBReflection.isChainBE(be))
 				continue;
 			if (!BnBReflection.isController(be))
 				continue;
-			Object chain = BnBReflection.getChain(be);
+			var chain = BnBReflection.getChain(be);
 			if (chain == null)
 				continue;
 			BlockPos immutableCheckPos = checkPos.immutable();
-			List<Object> nodes = BnBReflection.getChainPathCogwheelNodes(chain);
-			for (Object node : nodes) {
-				BlockPos localPos = BnBReflection.localPos(node);
-				if (immutableCheckPos.offset(localPos).equals(pos))
+			for (var node : chain.getChainPathCogwheelNodes()) {
+				if (immutableCheckPos.offset(node.localPos()).equals(pos))
 					return true;
 			}
 		}
@@ -197,37 +197,51 @@ public final class BnBKineticsCoreNodes {
 		int index = Math.max(0, slot - 1);
 		int x = index % 2;
 		int z = index / 2;
-		Vec3 local = new Vec3((18f / 2 * x + 3.5f) / 16f, 10.5f / 16f, (18f / 2 * z + 3.5f) / 16f);
+		Vec3 local = new Vec3((18f / 2 * x + 3.5f) / 16f, 10.5f / 16f,
+				(18f / 2 * z + 3.5f) / 16f);
 
 		Direction facing = getFacing(level, pos);
-		Vector3f offset = new Vector3f((float) local.x - 0.5f, (float) local.y - 0.5f, (float) local.z - 0.5f);
+		Vector3f offset = new Vector3f((float) local.x - 0.5f, (float) local.y - 0.5f,
+				(float) local.z - 0.5f);
 		offset.rotate(facing.getRotation());
 
 		return Vec3.atLowerCornerOf(pos)
 			.add(0.5f + offset.x, 0.5f + offset.y, 0.5f + offset.z);
 	}
 
+	@SuppressWarnings("unchecked")
 	private static Direction getFacing(Level level, BlockPos pos) {
 		try {
-			Field facingField = Class.forName(MODULAR_SPELL_CONSTRUCT_BLOCK).getField("FACING");
-			@SuppressWarnings("unchecked")
-			Property<Direction> facingProperty = (Property<Direction>) facingField.get(null);
-			return level.getBlockState(pos).getValue(facingProperty);
-		} catch (ReflectiveOperationException | ClassCastException | IllegalArgumentException e) {
+			return level.getBlockState(pos).getValue(getFacingProperty());
+		} catch (IllegalArgumentException e) {
 			return Direction.UP;
 		}
 	}
 
+	@SuppressWarnings("unchecked")
 	public static Direction getFacing(BlockState state) {
 		try {
-			Field facingField = Class.forName(MODULAR_SPELL_CONSTRUCT_BLOCK).getField("FACING");
-			@SuppressWarnings("unchecked")
-			Property<Direction> facingProperty = (Property<Direction>) facingField.get(null);
-			return state.getValue(facingProperty);
-		} catch (ReflectiveOperationException | ClassCastException | IllegalArgumentException e) {
+			return state.getValue(getFacingProperty());
+		} catch (IllegalArgumentException e) {
 			return Direction.UP;
 		}
 	}
 
-	public record KineticsCoreCogwheelNode(BlockPos pos, Direction.Axis rotationAxis, int slot, Vec3 center) {}
+	@SuppressWarnings("unchecked")
+	private static Property<Direction> getFacingProperty() {
+		if (!facingInitTried) {
+			facingInitTried = true;
+			try {
+				Class<?> blockClass = Class.forName(MODULAR_SPELL_CONSTRUCT_BLOCK);
+				Field facingField = blockClass.getField("FACING");
+				cachedFacingProperty = (Property<Direction>) facingField.get(null);
+			} catch (ReflectiveOperationException e) {
+				cachedFacingProperty = null;
+			}
+		}
+		return cachedFacingProperty;
+	}
+
+	public record KineticsCoreCogwheelNode(BlockPos pos, Direction.Axis rotationAxis, int slot,
+			Vec3 center) {}
 }

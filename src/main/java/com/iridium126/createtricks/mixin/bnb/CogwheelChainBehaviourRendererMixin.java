@@ -9,18 +9,15 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createtricks.content.kinetics.bnb.BnBChainRenderContext;
-import com.iridium126.createtricks.content.kinetics.bnb.BnBReflection;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.behaviour.CogwheelChainBehaviour;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChain;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PathedCogwheelNode;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.core.BlockPos;
 
-/**
- * Injects into the updated BnB {@code CogwheelChainBehaviourRenderer} to populate
- * angular velocity data for kinetics spell cores so they rotate in sync with the
- * cogwheel chain.
- */
 @Mixin(targets = "com.kipti.bnb.content.kinetics.cogwheel_chain.behaviour.CogwheelChainBehaviourRenderer", remap = false)
 public class CogwheelChainBehaviourRendererMixin {
 
@@ -32,7 +29,9 @@ public class CogwheelChainBehaviourRendererMixin {
 			float partialTicks, PoseStack ms, MultiBufferSource buffer, int light, int overlay,
 			CallbackInfo ci) {
 		BnBChainRenderContext.begin(be);
-		createtricks$populateChainAngularVelocities(behaviour, be);
+		if (behaviour instanceof CogwheelChainBehaviour chainBehaviour) {
+			createtricks$populateChainAngularVelocities(chainBehaviour, be);
+		}
 	}
 
 	@Inject(
@@ -45,29 +44,24 @@ public class CogwheelChainBehaviourRendererMixin {
 		BnBChainRenderContext.end();
 	}
 
-	/**
-	 * Iterates over the chain's cogwheel nodes and stores each node's world
-	 * position &rarr; angular velocity mapping in {@link BnBChainRenderContext}, so
-	 * the modular spell construct renderer can rotate kinetics cores at the same
-	 * speed and direction as the chain.
-	 */
-	private static void createtricks$populateChainAngularVelocities(Object behaviour, KineticBlockEntity be) {
-		if (!BnBReflection.isController(be))
+	private static void createtricks$populateChainAngularVelocities(CogwheelChainBehaviour chainBehaviour,
+			KineticBlockEntity be) {
+		if (!chainBehaviour.isController())
 			return;
 
-		Object chain = BnBReflection.getChain(be);
+		CogwheelChain chain = chainBehaviour.getControlledChain();
 		if (chain == null)
 			return;
 
-		float speed = BnBReflection.getSpeed(be);
-		List<Object> nodes = BnBReflection.getChainPathCogwheelNodes(chain);
+		float speed = be.getSpeed();
+		List<PathedCogwheelNode> nodes = chain.getChainPathCogwheelNodes();
 		BlockPos controllerPos = be.getBlockPos();
 
-		for (Object node : nodes) {
-			float sideFactor = BnBReflection.sideFactor(node);
+		for (PathedCogwheelNode node : nodes) {
+			float sideFactor = node.sideFactor();
 			float angularVelocity = (float) (Math.PI * sideFactor * speed / -300.0f);
 
-			BlockPos nodeWorldPos = controllerPos.offset(BnBReflection.localPos(node));
+			BlockPos nodeWorldPos = controllerPos.offset(node.localPos());
 			BnBChainRenderContext.putChainAngularVelocity(nodeWorldPos, angularVelocity);
 		}
 	}
