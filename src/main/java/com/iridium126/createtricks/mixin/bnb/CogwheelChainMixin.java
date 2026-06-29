@@ -13,10 +13,9 @@ import com.iridium126.createtricks.content.kinetics.bnb.BnBKineticsCoreNodes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
-@Mixin(targets = "com.kipti.bnb.content.cogwheel_chain.graph.CogwheelChain", remap = false)
+@Mixin(targets = "com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChain", remap = false)
 public abstract class CogwheelChainMixin {
 	@Shadow
 	private List<?> cogwheelNodes;
@@ -62,54 +61,27 @@ public abstract class CogwheelChainMixin {
 		return false;
 	}
 
+	/**
+	 * Checks whether the block state at a chain position is consistent with the
+	 * given path node, using the updated BnB {@code CogwheelChainCandidate} API.
+	 */
 	private static boolean isValidChainCogwheel(BlockState state, Object node) throws ReflectiveOperationException {
-		Class<?> placingChainClass = Class.forName("com.kipti.bnb.content.cogwheel_chain.graph.PlacingCogwheelChain");
+		Class<?> candidateClass = Class.forName(
+				"com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChainCandidate");
 
-		boolean nodeLarge = isLarge(node);
-		boolean nodeOffset = offsetForSmallCogwheel(node);
-		Direction.Axis nodeAxis = rotationAxis(node);
+		// Get the candidate for this state; null means it's not a valid target
+		Object candidate = candidateClass.getMethod("getForBlock", BlockState.class).invoke(null, state);
+		if (candidate == null)
+			return false;
 
-		Block block = state.getBlock();
-		Class<?> chainBlockClass = Class.forName("com.kipti.bnb.content.cogwheel_chain.block.CogwheelChainBlock");
-		boolean stateLarge;
-		boolean stateOffset;
-		Direction.Axis stateAxis = getAxis(state);
-		if (chainBlockClass.isInstance(block)) {
-			BlockState sourceState = (BlockState) chainBlockClass.getMethod("getSourceBlockState").invoke(block);
-			stateLarge = (Boolean) chainBlockClass.getMethod("isLargeChainCog").invoke(block);
-			stateOffset = (Boolean) placingChainClass.getMethod("hasSmallCogwheelOffset", BlockState.class).invoke(null, sourceState);
-		} else {
-			boolean validTarget = (Boolean) placingChainClass.getMethod("isValidBlockTarget", BlockState.class).invoke(null, state);
-			if (!validTarget)
-				return false;
-			stateLarge = (Boolean) placingChainClass.getMethod("isLargeBlockTarget", BlockState.class).invoke(null, state);
-			stateOffset = (Boolean) placingChainClass.getMethod("hasSmallCogwheelOffset", BlockState.class).invoke(null, state);
-		}
-
-		return nodeAxis == stateAxis && nodeLarge == stateLarge && nodeOffset == stateOffset;
-	}
-
-	private static Direction.Axis getAxis(BlockState state) {
-		try {
-			return state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS);
-		} catch (IllegalArgumentException e) {
-			return Direction.Axis.Y;
-		}
+		// Check consistency with the node: axis, isLarge, hasSmallCogwheelOffset
+		boolean consistent = (Boolean) candidateClass.getMethod("isConsistentWithNode",
+				Class.forName("com.kipti.bnb.content.kinetics.cogwheel_chain.graph.ICogwheelNode"))
+				.invoke(candidate, node);
+		return consistent;
 	}
 
 	private static BlockPos localPos(Object node) throws ReflectiveOperationException {
 		return (BlockPos) node.getClass().getMethod("localPos").invoke(node);
-	}
-
-	private static Direction.Axis rotationAxis(Object node) throws ReflectiveOperationException {
-		return (Direction.Axis) node.getClass().getMethod("rotationAxis").invoke(node);
-	}
-
-	private static boolean isLarge(Object node) throws ReflectiveOperationException {
-		return (Boolean) node.getClass().getMethod("isLarge").invoke(node);
-	}
-
-	private static boolean offsetForSmallCogwheel(Object node) throws ReflectiveOperationException {
-		return (Boolean) node.getClass().getMethod("offsetForSmallCogwheel").invoke(node);
 	}
 }

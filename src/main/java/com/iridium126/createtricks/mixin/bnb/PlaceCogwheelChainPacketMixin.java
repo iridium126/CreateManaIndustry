@@ -14,10 +14,10 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createtricks.content.kinetics.bnb.BnBKineticsCoreNodes;
-import com.kipti.bnb.content.cogwheel_chain.graph.CogwheelChainPathfinder;
-import com.kipti.bnb.content.cogwheel_chain.graph.PathedCogwheelNode;
-import com.kipti.bnb.content.cogwheel_chain.graph.PlacingCogwheelChain;
-import com.kipti.bnb.content.cogwheel_chain.graph.PlacingCogwheelNode;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChainPathfinder;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PathedCogwheelNode;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PlacingCogwheelChain;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PlacingCogwheelNode;
 
 @Mixin(targets = "com.kipti.bnb.network.packets.from_client.PlaceCogwheelChainPacket", remap = false)
 public abstract class PlaceCogwheelChainPacketMixin {
@@ -30,14 +30,14 @@ public abstract class PlaceCogwheelChainPacketMixin {
 	}
 
 	@Redirect(method = "handle",
-		at = @At(value = "INVOKE", target = "Lcom/kipti/bnb/content/cogwheel_chain/graph/CogwheelChainPathfinder;buildChainPath(Lcom/kipti/bnb/content/cogwheel_chain/graph/PlacingCogwheelChain;)Ljava/util/List;"),
+		at = @At(value = "INVOKE", target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/CogwheelChainPathfinder;buildChainPath(Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/PlacingCogwheelChain;)Ljava/util/List;"),
 		remap = false)
 	private List<PathedCogwheelNode> createtricks$overrideBuildPath(PlacingCogwheelChain placingChain) {
 		try {
 			List<PathedCogwheelNode> result;
 			try {
 				result = CogwheelChainPathfinder.buildChainPath(placingChain);
-			} catch (com.kipti.bnb.content.cogwheel_chain.graph.ChainInteractionFailedException e) {
+			} catch (com.kipti.bnb.content.kinetics.cogwheel_chain.placement.ChainInteractionFailedException e) {
 				result = null;
 			}
 			if (result != null)
@@ -71,7 +71,7 @@ public abstract class PlaceCogwheelChainPacketMixin {
 		int side = 1;
 		for (PlacingCogwheelNode node : visitedNodes) {
 			pathNodes.add(new PathedCogwheelNode(side, node.isLarge(), node.rotationAxis(),
-				node.pos().subtract(controllerPos), node.hasOffsetForSmallCogwheel()));
+				node.pos().subtract(controllerPos), node.hasSmallCogwheelOffset()));
 			side *= -1;
 		}
 		return pathNodes;

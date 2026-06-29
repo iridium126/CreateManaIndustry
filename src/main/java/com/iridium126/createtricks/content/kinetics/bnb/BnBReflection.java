@@ -3,16 +3,18 @@ package com.iridium126.createtricks.content.kinetics.bnb;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.jetbrains.annotations.Nullable;
 
 import com.iridium126.createtricks.CreateTricks;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.properties.Property;
 
 /**
@@ -22,17 +24,26 @@ import net.minecraft.world.level.block.state.properties.Property;
  * Every {@code Class.forName} / {@code getMethod} / {@code getField} call is
  * hoisted into a one-time static initialiser so that hot paths (render, stress,
  * execution limit) pay only the {@code Method.invoke} cost.
+ * <p>
+ * Updated for the behaviour-based BnB architecture where
+ * {@code CogwheelChainBehaviour} replaces the removed
+ * {@code CogwheelChainBlockEntity}.
  */
 public final class BnBReflection {
 
-	// --- BnB CogwheelChainBlockEntity --------------------------------------
+	// --- BnB CogwheelChainBehaviour -----------------------------------------
 
-	private static volatile boolean chainBEInitialized;
-	private static Class<?> chainBEClass;
+	private static volatile boolean behaviourInitialized;
+	private static Class<?> behaviourClass;
+	private static Object behaviourTypeInstance;
 	private static Method isControllerMethod;
-	private static Method getChainMethod;
-	private static Method getSpeedMethod;
+	private static Method getControlledChainMethod;
 	private static Method getChainRotationFactorMethod;
+
+	// --- BnB SuperBlockEntityBehaviour --------------------------------------
+
+	private static volatile boolean superBEInitialized;
+	private static Method superBEGetOptionalMethod;
 
 	// --- BnB CogwheelChain --------------------------------------------------
 
@@ -47,7 +58,7 @@ public final class BnBReflection {
 	private static Method sideFactorMethod;
 	private static Method rotationAxisMethod;
 	private static Method isLargeMethod;
-	private static Method offsetForSmallCogwheelMethod;
+	private static Method hasSmallCogwheelOffsetMethod;
 
 	// --- Trickster ModularSpellConstructBlock -------------------------------
 
@@ -58,34 +69,84 @@ public final class BnBReflection {
 	private BnBReflection() {}
 
 	// ========================================================================
-	// CogwheelChainBlockEntity
+	// CogwheelChainBehaviour
 	// ========================================================================
 
-	private static synchronized void ensureChainBEInit() {
-		if (chainBEInitialized)
+	private static synchronized void ensureBehaviourInit() {
+		if (behaviourInitialized)
 			return;
-		chainBEInitialized = true;
+		behaviourInitialized = true;
 		try {
-			chainBEClass = Class.forName(
-					"com.kipti.bnb.content.cogwheel_chain.block.CogwheelChainBlockEntity");
-			isControllerMethod = chainBEClass.getMethod("isController");
-			getChainMethod = chainBEClass.getMethod("getChain");
-			getSpeedMethod = chainBEClass.getMethod("getSpeed");
-			getChainRotationFactorMethod = chainBEClass.getMethod("getChainRotationFactor");
+			behaviourClass = Class.forName(
+					"com.kipti.bnb.content.kinetics.cogwheel_chain.behaviour.CogwheelChainBehaviour");
+			behaviourTypeInstance = behaviourClass.getField("TYPE").get(null);
+			isControllerMethod = behaviourClass.getMethod("isController");
+			getControlledChainMethod = behaviourClass.getMethod("getControlledChain");
+			getChainRotationFactorMethod = behaviourClass.getMethod("getChainRotationFactor");
 		} catch (ReflectiveOperationException e) {
-			CreateTricks.LOGGER.warn("BnB chain block entity reflection unavailable", e);
+			CreateTricks.LOGGER.warn("BnB chain behaviour reflection unavailable", e);
 		}
 	}
 
+	// ========================================================================
+	// SuperBlockEntityBehaviour
+	// ========================================================================
+
+	private static synchronized void ensureSuperBEInit() {
+		if (superBEInitialized)
+			return;
+		superBEInitialized = true;
+		try {
+			Class<?> superBEClass = Class.forName(
+					"com.cake.azimuth.behaviour.SuperBlockEntityBehaviour");
+			superBEGetOptionalMethod = superBEClass.getMethod("getOptional",
+					Level.class, BlockPos.class, Class.forName(
+							"com.simibubi.create.foundation.blockEntity.behaviour.BehaviourType"));
+		} catch (ReflectiveOperationException e) {
+			CreateTricks.LOGGER.warn("BnB SuperBlockEntityBehaviour reflection unavailable", e);
+		}
+	}
+
+	/**
+	 * Returns the {@code CogwheelChainBehaviour} attached to a block entity, or
+	 * {@code null} if the behaviour is not present.
+	 */
+	@Nullable
+	private static Object getBehaviour(Object be) {
+		ensureBehaviourInit();
+		ensureSuperBEInit();
+		if (behaviourClass == null || superBEGetOptionalMethod == null || behaviourTypeInstance == null)
+			return null;
+		if (!(be instanceof BlockEntity blockEntity))
+			return null;
+		Level level = blockEntity.getLevel();
+		if (level == null)
+			return null;
+
+		try {
+			@SuppressWarnings("unchecked")
+			Optional<Object> optional = (Optional<Object>) superBEGetOptionalMethod.invoke(
+					null, level, blockEntity.getBlockPos(), behaviourTypeInstance);
+			return optional.orElse(null);
+		} catch (ReflectiveOperationException e) {
+			return null;
+		}
+	}
+
+	// ========================================================================
+	// Behaviour-based chain accessors
+	// ========================================================================
+
 	public static boolean isChainBE(Object be) {
-		ensureChainBEInit();
-		return chainBEClass != null && chainBEClass.isInstance(be);
+		return getBehaviour(be) != null;
 	}
 
 	public static boolean isController(Object be) {
-		ensureChainBEInit();
+		Object behaviour = getBehaviour(be);
+		if (behaviour == null)
+			return false;
 		try {
-			return (Boolean) isControllerMethod.invoke(be);
+			return (Boolean) isControllerMethod.invoke(behaviour);
 		} catch (ReflectiveOperationException e) {
 			return false;
 		}
@@ -93,27 +154,28 @@ public final class BnBReflection {
 
 	@Nullable
 	public static Object getChain(Object be) {
-		ensureChainBEInit();
+		Object behaviour = getBehaviour(be);
+		if (behaviour == null)
+			return null;
 		try {
-			return getChainMethod.invoke(be);
+			return getControlledChainMethod.invoke(behaviour);
 		} catch (ReflectiveOperationException e) {
 			return null;
 		}
 	}
 
 	public static float getSpeed(Object be) {
-		ensureChainBEInit();
-		try {
-			return (Float) getSpeedMethod.invoke(be);
-		} catch (ReflectiveOperationException e) {
-			return 0;
-		}
+		if (be instanceof com.simibubi.create.content.kinetics.base.KineticBlockEntity kbe)
+			return kbe.getSpeed();
+		return 0;
 	}
 
 	public static float getChainRotationFactor(Object be) {
-		ensureChainBEInit();
+		Object behaviour = getBehaviour(be);
+		if (behaviour == null)
+			return 0;
 		try {
-			return (Float) getChainRotationFactorMethod.invoke(be);
+			return (Float) getChainRotationFactorMethod.invoke(behaviour);
 		} catch (ReflectiveOperationException e) {
 			return 0;
 		}
@@ -128,7 +190,8 @@ public final class BnBReflection {
 			return;
 		chainInitialized = true;
 		try {
-			chainClass = Class.forName("com.kipti.bnb.content.cogwheel_chain.graph.CogwheelChain");
+			chainClass = Class.forName(
+					"com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChain");
 			getChainPathCogwheelNodesMethod = chainClass.getMethod("getChainPathCogwheelNodes");
 		} catch (ReflectiveOperationException e) {
 			CreateTricks.LOGGER.warn("BnB chain reflection unavailable", e);
@@ -155,12 +218,12 @@ public final class BnBReflection {
 		nodeInitialized = true;
 		try {
 			Class<?> nodeClass = Class.forName(
-					"com.kipti.bnb.content.cogwheel_chain.graph.PathedCogwheelNode");
+					"com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PathedCogwheelNode");
 			localPosMethod = nodeClass.getMethod("localPos");
 			sideFactorMethod = nodeClass.getMethod("sideFactor");
 			rotationAxisMethod = nodeClass.getMethod("rotationAxis");
 			isLargeMethod = nodeClass.getMethod("isLarge");
-			offsetForSmallCogwheelMethod = nodeClass.getMethod("offsetForSmallCogwheel");
+			hasSmallCogwheelOffsetMethod = nodeClass.getMethod("hasSmallCogwheelOffset");
 		} catch (ReflectiveOperationException e) {
 			CreateTricks.LOGGER.warn("BnB path node reflection unavailable", e);
 		}
@@ -202,10 +265,10 @@ public final class BnBReflection {
 		}
 	}
 
-	public static boolean offsetForSmallCogwheel(Object node) {
+	public static boolean hasSmallCogwheelOffset(Object node) {
 		ensureNodeInit();
 		try {
-			return (Boolean) offsetForSmallCogwheelMethod.invoke(node);
+			return (Boolean) hasSmallCogwheelOffsetMethod.invoke(node);
 		} catch (ReflectiveOperationException e) {
 			return false;
 		}

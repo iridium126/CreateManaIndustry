@@ -2,39 +2,91 @@ package com.iridium126.createtricks.mixin.bnb;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.phys.BlockHitResult;
 
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createtricks.content.kinetics.bnb.BnBKineticsCoreNodes;
-import com.kipti.bnb.content.cogwheel_chain.graph.ChainInteractionFailedException;
-import com.kipti.bnb.content.cogwheel_chain.graph.PlacingCogwheelChain;
-import com.kipti.bnb.content.cogwheel_chain.graph.PlacingCogwheelNode;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChainCandidate;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PlacingCogwheelChain;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PlacingCogwheelNode;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.placement.ChainInteractionFailedException;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.types.CogwheelChainType;
 
-@Mixin(targets = "com.kipti.bnb.content.cogwheel_chain.item.CogwheelChainPlacementInteraction", remap = false)
+@Mixin(targets = "com.kipti.bnb.content.kinetics.cogwheel_chain.placement.CogwheelChainPlacementInteraction", remap = false)
 public abstract class CogwheelChainPlacementInteractionMixin {
 
-	@Shadow
-	static PlacingCogwheelChain currentBuildingChain;
-
-	private static final ThreadLocal<Minecraft> CAPTURED_MC = new ThreadLocal<>();
-
-	@Inject(method = "onRightClick",
-		at = @At(value = "INVOKE", target = "Lnet/neoforged/neoforge/client/event/InputEvent$InteractionKeyMappingTriggered;setSwingHand(Z)V"),
-		cancellable = true,
+	/**
+	 * Before {@code rightClickForChain} processes a click, check whether the
+	 * previous node was a spell construct and set the thread-local flag so
+	 * {@code PlacingCogwheelChainMixin} can bypass the normal validation.
+	 */
+	@Inject(method = "rightClickForChain",
+		at = @At(value = "INVOKE",
+			target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/PlacingCogwheelChain;tryAddNode(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;Lcom/kipti/bnb/content/kinetics/cogwheel_chain/types/CogwheelChainType;)Z"),
 		remap = false)
+	private static void createtricks$setLastNodeSpellFlag(
+		net.neoforged.neoforge.client.event.InputEvent.InteractionKeyMappingTriggered event,
+		ClientLevel level, BlockPos hitPos, BlockState targetedState,
+		CogwheelChainCandidate targetedCandidate, CogwheelChainType heldChainType,
+		ItemStack chainItemInHand, LocalPlayer player, CallbackInfo ci) {
+		PlacingCogwheelChain chain = lookupBuildingChain();
+		if (chain != null) {
+			PlacingCogwheelNode lastNode = chain.getLastNode();
+			if (lastNode != null && BnBKineticsCoreNodes.isModularSpellConstruct(level, lastNode.pos())) {
+				BnBKineticsCoreNodes.LAST_NODE_IS_SPELL.set(true);
+			}
+		}
+	}
+
+	/**
+	 * Allow loop closure via {@code tryCompleteLoop} when a spell construct is
+	 * part of the chain.
+	 */
+	@Redirect(method = "rightClickForChain",
+		at = @At(value = "INVOKE",
+			target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/PlacingCogwheelChain;tryCompleteLoop()Z"),
+		remap = false)
+	private static boolean createtricks$allowLoopClosureForSpellConstruct(PlacingCogwheelChain chain)
+			throws ChainInteractionFailedException {
+		try {
+			return chain.tryCompleteLoop();
+		} catch (ChainInteractionFailedException e) {
+			Minecraft mc = Minecraft.getInstance();
+			if (mc == null || mc.level == null)
+				throw e;
+
+			for (PlacingCogwheelNode node : chain.getVisitedNodes()) {
+				if (BnBKineticsCoreNodes.isModularSpellConstruct(mc.level, node.pos()))
+					return true;
+			}
+			throw e;
+		}
+	}
+
+	/**
+	 * Handle spell construct right-click interaction. Injected into the void
+	 * {@code onClickInput} before the private {@code onRightClick} is called.
+	 * If the target is a spell construct that has no kinetics core or is
+	 * already linked, show an error message, cancel the rest of
+	 * {@code onClickInput}, and mark the event as handled.
+	 */
+	@Inject(method = "onClickInput",
+		at = @At(value = "INVOKE",
+			target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/placement/CogwheelChainPlacementInteraction;onRightClick(Lnet/neoforged/neoforge/client/event/InputEvent$InteractionKeyMappingTriggered;)Z"),
+		cancellable = true, remap = false)
 	private static void createtricks$handleSpellConstructInteraction(
 		net.neoforged.neoforge.client.event.InputEvent.InteractionKeyMappingTriggered event,
-		CallbackInfoReturnable<Boolean> cir) {
+		CallbackInfo ci) {
 
 		Minecraft mc = Minecraft.getInstance();
 		ClientLevel level = mc.level;
@@ -43,8 +95,9 @@ public abstract class CogwheelChainPlacementInteractionMixin {
 
 		BlockPos pos = hit.getBlockPos();
 
-		if (currentBuildingChain != null) {
-			PlacingCogwheelNode lastNode = currentBuildingChain.getLastNode();
+		PlacingCogwheelChain chain = lookupBuildingChain();
+		if (chain != null) {
+			PlacingCogwheelNode lastNode = chain.getLastNode();
 			if (lastNode != null && !lastNode.pos().equals(pos)
 				&& BnBKineticsCoreNodes.isModularSpellConstruct(level, lastNode.pos())) {
 				BnBKineticsCoreNodes.LAST_NODE_IS_SPELL.set(true);
@@ -56,53 +109,34 @@ public abstract class CogwheelChainPlacementInteractionMixin {
 
 		if (!BnBKineticsCoreNodes.hasAnyKineticsCore(level, pos)) {
 			if (mc.player != null)
-				mc.player.displayClientMessage(Component.translatable("createtricks.bnb_chain.no_core"), true);
-			cir.setReturnValue(true);
+				mc.player.displayClientMessage(
+					Component.translatable("createtricks.bnb_chain.no_core"), true);
+			ci.cancel();
+			event.setCanceled(true);
 			return;
 		}
 
 		if (BnBKineticsCoreNodes.isAlreadyLinked(level, pos)) {
 			if (mc.player != null)
-				mc.player.displayClientMessage(Component.translatable("createtricks.bnb_chain.already_linked"), true);
-			cir.setReturnValue(true);
+				mc.player.displayClientMessage(
+					Component.translatable("createtricks.bnb_chain.already_linked"), true);
+			ci.cancel();
+			event.setCanceled(true);
 			return;
 		}
-
-		CAPTURED_MC.set(mc);
 	}
 
-	@Inject(method = "onRightClick", at = @At("RETURN"), remap = false)
-	private static void createtricks$clearCapturedMc(
-		net.neoforged.neoforge.client.event.InputEvent.InteractionKeyMappingTriggered event,
-		CallbackInfoReturnable<Boolean> cir) {
-		CAPTURED_MC.remove();
-	}
-
-	@Redirect(method = "onRightClick",
-		at = @At(value = "INVOKE", target = "Lcom/kipti/bnb/content/cogwheel_chain/graph/PlacingCogwheelChain;canBuildChainIfLooping()Z"),
-		remap = false)
-	private static boolean createtricks$allowLoopClosureForSpellConstruct(PlacingCogwheelChain chain) {
+	/**
+	 * Reflectively calls the BnB {@code getCurrentBuildingChain} getter.
+	 * Named so it does not collide with the target class' own public method.
+	 */
+	private static PlacingCogwheelChain lookupBuildingChain() {
 		try {
-			return chain.canBuildChainIfLooping();
-		} catch (ChainInteractionFailedException e) {
-			Minecraft mc = CAPTURED_MC.get();
-			if (mc == null || mc.level == null)
-				return false;
-
-			for (PlacingCogwheelNode node : chain.getVisitedNodes()) {
-				if (BnBKineticsCoreNodes.isModularSpellConstruct(mc.level, node.pos()))
-					return true;
-			}
-			return false;
+			Class<?> clazz = Class.forName(
+				"com.kipti.bnb.content.kinetics.cogwheel_chain.placement.CogwheelChainPlacementInteraction");
+			return (PlacingCogwheelChain) clazz.getMethod("getCurrentBuildingChain").invoke(null);
+		} catch (ReflectiveOperationException e) {
+			return null;
 		}
-	}
-
-	@Redirect(method = "onRightClick",
-		at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/block/state/BlockState;getValue(Lnet/minecraft/world/level/block/state/properties/Property;)Ljava/lang/Comparable;"),
-		remap = false)
-	private static Comparable<?> createtricks$fixOnRightClickAxis(BlockState state, Property<?> property) {
-		if (BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
-			return BnBKineticsCoreNodes.getFacing(state).getAxis();
-		return state.getValue(property);
 	}
 }

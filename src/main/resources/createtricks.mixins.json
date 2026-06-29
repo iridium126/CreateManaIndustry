@@ -21,6 +21,7 @@
     "bnb.CogwheelChainPlaceInLevelMixin",
     "bnb.CogwheelChainBlockEntityStressMixin",
     "bnb.CogwheelChainPlacementInteractionMixin",
+    "bnb.CogwheelChainCandidateMixin",
     "bnb.PlacingCogwheelChainMixin",
     "bnb.PlaceCogwheelChainPacketMixin"
   ],
@@ -29,7 +30,7 @@
     "LiquidBlockRendererMixin",
     "ModularSpellConstructBlockEntityRendererMixin",
     "SafeBlockEntityRendererMixin",
-    "bnb.CogwheelChainBlockEntityRendererMixin",
+    "bnb.CogwheelChainBehaviourRendererMixin",
     "bnb.RenderedChainPathNodeMixin"
   ],
   "injectors": {

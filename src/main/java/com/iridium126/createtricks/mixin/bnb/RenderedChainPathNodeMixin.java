@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(targets = "com.kipti.bnb.content.cogwheel_chain.graph.RenderedChainPathNode", remap = false)
+@Mixin(targets = "com.kipti.bnb.content.kinetics.cogwheel_chain.graph.RenderedChainPathNode", remap = false)
 public abstract class RenderedChainPathNodeMixin {
 	@Shadow(remap = false)
 	public abstract BlockPos relativePos();

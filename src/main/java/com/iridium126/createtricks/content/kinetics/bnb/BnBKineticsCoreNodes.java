@@ -135,25 +135,20 @@ public final class BnBKineticsCoreNodes {
 			BlockEntity be = level.getBlockEntity(checkPos);
 			if (be == null)
 				continue;
-			try {
-				Class<?> chainBEClass = Class.forName("com.kipti.bnb.content.cogwheel_chain.block.CogwheelChainBlockEntity");
-				if (!chainBEClass.isInstance(be))
-					continue;
-				boolean isController = (Boolean) chainBEClass.getMethod("isController").invoke(be);
-				if (!isController)
-					continue;
-				Object chain = chainBEClass.getMethod("getChain").invoke(be);
-				if (chain == null)
-					continue;
-				BlockPos immutableCheckPos = checkPos.immutable();
-				@SuppressWarnings("unchecked")
-				List<Object> nodes = (List<Object>) chain.getClass().getMethod("getChainPathCogwheelNodes").invoke(chain);
-				for (Object node : nodes) {
-					BlockPos localPos = (BlockPos) node.getClass().getMethod("localPos").invoke(node);
-					if (immutableCheckPos.offset(localPos).equals(pos))
-						return true;
-				}
-			} catch (ReflectiveOperationException ignored) {}
+			if (!BnBReflection.isChainBE(be))
+				continue;
+			if (!BnBReflection.isController(be))
+				continue;
+			Object chain = BnBReflection.getChain(be);
+			if (chain == null)
+				continue;
+			BlockPos immutableCheckPos = checkPos.immutable();
+			List<Object> nodes = BnBReflection.getChainPathCogwheelNodes(chain);
+			for (Object node : nodes) {
+				BlockPos localPos = BnBReflection.localPos(node);
+				if (immutableCheckPos.offset(localPos).equals(pos))
+					return true;
+			}
 		}
 		return false;
 	}

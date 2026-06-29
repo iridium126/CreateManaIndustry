@@ -7,20 +7,18 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.block.state.properties.Property;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.iridium126.createtricks.content.kinetics.bnb.BnBKineticsCoreNodes;
-import com.kipti.bnb.content.cogwheel_chain.graph.PlacingCogwheelChain;
-import com.kipti.bnb.content.cogwheel_chain.graph.PlacingCogwheelNode;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PlacingCogwheelNode;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.types.CogwheelChainType;
 
-@Mixin(targets = "com.kipti.bnb.content.cogwheel_chain.graph.PlacingCogwheelChain", remap = false)
+@Mixin(targets = "com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PlacingCogwheelChain", remap = false)
 public abstract class PlacingCogwheelChainMixin {
 
 	@Shadow
@@ -31,7 +29,7 @@ public abstract class PlacingCogwheelChainMixin {
 
 	@Inject(method = "tryAddNode", at = @At("HEAD"), cancellable = true, remap = false)
 	private void createtricks$bypassForSpellConstruct(BlockPos pos, BlockState state,
-		CallbackInfoReturnable<Boolean> cir) {
+			CogwheelChainType type, CallbackInfoReturnable<Boolean> cir) {
 		boolean newIsSpell = BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock());
 		boolean lastIsSpell = Boolean.TRUE.equals(BnBKineticsCoreNodes.LAST_NODE_IS_SPELL.get());
 
@@ -56,8 +54,21 @@ public abstract class PlacingCogwheelChainMixin {
 			hasOffset = false;
 		} else {
 			axis = getAxis(state);
-			isLarge = PlacingCogwheelChain.isLargeBlockTarget(state);
-			hasOffset = PlacingCogwheelChain.hasSmallCogwheelOffset(state);
+			try {
+				Class<?> candidateClass = Class.forName(
+						"com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChainCandidate");
+				Object candidate = candidateClass.getMethod("getForBlock", BlockState.class).invoke(null, state);
+				if (candidate == null) {
+					isLarge = false;
+					hasOffset = false;
+				} else {
+					isLarge = (Boolean) candidateClass.getMethod("isLarge").invoke(candidate);
+					hasOffset = (Boolean) candidateClass.getMethod("hasSmallCogwheelOffset").invoke(candidate);
+				}
+			} catch (ReflectiveOperationException e) {
+				isLarge = false;
+				hasOffset = false;
+			}
 		}
 
 		PlacingCogwheelNode newNode = new PlacingCogwheelNode(pos, axis, isLarge, hasOffset);
@@ -66,48 +77,55 @@ public abstract class PlacingCogwheelChainMixin {
 	}
 
 	@Inject(method = "tryAddNode", at = @At("RETURN"), remap = false)
-	private void createtricks$clearLastNodeFlag(CallbackInfoReturnable<Boolean> cir) {
+	private void createtricks$clearLastNodeFlag(BlockPos pos, BlockState state, CogwheelChainType type,
+			CallbackInfoReturnable<Boolean> cir) {
 		BnBKineticsCoreNodes.LAST_NODE_IS_SPELL.remove();
 	}
 
-	@Redirect(method = "checkMatchingNodesInLevel",
-		at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/block/state/BlockState;getValue(Lnet/minecraft/world/level/block/state/properties/Property;)Ljava/lang/Comparable;"),
-		remap = false)
-	private Comparable<?> createtricks$fixCheckMatchingAxis(BlockState state, Property<?> property) {
-		if (BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
-			return BnBKineticsCoreNodes.getFacing(state).getAxis();
-		return state.getValue(property);
-	}
-
-	@Inject(method = "checkMatchingNodesInLevel", at = @At("HEAD"), cancellable = true, remap = false)
-	private void createtricks$rejectInvalidSpellConstruct(Level level, CallbackInfoReturnable<Boolean> cir) {
+	/**
+	 * In the updated BnB, {@code checkMissingNodesInLevel} uses
+	 * {@code CogwheelChainCandidate.getForBlock} which returns null for spell
+	 * constructs. We override the check to skip spell construct positions and
+	 * verify they still have a valid kinetics core.
+	 */
+	@Inject(method = "checkMissingNodesInLevel", at = @At("HEAD"), cancellable = true, remap = false)
+	private void createtricks$skipSpellConstructInMissingCheck(Level level, CogwheelChainType type,
+			CallbackInfoReturnable<Boolean> cir) {
+		boolean hasSpellConstruct = false;
 		for (PlacingCogwheelNode node : getVisitedNodes()) {
-			if (!BnBKineticsCoreNodes.isModularSpellConstruct(level, node.pos()))
+			if (BnBKineticsCoreNodes.isModularSpellConstruct(level, node.pos())) {
+				hasSpellConstruct = true;
+				if (!BnBKineticsCoreNodes.hasAnyKineticsCore(level, node.pos())
+					|| BnBKineticsCoreNodes.isAlreadyLinked(level, node.pos())) {
+					cir.setReturnValue(true); // nodes are "missing" — reject
+					return;
+				}
+			}
+		}
+		if (!hasSpellConstruct)
+			return;
+
+		// Check non-spell-construct nodes normally via CogwheelChainCandidate
+		for (PlacingCogwheelNode node : getVisitedNodes()) {
+			if (BnBKineticsCoreNodes.isModularSpellConstruct(level, node.pos()))
 				continue;
-			if (!BnBKineticsCoreNodes.hasAnyKineticsCore(level, node.pos())
-				|| BnBKineticsCoreNodes.isAlreadyLinked(level, node.pos())) {
-				cir.setReturnValue(false);
+			BlockState state = level.getBlockState(node.pos());
+			try {
+				Class<?> candidateClass = Class.forName(
+						"com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChainCandidate");
+				Object candidate = candidateClass.getMethod("getForBlock", BlockState.class).invoke(null, state);
+				if (candidate == null || !(Boolean) candidateClass.getMethod("isConsistentWithNode",
+						Class.forName("com.kipti.bnb.content.kinetics.cogwheel_chain.graph.ICogwheelNode"))
+						.invoke(candidate, node)) {
+					cir.setReturnValue(true); // nodes are "missing" — reject
+					return;
+				}
+			} catch (ReflectiveOperationException e) {
+				cir.setReturnValue(true);
 				return;
 			}
 		}
-	}
-
-	@Inject(method = "isValidBlockTarget", at = @At("RETURN"), cancellable = true, remap = false)
-	private static void createtricks$acceptSpellConstruct(BlockState state, CallbackInfoReturnable<Boolean> cir) {
-		if (!cir.getReturnValue() && BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
-			cir.setReturnValue(true);
-	}
-
-	@Inject(method = "isLargeBlockTarget", at = @At("HEAD"), cancellable = true, remap = false)
-	private static void createtricks$spellConstructNotLarge(BlockState state, CallbackInfoReturnable<Boolean> cir) {
-		if (BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
-			cir.setReturnValue(false);
-	}
-
-	@Inject(method = "hasSmallCogwheelOffset", at = @At("HEAD"), cancellable = true, remap = false)
-	private static void createtricks$spellConstructNoOffset(BlockState state, CallbackInfoReturnable<Boolean> cir) {
-		if (BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
-			cir.setReturnValue(false);
+		cir.setReturnValue(false); // all good
 	}
 
 	private static Direction.Axis getAxis(BlockState state) {

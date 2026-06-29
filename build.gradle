@@ -50,6 +50,18 @@ repositories {
         name = "Ithundxr"
         url = "https://maven.ithundxr.dev/snapshots"
     }
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Modrinth"
+                url = "https://api.modrinth.com/maven"
+            }
+        }
+        // forRepositories(fg.repository) // Uncomment when using ForgeGradle
+        filter {
+            includeGroup "maven.modrinth"
+        }
+    }
 }
 
 base {
@@ -164,14 +176,16 @@ dependencies {
 
     implementation "curse.maven:create-328085:7963363"
     compileOnly "dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:${flywheel_version}"
-    localRuntime "dev.engine-room.flywheel:flywheel-neoforge-${minecraft_version}:${flywheel_version}"
     compileOnly "com.tterrag.registrate:Registrate:${registrate_version}"
     compileOnly "net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}"
-    compileOnly "curse.maven:create-bits-n-bobs-1398383:7591460"
-    localRuntime "curse.maven:create-bits-n-bobs-1398383:7591460"
+    compileOnly "maven.modrinth:T8bvmqVZ:cSCeD78i"
+    localRuntime "maven.modrinth:T8bvmqVZ:cSCeD78i"
+    localRuntime "curse.maven:azimuth-api-1466331:8317127"
+    localRuntime "curse.maven:strut-your-stuff-1486746:8301563"
 
-    implementation "curse.maven:accessories-938917:7583320"
-    implementation "curse.maven:owo-lib-532610:6785734"
+    localRuntime "curse.maven:accessories-938917:7583320"
+    //localRuntime "curse.maven:owo-lib-532610:6785734" 需要更新至0.13.0 alpha.15
+    localRuntime "curse.maven:lithostitched-936015:8321754"
 
     // Add Connector to the launch classpath
     additionalRuntimeClasspath "org.sinytra:connector:2.0.0-beta.12+1.21.1"
@@ -179,7 +193,7 @@ dependencies {
     compileOnly "curse.maven:forgified-fabric-api-889079:7658611"
     runtimeOnly "curse.maven:forgified-fabric-api-889079:7658611"
     // Install desired Fabric mods. Make sure they remain unmapped at runtime
-    implementation "curse.maven:trickster-1137971:7776022"
+    implementation "curse.maven:trickster-1137971:8324614"
     runtimeOnly "curse.maven:cicada-989574:7068950"
     runtimeOnly "curse.maven:lavender-api-962916:6107175"
     runtimeOnly "curse.maven:cardinal-components-api-318449:7250871"
