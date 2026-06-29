@@ -18,6 +18,7 @@
     "TrickBlunderExceptionMixin",
     "MechanicalPressKnotMixin",
     "bnb.CogwheelChainMixin",
+    "bnb.CogwheelChainPathNodesMixin",
     "bnb.CogwheelChainPlaceInLevelMixin",
     "bnb.CogwheelChainBlockEntityStressMixin",
     "bnb.CogwheelChainPlacementInteractionMixin",
@@ -31,7 +32,7 @@
     "ModularSpellConstructBlockEntityRendererMixin",
     "SafeBlockEntityRendererMixin",
     "bnb.CogwheelChainBehaviourRendererMixin",
-    "bnb.RenderedChainPathNodeMixin"
+    "bnb.CogwheelChainBehaviourVisualMixin"
   ],
   "injectors": {
     "defaultRequire": 1

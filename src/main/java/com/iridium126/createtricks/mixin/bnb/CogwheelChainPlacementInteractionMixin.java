@@ -74,8 +74,12 @@ public abstract class CogwheelChainPlacementInteractionMixin {
 	}
 
 	/**
-	 * Handle spell construct right-click interaction. Injected into
-	 * {@code onClickInput} before {@code onRightClick} is called.
+	 * Intercept right-clicks on spell construct blocks when the player is
+	 * holding a chain drive item or is already building a chain. If the spell
+	 * construct has no kinetics core, show an error. Already-linked spell
+	 * constructs are allowed through so the player can start a new chain
+	 * (matching BnB native behaviour where the old chain is destroyed when the
+	 * new one is placed).
 	 */
 	@Inject(method = "onClickInput",
 		at = @At(value = "INVOKE",
@@ -89,8 +93,18 @@ public abstract class CogwheelChainPlacementInteractionMixin {
 		ClientLevel level = mc.level;
 		if (level == null || !(mc.hitResult instanceof BlockHitResult hit))
 			return;
+		if (mc.player == null)
+			return;
 
 		BlockPos pos = hit.getBlockPos();
+
+		// Only intercept when the player is holding a chain drive item or is
+		// already building a chain — otherwise let the normal onRightClick
+		// handle the interaction (e.g. open the spell construct inventory).
+		boolean holdingChain = CogwheelChainPlacementInteraction.getChainItemInHand(mc.player) != null;
+		boolean alreadyBuilding = CogwheelChainPlacementInteraction.getCurrentBuildingChain() != null;
+		if (!holdingChain && !alreadyBuilding)
+			return;
 
 		PlacingCogwheelChain chain = CogwheelChainPlacementInteraction.getCurrentBuildingChain();
 		if (chain != null) {
@@ -104,19 +118,14 @@ public abstract class CogwheelChainPlacementInteractionMixin {
 		if (!BnBKineticsCoreNodes.isModularSpellConstruct(level, pos))
 			return;
 
+		// Only block the click when the spell construct has no kinetics core at
+		// all — it can't participate in a chain without one.  Already-linked
+		// constructs are allowed through (old chain is destroyed by
+		// placeChainCogwheelInLevel when the new chain is placed).
 		if (!BnBKineticsCoreNodes.hasAnyKineticsCore(level, pos)) {
 			if (mc.player != null)
 				mc.player.displayClientMessage(
 					Component.translatable("createtricks.bnb_chain.no_core"), true);
-			ci.cancel();
-			event.setCanceled(true);
-			return;
-		}
-
-		if (BnBKineticsCoreNodes.isAlreadyLinked(level, pos)) {
-			if (mc.player != null)
-				mc.player.displayClientMessage(
-					Component.translatable("createtricks.bnb_chain.already_linked"), true);
 			ci.cancel();
 			event.setCanceled(true);
 		}
