@@ -1,7 +1,6 @@
 package com.iridium126.createtricks.content.kinetics.bnb;
 
 import java.lang.reflect.Field;
-import java.util.List;
 
 import org.joml.Vector3f;
 
@@ -16,11 +15,9 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
-import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
 public final class BnBKineticsCoreNodes {
-	public static final int NO_SLOT = -1;
 	public static final double BNB_SMALL_COGWHEEL_RADIUS = 0.5;
 	public static final double KINETICS_CORE_RADIUS = 0.14;
 
@@ -33,20 +30,6 @@ public final class BnBKineticsCoreNodes {
 	private static Property<Direction> cachedFacingProperty;
 
 	private BnBKineticsCoreNodes() {}
-
-	public static KineticsCoreCogwheelNode tryCreate(Level level, BlockPos pos, BlockHitResult hit) {
-		int slot = getTargetKineticsCoreSlot(level, pos, hit);
-		if (slot == NO_SLOT)
-			return null;
-		return create(level, pos, slot);
-	}
-
-	public static KineticsCoreCogwheelNode create(Level level, BlockPos pos, int slot) {
-		if (!hasKineticsCoreInSlot(level, pos, slot))
-			return null;
-		return new KineticsCoreCogwheelNode(pos, getFacing(level, pos).getAxis(), slot,
-				getCoreCenter(level, pos, slot));
-	}
 
 	public static boolean isModularSpellConstruct(Level level, BlockPos pos) {
 		return isModularSpellConstructBlock(level.getBlockState(pos).getBlock());
@@ -61,13 +44,9 @@ public final class BnBKineticsCoreNodes {
 	}
 
 	public static boolean hasAnyKineticsCore(Level level, BlockPos pos) {
-		if (!isModularSpellConstruct(level, pos))
-			return false;
-
 		BlockEntity be = level.getBlockEntity(pos);
 		if (!(be instanceof Container container))
 			return false;
-
 		for (int slot = 1; slot < container.getContainerSize(); slot++) {
 			if (isKineticsCore(container.getItem(slot)))
 				return true;
@@ -76,13 +55,9 @@ public final class BnBKineticsCoreNodes {
 	}
 
 	public static int getKineticsCoreCount(Level level, BlockPos pos) {
-		if (!isModularSpellConstruct(level, pos))
-			return 0;
-
 		BlockEntity be = level.getBlockEntity(pos);
 		if (!(be instanceof Container container))
 			return 0;
-
 		int count = 0;
 		for (int slot = 1; slot < container.getContainerSize(); slot++) {
 			if (isKineticsCore(container.getItem(slot)))
@@ -91,23 +66,7 @@ public final class BnBKineticsCoreNodes {
 		return count;
 	}
 
-	public static boolean hasKineticsCoreInSlot(Level level, BlockPos pos, int slot) {
-		if (!isModularSpellConstruct(level, pos))
-			return false;
-
-		BlockEntity be = level.getBlockEntity(pos);
-		if (!(be instanceof Container container))
-			return false;
-		if (slot < 1 || slot >= container.getContainerSize())
-			return false;
-
-		return isKineticsCore(container.getItem(slot));
-	}
-
 	public static Vec3 getNearestCoreCenter(Level level, BlockPos pos, Vec3 target) {
-		if (!isModularSpellConstruct(level, pos))
-			return Vec3.atCenterOf(pos);
-
 		BlockEntity be = level.getBlockEntity(pos);
 		if (!(be instanceof Container container))
 			return Vec3.atCenterOf(pos);
@@ -117,105 +76,30 @@ public final class BnBKineticsCoreNodes {
 		for (int slot = 1; slot < container.getContainerSize(); slot++) {
 			if (!isKineticsCore(container.getItem(slot)))
 				continue;
-
 			Vec3 center = getCoreCenter(level, pos, slot);
-			double distance = center.distanceToSqr(target);
-			if (distance < nearestDistance) {
+			double dist = center.distanceToSqr(target);
+			if (dist < nearestDistance) {
 				nearest = center;
-				nearestDistance = distance;
+				nearestDistance = dist;
 			}
 		}
 		return nearest;
 	}
 
 	public static boolean isAlreadyLinked(Level level, BlockPos pos) {
-		if (!isModularSpellConstruct(level, pos))
-			return false;
-
-		int searchRadius = 8;
-		for (BlockPos checkPos : BlockPos.betweenClosed(
-			pos.offset(-searchRadius, -searchRadius, -searchRadius),
-			pos.offset(searchRadius, searchRadius, searchRadius))) {
-			BlockEntity be = level.getBlockEntity(checkPos);
-			if (be == null || !BnBReflection.isChainBE(be))
-				continue;
-			if (!BnBReflection.isController(be))
-				continue;
-			var chain = BnBReflection.getChain(be);
+		int r = 8;
+		for (BlockPos cp : BlockPos.betweenClosed(
+				pos.offset(-r, -r, -r), pos.offset(r, r, r))) {
+			BlockEntity be = level.getBlockEntity(cp);
+			var chain = BnBReflection.getChainIfController(be);
 			if (chain == null)
 				continue;
-			BlockPos immutableCheckPos = checkPos.immutable();
 			for (var node : chain.getChainPathCogwheelNodes()) {
-				if (immutableCheckPos.offset(node.localPos()).equals(pos))
+				if (cp.immutable().offset(node.localPos()).equals(pos))
 					return true;
 			}
 		}
 		return false;
-	}
-
-	private static boolean isKineticsCore(ItemStack stack) {
-		return KineticsSpellCoreItem.is(stack);
-	}
-
-	private static int getTargetKineticsCoreSlot(Level level, BlockPos pos, BlockHitResult hit) {
-		if (!isModularSpellConstruct(level, pos))
-			return NO_SLOT;
-
-		BlockEntity be = level.getBlockEntity(pos);
-		if (!(be instanceof Container container))
-			return NO_SLOT;
-
-		int onlySlot = NO_SLOT;
-		int kineticsCoreCount = 0;
-		for (int slot = 1; slot < container.getContainerSize(); slot++) {
-			if (isKineticsCore(container.getItem(slot))) {
-				onlySlot = slot;
-				kineticsCoreCount++;
-			}
-		}
-		if (kineticsCoreCount == 0)
-			return NO_SLOT;
-		if (kineticsCoreCount == 1)
-			return onlySlot;
-
-		Vec3 hitLocation = hit.getLocation();
-		double nearestDistance = Double.MAX_VALUE;
-		int nearestSlot = NO_SLOT;
-		for (int slot = 1; slot < container.getContainerSize(); slot++) {
-			if (!isKineticsCore(container.getItem(slot)))
-				continue;
-			double distance = hitLocation.distanceToSqr(getCoreCenter(level, pos, slot));
-			if (distance < nearestDistance) {
-				nearestDistance = distance;
-				nearestSlot = slot;
-			}
-		}
-		return nearestSlot;
-	}
-
-	private static Vec3 getCoreCenter(Level level, BlockPos pos, int slot) {
-		int index = Math.max(0, slot - 1);
-		int x = index % 2;
-		int z = index / 2;
-		Vec3 local = new Vec3((18f / 2 * x + 3.5f) / 16f, 10.5f / 16f,
-				(18f / 2 * z + 3.5f) / 16f);
-
-		Direction facing = getFacing(level, pos);
-		Vector3f offset = new Vector3f((float) local.x - 0.5f, (float) local.y - 0.5f,
-				(float) local.z - 0.5f);
-		offset.rotate(facing.getRotation());
-
-		return Vec3.atLowerCornerOf(pos)
-			.add(0.5f + offset.x, 0.5f + offset.y, 0.5f + offset.z);
-	}
-
-	@SuppressWarnings("unchecked")
-	private static Direction getFacing(Level level, BlockPos pos) {
-		try {
-			return level.getBlockState(pos).getValue(getFacingProperty());
-		} catch (IllegalArgumentException e) {
-			return Direction.UP;
-		}
 	}
 
 	@SuppressWarnings("unchecked")
@@ -227,21 +111,42 @@ public final class BnBKineticsCoreNodes {
 		}
 	}
 
+	// ---- internals ----------------------------------------------------------
+
+	private static boolean isKineticsCore(ItemStack stack) {
+		return KineticsSpellCoreItem.is(stack);
+	}
+
+	private static Vec3 getCoreCenter(Level level, BlockPos pos, int slot) {
+		int index = Math.max(0, slot - 1);
+		int x = index % 2;
+		int z = index / 2;
+		Vec3 local = new Vec3((18.0 / 2.0 * x + 3.5) / 16.0, 10.5 / 16.0,
+				(18.0 / 2.0 * z + 3.5) / 16.0);
+
+		Direction facing = getFacing(level.getBlockState(pos));
+		Vector3f offset = new Vector3f((float) local.x - 0.5f,
+				(float) local.y - 0.5f, (float) local.z - 0.5f);
+		offset.rotate(facing.getRotation());
+
+		return Vec3.atLowerCornerOf(pos)
+			.add(0.5f + offset.x, 0.5f + offset.y, 0.5f + offset.z);
+	}
+
 	@SuppressWarnings("unchecked")
 	private static Property<Direction> getFacingProperty() {
 		if (!facingInitTried) {
 			facingInitTried = true;
 			try {
-				Class<?> blockClass = Class.forName(MODULAR_SPELL_CONSTRUCT_BLOCK);
+				Class<?> blockClass = Class.forName(
+						MODULAR_SPELL_CONSTRUCT_BLOCK);
 				Field facingField = blockClass.getField("FACING");
-				cachedFacingProperty = (Property<Direction>) facingField.get(null);
+				cachedFacingProperty = (Property<Direction>) facingField
+						.get(null);
 			} catch (ReflectiveOperationException e) {
 				cachedFacingProperty = null;
 			}
 		}
 		return cachedFacingProperty;
 	}
-
-	public record KineticsCoreCogwheelNode(BlockPos pos, Direction.Axis rotationAxis, int slot,
-			Vec3 center) {}
 }
