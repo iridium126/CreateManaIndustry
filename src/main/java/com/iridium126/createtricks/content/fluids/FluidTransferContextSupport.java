@@ -15,11 +15,11 @@ public final class FluidTransferContextSupport {
 		CreateTricksFluidTransferContext.clear();
 	}
 
-	public static int getSpellInkRequiredAmount(ItemStack stack, FluidStack availableFluid) {
-		return SpellInkFluidHandler.getRequiredAmountForFilling(stack, availableFluid);
+	public static int getEsotericManaRequiredAmount(ItemStack stack, FluidStack availableFluid) {
+		return EsotericManaFluidHandler.getRequiredAmountForFilling(stack, availableFluid);
 	}
 
-	public static ItemStack fillSpellInk(ItemStack stack, FluidStack availableFluid) {
-		return SpellInkFluidHandler.fillItem(stack, availableFluid);
+	public static ItemStack fillEsotericMana(ItemStack stack, FluidStack availableFluid) {
+		return EsotericManaFluidHandler.fillItem(stack, availableFluid);
 	}
 }

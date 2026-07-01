@@ -1,7 +1,7 @@
 package com.iridium126.createtricks;
 
+import com.iridium126.createtricks.content.fluids.EsotericManaFluidHandler;
 import com.iridium126.createtricks.content.fluids.TricksterKnotFluidHandler;
-import com.iridium126.createtricks.content.fluids.SpellInkFluidHandler;
 import com.iridium126.createtricks.content.items.TricksterKnotItemHandler;
 import com.iridium126.createtricks.trickster.TricksterReflection;
 
@@ -18,12 +18,13 @@ public final class CreateTricksCapabilities {
 	private CreateTricksCapabilities() {}
 
 	public static void register(RegisterCapabilitiesEvent event) {
-		Item spellInk = BuiltInRegistries.ITEM.get(SpellInkFluidHandler.SPELL_INK_ID);
-		if (spellInk == Items.AIR)
-			spellInk = null;
+		Item esotericMana = BuiltInRegistries.ITEM.get(EsotericManaFluidHandler.ESOTERIC_MANA_ID);
+		if (esotericMana == Items.AIR)
+			esotericMana = null;
 
-		if (spellInk != null)
-			event.registerItem(Capabilities.FluidHandler.ITEM, (stack, ctx) -> new SpellInkFluidHandler(stack), spellInk);
+		if (esotericMana != null)
+			event.registerItem(Capabilities.FluidHandler.ITEM, (stack, ctx) -> new EsotericManaFluidHandler(stack),
+					esotericMana);
 
 		Item[] knotItems = BuiltInRegistries.ITEM.stream()
 				.filter(TricksterReflection::isKnotItem)

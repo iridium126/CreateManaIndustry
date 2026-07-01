@@ -35,6 +35,9 @@ public final class TricksterReflection {
 	static Class<?> defaultSpellExecutorClass;
 	static Class<?> knotItemClass;
 	static Class<?> infiniteManaPoolClass;
+	static Class<?> manaClass;
+	static Class<?> manaVariantClass;
+	static Class<?> minecraftWorldClass;
 	static Class<?> signatureClass;
 	static Class<?> trickClass;
 	static Class<?> vectorFragmentClass;
@@ -52,12 +55,19 @@ public final class TricksterReflection {
 	static Field blockSpellSourceBlockEntityField;
 
 	static Object manaComponentType;
+	static Object emptyMana;
+	static Object traditionalMana;
+	static Object traditionalManaVariant;
 	static Method manaComponentPoolMethod;
 	static Method manaComponentWithMethod;
 	static Method manaPoolMakeCloneMethod;
 	static Method manaPoolGetManaMethod;
 	static Method manaPoolGetMaxManaMethod;
+	static Method manaPoolGetVariantMethod;
+	static Method manaVariantOfMethod;
+	static Method manaVariantGetManaMethod;
 	static Method mutableManaPoolRefillMethod;
+	static Method mutableManaPoolUseMethod;
 	static Method itemStackGetComponentMethod;
 	static Method itemStackSetComponentMethod;
 	static Method patternOfMethod;
@@ -70,6 +80,7 @@ public final class TricksterReflection {
 	static Method getCrackedVersionMethod;
 	static Method transferPropertiesToCrackedMethod;
 	static Method getCreationCostMethod;
+	static long manaScale = 1L;
 
 	private record ManaAccess(Object component, Object pool) {
 	}
@@ -136,22 +147,40 @@ public final class TricksterReflection {
 			Class<?> manaComponentClass = Class.forName("dev.enjarai.trickster.item.component.ManaComponent");
 			Class<?> manaPoolClass = Class.forName("dev.enjarai.trickster.spell.mana.ManaPool");
 			Class<?> mutableManaPoolClass = Class.forName("dev.enjarai.trickster.spell.mana.MutableManaPool");
+			Class<?> manaeClass = Class.forName("dev.enjarai.trickster.spell.mana.type.Manae");
 			infiniteManaPoolClass = Class.forName("dev.enjarai.trickster.spell.mana.InfiniteManaPool");
+			manaClass = Class.forName("dev.enjarai.trickster.spell.mana.type.Mana");
+			manaVariantClass = Class.forName("dev.enjarai.trickster.spell.mana.storage.ManaVariant");
+			minecraftWorldClass = findClass(
+					"net.minecraft.world.level.Level",
+					"net.minecraft.world.World",
+					"net.minecraft.class_1937");
 
 			manaComponentType = modComponentsClass.getField("MANA").get(null);
+			emptyMana = manaeClass.getField("EMPTY").get(null);
+			traditionalMana = manaeClass.getField("TRADITIONAL").get(null);
 			manaComponentPoolMethod = manaComponentClass.getMethod("pool");
 			manaComponentWithMethod = manaComponentClass.getMethod("with", manaPoolClass);
-			manaPoolMakeCloneMethod = manaPoolClass.getMethod("makeClone", Level.class);
-			manaPoolGetManaMethod = manaPoolClass.getMethod("get", Level.class);
-			manaPoolGetMaxManaMethod = manaPoolClass.getMethod("getMax", Level.class);
-			mutableManaPoolRefillMethod = mutableManaPoolClass.getMethod("refill", float.class, Level.class);
+			manaPoolMakeCloneMethod = manaPoolClass.getMethod("makeClone", minecraftWorldClass);
+			manaPoolGetManaMethod = manaPoolClass.getMethod("get", minecraftWorldClass);
+			manaPoolGetMaxManaMethod = manaPoolClass.getMethod("getMax", minecraftWorldClass);
+			manaPoolGetVariantMethod = manaPoolClass.getMethod("getVariant", minecraftWorldClass);
+			manaVariantOfMethod = manaVariantClass.getMethod("of", manaClass);
+			manaVariantGetManaMethod = manaVariantClass.getMethod("getMana");
+			mutableManaPoolRefillMethod = mutableManaPoolClass.getMethod("refill", manaVariantClass, long.class,
+					minecraftWorldClass);
+			mutableManaPoolUseMethod = mutableManaPoolClass.getMethod("use", manaVariantClass, long.class,
+					minecraftWorldClass);
+			manaScale = manaPoolClass.getField("MANA_SCALE").getLong(null);
+			traditionalManaVariant = manaVariantOfMethod.invoke(null, traditionalMana);
 
 			itemStackGetComponentMethod = ItemStack.class.getMethod("get", DataComponentType.class);
 			itemStackSetComponentMethod = ItemStack.class.getMethod("set", DataComponentType.class, Object.class);
 
 
 			getCrackedVersionMethod = knotItemClass.getMethod("getCrackedVersion");
-			transferPropertiesToCrackedMethod = knotItemClass.getMethod("transferPropertiesToCracked", Level.class, ItemStack.class, ItemStack.class);
+			transferPropertiesToCrackedMethod = knotItemClass.getMethod("transferPropertiesToCracked", minecraftWorldClass,
+					ItemStack.class, ItemStack.class);
 			getCreationCostMethod = knotItemClass.getMethod("getCreationCost");
 			chargeAvailable = true;
 		} catch (Throwable t) {
@@ -184,7 +213,11 @@ public final class TricksterReflection {
 			numberFragmentNumberMethod = numberFragmentClass.getMethod("number");
 			vectorFragmentToBlockPosMethod = vectorFragmentClass.getMethod("toBlockPos");
 			spellContextSourceMethod = spellContextClass.getMethod("source");
-			spellContextUseManaMethod = spellContextClass.getMethod("useMana", trickClass, float.class);
+			try {
+				spellContextUseManaMethod = spellContextClass.getMethod("useScaledMana", trickClass, double.class);
+			} catch (NoSuchMethodException ignored) {
+				spellContextUseManaMethod = spellContextClass.getMethod("useMana", trickClass, float.class);
+			}
 			spellSourceGetWorldMethod = spellSourceClass.getMethod("getWorld");
 
 			registerAvailable = true;
@@ -215,6 +248,16 @@ public final class TricksterReflection {
 		throw new ClassNotFoundException("Minecraft text literal factory");
 	}
 
+	private static Class<?> findClass(String... classNames) throws ClassNotFoundException {
+		for (String className : classNames) {
+			try {
+				return Class.forName(className);
+			} catch (ClassNotFoundException ignored) {
+			}
+		}
+		throw new ClassNotFoundException(classNames.length == 0 ? "<empty>" : classNames[0]);
+	}
+
 	public static Object makeText(String value) {
 		if (!ensureRegisterInit())
 			return value;
@@ -225,16 +268,29 @@ public final class TricksterReflection {
 		}
 	}
 
+	public static void useTraditionalMana(Object spellContext, Object trick, double amount)
+			throws ReflectiveOperationException {
+		if (!ensureRegisterInit())
+			return;
+
+		Class<?> amountType = spellContextUseManaMethod.getParameterTypes()[1];
+		if (amountType == float.class) {
+			spellContextUseManaMethod.invoke(spellContext, trick, (float) amount);
+		} else {
+			spellContextUseManaMethod.invoke(spellContext, trick, amount);
+		}
+	}
+
 	public static float getMana(ItemStack stack) {
 		return getMana(stack, null);
 	}
 
 	public static float getMana(ItemStack stack, @Nullable Level level) {
-		return readManaValue(stack, level, manaPoolGetManaMethod);
+		return readManaValue(stack, level, false);
 	}
 
 	public static float getMaxMana(ItemStack stack, @Nullable Level level) {
-		return readManaValue(stack, level, manaPoolGetMaxManaMethod);
+		return readManaValue(stack, level, true);
 	}
 
 	public static boolean isKnotItem(Item item) {
@@ -311,7 +367,23 @@ public final class TricksterReflection {
 				return 0;
 			if (isInfiniteManaPool(access.pool()))
 				return manaAmount;
-			return Math.max(0, -mutateMana(stack, level, access, -manaAmount));
+			Object variant = getPoolVariant(access.pool(), level);
+			if (!isLiquidManaVariant(variant))
+				return 0;
+
+			long requested = toTricksterMana(manaAmount);
+			if (requested <= 0)
+				return 0;
+
+			Object mutablePool = manaPoolMakeCloneMethod.invoke(access.pool(), level);
+			long leftover = (long) mutableManaPoolUseMethod.invoke(mutablePool, traditionalManaVariant, requested, level);
+			long consumed = requested - leftover;
+			if (consumed <= 0)
+				return 0;
+
+			Object updatedComponent = manaComponentWithMethod.invoke(access.component(), mutablePool);
+			itemStackSetComponentMethod.invoke(stack, manaComponentType, updatedComponent);
+			return fromTricksterMana(consumed);
 		} catch (ReflectiveOperationException e) {
 			return 0;
 		}
@@ -325,13 +397,29 @@ public final class TricksterReflection {
 			ManaAccess access = getManaAccess(stack);
 			if (access == null || isInfiniteManaPool(access.pool()))
 				return 0;
-			return Math.max(0, mutateMana(stack, level, access, manaAmount));
+			Object variant = getPoolVariant(access.pool(), level);
+			if (!canAcceptLiquidMana(variant))
+				return 0;
+
+			long requested = toTricksterMana(manaAmount);
+			if (requested <= 0)
+				return 0;
+
+			Object mutablePool = manaPoolMakeCloneMethod.invoke(access.pool(), level);
+			long leftover = (long) mutableManaPoolRefillMethod.invoke(mutablePool, traditionalManaVariant, requested, level);
+			long inserted = requested - leftover;
+			if (inserted <= 0)
+				return 0;
+
+			Object updatedComponent = manaComponentWithMethod.invoke(access.component(), mutablePool);
+			itemStackSetComponentMethod.invoke(stack, manaComponentType, updatedComponent);
+			return fromTricksterMana(inserted);
 		} catch (ReflectiveOperationException e) {
 			return 0;
 		}
 	}
 
-	private static float readManaValue(ItemStack stack, @Nullable Level level, Method getterMethod) {
+	private static float readManaValue(ItemStack stack, @Nullable Level level, boolean includeBlankCapacity) {
 		if (!ensureChargeInit() || stack == null || stack.isEmpty() || level == null)
 			return 0;
 
@@ -339,7 +427,17 @@ public final class TricksterReflection {
 			ManaAccess access = getManaAccess(stack);
 			if (access == null)
 				return 0;
-			return (float) getterMethod.invoke(access.pool(), level);
+
+			Object variant = getPoolVariant(access.pool(), level);
+			if (includeBlankCapacity) {
+				if (!canAcceptLiquidMana(variant))
+					return 0;
+				return fromTricksterMana((long) manaPoolGetMaxManaMethod.invoke(access.pool(), level));
+			}
+
+			if (!isLiquidManaVariant(variant))
+				return 0;
+			return fromTricksterMana((long) manaPoolGetManaMethod.invoke(access.pool(), level));
 		} catch (ReflectiveOperationException e) {
 			return 0;
 		}
@@ -362,19 +460,28 @@ public final class TricksterReflection {
 		return new ManaAccess(component, pool);
 	}
 
-	private static float mutateMana(ItemStack stack, Level level, ManaAccess access, float manaDelta)
-			throws ReflectiveOperationException {
-		float before = (float) manaPoolGetManaMethod.invoke(access.pool(), level);
-		Object mutablePool = manaPoolMakeCloneMethod.invoke(access.pool(), level);
-		mutableManaPoolRefillMethod.invoke(mutablePool, manaDelta, level);
-		float after = (float) manaPoolGetManaMethod.invoke(mutablePool, level);
-		float changed = after - before;
-		if (changed == 0)
-			return 0;
+	private static Object getPoolVariant(Object pool, Level level) throws ReflectiveOperationException {
+		return manaPoolGetVariantMethod.invoke(pool, level);
+	}
 
-		Object updatedComponent = manaComponentWithMethod.invoke(access.component(), mutablePool);
-		itemStackSetComponentMethod.invoke(stack, manaComponentType, updatedComponent);
-		return changed;
+	private static boolean canAcceptLiquidMana(Object variant) throws ReflectiveOperationException {
+		return variant != null && (isBlankManaVariant(variant) || isLiquidManaVariant(variant));
+	}
+
+	private static boolean isBlankManaVariant(Object variant) throws ReflectiveOperationException {
+		return variant != null && manaVariantGetManaMethod.invoke(variant) == emptyMana;
+	}
+
+	private static boolean isLiquidManaVariant(Object variant) throws ReflectiveOperationException {
+		return variant != null && manaVariantGetManaMethod.invoke(variant) == traditionalMana;
+	}
+
+	private static long toTricksterMana(float manaAmount) {
+		return manaAmount <= 0 ? 0 : Math.max(0L, Math.round(manaAmount * manaScale));
+	}
+
+	private static float fromTricksterMana(long manaAmount) {
+		return manaAmount <= 0 ? 0 : manaAmount / (float) manaScale;
 	}
 
 	public static void syncExecutors(BlockEntity be) {
@@ -484,9 +591,17 @@ public final class TricksterReflection {
 			return false;
 
 		Object pool = manaComponentPoolMethod.invoke(component);
+		Object variant = getPoolVariant(pool, level);
+		if (!canAcceptLiquidMana(variant))
+			return false;
+
+		long requested = toTricksterMana(manaAmount);
+		if (requested <= 0)
+			return false;
+
 		Object mutablePool = manaPoolMakeCloneMethod.invoke(pool, level);
-		float leftover = (float) mutableManaPoolRefillMethod.invoke(mutablePool, manaAmount, level);
-		if (leftover >= manaAmount)
+		long leftover = (long) mutableManaPoolRefillMethod.invoke(mutablePool, traditionalManaVariant, requested, level);
+		if (leftover >= requested)
 			return false;
 
 		Object updatedComponent = manaComponentWithMethod.invoke(component, mutablePool);

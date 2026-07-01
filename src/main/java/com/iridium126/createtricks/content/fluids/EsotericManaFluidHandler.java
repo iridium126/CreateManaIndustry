@@ -12,10 +12,11 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
 
-public class SpellInkFluidHandler implements IFluidHandlerItem {
-	private static final float DEFAULT_SPELL_INK_MANA = 512;
+public class EsotericManaFluidHandler implements IFluidHandlerItem {
+	private static final float DEFAULT_ESOTERIC_MANA = 512;
 
-	public static final ResourceLocation SPELL_INK_ID = ResourceLocation.fromNamespaceAndPath("trickster", "spell_ink");
+	public static final ResourceLocation ESOTERIC_MANA_ID = ResourceLocation.fromNamespaceAndPath("trickster",
+			"esoteric_mana");
 
 	public static boolean canFillItem(ItemStack stack, FluidStack availableFluid) {
 		return stack.getItem() == Items.GLASS_BOTTLE
@@ -25,13 +26,13 @@ public class SpellInkFluidHandler implements IFluidHandlerItem {
 
 	public static int getRequiredAmountForFilling(ItemStack stack, FluidStack availableFluid) {
 		return canFillItem(stack, availableFluid)
-				? CreateTricksFluidConversions.manaToFluidAmount(DEFAULT_SPELL_INK_MANA)
+				? CreateTricksFluidConversions.manaToFluidAmount(DEFAULT_ESOTERIC_MANA)
 				: -1;
 	}
 
 	public static ItemStack createFilledBottle() {
-		Item spellInk = BuiltInRegistries.ITEM.get(SPELL_INK_ID);
-		return spellInk == Items.AIR ? ItemStack.EMPTY : new ItemStack(spellInk);
+		Item esotericMana = BuiltInRegistries.ITEM.get(ESOTERIC_MANA_ID);
+		return esotericMana == Items.AIR ? ItemStack.EMPTY : new ItemStack(esotericMana);
 	}
 
 	public static ItemStack fillItem(ItemStack stack, FluidStack availableFluid) {
@@ -50,7 +51,7 @@ public class SpellInkFluidHandler implements IFluidHandlerItem {
 
 	private ItemStack container;
 
-	public SpellInkFluidHandler(ItemStack container) {
+	public EsotericManaFluidHandler(ItemStack container) {
 		this.container = container;
 	}
 
@@ -111,18 +112,18 @@ public class SpellInkFluidHandler implements IFluidHandlerItem {
 	}
 
 	private FluidStack getContainedFluid() {
-		if (!isSpellInk(container))
+		if (!isEsotericMana(container))
 			return FluidStack.EMPTY;
 
 		float mana = TricksterReflection.getMana(container);
 		if (mana <= 0)
-			mana = DEFAULT_SPELL_INK_MANA;
+			mana = DEFAULT_ESOTERIC_MANA;
 
 		int amount = CreateTricksFluidConversions.manaToFluidAmount(mana);
 		return new FluidStack(CreateTricksFluids.LIQUID_MANA.get(), amount);
 	}
 
-	private static boolean isSpellInk(ItemStack stack) {
-		return BuiltInRegistries.ITEM.getKey(stack.getItem()).equals(SPELL_INK_ID);
+	private static boolean isEsotericMana(ItemStack stack) {
+		return BuiltInRegistries.ITEM.getKey(stack.getItem()).equals(ESOTERIC_MANA_ID);
 	}
 }

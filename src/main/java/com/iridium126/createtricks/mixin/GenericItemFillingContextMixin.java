@@ -30,7 +30,7 @@ public class GenericItemFillingContextMixin {
 	private static void createtricks$setLevelForRequiredAmount(Level world, ItemStack stack, FluidStack availableFluid,
 			CallbackInfoReturnable<Integer> cir) {
 		FluidTransferContextSupport.captureLevel(world);
-		int requiredAmount = FluidTransferContextSupport.getSpellInkRequiredAmount(stack, availableFluid);
+		int requiredAmount = FluidTransferContextSupport.getEsotericManaRequiredAmount(stack, availableFluid);
 		if (requiredAmount >= 0)
 			cir.setReturnValue(requiredAmount);
 	}
@@ -45,10 +45,10 @@ public class GenericItemFillingContextMixin {
 	private static void createtricks$setLevelForFilling(Level world, int requiredAmount, ItemStack stack,
 			FluidStack availableFluid, CallbackInfoReturnable<ItemStack> cir) {
 		FluidTransferContextSupport.captureLevel(world);
-		if (requiredAmount != FluidTransferContextSupport.getSpellInkRequiredAmount(stack, availableFluid))
+		if (requiredAmount != FluidTransferContextSupport.getEsotericManaRequiredAmount(stack, availableFluid))
 			return;
 
-		ItemStack filledItem = FluidTransferContextSupport.fillSpellInk(stack, availableFluid);
+		ItemStack filledItem = FluidTransferContextSupport.fillEsotericMana(stack, availableFluid);
 		if (!filledItem.isEmpty())
 			cir.setReturnValue(filledItem);
 	}
