@@ -91,7 +91,7 @@ public final class BnBKineticsCoreNodes {
 		for (BlockPos cp : BlockPos.betweenClosed(
 				pos.offset(-r, -r, -r), pos.offset(r, r, r))) {
 			BlockEntity be = level.getBlockEntity(cp);
-			var chain = BnBReflection.getChainIfController(be);
+			var chain = BnBCompact.getChainIfController(be);
 			if (chain == null)
 				continue;
 			for (var node : chain.getChainPathCogwheelNodes()) {
@@ -102,7 +102,6 @@ public final class BnBKineticsCoreNodes {
 		return false;
 	}
 
-	@SuppressWarnings("unchecked")
 	public static Direction getFacing(BlockState state) {
 		try {
 			return state.getValue(getFacingProperty());
