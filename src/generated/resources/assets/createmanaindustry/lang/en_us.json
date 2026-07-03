@@ -1,0 +1,12 @@
+{
+  "block.createmanaindustry.liquid_mana": "Liquid Mana",
+  "block.createmanaindustry.stress_mana_converter": "Stress Mana Converter",
+  "item.createmanaindustry.incomplete_amethyst_knot": "Incomplete Amethyst Knot",
+  "item.createmanaindustry.incomplete_astral_knot": "Incomplete Astral Knot",
+  "item.createmanaindustry.incomplete_diamond_knot": "Incomplete Diamond Knot",
+  "item.createmanaindustry.incomplete_echo_knot": "Incomplete Echo Knot",
+  "item.createmanaindustry.incomplete_emerald_knot": "Incomplete Emerald Knot",
+  "item.createmanaindustry.incomplete_quartz_knot": "Incomplete Quartz Knot",
+  "item.createmanaindustry.kinetics_spell_core": "Kinetics Spell Core",
+  "item.createmanaindustry.liquid_mana_bucket": "Liquid Mana Bucket"
+}

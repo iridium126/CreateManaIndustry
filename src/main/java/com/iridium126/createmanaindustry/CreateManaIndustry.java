@@ -1,0 +1,61 @@
+package com.iridium126.createmanaindustry;
+
+import org.slf4j.Logger;
+
+import com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter.StressManaConverterBlock;
+import com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter.StressManaConverterBlockEntity;
+import com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter.StressRangeTooltipModifier;
+import com.iridium126.createmanaindustry.trickster.KineticStressTrickRegister;
+import com.mojang.logging.LogUtils;
+import com.simibubi.create.foundation.data.CreateRegistrate;
+import com.simibubi.create.foundation.item.ItemDescription;
+import com.simibubi.create.foundation.item.KineticStats;
+import com.simibubi.create.foundation.item.TooltipModifier;
+
+import net.createmod.catnip.lang.FontHelper;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.ModContainer;
+
+@Mod(CreateManaIndustry.MODID)
+public class CreateManaIndustry {
+	public static final String MODID = "createmanaindustry";
+	public static final Logger LOGGER = LogUtils.getLogger();
+
+	public static final CreateRegistrate REGISTRATE = CreateRegistrate.create(MODID);
+
+	static {
+		REGISTRATE.defaultCreativeTab(CMICreativeModeTabs.MAIN_TAB.getKey());
+		REGISTRATE.setTooltipModifierFactory(CreateManaIndustry::createTooltipModifier);
+	}
+
+	private static TooltipModifier createTooltipModifier(Item item) {
+		TooltipModifier description = new ItemDescription.Modifier(item, FontHelper.Palette.STANDARD_CREATE);
+		if (item instanceof BlockItem blockItem && blockItem.getBlock() instanceof StressManaConverterBlock) {
+			return description.andThen(new StressRangeTooltipModifier(
+					StressManaConverterBlockEntity.MIN_STRESS_PER_RPM,
+					StressManaConverterBlockEntity.MAX_STRESS_PER_RPM));
+		}
+		return description.andThen(TooltipModifier.mapNull(KineticStats.create(item)));
+	}
+
+	public CreateManaIndustry(IEventBus modEventBus, ModContainer modContainer) {
+		REGISTRATE.registerEventListeners(modEventBus);
+		modEventBus.addListener(CMICapabilities::register);
+		CMICreativeModeTabs.register(modEventBus);
+		CMIBlocks.register();
+		CMIFluids.register();
+		CMIBlockEntityTypes.register();
+		CMIItems.register();
+		KineticStressTrickRegister.register();
+		CMIPartialModels.register();
+		modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON, Config.SPEC);
+	}
+
+	public static ResourceLocation modLoc(String path) {
+		return ResourceLocation.fromNamespaceAndPath(MODID, path);
+	}
+}

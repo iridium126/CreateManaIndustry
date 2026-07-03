@@ -1,0 +1,30 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "C": {
+      "item": "create:cogwheel"
+    },
+    "G": {
+      "item": "minecraft:gold_ingot"
+    },
+    "L": {
+      "item": "minecraft:leather"
+    },
+    "M": {
+      "item": "createmanaindustry:liquid_mana_bucket"
+    },
+    "T": {
+      "item": "minecraft:tuff"
+    }
+  },
+  "pattern": [
+    "LGL",
+    "TCT",
+    "TMT"
+  ],
+  "result": {
+    "count": 1,
+    "id": "createmanaindustry:kinetics_spell_core"
+  }
+}

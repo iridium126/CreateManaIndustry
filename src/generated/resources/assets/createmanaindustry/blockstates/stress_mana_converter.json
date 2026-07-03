@@ -1,0 +1,29 @@
+{
+  "variants": {
+    "facing=down": {
+      "model": "createmanaindustry:block/stress_mana_converter/block",
+      "x": 270,
+      "y": 90
+    },
+    "facing=east": {
+      "model": "createmanaindustry:block/stress_mana_converter/block",
+      "y": 270
+    },
+    "facing=north": {
+      "model": "createmanaindustry:block/stress_mana_converter/block",
+      "y": 180
+    },
+    "facing=south": {
+      "model": "createmanaindustry:block/stress_mana_converter/block"
+    },
+    "facing=up": {
+      "model": "createmanaindustry:block/stress_mana_converter/block",
+      "x": 90,
+      "y": 90
+    },
+    "facing=west": {
+      "model": "createmanaindustry:block/stress_mana_converter/block",
+      "y": 90
+    }
+  }
+}
