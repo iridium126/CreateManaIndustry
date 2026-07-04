@@ -21,7 +21,7 @@ public class ModularSpellConstructDisplayTarget extends SpellConstructDisplayTar
 	public Component getLineOptionText(int line) {
 		int core = SpellConstructDisplayArguments.decodeModularExecutorSlot(line) + 1;
 		int argument = SpellConstructDisplayArguments.decodeModularArgumentIndex(line) + 1;
-		return Component.translatable("createtricks.display_target.modular_argument", core, argument);
+		return Component.translatable("createmanaindustry.display_target.modular_argument", core, argument);
 	}
 
 	@Override

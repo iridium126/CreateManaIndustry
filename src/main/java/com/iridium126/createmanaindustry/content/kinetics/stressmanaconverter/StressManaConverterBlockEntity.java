@@ -28,7 +28,7 @@ public class StressManaConverterBlockEntity extends KineticBlockEntity {
 	@Override
 	public void addBehaviours(List<BlockEntityBehaviour> behaviours) {
 		stressPerRpm = new ScrollValueBehaviour(
-				Component.translatable("createtricks.stress_mana_converter.stress_per_rpm"),
+				Component.translatable("createmanaindustry.stress_mana_converter.stress_per_rpm"),
 				this,
 				new StressManaConverterScrollSlot())
 				.between(MIN_STRESS_PER_RPM, MAX_STRESS_PER_RPM)

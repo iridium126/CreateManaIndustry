@@ -14,7 +14,7 @@ public final class CMICreativeModeTabs {
 
 	public static final DeferredHolder<CreativeModeTab, CreativeModeTab> MAIN_TAB = REGISTER.register("main",
 			() -> CreativeModeTab.builder()
-					.title(Component.translatable("itemGroup.createtricks"))
+					.title(Component.translatable("itemGroup.createmanaindustry"))
 					.withTabsBefore(CreativeModeTabs.SPAWN_EGGS)
 					.icon(() -> CMIBlocks.STRESS_MANA_CONVERTER.asStack())
 					.build());

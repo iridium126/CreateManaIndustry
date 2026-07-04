@@ -33,7 +33,7 @@ public class SpellConstructDisplayTarget extends DisplayTarget {
 
 	@Override
 	public Component getLineOptionText(int line) {
-		return Component.translatable("createtricks.display_target.argument", line + 1);
+		return Component.translatable("createmanaindustry.display_target.argument", line + 1);
 	}
 
 	@Override

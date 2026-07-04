@@ -125,7 +125,7 @@ public abstract class CogwheelChainPlacementInteractionMixin {
 		if (!BnBKineticsCoreNodes.hasAnyKineticsCore(level, pos)) {
 			if (mc.player != null)
 				mc.player.displayClientMessage(
-					Component.translatable("createtricks.bnb_chain.no_core"), true);
+					Component.translatable("createmanaindustry.bnb_chain.no_core"), true);
 			ci.cancel();
 			event.setCanceled(true);
 		}

@@ -45,11 +45,11 @@ public class StressRangeTooltipModifier implements TooltipModifier {
 
 		if (hasGoggles) {
 			builder.text(" ")
-					.add(Component.translatable("tooltip.createtricks.stress_range", minStressPerRpm, maxStressPerRpm))
-					.add(Component.literal(" ").append(Component.translatable("tooltip.createtricks.variable_impact")));
+					.add(Component.translatable("tooltip.createmanaindustry.stress_range", minStressPerRpm, maxStressPerRpm))
+					.add(Component.literal(" ").append(Component.translatable("tooltip.createmanaindustry.variable_impact")));
 		} else {
 			builder.text(" ")
-					.add(Component.translatable("tooltip.createtricks.variable"));
+					.add(Component.translatable("tooltip.createmanaindustry.variable"));
 		}
 
 		builder.addTo(tooltip);
