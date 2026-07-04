@@ -17,6 +17,8 @@ public final class CMIArmInteractionPoints {
 
 	@SubscribeEvent
 	public static void registerArmInteractionPointType(RegisterEvent event) {
+		if (!CreateManaIndustry.TRICKSTER_ACTIVE)
+			return;
 		if (!event.getRegistryKey().equals(CreateRegistries.ARM_INTERACTION_POINT_TYPE))
 			return;
 

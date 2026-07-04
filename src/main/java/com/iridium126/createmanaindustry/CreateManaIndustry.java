@@ -17,13 +17,19 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.ModList;
+import net.neoforged.fml.common.Mod;
 
 @Mod(CreateManaIndustry.MODID)
 public class CreateManaIndustry {
 	public static final String MODID = "createmanaindustry";
 	public static final Logger LOGGER = LogUtils.getLogger();
+
+	// ---- optional dependency flags (set in constructor) -------------------
+
+	public static boolean TRICKSTER_ACTIVE = false;
+	public static boolean BNB_ACTIVE = false;
 
 	public static final CreateRegistrate REGISTRATE = CreateRegistrate.create(MODID);
 
@@ -43,6 +49,9 @@ public class CreateManaIndustry {
 	}
 
 	public CreateManaIndustry(IEventBus modEventBus, ModContainer modContainer) {
+		TRICKSTER_ACTIVE = ModList.get().isLoaded("trickster");
+		BNB_ACTIVE = ModList.get().isLoaded("bits_n_bobs");
+
 		REGISTRATE.registerEventListeners(modEventBus);
 		modEventBus.addListener(CMICapabilities::register);
 		CMICreativeModeTabs.register(modEventBus);
@@ -50,7 +59,8 @@ public class CreateManaIndustry {
 		CMIFluids.register();
 		CMIBlockEntityTypes.register();
 		CMIItems.register();
-		KineticStressTrickRegister.register();
+		if (TRICKSTER_ACTIVE)
+			KineticStressTrickRegister.register();
 		CMIPartialModels.register();
 		modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON, Config.SPEC);
 	}

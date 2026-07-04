@@ -23,6 +23,8 @@ public final class CMIDisplayTargets {
 
 	@SubscribeEvent
 	public static void registerDisplayTarget(RegisterEvent event) {
+		if (!CreateManaIndustry.TRICKSTER_ACTIVE)
+			return;
 		if (!event.getRegistryKey().equals(CreateRegistries.DISPLAY_TARGET))
 			return;
 
@@ -32,6 +34,8 @@ public final class CMIDisplayTargets {
 
 	@SubscribeEvent
 	public static void registerBlockEntityBindings(FMLCommonSetupEvent event) {
+		if (!CreateManaIndustry.TRICKSTER_ACTIVE)
+			return;
 		event.enqueueWork(() -> {
 			registerBlockEntity("spell_construct", SPELL_CONSTRUCT);
 			registerBlockEntity("modular_spell_construct", MODULAR_SPELL_CONSTRUCT);

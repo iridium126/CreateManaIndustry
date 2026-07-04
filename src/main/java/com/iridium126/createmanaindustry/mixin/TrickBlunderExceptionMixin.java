@@ -7,18 +7,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.iridium126.createmanaindustry.trickster.InvalidKineticTargetBlunder;
 
-import dev.enjarai.trickster.spell.blunder.TrickBlunderException;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 
 /**
  * Injects custom blunder information into TrickBlunderException.createMessage().
- *
- * We target the parent class TrickBlunderException because createMessage() is
- * defined there. We then use an instanceof check to only apply changes to
- * InvalidKineticTargetBlunder instances.
+ * <p>
+ * Uses a string target rather than {@code TrickBlunderException.class} so the
+ * mixin class itself can be loaded when Trickster is absent — the mixin plugin
+ * disables it by name in that case.
  */
-@Mixin(TrickBlunderException.class)
+@Mixin(targets = "dev.enjarai.trickster.spell.blunder.TrickBlunderException", remap = false)
 public abstract class TrickBlunderExceptionMixin {
 	@Inject(method = "createMessage", at = @At("RETURN"), cancellable = true, remap = false)
 	private void createtricks$overrideCreateMessage(CallbackInfoReturnable<MutableComponent> cir) {

@@ -19,6 +19,9 @@ public final class CMICapabilities {
 	private CMICapabilities() {}
 
 	public static void register(RegisterCapabilitiesEvent event) {
+		if (!CreateManaIndustry.TRICKSTER_ACTIVE)
+			return;
+
 		Item esotericMana = BuiltInRegistries.ITEM.get(EsotericManaFluidHandler.ESOTERIC_MANA_ID);
 		if (esotericMana == Items.AIR)
 			esotericMana = null;
