@@ -4,7 +4,7 @@ import java.util.List;
 
 import com.iridium126.createmanaindustry.Config;
 import com.iridium126.createmanaindustry.trickster.TricksterManaAccess;
-import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
+import com.simibubi.create.content.kinetics.simpleRelays.SimpleKineticBlockEntity;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollValueBehaviour;
 
@@ -14,7 +14,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 
-public class StressManaConverterBlockEntity extends KineticBlockEntity {
+public class StressManaConverterBlockEntity extends SimpleKineticBlockEntity {
 	public static final int MIN_STRESS_PER_RPM = 4;
 	public static final int MAX_STRESS_PER_RPM = 256;
 	public static final int DEFAULT_STRESS_PER_RPM = 4;
