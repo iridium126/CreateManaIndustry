@@ -1,6 +1,6 @@
-package com.iridium126.createmanaindustry;
+package com.iridium126.createmanaindustry.content.arm;
 
-import com.iridium126.createmanaindustry.content.arm.TricksterKnotArmInteractionPointType;
+import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.simibubi.create.api.registry.CreateRegistries;
 
 import net.minecraft.resources.ResourceLocation;

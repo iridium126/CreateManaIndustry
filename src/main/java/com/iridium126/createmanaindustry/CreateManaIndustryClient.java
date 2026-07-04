@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry;
 
-import com.iridium126.createmanaindustry.ponder.CreateTricksPonderPlugin;
+import com.iridium126.createmanaindustry.ponder.CMIPonderPlugin;
 
 import net.createmod.ponder.foundation.PonderIndex;
 //import net.minecraft.client.renderer.ItemBlockRenderTypes;
@@ -31,7 +31,7 @@ public class CreateManaIndustryClient {
 		event.enqueueWork(() -> {
 			//ItemBlockRenderTypes.setRenderLayer(CreateTricksFluids.LIQUID_MANA.get(), RenderType.translucent());
 			//ItemBlockRenderTypes.setRenderLayer(CreateTricksFluids.LIQUID_MANA.getSource(), RenderType.translucent());
-			PonderIndex.addPlugin(new CreateTricksPonderPlugin());
+			PonderIndex.addPlugin(new CMIPonderPlugin());
 		});
 	}
 }

@@ -11,7 +11,7 @@ import net.minecraft.world.level.ItemLike;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 
-public class CreateTricksPonderPlugin implements PonderPlugin {
+public class CMIPonderPlugin implements PonderPlugin {
 	private static final ResourceLocation SPELL_CONSTRUCT_BLOCK =
 			ResourceLocation.fromNamespaceAndPath("trickster", "spell_construct");
 	private static final ResourceLocation MODULAR_SPELL_CONSTRUCT_BLOCK =

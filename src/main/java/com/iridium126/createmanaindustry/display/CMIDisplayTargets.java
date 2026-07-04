@@ -1,7 +1,6 @@
-package com.iridium126.createmanaindustry;
+package com.iridium126.createmanaindustry.display;
 
-import com.iridium126.createmanaindustry.display.ModularSpellConstructDisplayTarget;
-import com.iridium126.createmanaindustry.display.SpellConstructDisplayTarget;
+import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.simibubi.create.api.behaviour.display.DisplayTarget;
 import com.simibubi.create.api.registry.CreateRegistries;
 

@@ -4,7 +4,7 @@
   "block.createmanaindustry.stress_mana_converter": "Stress Mana Converter",
   "block.createmanaindustry.stress_mana_converter.tooltip.summary": "Consumes _kinetic stress_ to _charge Trickster Knots_. The scroll box lets you tune its _stress cost per RPM_.",
   "item.createmanaindustry.stress_mana_converter": "Stress Mana Converter",
-  "itemGroup.createmanaindustry": "Create: Tricks",
+  "itemGroup.createmanaindustry": "Create: Mana Industry",
   "block.createmanaindustry.liquid_mana": "Liquid Mana",
   "item.createmanaindustry.liquid_mana_bucket": "Liquid Mana Bucket",
   "item.createmanaindustry.kinetics_spell_core": "Kinetics Spell Core",
@@ -19,10 +19,5 @@
   "tooltip.createmanaindustry.variable": "Variable",
   "tooltip.createmanaindustry.variable_impact": "Variable Impact",
   "trickster.trick.createmanaindustry.temporary_kinetic_stress": "Kinetic Stress Ploy",
-  "createmanaindustry.bnb_chain.started": "Kinetics core selected - right-click a BnB cogwheel chain node",
-  "createmanaindustry.bnb_chain.placed": "Kinetics core linked to BnB cogwheel chain",
-  "createmanaindustry.bnb_chain.too_far": "Target is too far away",
-  "createmanaindustry.bnb_chain.invalid_pair": "Kinetics cores can only link to BnB cogwheel chain nodes",
-  "createmanaindustry.bnb_chain.already_linked": "This Modular Spell Construct already has one link per kinetics core",
   "createmanaindustry.bnb_chain.no_core": "This Modular Spell Construct has no kinetics core to link"
 }
