@@ -3,8 +3,8 @@ package com.iridium126.createmanaindustry;
 import static com.iridium126.createmanaindustry.CreateManaIndustry.REGISTRATE;
 
 import com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter.StressManaConverterBlock;
-import com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter.StressManaConverterGenerator;
 import com.simibubi.create.AllBlocks;
+import com.simibubi.create.foundation.data.BlockStateGen;
 import com.simibubi.create.foundation.data.ModelGen;
 import com.simibubi.create.foundation.data.TagGen;
 import com.tterrag.registrate.providers.RegistrateRecipeProvider;
@@ -21,7 +21,7 @@ public final class CMIBlocks {
 			.block("stress_mana_converter", StressManaConverterBlock::new)
 			.initialProperties(() -> Blocks.IRON_BLOCK)
 			.properties(p -> p.mapColor(MapColor.TERRACOTTA_YELLOW))
-			.blockstate(StressManaConverterGenerator.directionalBlockState())
+			.blockstate(BlockStateGen.directionalBlockProvider(true))
 			.transform(TagGen.pickaxeOnly())
 			.item()
 			.transform(ModelGen.customItemModel())

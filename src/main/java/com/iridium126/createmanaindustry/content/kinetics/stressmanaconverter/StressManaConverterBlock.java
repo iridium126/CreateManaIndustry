@@ -23,9 +23,8 @@ public class StressManaConverterBlock extends DirectionalKineticBlock implements
 
 	private static final VoxelShaper SHAPE = VoxelShaper.forDirectional(
 			Shapes.or(
-					Block.box(0, 0, 0, 16, 6, 16),
-					Block.box(2, 6, 2, 14, 15, 14),
-					Block.box(3, 15, 3, 13, 16, 13)),
+					Block.box(0, 0, 0, 16, 14, 16),
+					Block.box(1, 14, 1, 15, 16, 15)),
 			Direction.UP);
 
 	public StressManaConverterBlock(Properties properties) {
@@ -64,5 +63,10 @@ public class StressManaConverterBlock extends DirectionalKineticBlock implements
 	@Override
 	protected boolean isPathfindable(BlockState state, PathComputationType pathComputationType) {
 		return false;
+	}
+
+	@Override
+	public boolean isLargeCog() {
+		return true;
 	}
 }
