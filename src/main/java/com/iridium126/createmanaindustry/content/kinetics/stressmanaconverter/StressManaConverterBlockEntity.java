@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter;
 import java.util.List;
 
 import com.iridium126.createmanaindustry.Config;
-import com.iridium126.createmanaindustry.trickster.TricksterReflection;
+import com.iridium126.createmanaindustry.trickster.TricksterManaAccess;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollValueBehaviour;
@@ -70,7 +70,7 @@ public class StressManaConverterBlockEntity extends KineticBlockEntity {
 			return;
 
 		BlockPos outputPos = StressManaConverterBlock.getManaOutputPos(getBlockState(), worldPosition);
-		TricksterReflection.chargeKnotsAt((ServerLevel) level, outputPos, mana);
+		TricksterManaAccess.chargeKnotsAt((ServerLevel) level, outputPos, mana);
 	}
 
 	public int getStressPerRpm() {

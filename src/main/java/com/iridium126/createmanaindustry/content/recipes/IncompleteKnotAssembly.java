@@ -5,7 +5,7 @@ import java.util.List;
 import com.iridium126.createmanaindustry.CMIFluids;
 import com.iridium126.createmanaindustry.CMIItems;
 import com.iridium126.createmanaindustry.content.fluids.CreateTricksFluidConversions;
-import com.iridium126.createmanaindustry.trickster.TricksterReflection;
+import com.iridium126.createmanaindustry.trickster.TricksterManaAccess;
 import com.simibubi.create.AllDataComponents;
 import com.simibubi.create.content.processing.sequenced.SequencedAssemblyRecipe;
 import com.tterrag.registrate.util.entry.ItemEntry;
@@ -61,7 +61,7 @@ public final class IncompleteKnotAssembly {
 			if (knotItem == Items.AIR)
 				return CreateTricksFluidConversions.manaToFluidAmount(fallbackCreationCost);
 			return CreateTricksFluidConversions.manaToFluidAmount(
-					TricksterReflection.getCreationCost(knotItem, fallbackCreationCost));
+					TricksterManaAccess.getCreationCost(knotItem, fallbackCreationCost));
 		}
 
 		private int getFillingStep(ItemStack stack) {

@@ -13,7 +13,7 @@
       "type": "create:deploying",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_quartz_knot"
+          "item": "createmanaindustry:incomplete_quartz_knot"
         },
         {
           "item": "minecraft:glass"
@@ -21,12 +21,12 @@
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_quartz_knot"
+          "id": "createmanaindustry:incomplete_quartz_knot"
         }
       ]
     }
   ],
   "transitional_item": {
-    "id": "createtricks:incomplete_quartz_knot"
+    "id": "createmanaindustry:incomplete_quartz_knot"
   }
 }

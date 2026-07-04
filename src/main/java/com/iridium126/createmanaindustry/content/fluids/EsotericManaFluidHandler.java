@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.content.fluids;
 
 import com.iridium126.createmanaindustry.CMIFluids;
-import com.iridium126.createmanaindustry.trickster.TricksterReflection;
+import com.iridium126.createmanaindustry.trickster.TricksterManaAccess;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -115,7 +115,7 @@ public class EsotericManaFluidHandler implements IFluidHandlerItem {
 		if (!isEsotericMana(container))
 			return FluidStack.EMPTY;
 
-		float mana = TricksterReflection.getMana(container);
+		float mana = TricksterManaAccess.getMana(container);
 		if (mana <= 0)
 			mana = DEFAULT_ESOTERIC_MANA;
 

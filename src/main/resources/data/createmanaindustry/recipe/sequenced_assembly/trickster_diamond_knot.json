@@ -13,7 +13,7 @@
       "type": "create:deploying",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_diamond_knot"
+          "item": "createmanaindustry:incomplete_diamond_knot"
         },
         {
           "item": "minecraft:glass"
@@ -21,7 +21,7 @@
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_diamond_knot"
+          "id": "createmanaindustry:incomplete_diamond_knot"
         }
       ]
     },
@@ -29,17 +29,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_diamond_knot"
+          "item": "createmanaindustry:incomplete_diamond_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_diamond_knot"
+          "id": "createmanaindustry:incomplete_diamond_knot"
         }
       ]
     },
@@ -47,17 +47,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_diamond_knot"
+          "item": "createmanaindustry:incomplete_diamond_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_diamond_knot"
+          "id": "createmanaindustry:incomplete_diamond_knot"
         }
       ]
     },
@@ -65,17 +65,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_diamond_knot"
+          "item": "createmanaindustry:incomplete_diamond_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_diamond_knot"
+          "id": "createmanaindustry:incomplete_diamond_knot"
         }
       ]
     },
@@ -83,23 +83,23 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_diamond_knot"
+          "item": "createmanaindustry:incomplete_diamond_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_diamond_knot"
+          "id": "createmanaindustry:incomplete_diamond_knot"
         }
       ]
     }
   ],
   "transitional_item": {
-    "id": "createtricks:incomplete_diamond_knot"
+    "id": "createmanaindustry:incomplete_diamond_knot"
   },
   "loops": 1
 }

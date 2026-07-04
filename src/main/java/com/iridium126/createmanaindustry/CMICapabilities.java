@@ -5,7 +5,7 @@ import net.minecraft.resources.ResourceLocation;
 import com.iridium126.createmanaindustry.content.fluids.EsotericManaFluidHandler;
 import com.iridium126.createmanaindustry.content.fluids.TricksterKnotFluidHandler;
 import com.iridium126.createmanaindustry.content.items.TricksterKnotItemHandler;
-import com.iridium126.createmanaindustry.trickster.TricksterReflection;
+import com.iridium126.createmanaindustry.trickster.TricksterKnotUtils;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.Item;
@@ -28,7 +28,7 @@ public final class CMICapabilities {
 					esotericMana);
 
 		Item[] knotItems = BuiltInRegistries.ITEM.stream()
-				.filter(TricksterReflection::isKnotItem)
+				.filter(TricksterKnotUtils::isKnotItem)
 				.toArray(Item[]::new);
 		if (knotItems.length > 0)
 			event.registerItem(Capabilities.FluidHandler.ITEM, (stack, ctx) -> new TricksterKnotFluidHandler(stack), knotItems);

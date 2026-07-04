@@ -4,7 +4,7 @@ import java.util.List;
 
 import org.jetbrains.annotations.Nullable;
 
-import com.iridium126.createmanaindustry.trickster.TricksterReflection;
+import com.iridium126.createmanaindustry.trickster.TricksterDisplaySync;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.MutableComponent;
@@ -72,7 +72,7 @@ public final class SpellConstructDisplayArguments {
 		slotTag.putString(Integer.toString(argumentIndex), componentsToString(text));
 		be.getPersistentData().put(NBT_KEY, slotTag);
 		be.setChanged();
-		TricksterReflection.syncExecutors(be);
+		TricksterDisplaySync.syncExecutors(be);
 	}
 
 	public static void storeModularArgument(BlockEntity be, int executorSlot, int argumentIndex, List<MutableComponent> text) {
@@ -89,7 +89,7 @@ public final class SpellConstructDisplayArguments {
 		root.put(NBT_SLOTS, slots);
 		be.getPersistentData().put(NBT_KEY, root);
 		be.setChanged();
-		TricksterReflection.syncExecutors(be);
+		TricksterDisplaySync.syncExecutors(be);
 	}
 
 	private static CompoundTag getSpellConstructSlotTag(BlockEntity be) {

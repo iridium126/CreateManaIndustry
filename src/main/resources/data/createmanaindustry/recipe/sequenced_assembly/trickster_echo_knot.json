@@ -13,7 +13,7 @@
       "type": "create:deploying",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "item": "minecraft:glass"
@@ -21,7 +21,7 @@
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -29,17 +29,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -47,17 +47,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -65,17 +65,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -83,17 +83,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -101,17 +101,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -119,17 +119,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -137,17 +137,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -155,17 +155,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -173,17 +173,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -191,17 +191,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -209,17 +209,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -227,17 +227,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -245,17 +245,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -263,17 +263,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -281,17 +281,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -299,17 +299,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -317,17 +317,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -335,17 +335,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -353,17 +353,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -371,17 +371,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -389,17 +389,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -407,17 +407,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -425,17 +425,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -443,17 +443,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -461,17 +461,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -479,17 +479,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -497,17 +497,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -515,17 +515,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -533,17 +533,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -551,17 +551,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -569,17 +569,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     },
@@ -587,23 +587,23 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_echo_knot"
+          "item": "createmanaindustry:incomplete_echo_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_echo_knot"
+          "id": "createmanaindustry:incomplete_echo_knot"
         }
       ]
     }
   ],
   "transitional_item": {
-    "id": "createtricks:incomplete_echo_knot"
+    "id": "createmanaindustry:incomplete_echo_knot"
   },
   "loops": 1
 }

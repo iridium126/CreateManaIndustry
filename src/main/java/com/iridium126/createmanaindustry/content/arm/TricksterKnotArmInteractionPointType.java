@@ -1,5 +1,6 @@
 package com.iridium126.createmanaindustry.content.arm;
 
+import com.iridium126.createmanaindustry.trickster.TricksterKnotUtils;
 import com.iridium126.createmanaindustry.trickster.TricksterReflection;
 import com.simibubi.create.content.kinetics.mechanicalArm.ArmInteractionPoint;
 import com.simibubi.create.content.kinetics.mechanicalArm.ArmInteractionPointType;
@@ -15,7 +16,7 @@ public class TricksterKnotArmInteractionPointType extends ArmInteractionPointTyp
 		if (!TricksterReflection.isAvailable())
 			return false;
 		BlockEntity be = level.getBlockEntity(pos);
-		return be != null && TricksterReflection.isTricksterKnotBlockEntity(be);
+		return be != null && TricksterKnotUtils.isTricksterKnotBlockEntity(be);
 	}
 
 	@Override

@@ -13,7 +13,7 @@
       "type": "create:deploying",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_emerald_knot"
+          "item": "createmanaindustry:incomplete_emerald_knot"
         },
         {
           "item": "minecraft:glass"
@@ -21,7 +21,7 @@
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_emerald_knot"
+          "id": "createmanaindustry:incomplete_emerald_knot"
         }
       ]
     },
@@ -29,23 +29,23 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_emerald_knot"
+          "item": "createmanaindustry:incomplete_emerald_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_emerald_knot"
+          "id": "createmanaindustry:incomplete_emerald_knot"
         }
       ]
     }
   ],
   "transitional_item": {
-    "id": "createtricks:incomplete_emerald_knot"
+    "id": "createmanaindustry:incomplete_emerald_knot"
   },
   "loops": 1
 }

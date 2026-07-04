@@ -13,7 +13,7 @@
       "type": "create:deploying",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "item": "minecraft:glass"
@@ -21,7 +21,7 @@
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -29,17 +29,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -47,17 +47,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -65,17 +65,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -83,17 +83,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -101,17 +101,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -119,17 +119,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -137,17 +137,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -155,17 +155,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -173,17 +173,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -191,17 +191,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -209,17 +209,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -227,17 +227,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -245,17 +245,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -263,17 +263,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -281,17 +281,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -299,17 +299,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -317,17 +317,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -335,17 +335,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -353,17 +353,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -371,17 +371,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -389,17 +389,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -407,17 +407,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -425,17 +425,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -443,17 +443,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -461,17 +461,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -479,17 +479,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -497,17 +497,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -515,17 +515,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -533,17 +533,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -551,17 +551,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -569,17 +569,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -587,17 +587,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -605,17 +605,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -623,17 +623,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -641,17 +641,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -659,17 +659,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -677,17 +677,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -695,17 +695,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -713,17 +713,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -731,17 +731,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -749,17 +749,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -767,17 +767,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -785,17 +785,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -803,17 +803,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -821,17 +821,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -839,17 +839,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -857,17 +857,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -875,17 +875,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -893,17 +893,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -911,17 +911,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -929,17 +929,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -947,17 +947,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -965,17 +965,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -983,17 +983,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1001,17 +1001,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1019,17 +1019,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1037,17 +1037,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1055,17 +1055,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1073,17 +1073,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1091,17 +1091,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1109,17 +1109,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1127,17 +1127,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1145,17 +1145,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1163,17 +1163,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1181,17 +1181,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1199,17 +1199,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1217,17 +1217,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1235,17 +1235,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1253,17 +1253,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1271,17 +1271,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1289,17 +1289,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1307,17 +1307,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1325,17 +1325,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1343,17 +1343,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1361,17 +1361,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1379,17 +1379,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1397,17 +1397,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1415,17 +1415,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1433,17 +1433,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1451,17 +1451,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1469,17 +1469,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1487,17 +1487,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1505,17 +1505,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1523,17 +1523,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1541,17 +1541,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1559,17 +1559,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1577,17 +1577,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1595,17 +1595,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1613,17 +1613,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1631,17 +1631,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1649,17 +1649,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1667,17 +1667,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1685,17 +1685,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1703,17 +1703,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1721,17 +1721,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1739,17 +1739,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1757,17 +1757,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1775,17 +1775,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1793,17 +1793,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1811,17 +1811,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1829,17 +1829,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1847,17 +1847,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1865,17 +1865,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1883,17 +1883,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1901,17 +1901,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1919,17 +1919,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1937,17 +1937,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1955,17 +1955,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1973,17 +1973,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -1991,17 +1991,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2009,17 +2009,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2027,17 +2027,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2045,17 +2045,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2063,17 +2063,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2081,17 +2081,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2099,17 +2099,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2117,17 +2117,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2135,17 +2135,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2153,17 +2153,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2171,17 +2171,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2189,17 +2189,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2207,17 +2207,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2225,17 +2225,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2243,17 +2243,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2261,17 +2261,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2279,17 +2279,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2297,17 +2297,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2315,17 +2315,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2333,17 +2333,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2351,17 +2351,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2369,17 +2369,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2387,17 +2387,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2405,17 +2405,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2423,17 +2423,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2441,17 +2441,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2459,17 +2459,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2477,17 +2477,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2495,17 +2495,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2513,17 +2513,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2531,17 +2531,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2549,17 +2549,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2567,17 +2567,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2585,17 +2585,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2603,17 +2603,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2621,17 +2621,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2639,17 +2639,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2657,17 +2657,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2675,17 +2675,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2693,17 +2693,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2711,17 +2711,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2729,17 +2729,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2747,17 +2747,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2765,17 +2765,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2783,17 +2783,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2801,17 +2801,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2819,17 +2819,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2837,17 +2837,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2855,17 +2855,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2873,17 +2873,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2891,17 +2891,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2909,17 +2909,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2927,17 +2927,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2945,17 +2945,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2963,17 +2963,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2981,17 +2981,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -2999,17 +2999,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3017,17 +3017,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3035,17 +3035,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3053,17 +3053,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3071,17 +3071,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3089,17 +3089,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3107,17 +3107,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3125,17 +3125,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3143,17 +3143,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3161,17 +3161,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3179,17 +3179,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3197,17 +3197,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3215,17 +3215,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3233,17 +3233,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3251,17 +3251,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3269,17 +3269,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3287,17 +3287,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3305,17 +3305,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3323,17 +3323,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3341,17 +3341,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3359,17 +3359,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3377,17 +3377,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3395,17 +3395,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3413,17 +3413,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3431,17 +3431,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3449,17 +3449,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3467,17 +3467,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3485,17 +3485,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3503,17 +3503,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3521,17 +3521,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3539,17 +3539,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3557,17 +3557,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3575,17 +3575,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3593,17 +3593,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3611,17 +3611,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3629,17 +3629,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3647,17 +3647,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3665,17 +3665,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3683,17 +3683,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3701,17 +3701,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3719,17 +3719,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3737,17 +3737,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3755,17 +3755,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3773,17 +3773,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3791,17 +3791,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3809,17 +3809,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3827,17 +3827,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3845,17 +3845,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3863,17 +3863,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3881,17 +3881,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3899,17 +3899,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3917,17 +3917,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3935,17 +3935,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3953,17 +3953,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3971,17 +3971,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -3989,17 +3989,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4007,17 +4007,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4025,17 +4025,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4043,17 +4043,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4061,17 +4061,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4079,17 +4079,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4097,17 +4097,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4115,17 +4115,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4133,17 +4133,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4151,17 +4151,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4169,17 +4169,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4187,17 +4187,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4205,17 +4205,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4223,17 +4223,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4241,17 +4241,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4259,17 +4259,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4277,17 +4277,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4295,17 +4295,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4313,17 +4313,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4331,17 +4331,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4349,17 +4349,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4367,17 +4367,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4385,17 +4385,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4403,17 +4403,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4421,17 +4421,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4439,17 +4439,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4457,17 +4457,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4475,17 +4475,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4493,17 +4493,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4511,17 +4511,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4529,17 +4529,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4547,17 +4547,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4565,17 +4565,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4583,17 +4583,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4601,17 +4601,17 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     },
@@ -4619,23 +4619,23 @@
       "type": "create:filling",
       "ingredients": [
         {
-          "item": "createtricks:incomplete_astral_knot"
+          "item": "createmanaindustry:incomplete_astral_knot"
         },
         {
           "type": "neoforge:single",
           "amount": 1,
-          "fluid": "createtricks:liquid_mana"
+          "fluid": "createmanaindustry:liquid_mana"
         }
       ],
       "results": [
         {
-          "id": "createtricks:incomplete_astral_knot"
+          "id": "createmanaindustry:incomplete_astral_knot"
         }
       ]
     }
   ],
   "transitional_item": {
-    "id": "createtricks:incomplete_astral_knot"
+    "id": "createmanaindustry:incomplete_astral_knot"
   },
   "loops": 1
 }

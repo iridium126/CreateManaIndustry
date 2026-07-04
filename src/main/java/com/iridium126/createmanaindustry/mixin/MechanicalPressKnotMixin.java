@@ -6,7 +6,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
-import com.iridium126.createmanaindustry.trickster.TricksterReflection;
+import com.iridium126.createmanaindustry.trickster.TricksterManaAccess;
 import com.simibubi.create.content.kinetics.press.MechanicalPressBlockEntity;
 import com.simibubi.create.foundation.recipe.RecipeApplier;
 
@@ -26,7 +26,7 @@ public class MechanicalPressKnotMixin {
 		ItemStack inputCopy = entity.getItem().copy();
 		RecipeApplier.applyRecipeOn(entity, recipe, respectChances);
 		ItemStack result = entity.getItem();
-		ItemStack transferred = TricksterReflection.applyKnotTransfer(entity.level(), inputCopy, result);
+		ItemStack transferred = TricksterManaAccess.applyKnotTransfer(entity.level(), inputCopy, result);
 		if (transferred != result) {
 			entity.setItem(transferred);
 		}
@@ -41,7 +41,7 @@ public class MechanicalPressKnotMixin {
 		List<ItemStack> results = RecipeApplier.applyRecipeOn(level, stack, recipe, respectChances);
 		for (int i = 0; i < results.size(); i++) {
 			ItemStack result = results.get(i);
-			ItemStack transferred = TricksterReflection.applyKnotTransfer(level, inputCopy, result);
+			ItemStack transferred = TricksterManaAccess.applyKnotTransfer(level, inputCopy, result);
 			if (transferred != result) {
 				results.set(i, transferred);
 			}

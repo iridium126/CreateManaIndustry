@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.content.items;
 
-import com.iridium126.createmanaindustry.trickster.TricksterReflection;
+import com.iridium126.createmanaindustry.trickster.TricksterKnotUtils;
 
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
@@ -105,7 +105,7 @@ public class TricksterKnotItemHandler implements IItemHandler {
 	}
 
 	private boolean isKnot(ItemStack stack) {
-		return TricksterReflection.isKnotStack(stack);
+		return TricksterKnotUtils.isKnotStack(stack);
 	}
 
 	private ItemStack copyWithCount(ItemStack stack, int count) {

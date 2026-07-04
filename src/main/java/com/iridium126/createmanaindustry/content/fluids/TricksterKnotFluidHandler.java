@@ -3,7 +3,8 @@ package com.iridium126.createmanaindustry.content.fluids;
 import org.jetbrains.annotations.Nullable;
 
 import com.iridium126.createmanaindustry.CMIFluids;
-import com.iridium126.createmanaindustry.trickster.TricksterReflection;
+import com.iridium126.createmanaindustry.trickster.TricksterKnotUtils;
+import com.iridium126.createmanaindustry.trickster.TricksterManaAccess;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -108,8 +109,8 @@ public class TricksterKnotFluidHandler implements IFluidHandlerItem {
 			return 0;
 
 		return filling
-				? TricksterReflection.refillMana(container, level, manaAmount)
-				: TricksterReflection.drainMana(container, level, manaAmount);
+				? TricksterManaAccess.refillMana(container, level, manaAmount)
+				: TricksterManaAccess.drainMana(container, level, manaAmount);
 	}
 
 	private int getDrainableAmount() {
@@ -122,7 +123,7 @@ public class TricksterKnotFluidHandler implements IFluidHandlerItem {
 		if (level == null)
 			return 0;
 
-		return getPositiveManaFluidAmount(TricksterReflection.getMana(container, level));
+		return getPositiveManaFluidAmount(TricksterManaAccess.getMana(container, level));
 	}
 
 	private int getFillableAmount() {
@@ -133,8 +134,8 @@ public class TricksterKnotFluidHandler implements IFluidHandlerItem {
 		if (level == null)
 			return 0;
 
-		float currentMana = TricksterReflection.getMana(container, level);
-		float maxMana = TricksterReflection.getMaxMana(container, level);
+		float currentMana = TricksterManaAccess.getMana(container, level);
+		float maxMana = TricksterManaAccess.getMaxMana(container, level);
 		return getPositiveManaFluidAmount(Math.max(0, maxMana - currentMana));
 	}
 
@@ -148,15 +149,15 @@ public class TricksterKnotFluidHandler implements IFluidHandlerItem {
 		if (level == null)
 			return 0;
 
-		return getPositiveManaFluidAmount(TricksterReflection.getMaxMana(container, level));
+		return getPositiveManaFluidAmount(TricksterManaAccess.getMaxMana(container, level));
 	}
 
 	private boolean isKnotContainer() {
-		return TricksterReflection.isKnotStack(container);
+		return TricksterKnotUtils.isKnotStack(container);
 	}
 
 	private boolean hasInfiniteMana() {
-		return TricksterReflection.hasInfiniteMana(container);
+		return TricksterManaAccess.hasInfiniteMana(container);
 	}
 
 	@Nullable

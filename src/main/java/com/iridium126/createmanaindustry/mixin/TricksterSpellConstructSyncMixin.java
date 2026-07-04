@@ -6,7 +6,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createmanaindustry.display.SpellConstructDisplayArguments;
-import com.iridium126.createmanaindustry.trickster.TricksterReflection;
+import com.iridium126.createmanaindustry.trickster.TricksterDisplaySync;
 
 import net.minecraft.world.level.block.entity.BlockEntity;
 
@@ -23,6 +23,6 @@ public class TricksterSpellConstructSyncMixin {
 		if (!be.getPersistentData().contains(SpellConstructDisplayArguments.NBT_KEY))
 			return;
 
-		TricksterReflection.syncExecutors(be);
+		TricksterDisplaySync.syncExecutors(be);
 	}
 }
