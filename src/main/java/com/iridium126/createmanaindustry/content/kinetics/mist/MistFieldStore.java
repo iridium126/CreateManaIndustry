@@ -82,12 +82,13 @@ public final class MistFieldStore {
 			BlockPos ap = entry.getKey();
 			int radius = entry.getValue().radius();
 
-			int dist = Math.abs(pos.getX() - ap.getX())
-					+ Math.abs(pos.getY() - ap.getY())
-					+ Math.abs(pos.getZ() - ap.getZ());
+			double dx = pos.getX() - ap.getX();
+				double dy = pos.getY() - ap.getY();
+				double dz = pos.getZ() - ap.getZ();
+				double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
 			if (dist <= radius) {
-				float conc = (float) (Config.mistBaseConcentration * (1.0 - (double) dist / radius));
+				float conc = (float) (Config.mistBaseConcentration * (1.0 - dist / radius));
 				if (conc > maxConc)
 					maxConc = conc;
 			}

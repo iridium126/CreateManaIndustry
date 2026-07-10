@@ -22,7 +22,7 @@ public final class Config {
 			.defineInRange("kineticStressTrickManaMultiplier", 2.0, 0.0, 1000000.0);
 
 	private static final ModConfigSpec.IntValue MIST_MAX_RADIUS = BUILDER
-			.comment("Maximum Manhattan radius (in blocks) of the mist field around an active Kinetic Atomizer.")
+			.comment("Maximum Euclidean radius (in blocks) of the mist field around an active Kinetic Atomizer.")
 			.defineInRange("mistMaxRadius", 8, 1, 32);
 
 	private static final ModConfigSpec.IntValue MIST_FLUID_PER_TICK = BUILDER

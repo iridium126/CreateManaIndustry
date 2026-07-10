@@ -3,22 +3,25 @@
   "category": "misc",
   "key": {
     "B": {
-      "item": "create:brass_casing"
+      "item": "create:brass_ingot"
     },
     "C": {
       "item": "create:cogwheel"
     },
-    "N": {
+    "I": {
       "item": "minecraft:copper_ingot"
+    },
+    "L": {
+      "item": "createmanaindustry:liquid_mana_bucket"
     },
     "P": {
       "item": "create:fluid_pipe"
     }
   },
   "pattern": [
-    " N ",
-    "BCB",
-    " P "
+    " I ",
+    "LCL",
+    "BPB"
   ],
   "result": {
     "count": 1,

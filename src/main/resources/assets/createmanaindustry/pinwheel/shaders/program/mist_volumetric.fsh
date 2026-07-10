@@ -4,7 +4,7 @@ uniform sampler2D DiffuseSampler0;
 uniform sampler2D DiffuseDepthSampler;
 
 uniform int AtomizerCount;
-uniform float AtomizerData[64];  // packed: x,y,z,radius per atomizer (4 floats each)
+uniform float AtomizerData[64]; // packed: x,y,z,radius per atomizer
 
 uniform vec4 MistColor;
 uniform float MistDensity;
@@ -15,27 +15,39 @@ in vec2 texCoord;
 out vec4 fragColor;
 
 #define MAX_STEPS 32
-#define NOISE_SCALE 0.3
+#define MIN_STEPS 8
+#define STEP_GROWTH 0.15
+#define NOISE_SCALE 0.25
+#define PI 3.14159265359
+#define ISOTROPIC_PHASE (0.25 / PI)
 #define FBM_OCTAVES 3
 
 // ---------------------------------------------------------------------------
-// Noise functions (hash-based, no texture required)
+// Hash functions (IQ / Dave Hoskins style, from Photon)
 // ---------------------------------------------------------------------------
 
-float hash(vec3 p) {
-    float h = dot(p, vec3(127.1, 311.7, 74.7));
-    return fract(sin(h) * 43758.5453123);
+float hash1(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.zyx + 31.32);
+    return fract((p.x + p.y) * p.z);
 }
+
+float hash_sin(vec3 p) {
+    return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
+}
+
+// ---------------------------------------------------------------------------
+// 3D Value noise
+// ---------------------------------------------------------------------------
 
 float valueNoise(vec3 p) {
     vec3 i = floor(p);
     vec3 f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
-
-    return mix(mix(mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x),
-                   mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
-               mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
-                   mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
+    return mix(mix(mix(hash1(i + vec3(0,0,0)), hash1(i + vec3(1,0,0)), f.x),
+                   mix(hash1(i + vec3(0,1,0)), hash1(i + vec3(1,1,0)), f.x), f.y),
+               mix(mix(hash1(i + vec3(0,0,1)), hash1(i + vec3(1,0,1)), f.x),
+                   mix(hash1(i + vec3(0,1,1)), hash1(i + vec3(1,1,1)), f.x), f.y), f.z);
 }
 
 float fbm(vec3 p) {
@@ -51,7 +63,17 @@ float fbm(vec3 p) {
 }
 
 // ---------------------------------------------------------------------------
-// Mist concentration at a world-space position
+// Phase function (from Photon phase_functions.glsl)
+// ---------------------------------------------------------------------------
+
+float henyey_greenstein_phase(float nu, float g) {
+    float gg = g * g;
+    return (ISOTROPIC_PHASE - ISOTROPIC_PHASE * gg)
+        / pow(1.0 + gg - 2.0 * g * nu, 1.5);
+}
+
+// ---------------------------------------------------------------------------
+// Mist concentration at a world-space position (our custom model)
 // ---------------------------------------------------------------------------
 
 float getConcentration(vec3 worldPos) {
@@ -63,9 +85,10 @@ float getConcentration(vec3 worldPos) {
             AtomizerData[i * 4 + 2],
             AtomizerData[i * 4 + 3]
         );
-        float dist = abs(worldPos.x - atomizer.x)
-                   + abs(worldPos.y - atomizer.y)
-                   + abs(worldPos.z - atomizer.z);
+        float dx = worldPos.x - atomizer.x;
+        float dy = worldPos.y - atomizer.y;
+        float dz = worldPos.z - atomizer.z;
+        float dist = sqrt(dx * dx + dy * dy + dz * dz);
         float radius = atomizer.w;
         if (dist <= radius) {
             float conc = 1.0 - dist / radius;
@@ -73,32 +96,6 @@ float getConcentration(vec3 worldPos) {
         }
     }
     return maxConc;
-}
-
-// ---------------------------------------------------------------------------
-// Simple sunlight scattering approximation
-// ---------------------------------------------------------------------------
-
-float sunScatter(vec3 worldPos, vec3 rayDir) {
-    // Approximate: light attenuated by mist density toward the sun
-    float sunDist = 32.0;
-    float opticalDepth = 0.0;
-    vec3 sunStep = SunDirection * (sunDist / 8.0);
-    vec3 sp = worldPos;
-    for (int i = 0; i < 8; i++) {
-        opticalDepth += getConcentration(sp) * 1.5;
-        sp += sunStep;
-    }
-    opticalDepth /= 8.0;
-
-    float cosTheta = dot(rayDir, SunDirection);
-    // Henyey-Greenstein phase function (g=0.3 forward-ish)
-    float g = 0.3;
-    float gg = g * g;
-    float phase = (1.0 - gg) / pow(1.0 + gg - 2.0 * g * cosTheta, 1.5);
-    phase *= 0.25; // normalize
-
-    return exp(-opticalDepth * 0.05) * (0.3 + 0.7 * phase);
 }
 
 // ---------------------------------------------------------------------------
@@ -116,52 +113,76 @@ void main() {
         return;
     }
 
-    // Sky (depth = 1.0): use a far clip limit
-    vec3 rayEnd;
+    // --- Ray setup (world space) ---
+
+    vec3 worldEnd;
     if (sceneDepth >= 1.0) {
         vec3 viewDir = viewDirFromUv(texCoord);
-        rayEnd = VeilCamera.CameraPosition + viewDir * 48.0; // far mist limit
+        worldEnd = VeilCamera.CameraPosition + viewDir * 48.0;
     } else {
-        rayEnd = screenToWorldSpace(texCoord, sceneDepth).xyz;
+        worldEnd = screenToWorldSpace(texCoord, sceneDepth).xyz;
     }
 
     vec3 rayStart = VeilCamera.CameraPosition;
-    vec3 rayDir = normalize(rayEnd - rayStart);
-    float rayLength = distance(rayStart, rayEnd);
-    rayLength = min(rayLength, 64.0); // cap for far chunks
+    vec3 rayDir = worldEnd - rayStart;
+    float rayLength = length(rayDir);
+    rayDir /= rayLength;
+    rayLength = min(rayLength, 64.0);
 
-    float stepSize = (rayLength / float(MAX_STEPS)) * MistStepScale;
+    // --- Adaptive step count (Photon style) ---
+
+    int stepCount = int(float(MIN_STEPS) + STEP_GROWTH * rayLength);
+    stepCount = min(stepCount, MAX_STEPS);
+
+    float stepSize = (rayLength / float(stepCount)) * MistStepScale;
     stepSize = max(stepSize, 0.1);
-    int steps = int(rayLength / stepSize);
-    steps = min(steps, MAX_STEPS);
 
-    // Dither start to hide banding
-    float dither = hash(vec3(gl_FragCoord.xy, 0.0));
+    // Recalculate with clamped step size
+    stepCount = int(rayLength / stepSize);
+    stepCount = min(stepCount, MAX_STEPS);
+
+    // --- Dither start to hide banding (from Photon r1) ---
+
+    float dither = hash1(vec3(gl_FragCoord.xy, 0.0));
+
+    float t = stepSize * dither;
+
+    // --- Ray march loop ---
+
+    float LoV = dot(rayDir, SunDirection);
 
     vec4 accumulatedMist = vec4(0.0);
     float transmittance = 1.0;
 
-    for (int i = 0; i < steps; i++) {
-        float t = (float(i) + dither) * stepSize;
+    for (int i = 0; i < stepCount; i++) {
         if (t > rayLength) break;
         if (transmittance < 0.01) break;
 
         vec3 pos = rayStart + rayDir * t;
-        float conc = getConcentration(pos);
+        float baseConc = getConcentration(pos);
 
-        if (conc > 0.001) {
-            // Modulate density with noise for natural mist texture
-            float noise = fbm(pos * NOISE_SCALE + vec3(0.0, 0.0, 0.0));
-            float density = conc * (0.6 + 0.4 * noise) * MistDensity;
+        if (baseConc > 0.001) {
+            // Modulate with procedural noise for natural mist wisps
+            float noise = fbm(pos * NOISE_SCALE);
+            float density = baseConc * (0.5 + 0.5 * noise) * MistDensity;
 
-            float scatter = sunScatter(pos, rayDir);
-            vec3 mistLit = MistColor.rgb * (0.5 + 0.5 * scatter);
+            // Photon-style Henyey-Greenstein phase with forward/backward mix
+            float miePhase = 0.7 * henyey_greenstein_phase(LoV, 0.5)
+                           + 0.3 * henyey_greenstein_phase(LoV, -0.2);
 
-            vec4 sampleCol = vec4(mistLit, density * MistColor.a);
+            // Combined sun + ambient scattering
+            float scatter = 0.5 + 0.5 * miePhase;
+            vec3 mistLit = MistColor.rgb * scatter;
+
+            // Front-to-back alpha compositing
+            float stepDensity = density * stepSize;
+            vec4 sampleCol = vec4(mistLit, density * MistColor.a * 0.4);
             sampleCol.rgb *= sampleCol.a;
             accumulatedMist += sampleCol * transmittance;
-            transmittance *= exp(-density * stepSize * 0.5);
+            transmittance *= exp(-stepDensity * 0.5);
         }
+
+        t += stepSize;
     }
 
     fragColor = sceneColor * transmittance + accumulatedMist;

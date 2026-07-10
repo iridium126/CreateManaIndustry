@@ -3,8 +3,6 @@ package com.iridium126.createmanaindustry;
 import com.iridium126.createmanaindustry.client.render.ClientMistHandler;
 import com.iridium126.createmanaindustry.ponder.CMIPonderPlugin;
 
-import foundry.veil.api.client.render.VeilRenderSystem;
-import foundry.veil.platform.VeilEventPlatform;
 import net.createmod.ponder.foundation.PonderIndex;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -22,13 +20,10 @@ public class CreateManaIndustryClient {
 	public CreateManaIndustryClient(ModContainer container) {
 		container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
 
-		// Register the Veil post-processing uniform injection listener
+		// Register the Veil post-processing uniform injection listener.
+		// The mist pipeline is added/removed on demand when atomizers
+		// activate/deactivate — see ClientMistHandler.setActive().
 		ClientMistHandler.init();
-
-		// Once the Veil renderer is available, add our mist pipeline
-		VeilEventPlatform.INSTANCE.onVeilRendererAvailable(renderer -> {
-			renderer.getPostProcessingManager().add(CreateManaIndustry.modLoc("mist"));
-		});
 	}
 
 	@SubscribeEvent

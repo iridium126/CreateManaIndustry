@@ -7,7 +7,9 @@ import com.iridium126.createmanaindustry.Config;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlockEntity;
 
+import foundry.veil.api.client.render.VeilRenderSystem;
 import foundry.veil.api.client.render.post.PostPipeline;
+import foundry.veil.api.client.render.post.PostProcessingManager;
 import foundry.veil.api.event.VeilPostProcessingEvent;
 import foundry.veil.platform.VeilEventPlatform;
 import net.minecraft.client.Minecraft;
@@ -37,6 +39,7 @@ public final class ClientMistHandler {
 	private static int atomizerCount = 0;
 	private static boolean initialized = false;
 	private static boolean dirty = true;
+	private static boolean pipelineActive = false;
 
 	private ClientMistHandler() {}
 
@@ -60,11 +63,24 @@ public final class ClientMistHandler {
 	 * Called by the atomizer BE when its active state is synced to the client.
 	 */
 	public static void setActive(BlockPos pos, boolean active) {
-		if (active)
+		if (active) {
 			activeAtomizers.put(pos.immutable(), Boolean.TRUE);
-		else
+		} else {
 			activeAtomizers.remove(pos);
+		}
 		dirty = true;
+
+		// Manage pipeline lifecycle: only run when mist is present
+		boolean hasMist = !activeAtomizers.isEmpty();
+		if (hasMist != pipelineActive) {
+			pipelineActive = hasMist;
+			PostProcessingManager ppm = VeilRenderSystem.renderer().getPostProcessingManager();
+			if (hasMist) {
+				ppm.add(PIPELINE_ID);
+			} else {
+				ppm.remove(PIPELINE_ID);
+			}
+		}
 	}
 
 	// --- Veil event callbacks ---

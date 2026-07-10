@@ -3,7 +3,8 @@
     {
       "type": "veil:blit",
       "shader": "createmanaindustry:mist_volumetric",
-      "in": "minecraft:main"
+      "in": "minecraft:main",
+      "clear": false
     }
   ],
   "renderStage": "after_translucent_blocks"
