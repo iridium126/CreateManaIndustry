@@ -1,7 +1,10 @@
 package com.iridium126.createmanaindustry.content.kinetics.kineticatomizer;
 
 import java.util.List;
+import java.util.function.BiConsumer;
 
+import com.iridium126.createmanaindustry.Config;
+import com.iridium126.createmanaindustry.content.kinetics.mist.MistFieldStore;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 
 import net.minecraft.core.BlockPos;
@@ -20,6 +23,9 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
 
 	static final int TANK_CAPACITY = 1000;
 
+	// Client-side callback: (blockPos, active) — set by ClientMistHandler on client init
+	private static BiConsumer<BlockPos, Boolean> mistSyncCallback = null;
+
 	private final FluidTank tank = new FluidTank(TANK_CAPACITY) {
 		@Override
 		protected void onContentsChanged() {
@@ -30,13 +36,15 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
 		}
 	};
 
+	private boolean wasActive = false;
+
 	public KineticAtomizerBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
 		super(type, pos, state);
 	}
 
 	public IFluidHandler getFluidHandler(Direction side) {
 		Direction facing = getBlockState().getValue(BlockStateProperties.FACING);
-    	Direction opposite = facing.getOpposite();
+		Direction opposite = facing.getOpposite();
 		if (side != opposite)
 			return null;
 		return new IFluidHandler() {
@@ -73,16 +81,66 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
 	protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
 		super.read(tag, registries, clientPacket);
 		tank.readFromNBT(registries, tag.getCompound("Tank"));
+		if (clientPacket) {
+			wasActive = tag.getBoolean("MistActive");
+			if (mistSyncCallback != null)
+				mistSyncCallback.accept(worldPosition, wasActive);
+		}
 	}
 
 	@Override
 	protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
 		super.write(tag, registries, clientPacket);
 		tag.put("Tank", tank.writeToNBT(registries, new CompoundTag()));
+		if (clientPacket)
+			tag.putBoolean("MistActive", wasActive);
+	}
+
+	/**
+	 * @return {@code true} if this atomizer is currently producing mist (has fluid
+	 *         and rotation). Synced to the client for visual rendering.
+	 */
+	public boolean isMistActive() {
+		return wasActive;
+	}
+
+	/**
+	 * Sets a callback invoked on the client whenever the active state is synced
+	 * from the server. Used by the rendering layer to track which atomizers are
+	 * producing mist.
+	 */
+	public static void setMistSyncCallback(BiConsumer<BlockPos, Boolean> callback) {
+		mistSyncCallback = callback;
 	}
 
 	@Override
 	public void tick() {
 		super.tick();
+
+		if (level == null || level.isClientSide)
+			return;
+
+		float speed = Math.abs(getSpeed());
+		boolean hasFluid = !tank.isEmpty();
+		boolean isActive = speed > 0 && hasFluid;
+
+		if (isActive != wasActive) {
+			MistFieldStore.setActive(level, worldPosition, isActive, Config.mistMaxRadius);
+			wasActive = isActive;
+			sendData();
+		}
+
+		if (isActive) {
+			float speedFactor = speed / 16f;
+			int toConsume = Math.max(1, (int) (Config.mistFluidPerTick * speedFactor));
+			tank.drain(toConsume, IFluidHandler.FluidAction.EXECUTE);
+		}
+	}
+
+	@Override
+	public void invalidate() {
+		super.invalidate();
+		if (level != null && !level.isClientSide)
+			MistFieldStore.setActive(level, worldPosition, false, 0);
 	}
 }

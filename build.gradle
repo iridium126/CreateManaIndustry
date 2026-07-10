@@ -178,6 +178,8 @@ dependencies {
     compileOnly "dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:${flywheel_version}"
     compileOnly "com.tterrag.registrate:Registrate:${registrate_version}"
     compileOnly "net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}"
+    implementation "maven.modrinth:3KUWeVhG:dqlL6EvF" // Veil
+
     implementation "maven.modrinth:T8bvmqVZ:cSCeD78i" // Create: Bits 'n' Bobs
     implementation "curse.maven:azimuth-api-1466331:8317127"
     localRuntime "curse.maven:strut-your-stuff-1486746:8301563"

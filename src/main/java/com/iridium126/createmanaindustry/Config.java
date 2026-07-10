@@ -21,11 +21,26 @@ public final class Config {
 			.comment("The multiplier applied to the kinetic stress mana trick when costing mana.")
 			.defineInRange("kineticStressTrickManaMultiplier", 2.0, 0.0, 1000000.0);
 
+	private static final ModConfigSpec.IntValue MIST_MAX_RADIUS = BUILDER
+			.comment("Maximum Manhattan radius (in blocks) of the mist field around an active Kinetic Atomizer.")
+			.defineInRange("mistMaxRadius", 8, 1, 32);
+
+	private static final ModConfigSpec.IntValue MIST_FLUID_PER_TICK = BUILDER
+			.comment("Base fluid amount (mB) consumed per tick when the atomizer is running at 16 RPM. Scales linearly with actual speed.")
+			.defineInRange("mistFluidPerTick", 1, 1, 100);
+
+	private static final ModConfigSpec.DoubleValue MIST_BASE_CONCENTRATION = BUILDER
+			.comment("Base concentration at distance 0 from the atomizer. Used in the formula: concentration = base * (1 - distance / radius).")
+			.defineInRange("mistBaseConcentration", 1.0, 0.0, 1000.0);
+
 	public static final ModConfigSpec SPEC = BUILDER.build();
 
 	public static double manaPerStress = 0.001;
 	public static int manaPerBucket = 2048;
 	public static double kineticStressTrickManaMultiplier = 2.0;
+	public static int mistMaxRadius = 8;
+	public static int mistFluidPerTick = 1;
+	public static double mistBaseConcentration = 1.0;
 
 	private Config() {}
 
@@ -35,6 +50,9 @@ public final class Config {
 			manaPerStress = MANA_PER_STRESS.get();
 			manaPerBucket = MANA_PER_BUCKET.get();
 			kineticStressTrickManaMultiplier = KINETIC_STRESS_TRICK_MANA_MULTIPLIER.get();
+			mistMaxRadius = MIST_MAX_RADIUS.get();
+			mistFluidPerTick = MIST_FLUID_PER_TICK.get();
+			mistBaseConcentration = MIST_BASE_CONCENTRATION.get();
 		}
 	}
 }

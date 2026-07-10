@@ -1,0 +1,10 @@
+{
+  "stages": [
+    {
+      "type": "veil:blit",
+      "shader": "createmanaindustry:mist_volumetric",
+      "in": "minecraft:main"
+    }
+  ],
+  "renderStage": "after_translucent_blocks"
+}
