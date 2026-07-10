@@ -4,18 +4,18 @@ import static com.iridium126.createmanaindustry.CreateManaIndustry.REGISTRATE;
 
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlockEntity;
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerRenderer;
-import com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter.StressManaConverterBlockEntity;
-import com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter.StressManaConverterRenderer;
-import com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter.StressManaConverterVisual;
+import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlockEntity;
+import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorRenderer;
+import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorVisual;
 import com.simibubi.create.content.kinetics.base.SingleAxisRotatingVisual;
 import com.tterrag.registrate.util.entry.BlockEntityEntry;
 
 public final class CMIBlockEntityTypes {
-	public static final BlockEntityEntry<StressManaConverterBlockEntity> STRESS_MANA_CONVERTER = REGISTRATE
-			.blockEntity("stress_mana_converter", StressManaConverterBlockEntity::new)
-			.visual(() -> StressManaConverterVisual::new, false)
-			.validBlocks(CMIBlocks.STRESS_MANA_CONVERTER)
-			.renderer(() -> StressManaConverterRenderer::new)
+	public static final BlockEntityEntry<KineticManaGeneratorBlockEntity> KINETIC_MANA_GENERATOR = REGISTRATE
+			.blockEntity("kinetic_mana_generator", KineticManaGeneratorBlockEntity::new)
+			.visual(() -> KineticManaGeneratorVisual::new, false)
+			.validBlocks(CMIBlocks.KINETIC_MANA_GENERATOR)
+			.renderer(() -> KineticManaGeneratorRenderer::new)
 			.register();
 
 	public static final BlockEntityEntry<KineticAtomizerBlockEntity> KINETIC_ATOMIZER = REGISTRATE

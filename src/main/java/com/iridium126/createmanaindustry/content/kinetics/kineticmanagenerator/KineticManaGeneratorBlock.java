@@ -1,4 +1,4 @@
-package com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter;
+package com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator;
 
 import com.iridium126.createmanaindustry.CMIBlockEntityTypes;
 import com.simibubi.create.content.kinetics.base.DirectionalKineticBlock;
@@ -19,7 +19,7 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-public class StressManaConverterBlock extends DirectionalKineticBlock implements IBE<StressManaConverterBlockEntity>, ICogWheel {
+public class KineticManaGeneratorBlock extends DirectionalKineticBlock implements IBE<KineticManaGeneratorBlockEntity>, ICogWheel {
 
 	private static final VoxelShaper SHAPE = VoxelShaper.forDirectional(
 			Shapes.or(
@@ -27,7 +27,7 @@ public class StressManaConverterBlock extends DirectionalKineticBlock implements
 					Block.box(1, 14, 1, 15, 16, 15)),
 			Direction.UP);
 
-	public StressManaConverterBlock(Properties properties) {
+	public KineticManaGeneratorBlock(Properties properties) {
 		super(properties);
 	}
 
@@ -51,13 +51,13 @@ public class StressManaConverterBlock extends DirectionalKineticBlock implements
 	}
 
 	@Override
-	public Class<StressManaConverterBlockEntity> getBlockEntityClass() {
-		return StressManaConverterBlockEntity.class;
+	public Class<KineticManaGeneratorBlockEntity> getBlockEntityClass() {
+		return KineticManaGeneratorBlockEntity.class;
 	}
 
 	@Override
-	public BlockEntityType<? extends StressManaConverterBlockEntity> getBlockEntityType() {
-		return CMIBlockEntityTypes.STRESS_MANA_CONVERTER.get();
+	public BlockEntityType<? extends KineticManaGeneratorBlockEntity> getBlockEntityType() {
+		return CMIBlockEntityTypes.KINETIC_MANA_GENERATOR.get();
 	}
 
 	@Override

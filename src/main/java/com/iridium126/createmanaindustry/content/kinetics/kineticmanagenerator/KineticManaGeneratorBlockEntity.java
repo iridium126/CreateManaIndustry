@@ -1,4 +1,4 @@
-package com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter;
+package com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator;
 
 import java.util.List;
 
@@ -14,23 +14,23 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 
-public class StressManaConverterBlockEntity extends SimpleKineticBlockEntity {
+public class KineticManaGeneratorBlockEntity extends SimpleKineticBlockEntity {
 	public static final int MIN_STRESS_PER_RPM = 4;
 	public static final int MAX_STRESS_PER_RPM = 256;
 	public static final int DEFAULT_STRESS_PER_RPM = 4;
 
 	private ScrollValueBehaviour stressPerRpm;
 
-	public StressManaConverterBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
+	public KineticManaGeneratorBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
 		super(type, pos, state);
 	}
 
 	@Override
 	public void addBehaviours(List<BlockEntityBehaviour> behaviours) {
 		stressPerRpm = new ScrollValueBehaviour(
-				Component.translatable("createmanaindustry.stress_mana_converter.stress_per_rpm"),
+				Component.translatable("createmanaindustry.kinetic_mana_generator.stress_per_rpm"),
 				this,
-				new StressManaConverterScrollSlot())
+				new KineticManaGeneratorScrollSlot())
 				.between(MIN_STRESS_PER_RPM, MAX_STRESS_PER_RPM)
 				.withCallback(this::onStressPerRpmChanged);
 		stressPerRpm.setValue(DEFAULT_STRESS_PER_RPM);
@@ -69,7 +69,7 @@ public class StressManaConverterBlockEntity extends SimpleKineticBlockEntity {
 		if (mana <= 0)
 			return;
 
-		BlockPos outputPos = StressManaConverterBlock.getManaOutputPos(getBlockState(), worldPosition);
+		BlockPos outputPos = KineticManaGeneratorBlock.getManaOutputPos(getBlockState(), worldPosition);
 		TricksterManaAccess.chargeKnotsAt((ServerLevel) level, outputPos, mana);
 	}
 

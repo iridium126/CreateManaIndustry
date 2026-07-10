@@ -1,0 +1,30 @@
+{
+  "variants": {
+    "facing=down": {
+      "model": "createmanaindustry:block/kinetic_mana_generator/block",
+      "x": 180
+    },
+    "facing=east": {
+      "model": "createmanaindustry:block/kinetic_mana_generator/block",
+      "x": 90,
+      "y": 90
+    },
+    "facing=north": {
+      "model": "createmanaindustry:block/kinetic_mana_generator/block",
+      "x": 90
+    },
+    "facing=south": {
+      "model": "createmanaindustry:block/kinetic_mana_generator/block",
+      "x": 90,
+      "y": 180
+    },
+    "facing=up": {
+      "model": "createmanaindustry:block/kinetic_mana_generator/block"
+    },
+    "facing=west": {
+      "model": "createmanaindustry:block/kinetic_mana_generator/block",
+      "x": 90,
+      "y": 270
+    }
+  }
+}

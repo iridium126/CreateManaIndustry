@@ -2,9 +2,9 @@
 	"format_version": "1.9.0",
 	"credit": "Made with Blockbench",
 	"textures": {
-		"1": "createmanaindustry:block/stress_mana_converter/base_other",
+		"1": "createmanaindustry:block/kinetic_mana_generator/base_other",
 		"2": "create:block/brass_block",
-		"3": "createmanaindustry:block/stress_mana_converter/cap",
+		"3": "createmanaindustry:block/kinetic_mana_generator/cap",
 		"4": "create:block/brass_gearbox",
 		"particle": "create:block/brass_block"
 	},

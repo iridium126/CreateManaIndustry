@@ -1,4 +1,4 @@
-package com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter;
+package com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator;
 
 import static net.minecraft.ChatFormatting.AQUA;
 import static net.minecraft.ChatFormatting.GRAY;
@@ -16,11 +16,11 @@ import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 
-public class StressRangeTooltipModifier implements TooltipModifier {
+public class KineticManaGeneratorTooltipModifier implements TooltipModifier {
 	private final int minStressPerRpm;
 	private final int maxStressPerRpm;
 
-	public StressRangeTooltipModifier(int minStressPerRpm, int maxStressPerRpm) {
+	public KineticManaGeneratorTooltipModifier(int minStressPerRpm, int maxStressPerRpm) {
 		this.minStressPerRpm = minStressPerRpm;
 		this.maxStressPerRpm = maxStressPerRpm;
 	}

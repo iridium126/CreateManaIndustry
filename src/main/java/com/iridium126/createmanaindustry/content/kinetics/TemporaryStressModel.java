@@ -19,9 +19,9 @@ public final class TemporaryStressModel {
 		return TemporaryStress.isActive(be) ? stressed : normal;
 	}
 
-	public static PartialModel innerStressManaConverter(BlockEntity be) {
-		return select(be, CMIPartialModels.STRESS_MANA_CONVERTER_INNER,
-				CMIPartialModels.STRESSED_STRESS_MANA_CONVERTER_INNER);
+	public static PartialModel innerKineticManaGenerator(BlockEntity be) {
+		return select(be, CMIPartialModels.KINETIC_MANA_GENERATOR_INNER,
+				CMIPartialModels.STRESSED_KINETIC_MANA_GENERATOR_INNER);
 	}
 
 	public static PartialModel shaft(BlockEntity be) {
@@ -52,8 +52,8 @@ public final class TemporaryStressModel {
 
 	@Nullable
 	public static PartialModel replacement(BlockEntity be, PartialModel model) {
-		if (model == CMIPartialModels.STRESS_MANA_CONVERTER_INNER)
-			return innerStressManaConverter(be);
+		if (model == CMIPartialModels.KINETIC_MANA_GENERATOR_INNER)
+			return innerKineticManaGenerator(be);
 		if (model == AllPartialModels.SHAFT)
 			return shaft(be);
 		if (model == AllPartialModels.SHAFT_HALF)
@@ -75,7 +75,7 @@ public final class TemporaryStressModel {
 	}
 
 	public static boolean hasReplacement(PartialModel model) {
-		return model == CMIPartialModels.STRESS_MANA_CONVERTER_INNER
+		return model == CMIPartialModels.KINETIC_MANA_GENERATOR_INNER
 				|| model == AllPartialModels.SHAFT
 				|| model == AllPartialModels.SHAFT_HALF
 				|| model == AllPartialModels.COGWHEEL

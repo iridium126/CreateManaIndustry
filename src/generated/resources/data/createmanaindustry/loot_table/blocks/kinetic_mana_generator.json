@@ -11,11 +11,11 @@
       "entries": [
         {
           "type": "minecraft:item",
-          "name": "createmanaindustry:stress_mana_converter"
+          "name": "createmanaindustry:kinetic_mana_generator"
         }
       ],
       "rolls": 1.0
     }
   ],
-  "random_sequence": "createmanaindustry:blocks/stress_mana_converter"
+  "random_sequence": "createmanaindustry:blocks/kinetic_mana_generator"
 }

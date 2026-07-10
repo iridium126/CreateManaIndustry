@@ -1,4 +1,4 @@
-package com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter;
+package com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator;
 
 import java.util.function.Supplier;
 
@@ -23,39 +23,34 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.Direction.Axis;
 import net.minecraft.world.level.block.state.BlockState;
 
-public class StressManaConverterRenderer extends KineticBlockEntityRenderer<StressManaConverterBlockEntity> {
+public class KineticManaGeneratorRenderer extends KineticBlockEntityRenderer<KineticManaGeneratorBlockEntity> {
 
-	public StressManaConverterRenderer(BlockEntityRendererProvider.Context context) {
+	public KineticManaGeneratorRenderer(BlockEntityRendererProvider.Context context) {
 		super(context);
 	}
 
 	@Override
-	protected void renderSafe(StressManaConverterBlockEntity be, float partialTicks, PoseStack ms,
+	protected void renderSafe(KineticManaGeneratorBlockEntity be, float partialTicks, PoseStack ms,
 		MultiBufferSource buffer, int light, int overlay) {
 
 		if (VisualizationManager.supportsVisualization(be.getLevel()))
 			return;
 
 		VertexConsumer vc = buffer.getBuffer(RenderType.solid());
-		Direction facing = be.getBlockState().getValue(StressManaConverterBlock.FACING);
+		Direction facing = be.getBlockState().getValue(KineticManaGeneratorBlock.FACING);
 		Axis axis = getRotationAxisOf(be);
 
 		renderRotatingBuffer(be,
-			getVerticalPartial(CMIPartialModels.STRESS_MANA_CONVERTER_OUTER, be.getBlockState(), facing),
+			getVerticalPartial(CMIPartialModels.KINETIC_MANA_GENERATOR_OUTER, be.getBlockState(), facing),
 			ms, vc, light);
 
 		float angle = getAngleForLargeCogShaft(be, axis);
 		SuperByteBuffer shaft =
-			getVerticalPartial(CMIPartialModels.STRESS_MANA_CONVERTER_INNER, be.getBlockState(), facing);
+			getVerticalPartial(CMIPartialModels.KINETIC_MANA_GENERATOR_INNER, be.getBlockState(), facing);
 		kineticRotationTransform(shaft, be, axis, angle, light);
 		shaft.renderInto(ms, vc);
 	}
 
-	/**
-	 * Returns a cached directional partial model whose default orientation has the
-	 * shaft along the Y axis (vertical), rotated to face the given direction with
-	 * all six directions producing distinct orientations.
-	 */
 	private static SuperByteBuffer getVerticalPartial(PartialModel partial, BlockState state, Direction facing) {
 		return CachedBuffers.partialDirectional(partial, state, facing, rotateVerticalModelToFace(facing));
 	}
@@ -82,7 +77,7 @@ public class StressManaConverterRenderer extends KineticBlockEntityRenderer<Stre
 		};
 	}
 
-	public static float getAngleForLargeCogShaft(StressManaConverterBlockEntity be, Axis axis) {
+	public static float getAngleForLargeCogShaft(KineticManaGeneratorBlockEntity be, Axis axis) {
 		BlockPos pos = be.getBlockPos();
 		float offset = getShaftAngleOffset(axis, pos);
 		float time = AnimationTickHolder.getRenderTime(be.getLevel());

@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry;
 import static com.iridium126.createmanaindustry.CreateManaIndustry.REGISTRATE;
 
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlock;
-import com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter.StressManaConverterBlock;
+import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlock;
 import com.simibubi.create.AllBlocks;
 import com.simibubi.create.foundation.data.BlockStateGen;
 import com.simibubi.create.foundation.data.ModelGen;
@@ -18,8 +18,8 @@ import net.minecraft.data.recipes.RecipeCategory;
 import net.minecraft.data.recipes.ShapedRecipeBuilder;
 
 public final class CMIBlocks {
-	public static final BlockEntry<StressManaConverterBlock> STRESS_MANA_CONVERTER = REGISTRATE
-			.block("stress_mana_converter", StressManaConverterBlock::new)
+	public static final BlockEntry<KineticManaGeneratorBlock> KINETIC_MANA_GENERATOR = REGISTRATE
+			.block("kinetic_mana_generator", KineticManaGeneratorBlock::new)
 			.initialProperties(() -> Blocks.IRON_BLOCK)
 			.properties(p -> p.mapColor(MapColor.TERRACOTTA_YELLOW))
 			.blockstate(BlockStateGen.directionalBlockProvider(true))

@@ -5,7 +5,7 @@
 	"textures": {
 		"0": "createmanaindustry:block/kinetic_atomizer/bottom",
 		"1": "createmanaindustry:block/kinetic_atomizer/brass_block",
-		"2": "createmanaindustry:block/stress_mana_converter/base_other",
+		"2": "createmanaindustry:block/kinetic_mana_generator/base_other",
 		"3": "createmanaindustry:block/kinetic_atomizer/encased_pipe",
 		"4": "createmanaindustry:block/kinetic_atomizer/top_side",
 		"5": "createmanaindustry:block/kinetic_atomizer/copper_block",

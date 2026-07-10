@@ -3,10 +3,10 @@
 	"parent": "block/block",
 	"texture_size": [32, 32],
 	"textures": {
-		"5": "createmanaindustry:block/stress_mana_converter/cog",
-		"particle": "create:block/axis",
-		"1_0": "create:block/axis",
-		"1_1": "create:block/axis_top"
+		"5": "createmanaindustry:block/kinetic_mana_generator/cog",
+		"particle": "createmanaindustry:block/temporary_stress/axis",
+		"1_0": "createmanaindustry:block/temporary_stress/axis",
+		"1_1": "createmanaindustry:block/temporary_stress/axis_top"
 	},
 	"elements": [
 		{

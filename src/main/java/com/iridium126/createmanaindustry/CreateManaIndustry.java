@@ -2,9 +2,9 @@ package com.iridium126.createmanaindustry;
 
 import org.slf4j.Logger;
 
-import com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter.StressManaConverterBlock;
-import com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter.StressManaConverterBlockEntity;
-import com.iridium126.createmanaindustry.content.kinetics.stressmanaconverter.StressRangeTooltipModifier;
+import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlock;
+import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlockEntity;
+import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorTooltipModifier;
 import com.iridium126.createmanaindustry.trickster.KineticStressTrickRegister;
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.foundation.data.CreateRegistrate;
@@ -40,10 +40,10 @@ public class CreateManaIndustry {
 
 	private static TooltipModifier createTooltipModifier(Item item) {
 		TooltipModifier description = new ItemDescription.Modifier(item, FontHelper.Palette.STANDARD_CREATE);
-		if (item instanceof BlockItem blockItem && blockItem.getBlock() instanceof StressManaConverterBlock) {
-			return description.andThen(new StressRangeTooltipModifier(
-					StressManaConverterBlockEntity.MIN_STRESS_PER_RPM,
-					StressManaConverterBlockEntity.MAX_STRESS_PER_RPM));
+		if (item instanceof BlockItem blockItem && blockItem.getBlock() instanceof KineticManaGeneratorBlock) {
+			return description.andThen(new KineticManaGeneratorTooltipModifier(
+					KineticManaGeneratorBlockEntity.MIN_STRESS_PER_RPM,
+					KineticManaGeneratorBlockEntity.MAX_STRESS_PER_RPM));
 		}
 		return description.andThen(TooltipModifier.mapNull(KineticStats.create(item)));
 	}

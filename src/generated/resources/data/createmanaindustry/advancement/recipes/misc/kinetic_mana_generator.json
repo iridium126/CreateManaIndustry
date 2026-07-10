@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "createmanaindustry:stress_mana_converter"
+        "recipe": "createmanaindustry:kinetic_mana_generator"
       },
       "trigger": "minecraft:recipe_unlocked"
     }
@@ -26,7 +26,7 @@
   ],
   "rewards": {
     "recipes": [
-      "createmanaindustry:stress_mana_converter"
+      "createmanaindustry:kinetic_mana_generator"
     ]
   }
 }
