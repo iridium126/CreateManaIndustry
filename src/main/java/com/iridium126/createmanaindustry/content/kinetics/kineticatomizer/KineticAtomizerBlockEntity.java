@@ -11,6 +11,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
@@ -33,24 +34,39 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
 		super(type, pos, state);
 	}
 
-	/**
-	 * Returns a fluid handler for the given side. Only the bottom face accepts fluid
-	 * input; other sides allow draining only.
-	 */
 	public IFluidHandler getFluidHandler(Direction side) {
-		if (side == Direction.DOWN)
-			return tank;
-		return null;
+		Direction facing = getBlockState().getValue(BlockStateProperties.FACING);
+    	Direction opposite = facing.getOpposite();
+		if (side != opposite)
+			return null;
+		return new IFluidHandler() {
+			@Override
+			public int getTanks() { return tank.getTanks(); }
+
+			@Override
+			public FluidStack getFluidInTank(int t) { return tank.getFluidInTank(t); }
+
+			@Override
+			public int getTankCapacity(int t) { return tank.getTankCapacity(t); }
+
+			@Override
+			public boolean isFluidValid(int t, FluidStack stack) { return tank.isFluidValid(t, stack); }
+
+			@Override
+			public int fill(FluidStack resource, IFluidHandler.FluidAction action) { return tank.fill(resource, action); }
+
+			@Override
+			public FluidStack drain(FluidStack resource, IFluidHandler.FluidAction action) { return FluidStack.EMPTY; }
+
+			@Override
+			public FluidStack drain(int maxDrain, IFluidHandler.FluidAction action) { return FluidStack.EMPTY; }
+		};
 	}
 
 	@Override
 	public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
 		super.addToGoggleTooltip(tooltip, isPlayerSneaking);
-		FluidStack fluid = tank.getFluid();
-		tooltip.add(Component.literal(fluid.isEmpty()
-				? "Empty"
-				: fluid.getHoverName().getString() + " " + fluid.getAmount() + " / " + TANK_CAPACITY + " mB"));
-		return true;
+		return containedFluidTooltip(tooltip, isPlayerSneaking, tank);
 	}
 
 	@Override

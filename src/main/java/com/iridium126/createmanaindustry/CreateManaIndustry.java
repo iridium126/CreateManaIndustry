@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 
 import com.iridium126.createmanaindustry.config.CMIStress;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlock;
+import com.simibubi.create.api.stress.BlockStressValues;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlockEntity;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorTooltipModifier;
 import com.iridium126.createmanaindustry.trickster.KineticStressTrickRegister;
@@ -69,6 +70,8 @@ public class CreateManaIndustry {
 			ModConfigSpec.Builder stressBuilder = new ModConfigSpec.Builder();
 			CMIStress.INSTANCE.registerAll(stressBuilder);
 			modContainer.registerConfig(ModConfig.Type.SERVER, stressBuilder.build());
+			BlockStressValues.IMPACTS.registerProvider(CMIStress.INSTANCE::getImpact);
+			BlockStressValues.CAPACITIES.registerProvider(CMIStress.INSTANCE::getCapacity);
 		}
 		modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
 	}
