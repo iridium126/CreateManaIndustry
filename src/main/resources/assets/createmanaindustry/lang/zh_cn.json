@@ -1,6 +1,7 @@
 {
   "createmanaindustry.display_target.argument": "法术参数 %1$s",
   "createmanaindustry.display_target.modular_argument": "法术核心 %1$s，法术参数 %2$s",
+  "block.createmanaindustry.kinetic_atomizer": "动力雾化器",
   "block.createmanaindustry.stress_mana_converter": "动力注魔台",
   "block.createmanaindustry.stress_mana_converter.tooltip.summary": "消耗_应力_为_Trickster 晶结_充能，通过滑动框调节其_每 RPM 的应力消耗_。",
   "item.createmanaindustry.stress_mana_converter": "动力注魔台",

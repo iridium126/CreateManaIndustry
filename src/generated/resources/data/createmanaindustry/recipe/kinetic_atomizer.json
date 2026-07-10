@@ -1,0 +1,27 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "B": {
+      "item": "create:brass_casing"
+    },
+    "C": {
+      "item": "create:cogwheel"
+    },
+    "N": {
+      "item": "minecraft:copper_ingot"
+    },
+    "P": {
+      "item": "create:fluid_pipe"
+    }
+  },
+  "pattern": [
+    " N ",
+    "BCB",
+    " P "
+  ],
+  "result": {
+    "count": 1,
+    "id": "createmanaindustry:kinetic_atomizer"
+  }
+}

@@ -5,6 +5,7 @@ import net.minecraft.resources.ResourceLocation;
 import com.iridium126.createmanaindustry.content.fluids.EsotericManaFluidHandler;
 import com.iridium126.createmanaindustry.content.fluids.TricksterKnotFluidHandler;
 import com.iridium126.createmanaindustry.content.items.TricksterKnotItemHandler;
+import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlockEntity;
 import com.iridium126.createmanaindustry.trickster.TricksterKnotUtils;
 
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -19,6 +20,12 @@ public final class CMICapabilities {
 	private CMICapabilities() {}
 
 	public static void register(RegisterCapabilitiesEvent event) {
+		// Kinetic Atomizer fluid handler — only accepts input from the bottom face.
+		event.registerBlockEntity(
+				Capabilities.FluidHandler.BLOCK,
+				CMIBlockEntityTypes.KINETIC_ATOMIZER.get(),
+				(be, side) -> ((KineticAtomizerBlockEntity) be).getFluidHandler(side));
+
 		if (!CreateManaIndustry.TRICKSTER_ACTIVE)
 			return;
 
