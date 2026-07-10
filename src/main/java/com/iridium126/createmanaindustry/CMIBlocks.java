@@ -5,9 +5,11 @@ import static com.iridium126.createmanaindustry.CreateManaIndustry.REGISTRATE;
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlock;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlock;
 import com.simibubi.create.AllBlocks;
+import com.simibubi.create.AllItems;
 import com.simibubi.create.foundation.data.BlockStateGen;
 import com.simibubi.create.foundation.data.ModelGen;
 import com.simibubi.create.foundation.data.TagGen;
+import com.iridium126.createmanaindustry.config.CMIStress;
 import com.tterrag.registrate.providers.RegistrateRecipeProvider;
 import com.tterrag.registrate.util.entry.BlockEntry;
 
@@ -43,20 +45,23 @@ public final class CMIBlocks {
 	public static final BlockEntry<KineticAtomizerBlock> KINETIC_ATOMIZER = REGISTRATE
 			.block("kinetic_atomizer", KineticAtomizerBlock::new)
 			.initialProperties(() -> Blocks.IRON_BLOCK)
-			.properties(p -> p.mapColor(MapColor.TERRACOTTA_YELLOW))
+			.properties(p -> p.noOcclusion()
+				.mapColor(MapColor.TERRACOTTA_YELLOW))
 			.blockstate(BlockStateGen.directionalBlockProvider(true))
 			.transform(TagGen.pickaxeOnly())
+			.transform(CMIStress.setImpact(4.0))
 			.item()
 			.transform(ModelGen.customItemModel())
 			.recipe((c, p) -> {
 				ShapedRecipeBuilder.shaped(RecipeCategory.MISC, c.get())
+						.define('I', Items.COPPER_INGOT)
+						.define('L', CMIFluids.LIQUID_MANA.getBucket().get())
 						.define('C', AllBlocks.COGWHEEL.asItem())
+						.define('B', AllItems.BRASS_INGOT)
 						.define('P', AllBlocks.FLUID_PIPE.asItem())
-						.define('B', AllBlocks.BRASS_CASING.asItem())
-						.define('N', Items.COPPER_INGOT)
-						.pattern(" N ")
-						.pattern("BCB")
-						.pattern(" P ")
+						.pattern(" I ")
+						.pattern("LCL")
+						.pattern("BPB")
 						.unlockedBy("has_liquid_mana", RegistrateRecipeProvider.has(CMIFluids.LIQUID_MANA.getBucket().get()))
 						.save(p, CreateManaIndustry.modLoc(c.getName()));
 			})

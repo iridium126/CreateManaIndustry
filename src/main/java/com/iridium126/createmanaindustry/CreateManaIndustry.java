@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry;
 
 import org.slf4j.Logger;
 
+import com.iridium126.createmanaindustry.config.CMIStress;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlock;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlockEntity;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorTooltipModifier;
@@ -20,6 +21,8 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.neoforge.common.ModConfigSpec;
 
 @Mod(CreateManaIndustry.MODID)
 public class CreateManaIndustry {
@@ -62,7 +65,12 @@ public class CreateManaIndustry {
 		if (TRICKSTER_ACTIVE)
 			KineticStressTrickRegister.register();
 		CMIPartialModels.register();
-		modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON, Config.SPEC);
+		{
+			ModConfigSpec.Builder stressBuilder = new ModConfigSpec.Builder();
+			CMIStress.INSTANCE.registerAll(stressBuilder);
+			modContainer.registerConfig(ModConfig.Type.SERVER, stressBuilder.build());
+		}
+		modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
 	}
 
 	public static ResourceLocation modLoc(String path) {
