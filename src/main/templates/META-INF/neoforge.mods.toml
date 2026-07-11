@@ -102,3 +102,17 @@ config="${mod_id}.mixins.json"
     versionRange="[2.1.9-beta,)"
     ordering="AFTER"
     side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="hexcasting"
+    type="optional"
+    versionRange="[0.12.0-devel-pre-23,)"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="veil"
+    type="optional"
+    versionRange="[4.3.0,)"
+    ordering="AFTER"
+    side="BOTH"

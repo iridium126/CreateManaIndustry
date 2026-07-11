@@ -36,6 +36,7 @@ public class CreateManaIndustry {
     public static boolean TRICKSTER_ACTIVE = false;
     public static boolean BNB_ACTIVE = false;
     public static boolean HEX_ACTIVE = false;
+    public static boolean VEIL_ACTIVE = false;
 
     public static final CreateRegistrate REGISTRATE = CreateRegistrate.create(MODID);
 
@@ -58,6 +59,7 @@ public class CreateManaIndustry {
         TRICKSTER_ACTIVE = ModList.get().isLoaded("trickster");
         BNB_ACTIVE = ModList.get().isLoaded("bits_n_bobs");
         HEX_ACTIVE = ModList.get().isLoaded("hexcasting");
+        VEIL_ACTIVE = ModList.get().isLoaded("veil");
 
         REGISTRATE.registerEventListeners(modEventBus);
         modEventBus.addListener(CMICapabilities::register);

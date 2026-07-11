@@ -23,7 +23,8 @@ public class CreateManaIndustryClient {
         // Register the Veil post-processing uniform injection listener.
         // The mist pipeline is added/removed on demand when atomizers
         // activate/deactivate — see ClientMistHandler.setActive().
-        ClientMistHandler.init();
+        if (CreateManaIndustry.VEIL_ACTIVE)
+            ClientMistHandler.init();
     }
 
     @SubscribeEvent
