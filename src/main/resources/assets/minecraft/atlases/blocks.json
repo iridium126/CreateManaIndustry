@@ -7,6 +7,14 @@
     {
       "type": "single",
       "resource": "createmanaindustry:fluid/liquid_mana_still"
+    },
+    {
+      "type": "single",
+      "resource": "createmanaindustry:fluid/liquid_media_flow"
+    },
+    {
+      "type": "single",
+      "resource": "createmanaindustry:fluid/liquid_media_still"
     }
   ]
 }

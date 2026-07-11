@@ -41,9 +41,27 @@ public class CMIFluids {
                             .explosionResistance(100f))
                     .source(BaseFlowingFluid.Source::new)
                     .block()
-                    .properties(p -> p.mapColor(MapColor.COLOR_PURPLE))
+                    .properties(p -> p.mapColor(MapColor.COLOR_LIGHT_BLUE))
                     // Let the rendered fluid stay full-bright without making the placed liquid emit world light.
                     .properties(p -> p.lightLevel($ -> 0))
+                    .build()
+                    .bucket()
+                    .model(NonNullBiConsumer.noop())
+                    .onRegister(CMIFluids::registerFluidDispenseBehavior)
+                    .tag(Tags.Items.BUCKETS)
+                    .build()
+                    .register();
+
+    public static final FluidEntry<BaseFlowingFluid.Flowing> LIQUID_MEDIA =
+            REGISTRATE.standardFluid("liquid_media")
+                    .properties(b -> b.viscosity(1000).density(1000).lightLevel(15))
+                    .fluidProperties(p -> p.levelDecreasePerBlock(1)
+                            .tickRate(5)
+                            .slopeFindDistance(4)
+                            .explosionResistance(100f))
+                    .source(BaseFlowingFluid.Source::new)
+                    .block()
+                    .properties(p -> p.mapColor(MapColor.COLOR_PINK))
                     .build()
                     .bucket()
                     .model(NonNullBiConsumer.noop())

@@ -16,7 +16,7 @@ public final class CMICreativeModeTabs {
             () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.createmanaindustry"))
                     .withTabsBefore(CreativeModeTabs.SPAWN_EGGS)
-                    .icon(() -> CMIBlocks.KINETIC_MANA_GENERATOR.asStack())
+                    .icon(() -> CMIBlocks.KINETIC_ATOMIZER.asStack())
                     .build());
 
     private CMICreativeModeTabs() {}

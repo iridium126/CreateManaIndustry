@@ -2,6 +2,8 @@
   "block.createmanaindustry.kinetic_atomizer": "Kinetic Atomizer",
   "block.createmanaindustry.kinetic_mana_generator": "Kinetic Mana Generator",
   "block.createmanaindustry.liquid_mana": "Liquid Mana",
+  "block.createmanaindustry.liquid_media": "Liquid Media",
+  "fluid.createmanaindustry.liquid_media": "Liquid Media",
   "item.createmanaindustry.incomplete_amethyst_knot": "Incomplete Amethyst Knot",
   "item.createmanaindustry.incomplete_astral_knot": "Incomplete Astral Knot",
   "item.createmanaindustry.incomplete_diamond_knot": "Incomplete Diamond Knot",
@@ -9,5 +11,6 @@
   "item.createmanaindustry.incomplete_emerald_knot": "Incomplete Emerald Knot",
   "item.createmanaindustry.incomplete_quartz_knot": "Incomplete Quartz Knot",
   "item.createmanaindustry.kinetics_spell_core": "Kinetics Spell Core",
-  "item.createmanaindustry.liquid_mana_bucket": "Liquid Mana Bucket"
+  "item.createmanaindustry.liquid_mana_bucket": "Liquid Mana Bucket",
+  "item.createmanaindustry.liquid_media_bucket": "Liquid Media Bucket"
 }

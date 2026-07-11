@@ -1,5 +1,6 @@
 {
   "values": [
-    "createmanaindustry:liquid_mana_bucket"
+    "createmanaindustry:liquid_mana_bucket",
+    "createmanaindustry:liquid_media_bucket"
   ]
 }
