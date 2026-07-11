@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.content.fluids;
 
-import com.iridium126.createmanaindustry.Config;
+import com.iridium126.createmanaindustry.config.Config;
 
 public final class CreateTricksFluidConversions {
 	private CreateTricksFluidConversions() {}

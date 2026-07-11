@@ -1,27 +1,35 @@
 package com.iridium126.createmanaindustry.client.render;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.iridium126.createmanaindustry.Config;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.CMIFluids;
+import com.iridium126.createmanaindustry.config.Config;
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlockEntity;
+import com.mojang.blaze3d.platform.NativeImage;
 
 import foundry.veil.api.client.render.VeilRenderSystem;
 import foundry.veil.api.client.render.post.PostPipeline;
 import foundry.veil.api.client.render.post.PostProcessingManager;
-import foundry.veil.api.event.VeilPostProcessingEvent;
 import foundry.veil.platform.VeilEventPlatform;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
+import net.neoforged.neoforge.fluids.FluidStack;
 
 /**
  * Client-side handler that collects active Kinetic Atomizer positions and
  * passes them as uniforms to the Veil mist volumetric shader.
  * <p>
  * Active atomizers are tracked via a {@link ConcurrentHashMap} populated by
- * {@link #setActive(BlockPos, boolean)} which should be called from the
+ * {@link #setActive(BlockPos, FluidStack)} which should be called from the
  * atomizer block entity's client-side sync handler.
  * <p>
  * Call {@link #init()} once during client setup to register the Veil
@@ -29,116 +37,212 @@ import net.minecraft.resources.ResourceLocation;
  */
 public final class ClientMistHandler {
 
-	private static final ResourceLocation PIPELINE_ID = CreateManaIndustry.modLoc("mist");
-	private static final int MAX_ATOMIZERS = 16;
+    private static final ResourceLocation PIPELINE_ID = CreateManaIndustry.modLoc("mist");
+    private static final int MAX_ATOMIZERS = 16;
 
-	/** Client-side registry of active atomizer positions. */
-	private static final Map<BlockPos, Boolean> activeAtomizers = new ConcurrentHashMap<>();
+    /** Client-side registry of active atomizer positions and their fluids. */
+    private static final Map<BlockPos, FluidStack> activeAtomizerFluids = new ConcurrentHashMap<>();
 
-	private static final float[] atomizerData = new float[MAX_ATOMIZERS * 4];
-	private static int atomizerCount = 0;
-	private static boolean initialized = false;
-	private static boolean dirty = true;
-	private static boolean pipelineActive = false;
+    private static final float[] atomizerData = new float[MAX_ATOMIZERS * 4];
+    private static final float[] atomizerColorData = new float[MAX_ATOMIZERS * 3];
+    private static int atomizerCount = 0;
+    private static boolean initialized = false;
+    private static boolean dirty = true;
+    private static boolean pipelineActive = false;
 
-	private ClientMistHandler() {}
+    /** Cache of extracted fluid texture colors, keyed by still texture ResourceLocation. */
+    private static final Map<ResourceLocation, float[]> fluidColorCache = new HashMap<>();
 
-	/**
-	 * Registers the Veil post-processing listener. Safe to call multiple times.
-	 * Must be called on the client after Veil has initialized.
-	 */
-	public static void init() {
-		if (initialized)
-			return;
-		initialized = true;
+    private ClientMistHandler() {}
 
-		// Bridge: register for client sync notifications from atomizer BEs
-		KineticAtomizerBlockEntity.setMistSyncCallback(ClientMistHandler::setActive);
+    /**
+     * Registers the Veil post-processing listener. Safe to call multiple times.
+     * Must be called on the client after Veil has initialized.
+     */
+    public static void init() {
+        if (initialized)
+            return;
+        initialized = true;
 
-		// Listen for Veil post-processing to inject uniforms
-		VeilEventPlatform.INSTANCE.preVeilPostProcessing(ClientMistHandler::onPrePostProcessing);
-	}
+        // Bridge: register for client sync notifications from atomizer BEs
+        KineticAtomizerBlockEntity.setMistSyncCallback(ClientMistHandler::setActive);
 
-	/**
-	 * Called by the atomizer BE when its active state is synced to the client.
-	 */
-	public static void setActive(BlockPos pos, boolean active) {
-		if (active) {
-			activeAtomizers.put(pos.immutable(), Boolean.TRUE);
-		} else {
-			activeAtomizers.remove(pos);
-		}
-		dirty = true;
+        // Listen for Veil post-processing to inject uniforms
+        VeilEventPlatform.INSTANCE.preVeilPostProcessing(ClientMistHandler::onPrePostProcessing);
+    }
 
-		// Manage pipeline lifecycle: only run when mist is present
-		boolean hasMist = !activeAtomizers.isEmpty();
-		if (hasMist != pipelineActive) {
-			pipelineActive = hasMist;
-			PostProcessingManager ppm = VeilRenderSystem.renderer().getPostProcessingManager();
-			if (hasMist) {
-				ppm.add(PIPELINE_ID);
-			} else {
-				ppm.remove(PIPELINE_ID);
-			}
-		}
-	}
+    /**
+     * Called by the atomizer BE when its active state is synced to the client.
+     * An empty FluidStack means the atomizer is inactive.
+     */
+    public static void setActive(BlockPos pos, FluidStack fluid) {
+        if (fluid.isEmpty()) {
+            activeAtomizerFluids.remove(pos);
+        } else {
+            activeAtomizerFluids.put(pos.immutable(), fluid);
+        }
+        dirty = true;
 
-	// --- Veil event callbacks ---
+        // Manage pipeline lifecycle: only run when mist is present
+        boolean hasMist = !activeAtomizerFluids.isEmpty();
+        if (hasMist != pipelineActive) {
+            pipelineActive = hasMist;
+            PostProcessingManager ppm = VeilRenderSystem.renderer().getPostProcessingManager();
+            if (hasMist) {
+                ppm.add(PIPELINE_ID);
+            } else {
+                ppm.remove(PIPELINE_ID);
+            }
+        }
+    }
 
-	private static void onPrePostProcessing(ResourceLocation name, PostPipeline pipeline,
-			PostPipeline.Context context) {
-		if (!PIPELINE_ID.equals(name))
-			return;
+    // --- Veil event callbacks ---
 
-		if (dirty) {
-			packAtomizerData();
-			dirty = false;
-		}
+    private static void onPrePostProcessing(ResourceLocation name, PostPipeline pipeline,
+            PostPipeline.Context context) {
+        if (!PIPELINE_ID.equals(name))
+            return;
 
-		var countUniform = pipeline.getUniform("AtomizerCount");
-		if (countUniform != null)
-			countUniform.setInt(atomizerCount);
+        if (dirty) {
+            packAtomizerData();
+            dirty = false;
+        }
 
-		var dataUniform = pipeline.getUniform("AtomizerData");
-		if (dataUniform != null)
-			dataUniform.setFloats(atomizerData);
+        var countUniform = pipeline.getUniform("AtomizerCount");
+        if (countUniform != null)
+            countUniform.setInt(atomizerCount);
 
-		var colorUniform = pipeline.getUniform("MistColor");
-		if (colorUniform != null)
-			colorUniform.setVector(0.70f, 0.75f, 0.80f, 0.6f);
+        var dataUniform = pipeline.getUniform("AtomizerData");
+        if (dataUniform != null)
+            dataUniform.setFloats(atomizerData);
 
-		var densityUniform = pipeline.getUniform("MistDensity");
-		if (densityUniform != null)
-			densityUniform.setFloat(0.08f);
+        var colorDataUniform = pipeline.getUniform("AtomizerColors");
+        if (colorDataUniform != null)
+            colorDataUniform.setFloats(atomizerColorData);
 
-		var stepUniform = pipeline.getUniform("MistStepScale");
-		if (stepUniform != null)
-			stepUniform.setFloat(0.8f);
+        var opacityUniform = pipeline.getUniform("MistOpacity");
+        if (opacityUniform != null)
+            opacityUniform.setFloat(0.4f);
 
-		var sunUniform = pipeline.getUniform("SunDirection");
-		if (sunUniform != null) {
-			Minecraft mc = Minecraft.getInstance();
-			if (mc.level != null) {
-				float sunAngle = mc.level.getSunAngle(mc.getTimer().getGameTimeDeltaTicks());
-				sunUniform.setVector((float) -Math.cos(sunAngle), (float) (Math.sin(sunAngle) * 0.3), 0.0f, 0.0f);
-			} else {
-				sunUniform.setVector(-0.7f, 0.5f, 0.3f, 0.0f);
-			}
-		}
-	}
+        var densityUniform = pipeline.getUniform("MistDensity");
+        if (densityUniform != null)
+            densityUniform.setFloat(0.25f);
 
-	private static void packAtomizerData() {
-		int count = 0;
-		for (BlockPos pos : activeAtomizers.keySet()) {
-			if (count >= MAX_ATOMIZERS)
-				break;
-			int base = count * 4;
-			atomizerData[base] = pos.getX() + 0.5f;
-			atomizerData[base + 1] = pos.getY() + 0.5f;
-			atomizerData[base + 2] = pos.getZ() + 0.5f;
-			atomizerData[base + 3] = Config.mistMaxRadius;
-			count++;
-		}
-		atomizerCount = count;
-	}
+        var stepUniform = pipeline.getUniform("MistStepScale");
+        if (stepUniform != null)
+            stepUniform.setFloat(0.8f);
+
+        var sunUniform = pipeline.getUniform("SunDirection");
+        if (sunUniform != null) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level != null) {
+                float sunAngle = mc.level.getSunAngle(mc.getTimer().getGameTimeDeltaTicks());
+                sunUniform.setVector((float) -Math.cos(sunAngle), (float) (Math.sin(sunAngle) * 0.3), 0.0f, 0.0f);
+            } else {
+                sunUniform.setVector(-0.7f, 0.5f, 0.3f, 0.0f);
+            }
+        }
+    }
+
+    private static void packAtomizerData() {
+        int count = 0;
+        for (var entry : activeAtomizerFluids.entrySet()) {
+            if (count >= MAX_ATOMIZERS)
+                break;
+            BlockPos pos = entry.getKey();
+            FluidStack fluid = entry.getValue();
+
+            float[] color = getCachedFluidColor(fluid);
+
+            // Position + radius
+            int base = count * 4;
+            atomizerData[base] = pos.getX() + 0.5f;
+            atomizerData[base + 1] = pos.getY() + 0.5f;
+            atomizerData[base + 2] = pos.getZ() + 0.5f;
+            atomizerData[base + 3] = Config.mistMaxRadius;
+
+            // Color (r, g, b)
+            int cBase = count * 3;
+            atomizerColorData[cBase] = color[0];
+            atomizerColorData[cBase + 1] = color[1];
+            atomizerColorData[cBase + 2] = color[2];
+
+            count++;
+        }
+        atomizerCount = count;
+    }
+
+    // --- Fluid color extraction ---
+
+    /**
+     * Returns the cached RGB color (float[3], values 0..1) for a fluid. Manual
+     * mappings for common fluids; falls back to extracting dominant color from the
+     * fluid's still texture.
+     * <p>
+     * Must be called on the render thread.
+     */
+    private static float[] getCachedFluidColor(FluidStack stack) {
+        Fluid fluid = stack.getFluid();
+
+        // --- Manual mappings ---
+        if (fluid == Fluids.WATER || fluid == Fluids.FLOWING_WATER)
+            return new float[]{1.0f, 1.0f, 1.0f};
+
+        Fluid manaFlowing = CMIFluids.LIQUID_MANA.get();
+        if (fluid == manaFlowing || fluid == CMIFluids.LIQUID_MANA.getSource())
+            return new float[]{0.0f, 1.0f, 1.0f}; // cyan
+
+        // --- Texture-based extraction ---
+        ResourceLocation texLoc = IClientFluidTypeExtensions.of(fluid).getStillTexture(stack);
+        if (texLoc == null)
+            return new float[]{1.0f, 1.0f, 1.0f};
+
+        return fluidColorCache.computeIfAbsent(texLoc, ClientMistHandler::extractColorFromTexture);
+    }
+
+    /**
+     * Extracts the dominant color from a block atlas sprite texture using sparse
+     * sampling. Skips mostly transparent pixels. Falls back to white on failure.
+     * <p>
+     * Performance: step=4 on a 16x16 texture = ~16 pixel reads. Result is cached
+     * per texture location for the lifetime of the session.
+     */
+    private static float[] extractColorFromTexture(ResourceLocation texLoc) {
+        TextureAtlasSprite sprite = Minecraft.getInstance()
+                .getTextureAtlas(InventoryMenu.BLOCK_ATLAS)
+                .apply(texLoc);
+        NativeImage image = sprite.contents().getOriginalImage();
+
+        if (image == null)
+            return new float[]{1.0f, 1.0f, 1.0f};
+
+        int w = image.getWidth();
+        int h = image.getHeight();
+        int sampleStep = Math.max(1, Math.min(w, h) / 4); // sample every ~4th pixel
+
+        double rSum = 0, gSum = 0, bSum = 0;
+        int count = 0;
+
+        for (int y = 0; y < h; y += sampleStep) {
+            for (int x = 0; x < w; x += sampleStep) {
+                int rgba = image.getPixelRGBA(x, y);
+                int a = (rgba >> 24) & 0xFF;
+                if (a < 128)
+                    continue; // skip mostly transparent pixels
+                rSum += (rgba >> 16) & 0xFF;
+                gSum += (rgba >> 8) & 0xFF;
+                bSum += rgba & 0xFF;
+                count++;
+            }
+        }
+
+        if (count == 0)
+            return new float[]{1.0f, 1.0f, 1.0f};
+
+        return new float[]{
+            (float) (rSum / count / 255.0),
+            (float) (gSum / count / 255.0),
+            (float) (bSum / count / 255.0)
+        };
+    }
 }

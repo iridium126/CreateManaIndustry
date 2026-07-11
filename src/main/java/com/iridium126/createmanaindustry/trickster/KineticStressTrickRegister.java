@@ -4,8 +4,8 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.List;
 
-import com.iridium126.createmanaindustry.Config;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.config.Config;
 import com.iridium126.createmanaindustry.content.kinetics.TemporaryStress;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 

@@ -6,7 +6,8 @@ uniform sampler2D DiffuseDepthSampler;
 uniform int AtomizerCount;
 uniform float AtomizerData[64]; // packed: x,y,z,radius per atomizer
 
-uniform vec4 MistColor;
+uniform float AtomizerColors[48]; // packed: r,g,b per atomizer, max 16
+uniform float MistOpacity;
 uniform float MistDensity;
 uniform float MistStepScale;
 uniform vec3 SunDirection;
@@ -76,8 +77,14 @@ float henyey_greenstein_phase(float nu, float g) {
 // Mist concentration at a world-space position (our custom model)
 // ---------------------------------------------------------------------------
 
-float getConcentration(vec3 worldPos) {
+/**
+ * Returns vec2(concentration, index) where index is the atomizer that has
+ * the maximum concentration at the given world position. If no atomizer
+ * contributes, returns vec2(0.0, -1.0).
+ */
+vec2 getConcentrationAndIdx(vec3 worldPos) {
     float maxConc = 0.0;
+    float maxIdx = -1.0;
     for (int i = 0; i < AtomizerCount; i++) {
         vec4 atomizer = vec4(
             AtomizerData[i * 4],
@@ -92,10 +99,13 @@ float getConcentration(vec3 worldPos) {
         float radius = atomizer.w;
         if (dist <= radius) {
             float conc = 1.0 - dist / radius;
-            if (conc > maxConc) maxConc = conc;
+            if (conc > maxConc) {
+                maxConc = conc;
+                maxIdx = float(i);
+            }
         }
     }
-    return maxConc;
+    return vec2(maxConc, maxIdx);
 }
 
 // ---------------------------------------------------------------------------
@@ -159,9 +169,10 @@ void main() {
         if (transmittance < 0.01) break;
 
         vec3 pos = rayStart + rayDir * t;
-        float baseConc = getConcentration(pos);
+        vec2 ci = getConcentrationAndIdx(pos);
+        float baseConc = ci.x;
 
-        if (baseConc > 0.001) {
+        if (baseConc > 0.001 && ci.y >= 0.0) {
             // Modulate with procedural noise for natural mist wisps
             float noise = fbm(pos * NOISE_SCALE);
             float density = baseConc * (0.5 + 0.5 * noise) * MistDensity;
@@ -172,11 +183,19 @@ void main() {
 
             // Combined sun + ambient scattering
             float scatter = 0.5 + 0.5 * miePhase;
-            vec3 mistLit = MistColor.rgb * scatter;
+
+            // Per-atomizer color from the dominant atomizer
+            int idx = int(ci.y);
+            vec3 atomizerCol = vec3(
+                AtomizerColors[idx * 3],
+                AtomizerColors[idx * 3 + 1],
+                AtomizerColors[idx * 3 + 2]
+            );
+            vec3 mistLit = atomizerCol * scatter;
 
             // Front-to-back alpha compositing
             float stepDensity = density * stepSize;
-            vec4 sampleCol = vec4(mistLit, density * MistColor.a * 0.4);
+            vec4 sampleCol = vec4(mistLit, density * MistOpacity);
             sampleCol.rgb *= sampleCol.a;
             accumulatedMist += sampleCol * transmittance;
             transmittance *= exp(-stepDensity * 0.5);

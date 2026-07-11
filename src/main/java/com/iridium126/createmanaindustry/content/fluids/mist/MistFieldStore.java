@@ -1,9 +1,9 @@
-package com.iridium126.createmanaindustry.content.kinetics.mist;
+package com.iridium126.createmanaindustry.content.fluids.mist;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.iridium126.createmanaindustry.Config;
+import com.iridium126.createmanaindustry.config.Config;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;

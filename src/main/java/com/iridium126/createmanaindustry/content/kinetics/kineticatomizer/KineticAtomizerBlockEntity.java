@@ -3,8 +3,8 @@ package com.iridium126.createmanaindustry.content.kinetics.kineticatomizer;
 import java.util.List;
 import java.util.function.BiConsumer;
 
-import com.iridium126.createmanaindustry.Config;
-import com.iridium126.createmanaindustry.content.kinetics.mist.MistFieldStore;
+import com.iridium126.createmanaindustry.config.Config;
+import com.iridium126.createmanaindustry.content.fluids.mist.MistFieldStore;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 
 import net.minecraft.core.BlockPos;
@@ -12,6 +12,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -23,10 +24,16 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
 
 	static final int TANK_CAPACITY = 1000;
 
-	// Client-side callback: (blockPos, active) — set by ClientMistHandler on client init
-	private static BiConsumer<BlockPos, Boolean> mistSyncCallback = null;
+	// Client-side callback: (blockPos, fluidStack) — set by ClientMistHandler on client init.
+	// FluidStack.EMPTY means inactive, non-empty means active with that fluid.
+	private static BiConsumer<BlockPos, FluidStack> mistSyncCallback = null;
 
 	private final FluidTank tank = new FluidTank(TANK_CAPACITY) {
+		@Override
+		public boolean isFluidValid(FluidStack stack) {
+			return !stack.is(FluidTags.LAVA);
+		}
+
 		@Override
 		protected void onContentsChanged() {
 			if (hasLevel() && !level.isClientSide) {
@@ -84,7 +91,7 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
 		if (clientPacket) {
 			wasActive = tag.getBoolean("MistActive");
 			if (mistSyncCallback != null)
-				mistSyncCallback.accept(worldPosition, wasActive);
+				mistSyncCallback.accept(worldPosition, wasActive ? tank.getFluid() : FluidStack.EMPTY);
 		}
 	}
 
@@ -109,7 +116,7 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
 	 * from the server. Used by the rendering layer to track which atomizers are
 	 * producing mist.
 	 */
-	public static void setMistSyncCallback(BiConsumer<BlockPos, Boolean> callback) {
+	public static void setMistSyncCallback(BiConsumer<BlockPos, FluidStack> callback) {
 		mistSyncCallback = callback;
 	}
 

@@ -1,4 +1,4 @@
-package com.iridium126.createmanaindustry.content.kinetics.mist;
+package com.iridium126.createmanaindustry.content.fluids.mist;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 

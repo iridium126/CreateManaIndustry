@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry;
 import org.slf4j.Logger;
 
 import com.iridium126.createmanaindustry.config.CMIStress;
+import com.iridium126.createmanaindustry.config.Config;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlock;
 import com.simibubi.create.api.stress.BlockStressValues;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlockEntity;
