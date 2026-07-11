@@ -2,8 +2,8 @@ package com.iridium126.createmanaindustry.content.fluids;
 
 import com.iridium126.createmanaindustry.config.Config;
 
-public final class CreateTricksFluidConversions {
-    private CreateTricksFluidConversions() {}
+public final class CMIFluidConversions {
+    private CMIFluidConversions() {}
 
     public static int manaToFluidAmount(float manaAmount) {
         if (manaAmount <= 0)

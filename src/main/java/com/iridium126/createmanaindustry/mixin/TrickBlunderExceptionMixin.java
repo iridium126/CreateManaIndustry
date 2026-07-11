@@ -20,7 +20,7 @@ import net.minecraft.network.chat.MutableComponent;
 @Mixin(targets = "dev.enjarai.trickster.spell.blunder.TrickBlunderException", remap = false)
 public abstract class TrickBlunderExceptionMixin {
     @Inject(method = "createMessage", at = @At("RETURN"), cancellable = true, remap = false)
-    private void createtricks$overrideCreateMessage(CallbackInfoReturnable<MutableComponent> cir) {
+    private void createmanaindustry$overrideCreateMessage(CallbackInfoReturnable<MutableComponent> cir) {
         if ((Object) this instanceof InvalidKineticTargetBlunder self) {
             MutableComponent message = cir.getReturnValue();
 

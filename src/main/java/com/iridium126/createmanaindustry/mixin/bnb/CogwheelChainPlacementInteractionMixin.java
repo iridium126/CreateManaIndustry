@@ -34,7 +34,7 @@ public abstract class CogwheelChainPlacementInteractionMixin {
         at = @At(value = "INVOKE",
             target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/PlacingCogwheelChain;tryAddNode(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;Lcom/kipti/bnb/content/kinetics/cogwheel_chain/types/CogwheelChainType;)Z"),
         remap = false)
-    private static void createtricks$setLastNodeSpellFlag(
+    private static void createmanaindustry$setLastNodeSpellFlag(
         net.neoforged.neoforge.client.event.InputEvent.InteractionKeyMappingTriggered event,
         ClientLevel level, BlockPos hitPos, BlockState targetedState,
         CogwheelChainCandidate targetedCandidate, CogwheelChainType heldChainType,
@@ -56,7 +56,7 @@ public abstract class CogwheelChainPlacementInteractionMixin {
         at = @At(value = "INVOKE",
             target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/PlacingCogwheelChain;tryCompleteLoop()Z"),
         remap = false)
-    private static boolean createtricks$allowLoopClosureForSpellConstruct(PlacingCogwheelChain chain)
+    private static boolean createmanaindustry$allowLoopClosureForSpellConstruct(PlacingCogwheelChain chain)
             throws ChainInteractionFailedException {
         try {
             return chain.tryCompleteLoop();
@@ -85,7 +85,7 @@ public abstract class CogwheelChainPlacementInteractionMixin {
         at = @At(value = "INVOKE",
             target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/placement/CogwheelChainPlacementInteraction;onRightClick(Lnet/neoforged/neoforge/client/event/InputEvent$InteractionKeyMappingTriggered;)Z"),
         cancellable = true, remap = false)
-    private static void createtricks$handleSpellConstructInteraction(
+    private static void createmanaindustry$handleSpellConstructInteraction(
         net.neoforged.neoforge.client.event.InputEvent.InteractionKeyMappingTriggered event,
         CallbackInfo ci) {
 

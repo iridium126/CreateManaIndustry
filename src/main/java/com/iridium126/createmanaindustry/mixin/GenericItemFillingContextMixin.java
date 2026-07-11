@@ -15,19 +15,19 @@ import net.neoforged.neoforge.fluids.FluidStack;
 @Mixin(value = GenericItemFilling.class, remap = false)
 public class GenericItemFillingContextMixin {
     @Inject(method = "canItemBeFilled", at = @At("HEAD"))
-    private static void createtricks$setLevelForFillCheck(Level world, ItemStack stack,
+    private static void createmanaindustry$setLevelForFillCheck(Level world, ItemStack stack,
             CallbackInfoReturnable<Boolean> cir) {
         FluidTransferContextSupport.captureLevel(world);
     }
 
     @Inject(method = "canItemBeFilled", at = @At("RETURN"))
-    private static void createtricks$clearLevelForFillCheck(Level world, ItemStack stack,
+    private static void createmanaindustry$clearLevelForFillCheck(Level world, ItemStack stack,
             CallbackInfoReturnable<Boolean> cir) {
         FluidTransferContextSupport.clearLevel();
     }
 
     @Inject(method = "getRequiredAmountForItem", at = @At("HEAD"), cancellable = true)
-    private static void createtricks$setLevelForRequiredAmount(Level world, ItemStack stack, FluidStack availableFluid,
+    private static void createmanaindustry$setLevelForRequiredAmount(Level world, ItemStack stack, FluidStack availableFluid,
             CallbackInfoReturnable<Integer> cir) {
         FluidTransferContextSupport.captureLevel(world);
         int requiredAmount = FluidTransferContextSupport.getEsotericManaRequiredAmount(stack, availableFluid);
@@ -36,13 +36,13 @@ public class GenericItemFillingContextMixin {
     }
 
     @Inject(method = "getRequiredAmountForItem", at = @At("RETURN"))
-    private static void createtricks$clearLevelForRequiredAmount(Level world, ItemStack stack, FluidStack availableFluid,
+    private static void createmanaindustry$clearLevelForRequiredAmount(Level world, ItemStack stack, FluidStack availableFluid,
             CallbackInfoReturnable<Integer> cir) {
         FluidTransferContextSupport.clearLevel();
     }
 
     @Inject(method = "fillItem", at = @At("HEAD"), cancellable = true)
-    private static void createtricks$setLevelForFilling(Level world, int requiredAmount, ItemStack stack,
+    private static void createmanaindustry$setLevelForFilling(Level world, int requiredAmount, ItemStack stack,
             FluidStack availableFluid, CallbackInfoReturnable<ItemStack> cir) {
         FluidTransferContextSupport.captureLevel(world);
         if (requiredAmount != FluidTransferContextSupport.getEsotericManaRequiredAmount(stack, availableFluid))
@@ -54,7 +54,7 @@ public class GenericItemFillingContextMixin {
     }
 
     @Inject(method = "fillItem", at = @At("RETURN"))
-    private static void createtricks$clearLevelForFilling(Level world, int requiredAmount, ItemStack stack,
+    private static void createmanaindustry$clearLevelForFilling(Level world, int requiredAmount, ItemStack stack,
             FluidStack availableFluid, CallbackInfoReturnable<ItemStack> cir) {
         FluidTransferContextSupport.clearLevel();
     }

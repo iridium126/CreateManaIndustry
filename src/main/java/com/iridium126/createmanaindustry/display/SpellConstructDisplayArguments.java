@@ -13,7 +13,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 public final class SpellConstructDisplayArguments {
     public static final int MAX_ARGUMENTS = 8;
     public static final int MODULAR_EXECUTOR_SLOTS = 4;
-    public static final String NBT_KEY = "CreateTricksDisplayArguments";
+    public static final String NBT_KEY = "CMIDisplayArguments";
     private static final String NBT_SLOTS = "slots";
     private SpellConstructDisplayArguments() {}
 

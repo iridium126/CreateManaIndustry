@@ -29,7 +29,7 @@ public abstract class CogwheelChainBehaviourVisualMixin {
         at = @At(value = "INVOKE",
             target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/render/CogwheelChainRenderGeometryBuilder;buildSegments(Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/CogwheelChain;Lnet/minecraft/world/phys/Vec3;)Ljava/util/List;"),
         remap = false)
-    private List createtricks$expandBeforeFlywheelBuild(CogwheelChain chain, Vec3 origin) {
+    private List createmanaindustry$expandBeforeFlywheelBuild(CogwheelChain chain, Vec3 origin) {
         BnBChainRenderContext.begin(kineticBlockEntity);
         try {
             return com.kipti.bnb.content.kinetics.cogwheel_chain.render.CogwheelChainRenderGeometryBuilder

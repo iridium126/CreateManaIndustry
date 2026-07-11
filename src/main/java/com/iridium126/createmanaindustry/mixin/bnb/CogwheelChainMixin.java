@@ -23,7 +23,7 @@ public abstract class CogwheelChainMixin {
     private List<PathedCogwheelNode> cogwheelNodes;
 
     @Inject(method = "checkIntegrity", at = @At("HEAD"), cancellable = true)
-    private void createtricks$checkKineticsCoreNodes(Level level, BlockPos origin,
+    private void createmanaindustry$checkKineticsCoreNodes(Level level, BlockPos origin,
             CallbackInfoReturnable<Boolean> cir) {
         if (!containsKineticsCoreNode(level, origin))
             return;

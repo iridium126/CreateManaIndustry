@@ -21,7 +21,7 @@ public class MechanicalPressKnotMixin {
     @Redirect(method = "tryProcessInWorld",
             at = @At(value = "INVOKE",
                     target = "Lcom/simibubi/create/foundation/recipe/RecipeApplier;applyRecipeOn(Lnet/minecraft/world/entity/item/ItemEntity;Lnet/minecraft/world/item/crafting/Recipe;Z)V"))
-    private void createtricks$transferKnotOnEntityPress(ItemEntity entity, Recipe<?> recipe,
+    private void createmanaindustry$transferKnotOnEntityPress(ItemEntity entity, Recipe<?> recipe,
             boolean respectChances) {
         ItemStack inputCopy = entity.getItem().copy();
         RecipeApplier.applyRecipeOn(entity, recipe, respectChances);
@@ -35,7 +35,7 @@ public class MechanicalPressKnotMixin {
     @Redirect(method = {"tryProcessInWorld", "tryProcessOnBelt"},
             at = @At(value = "INVOKE",
                     target = "Lcom/simibubi/create/foundation/recipe/RecipeApplier;applyRecipeOn(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/crafting/Recipe;Z)Ljava/util/List;"))
-    private List<ItemStack> createtricks$transferKnotOnListPress(Level level, ItemStack stack, Recipe<?> recipe,
+    private List<ItemStack> createmanaindustry$transferKnotOnListPress(Level level, ItemStack stack, Recipe<?> recipe,
             boolean respectChances) {
         ItemStack inputCopy = stack.copy();
         List<ItemStack> results = RecipeApplier.applyRecipeOn(level, stack, recipe, respectChances);

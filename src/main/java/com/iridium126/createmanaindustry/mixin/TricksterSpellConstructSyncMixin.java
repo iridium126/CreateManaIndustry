@@ -16,7 +16,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 })
 public class TricksterSpellConstructSyncMixin {
     @Inject(method = "tick", at = @At("HEAD"), remap = false)
-    private void createtricks$syncDisplayArguments(CallbackInfo ci) {
+    private void createmanaindustry$syncDisplayArguments(CallbackInfo ci) {
         BlockEntity be = (BlockEntity) (Object) this;
         if (be.getLevel() == null || be.getLevel().isClientSide())
             return;

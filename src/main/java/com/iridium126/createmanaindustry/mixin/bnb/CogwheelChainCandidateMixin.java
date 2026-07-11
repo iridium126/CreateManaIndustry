@@ -20,7 +20,7 @@ public class CogwheelChainCandidateMixin {
 
     @Inject(method = "getForBlock(Lnet/minecraft/world/level/block/state/BlockState;)Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/CogwheelChainCandidate;",
         at = @At("RETURN"), cancellable = true, remap = false)
-    private static void createtricks$acceptSpellConstructInCandidate(BlockState state,
+    private static void createmanaindustry$acceptSpellConstructInCandidate(BlockState state,
             CallbackInfoReturnable<CogwheelChainCandidate> cir) {
         if (cir.getReturnValue() != null)
             return;
@@ -33,7 +33,7 @@ public class CogwheelChainCandidateMixin {
 
     @Inject(method = "isLargeCogwheel(Lnet/minecraft/world/level/block/state/BlockState;)Z",
         at = @At("HEAD"), cancellable = true, remap = false)
-    private static void createtricks$spellConstructNotLarge(BlockState state,
+    private static void createmanaindustry$spellConstructNotLarge(BlockState state,
             CallbackInfoReturnable<Boolean> cir) {
         if (BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
             cir.setReturnValue(false);
@@ -41,7 +41,7 @@ public class CogwheelChainCandidateMixin {
 
     @Inject(method = "isValidCandidate(Lnet/minecraft/world/level/block/state/BlockState;)Z",
         at = @At("RETURN"), cancellable = true, remap = false)
-    private static void createtricks$acceptSpellConstructAsCandidate(BlockState state,
+    private static void createmanaindustry$acceptSpellConstructAsCandidate(BlockState state,
             CallbackInfoReturnable<Boolean> cir) {
         if (!cir.getReturnValue() && BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
             cir.setReturnValue(true);

@@ -26,7 +26,7 @@ public abstract class KineticBlockEntityChainStressMixin {
 
     @Inject(method = "calculateStressApplied", at = @At("RETURN"),
             cancellable = true, remap = false)
-    private void createtricks$addKineticsCoreStress(
+    private void createmanaindustry$addKineticsCoreStress(
             CallbackInfoReturnable<Float> cir) {
         CogwheelChain chain = BnBCompact.getChainIfController(this);
         if (chain == null) return;

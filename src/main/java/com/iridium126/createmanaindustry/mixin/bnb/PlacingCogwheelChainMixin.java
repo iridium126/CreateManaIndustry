@@ -29,7 +29,7 @@ public abstract class PlacingCogwheelChainMixin {
     public abstract PlacingCogwheelNode getLastNode();
 
     @Inject(method = "tryAddNode", at = @At("HEAD"), cancellable = true, remap = false)
-    private void createtricks$bypassForSpellConstruct(BlockPos pos, BlockState state,
+    private void createmanaindustry$bypassForSpellConstruct(BlockPos pos, BlockState state,
             CogwheelChainType type, CallbackInfoReturnable<Boolean> cir) {
         boolean newIsSpell = BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock());
         boolean lastIsSpell = Boolean.TRUE.equals(BnBKineticsCoreNodes.LAST_NODE_IS_SPELL.get());
@@ -71,7 +71,7 @@ public abstract class PlacingCogwheelChainMixin {
     }
 
     @Inject(method = "tryAddNode", at = @At("RETURN"), remap = false)
-    private void createtricks$clearLastNodeFlag(BlockPos pos, BlockState state, CogwheelChainType type,
+    private void createmanaindustry$clearLastNodeFlag(BlockPos pos, BlockState state, CogwheelChainType type,
             CallbackInfoReturnable<Boolean> cir) {
         BnBKineticsCoreNodes.LAST_NODE_IS_SPELL.remove();
     }
@@ -81,7 +81,7 @@ public abstract class PlacingCogwheelChainMixin {
      * positions which are not recognised by {@code CogwheelChainCandidate}.
      */
     @Inject(method = "checkMissingNodesInLevel", at = @At("HEAD"), cancellable = true, remap = false)
-    private void createtricks$skipSpellConstructInMissingCheck(Level level, CogwheelChainType type,
+    private void createmanaindustry$skipSpellConstructInMissingCheck(Level level, CogwheelChainType type,
             CallbackInfoReturnable<Boolean> cir) {
         boolean hasSpellConstruct = false;
         for (PlacingCogwheelNode node : getVisitedNodes()) {

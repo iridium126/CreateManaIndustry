@@ -12,8 +12,8 @@ import net.minecraft.core.Direction;
 @Mixin(value = DirectionalShaftHalvesBlockEntity.class, remap = false)
 public abstract class DirectionalShaftHalvesBlockEntityMixin {
     @Inject(method = "getSourceFacing", at = @At("HEAD"), cancellable = true)
-    private void createtricks$makeSourceFacingSafe(CallbackInfoReturnable<Direction> cir) {
-        if (((KineticBlockEntityAccessor) this).createtricks$getSource() == null) {
+    private void createmanaindustry$makeSourceFacingSafe(CallbackInfoReturnable<Direction> cir) {
+        if (((KineticBlockEntityAccessor) this).createmanaindustry$getSource() == null) {
             cir.setReturnValue(Direction.UP);
         }
     }

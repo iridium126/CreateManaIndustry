@@ -29,7 +29,7 @@ public abstract class RenderedChainPathNodeMixin {
     public abstract Vec3 nodeOffset();
 
     @Inject(method = "getPosition", at = @At("RETURN"), cancellable = true, remap = false)
-    private void createtricks$shrinkKineticsCoreEndpoint(CallbackInfoReturnable<Vec3> cir) {
+    private void createmanaindustry$shrinkKineticsCoreEndpoint(CallbackInfoReturnable<Vec3> cir) {
         cir.setReturnValue(BnBChainRenderContext.adjustKineticsCorePosition(
                 relativePos(), nodeOffset(), cir.getReturnValue()));
     }

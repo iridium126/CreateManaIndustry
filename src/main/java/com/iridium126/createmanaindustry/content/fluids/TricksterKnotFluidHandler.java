@@ -84,7 +84,7 @@ public class TricksterKnotFluidHandler implements IFluidHandlerItem {
         if (!action.execute())
             return fluidAmount;
 
-        Level level = CreateTricksFluidTransferContext.getLevel();
+        Level level = CMIFluidTransferContext.getLevel();
         if (level == null)
             return 0;
 
@@ -104,7 +104,7 @@ public class TricksterKnotFluidHandler implements IFluidHandlerItem {
     }
 
     private float transferMana(Level level, int fluidAmount, boolean filling) {
-        float manaAmount = CreateTricksFluidConversions.fluidAmountToMana(fluidAmount);
+        float manaAmount = CMIFluidConversions.fluidAmountToMana(fluidAmount);
         if (manaAmount <= 0)
             return 0;
 
@@ -162,14 +162,14 @@ public class TricksterKnotFluidHandler implements IFluidHandlerItem {
 
     @Nullable
     private Level getContextLevel() {
-        return CreateTricksFluidTransferContext.getLevel();
+        return CMIFluidTransferContext.getLevel();
     }
 
     private int getPositiveManaFluidAmount(float manaAmount) {
-        return manaAmount > 0 ? CreateTricksFluidConversions.manaToFluidAmount(manaAmount) : 0;
+        return manaAmount > 0 ? CMIFluidConversions.manaToFluidAmount(manaAmount) : 0;
     }
 
     private static int toFluidAmount(float manaAmount, int maxAmount) {
-        return CreateTricksFluidConversions.manaToFluidAmount(manaAmount, maxAmount);
+        return CMIFluidConversions.manaToFluidAmount(manaAmount, maxAmount);
     }
 }

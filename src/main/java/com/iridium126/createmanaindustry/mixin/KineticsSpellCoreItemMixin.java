@@ -27,7 +27,7 @@ public abstract class KineticsSpellCoreItemMixin {
 
     @Inject(method = "getExecutionLimit", at = @At("RETURN"),
             cancellable = true, remap = false)
-    private void createtricks$speedBasedExecutionLimit(ServerLevel world,
+    private void createmanaindustry$speedBasedExecutionLimit(ServerLevel world,
             Vec3 pos, int originalLimit,
             CallbackInfoReturnable<Integer> cir) {
         Item item = (Item) (Object) this;

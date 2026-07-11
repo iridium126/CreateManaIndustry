@@ -24,7 +24,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 public abstract class ModularSpellConstructBlockEntityRendererMixin {
 
     @ModifyVariable(method = "render", at = @At("STORE"), ordinal = 1, remap = false)
-    private ItemStack createtricks$hideKineticsCoreStack(ItemStack coreStack) {
+    private ItemStack createmanaindustry$hideKineticsCoreStack(ItemStack coreStack) {
         if (KineticsSpellCoreItem.is(coreStack)) {
             return ItemStack.EMPTY;
         }
@@ -32,7 +32,7 @@ public abstract class ModularSpellConstructBlockEntityRendererMixin {
     }
 
     @Inject(method = "render", at = @At("TAIL"), remap = false)
-    private void createtricks$renderKineticsCores(@Coerce Object entity, float partialTicks,
+    private void createmanaindustry$renderKineticsCores(@Coerce Object entity, float partialTicks,
             PoseStack matrices, MultiBufferSource vertexConsumers, int light, int overlay,
             CallbackInfo ci) {
         if (!(entity instanceof Container inventory) || !(entity instanceof BlockEntity blockEntity))

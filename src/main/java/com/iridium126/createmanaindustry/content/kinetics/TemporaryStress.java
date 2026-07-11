@@ -28,7 +28,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class TemporaryStress {
-    public static final String NBT_KEY = "CreateTricksTemporaryStress";
+    public static final String NBT_KEY = "CMITemporaryStress";
 
     private static final Map<StressKey, StressState> SERVER_STATES = new ConcurrentHashMap<>();
     private static final Map<StressKey, StressState> CLIENT_STATES = new ConcurrentHashMap<>();
@@ -218,7 +218,7 @@ public final class TemporaryStress {
         KineticNetwork previousNetwork = be.hasNetwork() ? be.getOrCreateNetwork() : null;
         if (!Mth.equal(prevSpeed, speed)) {
             if (!be.hasSource() && SpeedLevel.of(prevSpeed) != SpeedLevel.of(speed))
-                ((KineticBlockEntityAccessor) be).createtricks$getEffects()
+                ((KineticBlockEntityAccessor) be).createmanaindustry$getEffects()
                     .queueRotationIndicators();
             applyNewSpeed(be, state, prevSpeed, speed);
         }

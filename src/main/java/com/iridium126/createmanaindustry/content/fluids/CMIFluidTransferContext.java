@@ -4,10 +4,10 @@ import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.world.level.Level;
 
-public final class CreateTricksFluidTransferContext {
+public final class CMIFluidTransferContext {
     private static final ThreadLocal<Level> CURRENT_LEVEL = new ThreadLocal<>();
 
-    private CreateTricksFluidTransferContext() {}
+    private CMIFluidTransferContext() {}
 
     public static void setLevel(Level level) {
         CURRENT_LEVEL.set(level);

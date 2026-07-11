@@ -1,6 +1,6 @@
 {
   "loader": "neoforge:fluid_container",
   "parent": "neoforge:item/bucket",
-  "fluid": "createtricks:liquid_mana",
+  "fluid": "createmanaindustry:liquid_mana",
   "apply_fluid_luminosity": true
 }

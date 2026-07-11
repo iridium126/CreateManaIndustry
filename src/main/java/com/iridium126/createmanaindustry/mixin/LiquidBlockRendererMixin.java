@@ -17,7 +17,7 @@ public class LiquidBlockRendererMixin {
     private static final int FULL_BRIGHT_LIGHT = 0x00F000F0;
 
     @Inject(method = "getLightColor", at = @At("HEAD"), cancellable = true)
-    private void createtricks$makeLiquidManaFullBright(BlockAndTintGetter level, BlockPos pos,
+    private void createmanaindustry$makeLiquidManaFullBright(BlockAndTintGetter level, BlockPos pos,
             CallbackInfoReturnable<Integer> cir) {
         if (isLiquidMana(level.getFluidState(pos)) || isLiquidMana(level.getFluidState(pos.below())))
             cir.setReturnValue(FULL_BRIGHT_LIGHT);

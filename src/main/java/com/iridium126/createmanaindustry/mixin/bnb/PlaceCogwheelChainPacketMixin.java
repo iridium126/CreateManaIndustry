@@ -25,14 +25,14 @@ public abstract class PlaceCogwheelChainPacketMixin {
     private static final ThreadLocal<ServerPlayer> CAPTURED_PLAYER = new ThreadLocal<>();
 
     @Inject(method = "handle", at = @At("HEAD"), remap = false)
-    private void createtricks$capturePlayer(ServerPlayer player, CallbackInfo ci) {
+    private void createmanaindustry$capturePlayer(ServerPlayer player, CallbackInfo ci) {
         CAPTURED_PLAYER.set(player);
     }
 
     @Redirect(method = "handle",
         at = @At(value = "INVOKE", target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/CogwheelChainPathfinder;buildChainPath(Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/PlacingCogwheelChain;)Ljava/util/List;"),
         remap = false)
-    private List<PathedCogwheelNode> createtricks$overrideBuildPath(PlacingCogwheelChain placingChain) {
+    private List<PathedCogwheelNode> createmanaindustry$overrideBuildPath(PlacingCogwheelChain placingChain) {
         try {
             List<PathedCogwheelNode> result;
             try {

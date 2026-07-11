@@ -26,7 +26,7 @@ public class EsotericManaFluidHandler implements IFluidHandlerItem {
 
     public static int getRequiredAmountForFilling(ItemStack stack, FluidStack availableFluid) {
         return canFillItem(stack, availableFluid)
-                ? CreateTricksFluidConversions.manaToFluidAmount(DEFAULT_ESOTERIC_MANA)
+                ? CMIFluidConversions.manaToFluidAmount(DEFAULT_ESOTERIC_MANA)
                 : -1;
     }
 
@@ -119,7 +119,7 @@ public class EsotericManaFluidHandler implements IFluidHandlerItem {
         if (mana <= 0)
             mana = DEFAULT_ESOTERIC_MANA;
 
-        int amount = CreateTricksFluidConversions.manaToFluidAmount(mana);
+        int amount = CMIFluidConversions.manaToFluidAmount(mana);
         return new FluidStack(CMIFluids.LIQUID_MANA.get(), amount);
     }
 

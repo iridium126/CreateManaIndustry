@@ -8,11 +8,11 @@ public final class FluidTransferContextSupport {
     private FluidTransferContextSupport() {}
 
     public static void captureLevel(Level level) {
-        CreateTricksFluidTransferContext.setLevel(level);
+        CMIFluidTransferContext.setLevel(level);
     }
 
     public static void clearLevel() {
-        CreateTricksFluidTransferContext.clear();
+        CMIFluidTransferContext.clear();
     }
 
     public static int getEsotericManaRequiredAmount(ItemStack stack, FluidStack availableFluid) {

@@ -14,7 +14,7 @@ import dev.engine_room.flywheel.lib.visual.AbstractBlockEntityVisual;
 @Mixin(value = KineticBlockEntityVisual.class, remap = false)
 public abstract class KineticBlockEntityVisualMixin<T extends KineticBlockEntity> extends AbstractBlockEntityVisual<T> {
     @Unique
-    private InstancerProvider createtricks$instancerProvider;
+    private InstancerProvider createmanaindustry$instancerProvider;
 
     protected KineticBlockEntityVisualMixin(VisualizationContext context, T blockEntity, float partialTick) {
         super(context, blockEntity, partialTick);
@@ -22,9 +22,9 @@ public abstract class KineticBlockEntityVisualMixin<T extends KineticBlockEntity
 
     @Override
     protected InstancerProvider instancerProvider() {
-        if (createtricks$instancerProvider == null)
-            createtricks$instancerProvider = new TemporaryStressInstancerProvider(visualizationContext.instancerProvider(),
+        if (createmanaindustry$instancerProvider == null)
+            createmanaindustry$instancerProvider = new TemporaryStressInstancerProvider(visualizationContext.instancerProvider(),
                     blockEntity);
-        return createtricks$instancerProvider;
+        return createmanaindustry$instancerProvider;
     }
 }

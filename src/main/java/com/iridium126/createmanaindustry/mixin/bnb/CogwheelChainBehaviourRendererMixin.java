@@ -24,7 +24,7 @@ public class CogwheelChainBehaviourRendererMixin {
     @Inject(
         method = "renderSafe(Lcom/cake/azimuth/behaviour/SuperBlockEntityBehaviour;Lcom/simibubi/create/content/kinetics/base/KineticBlockEntity;FLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;II)V",
         at = @At("HEAD"), remap = false)
-    private void createtricks$beginKineticsCoreRender(@Coerce Object behaviour,
+    private void createmanaindustry$beginKineticsCoreRender(@Coerce Object behaviour,
             KineticBlockEntity be, float partialTicks, PoseStack ms,
             MultiBufferSource buffer, int light, int overlay, CallbackInfo ci) {
         BnBChainRenderContext.begin(be);
@@ -35,7 +35,7 @@ public class CogwheelChainBehaviourRendererMixin {
     @Inject(
         method = "renderSafe(Lcom/cake/azimuth/behaviour/SuperBlockEntityBehaviour;Lcom/simibubi/create/content/kinetics/base/KineticBlockEntity;FLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;II)V",
         at = @At("RETURN"), remap = false)
-    private void createtricks$endKineticsCoreRender(@Coerce Object behaviour,
+    private void createmanaindustry$endKineticsCoreRender(@Coerce Object behaviour,
             KineticBlockEntity be, float partialTicks, PoseStack ms,
             MultiBufferSource buffer, int light, int overlay, CallbackInfo ci) {
         BnBChainRenderContext.end();

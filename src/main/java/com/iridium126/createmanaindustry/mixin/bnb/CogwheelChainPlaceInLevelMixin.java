@@ -22,11 +22,11 @@ public abstract class CogwheelChainPlaceInLevelMixin {
     public abstract CogwheelChainType getChainType();
 
     @Invoker("placeChainCogwheelInLevel")
-    abstract void createtricks$invokePlaceChainCogwheelInLevel(Level level, PlacingCogwheelNode node,
+    abstract void createmanaindustry$invokePlaceChainCogwheelInLevel(Level level, PlacingCogwheelNode node,
             boolean isController, int chainsRequired, BlockPos controllerPos, boolean isCreative);
 
     @Inject(method = "placeInLevel", at = @At("HEAD"), cancellable = true, remap = false)
-    private void createtricks$customPlaceInLevel(Level level, PlacingCogwheelChain placingChain,
+    private void createmanaindustry$customPlaceInLevel(Level level, PlacingCogwheelChain placingChain,
             boolean isCreative, CallbackInfo ci) {
         boolean hasSpellConstruct = false;
         for (PlacingCogwheelNode node : placingChain.getVisitedNodes()) {
@@ -48,7 +48,7 @@ public abstract class CogwheelChainPlaceInLevelMixin {
                 isFirst = false;
                 continue;
             }
-            createtricks$invokePlaceChainCogwheelInLevel(level, node, isFirst, chainsRequired,
+            createmanaindustry$invokePlaceChainCogwheelInLevel(level, node, isFirst, chainsRequired,
                     controllerPos, isCreative);
             isFirst = false;
         }
