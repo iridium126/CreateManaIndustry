@@ -13,39 +13,39 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  */
 public final class TricksterKnotUtils {
 
-	private TricksterKnotUtils() {}
+    private TricksterKnotUtils() {}
 
-	// ---- knot item checks ------------------------------------------------
+    // ---- knot item checks ------------------------------------------------
 
-	public static boolean isKnotItem(Item item) {
-		return TricksterReflection.ensureChargeInit()
-				&& item != null
-				&& TricksterReflection.knotItemClass.isInstance(item);
-	}
+    public static boolean isKnotItem(Item item) {
+        return TricksterReflection.ensureChargeInit()
+                && item != null
+                && TricksterReflection.knotItemClass.isInstance(item);
+    }
 
-	public static boolean isKnotStack(ItemStack stack) {
-		return stack != null && !stack.isEmpty() && isKnotItem(stack.getItem());
-	}
+    public static boolean isKnotStack(ItemStack stack) {
+        return stack != null && !stack.isEmpty() && isKnotItem(stack.getItem());
+    }
 
-	// ---- block entity checks ---------------------------------------------
+    // ---- block entity checks ---------------------------------------------
 
-	public static boolean isTricksterKnotBlockEntity(BlockEntity be) {
-		if (!TricksterReflection.ensureChargeInit() || be == null)
-			return false;
-		return TricksterReflection.chargingArrayBlockEntityClass.isInstance(be)
-				|| TricksterReflection.spellConstructBlockEntityClass.isInstance(be)
-				|| TricksterReflection.modularSpellConstructBlockEntityClass.isInstance(be);
-	}
+    public static boolean isTricksterKnotBlockEntity(BlockEntity be) {
+        if (!TricksterReflection.ensureChargeInit() || be == null)
+            return false;
+        return TricksterReflection.chargingArrayBlockEntityClass.isInstance(be)
+                || TricksterReflection.spellConstructBlockEntityClass.isInstance(be)
+                || TricksterReflection.modularSpellConstructBlockEntityClass.isInstance(be);
+    }
 
-	public static boolean isSpellConstructBlockEntity(BlockEntity be) {
-		if (!TricksterReflection.ensureChargeInit() || be == null)
-			return false;
-		return TricksterReflection.spellConstructBlockEntityClass.isInstance(be);
-	}
+    public static boolean isSpellConstructBlockEntity(BlockEntity be) {
+        if (!TricksterReflection.ensureChargeInit() || be == null)
+            return false;
+        return TricksterReflection.spellConstructBlockEntityClass.isInstance(be);
+    }
 
-	public static boolean isModularSpellConstructBlockEntity(BlockEntity be) {
-		if (!TricksterReflection.ensureChargeInit() || be == null)
-			return false;
-		return TricksterReflection.modularSpellConstructBlockEntityClass.isInstance(be);
-	}
+    public static boolean isModularSpellConstructBlockEntity(BlockEntity be) {
+        if (!TricksterReflection.ensureChargeInit() || be == null)
+            return false;
+        return TricksterReflection.modularSpellConstructBlockEntityClass.isInstance(be);
+    }
 }

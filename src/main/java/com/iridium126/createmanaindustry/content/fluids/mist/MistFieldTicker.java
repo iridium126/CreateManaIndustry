@@ -13,11 +13,11 @@ import net.neoforged.neoforge.event.tick.LevelTickEvent;
  */
 @EventBusSubscriber(modid = CreateManaIndustry.MODID)
 public final class MistFieldTicker {
-	private MistFieldTicker() {}
+    private MistFieldTicker() {}
 
-	@SubscribeEvent
-	public static void onLevelTick(LevelTickEvent.Post event) {
-		if (event.getLevel() instanceof ServerLevel serverLevel)
-			MistFieldStore.tick(serverLevel);
-	}
+    @SubscribeEvent
+    public static void onLevelTick(LevelTickEvent.Post event) {
+        if (event.getLevel() instanceof ServerLevel serverLevel)
+            MistFieldStore.tick(serverLevel);
+    }
 }

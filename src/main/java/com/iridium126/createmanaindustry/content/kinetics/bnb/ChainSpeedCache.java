@@ -12,18 +12,18 @@ import net.minecraft.core.BlockPos;
  */
 public final class ChainSpeedCache {
 
-	private static final Map<BlockPos, CachedSpeed> SPEED_CACHE = new ConcurrentHashMap<>();
+    private static final Map<BlockPos, CachedSpeed> SPEED_CACHE = new ConcurrentHashMap<>();
 
-	private ChainSpeedCache() {}
+    private ChainSpeedCache() {}
 
-	public static float getCachedChainSpeed(BlockPos spellPos, long gameTime) {
-		CachedSpeed entry = SPEED_CACHE.get(spellPos);
-		return entry != null && entry.gameTime == gameTime ? entry.speed : -1f;
-	}
+    public static float getCachedChainSpeed(BlockPos spellPos, long gameTime) {
+        CachedSpeed entry = SPEED_CACHE.get(spellPos);
+        return entry != null && entry.gameTime == gameTime ? entry.speed : -1f;
+    }
 
-	public static void putCachedChainSpeed(BlockPos spellPos, float speed, long gameTime) {
-		SPEED_CACHE.put(spellPos.immutable(), new CachedSpeed(speed, gameTime));
-	}
+    public static void putCachedChainSpeed(BlockPos spellPos, float speed, long gameTime) {
+        SPEED_CACHE.put(spellPos.immutable(), new CachedSpeed(speed, gameTime));
+    }
 
-	private record CachedSpeed(float speed, long gameTime) {}
+    private record CachedSpeed(float speed, long gameTime) {}
 }

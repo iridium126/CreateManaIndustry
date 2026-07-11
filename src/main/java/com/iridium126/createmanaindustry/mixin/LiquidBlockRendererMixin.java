@@ -14,17 +14,17 @@ import net.minecraft.world.level.material.FluidState;
 
 @Mixin(LiquidBlockRenderer.class)
 public class LiquidBlockRendererMixin {
-	private static final int FULL_BRIGHT_LIGHT = 0x00F000F0;
+    private static final int FULL_BRIGHT_LIGHT = 0x00F000F0;
 
-	@Inject(method = "getLightColor", at = @At("HEAD"), cancellable = true)
-	private void createtricks$makeLiquidManaFullBright(BlockAndTintGetter level, BlockPos pos,
-			CallbackInfoReturnable<Integer> cir) {
-		if (isLiquidMana(level.getFluidState(pos)) || isLiquidMana(level.getFluidState(pos.below())))
-			cir.setReturnValue(FULL_BRIGHT_LIGHT);
-	}
+    @Inject(method = "getLightColor", at = @At("HEAD"), cancellable = true)
+    private void createtricks$makeLiquidManaFullBright(BlockAndTintGetter level, BlockPos pos,
+            CallbackInfoReturnable<Integer> cir) {
+        if (isLiquidMana(level.getFluidState(pos)) || isLiquidMana(level.getFluidState(pos.below())))
+            cir.setReturnValue(FULL_BRIGHT_LIGHT);
+    }
 
-	private static boolean isLiquidMana(FluidState fluidState) {
-		return fluidState.getType().isSame(CMIFluids.LIQUID_MANA.get())
-				|| fluidState.getType().isSame(CMIFluids.LIQUID_MANA.getSource());
-	}
+    private static boolean isLiquidMana(FluidState fluidState) {
+        return fluidState.getType().isSame(CMIFluids.LIQUID_MANA.get())
+                || fluidState.getType().isSame(CMIFluids.LIQUID_MANA.getSource());
+    }
 }

@@ -19,45 +19,45 @@ import net.minecraft.world.level.block.state.BlockState;
 @Mixin(targets = "com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChain", remap = false)
 public abstract class CogwheelChainMixin {
 
-	@Shadow
-	private List<PathedCogwheelNode> cogwheelNodes;
+    @Shadow
+    private List<PathedCogwheelNode> cogwheelNodes;
 
-	@Inject(method = "checkIntegrity", at = @At("HEAD"), cancellable = true)
-	private void createtricks$checkKineticsCoreNodes(Level level, BlockPos origin,
-			CallbackInfoReturnable<Boolean> cir) {
-		if (!containsKineticsCoreNode(level, origin))
-			return;
+    @Inject(method = "checkIntegrity", at = @At("HEAD"), cancellable = true)
+    private void createtricks$checkKineticsCoreNodes(Level level, BlockPos origin,
+            CallbackInfoReturnable<Boolean> cir) {
+        if (!containsKineticsCoreNode(level, origin))
+            return;
 
-		for (PathedCogwheelNode node : cogwheelNodes) {
-			BlockPos pos = origin.offset(node.localPos());
-			if (!level.isLoaded(pos))
-				continue;
+        for (PathedCogwheelNode node : cogwheelNodes) {
+            BlockPos pos = origin.offset(node.localPos());
+            if (!level.isLoaded(pos))
+                continue;
 
-			if (BnBKineticsCoreNodes.isModularSpellConstruct(level, pos)) {
-				if (!BnBKineticsCoreNodes.hasAnyKineticsCore(level, pos)) {
-					cir.setReturnValue(false);
-					return;
-				}
-				continue;
-			}
+            if (BnBKineticsCoreNodes.isModularSpellConstruct(level, pos)) {
+                if (!BnBKineticsCoreNodes.hasAnyKineticsCore(level, pos)) {
+                    cir.setReturnValue(false);
+                    return;
+                }
+                continue;
+            }
 
-			BlockState state = level.getBlockState(pos);
-			CogwheelChainCandidate candidate = CogwheelChainCandidate.getForBlock(state);
-			if (candidate == null || !candidate.isConsistentWithNode(node)) {
-				cir.setReturnValue(false);
-				return;
-			}
-		}
+            BlockState state = level.getBlockState(pos);
+            CogwheelChainCandidate candidate = CogwheelChainCandidate.getForBlock(state);
+            if (candidate == null || !candidate.isConsistentWithNode(node)) {
+                cir.setReturnValue(false);
+                return;
+            }
+        }
 
-		cir.setReturnValue(true);
-	}
+        cir.setReturnValue(true);
+    }
 
-	private boolean containsKineticsCoreNode(Level level, BlockPos origin) {
-		for (PathedCogwheelNode node : cogwheelNodes) {
-			BlockPos pos = origin.offset(node.localPos());
-			if (level.isLoaded(pos) && BnBKineticsCoreNodes.isModularSpellConstruct(level, pos))
-				return true;
-		}
-		return false;
-	}
+    private boolean containsKineticsCoreNode(Level level, BlockPos origin) {
+        for (PathedCogwheelNode node : cogwheelNodes) {
+            BlockPos pos = origin.offset(node.localPos());
+            if (level.isLoaded(pos) && BnBKineticsCoreNodes.isModularSpellConstruct(level, pos))
+                return true;
+        }
+        return false;
+    }
 }

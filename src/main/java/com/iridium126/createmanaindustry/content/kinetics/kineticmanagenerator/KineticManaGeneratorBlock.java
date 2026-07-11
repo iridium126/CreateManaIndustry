@@ -21,52 +21,52 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 public class KineticManaGeneratorBlock extends DirectionalKineticBlock implements IBE<KineticManaGeneratorBlockEntity>, ICogWheel {
 
-	private static final VoxelShaper SHAPE = VoxelShaper.forDirectional(
-			Shapes.or(
-					Block.box(0, 0, 0, 16, 14, 16),
-					Block.box(1, 14, 1, 15, 16, 15)),
-			Direction.UP);
+    private static final VoxelShaper SHAPE = VoxelShaper.forDirectional(
+            Shapes.or(
+                    Block.box(0, 0, 0, 16, 14, 16),
+                    Block.box(1, 14, 1, 15, 16, 15)),
+            Direction.UP);
 
-	public KineticManaGeneratorBlock(Properties properties) {
-		super(properties);
-	}
+    public KineticManaGeneratorBlock(Properties properties) {
+        super(properties);
+    }
 
-	@Override
-	public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-		return SHAPE.get(state.getValue(FACING));
-	}
+    @Override
+    public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return SHAPE.get(state.getValue(FACING));
+    }
 
-	@Override
-	public boolean hasShaftTowards(LevelReader level, BlockPos pos, BlockState state, Direction face) {
-		return face == state.getValue(FACING).getOpposite();
-	}
+    @Override
+    public boolean hasShaftTowards(LevelReader level, BlockPos pos, BlockState state, Direction face) {
+        return face == state.getValue(FACING).getOpposite();
+    }
 
-	@Override
-	public Axis getRotationAxis(BlockState state) {
-		return state.getValue(FACING).getAxis();
-	}
+    @Override
+    public Axis getRotationAxis(BlockState state) {
+        return state.getValue(FACING).getAxis();
+    }
 
-	public static BlockPos getManaOutputPos(BlockState state, BlockPos pos) {
-		return pos.relative(state.getValue(FACING));
-	}
+    public static BlockPos getManaOutputPos(BlockState state, BlockPos pos) {
+        return pos.relative(state.getValue(FACING));
+    }
 
-	@Override
-	public Class<KineticManaGeneratorBlockEntity> getBlockEntityClass() {
-		return KineticManaGeneratorBlockEntity.class;
-	}
+    @Override
+    public Class<KineticManaGeneratorBlockEntity> getBlockEntityClass() {
+        return KineticManaGeneratorBlockEntity.class;
+    }
 
-	@Override
-	public BlockEntityType<? extends KineticManaGeneratorBlockEntity> getBlockEntityType() {
-		return CMIBlockEntityTypes.KINETIC_MANA_GENERATOR.get();
-	}
+    @Override
+    public BlockEntityType<? extends KineticManaGeneratorBlockEntity> getBlockEntityType() {
+        return CMIBlockEntityTypes.KINETIC_MANA_GENERATOR.get();
+    }
 
-	@Override
-	protected boolean isPathfindable(BlockState state, PathComputationType pathComputationType) {
-		return false;
-	}
+    @Override
+    protected boolean isPathfindable(BlockState state, PathComputationType pathComputationType) {
+        return false;
+    }
 
-	@Override
-	public boolean isLargeCog() {
-		return true;
-	}
+    @Override
+    public boolean isLargeCog() {
+        return true;
+    }
 }

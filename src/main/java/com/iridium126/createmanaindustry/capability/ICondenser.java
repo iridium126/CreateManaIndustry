@@ -17,18 +17,18 @@ import net.neoforged.neoforge.capabilities.BlockCapability;
  * }</pre>
  */
 public interface ICondenser {
-	BlockCapability<ICondenser, Void> CAPABILITY = BlockCapability.createVoid(
-			CreateManaIndustry.modLoc("condenser"), ICondenser.class);
+    BlockCapability<ICondenser, Void> CAPABILITY = BlockCapability.createVoid(
+            CreateManaIndustry.modLoc("condenser"), ICondenser.class);
 
-	/**
-	 * @return {@code true} if the mist concentration at this block's position is
-	 *         greater than zero.
-	 */
-	boolean isInMist();
+    /**
+     * @return {@code true} if the mist concentration at this block's position is
+     *         greater than zero.
+     */
+    boolean isInMist();
 
-	/**
-	 * @return the current mist concentration at this block's position, or
-	 *         {@code 0.0f} if the block is not in any mist field.
-	 */
-	float getConcentration();
+    /**
+     * @return the current mist concentration at this block's position, or
+     *         {@code 0.0f} if the block is not in any mist field.
+     */
+    float getConcentration();
 }

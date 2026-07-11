@@ -22,58 +22,58 @@ import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PlacingCogwheelNode;
 @Mixin(targets = "com.kipti.bnb.network.packets.from_client.PlaceCogwheelChainPacket", remap = false)
 public abstract class PlaceCogwheelChainPacketMixin {
 
-	private static final ThreadLocal<ServerPlayer> CAPTURED_PLAYER = new ThreadLocal<>();
+    private static final ThreadLocal<ServerPlayer> CAPTURED_PLAYER = new ThreadLocal<>();
 
-	@Inject(method = "handle", at = @At("HEAD"), remap = false)
-	private void createtricks$capturePlayer(ServerPlayer player, CallbackInfo ci) {
-		CAPTURED_PLAYER.set(player);
-	}
+    @Inject(method = "handle", at = @At("HEAD"), remap = false)
+    private void createtricks$capturePlayer(ServerPlayer player, CallbackInfo ci) {
+        CAPTURED_PLAYER.set(player);
+    }
 
-	@Redirect(method = "handle",
-		at = @At(value = "INVOKE", target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/CogwheelChainPathfinder;buildChainPath(Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/PlacingCogwheelChain;)Ljava/util/List;"),
-		remap = false)
-	private List<PathedCogwheelNode> createtricks$overrideBuildPath(PlacingCogwheelChain placingChain) {
-		try {
-			List<PathedCogwheelNode> result;
-			try {
-				result = CogwheelChainPathfinder.buildChainPath(placingChain);
-			} catch (com.kipti.bnb.content.kinetics.cogwheel_chain.placement.ChainInteractionFailedException e) {
-				result = null;
-			}
-			if (result != null)
-				return result;
+    @Redirect(method = "handle",
+        at = @At(value = "INVOKE", target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/CogwheelChainPathfinder;buildChainPath(Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/PlacingCogwheelChain;)Ljava/util/List;"),
+        remap = false)
+    private List<PathedCogwheelNode> createtricks$overrideBuildPath(PlacingCogwheelChain placingChain) {
+        try {
+            List<PathedCogwheelNode> result;
+            try {
+                result = CogwheelChainPathfinder.buildChainPath(placingChain);
+            } catch (com.kipti.bnb.content.kinetics.cogwheel_chain.placement.ChainInteractionFailedException e) {
+                result = null;
+            }
+            if (result != null)
+                return result;
 
-			ServerPlayer player = CAPTURED_PLAYER.get();
-			if (player == null)
-				return null;
+            ServerPlayer player = CAPTURED_PLAYER.get();
+            if (player == null)
+                return null;
 
-			Level level = player.level();
-			boolean hasSpellConstruct = false;
-			for (PlacingCogwheelNode node : placingChain.getVisitedNodes()) {
-				if (BnBKineticsCoreNodes.isModularSpellConstruct(level, node.pos())) {
-					hasSpellConstruct = true;
-					break;
-				}
-			}
-			if (!hasSpellConstruct)
-				return null;
+            Level level = player.level();
+            boolean hasSpellConstruct = false;
+            for (PlacingCogwheelNode node : placingChain.getVisitedNodes()) {
+                if (BnBKineticsCoreNodes.isModularSpellConstruct(level, node.pos())) {
+                    hasSpellConstruct = true;
+                    break;
+                }
+            }
+            if (!hasSpellConstruct)
+                return null;
 
-			return manualBuildChainPath(placingChain);
-		} finally {
-			CAPTURED_PLAYER.remove();
-		}
-	}
+            return manualBuildChainPath(placingChain);
+        } finally {
+            CAPTURED_PLAYER.remove();
+        }
+    }
 
-	private static List<PathedCogwheelNode> manualBuildChainPath(PlacingCogwheelChain chain) {
-		List<PlacingCogwheelNode> visitedNodes = chain.getVisitedNodes();
-		BlockPos controllerPos = chain.getFirstNode().pos();
-		List<PathedCogwheelNode> pathNodes = new ArrayList<>();
-		int side = 1;
-		for (PlacingCogwheelNode node : visitedNodes) {
-			pathNodes.add(new PathedCogwheelNode(side, node.isLarge(), node.rotationAxis(),
-				node.pos().subtract(controllerPos), node.hasSmallCogwheelOffset()));
-			side *= -1;
-		}
-		return pathNodes;
-	}
+    private static List<PathedCogwheelNode> manualBuildChainPath(PlacingCogwheelChain chain) {
+        List<PlacingCogwheelNode> visitedNodes = chain.getVisitedNodes();
+        BlockPos controllerPos = chain.getFirstNode().pos();
+        List<PathedCogwheelNode> pathNodes = new ArrayList<>();
+        int side = 1;
+        for (PlacingCogwheelNode node : visitedNodes) {
+            pathNodes.add(new PathedCogwheelNode(side, node.isLarge(), node.rotationAxis(),
+                node.pos().subtract(controllerPos), node.hasSmallCogwheelOffset()));
+            side *= -1;
+        }
+        return pathNodes;
+    }
 }

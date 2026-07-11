@@ -17,41 +17,41 @@ import net.minecraft.network.chat.Component;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 
 public class KineticManaGeneratorTooltipModifier implements TooltipModifier {
-	private final int minStressPerRpm;
-	private final int maxStressPerRpm;
+    private final int minStressPerRpm;
+    private final int maxStressPerRpm;
 
-	public KineticManaGeneratorTooltipModifier(int minStressPerRpm, int maxStressPerRpm) {
-		this.minStressPerRpm = minStressPerRpm;
-		this.maxStressPerRpm = maxStressPerRpm;
-	}
+    public KineticManaGeneratorTooltipModifier(int minStressPerRpm, int maxStressPerRpm) {
+        this.minStressPerRpm = minStressPerRpm;
+        this.maxStressPerRpm = maxStressPerRpm;
+    }
 
-	@Override
-	public void modify(ItemTooltipEvent context) {
-		if (!StressImpact.isEnabled()) {
-			return;
-		}
+    @Override
+    public void modify(ItemTooltipEvent context) {
+        if (!StressImpact.isEnabled()) {
+            return;
+        }
 
-		boolean hasGoggles = context.getEntity() != null && GogglesItem.isWearingGoggles(context.getEntity());
-		List<Component> tooltip = context.getToolTip();
-		tooltip.add(CommonComponents.EMPTY);
+        boolean hasGoggles = context.getEntity() != null && GogglesItem.isWearingGoggles(context.getEntity());
+        List<Component> tooltip = context.getToolTip();
+        tooltip.add(CommonComponents.EMPTY);
 
-		CreateLang.translate("tooltip.stressImpact")
-				.style(GRAY)
-				.addTo(tooltip);
+        CreateLang.translate("tooltip.stressImpact")
+                .style(GRAY)
+                .addTo(tooltip);
 
-		LangBuilder builder = CreateLang.builder()
-				.add(CreateLang.text(TooltipHelper.makeProgressBar(3, 2))
-						.style(AQUA));
+        LangBuilder builder = CreateLang.builder()
+                .add(CreateLang.text(TooltipHelper.makeProgressBar(3, 2))
+                        .style(AQUA));
 
-		if (hasGoggles) {
-			builder.text(" ")
-					.add(Component.translatable("tooltip.createmanaindustry.stress_range", minStressPerRpm, maxStressPerRpm))
-					.add(Component.literal(" ").append(Component.translatable("tooltip.createmanaindustry.variable_impact")));
-		} else {
-			builder.text(" ")
-					.add(Component.translatable("tooltip.createmanaindustry.variable"));
-		}
+        if (hasGoggles) {
+            builder.text(" ")
+                    .add(Component.translatable("tooltip.createmanaindustry.stress_range", minStressPerRpm, maxStressPerRpm))
+                    .add(Component.literal(" ").append(Component.translatable("tooltip.createmanaindustry.variable_impact")));
+        } else {
+            builder.text(" ")
+                    .add(Component.translatable("tooltip.createmanaindustry.variable"));
+        }
 
-		builder.addTo(tooltip);
-	}
+        builder.addTo(tooltip);
+    }
 }

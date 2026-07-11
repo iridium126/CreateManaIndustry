@@ -20,56 +20,56 @@ import net.minecraft.data.recipes.RecipeCategory;
 import net.minecraft.data.recipes.ShapedRecipeBuilder;
 
 public final class CMIBlocks {
-	public static final BlockEntry<KineticManaGeneratorBlock> KINETIC_MANA_GENERATOR = REGISTRATE
-			.block("kinetic_mana_generator", KineticManaGeneratorBlock::new)
-			.initialProperties(() -> Blocks.IRON_BLOCK)
-			.properties(p -> p.mapColor(MapColor.TERRACOTTA_YELLOW))
-			.blockstate(BlockStateGen.directionalBlockProvider(true))
-			.transform(TagGen.pickaxeOnly())
-			.item()
-			.transform(ModelGen.customItemModel())
-			.recipe((c, p) -> {
-				ShapedRecipeBuilder.shaped(RecipeCategory.MISC, c.get())
-						.define('A', Items.AMETHYST_BLOCK)
-						.define('L', CMIFluids.LIQUID_MANA.getBucket().get())
-						.define('C', AllBlocks.COGWHEEL.asItem())
-						.define('B', AllBlocks.BRASS_BLOCK.asItem())
-						.pattern("AAA")
-						.pattern("LCL")
-						.pattern("BBB")
-						.unlockedBy("has_liquid_mana", RegistrateRecipeProvider.has(CMIFluids.LIQUID_MANA.getBucket().get()))
-						.save(p, CreateManaIndustry.modLoc(c.getName()));
-			})
-			.register();
+    public static final BlockEntry<KineticManaGeneratorBlock> KINETIC_MANA_GENERATOR = REGISTRATE
+            .block("kinetic_mana_generator", KineticManaGeneratorBlock::new)
+            .initialProperties(() -> Blocks.IRON_BLOCK)
+            .properties(p -> p.mapColor(MapColor.TERRACOTTA_YELLOW))
+            .blockstate(BlockStateGen.directionalBlockProvider(true))
+            .transform(TagGen.pickaxeOnly())
+            .item()
+            .transform(ModelGen.customItemModel())
+            .recipe((c, p) -> {
+                ShapedRecipeBuilder.shaped(RecipeCategory.MISC, c.get())
+                        .define('A', Items.AMETHYST_BLOCK)
+                        .define('L', CMIFluids.LIQUID_MANA.getBucket().get())
+                        .define('C', AllBlocks.COGWHEEL.asItem())
+                        .define('B', AllBlocks.BRASS_BLOCK.asItem())
+                        .pattern("AAA")
+                        .pattern("LCL")
+                        .pattern("BBB")
+                        .unlockedBy("has_liquid_mana", RegistrateRecipeProvider.has(CMIFluids.LIQUID_MANA.getBucket().get()))
+                        .save(p, CreateManaIndustry.modLoc(c.getName()));
+            })
+            .register();
 
-	public static final BlockEntry<KineticAtomizerBlock> KINETIC_ATOMIZER = REGISTRATE
-			.block("kinetic_atomizer", KineticAtomizerBlock::new)
-			.initialProperties(() -> Blocks.IRON_BLOCK)
-			.properties(p -> p.noOcclusion()
-				.mapColor(MapColor.TERRACOTTA_YELLOW))
-			.blockstate(BlockStateGen.directionalBlockProvider(true))
-			.transform(TagGen.pickaxeOnly())
-			.transform(CMIStress.setImpact(4.0))
-			.item()
-			.transform(ModelGen.customItemModel())
-			.recipe((c, p) -> {
-				ShapedRecipeBuilder.shaped(RecipeCategory.MISC, c.get())
-						.define('I', Items.COPPER_INGOT)
-						.define('L', CMIFluids.LIQUID_MANA.getBucket().get())
-						.define('C', AllBlocks.COGWHEEL.asItem())
-						.define('B', AllItems.BRASS_INGOT)
-						.define('P', AllBlocks.FLUID_PIPE.asItem())
-						.pattern(" I ")
-						.pattern("LCL")
-						.pattern("BPB")
-						.unlockedBy("has_liquid_mana", RegistrateRecipeProvider.has(CMIFluids.LIQUID_MANA.getBucket().get()))
-						.save(p, CreateManaIndustry.modLoc(c.getName()));
-			})
-			.register();
+    public static final BlockEntry<KineticAtomizerBlock> KINETIC_ATOMIZER = REGISTRATE
+            .block("kinetic_atomizer", KineticAtomizerBlock::new)
+            .initialProperties(() -> Blocks.IRON_BLOCK)
+            .properties(p -> p.noOcclusion()
+                .mapColor(MapColor.TERRACOTTA_YELLOW))
+            .blockstate(BlockStateGen.directionalBlockProvider(true))
+            .transform(TagGen.pickaxeOnly())
+            .transform(CMIStress.setImpact(4.0))
+            .item()
+            .transform(ModelGen.customItemModel())
+            .recipe((c, p) -> {
+                ShapedRecipeBuilder.shaped(RecipeCategory.MISC, c.get())
+                        .define('I', Items.COPPER_INGOT)
+                        .define('L', CMIFluids.LIQUID_MANA.getBucket().get())
+                        .define('C', AllBlocks.COGWHEEL.asItem())
+                        .define('B', AllItems.BRASS_INGOT)
+                        .define('P', AllBlocks.FLUID_PIPE.asItem())
+                        .pattern(" I ")
+                        .pattern("LCL")
+                        .pattern("BPB")
+                        .unlockedBy("has_liquid_mana", RegistrateRecipeProvider.has(CMIFluids.LIQUID_MANA.getBucket().get()))
+                        .save(p, CreateManaIndustry.modLoc(c.getName()));
+            })
+            .register();
 
-	private CMIBlocks() {
-	}
+    private CMIBlocks() {
+    }
 
-	public static void register() {
-	}
+    public static void register() {
+    }
 }

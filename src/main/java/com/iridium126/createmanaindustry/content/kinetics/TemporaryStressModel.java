@@ -13,86 +13,86 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class TemporaryStressModel {
-	private TemporaryStressModel() {}
+    private TemporaryStressModel() {}
 
-	public static PartialModel select(BlockEntity be, PartialModel normal, PartialModel stressed) {
-		return TemporaryStress.isActive(be) ? stressed : normal;
-	}
+    public static PartialModel select(BlockEntity be, PartialModel normal, PartialModel stressed) {
+        return TemporaryStress.isActive(be) ? stressed : normal;
+    }
 
-	public static PartialModel innerKineticManaGenerator(BlockEntity be) {
-		return select(be, CMIPartialModels.KINETIC_MANA_GENERATOR_INNER,
-				CMIPartialModels.STRESSED_KINETIC_MANA_GENERATOR_INNER);
-	}
+    public static PartialModel innerKineticManaGenerator(BlockEntity be) {
+        return select(be, CMIPartialModels.KINETIC_MANA_GENERATOR_INNER,
+                CMIPartialModels.STRESSED_KINETIC_MANA_GENERATOR_INNER);
+    }
 
-	public static PartialModel shaft(BlockEntity be) {
-		return select(be, AllPartialModels.SHAFT, CMIPartialModels.STRESSED_SHAFT);
-	}
+    public static PartialModel shaft(BlockEntity be) {
+        return select(be, AllPartialModels.SHAFT, CMIPartialModels.STRESSED_SHAFT);
+    }
 
-	public static PartialModel shaftHalf(BlockEntity be) {
-		return select(be, AllPartialModels.SHAFT_HALF, CMIPartialModels.STRESSED_SHAFT_HALF);
-	}
+    public static PartialModel shaftHalf(BlockEntity be) {
+        return select(be, AllPartialModels.SHAFT_HALF, CMIPartialModels.STRESSED_SHAFT_HALF);
+    }
 
-	public static PartialModel cogwheel(BlockEntity be) {
-		return select(be, AllPartialModels.COGWHEEL, CMIPartialModels.STRESSED_COGWHEEL);
-	}
+    public static PartialModel cogwheel(BlockEntity be) {
+        return select(be, AllPartialModels.COGWHEEL, CMIPartialModels.STRESSED_COGWHEEL);
+    }
 
-	public static PartialModel shaftlessLargeCogwheel(BlockEntity be) {
-		return select(be, AllPartialModels.SHAFTLESS_LARGE_COGWHEEL,
-				CMIPartialModels.STRESSED_SHAFTLESS_LARGE_COGWHEEL);
-	}
+    public static PartialModel shaftlessLargeCogwheel(BlockEntity be) {
+        return select(be, AllPartialModels.SHAFTLESS_LARGE_COGWHEEL,
+                CMIPartialModels.STRESSED_SHAFTLESS_LARGE_COGWHEEL);
+    }
 
-	public static PartialModel shaftlessCogwheel(BlockEntity be) {
-		return select(be, AllPartialModels.SHAFTLESS_COGWHEEL,
-				CMIPartialModels.STRESSED_SHAFTLESS_COGWHEEL);
-	}
+    public static PartialModel shaftlessCogwheel(BlockEntity be) {
+        return select(be, AllPartialModels.SHAFTLESS_COGWHEEL,
+                CMIPartialModels.STRESSED_SHAFTLESS_COGWHEEL);
+    }
 
-	public static PartialModel cogwheelShaft(BlockEntity be) {
-		return select(be, AllPartialModels.COGWHEEL_SHAFT, CMIPartialModels.STRESSED_COGWHEEL_SHAFT);
-	}
+    public static PartialModel cogwheelShaft(BlockEntity be) {
+        return select(be, AllPartialModels.COGWHEEL_SHAFT, CMIPartialModels.STRESSED_COGWHEEL_SHAFT);
+    }
 
-	@Nullable
-	public static PartialModel replacement(BlockEntity be, PartialModel model) {
-		if (model == CMIPartialModels.KINETIC_MANA_GENERATOR_INNER)
-			return innerKineticManaGenerator(be);
-		if (model == AllPartialModels.SHAFT)
-			return shaft(be);
-		if (model == AllPartialModels.SHAFT_HALF)
-			return shaftHalf(be);
-		if (model == AllPartialModels.COGWHEEL)
-			return cogwheel(be);
-		if (model == AllPartialModels.SHAFTLESS_COGWHEEL)
-			return shaftlessCogwheel(be);
-		if (model == AllPartialModels.SHAFTLESS_LARGE_COGWHEEL)
-			return shaftlessLargeCogwheel(be);
-		if (model == AllPartialModels.COGWHEEL_SHAFT)
-			return cogwheelShaft(be);
-		return null;
-	}
+    @Nullable
+    public static PartialModel replacement(BlockEntity be, PartialModel model) {
+        if (model == CMIPartialModels.KINETIC_MANA_GENERATOR_INNER)
+            return innerKineticManaGenerator(be);
+        if (model == AllPartialModels.SHAFT)
+            return shaft(be);
+        if (model == AllPartialModels.SHAFT_HALF)
+            return shaftHalf(be);
+        if (model == AllPartialModels.COGWHEEL)
+            return cogwheel(be);
+        if (model == AllPartialModels.SHAFTLESS_COGWHEEL)
+            return shaftlessCogwheel(be);
+        if (model == AllPartialModels.SHAFTLESS_LARGE_COGWHEEL)
+            return shaftlessLargeCogwheel(be);
+        if (model == AllPartialModels.COGWHEEL_SHAFT)
+            return cogwheelShaft(be);
+        return null;
+    }
 
-	public static PartialModel replacementOrSelf(BlockEntity be, PartialModel model) {
-		PartialModel replacement = replacement(be, model);
-		return replacement == null ? model : replacement;
-	}
+    public static PartialModel replacementOrSelf(BlockEntity be, PartialModel model) {
+        PartialModel replacement = replacement(be, model);
+        return replacement == null ? model : replacement;
+    }
 
-	public static boolean hasReplacement(PartialModel model) {
-		return model == CMIPartialModels.KINETIC_MANA_GENERATOR_INNER
-				|| model == AllPartialModels.SHAFT
-				|| model == AllPartialModels.SHAFT_HALF
-				|| model == AllPartialModels.COGWHEEL
-				|| model == AllPartialModels.SHAFTLESS_COGWHEEL
-				|| model == AllPartialModels.SHAFTLESS_LARGE_COGWHEEL
-				|| model == AllPartialModels.COGWHEEL_SHAFT;
-	}
+    public static boolean hasReplacement(PartialModel model) {
+        return model == CMIPartialModels.KINETIC_MANA_GENERATOR_INNER
+                || model == AllPartialModels.SHAFT
+                || model == AllPartialModels.SHAFT_HALF
+                || model == AllPartialModels.COGWHEEL
+                || model == AllPartialModels.SHAFTLESS_COGWHEEL
+                || model == AllPartialModels.SHAFTLESS_LARGE_COGWHEEL
+                || model == AllPartialModels.COGWHEEL_SHAFT;
+    }
 
-	@Nullable
-	public static PartialModel rotatingBlockModel(KineticBlockEntity be) {
-		BlockState state = be.getBlockState();
-		if (AllBlocks.COGWHEEL.is(state.getBlock()))
-			return cogwheel(be);
-		if (AllBlocks.SHAFT.is(state.getBlock()))
-			return shaft(be);
-		if (ICogWheel.isLargeCog(state))
-			return shaftlessLargeCogwheel(be);
-		return null;
-	}
+    @Nullable
+    public static PartialModel rotatingBlockModel(KineticBlockEntity be) {
+        BlockState state = be.getBlockState();
+        if (AllBlocks.COGWHEEL.is(state.getBlock()))
+            return cogwheel(be);
+        if (AllBlocks.SHAFT.is(state.getBlock()))
+            return shaft(be);
+        if (ICogWheel.isLargeCog(state))
+            return shaftlessLargeCogwheel(be);
+        return null;
+    }
 }

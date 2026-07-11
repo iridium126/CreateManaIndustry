@@ -21,43 +21,43 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 public class KineticAtomizerBlock extends DirectionalKineticBlock implements IBE<KineticAtomizerBlockEntity>, ICogWheel {
 
-	private static final VoxelShaper SHAPE = VoxelShaper.forDirectional(
-			Shapes.or(
-					Block.box(0, 0, 0, 16, 12, 16),
-					Block.box(3, 12, 3, 13, 16, 13)),
-			Direction.UP);
+    private static final VoxelShaper SHAPE = VoxelShaper.forDirectional(
+            Shapes.or(
+                    Block.box(0, 0, 0, 16, 12, 16),
+                    Block.box(3, 12, 3, 13, 16, 13)),
+            Direction.UP);
 
-	public KineticAtomizerBlock(Properties properties) {
-		super(properties);
-	}
+    public KineticAtomizerBlock(Properties properties) {
+        super(properties);
+    }
 
-	@Override
-	public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-		return SHAPE.get(state.getValue(FACING));
-	}
+    @Override
+    public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return SHAPE.get(state.getValue(FACING));
+    }
 
-	@Override
-	public boolean hasShaftTowards(LevelReader level, BlockPos pos, BlockState state, Direction face) {
-		return false;
-	}
+    @Override
+    public boolean hasShaftTowards(LevelReader level, BlockPos pos, BlockState state, Direction face) {
+        return false;
+    }
 
-	@Override
-	public Axis getRotationAxis(BlockState state) {
-		return state.getValue(FACING).getAxis();
-	}
+    @Override
+    public Axis getRotationAxis(BlockState state) {
+        return state.getValue(FACING).getAxis();
+    }
 
-	@Override
-	public Class<KineticAtomizerBlockEntity> getBlockEntityClass() {
-		return KineticAtomizerBlockEntity.class;
-	}
+    @Override
+    public Class<KineticAtomizerBlockEntity> getBlockEntityClass() {
+        return KineticAtomizerBlockEntity.class;
+    }
 
-	@Override
-	public BlockEntityType<? extends KineticAtomizerBlockEntity> getBlockEntityType() {
-		return CMIBlockEntityTypes.KINETIC_ATOMIZER.get();
-	}
+    @Override
+    public BlockEntityType<? extends KineticAtomizerBlockEntity> getBlockEntityType() {
+        return CMIBlockEntityTypes.KINETIC_ATOMIZER.get();
+    }
 
-	@Override
-	protected boolean isPathfindable(BlockState state, PathComputationType pathComputationType) {
-		return false;
-	}
+    @Override
+    protected boolean isPathfindable(BlockState state, PathComputationType pathComputationType) {
+        return false;
+    }
 }

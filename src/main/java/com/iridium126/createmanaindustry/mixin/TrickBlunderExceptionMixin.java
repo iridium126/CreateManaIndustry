@@ -19,16 +19,16 @@ import net.minecraft.network.chat.MutableComponent;
  */
 @Mixin(targets = "dev.enjarai.trickster.spell.blunder.TrickBlunderException", remap = false)
 public abstract class TrickBlunderExceptionMixin {
-	@Inject(method = "createMessage", at = @At("RETURN"), cancellable = true, remap = false)
-	private void createtricks$overrideCreateMessage(CallbackInfoReturnable<MutableComponent> cir) {
-		if ((Object) this instanceof InvalidKineticTargetBlunder self) {
-			MutableComponent message = cir.getReturnValue();
+    @Inject(method = "createMessage", at = @At("RETURN"), cancellable = true, remap = false)
+    private void createtricks$overrideCreateMessage(CallbackInfoReturnable<MutableComponent> cir) {
+        if ((Object) this instanceof InvalidKineticTargetBlunder self) {
+            MutableComponent message = cir.getReturnValue();
 
-			if (message == null) {
-				message = Component.literal("");
-			}
+            if (message == null) {
+                message = Component.literal("");
+            }
 
-			cir.setReturnValue(message.append("Invalid kinetic target at ").append(self.getPos().toShortString()));
-		}
-	}
+            cir.setReturnValue(message.append("Invalid kinetic target at ").append(self.getPos().toShortString()));
+        }
+    }
 }

@@ -14,11 +14,11 @@ import net.neoforged.neoforge.fluids.FluidStack;
 
 @Mixin(value = FillingBySpout.class, remap = false)
 public class FillingBySpoutMixin {
-	@Inject(method = "getRequiredAmountForItem", at = @At("HEAD"), cancellable = true)
-	private static void createtricks$useConfiguredIncompleteKnotFluidAmount(Level world, ItemStack stack,
-			FluidStack availableFluid, CallbackInfoReturnable<Integer> cir) {
-		int requiredAmount = IncompleteKnotAssembly.getRequiredFluidAmount(stack, availableFluid);
-		if (requiredAmount >= 0)
-			cir.setReturnValue(requiredAmount);
-	}
+    @Inject(method = "getRequiredAmountForItem", at = @At("HEAD"), cancellable = true)
+    private static void createtricks$useConfiguredIncompleteKnotFluidAmount(Level world, ItemStack stack,
+            FluidStack availableFluid, CallbackInfoReturnable<Integer> cir) {
+        int requiredAmount = IncompleteKnotAssembly.getRequiredFluidAmount(stack, availableFluid);
+        if (requiredAmount >= 0)
+            cir.setReturnValue(requiredAmount);
+    }
 }

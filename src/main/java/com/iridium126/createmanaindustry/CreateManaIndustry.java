@@ -28,56 +28,56 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 
 @Mod(CreateManaIndustry.MODID)
 public class CreateManaIndustry {
-	public static final String MODID = "createmanaindustry";
-	public static final Logger LOGGER = LogUtils.getLogger();
+    public static final String MODID = "createmanaindustry";
+    public static final Logger LOGGER = LogUtils.getLogger();
 
-	// ---- optional dependency flags (set in constructor) -------------------
+    // ---- optional dependency flags (set in constructor) -------------------
 
-	public static boolean TRICKSTER_ACTIVE = false;
-	public static boolean BNB_ACTIVE = false;
+    public static boolean TRICKSTER_ACTIVE = false;
+    public static boolean BNB_ACTIVE = false;
 
-	public static final CreateRegistrate REGISTRATE = CreateRegistrate.create(MODID);
+    public static final CreateRegistrate REGISTRATE = CreateRegistrate.create(MODID);
 
-	static {
-		REGISTRATE.defaultCreativeTab(CMICreativeModeTabs.MAIN_TAB.getKey());
-		REGISTRATE.setTooltipModifierFactory(CreateManaIndustry::createTooltipModifier);
-	}
+    static {
+        REGISTRATE.defaultCreativeTab(CMICreativeModeTabs.MAIN_TAB.getKey());
+        REGISTRATE.setTooltipModifierFactory(CreateManaIndustry::createTooltipModifier);
+    }
 
-	private static TooltipModifier createTooltipModifier(Item item) {
-		TooltipModifier description = new ItemDescription.Modifier(item, FontHelper.Palette.STANDARD_CREATE);
-		if (item instanceof BlockItem blockItem && blockItem.getBlock() instanceof KineticManaGeneratorBlock) {
-			return description.andThen(new KineticManaGeneratorTooltipModifier(
-					KineticManaGeneratorBlockEntity.MIN_STRESS_PER_RPM,
-					KineticManaGeneratorBlockEntity.MAX_STRESS_PER_RPM));
-		}
-		return description.andThen(TooltipModifier.mapNull(KineticStats.create(item)));
-	}
+    private static TooltipModifier createTooltipModifier(Item item) {
+        TooltipModifier description = new ItemDescription.Modifier(item, FontHelper.Palette.STANDARD_CREATE);
+        if (item instanceof BlockItem blockItem && blockItem.getBlock() instanceof KineticManaGeneratorBlock) {
+            return description.andThen(new KineticManaGeneratorTooltipModifier(
+                    KineticManaGeneratorBlockEntity.MIN_STRESS_PER_RPM,
+                    KineticManaGeneratorBlockEntity.MAX_STRESS_PER_RPM));
+        }
+        return description.andThen(TooltipModifier.mapNull(KineticStats.create(item)));
+    }
 
-	public CreateManaIndustry(IEventBus modEventBus, ModContainer modContainer) {
-		TRICKSTER_ACTIVE = ModList.get().isLoaded("trickster");
-		BNB_ACTIVE = ModList.get().isLoaded("bits_n_bobs");
+    public CreateManaIndustry(IEventBus modEventBus, ModContainer modContainer) {
+        TRICKSTER_ACTIVE = ModList.get().isLoaded("trickster");
+        BNB_ACTIVE = ModList.get().isLoaded("bits_n_bobs");
 
-		REGISTRATE.registerEventListeners(modEventBus);
-		modEventBus.addListener(CMICapabilities::register);
-		CMICreativeModeTabs.register(modEventBus);
-		CMIBlocks.register();
-		CMIFluids.register();
-		CMIBlockEntityTypes.register();
-		CMIItems.register();
-		if (TRICKSTER_ACTIVE)
-			KineticStressTrickRegister.register();
-		CMIPartialModels.register();
-		{
-			ModConfigSpec.Builder stressBuilder = new ModConfigSpec.Builder();
-			CMIStress.INSTANCE.registerAll(stressBuilder);
-			modContainer.registerConfig(ModConfig.Type.SERVER, stressBuilder.build());
-			BlockStressValues.IMPACTS.registerProvider(CMIStress.INSTANCE::getImpact);
-			BlockStressValues.CAPACITIES.registerProvider(CMIStress.INSTANCE::getCapacity);
-		}
-		modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
-	}
+        REGISTRATE.registerEventListeners(modEventBus);
+        modEventBus.addListener(CMICapabilities::register);
+        CMICreativeModeTabs.register(modEventBus);
+        CMIBlocks.register();
+        CMIFluids.register();
+        CMIBlockEntityTypes.register();
+        CMIItems.register();
+        if (TRICKSTER_ACTIVE)
+            KineticStressTrickRegister.register();
+        CMIPartialModels.register();
+        {
+            ModConfigSpec.Builder stressBuilder = new ModConfigSpec.Builder();
+            CMIStress.INSTANCE.registerAll(stressBuilder);
+            modContainer.registerConfig(ModConfig.Type.SERVER, stressBuilder.build());
+            BlockStressValues.IMPACTS.registerProvider(CMIStress.INSTANCE::getImpact);
+            BlockStressValues.CAPACITIES.registerProvider(CMIStress.INSTANCE::getCapacity);
+        }
+        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+    }
 
-	public static ResourceLocation modLoc(String path) {
-		return ResourceLocation.fromNamespaceAndPath(MODID, path);
-	}
+    public static ResourceLocation modLoc(String path) {
+        return ResourceLocation.fromNamespaceAndPath(MODID, path);
+    }
 }

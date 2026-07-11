@@ -5,20 +5,20 @@ import org.jetbrains.annotations.Nullable;
 import net.minecraft.world.level.Level;
 
 public final class CreateTricksFluidTransferContext {
-	private static final ThreadLocal<Level> CURRENT_LEVEL = new ThreadLocal<>();
+    private static final ThreadLocal<Level> CURRENT_LEVEL = new ThreadLocal<>();
 
-	private CreateTricksFluidTransferContext() {}
+    private CreateTricksFluidTransferContext() {}
 
-	public static void setLevel(Level level) {
-		CURRENT_LEVEL.set(level);
-	}
+    public static void setLevel(Level level) {
+        CURRENT_LEVEL.set(level);
+    }
 
-	public static void clear() {
-		CURRENT_LEVEL.remove();
-	}
+    public static void clear() {
+        CURRENT_LEVEL.remove();
+    }
 
-	@Nullable
-	public static Level getLevel() {
-		return CURRENT_LEVEL.get();
-	}
+    @Nullable
+    public static Level getLevel() {
+        return CURRENT_LEVEL.get();
+    }
 }

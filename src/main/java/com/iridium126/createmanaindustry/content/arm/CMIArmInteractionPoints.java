@@ -10,19 +10,19 @@ import net.neoforged.neoforge.registries.RegisterEvent;
 
 @EventBusSubscriber(modid = CreateManaIndustry.MODID)
 public final class CMIArmInteractionPoints {
-	private static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath(CreateManaIndustry.MODID,
-			"trickster_knot");
+    private static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath(CreateManaIndustry.MODID,
+            "trickster_knot");
 
-	private CMIArmInteractionPoints() {}
+    private CMIArmInteractionPoints() {}
 
-	@SubscribeEvent
-	public static void registerArmInteractionPointType(RegisterEvent event) {
-		if (!CreateManaIndustry.TRICKSTER_ACTIVE)
-			return;
-		if (!event.getRegistryKey().equals(CreateRegistries.ARM_INTERACTION_POINT_TYPE))
-			return;
+    @SubscribeEvent
+    public static void registerArmInteractionPointType(RegisterEvent event) {
+        if (!CreateManaIndustry.TRICKSTER_ACTIVE)
+            return;
+        if (!event.getRegistryKey().equals(CreateRegistries.ARM_INTERACTION_POINT_TYPE))
+            return;
 
-		event.register(CreateRegistries.ARM_INTERACTION_POINT_TYPE, ID,
-				TricksterKnotArmInteractionPointType::new);
-	}
+        event.register(CreateRegistries.ARM_INTERACTION_POINT_TYPE, ID,
+                TricksterKnotArmInteractionPointType::new);
+    }
 }

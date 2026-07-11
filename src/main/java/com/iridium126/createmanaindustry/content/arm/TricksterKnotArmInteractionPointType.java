@@ -11,16 +11,16 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class TricksterKnotArmInteractionPointType extends ArmInteractionPointType {
-	@Override
-	public boolean canCreatePoint(Level level, BlockPos pos, BlockState state) {
-		if (!TricksterReflection.isAvailable())
-			return false;
-		BlockEntity be = level.getBlockEntity(pos);
-		return be != null && TricksterKnotUtils.isTricksterKnotBlockEntity(be);
-	}
+    @Override
+    public boolean canCreatePoint(Level level, BlockPos pos, BlockState state) {
+        if (!TricksterReflection.isAvailable())
+            return false;
+        BlockEntity be = level.getBlockEntity(pos);
+        return be != null && TricksterKnotUtils.isTricksterKnotBlockEntity(be);
+    }
 
-	@Override
-	public ArmInteractionPoint createPoint(Level level, BlockPos pos, BlockState state) {
-		return new TricksterKnotArmInteractionPoint(this, level, pos, state);
-	}
+    @Override
+    public ArmInteractionPoint createPoint(Level level, BlockPos pos, BlockState state) {
+        return new TricksterKnotArmInteractionPoint(this, level, pos, state);
+    }
 }

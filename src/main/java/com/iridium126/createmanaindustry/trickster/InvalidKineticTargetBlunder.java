@@ -5,14 +5,14 @@ import dev.enjarai.trickster.spell.trick.Trick;
 import net.minecraft.core.BlockPos;
 
 public class InvalidKineticTargetBlunder extends TrickBlunderException {
-	private final BlockPos pos;
+    private final BlockPos pos;
 
-	public InvalidKineticTargetBlunder(Trick<?> source, BlockPos pos) {
-		super(source);
-		this.pos = pos;
-	}
+    public InvalidKineticTargetBlunder(Trick<?> source, BlockPos pos) {
+        super(source);
+        this.pos = pos;
+    }
 
-	public BlockPos getPos() {
-		return pos;
-	}
+    public BlockPos getPos() {
+        return pos;
+    }
 }

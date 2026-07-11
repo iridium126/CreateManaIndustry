@@ -23,106 +23,106 @@ import net.minecraft.world.level.block.state.BlockState;
  */
 public final class MistFieldStore {
 
-	/** Per-dimension map of atomizer positions to their field parameters. */
-	private static final Map<ResourceKey<Level>, Map<BlockPos, AtomizerField>> ACTIVE = new ConcurrentHashMap<>();
+    /** Per-dimension map of atomizer positions to their field parameters. */
+    private static final Map<ResourceKey<Level>, Map<BlockPos, AtomizerField>> ACTIVE = new ConcurrentHashMap<>();
 
-	private MistFieldStore() {}
+    private MistFieldStore() {}
 
-	/**
-	 * Called by {@code KineticAtomizerBlockEntity} on state transitions (inactive
-	 * → active or active → inactive). Not called every tick.
-	 *
-	 * @param active {@code true} to register this atomizer; {@code false} to remove
-	 */
-	public static void setActive(Level level, BlockPos pos, boolean active, int radius) {
-		if (level == null || level.isClientSide)
-			return;
+    /**
+     * Called by {@code KineticAtomizerBlockEntity} on state transitions (inactive
+     * → active or active → inactive). Not called every tick.
+     *
+     * @param active {@code true} to register this atomizer; {@code false} to remove
+     */
+    public static void setActive(Level level, BlockPos pos, boolean active, int radius) {
+        if (level == null || level.isClientSide)
+            return;
 
-		ResourceKey<Level> dim = level.dimension();
-		if (active) {
-			ACTIVE.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
-					.put(pos.immutable(), new AtomizerField(radius));
-		} else {
-			Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(dim);
-			if (dimFields != null) {
-				dimFields.remove(pos);
-				if (dimFields.isEmpty())
-					ACTIVE.remove(dim, dimFields);
-			}
-		}
-	}
+        ResourceKey<Level> dim = level.dimension();
+        if (active) {
+            ACTIVE.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
+                    .put(pos.immutable(), new AtomizerField(radius));
+        } else {
+            Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(dim);
+            if (dimFields != null) {
+                dimFields.remove(pos);
+                if (dimFields.isEmpty())
+                    ACTIVE.remove(dim, dimFields);
+            }
+        }
+    }
 
-	/**
-	 * Queries the mist concentration at a given position.
-	 * <ul>
-	 * <li>Only air blocks can contain mist — checked at query time so block
-	 * changes are automatically reflected.</li>
-	 * <li>If multiple atomizer fields overlap, the <b>maximum</b> concentration
-	 * is returned.</li>
-	 * </ul>
-	 *
-	 * @return concentration in {@code [0, mistBaseConcentration]}, or {@code 0}
-	 *         if the position is not in any mist field
-	 */
-	public static float getConcentration(Level level, BlockPos pos) {
-		if (level == null || pos == null)
-			return 0f;
+    /**
+     * Queries the mist concentration at a given position.
+     * <ul>
+     * <li>Only air blocks can contain mist — checked at query time so block
+     * changes are automatically reflected.</li>
+     * <li>If multiple atomizer fields overlap, the <b>maximum</b> concentration
+     * is returned.</li>
+     * </ul>
+     *
+     * @return concentration in {@code [0, mistBaseConcentration]}, or {@code 0}
+     *         if the position is not in any mist field
+     */
+    public static float getConcentration(Level level, BlockPos pos) {
+        if (level == null || pos == null)
+            return 0f;
 
-		// Mist only exists in air blocks
-		BlockState state = level.getBlockState(pos);
-		if (!state.isAir())
-			return 0f;
+        // Mist only exists in air blocks
+        BlockState state = level.getBlockState(pos);
+        if (!state.isAir())
+            return 0f;
 
-		Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(level.dimension());
-		if (dimFields == null || dimFields.isEmpty())
-			return 0f;
+        Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(level.dimension());
+        if (dimFields == null || dimFields.isEmpty())
+            return 0f;
 
-		float maxConc = 0f;
-		for (var entry : dimFields.entrySet()) {
-			BlockPos ap = entry.getKey();
-			int radius = entry.getValue().radius();
+        float maxConc = 0f;
+        for (var entry : dimFields.entrySet()) {
+            BlockPos ap = entry.getKey();
+            int radius = entry.getValue().radius();
 
-			double dx = pos.getX() - ap.getX();
-				double dy = pos.getY() - ap.getY();
-				double dz = pos.getZ() - ap.getZ();
-				double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            double dx = pos.getX() - ap.getX();
+                double dy = pos.getY() - ap.getY();
+                double dz = pos.getZ() - ap.getZ();
+                double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-			if (dist <= radius) {
-				float conc = (float) (Config.mistBaseConcentration * (1.0 - dist / radius));
-				if (conc > maxConc)
-					maxConc = conc;
-			}
-		}
-		return maxConc;
-	}
+            if (dist <= radius) {
+                float conc = (float) (Config.mistBaseConcentration * (1.0 - dist / radius));
+                if (conc > maxConc)
+                    maxConc = conc;
+            }
+        }
+        return maxConc;
+    }
 
-	/**
-	 * Convenience check for whether a position has any mist concentration.
-	 *
-	 * @return {@code true} if {@link #getConcentration(Level, BlockPos)} &gt; 0
-	 */
-	public static boolean isInMist(Level level, BlockPos pos) {
-		return getConcentration(level, pos) > 0f;
-	}
+    /**
+     * Convenience check for whether a position has any mist concentration.
+     *
+     * @return {@code true} if {@link #getConcentration(Level, BlockPos)} &gt; 0
+     */
+    public static boolean isInMist(Level level, BlockPos pos) {
+        return getConcentration(level, pos) > 0f;
+    }
 
-	/**
-	 * Called every tick via {@link MistFieldTicker} to remove atomizers whose
-	 * chunks are no longer loaded — a safety net for chunk unloads that miss
-	 * the {@code invalidate()} callback.
-	 */
-	public static void tick(ServerLevel level) {
-		Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(level.dimension());
-		if (dimFields == null || dimFields.isEmpty())
-			return;
+    /**
+     * Called every tick via {@link MistFieldTicker} to remove atomizers whose
+     * chunks are no longer loaded — a safety net for chunk unloads that miss
+     * the {@code invalidate()} callback.
+     */
+    public static void tick(ServerLevel level) {
+        Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(level.dimension());
+        if (dimFields == null || dimFields.isEmpty())
+            return;
 
-		dimFields.entrySet().removeIf(entry -> !level.isPositionEntityTicking(entry.getKey()));
-		if (dimFields.isEmpty())
-			ACTIVE.remove(level.dimension(), dimFields);
-	}
+        dimFields.entrySet().removeIf(entry -> !level.isPositionEntityTicking(entry.getKey()));
+        if (dimFields.isEmpty())
+            ACTIVE.remove(level.dimension(), dimFields);
+    }
 
-	/**
-	 * Immutable record storing per-atomizer field parameters. Extendable with
-	 * additional parameters (custom concentration, etc.) in the future.
-	 */
-	private record AtomizerField(int radius) {}
+    /**
+     * Immutable record storing per-atomizer field parameters. Extendable with
+     * additional parameters (custom concentration, etc.) in the future.
+     */
+    private record AtomizerField(int radius) {}
 }

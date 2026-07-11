@@ -21,21 +21,21 @@ import net.minecraft.world.phys.Vec3;
 @Mixin(targets = "com.kipti.bnb.content.kinetics.cogwheel_chain.behaviour.CogwheelChainBehaviourVisual", remap = false)
 public abstract class CogwheelChainBehaviourVisualMixin {
 
-	@Shadow(remap = false)
-	private KineticBlockEntity kineticBlockEntity;
+    @Shadow(remap = false)
+    private KineticBlockEntity kineticBlockEntity;
 
-	@SuppressWarnings("rawtypes")
-	@Redirect(method = "rebuildMeshIfNeeded",
-		at = @At(value = "INVOKE",
-			target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/render/CogwheelChainRenderGeometryBuilder;buildSegments(Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/CogwheelChain;Lnet/minecraft/world/phys/Vec3;)Ljava/util/List;"),
-		remap = false)
-	private List createtricks$expandBeforeFlywheelBuild(CogwheelChain chain, Vec3 origin) {
-		BnBChainRenderContext.begin(kineticBlockEntity);
-		try {
-			return com.kipti.bnb.content.kinetics.cogwheel_chain.render.CogwheelChainRenderGeometryBuilder
-					.buildSegments(chain, origin);
-		} finally {
-			// Context kept alive for angular velocity lookups; cleared elsewhere
-		}
-	}
+    @SuppressWarnings("rawtypes")
+    @Redirect(method = "rebuildMeshIfNeeded",
+        at = @At(value = "INVOKE",
+            target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/render/CogwheelChainRenderGeometryBuilder;buildSegments(Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/CogwheelChain;Lnet/minecraft/world/phys/Vec3;)Ljava/util/List;"),
+        remap = false)
+    private List createtricks$expandBeforeFlywheelBuild(CogwheelChain chain, Vec3 origin) {
+        BnBChainRenderContext.begin(kineticBlockEntity);
+        try {
+            return com.kipti.bnb.content.kinetics.cogwheel_chain.render.CogwheelChainRenderGeometryBuilder
+                    .buildSegments(chain, origin);
+        } finally {
+            // Context kept alive for angular velocity lookups; cleared elsewhere
+        }
+    }
 }

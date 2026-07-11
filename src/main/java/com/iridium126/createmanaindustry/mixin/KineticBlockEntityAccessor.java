@@ -8,9 +8,9 @@ import com.simibubi.create.content.kinetics.base.KineticEffectHandler;
 
 @Mixin(value = KineticBlockEntity.class, remap = false)
 public interface KineticBlockEntityAccessor {
-	@Accessor("effects")
-	KineticEffectHandler createtricks$getEffects();
+    @Accessor("effects")
+    KineticEffectHandler createtricks$getEffects();
 
-	@Accessor("source")
-	net.minecraft.core.BlockPos createtricks$getSource();
+    @Accessor("source")
+    net.minecraft.core.BlockPos createtricks$getSource();
 }

@@ -16,17 +16,17 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 @Mixin(value = SafeBlockEntityRenderer.class, remap = false)
 public class SafeBlockEntityRendererMixin<T extends BlockEntity> {
 
-	@Inject(method = "render", at = @At("HEAD"))
-	private void createtricks$setRenderedKineticBlockEntity(T be, float partialTicks, PoseStack ms,
-			MultiBufferSource buffer, int light, int overlay, CallbackInfo ci) {
-		if (be instanceof KineticBlockEntity)
-			TemporaryStressRenderContext.set(be);
-	}
+    @Inject(method = "render", at = @At("HEAD"))
+    private void createtricks$setRenderedKineticBlockEntity(T be, float partialTicks, PoseStack ms,
+            MultiBufferSource buffer, int light, int overlay, CallbackInfo ci) {
+        if (be instanceof KineticBlockEntity)
+            TemporaryStressRenderContext.set(be);
+    }
 
-	@Inject(method = "render", at = @At("RETURN"))
-	private void createtricks$clearRenderedKineticBlockEntity(T be, float partialTicks, PoseStack ms,
-			MultiBufferSource buffer, int light, int overlay, CallbackInfo ci) {
-		if (be instanceof KineticBlockEntity)
-			TemporaryStressRenderContext.clear(be);
-	}
+    @Inject(method = "render", at = @At("RETURN"))
+    private void createtricks$clearRenderedKineticBlockEntity(T be, float partialTicks, PoseStack ms,
+            MultiBufferSource buffer, int light, int overlay, CallbackInfo ci) {
+        if (be instanceof KineticBlockEntity)
+            TemporaryStressRenderContext.clear(be);
+    }
 }

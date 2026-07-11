@@ -22,56 +22,56 @@ import net.neoforged.fml.loading.FMLLoader;
  */
 public class CMIMixinPlugin implements IMixinConfigPlugin {
 
-	private static final String BNB_MOD_ID = "bits_n_bobs";
-	private static final String TRICKSTER_MOD_ID = "trickster";
+    private static final String BNB_MOD_ID = "bits_n_bobs";
+    private static final String TRICKSTER_MOD_ID = "trickster";
 
-	@Override
-	public void onLoad(String mixinPackage) {}
+    @Override
+    public void onLoad(String mixinPackage) {}
 
-	@Override
-	public String getRefMapperConfig() {
-		return null;
-	}
+    @Override
+    public String getRefMapperConfig() {
+        return null;
+    }
 
-	@Override
-	public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
-		// BnB cogwheel-chain mixins require Bits 'n' Bobs
-		if (mixinClassName.contains(".bnb."))
-			return isLoaded(BNB_MOD_ID);
+    @Override
+    public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        // BnB cogwheel-chain mixins require Bits 'n' Bobs
+        if (mixinClassName.contains(".bnb."))
+            return isLoaded(BNB_MOD_ID);
 
-		// Mixins that target Trickster classes — disable when Trickster is absent
-		if (mixinClassName.contains("TricksterSpellConstructSync")
-				|| mixinClassName.contains("TrickBlunderException")
-				|| mixinClassName.contains("KineticsSpellCoreItem")
-				|| mixinClassName.contains("ModularSpellConstructBlockEntityRenderer"))
-			return isLoaded(TRICKSTER_MOD_ID);
+        // Mixins that target Trickster classes — disable when Trickster is absent
+        if (mixinClassName.contains("TricksterSpellConstructSync")
+                || mixinClassName.contains("TrickBlunderException")
+                || mixinClassName.contains("KineticsSpellCoreItem")
+                || mixinClassName.contains("ModularSpellConstructBlockEntityRenderer"))
+            return isLoaded(TRICKSTER_MOD_ID);
 
-		return true;
-	}
+        return true;
+    }
 
-	@Override
-	public void acceptTargets(Set<String> myTargets, Set<String> otherTargets) {}
+    @Override
+    public void acceptTargets(Set<String> myTargets, Set<String> otherTargets) {}
 
-	@Override
-	public List<String> getMixins() {
-		return null;
-	}
+    @Override
+    public List<String> getMixins() {
+        return null;
+    }
 
-	@Override
-	public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {}
+    @Override
+    public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {}
 
-	@Override
-	public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {}
+    @Override
+    public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {}
 
-	// ---- helpers ----------------------------------------------------------
+    // ---- helpers ----------------------------------------------------------
 
-	/**
-	 * Checks whether a mod is present during the mixin bootstrap phase.
-	 * <p>
-	 * This must use {@code FMLLoader.getLoadingModList()} — the higher-level
-	 * {@code ModList.get()} is not yet populated when mixin plugins are queried.
-	 */
-	private static boolean isLoaded(String modId) {
-		return FMLLoader.getLoadingModList().getModFileById(modId) != null;
-	}
+    /**
+     * Checks whether a mod is present during the mixin bootstrap phase.
+     * <p>
+     * This must use {@code FMLLoader.getLoadingModList()} — the higher-level
+     * {@code ModList.get()} is not yet populated when mixin plugins are queried.
+     */
+    private static boolean isLoaded(String modId) {
+        return FMLLoader.getLoadingModList().getModFileById(modId) != null;
+    }
 }

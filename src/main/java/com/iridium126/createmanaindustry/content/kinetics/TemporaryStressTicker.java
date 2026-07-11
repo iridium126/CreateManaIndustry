@@ -9,11 +9,11 @@ import net.neoforged.neoforge.event.tick.LevelTickEvent;
 
 @EventBusSubscriber(modid = CreateManaIndustry.MODID)
 public final class TemporaryStressTicker {
-	private TemporaryStressTicker() {}
+    private TemporaryStressTicker() {}
 
-	@SubscribeEvent
-	public static void tick(LevelTickEvent.Post event) {
-		if (event.getLevel() instanceof ServerLevel level)
-			TemporaryStress.tick(level);
-	}
+    @SubscribeEvent
+    public static void tick(LevelTickEvent.Post event) {
+        if (event.getLevel() instanceof ServerLevel level)
+            TemporaryStress.tick(level);
+    }
 }

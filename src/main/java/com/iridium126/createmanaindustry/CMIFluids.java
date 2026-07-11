@@ -32,89 +32,89 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
 
 public class CMIFluids {
-	public static final FluidEntry<BaseFlowingFluid.Flowing> LIQUID_MANA =
-			REGISTRATE.standardFluid("liquid_mana", ClientFullBrightFluidType::new)
-					.properties(b -> b.viscosity(1000).density(1000))
-					.fluidProperties(p -> p.levelDecreasePerBlock(1)
-							.tickRate(5)
-							.slopeFindDistance(4)
-							.explosionResistance(100f))
-					.source(BaseFlowingFluid.Source::new)
-					.block()
-					.properties(p -> p.mapColor(MapColor.COLOR_PURPLE))
-					// Let the rendered fluid stay full-bright without making the placed liquid emit world light.
-					.properties(p -> p.lightLevel($ -> 0))
-					.build()
-					.bucket()
-					.model(NonNullBiConsumer.noop())
-					.onRegister(CMIFluids::registerFluidDispenseBehavior)
-					.tag(Tags.Items.BUCKETS)
-					.build()
-					.register();
+    public static final FluidEntry<BaseFlowingFluid.Flowing> LIQUID_MANA =
+            REGISTRATE.standardFluid("liquid_mana", ClientFullBrightFluidType::new)
+                    .properties(b -> b.viscosity(1000).density(1000))
+                    .fluidProperties(p -> p.levelDecreasePerBlock(1)
+                            .tickRate(5)
+                            .slopeFindDistance(4)
+                            .explosionResistance(100f))
+                    .source(BaseFlowingFluid.Source::new)
+                    .block()
+                    .properties(p -> p.mapColor(MapColor.COLOR_PURPLE))
+                    // Let the rendered fluid stay full-bright without making the placed liquid emit world light.
+                    .properties(p -> p.lightLevel($ -> 0))
+                    .build()
+                    .bucket()
+                    .model(NonNullBiConsumer.noop())
+                    .onRegister(CMIFluids::registerFluidDispenseBehavior)
+                    .tag(Tags.Items.BUCKETS)
+                    .build()
+                    .register();
 
-	public static void register() {}
+    public static void register() {}
 
-	private static final DispenseItemBehavior DISPENSE_FLUID = new DefaultDispenseItemBehavior() {
-		@Override
-		protected ItemStack execute(BlockSource pSource, ItemStack pStack) {
-			DispensibleContainerItem dispensibleContainerItem = (DispensibleContainerItem) pStack.getItem();
-			BlockPos pos = pSource.pos().relative(pSource.state().getValue(DispenserBlock.FACING));
-			Level level = pSource.level();
-			if (dispensibleContainerItem.emptyContents(null, level, pos, null, pStack)) {
-				return new ItemStack(Items.BUCKET);
-			}
-			return super.execute(pSource, pStack);
-		}
-	};
+    private static final DispenseItemBehavior DISPENSE_FLUID = new DefaultDispenseItemBehavior() {
+        @Override
+        protected ItemStack execute(BlockSource pSource, ItemStack pStack) {
+            DispensibleContainerItem dispensibleContainerItem = (DispensibleContainerItem) pStack.getItem();
+            BlockPos pos = pSource.pos().relative(pSource.state().getValue(DispenserBlock.FACING));
+            Level level = pSource.level();
+            if (dispensibleContainerItem.emptyContents(null, level, pos, null, pStack)) {
+                return new ItemStack(Items.BUCKET);
+            }
+            return super.execute(pSource, pStack);
+        }
+    };
 
-	private static void registerFluidDispenseBehavior(BucketItem bucket) {
-		DispenserBlock.registerBehavior(bucket, DISPENSE_FLUID);
-	}
+    private static void registerFluidDispenseBehavior(BucketItem bucket) {
+        DispenserBlock.registerBehavior(bucket, DISPENSE_FLUID);
+    }
 
-	private static class ClientFullBrightFluidType extends FluidType {
-		private static final int FULL_BRIGHT_LIGHT_LEVEL = 15;
-		private final ResourceLocation stillTexture;
-		private final ResourceLocation flowingTexture;
+    private static class ClientFullBrightFluidType extends FluidType {
+        private static final int FULL_BRIGHT_LIGHT_LEVEL = 15;
+        private final ResourceLocation stillTexture;
+        private final ResourceLocation flowingTexture;
 
-		public ClientFullBrightFluidType(Properties properties, ResourceLocation stillTexture,
-				ResourceLocation flowingTexture) {
-			super(properties);
-			this.stillTexture = stillTexture;
-			this.flowingTexture = flowingTexture;
-		}
+        public ClientFullBrightFluidType(Properties properties, ResourceLocation stillTexture,
+                ResourceLocation flowingTexture) {
+            super(properties);
+            this.stillTexture = stillTexture;
+            this.flowingTexture = flowingTexture;
+        }
 
-		@Override
-		public void initializeClient(Consumer<IClientFluidTypeExtensions> consumer) {
-			consumer.accept(new IClientFluidTypeExtensions() {
-				@Override
-				public ResourceLocation getStillTexture() {
-					return stillTexture;
-				}
+        @Override
+        public void initializeClient(Consumer<IClientFluidTypeExtensions> consumer) {
+            consumer.accept(new IClientFluidTypeExtensions() {
+                @Override
+                public ResourceLocation getStillTexture() {
+                    return stillTexture;
+                }
 
-				@Override
-				public ResourceLocation getFlowingTexture() {
-					return flowingTexture;
-				}
-			});
-		}
+                @Override
+                public ResourceLocation getFlowingTexture() {
+                    return flowingTexture;
+                }
+            });
+        }
 
-		@Override
-		public int getLightLevel() {
-			return shouldRenderFullBright() ? FULL_BRIGHT_LIGHT_LEVEL : 0;
-		}
+        @Override
+        public int getLightLevel() {
+            return shouldRenderFullBright() ? FULL_BRIGHT_LIGHT_LEVEL : 0;
+        }
 
-		@Override
-		public int getLightLevel(FluidState state, BlockAndTintGetter getter, BlockPos pos) {
-			return getLightLevel();
-		}
+        @Override
+        public int getLightLevel(FluidState state, BlockAndTintGetter getter, BlockPos pos) {
+            return getLightLevel();
+        }
 
-		@Override
-		public int getLightLevel(FluidStack stack) {
-			return getLightLevel();
-		}
+        @Override
+        public int getLightLevel(FluidStack stack) {
+            return getLightLevel();
+        }
 
-		private static boolean shouldRenderFullBright() {
-			return FMLEnvironment.dist == Dist.CLIENT && EffectiveSide.get() == LogicalSide.CLIENT;
-		}
-	}
+        private static boolean shouldRenderFullBright() {
+            return FMLEnvironment.dist == Dist.CLIENT && EffectiveSide.get() == LogicalSide.CLIENT;
+        }
+    }
 }

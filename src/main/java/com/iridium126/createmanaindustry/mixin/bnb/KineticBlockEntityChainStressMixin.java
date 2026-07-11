@@ -19,39 +19,39 @@ import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 @Mixin(value = KineticBlockEntity.class, remap = false)
 public abstract class KineticBlockEntityChainStressMixin {
 
-	private static final float STRESS_PER_CORE = 4.0f;
+    private static final float STRESS_PER_CORE = 4.0f;
 
-	@Shadow
-	protected float lastStressApplied;
+    @Shadow
+    protected float lastStressApplied;
 
-	@Inject(method = "calculateStressApplied", at = @At("RETURN"),
-			cancellable = true, remap = false)
-	private void createtricks$addKineticsCoreStress(
-			CallbackInfoReturnable<Float> cir) {
-		CogwheelChain chain = BnBCompact.getChainIfController(this);
-		if (chain == null) return;
+    @Inject(method = "calculateStressApplied", at = @At("RETURN"),
+            cancellable = true, remap = false)
+    private void createtricks$addKineticsCoreStress(
+            CallbackInfoReturnable<Float> cir) {
+        CogwheelChain chain = BnBCompact.getChainIfController(this);
+        if (chain == null) return;
 
-		KineticBlockEntity kbe = (KineticBlockEntity) (Object) this;
-		if (kbe.getLevel() == null) return;
+        KineticBlockEntity kbe = (KineticBlockEntity) (Object) this;
+        if (kbe.getLevel() == null) return;
 
-		var nodes = chain.getChainPathCogwheelNodes();
-		var controllerPos = kbe.getBlockPos();
+        var nodes = chain.getChainPathCogwheelNodes();
+        var controllerPos = kbe.getBlockPos();
 
-		int coreCount = 0;
-		for (var node : nodes) {
-			var worldPos = controllerPos.offset(node.localPos());
-			if (BnBKineticsCoreNodes.isModularSpellConstruct(
-					kbe.getLevel(), worldPos)) {
-				coreCount += BnBKineticsCoreNodes.getKineticsCoreCount(
-						kbe.getLevel(), worldPos);
-			}
-		}
+        int coreCount = 0;
+        for (var node : nodes) {
+            var worldPos = controllerPos.offset(node.localPos());
+            if (BnBKineticsCoreNodes.isModularSpellConstruct(
+                    kbe.getLevel(), worldPos)) {
+                coreCount += BnBKineticsCoreNodes.getKineticsCoreCount(
+                        kbe.getLevel(), worldPos);
+            }
+        }
 
-		if (coreCount > 0) {
-			float total = cir.getReturnValueF()
-					+ coreCount * STRESS_PER_CORE;
-			lastStressApplied = total;
-			cir.setReturnValue(total);
-		}
-	}
+        if (coreCount > 0) {
+            float total = cir.getReturnValueF()
+                    + coreCount * STRESS_PER_CORE;
+            lastStressApplied = total;
+            cir.setReturnValue(total);
+        }
+    }
 }

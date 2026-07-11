@@ -18,39 +18,39 @@ import com.kipti.bnb.content.kinetics.cogwheel_chain.types.CogwheelChainType;
 @Mixin(targets = "com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChain", remap = false)
 public abstract class CogwheelChainPlaceInLevelMixin {
 
-	@Shadow
-	public abstract CogwheelChainType getChainType();
+    @Shadow
+    public abstract CogwheelChainType getChainType();
 
-	@Invoker("placeChainCogwheelInLevel")
-	abstract void createtricks$invokePlaceChainCogwheelInLevel(Level level, PlacingCogwheelNode node,
-			boolean isController, int chainsRequired, BlockPos controllerPos, boolean isCreative);
+    @Invoker("placeChainCogwheelInLevel")
+    abstract void createtricks$invokePlaceChainCogwheelInLevel(Level level, PlacingCogwheelNode node,
+            boolean isController, int chainsRequired, BlockPos controllerPos, boolean isCreative);
 
-	@Inject(method = "placeInLevel", at = @At("HEAD"), cancellable = true, remap = false)
-	private void createtricks$customPlaceInLevel(Level level, PlacingCogwheelChain placingChain,
-			boolean isCreative, CallbackInfo ci) {
-		boolean hasSpellConstruct = false;
-		for (PlacingCogwheelNode node : placingChain.getVisitedNodes()) {
-			if (BnBKineticsCoreNodes.isModularSpellConstruct(level, node.pos())) {
-				hasSpellConstruct = true;
-				break;
-			}
-		}
-		if (!hasSpellConstruct)
-			return;
+    @Inject(method = "placeInLevel", at = @At("HEAD"), cancellable = true, remap = false)
+    private void createtricks$customPlaceInLevel(Level level, PlacingCogwheelChain placingChain,
+            boolean isCreative, CallbackInfo ci) {
+        boolean hasSpellConstruct = false;
+        for (PlacingCogwheelNode node : placingChain.getVisitedNodes()) {
+            if (BnBKineticsCoreNodes.isModularSpellConstruct(level, node.pos())) {
+                hasSpellConstruct = true;
+                break;
+            }
+        }
+        if (!hasSpellConstruct)
+            return;
 
-		ci.cancel();
-		boolean isFirst = true;
-		BlockPos controllerPos = placingChain.getFirstNode().pos();
-		int chainsRequired = placingChain.getChainsRequiredInLoop(getChainType());
+        ci.cancel();
+        boolean isFirst = true;
+        BlockPos controllerPos = placingChain.getFirstNode().pos();
+        int chainsRequired = placingChain.getChainsRequiredInLoop(getChainType());
 
-		for (PlacingCogwheelNode node : placingChain.getVisitedNodes()) {
-			if (BnBKineticsCoreNodes.isModularSpellConstruct(level, node.pos())) {
-				isFirst = false;
-				continue;
-			}
-			createtricks$invokePlaceChainCogwheelInLevel(level, node, isFirst, chainsRequired,
-					controllerPos, isCreative);
-			isFirst = false;
-		}
-	}
+        for (PlacingCogwheelNode node : placingChain.getVisitedNodes()) {
+            if (BnBKineticsCoreNodes.isModularSpellConstruct(level, node.pos())) {
+                isFirst = false;
+                continue;
+            }
+            createtricks$invokePlaceChainCogwheelInLevel(level, node, isFirst, chainsRequired,
+                    controllerPos, isCreative);
+            isFirst = false;
+        }
+    }
 }

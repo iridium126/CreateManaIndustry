@@ -29,78 +29,78 @@ import net.neoforged.neoforge.event.level.BlockEvent;
 @EventBusSubscriber(modid = CreateManaIndustry.MODID)
 public final class SpellConstructChainHandler {
 
-	private static final int CHAIN_SEARCH_RADIUS = 16;
+    private static final int CHAIN_SEARCH_RADIUS = 16;
 
-	private SpellConstructChainHandler() {}
+    private SpellConstructChainHandler() {}
 
-	@SubscribeEvent
-	public static void onBlockBreak(final BlockEvent.BreakEvent event) {
-		Level level = (Level) event.getLevel();
-		if (level.isClientSide())
-			return;
+    @SubscribeEvent
+    public static void onBlockBreak(final BlockEvent.BreakEvent event) {
+        Level level = (Level) event.getLevel();
+        if (level.isClientSide())
+            return;
 
-		BlockPos pos = event.getPos();
-		if (!BnBKineticsCoreNodes.isModularSpellConstructBlock(event.getState().getBlock()))
-			return;
+        BlockPos pos = event.getPos();
+        if (!BnBKineticsCoreNodes.isModularSpellConstructBlock(event.getState().getBlock()))
+            return;
 
-		Player player = event.getPlayer();
-		boolean isCreative = player != null && player.hasInfiniteMaterials();
+        Player player = event.getPlayer();
+        boolean isCreative = player != null && player.hasInfiniteMaterials();
 
-		for (BlockPos checkPos : BlockPos.betweenClosed(
-				pos.offset(-CHAIN_SEARCH_RADIUS, -CHAIN_SEARCH_RADIUS, -CHAIN_SEARCH_RADIUS),
-				pos.offset(CHAIN_SEARCH_RADIUS, CHAIN_SEARCH_RADIUS, CHAIN_SEARCH_RADIUS))) {
+        for (BlockPos checkPos : BlockPos.betweenClosed(
+                pos.offset(-CHAIN_SEARCH_RADIUS, -CHAIN_SEARCH_RADIUS, -CHAIN_SEARCH_RADIUS),
+                pos.offset(CHAIN_SEARCH_RADIUS, CHAIN_SEARCH_RADIUS, CHAIN_SEARCH_RADIUS))) {
 
-			BlockEntity be = level.getBlockEntity(checkPos);
-			if (be == null)
-				continue;
+            BlockEntity be = level.getBlockEntity(checkPos);
+            if (be == null)
+                continue;
 
-			CogwheelChainBehaviour behaviour = SuperBlockEntityBehaviour
-					.getOptional(level, checkPos, CogwheelChainBehaviour.TYPE).orElse(null);
-			if (behaviour == null || !behaviour.isController())
-				continue;
+            CogwheelChainBehaviour behaviour = SuperBlockEntityBehaviour
+                    .getOptional(level, checkPos, CogwheelChainBehaviour.TYPE).orElse(null);
+            if (behaviour == null || !behaviour.isController())
+                continue;
 
-			CogwheelChain chain = behaviour.getControlledChain();
-			if (chain == null)
-				continue;
+            CogwheelChain chain = behaviour.getControlledChain();
+            if (chain == null)
+                continue;
 
-			// Check if this controller's chain includes the broken position
-			boolean containsBrokenPos = false;
-			for (PathedCogwheelNode node : chain.getChainPathCogwheelNodes()) {
-				if (checkPos.offset(node.localPos()).equals(pos)) {
-					containsBrokenPos = true;
-					break;
-				}
-			}
-			if (!containsBrokenPos)
-				continue;
+            // Check if this controller's chain includes the broken position
+            boolean containsBrokenPos = false;
+            for (PathedCogwheelNode node : chain.getChainPathCogwheelNodes()) {
+                if (checkPos.offset(node.localPos()).equals(pos)) {
+                    containsBrokenPos = true;
+                    break;
+                }
+            }
+            if (!containsBrokenPos)
+                continue;
 
-			ResidualChainResult result = ResidualChainResult
-					.tryBuildResidualChain(chain, checkPos, pos);
+            ResidualChainResult result = ResidualChainResult
+                    .tryBuildResidualChain(chain, checkPos, pos);
 
-			if (result != null) {
-				int oldCost = chain.getChainsRequired();
-				int newCost = result.placingChain()
-						.getChainsRequiredInLoop(chain.getChainType());
-				int costDifference = oldCost - newCost;
+            if (result != null) {
+                int oldCost = chain.getChainsRequired();
+                int newCost = result.placingChain()
+                        .getChainsRequiredInLoop(chain.getChainType());
+                int costDifference = oldCost - newCost;
 
-				// Destroy old chain without dropping items
-				behaviour.destroyChain(false, true);
+                // Destroy old chain without dropping items
+                behaviour.destroyChain(false, true);
 
-				if (result.chain().checkIntegrity(level,
-						result.placingChain().getNodes().getFirst().pos())) {
-					result.chain().placeInLevel(level, result.placingChain(),
-							isCreative);
-				}
+                if (result.chain().checkIntegrity(level,
+                        result.placingChain().getNodes().getFirst().pos())) {
+                    result.chain().placeInLevel(level, result.placingChain(),
+                            isCreative);
+                }
 
-				// Refund the cost difference
-				if (!isCreative && costDifference > 0) {
-					ItemStack drops = chain.getReturnedItem().getDefaultInstance()
-							.copyWithCount(costDifference);
-					Block.popResource(level, pos, drops);
-				}
-			} else {
-				behaviour.destroyChain(!isCreative, true);
-			}
-		}
-	}
+                // Refund the cost difference
+                if (!isCreative && costDifference > 0) {
+                    ItemStack drops = chain.getReturnedItem().getDefaultInstance()
+                            .copyWithCount(costDifference);
+                    Block.popResource(level, pos, drops);
+                }
+            } else {
+                behaviour.destroyChain(!isCreative, true);
+            }
+        }
+    }
 }

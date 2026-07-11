@@ -18,43 +18,43 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  */
 public final class BnBCompact {
 
-	private BnBCompact() {}
+    private BnBCompact() {}
 
-	@Nullable
-	private static CogwheelChainBehaviour getBehaviour(Object be) {
-		if (!(be instanceof BlockEntity blockEntity))
-			return null;
-		Level level = blockEntity.getLevel();
-		if (level == null)
-			return null;
-		try {
-			return SuperBlockEntityBehaviour.getOptional(level,
-					blockEntity.getBlockPos(),
-					CogwheelChainBehaviour.TYPE).orElse(null);
-		} catch (NoClassDefFoundError e) {
-			return null;
-		}
-	}
+    @Nullable
+    private static CogwheelChainBehaviour getBehaviour(Object be) {
+        if (!(be instanceof BlockEntity blockEntity))
+            return null;
+        Level level = blockEntity.getLevel();
+        if (level == null)
+            return null;
+        try {
+            return SuperBlockEntityBehaviour.getOptional(level,
+                    blockEntity.getBlockPos(),
+                    CogwheelChainBehaviour.TYPE).orElse(null);
+        } catch (NoClassDefFoundError e) {
+            return null;
+        }
+    }
 
-	// ---- single lookup -----------------------------------------------------
+    // ---- single lookup -----------------------------------------------------
 
-	public static boolean isChainBE(Object be) {
-		return getBehaviour(be) != null;
-	}
+    public static boolean isChainBE(Object be) {
+        return getBehaviour(be) != null;
+    }
 
-	/**
-	 * Returns the controlled chain if {@code be} is a chain controller,
-	 * or {@code null} otherwise. Combines {@code isChainBE + isController
-	 * + getChain} into a single behaviour lookup.
-	 */
-	@Nullable
-	public static CogwheelChain getChainIfController(Object be) {
-		try {
-			CogwheelChainBehaviour behaviour = getBehaviour(be);
-			if (behaviour != null && behaviour.isController())
-				return behaviour.getControlledChain();
-		} catch (NoClassDefFoundError ignored) {
-		}
-		return null;
-	}
+    /**
+     * Returns the controlled chain if {@code be} is a chain controller,
+     * or {@code null} otherwise. Combines {@code isChainBE + isController
+     * + getChain} into a single behaviour lookup.
+     */
+    @Nullable
+    public static CogwheelChain getChainIfController(Object be) {
+        try {
+            CogwheelChainBehaviour behaviour = getBehaviour(be);
+            if (behaviour != null && behaviour.isController())
+                return behaviour.getControlledChain();
+        } catch (NoClassDefFoundError ignored) {
+        }
+        return null;
+    }
 }

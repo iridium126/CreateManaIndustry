@@ -5,21 +5,21 @@ import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.fluids.FluidStack;
 
 public final class FluidTransferContextSupport {
-	private FluidTransferContextSupport() {}
+    private FluidTransferContextSupport() {}
 
-	public static void captureLevel(Level level) {
-		CreateTricksFluidTransferContext.setLevel(level);
-	}
+    public static void captureLevel(Level level) {
+        CreateTricksFluidTransferContext.setLevel(level);
+    }
 
-	public static void clearLevel() {
-		CreateTricksFluidTransferContext.clear();
-	}
+    public static void clearLevel() {
+        CreateTricksFluidTransferContext.clear();
+    }
 
-	public static int getEsotericManaRequiredAmount(ItemStack stack, FluidStack availableFluid) {
-		return EsotericManaFluidHandler.getRequiredAmountForFilling(stack, availableFluid);
-	}
+    public static int getEsotericManaRequiredAmount(ItemStack stack, FluidStack availableFluid) {
+        return EsotericManaFluidHandler.getRequiredAmountForFilling(stack, availableFluid);
+    }
 
-	public static ItemStack fillEsotericMana(ItemStack stack, FluidStack availableFluid) {
-		return EsotericManaFluidHandler.fillItem(stack, availableFluid);
-	}
+    public static ItemStack fillEsotericMana(ItemStack stack, FluidStack availableFluid) {
+        return EsotericManaFluidHandler.fillItem(stack, availableFluid);
+    }
 }

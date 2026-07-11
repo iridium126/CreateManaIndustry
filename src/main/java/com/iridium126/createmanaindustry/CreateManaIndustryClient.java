@@ -17,19 +17,19 @@ import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 @Mod(value = CreateManaIndustry.MODID, dist = Dist.CLIENT)
 @EventBusSubscriber(modid = CreateManaIndustry.MODID, value = Dist.CLIENT)
 public class CreateManaIndustryClient {
-	public CreateManaIndustryClient(ModContainer container) {
-		container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
+    public CreateManaIndustryClient(ModContainer container) {
+        container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
 
-		// Register the Veil post-processing uniform injection listener.
-		// The mist pipeline is added/removed on demand when atomizers
-		// activate/deactivate — see ClientMistHandler.setActive().
-		ClientMistHandler.init();
-	}
+        // Register the Veil post-processing uniform injection listener.
+        // The mist pipeline is added/removed on demand when atomizers
+        // activate/deactivate — see ClientMistHandler.setActive().
+        ClientMistHandler.init();
+    }
 
-	@SubscribeEvent
-	private static void onClientSetup(FMLClientSetupEvent event) {
-		event.enqueueWork(() -> {
-			PonderIndex.addPlugin(new CMIPonderPlugin());
-		});
-	}
+    @SubscribeEvent
+    private static void onClientSetup(FMLClientSetupEvent event) {
+        event.enqueueWork(() -> {
+            PonderIndex.addPlugin(new CMIPonderPlugin());
+        });
+    }
 }

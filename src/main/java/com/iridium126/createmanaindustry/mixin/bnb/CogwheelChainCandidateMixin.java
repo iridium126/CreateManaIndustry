@@ -18,32 +18,32 @@ import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChainCandidat
 @Mixin(targets = "com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChainCandidate", remap = false)
 public class CogwheelChainCandidateMixin {
 
-	@Inject(method = "getForBlock(Lnet/minecraft/world/level/block/state/BlockState;)Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/CogwheelChainCandidate;",
-		at = @At("RETURN"), cancellable = true, remap = false)
-	private static void createtricks$acceptSpellConstructInCandidate(BlockState state,
-			CallbackInfoReturnable<CogwheelChainCandidate> cir) {
-		if (cir.getReturnValue() != null)
-			return;
-		if (!BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
-			return;
+    @Inject(method = "getForBlock(Lnet/minecraft/world/level/block/state/BlockState;)Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/CogwheelChainCandidate;",
+        at = @At("RETURN"), cancellable = true, remap = false)
+    private static void createtricks$acceptSpellConstructInCandidate(BlockState state,
+            CallbackInfoReturnable<CogwheelChainCandidate> cir) {
+        if (cir.getReturnValue() != null)
+            return;
+        if (!BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
+            return;
 
-		Direction.Axis axis = BnBKineticsCoreNodes.getFacing(state).getAxis();
-		cir.setReturnValue(new CogwheelChainCandidate(axis, false, false));
-	}
+        Direction.Axis axis = BnBKineticsCoreNodes.getFacing(state).getAxis();
+        cir.setReturnValue(new CogwheelChainCandidate(axis, false, false));
+    }
 
-	@Inject(method = "isLargeCogwheel(Lnet/minecraft/world/level/block/state/BlockState;)Z",
-		at = @At("HEAD"), cancellable = true, remap = false)
-	private static void createtricks$spellConstructNotLarge(BlockState state,
-			CallbackInfoReturnable<Boolean> cir) {
-		if (BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
-			cir.setReturnValue(false);
-	}
+    @Inject(method = "isLargeCogwheel(Lnet/minecraft/world/level/block/state/BlockState;)Z",
+        at = @At("HEAD"), cancellable = true, remap = false)
+    private static void createtricks$spellConstructNotLarge(BlockState state,
+            CallbackInfoReturnable<Boolean> cir) {
+        if (BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
+            cir.setReturnValue(false);
+    }
 
-	@Inject(method = "isValidCandidate(Lnet/minecraft/world/level/block/state/BlockState;)Z",
-		at = @At("RETURN"), cancellable = true, remap = false)
-	private static void createtricks$acceptSpellConstructAsCandidate(BlockState state,
-			CallbackInfoReturnable<Boolean> cir) {
-		if (!cir.getReturnValue() && BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
-			cir.setReturnValue(true);
-	}
+    @Inject(method = "isValidCandidate(Lnet/minecraft/world/level/block/state/BlockState;)Z",
+        at = @At("RETURN"), cancellable = true, remap = false)
+    private static void createtricks$acceptSpellConstructAsCandidate(BlockState state,
+            CallbackInfoReturnable<Boolean> cir) {
+        if (!cir.getReturnValue() && BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock()))
+            cir.setReturnValue(true);
+    }
 }

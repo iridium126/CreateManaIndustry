@@ -22,15 +22,15 @@ import com.iridium126.createmanaindustry.content.kinetics.bnb.BnBChainRenderCont
 @Mixin(targets = "com.kipti.bnb.content.kinetics.cogwheel_chain.graph.RenderedChainPathNode", remap = false)
 public abstract class RenderedChainPathNodeMixin {
 
-	@Shadow(remap = false)
-	public abstract BlockPos relativePos();
+    @Shadow(remap = false)
+    public abstract BlockPos relativePos();
 
-	@Shadow(remap = false)
-	public abstract Vec3 nodeOffset();
+    @Shadow(remap = false)
+    public abstract Vec3 nodeOffset();
 
-	@Inject(method = "getPosition", at = @At("RETURN"), cancellable = true, remap = false)
-	private void createtricks$shrinkKineticsCoreEndpoint(CallbackInfoReturnable<Vec3> cir) {
-		cir.setReturnValue(BnBChainRenderContext.adjustKineticsCorePosition(
-				relativePos(), nodeOffset(), cir.getReturnValue()));
-	}
+    @Inject(method = "getPosition", at = @At("RETURN"), cancellable = true, remap = false)
+    private void createtricks$shrinkKineticsCoreEndpoint(CallbackInfoReturnable<Vec3> cir) {
+        cir.setReturnValue(BnBChainRenderContext.adjustKineticsCorePosition(
+                relativePos(), nodeOffset(), cir.getReturnValue()));
+    }
 }
