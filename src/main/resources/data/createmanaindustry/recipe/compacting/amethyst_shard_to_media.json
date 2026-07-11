@@ -1,0 +1,14 @@
+{
+  "type": "create:compacting",
+  "ingredients": [
+    {
+      "item": "minecraft:amethyst_shard"
+    }
+  ],
+  "results": [
+    {
+      "id": "createmanaindustry:liquid_media",
+      "amount": 125
+    }
+  ]
+}

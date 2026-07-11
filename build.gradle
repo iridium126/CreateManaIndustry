@@ -62,6 +62,26 @@ repositories {
             includeGroup "maven.modrinth"
         }
     }
+    ivy {
+        url = uri("https://ci.blamejared.com/job/petrakat/job/Hexcasting/job/1.21/23/artifact/Neoforge/build/libs")
+        
+        patternLayout {
+            artifact "[artifact].[ext]"
+        }
+        metadataSources {
+            artifact() // 直接按文件名匹配，不读取pom/ivy元数据
+        }
+    }
+    ivy {
+        url = uri("https://ci.blamejared.com/job/petrakat/job/PAUCAL/job/1.21/27/artifact/Neoforge/build/libs")
+        
+        patternLayout {
+            artifact "[artifact].[ext]"
+        }
+        metadataSources {
+            artifact() // 直接按文件名匹配，不读取pom/ivy元数据
+        }
+    }
 }
 
 base {
@@ -179,6 +199,15 @@ dependencies {
     compileOnly "com.tterrag.registrate:Registrate:${registrate_version}"
     compileOnly "net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}"
     implementation "maven.modrinth:3KUWeVhG:dqlL6EvF" // Veil
+
+    implementation "hexcasting:hexcasting-neoforge-1.21.1-0.12.0-devel-pre-23@jar"
+    implementation "paucal:paucal-0.7.1-pre-27+1.21.1-neoforge@jar"
+    implementation "curse.maven:caelus-308989:5694215"
+    implementation "curse.maven:inline-971167:6556868"
+    implementation "curse.maven:patchouli-306770:7730942"
+    implementation "curse.maven:cloth-config-348521:5729127"
+    implementation "curse.maven:architectury-api-419699:5786327"
+    implementation "curse.maven:kotlin-for-forge-351264:7471280"
 
     implementation "maven.modrinth:T8bvmqVZ:cSCeD78i" // Create: Bits 'n' Bobs
     implementation "curse.maven:azimuth-api-1466331:8317127"

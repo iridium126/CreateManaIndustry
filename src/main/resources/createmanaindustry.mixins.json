@@ -17,6 +17,7 @@
     "TricksterSpellConstructSyncMixin",
     "TrickBlunderExceptionMixin",
     "MechanicalPressKnotMixin",
+    "ProcessingRecipeFluidMixin",
     "bnb.CogwheelChainMixin",
     "bnb.CogwheelChainPlaceInLevelMixin",
     "bnb.KineticBlockEntityChainStressMixin",

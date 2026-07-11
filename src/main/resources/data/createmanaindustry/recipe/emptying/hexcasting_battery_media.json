@@ -1,0 +1,18 @@
+{
+  "type": "create:emptying",
+  "ingredients": [
+    {
+      "item": "hexcasting:battery"
+    }
+  ],
+  "results": [
+    {
+      "id": "hexcasting:battery"
+    },
+    {
+      "type": "neoforge:fluid_stack",
+      "amount": 1000,
+      "fluid": "createmanaindustry:liquid_media"
+    }
+  ]
+}

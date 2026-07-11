@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry;
 import net.minecraft.resources.ResourceLocation;
 
 import com.iridium126.createmanaindustry.content.fluids.EsotericManaFluidHandler;
+import com.iridium126.createmanaindustry.content.fluids.MediaBatteryFluidHandler;
 import com.iridium126.createmanaindustry.content.fluids.TricksterKnotFluidHandler;
 import com.iridium126.createmanaindustry.content.items.TricksterKnotItemHandler;
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlockEntity;
@@ -25,6 +26,17 @@ public final class CMICapabilities {
                 Capabilities.FluidHandler.BLOCK,
                 CMIBlockEntityTypes.KINETIC_ATOMIZER.get(),
                 (be, side) -> ((KineticAtomizerBlockEntity) be).getFluidHandler(side));
+
+        // Media Battery fluid handler — bridges Create fluid system to Hexcasting media.
+        // Uses data components only, no Level context needed.
+        {
+            ResourceLocation batteryId = ResourceLocation.fromNamespaceAndPath("hexcasting", "battery");
+            Item mediaBattery = BuiltInRegistries.ITEM.get(batteryId);
+            if (mediaBattery != Items.AIR) {
+                event.registerItem(Capabilities.FluidHandler.ITEM,
+                        (stack, ctx) -> new MediaBatteryFluidHandler(stack), mediaBattery);
+            }
+        }
 
         if (!CreateManaIndustry.TRICKSTER_ACTIVE)
             return;

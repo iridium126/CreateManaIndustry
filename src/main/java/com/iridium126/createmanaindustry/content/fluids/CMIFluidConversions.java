@@ -24,4 +24,17 @@ public final class CMIFluidConversions {
             return 0;
         return fluidAmount * Config.manaPerBucket / 1000f;
     }
+
+    public static int mediaToFluidAmount(long media) {
+        if (media <= 0)
+            return 0;
+        double amount = Math.ceil(media * 1000.0 / Config.mediaPerBucket);
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(1, amount));
+    }
+
+    public static long fluidAmountToMedia(int fluidAmount) {
+        if (fluidAmount <= 0)
+            return 0;
+        return (long) fluidAmount * Config.mediaPerBucket / 1000;
+    }
 }

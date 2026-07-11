@@ -1,0 +1,14 @@
+{
+  "type": "create:compacting",
+  "ingredients": [
+    {
+      "item": "hexcasting:charged_amethyst"
+    }
+  ],
+  "results": [
+    {
+      "id": "createmanaindustry:liquid_media",
+      "amount": 250
+    }
+  ]
+}
