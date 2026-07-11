@@ -16,9 +16,9 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  * {@link NoClassDefFoundError} guarding so that non-BnB callers
  * (e.g. {@code KineticsSpellCoreItemMixin}) work without BnB installed.
  */
-public final class BnBCompact {
+public final class BnBCompat {
 
-    private BnBCompact() {}
+    private BnBCompat() {}
 
     @Nullable
     private static CogwheelChainBehaviour getBehaviour(Object be) {

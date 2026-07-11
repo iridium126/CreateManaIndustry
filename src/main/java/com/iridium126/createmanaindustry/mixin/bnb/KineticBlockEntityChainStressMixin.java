@@ -6,7 +6,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import com.iridium126.createmanaindustry.content.kinetics.bnb.BnBCompact;
+import com.iridium126.createmanaindustry.content.kinetics.bnb.BnBCompat;
 import com.iridium126.createmanaindustry.content.kinetics.bnb.BnBKineticsCoreNodes;
 import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChain;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
@@ -28,7 +28,7 @@ public abstract class KineticBlockEntityChainStressMixin {
             cancellable = true, remap = false)
     private void createmanaindustry$addKineticsCoreStress(
             CallbackInfoReturnable<Float> cir) {
-        CogwheelChain chain = BnBCompact.getChainIfController(this);
+        CogwheelChain chain = BnBCompat.getChainIfController(this);
         if (chain == null) return;
 
         KineticBlockEntity kbe = (KineticBlockEntity) (Object) this;

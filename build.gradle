@@ -201,13 +201,13 @@ dependencies {
     implementation "maven.modrinth:3KUWeVhG:dqlL6EvF" // Veil
 
     implementation "hexcasting:hexcasting-neoforge-1.21.1-0.12.0-devel-pre-23@jar"
-    implementation "paucal:paucal-0.7.1-pre-27+1.21.1-neoforge@jar"
-    implementation "curse.maven:caelus-308989:5694215"
-    implementation "curse.maven:inline-971167:6556868"
-    implementation "curse.maven:patchouli-306770:7730942"
-    implementation "curse.maven:cloth-config-348521:5729127"
-    implementation "curse.maven:architectury-api-419699:5786327"
-    implementation "curse.maven:kotlin-for-forge-351264:7471280"
+    localRuntime "paucal:paucal-0.7.1-pre-27+1.21.1-neoforge@jar"
+    localRuntime "curse.maven:caelus-308989:5694215"
+    localRuntime "curse.maven:inline-971167:6556868"
+    localRuntime "curse.maven:patchouli-306770:7730942"
+    localRuntime "curse.maven:cloth-config-348521:5729127"
+    localRuntime "curse.maven:architectury-api-419699:5786327"
+    localRuntime "curse.maven:kotlin-for-forge-351264:7471280"
 
     implementation "maven.modrinth:T8bvmqVZ:cSCeD78i" // Create: Bits 'n' Bobs
     implementation "curse.maven:azimuth-api-1466331:8317127"

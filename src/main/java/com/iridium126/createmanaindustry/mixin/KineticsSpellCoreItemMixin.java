@@ -8,7 +8,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.iridium126.createmanaindustry.content.items.KineticsSpellCoreItem;
-import com.iridium126.createmanaindustry.content.kinetics.bnb.BnBCompact;
+import com.iridium126.createmanaindustry.content.kinetics.bnb.BnBCompat;
 import com.iridium126.createmanaindustry.content.kinetics.bnb.ChainSpeedCache;
 import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChain;
 import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PathedCogwheelNode;
@@ -63,7 +63,7 @@ public abstract class KineticsSpellCoreItemMixin {
                 spellPos.offset(-r, -r, -r),
                 spellPos.offset(r, r, r))) {
             var be = level.getBlockEntity(cp);
-            CogwheelChain chain = BnBCompact.getChainIfController(be);
+            CogwheelChain chain = BnBCompat.getChainIfController(be);
             if (chain == null) continue;
 
             List<PathedCogwheelNode> nodes =

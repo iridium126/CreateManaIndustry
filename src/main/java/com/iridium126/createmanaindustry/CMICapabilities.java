@@ -29,7 +29,9 @@ public final class CMICapabilities {
 
         // Media Battery fluid handler — bridges Create fluid system to Hexcasting media.
         // Uses data components only, no Level context needed.
-        {
+        // Only registered when Hexcasting is present (guarded by HEX_ACTIVE to avoid
+        // class-loading Hexcasting API types at runtime).
+        if (CreateManaIndustry.HEX_ACTIVE) {
             ResourceLocation batteryId = ResourceLocation.fromNamespaceAndPath("hexcasting", "battery");
             Item mediaBattery = BuiltInRegistries.ITEM.get(batteryId);
             if (mediaBattery != Items.AIR) {

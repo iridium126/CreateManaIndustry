@@ -1,11 +1,13 @@
 package com.iridium126.createmanaindustry.mixin;
 
-import at.petrak.hexcasting.api.mod.HexConfig;
-import at.petrak.hexcasting.common.lib.HexItems;
 import com.iridium126.createmanaindustry.CMIFluids;
+import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.content.fluids.CMIFluidConversions;
+import com.iridium126.createmanaindustry.hexcasting.HexCompat;
 import com.simibubi.create.content.processing.recipe.ProcessingRecipe;
 import net.minecraft.core.NonNullList;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -22,13 +24,25 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * <p>
  * Recipe JSONs contain fluid amounts calculated with default config values.
  * This mixin replaces those amounts at runtime using the actual current values
- * of {@link HexConfig.CommonConfigAccess#dustMediaAmount()},
- * {@link HexConfig.CommonConfigAccess#shardMediaAmount()},
- * {@link HexConfig.CommonConfigAccess#chargedCrystalMediaAmount()},
- * and {@link com.iridium126.createmanaindustry.config.Config#mediaPerBucket}.
+ * of the Hexcasting media config and {@code mediaPerBucket}.
+ * <p>
+ * Items are identified via {@link BuiltInRegistries#ITEM} lookups rather than
+ * direct Hexcasting class references, so the mixin loads safely even when
+ * Hexcasting is absent. Config values come from {@link HexCompat}, which
+ * provides safe fallback defaults.
  */
 @Mixin(value = ProcessingRecipe.class, remap = false)
 public class ProcessingRecipeFluidMixin {
+
+    private static final ResourceLocation AMETHYST_DUST_ID =
+            ResourceLocation.fromNamespaceAndPath("hexcasting", "amethyst_dust");
+    private static final ResourceLocation CHARGED_AMETHYST_ID =
+            ResourceLocation.fromNamespaceAndPath("hexcasting", "charged_amethyst");
+
+    // Fallback media amounts when Hexcasting is absent
+    private static final long FALLBACK_DUST_MEDIA = 10000L;
+    private static final long FALLBACK_SHARD_MEDIA = 50000L;
+    private static final long FALLBACK_CHARGED_MEDIA = 100000L;
 
     @Inject(method = "getFluidResults", at = @At("RETURN"), cancellable = true)
     private void modifyMediaFluidResults(CallbackInfoReturnable<NonNullList<FluidStack>> cir) {
@@ -66,26 +80,31 @@ public class ProcessingRecipeFluidMixin {
     }
 
     /**
-     * Inspects the recipe's item ingredients to determine which Hexcasting media
-     * item is being processed, then returns its media value from the current
-     * Hexcasting config.
+     * Inspects the recipe's item ingredients to determine which media item is
+     * being processed. Uses registry-name lookups (not Hexcasting class
+     * references) so the mixin loads safely when Hexcasting is absent.
      *
-     * @return the media amount from config, or 0 if no recognized media item is found
+     * @return the media amount for the recognised item, or 0 if none matches
      */
     private static long getMediaAmountFromIngredients(ProcessingRecipe<?, ?> recipe) {
-        HexConfig.CommonConfigAccess config = HexConfig.common();
-        if (config == null)
-            return 0;
+        Item amethystDust = BuiltInRegistries.ITEM.get(AMETHYST_DUST_ID);
+        Item chargedAmethyst = BuiltInRegistries.ITEM.get(CHARGED_AMETHYST_ID);
 
         for (Ingredient ingredient : recipe.getIngredients()) {
             for (ItemStack stack : ingredient.getItems()) {
                 Item item = stack.getItem();
-                if (item == HexItems.AMETHYST_DUST)
-                    return config.dustMediaAmount();
+                if (amethystDust != Items.AIR && item == amethystDust)
+                    return CreateManaIndustry.HEX_ACTIVE
+                            ? HexCompat.getDustMediaAmount()
+                            : FALLBACK_DUST_MEDIA;
                 if (item == Items.AMETHYST_SHARD)
-                    return config.shardMediaAmount();
-                if (item == HexItems.CHARGED_AMETHYST)
-                    return config.chargedCrystalMediaAmount();
+                    return CreateManaIndustry.HEX_ACTIVE
+                            ? HexCompat.getShardMediaAmount()
+                            : FALLBACK_SHARD_MEDIA;
+                if (chargedAmethyst != Items.AIR && item == chargedAmethyst)
+                    return CreateManaIndustry.HEX_ACTIVE
+                            ? HexCompat.getChargedCrystalMediaAmount()
+                            : FALLBACK_CHARGED_MEDIA;
             }
         }
         return 0;

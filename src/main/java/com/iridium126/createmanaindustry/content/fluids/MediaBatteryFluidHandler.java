@@ -1,14 +1,16 @@
 package com.iridium126.createmanaindustry.content.fluids;
 
-import at.petrak.hexcasting.api.item.MediaHolderItem;
 import com.iridium126.createmanaindustry.CMIFluids;
+import com.iridium126.createmanaindustry.hexcasting.HexCompat;
+
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
 
 /**
  * Bridges Create's fluid system to Hexcasting's media data-component system
- * for {@code hexcasting:battery} and other {@link MediaHolderItem} items.
+ * for {@code hexcasting:battery} and other {@link
+ * at.petrak.hexcasting.api.item.MediaHolderItem} items.
  * <p>
  * Media is stored in item data components ({@code hexcasting:media} /
  * {@code hexcasting:start_media}) — no {@code Level} context is needed.
@@ -17,6 +19,9 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
  * <p>
  * Conversion: 1 bucket (1000 mB) of Liquid Media = {@code mediaPerBucket}
  * media units (default 400,000).
+ * <p>
+ * All Hexcasting API access goes through {@link HexCompat} so this class
+ * is safe to load even when Hexcasting is absent.
  */
 public class MediaBatteryFluidHandler implements IFluidHandlerItem {
 
@@ -40,10 +45,7 @@ public class MediaBatteryFluidHandler implements IFluidHandlerItem {
     public FluidStack getFluidInTank(int tank) {
         if (tank != 0)
             return FluidStack.EMPTY;
-        MediaHolderItem holder = getHolder();
-        if (holder == null)
-            return FluidStack.EMPTY;
-        long media = holder.getMedia(container);
+        long media = HexCompat.getMedia(container);
         int amount = CMIFluidConversions.mediaToFluidAmount(media);
         return amount > 0
                 ? new FluidStack(CMIFluids.LIQUID_MEDIA.get(), amount)
@@ -54,10 +56,7 @@ public class MediaBatteryFluidHandler implements IFluidHandlerItem {
     public int getTankCapacity(int tank) {
         if (tank != 0)
             return 0;
-        MediaHolderItem holder = getHolder();
-        if (holder == null)
-            return 0;
-        long maxMedia = holder.getMaxMedia(container);
+        long maxMedia = HexCompat.getMaxMedia(container);
         return maxMedia <= 0 ? 0 : CMIFluidConversions.mediaToFluidAmount(maxMedia);
     }
 
@@ -77,12 +76,11 @@ public class MediaBatteryFluidHandler implements IFluidHandlerItem {
         if (container.getCount() != 1)
             return 0;
 
-        MediaHolderItem holder = getHolder();
-        if (holder == null || !holder.canRecharge(container))
+        if (!HexCompat.canRecharge(container))
             return 0;
 
-        long currentMedia = holder.getMedia(container);
-        long maxMedia = holder.getMaxMedia(container);
+        long currentMedia = HexCompat.getMedia(container);
+        long maxMedia = HexCompat.getMaxMedia(container);
         if (maxMedia <= 0 || currentMedia >= maxMedia)
             return 0;
 
@@ -105,7 +103,7 @@ public class MediaBatteryFluidHandler implements IFluidHandlerItem {
             return 0;
 
         if (action.execute()) {
-            holder.insertMedia(container, mediaToAdd, false);
+            HexCompat.insertMedia(container, mediaToAdd);
         }
 
         return fluidToAccept;
@@ -130,11 +128,10 @@ public class MediaBatteryFluidHandler implements IFluidHandlerItem {
         if (maxDrain <= 0 || container.getCount() != 1)
             return FluidStack.EMPTY;
 
-        MediaHolderItem holder = getHolder();
-        if (holder == null || !holder.canProvideMedia(container))
+        if (!HexCompat.canProvideMedia(container))
             return FluidStack.EMPTY;
 
-        long currentMedia = holder.getMedia(container);
+        long currentMedia = HexCompat.getMedia(container);
         if (currentMedia <= 0)
             return FluidStack.EMPTY;
 
@@ -154,15 +151,9 @@ public class MediaBatteryFluidHandler implements IFluidHandlerItem {
             return FluidStack.EMPTY;
 
         if (action.execute()) {
-            holder.withdrawMedia(container, mediaToWithdraw, false);
+            HexCompat.withdrawMedia(container, mediaToWithdraw);
         }
 
         return new FluidStack(CMIFluids.LIQUID_MEDIA.get(), fluidToDrain);
-    }
-
-    private MediaHolderItem getHolder() {
-        if (container.getItem() instanceof MediaHolderItem holder)
-            return holder;
-        return null;
     }
 }
