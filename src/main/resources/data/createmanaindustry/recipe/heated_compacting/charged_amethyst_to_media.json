@@ -1,5 +1,6 @@
 {
-  "type": "create:compacting",
+  "type": "createmanaindustry:heated_compacting",
+  "heat_requirement": "heated",
   "ingredients": [
     {
       "item": "hexcasting:charged_amethyst"
