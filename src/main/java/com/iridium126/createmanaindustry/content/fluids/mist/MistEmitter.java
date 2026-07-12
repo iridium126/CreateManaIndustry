@@ -39,7 +39,7 @@ public final class MistEmitter {
 
     /** Activate persistent mist at the given position with a specific fluid. */
     public static void activate(Level level, BlockPos pos, FluidStack fluid, int radius) {
-        MistFieldStore.setActive(level, pos, true, radius);
+        MistFieldStore.setActive(level, pos, true, radius, fluid);
         notifyCallbacks(pos, fluid);
     }
 

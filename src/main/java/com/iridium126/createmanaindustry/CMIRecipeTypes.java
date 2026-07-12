@@ -3,11 +3,18 @@ package com.iridium126.createmanaindustry;
 import java.util.function.Supplier;
 
 import com.iridium126.createmanaindustry.content.recipes.HeatedCompactingRecipe;
+import com.iridium126.createmanaindustry.content.recipes.MistCompactingRecipe;
+import com.iridium126.createmanaindustry.content.recipes.MistRecipeParams;
+import com.mojang.serialization.MapCodec;
+import com.simibubi.create.content.processing.recipe.ProcessingRecipe;
+import com.simibubi.create.content.processing.recipe.ProcessingRecipeParams;
 import com.simibubi.create.content.processing.recipe.StandardProcessingRecipe;
 import com.simibubi.create.foundation.recipe.IRecipeTypeInfo;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeInput;
@@ -23,6 +30,8 @@ public final class CMIRecipeTypes {
     private static final DeferredRegister<RecipeType<?>> TYPE_REGISTER =
             DeferredRegister.create(Registries.RECIPE_TYPE, CreateManaIndustry.MODID);
 
+    // ---- HEATED_COMPACTING ---------------------------------------------------
+
     public static final ResourceLocation HEATED_COMPACTING_ID =
             CreateManaIndustry.modLoc("heated_compacting");
 
@@ -36,9 +45,7 @@ public final class CMIRecipeTypes {
 
     public static final IRecipeTypeInfo HEATED_COMPACTING = new IRecipeTypeInfo() {
         @Override
-        public ResourceLocation getId() {
-            return HEATED_COMPACTING_ID;
-        }
+        public ResourceLocation getId() { return HEATED_COMPACTING_ID; }
 
         @SuppressWarnings("unchecked")
         @Override
@@ -53,10 +60,69 @@ public final class CMIRecipeTypes {
         }
     };
 
+    // ---- MIST_COMPACTING ----------------------------------------------------
+
+    public static final ResourceLocation MIST_COMPACTING_ID =
+            CreateManaIndustry.modLoc("mist_compacting");
+
+    private static final Supplier<RecipeSerializer<?>> MIST_COMPACTING_SERIALIZER =
+            SERIALIZER_REGISTER.register("mist_compacting",
+                    () -> new MistCompactingSerializer());
+
+    private static final Supplier<RecipeType<?>> MIST_COMPACTING_TYPE =
+            TYPE_REGISTER.register("mist_compacting",
+                    () -> RecipeType.simple(MIST_COMPACTING_ID));
+
+    public static final IRecipeTypeInfo MIST_COMPACTING = new IRecipeTypeInfo() {
+        @Override
+        public ResourceLocation getId() { return MIST_COMPACTING_ID; }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        public <T extends RecipeSerializer<?>> T getSerializer() {
+            return (T) MIST_COMPACTING_SERIALIZER.get();
+        }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        public <I extends RecipeInput, R extends Recipe<I>> RecipeType<R> getType() {
+            return (RecipeType<R>) MIST_COMPACTING_TYPE.get();
+        }
+    };
+
+    // ---- registration -------------------------------------------------------
+
     private CMIRecipeTypes() {}
 
     public static void register(IEventBus modEventBus) {
         SERIALIZER_REGISTER.register(modEventBus);
         TYPE_REGISTER.register(modEventBus);
+    }
+
+    // ---- custom serializer for mist recipes ----------------------------------
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    private static final class MistCompactingSerializer implements RecipeSerializer<MistCompactingRecipe> {
+        private final MapCodec<MistCompactingRecipe> codec;
+        private final StreamCodec<RegistryFriendlyByteBuf, MistCompactingRecipe> streamCodec;
+
+        MistCompactingSerializer() {
+            var rawCodec = ProcessingRecipe.codec(
+                    (ProcessingRecipe.Factory) (ProcessingRecipeParams p) -> new MistCompactingRecipe(p),
+                    (MapCodec) MistRecipeParams.MIST_CODEC);
+            this.codec = rawCodec;
+            var rawStream = ProcessingRecipe.streamCodec(
+                    (ProcessingRecipe.Factory) (ProcessingRecipeParams p) -> new MistCompactingRecipe(p),
+                    (StreamCodec) MistRecipeParams.MIST_STREAM_CODEC);
+            this.streamCodec = rawStream;
+        }
+
+        @Override
+        public MapCodec<MistCompactingRecipe> codec() { return codec; }
+
+        @Override
+        public StreamCodec<RegistryFriendlyByteBuf, MistCompactingRecipe> streamCodec() {
+            return streamCodec;
+        }
     }
 }

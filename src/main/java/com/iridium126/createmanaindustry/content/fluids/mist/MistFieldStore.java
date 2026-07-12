@@ -41,13 +41,21 @@ public final class MistFieldStore {
      * @param active {@code true} to register this atomizer; {@code false} to remove
      */
     public static void setActive(Level level, BlockPos pos, boolean active, int radius) {
+        setActive(level, pos, active, radius, null);
+    }
+
+    /**
+     * Like {@link #setActive(Level, BlockPos, boolean, int)} but also stores the
+     * fluid type, enabling {@link #getFluidType(Level, BlockPos)} queries.
+     */
+    public static void setActive(Level level, BlockPos pos, boolean active, int radius, FluidStack fluid) {
         if (level == null || level.isClientSide)
             return;
 
         ResourceKey<Level> dim = level.dimension();
         if (active) {
             ACTIVE.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
-                    .put(pos.immutable(), new AtomizerField(radius));
+                    .put(pos.immutable(), new AtomizerField(radius, fluid));
         } else {
             Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(dim);
             if (dimFields != null) {
@@ -71,38 +79,66 @@ public final class MistFieldStore {
      *         if the position is not in any mist field
      */
     public static float getConcentration(Level level, BlockPos pos) {
-        if (level == null || pos == null)
-            return 0f;
+        return getDominant(level, pos).concentration;
+    }
 
-        // Mist only exists in air blocks
+    /**
+     * Returns the fluid type (as {@link net.minecraft.resources.ResourceLocation})
+     * of the mist source that contributes the highest concentration at the given
+     * position, or {@code null} if no mist is present.
+     */
+    @org.jetbrains.annotations.Nullable
+    public static net.minecraft.resources.ResourceLocation getFluidType(Level level, BlockPos pos) {
+        return getDominant(level, pos).fluidId;
+    }
+
+    /** Combined query — avoids double iteration over both maps. */
+    private static DominantResult getDominant(Level level, BlockPos pos) {
+        if (level == null || pos == null)
+            return DominantResult.NONE;
+
         BlockState state = level.getBlockState(pos);
         if (!state.isAir())
-            return 0f;
+            return DominantResult.NONE;
 
         ResourceKey<Level> dim = level.dimension();
         float maxConc = 0f;
+        net.minecraft.resources.ResourceLocation bestFluid = null;
 
-        // Check persistent entries
         Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(dim);
         if (dimFields != null && !dimFields.isEmpty()) {
             for (var entry : dimFields.entrySet()) {
                 float conc = calcConcentration(pos, entry.getKey(), entry.getValue().radius());
-                if (conc > maxConc)
+                if (conc > maxConc) {
                     maxConc = conc;
+                    var fluid = entry.getValue().fluid();
+                    bestFluid = fluid != null && !fluid.isEmpty()
+                            ? net.minecraft.core.registries.BuiltInRegistries.FLUID.getKey(fluid.getFluid())
+                            : null;
+                }
             }
         }
 
-        // Check timed entries
         Map<BlockPos, TimedMistEntry> dimTimed = TIMED.get(dim);
         if (dimTimed != null && !dimTimed.isEmpty()) {
             for (var entry : dimTimed.entrySet()) {
                 float conc = calcConcentration(pos, entry.getKey(), entry.getValue().radius());
-                if (conc > maxConc)
+                if (conc > maxConc) {
                     maxConc = conc;
+                    var fluid = entry.getValue().fluid();
+                    bestFluid = fluid != null && !fluid.isEmpty()
+                            ? net.minecraft.core.registries.BuiltInRegistries.FLUID.getKey(fluid.getFluid())
+                            : null;
+                }
             }
         }
 
-        return maxConc;
+        return new DominantResult(maxConc, bestFluid);
+    }
+
+    private record DominantResult(float concentration,
+            @org.jetbrains.annotations.Nullable net.minecraft.resources.ResourceLocation fluidId) {
+        static final DominantResult NONE = new DominantResult(0f, null);
     }
 
     private static float calcConcentration(BlockPos queryPos, BlockPos sourcePos, int radius) {
@@ -190,7 +226,9 @@ public final class MistFieldStore {
     /**
      * Immutable record storing per-atomizer field parameters.
      */
-    private record AtomizerField(int radius) {}
+    private record AtomizerField(int radius, @org.jetbrains.annotations.Nullable FluidStack fluid) {
+        AtomizerField(int radius) { this(radius, null); }
+    }
 
     /**
      * Immutable record for timed mist entries with expiry.

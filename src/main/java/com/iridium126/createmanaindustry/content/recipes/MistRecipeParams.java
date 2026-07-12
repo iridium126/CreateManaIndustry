@@ -1,0 +1,113 @@
+package com.iridium126.createmanaindustry.content.recipes;
+
+import java.util.Optional;
+import java.util.function.Supplier;
+
+import com.mojang.datafixers.util.Either;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.MapCodec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.simibubi.create.content.processing.recipe.HeatCondition;
+import com.simibubi.create.content.processing.recipe.ProcessingOutput;
+import com.simibubi.create.content.processing.recipe.ProcessingRecipeParams;
+import com.simibubi.create.foundation.codec.CreateCodecs;
+
+import net.createmod.catnip.codecs.stream.CatnipStreamCodecBuilders;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.resources.ResourceLocation;
+
+public class MistRecipeParams extends ProcessingRecipeParams {
+
+    protected MistOutput mist;
+    protected MistRequirement mistRequirement;
+
+    public static final MapCodec<MistRecipeParams> MIST_CODEC = createCodec(MistRecipeParams::new);
+    public static final StreamCodec<RegistryFriendlyByteBuf, MistRecipeParams> MIST_STREAM_CODEC =
+            createStreamCodec(MistRecipeParams::new);
+
+    protected MistRecipeParams() {
+        super();
+        this.mist = null;
+        this.mistRequirement = null;
+    }
+
+    public MistOutput getMist() { return mist; }
+    public MistRequirement getMistRequirement() { return mistRequirement; }
+
+    @SuppressWarnings("deprecation")
+    private static <P extends MistRecipeParams> MapCodec<P> createCodec(Supplier<P> factory) {
+        return RecordCodecBuilder.<P>mapCodec(instance -> instance.group(
+                Codec.either(CreateCodecs.SIZED_FLUID_INGREDIENT,
+                        net.minecraft.world.item.crafting.Ingredient.CODEC)
+                        .listOf().fieldOf("ingredients")
+                        .forGetter(p -> p.ingredients()),
+                Codec.either(net.neoforged.neoforge.fluids.FluidStack.CODEC,
+                        ProcessingOutput.CODEC)
+                        .listOf().fieldOf("results")
+                        .forGetter(p -> p.results()),
+                Codec.INT.optionalFieldOf("processing_time", 0)
+                        .forGetter(p -> p.processingDuration),
+                HeatCondition.CODEC.optionalFieldOf("heat_requirement", HeatCondition.NONE)
+                        .forGetter(p -> p.requiredHeat),
+                MistOutput.CODEC.optionalFieldOf("mist")
+                        .forGetter(p -> Optional.ofNullable(p.mist)),
+                MistRequirement.CODEC.optionalFieldOf("mist_requirement")
+                        .forGetter(p -> Optional.ofNullable(p.mistRequirement))
+        ).apply(instance,
+                (ingredients, results, processingDuration, requiredHeat, mistOpt, mistReqOpt) -> {
+                    P params = factory.get();
+                    ingredients.forEach(either -> either
+                            .ifRight(params.ingredients::add)
+                            .ifLeft(params.fluidIngredients::add));
+                    results.forEach(either -> either
+                            .ifRight(params.results::add)
+                            .ifLeft(params.fluidResults::add));
+                    params.processingDuration = processingDuration;
+                    params.requiredHeat = requiredHeat;
+                    params.mist = mistOpt.orElse(null);
+                    params.mistRequirement = mistReqOpt.orElse(null);
+                    return params;
+                }));
+    }
+
+    private static <P extends MistRecipeParams> StreamCodec<RegistryFriendlyByteBuf, P>
+            createStreamCodec(Supplier<P> factory) {
+        return StreamCodec.of(
+                (buffer, params) -> params.encode(buffer),
+                buffer -> {
+                    P params = factory.get();
+                    params.decode(buffer);
+                    return params;
+                });
+    }
+
+    @Override
+    protected void encode(RegistryFriendlyByteBuf buffer) {
+        super.encode(buffer);
+        buffer.writeBoolean(mist != null);
+        if (mist != null) {
+            ResourceLocation.STREAM_CODEC.encode(buffer, mist.fluidId());
+            ByteBufCodecs.VAR_INT.encode(buffer, mist.radius());
+        }
+        buffer.writeBoolean(mistRequirement != null);
+        if (mistRequirement != null) {
+            ResourceLocation.STREAM_CODEC.encode(buffer, mistRequirement.fluidId());
+            buffer.writeDouble(mistRequirement.minConcentration());
+        }
+    }
+
+    @Override
+    protected void decode(RegistryFriendlyByteBuf buffer) {
+        super.decode(buffer);
+        if (buffer.readBoolean())
+            mist = new MistOutput(
+                    ResourceLocation.STREAM_CODEC.decode(buffer),
+                    ByteBufCodecs.VAR_INT.decode(buffer));
+        if (buffer.readBoolean())
+            mistRequirement = new MistRequirement(
+                    ResourceLocation.STREAM_CODEC.decode(buffer),
+                    buffer.readDouble());
+    }
+}

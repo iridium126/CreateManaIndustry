@@ -1,0 +1,110 @@
+package com.iridium126.createmanaindustry.mixin;
+
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import com.iridium126.createmanaindustry.content.fluids.mist.MistEmitter;
+import com.iridium126.createmanaindustry.content.recipes.MistCompactingRecipe;
+import com.iridium126.createmanaindustry.content.recipes.MistOutput;
+import com.iridium126.createmanaindustry.network.ClientboundMistSyncPacket;
+import com.simibubi.create.content.processing.basin.BasinOperatingBlockEntity;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.crafting.Recipe;
+import net.neoforged.neoforge.fluids.FluidStack;
+
+/**
+ * Activates/deactivates persistent mist at the basin position when a
+ * {@link MistCompactingRecipe} is being processed.
+ */
+@Mixin(value = BasinOperatingBlockEntity.class, remap = false)
+public class BasinOperatingBlockEntityMistMixin {
+
+    @Shadow
+    protected Recipe<?> currentRecipe;
+
+    @Shadow
+    protected boolean isRunning() { throw new AssertionError(); }
+
+    @Unique
+    private BlockPos createmanaindustry$activeMistPos;
+
+    /** After recipe completes, activate mist if the recipe has mist output. */
+    @Inject(method = "applyBasinRecipe", at = @At("RETURN"))
+    private void createmanaindustry$activateMistOnRecipe(CallbackInfo ci) {
+        BasinOperatingBlockEntity self = (BasinOperatingBlockEntity) (Object) this;
+        if (self.getLevel() == null || self.getLevel().isClientSide)
+            return;
+
+        if (!(currentRecipe instanceof MistCompactingRecipe mistRecipe))
+            return;
+
+        MistOutput mist = mistRecipe.getMistOutput();
+        if (mist == null)
+            return;
+
+        // Basin is 2 blocks below the operating machine
+        BlockPos basinPos = self.getBlockPos().below(2);
+        FluidStack fluid = new FluidStack(BuiltInRegistries.FLUID.get(mist.fluidId()), 1);
+
+        MistEmitter.activate(self.getLevel(), basinPos, fluid, mist.radius());
+        ClientboundMistSyncPacket.sendToTracking(self.getLevel(), basinPos, fluid);
+        createmanaindustry$activeMistPos = basinPos;
+    }
+
+    /**
+     * When basin is removed, deactivate mist.
+     * <p>
+     * Injected after {@code onBasinRemoved()} is called inside
+     * {@link BasinOperatingBlockEntity#tick()}, since the method itself is
+     * {@code abstract} and subclass overrides do not call {@code super}.
+     */
+    @Inject(method = "tick",
+            at = @At(value = "INVOKE",
+                    target = "Lcom/simibubi/create/content/processing/basin/BasinOperatingBlockEntity;onBasinRemoved()V",
+                    shift = At.Shift.AFTER))
+    private void createmanaindustry$deactivateMistOnBasinRemoved(CallbackInfo ci) {
+        BasinOperatingBlockEntity self = (BasinOperatingBlockEntity) (Object) this;
+        if (createmanaindustry$activeMistPos != null) {
+            MistEmitter.deactivate(self.getLevel(), createmanaindustry$activeMistPos);
+            ClientboundMistSyncPacket.sendToTracking(
+                    self.getLevel(), createmanaindustry$activeMistPos, FluidStack.EMPTY);
+            createmanaindustry$activeMistPos = null;
+        }
+    }
+
+    /**
+     * When updateBasin runs and the machine is no longer actively processing a
+     * mist recipe, deactivate the mist.
+     * <p>
+     * The previous check only inspected {@code currentRecipe}, but Create never
+     * clears that field when ingredients run out — the mist would persist
+     * indefinitely. Now gates on {@link #isRunning()} as well, so mist is
+     * removed as soon as the pressing cycle finishes without a matching
+     * recipe.
+     */
+    @Inject(method = "updateBasin", at = @At("RETURN"))
+    private void createmanaindustry$deactivateMistOnIdle(CallbackInfoReturnable<Boolean> cir) {
+        BasinOperatingBlockEntity self = (BasinOperatingBlockEntity) (Object) this;
+        if (createmanaindustry$activeMistPos == null
+                || self.getLevel() == null || self.getLevel().isClientSide)
+            return;
+
+        // Keep mist active only while the machine is actively running a mist recipe
+        if (isRunning() && currentRecipe instanceof MistCompactingRecipe mistRecipe
+                && mistRecipe.getMistOutput() != null)
+            return;
+
+        // Machine is idle or recipe changed — deactivate
+        MistEmitter.deactivate(self.getLevel(), createmanaindustry$activeMistPos);
+        ClientboundMistSyncPacket.sendToTracking(
+                self.getLevel(), createmanaindustry$activeMistPos, FluidStack.EMPTY);
+        createmanaindustry$activeMistPos = null;
+    }
+}

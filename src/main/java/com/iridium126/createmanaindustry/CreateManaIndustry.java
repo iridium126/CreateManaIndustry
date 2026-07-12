@@ -25,6 +25,10 @@ import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.common.ModConfigSpec;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.registration.PayloadRegistrar;
+
+import com.iridium126.createmanaindustry.network.ClientboundMistSyncPacket;
 
 @Mod(CreateManaIndustry.MODID)
 public class CreateManaIndustry {
@@ -63,6 +67,7 @@ public class CreateManaIndustry {
 
         REGISTRATE.registerEventListeners(modEventBus);
         modEventBus.addListener(CMICapabilities::register);
+        modEventBus.addListener(CreateManaIndustry::registerPayloads);
         CMICreativeModeTabs.register(modEventBus);
         CMIRecipeTypes.register(modEventBus);
         CMIBlocks.register();
@@ -84,5 +89,13 @@ public class CreateManaIndustry {
 
     public static ResourceLocation modLoc(String path) {
         return ResourceLocation.fromNamespaceAndPath(MODID, path);
+    }
+
+    private static void registerPayloads(RegisterPayloadHandlersEvent event) {
+        PayloadRegistrar registrar = event.registrar(MODID).versioned("1");
+        registrar.playToClient(
+                ClientboundMistSyncPacket.TYPE,
+                ClientboundMistSyncPacket.STREAM_CODEC,
+                ClientboundMistSyncPacket::handle);
     }
 }

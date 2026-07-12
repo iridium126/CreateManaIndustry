@@ -15,10 +15,13 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 public class MechanicalPressHeatedCompactingMixin {
 
     @Inject(method = "matchStaticFilters", at = @At("RETURN"), cancellable = true)
-    private void createmanaindustry$matchHeatedCompacting(RecipeHolder<? extends Recipe<?>> recipe,
+    private void createmanaindustry$matchCustomCompacting(RecipeHolder<? extends Recipe<?>> recipe,
             CallbackInfoReturnable<Boolean> cir) {
-        if (!cir.getReturnValue()
-                && recipe.value().getType() == CMIRecipeTypes.HEATED_COMPACTING.getType()) {
+        if (cir.getReturnValue())
+            return;
+        var type = recipe.value().getType();
+        if (type == CMIRecipeTypes.HEATED_COMPACTING.getType()
+                || type == CMIRecipeTypes.MIST_COMPACTING.getType()) {
             cir.setReturnValue(true);
         }
     }
