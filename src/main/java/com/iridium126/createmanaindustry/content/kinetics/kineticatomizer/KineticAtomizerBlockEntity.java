@@ -1,10 +1,9 @@
 package com.iridium126.createmanaindustry.content.kinetics.kineticatomizer;
 
 import java.util.List;
-import java.util.function.BiConsumer;
 
 import com.iridium126.createmanaindustry.config.Config;
-import com.iridium126.createmanaindustry.content.fluids.mist.MistFieldStore;
+import com.iridium126.createmanaindustry.content.fluids.mist.MistEmitter;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 
 import net.minecraft.core.BlockPos;
@@ -23,10 +22,6 @@ import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 public class KineticAtomizerBlockEntity extends KineticBlockEntity {
 
     static final int TANK_CAPACITY = 1000;
-
-    // Client-side callback: (blockPos, fluidStack) — set by ClientMistHandler on client init.
-    // FluidStack.EMPTY means inactive, non-empty means active with that fluid.
-    private static BiConsumer<BlockPos, FluidStack> mistSyncCallback = null;
 
     private final FluidTank tank = new FluidTank(TANK_CAPACITY) {
         @Override
@@ -90,8 +85,7 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
         tank.readFromNBT(registries, tag.getCompound("Tank"));
         if (clientPacket) {
             wasActive = tag.getBoolean("MistActive");
-            if (mistSyncCallback != null)
-                mistSyncCallback.accept(worldPosition, wasActive ? tank.getFluid() : FluidStack.EMPTY);
+            MistEmitter.notifyClientSync(worldPosition, wasActive ? tank.getFluid() : FluidStack.EMPTY);
         }
     }
 
@@ -111,15 +105,6 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
         return wasActive;
     }
 
-    /**
-     * Sets a callback invoked on the client whenever the active state is synced
-     * from the server. Used by the rendering layer to track which atomizers are
-     * producing mist.
-     */
-    public static void setMistSyncCallback(BiConsumer<BlockPos, FluidStack> callback) {
-        mistSyncCallback = callback;
-    }
-
     @Override
     public void tick() {
         super.tick();
@@ -132,7 +117,11 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
         boolean isActive = speed > 0 && hasFluid;
 
         if (isActive != wasActive) {
-            MistFieldStore.setActive(level, worldPosition, isActive, Config.mistMaxRadius);
+            if (isActive) {
+                MistEmitter.activate(level, worldPosition, tank.getFluid(), Config.mistMaxRadius);
+            } else {
+                MistEmitter.deactivate(level, worldPosition);
+            }
             wasActive = isActive;
             sendData();
         }
@@ -148,6 +137,6 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
     public void invalidate() {
         super.invalidate();
         if (level != null && !level.isClientSide)
-            MistFieldStore.setActive(level, worldPosition, false, 0);
+            MistEmitter.deactivate(level, worldPosition);
     }
 }

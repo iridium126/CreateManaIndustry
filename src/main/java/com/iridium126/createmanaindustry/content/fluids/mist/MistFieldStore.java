@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.content.fluids.mist;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -10,6 +12,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.neoforge.fluids.FluidStack;
 
 /**
  * Central data store for active Kinetic Atomizer mist fields. Follows the
@@ -25,6 +28,9 @@ public final class MistFieldStore {
 
     /** Per-dimension map of atomizer positions to their field parameters. */
     private static final Map<ResourceKey<Level>, Map<BlockPos, AtomizerField>> ACTIVE = new ConcurrentHashMap<>();
+
+    /** Per-dimension map of timed mist entries (recipe byproducts) with expiry. */
+    private static final Map<ResourceKey<Level>, Map<BlockPos, TimedMistEntry>> TIMED = new ConcurrentHashMap<>();
 
     private MistFieldStore() {}
 
@@ -73,27 +79,75 @@ public final class MistFieldStore {
         if (!state.isAir())
             return 0f;
 
-        Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(level.dimension());
-        if (dimFields == null || dimFields.isEmpty())
-            return 0f;
-
+        ResourceKey<Level> dim = level.dimension();
         float maxConc = 0f;
-        for (var entry : dimFields.entrySet()) {
-            BlockPos ap = entry.getKey();
-            int radius = entry.getValue().radius();
 
-            double dx = pos.getX() - ap.getX();
-                double dy = pos.getY() - ap.getY();
-                double dz = pos.getZ() - ap.getZ();
-                double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-            if (dist <= radius) {
-                float conc = (float) (Config.mistBaseConcentration * (1.0 - dist / radius));
+        // Check persistent entries
+        Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(dim);
+        if (dimFields != null && !dimFields.isEmpty()) {
+            for (var entry : dimFields.entrySet()) {
+                float conc = calcConcentration(pos, entry.getKey(), entry.getValue().radius());
                 if (conc > maxConc)
                     maxConc = conc;
             }
         }
+
+        // Check timed entries
+        Map<BlockPos, TimedMistEntry> dimTimed = TIMED.get(dim);
+        if (dimTimed != null && !dimTimed.isEmpty()) {
+            for (var entry : dimTimed.entrySet()) {
+                float conc = calcConcentration(pos, entry.getKey(), entry.getValue().radius());
+                if (conc > maxConc)
+                    maxConc = conc;
+            }
+        }
+
         return maxConc;
+    }
+
+    private static float calcConcentration(BlockPos queryPos, BlockPos sourcePos, int radius) {
+        double dx = queryPos.getX() - sourcePos.getX();
+        double dy = queryPos.getY() - sourcePos.getY();
+        double dz = queryPos.getZ() - sourcePos.getZ();
+        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+        if (dist <= radius) {
+            return (float) (Config.mistBaseConcentration * (1.0 - dist / radius));
+        }
+        return 0f;
+    }
+
+    // ---- timed mist entries (recipe byproducts) ------------------------------
+
+    /**
+     * Registers a timed mist emission at the given position. Used for one-shot
+     * recipe byproducts that should persist for a fixed duration.
+     *
+     * @param fluid        the fluid whose color determines mist appearance
+     * @param radius       field radius in blocks
+     * @param expiryTick   absolute tick when the entry expires
+     */
+    public static void addTimed(Level level, BlockPos pos, FluidStack fluid, int radius, long expiryTick) {
+        if (level == null || level.isClientSide || pos == null)
+            return;
+
+        ResourceKey<Level> dim = level.dimension();
+        TIMED.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
+                .put(pos.immutable(), new TimedMistEntry(fluid, radius, expiryTick));
+    }
+
+    /** Removes a timed mist entry early (e.g. when a recipe source is removed). */
+    public static void removeTimed(Level level, BlockPos pos) {
+        if (level == null || level.isClientSide)
+            return;
+
+        ResourceKey<Level> dim = level.dimension();
+        Map<BlockPos, TimedMistEntry> dimTimed = TIMED.get(dim);
+        if (dimTimed != null) {
+            dimTimed.remove(pos);
+            if (dimTimed.isEmpty())
+                TIMED.remove(dim, dimTimed);
+        }
     }
 
     /**
@@ -106,23 +160,40 @@ public final class MistFieldStore {
     }
 
     /**
-     * Called every tick via {@link MistFieldTicker} to remove atomizers whose
-     * chunks are no longer loaded — a safety net for chunk unloads that miss
-     * the {@code invalidate()} callback.
+     * Called every tick via {@link MistFieldTicker} to:
+     * <ul>
+     *   <li>Remove persistent atomizers whose chunks are no longer loaded.</li>
+     *   <li>Expire timed entries whose expiry tick has passed.</li>
+     * </ul>
      */
     public static void tick(ServerLevel level) {
-        Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(level.dimension());
-        if (dimFields == null || dimFields.isEmpty())
-            return;
+        ResourceKey<Level> dim = level.dimension();
 
-        dimFields.entrySet().removeIf(entry -> !level.isPositionEntityTicking(entry.getKey()));
-        if (dimFields.isEmpty())
-            ACTIVE.remove(level.dimension(), dimFields);
+        // Clean up persistent entries for unloaded chunks
+        Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(dim);
+        if (dimFields != null && !dimFields.isEmpty()) {
+            dimFields.entrySet().removeIf(entry -> !level.isPositionEntityTicking(entry.getKey()));
+            if (dimFields.isEmpty())
+                ACTIVE.remove(dim, dimFields);
+        }
+
+        // Expire timed entries
+        Map<BlockPos, TimedMistEntry> dimTimed = TIMED.get(dim);
+        if (dimTimed != null && !dimTimed.isEmpty()) {
+            long currentTick = level.getGameTime();
+            dimTimed.entrySet().removeIf(entry -> entry.getValue().expiryTick() <= currentTick);
+            if (dimTimed.isEmpty())
+                TIMED.remove(dim, dimTimed);
+        }
     }
 
     /**
-     * Immutable record storing per-atomizer field parameters. Extendable with
-     * additional parameters (custom concentration, etc.) in the future.
+     * Immutable record storing per-atomizer field parameters.
      */
     private record AtomizerField(int radius) {}
+
+    /**
+     * Immutable record for timed mist entries with expiry.
+     */
+    private record TimedMistEntry(FluidStack fluid, int radius, long expiryTick) {}
 }

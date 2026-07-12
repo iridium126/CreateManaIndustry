@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.CMIFluids;
 import com.iridium126.createmanaindustry.config.Config;
-import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlockEntity;
+import com.iridium126.createmanaindustry.content.fluids.mist.MistEmitter;
 import com.mojang.blaze3d.platform.NativeImage;
 
 import foundry.veil.api.client.render.VeilRenderSystem;
@@ -65,7 +65,8 @@ public final class ClientMistHandler {
         initialized = true;
 
         // Bridge: register for client sync notifications from atomizer BEs
-        KineticAtomizerBlockEntity.setMistSyncCallback(ClientMistHandler::setActive);
+        // and other mist sources (e.g. timed recipe byproducts).
+        MistEmitter.registerSyncCallback(ClientMistHandler::setActive);
 
         // Listen for Veil post-processing to inject uniforms
         VeilEventPlatform.INSTANCE.preVeilPostProcessing(ClientMistHandler::onPrePostProcessing);
