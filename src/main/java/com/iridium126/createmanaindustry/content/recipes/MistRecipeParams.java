@@ -3,7 +3,6 @@ package com.iridium126.createmanaindustry.content.recipes;
 import java.util.Optional;
 import java.util.function.Supplier;
 
-import com.mojang.datafixers.util.Either;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -12,7 +11,6 @@ import com.simibubi.create.content.processing.recipe.ProcessingOutput;
 import com.simibubi.create.content.processing.recipe.ProcessingRecipeParams;
 import com.simibubi.create.foundation.codec.CreateCodecs;
 
-import net.createmod.catnip.codecs.stream.CatnipStreamCodecBuilders;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -36,15 +34,14 @@ public class MistRecipeParams extends ProcessingRecipeParams {
     public MistOutput getMist() { return mist; }
     public MistRequirement getMistRequirement() { return mistRequirement; }
 
-    @SuppressWarnings("deprecation")
     private static <P extends MistRecipeParams> MapCodec<P> createCodec(Supplier<P> factory) {
         return RecordCodecBuilder.<P>mapCodec(instance -> instance.group(
-                Codec.either(CreateCodecs.SIZED_FLUID_INGREDIENT,
+                Codec.either(CreateCodecs.FLAT_SIZED_FLUID_INGREDIENT_WITH_TYPE,
                         net.minecraft.world.item.crafting.Ingredient.CODEC)
                         .listOf().fieldOf("ingredients")
                         .forGetter(p -> p.ingredients()),
                 Codec.either(net.neoforged.neoforge.fluids.FluidStack.CODEC,
-                        ProcessingOutput.CODEC)
+                        ProcessingOutput.CODEC_NEW)
                         .listOf().fieldOf("results")
                         .forGetter(p -> p.results()),
                 Codec.INT.optionalFieldOf("processing_time", 0)

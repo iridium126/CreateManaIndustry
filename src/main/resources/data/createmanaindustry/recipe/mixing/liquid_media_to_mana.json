@@ -1,0 +1,17 @@
+{
+  "type": "create:mixing",
+  "ingredients": [
+    {
+      "type": "neoforge:single",
+      "amount": 125,
+      "fluid": "createmanaindustry:liquid_media"
+    }
+  ],
+  "results": [
+    {
+      "id": "createmanaindustry:liquid_mana",
+      "amount": 125
+    }
+  ],
+  "heat_requirement": "heated"
+}
