@@ -6,7 +6,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.iridium126.createmanaindustry.content.fluids.mist.MistFieldStore;
-import com.iridium126.createmanaindustry.content.recipes.MistCompactingRecipe;
+import com.iridium126.createmanaindustry.content.recipes.MistRecipe;
 import com.iridium126.createmanaindustry.content.recipes.MistRequirement;
 import com.simibubi.create.content.processing.basin.BasinBlockEntity;
 import com.simibubi.create.content.processing.basin.BasinRecipe;
@@ -26,7 +26,7 @@ public class BasinRecipeMistMixin {
             at = @At("HEAD"), cancellable = true)
     private static void createmanaindustry$checkMistRequirement(BasinBlockEntity basin, Recipe<?> recipe,
             boolean test, CallbackInfoReturnable<Boolean> cir) {
-        if (!(recipe instanceof MistCompactingRecipe mistRecipe))
+        if (!(recipe instanceof MistRecipe mistRecipe))
             return;
 
         MistRequirement req = mistRecipe.getMistRequirement();

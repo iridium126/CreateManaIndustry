@@ -4,20 +4,20 @@ import com.iridium126.createmanaindustry.CMIRecipeTypes;
 import com.simibubi.create.content.processing.basin.BasinRecipe;
 import com.simibubi.create.content.processing.recipe.ProcessingRecipeParams;
 
-public class MistCompactingRecipe extends BasinRecipe implements MistRecipe {
+public class MistMixingRecipe extends BasinRecipe implements MistRecipe {
 
-    public MistCompactingRecipe(ProcessingRecipeParams params) {
-        super(CMIRecipeTypes.MIST_COMPACTING, params);
+    public MistMixingRecipe(ProcessingRecipeParams params) {
+        super(CMIRecipeTypes.MIST_MIXING, params);
     }
 
-    /** Returns the mist output config, or null if this recipe has no mist byproduct. */
+    @Override
     public MistOutput getMistOutput() {
         if (getParams() instanceof MistRecipeParams mistParams)
             return mistParams.getMist();
         return null;
     }
 
-    /** Returns the mist requirement, or null if this recipe has no mist condition. */
+    @Override
     public MistRequirement getMistRequirement() {
         if (getParams() instanceof MistRecipeParams mistParams)
             return mistParams.getMistRequirement();

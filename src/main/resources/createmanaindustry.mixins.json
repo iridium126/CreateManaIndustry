@@ -19,6 +19,7 @@
     "ModelsMixin",
     "TricksterSpellConstructSyncMixin",
     "TrickBlunderExceptionMixin",
+    "MechanicalMixerMistMixin",
     "MechanicalPressHeatedCompactingMixin",
     "MechanicalPressKnotMixin",
     "ProcessingRecipeFluidMixin",

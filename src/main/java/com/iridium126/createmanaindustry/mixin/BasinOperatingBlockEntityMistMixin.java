@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.iridium126.createmanaindustry.content.fluids.mist.MistEmitter;
-import com.iridium126.createmanaindustry.content.recipes.MistCompactingRecipe;
+import com.iridium126.createmanaindustry.content.recipes.MistRecipe;
 import com.iridium126.createmanaindustry.content.recipes.MistOutput;
 import com.iridium126.createmanaindustry.network.ClientboundMistSyncPacket;
 import com.simibubi.create.content.processing.basin.BasinOperatingBlockEntity;
@@ -21,7 +21,7 @@ import net.neoforged.neoforge.fluids.FluidStack;
 
 /**
  * Activates/deactivates persistent mist at the basin position when a
- * {@link MistCompactingRecipe} is being processed.
+ * {@link MistRecipe} is being processed.
  */
 @Mixin(value = BasinOperatingBlockEntity.class, remap = false)
 public class BasinOperatingBlockEntityMistMixin {
@@ -42,7 +42,7 @@ public class BasinOperatingBlockEntityMistMixin {
         if (self.getLevel() == null || self.getLevel().isClientSide)
             return;
 
-        if (!(currentRecipe instanceof MistCompactingRecipe mistRecipe))
+        if (!(currentRecipe instanceof MistRecipe mistRecipe))
             return;
 
         MistOutput mist = mistRecipe.getMistOutput();
@@ -97,7 +97,7 @@ public class BasinOperatingBlockEntityMistMixin {
             return;
 
         // Keep mist active only while the machine is actively running a mist recipe
-        if (isRunning() && currentRecipe instanceof MistCompactingRecipe mistRecipe
+        if (isRunning() && currentRecipe instanceof MistRecipe mistRecipe
                 && mistRecipe.getMistOutput() != null)
             return;
 

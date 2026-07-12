@@ -189,9 +189,11 @@ public final class ClientMistHandler {
         if (fluid == Fluids.WATER || fluid == Fluids.FLOWING_WATER)
             return new float[]{1.0f, 1.0f, 1.0f};
 
-        Fluid manaFlowing = CMIFluids.LIQUID_MANA.get();
-        if (fluid == manaFlowing || fluid == CMIFluids.LIQUID_MANA.getSource())
-            return new float[]{0.0f, 1.0f, 1.0f}; // cyan
+        if (fluid == CMIFluids.LIQUID_MANA.get() || fluid == CMIFluids.LIQUID_MANA.getSource())
+            return new float[]{0.39215686f, 0.98431373f, 1.0f}; // light blue
+
+        if (fluid == CMIFluids.LIQUID_MEDIA.get() || fluid == CMIFluids.LIQUID_MEDIA.getSource())
+            return new float[]{0.76862745f, 0.61960784f, 0.95294118f}; // light purple
 
         // --- Texture-based extraction ---
         ResourceLocation texLoc = IClientFluidTypeExtensions.of(fluid).getStillTexture(stack);

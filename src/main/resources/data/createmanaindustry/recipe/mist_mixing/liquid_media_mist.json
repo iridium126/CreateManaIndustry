@@ -1,0 +1,16 @@
+{
+  "type": "createmanaindustry:mist_mixing",
+  "ingredients": [
+    {
+      "type": "neoforge:single",
+      "fluid": "createmanaindustry:liquid_mana",
+      "amount": 125
+    }
+  ],
+  "results": [],
+  "heat_requirement": "superheated",
+  "mist": {
+    "fluid": "createmanaindustry:liquid_media",
+    "radius": 16
+  }
+}

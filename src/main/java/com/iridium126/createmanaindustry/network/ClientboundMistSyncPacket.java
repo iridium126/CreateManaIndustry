@@ -23,10 +23,21 @@ public record ClientboundMistSyncPacket(BlockPos pos, FluidStack fluid) implemen
             new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("mist_sync"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundMistSyncPacket> STREAM_CODEC =
-            StreamCodec.composite(
-                    BlockPos.STREAM_CODEC, ClientboundMistSyncPacket::pos,
-                    FluidStack.STREAM_CODEC, ClientboundMistSyncPacket::fluid,
-                    ClientboundMistSyncPacket::new);
+            StreamCodec.of(
+                    (buffer, packet) -> {
+                        BlockPos.STREAM_CODEC.encode(buffer, packet.pos);
+                        boolean hasFluid = !packet.fluid.isEmpty();
+                        buffer.writeBoolean(hasFluid);
+                        if (hasFluid) {
+                            FluidStack.STREAM_CODEC.encode(buffer, packet.fluid);
+                        }
+                    },
+                    buffer -> {
+                        BlockPos pos = BlockPos.STREAM_CODEC.decode(buffer);
+                        boolean hasFluid = buffer.readBoolean();
+                        FluidStack fluid = hasFluid ? FluidStack.STREAM_CODEC.decode(buffer) : FluidStack.EMPTY;
+                        return new ClientboundMistSyncPacket(pos, fluid);
+                    });
 
     @Override
     public Type<? extends CustomPacketPayload> type() {

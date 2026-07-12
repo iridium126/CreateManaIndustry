@@ -4,6 +4,7 @@ import java.util.function.Supplier;
 
 import com.iridium126.createmanaindustry.content.recipes.HeatedCompactingRecipe;
 import com.iridium126.createmanaindustry.content.recipes.MistCompactingRecipe;
+import com.iridium126.createmanaindustry.content.recipes.MistMixingRecipe;
 import com.iridium126.createmanaindustry.content.recipes.MistRecipeParams;
 import com.mojang.serialization.MapCodec;
 import com.simibubi.create.content.processing.recipe.ProcessingRecipe;
@@ -90,6 +91,36 @@ public final class CMIRecipeTypes {
         }
     };
 
+    // ---- MIST_MIXING -------------------------------------------------------
+
+    public static final ResourceLocation MIST_MIXING_ID =
+            CreateManaIndustry.modLoc("mist_mixing");
+
+    private static final Supplier<RecipeSerializer<?>> MIST_MIXING_SERIALIZER =
+            SERIALIZER_REGISTER.register("mist_mixing",
+                    () -> new MistMixingSerializer());
+
+    private static final Supplier<RecipeType<?>> MIST_MIXING_TYPE =
+            TYPE_REGISTER.register("mist_mixing",
+                    () -> RecipeType.simple(MIST_MIXING_ID));
+
+    public static final IRecipeTypeInfo MIST_MIXING = new IRecipeTypeInfo() {
+        @Override
+        public ResourceLocation getId() { return MIST_MIXING_ID; }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        public <T extends RecipeSerializer<?>> T getSerializer() {
+            return (T) MIST_MIXING_SERIALIZER.get();
+        }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        public <I extends RecipeInput, R extends Recipe<I>> RecipeType<R> getType() {
+            return (RecipeType<R>) MIST_MIXING_TYPE.get();
+        }
+    };
+
     // ---- registration -------------------------------------------------------
 
     private CMIRecipeTypes() {}
@@ -122,6 +153,31 @@ public final class CMIRecipeTypes {
 
         @Override
         public StreamCodec<RegistryFriendlyByteBuf, MistCompactingRecipe> streamCodec() {
+            return streamCodec;
+        }
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    private static final class MistMixingSerializer implements RecipeSerializer<MistMixingRecipe> {
+        private final MapCodec<MistMixingRecipe> codec;
+        private final StreamCodec<RegistryFriendlyByteBuf, MistMixingRecipe> streamCodec;
+
+        MistMixingSerializer() {
+            var rawCodec = ProcessingRecipe.codec(
+                    (ProcessingRecipe.Factory) (ProcessingRecipeParams p) -> new MistMixingRecipe(p),
+                    (MapCodec) MistRecipeParams.MIST_CODEC);
+            this.codec = rawCodec;
+            var rawStream = ProcessingRecipe.streamCodec(
+                    (ProcessingRecipe.Factory) (ProcessingRecipeParams p) -> new MistMixingRecipe(p),
+                    (StreamCodec) MistRecipeParams.MIST_STREAM_CODEC);
+            this.streamCodec = rawStream;
+        }
+
+        @Override
+        public MapCodec<MistMixingRecipe> codec() { return codec; }
+
+        @Override
+        public StreamCodec<RegistryFriendlyByteBuf, MistMixingRecipe> streamCodec() {
             return streamCodec;
         }
     }
