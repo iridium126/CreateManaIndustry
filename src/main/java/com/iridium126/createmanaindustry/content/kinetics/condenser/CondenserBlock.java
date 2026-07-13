@@ -19,7 +19,6 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.phys.shapes.CollisionContext;
-import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 public class CondenserBlock extends Block implements IBE<CondenserBlockEntity>, IWrenchable {
@@ -28,9 +27,7 @@ public class CondenserBlock extends Block implements IBE<CondenserBlockEntity>, 
     public static final MapCodec<CondenserBlock> CODEC = simpleCodec(CondenserBlock::new);
 
     private static final VoxelShaper SHAPE = VoxelShaper.forDirectional(
-            Shapes.or(
-                    Block.box(0, 3, 0, 16, 13, 16),
-                    Block.box(3, 0, 3, 13, 16, 13)),
+            Block.box(3, 0, 3, 13, 16, 13),
             Direction.UP);
 
     public CondenserBlock(Properties properties) {
