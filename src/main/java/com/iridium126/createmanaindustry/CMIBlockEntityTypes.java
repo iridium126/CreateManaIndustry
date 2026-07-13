@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry;
 
 import static com.iridium126.createmanaindustry.CreateManaIndustry.REGISTRATE;
 
+import com.iridium126.createmanaindustry.content.kinetics.condenser.CondenserBlockEntity;
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlockEntity;
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerRenderer;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlockEntity;
@@ -23,6 +24,11 @@ public final class CMIBlockEntityTypes {
             .visual(() -> SingleAxisRotatingVisual.of(CMIPartialModels.KINETIC_ATOMIZER_COG), false)
             .validBlocks(CMIBlocks.KINETIC_ATOMIZER)
             .renderer(() -> KineticAtomizerRenderer::new)
+            .register();
+
+    public static final BlockEntityEntry<CondenserBlockEntity> CONDENSER = REGISTRATE
+            .blockEntity("condenser", CondenserBlockEntity::new)
+            .validBlocks(CMIBlocks.CONDENSER)
             .register();
 
     private CMIBlockEntityTypes() {}

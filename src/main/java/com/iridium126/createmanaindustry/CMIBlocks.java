@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry;
 
 import static com.iridium126.createmanaindustry.CreateManaIndustry.REGISTRATE;
 
+import com.iridium126.createmanaindustry.content.kinetics.condenser.CondenserBlock;
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlock;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlock;
 import com.simibubi.create.AllBlocks;
@@ -63,6 +64,26 @@ public final class CMIBlocks {
                         .pattern("LCL")
                         .pattern("BPB")
                         .unlockedBy("has_liquid_mana", RegistrateRecipeProvider.has(CMIFluids.LIQUID_MANA.getBucket().get()))
+                        .save(p, CreateManaIndustry.modLoc(c.getName()));
+            })
+            .register();
+
+    public static final BlockEntry<CondenserBlock> CONDENSER = REGISTRATE
+            .block("condenser", CondenserBlock::new)
+            .initialProperties(() -> Blocks.IRON_BLOCK)
+            .properties(p -> p.mapColor(MapColor.COLOR_ORANGE))
+            .transform(TagGen.pickaxeOnly())
+            .item()
+            .transform(ModelGen.customItemModel())
+            .recipe((c, p) -> {
+                ShapedRecipeBuilder.shaped(RecipeCategory.MISC, c.get())
+                        .define('I', Items.COPPER_INGOT)
+                        .define('P', AllBlocks.FLUID_PIPE.asItem())
+                        .define('C', Items.COPPER_BLOCK)
+                        .pattern(" I ")
+                        .pattern("PCP")
+                        .pattern(" I ")
+                        .unlockedBy("has_copper", RegistrateRecipeProvider.has(Items.COPPER_INGOT))
                         .save(p, CreateManaIndustry.modLoc(c.getName()));
             })
             .register();
