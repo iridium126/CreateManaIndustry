@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.content.kinetics.condenser;
 
 import com.iridium126.createmanaindustry.CMIBlockEntityTypes;
 import com.mojang.serialization.MapCodec;
+import com.simibubi.create.content.equipment.wrench.IWrenchable;
 import com.simibubi.create.foundation.block.IBE;
 
 import net.createmod.catnip.math.VoxelShaper;
@@ -21,7 +22,7 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-public class CondenserBlock extends Block implements IBE<CondenserBlockEntity> {
+public class CondenserBlock extends Block implements IBE<CondenserBlockEntity>, IWrenchable {
 
     public static final DirectionProperty FACING = BlockStateProperties.FACING;
     public static final MapCodec<CondenserBlock> CODEC = simpleCodec(CondenserBlock::new);

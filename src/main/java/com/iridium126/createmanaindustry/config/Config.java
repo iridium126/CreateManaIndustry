@@ -39,6 +39,10 @@ public final class Config {
             .comment("Base concentration at distance 0 from the atomizer. Used in the formula: concentration = base * (1 - distance / radius).")
             .defineInRange("mistBaseConcentration", 1.0, 0.0, 1000.0);
 
+    private static final ModConfigSpec.DoubleValue CONDENSE_EFFICIENCY = BUILDER
+            .comment("Base amount (mB/tick) of mist fluid condensed per unit of concentration when water flows through a Condenser.")
+            .defineInRange("condenseEfficiency", 5.0, 0.0, 1000.0);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     public static double manaPerStress = 0.001;
@@ -48,6 +52,7 @@ public final class Config {
     public static int mistMaxRadius = 16;
     public static int mistFluidPerTick = 1;
     public static double mistBaseConcentration = 1.0;
+    public static double condenseEfficiency = 5.0;
 
     private Config() {}
 
@@ -61,6 +66,7 @@ public final class Config {
             mistMaxRadius = MIST_MAX_RADIUS.get();
             mistFluidPerTick = MIST_FLUID_PER_TICK.get();
             mistBaseConcentration = MIST_BASE_CONCENTRATION.get();
+            condenseEfficiency = CONDENSE_EFFICIENCY.get();
         }
     }
 }

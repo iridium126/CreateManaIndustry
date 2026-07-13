@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.iridium126.createmanaindustry.config.Config;
+import com.iridium126.createmanaindustry.content.kinetics.condenser.CondenserBlock;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
@@ -96,7 +97,7 @@ public final class MistFieldStore {
             return DominantResult.NONE;
 
         BlockState state = level.getBlockState(pos);
-        if (!state.isAir())
+        if (!state.isAir() && !(state.getBlock() instanceof CondenserBlock))
             return DominantResult.NONE;
 
         ResourceKey<Level> dim = level.dimension();
@@ -206,7 +207,7 @@ public final class MistFieldStore {
         // Clean up persistent entries for unloaded chunks
         Map<BlockPos, AtomizerField> dimFields = ACTIVE.get(dim);
         if (dimFields != null && !dimFields.isEmpty()) {
-            dimFields.entrySet().removeIf(entry -> !level.isPositionEntityTicking(entry.getKey()));
+            dimFields.entrySet().removeIf(entry -> !level.isLoaded(entry.getKey()));
             if (dimFields.isEmpty())
                 ACTIVE.remove(dim, dimFields);
         }
