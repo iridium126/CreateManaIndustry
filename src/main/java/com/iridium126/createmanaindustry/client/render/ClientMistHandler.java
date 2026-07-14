@@ -11,7 +11,6 @@ import com.mojang.blaze3d.platform.NativeImage;
 
 import foundry.veil.api.client.render.VeilRenderSystem;
 import foundry.veil.api.client.render.post.PostPipeline;
-import foundry.veil.api.client.render.post.PostProcessingManager;
 import foundry.veil.platform.VeilEventPlatform;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -38,9 +37,27 @@ public final class ClientMistHandler {
 
     private static final ResourceLocation PIPELINE_ID = CreateManaIndustry.modLoc("mist");
     private static final int MAX_ATOMIZERS = 16;
+    /** Radius units per render frame during appear/disappear/change transitions. */
+    private static final float RADIUS_LERP_SPEED = 0.5f;
 
-    /** Per-source client data. */
-    private record MistSourceData(FluidStack fluid, int radius) {}
+    /** Per-source client data with animation state for smooth radius transitions. */
+    private static final class MistSourceData {
+        final FluidStack fluid;
+        float displayRadius;   // current rendered radius, lerps toward target each frame
+        float targetRadius;    // desired radius from server
+        boolean fading;        // true = target is 0, remove when display reaches 0
+
+        MistSourceData(FluidStack fluid, int radius) {
+            this.fluid = fluid;
+            this.targetRadius = radius;
+            this.displayRadius = 0f; // start at 0 for fade-in animation
+            this.fading = false;
+        }
+
+        boolean isAnimating() {
+            return Math.abs(displayRadius - targetRadius) > 0.01f;
+        }
+    }
 
     /** Client-side registry of active atomizer positions and their per-source data. */
     private static final Map<BlockPos, MistSourceData> activeSources = new ConcurrentHashMap<>();
@@ -77,27 +94,77 @@ public final class ClientMistHandler {
 
     /**
      * Called by the atomizer BE when its active state is synced to the client.
-     * An empty FluidStack means the atomizer is inactive.
+     * An empty FluidStack starts a fade-out; the source is removed when the
+     * displayed radius reaches zero.
      */
     public static void setActive(BlockPos pos, FluidStack fluid, int radius) {
         if (fluid.isEmpty()) {
-            activeSources.remove(pos);
+            // Start fade-out instead of immediate removal
+            MistSourceData existing = activeSources.get(pos);
+            if (existing != null) {
+                existing.targetRadius = 0f;
+                existing.fading = true;
+            }
         } else {
-            activeSources.put(pos.immutable(), new MistSourceData(fluid, radius));
+            MistSourceData existing = activeSources.get(pos);
+            if (existing != null) {
+                // Update target — display radius lerps to new value
+                existing.targetRadius = radius;
+                existing.fading = false;
+            } else {
+                // New source — display starts at 0, lerps to target (fade-in)
+                activeSources.put(pos.immutable(), new MistSourceData(fluid, radius));
+            }
         }
         dirty = true;
 
-        // Manage pipeline lifecycle: only run when mist is present
-        boolean hasMist = !activeSources.isEmpty();
-        if (hasMist != pipelineActive) {
-            pipelineActive = hasMist;
-            PostProcessingManager ppm = VeilRenderSystem.renderer().getPostProcessingManager();
-            if (hasMist) {
-                ppm.add(PIPELINE_ID);
+        // Add pipeline immediately on first source; removal is deferred to updateAnimations()
+        if (!activeSources.isEmpty() && !pipelineActive) {
+            pipelineActive = true;
+            VeilRenderSystem.renderer().getPostProcessingManager().add(PIPELINE_ID);
+        }
+    }
+
+    // --- animation ------------------------------------------------------------
+
+    /**
+     * Advances all radius animations by one frame. Removes fully-faded sources
+     * and cleans up the pipeline when no sources remain.
+     * <p>
+     * Called every render frame from {@link #onPrePostProcessing}.
+     *
+     * @return true while any source is still animating (triggers a repack)
+     */
+    private static boolean updateAnimations() {
+        boolean anyAnimating = false;
+        var it = activeSources.entrySet().iterator();
+        while (it.hasNext()) {
+            var entry = it.next();
+            MistSourceData data = entry.getValue();
+
+            // Lerp display toward target
+            float diff = data.targetRadius - data.displayRadius;
+            if (Math.abs(diff) <= 0.01f) {
+                data.displayRadius = data.targetRadius;
             } else {
-                ppm.remove(PIPELINE_ID);
+                float step = Math.signum(diff) * Math.min(RADIUS_LERP_SPEED, Math.abs(diff));
+                data.displayRadius += step;
+                anyAnimating = true;
+            }
+
+            // Remove fully-faded sources (fade-out completed)
+            if (data.fading && data.displayRadius <= 0.01f) {
+                it.remove();
             }
         }
+
+        // Clean up pipeline when all sources are gone (fade-outs finished)
+        if (activeSources.isEmpty() && pipelineActive) {
+            pipelineActive = false;
+            VeilRenderSystem.renderer().getPostProcessingManager().remove(PIPELINE_ID);
+        }
+
+        return anyAnimating;
     }
 
     // --- Veil event callbacks ---
@@ -107,7 +174,9 @@ public final class ClientMistHandler {
         if (!PIPELINE_ID.equals(name))
             return;
 
-        if (dirty) {
+        // Always tick animations; repack if dirty or animating
+        boolean animating = updateAnimations();
+        if (dirty || animating) {
             packAtomizerData();
             dirty = false;
         }
@@ -156,14 +225,14 @@ public final class ClientMistHandler {
             BlockPos pos = entry.getKey();
             MistSourceData data = entry.getValue();
 
-            float[] color = getCachedFluidColor(data.fluid());
+            float[] color = getCachedFluidColor(data.fluid);
 
             // Position + radius
             int base = count * 4;
             atomizerData[base] = pos.getX() + 0.5f;
             atomizerData[base + 1] = pos.getY() + 0.5f;
             atomizerData[base + 2] = pos.getZ() + 0.5f;
-            atomizerData[base + 3] = data.radius();
+            atomizerData[base + 3] = data.displayRadius;
 
             // Color (r, g, b)
             int cBase = count * 3;
