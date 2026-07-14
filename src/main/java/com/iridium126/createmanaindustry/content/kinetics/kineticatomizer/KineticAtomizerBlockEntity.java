@@ -111,6 +111,11 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
         return wasActive;
     }
 
+    /** Exposed for renderer use — returns the current tank fluid. */
+    FluidStack getTankFluid() {
+        return tank.getFluid();
+    }
+
     @Override
     public void tick() {
         super.tick();

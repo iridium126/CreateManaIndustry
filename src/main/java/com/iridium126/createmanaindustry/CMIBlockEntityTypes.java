@@ -21,7 +21,7 @@ public final class CMIBlockEntityTypes {
 
     public static final BlockEntityEntry<KineticAtomizerBlockEntity> KINETIC_ATOMIZER = REGISTRATE
             .blockEntity("kinetic_atomizer", KineticAtomizerBlockEntity::new)
-            .visual(() -> SingleAxisRotatingVisual.of(CMIPartialModels.KINETIC_ATOMIZER_COG), false)
+            .visual(() -> SingleAxisRotatingVisual.of(CMIPartialModels.KINETIC_ATOMIZER_COG), true)
             .validBlocks(CMIBlocks.KINETIC_ATOMIZER)
             .renderer(() -> KineticAtomizerRenderer::new)
             .register();
