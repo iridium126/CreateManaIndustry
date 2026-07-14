@@ -18,6 +18,6 @@ public final class MistFieldTicker {
     @SubscribeEvent
     public static void onLevelTick(LevelTickEvent.Post event) {
         if (event.getLevel() instanceof ServerLevel serverLevel)
-            MistFieldStore.tick(serverLevel);
+            MistEmitter.tick(serverLevel);
     }
 }

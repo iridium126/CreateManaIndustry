@@ -6,7 +6,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.CMIFluids;
-import com.iridium126.createmanaindustry.config.Config;
 import com.iridium126.createmanaindustry.content.fluids.mist.MistEmitter;
 import com.mojang.blaze3d.platform.NativeImage;
 
@@ -40,8 +39,11 @@ public final class ClientMistHandler {
     private static final ResourceLocation PIPELINE_ID = CreateManaIndustry.modLoc("mist");
     private static final int MAX_ATOMIZERS = 16;
 
-    /** Client-side registry of active atomizer positions and their fluids. */
-    private static final Map<BlockPos, FluidStack> activeAtomizerFluids = new ConcurrentHashMap<>();
+    /** Per-source client data. */
+    private record MistSourceData(FluidStack fluid, int radius) {}
+
+    /** Client-side registry of active atomizer positions and their per-source data. */
+    private static final Map<BlockPos, MistSourceData> activeSources = new ConcurrentHashMap<>();
 
     private static final float[] atomizerData = new float[MAX_ATOMIZERS * 4];
     private static final float[] atomizerColorData = new float[MAX_ATOMIZERS * 3];
@@ -66,7 +68,8 @@ public final class ClientMistHandler {
 
         // Bridge: register for client sync notifications from atomizer BEs
         // and other mist sources (e.g. timed recipe byproducts).
-        MistEmitter.registerSyncCallback(ClientMistHandler::setActive);
+        MistEmitter.registerSyncCallback(data ->
+                ClientMistHandler.setActive(data.pos(), data.fluid(), data.radius()));
 
         // Listen for Veil post-processing to inject uniforms
         VeilEventPlatform.INSTANCE.preVeilPostProcessing(ClientMistHandler::onPrePostProcessing);
@@ -76,16 +79,16 @@ public final class ClientMistHandler {
      * Called by the atomizer BE when its active state is synced to the client.
      * An empty FluidStack means the atomizer is inactive.
      */
-    public static void setActive(BlockPos pos, FluidStack fluid) {
+    public static void setActive(BlockPos pos, FluidStack fluid, int radius) {
         if (fluid.isEmpty()) {
-            activeAtomizerFluids.remove(pos);
+            activeSources.remove(pos);
         } else {
-            activeAtomizerFluids.put(pos.immutable(), fluid);
+            activeSources.put(pos.immutable(), new MistSourceData(fluid, radius));
         }
         dirty = true;
 
         // Manage pipeline lifecycle: only run when mist is present
-        boolean hasMist = !activeAtomizerFluids.isEmpty();
+        boolean hasMist = !activeSources.isEmpty();
         if (hasMist != pipelineActive) {
             pipelineActive = hasMist;
             PostProcessingManager ppm = VeilRenderSystem.renderer().getPostProcessingManager();
@@ -147,20 +150,20 @@ public final class ClientMistHandler {
 
     private static void packAtomizerData() {
         int count = 0;
-        for (var entry : activeAtomizerFluids.entrySet()) {
+        for (var entry : activeSources.entrySet()) {
             if (count >= MAX_ATOMIZERS)
                 break;
             BlockPos pos = entry.getKey();
-            FluidStack fluid = entry.getValue();
+            MistSourceData data = entry.getValue();
 
-            float[] color = getCachedFluidColor(fluid);
+            float[] color = getCachedFluidColor(data.fluid());
 
             // Position + radius
             int base = count * 4;
             atomizerData[base] = pos.getX() + 0.5f;
             atomizerData[base + 1] = pos.getY() + 0.5f;
             atomizerData[base + 2] = pos.getZ() + 0.5f;
-            atomizerData[base + 3] = Config.mistMaxRadius;
+            atomizerData[base + 3] = data.radius();
 
             // Color (r, g, b)
             int cBase = count * 3;

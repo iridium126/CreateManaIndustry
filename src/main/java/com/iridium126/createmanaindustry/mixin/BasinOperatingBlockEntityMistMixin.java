@@ -35,7 +35,7 @@ public class BasinOperatingBlockEntityMistMixin {
     @Unique
     private BlockPos createmanaindustry$activeMistPos;
 
-    /** After recipe completes, activate mist if the recipe has mist output. */
+    /** After recipe completes, emit/extend timed mist if the recipe has mist output. */
     @Inject(method = "applyBasinRecipe", at = @At("RETURN"))
     private void createmanaindustry$activateMistOnRecipe(CallbackInfo ci) {
         BasinOperatingBlockEntity self = (BasinOperatingBlockEntity) (Object) this;
@@ -53,13 +53,15 @@ public class BasinOperatingBlockEntityMistMixin {
         BlockPos basinPos = self.getBlockPos().below(2);
         FluidStack fluid = new FluidStack(BuiltInRegistries.FLUID.get(mist.fluidId()), 1);
 
-        MistEmitter.activate(self.getLevel(), basinPos, fluid, mist.radius());
-        ClientboundMistSyncPacket.sendToTracking(self.getLevel(), basinPos, fluid);
+        // Timed emission: each recipe completion resets the timer and adds capacity
+        MistEmitter.emitOrExtendTimed(self.getLevel(), basinPos, fluid,
+                mist.radius(), mist.duration(), mist.amount());
+        ClientboundMistSyncPacket.sendToTracking(self.getLevel(), basinPos, fluid, mist.radius());
         createmanaindustry$activeMistPos = basinPos;
     }
 
     /**
-     * When basin is removed, deactivate mist.
+     * When basin is removed, remove the timed mist entry.
      * <p>
      * Injected after {@code onBasinRemoved()} is called inside
      * {@link BasinOperatingBlockEntity#tick()}, since the method itself is
@@ -69,42 +71,34 @@ public class BasinOperatingBlockEntityMistMixin {
             at = @At(value = "INVOKE",
                     target = "Lcom/simibubi/create/content/processing/basin/BasinOperatingBlockEntity;onBasinRemoved()V",
                     shift = At.Shift.AFTER))
-    private void createmanaindustry$deactivateMistOnBasinRemoved(CallbackInfo ci) {
+    private void createmanaindustry$removeTimedOnBasinRemoved(CallbackInfo ci) {
         BasinOperatingBlockEntity self = (BasinOperatingBlockEntity) (Object) this;
         if (createmanaindustry$activeMistPos != null) {
-            MistEmitter.deactivate(self.getLevel(), createmanaindustry$activeMistPos);
+            MistEmitter.removeTimed(self.getLevel(), createmanaindustry$activeMistPos);
             ClientboundMistSyncPacket.sendToTracking(
-                    self.getLevel(), createmanaindustry$activeMistPos, FluidStack.EMPTY);
+                    self.getLevel(), createmanaindustry$activeMistPos, FluidStack.EMPTY, 0);
             createmanaindustry$activeMistPos = null;
         }
     }
 
     /**
      * When updateBasin runs and the machine is no longer actively processing a
-     * mist recipe, deactivate the mist.
-     * <p>
-     * The previous check only inspected {@code currentRecipe}, but Create never
-     * clears that field when ingredients run out — the mist would persist
-     * indefinitely. Now gates on {@link #isRunning()} as well, so mist is
-     * removed as soon as the pressing cycle finishes without a matching
-     * recipe.
+     * mist recipe, clear local tracking. The timed entry expires naturally after
+     * {@code duration} ticks — no explicit deactivation needed.
      */
     @Inject(method = "updateBasin", at = @At("RETURN"))
-    private void createmanaindustry$deactivateMistOnIdle(CallbackInfoReturnable<Boolean> cir) {
+    private void createmanaindustry$clearTrackingOnIdle(CallbackInfoReturnable<Boolean> cir) {
         BasinOperatingBlockEntity self = (BasinOperatingBlockEntity) (Object) this;
         if (createmanaindustry$activeMistPos == null
                 || self.getLevel() == null || self.getLevel().isClientSide)
             return;
 
-        // Keep mist active only while the machine is actively running a mist recipe
+        // Keep tracking while the machine is actively running a mist recipe
         if (isRunning() && currentRecipe instanceof MistRecipe mistRecipe
                 && mistRecipe.getMistOutput() != null)
             return;
 
-        // Machine is idle or recipe changed — deactivate
-        MistEmitter.deactivate(self.getLevel(), createmanaindustry$activeMistPos);
-        ClientboundMistSyncPacket.sendToTracking(
-                self.getLevel(), createmanaindustry$activeMistPos, FluidStack.EMPTY);
+        // Machine stopped or recipe changed — let the timed entry expire naturally
         createmanaindustry$activeMistPos = null;
     }
 }

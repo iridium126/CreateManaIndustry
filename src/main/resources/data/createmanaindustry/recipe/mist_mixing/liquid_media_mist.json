@@ -11,6 +11,8 @@
   "heat_requirement": "superheated",
   "mist": {
     "fluid": "createmanaindustry:liquid_media",
-    "radius": 16
+    "radius": 16,
+    "amount": 125,
+    "duration": 100
   }
 }

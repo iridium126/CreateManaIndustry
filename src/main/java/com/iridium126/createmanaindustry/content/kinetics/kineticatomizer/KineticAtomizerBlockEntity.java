@@ -39,6 +39,7 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
     };
 
     private boolean wasActive = false;
+    private int currentRadius = 0;
 
     public KineticAtomizerBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
@@ -85,7 +86,10 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
         tank.readFromNBT(registries, tag.getCompound("Tank"));
         if (clientPacket) {
             wasActive = tag.getBoolean("MistActive");
-            MistEmitter.notifyClientSync(worldPosition, wasActive ? tank.getFluid() : FluidStack.EMPTY);
+            int radius = tag.getInt("MistRadius");
+            currentRadius = radius;
+            MistEmitter.notifyClientSync(worldPosition,
+                    wasActive ? tank.getFluid() : FluidStack.EMPTY, radius);
         }
     }
 
@@ -93,8 +97,10 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
     protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
         super.write(tag, registries, clientPacket);
         tag.put("Tank", tank.writeToNBT(registries, new CompoundTag()));
-        if (clientPacket)
+        if (clientPacket) {
             tag.putBoolean("MistActive", wasActive);
+            tag.putInt("MistRadius", currentRadius);
+        }
     }
 
     /**
@@ -112,25 +118,35 @@ public class KineticAtomizerBlockEntity extends KineticBlockEntity {
         if (level == null || level.isClientSide)
             return;
 
-        float speed = Math.abs(getSpeed());
+        float absSpeed = Math.abs(getSpeed());
         boolean hasFluid = !tank.isEmpty();
-        boolean isActive = speed > 0 && hasFluid;
-
-        if (isActive != wasActive) {
-            if (isActive) {
-                MistEmitter.activate(level, worldPosition, tank.getFluid(), Config.mistMaxRadius);
-            } else {
-                MistEmitter.deactivate(level, worldPosition);
-            }
-            wasActive = isActive;
-            sendData();
-        }
+        boolean isActive = absSpeed > 0 && hasFluid;
 
         if (isActive) {
-            float speedFactor = speed / 16f;
+            int newRadius = computeRadius(absSpeed);
+
+            if (!wasActive) {
+                MistEmitter.activate(level, worldPosition, tank.getFluid(), newRadius);
+            } else if (newRadius != currentRadius) {
+                MistEmitter.updateRadius(level, worldPosition, newRadius);
+            }
+            currentRadius = newRadius;
+
+            float speedFactor = absSpeed / 16f;
             int toConsume = Math.max(1, (int) (Config.mistFluidPerTick * speedFactor));
-            tank.drain(toConsume, IFluidHandler.FluidAction.EXECUTE);
+            FluidStack drained = tank.drain(toConsume, IFluidHandler.FluidAction.EXECUTE);
+            if (!drained.isEmpty())
+                MistEmitter.addCapacity(level, worldPosition, drained.getAmount());
+        } else if (wasActive) {
+            MistEmitter.deactivate(level, worldPosition);
+            currentRadius = 0;
         }
+        wasActive = isActive;
+        sendData();
+    }
+
+    private int computeRadius(float absSpeed) {
+        return Math.max(1, Math.round(absSpeed * Config.mistMaxRadius / 256f));
     }
 
     @Override

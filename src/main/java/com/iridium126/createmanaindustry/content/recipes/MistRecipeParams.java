@@ -87,6 +87,8 @@ public class MistRecipeParams extends ProcessingRecipeParams {
         if (mist != null) {
             ResourceLocation.STREAM_CODEC.encode(buffer, mist.fluidId());
             ByteBufCodecs.VAR_INT.encode(buffer, mist.radius());
+            ByteBufCodecs.VAR_INT.encode(buffer, mist.amount());
+            ByteBufCodecs.VAR_INT.encode(buffer, mist.duration());
         }
         buffer.writeBoolean(mistRequirement != null);
         if (mistRequirement != null) {
@@ -101,6 +103,8 @@ public class MistRecipeParams extends ProcessingRecipeParams {
         if (buffer.readBoolean())
             mist = new MistOutput(
                     ResourceLocation.STREAM_CODEC.decode(buffer),
+                    ByteBufCodecs.VAR_INT.decode(buffer),
+                    ByteBufCodecs.VAR_INT.decode(buffer),
                     ByteBufCodecs.VAR_INT.decode(buffer));
         if (buffer.readBoolean())
             mistRequirement = new MistRequirement(

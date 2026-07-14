@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.content.kinetics.condenser;
 import java.util.List;
 
 import com.iridium126.createmanaindustry.config.Config;
+import com.iridium126.createmanaindustry.content.fluids.mist.MistEmitter;
 import com.iridium126.createmanaindustry.content.fluids.mist.MistFieldStore;
 import com.simibubi.create.AllParticleTypes;
 import com.simibubi.create.content.fluids.FluidPropagator;
@@ -99,7 +100,7 @@ public class CondenserBlockEntity extends SmartBlockEntity {
                 return;
             }
 
-            // 4. Inject mist fluid into Drain
+            // 4. Inject mist fluid into Drain (capacity-aware)
             SmartFluidTankBehaviour tank = drain.getBehaviour(SmartFluidTankBehaviour.TYPE);
             if (tank == null) {
                 setCondensing(false);
@@ -112,11 +113,37 @@ public class CondenserBlockEntity extends SmartBlockEntity {
                 return;
             }
 
-            int amount = Math.max(1, (int) (concentration * Config.condenseEfficiency * (1 + flowPressure / 64)));
-            FluidStack stack = new FluidStack(fluid, amount);
+            // Check drain fluid type compatibility
+            IFluidHandler primaryHandler = tank.getPrimaryHandler();
+            FluidStack drainFluid = primaryHandler.getFluidInTank(0);
+            if (!drainFluid.isEmpty()) {
+                ResourceLocation drainFluidId = BuiltInRegistries.FLUID.getKey(drainFluid.getFluid());
+                if (!drainFluidId.equals(mistFluidId)) {
+                    setCondensing(false);
+                    return; // fluid type mismatch — don't collect, don't reduce capacity
+                }
+            }
+
+            // Compute desired collection, clamp to drain remaining capacity
+            int desired = Math.max(1, (int) (concentration * Config.condenseEfficiency * (1 + flowPressure / 64)));
+            int drainRemaining = primaryHandler.getTankCapacity(0) - drainFluid.getAmount();
+            int target = Math.min(desired, drainRemaining);
+            if (target <= 0) {
+                setCondensing(false);
+                return;
+            }
+
+            // Consume from mist capacity (cascade through same-fluid sources)
+            long collected = MistEmitter.consumeCapacity(level, worldPosition, mistFluidId, target);
+            if (collected <= 0) {
+                setCondensing(false);
+                return;
+            }
+
+            FluidStack stack = new FluidStack(fluid, (int) collected);
 
             tank.allowInsertion();
-            tank.getPrimaryHandler().fill(stack, IFluidHandler.FluidAction.EXECUTE);
+            primaryHandler.fill(stack, IFluidHandler.FluidAction.EXECUTE);
             tank.forbidInsertion();
 
             setCondensing(true, stack);

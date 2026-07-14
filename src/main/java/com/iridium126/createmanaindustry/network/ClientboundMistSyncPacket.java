@@ -5,6 +5,7 @@ import com.iridium126.createmanaindustry.client.render.ClientMistHandler;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.world.level.Level;
@@ -17,7 +18,8 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
  * activates or deactivates (basin recipes don't have the atomizer's
  * built-in BE sync).
  */
-public record ClientboundMistSyncPacket(BlockPos pos, FluidStack fluid) implements CustomPacketPayload {
+public record ClientboundMistSyncPacket(BlockPos pos, FluidStack fluid, int radius)
+        implements CustomPacketPayload {
 
     public static final CustomPacketPayload.Type<ClientboundMistSyncPacket> TYPE =
             new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("mist_sync"));
@@ -26,6 +28,7 @@ public record ClientboundMistSyncPacket(BlockPos pos, FluidStack fluid) implemen
             StreamCodec.of(
                     (buffer, packet) -> {
                         BlockPos.STREAM_CODEC.encode(buffer, packet.pos);
+                        ByteBufCodecs.VAR_INT.encode(buffer, packet.radius);
                         boolean hasFluid = !packet.fluid.isEmpty();
                         buffer.writeBoolean(hasFluid);
                         if (hasFluid) {
@@ -34,9 +37,10 @@ public record ClientboundMistSyncPacket(BlockPos pos, FluidStack fluid) implemen
                     },
                     buffer -> {
                         BlockPos pos = BlockPos.STREAM_CODEC.decode(buffer);
+                        int radius = ByteBufCodecs.VAR_INT.decode(buffer);
                         boolean hasFluid = buffer.readBoolean();
                         FluidStack fluid = hasFluid ? FluidStack.STREAM_CODEC.decode(buffer) : FluidStack.EMPTY;
-                        return new ClientboundMistSyncPacket(pos, fluid);
+                        return new ClientboundMistSyncPacket(pos, fluid, radius);
                     });
 
     @Override
@@ -46,16 +50,16 @@ public record ClientboundMistSyncPacket(BlockPos pos, FluidStack fluid) implemen
 
     /** Called on the client. */
     public static void handle(ClientboundMistSyncPacket packet, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> ClientMistHandler.setActive(packet.pos, packet.fluid));
+        ctx.enqueueWork(() -> ClientMistHandler.setActive(packet.pos, packet.fluid, packet.radius));
     }
 
     /** Send to all players tracking the chunk containing {@code pos}. */
-    public static void sendToTracking(Level level, BlockPos pos, FluidStack fluid) {
+    public static void sendToTracking(Level level, BlockPos pos, FluidStack fluid, int radius) {
         if (level.isClientSide)
             return;
         PacketDistributor.sendToPlayersTrackingChunk(
                 (net.minecraft.server.level.ServerLevel) level,
                 level.getChunkAt(pos).getPos(),
-                new ClientboundMistSyncPacket(pos.immutable(), fluid));
+                new ClientboundMistSyncPacket(pos.immutable(), fluid, radius));
     }
 }
