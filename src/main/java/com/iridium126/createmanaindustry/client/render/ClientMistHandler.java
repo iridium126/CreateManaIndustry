@@ -54,9 +54,9 @@ public final class ClientMistHandler {
             this.fading = false;
         }
 
-        boolean isAnimating() {
+        /*boolean isAnimating() {
             return Math.abs(displayRadius - targetRadius) > 0.01f;
-        }
+        }*/
     }
 
     /** Client-side registry of active atomizer positions and their per-source data. */

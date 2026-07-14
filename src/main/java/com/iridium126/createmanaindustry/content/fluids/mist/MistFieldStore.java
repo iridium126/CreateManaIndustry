@@ -1,11 +1,7 @@
 package com.iridium126.createmanaindustry.content.fluids.mist;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 
 import com.iridium126.createmanaindustry.config.Config;
 import com.iridium126.createmanaindustry.content.kinetics.condenser.CondenserBlock;
@@ -384,11 +380,11 @@ public final class MistFieldStore {
             this.fluidCapacity = 0L;
         }
 
-        AtomizerField(int radius) { this(radius, null); }
+        //AtomizerField(int radius) { this(radius, null); }
 
         int radius() { return radius; }
         @org.jetbrains.annotations.Nullable FluidStack fluid() { return fluid; }
-        long fluidCapacity() { return fluidCapacity; }
+        //long fluidCapacity() { return fluidCapacity; }
     }
 
     /**
@@ -416,7 +412,7 @@ public final class MistFieldStore {
 
         FluidStack fluid() { return fluid; }
         int radius() { return radius; }
-        long expiryTick() { return expiryTick; }
-        long fluidCapacity() { return fluidCapacity; }
+        //long expiryTick() { return expiryTick; }
+        //long fluidCapacity() { return fluidCapacity; }
     }
 }
