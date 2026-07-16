@@ -8,6 +8,7 @@ import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.K
 import com.simibubi.create.api.stress.BlockStressValues;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlockEntity;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorTooltipModifier;
+import com.iridium126.createmanaindustry.hexcasting.CMISlatePatternRecipes;
 import com.iridium126.createmanaindustry.trickster.KineticStressTrickRegister;
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.foundation.data.CreateRegistrate;
@@ -25,6 +26,7 @@ import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.common.ModConfigSpec;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
@@ -76,6 +78,8 @@ public class CreateManaIndustry {
         CMIItems.register();
         if (TRICKSTER_ACTIVE)
             KineticStressTrickRegister.register();
+        if (HEX_ACTIVE)
+            NeoForge.EVENT_BUS.addListener(CMISlatePatternRecipes::onServerStarted);
         CMIPartialModels.register();
         {
             ModConfigSpec.Builder stressBuilder = new ModConfigSpec.Builder();

@@ -1,4 +1,4 @@
-package com.iridium126.createmanaindustry.content.kinetics.condenser;
+package com.iridium126.createmanaindustry.content.fluids.condenser;
 
 import java.util.List;
 

@@ -4,7 +4,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.iridium126.createmanaindustry.config.Config;
-import com.iridium126.createmanaindustry.content.kinetics.condenser.CondenserBlock;
+import com.iridium126.createmanaindustry.content.fluids.condenser.CondenserBlock;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;

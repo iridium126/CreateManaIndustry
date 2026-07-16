@@ -24,6 +24,7 @@ public class CMIMixinPlugin implements IMixinConfigPlugin {
 
     private static final String BNB_MOD_ID = "bits_n_bobs";
     private static final String TRICKSTER_MOD_ID = "trickster";
+    private static final String HEX_MOD_ID = "hexcasting";
 
     @Override
     public void onLoad(String mixinPackage) {}
@@ -45,6 +46,10 @@ public class CMIMixinPlugin implements IMixinConfigPlugin {
                 || mixinClassName.contains("KineticsSpellCoreItem")
                 || mixinClassName.contains("ModularSpellConstructBlockEntityRenderer"))
             return isLoaded(TRICKSTER_MOD_ID);
+
+        // RecipeManagerMixin injects slate pattern stonecutting recipes from Hexcasting
+        if (mixinClassName.contains("RecipeManagerMixin"))
+            return isLoaded(HEX_MOD_ID);
 
         return true;
     }

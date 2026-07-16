@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry;
 
 import static com.iridium126.createmanaindustry.CreateManaIndustry.REGISTRATE;
 
-import com.iridium126.createmanaindustry.content.kinetics.condenser.CondenserBlock;
+import com.iridium126.createmanaindustry.content.fluids.condenser.CondenserBlock;
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlock;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlock;
 import com.simibubi.create.AllBlocks;

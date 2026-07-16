@@ -23,6 +23,7 @@
     "MechanicalPressHeatedCompactingMixin",
     "MechanicalPressKnotMixin",
     "ProcessingRecipeFluidMixin",
+    "RecipeManagerMixin",
     "bnb.CogwheelChainMixin",
     "bnb.CogwheelChainPlaceInLevelMixin",
     "bnb.KineticBlockEntityChainStressMixin",

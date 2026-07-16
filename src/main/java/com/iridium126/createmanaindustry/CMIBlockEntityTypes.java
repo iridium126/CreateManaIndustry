@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry;
 
 import static com.iridium126.createmanaindustry.CreateManaIndustry.REGISTRATE;
 
-import com.iridium126.createmanaindustry.content.kinetics.condenser.CondenserBlockEntity;
+import com.iridium126.createmanaindustry.content.fluids.condenser.CondenserBlockEntity;
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlockEntity;
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerRenderer;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlockEntity;
