@@ -1,7 +1,5 @@
 package com.iridium126.createmanaindustry.trickster;
 
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 import java.util.List;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
@@ -9,8 +7,20 @@ import com.iridium126.createmanaindustry.config.Config;
 import com.iridium126.createmanaindustry.content.kinetics.TemporaryStress;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 
-import dev.enjarai.trickster.spell.trick.Trick;
+import dev.enjarai.trickster.spell.EvaluationResult;
+import dev.enjarai.trickster.spell.Fragment;
+import dev.enjarai.trickster.spell.Pattern;
+import dev.enjarai.trickster.spell.SpellContext;
+import dev.enjarai.trickster.spell.blunder.BlunderException;
+import dev.enjarai.trickster.spell.fragment.NumberFragment;
+import dev.enjarai.trickster.spell.fragment.VectorFragment;
+import dev.enjarai.trickster.spell.trick.Tricks;
+import dev.enjarai.trickster.spell.trick.func.LoadArgumentTrick;
+import dev.enjarai.trickster.spell.type.Signature;
+
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
@@ -21,93 +31,69 @@ public final class KineticStressTrickRegister {
     private KineticStressTrickRegister() {
     }
 
+    @SuppressWarnings({ "rawtypes", "unchecked" })
     public static void register() {
         if (registered)
             return;
 
+        if (!CreateManaIndustry.TRICKSTER_ACTIVE) {
+            CreateManaIndustry.LOGGER.warn("Trickster not active — skipping temporary kinetic stress trick registration");
+            return;
+        }
+
         try {
-            if (!TricksterReflection.ensureRegisterInit()) {
-                CreateManaIndustry.LOGGER.warn("Temporary kinetic stress trick registration is unavailable");
-                return;
-            }
+            Pattern pattern = Pattern.of(1, 0, 2, 3, 4, 5, 6, 8, 7);
+            LoadArgumentTrick trick = new LoadArgumentTrick(pattern, 0);
 
-            Object pattern = TricksterReflection.patternOfMethod.invoke(null,
-                    (Object) new int[] { 1, 0, 2, 3, 4, 5, 6, 8, 7 });
-            Object trick = TricksterReflection.loadArgumentTrickCtor.newInstance(pattern, 0);
+            trick.getSignatures().clear();
+            trick.getSignatures().add((Signature) new Signature<LoadArgumentTrick>() {
+                @Override
+                public boolean match(List<Fragment> fragments) {
+                    if (fragments.size() != 3)
+                        return false;
+                    return fragments.get(0) instanceof VectorFragment
+                            && fragments.get(1) instanceof NumberFragment
+                            && fragments.get(2) instanceof NumberFragment;
+                }
 
-            Method getSignaturesMethod = trick.getClass().getMethod("getSignatures");
-            Object rawSignatures = getSignaturesMethod.invoke(trick);
-            if (!(rawSignatures instanceof List<?> signaturesRaw))
-                return;
+                @Override
+                public EvaluationResult run(LoadArgumentTrick t, SpellContext ctx, List<Fragment> fragments)
+                        throws BlunderException {
+                    VectorFragment vectorFragment = (VectorFragment) fragments.get(0);
+                    double speedInput = ((NumberFragment) fragments.get(1)).number();
+                    double durationInput = ((NumberFragment) fragments.get(2)).number();
 
-            @SuppressWarnings("unchecked")
-            List<Object> signatures = (List<Object>) signaturesRaw;
-            signatures.clear();
-            signatures.add(createSignatureProxy());
-            TricksterReflection.tricksRegisterMethod.invoke(null, "temporary_kinetic_stress", trick);
+                    float stressMagnitude = (float) Math.abs(speedInput) * STRESS_PER_SPEED;
+                    int durationTicks = (int) Math.floor(durationInput);
+                    if (stressMagnitude <= 0 || durationTicks <= 0)
+                        throw new InvalidKineticStressBlunder(t);
+
+                    BlockPos pos = vectorFragment.toBlockPos();
+                    ServerLevel level = ctx.source().getWorld();
+                    BlockEntity be = level.getBlockEntity(pos);
+                    if (!(be instanceof KineticBlockEntity kinetic))
+                        throw new InvalidKineticTargetBlunder(t, pos);
+
+                    double manaCost = Config.manaPerStress * stressMagnitude * durationTicks
+                            * Config.kineticStressTrickManaMultiplier;
+                    TricksterManaAccess.useTraditionalMana(ctx, t, manaCost);
+
+                    float speed = (float) speedInput;
+                    TemporaryStress.apply(kinetic, speed < 0 ? -stressMagnitude : stressMagnitude, speed, durationTicks);
+                    return vectorFragment;
+                }
+
+                @Override
+                public MutableComponent asText() {
+                    return Component.literal("vector, number, number -> vector");
+                }
+            });
+
+            Tricks.register("temporary_kinetic_stress", trick);
             registered = true;
             CreateManaIndustry.LOGGER.info("Registered Trickster trick: temporary_kinetic_stress");
         } catch (Throwable t) {
             CreateManaIndustry.LOGGER.warn("Failed to register temporary kinetic stress trick", t);
         }
-    }
-
-    private static Object createSignatureProxy() {
-        java.lang.reflect.InvocationHandler handler = (proxy, method, args) -> {
-            String name = method.getName();
-            if ("match".equals(name))
-                return matches(args);
-            if ("asText".equals(name))
-                return TricksterReflection.makeText("vector, number, number -> vector");
-            if ("run".equals(name))
-                return run(args);
-            return method.getDefaultValue();
-        };
-        return Proxy.newProxyInstance(
-                TricksterReflection.signatureClass.getClassLoader(),
-                new Class<?>[] { TricksterReflection.signatureClass },
-                handler);
-    }
-
-    private static boolean matches(Object[] args) {
-        if (args == null || args.length == 0 || !(args[0] instanceof List<?> fragments))
-            return false;
-        if (fragments.size() != 3)
-            return false;
-
-        return TricksterReflection.vectorFragmentClass.isInstance(fragments.get(0))
-                && TricksterReflection.numberFragmentClass.isInstance(fragments.get(1))
-                && TricksterReflection.numberFragmentClass.isInstance(fragments.get(2));
-    }
-
-    private static Object run(Object[] args) throws Throwable {
-        Trick<?> trick = (Trick<?>) args[0];
-        Object spellContext = args[1];
-        @SuppressWarnings("unchecked")
-        List<Object> fragments = (List<Object>) args[2];
-
-        Object vectorFragment = fragments.get(0);
-        double speedInput = (double) TricksterReflection.numberFragmentNumberMethod.invoke(fragments.get(1));
-        double durationInput = (double) TricksterReflection.numberFragmentNumberMethod.invoke(fragments.get(2));
-        float stressMagnitude = (float) Math.abs(speedInput) * STRESS_PER_SPEED;
-        int durationTicks = (int) Math.floor(durationInput);
-        if (stressMagnitude <= 0 || durationTicks <= 0)
-            throw new InvalidKineticStressBlunder(trick);
-
-        BlockPos pos = (BlockPos) TricksterReflection.vectorFragmentToBlockPosMethod.invoke(vectorFragment);
-        Object source = TricksterReflection.spellContextSourceMethod.invoke(spellContext);
-        Object world = TricksterReflection.spellSourceGetWorldMethod.invoke(source);
-        if (!(world instanceof ServerLevel level))
-            throw new InvalidKineticTargetBlunder(trick, pos);
-
-        BlockEntity be = level.getBlockEntity(pos);
-        if (!(be instanceof KineticBlockEntity kinetic))
-            throw new InvalidKineticTargetBlunder(trick, pos);
-
-        double manaCost = Config.manaPerStress * stressMagnitude * durationTicks * Config.kineticStressTrickManaMultiplier;
-        TricksterManaAccess.useTraditionalMana(spellContext, trick, manaCost);
-        float speed = (float) speedInput;
-        TemporaryStress.apply(kinetic, speed < 0 ? -stressMagnitude : stressMagnitude, speed, durationTicks);
-        return vectorFragment;
     }
 }

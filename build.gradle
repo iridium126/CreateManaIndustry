@@ -50,6 +50,10 @@ repositories {
         name = "Ithundxr"
         url = "https://maven.ithundxr.dev/snapshots"
     }
+    maven {
+        name = "Fabric"
+        url = "https://maven.fabricmc.net/"
+    }
     exclusiveContent {
         forRepository {
             maven {
@@ -171,6 +175,23 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
+def remappedModCacheDir = layout.projectDirectory.dir(".gradle/loom-cache/remapped_mods/remapped")
+
+def remappedCurseJar = { String artifactPrefix, String version ->
+    providers.provider {
+        def matches = fileTree(remappedModCacheDir).matching {
+            include "curse/maven/${artifactPrefix}-*/${version}/*.jar"
+        }.files
+        if (matches.isEmpty()) {
+            throw new GradleException("Missing remapped jar for ${artifactPrefix}:${version} under ${remappedModCacheDir.asFile}")
+        }
+        if (matches.size() > 1) {
+            throw new GradleException("Expected one remapped jar for ${artifactPrefix}:${version}, found ${matches.size()}")
+        }
+        matches.iterator().next()
+    }
+}
+
 dependencies {
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
@@ -217,13 +238,18 @@ dependencies {
     //localRuntime "curse.maven:owo-lib-532610:6785734" 需要更新至0.13.0 alpha.15
     localRuntime "curse.maven:lithostitched-936015:8321754"
 
-    // Add Connector to the launch classpath
+    // Add Connector to the launch classpath and for compile-time access
+    compileOnly "org.sinytra:connector:2.0.0-beta.12+1.21.1"
     additionalRuntimeClasspath "org.sinytra:connector:2.0.0-beta.12+1.21.1"
     // Add FFAPI dependency
     compileOnly "curse.maven:forgified-fabric-api-889079:7658611"
     runtimeOnly "curse.maven:forgified-fabric-api-889079:7658611"
-    // Install desired Fabric mods. Make sure they remain unmapped at runtime
-    implementation "curse.maven:trickster-1137971:8324614"
+    // Compile-time deps for Trickster's transitive dependencies (needed for remapped jar)
+    compileOnly "net.fabricmc.fabric-api:fabric-api:0.102.0+1.21.1"
+    compileOnly "io.vavr:vavr:0.10.4"
+    // Compile against the Mojang-mapped cache artifact, but load the original Fabric jar at runtime.
+    compileOnly files(remappedCurseJar("trickster-1137971", "8324614"))
+    localRuntime "curse.maven:trickster-1137971:8324614"
     runtimeOnly "curse.maven:cicada-989574:7068950"
     runtimeOnly "curse.maven:lavender-api-962916:6107175"
     runtimeOnly "curse.maven:cardinal-components-api-318449:7250871"

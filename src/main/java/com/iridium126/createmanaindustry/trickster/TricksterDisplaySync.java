@@ -10,6 +10,16 @@ import org.jetbrains.annotations.Nullable;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.display.SpellConstructDisplayArguments;
 
+import dev.enjarai.trickster.block.ModularSpellConstructBlockEntity;
+import dev.enjarai.trickster.block.SpellConstructBlockEntity;
+import dev.enjarai.trickster.spell.SpellExecutor;
+import dev.enjarai.trickster.spell.execution.ExecutionState;
+import dev.enjarai.trickster.spell.execution.executor.DefaultSpellExecutor;
+import dev.enjarai.trickster.spell.execution.source.BlockSpellSource;
+import dev.enjarai.trickster.spell.Fragment;
+import dev.enjarai.trickster.spell.fragment.StringFragment;
+import dev.enjarai.trickster.spell.fragment.VoidFragment;
+
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 /**
@@ -18,7 +28,9 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  * as spell arguments inside Spell Construct and Modular Spell Construct
  * block entities.
  * <p>
- * All methods depend on {@link TricksterReflection#ensureDisplayInit()}.
+ * All methods use direct Trickster API — no reflection except for the
+ * private {@code arguments} field of {@link ExecutionState} (used only as a
+ * fallback when the returned list is not an {@link ArrayList}).
  */
 public final class TricksterDisplaySync {
 
@@ -32,25 +44,19 @@ public final class TricksterDisplaySync {
      * not a Trickster spell construct.
      */
     public static void syncExecutors(BlockEntity be) {
-        if (!TricksterReflection.ensureDisplayInit())
+        if (!CreateManaIndustry.TRICKSTER_ACTIVE)
             return;
 
-        try {
-            if (TricksterReflection.spellConstructBlockEntityClass.isInstance(be)) {
-                Object executor = TricksterReflection.spellConstructExecutorField.get(be);
-                syncExecutor(executor, be, -1);
-            } else if (TricksterReflection.modularSpellConstructBlockEntityClass.isInstance(be)) {
-                @SuppressWarnings("unchecked")
-                List<Optional<Object>> executors = (List<Optional<Object>>) TricksterReflection.modularExecutorsField.get(be);
-                for (int slot = 0; slot < executors.size()
-                        && slot < SpellConstructDisplayArguments.MODULAR_EXECUTOR_SLOTS; slot++) {
-                    Optional<Object> optional = executors.get(slot);
-                    int executorSlot = slot;
-                    optional.ifPresent(executor -> syncExecutor(executor, be, executorSlot));
-                }
+        if (be instanceof SpellConstructBlockEntity sc) {
+            syncExecutor(sc.executor, be, -1);
+        } else if (be instanceof ModularSpellConstructBlockEntity msc) {
+            List<Optional<SpellExecutor>> executors = msc.executors;
+            for (int slot = 0; slot < executors.size()
+                    && slot < SpellConstructDisplayArguments.MODULAR_EXECUTOR_SLOTS; slot++) {
+                Optional<SpellExecutor> optional = executors.get(slot);
+                int executorSlot = slot;
+                optional.ifPresent(executor -> syncExecutor(executor, be, executorSlot));
             }
-        } catch (ReflectiveOperationException e) {
-            CreateManaIndustry.LOGGER.error("Failed to sync spell construct display arguments", e);
         }
     }
 
@@ -59,8 +65,8 @@ public final class TricksterDisplaySync {
      * spell construct), combining live executor arguments with any overrides
      * stored via the DisplayLink system.
      */
-    public static List<?> buildExecutorArguments(BlockEntity be) {
-        if (!TricksterReflection.ensureDisplayInit())
+    public static List<Fragment> buildExecutorArguments(BlockEntity be) {
+        if (!CreateManaIndustry.TRICKSTER_ACTIVE)
             return List.of();
 
         return mergeDisplayArguments(be, -1, List.of());
@@ -71,74 +77,68 @@ public final class TricksterDisplaySync {
      */
     @Nullable
     public static BlockEntity getBlockEntityFromSource(Object source) {
-        if (!TricksterReflection.ensureDisplayInit() || source == null)
+        if (!CreateManaIndustry.TRICKSTER_ACTIVE || source == null)
             return null;
 
-        try {
-            return (BlockEntity) TricksterReflection.blockSpellSourceBlockEntityField.get(source);
-        } catch (ReflectiveOperationException e) {
-            return null;
+        if (source instanceof BlockSpellSource<?> bss) {
+            return bss.blockEntity;
         }
+        return null;
     }
 
     // ---- internals -------------------------------------------------------
 
-    private static void syncExecutor(@Nullable Object executor, BlockEntity be, int executorSlot) {
-        if (executor == null || !TricksterReflection.defaultSpellExecutorClass.isInstance(executor))
+    private static void syncExecutor(@Nullable SpellExecutor executor, BlockEntity be, int executorSlot) {
+        if (executor == null || !(executor instanceof DefaultSpellExecutor))
             return;
 
-        try {
-            Object state = TricksterReflection.spellExecutorGetDeepestStateMethod.invoke(executor);
-            @SuppressWarnings("unchecked")
-            List<Object> current = (List<Object>) TricksterReflection.executionStateGetArgumentsMethod.invoke(state);
-            List<Object> merged = mergeDisplayArguments(be, executorSlot, current);
+        ExecutionState state = executor.getDeepestState();
+        List<Fragment> current = state.getArguments();
+        List<Fragment> merged = mergeDisplayArguments(be, executorSlot, current);
 
-            if (current instanceof ArrayList<?> arrayList) {
-                @SuppressWarnings("unchecked")
-                ArrayList<Object> mutable = (ArrayList<Object>) arrayList;
-                mutable.clear();
-                mutable.addAll(merged);
-            } else {
-                Field argumentsField = state.getClass().getDeclaredField("arguments");
+        if (current instanceof ArrayList<?>) {
+            @SuppressWarnings("unchecked")
+            ArrayList<Fragment> mutable = (ArrayList<Fragment>) current;
+            mutable.clear();
+            mutable.addAll(merged);
+        } else {
+            // Fallback: access the private 'arguments' field directly
+            try {
+                Field argumentsField = ExecutionState.class.getDeclaredField("arguments");
                 argumentsField.setAccessible(true);
                 argumentsField.set(state, merged);
+            } catch (ReflectiveOperationException e) {
+                CreateManaIndustry.LOGGER.error("Failed to update spell executor arguments", e);
             }
-        } catch (ReflectiveOperationException e) {
-            CreateManaIndustry.LOGGER.error("Failed to update spell executor arguments", e);
         }
     }
 
-    private static List<Object> mergeDisplayArguments(BlockEntity be, int executorSlot, List<Object> base) {
-        ArrayList<Object> merged = new ArrayList<>(base);
+    private static List<Fragment> mergeDisplayArguments(BlockEntity be, int executorSlot, List<Fragment> base) {
+        ArrayList<Fragment> merged = new ArrayList<>(base);
         for (int i = 0; i < SpellConstructDisplayArguments.MAX_ARGUMENTS; i++) {
             if (!SpellConstructDisplayArguments.hasStoredArgument(be, executorSlot, i))
                 continue;
 
-            Object fragment = getDisplayArgument(be, executorSlot, i);
+            Fragment fragment = getDisplayArgument(be, executorSlot, i);
             if (fragment == null)
                 continue;
 
             while (merged.size() <= i)
-                merged.add(TricksterReflection.voidFragmentInstance);
+                merged.add(VoidFragment.INSTANCE);
             merged.set(i, fragment);
         }
         return merged;
     }
 
     @Nullable
-    private static Object getDisplayArgument(BlockEntity be, int executorSlot, int index) {
-        if (!TricksterReflection.ensureDisplayInit())
+    private static Fragment getDisplayArgument(BlockEntity be, int executorSlot, int index) {
+        if (!CreateManaIndustry.TRICKSTER_ACTIVE)
             return null;
 
         String value = SpellConstructDisplayArguments.getArgumentString(be, executorSlot, index);
         if (value == null)
             return null;
 
-        try {
-            return TricksterReflection.stringFragmentCtor.newInstance(value);
-        } catch (ReflectiveOperationException e) {
-            CreateManaIndustry.LOGGER.error("Failed to create StringFragment", e);
-            return null;
-        }
+        return new StringFragment(value);
     }
 }

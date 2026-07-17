@@ -42,8 +42,6 @@ public class CMIMixinPlugin implements IMixinConfigPlugin {
 
         // Mixins that target Trickster classes — disable when Trickster is absent
         if (mixinClassName.contains("TricksterSpellConstructSync")
-                || mixinClassName.contains("TrickBlunderException")
-                || mixinClassName.contains("KineticsSpellCoreItem")
                 || mixinClassName.contains("ModularSpellConstructBlockEntityRenderer"))
             return isLoaded(TRICKSTER_MOD_ID);
 

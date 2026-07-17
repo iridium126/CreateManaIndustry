@@ -1,5 +1,10 @@
 package com.iridium126.createmanaindustry.trickster;
 
+import dev.enjarai.trickster.block.ChargingArrayBlockEntity;
+import dev.enjarai.trickster.block.ModularSpellConstructBlockEntity;
+import dev.enjarai.trickster.block.SpellConstructBlockEntity;
+import dev.enjarai.trickster.item.KnotItem;
+
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -7,9 +12,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 /**
  * Utility methods for identifying Trickster knot items and block entities.
  * <p>
- * All knot-related type checks that were previously scattered across
- * {@link TricksterReflection} live here, delegating to the shared reflection
- * fields initialized by {@link TricksterReflection#ensureChargeInit()}.
+ * All type checks use direct {@code instanceof} — no reflection.
  */
 public final class TricksterKnotUtils {
 
@@ -18,34 +21,28 @@ public final class TricksterKnotUtils {
     // ---- knot item checks ------------------------------------------------
 
     public static boolean isKnotItem(Item item) {
-        return TricksterReflection.ensureChargeInit()
-                && item != null
-                && TricksterReflection.knotItemClass.isInstance(item);
+        return item instanceof KnotItem;
     }
 
     public static boolean isKnotStack(ItemStack stack) {
-        return stack != null && !stack.isEmpty() && isKnotItem(stack.getItem());
+        return stack != null && !stack.isEmpty() && stack.getItem() instanceof KnotItem;
     }
 
     // ---- block entity checks ---------------------------------------------
 
     public static boolean isTricksterKnotBlockEntity(BlockEntity be) {
-        if (!TricksterReflection.ensureChargeInit() || be == null)
+        if (be == null)
             return false;
-        return TricksterReflection.chargingArrayBlockEntityClass.isInstance(be)
-                || TricksterReflection.spellConstructBlockEntityClass.isInstance(be)
-                || TricksterReflection.modularSpellConstructBlockEntityClass.isInstance(be);
+        return be instanceof ChargingArrayBlockEntity
+                || be instanceof SpellConstructBlockEntity
+                || be instanceof ModularSpellConstructBlockEntity;
     }
 
     public static boolean isSpellConstructBlockEntity(BlockEntity be) {
-        if (!TricksterReflection.ensureChargeInit() || be == null)
-            return false;
-        return TricksterReflection.spellConstructBlockEntityClass.isInstance(be);
+        return be instanceof SpellConstructBlockEntity;
     }
 
     public static boolean isModularSpellConstructBlockEntity(BlockEntity be) {
-        if (!TricksterReflection.ensureChargeInit() || be == null)
-            return false;
-        return TricksterReflection.modularSpellConstructBlockEntityClass.isInstance(be);
+        return be instanceof ModularSpellConstructBlockEntity;
     }
 }
