@@ -32,7 +32,7 @@ public abstract class PlacingCogwheelChainMixin {
     private void createmanaindustry$bypassForSpellConstruct(BlockPos pos, BlockState state,
             CogwheelChainType type, CallbackInfoReturnable<Boolean> cir) {
         boolean newIsSpell = BnBKineticsCoreNodes.isModularSpellConstructBlock(state.getBlock());
-        boolean lastIsSpell = Boolean.TRUE.equals(BnBKineticsCoreNodes.LAST_NODE_IS_SPELL.get());
+        boolean lastIsSpell = Boolean.TRUE.equals(BnBKineticsCoreNodes.lastNodeIsSpell.get());
 
         if (!newIsSpell && !lastIsSpell)
             return;
@@ -73,7 +73,7 @@ public abstract class PlacingCogwheelChainMixin {
     @Inject(method = "tryAddNode", at = @At("RETURN"), remap = false)
     private void createmanaindustry$clearLastNodeFlag(BlockPos pos, BlockState state, CogwheelChainType type,
             CallbackInfoReturnable<Boolean> cir) {
-        BnBKineticsCoreNodes.LAST_NODE_IS_SPELL.remove();
+        BnBKineticsCoreNodes.lastNodeIsSpell.remove();
     }
 
     /**

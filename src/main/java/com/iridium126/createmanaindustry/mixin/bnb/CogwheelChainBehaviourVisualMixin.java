@@ -35,7 +35,7 @@ public abstract class CogwheelChainBehaviourVisualMixin {
             return com.kipti.bnb.content.kinetics.cogwheel_chain.render.CogwheelChainRenderGeometryBuilder
                     .buildSegments(chain, origin);
         } finally {
-            // Context kept alive for angular velocity lookups; cleared elsewhere
+            BnBChainRenderContext.end();
         }
     }
 }

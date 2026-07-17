@@ -41,6 +41,8 @@ public class CogwheelChainBehaviourRendererMixin {
         BnBChainRenderContext.end();
     }
 
+    private static final float ANGULAR_VELOCITY_FACTOR = (float) (Math.PI / -300.0);
+
     private static void populateAngularVelocities(
             CogwheelChainBehaviour chainBehaviour, KineticBlockEntity be) {
         if (!chainBehaviour.isController()) return;
@@ -48,15 +50,13 @@ public class CogwheelChainBehaviourRendererMixin {
         CogwheelChain chain = chainBehaviour.getControlledChain();
         if (chain == null) return;
 
-        float speed = be.getSpeed();
+        float speed = be.getSpeed() * ANGULAR_VELOCITY_FACTOR;
         List<PathedCogwheelNode> nodes = chain.getChainPathCogwheelNodes();
         BlockPos cp = be.getBlockPos();
 
         for (PathedCogwheelNode node : nodes) {
-            float side = node.sideFactor();
-            float av = (float) (Math.PI * side * speed / -300.0f);
             BnBChainRenderContext.putChainAngularVelocity(
-                    cp.offset(node.localPos()), av);
+                    cp.offset(node.localPos()), node.sideFactor() * speed);
         }
     }
 }

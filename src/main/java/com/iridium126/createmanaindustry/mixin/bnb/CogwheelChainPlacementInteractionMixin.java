@@ -43,7 +43,7 @@ public abstract class CogwheelChainPlacementInteractionMixin {
         if (chain != null) {
             PlacingCogwheelNode lastNode = chain.getLastNode();
             if (lastNode != null && BnBKineticsCoreNodes.isModularSpellConstruct(level, lastNode.pos())) {
-                BnBKineticsCoreNodes.LAST_NODE_IS_SPELL.set(true);
+                BnBKineticsCoreNodes.lastNodeIsSpell.set(true);
             }
         }
     }
@@ -111,7 +111,7 @@ public abstract class CogwheelChainPlacementInteractionMixin {
             PlacingCogwheelNode lastNode = chain.getLastNode();
             if (lastNode != null && !lastNode.pos().equals(pos)
                 && BnBKineticsCoreNodes.isModularSpellConstruct(level, lastNode.pos())) {
-                BnBKineticsCoreNodes.LAST_NODE_IS_SPELL.set(true);
+                BnBKineticsCoreNodes.lastNodeIsSpell.set(true);
             }
         }
 
@@ -123,9 +123,8 @@ public abstract class CogwheelChainPlacementInteractionMixin {
         // constructs are allowed through (old chain is destroyed by
         // placeChainCogwheelInLevel when the new chain is placed).
         if (!BnBKineticsCoreNodes.hasAnyKineticsCore(level, pos)) {
-            if (mc.player != null)
-                mc.player.displayClientMessage(
-                    Component.translatable("createmanaindustry.bnb_chain.no_core"), true);
+            mc.player.displayClientMessage(
+                Component.translatable("createmanaindustry.bnb_chain.no_core"), true);
             ci.cancel();
             event.setCanceled(true);
         }

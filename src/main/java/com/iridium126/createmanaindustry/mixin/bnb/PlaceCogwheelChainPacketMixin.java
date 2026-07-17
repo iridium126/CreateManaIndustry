@@ -29,13 +29,17 @@ public abstract class PlaceCogwheelChainPacketMixin {
         CAPTURED_PLAYER.set(player);
     }
 
+    @Inject(method = "handle", at = @At("RETURN"), remap = false)
+    private void createmanaindustry$cleanupPlayer(CallbackInfo ci) {
+        CAPTURED_PLAYER.remove();
+    }
+
     @Redirect(method = "handle",
         at = @At(value = "INVOKE", target = "Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/CogwheelChainPathfinder;buildChainPath(Lcom/kipti/bnb/content/kinetics/cogwheel_chain/graph/PlacingCogwheelChain;)Ljava/util/List;"),
         remap = false)
     private List<PathedCogwheelNode> createmanaindustry$overrideBuildPath(PlacingCogwheelChain placingChain) {
+        List<PathedCogwheelNode> result;
         try {
-            List<PathedCogwheelNode> result;
-            try {
                 result = CogwheelChainPathfinder.buildChainPath(placingChain);
             } catch (com.kipti.bnb.content.kinetics.cogwheel_chain.placement.ChainInteractionFailedException e) {
                 result = null;
@@ -59,9 +63,6 @@ public abstract class PlaceCogwheelChainPacketMixin {
                 return null;
 
             return manualBuildChainPath(placingChain);
-        } finally {
-            CAPTURED_PLAYER.remove();
-        }
     }
 
     private static List<PathedCogwheelNode> manualBuildChainPath(PlacingCogwheelChain chain) {

@@ -1,11 +1,10 @@
 package com.iridium126.createmanaindustry.content.kinetics.bnb;
 
-import java.lang.reflect.Field;
-
 import org.joml.Vector3f;
 
 import com.iridium126.createmanaindustry.content.items.KineticsSpellCoreItem;
 
+import dev.enjarai.trickster.block.ModularSpellConstructBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.Container;
@@ -14,22 +13,13 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.phys.Vec3;
 
 public final class BnBKineticsCoreNodes {
     public static final double BNB_SMALL_COGWHEEL_RADIUS = 0.5;
     public static final double KINETICS_CORE_RADIUS = 0.14;
 
-    public static final ThreadLocal<Boolean> LAST_NODE_IS_SPELL = new ThreadLocal<>();
-
-    private static final String MODULAR_SPELL_CONSTRUCT_BLOCK =
-        "dev.enjarai.trickster.block.ModularSpellConstructBlock";
-
-    private static volatile boolean facingInitTried;
-    private static Property<Direction> cachedFacingProperty;
-    private static volatile boolean blockClassTried;
-    private static Class<?> cachedBlockClass;
+    public static final ThreadLocal<Boolean> lastNodeIsSpell = new ThreadLocal<>();
 
     private BnBKineticsCoreNodes() {}
 
@@ -38,31 +28,11 @@ public final class BnBKineticsCoreNodes {
     }
 
     public static boolean isModularSpellConstructBlock(Block block) {
-        Class<?> cls = getBlockClass();
-        return cls != null && cls.isInstance(block);
-    }
-
-    private static Class<?> getBlockClass() {
-        if (!blockClassTried) {
-            blockClassTried = true;
-            try {
-                cachedBlockClass = Class.forName(MODULAR_SPELL_CONSTRUCT_BLOCK);
-            } catch (ClassNotFoundException e) {
-                cachedBlockClass = null;
-            }
-        }
-        return cachedBlockClass;
+        return block instanceof ModularSpellConstructBlock;
     }
 
     public static boolean hasAnyKineticsCore(Level level, BlockPos pos) {
-        BlockEntity be = level.getBlockEntity(pos);
-        if (!(be instanceof Container container))
-            return false;
-        for (int slot = 1; slot < container.getContainerSize(); slot++) {
-            if (isKineticsCore(container.getItem(slot)))
-                return true;
-        }
-        return false;
+        return getKineticsCoreCount(level, pos) > 0;
     }
 
     public static int getKineticsCoreCount(Level level, BlockPos pos) {
@@ -114,11 +84,10 @@ public final class BnBKineticsCoreNodes {
     }
 
     public static Direction getFacing(BlockState state) {
-        try {
-            return state.getValue(getFacingProperty());
-        } catch (IllegalArgumentException e) {
-            return Direction.UP;
+        if (state.getBlock() instanceof ModularSpellConstructBlock) {
+            return state.getValue(ModularSpellConstructBlock.FACING);
         }
+        return Direction.UP;
     }
 
     // ---- internals ----------------------------------------------------------
@@ -141,22 +110,5 @@ public final class BnBKineticsCoreNodes {
 
         return Vec3.atLowerCornerOf(pos)
             .add(0.5f + offset.x, 0.5f + offset.y, 0.5f + offset.z);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Property<Direction> getFacingProperty() {
-        if (!facingInitTried) {
-            facingInitTried = true;
-            try {
-                Class<?> blockClass = getBlockClass();
-                if (blockClass != null) {
-                    Field facingField = blockClass.getField("FACING");
-                    cachedFacingProperty = (Property<Direction>) facingField.get(null);
-                }
-            } catch (ReflectiveOperationException e) {
-                cachedFacingProperty = null;
-            }
-        }
-        return cachedFacingProperty;
     }
 }

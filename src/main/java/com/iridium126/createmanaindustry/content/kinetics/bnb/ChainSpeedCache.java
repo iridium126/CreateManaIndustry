@@ -6,9 +6,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
 
 /**
- * Lightweight per-tick chain speed cache used by {@code KineticsSpellCoreItemMixin}.
- * Separated from {@code BnBReflection} so that class can freely import BnB types
- * without causing class-load failures when BnB is not installed.
+ * Lightweight per-tick chain speed cache used by {@code KineticsSpellCoreItem}.
  */
 public final class ChainSpeedCache {
 
@@ -18,7 +16,13 @@ public final class ChainSpeedCache {
 
     public static float getCachedChainSpeed(BlockPos spellPos, long gameTime) {
         CachedSpeed entry = SPEED_CACHE.get(spellPos);
-        return entry != null && entry.gameTime == gameTime ? entry.speed : -1f;
+        if (entry == null)
+            return -1f;
+        if (entry.gameTime != gameTime) {
+            SPEED_CACHE.remove(spellPos);
+            return -1f;
+        }
+        return entry.speed;
     }
 
     public static void putCachedChainSpeed(BlockPos spellPos, float speed, long gameTime) {

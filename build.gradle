@@ -230,7 +230,7 @@ dependencies {
     localRuntime "curse.maven:architectury-api-419699:5786327"
     localRuntime "curse.maven:kotlin-for-forge-351264:7471280"
 
-    implementation "maven.modrinth:T8bvmqVZ:cSCeD78i" // Create: Bits 'n' Bobs
+    implementation "maven.modrinth:T8bvmqVZ:zNDKNuBZ" // Create: Bits 'n' Bobs
     implementation "curse.maven:azimuth-api-1466331:8317127"
     localRuntime "curse.maven:strut-your-stuff-1486746:8301563"
 

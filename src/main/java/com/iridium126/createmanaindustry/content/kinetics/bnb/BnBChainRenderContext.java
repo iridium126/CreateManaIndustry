@@ -46,9 +46,7 @@ public final class BnBChainRenderContext {
         return coreCenter.subtract(originLower).add(nodeOffset.scale(SCALE));
     }
 
-    // ========================================================================
-    // Angular velocity cache
-    // ========================================================================
+    // ---- angular velocity cache ----------------------------------------------
 
     public static void putChainAngularVelocity(BlockPos spellPos, float av) {
         CHAIN_ANGULAR_VELOCITIES.put(spellPos.immutable(),
@@ -58,8 +56,10 @@ public final class BnBChainRenderContext {
     public static float getChainAngularVelocity(BlockPos spellPos) {
         CachedVelocity e = CHAIN_ANGULAR_VELOCITIES.get(spellPos);
         if (e == null) return 0f;
-        if (AnimationTickHolder.getRenderTime() - e.renderTime
-                > VELOCITY_EXPIRY_SECONDS) return 0f;
+        if (AnimationTickHolder.getRenderTime() - e.renderTime > VELOCITY_EXPIRY_SECONDS) {
+            CHAIN_ANGULAR_VELOCITIES.remove(spellPos);
+            return 0f;
+        }
         return e.angularVelocity;
     }
 

@@ -25,8 +25,7 @@ public abstract class CogwheelChainMixin {
     @Inject(method = "checkIntegrity", at = @At("HEAD"), cancellable = true)
     private void createmanaindustry$checkKineticsCoreNodes(Level level, BlockPos origin,
             CallbackInfoReturnable<Boolean> cir) {
-        if (!containsKineticsCoreNode(level, origin))
-            return;
+        boolean hasSpellConstruct = false;
 
         for (PathedCogwheelNode node : cogwheelNodes) {
             BlockPos pos = origin.offset(node.localPos());
@@ -34,6 +33,7 @@ public abstract class CogwheelChainMixin {
                 continue;
 
             if (BnBKineticsCoreNodes.isModularSpellConstruct(level, pos)) {
+                hasSpellConstruct = true;
                 if (!BnBKineticsCoreNodes.hasAnyKineticsCore(level, pos)) {
                     cir.setReturnValue(false);
                     return;
@@ -49,15 +49,6 @@ public abstract class CogwheelChainMixin {
             }
         }
 
-        cir.setReturnValue(true);
-    }
-
-    private boolean containsKineticsCoreNode(Level level, BlockPos origin) {
-        for (PathedCogwheelNode node : cogwheelNodes) {
-            BlockPos pos = origin.offset(node.localPos());
-            if (level.isLoaded(pos) && BnBKineticsCoreNodes.isModularSpellConstruct(level, pos))
-                return true;
-        }
-        return false;
+        cir.setReturnValue(hasSpellConstruct || true);
     }
 }

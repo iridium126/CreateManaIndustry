@@ -6,10 +6,15 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import java.util.List;
+
 import com.iridium126.createmanaindustry.content.kinetics.bnb.BnBCompat;
 import com.iridium126.createmanaindustry.content.kinetics.bnb.BnBKineticsCoreNodes;
 import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.CogwheelChain;
+import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PathedCogwheelNode;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
+
+import net.minecraft.core.BlockPos;
 
 /**
  * Makes kinetics spell cores consume Create stress through the chain
@@ -28,18 +33,18 @@ public abstract class KineticBlockEntityChainStressMixin {
             cancellable = true, remap = false)
     private void createmanaindustry$addKineticsCoreStress(
             CallbackInfoReturnable<Float> cir) {
-        CogwheelChain chain = BnBCompat.getChainIfController(this);
+        KineticBlockEntity kbe = (KineticBlockEntity) (Object) this;
+        CogwheelChain chain = BnBCompat.getChainIfController(kbe);
         if (chain == null) return;
 
-        KineticBlockEntity kbe = (KineticBlockEntity) (Object) this;
         if (kbe.getLevel() == null) return;
 
-        var nodes = chain.getChainPathCogwheelNodes();
-        var controllerPos = kbe.getBlockPos();
+        List<PathedCogwheelNode> nodes = chain.getChainPathCogwheelNodes();
+        BlockPos controllerPos = kbe.getBlockPos();
 
         int coreCount = 0;
-        for (var node : nodes) {
-            var worldPos = controllerPos.offset(node.localPos());
+        for (PathedCogwheelNode node : nodes) {
+            BlockPos worldPos = controllerPos.offset(node.localPos());
             if (BnBKineticsCoreNodes.isModularSpellConstruct(
                     kbe.getLevel(), worldPos)) {
                 coreCount += BnBKineticsCoreNodes.getKineticsCoreCount(
