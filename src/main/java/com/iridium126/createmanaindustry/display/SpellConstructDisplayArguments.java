@@ -70,9 +70,7 @@ public final class SpellConstructDisplayArguments {
 
         CompoundTag slotTag = getSpellConstructSlotTag(be);
         slotTag.putString(Integer.toString(argumentIndex), componentsToString(text));
-        be.getPersistentData().put(NBT_KEY, slotTag);
-        be.setChanged();
-        TricksterDisplaySync.syncExecutors(be);
+        commitAndSync(be, slotTag);
     }
 
     public static void storeModularArgument(BlockEntity be, int executorSlot, int argumentIndex, List<MutableComponent> text) {
@@ -87,7 +85,11 @@ public final class SpellConstructDisplayArguments {
         slotTag.putString(Integer.toString(argumentIndex), componentsToString(text));
         slots.put(Integer.toString(executorSlot), slotTag);
         root.put(NBT_SLOTS, slots);
-        be.getPersistentData().put(NBT_KEY, root);
+        commitAndSync(be, root);
+    }
+
+    private static void commitAndSync(BlockEntity be, CompoundTag tag) {
+        be.getPersistentData().put(NBT_KEY, tag);
         be.setChanged();
         TricksterDisplaySync.syncExecutors(be);
     }

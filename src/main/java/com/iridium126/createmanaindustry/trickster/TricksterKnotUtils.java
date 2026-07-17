@@ -11,14 +11,10 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 
 /**
  * Utility methods for identifying Trickster knot items and block entities.
- * <p>
- * All type checks use direct {@code instanceof} — no reflection.
  */
 public final class TricksterKnotUtils {
 
     private TricksterKnotUtils() {}
-
-    // ---- knot item checks ------------------------------------------------
 
     public static boolean isKnotItem(Item item) {
         return item instanceof KnotItem;
@@ -28,21 +24,9 @@ public final class TricksterKnotUtils {
         return stack != null && !stack.isEmpty() && stack.getItem() instanceof KnotItem;
     }
 
-    // ---- block entity checks ---------------------------------------------
-
     public static boolean isTricksterKnotBlockEntity(BlockEntity be) {
-        if (be == null)
-            return false;
         return be instanceof ChargingArrayBlockEntity
                 || be instanceof SpellConstructBlockEntity
                 || be instanceof ModularSpellConstructBlockEntity;
-    }
-
-    public static boolean isSpellConstructBlockEntity(BlockEntity be) {
-        return be instanceof SpellConstructBlockEntity;
-    }
-
-    public static boolean isModularSpellConstructBlockEntity(BlockEntity be) {
-        return be instanceof ModularSpellConstructBlockEntity;
     }
 }

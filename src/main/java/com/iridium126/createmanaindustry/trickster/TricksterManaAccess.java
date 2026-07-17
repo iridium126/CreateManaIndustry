@@ -27,15 +27,15 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 
 /**
  * Read / write / transfer mana on Trickster knot items and block entities.
- * <p>
  * All mana operations use direct Trickster API calls — no reflection.
- * Every public method gates on {@link CreateManaIndustry#TRICKSTER_ACTIVE}.
  */
 public final class TricksterManaAccess {
 
+    private static final ManaVariant TRADITIONAL_VARIANT = ManaVariant.of(Manae.TRADITIONAL);
+
     private TricksterManaAccess() {}
 
-    // ---- public: query ---------------------------------------------------
+    // ---- public: query -------------------------------------------------------
 
     /** Returns the current liquid-mana amount in the knot stack (0 if unavailable). */
     public static float getMana(ItemStack stack) {
@@ -58,18 +58,12 @@ public final class TricksterManaAccess {
             return false;
 
         ManaComponent comp = stack.get(ModComponents.MANA);
-        if (comp == null)
-            return false;
-
-        return comp.pool() instanceof InfiniteManaPool;
+        return comp != null && comp.pool() instanceof InfiniteManaPool;
     }
 
-    // ---- public: transfer ------------------------------------------------
+    // ---- public: transfer ----------------------------------------------------
 
-    /**
-     * Drain up to {@code manaAmount} traditional mana from the stack,
-     * returning the amount actually removed.
-     */
+    /** Drain up to {@code manaAmount} traditional mana, returning the amount actually removed. */
     public static float drainMana(ItemStack stack, Level level, float manaAmount) {
         if (!CreateManaIndustry.TRICKSTER_ACTIVE || stack == null || stack.isEmpty() || level == null || manaAmount <= 0)
             return 0;
@@ -81,8 +75,7 @@ public final class TricksterManaAccess {
         if (pool instanceof InfiniteManaPool)
             return manaAmount;
 
-        ManaVariant variant = pool.getVariant(level);
-        if (!variant.isOf(Manae.TRADITIONAL))
+        if (!pool.getVariant(level).isOf(Manae.TRADITIONAL))
             return 0;
 
         long requested = toTricksterMana(manaAmount);
@@ -90,31 +83,27 @@ public final class TricksterManaAccess {
             return 0;
 
         MutableManaPool mutablePool = pool.makeClone(level);
-        long leftover = mutablePool.use(ManaVariant.of(Manae.TRADITIONAL), requested, level);
-        long consumed = requested - leftover;
+        long consumed = requested - mutablePool.use(TRADITIONAL_VARIANT, requested, level);
         if (consumed <= 0)
             return 0;
 
-        ManaComponent updated = comp.with(mutablePool);
-        stack.set(ModComponents.MANA, updated);
+        stack.set(ModComponents.MANA, comp.with(mutablePool));
         return fromTricksterMana(consumed);
     }
 
-    /**
-     * Refill up to {@code manaAmount} traditional mana into the stack,
-     * returning the amount actually inserted.
-     */
+    /** Refill up to {@code manaAmount} traditional mana, returning the amount actually inserted. */
     public static float refillMana(ItemStack stack, Level level, float manaAmount) {
         if (!CreateManaIndustry.TRICKSTER_ACTIVE || stack == null || stack.isEmpty() || level == null || manaAmount <= 0)
             return 0;
 
         ManaComponent comp = stack.get(ModComponents.MANA);
-        if (comp == null || comp.pool() instanceof InfiniteManaPool)
+        if (comp == null)
+            return 0;
+        ManaPool pool = comp.pool();
+        if (pool instanceof InfiniteManaPool)
             return 0;
 
-        ManaPool pool = comp.pool();
-        ManaVariant variant = pool.getVariant(level);
-        if (!canAcceptLiquidMana(variant))
+        if (!canAcceptLiquidMana(pool.getVariant(level)))
             return 0;
 
         long requested = toTricksterMana(manaAmount);
@@ -122,22 +111,19 @@ public final class TricksterManaAccess {
             return 0;
 
         MutableManaPool mutablePool = pool.makeClone(level);
-        long leftover = mutablePool.refill(ManaVariant.of(Manae.TRADITIONAL), requested, level);
-        long inserted = requested - leftover;
+        long inserted = requested - mutablePool.refill(TRADITIONAL_VARIANT, requested, level);
         if (inserted <= 0)
             return 0;
 
-        ManaComponent updated = comp.with(mutablePool);
-        stack.set(ModComponents.MANA, updated);
+        stack.set(ModComponents.MANA, comp.with(mutablePool));
         return fromTricksterMana(inserted);
     }
 
-    // ---- public: charging block entities ---------------------------------
+    // ---- public: charging block entities -------------------------------------
 
     /**
      * Charge all knot items in the Trickster block entity at {@code targetPos}
      * with {@code manaAmount} traditional mana.
-     *
      * @return {@code true} if at least one knot received mana.
      */
     public static boolean chargeKnotsAt(ServerLevel level, BlockPos targetPos, float manaAmount) {
@@ -145,39 +131,27 @@ public final class TricksterManaAccess {
             return false;
 
         BlockEntity target = level.getBlockEntity(targetPos);
-        if (target == null)
-            return false;
-
-        return chargeKnotsInBlockEntity(level, target, manaAmount);
+        return target != null && chargeKnotsInBlockEntity(level, target, manaAmount);
     }
 
-    // ---- public: trickster spell mana ------------------------------------
+    // ---- public: trickster spell mana ----------------------------------------
 
-    /**
-     * Consume traditional mana from a spell context.
-     */
+    /** Consume traditional mana from a spell context. */
     public static void useTraditionalMana(SpellContext ctx, Trick<?> trick, double amount) {
-        if (!CreateManaIndustry.TRICKSTER_ACTIVE)
-            return;
-        ctx.useScaledMana(trick, amount);
+        if (CreateManaIndustry.TRICKSTER_ACTIVE)
+            ctx.useScaledMana(trick, amount);
     }
 
-    // ---- public: knot crafting -------------------------------------------
+    // ---- public: knot crafting -----------------------------------------------
 
-    /**
-     * Returns the Trickster-defined creation cost of a knot item, or
-     * {@code fallback} when unavailable.
-     */
+    /** Returns the Trickster-defined creation cost of a knot item, or {@code fallback}. */
     public static float getCreationCost(Item item, float fallback) {
-        if (!CreateManaIndustry.TRICKSTER_ACTIVE || item == null || !(item instanceof KnotItem knotItem))
+        if (!CreateManaIndustry.TRICKSTER_ACTIVE || !(item instanceof KnotItem knotItem))
             return fallback;
         return knotItem.getCreationCost();
     }
 
-    /**
-     * Transfer mana / properties from a knot {@code input} to the
-     * {@code output} stack (e.g. after mechanical pressing).
-     */
+    /** Transfer mana / properties from a knot input to the output stack (e.g. after pressing). */
     public static ItemStack applyKnotTransfer(Level level, ItemStack input, ItemStack output) {
         if (!CreateManaIndustry.TRICKSTER_ACTIVE || !TricksterKnotUtils.isKnotStack(input))
             return output;
@@ -186,15 +160,12 @@ public final class TricksterManaAccess {
             return output;
 
         KnotItem crackedVersion = knotItem.getCrackedVersion();
-        if (crackedVersion == null)
-            return output;
-
-        return knotItem.transferPropertiesToCracked(level, input, output);
+        return crackedVersion == null ? output : knotItem.transferPropertiesToCracked(level, input, output);
     }
 
-    // ---- internals -------------------------------------------------------
+    // ---- private helpers -----------------------------------------------------
 
-    private static float readManaValue(ItemStack stack, @Nullable Level level, boolean includeBlankCapacity) {
+    private static float readManaValue(ItemStack stack, @Nullable Level level, boolean max) {
         if (!CreateManaIndustry.TRICKSTER_ACTIVE || stack == null || stack.isEmpty() || level == null)
             return 0;
 
@@ -205,70 +176,65 @@ public final class TricksterManaAccess {
         ManaPool pool = comp.pool();
         ManaVariant variant = pool.getVariant(level);
 
-        if (includeBlankCapacity) {
-            if (!canAcceptLiquidMana(variant))
-                return 0;
-            return fromTricksterMana(pool.getMax(level));
+        if (max) {
+            return canAcceptLiquidMana(variant) ? fromTricksterMana(pool.getMax(level)) : 0;
         }
-
-        if (!variant.isOf(Manae.TRADITIONAL))
-            return 0;
-        return fromTricksterMana(pool.get(level));
+        return variant.isOf(Manae.TRADITIONAL) ? fromTricksterMana(pool.get(level)) : 0;
     }
 
     private static boolean canAcceptLiquidMana(ManaVariant variant) {
-        return variant != null && (variant.isBlank() || variant.isOf(Manae.TRADITIONAL));
+        return variant.isBlank() || variant.isOf(Manae.TRADITIONAL);
     }
 
     private static long toTricksterMana(float manaAmount) {
-        return manaAmount <= 0 ? 0 : Math.max(0L, Math.round(manaAmount * ManaPool.MANA_SCALE));
+        return Math.max(0L, Math.round(manaAmount * ManaPool.MANA_SCALE));
     }
 
     private static float fromTricksterMana(long manaAmount) {
         return manaAmount <= 0 ? 0 : manaAmount / (float) ManaPool.MANA_SCALE;
     }
 
-    private static boolean chargeKnotsInBlockEntity(ServerLevel level, BlockEntity blockEntity, float manaAmount) {
-        if (blockEntity instanceof SpellConstructBlockEntity sc) {
-            if (chargeKnotStack(level, sc.getItem(0), manaAmount)) {
-                sc.markDirtyAndUpdateClients();
-                return true;
+    private static boolean chargeKnotsInBlockEntity(ServerLevel level, BlockEntity be, float manaAmount) {
+        return switch (be) {
+            case SpellConstructBlockEntity sc -> {
+                if (chargeKnotStack(level, sc.getItem(0), manaAmount)) {
+                    sc.markDirtyAndUpdateClients();
+                    yield true;
+                }
+                yield false;
             }
-            return false;
-        }
-
-        if (blockEntity instanceof ModularSpellConstructBlockEntity msc) {
-            if (msc.isEmpty())
-                return false;
-            if (chargeKnotStack(level, msc.getItem(0), manaAmount)) {
-                msc.markDirtyAndUpdateClients();
-                return true;
+            case ModularSpellConstructBlockEntity msc -> {
+                if (msc.isEmpty())
+                    yield false;
+                if (chargeKnotStack(level, msc.getItem(0), manaAmount)) {
+                    msc.markDirtyAndUpdateClients();
+                    yield true;
+                }
+                yield false;
             }
-            return false;
-        }
+            case ChargingArrayBlockEntity ca -> {
+                int knotCount = 0;
+                int size = ca.getContainerSize();
+                for (int i = 0; i < size; i++) {
+                    if (TricksterKnotUtils.isKnotStack(ca.getItem(i)))
+                        knotCount++;
+                }
+                if (knotCount == 0)
+                    yield false;
 
-        if (blockEntity instanceof ChargingArrayBlockEntity ca) {
-            int knotCount = 0;
-            for (int i = 0; i < ca.getContainerSize(); i++) {
-                if (TricksterKnotUtils.isKnotStack(ca.getItem(i)))
-                    knotCount++;
+                float share = manaAmount / knotCount;
+                boolean changed = false;
+                for (int i = 0; i < size; i++) {
+                    ItemStack stack = ca.getItem(i);
+                    if (TricksterKnotUtils.isKnotStack(stack) && chargeKnotStack(level, stack, share))
+                        changed = true;
+                }
+                if (changed)
+                    ca.markDirtyAndUpdateClients();
+                yield changed;
             }
-            if (knotCount == 0)
-                return false;
-
-            float share = manaAmount / knotCount;
-            boolean changed = false;
-            for (int i = 0; i < ca.getContainerSize(); i++) {
-                ItemStack stack = ca.getItem(i);
-                if (TricksterKnotUtils.isKnotStack(stack) && chargeKnotStack(level, stack, share))
-                    changed = true;
-            }
-            if (changed)
-                ca.markDirtyAndUpdateClients();
-            return changed;
-        }
-
-        return false;
+            default -> false;
+        };
     }
 
     private static boolean chargeKnotStack(ServerLevel level, ItemStack stack, float manaAmount) {
@@ -280,8 +246,7 @@ public final class TricksterManaAccess {
             return false;
 
         ManaPool pool = comp.pool();
-        ManaVariant variant = pool.getVariant(level);
-        if (!canAcceptLiquidMana(variant))
+        if (!canAcceptLiquidMana(pool.getVariant(level)))
             return false;
 
         long requested = toTricksterMana(manaAmount);
@@ -289,12 +254,11 @@ public final class TricksterManaAccess {
             return false;
 
         MutableManaPool mutablePool = pool.makeClone(level);
-        long leftover = mutablePool.refill(ManaVariant.of(Manae.TRADITIONAL), requested, level);
+        long leftover = mutablePool.refill(TRADITIONAL_VARIANT, requested, level);
         if (leftover >= requested)
             return false;
 
-        ManaComponent updated = comp.with(mutablePool);
-        stack.set(ModComponents.MANA, updated);
+        stack.set(ModComponents.MANA, comp.with(mutablePool));
         return true;
     }
 }

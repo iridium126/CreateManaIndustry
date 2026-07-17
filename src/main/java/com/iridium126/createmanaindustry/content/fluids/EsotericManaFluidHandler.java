@@ -18,6 +18,17 @@ public class EsotericManaFluidHandler implements IFluidHandlerItem {
     public static final ResourceLocation ESOTERIC_MANA_ID = ResourceLocation.fromNamespaceAndPath("trickster",
             "esoteric_mana");
 
+    private static volatile Item cachedEsotericManaItem;
+
+    private static Item getEsotericManaItem() {
+        Item item = cachedEsotericManaItem;
+        if (item == null) {
+            item = BuiltInRegistries.ITEM.get(ESOTERIC_MANA_ID);
+            cachedEsotericManaItem = item;
+        }
+        return item;
+    }
+
     public static boolean canFillItem(ItemStack stack, FluidStack availableFluid) {
         return stack.getItem() == Items.GLASS_BOTTLE
                 && !availableFluid.isEmpty()
@@ -31,7 +42,7 @@ public class EsotericManaFluidHandler implements IFluidHandlerItem {
     }
 
     public static ItemStack createFilledBottle() {
-        Item esotericMana = BuiltInRegistries.ITEM.get(ESOTERIC_MANA_ID);
+        Item esotericMana = getEsotericManaItem();
         return esotericMana == Items.AIR ? ItemStack.EMPTY : new ItemStack(esotericMana);
     }
 
@@ -124,6 +135,6 @@ public class EsotericManaFluidHandler implements IFluidHandlerItem {
     }
 
     private static boolean isEsotericMana(ItemStack stack) {
-        return BuiltInRegistries.ITEM.getKey(stack.getItem()).equals(ESOTERIC_MANA_ID);
+        return stack.getItem() == getEsotericManaItem();
     }
 }

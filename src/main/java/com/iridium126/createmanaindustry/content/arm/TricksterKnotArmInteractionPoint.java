@@ -1,11 +1,12 @@
 package com.iridium126.createmanaindustry.content.arm;
 
 import com.iridium126.createmanaindustry.content.items.TricksterKnotItemHandler;
-import com.iridium126.createmanaindustry.trickster.TricksterKnotUtils;
 import com.simibubi.create.content.kinetics.mechanicalArm.ArmBlockEntity;
 import com.simibubi.create.content.kinetics.mechanicalArm.ArmInteractionPoint;
 import com.simibubi.create.content.kinetics.mechanicalArm.ArmInteractionPointType;
 
+import dev.enjarai.trickster.block.ModularSpellConstructBlockEntity;
+import dev.enjarai.trickster.block.SpellConstructBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -24,8 +25,8 @@ public class TricksterKnotArmInteractionPoint extends ArmInteractionPoint {
         BlockEntity be = level.getBlockEntity(pos);
         if (be == null)
             return null;
-        TricksterKnotItemHandler.Mode mode = TricksterKnotUtils.isModularSpellConstructBlockEntity(be)
-                || TricksterKnotUtils.isSpellConstructBlockEntity(be) ? TricksterKnotItemHandler.Mode.FIRST_SLOT
+        TricksterKnotItemHandler.Mode mode = be instanceof ModularSpellConstructBlockEntity
+                || be instanceof SpellConstructBlockEntity ? TricksterKnotItemHandler.Mode.FIRST_SLOT
                         : TricksterKnotItemHandler.Mode.ALL_SLOTS;
         return TricksterKnotItemHandler.create(be, mode);
     }

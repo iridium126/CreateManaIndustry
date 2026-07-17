@@ -38,25 +38,27 @@ public class TricksterKnotItemHandler implements IItemHandler {
         if (!isSlotInRange(slot))
             return ItemStack.EMPTY;
 
-        ItemStack stack = container.getItem(toContainerSlot(slot));
-        return isKnot(stack) ? stack : ItemStack.EMPTY;
+        ItemStack stack = container.getItem(slot);
+        return TricksterKnotUtils.isKnotStack(stack) ? stack : ItemStack.EMPTY;
     }
 
     @Override
     public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
-        if (!isSlotInRange(slot) || stack.isEmpty() || !isKnot(stack))
+        if (!isSlotInRange(slot) || stack.isEmpty() || !TricksterKnotUtils.isKnotStack(stack))
             return stack;
 
-        int containerSlot = toContainerSlot(slot);
-        if (!container.getItem(containerSlot).isEmpty())
+        if (!container.getItem(slot).isEmpty())
             return stack;
 
         int inserted = Math.min(stack.getCount(), Math.min(getSlotLimit(slot), stack.getMaxStackSize()));
         if (inserted <= 0)
             return stack;
 
-        if (!simulate)
-            container.setItem(containerSlot, copyWithCount(stack, inserted));
+        if (!simulate) {
+            ItemStack copy = stack.copy();
+            copy.setCount(inserted);
+            container.setItem(slot, copy);
+        }
 
         if (inserted == stack.getCount())
             return ItemStack.EMPTY;
@@ -71,17 +73,18 @@ public class TricksterKnotItemHandler implements IItemHandler {
         if (!isSlotInRange(slot) || amount <= 0)
             return ItemStack.EMPTY;
 
-        int containerSlot = toContainerSlot(slot);
-        ItemStack stored = container.getItem(containerSlot);
-        if (!isKnot(stored))
+        ItemStack stored = container.getItem(slot);
+        if (!TricksterKnotUtils.isKnotStack(stored))
             return ItemStack.EMPTY;
 
         int extracted = Math.min(amount, stored.getCount());
-        ItemStack result = copyWithCount(stored, extracted);
+        ItemStack result = stored.copy();
+        result.setCount(extracted);
+
         if (!simulate) {
             ItemStack remaining = stored.copy();
             remaining.shrink(extracted);
-            container.setItem(containerSlot, remaining);
+            container.setItem(slot, remaining);
         }
         return result;
     }
@@ -93,24 +96,10 @@ public class TricksterKnotItemHandler implements IItemHandler {
 
     @Override
     public boolean isItemValid(int slot, ItemStack stack) {
-        return isSlotInRange(slot) && isKnot(stack);
-    }
-
-    private int toContainerSlot(int slot) {
-        return slot;
+        return isSlotInRange(slot) && TricksterKnotUtils.isKnotStack(stack);
     }
 
     private boolean isSlotInRange(int slot) {
         return slot >= 0 && slot < getSlots();
-    }
-
-    private boolean isKnot(ItemStack stack) {
-        return TricksterKnotUtils.isKnotStack(stack);
-    }
-
-    private ItemStack copyWithCount(ItemStack stack, int count) {
-        ItemStack copy = stack.copy();
-        copy.setCount(count);
-        return copy;
     }
 }

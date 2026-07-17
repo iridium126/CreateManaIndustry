@@ -28,6 +28,8 @@ public final class BnBKineticsCoreNodes {
 
     private static volatile boolean facingInitTried;
     private static Property<Direction> cachedFacingProperty;
+    private static volatile boolean blockClassTried;
+    private static Class<?> cachedBlockClass;
 
     private BnBKineticsCoreNodes() {}
 
@@ -36,11 +38,20 @@ public final class BnBKineticsCoreNodes {
     }
 
     public static boolean isModularSpellConstructBlock(Block block) {
-        try {
-            return Class.forName(MODULAR_SPELL_CONSTRUCT_BLOCK).isInstance(block);
-        } catch (ClassNotFoundException e) {
-            return false;
+        Class<?> cls = getBlockClass();
+        return cls != null && cls.isInstance(block);
+    }
+
+    private static Class<?> getBlockClass() {
+        if (!blockClassTried) {
+            blockClassTried = true;
+            try {
+                cachedBlockClass = Class.forName(MODULAR_SPELL_CONSTRUCT_BLOCK);
+            } catch (ClassNotFoundException e) {
+                cachedBlockClass = null;
+            }
         }
+        return cachedBlockClass;
     }
 
     public static boolean hasAnyKineticsCore(Level level, BlockPos pos) {
@@ -137,11 +148,11 @@ public final class BnBKineticsCoreNodes {
         if (!facingInitTried) {
             facingInitTried = true;
             try {
-                Class<?> blockClass = Class.forName(
-                        MODULAR_SPELL_CONSTRUCT_BLOCK);
-                Field facingField = blockClass.getField("FACING");
-                cachedFacingProperty = (Property<Direction>) facingField
-                        .get(null);
+                Class<?> blockClass = getBlockClass();
+                if (blockClass != null) {
+                    Field facingField = blockClass.getField("FACING");
+                    cachedFacingProperty = (Property<Direction>) facingField.get(null);
+                }
             } catch (ReflectiveOperationException e) {
                 cachedFacingProperty = null;
             }
