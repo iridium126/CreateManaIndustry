@@ -5,6 +5,7 @@ import com.mojang.serialization.Codec;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.codec.ByteBufCodecs;
+import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -27,7 +28,7 @@ public final class CMIComponents {
 
     private CMIComponents() {}
 
-    public static void register(net.neoforged.bus.api.IEventBus bus) {
+    public static void register(IEventBus bus) {
         REGISTER.register(bus);
     }
 }

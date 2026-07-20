@@ -2,9 +2,9 @@ package com.iridium126.createmanaindustry;
 
 import static com.iridium126.createmanaindustry.CreateManaIndustry.REGISTRATE;
 
+import com.iridium126.createmanaindustry.content.items.IncompleteKnotItem;
 import com.iridium126.createmanaindustry.content.items.KineticsSpellCoreItem;
 import com.simibubi.create.AllBlocks;
-import com.simibubi.create.content.processing.sequenced.SequencedAssemblyItem;
 import com.tterrag.registrate.providers.RegistrateRecipeProvider;
 import com.tterrag.registrate.util.entry.ItemEntry;
 import com.tterrag.registrate.util.nullness.NonNullBiConsumer;
@@ -32,20 +32,16 @@ public final class CMIItems {
                 })
                 .register();
 
-    public static final ItemEntry<SequencedAssemblyItem> INCOMPLETE_AMETHYST_KNOT =
-            incompleteKnot("incomplete_amethyst_knot");
-    public static final ItemEntry<SequencedAssemblyItem> INCOMPLETE_QUARTZ_KNOT =
-            incompleteKnot("incomplete_quartz_knot");
-    public static final ItemEntry<SequencedAssemblyItem> INCOMPLETE_EMERALD_KNOT =
+    public static final ItemEntry<IncompleteKnotItem> INCOMPLETE_EMERALD_KNOT =
             incompleteKnot("incomplete_emerald_knot");
-    public static final ItemEntry<SequencedAssemblyItem> INCOMPLETE_DIAMOND_KNOT =
-            incompleteKnot("incomplete_diamond_knot");
-    public static final ItemEntry<SequencedAssemblyItem> INCOMPLETE_ECHO_KNOT =
-            incompleteKnot("incomplete_echo_knot");
-    public static final ItemEntry<SequencedAssemblyItem> INCOMPLETE_ASTRAL_KNOT =
-            incompleteKnot("incomplete_astral_knot");
-    public static final ItemEntry<SequencedAssemblyItem> INCOMPLETE_PRISMATIC_KNOT =
+    public static final ItemEntry<IncompleteKnotItem> INCOMPLETE_PRISMATIC_KNOT =
             incompleteKnot("incomplete_prismatic_knot");
+    public static final ItemEntry<IncompleteKnotItem> INCOMPLETE_DIAMOND_KNOT =
+            incompleteKnot("incomplete_diamond_knot");
+    public static final ItemEntry<IncompleteKnotItem> INCOMPLETE_ECHO_KNOT =
+            incompleteKnot("incomplete_echo_knot");
+    public static final ItemEntry<IncompleteKnotItem> INCOMPLETE_ASTRAL_KNOT =
+            incompleteKnot("incomplete_astral_knot");
 
     private CMIItems() {
     }
@@ -53,8 +49,8 @@ public final class CMIItems {
     public static void register() {
     }
 
-    private static ItemEntry<SequencedAssemblyItem> incompleteKnot(String name) {
-        return REGISTRATE.item(name, SequencedAssemblyItem::new)
+    private static ItemEntry<IncompleteKnotItem> incompleteKnot(String name) {
+        return REGISTRATE.item(name, IncompleteKnotItem::new)
                 .model(NonNullBiConsumer.noop())
                 .register();
     }

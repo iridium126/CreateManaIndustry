@@ -38,11 +38,6 @@ public final class TricksterManaAccess {
     // ---- public: query -------------------------------------------------------
 
     /** Returns the current liquid-mana amount in the knot stack (0 if unavailable). */
-    public static float getMana(ItemStack stack) {
-        return getMana(stack, null);
-    }
-
-    /** Returns the current liquid-mana amount in the knot stack (0 if unavailable). */
     public static float getMana(ItemStack stack, @Nullable Level level) {
         return readManaValue(stack, level, false);
     }

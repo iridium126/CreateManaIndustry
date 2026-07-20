@@ -126,7 +126,7 @@ public class EsotericManaFluidHandler implements IFluidHandlerItem {
         if (!isEsotericMana(container))
             return FluidStack.EMPTY;
 
-        float mana = TricksterManaAccess.getMana(container);
+        float mana = TricksterManaAccess.getMana(container, CMIFluidTransferContext.getLevel());
         if (mana <= 0)
             mana = DEFAULT_ESOTERIC_MANA;
 

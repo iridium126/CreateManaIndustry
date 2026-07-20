@@ -1,7 +1,5 @@
 package com.iridium126.createmanaindustry.content.fluids;
 
-import org.jetbrains.annotations.Nullable;
-
 import com.iridium126.createmanaindustry.CMIFluids;
 import com.iridium126.createmanaindustry.trickster.TricksterKnotUtils;
 import com.iridium126.createmanaindustry.trickster.TricksterManaAccess;
@@ -119,7 +117,7 @@ public class TricksterKnotFluidHandler implements IFluidHandlerItem {
         if (hasInfiniteMana())
             return 1000;
 
-        Level level = getContextLevel();
+        Level level = CMIFluidTransferContext.getLevel();
         if (level == null)
             return 0;
 
@@ -130,7 +128,7 @@ public class TricksterKnotFluidHandler implements IFluidHandlerItem {
         if (!isKnotContainer() || hasInfiniteMana())
             return 0;
 
-        Level level = getContextLevel();
+        Level level = CMIFluidTransferContext.getLevel();
         if (level == null)
             return 0;
 
@@ -145,7 +143,7 @@ public class TricksterKnotFluidHandler implements IFluidHandlerItem {
         if (hasInfiniteMana())
             return 1000;
 
-        Level level = getContextLevel();
+        Level level = CMIFluidTransferContext.getLevel();
         if (level == null)
             return 0;
 
@@ -158,11 +156,6 @@ public class TricksterKnotFluidHandler implements IFluidHandlerItem {
 
     private boolean hasInfiniteMana() {
         return TricksterManaAccess.hasInfiniteMana(container);
-    }
-
-    @Nullable
-    private Level getContextLevel() {
-        return CMIFluidTransferContext.getLevel();
     }
 
     private int getPositiveManaFluidAmount(float manaAmount) {

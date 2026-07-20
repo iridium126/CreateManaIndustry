@@ -20,6 +20,7 @@
   "item.createmanaindustry.incomplete_diamond_knot": "Incomplete Diamond Knot",
   "item.createmanaindustry.incomplete_echo_knot": "Incomplete Echo Knot",
   "item.createmanaindustry.incomplete_emerald_knot": "Incomplete Emerald Knot",
+  "item.createmanaindustry.incomplete_prismatic_knot": "Incomplete Prismatic Knot",
   "item.createmanaindustry.incomplete_quartz_knot": "Incomplete Quartz Knot",
   "createmanaindustry.kinetic_mana_generator.stress_per_rpm": "Stress per RPM",
   "tooltip.createmanaindustry.stress_range": "%1$s-%2$s SU/RPM",

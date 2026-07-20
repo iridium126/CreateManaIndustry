@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.content.recipes;
 
-import java.util.List;
+import java.util.Map;
 
 import com.iridium126.createmanaindustry.CMIComponents;
 import com.iridium126.createmanaindustry.CMIFluids;
@@ -8,7 +8,6 @@ import com.iridium126.createmanaindustry.CMIItems;
 import com.iridium126.createmanaindustry.config.Config;
 import com.iridium126.createmanaindustry.content.fluids.CMIFluidConversions;
 import com.iridium126.createmanaindustry.trickster.TricksterManaAccess;
-import com.tterrag.registrate.util.entry.ItemEntry;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -18,29 +17,29 @@ import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.fluids.FluidStack;
 
 /**
- * Tracks incomplete knot → final knot mapping and manages the multi-step
- * liquid-mana filling process via the {@code filled_mana} data component.
+ * Manages the multi-step liquid-mana filling process for incomplete knot items
+ * via the {@code filled_mana} data component.
  * <p>
  * Each incomplete knot stores cumulative Trickster mana already infused
  * ({@link CMIComponents#FILLED_MANA}). When the total reaches the knot's
- * {@code creationCost}, the item is ready to become the final knot.
+ * {@code creationCost}, the item is replaced with the final Trickster knot.
  */
-public final class IncompleteKnotAssembly {
+public final class KnotFillingLogic {
 
-    private static final List<KnotAssembly> ASSEMBLIES = List.of(
-            new KnotAssembly(CMIItems.INCOMPLETE_EMERALD_KNOT, knot("emerald_knot"), 512),
-            new KnotAssembly(CMIItems.INCOMPLETE_DIAMOND_KNOT, knot("diamond_knot"), 8192),
-            new KnotAssembly(CMIItems.INCOMPLETE_ECHO_KNOT, knot("echo_knot"), 65536),
-            new KnotAssembly(CMIItems.INCOMPLETE_ASTRAL_KNOT, knot("astral_knot"), 524288),
-            new KnotAssembly(CMIItems.INCOMPLETE_PRISMATIC_KNOT, knot("prismatic_knot"), 8192));
+    private static final Map<Item, KnotEntry> KNOTS = Map.of(
+            CMIItems.INCOMPLETE_EMERALD_KNOT.get(), new KnotEntry(knot("emerald_knot"), 512),
+            CMIItems.INCOMPLETE_DIAMOND_KNOT.get(), new KnotEntry(knot("diamond_knot"), 8192),
+            CMIItems.INCOMPLETE_ECHO_KNOT.get(), new KnotEntry(knot("echo_knot"), 65536),
+            CMIItems.INCOMPLETE_ASTRAL_KNOT.get(), new KnotEntry(knot("astral_knot"), 524288),
+            CMIItems.INCOMPLETE_PRISMATIC_KNOT.get(), new KnotEntry(knot("prismatic_knot"), 8192));
 
-    private IncompleteKnotAssembly() {}
+    private KnotFillingLogic() {}
 
     // ---- public: fluid amount ------------------------------------------------
 
     /**
      * Returns the mB of liquid_mana to consume for the next fill operation on
-     * this incomplete knot, capped at the Spout's per-operation limit (1 bucket).
+     * this incomplete knot, capped at the Spout's per-operation limit.
      *
      * @return the required fluid amount in mB, or -1 if this is not an
      *         incomplete knot or the knot is already fully charged
@@ -50,13 +49,11 @@ public final class IncompleteKnotAssembly {
                 || !availableFluid.getFluid().isSame(CMIFluids.LIQUID_MANA.get()))
             return -1;
 
-        KnotAssembly assembly = findAssembly(stack);
-        if (assembly == null)
+        KnotEntry entry = KNOTS.get(stack.getItem());
+        if (entry == null)
             return -1;
 
-        float creationCost = resolveCreationCost(assembly);
-        float currentProgress = getFilledMana(stack);
-        float remaining = creationCost - currentProgress;
+        float remaining = entry.resolvedCreationCost - getFilledMana(stack);
         if (remaining <= 0)
             return -1;
 
@@ -67,31 +64,28 @@ public final class IncompleteKnotAssembly {
     // ---- public: fill operation ----------------------------------------------
 
     /**
-     * Performs one fill step on an incomplete knot, consuming liquid mana and
-     * advancing the {@code filled_mana} component. Returns the resulting stack:
-     * either the incomplete knot with updated progress, or the final knot item
-     * when the creation cost is reached.
+     * Performs one fill step on an incomplete knot, advancing the
+     * {@code filled_mana} component. Returns the incomplete knot with updated
+     * progress, or the final knot when the creation cost is reached.
      *
      * @param stack the incomplete knot being filled (not modified in place)
-     * @return the result stack (incomplete knot or final knot), or
-     *         {@link ItemStack#EMPTY} if this is not a valid incomplete knot
+     * @return the result stack, or {@link ItemStack#EMPTY} if invalid
      */
     public static ItemStack fillIncompleteKnot(ItemStack stack) {
-        KnotAssembly assembly = findAssembly(stack);
-        if (assembly == null)
+        KnotEntry entry = KNOTS.get(stack.getItem());
+        if (entry == null)
             return ItemStack.EMPTY;
 
-        float creationCost = resolveCreationCost(assembly);
         float currentProgress = getFilledMana(stack);
-        float remaining = creationCost - currentProgress;
+        float remaining = entry.resolvedCreationCost - currentProgress;
         if (remaining <= 0)
             return ItemStack.EMPTY;
 
         float toAdd = Math.min(remaining, Config.manaPerBucket);
         float newProgress = currentProgress + toAdd;
 
-        if (newProgress >= creationCost) {
-            Item knotItem = BuiltInRegistries.ITEM.get(assembly.knotId());
+        if (newProgress >= entry.resolvedCreationCost) {
+            Item knotItem = entry.cachedFinalKnot;
             if (knotItem == Items.AIR)
                 return ItemStack.EMPTY;
             return new ItemStack(knotItem);
@@ -102,6 +96,17 @@ public final class IncompleteKnotAssembly {
         return result;
     }
 
+    // ---- public: query --------------------------------------------------------
+
+    /**
+     * Returns the Trickster creation cost for the incomplete knot, or 0 if
+     * the stack is not a recognised incomplete knot.
+     */
+    public static float getCreationCost(ItemStack stack) {
+        KnotEntry entry = KNOTS.get(stack.getItem());
+        return entry != null ? entry.resolvedCreationCost : 0f;
+    }
+
     // ---- private helpers -----------------------------------------------------
 
     private static float getFilledMana(ItemStack stack) {
@@ -109,26 +114,21 @@ public final class IncompleteKnotAssembly {
         return value != null ? value : 0f;
     }
 
-    private static KnotAssembly findAssembly(ItemStack stack) {
-        if (stack.isEmpty())
-            return null;
-        for (KnotAssembly assembly : ASSEMBLIES) {
-            if (stack.is(assembly.incompleteKnot().get()))
-                return assembly;
-        }
-        return null;
-    }
-
-    private static float resolveCreationCost(KnotAssembly assembly) {
-        Item knotItem = BuiltInRegistries.ITEM.get(assembly.knotId());
-        if (knotItem == Items.AIR)
-            return assembly.fallbackCreationCost();
-        return TricksterManaAccess.getCreationCost(knotItem, assembly.fallbackCreationCost());
-    }
-
     private static ResourceLocation knot(String path) {
         return ResourceLocation.fromNamespaceAndPath("trickster", path);
     }
 
-    private record KnotAssembly(ItemEntry<?> incompleteKnot, ResourceLocation knotId, float fallbackCreationCost) {}
+    /** Immutable entry with eagerly-resolved creation cost and cached final knot item. */
+    private static final class KnotEntry {
+        final float resolvedCreationCost;
+        final Item cachedFinalKnot;
+
+        KnotEntry(ResourceLocation knotId, float fallbackCreationCost) {
+            Item knotItem = BuiltInRegistries.ITEM.get(knotId);
+            this.cachedFinalKnot = knotItem != Items.AIR ? knotItem : Items.AIR;
+            this.resolvedCreationCost = knotItem != Items.AIR
+                    ? TricksterManaAccess.getCreationCost(knotItem, fallbackCreationCost)
+                    : fallbackCreationCost;
+        }
+    }
 }

@@ -13,7 +13,7 @@ public final class CMIFluidTransferContext {
         CURRENT_LEVEL.set(level);
     }
 
-    public static void clear() {
+    public static void clearLevel() {
         CURRENT_LEVEL.remove();
     }
 
