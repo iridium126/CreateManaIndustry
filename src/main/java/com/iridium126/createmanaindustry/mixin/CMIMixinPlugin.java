@@ -49,6 +49,11 @@ public class CMIMixinPlugin implements IMixinConfigPlugin {
         if (mixinClassName.contains("RecipeManagerMixin"))
             return isLoaded(HEX_MOD_ID);
 
+        // Mixins that handle incomplete hexcasting items via Create machines
+        if (mixinClassName.contains("HexItem")
+                || mixinClassName.contains("IotaTransfer"))
+            return isLoaded(HEX_MOD_ID);
+
         return true;
     }
 

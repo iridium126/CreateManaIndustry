@@ -1,0 +1,11 @@
+{
+  "type": "create:deploying",
+  "ingredients": [
+    { "tag": "createmanaindustry:trinket_or_incomplete" },
+    { "tag": "createmanaindustry:iota_holders" }
+  ],
+  "keep_held_item": true,
+  "results": [
+    { "id": "createmanaindustry:incomplete_trinket" }
+  ]
+}

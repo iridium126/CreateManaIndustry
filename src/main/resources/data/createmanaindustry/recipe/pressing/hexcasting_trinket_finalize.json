@@ -1,0 +1,9 @@
+{
+  "type": "create:pressing",
+  "ingredients": [
+    { "item": "createmanaindustry:incomplete_trinket" }
+  ],
+  "results": [
+    { "id": "hexcasting:trinket" }
+  ]
+}

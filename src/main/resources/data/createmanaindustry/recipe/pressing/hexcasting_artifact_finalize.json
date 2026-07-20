@@ -1,0 +1,9 @@
+{
+  "type": "create:pressing",
+  "ingredients": [
+    { "item": "createmanaindustry:incomplete_artifact" }
+  ],
+  "results": [
+    { "id": "hexcasting:artifact" }
+  ]
+}
