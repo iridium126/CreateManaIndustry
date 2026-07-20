@@ -55,6 +55,10 @@ public final class Config {
             .comment("Maximum media capacity for incomplete artifacts (in Hexcasting dust units, 1 dust = 10,000).")
             .defineInRange("artifactMaxMedia", 640000000L, 10000L, Long.MAX_VALUE);
 
+    private static final ModConfigSpec.LongValue BATTERY_MAX_MEDIA = BUILDER
+            .comment("Maximum media capacity for incomplete media batteries (in Hexcasting dust units, 1 dust = 10,000).")
+            .defineInRange("batteryMaxMedia", 640000000L, 10000L, Long.MAX_VALUE);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     public static double manaPerStress = 0.001;
@@ -68,6 +72,7 @@ public final class Config {
     public static long cypherMaxMedia = 6400000L;
     public static long trinketMaxMedia = 64000000L;
     public static long artifactMaxMedia = 640000000L;
+    public static long batteryMaxMedia = 640000000L;
 
     private Config() {}
 
@@ -85,6 +90,7 @@ public final class Config {
             cypherMaxMedia = CYPHER_MAX_MEDIA.get();
             trinketMaxMedia = TRINKET_MAX_MEDIA.get();
             artifactMaxMedia = ARTIFACT_MAX_MEDIA.get();
+            batteryMaxMedia = BATTERY_MAX_MEDIA.get();
         }
     }
 }

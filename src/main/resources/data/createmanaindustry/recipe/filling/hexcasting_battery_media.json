@@ -1,0 +1,10 @@
+{
+  "type": "create:filling",
+  "ingredients": [
+    { "tag": "createmanaindustry:battery_or_incomplete" },
+    { "type": "neoforge:single", "amount": 1, "fluid": "createmanaindustry:liquid_media" }
+  ],
+  "results": [
+    { "id": "createmanaindustry:incomplete_media_battery" }
+  ]
+}

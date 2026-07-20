@@ -33,12 +33,22 @@ public class BeltDeployerIotaTransferMixin {
 
     private static final ThreadLocal<ItemStack> HELD_ITEM = new ThreadLocal<>();
 
-    @Inject(method = "activate", at = @At("HEAD"))
+    @Inject(method = "activate", at = @At("HEAD"), cancellable = true)
     private static void hex$captureHeldItem(TransportedItemStack transported,
             TransportedItemStackHandlerBehaviour handler,
             DeployerBlockEntity blockEntity, Recipe<?> recipe, CallbackInfo ci) {
         DeployerFakePlayer player = blockEntity.getPlayer();
-        HELD_ITEM.set(player != null ? player.getMainHandItem().copy() : ItemStack.EMPTY);
+        ItemStack heldItem = player != null ? player.getMainHandItem().copy() : ItemStack.EMPTY;
+
+        // Validate scroll op_id for the battery-scroll deploying recipe.
+        // The recipe JSON cannot filter by data components reliably through
+        // Create's Ingredient codec, so we enforce the check here.
+        if (!HexItemDataTransfer.validateScrollOpId(heldItem)) {
+            ci.cancel();
+            return;
+        }
+
+        HELD_ITEM.set(heldItem);
     }
 
     @Redirect(method = "activate",

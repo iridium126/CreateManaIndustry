@@ -20,6 +20,7 @@ public final class CMIHexItems {
     public static ItemEntry<IncompleteHexItem> INCOMPLETE_CYPHER;
     public static ItemEntry<IncompleteHexItem> INCOMPLETE_TRINKET;
     public static ItemEntry<IncompleteHexItem> INCOMPLETE_ARTIFACT;
+    public static ItemEntry<IncompleteMediaBatteryItem> INCOMPLETE_MEDIA_BATTERY;
 
     private CMIHexItems() {}
 
@@ -39,6 +40,11 @@ public final class CMIHexItems {
 
         INCOMPLETE_ARTIFACT = REGISTRATE.item("incomplete_artifact",
                         p -> new IncompleteHexItem(p, () -> Config.artifactMaxMedia, hexLoc("artifact")))
+                .model(NonNullBiConsumer.noop())
+                .register();
+
+        INCOMPLETE_MEDIA_BATTERY = REGISTRATE.item("incomplete_media_battery",
+                        p -> new IncompleteMediaBatteryItem(p, () -> Config.batteryMaxMedia, hexLoc("battery")))
                 .model(NonNullBiConsumer.noop())
                 .register();
     }

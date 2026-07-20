@@ -3,15 +3,17 @@ package com.iridium126.createmanaindustry.content.recipes;
 import at.petrak.hexcasting.api.casting.iota.Iota;
 import at.petrak.hexcasting.api.item.HexHolderItem;
 import at.petrak.hexcasting.api.item.IotaHolderItem;
+import at.petrak.hexcasting.api.item.MediaHolderItem;
 import at.petrak.hexcasting.api.pigment.FrozenPigment;
 import at.petrak.hexcasting.common.lib.HexDataComponents;
 
 import com.iridium126.createmanaindustry.content.items.IncompleteHexItem;
+import com.iridium126.createmanaindustry.content.items.IncompleteMediaBatteryItem;
 
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,31 +31,48 @@ public final class HexItemDataTransfer {
     // ---- Press: incomplete → final -----------------------------------------
 
     /**
-     * Transfers accumulated hex data from an incomplete hex item to a
+     * Transfers accumulated data from an incomplete item to a
      * freshly-pressed final Hexcasting item.
+     * <p>
+     * Handles two cases:
+     * <ul>
+     *   <li>{@link IncompleteHexItem} → {@link HexHolderItem} (patterns + media)</li>
+     *   <li>{@link IncompleteMediaBatteryItem} → {@link MediaHolderItem} (media only)</li>
+     * </ul>
      *
      * @param level the current level (may be needed for context)
-     * @param input the incomplete hex item being pressed
+     * @param input the incomplete item being pressed
      * @param output the recipe result (bare final item)
-     * @return the output stack with hex data applied, or the original output
-     *         if the input was not an incomplete hex item
+     * @return the output stack with data applied, or the original output
+     *         if no transfer was needed
      */
     public static ItemStack applyPressTransfer(Level level, ItemStack input, ItemStack output) {
-        if (!(input.getItem() instanceof IncompleteHexItem hexItem))
-            return output;
+        // Case 1: IncompleteHexItem → HexHolderItem (cypher/trinket/artifact)
+        if (input.getItem() instanceof IncompleteHexItem hexItem) {
+            if (output.getItem() instanceof HexHolderItem outputHolder) {
+                List<Iota> patterns = input.get(HexDataComponents.HEX_HOLDER_PATTERNS);
+                FrozenPigment pigment = input.get(HexDataComponents.PIGMENT);
+                long media = hexItem.getMedia(input);
 
-        if (!(output.getItem() instanceof HexHolderItem outputHolder))
-            return output;
+                if (patterns != null && !patterns.isEmpty()) {
+                    outputHolder.writeHex(output, patterns, pigment, media);
+                } else if (media > 0) {
+                    outputHolder.writeHex(output, List.of(), pigment, media);
+                }
+                return output;
+            }
+        }
 
-        List<Iota> patterns = input.get(HexDataComponents.HEX_HOLDER_PATTERNS);
-        FrozenPigment pigment = input.get(HexDataComponents.PIGMENT);
-        long media = hexItem.getMedia(input);
-
-        if (patterns != null && !patterns.isEmpty()) {
-            outputHolder.writeHex(output, patterns, pigment, media);
-        } else if (media > 0) {
-            // No patterns but has media — still transfer the media
-            outputHolder.writeHex(output, List.of(), pigment, media);
+        // Case 2: IncompleteMediaBatteryItem → MediaHolderItem (battery)
+        if (input.getItem() instanceof IncompleteMediaBatteryItem batteryItem) {
+            if (output.getItem() instanceof MediaHolderItem outputHolder) {
+                long media = batteryItem.getMedia(input);
+                // Set maxMedia to the total media accumulated during filling,
+                // rather than the config's batteryMaxMedia.
+                output.set(HexDataComponents.MEDIA_MAX, media);
+                outputHolder.setMedia(output, media);
+                return output;
+            }
         }
 
         return output;
@@ -97,6 +116,32 @@ public final class HexItemDataTransfer {
         }
 
         return recipeOutput;
+    }
+
+    // ---- Deployer: scroll validation ---------------------------------------
+
+    /**
+     * Validates that a scroll held by the deployer has the correct
+     * {@code hexcasting:op_id} when used to craft a battery.
+     * <p>
+     * Only enforces the check when the held item is a {@code hexcasting:scroll};
+     * all other items pass through without validation.
+     *
+     * @param heldItem the item held by the deployer
+     * @return {@code true} if the scroll has the correct op_id (or the held
+     *         item is not a scroll), {@code false} otherwise
+     */
+    public static boolean validateScrollOpId(ItemStack heldItem) {
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(heldItem.getItem());
+        if (!"hexcasting".equals(id.getNamespace()) || !"scroll".equals(id.getPath()))
+            return true; // Not a scroll — allowed
+
+        var opId = heldItem.get(HexDataComponents.ACTION);
+        if (opId == null)
+            return false; // Scroll without op_id — reject
+
+        ResourceLocation expected = ResourceLocation.fromNamespaceAndPath("hexcasting", "craft/battery");
+        return opId.location().equals(expected);
     }
 
     // ---- internal ----------------------------------------------------------

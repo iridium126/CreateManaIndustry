@@ -1,0 +1,9 @@
+{
+  "type": "create:pressing",
+  "ingredients": [
+    { "item": "createmanaindustry:incomplete_media_battery" }
+  ],
+  "results": [
+    { "id": "hexcasting:battery" }
+  ]
+}

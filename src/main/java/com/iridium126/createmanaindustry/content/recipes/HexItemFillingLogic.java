@@ -1,10 +1,13 @@
 package com.iridium126.createmanaindustry.content.recipes;
 
+import at.petrak.hexcasting.api.item.MediaHolderItem;
+
 import com.iridium126.createmanaindustry.CMIFluids;
 import com.iridium126.createmanaindustry.config.Config;
 import com.iridium126.createmanaindustry.content.fluids.CMIFluidConversions;
 import com.iridium126.createmanaindustry.content.items.CMIHexItems;
 import com.iridium126.createmanaindustry.content.items.IncompleteHexItem;
+import com.iridium126.createmanaindustry.content.items.IncompleteMediaBatteryItem;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -25,15 +28,16 @@ public final class HexItemFillingLogic {
     private HexItemFillingLogic() {}
 
     /**
-     * Resolves the corresponding {@link IncompleteHexItem} for a given stack.
+     * Resolves the corresponding incomplete item (as a {@link MediaHolderItem})
+     * for a given input stack.
      *
-     * @return the incomplete hex item type, or {@code null} if the stack is not
-     *         a recognised hex item (fresh-crafted or incomplete)
+     * @return the incomplete item that should receive media, or {@code null} if
+     *         the stack is not recognised
      */
-    private static IncompleteHexItem resolve(ItemStack stack) {
+    private static MediaHolderItem resolve(ItemStack stack) {
         Item item = stack.getItem();
-        if (item instanceof IncompleteHexItem hexItem)
-            return hexItem;
+        if (item instanceof MediaHolderItem mhi && isIncompleteItem(item))
+            return mhi;
 
         // Check if it's a fresh-crafted hexcasting item
         ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
@@ -47,8 +51,14 @@ public final class HexItemFillingLogic {
             return CMIHexItems.INCOMPLETE_TRINKET.get();
         if ("artifact".equals(path) && CMIHexItems.INCOMPLETE_ARTIFACT != null)
             return CMIHexItems.INCOMPLETE_ARTIFACT.get();
+        if ("battery".equals(path) && CMIHexItems.INCOMPLETE_MEDIA_BATTERY != null)
+            return CMIHexItems.INCOMPLETE_MEDIA_BATTERY.get();
 
         return null;
+    }
+
+    private static boolean isIncompleteItem(Item item) {
+        return item instanceof IncompleteHexItem || item instanceof IncompleteMediaBatteryItem;
     }
 
     // ---- fluid amount ------------------------------------------------------
@@ -65,12 +75,12 @@ public final class HexItemFillingLogic {
                 || !availableFluid.getFluid().isSame(CMIFluids.LIQUID_MEDIA.get()))
             return -1;
 
-        IncompleteHexItem hexItem = resolve(stack);
-        if (hexItem == null)
+        MediaHolderItem holder = resolve(stack);
+        if (holder == null)
             return -1;
 
-        long maxMedia = hexItem.getMaxMedia(stack);
-        long currentMedia = hexItem.getMedia(stack);
+        long maxMedia = holder.getMaxMedia(stack);
+        long currentMedia = holder.getMedia(stack);
         long remaining = maxMedia - currentMedia;
         if (remaining <= 0)
             return -1;
@@ -86,7 +96,7 @@ public final class HexItemFillingLogic {
     /**
      * Performs one fill step, adding media to the incomplete hex item.
      * <p>
-     * If the input is a fresh-crafted hexcasting item (not yet incomplete),
+     * If the input is a fresh-crafted item or glass bottle (not yet incomplete),
      * it is converted to the corresponding incomplete item with
      * {@code MEDIA_MAX} set from config before media is added.
      *
@@ -94,8 +104,8 @@ public final class HexItemFillingLogic {
      * @return the result stack, or {@link ItemStack#EMPTY} if invalid
      */
     public static ItemStack fillIncompleteHexItem(ItemStack stack, int fluidAmount) {
-        IncompleteHexItem hexItem = resolve(stack);
-        if (hexItem == null)
+        MediaHolderItem holder = resolve(stack);
+        if (holder == null)
             return ItemStack.EMPTY;
 
         long mediaToAdd = CMIFluidConversions.fluidAmountToMedia(fluidAmount);
@@ -103,20 +113,24 @@ public final class HexItemFillingLogic {
             return ItemStack.EMPTY;
 
         ItemStack result;
-        if (stack.getItem() instanceof IncompleteHexItem) {
+        if (isIncompleteItem(stack.getItem())) {
             // Already incomplete — copy and add media
             result = stack.copy();
+        } else if (holder instanceof Item item) {
+            // Fresh item or glass bottle — create incomplete copy with default max media
+            result = new ItemStack(item);
+            if (holder instanceof IncompleteHexItem hi)
+                hi.ensureMaxMedia(result);
+            else if (holder instanceof IncompleteMediaBatteryItem bi)
+                bi.ensureMaxMedia(result);
         } else {
-            // Fresh hexcasting item — create incomplete copy with default max media.
-            // Fresh-crafted hex items carry no useful data to preserve (no patterns, no media).
-            result = new ItemStack(hexItem);
-            hexItem.ensureMaxMedia(result);
+            return ItemStack.EMPTY;
         }
 
-        long currentMedia = hexItem.getMedia(result);
-        long maxMedia = hexItem.getMaxMedia(result);
+        long currentMedia = holder.getMedia(result);
+        long maxMedia = holder.getMaxMedia(result);
         long newMedia = Math.min(currentMedia + mediaToAdd, maxMedia);
-        hexItem.setMedia(result, newMedia);
+        holder.setMedia(result, newMedia);
 
         return result;
     }
