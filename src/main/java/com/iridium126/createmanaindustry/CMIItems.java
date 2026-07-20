@@ -44,6 +44,8 @@ public final class CMIItems {
             incompleteKnot("incomplete_echo_knot");
     public static final ItemEntry<SequencedAssemblyItem> INCOMPLETE_ASTRAL_KNOT =
             incompleteKnot("incomplete_astral_knot");
+    public static final ItemEntry<SequencedAssemblyItem> INCOMPLETE_PRISMATIC_KNOT =
+            incompleteKnot("incomplete_prismatic_knot");
 
     private CMIItems() {
     }

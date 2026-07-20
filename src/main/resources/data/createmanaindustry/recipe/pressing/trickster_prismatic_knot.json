@@ -1,0 +1,13 @@
+{
+  "type": "create:pressing",
+  "ingredients": [
+    {
+      "item": "trickster:prismatic_knot"
+    }
+  ],
+  "results": [
+    {
+      "id": "trickster:cracked_prismatic_knot"
+    }
+  ]
+}

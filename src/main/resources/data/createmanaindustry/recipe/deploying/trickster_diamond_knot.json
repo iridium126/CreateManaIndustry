@@ -1,0 +1,16 @@
+{
+  "type": "create:deploying",
+  "ingredients": [
+    {
+      "item": "minecraft:diamond"
+    },
+    {
+      "item": "minecraft:glass"
+    }
+  ],
+  "results": [
+    {
+      "id": "createmanaindustry:incomplete_diamond_knot"
+    }
+  ]
+}

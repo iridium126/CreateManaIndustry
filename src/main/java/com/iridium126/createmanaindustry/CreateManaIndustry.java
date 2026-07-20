@@ -72,6 +72,7 @@ public class CreateManaIndustry {
         modEventBus.addListener(CreateManaIndustry::registerPayloads);
         CMICreativeModeTabs.register(modEventBus);
         CMIRecipeTypes.register(modEventBus);
+        CMIComponents.register(modEventBus);
         CMIBlocks.register();
         CMIFluids.register();
         CMIBlockEntityTypes.register();

@@ -1,0 +1,16 @@
+{
+  "type": "create:deploying",
+  "ingredients": [
+    {
+      "item": "minecraft:prismarine_crystals"
+    },
+    {
+      "item": "minecraft:glass"
+    }
+  ],
+  "results": [
+    {
+      "id": "createmanaindustry:incomplete_prismatic_knot"
+    }
+  ]
+}

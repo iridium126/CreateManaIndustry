@@ -1,0 +1,16 @@
+{
+  "type": "create:deploying",
+  "ingredients": [
+    {
+      "item": "minecraft:emerald"
+    },
+    {
+      "item": "minecraft:glass"
+    }
+  ],
+  "results": [
+    {
+      "id": "createmanaindustry:incomplete_emerald_knot"
+    }
+  ]
+}

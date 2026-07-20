@@ -1,0 +1,18 @@
+{
+  "type": "create:filling",
+  "ingredients": [
+    {
+      "item": "createmanaindustry:incomplete_prismatic_knot"
+    },
+    {
+      "type": "neoforge:single",
+      "amount": 1,
+      "fluid": "createmanaindustry:liquid_mana"
+    }
+  ],
+  "results": [
+    {
+      "id": "createmanaindustry:incomplete_prismatic_knot"
+    }
+  ]
+}
