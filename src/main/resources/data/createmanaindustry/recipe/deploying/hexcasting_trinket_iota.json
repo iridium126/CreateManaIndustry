@@ -2,7 +2,7 @@
   "type": "create:deploying",
   "ingredients": [
     { "tag": "createmanaindustry:trinket_or_incomplete" },
-    { "tag": "createmanaindustry:iota_holders" }
+    { "tag": "createmanaindustry:iota_holder_item" }
   ],
   "keep_held_item": true,
   "results": [

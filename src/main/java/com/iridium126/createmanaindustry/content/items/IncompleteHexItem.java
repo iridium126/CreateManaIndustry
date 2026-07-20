@@ -6,10 +6,13 @@ import at.petrak.hexcasting.api.pigment.FrozenPigment;
 import at.petrak.hexcasting.api.utils.MediaHelper;
 import at.petrak.hexcasting.common.lib.HexDataComponents;
 
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -109,6 +112,23 @@ public class IncompleteHexItem extends Item implements HexHolderItem {
     @Override
     public @Nullable FrozenPigment getPigment(ItemStack stack) {
         return stack.get(HexDataComponents.PIGMENT);
+    }
+
+    // ---- Tooltip ------------------------------------------------------------
+
+    @Override
+    public void appendHoverText(ItemStack stack, TooltipContext context,
+            List<Component> tooltipComponents, TooltipFlag tooltipFlag) {
+        super.appendHoverText(stack, context, tooltipComponents, tooltipFlag);
+
+        var patterns = stack.get(HexDataComponents.HEX_HOLDER_PATTERNS);
+        if (patterns != null && !patterns.isEmpty()) {
+            var storedHex = Component.translatable("hexcasting.tooltip.stored_hex");
+            for (var iota : patterns) {
+                storedHex.append(iota.display().plainCopy().withStyle(ChatFormatting.DARK_PURPLE));
+            }
+            tooltipComponents.add(storedHex);
+        }
     }
 
     // ---- Visual (durability bar) -------------------------------------------
