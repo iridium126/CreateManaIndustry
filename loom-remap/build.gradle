@@ -1,0 +1,67 @@
+plugins {
+    id 'java'
+    id 'net.fabricmc.fabric-loom-remap' version "1.15-SNAPSHOT"
+}
+
+group = rootProject.group
+version = rootProject.version
+
+base {
+    archivesName = "loom-remap"
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = "Fabric"
+        url = "https://maven.fabricmc.net/"
+    }
+    maven {
+        name = "CurseMaven"
+        url = "https://cursemaven.com"
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+    mappings loom.officialMojangMappings()
+
+    modImplementation "net.fabricmc:fabric-loader:0.16.14"
+    modImplementation "curse.maven:trickster-1137971:8324614"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:0.102.0+1.21.1"
+    implementation "io.vavr:vavr:0.10.4"
+}
+
+def exportedDir = layout.buildDirectory.dir("remapped-libs")
+def exportedJar = layout.buildDirectory.file("remapped-libs/trickster-1137971-8324614-named.jar")
+
+tasks.register("exportTricksterNamedJar", Copy) {
+    dependsOn configurations.compileClasspath
+
+    from({
+        def matches = configurations.compileClasspath.resolve().findAll {
+            it.name.startsWith("trickster-") && it.name.endsWith(".jar")
+        }
+        if (matches.size() != 1) {
+            throw new GradleException("Expected exactly one remapped Trickster jar on compileClasspath, found ${matches.size()}")
+        }
+        matches
+    })
+
+    into(exportedDir)
+    rename { "trickster-1137971-8324614-named.jar" }
+}
+
+configurations {
+    namedTrickster
+}
+
+artifacts {
+    add("namedTrickster", exportedJar.get().asFile) {
+        builtBy tasks.named("exportTricksterNamedJar")
+    }
+}

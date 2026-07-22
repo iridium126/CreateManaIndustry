@@ -175,23 +175,6 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
-def remappedModCacheDir = layout.projectDirectory.dir(".gradle/loom-cache/remapped_mods/remapped")
-
-def remappedCurseJar = { String artifactPrefix, String version ->
-    providers.provider {
-        def matches = fileTree(remappedModCacheDir).matching {
-            include "curse/maven/${artifactPrefix}-*/${version}/*.jar"
-        }.files
-        if (matches.isEmpty()) {
-            throw new GradleException("Missing remapped jar for ${artifactPrefix}:${version} under ${remappedModCacheDir.asFile}")
-        }
-        if (matches.size() > 1) {
-            throw new GradleException("Expected one remapped jar for ${artifactPrefix}:${version}, found ${matches.size()}")
-        }
-        matches.iterator().next()
-    }
-}
-
 dependencies {
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
@@ -247,8 +230,8 @@ dependencies {
     // Compile-time deps for Trickster's transitive dependencies (needed for remapped jar)
     compileOnly "net.fabricmc.fabric-api:fabric-api:0.102.0+1.21.1"
     compileOnly "io.vavr:vavr:0.10.4"
-    // Compile against the Mojang-mapped cache artifact, but load the original Fabric jar at runtime.
-    compileOnly files(remappedCurseJar("trickster-1137971", "8324614"))
+    // Compile against the Loom-exported Mojang-mapped jar, but load the original Fabric jar at runtime.
+    compileOnly(project(path: ":loom-remap", configuration: "namedTrickster"))
     localRuntime "curse.maven:trickster-1137971:8324614"
     runtimeOnly "curse.maven:cicada-989574:7068950"
     runtimeOnly "curse.maven:lavender-api-962916:6107175"
