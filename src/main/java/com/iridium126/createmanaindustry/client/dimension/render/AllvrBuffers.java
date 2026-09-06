@@ -189,8 +189,10 @@ public final class AllvrBuffers {
 
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, this.queueBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, 4L * QUEUE_UINTS, GL_DYNAMIC_DRAW);
+        // two DispatchIndirectCommands: [0] cmdgen (finalize), [1] revalidate
+        // (finalize, 4c-2 — GPU-derived ceil(p1/64))
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, this.dispatchBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, 16L, GL_DYNAMIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, 32L, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, this.commandCountBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, 4L, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -361,6 +363,13 @@ public final class AllvrBuffers {
     /** cmdgen dispatch: size comes from the queue counter (over-dispatch ≤63 idle groups). */
     public void dispatchCmdgenIndirect() {
         GL43.glDispatchComputeIndirect(0L);
+    }
+
+    /** Revalidate dispatch (4c-2): size is the second indirect entry, written
+     *  by finalize as ceil(p1/64) from the GPU-side phase-1 count — replaces
+     *  the old constant QUEUE_CAPACITY/64-group dispatch. */
+    public void dispatchRevalidateIndirect() {
+        GL43.glDispatchComputeIndirect(16L);
     }
 
     /**

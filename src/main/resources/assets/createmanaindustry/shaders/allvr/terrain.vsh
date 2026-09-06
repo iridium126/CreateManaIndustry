@@ -197,7 +197,10 @@ void main() {
     vLight = vec2(float((hi >> 16u) & 0xFu), float((hi >> 12u) & 0xFu)) * (1.0 / 15.0);
 
     vec4 viewPos = ModelViewMat * vec4(relPos, 1.0);
-    vDist = length(viewPos.xyz);
+    // vanilla terrain fog measures cylindrical distance (max horizontal, |y|)
+    // — match it so terrain and the entities sharing the same fog values fade
+    // identically (matters in a ±30M-Y world once fog reaches the LOD extent)
+    vDist = max(length(viewPos.xz), abs(viewPos.y));
 
     gl_Position = ProjMat * ModelViewMat * vec4(relPos, 1.0);
 #ifdef ALLVR_TAA

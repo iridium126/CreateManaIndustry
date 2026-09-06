@@ -36,7 +36,6 @@ public final class ClientConfig {
 
     // ---- allay dimension (ALLVR) -------------------------------------------
 
-    private static ModConfigSpec.BooleanValue ALLVR_GPU_PIPELINE;
     private static ModConfigSpec.BooleanValue ALLVR_IRIS_INTEGRATION;
     private static ModConfigSpec.BooleanValue ALLVR_IRIS_SHADOW_PASS;
     private static ModConfigSpec.BooleanValue ALLVR_LOD;
@@ -92,13 +91,6 @@ public final class ClientConfig {
         BUILDER.pop();
 
         BUILDER.comment("Allay dimension (ALLVR) terrain renderer options.").push("allvr");
-        ALLVR_GPU_PIPELINE = BUILDER
-                .comment("Use the GPU-driven terrain pipeline (node tree + compute frustum cull + MDI command "
-                        + "generation + glMultiDrawElementsIndirectCount) instead of the CPU per-cube path. "
-                        + "Falls back to the CPU path automatically when the GL capability probe or shader "
-                        + "compile fails. Stage 4a slice: frustum culling only (HiZ occlusion and LOD arrive "
-                        + "in 4b/4c).")
-                .define("gpuPipeline", false);
         ALLVR_IRIS_INTEGRATION = BUILDER
                 .comment("ALLVR iris shader-pack integration (voxy contract): when the active shader pack "
                         + "ships a voxy.json adaptation (Photon, Complementary, ...), allay-dimension terrain "
@@ -114,12 +106,14 @@ public final class ClientConfig {
                         + "irisIntegration and an active pack with a shadow pass.")
                 .define("irisShadowPass", true);
         ALLVR_LOD = BUILDER
-                .comment("Far-terrain LOD for the allay dimension (4c-1): beyond the full-resolution cube streaming "
+                .comment("Far-terrain LOD for the allay dimension (4c): beyond the full-resolution cube streaming "
                         + "radius the server streams server-meshed LOD nodes (band table 256/512/1024/2048 blocks, "
                         + "server-side allvrLodDistance caps the extent). Requires the GPU terrain pipeline "
-                        + "(gpuPipeline) — LOD nodes only flow through the GPU-driven draw path. Streaming extent "
-                        + "is server-authoritative; this switch only turns the client's request/render half on.")
-                .define("lod", false);
+                        + "(GL 4.6, or 4.5 + ARB_shader_draw_parameters + ARB_indirect_parameters) — LOD nodes "
+                        + "only flow through the GPU-driven draw path. On an unsupported context the terrain is "
+                        + "inactive anyway (Tier C) and this switch has no effect. Streaming extent is "
+                        + "server-authoritative; this switch only turns the client's request/render half on.")
+                .define("lod", true);
         BUILDER.pop();
     }
 
@@ -135,10 +129,9 @@ public final class ClientConfig {
     public static int particleFadeDistance = 96;
     public static boolean shaderPackIntegration = true;
     public static boolean hexSprayRedirect = true;
-    public static boolean allvrGpuPipeline = false;
     public static boolean allvrIrisIntegration = false;
     public static boolean allvrIrisShadowPass = true;
-    public static boolean allvrLod = false;
+    public static boolean allvrLod = true;
 
     private ClientConfig() {}
 
@@ -156,7 +149,6 @@ public final class ClientConfig {
             particleFadeDistance = PARTICLE_FADE_DISTANCE.get();
             shaderPackIntegration = PARTICLE_SHADER_PACK_INTEGRATION.get();
             hexSprayRedirect = PARTICLE_HEX_SPRAY_REDIRECT.get();
-            allvrGpuPipeline = ALLVR_GPU_PIPELINE.get();
             allvrIrisIntegration = ALLVR_IRIS_INTEGRATION.get();
             allvrIrisShadowPass = ALLVR_IRIS_SHADOW_PASS.get();
             allvrLod = ALLVR_LOD.get();

@@ -7,10 +7,8 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import org.joml.Matrix4d;
@@ -44,9 +42,15 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
 /**
- * ALLVR V0 terrain renderer (doc §13 phase 3): Tier B MDI forward pass —
- * CPU greedy mesher, per-cube MDI commands, CPU frustum culling, no occlusion
- * culling / LOD / deferred shading (those are phases 4–5).
+ * ALLVR terrain renderer (doc §13 phase 4): Tier B MDI forward pass, fully
+ * GPU-driven since 4c-2 — node traversal → cmdgen → one
+ * glMultiDrawElementsIndirectCount per frame. The V0 CPU command source and
+ * its {@code allvrGpuPipeline} switch were deleted at 4c-2 (grilling option
+ * A): below the merged capability gate (GL 4.6, or 4.5 +
+ * ARB_shader_draw_parameters + ARB_indirect_parameters) the terrain is
+ * Tier C-inactive. The shadow pass keeps its CPU command source by design —
+ * it culled against the light's ortho box, which the player-view-driven GPU
+ * path cannot serve.
  * <p>
  * Frame slot by mode (grilling decision ⑧ fallback chain): no pack →
  * AFTER_SKY (the vanilla-terrain window this pass replaces); pack in use
@@ -89,10 +93,15 @@ public final class AllvrRenderer {
     private final float[] frustumPlanes = new float[24];
     private final Matrix4f projViewScratch = new Matrix4f();
     private final Vector4f planeScratch = new Vector4f();
-    private boolean mdiOk;
+    /** Merged terrain gate (4c-2): GL 4.6 core, or GL 4.5 with BOTH
+     *  ARB_shader_draw_parameters (gl_BaseInstance vertex path) and
+     *  ARB_indirect_parameters (MDIC count). Anything below is Tier C — no
+     *  terrain, one-time hint; the V0 CPU path that served the no-MDIC
+     *  window was deleted. */
+    private boolean capsOk;
     /** True when the context is GL 4.6 core (MDIC entry point choice). */
     private boolean coreGl46;
-    private boolean warnedGpuCaps;
+    private boolean warnedComputeFail;
     // starts at 2 so cleared stamps (0) and pre-run stamps never alias a
     // live lastFrameId (>= 2) in the two-phase membership test
     private int frameId = 2;
@@ -111,9 +120,24 @@ public final class AllvrRenderer {
     private boolean hizHistoryValid;
     /** One-time hint when allvrLod is on but the GPU path cannot serve it. */
     private boolean warnedLodNeedsGpu;
+    /** 30 fps floor: a frame-time EMA above this decays the LOD request inflow. */
+    private static final double FRAME_BUDGET_MS = 33.0;
+    private static final float REQUEST_COOL_DOWN = 0.85f;
+    private static final float REQUEST_RAMP_UP = 1.05f;
+    private static final float MIN_REQUEST_SCALE = 0.05f;
+    /** Frame-period EMA + hysteretic LOD request throttle (4c-2 帧时 EMA 自适应,
+     *  ParticleFrameProfiler pattern): the request scale decays while the EMA
+     *  sits above the 30 fps floor and ramps back when frames are healthy.
+     *  It paces NEW requests only — the per-level in-flight cap is unchanged. */
+    private double frameEmaMs;
+    private boolean frameEmaInit;
+    private float lodRequestScale = 1.0f;
+    /** Render-thread terrain-slice EMA (pumpResults + gpuDraw) in ms — the
+     *  4c-2 CPU<1ms acceptance instrument, printed by logGpuStats. */
+    private double sliceEmaMs;
+    private long lastStageNanos;
 
     private boolean initialized;
-    private boolean tierOk;
     private boolean warnedTier;
     private boolean warnedPack;
     private boolean warnedPatchFallback;
@@ -206,22 +230,62 @@ public final class AllvrRenderer {
         if (!this.initialized) {
             this.initialize(mc);
         }
-        if (!this.tierOk || !this.shaders.ready() || !this.buffers.ready()) {
+        this.recordFrameTime();
+        if (!this.capsOk || !this.shaders.ready() || !this.buffers.ready()) {
             if (this.shaders.needsRebuild() && this.buffers.ready()) {
                 this.shaders.rebuild();
             }
             return;
         }
 
-        this.pumpResults();
-        // 4a: GPU-driven path (node traversal → cmdgen → MDIC) behind the
-        // config switch; the CPU path below is the V0 fallback and stays
-        // until 4c acceptance removes it.
-        if (this.wantGpu()) {
+        // 4c-2: the GPU-driven path is the only main-pass path — the V0 CPU
+        // command source and its config switch were deleted. A failed compute
+        // compile degrades to "terrain skips the frame" (F3+T rebuilds); there
+        // is no CPU fallback to degrade into (Tier C semantics).
+        if (this.shaders.gpuReady()) {
+            long t0 = System.nanoTime();
+            this.pumpResults();
             this.gpuDraw(event, level, data);
-        } else {
-            this.draw(event, level, data);
+            // EMA over the whole terrain slice — mesh uploads legitimately
+            // spike it during a fill; the <1 ms acceptance number is steady state
+            double ms = (System.nanoTime() - t0) / 1.0e6;
+            this.sliceEmaMs = this.sliceEmaMs * 0.9 + ms * 0.1;
+        } else if (!this.warnedComputeFail) {
+            this.warnedComputeFail = true;
+            CreateManaIndustry.LOGGER.error(
+                "[Allvr] GPU compute pipeline unavailable (compile failure?) — terrain suspended "
+                    + "(F3+T rebuilds; no CPU fallback since the 4c-2 V0 removal)");
         }
+    }
+
+    /**
+     * Frame-period EMA + the LOD request throttle (4c-2). Measured between
+     * consecutive chosen-stage events — a full frame period while the level
+     * renders; outliers (menus, stalls >250 ms) are dropped. The hysteretic
+     * controller mirrors {@code ParticleFrameProfiler}: above the 30 fps
+     * floor the LOD request scale decays, well under it the inflow ramps back.
+     */
+    private void recordFrameTime() {
+        long now = System.nanoTime();
+        if (this.lastStageNanos != 0) {
+            double ms = (now - this.lastStageNanos) / 1.0e6;
+            if (ms >= 1.0 && ms <= 250.0) {
+                this.frameEmaMs = this.frameEmaInit ? this.frameEmaMs * 0.9 + ms * 0.1 : ms;
+                this.frameEmaInit = true;
+                if (this.frameEmaMs > FRAME_BUDGET_MS) {
+                    this.lodRequestScale *= REQUEST_COOL_DOWN;
+                } else if (this.frameEmaMs < FRAME_BUDGET_MS * 0.5) {
+                    this.lodRequestScale = Math.min(1.0f, this.lodRequestScale * REQUEST_RAMP_UP);
+                }
+                this.lodRequestScale = Math.max(MIN_REQUEST_SCALE, Math.min(1.0f, this.lodRequestScale));
+            }
+        }
+        this.lastStageNanos = now;
+    }
+
+    /** Current LOD request scale from the frame-time throttle (0.05..1). */
+    public float lodRequestScale() {
+        return this.lodRequestScale;
     }
 
     /**
@@ -285,45 +349,28 @@ public final class AllvrRenderer {
         this.appliedCustomIdRevision = -1;
     }
 
-    /**
-     * GPU path gate: config + MDIC caps + all four compute programs. The
-     * GPU-cull buffers must NOT be part of this gate — they are allocated
-     * on demand inside {@link #gpuDraw}; requiring them here deadlocked the
-     * switch (gate false → gpuDraw never runs → buffers never allocated).
-     */
-    private boolean wantGpu() {
-        if (!ClientConfig.allvrGpuPipeline) {
-            return false;
-        }
-        if (!this.mdiOk) {
-            if (!this.warnedGpuCaps) {
-                this.warnedGpuCaps = true;
-                CreateManaIndustry.LOGGER.warn(
-                    "[Allvr] gpuPipeline requested but MDIC (GL 4.6 / ARB_indirect_parameters) unavailable — CPU path active");
-            }
-            return false;
-        }
-        return this.shaders.gpuReady();
-    }
-
     private void initialize(Minecraft mc) {
         this.initialized = true;
         var caps = org.lwjgl.opengl.GL.getCapabilities();
-        // per-command draw parameters: GL 4.6 core, or the ARB extension on 4.5
-        this.tierOk = caps.OpenGL46 || caps.GL_ARB_shader_draw_parameters;
+        // 4c-2 merged gate: per-command draw parameters (gl_BaseInstance in the
+        // vertex path) AND the MDIC draw count must both be present — GL 4.6
+        // core carries both; on 4.5 they arrive as two ARB extensions. The old
+        // "MDIC-less Tier B" window the V0 CPU path served is gone by design
+        // (grilling option A): machines below the merged gate are Tier C.
+        this.capsOk = caps.OpenGL46
+            || (caps.GL_ARB_shader_draw_parameters && caps.GL_ARB_indirect_parameters);
         AllvrShaderCache.setUseExtensionFallback(!caps.OpenGL46 && caps.GL_ARB_shader_draw_parameters);
-        // MDIC (GL_PARAMETER_BUFFER draw count): GL 4.6 core or ARB_indirect_parameters
-        this.mdiOk = caps.OpenGL46 || caps.GL_ARB_indirect_parameters;
         this.coreGl46 = caps.OpenGL46;
         CreateManaIndustry.LOGGER.info(
-            "[Allvr] caps probe: OpenGL46={} ARB_shader_draw_parameters={} ARB_indirect_parameters={} → tier {} mdi {}",
+            "[Allvr] caps probe: OpenGL46={} ARB_shader_draw_parameters={} ARB_indirect_parameters={} → {}",
             caps.OpenGL46, caps.GL_ARB_shader_draw_parameters, caps.GL_ARB_indirect_parameters,
-            this.tierOk ? "B" : "C", this.mdiOk ? "ok" : "unavailable");
+            this.capsOk ? "terrain ok (Tier B)" : "Tier C — terrain disabled");
         this.buffers.ensure();
         AllvrMesherWorker.start();
-        if (!this.tierOk && !this.warnedTier) {
+        if (!this.capsOk && !this.warnedTier) {
             this.warnedTier = true;
-            chat(mc, "[Allvr] GL 4.6 / ARB_shader_draw_parameters unavailable — allay terrain disabled (Tier C)");
+            chat(mc, "[Allvr] GL 4.6 / ARB draw-parameters+indirect-parameters unavailable — "
+                + "allay terrain disabled (Tier C)");
         }
     }
 
@@ -447,7 +494,7 @@ public final class AllvrRenderer {
      * far terrain, so the request walk simply starts a few ticks late.
      */
     public boolean lodGate() {
-        return this.initialized && this.mdiOk && ClientConfig.allvrGpuPipeline && this.shaders.gpuReady();
+        return this.initialized && this.capsOk && this.shaders.gpuReady();
     }
 
     public void onCubeForgotten(long key) {
@@ -546,6 +593,12 @@ public final class AllvrRenderer {
         // tail draws them as ghost cubes with stale arena offsets
         this.buffers.invalidateNodeUpload();
         this.hizHistoryValid = false;
+        // frame-time throttle restarts cleanly per session
+        this.lastStageNanos = 0;
+        this.frameEmaMs = 0;
+        this.frameEmaInit = false;
+        this.lodRequestScale = 1.0f;
+        this.sliceEmaMs = 0;
         AllvrMesherWorker.clearQueues();
     }
 
@@ -819,59 +872,8 @@ public final class AllvrRenderer {
         return n;
     }
 
-    private void draw(RenderLevelStageEvent event, ClientLevel level, AllvrIrisPipelineData data) {
-        Minecraft mc = Minecraft.getInstance();
-        Camera camera = event.getCamera();
-        Vec3 camPos = camera.getPosition();
-        Frustum frustum = event.getFrustum();
-
-        int n = 0;
-        int cubesWithGeometry = 0;
-        Iterator<Long2ObjectOpenHashMap.Entry<Cube>> it = this.renderCubes.long2ObjectEntrySet().fastIterator();
-        while (it.hasNext() && n < AllvrBuffers.MAX_COMMANDS) {
-            Long2ObjectOpenHashMap.Entry<Cube> e = it.next();
-            Cube rc = e.getValue();
-            if (rc.quadCount <= 0 || rc.slot < 0) {
-                continue;
-            }
-            cubesWithGeometry++;
-            AllvrCubePos pos = AllvrCubePos.fromLong(e.getLongKey());
-            if (!frustum.isVisible(new AABB(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ(),
-                pos.minBlockX() + 32, pos.minBlockY() + 32, pos.minBlockZ() + 32))) {
-                continue;
-            }
-            // one command reaches quads only through the shared index buffer
-            // (MAX_QUADS_PER_COMMAND); craftable cubes beyond that (e.g.
-            // checkerboard, ~5×10⁴ quads) continue in consecutive commands
-            n = this.appendCommands(rc, n);
-        }
-        if (n == 0) {
-            this.logStats(0, cubesWithGeometry);
-            return;
-        }
-
-        int prog = this.shaders.terrain();
-        if (this.shaders.needsRebuild()) {
-            this.shaders.rebuild();
-            prog = this.shaders.terrain();
-            if (prog == 0) {
-                return;
-            }
-        }
-
-        this.buffers.uploadCommands(this.commands, n);
-        this.drawTerrain(event, level, camPos, n, false, data);
-        this.logStats(n, cubesWithGeometry);
-
-        // off-departure hygiene (particle-engine discipline)
-        RenderSystem.depthMask(true);
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
-        GL20.glUseProgram(0);
-        this.buffers.unbind();
-    }
-
-    /** Camera-relative + fog + day uniforms shared by both draw paths. */
+    /** Camera-relative + fog + day uniforms for the GPU-driven main pass
+     *  (the shadow pass sets its own). */
     private void terrainUniforms(int prog, RenderLevelStageEvent event, ClientLevel level, Vec3 camPos) {
         AllvrShaderCache.uniformMat4(prog, "ModelViewMat", event.getModelViewMatrix());
         AllvrShaderCache.uniformMat4(prog, "ProjMat", event.getProjectionMatrix());
@@ -902,15 +904,16 @@ public final class AllvrRenderer {
     }
 
     /**
-     * Shared draw tail for both command sources (doc §13 iris slice G2):
+     * Draw tail of the GPU-driven main pass (doc §13 iris slice G2):
      * patched-program selection (pack-lit vs unpatched fallback), the pack-lit
      * frame target bind/unbind with FBO+viewport save/restore (the vanilla
      * translucents and iris's own passes continue in the same frame), the
-     * common terrain program state, the MDI submission and the shadow-pass
-     * depth-only draw.
+     * common terrain program state and the MDIC submission with the
+     * GPU-owned command count. The shadow pass (below) submits separately
+     * with an explicit count — its command source is CPU-built per light box.
      */
     private void drawTerrain(RenderLevelStageEvent event, ClientLevel level, Vec3 camPos,
-                             int commandCount, boolean useMdIC, AllvrIrisPipelineData data) {
+                             AllvrIrisPipelineData data) {
         Minecraft mc = Minecraft.getInstance();
         // 0 = unpatched main-target draw, 1 = patched (pack-lit), 2 = albedo pass
         int mode = 0;
@@ -974,11 +977,7 @@ public final class AllvrRenderer {
         RenderSystem.depthMask(true);
         RenderSystem.disableBlend();
 
-        if (useMdIC) {
-            this.buffers.drawIndirectCount(this.coreGl46);
-        } else {
-            this.buffers.draw(commandCount);
-        }
+        this.buffers.drawIndirectCount(this.coreGl46);
 
         if (mode > 0) {
             if (mode == 2) {
@@ -1132,22 +1131,15 @@ public final class AllvrRenderer {
     /**
      * 4b GPU-driven draw (doc §9.1/§9.2/§9.4): flush dirty nodes → reset →
      * traversal (frustum + HiZ vs last frame's pyramid + two-phase split) →
-     * finalize → cmdgen → clamp → one glMultiDrawElementsIndirectCount whose command
-     * count is only ever read by the GPU (GL_PARAMETER_BUFFER) → build the HiZ
-     * pyramid from the borrowed MC main depth → revalidate phase-1 stamps
-     * against the fresh pyramid. Kernel sequence is serialized by SSBO/image
-     * barriers; the terrain draw tail is the V0 path's program/state with a
-     * different command source. HiZ degrades to frustum-only (4a) under an
-     * active iris pack or when the pyramid can't be built (Q7 safe degradation).
+     * finalize (both indirect dispatch sizes) → cmdgen → clamp → one
+     * glMultiDrawElementsIndirectCount whose command count is only ever read by
+     * the GPU (GL_PARAMETER_BUFFER) → build the HiZ pyramid from the borrowed
+     * MC main depth → revalidate phase-1 stamps against the fresh pyramid
+     * (dispatch also GPU-sized). Kernel sequence is serialized by SSBO/image
+     * barriers. HiZ degrades to frustum-only (4a) under an active iris pack
+     * or when the pyramid can't be built (Q7 safe degradation).
      */
     private void gpuDraw(RenderLevelStageEvent event, ClientLevel level, AllvrIrisPipelineData data) {
-        if (this.shaders.needsRebuild()) {
-            this.shaders.rebuild();
-            if (!this.shaders.gpuReady()) {
-                this.draw(event, level, null); // compute compile failed — V0 fallback
-                return;
-            }
-        }
         Minecraft mc = Minecraft.getInstance();
         Camera camera = event.getCamera();
         Vec3 camPos = camera.getPosition();
@@ -1234,7 +1226,7 @@ public final class AllvrRenderer {
         // triage readback (Q9): 5 s-throttled, debug-log gated — the real
         // per-frame path stays zero-readback. Also dumps node[0]'s raw uints
         // (GPU mirror truth) and a CPU re-run of the plane test (frustum
-        // sanity vs the vanilla-Frustum count the V0 path logs).
+        // sanity reference for the GPU traversal count).
         int phase1 = -1;
         int phase2 = -1;
         int cmdCount = -1;
@@ -1299,7 +1291,7 @@ public final class AllvrRenderer {
 
         // 5. terrain draw — shared tail (pack-lit FBO under a resolved patch),
         // MDIC submission with the GPU count
-        this.drawTerrain(event, level, camPos, -1, true, data);
+        this.drawTerrain(event, level, camPos, data);
         this.logGpuStats(nodeCount, highWater, phase1, phase2, cmdCount, triage);
 
         // 6. build the fresh HiZ pyramid from this frame's depth, then
@@ -1317,9 +1309,12 @@ public final class AllvrRenderer {
                 net.minecraft.util.Mth.floor(camPos.y),
                 net.minecraft.util.Mth.floor(camPos.z));
             this.uploadHizUniforms(revProg, event, mc);
-            // fixed over-dispatch: p1 lives GPU-side (zero readback) — the
-            // kernel exits on the queue bounds; see gpu_cull_revalidate.comp
-            GL43.glDispatchCompute((AllvrBuffers.QUEUE_CAPACITY + 63) / 64, 1, 1);
+            // indirect over-dispatch: finalize sized this dispatch from the
+            // GPU-side p1 count (dispatch[1] = ceil(p1/64)) — over-dispatch is
+            // ≤63 idle invocations instead of a constant QUEUE_CAPACITY/64
+            // groups every frame; the kernel's queue-bounds guard still covers
+            // the tail (4c-2 indirect dispatch)
+            this.buffers.dispatchRevalidateIndirect();
             GL42.glMemoryBarrier(GL43.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
             this.rememberHizView(event, camPos);
         }
@@ -1513,20 +1508,24 @@ public final class AllvrRenderer {
         }
     }
 
-    /** 5 s-throttled GPU-path stats (CPU-known counters + optional readback). */
+    /** 5 s-throttled GPU-path stats (CPU-known counters + optional readback).
+     *  The cpu figure is the render-thread terrain-slice EMA (pumpResults +
+     *  gpuDraw, ms) — the 4c-2 CPU<1 ms acceptance instrument; it legitimately
+     *  spikes during a fill, judge it in steady state. */
     private void logGpuStats(int nodeCount, int highWater, int phase1, int phase2, int cmdCount, String triage) {
         long now = System.currentTimeMillis();
         if (now - this.lastStatsLogMillis < 5000) {
             return;
         }
         this.lastStatsLogMillis = now;
+        String cpu = String.format(", cpu %.2fms", this.sliceEmaMs);
         if (phase1 >= 0) {
             CreateManaIndustry.LOGGER.info(
-                "[Allvr] gpu frame: {} nodes ({} high water) → p1 {} + p2 {} = {} visible → {} commands{}",
-                nodeCount, highWater, phase1, phase2, phase1 + phase2, cmdCount, triage);
+                "[Allvr] gpu frame: {} nodes ({} high water) → p1 {} + p2 {} = {} visible → {} commands{}{}",
+                nodeCount, highWater, phase1, phase2, phase1 + phase2, cmdCount, cpu, triage);
         } else {
-            CreateManaIndustry.LOGGER.info("[Allvr] gpu frame: {} nodes ({} high water){}",
-                nodeCount, highWater, triage);
+            CreateManaIndustry.LOGGER.info("[Allvr] gpu frame: {} nodes ({} high water){}{}",
+                nodeCount, highWater, cpu, triage);
         }
     }
 
@@ -1565,19 +1564,6 @@ public final class AllvrRenderer {
             }
         }
         return pass;
-    }
-
-    /** 5 s-throttled pipeline stats — the V0 visibility triage log: commands > 0
-     *  but nothing visible points at the shader/transform; commands == 0
-     *  points at the geometry pipeline (snapshot → mesher → arena). */
-    private void logStats(int commands, int cubesWithGeometry) {
-        long now = System.currentTimeMillis();
-        if (now - this.lastStatsLogMillis < 5000) {
-            return;
-        }
-        this.lastStatsLogMillis = now;
-        CreateManaIndustry.LOGGER.info("[Allvr] frame: {} MDI commands / {} cubes with geometry / {} render cubes",
-            commands, cubesWithGeometry, this.renderCubes.size());
     }
 
     /** 0.25 at full darkness → 1.0 at clear day (V0 stand-in for phase-5 light). */

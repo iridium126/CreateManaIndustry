@@ -51,6 +51,7 @@
     "allvr.AllvrPredictionHandlerMixin",
     "allvr.AllvrRenderSectionLayerMixin",
     "allvr.AllvrGetLightColorMixin",
+    "allvr.AllvrFogRendererMixin",
     "allvriris.AllvrIrisCreatePipelineMixin",
     "allvriris.AllvrProgramSetMixin",
     "allvriris.AllvrIrisPipelineMixin",

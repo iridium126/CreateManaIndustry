@@ -25,9 +25,11 @@ import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodReques
 /**
  * Client half of the LOD pipeline (doc §13 4c-1): holds the per-level
  * surface-node bitmaps streamed by the server, walks them once per client
- * tick to issue batched mesh requests (64/tick, per-level in-flight cap
- * 256 — grilling Q5), remaps server quads from vanilla state ids to render
- * ids on receive, and evicts nodes beyond the bitmap box's hysteresis.
+ * tick to issue batched mesh requests (64/tick at scale 1.0, scaled by the
+ * renderer's frame-time EMA throttle — 4c-2 帧时 EMA 自适应; per-level
+ * in-flight cap 256 — grilling Q5), remaps server quads from vanilla state
+ * ids to render ids on receive, and evicts nodes beyond the bitmap box's
+ * hysteresis.
  * <p>
  * Nodes whose cells fall inside the full-resolution streaming radius
  * (Chebyshev 8 cubes) are never requested: 256 blocks is a multiple of every
@@ -38,7 +40,7 @@ import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodReques
  */
 public final class AllvrLodClientState {
 
-    /** Mesh requests sent per tick (grilling Q5). */
+    /** Mesh requests sent per tick at throttle scale 1.0 (grilling Q5). */
     private static final int REQUESTS_PER_TICK = 64;
     /** Per-level in-flight cap. */
     private static final int MAX_PENDING = 256;
@@ -166,13 +168,19 @@ public final class AllvrLodClientState {
             return;
         }
         BlockPos player = mc.player.blockPosition();
+        // frame-time EMA throttle (4c-2): the inflow of NEW requests scales
+        // down while frames run hot and recovers when healthy; the per-level
+        // in-flight cap is unchanged, so a throttle can never strand pending
+        // entries — they just complete slower
+        int perTick = (int) Math.max(1,
+            Math.round(REQUESTS_PER_TICK * AllvrRenderer.INSTANCE.lodRequestScale()));
         List<long[]> entries = new ArrayList<>();
         for (int lvl = 0; lvl <= AllvrLodPos.MAX_LEVEL; lvl++) {
             LevelState state = levels[lvl];
             if (state == null || state.words == null) {
                 continue;
             }
-            walkLevel(lvl, state, player, entries);
+            walkLevel(lvl, state, player, entries, perTick);
         }
         // the request packet carries at most 16 entries — flush in chunks
         for (int i = 0; i < entries.size(); i += ServerboundAllvrLodRequestPacket.MAX_ENTRIES) {
@@ -182,7 +190,8 @@ public final class AllvrLodClientState {
         }
     }
 
-    private static void walkLevel(int lvl, LevelState state, BlockPos player, List<long[]> entries) {
+    private static void walkLevel(int lvl, LevelState state, BlockPos player, List<long[]> entries,
+                                  int perTick) {
         int half = state.dim >> 1;
         int playerCellX = player.getX() >> (5 + lvl);
         int playerCellY = player.getY() >> (5 + lvl);
@@ -195,7 +204,7 @@ public final class AllvrLodClientState {
         // cannot survive indefinitely when the request queue is full.
         evictFar(lvl, playerCellX, playerCellY, playerCellZ, half, minDist);
 
-        int budget = REQUESTS_PER_TICK - entries.size();
+        int budget = perTick - entries.size();
         if (budget <= 0 || pending[lvl].size() >= MAX_PENDING) {
             return;
         }
@@ -270,6 +279,33 @@ public final class AllvrLodClientState {
     // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
+
+    /** Full-resolution streaming extent incl. the forget hysteresis (8 send
+     *  cubes + 2 hysteresis) — the fog-end target when LOD is off. */
+    private static final float FULL_RES_EXTENT_BLOCKS = 320.0f;
+    /** Far-terrain extent assumed before the first L3 bitmap lands (the
+     *  default allvrLodDistance; the bitmap box corrects it once streamed). */
+    private static final float DEFAULT_LOD_EXTENT_BLOCKS = 2048.0f;
+
+    /**
+     * Blocks of visible terrain the allay dimension's fog should cover (the
+     * fog-end target consumed by {@code AllvrFogRendererMixin}). The L3
+     * bitmap box half-width tracks the band table's outer edge exactly (half
+     * the box × 256-block cells); before that bitmap arrives the default LOD
+     * distance is assumed, and with LOD off the full-res streaming radius is
+     * used. Vanilla fog would end at the render distance (≈192 blocks) and
+     * hide everything past the full-res seam.
+     */
+    public static float viewExtentBlocks() {
+        if (!ClientConfig.allvrLod) {
+            return FULL_RES_EXTENT_BLOCKS;
+        }
+        LevelState l3 = levels[3];
+        if (l3 != null && l3.dim > 0) {
+            return (l3.dim >> 1) * (float) AllvrLodBands.cellBlocks(3);
+        }
+        return DEFAULT_LOD_EXTENT_BLOCKS;
+    }
 
     private static boolean isSurface(LevelState state, int ix, int iy, int iz) {
         int bit = (iy * state.dim + iz) * state.dim + ix;
