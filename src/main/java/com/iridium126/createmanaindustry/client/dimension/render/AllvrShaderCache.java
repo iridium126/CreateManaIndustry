@@ -64,6 +64,7 @@ public final class AllvrShaderCache {
         sb.append("#define MAX_QUADS_PER_COMMAND ").append(AllvrBuffers.MAX_QUADS_PER_COMMAND).append('\n');
         sb.append("#define MAX_COMMANDS ").append(AllvrBuffers.MAX_COMMANDS).append('\n');
         sb.append("#define QUEUE_CAPACITY ").append(AllvrBuffers.QUEUE_CAPACITY).append('\n');
+        sb.append("#define NODE_SLOT_MASK ").append((1 << AllvrNodeStore.SLOT_BITS) - 1).append("u\n");
         sb.append("#define NODE_FLAG_HAS_MESH ").append(AllvrNodeStore.FLAG_HAS_MESH).append("u\n");
         sb.append("#define NODE_FLAG_DEAD ").append(AllvrNodeStore.FLAG_DEAD).append("u\n");
         return sb.toString();

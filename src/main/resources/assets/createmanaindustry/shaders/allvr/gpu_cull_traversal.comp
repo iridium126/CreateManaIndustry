@@ -11,18 +11,20 @@
 // re-checked after this frame's draw (gpu_cull_revalidate) against the fresh
 // pyramid, so steady-state occlusion still culls island backs.
 //
-// Plane convention (mirrors the particle engine's keygen): JOML Gribb-Hartmann
-// planes of Proj*View, normalized, inside = dot(n, p) + d >= 0, measured
-// against camera-relative positions; the renderer folds the camera's
-// sub-block fraction into d (CPU, double precision). Node AABBs stay in
-// integer space (±30M exact), camera-relative before any float conversion.
+// Visibility uses the exact same draw record and Proj*View transform as
+// terrain.vsh.  This is deliberately a homogeneous 8-corner reject instead
+// of CPU-extracted planes: it stays conservative for boxes crossing the eye
+// plane and cannot cull a node at node-buffer position A only to draw the
+// recycled cubeInfo slot at position B (the view-dependent LOD artifact).
 #pragma cmi_include chunks/node_common.glsl
 #pragma cmi_include chunks/hiz_test.glsl
 
 layout(local_size_x = 64) in;
 
-uniform vec4 uPlanes[6];
+uniform mat4 uViewProjection;
 uniform ivec3 uCamInt;
+// Also declared by hiz_test.glsl; always uploaded even when HiZ is disabled.
+// uniform vec3 uCamFrac;
 uniform uint uFrameId;
 uniform uint uLastFrameId;
 uniform uint uHizEnabled;
@@ -30,6 +32,32 @@ uniform uint uHizEnabled;
 layout(std430, binding = BIND_QUEUE) buffer Queue {
     uint queue[]; // [0] p1 count, [1] p2 count, [2..] p1 entries, [2+CAP..] p2 entries
 };
+
+layout(std430, binding = BIND_CUBEINFO) readonly buffer CullCubeInfoBuf {
+    ivec4 cullCubeInfo[]; // identical record consumed by terrain.vsh
+};
+
+bool allvrOutsideFrustum(ivec3 relOrigin, ivec3 extent) {
+    // A convex box is outside only when all eight corners violate the same
+    // homogeneous clip plane.  Boxes intersecting the eye/near plane pass,
+    // which is the required conservative behavior.
+    uint rejectMask = 0x3Fu; // -x,+x,-y,+y,-z,+z
+    for (uint corner = 0u; corner < 8u; corner++) {
+        ivec3 offset = ivec3(
+            (corner & 1u) != 0u ? extent.x : 0,
+            (corner & 2u) != 0u ? extent.y : 0,
+            (corner & 4u) != 0u ? extent.z : 0);
+        vec3 rel = vec3(relOrigin + offset) - uCamFrac;
+        vec4 clip = uViewProjection * vec4(rel, 1.0);
+        if (clip.x >= -clip.w) rejectMask &= ~0x01u;
+        if (clip.x <=  clip.w) rejectMask &= ~0x02u;
+        if (clip.y >= -clip.w) rejectMask &= ~0x04u;
+        if (clip.y <=  clip.w) rejectMask &= ~0x08u;
+        if (clip.z >= -clip.w) rejectMask &= ~0x10u;
+        if (clip.z <=  clip.w) rejectMask &= ~0x20u;
+    }
+    return rejectMask != 0u;
+}
 
 void main() {
     uint idx = gl_GlobalInvocationID.x;
@@ -40,19 +68,17 @@ void main() {
     if (!nodeLive(n)) {
         return;
     }
-    uint level = nodeLevel(n);
-    ivec3 extent = ivec3(int(32u << level));
-    ivec3 relOrigin = nodeAbsOrigin(n) - uCamInt;
+    uint drawSlot = n.b.w & NODE_SLOT_MASK;
+    if (drawSlot == 0u || drawSlot >= uint(cullCubeInfo.length())) {
+        return; // corrupt/stale node: never perform an out-of-bounds read
+    }
+    ivec4 drawInfo = cullCubeInfo[drawSlot];
+    int drawLevel = clamp(drawInfo.w, 0, 3);
+    ivec3 extent = ivec3(32 << drawLevel);
+    ivec3 relOrigin = drawInfo.xyz - uCamInt;
 
-    // positive-vertex test against the six planes; any miss culls the node
-    for (int i = 0; i < 6; i++) {
-        vec3 pn = uPlanes[i].xyz;
-        vec3 lo = vec3(relOrigin);
-        vec3 hi = vec3(relOrigin + extent);
-        vec3 positive = max(lo, hi) * step(0.0, pn) + min(lo, hi) * (1.0 - step(0.0, pn));
-        if (dot(pn, positive) + uPlanes[i].w < 0.0) {
-            return;
-        }
+    if (allvrOutsideFrustum(relOrigin, extent)) {
+        return;
     }
 
     // two-phase temporal: last-frame-visible bypasses the HiZ test

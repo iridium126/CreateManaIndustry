@@ -1161,6 +1161,9 @@ public final class AllvrRenderer {
             this.logGpuStats(nodeCount, 0, -1, -1, -1, "");
             return;
         }
+        // One matrix is shared by compute visibility and terrain.vsh.  The
+        // traversal additionally reads cubeInfo, so its tested AABB is exactly
+        // the AABB the emitted command will rasterize.
         this.extractFrustum(event.getProjectionMatrix(), event.getModelViewMatrix(), camPos);
         int curFrame = ++this.frameId;
         int lastFrame = curFrame - 1;
@@ -1192,11 +1195,15 @@ public final class AllvrRenderer {
         // 2. traversal: frustum + HiZ cull every live node → two-phase queue + stamp
         int travProg = this.shaders.traversal();
         GL20.glUseProgram(travProg);
-        GL20.glUniform4fv(GL20.glGetUniformLocation(travProg, "uPlanes"), this.frustumPlanes);
+        AllvrShaderCache.uniformMat4(travProg, "uViewProjection", this.projViewScratch);
         AllvrShaderCache.uniformIVec3(travProg, "uCamInt",
             net.minecraft.util.Mth.floor(camPos.x),
             net.minecraft.util.Mth.floor(camPos.y),
             net.minecraft.util.Mth.floor(camPos.z));
+        AllvrShaderCache.uniformVec3(travProg, "uCamFrac",
+            (float) (camPos.x - net.minecraft.util.Mth.floor(camPos.x)),
+            (float) (camPos.y - net.minecraft.util.Mth.floor(camPos.y)),
+            (float) (camPos.z - net.minecraft.util.Mth.floor(camPos.z)));
         GL30.glUniform1ui(GL30.glGetUniformLocation(travProg, "uFrameId"), curFrame);
         GL30.glUniform1ui(GL30.glGetUniformLocation(travProg, "uLastFrameId"), lastFrame);
         GL30.glUniform1ui(GL30.glGetUniformLocation(travProg, "uHizEnabled"), hizCull ? 1 : 0);

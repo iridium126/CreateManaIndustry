@@ -344,6 +344,11 @@ public final class AllvrBuffers {
 
     /** Binds the SSBO bases + GL_PARAMETER_BUFFER + dispatch-indirect source. */
     public void bindGpuCull() {
+        // Traversal reads the draw slot as its source of truth for origin and
+        // LOD level.  Using the same cubeInfo record as terrain.vsh prevents a
+        // recycled slot/node pair from being culled at one position and drawn
+        // at another.
+        GL30.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, AllvrShaderCache.BIND_CUBEINFO, this.cubeInfoBuffer);
         GL30.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, AllvrShaderCache.BIND_NODES, this.nodeBuffer);
         GL30.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, AllvrShaderCache.BIND_QUEUE, this.queueBuffer);
         GL30.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, AllvrShaderCache.BIND_CMD_COUNT, this.commandCountBuffer);
@@ -374,6 +379,7 @@ public final class AllvrBuffers {
 
     /** Releases GPU-cull bindings (mirror of {@link #unbind}'s discipline). */
     public void unbindGpuCull() {
+        GL30.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, AllvrShaderCache.BIND_CUBEINFO, 0);
         GL30.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, AllvrShaderCache.BIND_NODES, 0);
         GL30.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, AllvrShaderCache.BIND_QUEUE, 0);
         GL30.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, AllvrShaderCache.BIND_CMD_COUNT, 0);

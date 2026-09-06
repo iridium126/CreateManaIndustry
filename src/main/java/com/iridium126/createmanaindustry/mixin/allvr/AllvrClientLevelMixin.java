@@ -62,8 +62,9 @@ public abstract class AllvrClientLevelMixin {
      * prediction and server confirmation packets alike). Without this,
      * prediction writes reach the empty-shell column chunk and
      * {@code LevelChunk#setBlockState} indexes its section array out of
-     * bounds (the vanilla body's only guards sit behind the widened
-     * {@code isOutsideBuildHeight}).
+     * bounds (it has no section bounds check; the vanilla {@code Level}
+     * body's predicate guard only rejects the write, it cannot make it
+     * addressable).
      */
     @Inject(method = "setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)Z",
         at = @At("HEAD"), cancellable = true)

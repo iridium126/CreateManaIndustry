@@ -23,6 +23,9 @@ layout(local_size_x = 64) in;
 layout(std430, binding = BIND_QUEUE) readonly buffer Queue {
     uint queue[]; // [0] p1 count, [1] p2 count, [2..] p1 entries, [2+CAP..] p2
 };
+layout(std430, binding = BIND_CUBEINFO) readonly buffer RevalidateCubeInfoBuf {
+    ivec4 revalidateCubeInfo[]; // same draw record used by traversal + terrain.vsh
+};
 
 uniform ivec3 uCamInt;
 
@@ -37,9 +40,15 @@ void main() {
     if (!nodeLive(n)) {
         return; // freed since traversal — nothing to re-test
     }
-    uint level = nodeLevel(n);
-    ivec3 extent = ivec3(int(32u << level));
-    ivec3 relOrigin = nodeAbsOrigin(n) - uCamInt;
+    uint drawSlot = n.b.w & NODE_SLOT_MASK;
+    if (drawSlot == 0u || drawSlot >= uint(revalidateCubeInfo.length())) {
+        nodes[nodeIdx].b.y = 0u;
+        return;
+    }
+    ivec4 drawInfo = revalidateCubeInfo[drawSlot];
+    int drawLevel = clamp(drawInfo.w, 0, 3);
+    ivec3 extent = ivec3(32 << drawLevel);
+    ivec3 relOrigin = drawInfo.xyz - uCamInt;
     if (allvrHizOccluded(relOrigin, extent)) {
         nodes[nodeIdx].b.y = 0u; // drops out of phase-1 next frame
     }
