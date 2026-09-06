@@ -152,7 +152,10 @@ public final class AllvrLodSnapshot {
     private static void collectCubeOverlay(AllvrLodPos pos, AllvrCube cube, int cx, int cy, int cz,
                                            BlockPos.MutableBlockPos cursor,
                                            Int2ObjectOpenHashMap<BlockState> cells) {
-        int shift = 5 + pos.level();
+        // Snapshot cells are stride-sized blocks (32, 64, 128, 256), so the
+        // local cube-to-cell conversion uses only the level scale.  Adding the
+        // base cube shift here collapsed every edited cube to one cell at L0.
+        int shift = pos.level();
         int stride = pos.stride();
         int minBx = pos.minBlockX();
         int minBy = pos.minBlockY();

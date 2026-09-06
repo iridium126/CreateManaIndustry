@@ -1,7 +1,8 @@
 // ALLVR GPU-cull finalize (doc §9.1/§9.4): one thread converts the two
 // temporal-segment counts into the cmdgen dispatch size and stages it into
-// the indirect buffer. The dispatch over-dispatches by up to 63 idle groups
-// (raw count, not ceil — glDispatchComputeIndirect consumes raw numbers);
+// the indirect buffer. cmdgen has local_size_x=64, so this writes a workgroup
+// count and over-dispatches by at most 63 invocations (plus one empty group
+// for a zero-count frame);
 // max(total,1) keeps a zero-count frame valid.
 layout(local_size_x = 1) in;
 
@@ -15,5 +16,6 @@ layout(std430, binding = BIND_DISPATCH) writeonly buffer Dispatch {
 void main() {
     uint p1 = min(queue[0], uint(QUEUE_CAPACITY));
     uint p2 = min(queue[1], uint(QUEUE_CAPACITY));
-    dispatch = uvec4(max(p1 + p2, 1u), 1u, 1u, 0u);
+    uint total = p1 + p2;
+    dispatch = uvec4(max((total + 63u) / 64u, 1u), 1u, 1u, 0u);
 }

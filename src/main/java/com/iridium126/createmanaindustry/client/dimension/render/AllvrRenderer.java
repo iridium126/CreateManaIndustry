@@ -102,6 +102,13 @@ public final class AllvrRenderer {
     /** HiZ re-allocation throttle state (failure retry backoff). */
     private long lastHizAllocMillis;
     private boolean lastHizAllocFailed;
+    /** View state that produced the currently stored HiZ pyramid. */
+    private final Matrix4f hizHistoryModelView = new Matrix4f();
+    private final Matrix4f hizHistoryProjection = new Matrix4f();
+    private double hizHistoryCamX;
+    private double hizHistoryCamY;
+    private double hizHistoryCamZ;
+    private boolean hizHistoryValid;
     /** One-time hint when allvrLod is on but the GPU path cannot serve it. */
     private boolean warnedLodNeedsGpu;
 
@@ -440,7 +447,7 @@ public final class AllvrRenderer {
      * far terrain, so the request walk simply starts a few ticks late.
      */
     public boolean lodGate() {
-        return this.initialized && this.mdiOk;
+        return this.initialized && this.mdiOk && ClientConfig.allvrGpuPipeline && this.shaders.gpuReady();
     }
 
     public void onCubeForgotten(long key) {
@@ -538,6 +545,7 @@ public final class AllvrRenderer {
         // the dirty-set upload is a no-op) and the traversal's over-dispatch
         // tail draws them as ghost cubes with stale arena offsets
         this.buffers.invalidateNodeUpload();
+        this.hizHistoryValid = false;
         AllvrMesherWorker.clearQueues();
     }
 
@@ -1149,18 +1157,28 @@ public final class AllvrRenderer {
         int highWater = this.nodes.highWater();
         int nodeCount = this.nodes.nodeCount();
         if (highWater == 0) {
+            this.hizHistoryValid = false;
             this.logGpuStats(nodeCount, 0, -1, -1, -1, "");
             return;
         }
         this.extractFrustum(event.getProjectionMatrix(), event.getModelViewMatrix(), camPos);
         int curFrame = ++this.frameId;
         int lastFrame = curFrame - 1;
-        boolean hiz = !irisPackInUse() && this.shaders.hizReady()
+        boolean hizAvailable = !irisPackInUse() && this.shaders.hizReady()
             && this.extractDepthBias(event.getProjectionMatrix())
             && this.ensureHiz(mc);
+        // The pyramid is screen-space history. It is valid for traversal only
+        // when the camera and both transforms exactly match the frame that
+        // built it; otherwise current screen coordinates address unrelated
+        // previous-frame depths. We still rebuild below so stationary frames
+        // resume occlusion on the next draw.
+        boolean hizCull = hizAvailable && this.hizHistoryMatches(event, camPos);
+        if (!hizAvailable) {
+            this.hizHistoryValid = false;
+        }
 
         this.buffers.bindGpuCull();
-        if (hiz) {
+        if (hizAvailable) {
             GL13.glActiveTexture(GL13.GL_TEXTURE0 + AllvrBuffers.HIZ_UNIT);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, this.buffers.hizTexture());
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
@@ -1181,8 +1199,8 @@ public final class AllvrRenderer {
             net.minecraft.util.Mth.floor(camPos.z));
         GL30.glUniform1ui(GL30.glGetUniformLocation(travProg, "uFrameId"), curFrame);
         GL30.glUniform1ui(GL30.glGetUniformLocation(travProg, "uLastFrameId"), lastFrame);
-        GL30.glUniform1ui(GL30.glGetUniformLocation(travProg, "uHizEnabled"), hiz ? 1 : 0);
-        if (hiz) {
+        GL30.glUniform1ui(GL30.glGetUniformLocation(travProg, "uHizEnabled"), hizCull ? 1 : 0);
+        if (hizCull) {
             this.uploadHizUniforms(travProg, event, mc);
         }
         GL43.glDispatchCompute((highWater + 63) / 64, 1, 1);
@@ -1279,7 +1297,7 @@ public final class AllvrRenderer {
 
         // 6. build the fresh HiZ pyramid from this frame's depth, then
         // re-validate phase-1 stamps against it (their depth is on screen)
-        if (hiz) {
+        if (hizAvailable) {
             GL42.glMemoryBarrier(GL43.GL_FRAMEBUFFER_BARRIER_BIT | GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
             this.buildHiz(mc);
             // pyramid levels were written via imageStore — make them visible to
@@ -1296,6 +1314,7 @@ public final class AllvrRenderer {
             // kernel exits on the queue bounds; see gpu_cull_revalidate.comp
             GL43.glDispatchCompute((AllvrBuffers.QUEUE_CAPACITY + 63) / 64, 1, 1);
             GL42.glMemoryBarrier(GL43.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
+            this.rememberHizView(event, camPos);
         }
 
         // off-departure hygiene (particle-engine discipline)
@@ -1319,6 +1338,11 @@ public final class AllvrRenderer {
             event.getModelViewMatrix().get(new float[16]));
         GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(prog, "uProj"), false,
             event.getProjectionMatrix().get(new float[16]));
+        Vec3 camPos = event.getCamera().getPosition();
+        AllvrShaderCache.uniformVec3(prog, "uCamFrac",
+            (float) (camPos.x - net.minecraft.util.Mth.floor(camPos.x)),
+            (float) (camPos.y - net.minecraft.util.Mth.floor(camPos.y)),
+            (float) (camPos.z - net.minecraft.util.Mth.floor(camPos.z)));
         var main = mc.getMainRenderTarget();
         GL20.glUniform2f(GL20.glGetUniformLocation(prog, "uViewport"), main.width, main.height);
         GL20.glUniform1i(GL20.glGetUniformLocation(prog, "uHizTopLevel"), this.buffers.hizLevels() - 1);
@@ -1365,6 +1389,7 @@ public final class AllvrRenderer {
             return false;
         }
         this.lastHizAllocMillis = now;
+        this.hizHistoryValid = false;
         this.buffers.allocHiz(w, h);
         this.lastHizAllocFailed = !this.buffers.hizReady();
         // the caller's hiz predicate must see the allocation outcome: returning
@@ -1372,6 +1397,40 @@ public final class AllvrRenderer {
         // 0.0 = near plane) and culled the entire world instead of degrading
         // to frustum-only
         return this.buffers.hizReady();
+    }
+
+    /** True only when the HiZ texture was built from this exact screen-space view. */
+    private boolean hizHistoryMatches(RenderLevelStageEvent event, Vec3 camPos) {
+        if (!this.hizHistoryValid) {
+            return false;
+        }
+        double dx = camPos.x - this.hizHistoryCamX;
+        double dy = camPos.y - this.hizHistoryCamY;
+        double dz = camPos.z - this.hizHistoryCamZ;
+        return dx * dx + dy * dy + dz * dz <= 1e-8
+            && matrixNear(this.hizHistoryModelView, event.getModelViewMatrix())
+            && matrixNear(this.hizHistoryProjection, event.getProjectionMatrix());
+    }
+
+    private void rememberHizView(RenderLevelStageEvent event, Vec3 camPos) {
+        this.hizHistoryModelView.set(event.getModelViewMatrix());
+        this.hizHistoryProjection.set(event.getProjectionMatrix());
+        this.hizHistoryCamX = camPos.x;
+        this.hizHistoryCamY = camPos.y;
+        this.hizHistoryCamZ = camPos.z;
+        this.hizHistoryValid = true;
+    }
+
+    private static boolean matrixNear(Matrix4fc a, Matrix4fc b) {
+        final float e = 1e-6f;
+        return Math.abs(a.m00() - b.m00()) <= e && Math.abs(a.m01() - b.m01()) <= e
+            && Math.abs(a.m02() - b.m02()) <= e && Math.abs(a.m03() - b.m03()) <= e
+            && Math.abs(a.m10() - b.m10()) <= e && Math.abs(a.m11() - b.m11()) <= e
+            && Math.abs(a.m12() - b.m12()) <= e && Math.abs(a.m13() - b.m13()) <= e
+            && Math.abs(a.m20() - b.m20()) <= e && Math.abs(a.m21() - b.m21()) <= e
+            && Math.abs(a.m22() - b.m22()) <= e && Math.abs(a.m23() - b.m23()) <= e
+            && Math.abs(a.m30() - b.m30()) <= e && Math.abs(a.m31() - b.m31()) <= e
+            && Math.abs(a.m32() - b.m32()) <= e && Math.abs(a.m33() - b.m33()) <= e;
     }
 
     /**

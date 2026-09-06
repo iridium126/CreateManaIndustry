@@ -20,7 +20,7 @@ import net.minecraft.core.BlockPos;
  * a.x = absBlockX (signed int32)      b.x = quadCount
  * a.y = absBlockY (signed int32)      b.y = visibleFrameId (GPU-written)
  * a.z = absBlockZ (signed int32)      b.z = quadStart (arena quad index)
- * a.w = childPtr (0 = none, 4c)       b.w = slot(17b) | level(3b)&lt;&lt;17 | flags(8b)&lt;&lt;20
+ * a.w = childPtr (0 = none, 4c)       b.w = slot(18b) | level(3b)&lt;&lt;18 | flags(8b)&lt;&lt;21
  * </pre>
  * Mirror longs (little-endian → uint pairs): [a.x|a.y, a.z|a.w, b.x|b.y,
  * b.z|b.w]. Nodes are keyed by cube long; freed indices recycle via a free
@@ -37,9 +37,9 @@ public final class AllvrNodeStore {
     public static final int FLAG_DEAD = 2;
 
     /** b.w field packing — single source shared with chunks/node_common.glsl. */
-    public static final int SLOT_BITS = 17;
-    public static final int LEVEL_SHIFT = 17;
-    public static final int FLAGS_SHIFT = 20;
+    public static final int SLOT_BITS = 18;
+    public static final int LEVEL_SHIFT = 18;
+    public static final int FLAGS_SHIFT = 21;
 
     /** Hard ceiling (doc §7.4 node SSBO budget ≈ 2²¹ nodes). */
     public static final int MAX_NODES = 1 << 21;
@@ -229,7 +229,7 @@ public final class AllvrNodeStore {
         this.mirror[o + 3] = 0L;          // b.z/b.w unset
     }
 
-    /** b.w packing: slot | level&lt;&lt;LEVEL_SHIFT | flags&lt;&lt;FLAGS_SHIFT (≤ 27 bits). */
+    /** b.w packing: slot | level&lt;&lt;LEVEL_SHIFT | flags&lt;&lt;FLAGS_SHIFT (≤ 29 bits). */
     public static int packWord(int slot, int level, int flags) {
         return (slot & ((1 << SLOT_BITS) - 1)) | ((level & 7) << LEVEL_SHIFT) | (flags << FLAGS_SHIFT);
     }

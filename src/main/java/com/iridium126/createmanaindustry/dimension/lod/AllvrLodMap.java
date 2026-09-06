@@ -74,6 +74,8 @@ public final class AllvrLodMap {
 
     private static final class Sub {
         final AllvrCubePos[] lastCenter = new AllvrCubePos[4];
+        final int[] lastDim = new int[4];
+        int lastViewDistance = Integer.MIN_VALUE;
     }
 
     private final Map<UUID, Sub> subs = new HashMap<>();
@@ -160,27 +162,39 @@ public final class AllvrLodMap {
     private void refreshBitmaps(List<ServerPlayer> players, int viewDistance) {
         for (ServerPlayer player : players) {
             Sub sub = this.subs.computeIfAbsent(player.getUUID(), k -> new Sub());
+            boolean distanceChanged = sub.lastViewDistance != viewDistance;
             for (int lvl = 0; lvl <= AllvrLodBands.MAX_LEVEL; lvl++) {
+                if (!AllvrLodBands.enabled(lvl, viewDistance)) {
+                    if (sub.lastCenter[lvl] != null || sub.lastDim[lvl] != 0) {
+                        player.connection.send(new ClientboundAllvrLodBitmapPacket(
+                            lvl, 0, 0, 0, 0, new long[0]));
+                        sub.lastCenter[lvl] = null;
+                        sub.lastDim[lvl] = 0;
+                    }
+                    continue;
+                }
                 int cellShift = 5 + lvl;
                 int cx = player.getBlockX() >> cellShift;
                 int cy = player.getBlockY() >> cellShift;
                 int cz = player.getBlockZ() >> cellShift;
+                int dim = AllvrLodBands.bitmapBoxCells(lvl, viewDistance);
                 AllvrCubePos last = sub.lastCenter[lvl];
                 int threshold = AllvrLodBands.resendThresholdCells(lvl, viewDistance);
-                if (last != null
+                if (!distanceChanged && last != null && sub.lastDim[lvl] == dim
                     && Math.abs(last.getX() - cx) < threshold
                     && Math.abs(last.getY() - cy) < threshold
                     && Math.abs(last.getZ() - cz) < threshold) {
                     continue;
                 }
-                int dim = AllvrLodBands.bitmapBoxCells(lvl, viewDistance);
                 int ox = cx - (dim >> 1);
                 int oy = cy - (dim >> 1);
                 int oz = cz - (dim >> 1);
                 long[] words = this.field.compute(lvl, ox, oy, oz, dim);
                 player.connection.send(new ClientboundAllvrLodBitmapPacket(lvl, ox, oy, oz, dim, words));
                 sub.lastCenter[lvl] = AllvrCubePos.of(cx, cy, cz);
+                sub.lastDim[lvl] = dim;
             }
+            sub.lastViewDistance = viewDistance;
         }
     }
 
@@ -189,7 +203,7 @@ public final class AllvrLodMap {
         long deadline = System.nanoTime() + PREP_BUDGET_NANOS;
         while (!this.prepQueue.isEmpty()) {
             PendingJob job = this.prepQueue.poll();
-            Request req = this.requests[job.level()].remove(job.cellLong());
+            Request req = this.requests[job.level()].get(job.cellLong());
             if (req == null) {
                 continue; // invalidated while queued — its forget already went out
             }
@@ -229,8 +243,18 @@ public final class AllvrLodMap {
     private void drainResults(List<ServerPlayer> players) {
         BuiltMesh mesh;
         while ((mesh = this.results.poll()) != null) {
-            long curGen = this.gens[mesh.level()].get(mesh.cellLong());
-            boolean stale = mesh.gen() != curGen || mesh.quads() == null;
+            Request live = this.requests[mesh.level()].get(mesh.cellLong());
+            boolean sameRequest = live != null && live.gen == mesh.gen();
+            boolean stale = !sameRequest || mesh.quads() == null;
+            List<UUID> requesters;
+            if (sameRequest) {
+                // Keep the registry entry through queueing and the worker run;
+                // remove only the exact generation that produced this result.
+                this.requests[mesh.level()].remove(mesh.cellLong());
+                requesters = List.copyOf(live.requesters);
+            } else {
+                requesters = mesh.requesters();
+            }
             if (!stale) {
                 this.cachePut(mesh.level(), mesh.cellLong(), mesh.quads());
             }
@@ -240,7 +264,7 @@ public final class AllvrLodMap {
             ClientboundAllvrLodForgetPacket forget = stale
                 ? new ClientboundAllvrLodForgetPacket(mesh.level(), mesh.cellLong())
                 : null;
-            for (UUID uuid : mesh.requesters()) {
+            for (UUID uuid : requesters) {
                 ServerPlayer player = findPlayer(players, uuid);
                 if (player == null) {
                     continue;
@@ -272,7 +296,8 @@ public final class AllvrLodMap {
                 continue;
             }
             AllvrLodPos pos = AllvrLodPos.fromCellLong(lvl, cellLong);
-            if (chebyshevToNode(player.getPosition(1.0f), pos) > viewDistance + pos.sizeBlocks()) {
+            int distance = chebyshevToNode(player.getPosition(1.0f), pos);
+            if (!AllvrLodBands.inBand(lvl, distance, viewDistance)) {
                 player.connection.send(new ClientboundAllvrLodForgetPacket(lvl, cellLong));
                 continue;
             }

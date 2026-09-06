@@ -61,9 +61,11 @@ public final class AllvrClientCubeCache {
 
     /** Drops every streamed cube (level unload / dimension switch / logout). */
     public static void clear() {
-        cubes.clear();
-        beCubes.clear();
-        level = null;
+        synchronized (LOCK) {
+            cubes.clear();
+            beCubes.clear();
+            level = null;
+        }
     }
 
     /** Main-thread apply of one streamed cube. */

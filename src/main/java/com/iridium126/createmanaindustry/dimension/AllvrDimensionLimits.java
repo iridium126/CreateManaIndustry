@@ -25,7 +25,9 @@ public final class AllvrDimensionLimits {
     }
 
     public static boolean isInBounds(int x, int y, int z) {
-        return Math.abs(x) <= XZ_BOUND && Math.abs(y) <= Y_BOUND && Math.abs(z) <= XZ_BOUND;
+        return x >= -XZ_BOUND && x <= XZ_BOUND
+            && y >= -Y_BOUND && y <= Y_BOUND
+            && z >= -XZ_BOUND && z <= XZ_BOUND;
     }
 
     public static int clampY(int y) {

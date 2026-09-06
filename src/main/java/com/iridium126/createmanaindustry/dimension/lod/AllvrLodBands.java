@@ -25,17 +25,29 @@ public final class AllvrLodBands {
     /** Band outer edge for a level: fixed table, capped by the view distance.
      *  The top level's band is inclusive of the edge (its upper bound IS R). */
     public static int bandMax(int level, int viewDistanceBlocks) {
+        if (!enabled(level, viewDistanceBlocks)) {
+            return 0;
+        }
         int fixed = level >= MAX_LEVEL ? Integer.MAX_VALUE : BAND_MIN[level + 1];
-        return Math.min(fixed, Math.max(viewDistanceBlocks, BAND_MIN[MAX_LEVEL]));
+        return Math.min(fixed, viewDistanceBlocks);
+    }
+
+    public static boolean enabled(int level, int viewDistanceBlocks) {
+        return level >= 0 && level <= MAX_LEVEL && viewDistanceBlocks >= BAND_MIN[level];
     }
 
     public static boolean inBand(int level, int chebyshevBlocks, int viewDistanceBlocks) {
-        return chebyshevBlocks >= BAND_MIN[level] && chebyshevBlocks <= bandMax(level, viewDistanceBlocks);
+        return enabled(level, viewDistanceBlocks)
+            && chebyshevBlocks >= BAND_MIN[level]
+            && chebyshevBlocks <= bandMax(level, viewDistanceBlocks);
     }
 
     /** Cells per axis of a level's surface-node bitmap box (player-centered,
      *  spanning ±bandMax). L0–L2 → 32³, L3 at R=2048 → 16³ (R=4096 → 32³). */
     public static int bitmapBoxCells(int level, int viewDistanceBlocks) {
+        if (!enabled(level, viewDistanceBlocks)) {
+            return 0;
+        }
         return 2 * bandMax(level, viewDistanceBlocks) / cellBlocks(level);
     }
 

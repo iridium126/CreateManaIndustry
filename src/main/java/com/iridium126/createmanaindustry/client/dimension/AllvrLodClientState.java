@@ -15,6 +15,7 @@ import com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer;
 import com.iridium126.createmanaindustry.config.ClientConfig;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
+import com.iridium126.createmanaindustry.dimension.lod.AllvrLodBands;
 import com.iridium126.createmanaindustry.dimension.lod.AllvrLodPos;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodBitmapPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodForgetPacket;
@@ -41,9 +42,6 @@ public final class AllvrLodClientState {
     private static final int REQUESTS_PER_TICK = 64;
     /** Per-level in-flight cap. */
     private static final int MAX_PENDING = 256;
-    /** Cell Chebyshev distance where "fully outside the full-res radius" begins. */
-    private static final int FULL_RES_RADIUS_CUBES = 8;
-
     private static final class LevelState {
         int originX;
         int originY;
@@ -78,6 +76,10 @@ public final class AllvrLodClientState {
         if (lvl < 0 || lvl > AllvrLodPos.MAX_LEVEL) {
             return;
         }
+        if (packet.dimCells() <= 0 || packet.words() == null || packet.words().length == 0) {
+            clearLevel(lvl);
+            return;
+        }
         LevelState state = new LevelState();
         state.originX = packet.originCellX();
         state.originY = packet.originCellY();
@@ -101,7 +103,16 @@ public final class AllvrLodClientState {
         if (lvl < 0 || lvl > AllvrLodPos.MAX_LEVEL) {
             return;
         }
-        pending[lvl].remove(packet.cellLong());
+        // A response can race an eviction, a forget, or a zero-dimension
+        // bitmap.  Only publish meshes for requests still owned by this level;
+        // otherwise a late worker result would resurrect inner-band geometry.
+        if (levels[lvl] == null) {
+            AllvrRenderer.INSTANCE.forgetLod(lvl, packet.cellLong());
+            return;
+        }
+        if (!pending[lvl].remove(packet.cellLong())) {
+            return; // duplicate or a response evicted/forgotten earlier
+        }
         long[] quads = remapQuads(packet.quads());
         AllvrRenderer.INSTANCE.applyLodMesh(lvl, packet.cellLong(), quads);
         meshed[lvl].add(packet.cellLong());
@@ -128,9 +139,7 @@ public final class AllvrLodClientState {
     /** Drops all LOD state (level unload / dimension switch / logout). */
     public static void clear() {
         for (int i = 0; i < 4; i++) {
-            levels[i] = null;
-            pending[i].clear();
-            meshed[i].clear();
+            clearLevel(i);
         }
         loggedFirstBitmap = false;
         loggedFirstMesh = false;
@@ -178,10 +187,13 @@ public final class AllvrLodClientState {
         int playerCellX = player.getX() >> (5 + lvl);
         int playerCellY = player.getY() >> (5 + lvl);
         int playerCellZ = player.getZ() >> (5 + lvl);
-        // nodes fully outside the full-res streaming radius begin at this cell
-        // distance: L0→9, L1→5, L2→3, L3→2 (256 blocks is a multiple of every
-        // node size, so no node can straddle the full-res boundary)
-        int minDist = FULL_RES_RADIUS_CUBES / (1 << lvl) + 1;
+        // Nodes fully outside the full-res streaming radius begin at the first
+        // cell after the fixed band boundary.
+        int minDist = AllvrLodBands.bandMin(lvl) / AllvrLodBands.cellBlocks(lvl) + 1;
+
+        // Evict before the budget/pending early-outs so stale inner-band nodes
+        // cannot survive indefinitely when the request queue is full.
+        evictFar(lvl, playerCellX, playerCellY, playerCellZ, half, minDist);
 
         int budget = REQUESTS_PER_TICK - entries.size();
         if (budget <= 0 || pending[lvl].size() >= MAX_PENDING) {
@@ -218,17 +230,17 @@ public final class AllvrLodClientState {
                 }
             }
         }
-        evictFar(lvl, playerCellX, playerCellY, playerCellZ, half);
     }
 
-    /** Drops rendered/pending nodes beyond the box half ×1.25 (hysteresis). */
-    private static void evictFar(int lvl, int pcx, int pcy, int pcz, int half) {
+    /** Drops rendered/pending nodes outside the box or inside the full-res zone. */
+    private static void evictFar(int lvl, int pcx, int pcy, int pcz, int half, int minDist) {
         int limit = half + Math.max(1, half >> 2);
-        evictSet(lvl, meshed[lvl], pcx, pcy, pcz, limit, true);
-        evictSet(lvl, pending[lvl], pcx, pcy, pcz, limit, false);
+        evictSet(lvl, meshed[lvl], pcx, pcy, pcz, limit, minDist, true);
+        evictSet(lvl, pending[lvl], pcx, pcy, pcz, limit, minDist, false);
     }
 
     private static void evictSet(int lvl, LongOpenHashSet set, int pcx, int pcy, int pcz, int limit,
+                                 int minDist,
                                  boolean rendered) {
         if (set.isEmpty()) {
             return;
@@ -240,7 +252,7 @@ public final class AllvrLodClientState {
             AllvrLodPos pos = AllvrLodPos.fromCellLong(lvl, cellLong);
             int d = Math.max(Math.abs(pos.cellX() - pcx),
                 Math.max(Math.abs(pos.cellY() - pcy), Math.abs(pos.cellZ() - pcz)));
-            if (d > limit) {
+            if (d > limit || d < minDist) {
                 if (removed == null) {
                     removed = new ArrayList<>();
                 }
@@ -292,7 +304,7 @@ public final class AllvrLodClientState {
                 continue;
             }
             lo = (lo & ~0xF0000000L) | ((rid & 0xFL) << 28);
-            hi = (hi & ~0xFFFL) | ((long) ((rid >> 4) & 0xFFF) << 32);
+            hi = (hi & ~0xFFFL) | ((long) ((rid >> 4) & 0xFFF));
             quads[i] = lo | (hi << 32);
         }
         return quads;
@@ -301,6 +313,16 @@ public final class AllvrLodClientState {
     private static boolean inDimension() {
         Minecraft mc = Minecraft.getInstance();
         return mc.level != null && mc.level.dimension() == AllvrDimensions.ALLAY_LEVEL;
+    }
+
+    /** Clears one level and releases any renderer nodes belonging to it. */
+    private static void clearLevel(int lvl) {
+        for (long cellLong : meshed[lvl]) {
+            AllvrRenderer.INSTANCE.forgetLod(lvl, cellLong);
+        }
+        levels[lvl] = null;
+        pending[lvl].clear();
+        meshed[lvl].clear();
     }
 
     private AllvrLodClientState() {}
