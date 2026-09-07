@@ -21,8 +21,10 @@ import net.minecraft.world.level.block.state.BlockState;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubeMap;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
+import com.iridium126.createmanaindustry.dimension.cube.AllvrOverlaySource;
 import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandFieldGenerator;
 import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodBitmapPacket;
@@ -98,14 +100,36 @@ public final class AllvrLodMap {
     /** Edits awaiting their forget broadcast (flushed deduped per tick). */
     private final LongOpenHashSet[] dirtyNodes = new LongOpenHashSet[4];
 
-    private record PendingJob(int level, long cellLong) {}
-
     private record BuiltMesh(int level, long cellLong, long gen, long[] quads, List<UUID> requesters) {}
 
-    private final ArrayDeque<PendingJob> prepQueue = new ArrayDeque<>();
+    /**
+     * Main-thread prep state of one queued node: the live overlay captured
+     * from loaded edited cubes plus the async decodes of persisted-but-
+     * unloaded cubes (plan §7.6). The job is only handed to the build pool
+     * once every async overlay is ready — the pool then runs without world
+     * access.
+     */
+    private static final class PrepJob {
+        final int level;
+        final long cellLong;
+        final AllvrLodPos pos;
+        AllvrLodSnapshot.Overlay liveOverlay;
+        final List<java.util.concurrent.CompletableFuture<com.iridium126.createmanaindustry.dimension.storage.AllvrPersistedOverlay>>
+            asyncOverlays = new ArrayList<>(1);
+        boolean captureStarted;
+
+        PrepJob(int level, long cellLong, AllvrLodPos pos) {
+            this.level = level;
+            this.cellLong = cellLong;
+            this.pos = pos;
+        }
+    }
+
+    private final ArrayDeque<PrepJob> prepQueue = new ArrayDeque<>();
     private final ConcurrentLinkedQueue<BuiltMesh> results = new ConcurrentLinkedQueue<>();
     private long cacheBytes;
     private int evictScanTicks;
+    private boolean closed;
 
     @SuppressWarnings("unchecked")
     public AllvrLodMap(ServerLevel level, AllvrCubeMap cubeMap) {
@@ -142,6 +166,9 @@ public final class AllvrLodMap {
     // ------------------------------------------------------------------
 
     public void tick() {
+        if (this.closed) {
+            return;
+        }
         List<ServerPlayer> players = this.level.players();
         if (players.isEmpty()) {
             return;
@@ -198,24 +225,126 @@ public final class AllvrLodMap {
         }
     }
 
-    /** Main-thread prep slice: overlay capture (world reads) → pool handoff. */
+    /**
+     * Main-thread prep slice: live overlay capture (world reads) + async
+     * persisted-overlay loads (plan §7.6). A job waits in the queue until
+     * every persisted overlay decode finished — only then is the immutable
+     * combined overlay handed to the build pool. The budget paces how many
+     * jobs dequeue per tick; waiting jobs rotate to the tail.
+     */
     private void dispatchPrep() {
         long deadline = System.nanoTime() + PREP_BUDGET_NANOS;
-        while (!this.prepQueue.isEmpty()) {
-            PendingJob job = this.prepQueue.poll();
-            Request req = this.requests[job.level()].get(job.cellLong());
+        int scan = this.prepQueue.size();
+        while (scan-- > 0 && !this.prepQueue.isEmpty()) {
+            PrepJob job = this.prepQueue.poll();
+            Request req = this.requests[job.level].get(job.cellLong);
             if (req == null) {
                 continue; // invalidated while queued — its forget already went out
             }
-            AllvrLodPos pos = AllvrLodPos.fromCellLong(job.level(), job.cellLong());
-            AllvrLodSnapshot.Overlay overlay = AllvrLodSnapshot.capture(this.cubeMap, pos);
-            List<UUID> requesters = List.copyOf(req.requesters);
-            long gen = req.gen;
-            this.pool.execute(() -> this.runJob(job.level(), job.cellLong(), gen, overlay, requesters));
+            if (!job.captureStarted) {
+                this.startCapture(job);
+            }
+            if (job.asyncOverlays.isEmpty()) {
+                this.submitBuild(job, req);
+                continue;
+            }
+            boolean failed = false;
+            boolean allDone = true;
+            for (java.util.concurrent.CompletableFuture<com.iridium126.createmanaindustry.dimension.storage.AllvrPersistedOverlay> f
+                : job.asyncOverlays) {
+                if (f.isCompletedExceptionally()) {
+                    failed = true;
+                    break;
+                }
+                if (!f.isDone()) {
+                    allDone = false;
+                }
+            }
+            if (failed) {
+                // I/O or corrupt-record failure: send forget so the client
+                // re-requests later — never cache "generated far view" over a
+                // real edit (plan §7.6.6). Drop the request entry too, or the
+                // re-request would just re-join the dead one.
+                this.requests[job.level].remove(job.cellLong);
+                CreateManaIndustry.LOGGER.error("[Allvr] persisted overlay read failed for node {} — forget sent, retry possible",
+                    job.pos);
+                ClientboundAllvrLodForgetPacket forget = new ClientboundAllvrLodForgetPacket(job.level, job.cellLong);
+                for (UUID uuid : req.requesters) {
+                    ServerPlayer player = findPlayer(this.level.players(), uuid);
+                    if (player != null) {
+                        player.connection.send(forget);
+                    }
+                }
+                continue;
+            }
+            if (!allDone) {
+                this.prepQueue.add(job); // rotate — keep the queue fair
+                continue;
+            }
+            this.submitBuild(job, req);
             if (System.nanoTime() >= deadline) {
                 break;
             }
         }
+    }
+
+    /** Server-thread part of the overlay capture (loaded cubes only). */
+    private void startCapture(PrepJob job) {
+        job.captureStarted = true;
+        AllvrLodPos pos = job.pos;
+        int stride = pos.stride();
+        int minBx = pos.minBlockX();
+        int minBy = pos.minBlockY();
+        int minBz = pos.minBlockZ();
+        int span = pos.sizeBlocks();
+        int pad = stride + 16; // cells need the pad ring; emitters reach 15 beyond it
+        List<AllvrOverlaySource> sources = new ArrayList<>(1);
+        int cx0 = (minBx - pad) >> 5;
+        int cx1 = (minBx + span + pad - 1) >> 5;
+        int cy0 = (minBy - pad) >> 5;
+        int cy1 = (minBy + span + pad - 1) >> 5;
+        int cz0 = (minBz - pad) >> 5;
+        int cz1 = (minBz + span + pad - 1) >> 5;
+        for (int cy = cy0; cy <= cy1; cy++) {
+            for (int cz = cz0; cz <= cz1; cz++) {
+                for (int cx = cx0; cx <= cx1; cx++) {
+                    long key = AllvrCubePos.asLong(cx, cy, cz);
+                    if (!this.cubeMap.isPersisted(key)) {
+                        continue;
+                    }
+                    AllvrCube cube = this.cubeMap.getLoadedCube(key);
+                    if (cube != null) {
+                        sources.add(cube);
+                        continue;
+                    }
+                    // persisted but unloaded — decode async, merge when ready
+                    job.asyncOverlays.add(this.cubeMap.loadOverlayAsync(AllvrCubePos.of(cx, cy, cz)));
+                }
+            }
+        }
+        job.liveOverlay = AllvrLodSnapshot.capture(pos, sources);
+    }
+
+    /** Combines the live + persisted overlays and hands the immutable job to the pool. */
+    private void submitBuild(PrepJob job, Request req) {
+        AllvrLodSnapshot.Overlay overlay = job.liveOverlay;
+        for (java.util.concurrent.CompletableFuture<com.iridium126.createmanaindustry.dimension.storage.AllvrPersistedOverlay> f
+            : job.asyncOverlays) {
+            try {
+                com.iridium126.createmanaindustry.dimension.storage.AllvrPersistedOverlay persisted = f.join();
+                if (persisted != null) {
+                    AllvrLodSnapshot.Overlay extra = AllvrLodSnapshot.capture(job.pos, List.of(persisted));
+                    overlay = AllvrLodSnapshot.mergeInto(overlay, extra);
+                }
+            } catch (Exception e) {
+                // completedExceptionally jobs are filtered before this point
+                CreateManaIndustry.LOGGER.error("[Allvr] persisted overlay decode failed for node {}", job.pos, e);
+            }
+        }
+        List<UUID> requesters = List.copyOf(req.requesters);
+        long gen = req.gen;
+        AllvrLodSnapshot.Overlay finalOverlay = overlay;
+        this.pool.execute(() -> this.runJob(job.level, job.cellLong, gen, finalOverlay, requesters));
     }
 
     /** Pool thread: pure density math + mesher — no world access here. */
@@ -288,6 +417,9 @@ public final class AllvrLodMap {
     // ------------------------------------------------------------------
 
     public void onRequest(ServerPlayer player, List<long[]> entries) {
+        if (this.closed) {
+            return;
+        }
         int viewDistance = ServerConfig.allvrLodDistance;
         for (long[] entry : entries) {
             int lvl = (int) entry[0];
@@ -320,7 +452,7 @@ public final class AllvrLodMap {
             Request req = new Request(this.gens[lvl].get(cellLong));
             req.requesters.add(player.getUUID());
             this.requests[lvl].put(cellLong, req);
-            this.prepQueue.add(new PendingJob(lvl, cellLong));
+            this.prepQueue.add(new PrepJob(lvl, cellLong, pos));
         }
     }
 
@@ -361,6 +493,30 @@ public final class AllvrLodMap {
             }
             dirty.clear();
         }
+    }
+
+    /**
+     * Idempotent close (plan §7.6.7): rejects new work, waits for (or cancels)
+     * in-flight builds, and clears the result queue. Called from the
+     * {@code ServerLevel#close} mixin.
+     */
+    public void close() {
+        if (this.closed) {
+            return;
+        }
+        this.closed = true;
+        this.pool.shutdown();
+        boolean terminated = false;
+        try {
+            terminated = this.pool.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        if (!terminated) {
+            this.pool.shutdownNow();
+        }
+        this.results.clear();
+        this.prepQueue.clear();
     }
 
     // ------------------------------------------------------------------

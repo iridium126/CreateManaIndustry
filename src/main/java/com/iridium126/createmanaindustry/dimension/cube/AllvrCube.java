@@ -15,6 +15,7 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.PalettedContainerRO;
 
 /**
  * A 32×32×32 cube — the allay dimension's unit of block data, mirroring
@@ -24,14 +25,43 @@ import net.minecraft.world.level.chunk.PalettedContainer;
  * <p>
  * Sections default to air with a plains biome (vanilla
  * {@link LevelChunkSection#LevelChunkSection(Registry)} defaults), matching
- * the dimension's fixed-biome design. Storage is in-memory only until the
- * region3d persistence stage (roadmap phase 6).
+ * the dimension's fixed-biome design.
+ * <p>
+ * Persistence (roadmap phase 6): {@link #mutationVersion}/{@link #queuedVersion}
+ * form the dirty/versioning protocol of the save pipeline — every authoritative
+ * change bumps the mutation version, the serializer snapshots the cube and
+ * records the queued version, and {@link #needsSnapshot()} is the single
+ * "must snapshot before this cube may leave memory" question. {@link #onLoad}
+ * / {@link #onUnload} bracket the BE lifecycle the way {@code LevelChunk}
+ * does; the loader installs restored sections/BEs through the dedicated
+ * {@code install*} methods so deserialization never walks the live
+ * {@code setBlockState} path (no dirty marking, no neighbour updates).
  */
-public final class AllvrCube {
+public final class AllvrCube implements AllvrOverlaySource {
 
     public static final int SECTIONS_PER_CUBE = 8;
 
     private final AllvrCubePos pos;
+    /**
+     * Bumped on every authoritative mutation (block write, BE content
+     * change). Monotonic per cube instance; snapshots record the value they
+     * captured so a late older write can never be mistaken for the newest
+     * state (plan §8.3).
+     */
+    private long mutationVersion;
+    /**
+     * Version of the newest snapshot successfully handed to the IO worker.
+     * {@code mutationVersion > queuedVersion} ⟺ dirty for saving.
+     */
+    private long queuedVersion;
+    /**
+     * True when the cube's content came from (or has reached) persistent
+     * storage — such cubes override the deterministic generator on load and
+     * are the cross-session "edited" set members (plan §7.2).
+     */
+    private boolean persistedOverride;
+    /** Guards double {@link #onLoad}/{@link #onUnload} (mirrors ChunkAccess.loaded). */
+    private boolean loaded;
     private final LevelChunkSection[] sections = new LevelChunkSection[SECTIONS_PER_CUBE];
     /**
      * Block entities keyed by the 15-bit in-cube cell index. Never key by
@@ -105,6 +135,137 @@ public final class AllvrCube {
         int ly = AllvrCoords.blockToLocal(worldPos.getY());
         int lz = AllvrCoords.blockToLocal(worldPos.getZ());
         return sections[sectionIndex(lx, ly, lz)].setBlockState(lx & 15, ly & 15, lz & 15, state, useLocks);
+    }
+
+    // ---- persistence / lifecycle ------------------------------------------
+
+    public long mutationVersion() {
+        return mutationVersion;
+    }
+
+    /** Bumps the mutation version — called after every authoritative change. */
+    public void markDirty() {
+        mutationVersion++;
+    }
+
+    public boolean needsSnapshot() {
+        return mutationVersion > queuedVersion;
+    }
+
+    /** Records that a snapshot of {@code version} was enqueued (never regresses). */
+    public void markQueued(long version) {
+        if (version > queuedVersion) {
+            queuedVersion = version;
+        }
+    }
+
+    public boolean persistedOverride() {
+        return persistedOverride;
+    }
+
+    /** Marks the cube as storage-backed (set once; never cleared on a live cube). */
+    public void markPersistedOverride() {
+        this.persistedOverride = true;
+    }
+
+    public boolean isLoaded() {
+        return loaded;
+    }
+
+    /**
+     * Activates restored (or freshly generated) block entities: level binding,
+     * removal-flag clear and ticker rebind — the {@code LevelChunk#postProcessGeneration}
+     * / BE-load slice of vanilla. Idempotent.
+     */
+    public void onLoad(Level level) {
+        if (this.loaded) {
+            return;
+        }
+        this.loaded = true;
+        for (BlockEntity be : this.blockEntities.values()) {
+            be.setLevel(level);
+            be.clearRemoved();
+        }
+        this.rebindAllTickers(level);
+    }
+
+    /**
+     * Deactivates the cube before it leaves memory: stops tickers and marks
+     * every BE removed — lifecycle cleanup only, never a data change (the
+     * save snapshot is taken <i>before</i> this runs; plan §7.2).
+     */
+    public void onUnload() {
+        for (BlockEntity be : this.blockEntities.values()) {
+            if (be != null) {
+                be.setRemoved();
+            }
+        }
+        this.tickers.clear();
+        this.loaded = false;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void rebindAllTickers(Level level) {
+        for (it.unimi.dsi.fastutil.ints.Int2ObjectMap.Entry<BlockEntity> e : this.blockEntities.int2ObjectEntrySet()) {
+            BlockEntity be = e.getValue();
+            if (be == null || be.isRemoved()) {
+                continue;
+            }
+            BlockPos pos = be.getBlockPos();
+            BlockState state = this.getBlockState(pos);
+            BlockEntityTicker<BlockEntity> ticker =
+                state.getTicker(level, (BlockEntityType<BlockEntity>) be.getType());
+            if (ticker == null) {
+                this.tickers.remove(e.getIntKey());
+            } else {
+                this.tickers.put(e.getIntKey(), ticker);
+            }
+        }
+    }
+
+    // ---- loader-only installation (persistence path) ------------------------
+
+    /**
+     * Replaces one section wholesale — loader path only. Recounts the section
+     * through the container constructor, never touching the live write path.
+     */
+    public void installSection(int index, PalettedContainer<BlockState> states,
+                               PalettedContainerRO<Holder<Biome>> biomes) {
+        if (index < 0 || index >= SECTIONS_PER_CUBE) {
+            throw new IllegalArgumentException("section index " + index + " outside 0.." + (SECTIONS_PER_CUBE - 1));
+        }
+        this.sections[index] = new LevelChunkSection(states, biomes);
+    }
+
+    /** Registers a restored block entity (loader path; ticker binding happens in {@link #onLoad}). */
+    public void installBlockEntity(BlockEntity be) {
+        this.blockEntities.put(localIndex(be.getBlockPos()), be);
+    }
+
+    /**
+     * Rebuilds everything derivable from BlockState after a bulk load:
+     * the emitter index (wire light events) and every BE ticker. Loader path;
+     * generator cubes start without emitters and bind tickers lazily.
+     */
+    public void rebuildDerivedState(Level level) {
+        this.emitters.clear();
+        int baseX = this.pos.minBlockX();
+        int baseY = this.pos.minBlockY();
+        int baseZ = this.pos.minBlockZ();
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int ly = 0; ly < AllvrCoords.DIAMETER_IN_BLOCKS; ly++) {
+            for (int lz = 0; lz < AllvrCoords.DIAMETER_IN_BLOCKS; lz++) {
+                for (int lx = 0; lx < AllvrCoords.DIAMETER_IN_BLOCKS; lx++) {
+                    BlockState state = this.sections[sectionIndex(lx, ly, lz)]
+                        .getBlockState(lx & 15, ly & 15, lz & 15);
+                    int emission = state.getLightEmission(level, cursor.set(baseX + lx, baseY + ly, baseZ + lz));
+                    if (emission > 0) {
+                        this.emitters.put(localIndex(cursor), emission);
+                    }
+                }
+            }
+        }
+        this.rebindAllTickers(level);
     }
 
     // ---- block entities -------------------------------------------------

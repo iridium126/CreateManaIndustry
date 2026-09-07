@@ -40,7 +40,7 @@
 2. **世界生成 = 自定义空岛密度场**：单岛 ≈ 2000×2000×200（长宽×厚），3D 格点阵列贯穿全高度；无结构、无 feature、无洞穴（V0），单步生成（§5.3）。
 3. **进入维度只用原版命令**（`/execute in ... run tp`），不注册命令、不做出生点安全处理（开发期创造模式测试）。
 4. **Java 命名 `Allvr` 前缀**：`Allay` 仅存于注册名/资源 id，避免与既有 18 个 `Allay*` 实体/燃烧器类混淆（§0 命名约定见各节）。
-5. **持久化后移至阶段 6**：阶段 1–5 cube 纯内存态，重启按种子确定性重生成空岛。
+5. **持久化（阶段 6 的存档半边）已实现（2026-09-07）**：`region3d/` 双 header 阴影页 + cube NBT 快照，load-before-generate/save-before-unload，重启与远距卸载均保留玩家改动（§5.4）；Mesh Shader 等 §13 阶段 6 其余项仍待做。
 6. **本次实施终点 = 阶段 3（ALLVR V0）**：Tier B MDI + 前向着色 + CPU 视锥 + 禁用器 + 合成光照；GPU 剔除/延迟着色/CSM/探针/Mesh Shader 属阶段 4–6。
 
 **命名约定（全文生效）**：Java 类一律 `Allvr` 前缀（`AllvrCubePos`、`AllvrBuffers`……新增类同样带前缀）；包结构：服务端 `com.iridium126.createmanaindustry.dimension.{cube,gen,heightmap,net}`，客户端 `com.iridium126.createmanaindustry.client.dimension.{render,light}`（GL 代码不进 common 包）；shader 资源 `assets/createmanaindustry/shaders/allvr/`（平行于 `shaders/particles/`）；子系统代号 **ALLVR**。
@@ -315,11 +315,16 @@ islandStateAt(p):                                    // p 世界坐标
 
 **V0 明确不做**（保护均匀 cube 简写 + 控制范围）：岛屿内部洞穴雕刻、小岛点缀、尺寸/材质变体——全部后置为密度场参数。
 
-### 5.4 数据持久化（后移至阶段 6）
+### 5.4 数据持久化（**已实现，2026-09-07**，设计全文见 `docs/allay-dimension-persistence-plan.md`）
 
-- **阶段 1–5：cube 纯内存态**。世界重启后空岛按种子**确定性重生成**（§5.3 纯函数性质），玩家放置/破坏的方块丢失——已知限制，开发期创造测试可接受。
-- **阶段 6 定版存档格式**：届时采纳 CC3 旧实现（`src_old/.../RegionCubeIO.java`）布局或 `io.github.opencubicchunks:regionlib`；目录规划 `region/`（列 2D 元数据，原版 anvil）+ `region3d/`（cube NBT，含届时已存在的光照缓存/mesh 缓存一并序列化）+ `heightmaps/`。**数据结构稳定前不定格式**——阶段 4–5 会给 cube 增加探针/LPV/mesh 缓存内容，提前定版等于自找版本迁移。
-- cube NBT 字段名届时对齐原版 chunk section NBT（`block_states/biomes`；不写光照字段）。
+- **范围**：方块 + 方块实体（BE 完整 NBT 含 Data Components / NeoForge attachments）按 cube（32³）整份快照持久化；`emitters`/LOD mesh 等派生数据不存盘（恢复后重建）。计划刻、实体、POI、heightmap **仍由原版列层负责，V1 不接管**（§13 阶段 7 与 R17/R12 的口径不变）。
+- **目录**：`dimensions/createmanaindustry/allay_dimension/region3d/`（新增；vanilla `region/` 列数据不动）。首写前目录不存在——从未保存过的世界不产生 `region3d`。
+- **region3d 格式**（自有实现，未引旧 regionlib；4096 B 扇区、16³ cube/region、slot = `(ly<<8)|(lz<<4)|lx` Y-major、`floorDiv/floorMod` 负坐标）：双 header 阴影页（A/B 各 24 扇区，generation 递增 + 整头 CRC32C），批提交 = 写新 payload → `force(false)` → 写非活动 header → `force(true)` → 才释放被替换扇区；任一步中断旧 header 仍完整可读，双 header 均坏 = fail closed 报损坏，**绝不回退生成态覆盖记录**。压缩 = deflate（BEST_SPEED）+ 逐记录 CRC32C + 1 字节算法 id。
+- **cube NBT schema**（`AllvrCubeSerializer`）：`DataVersion / AllvrFormatVersion(=1) / GeneratorVersion / xPos,yPos,zPos / LastUpdate / sections[8]{Index, block_states, biomes}`（palette codec 与原版 `ChunkSerializer` 同源、资源名编码）+ `block_entities[]`（`saveWithFullMetadata`）；读侧按 Index 重排、坐标/BE 类型校验，损坏条目跳过、结构性损坏抛 `AllvrCubeCorruptedException`。版本迁移走 `AllvrCubeDataFixes`（未知高版本 fail closed），**不用**原版 `DataFixTypes.CHUNK`。
+- **并发模型**（与 CC3 `AsyncBatchingCubeIO` 同语义）：服务线程只做 NBT 快照（每 tick 预算 8 cube / 1 ms、同 cube 冷却 200 tick；卸载/save-all flush/关服绕过预算）→ 单 I/O 线程 latest-wins pending（同坐标覆盖、条件移除只删已写入版本、读先查 pending 保证 read-your-writes）→ 按 region 分批提交。
+- **接入**：`getOrGenerate` 改为 load-before-generate（内存 → pending/磁盘（阻塞一次 I/O）→ 确定性生成；损坏 cube 保持卸载并限频 ERROR）；`unloadFarCubes` 改为 save-before-unload（快照失败或 `noSave` 时 dirty cube 留驻内存）；BE `setChanged()` 经 `Level#blockEntityChanged` mixin 路由到对应 cube（不再脏化空列）；`ServerLevel#save` HEAD/TAIL 接入非阻塞入队与 `/save-all flush` 阻塞刷盘，`close()` 幂等收尾；`editedCubes` 会话集合升级为跨会话 `persistedIndex`（region header 枚举 + pending 并集）。
+- **LOD**：未加载但有持久化记录的 cube 经 worker 异步解码为只读 `AllvrPersistedOverlay`（不建 BE、不入 cube map）参与远景 overlay；I/O 失败发 forget 保重试，不缓存生成态远景。
+- **单测**：28 项 JUnit 全绿（`src/test/java/.../dimension/storage/`）——负坐标/±3000 万映射可逆、region 文件 round trip/扇区复用/断 header 恢复/双 header 损坏 fail-closed、worker latest-wins/read-your-writes/写入期新快照不被旧批删除/flush 耐久/重试上限 fail-closed/close 幂等拒绝、region 存储跨 region 路由/CRC 损坏检测。GameTest/手工冒烟矩阵（§10.2–10.3 计划文）待运行期验证。
 
 ### 5.5 与 mod 生态的兼容边界
 
@@ -700,7 +705,7 @@ Bloom（MIP 金字塔，emissive HDR 输出受益）→ ACES tonemap（blit 内�
 | **4. GPU-Driven 完全体** ✅ **4a/4b/4c-1/4c-2 已完成**（4c-1 冒烟通过、4c-2 落地，2026-09-06；V0 CPU 主 pass 路径与 `allvrGpuPipeline` 开关已删除，GPU 路径为唯一主 pass 路径）——实况见 §13.1 | 决策与逐切片实况见 **§13.1** | 剔除/LOD/命令全 GPU；远距块状化 LOD | 4a：视觉与 V0 等价 + 1 draw call；4b：遮挡无穿透/无闪现；4c-1：R=2048 四带出岛 + 带边界无洞（裂缝口径）+ 256 缝干净 + 瞬移面向扇区数秒 / 全球面 ~15s + 编辑失效闭环 + `allvrLod=false` 逐字节回归 + 主线程切片 <0.5ms 与 p2<视锥通过量统计断言；4c-2：整场 1 draw call + 渲染线程 CPU < 1 ms + 30 min 会话无泄漏斜率（粒子引擎计时环验证）+ V0 路径/开关删除 | 阶段 3 |
 | **4i. iris 光影集成（voxy 契约，2026-09-05 grilling 定稿 9 问）** ✅ **G0–G2 已实现且 G2 冒烟验收通过（2026-09-06：pack-lit、地形自投影、Complementary patched 档、resize 均已验证）**——实况见 §13.2（G3–G5 待做） | 范围、9 问决策、G1/G2 落地与 12 轮冒烟排查实况见 **§13.2** | voxy 契约 iris 集成（G0–G2 已落地，实况见 §13.2） | G2 验收=①Photon 进 allay 维度地形被 pack 光照/阴影（日志 `patched terrain program compiled`）；②Complementary 进 allay 维度 albedo 档视觉（deferred 着色）；③开关关闭/无 pack 行为与 V0 一致；④方块放置/破坏后受影响 cube 光照重烘焙；⑤voxy 移植版在场时 allay 行为不变（G3） | 阶段 4 |
 | **5. 延迟着色 + 光照系统** | §10–11：G-Buffer MRT + 延迟 PBR + CSM + SH 探针烘焙 + LPV + 延迟点光 + 半透明前向 + bloom/ACES | 取代原版光照的完整视觉 | 光照更新零卡顿（变更场景帧预算内消化）；洞穴/缝隙漏光/昼夜/水面正确；实体检视无穿帮 | 阶段 4 |
-| **6. 持久化 + Mesh Shader** | §5.4 region3d 存档定版（含光照/mesh 缓存序列化）+ §9.5 Tier A task/mesh 路径 + meshlet 剔除 + GPU mesher（§8.2 M1）+ 近场 DDA 软影（§11.4）+ TAA 选项 | 重启存续；Tier A 硬件最优路径 | 重启后玩家改动存续；Tier A/B 视觉一致；GPU 时间分布达标（计时环出报告） | 阶段 5；regionlib 评估 |
+| **6. 持久化 + Mesh Shader** | **存档半边已完成（2026-09-07，§5.4：region3d 双 header 阴影页 + cube NBT + worker + save/close 接线 + LOD 持久化 overlay，28 项单测全绿；未引旧 regionlib，无 region2d——列数据归原版）**；其余仍待做：§9.5 Tier A task/mesh 路径 + meshlet 剔除 + GPU mesher（§8.2 M1）+ 近场 DDA 软影（§11.4）+ TAA 选项 | 重启存续（已达成）；Tier A 硬件最优路径（待做） | 重启后玩家改动存续（已达成，待 §10.3 计划文手工冒烟矩阵运行期复核）；Tier A/B 视觉一致；GPU 时间分布达标（计时环出报告） | 阶段 5；~~regionlib 评估~~（自有实现，勿依赖） |
 | **7. 玩法接入 + 远期生态** | 游戏性光照（§11.6 预案）、自定义 biome/`DimensionSpecialEffects` 天空、传送方块/出生点安全、风暴/燃烧器维度内容、Create 跨 cube 传动验证、voxy 兼容重评（§12）、**cube 侧随机刻/计划刻/刷怪**（2026-09-05 起原版 `tickChunk`/`spawnForChunk` 已在维度内取消，§5.2 性能拦截实况——接入玩法时以 cube 数据驱动实现替代） | 维度玩法闭环 | 按需求定义 | 按需求 |
 
 ### 13.1 阶段 4：GPU-Driven 完全体——决策与逐切片实况（4a / 4b / 4c）
@@ -853,7 +858,7 @@ allay 维度地形渲染（V0+GPU 双路径、L0）通过 voxy 契约获得 pack
 
 - **G3-G5 待做**：移植版共存冒烟 → 无 pack 逐字节回归 → 性能
 
-里程碑口径：**1–2 服务端与数据通路**（不发布）；**3 第一个可视里程碑**（本次实施终点）；4–5 渲染完全体（一个大版本）；6 收尾（存档落地 + Tier A）；7 按玩法节奏。内存态重启丢改动是阶段 6 前的**已知限制**（确定性重生成缓解）。
+里程碑口径：**1–2 服务端与数据通路**（不发布）；**3 第一个可视里程碑**（本次实施终点）；4–5 渲染完全体（一个大版本）；6 收尾（存档落地 + Tier A）；7 按玩法节奏。内存态重启丢改动的旧限制已由 region3d 持久化解除（§5.4，2026-09-07）。
 
 ---
 
@@ -875,7 +880,7 @@ allay 维度地形渲染（V0+GPU 双路径、L0）通过 voxy 契约获得 pack
 | R12 | Y ±3000 万下实体/寻路/掉落物等原版数值假设 | 中 | 软件边界内实测；**阶段 1 新确认**：`SectionPos` 20 bit Y（§2.4）使原版实体 section 存储在 |Y|>~840 万混叠——实体相关功能在超高 Y 的实际可信范围约 ±840 万，玩家本体与方块不受影响；远期需自建实体索引 |
 | R16 | 自定义方块级存储的坐标 key 位宽（`BlockPos.asLong` Y 12 bit） | 高（已踩） | **已修复**：cube 内 BE 用 15 bit 局部索引（`AllvrCube.localIndex`）；后续任何方块级 map 禁用 `BlockPos.asLong`，一律 cube key + 局部索引 |
 | R13 | 网络包体积/频率（cube 级 32³ 下发） | 低 | 调色板 + 仅 dirty section 重发 + 光源事件化 + 均匀 cube 数字节包 |
-| R14 | 内存态存档：阶段 6 前重启**与远距 cube 卸载**（超出所有玩家 forget 半径，每 2s 扫描，§2.4 审查修复③）都丢玩家改动 | 中 | 已知限制（卸载方案 2026-09-04 评审接受丢弃）；密度场确定性保证地形可复现；创造测试可接受 |
+| R14 | ~~内存态存档~~ | 中 | **已关闭（2026-09-07，§5.4）**：region3d 持久化落地——远距卸载 save-before-unload、自动保存/`/save-all flush`/关服接 `ServerLevel#save`/`close`，BE 脏标记经 `Level#blockEntityChanged` 路由；异常终止最多丢尚未后台快照的最近修改，已提交记录不损坏。残余限制：计划刻/实体/POI 仍属原版列层（R12/R17 口径不变）； LOD 持久化 overlay 已同步落地 |
 | R15 | voxy（Connector 场景）残余交互 | 低 | §12 分析：ingest 链拿不到数据，自动失效不污染 |
 | R17 | 计划刻孤儿丢失（列容器缺失时 `LevelTicks.schedule` 静默丢 tick）+ 随机刻不作用（列 section 全空气，草蔓延/作物/树叶/火焰全无） | 中（玩法期显性，阶段 4 触达面小） | **阶段 7"cube 模拟批次"统一落地**（随机刻 + 孤儿计划刻兜底 + 刷怪/模拟边界 + §11.6 游戏性光照）；事实核查与方案否决记录见 §2.4 阶段 4 兼容性批次② |
 | R18 | vanilla 线上位置编码 12 bit Y 墙（§2.1 打包墙的网络面）：客户端→服务器动作包在 \|Y\|>2048 处混叠（破坏/放置/署名编辑），服务器→客户端原版位置包（方块事件/挖掘裂纹/其他玩家观感）同样混叠 | 高（已踩，交互面已修） | **交互面已修复**：`AllvrServerboundPosMixin` 服务器侧玩家锚定 Y 重建（§2.4 阶段 4 兼容性批次⑤，覆盖 player-action/use-item-on/sign-update）；服务器→客户端残余为远端观感非正确性路径，暂不处理；任何新加的含 `BlockPos` 的客户端→服务器包必须走同款重建或自定义 wire（cubeKey+cell） |

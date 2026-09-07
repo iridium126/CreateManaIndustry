@@ -7,13 +7,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
-import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
-import com.iridium126.createmanaindustry.dimension.cube.AllvrCubeMap;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
+import com.iridium126.createmanaindustry.dimension.cube.AllvrOverlaySource;
 import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandFieldGenerator;
 import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandFieldGenerator.Island;
 import com.iridium126.createmanaindustry.dimension.mesh.AllvrMeshLight;
 import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
+
+import java.util.List;
 
 /**
  * Builds the 34³ mesher snapshot for one LOD node from the island density
@@ -98,58 +99,56 @@ public final class AllvrLodSnapshot {
     }
 
     /**
-     * Server-thread overlay capture for a node: edited loaded cubes
-     * overlapping the node's padded region contribute their occluder cells
-     * (first occluder per snapshot cell) and light emitters. Cells align with
-     * cube borders on every level (stride divides 32), so each snapshot cell
-     * is decided by exactly one cube. Unedited cubes are skipped wholesale —
-     * their blocks ARE the density field.
+     * Server-thread overlay capture for a node: every overlapping
+     * persisted-edited cube contributes its occluder cells (first occluder per
+     * snapshot cell) and light emitters. The caller decides what a source is —
+     * a loaded {@link AllvrCube} (live capture) or a decoded
+     * {@code AllvrPersistedOverlay} (persisted-but-unloaded cube; plan §7.6).
+     * Cells align with cube borders on every level (stride divides 32), so
+     * each snapshot cell is decided by exactly one cube. Cubes without a
+     * persistence record are skipped wholesale — their blocks ARE the density
+     * field.
      */
-    public static Overlay capture(AllvrCubeMap cubeMap, AllvrLodPos pos) {
-        int stride = pos.stride();
-        int minBx = pos.minBlockX();
-        int minBy = pos.minBlockY();
-        int minBz = pos.minBlockZ();
-        int span = pos.sizeBlocks();
-        // cells need the pad ring (+stride); emitters reach manhattan 15 beyond it
-        int pad = stride + 16;
+    public static Overlay capture(AllvrLodPos pos, List<AllvrOverlaySource> sources) {
         Int2ObjectOpenHashMap<BlockState> cells = new Int2ObjectOpenHashMap<>();
         LongArrayList emitters = new LongArrayList();
-
-        int cx0 = (minBx - pad) >> 5;
-        int cx1 = (minBx + span + pad - 1) >> 5;
-        int cy0 = (minBy - pad) >> 5;
-        int cy1 = (minBy + span + pad - 1) >> 5;
-        int cz0 = (minBz - pad) >> 5;
-        int cz1 = (minBz + span + pad - 1) >> 5;
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        for (int cy = cy0; cy <= cy1; cy++) {
-            for (int cz = cz0; cz <= cz1; cz++) {
-                for (int cx = cx0; cx <= cx1; cx++) {
-                    long key = AllvrCubePos.asLong(cx, cy, cz);
-                    if (!cubeMap.isEdited(key)) {
-                        continue;
-                    }
-                    AllvrCube cube = cubeMap.getLoadedCube(key);
-                    if (cube == null) {
-                        continue; // edited then unloaded — R14 semantics, density wins
-                    }
-                    collectCubeOverlay(pos, cube, cx, cy, cz, cursor, cells);
-                    for (Int2IntMap.Entry e : cube.getEmitters().int2IntEntrySet()) {
-                        int cell = e.getIntKey();
-                        emitters.add((cx << 5) + (cell & 31));
-                        emitters.add((cy << 5) + (cell >> 10));
-                        emitters.add((cz << 5) + ((cell >> 5) & 31));
-                        emitters.add(e.getIntValue());
-                    }
-                }
+        for (AllvrOverlaySource source : sources) {
+            AllvrCubePos cpos = source.getPos();
+            collectCubeOverlay(pos, source, cpos.getX(), cpos.getY(), cpos.getZ(), cursor, cells);
+            for (Int2IntMap.Entry e : source.getEmitters().int2IntEntrySet()) {
+                int cell = e.getIntKey();
+                emitters.add((cpos.getX() << 5) + (cell & 31));
+                emitters.add((cpos.getY() << 5) + (cell >> 10));
+                emitters.add((cpos.getZ() << 5) + ((cell >> 5) & 31));
+                emitters.add(e.getIntValue());
             }
         }
         return new Overlay(cells, emitters.toLongArray());
     }
 
-    /** One edited cube's occluder contribution to the snapshot cells. */
-    private static void collectCubeOverlay(AllvrLodPos pos, AllvrCube cube, int cx, int cy, int cz,
+    /**
+     * Merges a second capture (decoded persisted overlays) into the live one.
+     * Cells never overlap (one cell ⟸ one cube), but {@code putIfAbsent} keeps
+     * the live capture authoritative regardless.
+     */
+    public static Overlay mergeInto(Overlay base, Overlay extra) {
+        if (extra.cells().isEmpty() && extra.emitters().length == 0) {
+            return base;
+        }
+        for (it.unimi.dsi.fastutil.ints.Int2ObjectMap.Entry<BlockState> e : extra.cells().int2ObjectEntrySet()) {
+            base.cells().putIfAbsent(e.getIntKey(), e.getValue());
+        }
+        if (extra.emitters().length == 0) {
+            return base;
+        }
+        long[] merged = java.util.Arrays.copyOf(base.emitters(), base.emitters().length + extra.emitters().length);
+        System.arraycopy(extra.emitters(), 0, merged, base.emitters().length, extra.emitters().length);
+        return new Overlay(base.cells(), merged);
+    }
+
+    /** One overlay source's occluder contribution to the snapshot cells. */
+    private static void collectCubeOverlay(AllvrLodPos pos, AllvrOverlaySource source, int cx, int cy, int cz,
                                            BlockPos.MutableBlockPos cursor,
                                            Int2ObjectOpenHashMap<BlockState> cells) {
         // Snapshot cells are stride-sized blocks (32, 64, 128, 256), so the
@@ -184,10 +183,10 @@ public final class AllvrLodSnapshot {
                     for (int dy = 0; dy < stride && found == null; dy++) {
                         for (int dz = 0; dz < stride && found == null; dz++) {
                             for (int dx = 0; dx < stride && found == null; dx++) {
-                                BlockState s = cube.getBlockState(cursor.set(wx0 + dx, wy0 + dy, wz0 + dz));
-                                if (AllvrMesher.occludesAt(s) != 0) {
-                                    found = s;
-                                }
+                    BlockState s = source.getBlockState(cursor.set(wx0 + dx, wy0 + dy, wz0 + dz));
+                    if (AllvrMesher.occludesAt(s) != 0) {
+                        found = s;
+                    }
                             }
                         }
                     }

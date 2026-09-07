@@ -181,7 +181,21 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
+// The persistence unit tests compile/run against the mod's own classes plus
+// the (registry-free) Minecraft classes — ModDevGradle only wires the main
+// source set, so extend the test classpaths from the main ones.
+configurations {
+    testCompileClasspath.extendsFrom compileClasspath
+    testRuntimeClasspath.extendsFrom runtimeClasspath
+}
+
 dependencies {
+    // region3d persistence unit tests (pure JVM; plan P0/P2/P3). Test-only —
+    // never published; no legacy regionlib dependency is introduced.
+    testImplementation platform("org.junit:junit-bom:5.10.2")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
@@ -318,5 +332,13 @@ idea {
     module {
         downloadSources = true
         downloadJavadoc = true
+    }
+}
+// region3d persistence unit tests (plan §10.1): pure JVM, no game launch.
+tasks.named('test', Test) {
+    useJUnitPlatform()
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
     }
 }

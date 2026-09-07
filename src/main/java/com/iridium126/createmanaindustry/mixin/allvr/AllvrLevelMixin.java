@@ -1,9 +1,11 @@
 package com.iridium126.createmanaindustry.mixin.allvr;
 
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
@@ -12,6 +14,7 @@ import com.iridium126.createmanaindustry.dimension.cube.AllvrServerLevelDuck;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
@@ -30,6 +33,9 @@ import net.minecraft.world.level.material.FluidState;
  */
 @Mixin(Level.class)
 public abstract class AllvrLevelMixin {
+
+    @Shadow
+    public abstract void updateNeighbourForOutputSignal(BlockPos pos, Block block);
 
     @Unique
     private AllvrCubeMap allvr$map() {
@@ -76,6 +82,26 @@ public abstract class AllvrLevelMixin {
         AllvrCubeMap map = allvr$map();
         if (map != null) {
             cir.setReturnValue(map.getBlockEntity(pos));
+        }
+    }
+
+    /**
+     * Persistence hard requirement (plan §7.4): {@code BlockEntity#setChanged()}
+     * lands here and must mark the ALLVR cube, not the empty vanilla column
+     * chunk. Routing cancels the vanilla branch; the comparator-output half of
+     * the vanilla body is re-applied by hand so BE-driven comparator signals
+     * still update.
+     */
+    @Inject(method = "blockEntityChanged", at = @At("HEAD"), cancellable = true)
+    private void allvr$blockEntityChanged(BlockPos pos, CallbackInfo ci) {
+        AllvrCubeMap map = allvr$map();
+        if (map != null) {
+            map.markBlockEntityDirty(pos);
+            BlockState state = map.getBlockState(pos);
+            if (!state.isAir()) {
+                this.updateNeighbourForOutputSignal(pos, state.getBlock());
+            }
+            ci.cancel();
         }
     }
 }
