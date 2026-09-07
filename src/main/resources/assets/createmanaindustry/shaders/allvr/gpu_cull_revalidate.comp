@@ -49,7 +49,9 @@ void main() {
     }
     ivec4 drawInfo = revalidateCubeInfo[drawSlot];
     int drawLevel = clamp(drawInfo.w, 0, 3);
-    ivec3 extent = ivec3(32 << drawLevel);
+    // The near scene is indexed by 16³ render cells.  Legacy LOD scale is no
+    // longer part of the runtime node protocol.
+    ivec3 extent = ivec3(16);
     ivec3 relOrigin = drawInfo.xyz - uCamInt;
     if (allvrHizOccluded(relOrigin, extent)) {
         nodes[nodeIdx].b.y = 0u; // drops out of phase-1 next frame

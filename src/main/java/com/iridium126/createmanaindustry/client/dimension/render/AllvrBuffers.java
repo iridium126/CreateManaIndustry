@@ -119,9 +119,9 @@ public final class AllvrBuffers {
     private int hizLevels;
 
     private long arenaQuads;         // current capacity, quads
-    private long arenaUsed;          // bump pointer, quads
-    /** Free arena ranges {start, size} — first-fit on alloc. */
-    private final java.util.ArrayList<long[]> freeRanges = new java.util.ArrayList<>();
+    private long arenaUsed;          // high-water mark, quads (debug/copy bound)
+    /** Region allocator keeps remesh churn local and returns generation-tagged handles. */
+    private final AllvrRegionArena regions = new AllvrRegionArena();
     private final int[] freeSlots = new int[MAX_SLOTS];
     private int freeSlotCount;
     private int nextSlot = 1;        // 0 reserved as "no slot"
@@ -165,7 +165,7 @@ public final class AllvrBuffers {
         this.freeSlotCount = 0;
         this.nextSlot = 1;
         this.arenaUsed = 0;
-        this.freeRanges.clear();
+        this.regions.ensureCapacity(this.arenaQuads);
         this.stateTboEntries = 0;
     }
 
@@ -416,6 +416,7 @@ public final class AllvrBuffers {
         }
         this.arenaBuffer = created;
         this.arenaQuads = newQuads;
+        this.regions.ensureCapacity(newQuads);
     }
 
     // ------------------------------------------------------------------
@@ -455,28 +456,21 @@ public final class AllvrBuffers {
     // quad arena
     // ------------------------------------------------------------------
 
-    /** First-fit range of {@code size} quads; -1 when the arena must grow. */
+    /** Region-local range of {@code size} quads; -1 when no region fits. */
     public int allocRange(long size) {
-        for (int i = 0; i < this.freeRanges.size(); i++) {
-            long[] r = this.freeRanges.get(i);
-            if (r[1] == size) {
-                this.freeRanges.remove(i);
-                return (int) r[0];
-            }
-            if (r[1] > size) {
-                r[1] -= size;
-                return (int) (r[0] + r[1]);
-            }
+        if (size <= 0 || size > Integer.MAX_VALUE) {
+            return -1;
         }
-        if (this.arenaUsed + size > this.arenaQuads) {
+        AllvrRegionArena.Handle handle = this.regions.allocate((int) size);
+        if (handle == null && this.arenaUsed + size > this.arenaQuads) {
             growArena(this.arenaUsed + size);
-            if (this.arenaUsed + size > this.arenaQuads) {
-                return -1; // cap reached
-            }
+            handle = this.regions.allocate((int) size);
         }
-        int start = (int) this.arenaUsed;
-        this.arenaUsed += size;
-        return start;
+        if (handle == null) {
+            return -1;
+        }
+        this.arenaUsed = Math.max(this.arenaUsed, (long) handle.offset() + size);
+        return handle.offset();
     }
 
     /** Same test as {@link #allocRange}'s success condition: a contiguous free
@@ -485,43 +479,15 @@ public final class AllvrBuffers {
      *  changed in between — the deferred-retry path in {@code AllvrRenderer}
      *  uses this to avoid retry-spin under fragmentation. */
     public boolean canFit(long size) {
-        for (long[] r : this.freeRanges) {
-            if (r[1] >= size) {
-                return true;
-            }
-        }
-        return this.arenaUsed + size <= this.arenaQuads;
+        return size > 0 && size <= Integer.MAX_VALUE && this.regions.canFit((int) size);
     }
 
     /** Frees a range, coalescing with adjacent free ranges and reclaiming the
-     *  bump-pointer tail — without this, cube remesh churn fragments the arena
-     *  until even single-cube allocations fail. */
+     *  region free list — remesh churn stays local and does not require a
+     *  global first-fit scan. */
     public void freeRange(int start, int size) {
-        if (size <= 0) {
-            return;
-        }
-        long end = start + (long) size;
-        for (int i = 0; i < this.freeRanges.size(); ) {
-            long[] r = this.freeRanges.get(i);
-            if (r[0] + r[1] == start) {
-                // adjacent range ends where this begins — absorb it
-                start = (int) r[0];
-                size += (int) r[1];
-                this.freeRanges.remove(i);
-            } else if (r[0] == end) {
-                // this ends where the adjacent range begins — absorb it
-                end = r[0] + r[1];
-                size += (int) r[1];
-                this.freeRanges.remove(i);
-            } else {
-                i++;
-            }
-        }
-        if (end == this.arenaUsed) {
-            // touches the unallocated tail — shrink it instead of tracking
-            this.arenaUsed = start;
-        } else {
-            this.freeRanges.add(new long[] {start, size});
+        if (size > 0) {
+            this.regions.free(start, size);
         }
     }
 
@@ -608,7 +574,7 @@ public final class AllvrBuffers {
     /** Drops every cube's geometry (level unload); GL objects persist. */
     public void reset() {
         this.arenaUsed = 0;
-        this.freeRanges.clear();
+        this.regions.reset();
         this.freeSlotCount = 0;
         this.nextSlot = 1;
     }

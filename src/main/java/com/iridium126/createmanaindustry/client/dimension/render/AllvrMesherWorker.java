@@ -1,150 +1,174 @@
 package com.iridium126.createmanaindustry.client.dimension.render;
 
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.RenderType;
 
-import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
+import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
+import com.iridium126.createmanaindustry.dimension.mesh.AllvrMeshCodec;
 
 /**
- * Daemon worker that turns streamed cubes into greedy-meshed quad streams
- * (doc §8.2 M0). Jobs carry the submitting renderer session's epoch — a
- * result whose epoch is stale (level switched in between) is discarded by
- * the drain instead of resurrecting old-session geometry (sodium-parity plan
- * §7.1). The snapshot is taken through
- * {@link AllvrClientCubeCache#snapshotForMesher} — the lock is held only for
- * the neighborhood lookup, eight private section copies and the padding
- * strips, so main-thread applies/writes never queue behind a full snapshot.
- * Results are drained by the render thread in {@code AllvrRenderer}.
- * <p>
- * Result statuses (plan §7.1): every dequeued job eventually produces a
- * result of one of the four states, and the renderer settles the cube's
- * pending state on EVERY outcome — an exception inside the worker can no
- * longer strand a cube's pending entry forever (the old drop-on-throw path).
- * FAILED_RETRYABLE is a per-job failure (bad snapshot, mesher bug): logged,
- * not auto-retried — the next edit to the cube re-triggers it. FAILED_FATAL
- * (JVM/linkage errors) additionally logs at error. CANCELLED covers jobs
- * dropped by {@link #cancel} before execution.
- * <p>
- * V0 keeps one worker: a burst of 24 streamed cubes/tick meshes at a few ms
- * per cube, so results lag the stream slightly during load spikes — load
- * order pop-in, not data loss (a re-submitted job is deduped upstream). The
- * multi-worker priority scheduler is M3.
+ * Multi-worker cell builder facade.
+ *
+ * <p>The old implementation was a single FIFO queue over 32³ cubes.  The
+ * public facade is kept stable for the renderer, but jobs now carry epoch and
+ * content revision and are ordered by the Sodium-inspired priority scheduler.
+ * Every job settles with one of the four explicit statuses.
  */
 public final class AllvrMesherWorker {
 
-    /** Outcome of one mesh job (plan §7.1 four-state contract). */
     public enum Status { SUCCESS, CANCELLED, FAILED_RETRYABLE, FAILED_FATAL }
 
-    /** One settled mesh job, ready to upload (or already failed). */
-    public record MeshResult(long key, long epoch, long[] quads, Status status) {}
+    public record MeshResult(long key, long epoch, long revision, long[] quads, int connectivityMask,
+                             AllvrFallbackBlock[] fallbackBlocks,
+                             Status status, Throwable failure) {
+        public MeshResult(long key, long epoch, long revision, long[] quads, int connectivityMask,
+                          Status status, Throwable failure) {
+            this(key, epoch, revision, quads, connectivityMask, new AllvrFallbackBlock[0], status, failure);
+        }
 
-    /** One queued job: the cube key plus the submitting session's epoch. */
-    private record Job(long key, long epoch) {}
+        public MeshResult(long key, long epoch, long[] quads, Status status) {
+            this(key, epoch, 0L, quads, 0, new AllvrFallbackBlock[0], status, null);
+        }
+    }
 
-    private static final LinkedBlockingQueue<Job> JOBS = new LinkedBlockingQueue<>();
-    private static final ConcurrentLinkedQueue<MeshResult> RESULTS = new ConcurrentLinkedQueue<>();
-    private static volatile boolean running;
-    private static Thread thread;
+    public record BuildOutput(long[] quads, int connectivityMask,
+                              AllvrFallbackBlock[] fallbackBlocks) {
+        public BuildOutput(long[] quads, int connectivityMask) {
+            this(quads, connectivityMask, new AllvrFallbackBlock[0]);
+        }
+    }
 
-    public static void start() {
-        if (thread != null) {
+    private static AllvrBuildScheduler<Long, BuildOutput> scheduler;
+    private static volatile Thread marker;
+
+    public static synchronized void start() {
+        if (scheduler != null) {
             return;
         }
-        running = true;
-        thread = new Thread(AllvrMesherWorker::run, "CMI-AllvrMesher");
-        thread.setDaemon(true);
-        thread.start();
+        int processors = Runtime.getRuntime().availableProcessors();
+        int workers = Math.max(1, Math.min(8, processors - 1));
+        scheduler = new AllvrBuildScheduler<>(workers, AllvrMesherWorker::buildCell);
+        marker = Thread.currentThread();
+        CreateManaIndustry.LOGGER.info("[Allvr] cell build scheduler started with {} workers", workers);
     }
 
-    public static void stop() {
-        running = false;
-        JOBS.clear();
-        RESULTS.clear();
-        thread = null;
+    public static synchronized void stop() {
+        if (scheduler != null) {
+            scheduler.close();
+            scheduler = null;
+        }
+        marker = null;
     }
 
-    /** Queues a remesh for {@code key} under {@code epoch}; deduped upstream. */
     public static void submit(long key, long epoch) {
-        JOBS.add(new Job(key, epoch));
+        submit(key, epoch, 0L, AllvrBuildScheduler.Priority.BACKGROUND);
     }
 
-    /**
-     * Best-effort cancellation of queued jobs for {@code key} (cube forgotten
-     * / level dropped). A job already dequeued or mid-run still settles with
-     * a result — the renderer's pending bookkeeping handles that outcome.
-     */
+    public static void submit(long key, long epoch, long revision,
+                              AllvrBuildScheduler.Priority priority) {
+        start();
+        scheduler.submit(key, epoch, revision, priority, key);
+    }
+
     public static void cancel(long key) {
-        JOBS.removeIf(job -> job.key() == key);
+        AllvrBuildScheduler<Long, BuildOutput> current = scheduler;
+        if (current != null) {
+            current.cancel(key);
+        }
     }
 
-    /** Thread handle for lazy startup checks (null before the first start). */
     public static Thread threadOrNull() {
-        return thread;
+        return marker;
     }
 
-    /** Drops queued jobs/results (level switch); the worker thread stays up. */
     public static void clearQueues() {
-        JOBS.clear();
-        RESULTS.clear();
+        AllvrBuildScheduler<Long, BuildOutput> current = scheduler;
+        if (current != null) {
+            current.clear();
+        }
     }
 
     public static MeshResult poll() {
-        return RESULTS.poll();
+        AllvrBuildScheduler<Long, BuildOutput> current = scheduler;
+        if (current == null) {
+            return null;
+        }
+        AllvrBuildScheduler.Result<BuildOutput> result = current.poll();
+        if (result == null) {
+            return null;
+        }
+        BuildOutput output = result.output();
+        return new MeshResult(result.key(), result.epoch(), result.revision(),
+            output == null ? null : output.quads(),
+            output == null ? 0 : output.connectivityMask(),
+            output == null ? new AllvrFallbackBlock[0] : output.fallbackBlocks(),
+            switch (result.status()) {
+                case SUCCESS -> Status.SUCCESS;
+                case CANCELLED -> Status.CANCELLED;
+                case FAILED_RETRYABLE -> Status.FAILED_RETRYABLE;
+                case FAILED_FATAL -> Status.FAILED_FATAL;
+            }, result.failure());
     }
 
-    private static void run() {
-        while (running) {
-            Job job = null;
-            try {
-                job = JOBS.poll(50, java.util.concurrent.TimeUnit.MILLISECONDS);
-                if (job != null) {
-                    process(job);
-                }
-            } catch (InterruptedException ignored) {
-                return;
-            } catch (Throwable t) {
-                // keep the worker alive: a dead thread silently ends ALL remeshing
-                // (the renderer's lazy-start check only sees a non-null handle);
-                // the failed job still settles so its pending entry drains
-                CreateManaIndustry.LOGGER.error("[Allvr] mesher failed on cube {}, job settled as failure",
-                    job == null ? "?" : job.key(), t);
-                if (job != null) {
-                    RESULTS.add(new MeshResult(job.key(), job.epoch(), new long[0], statusOf(t)));
+    public static int queuedCount() {
+        AllvrBuildScheduler<Long, BuildOutput> current = scheduler;
+        return current == null ? 0 : current.queuedCount();
+    }
+
+    private static BuildOutput buildCell(Long key, AllvrBuildScheduler.CancellationToken token) {
+        AllvrCellSnapshotPool.Snapshot snapshot = AllvrCellSnapshotPool.acquire();
+        BlockState[] states = snapshot.states();
+        byte[] occludes = snapshot.occludes();
+        if (token.isCancelled()) {
+            return null;
+        }
+        AllvrClientCubeCache.snapshotForCell(key, states, occludes);
+        if (token.isCancelled()) {
+            return null;
+        }
+        AllvrMeshCodec codec = AllvrRenderStateMap.CLIENT_CODEC;
+        AllvrCellLightBaker light = AllvrCellLightBaker.capture(key, occludes);
+        return new BuildOutput(AllvrCellMesher.build(states, occludes, light, codec),
+            AllvrCellConnectivity.mask(occludes), collectFallbackBlocks(key, states, light));
+    }
+
+    private static AllvrFallbackBlock[] collectFallbackBlocks(long key, BlockState[] states,
+                                                               AllvrCellLightBaker light) {
+        java.util.ArrayList<AllvrFallbackBlock> blocks = new java.util.ArrayList<>();
+        int minX = AllvrRenderCellKey.minBlockX(key);
+        int minY = AllvrRenderCellKey.minBlockY(key);
+        int minZ = AllvrRenderCellKey.minBlockZ(key);
+        for (int y = 0; y < AllvrCellMesher.CELL; y++) {
+            for (int z = 0; z < AllvrCellMesher.CELL; z++) {
+                for (int x = 0; x < AllvrCellMesher.CELL; x++) {
+                    BlockState state = states[AllvrCellMesher.paddedIndex(x, y, z)];
+                    if (state.isAir()) {
+                        continue;
+                    }
+                    short id = AllvrRenderStateMap.idOf(state);
+                    boolean fluid = !state.getFluidState().isEmpty();
+                    boolean descriptor = id != AllvrRenderStateMap.ID_AIR
+                        && AllvrRenderStateMap.entryOf(id).renderable
+                        && ItemBlockRenderTypes.getChunkRenderType(state) == RenderType.solid();
+                    if (!descriptor || fluid) {
+                        int sky = light.sky(x, z, (long) minY + y);
+                        int block = light.block(x, z, (long) minY + y);
+                        RenderType type = fluid
+                            ? ItemBlockRenderTypes.getRenderLayer(state.getFluidState())
+                            : ItemBlockRenderTypes.getChunkRenderType(state);
+                        blocks.add(new AllvrFallbackBlock(minX + x, minY + y, minZ + z, state,
+                            LightTexture.pack(block, sky), fluid, type == RenderType.translucent()));
+                    }
                 }
             }
         }
-    }
-
-    /** JVM-breaking throwables are fatal, everything else is retryable-on-edit. */
-    private static Status statusOf(Throwable t) {
-        return t instanceof VirtualMachineError || t instanceof LinkageError
-            ? Status.FAILED_FATAL
-            : Status.FAILED_RETRYABLE;
-    }
-
-    private static void process(Job job) {
-        try {
-            BlockState[] states = new BlockState[AllvrMesher.PADDED * AllvrMesher.PADDED * AllvrMesher.PADDED];
-            byte[] occludes = new byte[states.length];
-            // Snapshot via the cache's copy-based path: the lock is held only for
-            // the neighborhood lookup + section copies + padding strips; the 32³
-            // interior is filled outside it (the old per-voxel scan held the lock
-            // for the full 39k reads and stalled main-thread cube writes).
-            AllvrClientCubeCache.snapshotForMesher(job.key(), states, occludes);
-            // light bake always on: cheap (column scans with per-section skips +
-            // a tiny emitter table), keeps the quad stream format config-agnostic
-            AllvrLightBaker light = AllvrLightBaker.capture(job.key(), occludes);
-            RESULTS.add(new MeshResult(job.key(), job.epoch(),
-                AllvrMesher.build(states, occludes, light, AllvrRenderStateMap.CLIENT_CODEC), Status.SUCCESS));
-        } catch (Throwable t) {
-            CreateManaIndustry.LOGGER.error("[Allvr] mesher job failed on cube {}",
-                job.key(), t);
-            RESULTS.add(new MeshResult(job.key(), job.epoch(), new long[0], statusOf(t)));
-        }
+        return blocks.toArray(AllvrFallbackBlock[]::new);
     }
 
     private AllvrMesherWorker() {}

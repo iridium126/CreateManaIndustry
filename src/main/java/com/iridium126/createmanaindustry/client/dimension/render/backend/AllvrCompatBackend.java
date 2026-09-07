@@ -24,7 +24,7 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
+import com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderCellKey;
 import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
 
 /**
@@ -195,10 +195,9 @@ public final class AllvrCompatBackend {
      * glBufferSubData per publish; render thread only.
      */
     public void publish(long key, int start, long[] quads) {
-        AllvrCubePos pos = AllvrCubePos.fromLong(key);
-        int ox = pos.minBlockX();
-        int oy = pos.minBlockY();
-        int oz = pos.minBlockZ();
+        int ox = AllvrRenderCellKey.minBlockX(key);
+        int oy = AllvrRenderCellKey.minBlockY(key);
+        int oz = AllvrRenderCellKey.minBlockZ(key);
         int[] verts = new int[quads.length * VERTS_PER_QUAD * 6];
         for (int q = 0; q < quads.length; q++) {
             long word = quads[q];

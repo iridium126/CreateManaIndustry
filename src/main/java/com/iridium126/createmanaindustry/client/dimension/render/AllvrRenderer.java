@@ -1,16 +1,29 @@
 package com.iridium126.createmanaindustry.client.dimension.render;
 
 import java.util.Iterator;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
 
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import org.joml.Matrix4d;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
@@ -72,10 +85,13 @@ public final class AllvrRenderer {
     private final AllvrBuffers buffers = new AllvrBuffers();
     private final AllvrShaderCache shaders = new AllvrShaderCache();
     private final AllvrNodeStore nodes = new AllvrNodeStore();
+    private final AllvrRenderWorld renderWorld = new AllvrRenderWorld();
     private final AllvrCompatBackend compat = new AllvrCompatBackend();
     private final Long2ObjectOpenHashMap<Cube> renderCubes = new Long2ObjectOpenHashMap<>();
     /** Dedupe set for submitted mesh jobs (main thread only). */
     private final LongOpenHashSet pending = new LongOpenHashSet();
+    /** Results pulled from the worker but deferred by this frame's upload budget. */
+    private final Deque<AllvrMesherWorker.MeshResult> deferredResults = new ArrayDeque<>();
     private final int[] commands = new int[AllvrBuffers.COMMAND_STRIDE * AllvrBuffers.MAX_COMMANDS];
 
     /** Terrain backend tier (sodium-parity plan §7.7): B = default GPU-driven
@@ -167,10 +183,16 @@ public final class AllvrRenderer {
         int slot = -1;
         int quadStart = -1;
         int quadCount = 0;
+        long contentRevision;
+        long scheduledRevision;
+        long publishedRevision;
+        int connectivityMask;
         /** Mesh result held when the quad arena couldn't fit it — retried by
          *  {@link #retryDeferred} once {@code AllvrBuffers#canFit} passes, so
          *  an exhausted arena defers instead of dropping the cube forever. */
         long[] deferredQuads;
+        AllvrFallbackBlock[] fallbackBlocks = new AllvrFallbackBlock[0];
+        AllvrFallbackBlock[] deferredFallbackBlocks;
     }
 
     // ------------------------------------------------------------------
@@ -287,6 +309,7 @@ public final class AllvrRenderer {
         this.tier = Tier.C;
         this.renderCubes.clear();
         this.pending.clear();
+        this.deferredResults.clear();
         this.deferredCount = 0;
         this.nodes.clear();
         this.buffers.invalidateNodeUpload();
@@ -331,7 +354,7 @@ public final class AllvrRenderer {
 
     /**
      * CPU frustum pass for the compat backend: the same Gribb–Hartmann plane
-     * test the GPU traversal runs, per cube AABB (32³ local extent), appended
+     * test the GPU traversal runs, per cell AABB (16³ local extent), appended
      * into the compat draw list.
      */
     private int buildCompatCommands(Vec3 camPos) {
@@ -344,19 +367,18 @@ public final class AllvrRenderer {
             if (rc.quadCount <= 0 || rc.quadStart < 0) {
                 continue;
             }
-            AllvrCubePos p = AllvrCubePos.fromLong(e.getLongKey());
-            float ox = p.minBlockX() - camX;
-            float oy = p.minBlockY() - camY;
-            float oz = p.minBlockZ() - camZ;
+            float ox = AllvrRenderCellKey.minBlockX(e.getLongKey()) - camX;
+            float oy = AllvrRenderCellKey.minBlockY(e.getLongKey()) - camY;
+            float oz = AllvrRenderCellKey.minBlockZ(e.getLongKey()) - camZ;
             boolean ok = true;
             for (int i = 0; i < 6 && ok; i++) {
                 float nx = this.frustumPlanes[i * 4];
                 float ny = this.frustumPlanes[i * 4 + 1];
                 float nz = this.frustumPlanes[i * 4 + 2];
                 float d = this.frustumPlanes[i * 4 + 3];
-                float px = nx > 0f ? ox + 32f : ox;
-                float py = ny > 0f ? oy + 32f : oy;
-                float pz = nz > 0f ? oz + 32f : oz;
+                float px = nx > 0f ? ox + 16f : ox;
+                float py = ny > 0f ? oy + 16f : oy;
+                float pz = nz > 0f ? oz + 16f : oz;
                 if (nx * px + ny * py + nz * pz + d < 0f) {
                     ok = false;
                 }
@@ -461,6 +483,7 @@ public final class AllvrRenderer {
 
     private void initialize(Minecraft mc) {
         this.initialized = true;
+        this.renderWorld.bind(mc.level);
         var caps = org.lwjgl.opengl.GL.getCapabilities();
         // 4c-2 merged gate: per-command draw parameters (gl_BaseInstance in the
         // vertex path) AND the MDIC draw count must both be present — GL 4.6
@@ -497,21 +520,48 @@ public final class AllvrRenderer {
             // rendered frame)
             this.initialize(Minecraft.getInstance());
         }
+        this.renderWorld.bind(Minecraft.getInstance().level);
+        AllvrCubePos cube = AllvrCubePos.fromLong(key);
+        for (int ly = 0; ly < 2; ly++) {
+            for (int lz = 0; lz < 2; lz++) {
+                for (int lx = 0; lx < 2; lx++) {
+                    this.applyCell(AllvrRenderCellKey.ofCell((cube.getX() << 1) + lx,
+                        (cube.getY() << 1) + ly, (cube.getZ() << 1) + lz));
+                }
+            }
+        }
+    }
+
+    private void applyCell(long key) {
         Cube rc = this.renderCubes.get(key);
         if (rc == null) {
             rc = new Cube();
             if (this.tier == Tier.B) {
-                AllvrCubePos pos = AllvrCubePos.fromLong(key);
-                rc.slot = this.buffers.allocSlot(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ());
-            } // Tier C: origins ride in the expanded vertex attributes — no slots
+                rc.slot = this.buffers.allocSlot(AllvrRenderCellKey.minBlockX(key),
+                    AllvrRenderCellKey.minBlockY(key), AllvrRenderCellKey.minBlockZ(key));
+            }
             this.renderCubes.put(key, rc);
         }
-        this.submit(key);
+        rc.contentRevision = this.renderWorld.markCellDirty(key);
+        this.submit(key, AllvrBuildScheduler.Priority.NEAR_CAMERA);
     }
 
-    /** Drops one cube's geometry (server forget, eviction, level unload). */
+    /** Drops all eight cell meshes owned by one streamed 32³ cube. */
     public void onCubeForgotten(long key) {
+        AllvrCubePos cube = AllvrCubePos.fromLong(key);
+        for (int ly = 0; ly < 2; ly++) {
+            for (int lz = 0; lz < 2; lz++) {
+                for (int lx = 0; lx < 2; lx++) {
+                    this.forgetCell(AllvrRenderCellKey.ofCell((cube.getX() << 1) + lx,
+                        (cube.getY() << 1) + ly, (cube.getZ() << 1) + lz));
+                }
+            }
+        }
+    }
+
+    private void forgetCell(long key) {
         Cube rc = this.renderCubes.remove(key);
+        this.renderWorld.forgetCell(key);
         if (rc == null) {
             return;
         }
@@ -533,61 +583,63 @@ public final class AllvrRenderer {
     }
 
     /**
-     * Client-side block change: remesh the cube (and border-adjacent neighbors
-     * for the face-culling seam), plus the light-driven dirty set (grilling
-     * decision ⑥): an occluder change shifts the sky column exposure BELOW it
-     * (the column scan looks up from every voxel; the 128-block window spans
-     * 4 cubes), an emitter change relights every cube whose voxels sit within
-     * manhattan 15 of it.
+     * Client-side block change: remesh one 16³ cell and only the border
+     * neighbours whose face visibility changed.  The 32³ cube remains the
+     * network/cache unit, but a normal edit now rebuilds one cell instead of
+     * all eight cells.
      */
     public void onBlockChanged(net.minecraft.core.BlockPos pos, BlockState oldState, BlockState newState) {
-        AllvrCubePos cpos = AllvrCubePos.of(pos);
-        long key = cpos.asLong();
+        int cellX = pos.getX() >> 4;
+        int cellY = pos.getY() >> 4;
+        int cellZ = pos.getZ() >> 4;
+        long key = AllvrRenderCellKey.ofCell(cellX, cellY, cellZ);
         Cube rc = this.renderCubes.get(key);
         if (rc == null) {
             return;
         }
-        this.submit(key);
-        // a change at the cube border can invalidate the neighbor's culled
-        // faces across the seam — remesh only the directly touched neighbors
-        int lx = pos.getX() & 31;
-        int ly = pos.getY() & 31;
-        int lz = pos.getZ() & 31;
+        rc.contentRevision = this.renderWorld.markCellDirty(key);
+        this.submit(key, AllvrBuildScheduler.Priority.VISIBLE_UPDATE);
+        // A change at a cell border can invalidate the neighbour's culled
+        // faces across the seam — remesh only the directly touched neighbours.
+        int lx = pos.getX() & 15;
+        int ly = pos.getY() & 15;
+        int lz = pos.getZ() & 15;
         if (lx == 0) {
-            this.dirtyCube(cpos.getX() - 1, cpos.getY(), cpos.getZ());
-        } else if (lx == 31) {
-            this.dirtyCube(cpos.getX() + 1, cpos.getY(), cpos.getZ());
+            this.dirtyCell(cellX - 1, cellY, cellZ, AllvrBuildScheduler.Priority.SEAM_HANDOFF);
+        } else if (lx == 15) {
+            this.dirtyCell(cellX + 1, cellY, cellZ, AllvrBuildScheduler.Priority.SEAM_HANDOFF);
         }
         if (ly == 0) {
-            this.dirtyCube(cpos.getX(), cpos.getY() - 1, cpos.getZ());
-        } else if (ly == 31) {
-            this.dirtyCube(cpos.getX(), cpos.getY() + 1, cpos.getZ());
+            this.dirtyCell(cellX, cellY - 1, cellZ, AllvrBuildScheduler.Priority.SEAM_HANDOFF);
+        } else if (ly == 15) {
+            this.dirtyCell(cellX, cellY + 1, cellZ, AllvrBuildScheduler.Priority.SEAM_HANDOFF);
         }
         if (lz == 0) {
-            this.dirtyCube(cpos.getX(), cpos.getY(), cpos.getZ() - 1);
-        } else if (lz == 31) {
-            this.dirtyCube(cpos.getX(), cpos.getY(), cpos.getZ() + 1);
+            this.dirtyCell(cellX, cellY, cellZ - 1, AllvrBuildScheduler.Priority.SEAM_HANDOFF);
+        } else if (lz == 15) {
+            this.dirtyCell(cellX, cellY, cellZ + 1, AllvrBuildScheduler.Priority.SEAM_HANDOFF);
         }
-        // light dirt — the same rules AllvrLightBaker bakes from
+        // Light dirt is cell-granular.  A 128-block sky window spans eight
+        // cells; block emitters can reach the adjacent cell ring.
         if (oldState != null && newState != null) {
             if (AllvrMesher.occludesAt(oldState) != AllvrMesher.occludesAt(newState)) {
-                for (int k = 1; k <= AllvrLightBaker.SKY_WINDOW_BLOCKS >> 5; k++) {
-                    this.dirtyCube(cpos.getX(), cpos.getY() - k, cpos.getZ());
+                for (int k = 1; k <= AllvrLightBaker.SKY_WINDOW_BLOCKS >> 4; k++) {
+                    this.dirtyCell(cellX, cellY - k, cellZ, AllvrBuildScheduler.Priority.VISIBLE_UPDATE);
                 }
             }
             if (oldState.getLightEmission() != newState.getLightEmission()) {
-                // per axis at most one neighbor qualifies (15 < 32)
                 int minX = lx <= 14 ? -1 : 0;
-                int maxX = lx >= 17 ? 1 : 0;
+                int maxX = lx >= 1 ? 1 : 0;
                 int minY = ly <= 14 ? -1 : 0;
-                int maxY = ly >= 17 ? 1 : 0;
+                int maxY = ly >= 1 ? 1 : 0;
                 int minZ = lz <= 14 ? -1 : 0;
-                int maxZ = lz >= 17 ? 1 : 0;
+                int maxZ = lz >= 1 ? 1 : 0;
                 for (int dx = minX; dx <= maxX; dx++) {
                     for (int dy = minY; dy <= maxY; dy++) {
                         for (int dz = minZ; dz <= maxZ; dz++) {
                             if ((dx | dy | dz) != 0) {
-                                this.dirtyCube(cpos.getX() + dx, cpos.getY() + dy, cpos.getZ() + dz);
+                                this.dirtyCell(cellX + dx, cellY + dy, cellZ + dz,
+                                    AllvrBuildScheduler.Priority.VISIBLE_UPDATE);
                             }
                         }
                     }
@@ -598,8 +650,10 @@ public final class AllvrRenderer {
 
     public void dropLevel() {
         this.epoch++; // in-flight results from the old session are discarded
+        this.renderWorld.beginSession();
         this.renderCubes.clear();
         this.pending.clear();
+        this.deferredResults.clear();
         this.deferredCount = 0;
         this.buffers.reset();
         this.nodes.clear();
@@ -624,6 +678,24 @@ public final class AllvrRenderer {
     }
 
     /**
+     * Invalidates the immutable render-resource snapshot on F3+T.  Existing
+     * GPU meshes remain drawable until their replacement is uploaded, while
+     * every resident cell is scheduled against the new resource revision.
+     */
+    public void onResourceReload() {
+        this.renderWorld.bumpResourceRevision();
+        AllvrRenderStateMap.invalidateResources();
+        AllvrClientCubeCache.prepareRenderResources();
+        this.buffers.invalidateStateTable();
+        for (var entry : this.renderCubes.long2ObjectEntrySet()) {
+            Cube cell = entry.getValue();
+            cell.contentRevision = this.renderWorld.markCellDirty(entry.getLongKey());
+            this.submit(entry.getLongKey(), AllvrBuildScheduler.Priority.VISIBLE_UPDATE);
+        }
+        this.requestShaderRebuild();
+    }
+
+    /**
      * Full GL close (sodium-parity plan §7.1: GL objects are closed explicitly
      * by the session's single owner). Called from the game-shutdown event —
      * the renderer singleton holds no GL object across a context change, and
@@ -633,30 +705,52 @@ public final class AllvrRenderer {
         this.buffers.destroy();
         this.compat.destroy();
         this.shaders.destroy();
+        this.renderWorld.close();
         this.renderCubes.clear();
         this.pending.clear();
+        this.deferredResults.clear();
         this.nodes.clear();
         this.initialized = false;
         AllvrMesherWorker.stop();
     }
 
     private void submit(long key) {
+        this.submit(key, AllvrBuildScheduler.Priority.BACKGROUND);
+    }
+
+    private void submit(long key, AllvrBuildScheduler.Priority priority) {
         if (!this.pending.add(key)) {
             return;
         }
         if (AllvrMesherWorker.threadOrNull() == null) {
             AllvrMesherWorker.start();
         }
-        AllvrMesherWorker.submit(key, this.epoch);
+        Cube rc = this.renderCubes.get(key);
+        if (rc == null) {
+            this.pending.remove(key);
+            return;
+        }
+        rc.scheduledRevision = rc.contentRevision;
+        AllvrRenderCell cell = this.renderWorld.cell(key);
+        if (cell != null) {
+            cell.schedule(rc.scheduledRevision);
+            cell.begin(rc.scheduledRevision);
+        }
+        AllvrMesherWorker.submit(key, this.epoch, rc.scheduledRevision, priority);
     }
 
-    /** Marks a cube (any offset) for remesh when it holds geometry. */
-    private void dirtyCube(int cx, int cy, int cz) {
-        long nkey = AllvrCubePos.of(cx, cy, cz).asLong();
+    /** Marks a cell for remesh when it already has visible geometry. */
+    private void dirtyCell(int cx, int cy, int cz, AllvrBuildScheduler.Priority priority) {
+        long nkey = AllvrRenderCellKey.ofCell(cx, cy, cz);
         Cube rc = this.renderCubes.get(nkey);
-        if (rc != null && rc.quadCount > 0) {
-            this.submit(nkey);
+        if (rc != null && hasGeometry(rc)) {
+            rc.contentRevision = this.renderWorld.markCellDirty(nkey);
+            this.submit(nkey, priority);
         }
+    }
+
+    private static boolean hasGeometry(Cube rc) {
+        return rc.quadCount > 0 || rc.fallbackBlocks.length > 0 || rc.deferredFallbackBlocks != null;
     }
 
     // ------------------------------------------------------------------
@@ -664,19 +758,40 @@ public final class AllvrRenderer {
     // ------------------------------------------------------------------
 
     private void pumpResults() {
+        long deadline = System.nanoTime() + 2_000_000L;
+        long uploadedBytes = 0L;
+        final long uploadBudgetBytes = 4L * 1024L * 1024L;
         AllvrMesherWorker.MeshResult result;
-        while ((result = AllvrMesherWorker.poll()) != null) {
+        while (System.nanoTime() < deadline && uploadedBytes < uploadBudgetBytes
+            && (result = this.deferredResults.isEmpty() ? AllvrMesherWorker.poll() : this.deferredResults.pollFirst()) != null) {
+            long resultBytes = result.quads() == null ? 0L : (long) result.quads().length * Long.BYTES;
+            if (uploadedBytes > 0 && uploadedBytes + resultBytes > uploadBudgetBytes) {
+                this.deferredResults.addFirst(result);
+                break;
+            }
+            uploadedBytes += resultBytes;
             long key = result.key();
             this.pending.remove(key); // settled on EVERY outcome (plan §7.1)
             if (result.epoch() != this.epoch) {
                 continue; // stale session (level switched) — never republish
             }
             Cube rc = this.renderCubes.get(key);
-            if (rc == null) {
+            AllvrRenderCell cell = this.renderWorld.cell(key);
+            if (rc == null || cell == null) {
+                continue;
+            }
+            if (result.revision() != 0 && result.revision() != cell.contentRevision()) {
+                // The result is valid work, but no longer current.  Settle it
+                // and immediately schedule the newest revision; never publish
+                // stale geometry just because it completed first.
+                this.submit(key, AllvrBuildScheduler.Priority.VISIBLE_UPDATE);
                 continue;
             }
             switch (result.status()) {
-                case SUCCESS -> this.applySuccess(key, rc, result.quads());
+                case SUCCESS -> {
+                    rc.connectivityMask = result.connectivityMask();
+                    this.applySuccess(key, rc, result.quads(), result.fallbackBlocks());
+                }
                 case CANCELLED, FAILED_RETRYABLE, FAILED_FATAL -> this.applyFailure(key, rc, result);
             }
         }
@@ -690,12 +805,15 @@ public final class AllvrRenderer {
      * the new one takes over, so a failed allocation can never leave an
      * update hole (the old "free first, then try to fit" order did).
      */
-    private void applySuccess(long key, Cube rc, long[] quads) {
+    private void applySuccess(long key, Cube rc, long[] quads, AllvrFallbackBlock[] fallbackBlocks) {
+        if (fallbackBlocks == null) {
+            fallbackBlocks = new AllvrFallbackBlock[0];
+        }
         if (quads.length > 0) {
             if (this.loggedMeshResults < 3) {
                 this.loggedMeshResults++;
-                CreateManaIndustry.LOGGER.info("[Allvr] mesh result #{}: cube {} → {} quads",
-                    this.loggedMeshResults, AllvrCubePos.fromLong(key), quads.length);
+                CreateManaIndustry.LOGGER.info("[Allvr] mesh result #{}: cell {} → {} quads",
+                    this.loggedMeshResults, AllvrRenderCellKey.describe(key), quads.length);
             }
             int start = this.tier == Tier.C
                 ? this.compat.allocRange(quads.length)
@@ -708,6 +826,7 @@ public final class AllvrRenderer {
                     this.deferredCount++;
                 }
                 rc.deferredQuads = quads;
+                rc.deferredFallbackBlocks = fallbackBlocks;
                 long now = System.currentTimeMillis();
                 if (now - this.lastStarveWarnMillis > 5000) {
                     this.lastStarveWarnMillis = now;
@@ -723,9 +842,11 @@ public final class AllvrRenderer {
             if (rc.deferredQuads != null) {
                 // a fresher stream just landed — the stale one is superseded
                 rc.deferredQuads = null;
+                rc.deferredFallbackBlocks = null;
                 this.deferredCount--;
             }
             this.assignQuads(key, rc, start, quads);
+            rc.fallbackBlocks = fallbackBlocks;
             if (oldStart >= 0) {
                 // freed AFTER the new publication — the swap is atomic per frame
                 if (this.tier == Tier.C) {
@@ -734,7 +855,7 @@ public final class AllvrRenderer {
                     this.buffers.freeRange(oldStart, oldCount);
                 }
             }
-        } else {
+        } else if (fallbackBlocks.length == 0) {
             // empty mesh: publish nothing and drop the old publication —
             // the range freed here is never re-referenced (see unpublishNodeMesh)
             int oldStart = rc.quadStart;
@@ -743,9 +864,39 @@ public final class AllvrRenderer {
             rc.quadCount = 0;
             if (rc.deferredQuads != null) {
                 rc.deferredQuads = null;
+                rc.deferredFallbackBlocks = null;
                 this.deferredCount--;
             }
+            rc.fallbackBlocks = new AllvrFallbackBlock[0];
             this.unpublishNodeMesh(key);
+            AllvrRenderCell cell = this.renderWorld.cell(key);
+            if (cell != null) {
+                cell.clearAllocation();
+            }
+            if (oldStart >= 0) {
+                if (this.tier == Tier.C) {
+                    this.compat.freeRange(oldStart, oldCount);
+                } else {
+                    this.buffers.freeRange(oldStart, oldCount);
+                }
+            }
+        } else {
+            // A cell containing only generic geometry has no descriptor range,
+            // but it is still a successful publication and must replace any
+            // previous descriptor mesh atomically.
+            int oldStart = rc.quadStart;
+            int oldCount = rc.quadCount;
+            rc.quadStart = -1;
+            rc.quadCount = 0;
+            this.unpublishNodeMesh(key);
+            rc.fallbackBlocks = fallbackBlocks;
+            rc.publishedRevision = rc.contentRevision;
+            AllvrRenderCell cell = this.renderWorld.cell(key);
+            if (cell != null) {
+                cell.clearAllocation();
+                cell.publish(rc.contentRevision, -1, 0);
+            }
+            this.markFirstMeshAndNeighbors(key, rc);
             if (oldStart >= 0) {
                 if (this.tier == Tier.C) {
                     this.compat.freeRange(oldStart, oldCount);
@@ -766,11 +917,15 @@ public final class AllvrRenderer {
      * would loop forever (plan §7.1).
      */
     private void applyFailure(long key, Cube rc, AllvrMesherWorker.MeshResult result) {
+        AllvrRenderCell cell = this.renderWorld.cell(key);
+        if (cell != null) {
+            cell.fail(result.revision());
+        }
         long now = System.currentTimeMillis();
         if (now - this.lastWorkerFailWarnMillis > 5000) {
             this.lastWorkerFailWarnMillis = now;
-            CreateManaIndustry.LOGGER.error("[Allvr] mesher job for cube {} settled as {} — previous mesh kept, "
-                + "retried on the cube's next edit", AllvrCubePos.fromLong(key), result.status());
+            CreateManaIndustry.LOGGER.error("[Allvr] mesher job for cell {} settled as {} — previous mesh kept, "
+                + "retried on the cell's next edit", AllvrRenderCellKey.describe(key), result.status(), result.failure());
         }
     }
 
@@ -784,20 +939,34 @@ public final class AllvrRenderer {
             // GPU-cull path: publish the mesh into the node SSBO. Slotless cubes
             // (cubeInfo table full) stay nodeless — the draw skips them too.
             if (rc.slot >= 0) {
-                AllvrCubePos cpos = AllvrCubePos.fromLong(key);
+                int cx = AllvrRenderCellKey.minBlockX(key);
+                int cy = AllvrRenderCellKey.minBlockY(key);
+                int cz = AllvrRenderCellKey.minBlockZ(key);
                 this.nodes.setMesh(key,
-                    new net.minecraft.core.BlockPos(cpos.minBlockX(), cpos.minBlockY(), cpos.minBlockZ()),
+                    new net.minecraft.core.BlockPos(cx, cy, cz),
                     start, quads.length, rc.slot);
             }
         }
         rc.quadStart = start;
         rc.quadCount = quads.length;
+        rc.publishedRevision = rc.contentRevision;
+        AllvrRenderCell cell = this.renderWorld.cell(key);
+        if (cell != null) {
+            cell.publish(rc.contentRevision, start, quads.length);
+        }
         // first mesh: neighbors meshed earlier may have culled faces
         // against this cube while it was still void air
-        if ((this.tier == Tier.C || rc.slot >= 0) && !this.sawFirstMesh.contains(key)) {
-            this.sawFirstMesh.add(key);
-            this.dirtyAllNeighbors(key);
+        if (hasGeometry(rc) && !this.sawFirstMesh.contains(key)) {
+            this.markFirstMeshAndNeighbors(key, rc);
         }
+    }
+
+    private void markFirstMeshAndNeighbors(long key, Cube rc) {
+        if (!hasGeometry(rc) || this.sawFirstMesh.contains(key)) {
+            return;
+        }
+        this.sawFirstMesh.add(key);
+        this.dirtyAllNeighbors(key);
     }
 
     /**
@@ -849,12 +1018,15 @@ public final class AllvrRenderer {
             }
             long[] quads = rc.deferredQuads;
             rc.deferredQuads = null;
+            AllvrFallbackBlock[] fallbackBlocks = rc.deferredFallbackBlocks;
+            rc.deferredFallbackBlocks = null;
             this.deferredCount--;
             int oldStart = rc.quadStart;
             int oldCount = rc.quadCount;
             rc.quadStart = -1;
             rc.quadCount = 0;
             this.assignQuads(e.getLongKey(), rc, start, quads);
+            rc.fallbackBlocks = fallbackBlocks == null ? new AllvrFallbackBlock[0] : fallbackBlocks;
             if (oldStart >= 0) {
                 if (this.tier == Tier.C) {
                     this.compat.freeRange(oldStart, oldCount);
@@ -868,16 +1040,19 @@ public final class AllvrRenderer {
     private final LongOpenHashSet sawFirstMesh = new LongOpenHashSet();
 
     private void dirtyAllNeighbors(long key) {
-        AllvrCubePos pos = AllvrCubePos.fromLong(key);
+        int cellX = AllvrRenderCellKey.cellX(key);
+        int cellY = AllvrRenderCellKey.cellY(key);
+        int cellZ = AllvrRenderCellKey.cellZ(key);
         for (int axis = 0; axis < 3; axis++) {
             for (int dir = -1; dir <= 1; dir += 2) {
-                int x = pos.getX() + (axis == 0 ? dir : 0);
-                int y = pos.getY() + (axis == 1 ? dir : 0);
-                int z = pos.getZ() + (axis == 2 ? dir : 0);
-                long nkey = AllvrCubePos.of(x, y, z).asLong();
+                int x = cellX + (axis == 0 ? dir : 0);
+                int y = cellY + (axis == 1 ? dir : 0);
+                int z = cellZ + (axis == 2 ? dir : 0);
+                long nkey = AllvrRenderCellKey.ofCell(x, y, z);
                 Cube rc = this.renderCubes.get(nkey);
-                if (rc != null && rc.quadCount > 0) {
-                    this.submit(nkey);
+                if (rc != null && hasGeometry(rc)) {
+                    rc.contentRevision = this.renderWorld.markCellDirty(nkey);
+                    this.submit(nkey, AllvrBuildScheduler.Priority.SEAM_HANDOFF);
                 }
             }
         }
@@ -928,7 +1103,7 @@ public final class AllvrRenderer {
         double zMin = 0;
         double zMax = 0;
         if (ortho) {
-            double radius = 16.0 * Math.sqrt(3.0) + 4.0;
+            double radius = 8.0 * Math.sqrt(3.0) + 4.0;
             limXY = 1.0 / Math.abs(shadowProjection.m00()) + radius;
             float m22 = shadowProjection.m22();
             float m32 = shadowProjection.m32();
@@ -947,11 +1122,10 @@ public final class AllvrRenderer {
                 continue;
             }
             if (ortho) {
-                AllvrCubePos pos = AllvrCubePos.fromLong(e.getLongKey());
                 view.transformPosition(center.set(
-                    pos.minBlockX() + 16.0 - camPos.x,
-                    pos.minBlockY() + 16.0 - camPos.y,
-                    pos.minBlockZ() + 16.0 - camPos.z), center);
+                    AllvrRenderCellKey.minBlockX(e.getLongKey()) + 8.0 - camPos.x,
+                    AllvrRenderCellKey.minBlockY(e.getLongKey()) + 8.0 - camPos.y,
+                    AllvrRenderCellKey.minBlockZ(e.getLongKey()) + 8.0 - camPos.z), center);
                 if (Math.abs(center.x) > limXY || Math.abs(center.y) > limXY
                     || center.z < zMin || center.z > zMax) {
                     continue;
@@ -1091,6 +1265,13 @@ public final class AllvrRenderer {
             this.buffers.drawIndirectCount(this.coreGl46);
         }
 
+        // The compact descriptor stream deliberately contains only proven
+        // full-cube SOLID states.  Everything else is submitted through the
+        // vanilla/NeoForge dispatcher while the same camera-relative pose and
+        // target are active, so partial models and fluids cannot disappear.
+        this.drawFallbackBlocks(event, level, camPos);
+        this.drawBlockEntities(event, camPos);
+
         if (mode > 0) {
             if (mode == 2) {
                 GL13.glActiveTexture(GL13.GL_TEXTURE0 + LIGHTMAP_UNIT);
@@ -1105,6 +1286,126 @@ public final class AllvrRenderer {
             }
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, savedFbo);
             GL11.glViewport(savedViewport[0], savedViewport[1], savedViewport[2], savedViewport[3]);
+        }
+    }
+
+    /**
+     * Generic M4 stream for partial models, cutout/translucent materials and
+     * fluids.  The worker supplies immutable states and light values; only
+     * dispatcher/model access occurs here on the render thread.  Translucent
+     * entries retain the last valid list and are sorted back-to-front before
+     * each submission, so a budgeted future sort can safely reuse this list.
+     */
+    private void drawFallbackBlocks(RenderLevelStageEvent event, ClientLevel level, Vec3 camPos) {
+        List<AllvrFallbackBlock> blocks = new ArrayList<>();
+        for (var entry : this.renderCubes.long2ObjectEntrySet()) {
+            Cube rc = entry.getValue();
+            if (rc.fallbackBlocks.length == 0 || !this.cellInFrustum(entry.getLongKey(), camPos)) {
+                continue;
+            }
+            java.util.Collections.addAll(blocks, rc.fallbackBlocks);
+        }
+        if (blocks.isEmpty()) {
+            return;
+        }
+        blocks.sort((a, b) -> {
+            if (a.translucent() != b.translucent()) {
+                return a.translucent() ? 1 : -1;
+            }
+            if (!a.translucent()) {
+                return 0;
+            }
+            double ad = distanceSqr(a, camPos);
+            double bd = distanceSqr(b, camPos);
+            return Double.compare(bd, ad);
+        });
+
+        Minecraft mc = Minecraft.getInstance();
+        MultiBufferSource.BufferSource buffers = mc.renderBuffers().bufferSource();
+        PoseStack pose = event.getPoseStack();
+        AllvrBlockAccess access = new AllvrBlockAccess(level);
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        try {
+            for (AllvrFallbackBlock block : blocks) {
+                pos.set(block.x(), block.y(), block.z());
+                pose.pushPose();
+                pose.translate((float) (block.x() - camPos.x),
+                    (float) (block.y() - camPos.y), (float) (block.z() - camPos.z));
+                if (block.fluid()) {
+                    RenderType type = ItemBlockRenderTypes.getRenderLayer(block.state().getFluidState());
+                    VertexConsumer consumer = buffers.getBuffer(type);
+                    mc.getBlockRenderer().renderLiquid(pos, access,
+                        new AllvrLiquidVertexConsumer(consumer, pose, pos),
+                        block.state(), block.state().getFluidState());
+                } else {
+                    var model = mc.getBlockRenderer().getBlockModel(block.state());
+                    var modelData = model.getModelData(access, pos, block.state(), access.getModelData(pos));
+                    mc.getBlockRenderer().renderSingleBlock(block.state(), pose, buffers,
+                        block.packedLight(), OverlayTexture.NO_OVERLAY,
+                        modelData, null);
+                }
+                pose.popPose();
+            }
+        } finally {
+            buffers.endBatch();
+        }
+    }
+
+    private boolean cellInFrustum(long key, Vec3 camPos) {
+        int camX = net.minecraft.util.Mth.floor(camPos.x);
+        int camY = net.minecraft.util.Mth.floor(camPos.y);
+        int camZ = net.minecraft.util.Mth.floor(camPos.z);
+        float ox = AllvrRenderCellKey.minBlockX(key) - camX;
+        float oy = AllvrRenderCellKey.minBlockY(key) - camY;
+        float oz = AllvrRenderCellKey.minBlockZ(key) - camZ;
+        for (int i = 0; i < 6; i++) {
+            float nx = this.frustumPlanes[i * 4];
+            float ny = this.frustumPlanes[i * 4 + 1];
+            float nz = this.frustumPlanes[i * 4 + 2];
+            float d = this.frustumPlanes[i * 4 + 3];
+            float px = nx > 0f ? ox + 16f : ox;
+            float py = ny > 0f ? oy + 16f : oy;
+            float pz = nz > 0f ? oz + 16f : oz;
+            if (nx * px + ny * py + nz * pz + d < 0f) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static double distanceSqr(AllvrFallbackBlock block, Vec3 camPos) {
+        double dx = block.x() + 0.5 - camPos.x;
+        double dy = block.y() + 0.5 - camPos.y;
+        double dz = block.z() + 0.5 - camPos.z;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    /** Draws ALLVR-owned block entities exactly once; empty shell sections do
+     * not participate in vanilla's block-entity list. */
+    private void drawBlockEntities(RenderLevelStageEvent event, Vec3 camPos) {
+        List<BlockEntity> entities = AllvrClientCubeCache.blockEntities();
+        if (entities.isEmpty()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        MultiBufferSource.BufferSource buffers = mc.renderBuffers().bufferSource();
+        PoseStack pose = event.getPoseStack();
+        float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
+        try {
+            for (BlockEntity entity : entities) {
+                BlockPos pos = entity.getBlockPos();
+                long cellKey = AllvrRenderCellKey.ofBlock(pos.getX(), pos.getY(), pos.getZ());
+                if (!this.renderCubes.containsKey(cellKey) || !this.cellInFrustum(cellKey, camPos)) {
+                    continue;
+                }
+                pose.pushPose();
+                pose.translate((float) (pos.getX() - camPos.x),
+                    (float) (pos.getY() - camPos.y), (float) (pos.getZ() - camPos.z));
+                mc.getBlockEntityRenderDispatcher().render(entity, partialTick, pose, buffers);
+                pose.popPose();
+            }
+        } finally {
+            buffers.endBatch();
         }
     }
 
@@ -1656,19 +1957,18 @@ public final class AllvrRenderer {
             if (rc.quadCount <= 0 || rc.slot < 0) {
                 continue;
             }
-            AllvrCubePos p = AllvrCubePos.fromLong(e.getLongKey());
-            float ox = p.minBlockX() - camX;
-            float oy = p.minBlockY() - camY;
-            float oz = p.minBlockZ() - camZ;
+            float ox = AllvrRenderCellKey.minBlockX(e.getLongKey()) - camX;
+            float oy = AllvrRenderCellKey.minBlockY(e.getLongKey()) - camY;
+            float oz = AllvrRenderCellKey.minBlockZ(e.getLongKey()) - camZ;
             boolean ok = true;
             for (int i = 0; i < 6 && ok; i++) {
                 float nx = this.frustumPlanes[i * 4];
                 float ny = this.frustumPlanes[i * 4 + 1];
                 float nz = this.frustumPlanes[i * 4 + 2];
                 float d = this.frustumPlanes[i * 4 + 3];
-                float px = nx > 0f ? ox + 32f : ox;
-                float py = ny > 0f ? oy + 32f : oy;
-                float pz = nz > 0f ? oz + 32f : oz;
+                float px = nx > 0f ? ox + 16f : ox;
+                float py = ny > 0f ? oy + 16f : oy;
+                float pz = nz > 0f ? oz + 16f : oz;
                 if (nx * px + ny * py + nz * pz + d < 0f) {
                     ok = false;
                 }

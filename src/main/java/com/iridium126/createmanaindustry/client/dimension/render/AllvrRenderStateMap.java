@@ -10,6 +10,7 @@ import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.state.BlockState;
+import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 
 import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
 
@@ -21,14 +22,10 @@ import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
  * EACH FACE of the state's block model (assumed a full cube: at least one
  * culled quad per direction, the island generator only produces
  * stone/dirt/grass), the resolved per-face biome tint, and a {@code renderable}
- * flag. Per face the FIRST culled quad is used — tinted overlay layers (e.g.
- * the grass block's side overlay, whose second quad is what vanilla tints) are
- * dropped, so the grass side renders with its untinted base texture while its
- * top face keeps the tinted grass_block_top sprite. Untinted faces carry a
- * white tint (identity multiply). Non-full-cube models (stairs, torches, …)
- * and translucent states (water/glass) resolve to a non-renderable entry — V0
- * leaves them unrendered (documented phase-3 deviation; the model-geometry path
- * of §7.3 lands later).
+ * flag. States with multipart/overlay quads, partial geometry (stairs,
+ * torches, …), or non-solid render types resolve to a non-renderable entry
+ * and are handed to the generic dispatcher stream; descriptor certification
+ * never silently drops model geometry.
  * <p>
  * Face order is {@link AllvrMesher#FACES} ({@code axis*2 + dir}, dir 0 =
  * positive axis) — the same index the vertex shader derives and uses to fetch
@@ -124,6 +121,13 @@ public final class AllvrRenderStateMap {
             if (boxed != null) {
                 return boxed;
             }
+            // Model managers and color providers are mutable client resources.
+            // A build worker may only consume the immutable table populated on
+            // the render thread; it must never resolve a new model in the
+            // background.  The owning cube apply path calls prepareCube first.
+            if (!Minecraft.getInstance().isSameThread()) {
+                return ID_AIR;
+            }
             short id = (short) ENTRIES.size();
             if (id >= Short.MAX_VALUE) {
                 com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER
@@ -137,6 +141,22 @@ public final class AllvrRenderStateMap {
             // revision check re-runs setCustomIds and re-uploads the TBO
             customIdRevision++;
             return id;
+        }
+    }
+
+    /** Resolves all states present in one decoded cube on the client thread. */
+    public static void prepareCube(AllvrCube cube) {
+        if (!Minecraft.getInstance().isSameThread()) {
+            throw new IllegalStateException("ALLVR model preparation must run on the client thread");
+        }
+        for (var section : cube.getSections()) {
+            for (int y = 0; y < 16; y++) {
+                for (int z = 0; z < 16; z++) {
+                    for (int x = 0; x < 16; x++) {
+                        idOf(section.getBlockState(x, y, z));
+                    }
+                }
+            }
         }
     }
 
@@ -172,6 +192,22 @@ public final class AllvrRenderStateMap {
         return ENTRIES.size();
     }
 
+    /**
+     * Drops all resource-derived model/material entries.  The next client
+     * thread preparation pass repopulates the table from the new model
+     * manager; in-flight workers can only observe the old epoch/revision and
+     * are rejected by the renderer.
+     */
+    public static synchronized void invalidateResources() {
+        IDS.clear();
+        ENTRIES.clear();
+        STATES.clear();
+        ENTRIES.add(NON_RENDERABLE);
+        STATES.add(null);
+        customIds = new int[] {0};
+        customIdRevision++;
+    }
+
     /** Packed float table for the state TBO: TEXELS_PER_FACE vec4 per face × 6 faces per id.
      *  The inset texel's z component carries the iris customId (spare texel, grilling
      *  decision ⑦); w stays spare. */
@@ -201,10 +237,11 @@ public final class AllvrRenderStateMap {
     }
 
     /**
-     * Full-cube assumption: every direction must expose at least one culled
-     * quad; per face the first quad is used (the base face — tinted overlays
-     * come later in the list and are dropped). Anything else (missing face,
-     * partial models, null) resolves to non-renderable.
+     * Descriptor certification: exactly one culled quad per direction and no
+     * unculled overlay quad. Anything else (missing face, multipart/overlay,
+     * partial model, null) resolves to the generic dispatcher stream. This is
+     * intentionally conservative: a state is fast-pathed only when the
+     * descriptor is provably equivalent to the baked model.
      */
     private static Entry resolveEntry(BlockState state) {
         Minecraft mc = Minecraft.getInstance();
@@ -217,11 +254,16 @@ public final class AllvrRenderStateMap {
         for (int i = 0; i < FACES; i++) {
             List<net.minecraft.client.renderer.block.model.BakedQuad> quads =
                 model.getQuads(state, AllvrMesher.FACES[i], rand);
-            if (quads.isEmpty()) {
+            if (quads.size() != 1) {
                 return NON_RENDERABLE;
             }
             net.minecraft.client.renderer.block.model.BakedQuad quad = quads.get(0);
             var sprite = quad.getSprite();
+            var ticker = sprite.createTicker();
+            if (ticker != null) {
+                ticker.close();
+                return NON_RENDERABLE;
+            }
             float tr = 1, tg = 1, tb = 1;
             if (quad.isTinted()) {
                 // null level/pos → the colorer's documented default branch
@@ -236,6 +278,9 @@ public final class AllvrRenderStateMap {
                 tr, tg, tb,
                 0.5f / Math.max(1, sprite.contents().width()),
                 0.5f / Math.max(1, sprite.contents().height()));
+        }
+        if (!model.getQuads(state, null, rand).isEmpty()) {
+            return NON_RENDERABLE;
         }
         return new Entry(faces, true);
     }

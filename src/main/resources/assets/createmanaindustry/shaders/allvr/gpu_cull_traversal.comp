@@ -74,7 +74,9 @@ void main() {
     }
     ivec4 drawInfo = cullCubeInfo[drawSlot];
     int drawLevel = clamp(drawInfo.w, 0, 3);
-    ivec3 extent = ivec3(32 << drawLevel);
+    // ALLVR near nodes are 16³ render cells.  Legacy LOD levels are gone;
+    // keep the table's fourth word ignored for ABI compatibility.
+    ivec3 extent = ivec3(16);
     ivec3 relOrigin = drawInfo.xyz - uCamInt;
 
     if (allvrOutsideFrustum(relOrigin, extent)) {

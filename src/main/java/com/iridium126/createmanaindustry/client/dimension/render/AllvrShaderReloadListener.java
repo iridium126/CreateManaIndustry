@@ -29,7 +29,7 @@ public final class AllvrShaderReloadListener {
 
             @Override
             protected void apply(Void ignored, ResourceManager resourceManager, ProfilerFiller profilerFiller) {
-                AllvrRenderer.INSTANCE.requestShaderRebuild();
+                AllvrRenderer.INSTANCE.onResourceReload();
             }
         });
     }
