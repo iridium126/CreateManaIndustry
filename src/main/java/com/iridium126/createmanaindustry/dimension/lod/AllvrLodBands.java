@@ -62,5 +62,33 @@ public final class AllvrLodBands {
         return 32 << level;
     }
 
+    /**
+     * Active vertical radius in blocks for LOD requests and injection
+     * (voxy integration plan §5.2): fixed 3072. Requests, eviction and the
+     * client's virtual-Y window are cropped to this around the player —
+     * a larger value could push owned nodes past the Voxy section-key's
+     * hard ±4096 bound even before a rebase, and 3072 keeps ≥512 blocks
+     * of guard band from that edge at every level.
+     */
+    public static final int ACTIVE_VERTICAL_RADIUS_BLOCKS = 3072;
+
+    /** Active vertical radius in a level's own cells (96/48/24/12). */
+    public static int activeVerticalCells(int level) {
+        return ACTIVE_VERTICAL_RADIUS_BLOCKS >> (5 + level);
+    }
+
+    /** Vertical eviction limit (cells from the player's cell): the active
+     *  radius plus the same 25% hysteresis the bitmap box uses, so nodes do
+     *  not flap at the window edge. Never exceeds the band box itself. */
+    public static int verticalEvictCells(int level, int viewDistanceBlocks) {
+        int box = bitmapBoxCells(level, viewDistanceBlocks);
+        if (box <= 0) {
+            return 0;
+        }
+        int active = activeVerticalCells(level);
+        int hysteresis = active + Math.max(1, active >> 2);
+        return Math.min(box >> 1, hysteresis);
+    }
+
     private AllvrLodBands() {}
 }

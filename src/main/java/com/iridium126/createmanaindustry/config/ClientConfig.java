@@ -39,6 +39,7 @@ public final class ClientConfig {
     private static ModConfigSpec.BooleanValue ALLVR_IRIS_INTEGRATION;
     private static ModConfigSpec.BooleanValue ALLVR_IRIS_SHADOW_PASS;
     private static ModConfigSpec.BooleanValue ALLVR_LOD;
+    private static ModConfigSpec.EnumValue<AllvrLodBackendMode> ALLVR_LOD_BACKEND;
 
     static {
         BUILDER.comment("Volumetric mist rendering options.").push("rendering");
@@ -114,10 +115,23 @@ public final class ClientConfig {
                         + "inactive anyway (Tier C) and this switch has no effect. Streaming extent is "
                         + "server-authoritative; this switch only turns the client's request/render half on.")
                 .define("lod", true);
+        ALLVR_LOD_BACKEND = BUILDER
+                .comment("Which far-terrain LOD rendering backend consumes the streamed nodes (voxy integration): "
+                        + "AUTO picks the voxy adapter when the pinned Voxy build (0.2.15-beta, 1.21.1 NeoForge) is "
+                        + "installed and its internal surface matches, and falls back to ALLVR's own legacy LOD "
+                        + "renderer otherwise. VOXY forces the adapter (fallback unchanged), LEGACY forces the old "
+                        + "renderer (A/B baseline), OFF disables far-terrain LOD on the client. Applies on the "
+                        + "next dimension entry or config reload.")
+                .defineEnum("lodBackend", AllvrLodBackendMode.AUTO);
         BUILDER.pop();
     }
 
     public static final ModConfigSpec SPEC = BUILDER.build();
+
+    /** Explicit backend choice for the far-terrain LOD (voxy integration). */
+    public enum AllvrLodBackendMode {
+        AUTO, VOXY, LEGACY, OFF
+    }
 
     public static double mistGlowStrength = 0.5;
     public static boolean mistDebugShadow = false;
@@ -132,6 +146,7 @@ public final class ClientConfig {
     public static boolean allvrIrisIntegration = false;
     public static boolean allvrIrisShadowPass = true;
     public static boolean allvrLod = true;
+    public static AllvrLodBackendMode allvrLodBackend = AllvrLodBackendMode.AUTO;
 
     private ClientConfig() {}
 
@@ -152,6 +167,7 @@ public final class ClientConfig {
             allvrIrisIntegration = ALLVR_IRIS_INTEGRATION.get();
             allvrIrisShadowPass = ALLVR_IRIS_SHADOW_PASS.get();
             allvrLod = ALLVR_LOD.get();
+            allvrLodBackend = ALLVR_LOD_BACKEND.get();
         }
     }
 }

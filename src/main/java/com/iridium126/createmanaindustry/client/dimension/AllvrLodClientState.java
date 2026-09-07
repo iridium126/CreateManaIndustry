@@ -10,6 +10,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.client.dimension.lod.AllvrLodBackendManager;
 import com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderStateMap;
 import com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer;
 import com.iridium126.createmanaindustry.config.ClientConfig;
@@ -17,26 +18,26 @@ import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 import com.iridium126.createmanaindustry.dimension.lod.AllvrLodBands;
 import com.iridium126.createmanaindustry.dimension.lod.AllvrLodPos;
+import com.iridium126.createmanaindustry.dimension.lod.AllvrLodSectionCodec;
+import com.iridium126.createmanaindustry.dimension.lod.AllvrLodSectionData;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodBitmapPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodForgetPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodMeshPacket;
+import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodSectionPacket;
 import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodRequestPacket;
 
 /**
  * Client half of the LOD pipeline (doc §13 4c-1): holds the per-level
  * surface-node bitmaps streamed by the server, walks them once per client
- * tick to issue batched mesh requests (64/tick at scale 1.0, scaled by the
- * renderer's frame-time EMA throttle — 4c-2 帧时 EMA 自适应; per-level
- * in-flight cap 256 — grilling Q5), remaps server quads from vanilla state
- * ids to render ids on receive, and evicts nodes beyond the bitmap box's
- * hysteresis.
+ * tick to issue batched requests, and routes the answers to the active
+ * backend (voxy integration plan §7.1). The wire capability rides every
+ * request batch so the server's answer format always matches the backend;
+ * a backend switch clears the mesh/pending bookkeeping so the walk refills.
  * <p>
  * Nodes whose cells fall inside the full-resolution streaming radius
- * (Chebyshev 8 cubes) are never requested: 256 blocks is a multiple of every
- * node size, so no node straddles the boundary and that terrain comes
- * entirely from the full-res cube stream. All apply/forget/tick run on the
- * main thread ({@code enqueueWork} / client tick), which is the render
- * thread.
+ * (Chebyshev 8 cubes) are never requested, and requests are additionally
+ * cropped to the fixed active vertical radius (plan §5.2). All
+ * apply/forget/tick run on the main thread, which is the render thread.
  */
 public final class AllvrLodClientState {
 
@@ -109,7 +110,7 @@ public final class AllvrLodClientState {
         // bitmap.  Only publish meshes for requests still owned by this level;
         // otherwise a late worker result would resurrect inner-band geometry.
         if (levels[lvl] == null) {
-            AllvrRenderer.INSTANCE.forgetLod(lvl, packet.cellLong());
+            AllvrLodBackendManager.forget(lvl, packet.cellLong());
             return;
         }
         if (!pending[lvl].remove(packet.cellLong())) {
@@ -125,6 +126,48 @@ public final class AllvrLodClientState {
         }
     }
 
+    public static void applySection(ClientboundAllvrLodSectionPacket packet) {
+        if (!inDimension()) {
+            return;
+        }
+        int lvl = packet.level();
+        if (lvl < 0 || lvl > AllvrLodPos.MAX_LEVEL) {
+            return;
+        }
+        // same ownership guard as applyMesh — a late section payload for a
+        // dead bitmap level must not resurrect inner-band nodes
+        if (levels[lvl] == null) {
+            AllvrLodBackendManager.forget(lvl, packet.cellLong());
+            return;
+        }
+        if (!pending[lvl].remove(packet.cellLong())) {
+            return; // duplicate, stale, or an old-epoch re-send — dropped
+        }
+        AllvrLodSectionData data;
+        try {
+            data = AllvrLodSectionCodec.decode(lvl, packet.cellLong(), packet.generation(),
+                packet.payload());
+        } catch (Exception e) {
+            CreateManaIndustry.LOGGER.warn("[Allvr] malformed LOD section payload for {}",
+                AllvrLodPos.fromCellLong(lvl, packet.cellLong()), e);
+            return; // pending already consumed — the walk re-requests fresh
+        }
+        // the biome rides the injection; sample it here on the main thread
+        // (the writer thread must not touch the level)
+        Minecraft mc = Minecraft.getInstance();
+        AllvrLodPos pos = AllvrLodPos.fromCellLong(lvl, packet.cellLong());
+        net.minecraft.core.BlockPos center = new net.minecraft.core.BlockPos(
+            pos.minBlockX() + pos.stride() * 15,
+            pos.minBlockY() + pos.stride() * 15,
+            pos.minBlockZ() + pos.stride() * 15);
+        net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> biome =
+            mc.level.getBiome(center);
+        if (AllvrLodBackendManager.apply(data, biome)) {
+            meshed[lvl].add(packet.cellLong());
+        }
+        // rejected publishes stay out of meshed, so the walk re-issues them
+    }
+
     public static void applyForget(ClientboundAllvrLodForgetPacket packet) {
         if (!inDimension()) {
             return;
@@ -135,7 +178,7 @@ public final class AllvrLodClientState {
         }
         pending[lvl].remove(packet.cellLong());
         meshed[lvl].remove(packet.cellLong());
-        AllvrRenderer.INSTANCE.forgetLod(lvl, packet.cellLong());
+        AllvrLodBackendManager.forget(lvl, packet.cellLong());
     }
 
     /** Drops all LOD state (level unload / dimension switch / logout). */
@@ -143,8 +186,26 @@ public final class AllvrLodClientState {
         for (int i = 0; i < 4; i++) {
             clearLevel(i);
         }
+        AllvrLodBackendManager.leave();
         loggedFirstBitmap = false;
         loggedFirstMesh = false;
+    }
+
+    /** Level join: binds the backend manager to the new client level. */
+    public static void onLevelChanged(net.minecraft.client.multiplayer.ClientLevel level) {
+        AllvrLodBackendManager.enter(level);
+    }
+
+    /** Config reload: re-runs the backend selection for the current level. */
+    public static void onConfigReloaded() {
+        Minecraft mc = Minecraft.getInstance();
+        AllvrLodBackendManager.reselect(mc.level);
+        // a backend switch invalidates the request bookkeeping — the walk
+        // re-issues every node against the new backend's wire format
+        for (int i = 0; i < 4; i++) {
+            pending[i].clear();
+            meshed[i].clear();
+        }
     }
 
     // ------------------------------------------------------------------
@@ -159,6 +220,13 @@ public final class AllvrLodClientState {
         if (mc.level == null || mc.level.dimension() != AllvrDimensions.ALLAY_LEVEL || mc.player == null) {
             return;
         }
+        if (!AllvrLodBackendManager.requestsOpen()) {
+            return; // backend not bound / explicitly disabled
+        }
+        AllvrLodBackendManager.tick(
+            mc.gameRenderer.getMainCamera().getPosition().x,
+            mc.gameRenderer.getMainCamera().getPosition().y,
+            mc.gameRenderer.getMainCamera().getPosition().z);
         if (!AllvrRenderer.INSTANCE.lodGate()) {
             if (!warnedNeedsGpu) {
                 warnedNeedsGpu = true;
@@ -175,18 +243,29 @@ public final class AllvrLodClientState {
         int perTick = (int) Math.max(1,
             Math.round(REQUESTS_PER_TICK * AllvrRenderer.INSTANCE.lodRequestScale()));
         List<long[]> entries = new ArrayList<>();
-        for (int lvl = 0; lvl <= AllvrLodPos.MAX_LEVEL; lvl++) {
-            LevelState state = levels[lvl];
-            if (state == null || state.words == null) {
-                continue;
+        if (AllvrLodBackendManager.refillMode()) {
+            // rebase REFILL: coarsest levels first so the horizon fills rough
+            for (int lvl = AllvrLodPos.MAX_LEVEL; lvl >= 0; lvl--) {
+                LevelState state = levels[lvl];
+                if (state != null && state.words != null) {
+                    walkLevel(lvl, state, player, entries, perTick);
+                }
             }
-            walkLevel(lvl, state, player, entries, perTick);
+        } else {
+            for (int lvl = 0; lvl <= AllvrLodPos.MAX_LEVEL; lvl++) {
+                LevelState state = levels[lvl];
+                if (state == null || state.words == null) {
+                    continue;
+                }
+                walkLevel(lvl, state, player, entries, perTick);
+            }
         }
         // the request packet carries at most 16 entries — flush in chunks
         for (int i = 0; i < entries.size(); i += ServerboundAllvrLodRequestPacket.MAX_ENTRIES) {
             int end = Math.min(entries.size(), i + ServerboundAllvrLodRequestPacket.MAX_ENTRIES);
             net.neoforged.neoforge.network.PacketDistributor.sendToServer(
-                ServerboundAllvrLodRequestPacket.of(entries.subList(i, end)));
+                ServerboundAllvrLodRequestPacket.of(AllvrLodBackendManager.wireCapability(),
+                    entries.subList(i, end)));
         }
     }
 
@@ -196,13 +275,15 @@ public final class AllvrLodClientState {
         int playerCellX = player.getX() >> (5 + lvl);
         int playerCellY = player.getY() >> (5 + lvl);
         int playerCellZ = player.getZ() >> (5 + lvl);
-        // Nodes fully outside the full-res streaming radius begin at the first
-        // cell after the fixed band boundary.
+        // Nodes fully outside the full-resolution streaming radius begin at the
+        // first cell after the fixed band boundary; the active vertical window
+        // additionally crops the walk (plan §5.2).
         int minDist = AllvrLodBands.bandMin(lvl) / AllvrLodBands.cellBlocks(lvl) + 1;
+        int verticalLimit = AllvrLodBands.activeVerticalCells(lvl);
 
         // Evict before the budget/pending early-outs so stale inner-band nodes
         // cannot survive indefinitely when the request queue is full.
-        evictFar(lvl, playerCellX, playerCellY, playerCellZ, half, minDist);
+        evictFar(lvl, playerCellX, playerCellY, playerCellZ, half, minDist, verticalLimit);
 
         int budget = perTick - entries.size();
         if (budget <= 0 || pending[lvl].size() >= MAX_PENDING) {
@@ -215,6 +296,9 @@ public final class AllvrLodClientState {
         // full-res zone (duplicate geometry) after the player walks toward them
         for (int cy = state.originY; cy < state.originY + state.dim && budget > 0; cy++) {
             int dy = cy - playerCellY;
+            if (Math.abs(dy) > verticalLimit) {
+                continue; // outside the active vertical window (§5.2)
+            }
             for (int cz = state.originZ; cz < state.originZ + state.dim && budget > 0; cz++) {
                 int dz = cz - playerCellZ;
                 for (int cx = state.originX; cx < state.originX + state.dim && budget > 0; cx++) {
@@ -241,16 +325,22 @@ public final class AllvrLodClientState {
         }
     }
 
-    /** Drops rendered/pending nodes outside the box or inside the full-res zone. */
-    private static void evictFar(int lvl, int pcx, int pcy, int pcz, int half, int minDist) {
+    /** Drops rendered/pending nodes outside the box or inside the full-res
+     *  zone, and crops vertically to the active window (plan §5.2). */
+    private static void evictFar(int lvl, int pcx, int pcy, int pcz, int half, int minDist,
+                                 int verticalLimit) {
         int limit = half + Math.max(1, half >> 2);
-        evictSet(lvl, meshed[lvl], pcx, pcy, pcz, limit, minDist, true);
-        evictSet(lvl, pending[lvl], pcx, pcy, pcz, limit, minDist, false);
+        int vertical = Math.min(AllvrLodBands.verticalEvictCells(lvl, viewDistanceBlocks()), verticalLimit);
+        evictSet(lvl, meshed[lvl], pcx, pcy, pcz, limit, minDist, vertical, true);
+        evictSet(lvl, pending[lvl], pcx, pcy, pcz, limit, minDist, vertical, false);
+    }
+
+    private static int viewDistanceBlocks() {
+        return com.iridium126.createmanaindustry.config.ServerConfig.allvrLodDistance;
     }
 
     private static void evictSet(int lvl, LongOpenHashSet set, int pcx, int pcy, int pcz, int limit,
-                                 int minDist,
-                                 boolean rendered) {
+                                 int minDist, int vertical, boolean rendered) {
         if (set.isEmpty()) {
             return;
         }
@@ -261,13 +351,14 @@ public final class AllvrLodClientState {
             AllvrLodPos pos = AllvrLodPos.fromCellLong(lvl, cellLong);
             int d = Math.max(Math.abs(pos.cellX() - pcx),
                 Math.max(Math.abs(pos.cellY() - pcy), Math.abs(pos.cellZ() - pcz)));
-            if (d > limit || d < minDist) {
+            int dy = Math.abs(pos.cellY() - pcy);
+            if (d > limit || d < minDist || dy > vertical) {
                 if (removed == null) {
                     removed = new ArrayList<>();
                 }
                 removed.add(cellLong);
                 if (rendered) {
-                    AllvrRenderer.INSTANCE.forgetLod(lvl, cellLong);
+                    AllvrLodBackendManager.forget(lvl, cellLong);
                 }
             }
         }
@@ -351,10 +442,10 @@ public final class AllvrLodClientState {
         return mc.level != null && mc.level.dimension() == AllvrDimensions.ALLAY_LEVEL;
     }
 
-    /** Clears one level and releases any renderer nodes belonging to it. */
+    /** Clears one level and releases any backend nodes belonging to it. */
     private static void clearLevel(int lvl) {
         for (long cellLong : meshed[lvl]) {
-            AllvrRenderer.INSTANCE.forgetLod(lvl, cellLong);
+            AllvrLodBackendManager.forget(lvl, cellLong);
         }
         levels[lvl] = null;
         pending[lvl].clear();

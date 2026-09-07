@@ -224,6 +224,10 @@ dependencies {
     compileOnly "net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}"
     implementation "maven.modrinth:3KUWeVhG:dqlL6EvF" // Veil
     compileOnly "curse.maven:irisshaders-455508:8242804"
+    // Voxy runtime adapter (voxy integration plan §8.2): compile against the
+    // verified local build, never bundle it — Voxy stays a user-installed
+    // optional dependency and its classes must not enter the CMI jar.
+    compileOnly files("run/mods/voxy-0.2.15-beta+1.21.1-neoforge.jar")
     // GLSL AST transformation for the shader-pack particle path. Provided at runtime
     // Provided by iris-veil-compat (JarJar) -- compile against 2.0.1, never bundle (AGPL).
     compileOnly "io.github.douira:glsl-transformer:2.0.1"

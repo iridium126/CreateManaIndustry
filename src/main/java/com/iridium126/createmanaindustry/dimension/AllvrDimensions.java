@@ -28,5 +28,10 @@ public final class AllvrDimensions {
         ResourceKey.create(Registries.DIMENSION_TYPE,
             ResourceLocation.fromNamespaceAndPath(CreateManaIndustry.MODID, "allay"));
 
+    /** Dimension identity gate shared by server and client code. */
+    public static boolean isAllay(Level level) {
+        return level != null && level.dimension() == ALLAY_LEVEL;
+    }
+
     private AllvrDimensions() {}
 }

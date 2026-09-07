@@ -223,6 +223,9 @@ public class CreateManaIndustryClient {
             CMIParticleEngine.INSTANCE.onLevelChanged();
             // Bind the cube cache to the new client level (allay dimension only).
             com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.onLevelChanged(clientLevel);
+            // Bind the LOD backend manager to the new client level too (voxy
+            // integration: the voxy adapter probes the engine from here).
+            com.iridium126.createmanaindustry.client.dimension.AllvrLodClientState.onLevelChanged(clientLevel);
         }
     }
 }

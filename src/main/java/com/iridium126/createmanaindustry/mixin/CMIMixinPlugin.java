@@ -93,6 +93,11 @@ public class CMIMixinPlugin implements IMixinConfigPlugin {
         if (mixinClassName.contains(".irisveil."))
             return isLoaded(IRISVEIL_MOD_ID);
 
+        // Voxy runtime adapter hooks — their target classes live inside the
+        // voxy mod itself, so they must never apply without it (plan §7.1)
+        if (mixinClassName.contains(".voxy."))
+            return isLoaded(VOXY_MOD_ID);
+
         // Allay-dimension sodium terrain disable — string mixin targets, no
         // compile dependency; only applies where sodium is actually installed
         if (mixinClassName.contains(".sodium."))

@@ -19,10 +19,20 @@ import com.iridium126.createmanaindustry.dimension.lod.AllvrLodMap;
  * 64-requests/tick pacing at 4 packets/tick instead of 64. Invalid entries
  * (wrong dimension, out of range, over the in-flight cap) are answered with
  * a forget so the client's pending set cannot leak.
+ * <p>
+ * {@code capability} is the client's per-connection LOD data backend
+ * (voxy integration plan §6.1): {@code 0} = legacy meshed quads,
+ * {@code 1} = voxel section payloads. It rides every request batch so a
+ * backend switch mid-session self-heals — the server answers each request
+ * with the wire format the client asked for.
  */
-public record ServerboundAllvrLodRequestPacket(long[] flat) implements CustomPacketPayload {
+public record ServerboundAllvrLodRequestPacket(int capability, long[] flat) implements CustomPacketPayload {
 
     public static final int MAX_ENTRIES = 16;
+    /** Legacy server-meshed quad stream (the 4c-1 path). */
+    public static final int CAPABILITY_LEGACY_MESH = 0;
+    /** 32³ voxel section payloads ({@code ClientboundAllvrLodSectionPacket}). */
+    public static final int CAPABILITY_VOXEL_SECTION = 1;
 
     public static final CustomPacketPayload.Type<ServerboundAllvrLodRequestPacket> TYPE =
         new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("allvr_lod_request"));
@@ -31,6 +41,7 @@ public record ServerboundAllvrLodRequestPacket(long[] flat) implements CustomPac
         StreamCodec.of(ServerboundAllvrLodRequestPacket::encode, ServerboundAllvrLodRequestPacket::decode);
 
     private static void encode(RegistryFriendlyByteBuf buf, ServerboundAllvrLodRequestPacket p) {
+        buf.writeVarInt(p.capability);
         buf.writeVarInt(p.flat.length / 2);
         for (long v : p.flat) {
             buf.writeLong(v);
@@ -38,23 +49,27 @@ public record ServerboundAllvrLodRequestPacket(long[] flat) implements CustomPac
     }
 
     private static ServerboundAllvrLodRequestPacket decode(RegistryFriendlyByteBuf buf) {
+        int capability = buf.readVarInt();
         int n = Math.min(buf.readVarInt(), MAX_ENTRIES);
         long[] flat = new long[n * 2];
         for (int i = 0; i < flat.length; i++) {
             flat[i] = buf.readLong();
         }
-        return new ServerboundAllvrLodRequestPacket(flat);
+        return new ServerboundAllvrLodRequestPacket(capability, flat);
     }
 
-    /** level/cell pairs flattened as {level, cellLong} — built by the client. */
-    public static ServerboundAllvrLodRequestPacket of(List<long[]> entries) {
+    /**
+     * level/cell pairs flattened as {level, cellLong} — built by the client
+     * with its active backend's capability.
+     */
+    public static ServerboundAllvrLodRequestPacket of(int capability, List<long[]> entries) {
         long[] flat = new long[entries.size() * 2];
         int i = 0;
         for (long[] e : entries) {
             flat[i++] = e[0];
             flat[i++] = e[1];
         }
-        return new ServerboundAllvrLodRequestPacket(flat);
+        return new ServerboundAllvrLodRequestPacket(capability, flat);
     }
 
     @Override
@@ -75,7 +90,7 @@ public record ServerboundAllvrLodRequestPacket(long[] flat) implements CustomPac
         ctx.enqueueWork(() -> {
             AllvrLodMap lodMap = ((AllvrServerLevelDuck) player.level()).allvr$getLodMap();
             if (lodMap != null) {
-                lodMap.onRequest(player, entries);
+                lodMap.onRequest(player, packet.capability, entries);
             }
         });
     }

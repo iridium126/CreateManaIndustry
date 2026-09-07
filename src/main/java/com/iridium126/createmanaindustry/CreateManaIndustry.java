@@ -49,6 +49,7 @@ import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrForgetCub
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodBitmapPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodForgetPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodMeshPacket;
+import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodSectionPacket;
 import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodRequestPacket;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -250,6 +251,10 @@ public class CreateManaIndustry {
                 ClientboundAllvrLodForgetPacket.TYPE,
                 ClientboundAllvrLodForgetPacket.STREAM_CODEC,
                 ClientboundAllvrLodForgetPacket::handle);
+        registrar.playToClient(
+                ClientboundAllvrLodSectionPacket.TYPE,
+                ClientboundAllvrLodSectionPacket.STREAM_CODEC,
+                ClientboundAllvrLodSectionPacket::handle);
         registrar.playToServer(
                 ServerboundAllvrLodRequestPacket.TYPE,
                 ServerboundAllvrLodRequestPacket.STREAM_CODEC,
