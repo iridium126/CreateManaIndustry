@@ -66,9 +66,16 @@ public final class AllvrCubeMap {
 
     /** Per-player server-memory load radius, in cubes (mirrors CC3 verticalViewDistance=8). */
     private static final int GEN_RADIUS = 8;
-    /** Per-player client subscription radii (xz, y) — smaller vertically, islands span ~7 cubes. */
+    /**
+     * Per-player client subscription radii (xz, y). The Y radius equals the
+     * XZ radius (plan F18): the LOD exclusion zone was derived from the XZ
+     * radius (Chebyshev 8) while near streaming only sent ±4 vertically — a
+     * player flying straight up left cubes 5–8 with no near mesh AND no LOD
+     * request. Uniform 8 makes the vertical coverage match the exclusion
+     * zone; the vertical forget margin keeps its extra hysteresis.
+     */
     private static final int SEND_XZ_RADIUS = 8;
-    private static final int SEND_Y_RADIUS = 4;
+    private static final int SEND_Y_RADIUS = 8;
     /** Forget margin beyond the send radii (hysteresis against jitter at the edge). */
     private static final int FORGET_XZ_RADIUS = SEND_XZ_RADIUS + 2;
     private static final int FORGET_Y_RADIUS = SEND_Y_RADIUS + 2;
@@ -194,10 +201,12 @@ public final class AllvrCubeMap {
             return false;
         }
         pos = pos.immutable();
-        BlockState oldState = cube.setBlockState(pos, newState, false);
-        if (oldState == null) {
+        BlockState oldState = cube.getBlockState(pos);
+        if (oldState == newState || oldState.equals(newState)) {
             return false; // same-state write — no new mutation version (§10.2)
         }
+        cube.setBlockState(pos, newState, false);
+        oldState.onRemove(level, pos, newState, false);
 
         long cubeKey = cube.getPos().asLong();
         this.persistedIndex.add(cubeKey);
@@ -208,6 +217,7 @@ public final class AllvrCubeMap {
         }
 
         updateBlockEntity(cube, pos, newState);
+        newState.onPlace(level, pos, oldState, false);
 
         // light emitter tracking (wire "light source events"; consumed by the
         // phase-3 synthetic light sampler)
@@ -264,8 +274,11 @@ public final class AllvrCubeMap {
      *  (one packet build, N sends; level.players() is the allay dimension). */
     private void sendBlockUpdate(BlockPos pos, BlockState state) {
         long cubeKey = AllvrCubePos.asLong(pos);
+        BlockEntity blockEntity = this.cubes.get(cubeKey).getBlockEntity(pos);
+        net.minecraft.nbt.CompoundTag tag = blockEntity == null ? null
+            : blockEntity.getUpdateTag(this.level.registryAccess());
         ClientboundAllvrBlockUpdatePacket packet = new ClientboundAllvrBlockUpdatePacket(
-            cubeKey, AllvrCube.localIndex(pos), net.minecraft.world.level.block.Block.getId(state));
+            cubeKey, AllvrCube.localIndex(pos), net.minecraft.world.level.block.Block.getId(state), tag);
         for (ServerPlayer player : level.players()) {
             Subscription sub = subscriptions.get(player.getUUID());
             if (sub != null && sub.sent.contains(cubeKey)) {
@@ -297,6 +310,11 @@ public final class AllvrCubeMap {
     /** Whether the cube has a pending or disk record (LOD overlay hint). */
     public boolean isPersisted(long cubeKey) {
         return this.persistedIndex.contains(cubeKey);
+    }
+
+    /** Snapshot of edited/persisted cube coverage for the LOD bitmap union. */
+    public long[] persistedKeysSnapshot() {
+        return this.persistedIndex.toLongArray();
     }
 
     /** Wired by the ServerLevel mixin after creating both maps. */

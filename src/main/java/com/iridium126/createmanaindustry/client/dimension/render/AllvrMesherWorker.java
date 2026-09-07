@@ -24,16 +24,18 @@ public final class AllvrMesherWorker {
 
     public enum Status { SUCCESS, CANCELLED, FAILED_RETRYABLE, FAILED_FATAL }
 
-    public record MeshResult(long key, long epoch, long revision, long[] quads, int connectivityMask,
+    public record MeshResult(long key, long epoch, long incarnation, long resourceRevision,
+                             long revision, long[] quads, int connectivityMask,
                              AllvrFallbackBlock[] fallbackBlocks,
                              Status status, Throwable failure) {
         public MeshResult(long key, long epoch, long revision, long[] quads, int connectivityMask,
                           Status status, Throwable failure) {
-            this(key, epoch, revision, quads, connectivityMask, new AllvrFallbackBlock[0], status, failure);
+            this(key, epoch, 0L, 0L, revision, quads, connectivityMask,
+                new AllvrFallbackBlock[0], status, failure);
         }
 
         public MeshResult(long key, long epoch, long[] quads, Status status) {
-            this(key, epoch, 0L, quads, 0, new AllvrFallbackBlock[0], status, null);
+            this(key, epoch, 0L, 0L, 0L, quads, 0, new AllvrFallbackBlock[0], status, null);
         }
     }
 
@@ -72,8 +74,13 @@ public final class AllvrMesherWorker {
 
     public static void submit(long key, long epoch, long revision,
                               AllvrBuildScheduler.Priority priority) {
+        submit(key, epoch, 0L, 0L, revision, priority);
+    }
+
+    public static void submit(long key, long epoch, long incarnation, long resourceRevision,
+                              long revision, AllvrBuildScheduler.Priority priority) {
         start();
-        scheduler.submit(key, epoch, revision, priority, key);
+        scheduler.submit(key, epoch, incarnation, resourceRevision, revision, priority, key);
     }
 
     public static void cancel(long key) {
@@ -104,7 +111,8 @@ public final class AllvrMesherWorker {
             return null;
         }
         BuildOutput output = result.output();
-        return new MeshResult(result.key(), result.epoch(), result.revision(),
+        return new MeshResult(result.key(), result.epoch(), result.incarnation(),
+            result.resourceRevision(), result.revision(),
             output == null ? null : output.quads(),
             output == null ? 0 : output.connectivityMask(),
             output == null ? new AllvrFallbackBlock[0] : output.fallbackBlocks(),
@@ -154,16 +162,21 @@ public final class AllvrMesherWorker {
                     short id = AllvrRenderStateMap.idOf(state);
                     boolean fluid = !state.getFluidState().isEmpty();
                     boolean descriptor = id != AllvrRenderStateMap.ID_AIR
-                        && AllvrRenderStateMap.entryOf(id).renderable
-                        && ItemBlockRenderTypes.getChunkRenderType(state) == RenderType.solid();
-                    if (!descriptor || fluid) {
+                        && AllvrRenderStateMap.entryOf(id).renderable;
+                    // Model and fluid ownership are independent. A waterlogged
+                    // stair/fence must submit both its block model and its
+                    // liquid surface; one boolean must not erase the other.
+                    boolean model = !descriptor;
+                    boolean renderFluid = fluid;
+                    if (model || renderFluid) {
                         int sky = light.sky(x, z, (long) minY + y);
                         int block = light.block(x, z, (long) minY + y);
-                        RenderType type = fluid
+                        RenderType type = renderFluid
                             ? ItemBlockRenderTypes.getRenderLayer(state.getFluidState())
                             : ItemBlockRenderTypes.getChunkRenderType(state);
                         blocks.add(new AllvrFallbackBlock(minX + x, minY + y, minZ + z, state,
-                            LightTexture.pack(block, sky), fluid, type == RenderType.translucent()));
+                            LightTexture.pack(block, sky), model, renderFluid,
+                            type == RenderType.translucent()));
                     }
                 }
             }

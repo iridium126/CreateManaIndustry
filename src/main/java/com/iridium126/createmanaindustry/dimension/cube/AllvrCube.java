@@ -305,6 +305,7 @@ public final class AllvrCube implements AllvrOverlaySource {
             existing = be;
         }
         if (existing != null) {
+            existing.setBlockState(newState);
             this.rebindTicker(level, pos, newState, existing);
         }
     }
@@ -318,8 +319,13 @@ public final class AllvrCube implements AllvrOverlaySource {
     }
 
     public BlockEntity removeBlockEntity(BlockPos worldPos) {
-        this.tickers.remove(localIndex(worldPos));
-        return blockEntities.remove(localIndex(worldPos));
+        int cell = localIndex(worldPos);
+        this.tickers.remove(cell);
+        BlockEntity removed = blockEntities.remove(cell);
+        if (removed != null) {
+            removed.setRemoved();
+        }
+        return removed;
     }
 
     public Int2ObjectOpenHashMap<BlockEntity> getBlockEntities() {

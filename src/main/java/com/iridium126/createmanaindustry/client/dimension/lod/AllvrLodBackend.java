@@ -42,6 +42,16 @@ public interface AllvrLodBackend {
     /** Releases everything (owned refs, queues, engine binding). */
     void leave();
 
+    /** True only while the live backend can accept a new section ticket. */
+    default boolean requestsOpen() {
+        return true;
+    }
+
+    /** Terminal writer failures that must return their nodes to the request walk. */
+    default java.util.List<Failure> drainFailures() {
+        return java.util.List.of();
+    }
+
     /** One-line debug state for logs/overlays. */
     String debugState();
 
@@ -55,4 +65,6 @@ public interface AllvrLodBackend {
             return new Availability(false, reason);
         }
     }
+
+    record Failure(int level, long cellLong) {}
 }

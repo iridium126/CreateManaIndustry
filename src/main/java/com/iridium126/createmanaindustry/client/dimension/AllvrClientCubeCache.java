@@ -66,6 +66,9 @@ public final class AllvrClientCubeCache {
     /** Drops every streamed cube (level unload / dimension switch / logout). */
     public static void clear() {
         synchronized (LOCK) {
+            for (AllvrCube cube : cubes.values()) {
+                cube.onUnload();
+            }
             cubes.clear();
             beCubes.clear();
             level = null;
@@ -91,9 +94,13 @@ public final class AllvrClientCubeCache {
         }
         com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderStateMap.prepareCube(cube);
         synchronized (LOCK) {
-            cubes.put(packet.cubePos(), cube);
+            AllvrCube old = cubes.put(packet.cubePos(), cube);
+            if (old != null) {
+                old.onUnload();
+            }
             refreshBeCube(packet.cubePos(), cube);
         }
+        cube.onLoad(clientLevel);
         com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE.onCubeApplied(packet.cubePos());
         if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
             CreateManaIndustry.LOGGER.debug("[Allvr] cube {} streamed ({} bytes, {} cubes cached)",
@@ -103,7 +110,10 @@ public final class AllvrClientCubeCache {
 
     public static void forgetCube(long cubePos) {
         synchronized (LOCK) {
-            cubes.remove(cubePos);
+            AllvrCube old = cubes.remove(cubePos);
+            if (old != null) {
+                old.onUnload();
+            }
             beCubes.remove(cubePos);
         }
         com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE.onCubeForgotten(cubePos);
@@ -143,7 +153,7 @@ public final class AllvrClientCubeCache {
             }
             AllvrCubePos cpos = cube.getPos();
             if (Math.abs(cpos.getX() - pc.getX()) <= 8 && Math.abs(cpos.getZ() - pc.getZ()) <= 8
-                && Math.abs(cpos.getY() - pc.getY()) <= 4) {
+                && Math.abs(cpos.getY() - pc.getY()) <= 8) {
                 cube.tickBlockEntities(clientLevel);
             }
         }
@@ -183,6 +193,11 @@ public final class AllvrClientCubeCache {
         BlockPos blockPos = new BlockPos(pos.minBlockX() + (cell & 31),
             pos.minBlockY() + (cell >> 10), pos.minBlockZ() + ((cell >> 5) & 31));
         clientLevel.setServerVerifiedBlockState(blockPos, state, 19);
+        BlockEntity blockEntity = getBlockEntity(blockPos);
+        if (blockEntity != null && packet.blockEntityTag() != null) {
+            blockEntity.loadWithComponents(packet.blockEntityTag(), clientLevel.registryAccess());
+            blockEntity.setChanged();
+        }
     }
 
     /** The cached cube at a position's cube, or null (never generates). */
@@ -255,11 +270,14 @@ public final class AllvrClientCubeCache {
                 return false;
             }
             pos = pos.immutable();
-            oldState = cube.setBlockState(pos, newState, false);
-            if (oldState == null) {
+            oldState = cube.getBlockState(pos);
+            if (oldState == newState || oldState.equals(newState)) {
                 return false;
             }
+            cube.setBlockState(pos, newState, false);
+            oldState.onRemove(clientLevel, pos, newState, false);
             updateBlockEntity(clientLevel, cube, pos, newState);
+            newState.onPlace(clientLevel, pos, oldState, false);
             com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderStateMap.idOf(newState);
 
             int oldEmission = oldState.getLightEmission(clientLevel, pos);

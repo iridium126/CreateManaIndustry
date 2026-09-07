@@ -104,7 +104,11 @@ public final class AllvrLodBackendManager {
 
     /** True while the voxy backend accepts new work (rebase freeze blocks it). */
     public static boolean requestsOpen() {
-        return active != null && active != DISABLED;
+        return active != null && active != DISABLED && active.requestsOpen();
+    }
+
+    public static java.util.List<AllvrLodBackend.Failure> drainFailures() {
+        return active == null ? java.util.List.of() : active.drainFailures();
     }
 
     /** True when the far-terrain backend is the active voxy adapter — the

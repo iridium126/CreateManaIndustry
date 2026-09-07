@@ -91,6 +91,14 @@ public final class AllvrRenderCellKey {
         return ofCell(cellX(key) + dx, cellY(key) + dy, cellZ(key) + dz);
     }
 
+    /** Releases a runtime handle after its render cell is forgotten. */
+    public static void release(long key) {
+        Coordinates coordinates = BY_ID.remove(key);
+        if (coordinates != null) {
+            BY_COORDINATES.remove(coordinates, key);
+        }
+    }
+
     public static String describe(long key) {
         Coordinates c = coordinates(key);
         return "CellPos{" + c.x() + "," + c.y() + "," + c.z() + "}";

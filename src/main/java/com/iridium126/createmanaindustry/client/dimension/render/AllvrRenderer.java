@@ -193,6 +193,7 @@ public final class AllvrRenderer {
         long[] deferredQuads;
         AllvrFallbackBlock[] fallbackBlocks = new AllvrFallbackBlock[0];
         AllvrFallbackBlock[] deferredFallbackBlocks;
+        long deferredRevision;
     }
 
     // ------------------------------------------------------------------
@@ -341,10 +342,6 @@ public final class AllvrRenderer {
         Camera camera = event.getCamera();
         Vec3 camPos = camera.getPosition();
 
-        if (this.compat.quadsUsed() == 0) {
-            this.logGpuStats(0, 0, -1, -1, -1, "");
-            return;
-        }
         this.extractFrustum(event.getProjectionMatrix(), event.getModelViewMatrix(), camPos);
         this.compatEntries = this.buildCompatCommands(camPos);
         this.drawTerrain(event, level, camPos, data);
@@ -482,7 +479,6 @@ public final class AllvrRenderer {
     }
 
     private void initialize(Minecraft mc) {
-        this.initialized = true;
         this.renderWorld.bind(mc.level);
         var caps = org.lwjgl.opengl.GL.getCapabilities();
         // 4c-2 merged gate: per-command draw parameters (gl_BaseInstance in the
@@ -499,9 +495,23 @@ public final class AllvrRenderer {
             "[Allvr] caps probe: OpenGL46={} ARB_shader_draw_parameters={} ARB_indirect_parameters={} → {}",
             caps.OpenGL46, caps.GL_ARB_shader_draw_parameters, caps.GL_ARB_indirect_parameters,
             this.capsOk ? "terrain ok (Tier B)" : "Tier C compat backend (near terrain stays visible)");
-        this.buffers.ensure();
+        // Tier C owns only its compact VAO/VBO. Tier B resources are optional
+        // and are created transactionally; a shader/SSBO allocation failure
+        // must not strand near rendering behind a half-initialized B backend.
+        if (this.tier == Tier.B) {
+            try {
+                this.buffers.ensure();
+            } catch (Throwable failure) {
+                CreateManaIndustry.LOGGER.error("[Allvr] Tier B resource initialization failed; using Tier C",
+                    failure);
+                this.tier = Tier.C;
+                this.capsOk = false;
+                this.buffers.destroy();
+            }
+        }
         this.compat.ensure();
         AllvrMesherWorker.start();
+        this.initialized = true;
         if (!this.capsOk && !this.warnedTier) {
             this.warnedTier = true;
             chat(mc, "[Allvr] GL 4.6 / ARB draw-parameters+indirect-parameters unavailable — "
@@ -580,6 +590,7 @@ public final class AllvrRenderer {
         this.nodes.freeNode(key);
         this.pending.remove(key);
         this.sawFirstMesh.remove(key);
+        AllvrRenderCellKey.release(key);
     }
 
     /**
@@ -736,7 +747,10 @@ public final class AllvrRenderer {
             cell.schedule(rc.scheduledRevision);
             cell.begin(rc.scheduledRevision);
         }
-        AllvrMesherWorker.submit(key, this.epoch, rc.scheduledRevision, priority);
+        AllvrRenderCell ticketCell = this.renderWorld.cell(key);
+        AllvrMesherWorker.submit(key, this.epoch,
+            ticketCell == null ? 0L : ticketCell.incarnation(),
+            this.renderWorld.resourceRevision(), rc.scheduledRevision, priority);
     }
 
     /** Marks a cell for remesh when it already has visible geometry. */
@@ -771,7 +785,6 @@ public final class AllvrRenderer {
             }
             uploadedBytes += resultBytes;
             long key = result.key();
-            this.pending.remove(key); // settled on EVERY outcome (plan §7.1)
             if (result.epoch() != this.epoch) {
                 continue; // stale session (level switched) — never republish
             }
@@ -780,17 +793,28 @@ public final class AllvrRenderer {
             if (rc == null || cell == null) {
                 continue;
             }
+            if (result.incarnation() != cell.incarnation()) {
+                continue; // old coordinate incarnation or material snapshot
+            }
+            if (result.resourceRevision() != 0
+                && result.resourceRevision() != this.renderWorld.resourceRevision()) {
+                this.pending.remove(key);
+                this.submit(key, AllvrBuildScheduler.Priority.VISIBLE_UPDATE);
+                continue;
+            }
             if (result.revision() != 0 && result.revision() != cell.contentRevision()) {
                 // The result is valid work, but no longer current.  Settle it
                 // and immediately schedule the newest revision; never publish
                 // stale geometry just because it completed first.
+                this.pending.remove(key);
                 this.submit(key, AllvrBuildScheduler.Priority.VISIBLE_UPDATE);
                 continue;
             }
+            this.pending.remove(key); // settle only the matching current ticket
             switch (result.status()) {
                 case SUCCESS -> {
                     rc.connectivityMask = result.connectivityMask();
-                    this.applySuccess(key, rc, result.quads(), result.fallbackBlocks());
+                    this.applySuccess(key, rc, result.quads(), result.fallbackBlocks(), result.revision());
                 }
                 case CANCELLED, FAILED_RETRYABLE, FAILED_FATAL -> this.applyFailure(key, rc, result);
             }
@@ -805,7 +829,8 @@ public final class AllvrRenderer {
      * the new one takes over, so a failed allocation can never leave an
      * update hole (the old "free first, then try to fit" order did).
      */
-    private void applySuccess(long key, Cube rc, long[] quads, AllvrFallbackBlock[] fallbackBlocks) {
+    private void applySuccess(long key, Cube rc, long[] quads, AllvrFallbackBlock[] fallbackBlocks,
+                              long revision) {
         if (fallbackBlocks == null) {
             fallbackBlocks = new AllvrFallbackBlock[0];
         }
@@ -827,6 +852,7 @@ public final class AllvrRenderer {
                 }
                 rc.deferredQuads = quads;
                 rc.deferredFallbackBlocks = fallbackBlocks;
+                rc.deferredRevision = revision;
                 long now = System.currentTimeMillis();
                 if (now - this.lastStarveWarnMillis > 5000) {
                     this.lastStarveWarnMillis = now;
@@ -843,6 +869,7 @@ public final class AllvrRenderer {
                 // a fresher stream just landed — the stale one is superseded
                 rc.deferredQuads = null;
                 rc.deferredFallbackBlocks = null;
+                rc.deferredRevision = 0L;
                 this.deferredCount--;
             }
             this.assignQuads(key, rc, start, quads);
@@ -865,6 +892,7 @@ public final class AllvrRenderer {
             if (rc.deferredQuads != null) {
                 rc.deferredQuads = null;
                 rc.deferredFallbackBlocks = null;
+                rc.deferredRevision = 0L;
                 this.deferredCount--;
             }
             rc.fallbackBlocks = new AllvrFallbackBlock[0];
@@ -886,6 +914,12 @@ public final class AllvrRenderer {
             // previous descriptor mesh atomically.
             int oldStart = rc.quadStart;
             int oldCount = rc.quadCount;
+            if (rc.deferredQuads != null) {
+                rc.deferredQuads = null;
+                rc.deferredFallbackBlocks = null;
+                rc.deferredRevision = 0L;
+                this.deferredCount--;
+            }
             rc.quadStart = -1;
             rc.quadCount = 0;
             this.unpublishNodeMesh(key);
@@ -1004,6 +1038,14 @@ public final class AllvrRenderer {
             if (rc.deferredQuads == null) {
                 continue;
             }
+            if (rc.deferredRevision != 0L && rc.deferredRevision != rc.contentRevision) {
+                rc.deferredQuads = null;
+                rc.deferredFallbackBlocks = null;
+                rc.deferredRevision = 0L;
+                this.deferredCount--;
+                this.submit(e.getLongKey(), AllvrBuildScheduler.Priority.VISIBLE_UPDATE);
+                continue;
+            }
             boolean fits = this.tier == Tier.C
                 ? this.compat.canFit(rc.deferredQuads.length)
                 : this.buffers.canFit(rc.deferredQuads.length);
@@ -1020,6 +1062,7 @@ public final class AllvrRenderer {
             rc.deferredQuads = null;
             AllvrFallbackBlock[] fallbackBlocks = rc.deferredFallbackBlocks;
             rc.deferredFallbackBlocks = null;
+            rc.deferredRevision = 0L;
             this.deferredCount--;
             int oldStart = rc.quadStart;
             int oldCount = rc.quadCount;
@@ -1206,6 +1249,7 @@ public final class AllvrRenderer {
                     CreateManaIndustry.LOGGER.warn("[Allvr] patched terrain programs unavailable — falling back "
                         + "to the unpatched draw (fallback chain, grilling decision ⑧)");
                 }
+                prog = this.shaders.terrain();
             }
         }
         if (prog == 0) {
@@ -1214,6 +1258,7 @@ public final class AllvrRenderer {
 
         int savedFbo = 0;
         int[] savedViewport = null;
+        boolean targetBound = false;
         if (mode > 0) {
             savedFbo = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
             savedViewport = new int[4];
@@ -1221,18 +1266,22 @@ public final class AllvrRenderer {
             var main = mc.getMainRenderTarget();
             if (this.frameTarget.beginFrame(main.width, main.height)) {
                 this.frameTarget.bind();
+                targetBound = true;
             } else {
                 // incomplete target (dead pack textures) → albedo fallback: the
                 // unpatched program draws into the currently bound gbuffer FBO
                 mode = 0;
-                prog = this.shaders.terrain();
+                prog = this.tier == Tier.C ? this.shaders.compatTerrain() : this.shaders.terrain();
             }
         }
 
+        try {
         // TBO freshness parity: the state table must cover every id the mesher
         // registers (invalidateStateTable forces the re-upload after a
         // customId re-resolve — grilling decision ⑦)
-        this.buffers.ensureStateTable(AllvrRenderStateMap.entryCount());
+        if (this.tier == Tier.B) {
+            this.buffers.ensureStateTable(AllvrRenderStateMap.entryCount());
+        }
         GL20.glUseProgram(prog);
         if (this.tier == Tier.C) {
             this.compat.bindForDraw();
@@ -1279,6 +1328,7 @@ public final class AllvrRenderer {
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
             }
             this.frameTarget.unbind();
+            targetBound = false;
             // shadow pass is a Tier B feature (GPU command source + pack FBO
             // plumbing); the compat tier stays main-pass-only
             if (this.tier == Tier.B && ClientConfig.allvrIrisShadowPass) {
@@ -1286,6 +1336,17 @@ public final class AllvrRenderer {
             }
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, savedFbo);
             GL11.glViewport(savedViewport[0], savedViewport[1], savedViewport[2], savedViewport[3]);
+        }
+        } finally {
+            if (targetBound) {
+                try {
+                    this.frameTarget.unbind();
+                } finally {
+                    GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, savedFbo);
+                    GL11.glViewport(savedViewport[0], savedViewport[1],
+                        savedViewport[2], savedViewport[3]);
+                }
+            }
         }
     }
 
@@ -1329,22 +1390,26 @@ public final class AllvrRenderer {
             for (AllvrFallbackBlock block : blocks) {
                 pos.set(block.x(), block.y(), block.z());
                 pose.pushPose();
-                pose.translate((float) (block.x() - camPos.x),
-                    (float) (block.y() - camPos.y), (float) (block.z() - camPos.z));
-                if (block.fluid()) {
-                    RenderType type = ItemBlockRenderTypes.getRenderLayer(block.state().getFluidState());
-                    VertexConsumer consumer = buffers.getBuffer(type);
-                    mc.getBlockRenderer().renderLiquid(pos, access,
-                        new AllvrLiquidVertexConsumer(consumer, pose, pos),
-                        block.state(), block.state().getFluidState());
-                } else {
-                    var model = mc.getBlockRenderer().getBlockModel(block.state());
-                    var modelData = model.getModelData(access, pos, block.state(), access.getModelData(pos));
-                    mc.getBlockRenderer().renderSingleBlock(block.state(), pose, buffers,
-                        block.packedLight(), OverlayTexture.NO_OVERLAY,
-                        modelData, null);
+                try {
+                    pose.translate((float) (block.x() - camPos.x),
+                        (float) (block.y() - camPos.y), (float) (block.z() - camPos.z));
+                    if (block.fluid()) {
+                        RenderType type = ItemBlockRenderTypes.getRenderLayer(block.state().getFluidState());
+                        VertexConsumer consumer = buffers.getBuffer(type);
+                        mc.getBlockRenderer().renderLiquid(pos, access,
+                            new AllvrLiquidVertexConsumer(consumer, pose, pos),
+                            block.state(), block.state().getFluidState());
+                    }
+                    if (block.model()) {
+                        var model = mc.getBlockRenderer().getBlockModel(block.state());
+                        var modelData = model.getModelData(access, pos, block.state(), access.getModelData(pos));
+                        mc.getBlockRenderer().renderSingleBlock(block.state(), pose, buffers,
+                            block.packedLight(), OverlayTexture.NO_OVERLAY,
+                            modelData, null);
+                    }
+                } finally {
+                    pose.popPose();
                 }
-                pose.popPose();
             }
         } finally {
             buffers.endBatch();

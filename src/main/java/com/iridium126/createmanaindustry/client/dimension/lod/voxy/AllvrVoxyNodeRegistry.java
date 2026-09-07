@@ -95,7 +95,7 @@ public final class AllvrVoxyNodeRegistry {
      * later gains ALLVR data is upgraded in place — the held reference and
      * the ledger entry stay the same, only the role changes.
      */
-    public void register(int level, long key, int cellX, int cellY, int cellZ,
+    public boolean register(int level, long key, int cellX, int cellY, int cellZ,
                          me.cortex.voxy.common.world.WorldSection section,
                          boolean dataOwned, long generation) {
         Entry existing = this.byLevel[level].get(key);
@@ -106,10 +106,11 @@ public final class AllvrVoxyNodeRegistry {
             if (generation > existing.generation) {
                 existing.generation = generation;
             }
-            return;
+            return false;
         }
         this.byLevel[level].put(key,
             new Entry(level, key, cellX, cellY, cellZ, section, dataOwned, generation));
+        return true;
     }
 
     /** Six-direction neighbor bits for nodes adjacent to (x, y, z) at level. */
@@ -136,6 +137,27 @@ public final class AllvrVoxyNodeRegistry {
         return mask;
     }
 
+    /** Direct owned-child bits for a topology node at {@code level}. */
+    public int ownedChildMask(int level, int cellX, int cellY, int cellZ) {
+        if (level <= 0) {
+            return 0;
+        }
+        int mask = 0;
+        int childLevel = level - 1;
+        for (int y = 0; y <= 1; y++) {
+            for (int z = 0; z <= 1; z++) {
+                for (int x = 0; x <= 1; x++) {
+                    if (this.isOwned(childLevel, entryKey(childLevel,
+                        (cellX << 1) + x, (cellY << 1) + y, (cellZ << 1) + z))) {
+                        int index = (y << 2) | (z << 1) | x;
+                        mask |= 1 << index;
+                    }
+                }
+            }
+        }
+        return mask;
+    }
+
     /** The Voxy section key for a virtual (level, x, y, z). */
     public static long entryKey(int level, int cellX, int cellY, int cellZ) {
         return me.cortex.voxy.common.world.WorldEngine.getWorldSectionId(level, cellX, cellY, cellZ);
@@ -146,6 +168,13 @@ public final class AllvrVoxyNodeRegistry {
             for (var entry : map.values()) {
                 visitor.accept(entry);
             }
+        }
+    }
+
+    /** Removes all ledger entries after the caller has released their refs. */
+    public void clear() {
+        for (var map : this.byLevel) {
+            map.clear();
         }
     }
 }

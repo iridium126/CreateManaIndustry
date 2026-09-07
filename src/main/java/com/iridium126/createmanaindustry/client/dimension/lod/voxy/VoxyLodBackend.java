@@ -9,6 +9,7 @@ import net.minecraft.world.level.biome.Biome;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.dimension.lod.AllvrLodBackend;
+import com.iridium126.createmanaindustry.dimension.lod.AllvrLodPos;
 import com.iridium126.createmanaindustry.dimension.lod.AllvrLodSectionData;
 
 /**
@@ -47,6 +48,24 @@ final class VoxyLodBackend implements AllvrLodBackend {
         return this.state == STATE_REFILL;
     }
 
+    @Override
+    public boolean requestsOpen() {
+        return this.engine != null && this.state == STATE_STEADY;
+    }
+
+    @Override
+    public java.util.List<AllvrLodBackend.Failure> drainFailures() {
+        if (this.writer == null) {
+            return java.util.List.of();
+        }
+        java.util.ArrayList<AllvrLodBackend.Failure> failures = new java.util.ArrayList<>();
+        AllvrVoxySectionWriter.Inject failed;
+        while ((failed = this.writer.pollFailedInject()) != null) {
+            failures.add(new AllvrLodBackend.Failure(failed.data().level(), failed.data().cellLong()));
+        }
+        return failures;
+    }
+
     /** The virtual Y window this backend tracks (the viewport camera patch). */
     AllvrVoxyYWindow window() {
         return this.window;
@@ -75,6 +94,15 @@ final class VoxyLodBackend implements AllvrLodBackend {
         // marker is consumed by AllvrLodClientState as a forget and must
         // never become an asynchronous writer job.
         if (data == null) {
+            return false;
+        }
+        // Do this check before enqueueing: an absolute section outside the
+        // current virtual window cannot be made resident by merely accepting
+        // a queue entry.  The walk will retry it after the next rebase.
+        AllvrLodPos pos = AllvrLodPos.fromCellLong(data.level(), data.cellLong());
+        int virtualY = this.window.virtualCellY(data.level(), pos.cellY());
+        if (virtualY < AllvrVoxyYWindow.VOXY_MIN_CELL_Y
+            || virtualY > AllvrVoxyYWindow.VOXY_MAX_CELL_Y) {
             return false;
         }
         if (this.state == STATE_DETACH || this.engine == null || this.writer == null) {
@@ -120,6 +148,11 @@ final class VoxyLodBackend implements AllvrLodBackend {
             return;
         }
         if (this.state == STATE_REFILL) {
+            if (this.window.needsRebase(cameraY)) {
+                beginRebase();
+                runDetachBatch();
+                return;
+            }
             this.writer.drain();
             if (--this.refillTicksLeft <= 0) {
                 this.state = STATE_STEADY;
@@ -131,6 +164,8 @@ final class VoxyLodBackend implements AllvrLodBackend {
 
     /** Rebase step 3 (§5.3): snapshot the ledger, freeze the request walk. */
     private void beginRebase() {
+        this.window.invalidateQueuedWork();
+        this.writer.clear();
         this.detachQueue = new ArrayList<>();
         this.registry.forEachOwned(entry -> this.detachQueue.add(entry));
         this.state = STATE_DETACH;
@@ -161,7 +196,7 @@ final class VoxyLodBackend implements AllvrLodBackend {
                 this.detachQueue.remove(this.detachQueue.size() - 1);
             // the forget protocol decodes the VIRTUAL key straight out of the
             // voxy section key; the ledger entry went with the snapshot
-            AllvrVoxyEngineOps.forgetNode(this.engine, this.window,
+            AllvrVoxyEngineOps.forgetVirtual(this.engine, this.window,
                 this.registry, entry.level, entry.key);
         }
     }
@@ -175,6 +210,7 @@ final class VoxyLodBackend implements AllvrLodBackend {
         this.registry = null;
         this.writer = null;
         this.detachQueue = null;
+        this.state = STATE_STEADY;
     }
 
     /** Releases every held reference and drops the writer queue. */
@@ -182,7 +218,20 @@ final class VoxyLodBackend implements AllvrLodBackend {
         if (this.writer != null) {
             this.writer.clear();
         }
+        if (this.registry != null) {
+            List<AllvrVoxyNodeRegistry.Entry> owned = new ArrayList<>();
+            this.registry.forEachOwned(owned::add);
+            for (AllvrVoxyNodeRegistry.Entry entry : owned) {
+                try {
+                    entry.section.release(me.cortex.voxy.common.world.WorldSection.RELEASE_HINT_POSSIBLE_REUSE);
+                } catch (Throwable ignored) {
+                    // The engine may already be dead; never retain stale keys.
+                }
+            }
+            this.registry.clear();
+        }
         this.detachQueue = null;
+        this.state = STATE_STEADY;
     }
 
     @Override

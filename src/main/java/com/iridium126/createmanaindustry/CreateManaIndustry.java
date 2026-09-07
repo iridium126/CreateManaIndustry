@@ -50,6 +50,7 @@ import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodBitmap
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodForgetPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodSectionPacket;
 import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodRequestPacket;
+import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodSubscriptionPacket;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.level.BlockEvent;
@@ -255,6 +256,12 @@ public class CreateManaIndustry {
                 ServerboundAllvrLodRequestPacket.TYPE,
                 ServerboundAllvrLodRequestPacket.STREAM_CODEC,
                 ServerboundAllvrLodRequestPacket::handle);
+        // F30: the client's far-terrain subscription handshake — a near-only
+        // client must cost the server zero LOD work (no bitmaps, no builds).
+        registrar.playToServer(
+                ServerboundAllvrLodSubscriptionPacket.TYPE,
+                ServerboundAllvrLodSubscriptionPacket.STREAM_CODEC,
+                ServerboundAllvrLodSubscriptionPacket::handle);
     }
 
     /**

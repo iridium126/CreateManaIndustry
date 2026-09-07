@@ -37,11 +37,13 @@ public final class AllvrBuildScheduler<J, R> implements AutoCloseable {
         FAILED_FATAL
     }
 
-    public record Job<J>(long key, long epoch, long revision, Priority priority, J input,
-                         long sequence) {}
+    public record Job<J>(long key, long epoch, long incarnation, long resourceRevision,
+                         long revision, Priority priority, J input,
+                         long sequence, long jobId, AtomicBoolean cancellation) {}
 
-    public record Result<R>(long key, long epoch, long revision, Status status, R output,
-                            Throwable failure) {}
+    public record Result<R>(long key, long epoch, long incarnation, long resourceRevision,
+                            long revision, Status status, R output, Throwable failure,
+                            long jobId) {}
 
     @FunctionalInterface
     public interface Builder<J, R> {
@@ -66,7 +68,9 @@ public final class AllvrBuildScheduler<J, R> implements AutoCloseable {
     private final java.util.concurrent.ConcurrentLinkedQueue<Result<R>> results =
         new java.util.concurrent.ConcurrentLinkedQueue<>();
     private final ConcurrentHashMap<Long, AtomicBoolean> cancellations = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, Long> latestJobByKey = new ConcurrentHashMap<>();
     private final AtomicLong sequence = new AtomicLong();
+    private final AtomicLong jobIds = new AtomicLong();
     private final Builder<J, R> builder;
     private final Thread[] workers;
     private volatile boolean running = true;
@@ -92,20 +96,43 @@ public final class AllvrBuildScheduler<J, R> implements AutoCloseable {
     }
 
     public void submit(long key, long epoch, long revision, Priority priority, J input) {
+        this.submit(key, epoch, 0L, 0L, revision, priority, input);
+    }
+
+    public void submit(long key, long epoch, long incarnation, long resourceRevision,
+                       long revision, Priority priority, J input) {
         if (!this.running) {
             return;
         }
-        AtomicBoolean cancelled = this.cancellations.computeIfAbsent(key, ignored -> new AtomicBoolean());
-        cancelled.set(false);
-        this.queue.add(new Job<>(key, epoch, revision,
-            priority == null ? Priority.BACKGROUND : priority, input, this.sequence.getAndIncrement()));
+        long jobId = this.jobIds.incrementAndGet();
+        AtomicBoolean cancelled = new AtomicBoolean();
+        this.cancellations.put(jobId, cancelled);
+        this.latestJobByKey.put(key, jobId);
+        this.queue.add(new Job<>(key, epoch, incarnation, resourceRevision, revision,
+            priority == null ? Priority.BACKGROUND : priority, input, this.sequence.getAndIncrement(),
+            jobId, cancelled));
     }
 
     /** Cancels queued and in-flight jobs for a key; no result is required. */
     public void cancel(long key) {
-        AtomicBoolean flag = this.cancellations.computeIfAbsent(key, ignored -> new AtomicBoolean());
-        flag.set(true);
-        this.queue.removeIf(job -> job.key() == key);
+        Long latest = this.latestJobByKey.get(key);
+        if (latest != null) {
+            AtomicBoolean flag = this.cancellations.get(latest);
+            if (flag != null) {
+                flag.set(true);
+            }
+        }
+        for (var it = this.queue.iterator(); it.hasNext(); ) {
+            Job<J> job = it.next();
+            if (job.key() == key) {
+                job.cancellation().set(true);
+                it.remove();
+                this.results.add(new Result<>(job.key(), job.epoch(), job.incarnation(),
+                    job.resourceRevision(), job.revision(), Status.CANCELLED, null, null,
+                    job.jobId()));
+                this.finish(job);
+            }
+        }
     }
 
     public Result<R> poll() {
@@ -115,7 +142,11 @@ public final class AllvrBuildScheduler<J, R> implements AutoCloseable {
     public void clear() {
         this.queue.clear();
         this.results.clear();
+        for (AtomicBoolean flag : this.cancellations.values()) {
+            flag.set(true);
+        }
         this.cancellations.clear();
+        this.latestJobByKey.clear();
     }
 
     private void run() {
@@ -126,26 +157,36 @@ public final class AllvrBuildScheduler<J, R> implements AutoCloseable {
                 if (job == null) {
                     continue;
                 }
-                AtomicBoolean cancelled = this.cancellations.computeIfAbsent(job.key(),
-                    ignored -> new AtomicBoolean());
-                CancellationToken token = new CancellationToken(cancelled);
+                CancellationToken token = new CancellationToken(job.cancellation());
                 if (token.isCancelled()) {
-                    this.results.add(new Result<>(job.key(), job.epoch(), job.revision(),
-                        Status.CANCELLED, null, null));
+                    this.results.add(new Result<>(job.key(), job.epoch(), job.incarnation(),
+                        job.resourceRevision(), job.revision(), Status.CANCELLED, null, null,
+                        job.jobId()));
+                    this.finish(job);
                     continue;
                 }
                 R output = this.builder.build(job.input(), token);
-                this.results.add(new Result<>(job.key(), job.epoch(), job.revision(),
-                    token.isCancelled() ? Status.CANCELLED : Status.SUCCESS, output, null));
+                this.results.add(new Result<>(job.key(), job.epoch(), job.incarnation(),
+                    job.resourceRevision(), job.revision(),
+                    token.isCancelled() ? Status.CANCELLED : Status.SUCCESS, output, null,
+                    job.jobId()));
+                this.finish(job);
             } catch (Throwable failure) {
                 if (job != null) {
                     Status status = failure instanceof VirtualMachineError || failure instanceof LinkageError
                         ? Status.FAILED_FATAL : Status.FAILED_RETRYABLE;
-                    this.results.add(new Result<>(job.key(), job.epoch(), job.revision(),
-                        status, null, failure));
+                    this.results.add(new Result<>(job.key(), job.epoch(), job.incarnation(),
+                        job.resourceRevision(), job.revision(), status, null, failure,
+                        job.jobId()));
+                    this.finish(job);
                 }
             }
         }
+    }
+
+    private void finish(Job<J> job) {
+        this.cancellations.remove(job.jobId());
+        this.latestJobByKey.remove(job.key(), job.jobId());
     }
 
     @Override
@@ -155,5 +196,14 @@ public final class AllvrBuildScheduler<J, R> implements AutoCloseable {
         for (Thread worker : this.workers) {
             worker.interrupt();
         }
+        for (Thread worker : this.workers) {
+            try {
+                worker.join(2000L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        this.results.clear();
     }
 }

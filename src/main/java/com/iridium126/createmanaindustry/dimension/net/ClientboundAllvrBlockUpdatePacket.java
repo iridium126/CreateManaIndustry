@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.dimension.net;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.nbt.CompoundTag;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
@@ -21,10 +22,11 @@ import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
  * "send to clients") to every client subscribed to the cube; the client
  * applies it through {@code AllvrClientCubeCache.setBlock} with vanilla
  * confirmation semantics (flags 19, recursion 512) — unloaded cubes drop the
- * write. Block-entity payload is deliberately not carried: BE data still
- * travels with full cube packets (known limitation).
+ * write. When the new state has a block entity, its update tag is carried in
+ * the same packet so high-Y machines do not wait for a full cube resend.
  */
-public record ClientboundAllvrBlockUpdatePacket(long cubePos, int cellIndex, int stateId)
+public record ClientboundAllvrBlockUpdatePacket(long cubePos, int cellIndex, int stateId,
+                                                CompoundTag blockEntityTag)
         implements CustomPacketPayload {
 
     public static final CustomPacketPayload.Type<ClientboundAllvrBlockUpdatePacket> TYPE =
@@ -37,11 +39,12 @@ public record ClientboundAllvrBlockUpdatePacket(long cubePos, int cellIndex, int
         buffer.writeLong(p.cubePos);
         buffer.writeShort(p.cellIndex);
         buffer.writeVarInt(p.stateId);
+        buffer.writeNbt(p.blockEntityTag);
     }
 
     private static ClientboundAllvrBlockUpdatePacket decode(RegistryFriendlyByteBuf buffer) {
         return new ClientboundAllvrBlockUpdatePacket(buffer.readLong(), buffer.readShort() & 0xFFFF,
-            buffer.readVarInt());
+            buffer.readVarInt(), buffer.readNbt());
     }
 
     @Override

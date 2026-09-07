@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 
@@ -42,6 +44,8 @@ public final class AllvrLodClientState {
     private static final int REQUESTS_PER_TICK = 64;
     /** Per-level in-flight cap. */
     private static final int MAX_PENDING = 256;
+    /** A lost response must not occupy a pending slot forever. */
+    private static final long REQUEST_TIMEOUT_TICKS = 100L;
     private static final class LevelState {
         int originX;
         int originY;
@@ -51,7 +55,9 @@ public final class AllvrLodClientState {
     }
 
     private static final LevelState[] levels = new LevelState[4];
-    private static final LongOpenHashSet[] pending = new LongOpenHashSet[4];
+    private record PendingTicket(long sessionEpoch, long requestId, long deadlineTick) {}
+
+    private static final Long2ObjectOpenHashMap<PendingTicket>[] pending = new Long2ObjectOpenHashMap[4];
     /**
      * Sections the active backend accepted ("resident" — the voxy backend owns
      * the node; plan §6.3 renames the old "meshed" since no ALLVR mesh is
@@ -61,13 +67,21 @@ public final class AllvrLodClientState {
     /** All-air responses have no backend node, but are still completed
      *  requests and must not be re-issued every tick. */
     private static final LongOpenHashSet[] empty = new LongOpenHashSet[4];
+    /** Per-node retry backoff after a terminal retryable server failure. */
+    private static final Long2LongOpenHashMap[] retryAtTick = new Long2LongOpenHashMap[4];
+    private static long sessionEpoch = 1L;
+    private static long nextRequestId = 1L;
+    private static long clientTick;
+    private static Boolean lastSubscription;
     private static boolean loggedFirstBitmap;
 
     static {
         for (int i = 0; i < 4; i++) {
-            pending[i] = new LongOpenHashSet();
+            pending[i] = new Long2ObjectOpenHashMap<>();
             resident[i] = new LongOpenHashSet();
             empty[i] = new LongOpenHashSet();
+            retryAtTick[i] = new Long2LongOpenHashMap();
+            retryAtTick[i].defaultReturnValue(0L);
         }
     }
 
@@ -129,9 +143,12 @@ public final class AllvrLodClientState {
             AllvrLodBackendManager.forget(lvl, packet.cellLong());
             return;
         }
-        if (!pending[lvl].remove(packet.cellLong())) {
+        PendingTicket ticket = pending[lvl].get(packet.cellLong());
+        if (ticket == null || ticket.sessionEpoch() != packet.sessionEpoch()
+            || ticket.requestId() != packet.requestId()) {
             return; // duplicate, stale, or an old-epoch re-send — dropped
         }
+        pending[lvl].remove(packet.cellLong());
         AllvrLodSectionData data;
         try {
             data = AllvrLodSectionCodec.decode(lvl, packet.cellLong(), packet.generation(),
@@ -175,14 +192,32 @@ public final class AllvrLodClientState {
         if (lvl < 0 || lvl > AllvrLodPos.MAX_LEVEL) {
             return;
         }
+        if (packet.requestId() != ClientboundAllvrLodForgetPacket.BROADCAST) {
+            PendingTicket ticket = pending[lvl].get(packet.cellLong());
+            if (ticket == null || ticket.sessionEpoch() != packet.sessionEpoch()
+                || ticket.requestId() != packet.requestId()) {
+                return; // a late forget must not settle a newer request
+            }
+            pending[lvl].remove(packet.cellLong());
+            if (packet.retryable()) {
+                retryAtTick[lvl].put(packet.cellLong(), clientTick + 10L);
+            }
+            return;
+        }
         pending[lvl].remove(packet.cellLong());
         resident[lvl].remove(packet.cellLong());
         empty[lvl].remove(packet.cellLong());
+        retryAtTick[lvl].remove(packet.cellLong());
         AllvrLodBackendManager.forget(lvl, packet.cellLong());
     }
 
     /** Drops all LOD state (level unload / dimension switch / logout). */
     public static void clear() {
+        if (inDimension()) {
+            sendSubscription(false);
+        }
+        sessionEpoch++;
+        lastSubscription = null;
         for (int i = 0; i < 4; i++) {
             clearLevel(i);
         }
@@ -192,6 +227,8 @@ public final class AllvrLodClientState {
 
     /** Level join: binds the backend manager to the new client level. */
     public static void onLevelChanged(net.minecraft.client.multiplayer.ClientLevel level) {
+        sessionEpoch++;
+        lastSubscription = null;
         AllvrLodBackendManager.enter(level);
     }
 
@@ -205,7 +242,9 @@ public final class AllvrLodClientState {
             pending[i].clear();
             resident[i].clear();
             empty[i].clear();
+            retryAtTick[i].clear();
         }
+        syncSubscription();
     }
 
     // ------------------------------------------------------------------
@@ -213,14 +252,27 @@ public final class AllvrLodClientState {
     // ------------------------------------------------------------------
 
     public static void tick() {
-        if (!farTerrainEnabled()) {
-            return;
-        }
+        clientTick++;
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.level.dimension() != AllvrDimensions.ALLAY_LEVEL || mc.player == null) {
             return;
         }
-        if (!AllvrLodBackendManager.requestsOpen()) {
+        AllvrLodBackendManager.tick(
+            mc.gameRenderer.getMainCamera().getPosition().x,
+            mc.gameRenderer.getMainCamera().getPosition().y,
+            mc.gameRenderer.getMainCamera().getPosition().z);
+        for (var failure : AllvrLodBackendManager.drainFailures()) {
+            int lvl = failure.level();
+            if (lvl < 0 || lvl > AllvrLodPos.MAX_LEVEL) {
+                continue;
+            }
+            resident[lvl].remove(failure.cellLong());
+            empty[lvl].remove(failure.cellLong());
+            retryAtTick[lvl].put(failure.cellLong(), clientTick + 10L);
+            AllvrLodBackendManager.forget(lvl, failure.cellLong());
+        }
+        syncSubscription();
+        if (!farTerrainEnabled() || !AllvrLodBackendManager.requestsOpen()) {
             // near-only (voxy missing, disabled, or failed): no new requests,
             // pending drained, no legacy retry (sodium-parity plan §6.3)
             for (int lvl = 0; lvl <= AllvrLodPos.MAX_LEVEL; lvl++) {
@@ -230,11 +282,8 @@ public final class AllvrLodClientState {
             }
             return;
         }
-        AllvrLodBackendManager.tick(
-            mc.gameRenderer.getMainCamera().getPosition().x,
-            mc.gameRenderer.getMainCamera().getPosition().y,
-            mc.gameRenderer.getMainCamera().getPosition().z);
         BlockPos player = mc.player.blockPosition();
+        expirePending();
         // frame-time EMA throttle (4c-2): the inflow of NEW requests scales
         // down while frames run hot and recovers when healthy; the per-level
         // in-flight cap is unchanged, so a throttle can never strand pending
@@ -265,6 +314,7 @@ public final class AllvrLodClientState {
             net.neoforged.neoforge.network.PacketDistributor.sendToServer(
                 ServerboundAllvrLodRequestPacket.of(
                     ServerboundAllvrLodRequestPacket.CAPABILITY_VOXEL_SECTION,
+                    sessionEpoch,
                     entries.subList(i, end)));
         }
     }
@@ -289,7 +339,7 @@ public final class AllvrLodClientState {
         // Nodes fully outside the full-resolution streaming radius begin at the
         // first cell after the fixed band boundary; the active vertical window
         // additionally crops the walk (plan §5.2).
-        int minDist = AllvrLodBands.bandMin(lvl) / AllvrLodBands.cellBlocks(lvl) + 1;
+        int minDist = AllvrLodBands.minCellDistance(lvl);
         int verticalLimit = AllvrLodBands.activeVerticalCells(lvl);
 
         // Evict before the budget/pending early-outs so stale inner-band nodes
@@ -322,12 +372,18 @@ public final class AllvrLodClientState {
                         continue;
                     }
                     long cellLong = AllvrCubePos.asLong(cx, cy, cz);
-                    if (resident[lvl].contains(cellLong) || pending[lvl].contains(cellLong)
-                        || empty[lvl].contains(cellLong)) {
+                    if (resident[lvl].contains(cellLong) || pending[lvl].containsKey(cellLong)
+                        || empty[lvl].contains(cellLong)
+                        || retryAtTick[lvl].get(cellLong) > clientTick) {
                         continue;
                     }
-                    pending[lvl].add(cellLong);
-                    entries.add(new long[] {lvl, cellLong});
+                    long requestId = nextRequestId++;
+                    if (requestId == ClientboundAllvrLodForgetPacket.BROADCAST) {
+                        requestId = nextRequestId++;
+                    }
+                    pending[lvl].put(cellLong, new PendingTicket(sessionEpoch, requestId,
+                        clientTick + REQUEST_TIMEOUT_TICKS));
+                    entries.add(new long[] {lvl, cellLong, requestId});
                     budget--;
                     if (pending[lvl].size() >= MAX_PENDING) {
                         return;
@@ -345,7 +401,7 @@ public final class AllvrLodClientState {
         int limit = half + Math.max(1, half >> 2);
         int vertical = Math.min(AllvrLodBands.verticalEvictCells(lvl, viewDistanceBlocks()), verticalLimit);
         evictSet(lvl, resident[lvl], pcx, pcy, pcz, limit, minDist, vertical, true);
-        evictSet(lvl, pending[lvl], pcx, pcy, pcz, limit, minDist, vertical, false);
+        evictPending(lvl, pcx, pcy, pcz, limit, minDist, vertical);
         evictSet(lvl, empty[lvl], pcx, pcy, pcz, limit, minDist, vertical, false);
     }
 
@@ -381,13 +437,45 @@ public final class AllvrLodClientState {
         }
     }
 
+    private static void evictPending(int lvl, int pcx, int pcy, int pcz, int limit,
+                                     int minDist, int vertical) {
+        var it = pending[lvl].keySet().iterator();
+        while (it.hasNext()) {
+            long cellLong = it.nextLong();
+            AllvrLodPos pos = AllvrLodPos.fromCellLong(lvl, cellLong);
+            int d = Math.max(Math.abs(pos.cellX() - pcx),
+                Math.max(Math.abs(pos.cellY() - pcy), Math.abs(pos.cellZ() - pcz)));
+            int dy = Math.abs(pos.cellY() - pcy);
+            if (d > limit || d < minDist || dy > vertical) {
+                it.remove();
+            }
+        }
+    }
+
+    /** Settles lost/failed transport responses so one dead connection cannot
+     * permanently consume the per-level request window. */
+    private static void expirePending() {
+        for (int lvl = 0; lvl <= AllvrLodPos.MAX_LEVEL; lvl++) {
+            var it = pending[lvl].long2ObjectEntrySet().iterator();
+            while (it.hasNext()) {
+                var entry = it.next();
+                if (entry.getValue().deadlineTick() <= clientTick) {
+                    it.remove();
+                    long cellLong = entry.getLongKey();
+                    retryAtTick[lvl].put(cellLong,
+                        Math.max(retryAtTick[lvl].get(cellLong), clientTick + 10L));
+                }
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
 
     /** Full-resolution streaming extent incl. the forget hysteresis (8 send
      *  cubes + 2 hysteresis) — the fog-end target of the near-only state. */
-    private static final float FULL_RES_EXTENT_BLOCKS = 320.0f;
+    private static final float FULL_RES_EXTENT_BLOCKS = AllvrLodBands.fullResExtentBlocks();
     /** Far-terrain extent assumed before the first L3 bitmap lands (the
      *  default allvrLodDistance; the bitmap box corrects it once streamed). */
     private static final float DEFAULT_LOD_EXTENT_BLOCKS = 2048.0f;
@@ -437,6 +525,22 @@ public final class AllvrLodClientState {
         pending[lvl].clear();
         resident[lvl].clear();
         empty[lvl].clear();
+        retryAtTick[lvl].clear();
+    }
+
+    private static void syncSubscription() {
+        boolean desired = farTerrainEnabled() && AllvrLodBackendManager.requestsOpen();
+        if (lastSubscription != null && lastSubscription == desired) {
+            return;
+        }
+        sendSubscription(desired);
+        lastSubscription = desired;
+    }
+
+    private static void sendSubscription(boolean subscribed) {
+        net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+            new com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodSubscriptionPacket(
+                sessionEpoch, subscribed));
     }
 
     private AllvrLodClientState() {}

@@ -108,8 +108,10 @@ public final class AllvrCompatBackend {
         glBufferData(GL_ARRAY_BUFFER, (long) MAX_QUADS * VERTS_PER_QUAD * VERTEX_BYTES, GL_DYNAMIC_DRAW);
         // aQuad (loc 0): 2×uint at offset 0
         org.lwjgl.opengl.GL30.glVertexAttribIPointer(0, 2, GL_UNSIGNED_INT, VERTEX_BYTES, 0);
+        org.lwjgl.opengl.GL20.glEnableVertexAttribArray(0);
         // aOrigin (loc 1): 3×int at offset 8
         org.lwjgl.opengl.GL30.glVertexAttribIPointer(1, 3, org.lwjgl.opengl.GL11.GL_INT, VERTEX_BYTES, 8);
+        org.lwjgl.opengl.GL20.glEnableVertexAttribArray(1);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
     }
@@ -240,8 +242,11 @@ public final class AllvrCompatBackend {
         if (n <= 0) {
             return;
         }
-        this.drawCounts.flip();
-        this.drawPointers.flip();
+        // put(index, value) is absolute and leaves position at zero. flip()
+        // would therefore publish an empty range (F04); expose exactly the
+        // entries appended for this frame.
+        this.drawCounts.limit(n).position(0);
+        this.drawPointers.limit(n).position(0);
         GL15.glMultiDrawElements(GL_TRIANGLES, this.drawCounts, GL_UNSIGNED_INT, this.drawPointers);
         this.drawCounts.clear();
         this.drawPointers.clear();

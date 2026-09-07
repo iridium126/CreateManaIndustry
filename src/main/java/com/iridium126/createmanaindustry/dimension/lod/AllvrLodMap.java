@@ -75,14 +75,19 @@ public final class AllvrLodMap {
         final AllvrCubePos[] lastCenter = new AllvrCubePos[4];
         final int[] lastDim = new int[4];
         int lastViewDistance = Integer.MIN_VALUE;
+        long lastCoverageRevision;
+        long sessionEpoch;
+        boolean subscribed;
     }
 
     private final Map<UUID, Sub> subs = new HashMap<>();
 
+    private record ClientTicket(long sessionEpoch, long requestId) {}
+
     private static final class Request {
         final long gen;
-        final long id = REQUEST_IDS.incrementAndGet();
-        final List<UUID> requesters = new ArrayList<>(1);
+        final long buildId = REQUEST_IDS.incrementAndGet();
+        final Map<UUID, ClientTicket> requesters = new HashMap<>(1);
 
         Request(long gen) {
             this.gen = gen;
@@ -108,8 +113,9 @@ public final class AllvrLodMap {
      * (a real, cacheable "no faces" answer), not a failure — failures never
      * enqueue a result at all.
      */
-    private record BuiltSectionPayload(int level, long cellLong, long gen, long requestId,
-                                      byte[] payload, List<UUID> requesters) {}
+    private record BuiltSectionPayload(int level, long cellLong, long gen, long buildId,
+                                      boolean success, byte[] payload,
+                                      Map<UUID, ClientTicket> requesters) {}
 
     /**
      * Main-thread prep state of one queued node: the live overlay captured
@@ -137,6 +143,7 @@ public final class AllvrLodMap {
     private final ArrayDeque<PrepJob> prepQueue = new ArrayDeque<>();
     private final ConcurrentLinkedQueue<BuiltSectionPayload> sectionResults = new ConcurrentLinkedQueue<>();
     private long cacheBytes;
+    private long coverageRevision = 1L;
     private int evictScanTicks;
     private boolean closed;
 
@@ -167,7 +174,48 @@ public final class AllvrLodMap {
     }
 
     public void resetPlayer(UUID uuid) {
+        this.removeRequester(uuid);
         this.subs.remove(uuid);
+    }
+
+    /** Updates the client's far-terrain capability and session ticket. */
+    public void setSubscribed(UUID uuid, long sessionEpoch, boolean subscribed) {
+        Sub previous = this.subs.get(uuid);
+        if (!subscribed) {
+            this.removeRequester(uuid);
+            this.subs.remove(uuid);
+            return;
+        }
+        if (previous == null || !previous.subscribed || previous.sessionEpoch != sessionEpoch) {
+            this.removeRequester(uuid);
+            Sub sub = previous == null ? new Sub() : previous;
+            sub.sessionEpoch = sessionEpoch;
+            sub.subscribed = true;
+            for (int i = 0; i < sub.lastCenter.length; i++) {
+                sub.lastCenter[i] = null;
+                sub.lastDim[i] = 0;
+            }
+            sub.lastViewDistance = Integer.MIN_VALUE;
+            this.subs.put(uuid, sub);
+        }
+    }
+
+    private void removeRequester(UUID uuid) {
+        for (int lvl = 0; lvl <= AllvrLodBands.MAX_LEVEL; lvl++) {
+            var it = this.requests[lvl].long2ObjectEntrySet().iterator();
+            while (it.hasNext()) {
+                var entry = it.next();
+                entry.getValue().requesters.remove(uuid);
+                if (entry.getValue().requesters.isEmpty()) {
+                    it.remove();
+                }
+            }
+        }
+    }
+
+    private boolean subscribed(UUID uuid, long sessionEpoch) {
+        Sub sub = this.subs.get(uuid);
+        return sub != null && sub.subscribed && sub.sessionEpoch == sessionEpoch;
     }
 
     // ------------------------------------------------------------------
@@ -178,8 +226,23 @@ public final class AllvrLodMap {
         if (this.closed) {
             return;
         }
-        List<ServerPlayer> players = this.level.players();
+        List<ServerPlayer> players = this.level.players().stream()
+            .filter(player -> {
+                Sub sub = this.subs.get(player.getUUID());
+                return sub != null && sub.subscribed
+                    && this.subscribed(player.getUUID(), sub.sessionEpoch);
+            })
+            .toList();
         if (players.isEmpty()) {
+            // Do not let a vanished player leave prep/request state or build
+            // results accumulating until the next subscriber arrives.  Jobs
+            // already executing are immutable and their late results are
+            // discarded by clearing the result queue on the server thread.
+            for (var map : this.requests) {
+                map.clear();
+            }
+            this.prepQueue.clear();
+            this.sectionResults.clear();
             return;
         }
         int viewDistance = ServerConfig.allvrLodDistance;
@@ -197,8 +260,12 @@ public final class AllvrLodMap {
     /** Bitmap recompute + resend when a player crossed the per-level threshold. */
     private void refreshBitmaps(List<ServerPlayer> players, int viewDistance) {
         for (ServerPlayer player : players) {
-            Sub sub = this.subs.computeIfAbsent(player.getUUID(), k -> new Sub());
-            boolean distanceChanged = sub.lastViewDistance != viewDistance;
+            Sub sub = this.subs.get(player.getUUID());
+            if (sub == null || !sub.subscribed) {
+                continue;
+            }
+        boolean distanceChanged = sub.lastViewDistance != viewDistance;
+            boolean coverageChanged = sub.lastCoverageRevision != this.coverageRevision;
             for (int lvl = 0; lvl <= AllvrLodBands.MAX_LEVEL; lvl++) {
                 if (!AllvrLodBands.enabled(lvl, viewDistance)) {
                     if (sub.lastCenter[lvl] != null || sub.lastDim[lvl] != 0) {
@@ -216,7 +283,7 @@ public final class AllvrLodMap {
                 int dim = AllvrLodBands.bitmapBoxCells(lvl, viewDistance);
                 AllvrCubePos last = sub.lastCenter[lvl];
                 int threshold = AllvrLodBands.resendThresholdCells(lvl, viewDistance);
-                if (!distanceChanged && last != null && sub.lastDim[lvl] == dim
+                if (!distanceChanged && !coverageChanged && last != null && sub.lastDim[lvl] == dim
                     && Math.abs(last.getX() - cx) < threshold
                     && Math.abs(last.getY() - cy) < threshold
                     && Math.abs(last.getZ() - cz) < threshold) {
@@ -226,11 +293,31 @@ public final class AllvrLodMap {
                 int oy = cy - (dim >> 1);
                 int oz = cz - (dim >> 1);
                 long[] words = this.field.compute(lvl, ox, oy, oz, dim);
+                this.mergeEditedCoverage(words, lvl, ox, oy, oz, dim);
                 player.connection.send(new ClientboundAllvrLodBitmapPacket(lvl, ox, oy, oz, dim, words));
                 sub.lastCenter[lvl] = AllvrCubePos.of(cx, cy, cz);
                 sub.lastDim[lvl] = dim;
             }
             sub.lastViewDistance = viewDistance;
+            sub.lastCoverageRevision = this.coverageRevision;
+        }
+    }
+
+    /** Adds persisted/edited cubes to the natural surface candidate bitmap. */
+    private void mergeEditedCoverage(long[] words, int level, int ox, int oy, int oz, int dim) {
+        for (long cubeKey : this.cubeMap.persistedKeysSnapshot()) {
+            AllvrCubePos cube = AllvrCubePos.fromLong(cubeKey);
+            int x = cube.getX() >> level;
+            int y = cube.getY() >> level;
+            int z = cube.getZ() >> level;
+            int ix = x - ox;
+            int iy = y - oy;
+            int iz = z - oz;
+            if (ix < 0 || ix >= dim || iy < 0 || iy >= dim || iz < 0 || iz >= dim) {
+                continue;
+            }
+            int bit = (iy * dim + iz) * dim + ix;
+            words[bit >> 6] |= 1L << (bit & 63);
         }
     }
 
@@ -244,7 +331,8 @@ public final class AllvrLodMap {
     private void dispatchPrep() {
         long deadline = System.nanoTime() + PREP_BUDGET_NANOS;
         int scan = this.prepQueue.size();
-        while (scan-- > 0 && !this.prepQueue.isEmpty()) {
+        int dispatched = 0;
+        while (scan-- > 0 && dispatched < REQUESTS_PER_TICK && !this.prepQueue.isEmpty()) {
             PrepJob job = this.prepQueue.poll();
             Request req = this.requests[job.level].get(job.cellLong);
             if (req == null) {
@@ -255,6 +343,10 @@ public final class AllvrLodMap {
             }
             if (job.asyncOverlays.isEmpty()) {
                 this.submitBuild(job, req);
+                dispatched++;
+                if (System.nanoTime() >= deadline) {
+                    break;
+                }
                 continue;
             }
             boolean failed = false;
@@ -277,11 +369,13 @@ public final class AllvrLodMap {
                 this.requests[job.level].remove(job.cellLong);
                 CreateManaIndustry.LOGGER.error("[Allvr] persisted overlay read failed for node {} — forget sent, retry possible",
                     job.pos);
-                ClientboundAllvrLodForgetPacket forget = new ClientboundAllvrLodForgetPacket(job.level, job.cellLong);
-                for (UUID uuid : req.requesters) {
+                for (var requester : req.requesters.entrySet()) {
+                    UUID uuid = requester.getKey();
                     ServerPlayer player = findPlayer(this.level.players(), uuid);
-                    if (player != null) {
-                        player.connection.send(forget);
+                    if (player != null && this.subscribed(uuid, requester.getValue().sessionEpoch())) {
+                        ClientTicket ticket = requester.getValue();
+                        player.connection.send(ClientboundAllvrLodForgetPacket.ticketed(job.level,
+                            job.cellLong, ticket.sessionEpoch(), ticket.requestId(), true));
                     }
                 }
                 continue;
@@ -291,6 +385,7 @@ public final class AllvrLodMap {
                 continue;
             }
             this.submitBuild(job, req);
+            dispatched++;
             if (System.nanoTime() >= deadline) {
                 break;
             }
@@ -350,19 +445,19 @@ public final class AllvrLodMap {
                 CreateManaIndustry.LOGGER.error("[Allvr] persisted overlay decode failed for node {}", job.pos, e);
             }
         }
-        List<UUID> requesters = List.copyOf(req.requesters);
+        Map<UUID, ClientTicket> requesters = Map.copyOf(req.requesters);
         long gen = req.gen;
-        long requestId = req.id;
+        long buildId = req.buildId;
         AllvrLodSnapshot.Overlay finalOverlay = overlay;
-        this.pool.execute(() -> this.runSectionJob(job.level, job.cellLong, gen, requestId, finalOverlay, requesters));
+        this.pool.execute(() -> this.runSectionJob(job.level, job.cellLong, gen, buildId, finalOverlay, requesters));
     }
 
     /**
      * Pool thread: voxel section build (plan §6.2) — failures throw inside
      * the pool and enqueue nothing (client re-requests).
      */
-    private void runSectionJob(int level, long cellLong, long gen, long requestId,
-                               AllvrLodSnapshot.Overlay overlay, List<UUID> requesters) {
+    private void runSectionJob(int level, long cellLong, long gen, long buildId,
+                               AllvrLodSnapshot.Overlay overlay, Map<UUID, ClientTicket> requesters) {
         byte[] payload;
         try {
             AllvrLodPos pos = AllvrLodPos.fromCellLong(level, cellLong);
@@ -377,9 +472,12 @@ public final class AllvrLodMap {
         } catch (Throwable t) {
             CreateManaIndustry.LOGGER.error("[Allvr] LOD section build failed on {} — client re-requests",
                 pos(level, cellLong), t);
+            this.sectionResults.add(new BuiltSectionPayload(level, cellLong, gen, buildId,
+                false, null, requesters));
             return;
         }
-        this.sectionResults.add(new BuiltSectionPayload(level, cellLong, gen, requestId, payload, requesters));
+        this.sectionResults.add(new BuiltSectionPayload(level, cellLong, gen, buildId,
+            true, payload, requesters));
     }
 
     /** Wire marker for an all-air section node (codec format 0). */
@@ -397,34 +495,37 @@ public final class AllvrLodMap {
         BuiltSectionPayload result;
         while ((result = this.sectionResults.poll()) != null) {
             Request live = this.requests[result.level()].get(result.cellLong());
-            boolean sameRequest = live != null && live.gen == result.gen();
+            boolean sameRequest = live != null && live.gen == result.gen()
+                && live.buildId == result.buildId();
             boolean stale = !sameRequest;
-            List<UUID> requesters;
-            long requestId = result.requestId();
+            Map<UUID, ClientTicket> requesters;
             if (sameRequest) {
                 // Keep the registry entry through queueing and the worker run;
                 // remove only the exact generation that produced this result.
                 this.requests[result.level()].remove(result.cellLong());
-                requesters = List.copyOf(live.requesters);
+                requesters = Map.copyOf(live.requesters);
             } else {
                 requesters = result.requesters();
             }
-            if (!stale) {
+            if (!stale && result.success()) {
                 this.sectionCachePut(result.level(), result.cellLong(), result.payload());
             }
-            ClientboundAllvrLodSectionPacket packet = stale
-                ? null
-                : new ClientboundAllvrLodSectionPacket(ClientboundAllvrLodSectionPacket.PROTOCOL_VERSION,
-                    requestId, result.level(), result.cellLong(), (int) result.gen(), result.payload());
-            ClientboundAllvrLodForgetPacket forget = stale
-                ? new ClientboundAllvrLodForgetPacket(result.level(), result.cellLong())
-                : null;
-            for (UUID uuid : requesters) {
+            for (var requester : requesters.entrySet()) {
+                UUID uuid = requester.getKey();
+                ClientTicket ticket = requester.getValue();
                 ServerPlayer player = findPlayer(players, uuid);
                 if (player == null) {
                     continue;
                 }
-                player.connection.send(stale ? forget : packet);
+                if (stale || !result.success()) {
+                    player.connection.send(ClientboundAllvrLodForgetPacket.ticketed(result.level(),
+                        result.cellLong(), ticket.sessionEpoch(), ticket.requestId(), !stale));
+                } else {
+                    player.connection.send(new ClientboundAllvrLodSectionPacket(
+                        ClientboundAllvrLodSectionPacket.PROTOCOL_VERSION, ticket.sessionEpoch(),
+                        ticket.requestId(), result.level(), result.cellLong(), (int) result.gen(),
+                        result.payload()));
+                }
             }
         }
     }
@@ -442,43 +543,49 @@ public final class AllvrLodMap {
     // requests (server thread, from the C2S packet)
     // ------------------------------------------------------------------
 
-    public void onRequest(ServerPlayer player, List<long[]> entries) {
+    public void onRequest(ServerPlayer player, long sessionEpoch, List<long[]> entries) {
         if (this.closed) {
+            return;
+        }
+        if (!this.subscribed(player.getUUID(), sessionEpoch)) {
             return;
         }
         int viewDistance = ServerConfig.allvrLodDistance;
         for (long[] entry : entries) {
             int lvl = (int) entry[0];
             long cellLong = entry[1];
+            long requestId = entry[2];
             if (lvl < 0 || lvl > AllvrLodBands.MAX_LEVEL) {
+                player.connection.send(ClientboundAllvrLodForgetPacket.ticketed(lvl, cellLong,
+                    sessionEpoch, requestId, false));
                 continue;
             }
             AllvrLodPos pos = AllvrLodPos.fromCellLong(lvl, cellLong);
             int distance = chebyshevToNode(player.getPosition(1.0f), pos);
             if (!AllvrLodBands.inBand(lvl, distance, viewDistance)) {
-                player.connection.send(new ClientboundAllvrLodForgetPacket(lvl, cellLong));
+                player.connection.send(ClientboundAllvrLodForgetPacket.ticketed(lvl, cellLong,
+                    sessionEpoch, requestId, false));
                 continue;
             }
             Request existing = this.requests[lvl].get(cellLong);
             if (existing != null) {
-                if (!existing.requesters.contains(player.getUUID())) {
-                    existing.requesters.add(player.getUUID());
-                }
+                existing.requesters.put(player.getUUID(), new ClientTicket(sessionEpoch, requestId));
                 continue;
             }
             byte[] cached = this.sectionCache[lvl].get(cellLong);
             if (cached != null) {
                 player.connection.send(new ClientboundAllvrLodSectionPacket(
-                    ClientboundAllvrLodSectionPacket.PROTOCOL_VERSION, -1L, lvl, cellLong,
-                    (int) this.gens[lvl].get(cellLong), cached));
+                    ClientboundAllvrLodSectionPacket.PROTOCOL_VERSION, sessionEpoch, requestId,
+                    lvl, cellLong, (int) this.gens[lvl].get(cellLong), cached));
                 continue;
             }
             if (this.requests[lvl].size() >= MAX_INFLIGHT) {
-                player.connection.send(new ClientboundAllvrLodForgetPacket(lvl, cellLong));
+                player.connection.send(ClientboundAllvrLodForgetPacket.ticketed(lvl, cellLong,
+                    sessionEpoch, requestId, true));
                 continue;
             }
             Request req = new Request(this.gens[lvl].get(cellLong));
-            req.requesters.add(player.getUUID());
+            req.requesters.put(player.getUUID(), new ClientTicket(sessionEpoch, requestId));
             this.requests[lvl].put(cellLong, req);
             this.prepQueue.add(new PrepJob(lvl, cellLong, pos));
         }
@@ -497,12 +604,28 @@ public final class AllvrLodMap {
 
     public void onBlockChanged(net.minecraft.core.BlockPos pos) {
         for (int lvl = 0; lvl <= AllvrLodBands.MAX_LEVEL; lvl++) {
-            long cellLong = AllvrCubePos.asLong(pos.getX() >> (5 + lvl), pos.getY() >> (5 + lvl), pos.getZ() >> (5 + lvl));
-            this.gens[lvl].put(cellLong, this.gens[lvl].get(cellLong) + 1);
-            this.requests[lvl].remove(cellLong);
-            this.cacheRemove(lvl, cellLong);
-            this.dirtyNodes[lvl].add(cellLong);
+            int shift = 5 + lvl;
+            int cx = pos.getX() >> shift;
+            int cy = pos.getY() >> shift;
+            int cz = pos.getZ() >> shift;
+            // The snapshot has a stride-dependent pad ring for occlusion and
+            // light sampling.  An edit near a node boundary can therefore
+            // change a neighbour's payload even when the edited block is not
+            // in that neighbour's 32³ core.  Invalidate the complete local
+            // dependency stencil; the dirty set deduplicates edit storms.
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        long cellLong = AllvrCubePos.asLong(cx + dx, cy + dy, cz + dz);
+                        this.gens[lvl].put(cellLong, this.gens[lvl].get(cellLong) + 1);
+                        this.requests[lvl].remove(cellLong);
+                        this.cacheRemove(lvl, cellLong);
+                        this.dirtyNodes[lvl].add(cellLong);
+                    }
+                }
+            }
         }
+        this.coverageRevision++;
     }
 
     /** Flushes forget broadcasts, deduped — a /fill edit storm collapses to
@@ -543,8 +666,12 @@ public final class AllvrLodMap {
         if (!terminated) {
             this.pool.shutdownNow();
         }
-        this.sectionResults.clear();
+        for (var map : this.requests) {
+            map.clear();
+        }
         this.prepQueue.clear();
+        this.subs.clear();
+        this.sectionResults.clear();
     }
 
     // ------------------------------------------------------------------

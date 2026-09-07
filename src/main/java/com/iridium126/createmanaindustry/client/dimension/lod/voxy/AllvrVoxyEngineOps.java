@@ -41,6 +41,7 @@ final class AllvrVoxyEngineOps {
         }
         long key = VoxyApi_0215_1211.sectionKey(lvl, vx, vy, vz);
         me.cortex.voxy.common.world.WorldSection section = engine.acquire(lvl, vx, vy, vz);
+        boolean ownerReference = false;
         try {
             long[] raw = section._unsafeGetRawDataArray();
             int[] blockIds = VoxyApi_0215_1211.mappedBlockIds(engine.getMapper(), data.palette());
@@ -51,11 +52,11 @@ final class AllvrVoxyEngineOps {
                 raw[i] = me.cortex.voxy.common.world.other.Mapper.composeMappingId(
                     light[i], blockIds[indices[i]], biomeId);
             }
+            int delta = nonAirCount(data) - section.getNonEmptyBlockCount();
+            if (delta != 0) {
+                section.addNonEmptyBlockCount(delta);
+            }
             if (lvl == 0) {
-                int delta = nonAirCount(data) - section.getNonEmptyBlockCount();
-                if (delta != 0) {
-                    section.addNonEmptyBlockCount(delta);
-                }
                 section.updateLvl0State();
             }
             engine.markDirty(section,
@@ -63,15 +64,18 @@ final class AllvrVoxyEngineOps {
                     | me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_CHILD_EXISTENCE_BIT
                     | me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_DONT_SAVE,
                 registry.neighborMask(lvl, vx, vy, vz));
-            registry.register(lvl, key, vx, vy, vz, section, true, data.generation());
+            ownerReference = registry.register(lvl, key, vx, vy, vz, section, true, data.generation());
             chainAncestors(engine, registry, section, lvl, vx, vy, vz);
             return true;
         } catch (Throwable t) {
-            try {
-                section.release(me.cortex.voxy.common.world.WorldSection.RELEASE_HINT_POSSIBLE_REUSE);
-            } catch (Throwable ignored) {
-            }
             throw t instanceof RuntimeException rt ? rt : new IllegalStateException(t);
+        } finally {
+            if (!ownerReference) {
+                try {
+                    section.release(me.cortex.voxy.common.world.WorldSection.RELEASE_HINT_POSSIBLE_REUSE);
+                } catch (Throwable ignored) {
+                }
+            }
         }
     }
 
@@ -82,28 +86,59 @@ final class AllvrVoxyEngineOps {
      * six-neighbor remesh, then the upward cascade while each ancestor stays
      * childless and topology-only. Idempotent when the node was never ours.
      */
-    static void forgetNode(me.cortex.voxy.common.world.WorldEngine engine,
-                           AllvrVoxyYWindow window, AllvrVoxyNodeRegistry registry,
-                           int lvl, long virtualKey) {
+    static void forgetAbsolute(me.cortex.voxy.common.world.WorldEngine engine,
+                               AllvrVoxyYWindow window, AllvrVoxyNodeRegistry registry,
+                               int lvl, long absoluteCellLong) {
+        AllvrLodPos absolute = AllvrLodPos.fromCellLong(lvl, absoluteCellLong);
+        int virtualY = window.virtualCellY(lvl, absolute.cellY());
+        if (virtualY < AllvrVoxyYWindow.VOXY_MIN_CELL_Y
+            || virtualY > AllvrVoxyYWindow.VOXY_MAX_CELL_Y) {
+            return;
+        }
+        forgetVirtual(engine, window, registry, lvl,
+            VoxyApi_0215_1211.sectionKey(lvl, absolute.cellX(), virtualY, absolute.cellZ()));
+    }
+
+    /** Internal detach-only entry point: {@code virtualKey} is a Voxy key. */
+    static void forgetVirtual(me.cortex.voxy.common.world.WorldEngine engine,
+                              AllvrVoxyYWindow window, AllvrVoxyNodeRegistry registry,
+                              int lvl, long virtualKey) {
         int vx = VoxyApi_0215_1211.keyX(virtualKey);
         int vy = VoxyApi_0215_1211.keyY(virtualKey);
         int vz = VoxyApi_0215_1211.keyZ(virtualKey);
-        me.cortex.voxy.common.world.WorldSection section = registry.take(lvl, virtualKey);
-        if (section == null) {
+        AllvrVoxyNodeRegistry.Entry owned = registry.takeEntry(lvl, virtualKey);
+        if (owned == null) {
             return; // never owned here — idempotent
         }
+        me.cortex.voxy.common.world.WorldSection section = owned.section;
+        if (!owned.dataOwned) {
+            // This is a topology-only ancestor kept alive for finer children;
+            // a coarse forget must not tear down those children.
+            registry.register(lvl, virtualKey, vx, vy, vz, section, false, owned.generation);
+            return;
+        }
+        int childMask = registry.ownedChildMask(lvl, vx, vy, vz);
         try {
-            clearSectionData(section);
+            clearSectionData(section, childMask);
         } catch (Throwable t) {
             CreateManaIndustry.LOGGER.error("[Allvr] voxy forget air-fill failed at {}",
                 me.cortex.voxy.common.world.WorldEngine.pprintPos(virtualKey), t);
         }
-        detachFromParent(engine, registry, section, lvl, vx, vy, vz);
+        if (childMask != 0) {
+            // Keep the owner reference and the topology node, but remove only
+            // this node's voxel data.  Its descendants still need the parent
+            // reachable from the top-level walk.
+            registry.register(lvl, virtualKey, vx, vy, vz, section, false, owned.generation);
+        } else {
+            detachFromParent(engine, registry, section, lvl, vx, vy, vz);
+        }
         engine.markDirty(section,
             me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_BLOCK_BIT
                 | me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_DONT_SAVE,
             registry.neighborMask(lvl, vx, vy, vz));
-        section.release(me.cortex.voxy.common.world.WorldSection.RELEASE_HINT_POSSIBLE_REUSE);
+        if (childMask == 0) {
+            section.release(me.cortex.voxy.common.world.WorldSection.RELEASE_HINT_POSSIBLE_REUSE);
+        }
     }
 
     /** Counts non-air cells (palette index != 0) for the L0 block counter. */
@@ -140,14 +175,32 @@ final class AllvrVoxyEngineOps {
             me.cortex.voxy.common.world.WorldSection ancestor =
                 engine.acquire(ancLvl, ancX, ancY, ancZ);
             long ancKey = VoxyApi_0215_1211.sectionKey(ancLvl, ancX, ancY, ancZ);
+            byte before = ancestor.getNonEmptyChildren();
             int changed = ancestor.updateEmptyChildState(childSection);
+            // Voxy's helper only consults child.getNonEmptyChildren(), which
+            // is zero for a data-owned L1..L3 leaf. The leaf's block count is
+            // the other valid source of existence; set only this child's bit,
+            // never all 255 bits, so an isolated high-level leaf is reachable
+            // without inventing descendants.
+            if (childSection.getNonEmptyBlockCount() != 0) {
+                byte wanted = (byte) (before | (1 << me.cortex.voxy.common.world.WorldSection
+                    .getChildIndex(childSection.x, childSection.y, childSection.z)));
+                if (wanted != ancestor.getNonEmptyChildren()) {
+                    ancestor._unsafeSetNonEmptyChildren(wanted);
+                    changed = 1;
+                }
+            }
             if (changed != 0) {
                 engine.markDirty(ancestor,
                     me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_CHILD_EXISTENCE_BIT
                         | me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_DONT_SAVE,
                     0);
                 if (ancLvl < me.cortex.voxy.common.world.WorldEngine.MAX_LOD_LAYER) {
-                    registry.register(ancLvl, ancKey, ancX, ancY, ancZ, ancestor, false, 0);
+                    boolean adopted = registry.register(ancLvl, ancKey, ancX, ancY, ancZ,
+                        ancestor, false, 0);
+                    if (!adopted) {
+                        ancestor.release(me.cortex.voxy.common.world.WorldSection.RELEASE_HINT_POSSIBLE_REUSE);
+                    }
                 } else {
                     ancestor.release(me.cortex.voxy.common.world.WorldSection.RELEASE_HINT_POSSIBLE_REUSE);
                 }
@@ -161,17 +214,18 @@ final class AllvrVoxyEngineOps {
 
     /** Air-fills one section (silent — no dirty events) so a stale read of
      *  the data array after the forget can never resurrect old geometry. */
-    private static void clearSectionData(me.cortex.voxy.common.world.WorldSection section) {
+    private static void clearSectionData(me.cortex.voxy.common.world.WorldSection section,
+                                         int childMask) {
         long[] raw = section._unsafeGetRawDataArray();
         java.util.Arrays.fill(raw, me.cortex.voxy.common.world.other.Mapper.airWithLight(15));
+        int delta = -section.getNonEmptyBlockCount();
+        if (delta != 0) {
+            section.addNonEmptyBlockCount(delta);
+        }
         if (section.lvl == 0) {
-            int delta = -section.getNonEmptyBlockCount();
-            if (delta != 0) {
-                section.addNonEmptyBlockCount(delta);
-            }
             section.updateLvl0State();
         }
-        section._unsafeSetNonEmptyChildren((byte) 0);
+        section._unsafeSetNonEmptyChildren((byte) childMask);
     }
 
     /**
@@ -184,18 +238,18 @@ final class AllvrVoxyEngineOps {
                                  me.cortex.voxy.common.world.WorldSection childSection,
                                  int lvl, int vx, int vy, int vz) {
         int ancLvl = lvl + 1;
-        int ancX = vx;
-        int ancY = vy;
-        int ancZ = vz;
+        int childX = vx;
+        int childY = vy;
+        int childZ = vz;
         while (ancLvl <= me.cortex.voxy.common.world.WorldEngine.MAX_LOD_LAYER) {
-            ancX >>= 1;
-            ancY >>= 1;
-            ancZ >>= 1;
+            int ancX = childX >> 1;
+            int ancY = childY >> 1;
+            int ancZ = childZ >> 1;
             me.cortex.voxy.common.world.WorldSection ancestor =
                 engine.acquire(ancLvl, ancX, ancY, ancZ);
             long ancKey = VoxyApi_0215_1211.sectionKey(ancLvl, ancX, ancY, ancZ);
             int childIdx = me.cortex.voxy.common.world.WorldSection.getChildIndex(
-                childSection.x, childSection.y, childSection.z);
+                childX, childY, childZ);
             byte next = (byte) (ancestor.getNonEmptyChildren() & ~(1 << childIdx));
             ancestor._unsafeSetNonEmptyChildren(next);
             engine.markDirty(ancestor,
@@ -216,7 +270,10 @@ final class AllvrVoxyEngineOps {
                 ancestor.release(me.cortex.voxy.common.world.WorldSection.RELEASE_HINT_POSSIBLE_REUSE);
                 return;
             }
-            childSection = ancestor;
+            childX = ancX;
+            childY = ancY;
+            childZ = ancZ;
+            ancestor.release(me.cortex.voxy.common.world.WorldSection.RELEASE_HINT_POSSIBLE_REUSE);
             ancLvl++;
         }
     }

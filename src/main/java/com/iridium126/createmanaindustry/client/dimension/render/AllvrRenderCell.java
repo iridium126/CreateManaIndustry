@@ -10,6 +10,9 @@ package com.iridium126.createmanaindustry.client.dimension.render;
  */
 public final class AllvrRenderCell {
 
+    private static final java.util.concurrent.atomic.AtomicLong INCARNATIONS =
+        new java.util.concurrent.atomic.AtomicLong();
+
     public enum BuildState {
         CLEAN,
         QUEUED,
@@ -19,6 +22,8 @@ public final class AllvrRenderCell {
     }
 
     private final long key;
+    /** Never reused, even when the same coordinate is streamed again. */
+    private final long incarnation = INCARNATIONS.incrementAndGet();
     private long contentRevision;
     private long scheduledRevision;
     private long publishedRevision;
@@ -34,6 +39,10 @@ public final class AllvrRenderCell {
 
     public long key() {
         return this.key;
+    }
+
+    public long incarnation() {
+        return this.incarnation;
     }
 
     public long contentRevision() {

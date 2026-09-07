@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.dimension.render;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -49,5 +50,13 @@ class AllvrRenderRevisionTest {
         world.beginSession();
         assertTrue(world.epoch() > epoch);
         assertTrue(world.cellCount() == 0);
+    }
+
+    @Test
+    void sameCoordinateGetsAUniqueIncarnationAfterReplacement() {
+        long key = AllvrRenderCellKey.ofCell(1, 2, 3);
+        AllvrRenderCell oldCell = new AllvrRenderCell(key);
+        AllvrRenderCell newCell = new AllvrRenderCell(key);
+        assertNotEquals(oldCell.incarnation(), newCell.incarnation());
     }
 }

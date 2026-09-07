@@ -5,8 +5,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import net.minecraft.client.Minecraft;
-
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 
 /**
@@ -25,8 +23,11 @@ public abstract class AllvrVoxyIngestMixin {
     @Inject(method = "isIngestEnabled", at = @At("HEAD"), cancellable = true, remap = false)
     private void allvr$blockAllayIngest(me.cortex.voxy.commonImpl.WorldIdentifier identifier,
                                         CallbackInfoReturnable<Boolean> cir) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level != null && AllvrDimensions.isAllay(mc.level)) {
+        // The method is called for the identifier being considered, which is
+        // not necessarily the level currently displayed by Minecraft.  Using
+        // mc.level here could disable ingest for an unrelated world during a
+        // dimension transition and could allow a late allay ingest through.
+        if (identifier != null && AllvrDimensions.ALLAY_LEVEL.equals(identifier.key)) {
             cir.setReturnValue(false);
         }
     }

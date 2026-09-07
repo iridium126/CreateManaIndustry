@@ -1,8 +1,5 @@
 package com.iridium126.createmanaindustry.dimension.lod;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -14,15 +11,30 @@ import net.minecraft.world.level.block.state.BlockState;
  * <p>
  * Payload layout (all varints, LSB-first bit packing):
  * <pre>
- *   format (varint)  — 0 = all air, 1 = single material, 2 = palette
+ *   format (varint)  — 0 = all air, 1 = single uniform non-air material, 2 = palette
  *   palette          — format 1: one vanilla state id; format 2: (n-1) ids,
  *                      palette[0] = air is implicit and not written
- *   bitWidth         — format 2 only: 1/2/4/8/16 (0 never occurs with a payload)
+ *   bitWidth         — format 2 only: the canonical width for the palette
+ *                      size (1/2/4/8/16) — decode rejects anything else
  *   packedIndices    — byte array, LSB-first bit packing, format 2 only
- *   light            — uniform flag (varint): 0 = one byte follows, 1 = 32768 bytes
+ *   light            — uniform flag (varint): exactly 0 = one byte follows,
+ *                      exactly 1 = 32768 bytes follow
  * </pre>
- * Every decode validates the fixed cell count, palette cap and array sizes;
- * a malformed payload throws so the packet layer rejects the whole packet
+ * Protocol notes (review F01–F03):
+ * <ul>
+ *   <li>format 1 is emitted ONLY when every cell holds the same non-air
+ *       palette index — an air+stone mix still encodes the full index stream,
+ *       so a half-solid island can never flatten into a solid node;</li>
+ *   <li>the index bit width is a single canonical function of the palette
+ *       size on BOTH sides — an encoder can never produce a width its own
+ *       decoder rejects, and the shift math is done in {@code long} so a
+ *       future width beyond 32 cannot truncate;</li>
+ *   <li>decode validates format, flag, width-vs-palette, every state id
+ *       against the live block-state registry (a plain id lookup silently
+ *       maps unknown ids to AIR, which would smuggle bad ids through), the
+ *       index range, and the exact payload length — no trailing bytes.</li>
+ * </ul>
+ * Every violation throws so the packet layer rejects the whole packet
  * (plan §6.1: no memory-amplification).
  */
 public final class AllvrLodSectionCodec {
@@ -33,45 +45,89 @@ public final class AllvrLodSectionCodec {
     private static final int LIGHT_UNIFORM = 0;
     private static final int LIGHT_FULL = 1;
 
+    /**
+     * Transport cap for one section payload (F03): derived from the real
+     * legal domain, not a guess — worst legitimate encoding is
+     * palette (≤ CELLS−1 non-air ids, 3-byte varints each, plus the count
+     * varint) + indices (32768 × 16 bit) + light (32768 bytes + flag):
+     * ≈ 98.3 KB + 64 KB + 32.8 KB ≈ 195 KB. 256 KB carries headroom without
+     * admitting anything the codec itself would reject; the encoder
+     * additionally refuses to emit an oversized payload so a server can never
+     * produce a packet the client is required to drop.
+     */
+    public static final int MAX_PAYLOAD_BYTES = 256 * 1024;
+
     private AllvrLodSectionCodec() {}
 
     /** Encodes a non-air section into its cached wire payload. */
     public static byte[] encode(AllvrLodSectionData data) {
+        int[] indices = data.indices();
+        // F01: "single material" requires a genuinely uniform NON-AIR index
+        // stream — a 2-entry palette with mixed air/material must still carry
+        // per-cell occupancy
+        int uniformIndex = uniformNonAirIndex(indices);
         ByteSink out = new ByteSink(4096);
-        boolean uniformLight = true;
-        for (int i = 1; i < data.light().length; i++) {
-            if (data.light()[i] != data.light()[0]) {
-                uniformLight = false;
-                break;
-            }
-        }
-        if (data.palette().length == 2) {
+        BlockState[] palette = data.palette();
+        if (uniformIndex > 0) {
             out.varint(FORMAT_SINGLE);
-            out.varint(Block.getId(data.palette()[1]));
+            out.varint(Block.getId(data.palette()[uniformIndex]));
         } else {
             out.varint(FORMAT_PALETTE);
-            out.varint(data.palette().length - 1);
+            int nonAir = data.palette().length - 1;
+            out.varint(nonAir);
             for (int i = 1; i < data.palette().length; i++) {
                 out.varint(Block.getId(data.palette()[i]));
             }
             int bitWidth = bitWidth(data.palette().length);
             out.varint(bitWidth);
-            out.bytes(pack(data.indices(), bitWidth));
+            out.bytes(pack(indices, bitWidth));
+        }
+        byte[] light = data.light();
+        boolean uniformLight = true;
+        for (int i = 1; i < light.length; i++) {
+            if (light[i] != light[0]) {
+                uniformLight = false;
+                break;
+            }
         }
         if (uniformLight) {
             out.varint(LIGHT_UNIFORM);
-            out.byteValue(data.light()[0]);
+            out.byteValue(light[0]);
         } else {
             out.varint(LIGHT_FULL);
-            out.bytes(data.light());
+            out.bytes(light);
         }
-        return out.toArray();
+        byte[] encoded = out.toArray();
+        if (encoded.length > MAX_PAYLOAD_BYTES) {
+            // the palette cap keeps every legitimate encoding far below the
+            // cap; hitting this means the domain assumptions broke — refuse
+            // to send rather than emit a packet clients must reject
+            throw new IllegalStateException("encoded LOD section exceeds the transport cap: "
+                + encoded.length + " > " + MAX_PAYLOAD_BYTES);
+        }
+        return encoded;
+    }
+
+    /** The one uniform non-air index, or 0 when the stream is mixed/air. */
+    private static int uniformNonAirIndex(int[] indices) {
+        int first = indices[0];
+        if (first == 0) {
+            return 0;
+        }
+        for (int i = 1; i < indices.length; i++) {
+            if (indices[i] != first) {
+                return 0;
+            }
+        }
+        return first;
     }
 
     /**
      * Decodes a payload back into a section. {@code payload} is the cached
      * wire bytes (never null); vanilla state ids resolve through
-     * {@link Block#stateById}.
+     * {@link Block#stateById} AFTER the id is proven to exist in the block
+     * state registry ({@code stateById} silently answers AIR for unknown ids,
+     * which would turn a hostile payload into valid-looking air).
      */
     public static AllvrLodSectionData decode(int level, long cellLong, long generation, byte[] payload) {
         ByteReader in = new ByteReader(payload);
@@ -80,62 +136,119 @@ public final class AllvrLodSectionCodec {
         int[] indices;
         switch (format) {
             case FORMAT_ALL_AIR -> {
+                requireConsumed(in);
                 return null;
             }
             case FORMAT_SINGLE -> {
-                BlockState material = stateById(in.varint());
+                BlockState material = checkedState(in.varint());
                 palette = new BlockState[] {airState(), material};
                 indices = null; // every cell is palette index 1
             }
             case FORMAT_PALETTE -> {
                 int count = in.varint();
-                if (count < 1 || count > AllvrLodSectionData.MAX_PALETTE) {
+                if (count < 1 || count > AllvrLodSectionData.MAX_PALETTE - 1) {
                     throw new IllegalArgumentException("bad palette size " + count);
                 }
                 palette = new BlockState[count + 1];
                 palette[0] = airState();
                 for (int i = 1; i <= count; i++) {
-                    palette[i] = stateById(in.varint());
+                    palette[i] = checkedState(in.varint());
                 }
                 int width = in.varint();
-                if (width != 1 && width != 2 && width != 4 && width != 8 && width != 16) {
-                    throw new IllegalArgumentException("bad index bit width " + width);
+                // F02: the width is canonical per palette size on both sides —
+                // any other value is malformed, not "another encoding"
+                int expected = bitWidth(palette.length);
+                if (width != expected) {
+                    throw new IllegalArgumentException("bad index bit width " + width
+                        + " (canonical " + expected + " for palette " + palette.length + ")");
                 }
                 byte[] packed = in.bytes((AllvrLodSectionData.CELLS * width + 7) >> 3);
                 indices = unpack(packed, width);
             }
             default -> throw new IllegalArgumentException("bad section format " + format);
         }
-        byte uniform = (byte) in.varint();
+        int flag = in.varint();
         byte[] light;
-        if (uniform == LIGHT_UNIFORM) {
+        if (flag == LIGHT_UNIFORM) {
             byte value = (byte) in.byteValue();
             light = new byte[AllvrLodSectionData.CELLS];
             java.util.Arrays.fill(light, value);
-        } else {
+        } else if (flag == LIGHT_FULL) {
             light = in.bytes(AllvrLodSectionData.CELLS);
+        } else {
+            throw new IllegalArgumentException("unknown light flag " + flag);
         }
-        int[] effective = indices;
-        if (effective == null) {
-            effective = new int[AllvrLodSectionData.CELLS];
-            java.util.Arrays.fill(effective, 1);
+        requireConsumed(in);
+        if (indices == null) {
+            indices = new int[AllvrLodSectionData.CELLS];
+            java.util.Arrays.fill(indices, 1);
         }
-        return new AllvrLodSectionData(level, cellLong, generation, palette, effective, light);
+        // constructor validates level/position/index-range/light-length too
+        return new AllvrLodSectionData(level, cellLong, generation, palette, indices, light);
     }
 
-    private static int bitWidth(int paletteSize) {
-        int bits = Integer.SIZE - Integer.numberOfLeadingZeros(paletteSize - 1);
-        return Math.max(1, bits);
+    /** The payload must end exactly at the last field — no trailing bytes. */
+    private static void requireConsumed(ByteReader in) {
+        if (in.remaining() != 0) {
+            throw new IllegalArgumentException(in.remaining() + " trailing byte(s) after LOD section payload");
+        }
+    }
+
+    private static BlockState checkedState(int id) {
+        if (id < 0) {
+            throw new IllegalArgumentException("unknown vanilla state id " + id);
+        }
+        // IdMapper#byId returns null for an absent id. Do not use
+        // Block.stateById here: that API deliberately maps unknown ids to
+        // air, which would turn a malformed payload into valid geometry.
+        BlockState state = Block.BLOCK_STATE_REGISTRY.byId(id);
+        if (state == null || state.isAir()) {
+            throw new IllegalArgumentException("state id " + id + " resolved to air");
+        }
+        return state;
+    }
+
+    /**
+     * Canonical index bit width for a palette that includes air
+     * (F02): {@code ceil(log2(size))} clamped to the fixed set
+     * {1, 2, 4, 8, 16}. Encode and decode share this exact function, so a
+     * payload can never be produced with a width its own decoder rejects.
+     */
+    static int bitWidth(int paletteSize) {
+        if (paletteSize <= 1) {
+            return 1; // degenerate: all indices are 0
+        }
+        int needed = Integer.SIZE - Integer.numberOfLeadingZeros(paletteSize - 1);
+        if (needed <= 1) {
+            return 1;
+        }
+        if (needed <= 2) {
+            return 2;
+        }
+        if (needed <= 4) {
+            return 4;
+        }
+        if (needed <= 8) {
+            return 8;
+        }
+        return 16;
     }
 
     /** LSB-first bit packing of {@code CELLS} values of {@code width} bits. */
     static byte[] pack(int[] values, int width) {
+        if (width < 1 || width > 16) {
+            throw new IllegalArgumentException("unsupported bit width " + width);
+        }
         byte[] out = new byte[(AllvrLodSectionData.CELLS * width + 7) >> 3];
         long acc = 0;
         int bits = 0;
         int pos = 0;
-        for (int i = 0; i < values.length; i++) {
-            acc |= (values[i] & ((1 << width) - 1)) << bits;
+        long mask = (1L << width) - 1;
+        for (int value : values) {
+            // F02: explicit long math — an int shift with width == 32 would
+            // truncate; keeping the accumulator long makes any future width
+            // extension safe
+            acc |= ((long) value & mask) << bits;
             bits += width;
             while (bits >= 8) {
                 out[pos++] = (byte) acc;
@@ -150,16 +263,20 @@ public final class AllvrLodSectionCodec {
     }
 
     static int[] unpack(byte[] packed, int width) {
+        if (width < 1 || width > 16) {
+            throw new IllegalArgumentException("unsupported bit width " + width);
+        }
         int[] out = new int[AllvrLodSectionData.CELLS];
         long acc = 0;
         int bits = 0;
         int pos = 0;
+        long mask = (1L << width) - 1;
         for (int i = 0; i < out.length; i++) {
             while (bits < width) {
                 acc |= (packed[pos++] & 0xFFL) << bits;
                 bits += 8;
             }
-            out[i] = (int) (acc & ((1 << width) - 1));
+            out[i] = (int) (acc & mask);
             acc >>>= width;
             bits -= width;
         }
@@ -168,14 +285,6 @@ public final class AllvrLodSectionCodec {
 
     private static BlockState airState() {
         return net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
-    }
-
-    private static BlockState stateById(int id) {
-        BlockState state = Block.stateById(id);
-        if (state == null) {
-            throw new IllegalArgumentException("unknown vanilla state id " + id);
-        }
-        return state;
     }
 
     // ---- minimal growable byte sink / reader -------------------------------
@@ -226,6 +335,10 @@ public final class AllvrLodSectionCodec {
 
         ByteReader(byte[] data) {
             this.data = data;
+        }
+
+        int remaining() {
+            return this.data.length - this.pos;
         }
 
         int varint() {

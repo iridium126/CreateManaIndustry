@@ -30,30 +30,82 @@ import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
  * Non-occluding states are already folded to air by the server (the LOD
  * material policy is full-occluder-only in v1), so {@code palette} only
  * holds renderable states plus air.
+ * <p>
+ * Instances are <b>validated, read-only values</b> (plan F03): the
+ * constructor structurally validates every field and defensively copies the
+ * caller's arrays, so a decoded section can never be mutated into an
+ * out-of-contract state after the wire check passed, and a caller-side alias
+ * can never reach into a published section.
  */
 public final class AllvrLodSectionData {
 
     public static final int CELLS = 32 * 32 * 32;
-    /** Palette size cap for the wire format (16-bit indices max). */
-    public static final int MAX_PALETTE = 1 << 15;
+    /**
+     * Palette size cap for the wire format (F03): a node has only
+     * {@link #CELLS} voxels, so a palette can never legitimately exceed
+     * CELLS entries (air + at most one distinct state per voxel). The old
+     * {@code 1<<15} cap admitted encodings the transport then had to refuse.
+     */
+    public static final int MAX_PALETTE = CELLS;
 
-    public final int level;
+    private final int level;
     /** Absolute {@code (level, cell)} key — the server never writes virtual Y. */
-    public final long cellLong;
+    private final long cellLong;
     /** Server-side node generation at build time (edit counter). */
-    public final long generation;
-    public final BlockState[] palette;
-    public final int[] indices;
-    public final byte[] light;
+    private final long generation;
+    private final BlockState[] palette;
+    private final int[] indices;
+    private final byte[] light;
 
-    AllvrLodSectionData(int level, long cellLong, long generation,
-                        BlockState[] palette, int[] indices, byte[] light) {
+    /**
+     * Validated construction — the ONLY way a section comes into existence.
+     * Every invariant the codec and the injector rely on is checked here, so
+     * callers can index {@code palette[indices[i]]} and the light nibbles
+     * without re-validating.
+     */
+    public AllvrLodSectionData(int level, long cellLong, long generation,
+                               BlockState[] palette, int[] indices, byte[] light) {
+        if (level < 0 || level > AllvrLodPos.MAX_LEVEL) {
+            throw new IllegalArgumentException("LOD level out of range: " + level);
+        }
+        AllvrLodPos pos = AllvrLodPos.fromCellLong(level, cellLong);
+        for (int axis = 0; axis < 3; axis++) {
+            int c = new int[] {pos.cellX(), pos.cellY(), pos.cellZ()}[axis];
+            if (c < -com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.MAX_COORDINATE_VALUE
+                || c > com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.MAX_COORDINATE_VALUE) {
+                throw new IllegalArgumentException("LOD cell coordinate out of range: " + pos);
+            }
+        }
+        if (palette == null || palette.length < 2 || palette.length > MAX_PALETTE) {
+            throw new IllegalArgumentException("bad LOD palette size "
+                + (palette == null ? -1 : palette.length));
+        }
+        if (palette[0] == null || !palette[0].isAir()) {
+            throw new IllegalArgumentException("LOD palette[0] must be air");
+        }
+        for (int i = 1; i < palette.length; i++) {
+            if (palette[i] == null || palette[i].isAir()) {
+                throw new IllegalArgumentException("LOD palette[" + i + "] must be a non-air state");
+            }
+        }
+        if (indices == null || indices.length != CELLS) {
+            throw new IllegalArgumentException("LOD indices must hold exactly " + CELLS + " cells");
+        }
+        for (int index : indices) {
+            if (index < 0 || index >= palette.length) {
+                throw new IllegalArgumentException("LOD cell index " + index
+                    + " outside palette of size " + palette.length);
+            }
+        }
+        if (light == null || light.length != CELLS) {
+            throw new IllegalArgumentException("LOD light must hold exactly " + CELLS + " bytes");
+        }
         this.level = level;
         this.cellLong = cellLong;
         this.generation = generation;
-        this.palette = palette;
-        this.indices = indices;
-        this.light = light;
+        this.palette = palette.clone();
+        this.indices = indices.clone();
+        this.light = light.clone();
     }
 
     /** Cell index (0..32767) for local x/y/z in 0..31. */
@@ -73,16 +125,33 @@ public final class AllvrLodSectionData {
         return this.generation;
     }
 
+    /** Defensive copy — the palette of a published section is never aliased. */
     public BlockState[] palette() {
-        return this.palette;
+        return this.palette.clone();
     }
 
+    /** Defensive copy — the index stream of a published section is never aliased. */
     public int[] indices() {
-        return this.indices;
+        return this.indices.clone();
     }
 
+    /** Defensive copy — the light stream of a published section is never aliased. */
     public byte[] light() {
-        return this.light;
+        return this.light.clone();
+    }
+
+    /** Read-only view of the palette for hot loops that only read it. */
+    public void copyPaletteInto(BlockState[] target) {
+        System.arraycopy(this.palette, 0, target, 0, this.palette.length);
+    }
+
+    public boolean isAllAir() {
+        for (int index : this.indices) {
+            if (index != 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

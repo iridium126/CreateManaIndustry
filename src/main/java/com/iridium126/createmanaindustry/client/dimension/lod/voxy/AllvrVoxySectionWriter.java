@@ -1,6 +1,8 @@
 package com.iridium126.createmanaindustry.client.dimension.lod.voxy;
 
 import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.Set;
 
 import net.minecraft.core.Holder;
 import net.minecraft.world.level.biome.Biome;
@@ -26,9 +28,16 @@ final class AllvrVoxySectionWriter {
     private static final int QUEUE_CAP = 1024;
 
     private final ArrayDeque<Job> queue = new ArrayDeque<>();
+    /** Control/mutation queue is independent of data backpressure: a forget
+     * must not be dropped behind a full injection queue. */
+    private final ArrayDeque<Job> controlQueue = new ArrayDeque<>();
+    private final Set<ForgetKey> pendingForgets = new HashSet<>();
+    private final ArrayDeque<Inject> failedInjects = new ArrayDeque<>();
     private AllvrVoxyYWindow window;
     private me.cortex.voxy.common.world.WorldEngine engine;
     private AllvrVoxyNodeRegistry registry;
+
+    private record ForgetKey(int level, long cellLong) {}
 
     void bindWindow(AllvrVoxyYWindow window) {
         this.window = window;
@@ -41,6 +50,13 @@ final class AllvrVoxySectionWriter {
 
     /** True when the job was accepted (caller marks the node meshed). */
     boolean enqueue(Job job) {
+        if (job instanceof Forget) {
+            Forget forget = (Forget) job;
+            if (this.pendingForgets.add(new ForgetKey(forget.level(), forget.cellLong()))) {
+                this.controlQueue.add(job);
+            }
+            return true;
+        }
         if (this.queue.size() >= QUEUE_CAP) {
             return false;
         }
@@ -52,13 +68,22 @@ final class AllvrVoxySectionWriter {
     void drain() {
         int budget = MAX_PER_TICK;
         while (budget-- > 0) {
-            Job job = this.queue.poll();
+            Job job = this.controlQueue.poll();
+            if (job == null) {
+                job = this.queue.poll();
+            }
             if (job == null) {
                 return;
+            }
+            if (job instanceof Forget forget) {
+                this.pendingForgets.remove(new ForgetKey(forget.level(), forget.cellLong()));
             }
             try {
                 job.run(this);
             } catch (Throwable t) {
+                if (job instanceof Inject inject) {
+                    this.failedInjects.add(inject);
+                }
                 com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(
                     "[Allvr] voxy writer job failed", t);
             }
@@ -67,6 +92,13 @@ final class AllvrVoxySectionWriter {
 
     void clear() {
         this.queue.clear();
+        this.controlQueue.clear();
+        this.pendingForgets.clear();
+        this.failedInjects.clear();
+    }
+
+    Inject pollFailedInject() {
+        return this.failedInjects.poll();
     }
 
     /** One queued voxy-engine write. */
@@ -87,7 +119,7 @@ final class AllvrVoxySectionWriter {
     record Forget(int level, long cellLong) implements Job {
         @Override
         public void run(AllvrVoxySectionWriter writer) {
-            AllvrVoxyEngineOps.forgetNode(writer.engine, writer.window,
+            AllvrVoxyEngineOps.forgetAbsolute(writer.engine, writer.window,
                 writer.registry, this.level(), this.cellLong());
         }
     }

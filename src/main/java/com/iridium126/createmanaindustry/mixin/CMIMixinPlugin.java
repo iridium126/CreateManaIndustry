@@ -94,14 +94,16 @@ public class CMIMixinPlugin implements IMixinConfigPlugin {
             return isLoaded(IRISVEIL_MOD_ID);
 
         // Voxy runtime adapter hooks — their target classes live inside the
-        // voxy mod itself, so they must never apply without it (plan §7.1)
+        // voxy mod itself, so they must never apply without the exact ABI
+        // family.  This check runs before mixin target transformation; the
+        // later reflective probe remains the second line of defense.
         if (mixinClassName.contains(".voxy."))
-            return isLoaded(VOXY_MOD_ID);
+            return isSupportedVoxy();
 
         // Allay-dimension sodium terrain disable — string mixin targets, no
-        // compile dependency; only applies where sodium is actually installed
+        // compile dependency; only applies to the fixed 0.8.13 ABI family
         if (mixinClassName.contains(".sodium."))
-            return isLoaded(SODIUM_MOD_ID);
+            return isSupportedVersion(SODIUM_MOD_ID, "0.8.13");
 
         return true;
     }
@@ -130,5 +132,37 @@ public class CMIMixinPlugin implements IMixinConfigPlugin {
      */
     private static boolean isLoaded(String modId) {
         return FMLLoader.getLoadingModList().getModFileById(modId) != null;
+    }
+
+    /** Bootstrap-safe metadata gate for the Voxy mixin group. */
+    private static boolean isSupportedVoxy() {
+        return isSupportedVersion(VOXY_MOD_ID, "0.2.15-beta");
+    }
+
+    /** Reads loader metadata without loading the optional target mod classes. */
+    private static boolean isSupportedVersion(String modId, String prefix) {
+        Object file = FMLLoader.getLoadingModList().getModFileById(modId);
+        if (file == null) {
+            return false;
+        }
+        try {
+            Object mods = file.getClass().getMethod("getMods").invoke(file);
+            if (!(mods instanceof Iterable<?> iterable)) {
+                return false;
+            }
+            for (Object mod : iterable) {
+                Object id = mod.getClass().getMethod("getModId").invoke(mod);
+                if (!modId.equals(String.valueOf(id))) {
+                    continue;
+                }
+                Object version = mod.getClass().getMethod("getVersion").invoke(mod);
+                return version != null && String.valueOf(version).startsWith(prefix);
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // A metadata ABI change must fail closed: the runtime probe can
+            // still report near-only, while an unknown mixin target cannot
+            // crash bootstrap.
+        }
+        return false;
     }
 }

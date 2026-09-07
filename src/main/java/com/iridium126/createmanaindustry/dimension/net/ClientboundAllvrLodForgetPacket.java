@@ -13,8 +13,35 @@ import com.iridium126.createmanaindustry.client.dimension.AllvrLodClientState;
  * §13 4c): sent on player-edit invalidation (the node will be re-requested if
  * still in band), on stale build results, and as a rejection for
  * out-of-range/malformed requests so the client's pending set cannot leak.
+ * <p>
+ * {@code requestId} (plan F26): {@code -1} marks the broadcast flavour —
+ * "this node's server truth changed, drop whatever you hold" — which applies
+ * unconditionally. Any other value is a <b>ticketed</b> forget: it settles
+ * exactly the client request that carried that id. A late ticketed forget
+ * can therefore never consume a NEWER re-request's pending entry (the
+ * re-request was issued under a different id).
  */
-public record ClientboundAllvrLodForgetPacket(int level, long cellLong) implements CustomPacketPayload {
+public record ClientboundAllvrLodForgetPacket(int level, long cellLong, long sessionEpoch,
+                                               long requestId, boolean retryable)
+    implements CustomPacketPayload {
+
+    /** requestId for the broadcast (unconditional) flavour. */
+    public static final long BROADCAST = -1L;
+
+    public ClientboundAllvrLodForgetPacket(int level, long cellLong) {
+        this(level, cellLong, 0L, BROADCAST, false);
+    }
+
+    public ClientboundAllvrLodForgetPacket(int level, long cellLong, long requestId) {
+        this(level, cellLong, 0L, requestId, false);
+    }
+
+    public static ClientboundAllvrLodForgetPacket ticketed(int level, long cellLong,
+                                                            long sessionEpoch, long requestId,
+                                                            boolean retryable) {
+        return new ClientboundAllvrLodForgetPacket(level, cellLong, sessionEpoch, requestId,
+            retryable);
+    }
 
     public static final CustomPacketPayload.Type<ClientboundAllvrLodForgetPacket> TYPE =
         new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("allvr_lod_forget"));
@@ -25,10 +52,14 @@ public record ClientboundAllvrLodForgetPacket(int level, long cellLong) implemen
     private static void encode(RegistryFriendlyByteBuf buf, ClientboundAllvrLodForgetPacket p) {
         buf.writeVarInt(p.level);
         buf.writeLong(p.cellLong);
+        buf.writeLong(p.sessionEpoch);
+        buf.writeLong(p.requestId);
+        buf.writeBoolean(p.retryable);
     }
 
     private static ClientboundAllvrLodForgetPacket decode(RegistryFriendlyByteBuf buf) {
-        return new ClientboundAllvrLodForgetPacket(buf.readVarInt(), buf.readLong());
+        return new ClientboundAllvrLodForgetPacket(buf.readVarInt(), buf.readLong(), buf.readLong(),
+            buf.readLong(), buf.readBoolean());
     }
 
     @Override

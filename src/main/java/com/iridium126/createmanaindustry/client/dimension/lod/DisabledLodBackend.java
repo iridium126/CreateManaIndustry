@@ -37,6 +37,11 @@ final class DisabledLodBackend implements AllvrLodBackend {
     public void leave() {}
 
     @Override
+    public boolean requestsOpen() {
+        return false;
+    }
+
+    @Override
     public String debugState() {
         return "near-only";
     }

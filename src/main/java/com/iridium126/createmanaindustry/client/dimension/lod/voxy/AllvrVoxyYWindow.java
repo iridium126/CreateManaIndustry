@@ -67,4 +67,9 @@ public final class AllvrVoxyYWindow {
         this.originBlockY = newOrigin;
         this.epoch++;
     }
+
+    /** Invalidates queued work before a rebase MOVE publishes a new origin. */
+    public void invalidateQueuedWork() {
+        this.epoch++;
+    }
 }

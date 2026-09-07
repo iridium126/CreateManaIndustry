@@ -7,7 +7,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.Direction;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.state.BlockState;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
@@ -245,6 +249,14 @@ public final class AllvrRenderStateMap {
      */
     private static Entry resolveEntry(BlockState state) {
         Minecraft mc = Minecraft.getInstance();
+        // This is the shared certification consumed by both the descriptor
+        // codec and the fallback collector. A six-quad model alone is not
+        // proof of full-cube solid semantics (glass, offset and multipart
+        // models commonly satisfy weaker tests).
+        if (!state.isCollisionShapeFullBlock(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)
+            || ItemBlockRenderTypes.getChunkRenderType(state) != RenderType.solid()) {
+            return NON_RENDERABLE;
+        }
         BakedModel model = mc.getBlockRenderer().getBlockModelShaper().getBlockModel(state);
         if (model == null) {
             return NON_RENDERABLE;
@@ -258,6 +270,15 @@ public final class AllvrRenderStateMap {
                 return NON_RENDERABLE;
             }
             net.minecraft.client.renderer.block.model.BakedQuad quad = quads.get(0);
+            if (quad.getDirection() != AllvrMesher.FACES[i]) {
+                return NON_RENDERABLE;
+            }
+            // A world-dependent tint cannot be represented by the immutable
+            // descriptor material table; route it through the generic model
+            // compiler where the real BlockAndTintGetter is available.
+            if (quad.isTinted()) {
+                return NON_RENDERABLE;
+            }
             var sprite = quad.getSprite();
             var ticker = sprite.createTicker();
             if (ticker != null) {
@@ -265,13 +286,6 @@ public final class AllvrRenderStateMap {
                 return NON_RENDERABLE;
             }
             float tr = 1, tg = 1, tb = 1;
-            if (quad.isTinted()) {
-                // null level/pos → the colorer's documented default branch
-                int rgb = mc.getBlockColors().getColor(state, null, null, quad.getTintIndex());
-                tr = ((rgb >> 16) & 0xFF) / 255.0f;
-                tg = ((rgb >> 8) & 0xFF) / 255.0f;
-                tb = (rgb & 0xFF) / 255.0f;
-            }
             faces[i] = new FaceMaterial(
                 sprite.getU0(), sprite.getV0(),
                 sprite.getU1() - sprite.getU0(), sprite.getV1() - sprite.getV0(),
