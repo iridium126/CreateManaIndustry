@@ -29,15 +29,15 @@ import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandFieldGenerator
 import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodBitmapPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodForgetPacket;
-import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodMeshPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodSectionPacket;
 import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodRequestPacket;
 
 /**
- * Server-side LOD pipeline for one allay-dimension {@link ServerLevel} (doc
- * §13 4c-1, grilling 2026-09-06): per-player surface-node bitmaps (S→C), a
- * C2S mesh-request channel answered from a shared LRU cache or a parallel
- * build pool, and the player-edit invalidation loop.
+ * Server-side LOD pipeline for one allay-dimension {@link ServerLevel}
+ * (sodium-parity plan §6.2): per-player surface-node bitmaps (S→C), a C2S
+ * section-request channel answered from a shared LRU cache or a parallel
+ * build pool, and the player-edit invalidation loop. The legacy server-meshed
+ * quad path is deleted — the only wire payload is the voxel section.
  * <p>
  * Thread discipline: everything on the server main thread except the build
  * pool, which receives immutable jobs (generator math is pure; world reads
@@ -46,22 +46,17 @@ import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodReques
  * dispatch plus edited-cube overlay capture; a single oversized capture may
  * overrun, the budget only paces how many jobs dequeue per tick).
  * <p>
- * Throughput revision over the 4a text (grilling Q5): build pool (default 2
- * threads, config) instead of a 2ms/tick server-thread budget, and request
- * pacing 64/tick in-flight 256 instead of 8/32 — R=2048 holds ~50k surface
- * nodes, which the original figures would fill in tens of minutes.
- * <p>
- * Invalidation (grilling Q4, in 4c-1): a player block edit bumps the
- * containing node's generation per level (≤4 nodes), drops the cache entry
- * and queues a forget broadcast (flushed deduped per tick — a /fill must not
- * emit 16k packets). Stale build results (generation moved while building)
- * are dropped and answered with a forget so the client re-requests fresh.
+ * Invalidation (grilling Q4): a player block edit bumps the containing
+ * node's generation per level (≤4 nodes), drops the cache entry and queues a
+ * forget broadcast (flushed deduped per tick — a /fill must not emit 16k
+ * packets). Stale build results (generation moved while building) are
+ * dropped and answered with a forget so the client re-requests fresh.
  */
 public final class AllvrLodMap {
 
-    /** Shared mesh cache budget (4a grilling decision, kept). */
+    /** Shared section cache budget (4a grilling decision, kept). */
     private static final long CACHE_BUDGET_BYTES = 256L << 20;
-    /** Mesh requests dequeued per tick (grilling Q5 revision). */
+    /** Section requests dequeued per tick (grilling Q5 revision). */
     private static final int REQUESTS_PER_TICK = 64;
     /** Per-level in-flight request cap. */
     private static final int MAX_INFLIGHT = 256;
@@ -87,13 +82,10 @@ public final class AllvrLodMap {
     private static final class Request {
         final long gen;
         final long id = REQUEST_IDS.incrementAndGet();
-        /** Wire backend this request was opened for (§6.1 capability). */
-        final boolean section;
         final List<UUID> requesters = new ArrayList<>(1);
 
-        Request(long gen, boolean section) {
+        Request(long gen) {
             this.gen = gen;
-            this.section = section;
         }
     }
 
@@ -101,12 +93,8 @@ public final class AllvrLodMap {
         new java.util.concurrent.atomic.AtomicLong();
 
     private final Long2ObjectOpenHashMap<Request>[] requests = new Long2ObjectOpenHashMap[4];
-    /** Per-level mesh cache; access-order LRU under {@link #cacheBytes}. */
-    @SuppressWarnings("unchecked")
-    private final LinkedHashMap<Long, long[]>[] cache = new LinkedHashMap[4];
     /**
-     * Per-level section-payload cache (plan §6.2) — same LRU discipline, one
-     * entry per (level, node) per wire backend, sharing {@link #cacheBytes}.
+     * Per-level section-payload LRU cache, sharing {@link #cacheBytes}.
      */
     @SuppressWarnings("unchecked")
     private final LinkedHashMap<Long, byte[]>[] sectionCache = new LinkedHashMap[4];
@@ -116,15 +104,9 @@ public final class AllvrLodMap {
     private final LongOpenHashSet[] dirtyNodes = new LongOpenHashSet[4];
 
     /**
-     * Server-meshed quad result for legacy-capable requesters (4c-1 path).
-     * {@code quads == null} means the build failed — answered with a forget.
-     */
-    private record BuiltMesh(int level, long cellLong, long gen, long[] quads, List<UUID> requesters) {}
-
-    /**
-     * Voxel section result for section-capable requesters (plan §6.1/§6.2):
-     * {@code payload == null} means all-air (a real, cacheable "no faces"
-     * answer), not a failure — failures never enqueue a result at all.
+     * Voxel section result (plan §6.2): {@code payload == null} means all-air
+     * (a real, cacheable "no faces" answer), not a failure — failures never
+     * enqueue a result at all.
      */
     private record BuiltSectionPayload(int level, long cellLong, long gen, long requestId,
                                       byte[] payload, List<UUID> requesters) {}
@@ -140,23 +122,19 @@ public final class AllvrLodMap {
         final int level;
         final long cellLong;
         final AllvrLodPos pos;
-        /** Wire backend this job builds for (§6.1 capability). */
-        final boolean section;
         AllvrLodSnapshot.Overlay liveOverlay;
         final List<java.util.concurrent.CompletableFuture<com.iridium126.createmanaindustry.dimension.storage.AllvrPersistedOverlay>>
             asyncOverlays = new ArrayList<>(1);
         boolean captureStarted;
 
-        PrepJob(int level, long cellLong, AllvrLodPos pos, boolean section) {
+        PrepJob(int level, long cellLong, AllvrLodPos pos) {
             this.level = level;
             this.cellLong = cellLong;
             this.pos = pos;
-            this.section = section;
         }
     }
 
     private final ArrayDeque<PrepJob> prepQueue = new ArrayDeque<>();
-    private final ConcurrentLinkedQueue<BuiltMesh> results = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<BuiltSectionPayload> sectionResults = new ConcurrentLinkedQueue<>();
     private long cacheBytes;
     private int evictScanTicks;
@@ -175,7 +153,6 @@ public final class AllvrLodMap {
             this.dirtyNodes[i] = new LongOpenHashSet();
             // access-order: cache hits refresh recency, so the budget eviction
             // drops genuinely cold nodes, not the most recently served ones
-            this.cache[i] = new LinkedHashMap<>(16, 0.75f, true);
             this.sectionCache[i] = new LinkedHashMap<>(16, 0.75f, true);
         }
         int threads = Math.max(1, ServerConfig.allvrLodBuildThreads);
@@ -210,7 +187,6 @@ public final class AllvrLodMap {
         this.flushDirtyNodes(players);
         this.refreshBitmaps(players, viewDistance);
         this.dispatchPrep();
-        this.drainResults(players);
         this.drainSectionResults(players);
         if (++this.evictScanTicks >= EVICT_SCAN_TICKS) {
             this.evictScanTicks = 0;
@@ -378,35 +354,12 @@ public final class AllvrLodMap {
         long gen = req.gen;
         long requestId = req.id;
         AllvrLodSnapshot.Overlay finalOverlay = overlay;
-        if (job.section) {
-            this.pool.execute(() -> this.runSectionJob(job.level, job.cellLong, gen, requestId, finalOverlay, requesters));
-        } else {
-            this.pool.execute(() -> this.runJob(job.level, job.cellLong, gen, finalOverlay, requesters));
-        }
-    }
-
-    /** Pool thread: pure density math + mesher — no world access here. */
-    private void runJob(int level, long cellLong, long gen,
-                        AllvrLodSnapshot.Overlay overlay, List<UUID> requesters) {
-        long[] quads = null;
-        try {
-            AllvrLodPos pos = AllvrLodPos.fromCellLong(level, cellLong);
-            BlockState[] states = new BlockState[AllvrMesher.PADDED * AllvrMesher.PADDED * AllvrMesher.PADDED];
-            java.util.Arrays.fill(states, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
-            byte[] occludes = new byte[states.length];
-            AllvrLodSnapshot snapshot = AllvrLodSnapshot.create(this.generator, pos, overlay);
-            snapshot.fill(states, occludes);
-            quads = AllvrMesher.build(states, occludes, snapshot.light(), AllvrLodSnapshot.SERVER_CODEC);
-        } catch (Throwable t) {
-            CreateManaIndustry.LOGGER.error("[Allvr] LOD build failed on {} — client re-requests", pos(level, cellLong), t);
-        }
-        this.results.add(new BuiltMesh(level, cellLong, gen, quads, requesters));
+        this.pool.execute(() -> this.runSectionJob(job.level, job.cellLong, gen, requestId, finalOverlay, requesters));
     }
 
     /**
-     * Pool thread: voxel section build (plan §6.2) — the same snapshot feeds
-     * {@link AllvrLodSectionData#build} so both wire paths see one truth;
-     * failures throw inside the pool and enqueue nothing (client re-requests).
+     * Pool thread: voxel section build (plan §6.2) — failures throw inside
+     * the pool and enqueue nothing (client re-requests).
      */
     private void runSectionJob(int level, long cellLong, long gen, long requestId,
                                AllvrLodSnapshot.Overlay overlay, List<UUID> requesters) {
@@ -436,52 +389,10 @@ public final class AllvrLodMap {
         return AllvrLodPos.fromCellLong(level, cellLong).toString();
     }
 
-    private void drainResults(List<ServerPlayer> players) {
-        BuiltMesh mesh;
-        while ((mesh = this.results.poll()) != null) {
-            Request live = this.requests[mesh.level()].get(mesh.cellLong());
-            boolean sameRequest = live != null && live.gen == mesh.gen();
-            boolean stale = !sameRequest || mesh.quads() == null;
-            List<UUID> requesters;
-            if (sameRequest) {
-                // Keep the registry entry through queueing and the worker run;
-                // remove only the exact generation that produced this result.
-                this.requests[mesh.level()].remove(mesh.cellLong());
-                requesters = List.copyOf(live.requesters);
-            } else {
-                requesters = mesh.requesters();
-            }
-            if (!stale) {
-                this.cachePut(mesh.level(), mesh.cellLong(), mesh.quads());
-            }
-            ClientboundAllvrLodMeshPacket packet = stale
-                ? null
-                : new ClientboundAllvrLodMeshPacket(mesh.level(), mesh.cellLong(), mesh.quads());
-            ClientboundAllvrLodForgetPacket forget = stale
-                ? new ClientboundAllvrLodForgetPacket(mesh.level(), mesh.cellLong())
-                : null;
-            for (UUID uuid : requesters) {
-                ServerPlayer player = findPlayer(players, uuid);
-                if (player == null) {
-                    continue;
-                }
-                player.connection.send(stale ? forget : packet);
-            }
-        }
-    }
-
-    private static ServerPlayer findPlayer(List<ServerPlayer> players, UUID uuid) {
-        for (ServerPlayer player : players) {
-            if (player.getUUID().equals(uuid)) {
-                return player;
-            }
-        }
-        return null;
-    }
-
-    /** Mirrors {@link #drainResults} for section payloads (plan §6.2): the
-     *  result queue stays coherent under generation races the same way — a
-     *  stale generation answers a forget, not a payload. */
+    /**
+     * Mirrors the generation-race discipline: a stale generation answers a
+     * forget, not a payload.
+     */
     private void drainSectionResults(List<ServerPlayer> players) {
         BuiltSectionPayload result;
         while ((result = this.sectionResults.poll()) != null) {
@@ -491,6 +402,8 @@ public final class AllvrLodMap {
             List<UUID> requesters;
             long requestId = result.requestId();
             if (sameRequest) {
+                // Keep the registry entry through queueing and the worker run;
+                // remove only the exact generation that produced this result.
                 this.requests[result.level()].remove(result.cellLong());
                 requesters = List.copyOf(live.requesters);
             } else {
@@ -516,15 +429,23 @@ public final class AllvrLodMap {
         }
     }
 
+    private static ServerPlayer findPlayer(List<ServerPlayer> players, UUID uuid) {
+        for (ServerPlayer player : players) {
+            if (player.getUUID().equals(uuid)) {
+                return player;
+            }
+        }
+        return null;
+    }
+
     // ------------------------------------------------------------------
     // requests (server thread, from the C2S packet)
     // ------------------------------------------------------------------
 
-    public void onRequest(ServerPlayer player, int capability, List<long[]> entries) {
+    public void onRequest(ServerPlayer player, List<long[]> entries) {
         if (this.closed) {
             return;
         }
-        boolean sectionCapable = capability == ServerboundAllvrLodRequestPacket.CAPABILITY_VOXEL_SECTION;
         int viewDistance = ServerConfig.allvrLodDistance;
         for (long[] entry : entries) {
             int lvl = (int) entry[0];
@@ -540,41 +461,26 @@ public final class AllvrLodMap {
             }
             Request existing = this.requests[lvl].get(cellLong);
             if (existing != null) {
-                if (existing.section != sectionCapable) {
-                    // a request opened for the other wire backend — reject this
-                    // join so its requester retries fresh rather than waiting on
-                    // a result shaped for someone else (plan §6.1 capability)
-                    player.connection.send(new ClientboundAllvrLodForgetPacket(lvl, cellLong));
-                    continue;
-                }
                 if (!existing.requesters.contains(player.getUUID())) {
                     existing.requesters.add(player.getUUID());
                 }
                 continue;
             }
-            if (sectionCapable) {
-                byte[] cached = this.sectionCache[lvl].get(cellLong);
-                if (cached != null) {
-                    player.connection.send(new ClientboundAllvrLodSectionPacket(
-                        ClientboundAllvrLodSectionPacket.PROTOCOL_VERSION, -1L, lvl, cellLong,
-                        (int) this.gens[lvl].get(cellLong), cached));
-                    continue;
-                }
-            } else {
-                long[] cached = this.cache[lvl].get(cellLong);
-                if (cached != null) {
-                    player.connection.send(new ClientboundAllvrLodMeshPacket(lvl, cellLong, cached));
-                    continue;
-                }
+            byte[] cached = this.sectionCache[lvl].get(cellLong);
+            if (cached != null) {
+                player.connection.send(new ClientboundAllvrLodSectionPacket(
+                    ClientboundAllvrLodSectionPacket.PROTOCOL_VERSION, -1L, lvl, cellLong,
+                    (int) this.gens[lvl].get(cellLong), cached));
+                continue;
             }
             if (this.requests[lvl].size() >= MAX_INFLIGHT) {
                 player.connection.send(new ClientboundAllvrLodForgetPacket(lvl, cellLong));
                 continue;
             }
-            Request req = new Request(this.gens[lvl].get(cellLong), sectionCapable);
+            Request req = new Request(this.gens[lvl].get(cellLong));
             req.requesters.add(player.getUUID());
             this.requests[lvl].put(cellLong, req);
-            this.prepQueue.add(new PrepJob(lvl, cellLong, pos, sectionCapable));
+            this.prepQueue.add(new PrepJob(lvl, cellLong, pos));
         }
     }
 
@@ -637,7 +543,7 @@ public final class AllvrLodMap {
         if (!terminated) {
             this.pool.shutdownNow();
         }
-        this.results.clear();
+        this.sectionResults.clear();
         this.prepQueue.clear();
     }
 
@@ -645,25 +551,6 @@ public final class AllvrLodMap {
     // cache
     // ------------------------------------------------------------------
 
-    private void cachePut(int lvl, long cellLong, long[] quads) {
-        long[] old = this.cache[lvl].put(cellLong, quads);
-        if (old != null) {
-            this.cacheBytes -= old.length << 3;
-        }
-        this.cacheBytes += quads.length << 3;
-        while (this.cacheBytes > CACHE_BUDGET_BYTES) {
-            var it = this.cache[lvl].entrySet().iterator();
-            if (!it.hasNext()) {
-                CreateManaIndustry.LOGGER.warn("[Allvr] LOD cache over budget with empty level map");
-                break;
-            }
-            var eldest = it.next();
-            it.remove();
-            this.cacheBytes -= eldest.getValue().length << 3;
-        }
-    }
-
-    /** Same LRU discipline as {@link #cachePut} for section payloads. */
     private void sectionCachePut(int lvl, long cellLong, byte[] payload) {
         byte[] old = this.sectionCache[lvl].put(cellLong, payload);
         if (old != null) {
@@ -673,7 +560,8 @@ public final class AllvrLodMap {
         while (this.cacheBytes > CACHE_BUDGET_BYTES) {
             var it = this.sectionCache[lvl].entrySet().iterator();
             if (!it.hasNext()) {
-                break; // the quad cache holds the remaining budget pressure
+                CreateManaIndustry.LOGGER.warn("[Allvr] LOD section cache over budget with empty level map");
+                break;
             }
             var eldest = it.next();
             it.remove();
@@ -681,30 +569,17 @@ public final class AllvrLodMap {
         }
     }
 
-    private long cacheRemove(int lvl, long cellLong) {
-        long[] old = this.cache[lvl].remove(cellLong);
-        long freed = old == null ? 0L : old.length << 3;
+    private void cacheRemove(int lvl, long cellLong) {
         byte[] oldSection = this.sectionCache[lvl].remove(cellLong);
         if (oldSection != null) {
-            freed += oldSection.length;
+            this.cacheBytes -= oldSection.length;
         }
-        this.cacheBytes -= freed;
-        return freed;
     }
 
     /** Drops cache entries outside every player's R×1.25 hysteresis (4a decision). */
     private void evictCache(List<ServerPlayer> players, int viewDistance) {
         long limit = (long) viewDistance * 5 / 4;
         for (int lvl = 0; lvl <= AllvrLodBands.MAX_LEVEL; lvl++) {
-            var it = this.cache[lvl].entrySet().iterator();
-            while (it.hasNext()) {
-                var e = it.next();
-                AllvrLodPos pos = AllvrLodPos.fromCellLong(lvl, e.getKey());
-                if (!anyPlayerNear(players, pos, limit)) {
-                    it.remove();
-                    this.cacheBytes -= e.getValue().length << 3;
-                }
-            }
             var sectionIt = this.sectionCache[lvl].entrySet().iterator();
             while (sectionIt.hasNext()) {
                 var e = sectionIt.next();

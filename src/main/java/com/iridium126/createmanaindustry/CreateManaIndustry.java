@@ -48,7 +48,6 @@ import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacke
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrForgetCubePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodBitmapPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodForgetPacket;
-import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodMeshPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodSectionPacket;
 import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodRequestPacket;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
@@ -236,17 +235,14 @@ public class CreateManaIndustry {
                 ClientboundAllvrBlockUpdatePacket.TYPE,
                 ClientboundAllvrBlockUpdatePacket.STREAM_CODEC,
                 ClientboundAllvrBlockUpdatePacket::handle);
-        // Allay dimension LOD pipeline (4c-1): surface-node bitmaps, batched
-        // mesh requests, mesh responses (vanilla state ids, client-remapped)
-        // and per-node invalidation.
+        // Allay dimension LOD pipeline (sodium-parity plan §6.2): surface-node
+        // bitmaps, batched section requests and per-node invalidation. The
+        // legacy server-meshed quad payload was deleted — the voxel section is
+        // the only wire format.
         registrar.playToClient(
                 ClientboundAllvrLodBitmapPacket.TYPE,
                 ClientboundAllvrLodBitmapPacket.STREAM_CODEC,
                 ClientboundAllvrLodBitmapPacket::handle);
-        registrar.playToClient(
-                ClientboundAllvrLodMeshPacket.TYPE,
-                ClientboundAllvrLodMeshPacket.STREAM_CODEC,
-                ClientboundAllvrLodMeshPacket::handle);
         registrar.playToClient(
                 ClientboundAllvrLodForgetPacket.TYPE,
                 ClientboundAllvrLodForgetPacket.STREAM_CODEC,

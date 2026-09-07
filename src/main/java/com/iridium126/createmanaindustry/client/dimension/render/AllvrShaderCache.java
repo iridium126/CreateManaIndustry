@@ -100,6 +100,16 @@ public final class AllvrShaderCache {
     // patched link) — vanilla-gbuffer-mimicking albedo pass
     private AllvrIrisPipelineData albedoData;
     private int albedoTerrain;
+    // Tier C compat floor (sodium-parity plan §7.7): the same terrain sources
+    // with ALLVR_COMPAT — attribute-vertex path, no draw-parameter builtins,
+    // fixed GLSL 3.3 (the compat target context is BELOW the merged 4.5 gate;
+    // the extension fallback line would fail there).
+    private static final String COMPAT_VERSION_LINE = "#version 330 core\n";
+    private int compatTerrain;
+    private AllvrIrisPipelineData patchedCompatData;
+    private int patchedCompatTerrain;
+    private AllvrIrisPipelineData albedoCompatData;
+    private int compatAlbedoTerrain;
     private volatile boolean dirty = true;
 
     /** Selects the GLSL version before the first compile (capability probe). */
@@ -132,6 +142,10 @@ public final class AllvrShaderCache {
             GL20.glDeleteProgram(this.shadowTerrainSimple);
             this.shadowTerrainSimple = 0;
         }
+        if (this.compatTerrain != 0) {
+            GL20.glDeleteProgram(this.compatTerrain);
+            this.compatTerrain = 0;
+        }
         // the patched programs are identity-keyed on their pipeline data — drop
         // them here so the next syncIrisData pass re-links against fresh sources
         this.dropPatched();
@@ -146,6 +160,7 @@ public final class AllvrShaderCache {
         this.cullClamp = 0;
         this.hizFirst = this.hizDownsample = this.revalidate = 0;
         this.terrain = link(GLSL_DIR + "terrain.vsh", GLSL_DIR + "terrain.fsh");
+        this.compatTerrain = this.linkCompat(GLSL_DIR + "terrain.fsh", "", "compat terrain");
         this.shadowTerrain = linkShadowTerrain(GLSL_DIR + "shadow.fsh",
             "#define ALLVR_SHADOW_PASS\n#define ALLVR_SHADOW_EXACT\n", "terrain.vsh (shadow exact)");
         this.shadowTerrainSimple = linkShadowTerrain(GLSL_DIR + "terrain.fsh",
@@ -170,10 +185,66 @@ public final class AllvrShaderCache {
         if (this.hizReady()) {
             CreateManaIndustry.LOGGER.info("[Allvr] HiZ programs compiled (first/downsample/revalidate)");
         }
+        if (this.compatTerrain != 0) {
+            CreateManaIndustry.LOGGER.info("[Allvr] compat (Tier C) terrain program compiled: {}",
+                this.compatTerrain);
+        }
     }
 
     public int terrain() {
         return this.terrain;
+    }
+
+    public int compatTerrain() {
+        return this.compatTerrain;
+    }
+
+    public int compatPatchedTerrain() {
+        return this.patchedCompatTerrain;
+    }
+
+    public int compatAlbedoTerrain() {
+        return this.compatAlbedoTerrain;
+    }
+
+    /**
+     * Tier C program builder: ALLVR_COMPAT vertex path at fixed GLSL 3.3
+     * (compat contexts sit below the 4.5 draw-parameter gate) + the same fsh
+     * variant the Tier B build would use. Returns 0 on compile failure.
+     */
+    private int linkCompat(String fshPath, String defines, String name) {
+        String vs = load(GLSL_DIR + "terrain.vsh");
+        String fs = load(fshPath);
+        if (vs == null || fs == null) {
+            return 0;
+        }
+        int vsh = compileStage(COMPAT_VERSION_LINE + defines + "#define ALLVR_COMPAT\n" + PRELUDE + vs,
+            GL20.GL_VERTEX_SHADER);
+        int fsh = compileStage(COMPAT_VERSION_LINE + PRELUDE + fs, GL20.GL_FRAGMENT_SHADER);
+        return link(name, vsh, fsh);
+    }
+
+    /** Releases every program (game shutdown — plan §7.1 GL close discipline). */
+    public void destroy() {
+        for (int p : new int[] {this.terrain, this.shadowTerrain, this.shadowTerrainSimple,
+                this.compatTerrain, this.patchedTerrain, this.albedoTerrain,
+                this.patchedCompatTerrain, this.compatAlbedoTerrain,
+                this.cullReset, this.traversal, this.cullFinalize, this.cmdgen,
+                this.cullClamp, this.hizFirst, this.hizDownsample, this.revalidate}) {
+            if (p != 0) {
+                GL20.glDeleteProgram(p);
+            }
+        }
+        this.terrain = this.shadowTerrain = this.shadowTerrainSimple = 0;
+        this.compatTerrain = this.patchedTerrain = this.albedoTerrain = 0;
+        this.patchedCompatTerrain = this.compatAlbedoTerrain = 0;
+        this.cullReset = this.traversal = this.cullFinalize = this.cmdgen = 0;
+        this.cullClamp = 0;
+        this.hizFirst = this.hizDownsample = this.revalidate = 0;
+        this.patchedData = null;
+        this.albedoData = null;
+        this.patchedCompatData = null;
+        this.albedoCompatData = null;
     }
 
     public int shadowTerrain() {
@@ -227,6 +298,8 @@ public final class AllvrShaderCache {
         this.dropPatched();
         this.patchedData = data;
         this.patchedTerrain = this.linkPatched(data);
+        this.patchedCompatData = data;
+        this.patchedCompatTerrain = this.linkCompatPatched(data);
         if (this.patchedTerrain != 0) {
             CreateManaIndustry.LOGGER.info("[Allvr] patched terrain program compiled: {}",
                 this.patchedTerrain);
@@ -279,6 +352,8 @@ public final class AllvrShaderCache {
             return 0;
         }
         this.albedoTerrain = link("albedo terrain", vsh, fsh);
+        this.albedoCompatData = data;
+        this.compatAlbedoTerrain = this.linkCompatAlbedo(data);
         return this.albedoTerrain;
     }
 
@@ -291,7 +366,12 @@ public final class AllvrShaderCache {
             GL20.glDeleteProgram(this.albedoTerrain);
             this.albedoTerrain = 0;
         }
+        if (this.compatAlbedoTerrain != 0) {
+            GL20.glDeleteProgram(this.compatAlbedoTerrain);
+            this.compatAlbedoTerrain = 0;
+        }
         this.albedoData = null;
+        this.albedoCompatData = null;
     }
 
     /** The pack's TAA jitter plumbing for a vertex shader (UBO + function),
@@ -322,7 +402,63 @@ public final class AllvrShaderCache {
             GL20.glDeleteProgram(this.patchedTerrain);
             this.patchedTerrain = 0;
         }
+        if (this.patchedCompatTerrain != 0) {
+            GL20.glDeleteProgram(this.patchedCompatTerrain);
+            this.patchedCompatTerrain = 0;
+        }
         this.patchedData = null;
+        this.patchedCompatData = null;
+    }
+
+    /**
+     * Tier C variant of {@link #linkPatched}: the compat vertex path at fixed
+     * GLSL 3.3 + the identical patched fragment source (the pack's patch is
+     * vsh-agnostic). A pack requiring 4.x-only GLSL in its patch fails here —
+     * the renderer then falls back to the compat albedo or unpatched draw.
+     */
+    private int linkCompatPatched(AllvrIrisPipelineData data) {
+        String vs = load(GLSL_DIR + "terrain.vsh");
+        String fs = load(GLSL_DIR + "terrain.fsh");
+        if (vs == null || fs == null) {
+            return 0;
+        }
+        String vHeader = this.taaHeader(data);
+        String patchSource = data.getPatchOpaqueSource();
+        if (patchSource == null || patchSource.isBlank()) {
+            return 0;
+        }
+        if (patchSource.contains("miplevel") && !patchSource.contains("float miplevel")) {
+            patchSource = "float miplevel = 0.0;\n" + patchSource;
+        }
+        int vsh = compileStage(COMPAT_VERSION_LINE + "#define ALLVR_COMPAT\n" + PRELUDE + vHeader + vs,
+            GL20.GL_VERTEX_SHADER);
+        int fsh = compileStage(COMPAT_VERSION_LINE + "#define PATCHED_SHADER\n" + PRELUDE + fs + patchSource,
+            GL20.GL_FRAGMENT_SHADER);
+        return link("compat patched terrain", vsh, fsh);
+    }
+
+    /** Tier C variant of the albedo program (same fsh, compat vsh). */
+    private int linkCompatAlbedo(AllvrIrisPipelineData data) {
+        String vs = load(GLSL_DIR + "terrain.vsh");
+        String fs = load(GLSL_DIR + "terrain.fsh");
+        if (vs == null || fs == null) {
+            return 0;
+        }
+        String vHeader = this.taaHeader(data);
+        String fHeader = "#define ALLVR_ALBEDO_PASS\n";
+        int vsh = compileStage(COMPAT_VERSION_LINE + "#define ALLVR_COMPAT\n" + PRELUDE + vHeader + vs,
+            GL20.GL_VERTEX_SHADER);
+        int fsh = compileStage(COMPAT_VERSION_LINE + PRELUDE + fHeader + fs, GL20.GL_FRAGMENT_SHADER);
+        if (vsh == 0 || fsh == 0) {
+            if (vsh != 0) {
+                GL20.glDeleteShader(vsh);
+            }
+            if (fsh != 0) {
+                GL20.glDeleteShader(fsh);
+            }
+            return 0;
+        }
+        return link("compat albedo terrain", vsh, fsh);
     }
 
     /** voxy contract constants — keep in sync with AllvrIrisPipelineData. */
@@ -403,6 +539,13 @@ public final class AllvrShaderCache {
 
     public boolean ready() {
         return this.terrain != 0;
+    }
+
+    /** The compat floor's own readiness (fixed GLSL 3.3 path) — independent
+     *  of the Tier B program set, which may fail to compile on a context
+     *  below the merged gate (compatReady is what Tier C renders through). */
+    public boolean compatReady() {
+        return this.compatTerrain != 0;
     }
 
     /** All five GPU-cull programs linked (GPU-cull path completeness). */

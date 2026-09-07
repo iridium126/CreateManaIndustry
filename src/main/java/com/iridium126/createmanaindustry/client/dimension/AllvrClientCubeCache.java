@@ -68,14 +68,23 @@ public final class AllvrClientCubeCache {
         }
     }
 
-    /** Main-thread apply of one streamed cube. */
+    /** Main-thread apply of one streamed cube. A structurally malformed
+     *  payload (element cap breach, trailing bytes) drops the whole packet —
+     *  a half-applied cube would mix old sections with a failed tail. */
     public static void applyCube(ClientboundAllvrCubePacket packet) {
         ClientLevel clientLevel = Minecraft.getInstance().level;
         if (clientLevel == null || clientLevel.dimension() != AllvrDimensions.ALLAY_LEVEL) {
             return;
         }
         level = clientLevel;
-        AllvrCube cube = packet.decodeCube(clientLevel, clientLevel.registryAccess());
+        AllvrCube cube;
+        try {
+            cube = packet.decodeCube(clientLevel, clientLevel.registryAccess());
+        } catch (Exception e) {
+            CreateManaIndustry.LOGGER.warn("[Allvr] malformed cube packet for {} — dropped",
+                com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(packet.cubePos()), e);
+            return;
+        }
         synchronized (LOCK) {
             cubes.put(packet.cubePos(), cube);
             refreshBeCube(packet.cubePos(), cube);
@@ -157,10 +166,18 @@ public final class AllvrClientCubeCache {
         com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos pos =
             com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(packet.cubePos());
         int cell = packet.cellIndex();
+        // the 15-bit cube cell layout — anything else cannot address this cube
+        if (cell > 32767) {
+            return;
+        }
+        net.minecraft.world.level.block.state.BlockState state =
+            net.minecraft.world.level.block.Block.stateById(packet.stateId());
+        if (state == null) {
+            return; // unknown state id — never guess a substitute
+        }
         BlockPos blockPos = new BlockPos(pos.minBlockX() + (cell & 31),
             pos.minBlockY() + (cell >> 10), pos.minBlockZ() + ((cell >> 5) & 31));
-        clientLevel.setServerVerifiedBlockState(blockPos,
-            net.minecraft.world.level.block.Block.stateById(packet.stateId()), 19);
+        clientLevel.setServerVerifiedBlockState(blockPos, state, 19);
     }
 
     /** The cached cube at a position's cube, or null (never generates). */
@@ -175,6 +192,13 @@ public final class AllvrClientCubeCache {
     public static AllvrCube peekCube(long cubePos) {
         synchronized (LOCK) {
             return cubes.get(cubePos);
+        }
+    }
+
+    /** Snapshot of every cached cube key (tier-latch rebuild path; main thread). */
+    public static long[] cubeKeys() {
+        synchronized (LOCK) {
+            return cubes.keySet().toLongArray();
         }
     }
 

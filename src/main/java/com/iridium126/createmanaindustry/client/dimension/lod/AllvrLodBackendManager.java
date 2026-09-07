@@ -8,27 +8,27 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.dimension.lod.voxy.VoxyCompatibilityProbe;
 import com.iridium126.createmanaindustry.config.ClientConfig;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
-import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodRequestPacket;
 
 /**
- * Backend selection, lifecycle and stats (voxy integration plan §7.1): AUTO
- * picks the voxy adapter when the probed Voxy build is present and falls
- * back to the legacy renderer otherwise; VOXY/LEGACY/OFF force a backend.
- * Selection happens on level join (or a config reload) — switching
- * backends clears the client's mesh/pending bookkeeping so the request walk
- * re-issues every node against the new backend's wire format.
+ * Backend selection and lifecycle: Voxy is the ONLY far-terrain backend
+ * (sodium-parity plan §2.1). AUTO enables the voxy adapter when the probed
+ * Voxy build is present and otherwise enters the disabled backend — the
+ * dimension then runs near-only with no far requests and no fallback
+ * renderer. VOXY forces the adapter (unavailable → disabled with one clear
+ * message); OFF always disables. Selection happens on level join (or a
+ * config reload) — switching backends clears the client's pending/resident
+ * bookkeeping so the request walk re-issues every node.
  * <p>
  * All entry points run on the main thread (client tick / enqueueWork), so
  * backend swaps are naturally serialized.
  */
 public final class AllvrLodBackendManager {
 
-    /** Explicit backend choice (voxy integration plan §9.3). */
+    /** Explicit backend choice (sodium-parity plan §6.1). */
     public enum Mode {
-        AUTO, VOXY, LEGACY, OFF
+        AUTO, VOXY, OFF
     }
 
-    private static final LegacyAllvrLodBackend LEGACY = new LegacyAllvrLodBackend();
     private static final DisabledLodBackend DISABLED = new DisabledLodBackend();
 
     private static AllvrLodBackend active;
@@ -36,6 +36,7 @@ public final class AllvrLodBackendManager {
     private static long appliedSections;
     private static long rejectedSections;
     private static long forgottenNodes;
+    private static boolean warnedVoxyUnavailable;
 
     private AllvrLodBackendManager() {}
 
@@ -58,7 +59,7 @@ public final class AllvrLodBackendManager {
     /**
      * Config reload: re-run selection against the current level. A backend
      * switch drops the previous backend's nodes; the caller clears the
-     * request bookkeeping so the walk refills through the new wire format.
+     * request bookkeeping so the walk refills through the voxy backend.
      */
     public static void reselect(ClientLevel level) {
         enter(level);
@@ -101,23 +102,15 @@ public final class AllvrLodBackendManager {
         }
     }
 
-    /** True when the active backend is the legacy quad renderer. */
-    public static boolean legacyActive() {
-        return active == LEGACY;
-    }
-
-    /** The wire capability the ACTIVE backend consumes — sent with every
-     *  request batch so the server's answer format always matches. */
-    public static int wireCapability() {
-        if (active == null || active == DISABLED || active == LEGACY) {
-            return ServerboundAllvrLodRequestPacket.CAPABILITY_LEGACY_MESH;
-        }
-        return ServerboundAllvrLodRequestPacket.CAPABILITY_VOXEL_SECTION;
-    }
-
-    /** True while the backend accepts new work (rebase freeze blocks it). */
+    /** True while the voxy backend accepts new work (rebase freeze blocks it). */
     public static boolean requestsOpen() {
         return active != null && active != DISABLED;
+    }
+
+    /** True when the far-terrain backend is the active voxy adapter — the
+     *  fog/debug extent reports the far radius only in this state. */
+    public static boolean farTerrainActive() {
+        return requestsOpen();
     }
 
     /** True during the rebase REFILL phase — the walk then serves coarsest
@@ -148,27 +141,31 @@ public final class AllvrLodBackendManager {
         ClientConfig.AllvrLodBackendMode mode = ClientConfig.allvrLodBackend;
         return switch (mode) {
             case OFF -> DISABLED;
-            case LEGACY -> LEGACY;
             case VOXY -> selectVoxy("explicit VOXY mode");
-            case AUTO -> voxyAvailable().available() ? selectVoxy("AUTO") : legacyFallback("AUTO");
+            case AUTO -> voxyAvailable().available() ? selectVoxy("AUTO") : DISABLED;
         };
     }
 
     private static AllvrLodBackend selectVoxy(String via) {
         AllvrLodBackend.Availability availability = voxyAvailable();
         if (availability.available()) {
-            return voxyBackend();
+            AllvrLodBackend backend = VoxyCompatibilityProbe.createBackend();
+            if (backend != null) {
+                warnedVoxyUnavailable = false;
+                return backend;
+            }
+            availability = AllvrLodBackend.Availability.fail("adapter construction failed");
         }
-        CreateManaIndustry.LOGGER.warn(
-            "[Allvr] {} requested the voxy LOD backend but it is unavailable ({}); falling back to legacy",
-            via, availability.reason());
-        return LEGACY;
-    }
-
-    private static AllvrLodBackend legacyFallback(String via) {
-        CreateManaIndustry.LOGGER.info("[Allvr] {} selects the legacy LOD backend ({} )",
-            via, voxyAvailable().reason());
-        return LEGACY;
+        // near-only is a defined product state, not a renderer failure: log it
+        // once per session, never retry a legacy path (sodium-parity plan §6.1)
+        if (!warnedVoxyUnavailable) {
+            warnedVoxyUnavailable = true;
+            CreateManaIndustry.LOGGER.warn(
+                "[Allvr] {} wanted the voxy LOD backend but it is unavailable ({}); "
+                    + "far terrain disabled — near-only",
+                via, availability.reason());
+        }
+        return DISABLED;
     }
 
     private static AllvrLodBackend.Availability voxyAvailable() {
@@ -178,19 +175,10 @@ public final class AllvrLodBackendManager {
         return voxyAvailability;
     }
 
-    private static AllvrLodBackend voxyBackend() {
-        AllvrLodBackend backend = VoxyCompatibilityProbe.createBackend();
-        if (backend != null) {
-            return backend;
-        }
-        return LEGACY;
-    }
-
     private static String modeDescription() {
         return switch (ClientConfig.allvrLodBackend) {
             case AUTO -> "config AUTO";
             case VOXY -> "config VOXY";
-            case LEGACY -> "config LEGACY";
             case OFF -> "config OFF";
         };
     }

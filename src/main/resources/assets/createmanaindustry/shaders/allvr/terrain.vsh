@@ -15,12 +15,22 @@ uniform mat4 ProjMat;
 uniform ivec3 uCamInt;
 uniform vec3 uCamFrac;
 
+#ifdef ALLVR_COMPAT
+// Tier C compat floor (sodium-parity plan §7.7): no draw-parameter builtins,
+// no SSBO fetch — the quad descriptor and the ABSOLUTE integer cube origin
+// ride as expanded per-vertex attributes (24 B/vertex), and the corner index
+// comes from gl_VertexID (GL 3.3 core). Camera-relative math stays exact:
+// origin − uCamInt is integer arithmetic, uCamFrac arrives separately.
+layout(location = 0) in uvec2 aQuad;
+layout(location = 1) in ivec3 aOrigin;
+#else
 layout(std430, binding = BIND_QUADS) readonly buffer QuadBuf {
     uvec2 quads[]; // 8-byte packed quad (doc §7.3)
 };
 layout(std430, binding = BIND_CUBEINFO) readonly buffer CubeInfoBuf {
     ivec4 cubeInfo[]; // xyz = absolute cube origin
 };
+#endif
 layout(binding = STATE_TBO_UNIT) uniform samplerBuffer uStateTable;
 
 out vec2 vUvLocal;   // un-tiled quad-space uv (0..size), tiled in the fsh
@@ -108,12 +118,18 @@ vec2 allvrEdgeNormal(vec2 a, vec2 b) {
 #endif
 
 void main() {
+#ifdef ALLVR_COMPAT
+    uint rel = gl_VertexID & 3u;
+    uint corner = rel;
+    uvec2 qw = aQuad;
+#else
     uint baseVertex = gl_BaseVertex;
     uint rel = gl_VertexID - baseVertex;
     uint quadLocal = rel >> 2u;
     uint corner = rel & 3u;
 
     uvec2 qw = quads[(baseVertex >> 2u) + quadLocal]; // NB: "packed" is a GLSL reserved word
+#endif
     uint lo = qw.x;
     uint hi = qw.y;
 
@@ -163,14 +179,12 @@ void main() {
                + av * (float(v) + c.y * float(sizeV))
                + aw * plane;
 
+#ifdef ALLVR_COMPAT
+    ivec3 origin = aOrigin;
+#else
     ivec3 origin = cubeInfo[gl_BaseInstance].xyz;
-    // 4c: cubeInfo.w carries the LOD level (0 = full-res cube and L0 node, the
-    // server stream writes the node's level 0..3). World position scales by
-    // 1 << level; vUvLocal above deliberately does NOT — it stays in node-voxel
-    // units so fract() tiles once per node voxel (per 2^level blocks) and the
-    // derivative-driven mip selection coarsens automatically.
-    float lodScale = ldexp(1.0, cubeInfo[gl_BaseInstance].w);
-    vec3 relPos = vec3(origin - uCamInt) - uCamFrac + local * lodScale;
+#endif
+    vec3 relPos = vec3(origin - uCamInt) - uCamFrac + local;
 
     // Texture coords follow the vanilla FaceInfo/BlockFaceUV table (derived
     // from FaceBakery.makeVertices + BlockFaceUV.getU/getV, uv [0,0,16,16]) —
@@ -223,9 +237,9 @@ void main() {
     vec2 distP[4];
     float devP[4];
     for (int i = 0; i < 4; i++) {
-        vec3 l4 = (au * (float(u) + cTab[i].x * float(sizeU))
+        vec3 l4 = au * (float(u) + cTab[i].x * float(sizeU))
                 + av * (float(v) + cTab[i].y * float(sizeV))
-                + aw * plane) * lodScale;
+                + aw * plane;
         vec4 cp4 = ProjMat * (ModelViewMat * vec4(baseRel + l4, 1.0));
         vec3 dz = allvrDistortShadowSpace(cp4.xyz);
         distC[i] = dz.xy;
@@ -251,12 +265,12 @@ void main() {
     gl_Position = vec4(dilated, distZ[int(corner)], 1.0);
 
     // plane frame for the fragment-exact solve in shadow.fsh (uv bounds in
-    // world blocks — the LOD scale widens the quad's true extent)
+    // world blocks)
     vOriginView = (ModelViewMat * vec4(baseRel
-        + (au * float(u) + av * float(v) + aw * plane) * lodScale, 1.0)).xyz;
+        + (au * float(u) + av * float(v) + aw * plane), 1.0)).xyz;
     vUAxisView = mat3(ModelViewMat) * au;
     vVAxisView = mat3(ModelViewMat) * av;
-    vQuadSize = vec2(float(sizeU), float(sizeV)) * lodScale;
+    vQuadSize = vec2(float(sizeU), float(sizeV));
 #else
 #ifdef ALLVR_SHADOW_PASS
     gl_Position = vec4(allvrDistortShadowSpace(gl_Position.xyz), gl_Position.w);

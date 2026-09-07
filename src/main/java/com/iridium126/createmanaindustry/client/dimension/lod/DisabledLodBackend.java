@@ -7,8 +7,10 @@ import net.minecraft.world.level.biome.Biome;
 import com.iridium126.createmanaindustry.dimension.lod.AllvrLodSectionData;
 
 /**
- * Backend for an explicitly disabled LOD (voxy integration plan §7.1) —
- * accepts nothing, forgets into nothing.
+ * Explicit no-far-terrain state (sodium-parity plan §6.1) — accepts nothing,
+ * forgets into nothing. The dimension runs near-only: fog and debug extent
+ * report the near radius, and this is a defined product state, not a
+ * renderer failure.
  */
 final class DisabledLodBackend implements AllvrLodBackend {
 
@@ -36,6 +38,6 @@ final class DisabledLodBackend implements AllvrLodBackend {
 
     @Override
     public String debugState() {
-        return "off";
+        return "near-only";
     }
 }

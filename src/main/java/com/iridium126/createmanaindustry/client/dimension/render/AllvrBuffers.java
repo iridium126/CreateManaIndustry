@@ -423,10 +423,10 @@ public final class AllvrBuffers {
     // ------------------------------------------------------------------
 
     /** Allocates a slot and writes the cube's absolute origin. -1 when full.
-     *  {@code level} rides in the unused w component: the vertex shader scales
-     *  local coordinates by {@code 1 << level} (0 for full-res cubes, the LOD
-     *  level 0..3 for LOD nodes — 4c). */
-    public int allocSlot(int x, int y, int z, int level) {
+     *  The w component is unused since the legacy LOD scale left with the
+     *  legacy LOD path — near nodes render at scale 1 (written as 0 so the
+     *  ivec4 layout stays put). */
+    public int allocSlot(int x, int y, int z) {
         int slot;
         if (this.freeSlotCount > 0) {
             slot = this.freeSlots[--this.freeSlotCount];
@@ -441,7 +441,7 @@ public final class AllvrBuffers {
         // 1181224960-style garbage ints sent every vertex outside the clip
         // volume (the "terrain invisible in every config" bug).
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 16L * slot,
-            new int[] {x, y, z, level});
+            new int[] {x, y, z, 0});
         return slot;
     }
 

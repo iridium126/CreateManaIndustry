@@ -14,24 +14,23 @@ import com.iridium126.createmanaindustry.dimension.cube.AllvrServerLevelDuck;
 import com.iridium126.createmanaindustry.dimension.lod.AllvrLodMap;
 
 /**
- * Batched C2S mesh requests for LOD nodes (doc §13 4c): pairs of
+ * Batched C2S LOD section requests (sodium-parity plan §6.2): pairs of
  * {@code (level byte, cellLong)} — batching 16 per packet keeps the
  * 64-requests/tick pacing at 4 packets/tick instead of 64. Invalid entries
  * (wrong dimension, out of range, over the in-flight cap) are answered with
  * a forget so the client's pending set cannot leak.
  * <p>
- * {@code capability} is the client's per-connection LOD data backend
- * (voxy integration plan §6.1): {@code 0} = legacy meshed quads,
- * {@code 1} = voxel section payloads. It rides every request batch so a
- * backend switch mid-session self-heals — the server answers each request
- * with the wire format the client asked for.
+ * {@code capability} is the request protocol version. After the legacy-LOD
+ * removal only the voxel-section protocol exists ({@code 1}); a request
+ * carrying anything else comes from a mismatched client and is rejected with
+ * per-entry forgets — capability 0 must never be guessed into section
+ * payloads (plan §6.2). The field rides every request batch so a mid-session
+ * protocol change self-heals.
  */
 public record ServerboundAllvrLodRequestPacket(int capability, long[] flat) implements CustomPacketPayload {
 
     public static final int MAX_ENTRIES = 16;
-    /** Legacy server-meshed quad stream (the 4c-1 path). */
-    public static final int CAPABILITY_LEGACY_MESH = 0;
-    /** 32³ voxel section payloads ({@code ClientboundAllvrLodSectionPacket}). */
+    /** 32³ voxel section payloads ({@code ClientboundAllvrLodSectionPacket}) — the only protocol. */
     public static final int CAPABILITY_VOXEL_SECTION = 1;
 
     public static final CustomPacketPayload.Type<ServerboundAllvrLodRequestPacket> TYPE =
@@ -60,7 +59,7 @@ public record ServerboundAllvrLodRequestPacket(int capability, long[] flat) impl
 
     /**
      * level/cell pairs flattened as {level, cellLong} — built by the client
-     * with its active backend's capability.
+     * with {@link #CAPABILITY_VOXEL_SECTION}.
      */
     public static ServerboundAllvrLodRequestPacket of(int capability, List<long[]> entries) {
         long[] flat = new long[entries.size() * 2];
@@ -82,6 +81,24 @@ public record ServerboundAllvrLodRequestPacket(int capability, long[] flat) impl
             || player.level().dimension() != AllvrDimensions.ALLAY_LEVEL) {
             return;
         }
+        // protocol gate: anything but the voxel-section capability is a
+        // mismatched client — drain its entries with forgets, never answer
+        // with section payloads
+        if (packet.capability() != CAPABILITY_VOXEL_SECTION) {
+            CreateManaIndustry.LOGGER.warn(
+                "[Allvr] rejected LOD request batch with unknown capability {} (client/server mismatch)",
+                packet.capability());
+            List<ClientboundAllvrLodForgetPacket> rejects = new ArrayList<>(packet.flat.length / 2);
+            for (int i = 0; i + 1 < packet.flat.length; i += 2) {
+                rejects.add(new ClientboundAllvrLodForgetPacket((int) packet.flat[i], packet.flat[i + 1]));
+            }
+            ctx.enqueueWork(() -> {
+                for (ClientboundAllvrLodForgetPacket forget : rejects) {
+                    player.connection.send(forget);
+                }
+            });
+            return;
+        }
         List<long[]> entries = new ArrayList<>(packet.flat.length / 2);
         for (int i = 0; i + 1 < packet.flat.length; i += 2) {
             entries.add(new long[] {packet.flat[i], packet.flat[i + 1]});
@@ -90,7 +107,7 @@ public record ServerboundAllvrLodRequestPacket(int capability, long[] flat) impl
         ctx.enqueueWork(() -> {
             AllvrLodMap lodMap = ((AllvrServerLevelDuck) player.level()).allvr$getLodMap();
             if (lodMap != null) {
-                lodMap.onRequest(player, packet.capability, entries);
+                lodMap.onRequest(player, entries);
             }
         });
     }

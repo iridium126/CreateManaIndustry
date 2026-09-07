@@ -71,7 +71,7 @@ public final class AllvrLodSectionCodec {
     /**
      * Decodes a payload back into a section. {@code payload} is the cached
      * wire bytes (never null); vanilla state ids resolve through
-     * {@link Block#stateById} exactly like the legacy quad remap.
+     * {@link Block#stateById}.
      */
     public static AllvrLodSectionData decode(int level, long cellLong, long generation, byte[] payload) {
         ByteReader in = new ByteReader(payload);

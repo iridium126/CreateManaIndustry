@@ -31,11 +31,11 @@ import com.iridium126.createmanaindustry.client.dimension.iris.AllvrIrisDataHold
 import com.iridium126.createmanaindustry.client.dimension.iris.AllvrIrisFrameTarget;
 import com.iridium126.createmanaindustry.client.dimension.iris.AllvrIrisPipelineData;
 import com.iridium126.createmanaindustry.client.dimension.iris.AllvrVoxyUniforms;
+import com.iridium126.createmanaindustry.client.dimension.render.backend.AllvrCompatBackend;
 import com.iridium126.createmanaindustry.client.render.shaderpack.ShadowDistortionRegistry;
 import com.iridium126.createmanaindustry.config.ClientConfig;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
-import com.iridium126.createmanaindustry.dimension.lod.AllvrLodPos;
 import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
 import com.mojang.blaze3d.systems.RenderSystem;
 
@@ -72,20 +72,18 @@ public final class AllvrRenderer {
     private final AllvrBuffers buffers = new AllvrBuffers();
     private final AllvrShaderCache shaders = new AllvrShaderCache();
     private final AllvrNodeStore nodes = new AllvrNodeStore();
+    private final AllvrCompatBackend compat = new AllvrCompatBackend();
     private final Long2ObjectOpenHashMap<Cube> renderCubes = new Long2ObjectOpenHashMap<>();
-    /**
-     * LOD render entries, one map per level 0..3 (doc §13 4c-1). Keys are cell
-     * longs and ALIAS full-res cube longs at L0 — the per-level maps keep the
-     * two node kinds apart. LOD nodes flow only into the GPU path (4c
-     * decision: the V0 CPU command source never sees them, and it is deleted
-     * at 4c-2 anyway); they are excluded from the shadow pass (full-res
-     * coverage meets typical pack shadowDistance).
-     */
-    @SuppressWarnings("unchecked")
-    private final Long2ObjectOpenHashMap<Cube>[] lodCubes = new Long2ObjectOpenHashMap[4];
     /** Dedupe set for submitted mesh jobs (main thread only). */
     private final LongOpenHashSet pending = new LongOpenHashSet();
     private final int[] commands = new int[AllvrBuffers.COMMAND_STRIDE * AllvrBuffers.MAX_COMMANDS];
+
+    /** Terrain backend tier (sodium-parity plan §7.7): B = default GPU-driven
+     *  MDI path, C = CPU render list + plain indexed batch drawing. Tier C
+     *  never disables the near terrain — capability shortfalls and Tier B
+     *  session failures latch into it. */
+    private enum Tier { B, C }
+    private Tier tier = Tier.B;
 
     // GPU-cull path state (4a). Nodes are maintained regardless of the active
     // path (setMesh/freeNode mirror assignQuads/forget), so the config switch
@@ -118,9 +116,7 @@ public final class AllvrRenderer {
     private double hizHistoryCamY;
     private double hizHistoryCamZ;
     private boolean hizHistoryValid;
-    /** One-time hint when allvrLod is on but the GPU path cannot serve it. */
-    private boolean warnedLodNeedsGpu;
-    /** 30 fps floor: a frame-time EMA above this decays the LOD request inflow. */
+    /** 30 fps floor: a frame-time EMA above this decays the request inflow. */
     private static final double FRAME_BUDGET_MS = 33.0;
     private static final float REQUEST_COOL_DOWN = 0.85f;
     private static final float REQUEST_RAMP_UP = 1.05f;
@@ -144,6 +140,8 @@ public final class AllvrRenderer {
     private boolean warnedShadowEmpty;
     private boolean warnedShadowExactFallback;
     private boolean loggedShadowStart;
+    /** Shader rebuild throttle (5 s) so a failing compile can't spin per frame. */
+    private long lastShaderRebuildMillis;
     // iris integration (G2 draw mounting): the allay pipeline's patch data +
     // the pack-lit draw targets it resolves to
     private AllvrIrisPipelineData irisData;
@@ -151,9 +149,15 @@ public final class AllvrRenderer {
     private int appliedCustomIdRevision = -1;
     private int loggedMeshResults;
     private long lastStatsLogMillis;
+    /** Throttle for FAILED_* result logging (5 s, like the starve warn). */
+    private long lastWorkerFailWarnMillis;
     /** Cubes currently holding a deferred (arena-starved) mesh stream. */
     private int deferredCount;
     private long lastStarveWarnMillis;
+    /** Session epoch (plan §7.1): bumped on every level drop; mesh results
+     *  stamped with an older epoch are discarded instead of resurrecting the
+     *  previous session's geometry through the freshly cleared buffers. */
+    private long epoch;
 
     /** Texture unit for the vanilla lightmap in the level-2 albedo pass
      *  (outside the HiZ/MC-depth compute units and the patch's sampler range). */
@@ -163,7 +167,6 @@ public final class AllvrRenderer {
         int slot = -1;
         int quadStart = -1;
         int quadCount = 0;
-        boolean needsRemesh;
         /** Mesh result held when the quad arena couldn't fit it — retried by
          *  {@link #retryDeferred} once {@code AllvrBuffers#canFit} passes, so
          *  an exhausted arena defers instead of dropping the cube forever. */
@@ -231,17 +234,35 @@ public final class AllvrRenderer {
             this.initialize(mc);
         }
         this.recordFrameTime();
-        if (!this.capsOk || !this.shaders.ready() || !this.buffers.ready()) {
-            if (this.shaders.needsRebuild() && this.buffers.ready()) {
+        boolean compat = this.tier == Tier.C;
+        boolean programsReady = compat ? this.shaders.compatReady() : this.shaders.ready();
+        boolean backendReady = compat ? this.compat.ready() && this.buffers.ready() : this.buffers.ready();
+        if (!programsReady || !backendReady) {
+            // rebuild throttle: a failed compile sets needsRebuild again — retry
+            // at most once per 5 s instead of compiling every frame
+            if (this.shaders.needsRebuild() && backendReady
+                && System.currentTimeMillis() - this.lastShaderRebuildMillis > 5000) {
+                this.lastShaderRebuildMillis = System.currentTimeMillis();
                 this.shaders.rebuild();
             }
             return;
         }
 
-        // 4c-2: the GPU-driven path is the only main-pass path — the V0 CPU
-        // command source and its config switch were deleted. A failed compute
-        // compile degrades to "terrain skips the frame" (F3+T rebuilds); there
-        // is no CPU fallback to degrade into (Tier C semantics).
+        if (compat) {
+            // compat floor: CPU frustum cull + plain indexed batch drawing; no
+            // compute, no HiZ, no shadow pass (plan §7.7 — Tier C guarantees
+            // a visible, correct near terrain)
+            long t0 = System.nanoTime();
+            this.pumpResults();
+            this.compatDraw(event, level, data);
+            double ms = (System.nanoTime() - t0) / 1.0e6;
+            this.sliceEmaMs = this.sliceEmaMs * 0.9 + ms * 0.1;
+            return;
+        }
+
+        // Tier B main pass — GPU-driven since 4c-2. A failed compute compile
+        // latches the session into Tier C instead of leaving terrain invisible
+        // (F3+T rebuilds still re-try Tier B on the next session).
         if (this.shaders.gpuReady()) {
             long t0 = System.nanoTime();
             this.pumpResults();
@@ -250,12 +271,101 @@ public final class AllvrRenderer {
             // spike it during a fill; the <1 ms acceptance number is steady state
             double ms = (System.nanoTime() - t0) / 1.0e6;
             this.sliceEmaMs = this.sliceEmaMs * 0.9 + ms * 0.1;
-        } else if (!this.warnedComputeFail) {
+        } else {
+            this.latchTierC("GPU cull pipeline unavailable (compile failure?)");
+        }
+    }
+
+    /**
+     * Session failure latch (sodium-parity plan §7.7): a Tier B failure
+     * switches the renderer to the compat backend for the rest of the
+     * session. Meshes uploaded to the Tier B arena are stranded there, so the
+     * compat store is rebuilt from the cube cache's key set — snapshots are
+     * cheap and the remesh is bounded by the streamed radius.
+     */
+    private void latchTierC(String reason) {
+        this.tier = Tier.C;
+        this.renderCubes.clear();
+        this.pending.clear();
+        this.deferredCount = 0;
+        this.nodes.clear();
+        this.buffers.invalidateNodeUpload();
+        this.sawFirstMesh.clear();
+        this.compat.reset();
+        if (!this.warnedComputeFail) {
             this.warnedComputeFail = true;
             CreateManaIndustry.LOGGER.error(
-                "[Allvr] GPU compute pipeline unavailable (compile failure?) — terrain suspended "
-                    + "(F3+T rebuilds; no CPU fallback since the 4c-2 V0 removal)");
+                "[Allvr] {} — session latched to the Tier C compat backend", reason);
+            chat(Minecraft.getInstance(), "[Allvr] allay terrain fell back to the compat "
+                + "renderer for this session (" + reason + ")");
         }
+        for (long key : AllvrClientCubeCache.cubeKeys()) {
+            this.onCubeApplied(key);
+        }
+    }
+
+    /** Visible compat draw entries built for the current frame (0 = skip). */
+    private int compatEntries;
+
+    /**
+     * Tier C draw: CPU frustum cull over the cube set (the exact planes the
+     * Tier B traversal consumes) → plain glMultiDrawElements batch via the
+     * compat backend's expanded-vertex VAO. No HiZ, no shadow pass, no MDIC —
+     * the compat tier's contract is a correct, visible near terrain.
+     */
+    private void compatDraw(RenderLevelStageEvent event, ClientLevel level, AllvrIrisPipelineData data) {
+        Minecraft mc = Minecraft.getInstance();
+        Camera camera = event.getCamera();
+        Vec3 camPos = camera.getPosition();
+
+        if (this.compat.quadsUsed() == 0) {
+            this.logGpuStats(0, 0, -1, -1, -1, "");
+            return;
+        }
+        this.extractFrustum(event.getProjectionMatrix(), event.getModelViewMatrix(), camPos);
+        this.compatEntries = this.buildCompatCommands(camPos);
+        this.drawTerrain(event, level, camPos, data);
+        this.logGpuStats(this.renderCubes.size(), this.renderCubes.size(), -1, -1,
+            this.compatEntries, " | compat (Tier C)");
+    }
+
+    /**
+     * CPU frustum pass for the compat backend: the same Gribb–Hartmann plane
+     * test the GPU traversal runs, per cube AABB (32³ local extent), appended
+     * into the compat draw list.
+     */
+    private int buildCompatCommands(Vec3 camPos) {
+        int camX = net.minecraft.util.Mth.floor(camPos.x);
+        int camY = net.minecraft.util.Mth.floor(camPos.y);
+        int camZ = net.minecraft.util.Mth.floor(camPos.z);
+        int n = 0;
+        for (var e : this.renderCubes.long2ObjectEntrySet()) {
+            Cube rc = e.getValue();
+            if (rc.quadCount <= 0 || rc.quadStart < 0) {
+                continue;
+            }
+            AllvrCubePos p = AllvrCubePos.fromLong(e.getLongKey());
+            float ox = p.minBlockX() - camX;
+            float oy = p.minBlockY() - camY;
+            float oz = p.minBlockZ() - camZ;
+            boolean ok = true;
+            for (int i = 0; i < 6 && ok; i++) {
+                float nx = this.frustumPlanes[i * 4];
+                float ny = this.frustumPlanes[i * 4 + 1];
+                float nz = this.frustumPlanes[i * 4 + 2];
+                float d = this.frustumPlanes[i * 4 + 3];
+                float px = nx > 0f ? ox + 32f : ox;
+                float py = ny > 0f ? oy + 32f : oy;
+                float pz = nz > 0f ? oz + 32f : oz;
+                if (nx * px + ny * py + nz * pz + d < 0f) {
+                    ok = false;
+                }
+            }
+            if (ok) {
+                n = this.compat.appendDrawEntry(rc.quadStart, rc.quadCount, n);
+            }
+        }
+        return n;
     }
 
     /**
@@ -354,23 +464,25 @@ public final class AllvrRenderer {
         var caps = org.lwjgl.opengl.GL.getCapabilities();
         // 4c-2 merged gate: per-command draw parameters (gl_BaseInstance in the
         // vertex path) AND the MDIC draw count must both be present — GL 4.6
-        // core carries both; on 4.5 they arrive as two ARB extensions. The old
-        // "MDIC-less Tier B" window the V0 CPU path served is gone by design
-        // (grilling option A): machines below the merged gate are Tier C.
+        // core carries both; on 4.5 they arrive as two ARB extensions. Below
+        // the merged gate the compat Tier C floor takes over (plan §7.7):
+        // near terrain stays visible through the CPU-drawn compat backend.
         this.capsOk = caps.OpenGL46
             || (caps.GL_ARB_shader_draw_parameters && caps.GL_ARB_indirect_parameters);
         AllvrShaderCache.setUseExtensionFallback(!caps.OpenGL46 && caps.GL_ARB_shader_draw_parameters);
         this.coreGl46 = caps.OpenGL46;
+        this.tier = this.capsOk ? Tier.B : Tier.C;
         CreateManaIndustry.LOGGER.info(
             "[Allvr] caps probe: OpenGL46={} ARB_shader_draw_parameters={} ARB_indirect_parameters={} → {}",
             caps.OpenGL46, caps.GL_ARB_shader_draw_parameters, caps.GL_ARB_indirect_parameters,
-            this.capsOk ? "terrain ok (Tier B)" : "Tier C — terrain disabled");
+            this.capsOk ? "terrain ok (Tier B)" : "Tier C compat backend (near terrain stays visible)");
         this.buffers.ensure();
+        this.compat.ensure();
         AllvrMesherWorker.start();
         if (!this.capsOk && !this.warnedTier) {
             this.warnedTier = true;
             chat(mc, "[Allvr] GL 4.6 / ARB draw-parameters+indirect-parameters unavailable — "
-                + "allay terrain disabled (Tier C)");
+                + "allay terrain drawn through the Tier C compat backend");
         }
     }
 
@@ -388,125 +500,31 @@ public final class AllvrRenderer {
         Cube rc = this.renderCubes.get(key);
         if (rc == null) {
             rc = new Cube();
-            AllvrCubePos pos = AllvrCubePos.fromLong(key);
-            rc.slot = this.buffers.allocSlot(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ(), 0);
+            if (this.tier == Tier.B) {
+                AllvrCubePos pos = AllvrCubePos.fromLong(key);
+                rc.slot = this.buffers.allocSlot(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ());
+            } // Tier C: origins ride in the expanded vertex attributes — no slots
             this.renderCubes.put(key, rc);
         }
         this.submit(key);
     }
 
-    /**
-     * Applies one server-built LOD mesh (main thread; quads arrive with
-     * vanilla state ids and were remapped by the caller). Mirrors the
-     * pumpResults discipline: the old arena range is freed and its node
-     * unpublished BEFORE the new stream lands, so a freed range can never be
-     * drawn through a stale node (the ghost-geometry fix class from 4b).
-     * An empty stream publishes nothing but still settles the caller's
-     * has-mesh state — the node just exists faceless.
-     */
-    public void applyLodMesh(int level, long cellLong, long[] quads) {
-        if (!this.initialized) {
-            this.initialize(Minecraft.getInstance());
-        }
-        AllvrLodPos pos = AllvrLodPos.fromCellLong(level, cellLong);
-        Cube rc = this.lodCubes[level].get(cellLong);
-        if (rc != null) {
-            if (rc.quadStart >= 0) {
-                this.buffers.freeRange(rc.quadStart, rc.quadCount);
-                rc.quadStart = -1;
-                rc.quadCount = 0;
-                this.nodes.freeLodNode(level, cellLong);
-            }
-            if (rc.deferredQuads != null) {
-                rc.deferredQuads = null;
-                this.deferredCount--;
-            }
-        }
-        if (quads.length == 0) {
-            // empty stream: publish nothing and release the slot — the node
-            // stays faceless (its has-mesh state lives in the client state,
-            // so the request walk never re-requests it)
-            if (rc != null) {
-                if (rc.slot >= 0) {
-                    this.buffers.freeSlot(rc.slot);
-                }
-                this.lodCubes[level].remove(cellLong);
-            }
-            return;
-        }
-        if (rc == null) {
-            rc = new Cube();
-            rc.slot = this.buffers.allocSlot(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ(), level);
-            this.lodCubes[level].put(cellLong, rc);
-        }
-        int start = this.buffers.allocRange(quads.length);
-        if (start < 0) {
-            // arena full: hold and retry when space frees (same contract as
-            // the full-res deferred path — dropping would leave a permanent
-            // far-terrain hole with nothing to re-trigger the request)
-            rc.deferredQuads = quads;
-            this.deferredCount++;
-            long now = System.currentTimeMillis();
-            if (now - this.lastStarveWarnMillis > 5000) {
-                this.lastStarveWarnMillis = now;
-                CreateManaIndustry.LOGGER.warn("[Allvr] quad arena full — {} mesh(es) deferred", this.deferredCount);
-            }
-            return;
-        }
-        this.buffers.uploadQuads(start, quads);
-        rc.quadStart = start;
-        rc.quadCount = quads.length;
-        if (rc.slot >= 0) {
-            this.nodes.setLodMesh(level, cellLong,
-                new net.minecraft.core.BlockPos(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ()),
-                start, quads.length, rc.slot);
-        }
-    }
-
-    /** Drops one LOD node's geometry (invalidation, eviction, level unload). */
-    public void forgetLod(int level, long cellLong) {
-        Cube rc = this.lodCubes[level].remove(cellLong);
-        if (rc == null) {
-            return;
-        }
-        if (rc.deferredQuads != null) {
-            this.deferredCount--;
-        }
-        if (rc.quadStart >= 0) {
-            this.buffers.freeRange(rc.quadStart, rc.quadCount);
-        }
-        if (rc.slot >= 0) {
-            this.buffers.freeSlot(rc.slot);
-        }
-        this.nodes.freeLodNode(level, cellLong);
-    }
-
-    /** Whether the LOD node currently holds a published (or deferred) mesh. */
-    public boolean hasLodMesh(int level, long cellLong) {
-        Cube rc = this.lodCubes[level].get(cellLong);
-        return rc != null && (rc.quadCount > 0 || rc.deferredQuads != null);
-    }
-
-    /**
-     * LOD gate for the client request state (4c decision: LOD nodes only flow
-     * through the GPU-driven path). False until the renderer initialized —
-     * the first stage event initializes it long before the player could see
-     * far terrain, so the request walk simply starts a few ticks late.
-     */
-    public boolean lodGate() {
-        return this.initialized && this.capsOk && this.shaders.gpuReady();
-    }
-
+    /** Drops one cube's geometry (server forget, eviction, level unload). */
     public void onCubeForgotten(long key) {
         Cube rc = this.renderCubes.remove(key);
         if (rc == null) {
             return;
         }
+        AllvrMesherWorker.cancel(key); // queued jobs for a dead cube settle as CANCELLED
         if (rc.deferredQuads != null) {
             this.deferredCount--;
         }
         if (rc.quadStart >= 0) {
-            this.buffers.freeRange(rc.quadStart, rc.quadCount);
+            if (this.tier == Tier.C) {
+                this.compat.freeRange(rc.quadStart, rc.quadCount);
+            } else {
+                this.buffers.freeRange(rc.quadStart, rc.quadCount);
+            }
         }
         this.buffers.freeSlot(rc.slot);
         this.nodes.freeNode(key);
@@ -579,14 +597,13 @@ public final class AllvrRenderer {
     }
 
     public void dropLevel() {
+        this.epoch++; // in-flight results from the old session are discarded
         this.renderCubes.clear();
-        for (var map : this.lodCubes) {
-            map.clear();
-        }
         this.pending.clear();
         this.deferredCount = 0;
         this.buffers.reset();
         this.nodes.clear();
+        this.compat.reset();
         // zero the GPU node buffer on the next sync — nodes.clear() alone
         // leaves the old session's nodes alive in it (capacity unchanged →
         // the dirty-set upload is a no-op) and the traversal's over-dispatch
@@ -606,6 +623,23 @@ public final class AllvrRenderer {
         this.shaders.requestRebuild();
     }
 
+    /**
+     * Full GL close (sodium-parity plan §7.1: GL objects are closed explicitly
+     * by the session's single owner). Called from the game-shutdown event —
+     * the renderer singleton holds no GL object across a context change, and
+     * every owned object here is deleted exactly once.
+     */
+    public void close() {
+        this.buffers.destroy();
+        this.compat.destroy();
+        this.shaders.destroy();
+        this.renderCubes.clear();
+        this.pending.clear();
+        this.nodes.clear();
+        this.initialized = false;
+        AllvrMesherWorker.stop();
+    }
+
     private void submit(long key) {
         if (!this.pending.add(key)) {
             return;
@@ -613,7 +647,7 @@ public final class AllvrRenderer {
         if (AllvrMesherWorker.threadOrNull() == null) {
             AllvrMesherWorker.start();
         }
-        AllvrMesherWorker.submit(key);
+        AllvrMesherWorker.submit(key, this.epoch);
     }
 
     /** Marks a cube (any offset) for remesh when it holds geometry. */
@@ -633,75 +667,134 @@ public final class AllvrRenderer {
         AllvrMesherWorker.MeshResult result;
         while ((result = AllvrMesherWorker.poll()) != null) {
             long key = result.key();
-            this.pending.remove(key);
+            this.pending.remove(key); // settled on EVERY outcome (plan §7.1)
+            if (result.epoch() != this.epoch) {
+                continue; // stale session (level switched) — never republish
+            }
             Cube rc = this.renderCubes.get(key);
             if (rc == null) {
                 continue;
             }
-            if (rc.quadStart >= 0) {
-                this.buffers.freeRange(rc.quadStart, rc.quadCount);
-                rc.quadStart = -1;
-                rc.quadCount = 0;
-            }
-            if (result.quads().length > 0) {
-                if (this.loggedMeshResults < 3) {
-                    this.loggedMeshResults++;
-                    CreateManaIndustry.LOGGER.info("[Allvr] mesh result #{}: cube {} → {} quads",
-                        this.loggedMeshResults, AllvrCubePos.fromLong(key), result.quads().length);
-                }
-                int start = this.buffers.allocRange(result.quads().length);
-                if (start < 0) {
-                    // arena full: hold the stream and retry when space frees up —
-                    // dropping it left the cube unrendered until some later block
-                    // change happened to re-trigger a remesh
-                    // the stale node still points at the just-freed range — drop it
-                    this.unpublishNodeMesh(key);
-                    if (rc.deferredQuads == null) {
-                        this.deferredCount++;
-                    }
-                    rc.deferredQuads = result.quads();
-                    long now = System.currentTimeMillis();
-                    if (now - this.lastStarveWarnMillis > 5000) {
-                        this.lastStarveWarnMillis = now;
-                        CreateManaIndustry.LOGGER.warn("[Allvr] quad arena full — {} cube(s) deferred",
-                            this.deferredCount);
-                    }
-                } else {
-                    if (rc.deferredQuads != null) {
-                        // a fresher stream just landed — the stale one is superseded
-                        rc.deferredQuads = null;
-                        this.deferredCount--;
-                    }
-                    this.assignQuads(key, rc, start, result.quads());
-                }
-            } else {
-                // empty mesh: the range freed above is never re-published —
-                // drop the stale node (see unpublishNodeMesh)
-                this.unpublishNodeMesh(key);
-            }
-            if (rc.needsRemesh) {
-                rc.needsRemesh = false;
-                this.submit(key);
+            switch (result.status()) {
+                case SUCCESS -> this.applySuccess(key, rc, result.quads());
+                case CANCELLED, FAILED_RETRYABLE, FAILED_FATAL -> this.applyFailure(key, rc, result);
             }
         }
         this.retryDeferred();
     }
 
+    /**
+     * Publishes one successful mesh result with the plan §7.2 atomic-swap
+     * discipline: the new stream is allocated FIRST and published, and only
+     * then is the old arena range freed — the old mesh keeps drawing until
+     * the new one takes over, so a failed allocation can never leave an
+     * update hole (the old "free first, then try to fit" order did).
+     */
+    private void applySuccess(long key, Cube rc, long[] quads) {
+        if (quads.length > 0) {
+            if (this.loggedMeshResults < 3) {
+                this.loggedMeshResults++;
+                CreateManaIndustry.LOGGER.info("[Allvr] mesh result #{}: cube {} → {} quads",
+                    this.loggedMeshResults, AllvrCubePos.fromLong(key), quads.length);
+            }
+            int start = this.tier == Tier.C
+                ? this.compat.allocRange(quads.length)
+                : this.buffers.allocRange(quads.length);
+            if (start < 0) {
+                // arena full: the OLD mesh stays visible (never unpublished) and
+                // the new stream defers to retryDeferred; a newer stream arriving
+                // while deferred simply replaces this one (latest wins)
+                if (rc.deferredQuads == null) {
+                    this.deferredCount++;
+                }
+                rc.deferredQuads = quads;
+                long now = System.currentTimeMillis();
+                if (now - this.lastStarveWarnMillis > 5000) {
+                    this.lastStarveWarnMillis = now;
+                    CreateManaIndustry.LOGGER.warn("[Allvr] quad arena full — {} cube(s) deferred",
+                        this.deferredCount);
+                }
+                return;
+            }
+            int oldStart = rc.quadStart;
+            int oldCount = rc.quadCount;
+            rc.quadStart = -1;
+            rc.quadCount = 0;
+            if (rc.deferredQuads != null) {
+                // a fresher stream just landed — the stale one is superseded
+                rc.deferredQuads = null;
+                this.deferredCount--;
+            }
+            this.assignQuads(key, rc, start, quads);
+            if (oldStart >= 0) {
+                // freed AFTER the new publication — the swap is atomic per frame
+                if (this.tier == Tier.C) {
+                    this.compat.freeRange(oldStart, oldCount);
+                } else {
+                    this.buffers.freeRange(oldStart, oldCount);
+                }
+            }
+        } else {
+            // empty mesh: publish nothing and drop the old publication —
+            // the range freed here is never re-referenced (see unpublishNodeMesh)
+            int oldStart = rc.quadStart;
+            int oldCount = rc.quadCount;
+            rc.quadStart = -1;
+            rc.quadCount = 0;
+            if (rc.deferredQuads != null) {
+                rc.deferredQuads = null;
+                this.deferredCount--;
+            }
+            this.unpublishNodeMesh(key);
+            if (oldStart >= 0) {
+                if (this.tier == Tier.C) {
+                    this.compat.freeRange(oldStart, oldCount);
+                } else {
+                    this.buffers.freeRange(oldStart, oldCount);
+                }
+            }
+        }
+    }
+
+    /**
+     * A CANCELLED or FAILED_* result keeps the cube's previous mesh published —
+     * the plan §7.2 atomic-swap rule ("keep the old mesh until the new upload
+     * succeeds") applies to failures too: a stale-but-valid mesh beats an
+     * update hole, and the next edit to the cube re-triggers the remesh. Only
+     * the pure-empty SUCCESS result drops a publication (the new truth is
+     * "no geometry"). Logs throttled; no auto-retry — a deterministic failure
+     * would loop forever (plan §7.1).
+     */
+    private void applyFailure(long key, Cube rc, AllvrMesherWorker.MeshResult result) {
+        long now = System.currentTimeMillis();
+        if (now - this.lastWorkerFailWarnMillis > 5000) {
+            this.lastWorkerFailWarnMillis = now;
+            CreateManaIndustry.LOGGER.error("[Allvr] mesher job for cube {} settled as {} — previous mesh kept, "
+                + "retried on the cube's next edit", AllvrCubePos.fromLong(key), result.status());
+        }
+    }
+
     private void assignQuads(long key, Cube rc, int start, long[] quads) {
-        this.buffers.uploadQuads(start, quads);
+        if (this.tier == Tier.C) {
+            // compat: vertices expand into the compat VBO (origin included);
+            // no GPU arena upload, no node publication
+            this.compat.publish(key, start, quads);
+        } else {
+            this.buffers.uploadQuads(start, quads);
+            // GPU-cull path: publish the mesh into the node SSBO. Slotless cubes
+            // (cubeInfo table full) stay nodeless — the draw skips them too.
+            if (rc.slot >= 0) {
+                AllvrCubePos cpos = AllvrCubePos.fromLong(key);
+                this.nodes.setMesh(key,
+                    new net.minecraft.core.BlockPos(cpos.minBlockX(), cpos.minBlockY(), cpos.minBlockZ()),
+                    start, quads.length, rc.slot);
+            }
+        }
         rc.quadStart = start;
         rc.quadCount = quads.length;
-        // GPU-cull path: publish the mesh into the node SSBO. Slotless cubes
-        // (cubeInfo table full) stay nodeless — the V0 draw skips them too.
-        if (rc.slot >= 0) {
-            AllvrCubePos cpos = AllvrCubePos.fromLong(key);
-            this.nodes.setMesh(key,
-                new net.minecraft.core.BlockPos(cpos.minBlockX(), cpos.minBlockY(), cpos.minBlockZ()),
-                start, quads.length, rc.slot);
-        }
         // first mesh: neighbors meshed earlier may have culled faces
         // against this cube while it was still void air
-        if (rc.slot >= 0 && !this.sawFirstMesh.contains(key)) {
+        if ((this.tier == Tier.C || rc.slot >= 0) && !this.sawFirstMesh.contains(key)) {
             this.sawFirstMesh.add(key);
             this.dirtyAllNeighbors(key);
         }
@@ -720,13 +813,17 @@ public final class AllvrRenderer {
      * {@link #assignQuads} re-allocates the node via {@code setMesh}.
      */
     private void unpublishNodeMesh(long key) {
-        this.nodes.freeNode(key);
+        if (this.tier == Tier.B) {
+            this.nodes.freeNode(key);
+        } // Tier C: nothing is published — the freed VBO range is the whole state
     }
 
-    /** Uploads deferred mesh results once the arena can actually fit them.
-     *  {@code canFit} mirrors {@code allocRange}'s success test, so a
-     *  fragmented arena waits for real contiguous space instead of
-     *  spin-remeshing the same cube every frame. */
+    /** Uploads deferred mesh results once the arena can actually fit them,
+     *  keeping the §7.2 atomic-swap order: publish the new stream first, free
+     *  the old range after — the cube never draws through freed memory and
+     *  never shows an update hole. {@code canFit} mirrors {@code allocRange}'s
+     *  success test, so a fragmented arena waits for real contiguous space
+     *  instead of spin-remeshing the same cube every frame. */
     private void retryDeferred() {
         if (this.deferredCount == 0) {
             return;
@@ -735,41 +832,34 @@ public final class AllvrRenderer {
         while (it.hasNext()) {
             Long2ObjectOpenHashMap.Entry<Cube> e = it.next();
             Cube rc = e.getValue();
-            if (rc.deferredQuads == null || !this.buffers.canFit(rc.deferredQuads.length)) {
+            if (rc.deferredQuads == null) {
                 continue;
             }
-            int start = this.buffers.allocRange(rc.deferredQuads.length);
+            boolean fits = this.tier == Tier.C
+                ? this.compat.canFit(rc.deferredQuads.length)
+                : this.buffers.canFit(rc.deferredQuads.length);
+            if (!fits) {
+                continue;
+            }
+            int start = this.tier == Tier.C
+                ? this.compat.allocRange(rc.deferredQuads.length)
+                : this.buffers.allocRange(rc.deferredQuads.length);
             if (start < 0) {
                 continue; // arena changed between canFit and alloc — retry next frame
             }
             long[] quads = rc.deferredQuads;
             rc.deferredQuads = null;
             this.deferredCount--;
+            int oldStart = rc.quadStart;
+            int oldCount = rc.quadCount;
+            rc.quadStart = -1;
+            rc.quadCount = 0;
             this.assignQuads(e.getLongKey(), rc, start, quads);
-        }
-        for (int lvl = 0; lvl < this.lodCubes.length; lvl++) {
-            Iterator<Long2ObjectOpenHashMap.Entry<Cube>> lit = this.lodCubes[lvl].long2ObjectEntrySet().fastIterator();
-            while (lit.hasNext()) {
-                Long2ObjectOpenHashMap.Entry<Cube> e = lit.next();
-                Cube rc = e.getValue();
-                if (rc.deferredQuads == null || !this.buffers.canFit(rc.deferredQuads.length)) {
-                    continue;
-                }
-                int start = this.buffers.allocRange(rc.deferredQuads.length);
-                if (start < 0) {
-                    continue;
-                }
-                long[] quads = rc.deferredQuads;
-                rc.deferredQuads = null;
-                this.deferredCount--;
-                this.buffers.uploadQuads(start, quads);
-                rc.quadStart = start;
-                rc.quadCount = quads.length;
-                if (rc.slot >= 0) {
-                    AllvrLodPos pos = AllvrLodPos.fromCellLong(lvl, e.getLongKey());
-                    this.nodes.setLodMesh(lvl, e.getLongKey(),
-                        new net.minecraft.core.BlockPos(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ()),
-                        start, quads.length, rc.slot);
+            if (oldStart >= 0) {
+                if (this.tier == Tier.C) {
+                    this.compat.freeRange(oldStart, oldCount);
+                } else {
+                    this.buffers.freeRange(oldStart, oldCount);
                 }
             }
         }
@@ -917,18 +1007,31 @@ public final class AllvrRenderer {
         Minecraft mc = Minecraft.getInstance();
         // 0 = unpatched main-target draw, 1 = patched (pack-lit), 2 = albedo pass
         int mode = 0;
-        int prog = this.shaders.terrain();
+        int prog = this.tier == Tier.C ? this.shaders.compatTerrain() : this.shaders.terrain();
         if (data != null) {
-            prog = this.shaders.patchedTerrain();
-            if (prog != 0) {
-                mode = 1;
-            } else if (this.shaders.albedoTerrain() != 0) {
-                mode = 2;
-                prog = this.shaders.albedoTerrain();
-            } else if (!this.warnedPatchFallback) {
-                this.warnedPatchFallback = true;
-                CreateManaIndustry.LOGGER.warn("[Allvr] patched terrain programs unavailable — falling back "
-                    + "to the unpatched draw (fallback chain, grilling decision ⑧)");
+            if (this.tier == Tier.C) {
+                prog = this.shaders.compatPatchedTerrain();
+                if (prog != 0) {
+                    mode = 1;
+                } else if (this.shaders.compatAlbedoTerrain() != 0) {
+                    mode = 2;
+                    prog = this.shaders.compatAlbedoTerrain();
+                } else {
+                    // compat draw without any pack-aware program — unpatched
+                    prog = this.shaders.compatTerrain();
+                }
+            } else {
+                prog = this.shaders.patchedTerrain();
+                if (prog != 0) {
+                    mode = 1;
+                } else if (this.shaders.albedoTerrain() != 0) {
+                    mode = 2;
+                    prog = this.shaders.albedoTerrain();
+                } else if (!this.warnedPatchFallback) {
+                    this.warnedPatchFallback = true;
+                    CreateManaIndustry.LOGGER.warn("[Allvr] patched terrain programs unavailable — falling back "
+                        + "to the unpatched draw (fallback chain, grilling decision ⑧)");
+                }
             }
         }
         if (prog == 0) {
@@ -957,7 +1060,11 @@ public final class AllvrRenderer {
         // customId re-resolve — grilling decision ⑦)
         this.buffers.ensureStateTable(AllvrRenderStateMap.entryCount());
         GL20.glUseProgram(prog);
-        this.buffers.bindForDraw();
+        if (this.tier == Tier.C) {
+            this.compat.bindForDraw();
+        } else {
+            this.buffers.bindForDraw();
+        }
         this.terrainUniforms(prog, event, level, camPos);
         if (mode == 2) {
             // albedo pass samples the vanilla lightmap with the baked nibbles
@@ -977,7 +1084,12 @@ public final class AllvrRenderer {
         RenderSystem.depthMask(true);
         RenderSystem.disableBlend();
 
-        this.buffers.drawIndirectCount(this.coreGl46);
+        if (this.tier == Tier.C) {
+            this.compat.draw(this.compatEntries);
+            this.compat.unbind();
+        } else {
+            this.buffers.drawIndirectCount(this.coreGl46);
+        }
 
         if (mode > 0) {
             if (mode == 2) {
@@ -986,7 +1098,9 @@ public final class AllvrRenderer {
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
             }
             this.frameTarget.unbind();
-            if (ClientConfig.allvrIrisShadowPass) {
+            // shadow pass is a Tier B feature (GPU command source + pack FBO
+            // plumbing); the compat tier stays main-pass-only
+            if (this.tier == Tier.B && ClientConfig.allvrIrisShadowPass) {
                 this.drawShadowPass(camPos);
             }
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, savedFbo);
@@ -1598,8 +1712,5 @@ public final class AllvrRenderer {
     }
 
     private AllvrRenderer() {
-        for (int i = 0; i < this.lodCubes.length; i++) {
-            this.lodCubes[i] = new Long2ObjectOpenHashMap<>();
-        }
     }
 }

@@ -18,8 +18,8 @@ import com.iridium126.createmanaindustry.client.dimension.lod.AllvrLodBackend;
  *       overrides, static render-system accessor).</li>
  * </ul>
  * An unknown build degrades to UNAVAILABLE with the reason logged once; the
- * backend manager then falls back to the legacy renderer without touching
- * anything Voxy-shaped at runtime.
+ * backend manager then enters the disabled (near-only) backend without
+ * touching anything Voxy-shaped at runtime — there is no fallback renderer.
  */
 public final class VoxyCompatibilityProbe {
 

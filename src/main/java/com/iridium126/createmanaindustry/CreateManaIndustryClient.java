@@ -103,10 +103,13 @@ public class CreateManaIndustryClient {
         }
     }
 
-    /** Releases the GPU particle engine's resources when the game shuts down. */
+    /** Releases the GPU particle engine's and the ALLVR renderer's resources
+     *  when the game shuts down (plan §7.1: GL objects are closed explicitly
+     *  by their owning session). */
     @SubscribeEvent
     private static void onGameShuttingDown(GameShuttingDownEvent event) {
         CMIParticleEngine.INSTANCE.close();
+        com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE.close();
     }
 
     /**

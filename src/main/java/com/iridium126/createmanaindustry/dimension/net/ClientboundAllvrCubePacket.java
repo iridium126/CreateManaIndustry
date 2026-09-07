@@ -51,6 +51,14 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundAllvrCubePacket> STREAM_CODEC =
         StreamCodec.of(ClientboundAllvrCubePacket::encode, ClientboundAllvrCubePacket::decode);
 
+    /** Hard element caps (sodium-parity plan §7.1): one entry per cube cell
+     *  each — anything above can only be a malformed/hostile stream, and the
+     *  client must reject it instead of looping on a giant count. */
+    public static final int MAX_BLOCK_ENTRIES = 32 * 32 * 32;
+    public static final int MAX_EMITTER_ENTRIES = 32 * 32 * 32;
+    /** Vanilla light emission range (checked arithmetic on the wire value). */
+    public static final int MAX_EMISSION = 15;
+
     private static void encode(RegistryFriendlyByteBuf buffer, ClientboundAllvrCubePacket p) {
         buffer.writeLong(p.cubePos);
         buffer.writeByteArray(p.payload);
@@ -96,7 +104,10 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
         ctx.enqueueWork(() -> AllvrClientCubeCache.applyCube(packet));
     }
 
-    /** Client-side decode into a fresh {@link AllvrCube} (main thread). */
+    /** Client-side decode into a fresh {@link AllvrCube} (main thread).
+     *  Throws on any structural violation (element count over the cap, a cell
+     *  index outside the 15-bit cube layout, trailing bytes) so the caller
+     *  rejects the whole packet instead of half-applying it. */
     public AllvrCube decodeCube(Level level, RegistryAccess registryAccess) {
         AllvrCubePos pos = AllvrCubePos.fromLong(cubePos);
         AllvrCube cube = new AllvrCube(pos, registryAccess.registryOrThrow(Registries.BIOME));
@@ -109,8 +120,12 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
         int baseY = pos.minBlockY();
         int baseZ = pos.minBlockZ();
         int beCount = buf.readVarInt();
+        if (beCount < 0 || beCount > MAX_BLOCK_ENTRIES) {
+            throw new IllegalArgumentException("cube BE count out of range: " + beCount);
+        }
         for (int i = 0; i < beCount; i++) {
             int cell = buf.readShort() & 0xFFFF;
+            requireCell(cell);
             CompoundTag tag = buf.readNbt();
             BlockPos worldPos = new BlockPos(baseX + (cell & 31), baseY + (cell >> 10), baseZ + ((cell >> 5) & 31));
             BlockState state = cube.getBlockState(worldPos);
@@ -129,11 +144,26 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
             }
         }
         int emitterCount = buf.readVarInt();
+        if (emitterCount < 0 || emitterCount > MAX_EMITTER_ENTRIES) {
+            throw new IllegalArgumentException("cube emitter count out of range: " + emitterCount);
+        }
         for (int i = 0; i < emitterCount; i++) {
             int cell = buf.readShort() & 0xFFFF;
-            int emission = buf.readVarInt();
+            requireCell(cell);
+            int emission = Math.min(Math.max(0, buf.readVarInt()), MAX_EMISSION);
             cube.putEmitter(new BlockPos(baseX + (cell & 31), baseY + (cell >> 10), baseZ + ((cell >> 5) & 31)), emission);
         }
+        if (buf.readableBytes() != 0) {
+            throw new IllegalArgumentException("cube payload has " + buf.readableBytes()
+                + " trailing bytes — codec mismatch");
+        }
         return cube;
+    }
+
+    /** Cell layout is y&lt;&lt;10 | z&lt;&lt;5 | x over a 32³ cube (15 bits). */
+    private static void requireCell(int cell) {
+        if (cell > 32767) {
+            throw new IllegalArgumentException("cube cell index out of range: " + cell);
+        }
     }
 }

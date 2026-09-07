@@ -9,21 +9,33 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.dimension.AllvrLodClientState;
 
 /**
- * One LOD node's voxel section payload (voxy integration plan §6.1) —
- * replaces the meshed quad stream for section-capable clients. The
- * {@code payload} body is the {@code AllvrLodSectionCodec} encoding
- * (palette + per-cell light); positions stay ABSOLUTE — the client maps
- * them into its virtual Y window, never the server.
+ * One LOD node's voxel section payload — the only far-terrain wire format
+ * after the legacy-LOD removal (sodium-parity plan §6.2). The {@code payload}
+ * body is the {@code AllvrLodSectionCodec} encoding (palette + per-cell
+ * light); positions stay ABSOLUTE — the client maps them into its virtual Y
+ * window, never the server.
  * <p>
  * {@code requestId} echoes the server-side request it fulfills (race
  * debugging / ownership attribution); {@code generation} is the node's
  * edit counter at build time so the client can drop stale re-sends.
+ * {@code protocolVersion} is bumped to 2 for the legacy-LOD removal — the
+ * decode rejects any other version outright, so mismatched client/server
+ * builds fail closed instead of guessing formats.
  */
 public record ClientboundAllvrLodSectionPacket(int protocolVersion, long requestId, int level,
                                                long cellLong, int generation, byte[] payload)
     implements CustomPacketPayload {
 
-    public static final int PROTOCOL_VERSION = 1;
+    public static final int PROTOCOL_VERSION = 2;
+
+    /**
+     * Hard payload byte cap (sodium-parity plan §7.1): a fully populated
+     * worst-case section encodes to well under 128 KB (palette + 32768
+     * indices + 32768 light bytes); anything larger can only be malformed,
+     * and the cap stops a hostile stream from requesting the transport
+     * maximum before the codec's own validation runs.
+     */
+    public static final int MAX_PAYLOAD_BYTES = 128 * 1024;
 
     public static final CustomPacketPayload.Type<ClientboundAllvrLodSectionPacket> TYPE =
         new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("allvr_lod_section"));
@@ -49,7 +61,7 @@ public record ClientboundAllvrLodSectionPacket(int protocolVersion, long request
         int level = buf.readVarInt();
         long cellLong = buf.readLong();
         int generation = buf.readVarInt();
-        byte[] payload = buf.readByteArray();
+        byte[] payload = buf.readByteArray(MAX_PAYLOAD_BYTES);
         return new ClientboundAllvrLodSectionPacket(protocol, requestId, level, cellLong, generation, payload);
     }
 

@@ -16,6 +16,11 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 @EventBusSubscriber(modid = CreateManaIndustry.MODID)
 public final class ClientConfig {
 
+    /** Class-local logger — a unit test parses config values without loading
+     *  the mod class (its static init touches game registries). */
+    private static final org.slf4j.Logger LOGGER =
+        org.slf4j.LoggerFactory.getLogger(ClientConfig.class);
+
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     // ---- rendering ---------------------------------------------------------
@@ -39,7 +44,7 @@ public final class ClientConfig {
     private static ModConfigSpec.BooleanValue ALLVR_IRIS_INTEGRATION;
     private static ModConfigSpec.BooleanValue ALLVR_IRIS_SHADOW_PASS;
     private static ModConfigSpec.BooleanValue ALLVR_LOD;
-    private static ModConfigSpec.EnumValue<AllvrLodBackendMode> ALLVR_LOD_BACKEND;
+    private static ModConfigSpec.ConfigValue<String> ALLVR_LOD_BACKEND;
 
     static {
         BUILDER.comment("Volumetric mist rendering options.").push("rendering");
@@ -107,30 +112,63 @@ public final class ClientConfig {
                         + "irisIntegration and an active pack with a shadow pass.")
                 .define("irisShadowPass", true);
         ALLVR_LOD = BUILDER
-                .comment("Far-terrain LOD for the allay dimension (4c): beyond the full-resolution cube streaming "
-                        + "radius the server streams server-meshed LOD nodes (band table 256/512/1024/2048 blocks, "
-                        + "server-side allvrLodDistance caps the extent). Requires the GPU terrain pipeline "
-                        + "(GL 4.6, or 4.5 + ARB_shader_draw_parameters + ARB_indirect_parameters) — LOD nodes "
-                        + "only flow through the GPU-driven draw path. On an unsupported context the terrain is "
-                        + "inactive anyway (Tier C) and this switch has no effect. Streaming extent is "
-                        + "server-authoritative; this switch only turns the client's request/render half on.")
+                .comment("Far-terrain LOD for the allay dimension: beyond the full-resolution cube streaming "
+                        + "radius the server streams 32³ voxel sections to the Voxy far-terrain backend — "
+                        + "the only far-terrain renderer (sodium-parity plan §2.1). Without a usable Voxy "
+                        + "install the dimension runs near-only: no far requests, no fallback renderer. "
+                        + "This switch is the master kill (false wins over every lodBackend mode).")
                 .define("lod", true);
+        // NB: parsed manually (parseBackendMode) instead of defineEnum — configs
+        // written before the legacy-LOD removal may carry "LEGACY", and an
+        // unknown enum name must never fail the whole spec load (plan §6.1).
         ALLVR_LOD_BACKEND = BUILDER
-                .comment("Which far-terrain LOD rendering backend consumes the streamed nodes (voxy integration): "
-                        + "AUTO picks the voxy adapter when the pinned Voxy build (0.2.15-beta, 1.21.1 NeoForge) is "
-                        + "installed and its internal surface matches, and falls back to ALLVR's own legacy LOD "
-                        + "renderer otherwise. VOXY forces the adapter (fallback unchanged), LEGACY forces the old "
-                        + "renderer (A/B baseline), OFF disables far-terrain LOD on the client. Applies on the "
-                        + "next dimension entry or config reload.")
-                .defineEnum("lodBackend", AllvrLodBackendMode.AUTO);
+                .comment("Which far-terrain backend consumes the streamed voxel sections: AUTO enables the "
+                        + "voxy adapter when the pinned Voxy build (0.2.15-beta, 1.21.1 NeoForge) is "
+                        + "installed and its internal surface matches, otherwise the dimension runs "
+                        + "near-only (no fallback renderer). VOXY forces the adapter, OFF disables "
+                        + "far-terrain requests on the client. lod=false is the master kill and wins over "
+                        + "this value. Applies on the next dimension entry or config reload. The removed "
+                        + "LEGACY value reads as AUTO.")
+                .define("lodBackend", "AUTO");
         BUILDER.pop();
     }
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 
-    /** Explicit backend choice for the far-terrain LOD (voxy integration). */
+    /**
+     * Explicit backend choice for the far-terrain LOD (sodium-parity plan
+     * §6.1): Voxy or disabled — the legacy renderer no longer exists.
+     */
     public enum AllvrLodBackendMode {
-        AUTO, VOXY, LEGACY, OFF
+        AUTO, VOXY, OFF
+    }
+
+    /**
+     * Parses the stored {@code lodBackend} string into the mode enum. LEGACY
+     * (a value written before the legacy-LOD removal) migrates to AUTO with a
+     * warning; anything unknown also falls back to AUTO — a stale value must
+     * not fail config loading. Exposed for tests.
+     */
+    public static AllvrLodBackendMode parseBackendMode(String raw) {
+        if (raw == null) {
+            return AllvrLodBackendMode.AUTO;
+        }
+        switch (raw.trim().toUpperCase(java.util.Locale.ROOT)) {
+            case "VOXY":
+                return AllvrLodBackendMode.VOXY;
+            case "OFF":
+                return AllvrLodBackendMode.OFF;
+            case "LEGACY":
+                LOGGER.warn(
+                    "[Allvr] config lodBackend=LEGACY refers to the removed legacy LOD renderer — migrating to AUTO");
+                return AllvrLodBackendMode.AUTO;
+            case "AUTO":
+                return AllvrLodBackendMode.AUTO;
+            default:
+                LOGGER.warn(
+                    "[Allvr] unknown config lodBackend value '{}' — using AUTO", raw);
+                return AllvrLodBackendMode.AUTO;
+        }
     }
 
     public static double mistGlowStrength = 0.5;
@@ -167,7 +205,7 @@ public final class ClientConfig {
             allvrIrisIntegration = ALLVR_IRIS_INTEGRATION.get();
             allvrIrisShadowPass = ALLVR_IRIS_SHADOW_PASS.get();
             allvrLod = ALLVR_LOD.get();
-            allvrLodBackend = ALLVR_LOD_BACKEND.get();
+            allvrLodBackend = parseBackendMode(ALLVR_LOD_BACKEND.get());
         }
     }
 }
