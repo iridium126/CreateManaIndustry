@@ -58,12 +58,16 @@ public final class AllvrLodClientState {
      * implied). Rejected publishes stay out, so the walk re-issues them.
      */
     private static final LongOpenHashSet[] resident = new LongOpenHashSet[4];
+    /** All-air responses have no backend node, but are still completed
+     *  requests and must not be re-issued every tick. */
+    private static final LongOpenHashSet[] empty = new LongOpenHashSet[4];
     private static boolean loggedFirstBitmap;
 
     static {
         for (int i = 0; i < 4; i++) {
             pending[i] = new LongOpenHashSet();
             resident[i] = new LongOpenHashSet();
+            empty[i] = new LongOpenHashSet();
         }
     }
 
@@ -137,6 +141,17 @@ public final class AllvrLodClientState {
                 AllvrLodPos.fromCellLong(lvl, packet.cellLong()), e);
             return; // pending already consumed — the walk re-requests fresh
         }
+        if (data == null) {
+            // format=0 is the valid all-air response, not a section that can
+            // be injected into Voxy. Clear any old backend node as well: an
+            // all-air rebuild may race a previous resident payload.
+            if (resident[lvl].remove(packet.cellLong())) {
+                AllvrLodBackendManager.forget(lvl, packet.cellLong());
+            }
+            empty[lvl].add(packet.cellLong());
+            return;
+        }
+        empty[lvl].remove(packet.cellLong());
         // the biome rides the injection; sample it here on the main thread
         // (the writer thread must not touch the level)
         Minecraft mc = Minecraft.getInstance();
@@ -162,6 +177,7 @@ public final class AllvrLodClientState {
         }
         pending[lvl].remove(packet.cellLong());
         resident[lvl].remove(packet.cellLong());
+        empty[lvl].remove(packet.cellLong());
         AllvrLodBackendManager.forget(lvl, packet.cellLong());
     }
 
@@ -188,6 +204,7 @@ public final class AllvrLodClientState {
         for (int i = 0; i < 4; i++) {
             pending[i].clear();
             resident[i].clear();
+            empty[i].clear();
         }
     }
 
@@ -207,7 +224,7 @@ public final class AllvrLodClientState {
             // near-only (voxy missing, disabled, or failed): no new requests,
             // pending drained, no legacy retry (sodium-parity plan §6.3)
             for (int lvl = 0; lvl <= AllvrLodPos.MAX_LEVEL; lvl++) {
-                if (!pending[lvl].isEmpty() || !resident[lvl].isEmpty()) {
+                if (!pending[lvl].isEmpty() || !resident[lvl].isEmpty() || !empty[lvl].isEmpty()) {
                     clearLevel(lvl);
                 }
             }
@@ -305,7 +322,8 @@ public final class AllvrLodClientState {
                         continue;
                     }
                     long cellLong = AllvrCubePos.asLong(cx, cy, cz);
-                    if (resident[lvl].contains(cellLong) || pending[lvl].contains(cellLong)) {
+                    if (resident[lvl].contains(cellLong) || pending[lvl].contains(cellLong)
+                        || empty[lvl].contains(cellLong)) {
                         continue;
                     }
                     pending[lvl].add(cellLong);
@@ -319,14 +337,16 @@ public final class AllvrLodClientState {
         }
     }
 
-    /** Drops resident/pending nodes outside the box or inside the full-res
-     *  zone, and crops vertically to the active window (plan §5.2). */
+    /** Drops resident, pending, and known-empty nodes outside the box or
+     *  inside the full-res zone, and crops vertically to the active window
+     *  (plan §5.2). */
     private static void evictFar(int lvl, int pcx, int pcy, int pcz, int half, int minDist,
                                  int verticalLimit) {
         int limit = half + Math.max(1, half >> 2);
         int vertical = Math.min(AllvrLodBands.verticalEvictCells(lvl, viewDistanceBlocks()), verticalLimit);
         evictSet(lvl, resident[lvl], pcx, pcy, pcz, limit, minDist, vertical, true);
         evictSet(lvl, pending[lvl], pcx, pcy, pcz, limit, minDist, vertical, false);
+        evictSet(lvl, empty[lvl], pcx, pcy, pcz, limit, minDist, vertical, false);
     }
 
     private static int viewDistanceBlocks() {
@@ -416,6 +436,7 @@ public final class AllvrLodClientState {
         levels[lvl] = null;
         pending[lvl].clear();
         resident[lvl].clear();
+        empty[lvl].clear();
     }
 
     private AllvrLodClientState() {}

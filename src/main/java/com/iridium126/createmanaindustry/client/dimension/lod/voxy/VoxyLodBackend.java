@@ -71,6 +71,12 @@ final class VoxyLodBackend implements AllvrLodBackend {
 
     @Override
     public boolean apply(AllvrLodSectionData data, Holder<Biome> biome) {
+        // The section codec uses null for its valid all-air marker. That
+        // marker is consumed by AllvrLodClientState as a forget and must
+        // never become an asynchronous writer job.
+        if (data == null) {
+            return false;
+        }
         if (this.state == STATE_DETACH || this.engine == null || this.writer == null) {
             return false; // frozen (rebase detach) or not yet bound — re-request
         }
