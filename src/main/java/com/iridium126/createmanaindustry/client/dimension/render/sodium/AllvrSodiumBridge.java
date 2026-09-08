@@ -38,6 +38,8 @@ public final class AllvrSodiumBridge {
     private static volatile ClientLevel level;
     private static volatile long resourceRevision;
     private static volatile boolean initialized;
+    /** No cube event may be mapped until the first camera-centered origin is published. */
+    private static boolean originInitialized;
     private static double lastCameraY;
 
     private AllvrSodiumBridge() {}
@@ -74,7 +76,13 @@ public final class AllvrSodiumBridge {
         }
         initialized = true;
         resourceRevision++;
-        enqueueAllResidentCubes();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == newLevel && mc.player != null) {
+            lastCameraY = mc.gameRenderer.getMainCamera().getPosition().y;
+            WINDOW.initializeAt(WINDOW.nextOrigin(lastCameraY));
+            originInitialized = true;
+            enqueueAllResidentCubes();
+        }
     }
 
     public static void clear() {
@@ -92,6 +100,8 @@ public final class AllvrSodiumBridge {
         QUEUED_REMOVE.clear();
         WINDOW.reset();
         initialized = false;
+        originInitialized = false;
+        lastCameraY = 0.0D;
         level = null;
     }
 
@@ -102,6 +112,18 @@ public final class AllvrSodiumBridge {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
             lastCameraY = mc.gameRenderer.getMainCamera().getPosition().y;
+            if (!originInitialized) {
+                // Packets can arrive before LevelEvent.Load has a usable
+                // camera.  Discard any pre-init mapping and seed the whole
+                // resident set against the real camera position instead.
+                ADD_QUEUE.clear();
+                REMOVE_QUEUE.clear();
+                QUEUED_ADD.clear();
+                QUEUED_REMOVE.clear();
+                WINDOW.initializeAt(WINDOW.nextOrigin(lastCameraY));
+                originInitialized = true;
+                enqueueAllResidentCubes();
+            }
             if (WINDOW.isSteady() && WINDOW.needsRebase(lastCameraY)) {
                 WINDOW.beginDetach();
                 for (long key : OWNED) {
@@ -128,7 +150,7 @@ public final class AllvrSodiumBridge {
     }
 
     public static void onCubeApplied(long cubeKey) {
-        if (!active()) {
+        if (!active() || !originInitialized) {
             return;
         }
         enqueueCubeSections(cubeKey);
@@ -136,7 +158,7 @@ public final class AllvrSodiumBridge {
     }
 
     public static void onCubeForgotten(long cubeKey) {
-        if (!active()) {
+        if (!active() || !originInitialized) {
             return;
         }
         AllvrCubePos cube = AllvrCubePos.fromLong(cubeKey);
@@ -154,7 +176,7 @@ public final class AllvrSodiumBridge {
 
     public static void onBlockChanged(net.minecraft.core.BlockPos absolutePos,
                                       BlockState oldState, BlockState newState) {
-        if (!active()) {
+        if (!active() || !originInitialized) {
             return;
         }
         int sx = absolutePos.getX() >> 4;
@@ -171,7 +193,7 @@ public final class AllvrSodiumBridge {
     }
 
     public static void onResourceReload() {
-        if (!active()) {
+        if (!active() || !originInitialized) {
             return;
         }
         resourceRevision++;

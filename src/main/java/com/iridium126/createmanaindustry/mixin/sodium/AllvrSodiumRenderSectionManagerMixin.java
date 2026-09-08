@@ -15,6 +15,8 @@ import com.iridium126.createmanaindustry.client.dimension.render.sodium.SodiumAp
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager;
+import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
+import net.caffeinemc.mods.sodium.client.render.chunk.data.BuiltSectionInfo;
 import net.caffeinemc.mods.sodium.client.world.LevelSlice;
 import net.caffeinemc.mods.sodium.client.world.cloned.ChunkRenderContext;
 import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
@@ -57,6 +59,25 @@ public abstract class AllvrSodiumRenderSectionManagerMixin {
             target = "Lnet/minecraft/client/multiplayer/ClientLevel;getSectionIndexFromSectionY(I)I"))
     private int cmi$allaySectionIndex(ClientLevel level, int y) {
         return AllvrSodiumSectionLifecycle.sectionIndex(level.getSectionIndexFromSectionY(y));
+    }
+
+    /**
+     * Voxy installs a redirect on this exact call and assumes every render
+     * section has a vanilla-height LevelChunkSection array.  ALLVR sections
+     * are intentionally virtual and never belong to that array; use Sodium's
+     * own state update while Allay is active, preserving Voxy's behavior in
+     * every ordinary dimension.
+     */
+    @WrapOperation(method = "updateSectionInfo",
+        at = @At(value = "INVOKE",
+            target = "Lnet/caffeinemc/mods/sodium/client/render/chunk/RenderSection;"
+                + "setInfo(Lnet/caffeinemc/mods/sodium/client/render/chunk/data/BuiltSectionInfo;)Z"))
+    private boolean cmi$allaySetInfo(RenderSection section, BuiltSectionInfo info,
+                                     Operation<Boolean> original) {
+        if (AllvrSodiumBridge.active()) {
+            return section.setInfo(info);
+        }
+        return original.call(section, info);
     }
 
     @WrapOperation(method = "createRebuildTask",

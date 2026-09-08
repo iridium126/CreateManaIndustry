@@ -135,6 +135,19 @@ public final class AllvrRenderYWindow {
         this.phase = Phase.STEADY;
     }
 
+    /**
+     * Starts a fresh level session at an origin chosen from the current
+     * camera.  A level can be entered hundreds or thousands of blocks above
+     * the vanilla build window, so the first origin must not always be zero.
+     * This is intentionally a direct initialization rather than a rebase:
+     * there are no sections from the new level that need to be detached yet.
+     */
+    public void initializeAt(int newOrigin) {
+        this.originBlockY = newOrigin;
+        this.phase = Phase.STEADY;
+        this.epoch++;
+    }
+
     /** Resets the whole window to a fresh session (level load): origin 0,
      *  phase STEADY, epoch continues monotonically so stale work from the
      *  previous session can never alias. */

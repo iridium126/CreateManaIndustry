@@ -28,4 +28,18 @@ class AllvrRenderYWindowTest {
         window.endRebase();
         assertFalse(window.isRebasing());
     }
+
+    @Test
+    void initialOriginCanBeCenteredBeforeAnySectionsExist() {
+        AllvrRenderYWindow window = new AllvrRenderYWindow();
+        long before = window.epoch();
+
+        window.initializeAt(window.nextOrigin(9_785));
+
+        assertEquals(9_728, window.originBlockY());
+        assertEquals(0, window.virtualBlockY(9_728));
+        assertEquals(9_728, window.absoluteBlockY(0));
+        assertEquals(AllvrRenderYWindow.Phase.STEADY, window.phase());
+        assertTrue(window.epoch() > before);
+    }
 }
