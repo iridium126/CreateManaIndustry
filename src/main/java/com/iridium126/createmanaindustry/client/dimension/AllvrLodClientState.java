@@ -33,10 +33,12 @@ import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodReques
  * capability is consulted. A backend switch clears the pending/resident
  * bookkeeping so the walk refills.
  * <p>
- * Nodes whose cells fall inside the full-resolution streaming radius
- * (Chebyshev 8 cubes) are never requested, and requests are additionally
- * cropped to the fixed active vertical radius. All apply/forget/tick run on
- * the main thread, which is the render thread.
+ * Nodes whose geometry is inside Minecraft's effective render distance are
+ * never requested here because Sodium owns that near terrain. Every LOD level
+ * outside that seam remains available to Voxy; Voxy owns the screen-space
+ * choice of which level to display. Requests are additionally cropped to the
+ * fixed active vertical radius. All apply/forget/tick run on the main thread,
+ * which is the render thread.
  */
 public final class AllvrLodClientState {
 
@@ -73,6 +75,7 @@ public final class AllvrLodClientState {
     private static long nextRequestId = 1L;
     private static long clientTick;
     private static Boolean lastSubscription;
+    private static int lastRenderDistanceChunks = Integer.MIN_VALUE;
     private static boolean loggedFirstBitmap;
 
     static {
@@ -101,13 +104,14 @@ public final class AllvrLodClientState {
             clearLevel(lvl);
             return;
         }
-        // structural checks (sodium-parity plan §7.1): the box must stay in
-        // the server-generated range (≤ 32³ cells, band table §6.2) and the
-        // word array must cover exactly dim³ bits — a short word array would
-        // crash the walk's isSurface read, an oversized one is garbage.
+        // Structural checks (sodium-parity plan §7.1): the box must stay in
+        // the bounded server-generated range and the word array must cover
+        // exactly dim³ bits — a short word array would crash the walk's
+        // surface read, an oversized one is garbage.
         int dim = packet.dimCells();
         long cells = (long) dim * dim * dim;
-        if (dim > 64 || packet.words().length != (int) ((cells + 63) >>> 6)) {
+        if (dim > AllvrLodBands.MAX_BITMAP_DIM
+            || packet.words().length != (int) ((cells + 63) >>> 6)) {
             CreateManaIndustry.LOGGER.warn(
                 "[Allvr] malformed LOD bitmap for L{} (dim={}, words={}) — dropped",
                 lvl, dim, packet.words().length);
@@ -138,7 +142,8 @@ public final class AllvrLodClientState {
         }
         // A response can race an eviction, a forget, or a zero-dimension
         // bitmap. Only publish sections for requests still owned by this
-        // level; otherwise a late payload would resurrect inner-band nodes.
+        // level; otherwise a late payload would resurrect nodes now owned by
+        // the near renderer.
         if (levels[lvl] == null) {
             AllvrLodBackendManager.forget(lvl, packet.cellLong());
             return;
@@ -214,10 +219,11 @@ public final class AllvrLodClientState {
     /** Drops all LOD state (level unload / dimension switch / logout). */
     public static void clear() {
         if (inDimension()) {
-            sendSubscription(false);
+            sendSubscription(false, AllvrClientRenderDistance.chunks());
         }
         sessionEpoch++;
         lastSubscription = null;
+        lastRenderDistanceChunks = Integer.MIN_VALUE;
         for (int i = 0; i < 4; i++) {
             clearLevel(i);
         }
@@ -229,6 +235,7 @@ public final class AllvrLodClientState {
     public static void onLevelChanged(net.minecraft.client.multiplayer.ClientLevel level) {
         sessionEpoch++;
         lastSubscription = null;
+        lastRenderDistanceChunks = Integer.MIN_VALUE;
         AllvrLodBackendManager.enter(level);
     }
 
@@ -336,73 +343,84 @@ public final class AllvrLodClientState {
         int playerCellX = player.getX() >> (5 + lvl);
         int playerCellY = player.getY() >> (5 + lvl);
         int playerCellZ = player.getZ() >> (5 + lvl);
-        // Nodes fully outside the full-resolution streaming radius begin at the
-        // first cell after the fixed band boundary; the active vertical window
-        // additionally crops the walk (plan §5.2).
-        int minDist = AllvrLodBands.minCellDistance(lvl);
+        // The seam is expressed in blocks, not a level-specific cell band. A
+        // 12-chunk Minecraft render distance therefore gives Sodium 192 blocks
+        // of near terrain and starts the Voxy hierarchy immediately beyond it.
+        int nearDistanceBlocks = AllvrClientRenderDistance.blocks();
+        int viewDistanceBlocks = viewDistanceBlocks();
         int verticalLimit = AllvrLodBands.activeVerticalCells(lvl);
 
-        // Evict before the budget/pending early-outs so stale inner-band nodes
+        // Evict before the budget/pending early-outs so stale near nodes
         // cannot survive indefinitely when the request queue is full.
-        evictFar(lvl, playerCellX, playerCellY, playerCellZ, half, minDist, verticalLimit);
+        evictFar(lvl, playerCellX, playerCellY, playerCellZ, half, player,
+            nearDistanceBlocks, verticalLimit);
 
         int budget = perTick - entries.size();
         if (budget <= 0 || pending[lvl].size() >= MAX_PENDING) {
             return;
         }
 
-        // iterate the bitmap box but measure distance from the PLAYER's cell,
-        // not the box center — the box lags the player by up to the resend
-        // threshold, and box-relative distance would request nodes inside the
-        // full-res zone (duplicate geometry) after the player walks toward them
-        for (int cy = state.originY; cy < state.originY + state.dim && budget > 0; cy++) {
-            int dy = cy - playerCellY;
-            if (Math.abs(dy) > verticalLimit) {
-                continue; // outside the active vertical window (§5.2)
-            }
-            for (int cz = state.originZ; cz < state.originZ + state.dim && budget > 0; cz++) {
-                int dz = cz - playerCellZ;
-                for (int cx = state.originX; cx < state.originX + state.dim && budget > 0; cx++) {
-                    int dx = cx - playerCellX;
-                    int dist = Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz)));
-                    if (dist < minDist || dist > half) {
-                        continue; // full-res territory, or beyond the band
-                    }
-                    if (!isSurface(state, cx - state.originX, cy - state.originY, cz - state.originZ)) {
-                        continue;
-                    }
-                    long cellLong = AllvrCubePos.asLong(cx, cy, cz);
-                    if (resident[lvl].contains(cellLong) || pending[lvl].containsKey(cellLong)
-                        || empty[lvl].contains(cellLong)
-                        || retryAtTick[lvl].get(cellLong) > clientTick) {
-                        continue;
-                    }
-                    long requestId = nextRequestId++;
-                    if (requestId == ClientboundAllvrLodForgetPacket.BROADCAST) {
-                        requestId = nextRequestId++;
-                    }
-                    pending[lvl].put(cellLong, new PendingTicket(sessionEpoch, requestId,
-                        clientTick + REQUEST_TIMEOUT_TICKS));
-                    entries.add(new long[] {lvl, cellLong, requestId});
-                    budget--;
-                    if (pending[lvl].size() >= MAX_PENDING) {
-                        return;
-                    }
+        // Walk only set bits. The hierarchy now uses the complete coverage box
+        // at every level, so scanning every air bit would make a large render
+        // distance needlessly expensive on the render thread.
+        int cellCount = state.dim * state.dim * state.dim;
+        for (int wordIndex = 0; wordIndex < state.words.length && budget > 0; wordIndex++) {
+            long word = state.words[wordIndex];
+            while (word != 0L && budget > 0) {
+                long bitMask = word & -word;
+                int bit = Long.numberOfTrailingZeros(bitMask);
+                word ^= bitMask;
+                int flat = (wordIndex << 6) + bit;
+                if (flat >= cellCount) {
+                    break; // ignore padding bits in the final word
+                }
+                int ix = flat % state.dim;
+                int yz = flat / state.dim;
+                int iz = yz % state.dim;
+                int iy = yz / state.dim;
+                int cx = state.originX + ix;
+                int cy = state.originY + iy;
+                int cz = state.originZ + iz;
+                if (Math.abs(cy - playerCellY) > verticalLimit) {
+                    continue; // outside the active vertical window (§5.2)
+                }
+                int distance = AllvrLodBands.nearestDistanceBlocks(lvl, cx, cy, cz,
+                    player.getX(), player.getY(), player.getZ());
+                if (distance <= nearDistanceBlocks
+                    || !AllvrLodBands.inCoverage(lvl, distance, viewDistanceBlocks)) {
+                    continue; // Sodium owns near terrain; outside server coverage
+                }
+                long cellLong = AllvrCubePos.asLong(cx, cy, cz);
+                if (resident[lvl].contains(cellLong) || pending[lvl].containsKey(cellLong)
+                    || empty[lvl].contains(cellLong)
+                    || retryAtTick[lvl].get(cellLong) > clientTick) {
+                    continue;
+                }
+                long requestId = nextRequestId++;
+                if (requestId == ClientboundAllvrLodForgetPacket.BROADCAST) {
+                    requestId = nextRequestId++;
+                }
+                pending[lvl].put(cellLong, new PendingTicket(sessionEpoch, requestId,
+                    clientTick + REQUEST_TIMEOUT_TICKS));
+                entries.add(new long[] {lvl, cellLong, requestId});
+                budget--;
+                if (pending[lvl].size() >= MAX_PENDING) {
+                    return;
                 }
             }
         }
     }
 
-    /** Drops resident, pending, and known-empty nodes outside the box or
-     *  inside the full-res zone, and crops vertically to the active window
-     *  (plan §5.2). */
-    private static void evictFar(int lvl, int pcx, int pcy, int pcz, int half, int minDist,
-                                 int verticalLimit) {
+    /** Drops resident, pending, and known-empty nodes outside the coverage box
+     *  or inside Minecraft's near-render seam, and crops vertically to the
+     *  active window (plan §5.2). */
+    private static void evictFar(int lvl, int pcx, int pcy, int pcz, int half,
+                                 BlockPos player, int nearDistanceBlocks, int verticalLimit) {
         int limit = half + Math.max(1, half >> 2);
         int vertical = Math.min(AllvrLodBands.verticalEvictCells(lvl, viewDistanceBlocks()), verticalLimit);
-        evictSet(lvl, resident[lvl], pcx, pcy, pcz, limit, minDist, vertical, true);
-        evictPending(lvl, pcx, pcy, pcz, limit, minDist, vertical);
-        evictSet(lvl, empty[lvl], pcx, pcy, pcz, limit, minDist, vertical, false);
+        evictSet(lvl, resident[lvl], pcx, pcy, pcz, limit, player, nearDistanceBlocks, vertical, true);
+        evictPending(lvl, pcx, pcy, pcz, limit, player, nearDistanceBlocks, vertical);
+        evictSet(lvl, empty[lvl], pcx, pcy, pcz, limit, player, nearDistanceBlocks, vertical, false);
     }
 
     private static int viewDistanceBlocks() {
@@ -410,7 +428,8 @@ public final class AllvrLodClientState {
     }
 
     private static void evictSet(int lvl, LongOpenHashSet set, int pcx, int pcy, int pcz, int limit,
-                                 int minDist, int vertical, boolean accepted) {
+                                 BlockPos player, int nearDistanceBlocks, int vertical,
+                                 boolean accepted) {
         if (set.isEmpty()) {
             return;
         }
@@ -422,7 +441,9 @@ public final class AllvrLodClientState {
             int d = Math.max(Math.abs(pos.cellX() - pcx),
                 Math.max(Math.abs(pos.cellY() - pcy), Math.abs(pos.cellZ() - pcz)));
             int dy = Math.abs(pos.cellY() - pcy);
-            if (d > limit || d < minDist || dy > vertical) {
+            boolean insideNear = AllvrLodBands.nearestDistanceBlocks(lvl, pos.cellX(), pos.cellY(), pos.cellZ(),
+                player.getX(), player.getY(), player.getZ()) <= nearDistanceBlocks;
+            if (d > limit || insideNear || dy > vertical) {
                 if (removed == null) {
                     removed = new ArrayList<>();
                 }
@@ -438,7 +459,7 @@ public final class AllvrLodClientState {
     }
 
     private static void evictPending(int lvl, int pcx, int pcy, int pcz, int limit,
-                                     int minDist, int vertical) {
+                                     BlockPos player, int nearDistanceBlocks, int vertical) {
         var it = pending[lvl].keySet().iterator();
         while (it.hasNext()) {
             long cellLong = it.nextLong();
@@ -446,7 +467,9 @@ public final class AllvrLodClientState {
             int d = Math.max(Math.abs(pos.cellX() - pcx),
                 Math.max(Math.abs(pos.cellY() - pcy), Math.abs(pos.cellZ() - pcz)));
             int dy = Math.abs(pos.cellY() - pcy);
-            if (d > limit || d < minDist || dy > vertical) {
+            boolean insideNear = AllvrLodBands.nearestDistanceBlocks(lvl, pos.cellX(), pos.cellY(), pos.cellZ(),
+                player.getX(), player.getY(), player.getZ()) <= nearDistanceBlocks;
+            if (d > limit || insideNear || dy > vertical) {
                 it.remove();
             }
         }
@@ -473,29 +496,22 @@ public final class AllvrLodClientState {
     // helpers
     // ------------------------------------------------------------------
 
-    /** Full-resolution streaming extent incl. the forget hysteresis (8 send
-     *  cubes + 2 hysteresis) — the fog-end target of the near-only state. */
-    private static final float FULL_RES_EXTENT_BLOCKS = AllvrLodBands.fullResExtentBlocks();
-    /** Far-terrain extent assumed before the first L3 bitmap lands (the
-     *  default allvrLodDistance; the bitmap box corrects it once streamed). */
-    private static final float DEFAULT_LOD_EXTENT_BLOCKS = 2048.0f;
-
     /**
      * Blocks of visible terrain the allay dimension's fog should cover (the
      * fog-end target consumed by {@code AllvrFogRendererMixin}). The far
      * radius is only reported while the voxy backend is actually active —
-     * near-only fog ends at the real near coverage instead of advertising a
-     * far horizon nothing renders (sodium-parity plan §6.3).
+     * near-only fog follows Minecraft's own effective render distance instead
+     * of advertising a far horizon nothing renders.
      */
     public static float viewExtentBlocks() {
         if (!farTerrainEnabled() || !AllvrLodBackendManager.farTerrainActive()) {
-            return FULL_RES_EXTENT_BLOCKS;
+            return AllvrClientRenderDistance.blocks();
         }
         LevelState l3 = levels[3];
         if (l3 != null && l3.dim > 0) {
             return (l3.dim >> 1) * (float) AllvrLodBands.cellBlocks(3);
         }
-        return DEFAULT_LOD_EXTENT_BLOCKS;
+        return viewDistanceBlocks();
     }
 
     private static boolean isSurface(LevelState state, int ix, int iy, int iz) {
@@ -530,17 +546,20 @@ public final class AllvrLodClientState {
 
     private static void syncSubscription() {
         boolean desired = farTerrainEnabled() && AllvrLodBackendManager.requestsOpen();
-        if (lastSubscription != null && lastSubscription == desired) {
+        int renderDistanceChunks = AllvrClientRenderDistance.chunks();
+        if (lastSubscription != null && lastSubscription == desired
+            && (!desired || lastRenderDistanceChunks == renderDistanceChunks)) {
             return;
         }
-        sendSubscription(desired);
+        sendSubscription(desired, renderDistanceChunks);
         lastSubscription = desired;
+        lastRenderDistanceChunks = renderDistanceChunks;
     }
 
-    private static void sendSubscription(boolean subscribed) {
+    private static void sendSubscription(boolean subscribed, int renderDistanceChunks) {
         net.neoforged.neoforge.network.PacketDistributor.sendToServer(
             new com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodSubscriptionPacket(
-                sessionEpoch, subscribed));
+                sessionEpoch, subscribed, renderDistanceChunks));
     }
 
     private AllvrLodClientState() {}

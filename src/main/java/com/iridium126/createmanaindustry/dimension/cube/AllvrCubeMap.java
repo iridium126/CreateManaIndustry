@@ -64,21 +64,21 @@ import com.iridium126.createmanaindustry.dimension.storage.AllvrStorageDiagnosti
  */
 public final class AllvrCubeMap {
 
-    /** Per-player server-memory load radius, in cubes (mirrors CC3 verticalViewDistance=8). */
+    /** One transport cube's unchanged world-space edge length. */
+    private static final int CUBE_EDGE_BLOCKS = 32;
+    /** Per-player server-memory/simulation shell, in cubes. */
     private static final int GEN_RADIUS = 8;
     /**
-     * Per-player client subscription radii (xz, y). The Y radius equals the
-     * XZ radius (plan F18): the LOD exclusion zone was derived from the XZ
-     * radius (Chebyshev 8) while near streaming only sent ±4 vertically — a
-     * player flying straight up left cubes 5–8 with no near mesh AND no LOD
-     * request. Uniform 8 makes the vertical coverage match the exclusion
-     * zone; the vertical forget margin keeps its extra hysteresis.
+     * Default per-player client subscription radii (xz, y), used until the
+     * client sends its effective Minecraft render distance. The Y radius
+     * equals XZ so a player flying straight up never falls into a gap between
+     * Sodium near terrain and Voxy far terrain.
      */
-    private static final int SEND_XZ_RADIUS = 8;
-    private static final int SEND_Y_RADIUS = 8;
+    private static final int DEFAULT_SEND_XZ_RADIUS = 8;
+    private static final int DEFAULT_SEND_Y_RADIUS = 8;
     /** Forget margin beyond the send radii (hysteresis against jitter at the edge). */
-    private static final int FORGET_XZ_RADIUS = SEND_XZ_RADIUS + 2;
-    private static final int FORGET_Y_RADIUS = SEND_Y_RADIUS + 2;
+    private static final int DEFAULT_FORGET_XZ_RADIUS = DEFAULT_SEND_XZ_RADIUS + 2;
+    private static final int DEFAULT_FORGET_Y_RADIUS = DEFAULT_SEND_Y_RADIUS + 2;
     /** Max cubes streamed per player per tick. */
     private static final int SEND_BUDGET_PER_TICK = 24;
     /** Shell-load time budget per tick. */
@@ -139,6 +139,10 @@ public final class AllvrCubeMap {
     private static final class Subscription {
         final LongOpenHashSet sent = new LongOpenHashSet();
         AllvrCubePos lastCube;
+        int sendXzRadius = DEFAULT_SEND_XZ_RADIUS;
+        int sendYRadius = DEFAULT_SEND_Y_RADIUS;
+        int forgetXzRadius = DEFAULT_FORGET_XZ_RADIUS;
+        int forgetYRadius = DEFAULT_FORGET_Y_RADIUS;
     }
 
     public AllvrCubeMap(ServerLevel level) {
@@ -168,6 +172,23 @@ public final class AllvrCubeMap {
     /** Persistence diagnostics snapshot (plan §7.3). */
     public AllvrStorageDiagnostics diagnostics() {
         return this.diagnostics;
+    }
+
+    /**
+     * Updates the near-cube stream for one client. Minecraft's render distance
+     * is measured in 16-block chunks, while the Allay transport remains based
+     * on unchanged 32³ cubes. The server-side generation/simulation shell is
+     * intentionally kept separate and remains capped by {@link #GEN_RADIUS}.
+     */
+    public void setClientRenderDistance(UUID uuid, int renderDistanceChunks) {
+        Subscription sub = this.subscriptions.computeIfAbsent(uuid, k -> new Subscription());
+        int chunks = Math.max(2, Math.min(64, renderDistanceChunks));
+        int blocks = chunks * 16;
+        int radius = Math.max(1, (blocks + CUBE_EDGE_BLOCKS - 1) / CUBE_EDGE_BLOCKS);
+        sub.sendXzRadius = radius;
+        sub.sendYRadius = radius;
+        sub.forgetXzRadius = radius + 2;
+        sub.forgetYRadius = radius + 2;
     }
 
     // ------------------------------------------------------------------
@@ -484,8 +505,9 @@ public final class AllvrCubeMap {
                 continue;
             }
             int sentCount = 0;
+            int streamRadius = Math.max(GEN_RADIUS, Math.max(sub.sendXzRadius, sub.sendYRadius));
             genLoop:
-            for (int r = 0; r <= GEN_RADIUS; r++) {
+            for (int r = 0; r <= streamRadius; r++) {
                 for (int dy = -r; dy <= r; dy++) {
                     for (int dx = -r; dx <= r; dx++) {
                         for (int dz = -r; dz <= r; dz++) {
@@ -496,7 +518,9 @@ public final class AllvrCubeMap {
                             int cy = pc.getY() + dy;
                             int cz = pc.getZ() + dz;
                             long key = AllvrCubePos.asLong(cx, cy, cz);
-                            boolean inSendRange = Math.abs(dy) <= SEND_Y_RADIUS; // xz always <= GEN_RADIUS == SEND_XZ_RADIUS
+                            boolean inSendRange = Math.abs(dx) <= sub.sendXzRadius
+                                && Math.abs(dy) <= sub.sendYRadius
+                                && Math.abs(dz) <= sub.sendXzRadius;
                             if (sub.sent.contains(key) || (capReached && r > 2 && !inSendRange)) {
                                 continue;
                             }
@@ -712,9 +736,9 @@ public final class AllvrCubeMap {
             boolean nearAnyPlayer = false;
             for (ServerPlayer player : players) {
                 AllvrCubePos pc = AllvrCubePos.of(player.blockPosition());
-                if (Math.abs(cpos.getX() - pc.getX()) <= FORGET_XZ_RADIUS
-                    && Math.abs(cpos.getZ() - pc.getZ()) <= FORGET_XZ_RADIUS
-                    && Math.abs(cpos.getY() - pc.getY()) <= FORGET_Y_RADIUS) {
+                if (Math.abs(cpos.getX() - pc.getX()) <= DEFAULT_FORGET_XZ_RADIUS
+                    && Math.abs(cpos.getZ() - pc.getZ()) <= DEFAULT_FORGET_XZ_RADIUS
+                    && Math.abs(cpos.getY() - pc.getY()) <= DEFAULT_FORGET_Y_RADIUS) {
                     nearAnyPlayer = true;
                     break;
                 }
@@ -770,8 +794,8 @@ public final class AllvrCubeMap {
             int dxCube = cpos.getX() - pc.getX();
             int dyCube = cpos.getY() - pc.getY();
             int dzCube = cpos.getZ() - pc.getZ();
-            if (Math.max(Math.abs(dxCube), Math.abs(dzCube)) > FORGET_XZ_RADIUS
-                || Math.abs(dyCube) > FORGET_Y_RADIUS) {
+            if (Math.max(Math.abs(dxCube), Math.abs(dzCube)) > sub.forgetXzRadius
+                || Math.abs(dyCube) > sub.forgetYRadius) {
                 if (forget == null) {
                     forget = new LongArrayList();
                 }

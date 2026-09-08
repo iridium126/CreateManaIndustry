@@ -211,10 +211,10 @@ public final class ServerConfig {
 
         BUILDER.comment("Allay dimension LOD pipeline (server-authoritative streaming extent).").push("allvr_lod");
         ALLVR_LOD_DISTANCE = BUILDER
-                .comment("Far-terrain view distance for the allay dimension's LOD pipeline, in blocks. "
-                        + "Beyond the full-resolution cube streaming radius (256 blocks) the server streams "
-                        + "server-meshed LOD nodes out to this distance (fixed band table 256/512/1024/2048, "
-                        + "the view distance only caps the outer edge). Applies to every player in the dimension.")
+                .comment("Outer far-terrain coverage limit for the allay dimension's LOD pipeline, in blocks. "
+                        + "The complete L0-L3 hierarchy is available in this coverage and Voxy chooses the "
+                        + "visible level by its own render-distance and screen-space policy. The near terrain "
+                        + "follows each client's Minecraft render distance. Applies to every player in the dimension.")
                 .defineInRange("allvrLodDistance", 2048, 512, 4096);
         ALLVR_LOD_BUILD_THREADS = BUILDER
                 .comment("Worker threads that build LOD node meshes (density-field math + greedy mesher, no world "

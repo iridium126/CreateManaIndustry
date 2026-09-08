@@ -264,7 +264,7 @@ public final class AllvrLodMap {
             if (sub == null || !sub.subscribed) {
                 continue;
             }
-        boolean distanceChanged = sub.lastViewDistance != viewDistance;
+            boolean distanceChanged = sub.lastViewDistance != viewDistance;
             boolean coverageChanged = sub.lastCoverageRevision != this.coverageRevision;
             for (int lvl = 0; lvl <= AllvrLodBands.MAX_LEVEL; lvl++) {
                 if (!AllvrLodBands.enabled(lvl, viewDistance)) {
@@ -562,7 +562,7 @@ public final class AllvrLodMap {
             }
             AllvrLodPos pos = AllvrLodPos.fromCellLong(lvl, cellLong);
             int distance = chebyshevToNode(player.getPosition(1.0f), pos);
-            if (!AllvrLodBands.inBand(lvl, distance, viewDistance)) {
+            if (!AllvrLodBands.inCoverage(lvl, distance, viewDistance)) {
                 player.connection.send(ClientboundAllvrLodForgetPacket.ticketed(lvl, cellLong,
                     sessionEpoch, requestId, false));
                 continue;

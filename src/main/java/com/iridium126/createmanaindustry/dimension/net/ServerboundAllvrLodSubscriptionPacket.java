@@ -6,6 +6,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.dimension.cube.AllvrCubeMap;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrServerLevelDuck;
 import com.iridium126.createmanaindustry.dimension.lod.AllvrLodMap;
 
@@ -17,12 +18,18 @@ import com.iridium126.createmanaindustry.dimension.lod.AllvrLodMap;
  * near-only client (voxy missing, disabled, OFF, or failed) costs the server
  * zero LOD work: no bitmap compute, no build jobs, no cached traffic.
  * <p>
- * The packet is re-sent whenever the client's effective availability flips
- * (level join, config reload, backend failure latch) so the server follows
- * the client's real state instead of a one-shot handshake.
+ * The packet also carries Minecraft's effective render distance in chunks.
+ * This lets the cube stream use the same near-render radius as Sodium while
+ * the subscription remains the far-terrain capability handshake. It is
+ * re-sent whenever either value changes.
  */
-public record ServerboundAllvrLodSubscriptionPacket(long sessionEpoch, boolean subscribed)
+public record ServerboundAllvrLodSubscriptionPacket(long sessionEpoch, boolean subscribed,
+                                                    int renderDistanceChunks)
     implements CustomPacketPayload {
+
+    public ServerboundAllvrLodSubscriptionPacket {
+        renderDistanceChunks = Math.max(2, Math.min(64, renderDistanceChunks));
+    }
 
     public static final CustomPacketPayload.Type<ServerboundAllvrLodSubscriptionPacket> TYPE =
         new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("allvr_lod_subscription"));
@@ -34,10 +41,11 @@ public record ServerboundAllvrLodSubscriptionPacket(long sessionEpoch, boolean s
     private static void encode(RegistryFriendlyByteBuf buf, ServerboundAllvrLodSubscriptionPacket p) {
         buf.writeLong(p.sessionEpoch);
         buf.writeBoolean(p.subscribed);
+        buf.writeVarInt(p.renderDistanceChunks);
     }
 
     private static ServerboundAllvrLodSubscriptionPacket decode(RegistryFriendlyByteBuf buf) {
-        return new ServerboundAllvrLodSubscriptionPacket(buf.readLong(), buf.readBoolean());
+        return new ServerboundAllvrLodSubscriptionPacket(buf.readLong(), buf.readBoolean(), buf.readVarInt());
     }
 
     @Override
@@ -51,7 +59,12 @@ public record ServerboundAllvrLodSubscriptionPacket(long sessionEpoch, boolean s
             return;
         }
         ctx.enqueueWork(() -> {
-            AllvrLodMap lodMap = ((AllvrServerLevelDuck) player.level()).allvr$getLodMap();
+            AllvrServerLevelDuck duck = (AllvrServerLevelDuck) player.level();
+            AllvrCubeMap cubeMap = duck.allvr$getCubeMap();
+            if (cubeMap != null) {
+                cubeMap.setClientRenderDistance(player.getUUID(), packet.renderDistanceChunks());
+            }
+            AllvrLodMap lodMap = duck.allvr$getLodMap();
             if (lodMap != null) {
                 lodMap.setSubscribed(player.getUUID(), packet.sessionEpoch(), packet.subscribed());
             }

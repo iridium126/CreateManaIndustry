@@ -33,7 +33,7 @@ public interface AllvrLodBackend {
      */
     boolean apply(AllvrLodSectionData data, Holder<Biome> biome);
 
-    /** Drops one node (server forget, band eviction, invalidation). */
+    /** Drops one node (server forget, coverage eviction, invalidation). */
     void forget(int level, long cellLong);
 
     /** Per-tick driver: engine binding, budgeted injection drain, rebase. */

@@ -289,6 +289,12 @@ public final class AllvrSodiumBridge {
             QUEUED_ADD.remove(key);
             if (!AllvrSodiumSectionSource.hasContent(level, SectionPos.of(key), resourceRevision, WINDOW.epoch())) continue;
             SectionPos pos = SectionPos.of(key);
+            // Sodium may have registered an empty placeholder for this
+            // virtual coordinate while the ClientLevel was being created.
+            // onSectionAdded() intentionally returns for an existing key, so
+            // invalidate/rebuild first; it is a no-op when the section is not
+            // present, after which onSectionAdded creates the real section.
+            SodiumApi_0813_1211.scheduleRebuild(manager, pos.getX(), pos.getY(), pos.getZ(), true);
             SodiumApi_0813_1211.onSectionAdded(manager, pos.getX(), pos.getY(), pos.getZ());
             OWNED.add(key);
         }

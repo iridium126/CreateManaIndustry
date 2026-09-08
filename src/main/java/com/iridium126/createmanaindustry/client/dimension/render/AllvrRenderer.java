@@ -40,6 +40,7 @@ import org.lwjgl.opengl.GL46;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
+import com.iridium126.createmanaindustry.client.dimension.AllvrClientRenderDistance;
 import com.iridium126.createmanaindustry.client.dimension.iris.AllvrIrisDataHolder;
 import com.iridium126.createmanaindustry.client.dimension.iris.AllvrIrisFrameTarget;
 import com.iridium126.createmanaindustry.client.dimension.iris.AllvrIrisPipelineData;
@@ -255,7 +256,7 @@ public final class AllvrRenderer {
             // collapsing motion vectors to zero and leaving TAA history
             // smeared across the sky while the camera turned.
             AllvrVoxyUniforms.update(event.getModelViewMatrix(), event.getProjectionMatrix(),
-                mc.options.renderDistance().get() * 16);
+                AllvrClientRenderDistance.blocks());
         }
         if (packInUse && !this.warnedPack) {
             this.warnedPack = true;
