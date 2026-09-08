@@ -100,8 +100,8 @@ public class CMIMixinPlugin implements IMixinConfigPlugin {
         if (mixinClassName.contains(".voxy."))
             return isSupportedVoxy();
 
-        // Allay-dimension sodium terrain disable — string mixin targets, no
-        // compile dependency; only applies to the fixed 0.8.13 ABI family
+        // Allay-dimension Sodium bridge — string mixin targets, no compile
+        // dependency; only applies to the fixed 0.8.13 ABI family.
         if (mixinClassName.contains(".sodium."))
             return isSupportedVersion(SODIUM_MOD_ID, "0.8.13");
 

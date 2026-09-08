@@ -29,6 +29,7 @@ public final class AllvrShaderReloadListener {
 
             @Override
             protected void apply(Void ignored, ResourceManager resourceManager, ProfilerFiller profilerFiller) {
+                com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.onResourceReload();
                 AllvrRenderer.INSTANCE.onResourceReload();
             }
         });

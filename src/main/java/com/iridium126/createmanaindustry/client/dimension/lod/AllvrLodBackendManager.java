@@ -6,6 +6,8 @@ import net.minecraft.world.level.biome.Biome;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.dimension.lod.voxy.VoxyCompatibilityProbe;
+import com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyYWindow;
+import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge;
 import com.iridium126.createmanaindustry.config.ClientConfig;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 
@@ -153,7 +155,8 @@ public final class AllvrLodBackendManager {
     private static AllvrLodBackend selectVoxy(String via) {
         AllvrLodBackend.Availability availability = voxyAvailable();
         if (availability.available()) {
-            AllvrLodBackend backend = VoxyCompatibilityProbe.createBackend();
+            AllvrLodBackend backend = VoxyCompatibilityProbe.createBackend(
+                new AllvrVoxyYWindow(AllvrSodiumBridge.window()));
             if (backend != null) {
                 warnedVoxyUnavailable = false;
                 return backend;

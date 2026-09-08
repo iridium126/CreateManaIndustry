@@ -91,6 +91,17 @@ config="${mod_id}.mixins.json"
     ordering="AFTER"
     side="BOTH"
 
+# Sodium is the sole near-terrain renderer for the allay dimension
+# (sodium-parity plan §4.1). Client-only required dependency: dedicated
+# servers never load client render mods, and startup must fail with a clear
+# dependency error instead of silently degrading to the deleted legacy path.
+[[dependencies.${mod_id}]]
+    modId="sodium"
+    type="required"
+    versionRange="[0.8.13-beta.1,0.8.14)"
+    ordering="AFTER"
+    side="CLIENT"
+
 [[dependencies.${mod_id}]]
     modId="trickster"
     type="optional"

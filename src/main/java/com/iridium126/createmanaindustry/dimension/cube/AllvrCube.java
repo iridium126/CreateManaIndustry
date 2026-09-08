@@ -134,7 +134,11 @@ public final class AllvrCube implements AllvrOverlaySource {
         int lx = AllvrCoords.blockToLocal(worldPos.getX());
         int ly = AllvrCoords.blockToLocal(worldPos.getY());
         int lz = AllvrCoords.blockToLocal(worldPos.getZ());
-        return sections[sectionIndex(lx, ly, lz)].setBlockState(lx & 15, ly & 15, lz & 15, state, useLocks);
+        BlockState old = sections[sectionIndex(lx, ly, lz)].setBlockState(lx & 15, ly & 15, lz & 15, state, useLocks);
+        if (old != null && !old.equals(state)) {
+            this.markDirty();
+        }
+        return old;
     }
 
     // ---- persistence / lifecycle ------------------------------------------

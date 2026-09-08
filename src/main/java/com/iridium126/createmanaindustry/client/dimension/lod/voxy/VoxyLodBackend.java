@@ -14,10 +14,16 @@ import com.iridium126.createmanaindustry.dimension.lod.AllvrLodSectionData;
 
 /**
  * The voxy LOD backend (voxy integration plan §7.1/§5.3): binds the client
- * level to the live voxy engine, publishes decoded section payloads through
- * the single-writer queue, and drives the rebase state machine (STEADY →
- * DETACH batching → MOVE → REFILL → STEADY). Everything here runs on the
- * render thread; the voxy types stay confined to this package.
+ * level to the live voxy engine and publishes decoded section payloads through
+ * the single-writer queue. Everything here runs on the render thread; the voxy
+ * types stay confined to this package.
+ * <p>
+ * Rebase ownership moved with the sodium bridge (sodium-parity plan §6.3): the
+ * shared {@link AllvrRenderYWindow} origin is driven by
+ * {@code AllvrSodiumBridge}. This backend OBSERVES the window — when the
+ * published origin changes it detaches its owned nodes (their virtual keys
+ * died with the old origin) in bounded batches and lets the request walk
+ * refill far residency. It never moves the origin itself.
  */
 final class VoxyLodBackend implements AllvrLodBackend {
 
@@ -40,8 +46,9 @@ final class VoxyLodBackend implements AllvrLodBackend {
     private int state = STATE_STEADY;
     private List<AllvrVoxyNodeRegistry.Entry> detachQueue;
     private long rebaseCount;
-    private double lastCameraY;
     private int refillTicksLeft;
+    /** The shared window origin this backend has built its residency against. */
+    private int observedOrigin;
 
     /** True while the backend is in the rebase REFILL phase (§5.3 step 5). */
     boolean isRefilling() {
@@ -54,6 +61,11 @@ final class VoxyLodBackend implements AllvrLodBackend {
         // already accepts and drains writes in this state, so keeping the gate
         // closed here produced an avoidable 60-tick blank LOD window after
         // every Y rebase (and made the client's refill ordering unreachable).
+        // The shared bridge rebase also freezes the walk while it detaches
+        // old-epoch sections: anything accepted then dies at the MOVE anyway.
+        if (this.window != null && this.window.shared().isDetaching()) {
+            return false;
+        }
         return this.engine != null && this.state != STATE_DETACH;
     }
 
@@ -75,6 +87,13 @@ final class VoxyLodBackend implements AllvrLodBackend {
         return this.window;
     }
 
+    /** The shared window must be bound BEFORE enter — it comes from the
+     *  client runtime, not from this backend (plan §6.3 single origin owner). */
+    void bindSharedWindow(AllvrVoxyYWindow window) {
+        this.window = window;
+        this.observedOrigin = window.originBlockY();
+    }
+
     @Override
     public Availability probe() {
         return VoxyCompatibilityProbe.probe();
@@ -83,7 +102,9 @@ final class VoxyLodBackend implements AllvrLodBackend {
     @Override
     public void enter(ClientLevel level) {
         this.level = level;
-        this.window = new AllvrVoxyYWindow();
+        if (this.window == null) {
+            throw new IllegalStateException("voxy backend entered without the shared Y window");
+        }
         this.registry = new AllvrVoxyNodeRegistry();
         this.writer = new AllvrVoxySectionWriter();
         this.writer.bindWindow(this.window);
@@ -128,7 +149,6 @@ final class VoxyLodBackend implements AllvrLodBackend {
         if (this.window == null || this.level == null) {
             return;
         }
-        this.lastCameraY = cameraY;
         if (this.engine != null && !this.engine.isLive()) {
             // voxy tore its renderer down underneath us — drop ownership and
             // re-probe on a later tick (plan §13: never write to a dead engine)
@@ -146,17 +166,15 @@ final class VoxyLodBackend implements AllvrLodBackend {
             runDetachBatch();
             return;
         }
-        if (this.state == STATE_STEADY && this.window.needsRebase(cameraY)) {
-            beginRebase();
+        if (this.window.originBlockY() != this.observedOrigin) {
+            // The shared window published a MOVE — every owned node's virtual
+            // key died with the old origin. Detach residency; the request walk
+            // (plus the client bookkeeping reset) refills far terrain.
+            beginDetach();
             runDetachBatch();
             return;
         }
         if (this.state == STATE_REFILL) {
-            if (this.window.needsRebase(cameraY)) {
-                beginRebase();
-                runDetachBatch();
-                return;
-            }
             this.writer.drain();
             if (--this.refillTicksLeft <= 0) {
                 this.state = STATE_STEADY;
@@ -167,31 +185,32 @@ final class VoxyLodBackend implements AllvrLodBackend {
     }
 
     /** Rebase step 3 (§5.3): snapshot the ledger, freeze the request walk. */
-    private void beginRebase() {
-        this.window.invalidateQueuedWork();
+    private void beginDetach() {
+        this.observedOrigin = this.window.originBlockY();
         this.writer.clear();
         this.detachQueue = new ArrayList<>();
         this.registry.forEachOwned(entry -> this.detachQueue.add(entry));
         this.state = STATE_DETACH;
         this.rebaseCount++;
-        CreateManaIndustry.LOGGER.info("[Allvr] voxy rebase #{}: detaching {} owned nodes",
-            this.rebaseCount, this.detachQueue.size());
+        CreateManaIndustry.LOGGER.info("[Allvr] voxy rebase #{}: detaching {} owned nodes "
+            + "for the shared-window move", this.rebaseCount, this.detachQueue.size());
     }
 
     /**
      * Detach batching (§5.3 step 3): fine-to-coarse forgets, one bounded
-     * batch per tick; when the snapshot drains, MOVE to the new origin and
-     * open the REFILL phase (§5.3 steps 4-5).
+     * batch per tick; when the snapshot drains, open the REFILL phase. The
+     * origin itself was already published by the bridge — this backend only
+     * retires its own node residency (§6.3: shared origin, per-renderer
+     * residency).
      */
     private void runDetachBatch() {
         if (this.detachQueue.isEmpty()) {
-            int nextOrigin = this.window.nextOrigin(this.lastCameraY);
-            this.window.moveOrigin(nextOrigin);
             this.detachQueue = null;
             this.state = STATE_REFILL;
             this.refillTicksLeft = REFILL_TICKS;
             CreateManaIndustry.LOGGER.info(
-                "[Allvr] voxy rebase #{} moved origin to {}", this.rebaseCount, nextOrigin);
+                "[Allvr] voxy rebase #{} detached; refill begins at origin {}",
+                this.rebaseCount, this.window.originBlockY());
             return;
         }
         int budget = DETACH_PER_TICK;

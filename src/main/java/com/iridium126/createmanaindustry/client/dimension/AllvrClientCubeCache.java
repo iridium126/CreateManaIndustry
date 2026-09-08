@@ -27,6 +27,7 @@ import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrBlockUpda
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacket;
 import com.iridium126.createmanaindustry.client.dimension.render.AllvrCellMesher;
 import com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderStateMap;
+import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge;
 
 /**
  * Client-side registry of streamed cubes for the allay dimension — the cube
@@ -53,6 +54,8 @@ public final class AllvrClientCubeCache {
     public static final Object LOCK = new Object();
 
     private static ClientLevel level;
+    /** Monotonic ALLVR content revision used by immutable Sodium snapshots. */
+    private static long contentRevision;
     private static final Long2ObjectOpenHashMap<AllvrCube> cubes = new Long2ObjectOpenHashMap<>();
     /** Cubes that hold block entities — the client ticking worklist (mirrors
      *  the server cube map's registry; most cubes are pure terrain). */
@@ -63,14 +66,36 @@ public final class AllvrClientCubeCache {
         level = clientLevel;
     }
 
+    public static ClientLevel currentLevel() {
+        return level;
+    }
+
+    public static long contentRevision() {
+        synchronized (LOCK) {
+            return contentRevision;
+        }
+    }
+
+    /** Internal read for a caller already holding {@link #LOCK}. */
+    public static long contentRevisionUnsafe() {
+        return contentRevision;
+    }
+
+    /** Internal read for a caller already holding {@link #LOCK}. */
+    public static AllvrCube peekCubeUnsafe(long key) {
+        return cubes.get(key);
+    }
+
     /** Drops every streamed cube (level unload / dimension switch / logout). */
     public static void clear() {
+        AllvrSodiumBridge.clear();
         synchronized (LOCK) {
             for (AllvrCube cube : cubes.values()) {
                 cube.onUnload();
             }
             cubes.clear();
             beCubes.clear();
+            contentRevision++;
             level = null;
         }
     }
@@ -99,8 +124,12 @@ public final class AllvrClientCubeCache {
                 old.onUnload();
             }
             refreshBeCube(packet.cubePos(), cube);
+            contentRevision++;
         }
         cube.onLoad(clientLevel);
+        AllvrSodiumBridge.onCubeApplied(packet.cubePos());
+        // The old renderer remains source-compatible for the development
+        // rollback branch, but is never a production terrain owner.
         com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE.onCubeApplied(packet.cubePos());
         if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
             CreateManaIndustry.LOGGER.debug("[Allvr] cube {} streamed ({} bytes, {} cubes cached)",
@@ -115,7 +144,9 @@ public final class AllvrClientCubeCache {
                 old.onUnload();
             }
             beCubes.remove(cubePos);
+            contentRevision++;
         }
+        AllvrSodiumBridge.onCubeForgotten(cubePos);
         com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE.onCubeForgotten(cubePos);
     }
 
@@ -279,6 +310,7 @@ public final class AllvrClientCubeCache {
             updateBlockEntity(clientLevel, cube, pos, newState);
             newState.onPlace(clientLevel, pos, oldState, false);
             com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderStateMap.idOf(newState);
+            contentRevision++;
 
             int oldEmission = oldState.getLightEmission(clientLevel, pos);
             int newEmission = newState.getLightEmission(clientLevel, pos);
@@ -293,6 +325,7 @@ public final class AllvrClientCubeCache {
         // shape updates) are safe — Java monitors are reentrant
         com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE
             .onBlockChanged(pos, oldState, newState);
+        AllvrSodiumBridge.onBlockChanged(pos, oldState, newState);
 
         // mirror of Level#markAndNotifyBlock, minus renderer notification —
         // cubes have no vanilla sections to re-render (ALLVR remesh, phase 3)

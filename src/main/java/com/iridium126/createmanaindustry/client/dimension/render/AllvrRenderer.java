@@ -200,6 +200,12 @@ public final class AllvrRenderer {
     // ------------------------------------------------------------------
 
     public void onRenderStage(RenderLevelStageEvent event) {
+        // Sodium is the sole production near-terrain owner.  The legacy
+        // renderer remains source-compatible only for a developer rollback
+        // build and must never allocate, build, or draw in the normal path.
+        if (com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.active()) {
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
         if (level == null || level.dimension() != AllvrDimensions.ALLAY_LEVEL) {
@@ -541,6 +547,9 @@ public final class AllvrRenderer {
     // ------------------------------------------------------------------
 
     public void onCubeApplied(long key) {
+        if (com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.active()) {
+            return;
+        }
         if (!this.initialized) {
             // main thread === render thread: GL context is live, so the lazy
             // init is safe here too (cube packets can arrive before the first
@@ -575,6 +584,9 @@ public final class AllvrRenderer {
 
     /** Drops all eight cell meshes owned by one streamed 32³ cube. */
     public void onCubeForgotten(long key) {
+        if (com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.active()) {
+            return;
+        }
         AllvrCubePos cube = AllvrCubePos.fromLong(key);
         for (int ly = 0; ly < 2; ly++) {
             for (int lz = 0; lz < 2; lz++) {
@@ -617,6 +629,9 @@ public final class AllvrRenderer {
      * all eight cells.
      */
     public void onBlockChanged(net.minecraft.core.BlockPos pos, BlockState oldState, BlockState newState) {
+        if (com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.active()) {
+            return;
+        }
         int cellX = pos.getX() >> 4;
         int cellY = pos.getY() >> 4;
         int cellZ = pos.getZ() >> 4;
@@ -711,6 +726,9 @@ public final class AllvrRenderer {
      * every resident cell is scheduled against the new resource revision.
      */
     public void onResourceReload() {
+        if (com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.active()) {
+            return;
+        }
         this.renderWorld.bumpResourceRevision();
         AllvrRenderStateMap.invalidateResources();
         AllvrClientCubeCache.prepareRenderResources();

@@ -1,533 +1,599 @@
-# Allay Dimension 近景地形渲染器选型与实施计划
+# Allay Dimension：Sodium 原生近景渲染接入最终实施计划
 
-> 文档类型：实现计划，不包含实现代码  
-> 修订基线：Create: Mana Industry `46ac70c`；Minecraft 1.21.1 / NeoForge 21.1.236 / Java 21  
-> 对照基线：`.refs/sodium` `mc1.21.1-0.8.13-2-gb3ddb22d`  
-> 本次决定：Voxy 集成视为已完成；删除 legacy LOD；Voxy 是唯一远景后端；未安装、被禁用或运行失败时，只渲染 ALLVR 近景，不提供远景替代。  
-> 文档关系：本计划覆盖 `allay-dimension-voxy-lod-integration-plan.md` 中“保留 legacy fallback”“新旧网格协议并存”和“等待一个发布周期再删除”的旧安排；其 Voxy section、虚拟 Y 窗口和生命周期设计仍作为现状依据。
+> 文档类型：最终实现计划；本次只修订文档，不包含实现代码
+>
+> 修订日期：2026-09-08
+>
+> 仓库基线：Create: Mana Industry `b774b41`；Minecraft 1.21.1 / NeoForge 21.1.236 / Java 21
+>
+> 对照版本：Sodium NeoForge `0.8.13-beta.1+mc1.21.1`；Iris NeoForge `1.8.14-beta.1+mc1.21.1`；Voxy `0.2.15-beta+1.21.1-neoforge`
+>
+> 最终决定：Sodium 成为本项目的**客户端硬依赖**；Allay 近景地形只接入 Sodium，不再建设原版地形渲染后端；Iris 与 Voxy 保持可选。
+>
+> 文档关系：本计划取代本文档旧版“继续完善自研 ALLVR 近景渲染器”的决定。`allay-dimension-voxy-lod-integration-plan.md` 继续负责 Voxy 远景数据、虚拟 Y 和生命周期细节。
 
-## 1. 决策摘要
+## 1. 最终结论
 
-在两个候选方案中，选择方案 1：继续完善专用 ALLVR 近景渲染器；Sodium 作为渲染语义、调度、透明排序和性能基线，不作为 Allay 数据的运行时接收器。原版渲染器只保留为对照，不建设 Allay 数据桥。
-
-选择理由不是“自研必然比 Sodium 快”，而是 Allay 的数据和坐标约束使方案 2 需要先构造一个成本很高的虚拟 vanilla 世界：
-
-- Allay 权威数据是独立的 32³ Cube，实际 Y 可到约 ±3000 万；当前 vanilla `ClientLevel` 只是 384 高度的空壳。
-- Sodium 的 `LevelSlice.prepare`、`ClonedChunkSectionCache` 和 `RenderSectionManager.onSectionAdded` 都从 `ClientLevel -> LevelChunk -> LevelChunkSection[]` 取数，并用 `SectionPos`、正式 build height 和 chunk tracker 管理生命周期。它没有 Voxy `WorldSection` 那样面向外部世界数据的稳定注入边界。
-- 一个 32³ Cube 虽然已经由 8 个 `LevelChunkSection` 组成，但仍需拆到 4 个 X/Z vanilla chunk column、映射 2 层 section、补齐光照/方块实体/ModelData，并把绝对 Y 放入会反复 rebase 的虚拟高度窗口。
-- 近景垂直直径最坏超过当前 384 高度空壳。若复用当前 `ClientLevel`，必须裁剪近景或改写 build-height 假设；若另建 facade level，又要让 Sodium/原版 renderer、颜色、模型、光照和方块实体全部认识这个 facade。
-- 每次 Y rebase 都会改变 section key、render section、邻接图和 GPU allocation 的身份，导致全窗口重新建图、网格化和上传。ALLVR 原生路径可始终使用绝对整数 key，只在提交矩阵时做 camera-relative 变换，没有该峰值。
-
-方案 2 的真实优势是短期功能覆盖和成熟度：Sodium 已经完整处理模型、流体、AO、材质 pass、透明排序、动画纹理、方块实体、构建预算和显存区域。若只看普通高度、稳定视角和复杂方块，Sodium bridge 很可能比尚未补全的 ALLVR 更快、更可靠；原版 bridge 的兼容性较好，但 CPU 构建、上传和 draw-call 成本明显更高。
-
-最终策略：
-
-1. 先彻底删除 legacy LOD，缩小系统状态空间。
-2. 保留现有 Voxy section 协议、L0～L3 生成/请求、虚拟 Y 窗口和 Voxy adapter；无 Voxy 时关闭远景请求。
-3. 把 ALLVR 重构为只负责近景完整分辨率的会话级 renderer，不再维护自己的远景节点树。
-4. 按 Sodium 的职责和可见结果补齐 Minecraft 渲染语义，但使用 Allay 原生 Cube/cell 数据通路。
-5. 默认后端为跨厂商 GPU MDI；保留普通索引批绘制；`GL_NV_mesh_shader` 仅作为可选 NVIDIA 加速层。
-
-## 2. 固定范围与所有权
-
-### 2.1 最终画面所有权
+采用单一生产路径：
 
 ```text
-0 ～近景边界：ALLVR full-resolution renderer
-近景边界～服务器远景半径：Voxy，且仅当兼容 Voxy backend 实际可用
-Voxy 不可用：近景边界外不绘制地形，以天空/雾自然结束视距
-```
-
-- 不再存在 `LegacyAllvrLodBackend`、服务端 LOD quad、客户端 LOD descriptor draw 或 `AUTO -> legacy`。
-- Voxy 不接管近景模型精确渲染；ALLVR 不再生成任何远景 LOD mesh。
-- 方块实体、精确流体和动态透明只在近景保证；Voxy 远景继续采用既有降采样语义。
-- 近远景交界由单一 ownership 状态机管理，不能仅靠两个 renderer 恰好使用相同距离常量。
-
-### 2.2 保留的 Voxy 路径
-
-以下均为已经完成的远景基础设施，不在本次重做：
-
-- `AllvrLodSnapshot`、`AllvrLodSectionData`、`AllvrLodSectionCodec`；
-- `ClientboundAllvrLodSectionPacket`、bitmap、request、forget 协议；
-- `VoxyLodBackend`、`AllvrVoxySectionWriter`、`AllvrVoxyNodeRegistry`、`AllvrVoxyYWindow`；
-- L0～L3 距离分带、服务端 surface bitmap、generation/失效和 Voxy rebase；
-- Voxy/Sodium/Iris 的既有条件加载与渲染 hook。
-
-保留不等于维持双后端协议。请求能力应收敛为“Voxy voxel section 可用”或“无远景请求”，不再协商 legacy mesh。
-
-### 2.3 近景 renderer 的非目标
-
-- 不复制 Sodium 源码或绑定 Sodium 私有类。
-- 不修改 Cube 网络/存档格式；32³ 仍是数据所有权单位。
-- 不为近景引入虚拟 Y rebase。
-- 不重新实现远景 mip、远景层级树或自研 LOD shader。
-- 不承诺所有光影包像素级相同；必须保证正确 framebuffer、depth、shadow 和降级行为。
-
-## 3. 当前实现与 Sodium 的关键差异
-
-| 能力 | Sodium 0.8.13 | 当前 ALLVR | 本计划处理 |
-|---|---|---|---|
-| 数据单位 | 16³ vanilla section | 32³ Cube/34³ snapshot | 渲染内部拆成 16³ cell，数据所有权不变 |
-| 完整方块 fast path | 紧凑 chunk mesh | 8 B/quad 贪心 descriptor | 保留并严格认证 |
-| 任意 `BakedModel` | 支持 culled/unculled、多 quad、随机、offset | 只收六面完整立方体，每面只取第一 quad | 增加通用顶点流 |
-| 流体 | 独立 tessellator | 不渲染 | 补齐近景流体 |
-| pass | solid/cutout/translucent | 单 opaque | 三 pass 与材质表 |
-| tint/AO/light/normal | 逐顶点 | 面中心近似、无 AO、仅轴向 normal | 对齐可见语义 |
-| 透明排序 | section 分类与动态排序 | 无 | 分级排序、预算化重排 |
-| 动画纹理 | 可见 sprite 激活 | 无 | 按可见 cell 激活 |
-| 方块实体 | 构建期分类、可见列表 | Cube 中存在且 tick，但未进入 terrain 可见列表 | ALLVR 自有 BE 列表 |
-| 调度 | 多 worker、优先级、取消、上传预算 | 单 worker FIFO、裸 pending | revision/epoch、多队列和预算 |
-| 显存 | region arena、批量 staging | 单全局 arena、频繁 `glBufferSubData` | region + staging ring + generation handle |
-| 可见性 | section graph、frustum、occlusion | GPU frustum/Hi-Z/MDIC | 保留 GPU 优势，补 connectivity 与稳健回退 |
-| 高 Y | 依赖 vanilla section/build height | 原生绝对整数 Cube key | ALLVR 原生路径保留优势 |
-| 远景 | 非 Sodium 核心职责 | legacy + Voxy 双路径 | 只保留 Voxy |
-| 低能力 GPU | 成熟兼容路径 | 能力不足时可能整片停用 | 普通索引批绘制保底 |
-| 生命周期 | world/section/task 状态完整 | 在途结果、失败 pending、GL close 有漏洞 | M2 先修复 |
-
-## 4. 两种方案的性能比较
-
-### 4.1 方案 1：完善 ALLVR
-
-优势：
-
-- 数据路径最短。Cube packet 解码后的 `LevelChunkSection[8]` 可直接被 16³ cell snapshot 使用，不需要合成 `LevelChunk`、触发另一个 chunk tracker 或维护镜像世界。
-- 近景全程使用绝对整数 identity；相机相对坐标在 CPU/GPU 边界拆分，不发生 Y rebase 全量重建。
-- 完整立方体和规则表面可继续使用 8 B descriptor 与贪心合并。Allay 岛屿的大面积规则地形有机会显著降低顶点带宽和上传量。
-- 可见性、命令生成和 draw submission 可保持 GPU-driven；在高端 GPU 和大可见表面上，性能上限高于原版，也可能高于 Sodium 的 CPU section list 路径。
-- 只为实际到达的 Cube/cell 建立节点，不必维护 vanilla 正式高度内的空 shell column/section 图。
-- Voxy 负责远景后，不再需要 ALLVR 的 LOD node、LOD quad arena 和远景阴影遍历，近景 renderer 的显存和复杂度都能下降。
-
-劣势：
-
-- 在模型、流体、AO、透明和 BE 补齐前，画面不完整；在补齐初期，通用模型路径的构建吞吐通常会落后于成熟 Sodium。
-- 双几何流、三 pass、透明排序、资源重载和 Iris patch 都由本项目维护，验证面大。
-- 当前 single worker、全局 arena 和上传方式必须重构，否则 descriptor 的理论优势会被调度和停顿抵消。
-- Mesh Shader 只能优化支持 `GL_NV_mesh_shader` 的设备；不能作为默认性能承诺。
-- 低端/集成显卡上，成熟 Sodium 的 CPU cull 和 region batching 可能比自研 compute/Hi-Z 更稳定，因此必须保留轻量兼容后端。
-
-### 4.2 方案 2A：把 Allay 数据输入 Sodium
-
-可行形态只有两种，都不是复用 Voxy adapter 就能完成：
-
-1. **Synthetic chunk facade**：把每个 32³ Cube 映射到 4 个 X/Z `LevelChunk` column 和每 column 2 个 Y section，让 Sodium 继续从 `ClientLevel` 读取。
-2. **内部 build-context 注入**：绕过正常 chunk tracker，直接构造 Sodium 的 `ClonedChunkSection`/`ChunkRenderContext` 并把任务送入 `RenderSectionManager`。
-
-优势：
-
-- 立即复用成熟的任意模型、流体、AO/light、material pass、透明排序、动画 sprite、BE 收集和错误上下文。
-- 立即复用优先级、取消、worker、upload budget、region allocator 和 renderer debug 指标。
-- 在复杂方块密集场景中，短期 CPU 构建吞吐和稳定性最可能领先 ALLVR。
-- 在普通高度且窗口不移动时，steady-state 画面和性能容易接近已验证的 Sodium 行为。
-
-性能与架构代价：
-
-- synthetic facade 至少复制 chunk/section identity、光照、BE 和 dirty 生命周期；Sodium 构建时仍会把邻域 clone/unpack 到 `LevelSlice`。即使复用已有 `LevelChunkSection` palette，也无法消除双份管理和 build snapshot。
-- 当前 384 高度 shell 无法覆盖最坏约 512+ 方块的近景垂直窗口。扩大正式 build height 会影响整个 `ClientLevel`；滑动窗口则会定期重建所有 synthetic columns。
-- `SectionPos`、render section key、光照 key、BE 坐标和模型随机种子都必须在虚拟 Y 与绝对 Y 之间转换。热路径算术本身便宜，rebase 引起的图、mesh、upload 全量失效很贵。
-- 若近景桥与 Voxy 共用 512 对齐 Y origin，一次 rebase 会同时冲击近景与远景；若不共用，近远景 seam、camera transform 和调试坐标会出现两套空间。
-- facade 需要阻止 synthetic 数据被玩法、粒子、实体、声音、寻路或其他 mod 当作真实 vanilla chunk 使用；隔离检查会进入大量世界访问热路径。
-- 直接注入 Sodium 内部 context 可少建部分 facade 对象，但会绑定 `RenderSectionManager`、`ClonedChunkSectionCache`、region/task output 等私有 ABI。Sodium 更新后的失配很可能表现为构建结果丢失或 native/GPU 生命周期错误，而不只是安全禁用。
-- Allay 当前还需保留 Sodium 对 Voxy 的 draw hook，同时禁止其空 shell terrain。把同一 Sodium renderer 又变成近景 owner，会使 hook 顺序、section tracker 和 Voxy ownership 更难隔离。
-
-结论：Sodium bridge 的稳定视角性能可能很好，复杂模型阶段甚至明显优于早期 ALLVR；但它把最危险的成本集中到垂直移动、传送、reload 和版本升级。对本项目的超高 Y 目标，峰值帧时间、内存复制和维护风险高于其 steady-state 收益。
-
-### 4.3 方案 2B：把 Allay 数据输入原版 renderer
-
-优势：
-
-- 不依赖 Sodium 安装与内部 ABI；大部分 vanilla/NeoForge 模型和 render type 行为自然可用。
-- 适合作为视觉正确性参考，调试某个模型是否应被渲染。
-
-劣势：
-
-- 同样需要 synthetic `ClientLevel`/`LevelChunk`、虚拟 Y、光照和 BE 桥，无法避开方案 2 的根本数据适配成本。
-- `ViewArea`/section dispatcher 围绕固定 build height 和 chunk column 工作，空 section bookkeeping 更多。
-- CPU tessellation、BufferBuilder 分配、上传和 draw-call 合批能力均弱于 Sodium；高速流送和 rebase 时更容易产生长尾卡顿。
-- 不提供 ALLVR 当前 GPU command generation、Hi-Z 和紧凑 descriptor 的性能上限。
-
-结论：原版 bridge 在性能上是三个方案中最弱的生产选择。它可以用于离屏/测试对照，不应成为 Allay 近景后端。
-
-### 4.4 汇总判断
-
-下表是基于当前代码路径的工程判断，必须由 M0 基准验证，不代表尚未测量的绝对 FPS：
-
-| 指标 | 完成后的 ALLVR | Sodium bridge | 原版 bridge |
-|---|---|---|---|
-| 短期功能完整度 | 低→高，需实施 | 高 | 高 |
-| 规则岛屿 steady-state CPU/GPU | 潜力最佳 | 好 | 较差 |
-| 复杂模型构建吞吐 | 初期较差，成熟后接近 | 最佳/最稳 | 较差 |
-| 单方块更新 | 16³ cell 精确 dirty，无桥接 | section dirty + bridge/cache 失效 | section dispatcher rebuild |
-| 内存 | 单份 Cube + render snapshot/GPU scene | Cube + synthetic world + Sodium clone/scene | Cube + synthetic world + vanilla buffers |
-| 高速上下移动/传送 | 无 near rebase，最佳 | near 全窗口 rebase 峰值最大 | rebase 峰值大 |
-| 高 Y 正确性 | 原生 | 依赖完整虚拟化 | 依赖完整虚拟化 |
-| 高端 GPU 上限 | MDI/Hi-Z/可选 Mesh Shader | 成熟但受 Sodium 管线约束 | 最低 |
-| 低端 GPU 可预测性 | 需专门建设 compat | 最佳 | 可用但慢 |
-| Sodium 版本升级成本 | 只维护门禁/Voxy hook | 高，内部 ABI 适配 | 无 Sodium ABI |
-| 无 Sodium 安装 | 完整近景 | 必须再准备原版 fallback | 可用 |
-
-决策门：若 M4 完成后，ALLVR 在“完整模型+流体”场景的构建 p95 仍比同画质 Sodium 慢 35% 以上，且 profile 证明瓶颈来自不可复用的模型 tessellation 而非调度/上传，则重新评估一个限时 Sodium build-context 原型。该原型不得先引入 synthetic gameplay chunks，也不得改变本计划删除 legacy LOD 的决定。
-
-## 5. 目标架构
-
-```text
-AllvrClientCubeCache（32³、绝对坐标、唯一近景数据源）
-        │ cube generation / block dirty / forget
+ALLVR 32³ Cube 数据
+        │
         ▼
-AllvrRenderWorld（每个 ClientLevel 一个 epoch，唯一资源所有者）
-        ├─ AllvrRenderCell：16³；一个 Cube 对应 8 cell
-        ├─ AllvrBuildScheduler：优先级、取消、预算、多 worker
-        ├─ AllvrModelCompiler
-        │    ├─ 规则 descriptor 流：认证后的轴向可合并面
-        │    └─ 通用 vertex/index 流：任意模型、流体、overlay
-        ├─ AllvrMaterialRegistry：solid / cutout / translucent
-        ├─ AllvrGpuScene：region arena、staging ring、generation handle
-        ├─ AllvrVisibility：frustum、connectivity、Hi-Z、pass lists
-        ├─ AllvrBlockEntityLists
-        └─ AllvrTerrainBackend
-             ├─ GPU MDI/MDIC（默认）
-             ├─ 普通索引批绘制（兼容保底）
-             └─ NV task/mesh shader（可选）
+ALLVR→Sodium section 数据源与虚拟坐标适配
+        │
+        ▼
+Sodium 原生 ChunkBuilderMeshingTask / RenderSectionManager
+        │
+        ├── 无 Iris：Sodium 原生 terrain shader
+        └── 有 Iris：Iris 自动替换 Sodium terrain program/framebuffer/shadow pass
 
-远景（独立生命周期）
-AllvrLodClientState -> VoxyLodBackend -> Voxy WorldSection/render pipeline
+远景：ALLVR LOD section → Voxy → Voxy 自己的渲染与 Iris shader-pack 接口
 ```
 
-### 5.1 坐标规则
+具体选择如下：
 
-- CPU identity 始终使用绝对整数 cube/cell/block 坐标。
-- cell mesh 内只保存 0～16 局部坐标；scene node 保存绝对 cell origin 的整数高低位。
-- 每帧把 `nodeOriginInt - cameraBlockInt` 与 camera fraction 分开提交，shader 不接收 ±3000 万绝对 float。
-- Voxy 的虚拟 Y origin 只属于远景 adapter，不能渗入 `AllvrRenderWorld`。
-- 模型随机 seed、offset、biome tint 和 BE 逻辑使用绝对 `BlockPos` 语义。
+1. 放弃继续建设自研 ALLVR 近景网格、材质、流体、透明排序、显存分配和 terrain shader。
+2. 不建设原版 `ViewArea` / `SectionRenderDispatcher` 后端，也不维护“无 Sodium 时回退原版”的双实现。
+3. Sodium 在客户端为 required dependency；未安装或版本不匹配时，由 NeoForge 在启动阶段明确报依赖错误，而不是运行到维度内再静默降级。
+4. Iris 仍为可选依赖。安装并启用光影包时，近景地形通过 Sodium 的标准 terrain pass 自动进入 Iris；本项目只维护坐标/生命周期接入和兼容性验证，不再维护一套 ALLVR 专用近景光影 shader。
+5. Voxy 仍为可选的唯一远景后端。Voxy 不走 Sodium 的标准近景 terrain pass，因此 Voxy 的 `voxy.json`、虚拟 Y、采样器、uniform、framebuffer 与 shader-pack 适配仍需保留。
+6. 旧自研 renderer 在迁移期间只作为开发回滚路径存在；新路径达到全部发布门后删除，不作为发布版可选后端长期维护。
 
-### 5.2 双几何流
+这不是“把 block state 交给 Sodium 就完全零适配”。需要主动适配一次 Sodium 的数据源、section 生命周期和虚拟 Y；完成后，模型、流体、材质 pass、透明排序、批处理以及 Iris 近景光影由 Sodium/Iris 维护。
 
-规则 descriptor 流只接受资源重载时通过认证的状态：轴向 quad、UV 可安全平铺、材质/pass 一致、无位置相关模型变化。任何不满足条件的 quad 自动进入通用流，不允许继续标记 `NON_RENDERABLE` 后静默丢失。
+## 2. 对两个关键问题的直接回答
 
-通用流保存真实 position、UV、color/tint、sky/block light、AO、normal、material id 和 index。两条流共享 cell bounds、pass、visibility、upload 和生命周期，不建立两套 renderer。
+### 2.1 把地形数据输入 Sodium 后，光影包能否自动生效
 
-### 5.3 近远景交界
+**可以，但前提是地形完整进入 Sodium 的标准地形管线。**
 
-为每个边界 32³ coverage cell 维护以下状态：
+必须同时满足以下条件：
 
-- `VOXY_READY`
-- `ALLVR_BUILDING_WITH_VOXY_FALLBACK`
-- `ALLVR_READY`
-- `VOXY_BUILDING_WITH_ALLVR_FALLBACK`
-- `NEAR_ONLY_NO_VOXY`
+- 网格由 Sodium 的 `ChunkBuilderMeshingTask` 及其 block/fluid renderer 生成；
+- 结果使用 Sodium 的 chunk vertex format、material 和 `TerrainRenderPass`；
+- section 由 Sodium 的 `RenderSectionManager` 参与可见性、排序、上传和绘制；
+- 实际 draw 仍从 Sodium 的 `ShaderChunkRenderer` / `renderLayer` 发出；
+- solid、cutout、translucent 和 shadow 都沿用 Sodium/Iris 已知的 pass 时序。
 
-进入近景时先发布 8 个 ALLVR cell，再在下一帧边界提交前忘记对应 Voxy 节点；离开近景时先请求/注入 Voxy section，确认 backend residency 后再回收 ALLVR mesh。若 Voxy API 无法报告 GPU-ready，只能使用保守帧延迟与雾，不把“section 已写入”误当成“mesh 已可见”。所有切换带 1～2 cube hysteresis，防止在边界来回抖动。
+Iris 的 Sodium 兼容层会在 `MixinShaderChunkRenderer` 中为每个 `TerrainRenderPass` 绑定光影包对应的 framebuffer 和 `SodiumPrograms`，并对 Sodium render lists 建立 shadow pass。只要 ALLVR section 与普通 Sodium section 在这一层不可区分，Photon 等光影包会自动处理近景地形，不需要本项目再为每个光影包生成 ALLVR 专用 gbuffer/shadow shader。
 
-无 Voxy 时不等待远景 readiness：Cube 离开近景缓存后正常释放；远处保持不绘制。雾距离必须依据实际近景覆盖，而不是服务器 LOD 半径。
+下列做法**不会**自动获得 Iris 支持：
 
-## 6. Legacy LOD 删除计划
+- 只借用 Sodium 的 mesher，之后把顶点复制到 ALLVR 自有 VBO 并在自定义事件中 draw；
+- 继续使用 `assets/.../shaders/allvr/terrain.*`，仅让 Sodium 提供 block state；
+- 使用自定义 framebuffer、pass 顺序、vertex format 或独立 shadow draw；
+- 在 Sodium terrain pass 结束后叠加 ALLVR 地形。
 
-该删除作为第一个独立里程碑完成并单独验证，禁止留下一条“不可配置但仍可触发”的隐藏 mesh 路径。
+因此本计划的硬边界是：**ALLVR 只替换 Sodium 的 section 数据来源与坐标解释，不替换 Sodium 从构建结果到最终 draw 的后半条管线。**
 
-### 6.1 客户端后端与配置
+仍需由本项目负责的 Iris 相关工作只有：
 
-- 删除 `LegacyAllvrLodBackend.java`。
-- `AllvrLodBackendManager` 只选择 Voxy 或 Disabled：`AUTO` 为“兼容 Voxy 可用则启用，否则 Disabled”；`VOXY` 不可用时也进入 Disabled 并给出一次清晰提示；`OFF` 始终 Disabled。
-- 移除 `legacyActive()`、legacy fallback、legacy wire capability 和相关日志。
-- `ClientConfig.AllvrLodBackendMode` 收敛为 `AUTO / VOXY / OFF`。读取旧配置时把 `LEGACY` 迁移为 `AUTO` 并警告；若无 Voxy，实际结果自然是无远景。不得因未知枚举让配置加载失败。
-- 评估合并旧 `allvrLod` boolean 与 `lodBackend=OFF`；若为兼容保留，必须定义唯一优先级并在下一配置保存时规范化。
-- `DisabledLodBackend` 保留为明确的无远景状态；状态面板显示“near-only”，不称为 renderer failure。
+- 确认 virtual Y 下 Sodium terrain 的 camera-relative 顶点位置、Iris `cameraPosition` 和光影包 world-position 重建一致；
+- 验证阴影视锥、TAA jitter、translucent 和 framebuffer 切换没有因虚拟坐标产生偏移；
+- 对受支持的 Sodium/Iris 版本做 ABI 与行为门禁；
+- 保留非 terrain 功能自身需要的 Iris/Veil 适配；
+- 保留 Voxy 远景的独立 Iris 适配。
 
-### 6.2 网络协议与服务端生成
+这些属于一次性的管线接入和版本兼容，不是逐光影包重写近景 renderer。
 
-- 删除 `ClientboundAllvrLodMeshPacket.java` 及 `CreateManaIndustry` 中的 payload 注册。
-- 删除 `ServerboundAllvrLodRequestPacket.CAPABILITY_LEGACY_MESH` 和 mesh 分支。协议升级后请求只表达 voxel section 版本；Disabled 客户端根本不发 LOD 请求。
-- `AllvrLodMap` 删除服务端 `AllvrMesher.build`、mesh result、`long[]` cache、mesh packet send 和双 encoder 分支；只缓存/发送带 generation 的 section payload。
-- 保留 bitmap、section、forget、LOD snapshot、overlay 合并、请求预算和失效，因为它们仍服务 Voxy。
-- 更新协议版本并明确拒绝旧客户端/服务端组合，不能把旧 capability 0 猜成新 section 格式。
+### 2.2 把地形映射到原版后，能否自动获得 Sodium 支持
 
-### 6.3 客户端请求状态
+**理论上可以，简单映射不可以。**
 
-- `AllvrLodClientState` 删除 `applyMesh()`、`remapQuads()`、mesh packet import 和 legacy 首包日志。
-- `meshed` 改名为 `resident/accepted`，语义为“Voxy backend 已拥有该 section”，不再暗示 ALLVR mesh。
-- 删除对 `AllvrRenderer.lodGate()` 和 GPU capability 的依赖。远景请求门只看 Voxy backend 是否 active、rebase 是否 freeze、窗口是否接受该 cell。
-- Voxy 缺失或中途失效时立即停止新请求、取消 pending、清空 accepted/ownership；释放 Voxy 引用后进入 near-only，不重试 legacy。
-- `viewExtentBlocks()`、雾和 debug distance 使用实际 backend 状态：Voxy active 才报告远景半径，否则报告近景可见半径。
+如果 ALLVR 数据被构造成真正的 `ClientLevel -> LevelChunk -> LevelChunkSection[]`，并完整触发原版 chunk ready、section add/remove、dirty、light、block entity 和 resource reload 生命周期，那么 Sodium 替换 `LevelRenderer` 后通常会像处理普通世界一样自动接管。此时原版与 Sodium 可以共用同一个 synthetic chunk facade。
 
-### 6.4 ALLVR renderer 内的 LOD 数据
+但当前 ALLVR 的 `Level#getBlockState` 拦截和 32³ Cube cache 不满足这个条件：
 
-- `AllvrRenderer` 删除 `lodCubes[4]`、`applyLodMesh`、`forgetLod`、`hasLodMesh`、LOD deferred upload/回收循环和 LOD shadow command 遍历。
-- `AllvrNodeStore` 删除 `lodByCubeKey`、`setLodMesh` 和 level-based node scale；近景 node 始终是一层 render cell。
-- `AllvrBuffers`、terrain/shadow shader 和 GPU cull shader 删除只服务 legacy LOD 的 level/scale/parent-child 字段；共用于近景的 slot、descriptor、command 和 Hi-Z 逻辑保留到后续重构替换。
-- 删除旧 LOD 专用测试、统计、注释和文档；不要误删近景 `AllvrMesher`，它仍是规则 descriptor fast path 的来源。
+- Sodium `RenderSectionManager.onSectionAdded` 直接取得 `level.getChunk(x,z).getSections()[index]` 判断 section；
+- `RenderSectionManager.createRebuildTask` 固定调用 `LevelSlice.prepare(level, sectionPos, sectionCache)`；
+- `ClonedChunkSectionCache.clone` 再次直接从 `LevelChunk` 和 `LevelChunkSection[]` 克隆数据；
+- section 图与越界判断使用 `SectionPos` 和 `ClientLevel` 的正式 build height。
 
-### 6.5 删除验收
+所以仅把 `getBlockState` 指向 Cube、向原版 renderer 发 dirty 事件，Sodium 仍会读到 384 高度空壳 chunk，而不是 ALLVR Cube。
 
-- 全仓库不存在 `LegacyAllvrLodBackend`、`ClientboundAllvrLodMeshPacket`、`CAPABILITY_LEGACY_MESH`、`applyLodMesh`、`setLodMesh` 的可执行引用。
-- Voxy 可用：近景 ALLVR、远景 Voxy，网络只出现 section payload。
-- Voxy 缺失/禁用/ABI 不匹配：维度可进入，近景可见，远景不请求、不生成、不渲染，无错误重试洪泛。
-- Voxy 运行中失败：释放远景资源后继续近景，不 crash、不复活 legacy。
-- 服务端不再为任何玩家执行 LOD server meshing，CPU profile 中无该调用。
+要让“映射到原版”真正自动工作，必须维护一个隔离的 synthetic vanilla 世界：
 
-## 7. 近景 ALLVR 补全计划
+- 每个 32³ Cube 拆为 4 个 X/Z column、每 column 2 层 16³ section；
+- 为超高 Y 建立滑动虚拟高度窗口；
+- 镜像 palette、biome、light、ModelData、block entity 和 auxiliary light；
+- 维护 chunk tracker、section 生命周期、邻接和 rebase；
+- 防止玩法、实体、粒子或其他模组把 synthetic chunk 当作权威世界数据。
 
-### 7.1 生命周期、安全与结果新鲜度
+这已经不是“少量映射”，而是维护第二个客户端世界模型。它既没有消除 Sodium 私有 ABI 接入，也增加了数据复制和跨模组泄漏风险。因此本计划不采用 synthetic vanilla facade，而是直接建设窄边界的 Sodium section source adapter。
 
-- 新建 `AllvrRenderWorld`，绑定单个 `ClientLevel` 和 64-bit epoch；level unload 后所有旧任务、upload 和 GPU handle 自动失效。
-- 每个 cell 使用 `contentRevision / scheduledRevision / publishedRevision`。构建中再次 dirty 只递增 revision；旧结果销毁后立即按最新 revision 重排。
-- worker 结果必须为 `SUCCESS / CANCELLED / FAILED_RETRYABLE / FAILED_FATAL`，任何结果都结算 pending，避免异常后永久卡死。
-- 资源 reload 发布 `resourceRevision`；worker 只读取主线程生成的不可变 model/material snapshot，不从后台线程访问可变 `Minecraft` model manager。
-- 所有 cube packet、BE/emitter、bitmap、section payload 都保留精确元素/字节上限、checked arithmetic、generation 和尾随数据检查。
-- GL 对象由会话唯一所有者显式关闭；初始化和 backend 切换事务化，任何异常都恢复 FBO/program/buffer/texture/blend/depth/cull 状态。
+## 3. 为什么选择 Sodium 单后端
 
-### 7.2 16³ render cell 与调度
+当前 5 FPS 的根因不是 draw-call 入口本身，而是自研 renderer 尚未覆盖 Minecraft 的通用地形语义。大量不满足“六面完整 SOLID 立方体”条件的方块落入逐方块 fallback；fallback 每帧收集、排序、调用 `renderSingleBlock` / `renderLiquid` 并上传，导致 CPU 和 GPU 都重复处理近景地形。继续完善自研方案意味着还要长期维护：
 
-- 一个 Cube 映射 2×2×2 个 cell；cube packet 到达批量建立，单块更新通常只 dirty 一个 cell，边界更新精确通知相邻 cell。
-- 快照使用池化 18³ state/occlusion 邻域；光照所需更大邻域以共享只读 context 提供，不为每 cell 复制 27 cube。
-- 调度优先级：屏幕内首次 mesh > 近相机首次 mesh > 可见更新 > seam handoff > 不可见更新。
-- 多 worker 数由 CPU 核心和实际主线程占用限制；任务支持取消。snapshot、build、apply、upload 分别有每帧时间/字节预算。
-- 新 mesh 上传成功前保留旧 mesh；不能先 free 再 build 造成更新闪洞。
+- 任意 `BakedModel`、multipart、random/weighted、ModelData 和自定义 render type；
+- 流体 tessellation、AO、逐顶点光照、biome tint、动画 sprite；
+- solid/cutout/translucent pass 和动态透明排序；
+- section 调度、取消、上传预算、region allocator、显存回收；
+- Iris gbuffer、shadow、TAA、pack material id 和版本变化。
 
-### 7.3 模型、流体与材质
+Sodium 已经承担这些职责。直接接入虽然需要处理高 Y，但总体只维护“数据源 + 坐标 + 生命周期”三个边界，工作量和长期风险都小于同时维护自研、原版与 Sodium 三套行为。
 
-- 模型编译遍历所有 direction-cull quad 与 unculled quad，保留多 quad/overlay、位置随机、state offset、真实 UV、tint、shade、normal 和 render type。
-- 对接 NeoForge ModelData、模型扩展和自定义 render type；单个坏模型隔离为可观察错误占位，不杀死 worker。
-- 流体编译覆盖四角高度、流向 UV、顶/底/侧面、遮挡、overlay、双面、水体 tint、岩浆和自定义 fluid。
-- 建立 SOLID、CUTOUT、TRANSLUCENT 三 pass，material 记录 alpha cutoff、mipmap、cull、emissive、depth write、blend 和 sprite。
-- 资源重载重新认证 descriptor fast path；无法证明与通用流等价的 state 一律走通用流。
+| 维度 | 继续自研 | synthetic 原版映射 | 直接 Sodium bridge（选定） |
+|---|---|---|---|
+| 近景模型/流体完整度 | 需自行补齐 | 原版/Sodium 可复用 | Sodium 原生复用 |
+| Iris 近景适配 | ALLVR 专用 | 自动，前提是完整 facade | 自动，前提是标准 Sodium draw |
+| 高 Y | 原生绝对 key | 必须滑动窗口 | 必须 renderer-private 虚拟 Y |
+| 数据复制 | 较少 | 最大，维护第二世界 | snapshot 所需最小复制 |
+| 运行时后端数 | 自研 + 兼容路径 | 原版 + Sodium 分支 | 仅 Sodium |
+| 性能成熟度 | 当前约 5 FPS | 原版较弱、Sodium 较好 | Sodium 最佳 |
+| 升级成本 | 本项目全部承担 | Minecraft + Sodium 双边 | 集中的 Sodium version adapter |
+| 第三方状态泄漏 | 低 | 高 | 低 |
 
-### 7.4 光照、AO、颜色与动画
+## 4. 依赖和兼容策略
 
-- 以逐顶点 sky/block light 和 AO 取代面中心常量；区分 flat/smooth、direction shade 与 emissive。
-- 生物群系 tint 使用绝对 world position 和配置的 blend radius；缓存按 biome cell/color resolver 分层。
-- 客户端维护增量 light brick 或等价共享光照缓存，跨 cell/cube 传播；方块光不得继续无视遮挡做简单曼哈顿扩散。
-- 通用流保存 packed normal；descriptor 流从 axis/face 恢复，Iris patch 得到一致的 lightmap、normal、tint 和 material id。
-- 构建结果记录 animated sprite；每帧只为可见 cell/pass mark active。
+### 4.1 依赖级别
 
-### 7.5 透明、方块实体和破坏效果
+- **Sodium：客户端硬依赖。** `neoforge.mods.toml` 增加 `modId="sodium"`、`type="required"`、`side="CLIENT"` 和受支持版本范围。
+- **Iris：客户端可选依赖。** 无 Iris 时使用 Sodium 原生 shader；有 Iris 时走 Iris 的 Sodium 兼容层。
+- **Voxy：客户端可选依赖。** 可用时提供远景；缺失或失败时稳定退化为 Sodium 近景 + 雾，不恢复 legacy LOD。
+- **服务端：不要求安装 Sodium。** required dependency 的 side 必须为 `CLIENT`，避免专用服务器加载客户端渲染模组。
 
-- 透明先按 cell back-to-front 和 quad plane 分类，随后只对需要动态排序的几何维护可复用 sort data；相机跨排序平面时才重排。
-- 排序也受预算约束，但预算不足时保留上一有效顺序，不能临时丢透明几何。
-- cell 构建期收集普通/global BE；按 ALLVR 可见列表调用 vanilla dispatcher，支持 off-screen、crumbling、outline 和高 Y camera-relative transform。
-- 明确 Create/Flywheel block entity 的所有权：可进入实例系统的交给实例 renderer；否则走 vanilla fallback，禁止双绘。
-- 方块破坏 overlay 与正在替换的旧 terrain mesh 同步，不能依赖空 vanilla shell section。
+开发首版固定验证 Sodium `0.8.13-beta.1+mc1.21.1`。由于计划需要接入 `RenderSectionManager`、`LevelSlice` 和 cloned section 内部路径，不能一开始声明开放式 `[0.8,)`。先使用精确版本或窄范围；新增版本必须经过编译、mixin audit、冒烟、视觉和性能矩阵后再扩展。
 
-### 7.6 GPU scene、上传与可见性
+### 4.2 构建与发布
 
-- 用 region arena 替代单全局 first-fit arena；descriptor、vertex、index、metadata 可独立分配，handle 带 generation 防 ABA。
-- persistently mapped staging ring + fence 批量上传；node/material/command dirty 合并连续 range，每帧受时间和字节双预算限制。
-- 显存不足先驱逐不可见和最远近景 cell；仍不足时切 compat backend/缩小近景距离并显示原因，禁止 silent drop。
-- 16³ cell 构建六面 connectivity mask。CPU graph 生成候选，GPU frustum/Hi-Z 做细剔除；Hi-Z 使用保守上一帧重投影，不再要求相机完全静止。
-- command buffer 物理分段并在 GPU 写入前 clamp；overflow 异步反馈并在下一帧恢复，不能写越界或永久隐形。
-- 阴影使用 light-frustum 可见列表；solid/cutout 投影，透明仅在 pack 明确支持时参与。
+实施时应：
 
-### 7.7 渲染后端
+1. 在 `build.gradle` 增加可复现的 Sodium compile dependency，并把同版 Sodium 加入开发运行环境；不把 Sodium jar 打入 CMI jar。
+2. 在 `src/main/templates/META-INF/neoforge.mods.toml` 增加 CLIENT required dependency。
+3. 保留 Iris/Voxy 为 `compileOnly` 或隔离的 version adapter，避免把可选模组打包进 CMI。
+4. CI 增加“仅 Sodium”“Sodium+Iris”“Sodium+Voxy”“Sodium+Iris+Voxy”四个运行组合。
+5. 启动时记录一次 Sodium adapter 版本和签名探测结果；签名不匹配应中止加载并给出明确版本信息，禁止半初始化后黑屏。
 
-| Tier | 条件 | 路径 |
-|---|---|---|
-| A | `GL_NV_mesh_shader` 和完整依赖能力 | task/mesh shader 展开 descriptor/meshlet；仅可选 |
-| B | compute + SSBO + draw parameters + indirect/MDI(C) | 默认 GPU-driven 后端 |
-| C | 缺少完整 GPU-driven 能力或驱动被禁用 | CPU render list + 普通紧凑 vertex/index 批绘制 |
+## 5. 固定架构边界
 
-Tier C 只保证近景；Voxy 远景是否可见仍由 Voxy 自身能力决定。任何 Tier 失败都不得关闭整个 Allay 近景。
+### 5.1 数据所有权
 
-Mesh Shader 实施约束：
+- 服务端、网络、存档、玩法、碰撞、实体和 block entity 的权威坐标始终是 ALLVR 绝对坐标。
+- `AllvrClientCubeCache` 仍是客户端近景唯一数据源；不把 synthetic chunks 注册进 `ClientChunkCache`。
+- `AllvrCube` 的 8 个 `LevelChunkSection` 继续复用，逻辑单位仍为 32³ Cube。
+- Sodium bridge 只生成不可变的构建 snapshot；worker 不直接持有会被 packet/update 修改的 live palette。
+- 渲染 section 使用 16³，故一个 Cube 映射为 2×2×2 个 Sodium render section。
 
-- descriptor 与通用流都先切为受硬件上限约束的 meshlet；fragment/material/Iris 接口与 MDI 共用。
-- task stage 可做 frustum、normal cone 和可选 Hi-Z；透明顺序仍来自 CPU/GPU sort list，不能依赖 invocation 顺序。
-- 运行时查询最大 vertices/primitives/workgroup，不写死 GPU 型号。
-- 只有目标设备族的 GPU p95 相比 MDI 改善至少 10%，并通过长稳与驱动矩阵，AUTO 才启用；否则保持实验开关。
-
-## 8. 分阶段实施顺序
-
-### M0：基线和选型证据
-
-- 冻结四组录制：规则空岛、复杂模型展台、洞穴+流体+透明+BE、高 Y 高速垂直移动。
-- 记录 current ALLVR near、普通维度 Sodium 和原版的 build/snapshot/upload/render CPU p50/p95/max、GPU pass、mesh bytes、显存和 draw count。
-- 为现有 Voxy 集成记录 section 注入、mesh backlog、远景 GPU/CPU 和 rebase 峰值；后续确保删除 legacy 不回退该结果。
-- 建立离屏视觉基线和 RenderDoc capture；不把普通维度 Sodium FPS 直接当作 bridge FPS。
-
-完成条件：指标可重复，CPU/GPU 时间边界清楚，后续每阶段能与同场景比较。
-
-### M1：删除 legacy LOD
-
-按第 6 节完整删除客户端、协议、服务端 meshing、renderer LOD node 和配置入口；协议升级一次完成，不维持双版本热路径。
-
-完成条件：Voxy 组合远景正常；无 Voxy near-only 正常；服务端和客户端 profile 都不再出现 legacy mesh。
-
-### M2：生命周期、安全和兼容保底
-
-- world/resource epoch、cell revision、任务四态、取消与过期过滤。
-- 网络精确上限、GL 完整 close、事务初始化、状态恢复。
-- 建立 Tier C，使能力不足或 Tier B shader 失败时近景仍可见。
-
-完成条件：压力编辑不丢更新；100 次维度往返、50 次 reload/resize 无 GL/native 资源增长；故意让模型/worker失败后其他 cell 继续。
-
-### M3：16³ cell、调度器和原子发布
-
-- 拆 cell、18³ snapshot、多 worker 优先级、预算和统计。
-- 新旧 mesh 原子交换；seam handoff 请求纳入优先级。
-
-完成条件：单块更新通常只构建一个 cell；高速飞行时屏幕内首次 mesh 不被后台工作饿死；主线程 snapshot/apply/upload 长尾受预算控制。
-
-### M4：完整模型、流体、光照和三 pass
-
-- 双几何流、ModelData、流体、逐顶点 tint/AO/light/normal。
-- solid/cutout/translucent material pipeline 和资源重载认证。
-- registry coverage scan：所有可见 BlockState 都必须有渲染路径或明确白名单原因。
-
-完成条件：模型展台与 Sodium 视觉基线没有系统性缺面；楼梯、栅栏、植物、火把、草 overlay、机械模型、水/岩浆均可见。
-
-此阶段执行第 4.4 节决策门；只有明确未达性能门且 profile 指向模型 tessellation，才讨论 Sodium 内部原型。
-
-### M5：透明、动画、BE 和 Iris
-
-- 分级透明排序、sprite activation、BE/global BE、crumbling、outline、Flywheel ownership。
-- Iris opaque/cutout/translucent targets、blend/depth、TAA 和 shadow patch 全部接通。
-
-完成条件：多层透明移动无稳定错误翻转；动画不冻结；BE 在高 Y 正确显示、破坏和发光；代表性光影包无 framebuffer/depth 污染。
-
-### M6：region 显存、上传和可见性
-
-- region arena、staging ring、fence、generation handle、预算驱逐和碎片统计。
-- connectivity + frustum + 保守 Hi-Z；阴影 GPU list；overflow 恢复。
-
-完成条件：随机编辑/高速飞行 30 分钟无不可恢复碎片、空洞或 backlog；上传 p95 达门；持续移动时 Hi-Z 有可测收益且无闪洞。
-
-### M7：Voxy seam 和无 Voxy 行为闭环
-
-- 实现第 5.3 节 ownership state machine、readiness、hysteresis 和原子帧边界切换。
-- Voxy reload/rebase/异常时只退 near-only；雾和 debug distance 跟随实际 coverage。
-- 验证 Sodium terrain 门禁不会阻止 Voxy draw hook，也不会维护 Allay 空 shell。
-
-完成条件：进出 256 方块边界、高速转向、传送和 Voxy rebase 无长期洞/双绘；无 Voxy 场景没有远景请求和错误日志洪泛。
-
-### M8：可选 Mesh Shader 与发布清理
-
-- meshlet 化、NV task/mesh backend、与 MDI 逐帧截图/GPU timestamp A/B。
-- 删除被新模块替代的 singleton、旧 allocator、旧 pending 协议和失效注释。
-- 更新 Allay/Voxy 开发文档和配置说明，明确“Voxy 唯一远景、无 Voxy near-only”。
-
-完成条件：Mesh Shader 达不到收益门时保持关闭也不阻塞发布；所有硬件/模组/光影包/长稳门通过。
-
-## 9. 文件落点
-
-### 9.1 删除或收缩
-
-| 文件/模块 | 计划 |
-|---|---|
-| `LegacyAllvrLodBackend.java` | 删除 |
-| `ClientboundAllvrLodMeshPacket.java` | 删除 |
-| `ServerboundAllvrLodRequestPacket.java` | 删除 legacy capability/branch，只保留 section 协议 |
-| `AllvrLodMap.java` | 删除服务端 mesh build/cache/send，保留 section 生成 |
-| `AllvrLodClientState.java` | 删除 quad remap/renderer mesh 接口，改为 Voxy residency 请求状态 |
-| `AllvrLodBackendManager.java` | 只剩 Voxy/Disabled；失败为 near-only |
-| `AllvrRenderer.java` | 最终只做事件适配和 `AllvrRenderWorld` 调用；删除 legacy LOD 与资源大杂烩 |
-| `AllvrNodeStore.java` | 删除 LOD 层级，迁移为平坦、generation 化的 near cell scene node |
-| `AllvrBuffers.java` | 由 region/GPU scene 逐步取代 |
-| `AllvrMesherWorker.java` | 由 scheduler 取代 |
-| `AllvrMesher.java` | 保留为规则 descriptor fast path |
-| `AllvrRenderStateMap.java` | 由 resource-revision model/material snapshot 取代 |
-| `AllvrLightBaker.java` | 迁移到共享增量 light cache |
-| `AllvrSodiumTerrainMixin.java` | 保留 Voxy draw 入口；禁止 Sodium 维护空 shell，精确版本门禁 |
-
-### 9.2 建议新增包
+### 5.2 画面所有权
 
 ```text
-client/dimension/render/world       会话、cell、revision、ownership、BE list
-client/dimension/render/build       snapshot、scheduler、model/fluid compiler
-client/dimension/render/material    material、pass、sprite activity
-client/dimension/render/gpu         region、allocator、upload ring、handles
-client/dimension/render/backend     compat、MDI、NV mesh shader
-client/dimension/render/visibility  connectivity、Hi-Z、pass lists
-client/dimension/render/debug       overlay、counter、capture hooks
+0 ～ 近景边界：Sodium render sections（唯一 owner）
+近景边界 ～ 远景上限：Voxy（仅在 backend 实际可用时）
+无 Voxy：近景边界外由雾过渡到天空
+block entity / dynamic instance：现有绝对坐标路径，单独做 ownership 去重
 ```
 
-## 10. 性能预算与发布门
+- 自研 ALLVR terrain draw 与 Sodium terrain 不得同时启用。
+- 迁移阶段的 legacy 开关仅为开发回滚，默认关闭，不能向普通用户暴露为长期后端选项。
+- Voxy seam 必须使用 readiness + hysteresis；不能仅凭距离让两个 renderer 同时覆盖同一体素。
 
-所有指标在固定录制、release build、1080p、至少 10,000 帧下统计，并报告硬件、驱动、Sodium/Voxy/Iris 版本；不能只报平均 FPS。
+### 5.3 不做的事情
 
-- 稳定视角：ALLVR near terrain render-thread slice p95 ≤ 0.75 ms，不允许同步 GPU readback。
-- 持续流送：snapshot + result apply + upload 合计 p95 ≤ 2.0 ms；单帧由预算限制在 4 ms 内。
-- 单块更新：通常只重建 1 个 16³ cell；边界只重建受影响邻居集合，不重建整个 32³ Cube。
-- 构建吞吐：至少为当前单 worker 路径的 3 倍；主线程不得因 cache lock 等待超过 2 ms。
-- Tier B：同等可见几何和画质下，GPU/terrain p95 不比 Sodium 普通世界对照慢 15% 以上；差异必须拆分为额外视觉功能、像素量或 renderer overhead。
-- Tier A：仅在比 Tier B 改善 ≥10% 时对该设备族自动启用。
-- 上传：render-thread upload p95 < 1 ms，任何大批量结果可跨帧完成。
-- 显存：预算内稳定；碎片率和 deferred allocation 不连续增长；驱逐后可回收。
-- Voxy：删除 legacy 后，section 网络量、服务端 section build、client injection、mesh backlog 和 rebase p95 不得回退超过 10%。
-- near-only：无 Voxy 时不产生 LOD bitmap walk、section 请求、服务端 section build 或 Voxy probe 重试开销。
-- 长稳：30 分钟飞行+随机编辑、100 次维度往返、50 次资源重载/resize，无空洞、worker 死亡、GL error 洪泛或资源增长。
+- 不扩大全局 `ClientLevel` build height。现有注释已证明这会破坏 Sodium 的 section array 边界保护。
+- 不伪造完整 vanilla `LevelChunk` 世界。
+- 不 fork 或复制 Sodium renderer。
+- 不在 Sodium draw 后叠加 ALLVR 专用 terrain pass。
+- 不让 Voxy 取代近景精确模型渲染。
+- 不承诺任意未来 Sodium/Iris 版本无需验证即可兼容。
 
-若门槛未通过，必须保留 capture 和归因；不允许通过静默丢模型、关闭透明排序、伪造雾距离或降低正确性来达标。
+## 6. Renderer-private 虚拟 Y
 
-## 11. 测试矩阵
+### 6.1 坐标定义
 
-### 11.1 数据与坐标
+Sodium 的 section graph、`SectionPos` 和 `BlockPos` 必须工作在安全的小范围 Y 内；ALLVR 的权威世界仍使用约 ±3000 万绝对 Y。定义：
 
-- Y=0、±1,000,000、±29,999,900；负 X/Y/Z；15↔16、31↔32 cell/cube 边界。
-- cube 首包、更新、forget、重发；构建中重复 dirty；旧 epoch/revision/generation；worker 失败。
-- Voxy absolute↔virtual Y round-trip、连续 rebase、旧 epoch 包、超窗 cell 拒绝。
-- 合法最大 packet 与短数组、超长数组、溢出、无效 state、尾随字节 fuzz。
+```text
+originBlockY   = 512 对齐的窗口原点
+originSectionY = originBlockY >> 4
 
-### 11.2 渲染内容
+virtualBlockY   = absoluteBlockY   - originBlockY
+virtualSectionY = absoluteSectionY - originSectionY
+absoluteBlockY  = virtualBlockY    + originBlockY
+```
 
-- 完整立方、random/weighted、overlay、unculled、offset、multipart、ModelData、自定义 render type。
-- solid、cutout、cutout-mipped、tripwire、translucent、emissive、双面。
-- 静水、流水、瀑布、含水、自定义流体及玻璃/叶子交界。
-- 露天、洞口、封闭洞穴、遮墙光源、跨 cell/cube 光源、昼夜。
-- 普通/global BE、crumbling、outline、Create/Flywheel。
-- animated sprite、资源包 reload、shader reload、窗口 resize。
+X/Z 保持原坐标。Sodium section identity、render region、可见性与透明排序使用 virtual Y；模型查询、随机种子、biome tint、光照和 block entity 使用转换后的 absolute Y。
 
-### 11.3 运行组合
+### 6.2 相机与 shader 规则
 
-| Sodium | Iris | Voxy | 必须结果 |
-|---|---|---|---|
-| 无 | 无 | 无 | ALLVR 完整近景；边界外无地形 |
-| 有 | 无 | 无 | Sodium 不维护空 shell；ALLVR 近景与无 Sodium 一致 |
-| 有/无 | 有 | 无 | ALLVR 三 pass/depth/shadow 正确；边界外无地形 |
-| 有 | 无 | 有 | ALLVR 近景 + Voxy 远景，单一 ownership |
-| 有 | 有 | 有 | ALLVR/Voxy/Iris targets、depth、TAA、shadow 正确 |
-| 任意 | 任意 | ABI 不支持/运行失败 | 自动 near-only，不 crash、不启用 legacy |
+- 传入 Sodium section culling、region offset、mesh sort 的 terrain camera Y 必须是 `cameraY - originBlockY`。
+- section vertex 与 terrain camera 同减一个 origin，得到的 camera-relative 几何位置与绝对世界完全相同。
+- Iris 的全局 `cameraPosition` 继续表达绝对相机坐标；光影包把 camera-relative position 加回 camera position 后仍得到绝对世界位置。
+- 禁止把 ±3000 万 absolute Y 直接编码进 Sodium chunk vertex float。
+- 非 terrain renderer 不接收虚拟 camera，避免实体、天空、粒子和后处理整体错位。
 
-至少测试一组低能力 compat GPU、一组主流 AMD/Intel Tier B、一组 NVIDIA Tier B；NV Mesh Shader 设备另测 Tier A。Voxy 的实际依赖组合按已支持矩阵执行，不假设任意“无 Sodium + Voxy”都能工作。
+### 6.3 窗口与 rebase
 
-### 11.4 必增自动测试
+首版复用 Voxy 已验证的 512-block 对齐与触发距离，并抽取共享 `AllvrRenderYWindow`：
 
-- `AllvrRenderRevisionTest`：重复 dirty、乱序结果、跨 epoch、失败结算。
-- `AllvrPacketBoundsTest`：最大合法值、溢出、短 bitmap、尾随字节和 fuzz。
-- `AllvrRenderCellBoundaryTest`：六边邻居 dirty 与未知邻居。
-- `AllvrModelCoverageTest`：registry 扫描与 descriptor/general 分类。
-- `AllvrAllocatorPropertyTest`：随机 alloc/free/compact、generation ABA。
-- `AllvrFarTerrainModeTest`：Voxy/Disabled 选择、旧 LEGACY 配置迁移、无请求行为。
-- `AllvrVoxyOwnershipTest`：near/far ready handoff、rebase、失败降 near-only。
-- `AllvrTranslucentSortTest`：相机跨平面、退化/相交 quad、稳定 tie-break。
-- 离屏/RenderDoc golden：三 pass、Iris targets、shadow distortion、高 Y 精度和 seam。
+- 玩家距 origin 达 512 blocks 时触发新 origin；
+- near cube 请求半径和 forget hysteresis 必须保证所有 resident section 落在 `SectionPos` / `BlockPos` 安全范围；
+- Sodium 与 Voxy 共享 origin/epoch，避免两个空间定义产生 seam 漂移；
+- Voxy 不可用时同一 origin 管理器仍服务 Sodium。
 
-## 12. 风险与控制
+rebase 采用严格状态机：
+
+1. `STEADY`：旧 epoch 正常构建与绘制。
+2. `FREEZE`：停止接收会进入旧 virtual key 的新任务，`windowEpoch++`；迟到结果全部丢弃。
+3. `DETACH`：分帧移除旧 Sodium sections 和 Voxy nodes；释放/取消由 generation 保护。
+4. `MOVE`：在帧边界原子发布新 origin；terrain camera 和 section mapping 必须同帧切换。
+5. `REFILL`：中心近景优先重新注册，屏幕内 section 优先构建；Voxy 从粗层向细层回填。
+6. `STEADY`：所有 ownership 和 backlog 回到正常策略。
+
+首版不同时维护两个 Sodium renderer。rebase 空窗使用旧帧保留、雾和分帧 refill 掩护；禁止为了无缝而让旧/新 epoch 同帧 draw，否则会重现地形叠帧覆盖天空的问题。
+
+## 7. Sodium 接入设计
+
+### 7.1 单一适配层
+
+新增集中包，例如：
+
+```text
+client/dimension/render/sodium/
+    AllvrSodiumBridge
+    AllvrSodiumSectionSource
+    AllvrSodiumSectionSnapshot
+    AllvrSodiumSectionLifecycle
+    AllvrSodiumCoordinateSpace
+    AllvrSodiumCompatibilityProbe
+    SodiumApi_0813_1211
+```
+
+其他 ALLVR 模块不得散落引用 Sodium private classes。所有内部 ABI 调用集中在 `SodiumApi_0813_1211`，以便版本升级时替换一个 adapter，而不是全仓修改。
+
+### 7.2 Section source
+
+`AllvrSodiumSectionSource` 按 absolute section 坐标读取 `AllvrClientCubeCache`：
+
+1. 通过 floor division 定位 32³ Cube。
+2. 通过 `AllvrCube.sliceIndex(ssx, ssy, ssz)` 取得对应 16³ `LevelChunkSection`。
+3. 获取构建所需的 3×3×3 section 邻域；未知/未加载邻居按空气处理，但必须在邻居到达时 dirty 边界。
+4. 克隆 palette/biome 为不可变 snapshot，附带 absolute origin、virtual render key、cube generation、content revision、resource revision 和 window epoch。
+5. 提供 Sodium block/fluid model 构建所需的 light、biome tint、ModelData 与 auxiliary light 查询。
+
+snapshot 只能在短锁或版本校验下生成。worker 完成时必须同时校验 world epoch、window epoch、content revision 和 resource revision；任一过期即丢弃，不能上传旧几何。
+
+### 7.3 生命周期
+
+Cube 事件映射如下：
+
+| ALLVR 事件 | Sodium 行为 |
+|---|---|
+| cube packet 首次到达 | 注册 8 个非空/待判定 render sections，调度 initial build |
+| cube 内 block update | invalid cloned snapshot；dirty 本 section及受遮挡/光照影响的边界邻居 |
+| 邻接 cube 到达 | dirty 双方边界 section，消除先前空气 seam |
+| cube forget | 取消任务，移除 8 section，释放 mesh/BE ownership |
+| dimension unload | destroy bridge，epoch++，拒绝全部迟到结果 |
+| resource reload | resourceRevision++，清 snapshot/cache，预算化重建 visible sections |
+| Y rebase | 按第 6.3 节 detach/move/refill；旧 virtual key 不得复活 |
+
+不能直接依赖 Sodium 的 vanilla `ChunkTracker`，因为 ALLVR Cube 不在 `ClientChunkCache` 中。bridge 必须主动驱动 section add/remove/dirty，并绕开 `onSectionAdded` 当前对 vanilla `LevelChunkSection[]` 的硬读取。
+
+### 7.4 必要的 Sodium hook
+
+对 Sodium 0.8.13，最小 hook 集合是：
+
+1. `RenderSectionManager.onSectionAdded`：ALLAY 维度从 `AllvrSodiumSectionSource` 判断 air/non-air 并建立 render section，不索引空壳 `LevelChunkSection[]`。
+2. `RenderSectionManager.createRebuildTask` 或 `LevelSlice.prepare`：ALLAY 维度构造 cube-backed `ChunkRenderContext`，普通维度保持原逻辑。
+3. `ClonedChunkSectionCache.acquire/clone/invalidate`：将 ALLAY section 克隆重定向到 source；若选择在 `LevelSlice.prepare` 上层完全替换 context，则此处只做防误读断言。
+4. camera/viewport 输入：只对 ALLAY terrain manager 把 Y 转换为 virtual；不能修改全局 Camera。
+5. section key、dirty、visibility/debug 查询：外部 absolute Y 进入 manager 前统一转换为 virtual Y。
+6. task publish/upload：附加 ALLVR epoch/revision 校验，旧任务不能覆盖新 section。
+
+优先使用接口注入和窄 redirect；不得复制整个 `RenderSectionManager` 方法。每个 hook 都要有 `require`/签名检查和普通维度回归测试。
+
+### 7.5 Sodium 原生能力必须完整保留
+
+bridge 的成功标准不是“能看到草方块”，而是使用 Sodium 原生能力：
+
+- 任意 `BakedModel`、culled/unculled quad、multipart、weighted/random model；
+- NeoForge ModelData 和平台 model hooks；
+- block 与 fluid renderer；
+- AO、sky/block light、biome tint、normal、shade；
+- solid、cutout、translucent pass 与透明排序；
+- animated sprite activation；
+- build priority、worker、取消、upload budget、region allocator；
+- frustum、section graph、occlusion 与 shadow render lists；
+- Sodium debug counters 和错误上下文。
+
+若某阶段通过把复杂模型退回逐方块 immediate renderer 才显示正确，该阶段不算完成，因为这会恢复当前 5 FPS 的核心瓶颈。
+
+## 8. 方块实体、光照和动态内容
+
+### 8.1 方块实体
+
+首版 terrain bridge 不把 synthetic `LevelChunk` 暴露给 Sodium。方块实体继续由 ALLVR 绝对坐标列表交给 vanilla/NeoForge/Flywheel dispatcher：
+
+- Sodium mesh snapshot 只收集静态 block/fluid geometry；
+- ALLVR 每帧按 near visibility 提交普通/global BE；
+- Create/Flywheel 可实例化的 BE 交给实例 renderer，其余走 vanilla dispatcher；
+- 一个 BE 只能有一个 owner，禁止 Sodium built-section list 与 ALLVR list 双绘；
+- crumbling、outline、off-screen/global BE 和 unload 生命周期单独覆盖。
+
+后续只有在 Sodium 提供稳定 external BE list 边界且实测有收益时，才迁移 BE ownership；它不是 terrain cutover 的前置条件。
+
+### 8.2 光照与 biome
+
+- 模型构建查询以 absolute `BlockPos` 为语义，避免随机 seed、offset 与 tint 随 rebase 改变。
+- `AllvrLightSampler`/增量 light cache 向 Sodium build context 提供 sky/block light；邻域未就绪时使用明确 provisional 状态，邻居/光源到达后 dirty。
+- biome palette 来自 Cube section；blend radius 查询跨 cube 时使用 absolute position。
+- emissive、auxiliary light 和 modded light hooks 必须进入同一个 snapshot contract。
+
+### 8.3 更新粒度
+
+- 单方块更新通常只重建 1 个 16³ section。
+- 位于 section 边界的遮挡、AO、流体或光照变化只通知实际相邻集合。
+- 新 mesh 上传成功前保留旧 mesh；失败或预算延期不得先释放旧结果形成闪洞。
+- 重建请求合并 revision，不为同一 section 堆积重复任务。
+
+## 9. Iris 自动接入与验证边界
+
+### 9.1 可删除的近景专用适配
+
+在 Sodium cutover 完成且验证通过后，可删除仅服务自研近景 terrain 的：
+
+- `assets/createmanaindustry/shaders/allvr/terrain.vsh` 与 `terrain.fsh`；
+- `AllvrShaderCache`、ALLVR terrain program patch/compile 分支；
+- 为自定义 terrain framebuffer、gbuffer 输出和 shadow draw 添加的 Iris mixin；
+- 自研 terrain VBO/IBO/descriptor、fallback immediate draw 和自定义 pass 状态。
+
+删除前逐项审计 `mixin/allvriris` 与 `client/dimension/iris`。名字含 ALLVR 不代表只服务 terrain；粒子、雾、Veil、Voxy sampler/uniform 和其他效果仍有独立用途，不得连带删除。
+
+### 9.2 必测内容
+
+- Iris 关闭：Sodium 的 solid/cutout/translucent 与主世界一致。
+- Iris 开启但无 shader pack：行为与普通 Sodium/Iris 世界一致。
+- Photon：gbuffer 位置、法线、lightmap、material id、depth、shadow、TAA 均正确。
+- 至少再测一套 Complementary 系光影包，防止仅适配 Photon 的隐含假设。
+- 快速转动、resize、shader reload、dimension switch 后无上一帧地形残留。
+- virtual Y rebase 前后 world-position 相关效果不跳变；阴影不偏移，天空不被旧深度覆盖。
+
+### 9.3 “自动生效”的验收定义
+
+只有满足以下三点才可以删除 ALLVR 近景 shader 适配：
+
+1. RenderDoc 中近景 ALLVR section 和普通 Sodium section 使用同类 terrain program、vertex format、pass 和 framebuffer。
+2. shader pack on/off 都没有额外 ALLVR terrain draw call。
+3. ALLVR 代码不再读取 shader-pack 源码、不再拼接 Photon/Complementary 专用近景 shader。
+
+## 10. Voxy 远景保持独立
+
+Voxy 即使依赖/协同 Sodium，也不是 Sodium 的普通 `RenderSectionManager` terrain section。它使用自己的 `WorldSection`、LOD mesh、viewport、存储和 shader-pack contract。因此：
+
+- 保留 `VoxyLodBackend`、`AllvrVoxySectionWriter`、`AllvrVoxyNodeRegistry` 和 version adapter；
+- 保留 Voxy virtual Y、viewport、top-level range、LOD threshold 和 storage/ingest mixin；
+- 保留光影包 `voxy.json` contract、Voxy sampler/uniform、framebuffer 和 patch 数据；
+- Sodium 近景与 Voxy 远景共享 origin/epoch，但各自维护 section/node residency；
+- seam 状态机必须先确认新 owner ready，再在下一帧撤销旧 owner；
+- Voxy 失败后只退化到 Sodium near-only，不启动自研或原版远景 fallback。
+
+## 11. 参考 CubicChunks 的方式
+
+参考 `.refs/CubicChunks` 的是数据与 renderer 解耦模式，而不是照搬其旧版本类：
+
+- 用 3D cube cache 作为权威客户端数据，而非强行压入固定高度 column；
+- renderer build cache 从 cube 数据按需提供邻域；
+- 相机跨 cube 时增量维护 3D view/lifecycle；
+- 玩法坐标与 renderer 内部坐标分离。
+
+不照搬的部分：
+
+- 旧 Minecraft 版本的 `ViewFrustum`、`RenderChunk` 和固定 OpenGL backend；
+- 把现代 Sodium 当作原版 renderer 的透明替换而忽略其 cloned section / `LevelSlice`；
+- 为兼容旧接口创建可被所有模组访问的 synthetic gameplay chunks。
+
+本计划相当于把 CubicChunks 的 `RenderCubeCache` 思路落到 Sodium 的 `ChunkRenderContext` 输入边界。
+
+## 12. 分阶段实施
+
+### P0：冻结基线与删除条件
+
+- 固定可复现场景：规则岛屿、草/植物/楼梯/栅栏展台、流体+玻璃、Create/Flywheel BE、高 Y 垂直飞行。
+- 记录现状 CPU/GPU p50/p95/max、section 数、fallback block 数、draw count、upload bytes、显存、worker backlog。
+- 保存 shader off、Photon on 的截图和 RenderDoc capture。
+- 为旧自研 renderer 增加仅开发可用的总开关与计数，明确最终删除清单。
+
+退出标准：5 FPS 瓶颈可重复，所有后续阶段都能与同一录制比较。
+
+### P1：Sodium 硬依赖和 compatibility probe
+
+- 增加 CLIENT required metadata 和可复现编译依赖。
+- 建立 `SodiumApi_0813_1211` 与签名/版本 probe。
+- 移除“无 Sodium 时正常进入 Allay 并使用自研 renderer”的产品承诺。
+- 普通维度保持 Sodium 原生行为，Allay 尚未切换时仍由 dev legacy 临时显示。
+
+退出标准：缺失/错误版 Sodium 在启动期明确失败；正确版本进入主世界无回归。
+
+### P2：共享虚拟 Y 与 section source
+
+- 抽取 `AllvrRenderYWindow`，统一 Sodium/Voxy origin、epoch 和转换函数。
+- 建立 cube→8 sections 的 key 映射、snapshot、邻域和 revision contract。
+- 为 absolute↔virtual 坐标、负数 floor division、cube/section 边界和 rebase 写纯 JVM 测试。
+- 禁止 client build-height widening；增加越界断言。
+
+退出标准：Y=0、±1,000,000、±29,999,900 的 key round-trip 和邻域查询全部通过。
+
+### P3：Sodium native meshing 最小原型
+
+- 在 Allay 维度注册 cube-backed render sections。
+- 替换 `LevelSlice.prepare`/cloned source，使 Sodium worker 直接看到 Cube snapshot。
+- 先覆盖 full cube、草方块、植物、楼梯和静态水，确认全部由 Sodium chunk mesher 产生。
+- 使用 Sodium 原生 upload、render list、terrain pass 和 shader；禁止 ALLVR terrain draw。
+
+退出标准：RenderDoc 证明没有自定义 ALLVR terrain pass；shader off 时位置、深度和转动正确；性能明显脱离逐方块 fallback。
+
+### P4：完整生命周期与资源安全
+
+- cube add/update/neighbor/forget 到 section add/dirty/remove 完整映射。
+- world/window/content/resource 四类 revision 和迟到结果过滤。
+- 任务取消、失败结算、旧 mesh 原子替换、dimension unload 和 resource reload。
+- 100 次进出维度、50 次 reload/resize、30 分钟高速流送无资源增长。
+
+退出标准：无旧 section 复活、永久洞、重复几何、worker 死亡或 GL error 洪泛。
+
+### P5：模型、流体、光照和 ModelData 完整度
+
+- 接通 Sodium/NeoForge model、fluid、ModelData、tint、AO/light 和 animated sprite 所需的 level/snapshot 查询。
+- registry coverage scan：所有可见 BlockState 必须由 Sodium native mesh 覆盖或有书面非地形原因。
+- 完成 absolute seed/tint/light 语义和边界 dirty。
+
+退出标准：展台与普通 Sodium 世界没有系统性缺面；fallback immediate terrain block 数恒为 0。
+
+### P6：Iris 自动接入
+
+- 验证 Sodium `TerrainRenderPass` 到 Iris `SodiumPrograms` 的标准路径。
+- 完成 virtual terrain camera 与 absolute Iris camera uniform 的一致性测试。
+- 覆盖 main、shadow、translucent、TAA、reload 和 resize。
+- 删除已证实冗余的 ALLVR 近景 terrain shader/patch；保留 Voxy 和非 terrain Iris 代码。
+
+退出标准：Photon 与第二套 shader pack 通过第 9 节；近景无 ALLVR 特制 shader/draw。
+
+### P7：Voxy seam、BE 与 rebase
+
+- Sodium near / Voxy far ownership state machine 与 hysteresis。
+- Voxy 缺失、reload、运行失败时 near-only 闭环。
+- BE/Flywheel/crumbling/outline 单一 ownership。
+- 多次向上/向下跨 512 对齐点，验证 freeze/detach/move/refill。
+
+退出标准：边界和 rebase 无长期洞、双绘、z-fighting、旧深度或天空覆盖伪影。
+
+### P8：性能收口与移除自研 renderer
+
+- 用 profiler 和 GPU timestamp 对照主世界 Sodium、Allay Sodium bridge 和旧 renderer。
+- 优化只允许发生在 snapshot、dirty 合并、调度预算和 seam；不 fork Sodium mesh/draw。
+- 删除旧 terrain shader、mesher worker、fallback per-block draw、allocator、node store 和配置入口。
+- 更新开发文档、依赖说明和故障诊断。
+
+退出标准：第 14 节全部通过，发布构建中不存在第二套近景 terrain renderer。
+
+## 13. 计划中的文件落点
+
+### 13.1 修改
+
+| 文件/区域 | 计划 |
+|---|---|
+| `build.gradle` | 增加 Sodium compile/dev runtime dependency；Iris/Voxy 保持可选且不打包 |
+| `src/main/templates/META-INF/neoforge.mods.toml` | 增加 Sodium CLIENT required 依赖与窄版本范围 |
+| `createmanaindustry.mixins.json` / mixin plugin | 新增 Sodium bridge hooks；普通维度保持原逻辑；按阶段移除旧 terrain Iris hooks |
+| `AllvrClientCubeCache` | 发出 section source 所需的 add/update/neighbor/forget/revision 事件 |
+| `AllvrVoxyYWindow` | 迁移到共享 `AllvrRenderYWindow`，保留 Voxy 特有范围检查 |
+| `AllvrLodBackendManager` | 与共享 window/epoch 同步；失败仍为 near-only |
+| `AllvrSodiumTerrainMixin` | 从“取消 Sodium terrain”改为 bridge 入口；最终不得取消标准 Sodium draw |
+| ALLVR BE/render hooks | 仅保留 BE、动态内容和非 terrain 效果的绝对坐标渲染 |
+
+### 13.2 新增
+
+```text
+client/dimension/render/AllvrRenderYWindow.java
+client/dimension/render/sodium/AllvrSodiumBridge.java
+client/dimension/render/sodium/AllvrSodiumSectionSource.java
+client/dimension/render/sodium/AllvrSodiumSectionSnapshot.java
+client/dimension/render/sodium/AllvrSodiumSectionLifecycle.java
+client/dimension/render/sodium/AllvrSodiumCoordinateSpace.java
+client/dimension/render/sodium/AllvrSodiumCompatibilityProbe.java
+client/dimension/render/sodium/SodiumApi_0813_1211.java
+```
+
+### 13.3 达标后删除或收缩
+
+| 模块 | 最终处理 |
+|---|---|
+| `AllvrRenderer` | 删除 terrain draw；若仍承担 BE/事件编排则改名并收缩 |
+| `AllvrRenderWorld` | 删除自研 mesh/GPU scene；仅保留 lifecycle/ownership 时改名 |
+| `AllvrCellMesher` / `AllvrMesherWorker` / `AllvrBuildScheduler` | 删除自研 terrain 构建路径 |
+| `AllvrFallbackBlock` / immediate fallback | 删除；native Sodium coverage 必须为 100% |
+| `AllvrBuffers` / `AllvrRegionArena` / `AllvrNodeStore` | 删除自研 terrain GPU 资源 |
+| `AllvrShaderCache` / `assets/.../shaders/allvr/terrain.*` | 删除自研近景 terrain shader |
+| ALLVR terrain-specific Iris mixins | 验证无其他用途后删除 |
+| `AllvrLightSampler` 等 | 若仍为 Sodium build context 提供数据则保留并接口化 |
+| Voxy adapter 与 Voxy/Iris patch | 保留 |
+
+## 14. 性能、正确性与发布门
+
+所有性能数据使用 release build、固定录制、相同视距和分辨率，至少 10,000 帧；报告 p50/p95/max、CPU 和 GPU 时间，不只报告平均 FPS。
+
+### 14.1 性能门
+
+- 稳定近景：Allay Sodium bridge 的 terrain CPU/GPU p95 不得比相同可见 section/几何量的普通 Sodium 对照慢 20% 以上。
+- 目标设备、无光影包、1080p 固定场景：平均 FPS 至少达到同设备普通 Sodium 世界的 70%；若世界像素/几何量不同，必须同时给出 terrain GPU ms 归一化结果。
+- Photon 场景：与同可见几何量的普通 Sodium+Iris 对照相比，额外 bridge CPU p95 ≤ 1 ms，额外 GPU terrain p95 ≤ 15%。
+- 稳定视角不允许每帧重建、重新排序全部 blocks、重复上传静态 mesh 或同步 GPU readback。
+- 单块更新通常只重建一个 16³ section；主线程 snapshot/apply/upload 合计 p95 ≤ 2 ms，单帧受 4 ms 预算硬限制。
+- rebase 清理/回填必须分帧；主线程单帧峰值 < 50 ms，且不能产生持续重复 draw。
+- 30 分钟高速飞行后 section、snapshot、native buffer 和 Voxy node 数量回到稳定区间。
+
+### 14.2 正确性门
+
+- shader off/on 时相机转动、平移、FOV 改变和窗口 resize 均无屏幕固定地形。
+- 没有上一帧地形叠加、旧 depth、天空覆盖、双绘或 z-fighting。
+- solid/cutout/translucent、流体、AO/light/tint、动画纹理与 Sodium 语义一致。
+- Y=0、±1,000,000、±29,999,900 位置稳定，无 float 抖动、key alias 或随机模型跳变。
+- shader reload、resource reload、dimension switch 和 Y rebase 不复活旧 epoch。
+- Voxy on/off/失败均保持明确的 single-owner 近远景画面。
+
+### 14.3 测试矩阵
+
+| Sodium | Iris | Shader pack | Voxy | 预期 |
+|---|---|---|---|---|
+| 缺失/错误版本 | 任意 | 任意 | 任意 | 启动阶段明确依赖失败 |
+| 正确 | 无 | 无 | 无 | Sodium 近景，边界外雾/天空 |
+| 正确 | 有 | 关闭 | 无 | 与 Sodium 无 Iris 视觉一致 |
+| 正确 | 有 | Photon | 无 | Sodium/Iris 近景、gbuffer/shadow/TAA 正确 |
+| 正确 | 有 | 第二套代表包 | 无 | 无 pack-specific ALLVR 近景补丁 |
+| 正确 | 无 | 无 | 有 | Sodium 近景 + Voxy 远景 |
+| 正确 | 有 | Photon | 有 | Sodium/Iris 近景 + Voxy/Iris 远景，seam 单 owner |
+| 正确 | 任意 | 任意 | ABI 错误/运行失败 | Sodium near-only，不 crash、不恢复 legacy |
+
+至少覆盖 AMD、Intel、NVIDIA 各一组；性能门以用户报告问题的同一设备为首要基线。
+
+## 15. 自动测试清单
+
+- `AllvrSodiumCoordinateSpaceTest`：正负坐标、边界、absolute↔virtual round-trip。
+- `AllvrRenderYWindowTest`：512 对齐、触发、epoch、连续 rebase。
+- `AllvrSodiumSectionMappingTest`：一个 Cube 到 8 sections、邻域和负数 floor division。
+- `AllvrSodiumRevisionTest`：乱序 build、更新中 dirty、forget、reload、跨 epoch。
+- `AllvrSodiumLifecycleTest`：add/update/neighbor/remove 的准确 section 集合。
+- `AllvrSodiumModelCoverageTest`：registry 中所有可见 state 不进入 immediate fallback。
+- `AllvrSodiumDependencyTest`：metadata 只在 CLIENT required，支持范围与 adapter 一致。
+- `AllvrNearFarOwnershipTest`：Sodium/Voxy ready、hysteresis、失败和 rebase。
+- 离屏/RenderDoc golden：shader off、Photon、第二套 pack、shadow、translucent、高 Y。
+
+## 16. 主要风险与控制
 
 | 风险 | 控制 |
 |---|---|
-| 删除 legacy 后 Voxy 故障没有远景 | 这是明确产品行为；near-only 必须稳定，状态和雾准确，不伪装成故障恢复 |
-| ALLVR 功能补全周期长 | 按 M2～M5 逐阶段建立 coverage/golden；每阶段保持可运行，不同时重写全部模块 |
-| 通用模型显著增加 mesh bytes | descriptor fast path + 通用流；先保证 coverage，再以测量扩大认证集合 |
-| 透明排序成本高 | 分级分类、sort data 复用、触发式重排和预算；预算不足保留旧顺序 |
-| 光照传播成本高 | 共享增量 light brick 与 dirty propagation，禁止每个任务重复全邻域扫描 |
-| GPU-driven 在低端设备表现差 | Tier C 正确性保底；AUTO 基于 capability、smoke test 和会话失败锁存 |
-| Mesh Shader 厂商锁定/驱动问题 | 只做可选 Tier A；MDI/compat 始终存在；收益和长稳双门禁 |
-| Iris 私有接口变化 | 集中 version adapter、签名探测、完整 GL 状态保护；失败降级而非半初始化 |
-| Sodium mixin 版本变化 | 仅维护空 shell 门禁和 Voxy hook；精确版本探测失败时保留最终 draw guard |
-| Voxy seam readiness 不可观察 | 扩展最小 residency 查询；做不到时使用保守帧延迟、hysteresis 和雾，不恢复 legacy |
-| 方案 2 被低估 | 保留 M4 量化决策门；只有实测明确失败才做限时内部 context 原型 |
+| Sodium 无稳定外部 section API | 所有 private ABI 集中在单 version adapter；精确版本门禁和 CI mixin audit |
+| virtual Y 导致 cull/draw/shader 空间不一致 | 单一坐标类型；terrain camera 同源转换；RenderDoc + 高 Y golden；非 terrain 禁用 virtual camera |
+| rebase 全窗口重建卡顿 | 512 对齐、稀有触发、freeze/detach/move/refill、中心优先、分帧预算和雾 |
+| 旧/新 epoch 同帧双绘 | frame-boundary 原子 origin；generation/revision 检查；不维护双 renderer |
+| synthetic 数据污染玩法或其他模组 | 不注册进 `ClientChunkCache`；只通过 Sodium build context 暴露不可变 snapshot |
+| 模型/光照查询仍落回 live Level | adapter 覆盖所有 build-context 查询；调试构建启用绝对/虚拟坐标断言 |
+| Iris 自动路径被自定义 draw 绕开 | RenderDoc 验收；发布构建中禁止 ALLVR terrain draw/program |
+| 删除 Iris 代码时误删 Voxy/雾/粒子功能 | 按调用图逐项审计，只删 terrain-specific 分支 |
+| Voxy 远景被误认为也会自动兼容 Iris | 保留既有 Voxy shader contract 和测试，文档明确双边界 |
+| Sodium 升级破坏内部 hook | 不自动放宽版本；新版本单独 adapter、基准与完整矩阵后启用 |
 
-## 13. 完成定义
+## 17. 回滚策略
 
-同时满足以下条件才算完成：
+迁移期间保留仅开发可见的 `legacyAllvrTerrain` 开关，用于对照和定位，规则如下：
 
-- legacy LOD 的配置、协议、服务端 meshing、客户端 mesh、GPU node/shader 分支和测试均已删除。
-- Voxy 是唯一远景后端；无 Voxy 或 Voxy 失败时，只渲染近景，且没有远景请求/生成/错误重试。
-- 所有可见近景 BlockState、fluid、solid/cutout/translucent、tint、AO/light、normal、animated sprite、BE 和 crumbling 均有明确、通过测试的路径。
-- 每个构建、上传和 GPU handle 都有 epoch/revision/generation；旧世界、reload、乱序结果不能复活旧几何。
-- 所有网络渲染载荷有精确上限和结构校验。
-- 任意目标 GPU 至少能用 Tier C 正确显示近景；Tier B/A 失败可在本会话安全降级。
-- ALLVR near 与 Voxy far 由单一 ownership 状态机切换，无长期洞、双绘或 z-fighting。
-- Sodium 在 Allay 维度不重复维护空 shell，其他维度行为不变，Voxy draw hook仍工作。
-- Iris on/off、目标光影包、resize/reload、阴影、透明、高 Y 和长稳矩阵通过。
-- 第 10 节性能门全部通过，且没有以静默丢几何换取指标。
+- 同一帧只能有一个 near terrain owner；切换必须 destroy 当前资源并重建，不能叠加。
+- legacy 不承担正式兼容承诺，不接收新功能。
+- P6 通过后停止维护 legacy Iris path；P8 性能门通过后彻底删除。
+- 若某一阶段失败，回滚该阶段的 Sodium bridge 变更，不恢复“原版后端”新支线。
 
-完成后的系统定位是：ALLVR 是 Allay 超高 Y Cube 世界的完整近景 renderer；Voxy 是唯一可选远景 renderer；Sodium 是实现质量和性能的对照标准，而不是需要虚拟化整个 Allay 世界才能使用的运行时数据后端。
+## 18. 完成定义
+
+全部满足才算完成：
+
+- Sodium 是声明清楚、版本受控、仅客户端要求的硬依赖。
+- Allay 近景 block/fluid geometry 全部由 Sodium native mesher、buffer、render list 和 terrain pass 处理。
+- Iris 开启时近景经 Iris 的 Sodium 兼容层自动进入 gbuffer/shadow；不存在 ALLVR 专用近景 shader/draw。
+- 原版 synthetic chunk renderer 和原版 fallback 从未成为生产后端。
+- Voxy 仍是唯一可选远景后端，且其 Iris 适配保留。
+- virtual Y、rebase、revision、resource reload 和 dimension lifecycle 没有旧结果复活或双绘。
+- fallback immediate terrain block 数恒为 0；旧自研 terrain 构建/上传/绘制代码已删除。
+- 第 14 节性能与正确性门、完整运行组合和长稳测试全部通过。
+
+最终系统定位是：**ALLVR 负责超高 Y Cube 世界的数据与绝对坐标语义；Sodium 是唯一近景地形渲染器；Iris 自动接管 Sodium 近景 shader pipeline；Voxy 独立负责可选远景。**

@@ -39,12 +39,15 @@ public final class VoxyCompatibilityProbe {
         return availability;
     }
 
-    /** Creates the adapter once the probe passed; null = fall back. */
-    public static AllvrLodBackend createBackend() {
+    /** Creates the adapter once the probe passed; null = fall back. The
+     *  shared Y window must be bound before {@code enter} (plan §6.3 — the
+     *  bridge owns the origin, this backend only observes it). */
+    public static AllvrLodBackend createBackend(AllvrVoxyYWindow sharedWindow) {
         if (!probe().available()) {
             return null;
         }
         VoxyLodBackend backend = new VoxyLodBackend();
+        backend.bindSharedWindow(sharedWindow);
         return currentBackend = backend;
     }
 

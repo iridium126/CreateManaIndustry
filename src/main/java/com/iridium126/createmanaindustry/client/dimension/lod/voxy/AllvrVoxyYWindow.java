@@ -1,14 +1,16 @@
 package com.iridium126.createmanaindustry.client.dimension.lod.voxy;
 
+import com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderYWindow;
+
 /**
- * The player-centered virtual Y window (voxy integration plan §5): Voxy's
- * section key keeps only 8 signed bits of Y (L0 section = 32 blocks, so the
- * hard window is block Y {@code [-4096, 4095]} = cell Y {@code [-128, 127]}),
- * while ALLVR spans ±30M. The window is a 512-block-aligned
- * {@code originBlockY} tracked near the player; the client remaps absolute
- * cell Y → virtual cell Y at injection and camera Y at the viewport patch.
- * The server never sees a virtual Y, and virtual keys never persist (the
- * allay voxy engine runs on memory storage with {@code DONT_SAVE} writes).
+ * Voxy-side view of the shared virtual Y window (sodium-parity plan §6.3):
+ * origin/epoch/rebase ownership lives in {@link AllvrRenderYWindow} — the
+ * Sodium bridge drives the rebase state machine and the Voxy backend observes
+ * the epoch. This wrapper only adds the Voxy-specific coordinate surface:
+ * Voxy's LOD cell keys exist per level ({@code 32 << level} blocks per cell)
+ * and its hard cell-Y range is {@code [-128, 127]} (block Y {@code [-4096,
+ * 4095]}). Section keys never persist (the allay voxy engine runs on memory
+ * storage with {@code DONT_SAVE} writes).
  */
 public final class AllvrVoxyYWindow {
 
@@ -22,54 +24,44 @@ public final class AllvrVoxyYWindow {
     /** Voxy hard block-Y range implied by the cell range: {@code [-4096, 4095]}. */
     public static final int VOXY_MIN_BLOCK_Y = VOXY_MIN_CELL_Y << 5;
     public static final int VOXY_MAX_BLOCK_Y = (VOXY_MAX_CELL_Y << 5) + 31;
-    /** Rebase trigger distance from the origin (plan §5.2). */
-    private static final int REBASE_TRIGGER_BLOCKS = 512;
 
-    private volatile long epoch;
-    private volatile int originBlockY;
+    private final AllvrRenderYWindow window;
 
-    public AllvrVoxyYWindow() {
-        this.originBlockY = 0;
+    public AllvrVoxyYWindow(AllvrRenderYWindow window) {
+        this.window = window;
     }
 
-    /** Monotonic window generation — bumped at every rebase; late section
-     *  payloads from an older epoch must be dropped, not resurrected. */
+    /** The shared window backing this view. */
+    public AllvrRenderYWindow shared() {
+        return this.window;
+    }
+
     public long epoch() {
-        return this.epoch;
+        return this.window.epoch();
     }
 
     public int originBlockY() {
-        return this.originBlockY;
+        return this.window.originBlockY();
     }
 
-    /** Virtual cell Y for one ABSOLUTE cell Y at a level (plan §5.1). */
+    /** Virtual cell Y for one ABSOLUTE cell Y at a level (voxy plan §5.1). */
     public int virtualCellY(int level, int absoluteCellY) {
-        return absoluteCellY - (this.originBlockY >> (5 + level));
+        return absoluteCellY - (this.window.originBlockY() >> (5 + level));
     }
 
-    /** Camera remap for the viewport patch (plan §5.1). */
+    /** Camera remap for the viewport patch (voxy plan §5.1). */
     public double virtualCameraY(double absoluteCameraY) {
-        return absoluteCameraY - this.originBlockY;
+        return this.window.virtualCameraY(absoluteCameraY);
     }
 
-    /** True while the player sits inside the rebase trigger band. */
-    public boolean needsRebase(double playerY) {
-        return Math.abs(playerY - this.originBlockY) >= REBASE_TRIGGER_BLOCKS;
+    /** True while the shared window is mid-rebase — the far backend must not
+     *  accept new work (plan §6.3 FREEZE). */
+    public boolean isRebasing() {
+        return this.window.isRebasing();
     }
 
-    /** The nearest 512-aligned origin for a player Y (plan §5.2). */
-    public int nextOrigin(double playerY) {
+    /** The origin the shared rebase will publish next (bridge-computed). */
+    public static int alignedOrigin(double playerY) {
         return (int) Math.rint(playerY / (double) ALIGN_BLOCKS) * ALIGN_BLOCKS;
-    }
-
-    /** Moves the origin and bumps the epoch (plan §5.3 MOVE step). */
-    public void moveOrigin(int newOrigin) {
-        this.originBlockY = newOrigin;
-        this.epoch++;
-    }
-
-    /** Invalidates queued work before a rebase MOVE publishes a new origin. */
-    public void invalidateQueuedWork() {
-        this.epoch++;
     }
 }
