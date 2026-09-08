@@ -459,9 +459,9 @@ public final class AllvrLodClientState {
             var it = pending[lvl].long2ObjectEntrySet().iterator();
             while (it.hasNext()) {
                 var entry = it.next();
+                long cellLong = entry.getLongKey();
                 if (entry.getValue().deadlineTick() <= clientTick) {
                     it.remove();
-                    long cellLong = entry.getLongKey();
                     retryAtTick[lvl].put(cellLong,
                         Math.max(retryAtTick[lvl].get(cellLong), clientTick + 10L));
                 }

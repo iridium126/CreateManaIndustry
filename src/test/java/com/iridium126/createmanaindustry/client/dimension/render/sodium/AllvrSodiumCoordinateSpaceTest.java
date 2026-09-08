@@ -41,4 +41,11 @@ class AllvrSodiumCoordinateSpaceTest {
             assertEquals(cube, AllvrSodiumCoordinateSpace.cubeOfBlock(block));
         }
     }
+
+    @Test
+    void sodiumContextMatchesLevelSliceNeighbourRadius() {
+        assertEquals(1, AllvrSodiumSectionSource.CONTEXT_RADIUS);
+        assertEquals(3, AllvrSodiumSectionSource.CONTEXT_SIDE);
+        assertEquals(27, AllvrSodiumSectionSource.CONTEXT_SIZE);
+    }
 }

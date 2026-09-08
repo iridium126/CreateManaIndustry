@@ -5,6 +5,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import net.minecraft.client.Minecraft;
+
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 
 /**
@@ -27,7 +29,16 @@ public abstract class AllvrVoxyIngestMixin {
         // not necessarily the level currently displayed by Minecraft.  Using
         // mc.level here could disable ingest for an unrelated world during a
         // dimension transition and could allow a late allay ingest through.
-        if (identifier != null && AllvrDimensions.ALLAY_LEVEL.equals(identifier.key)) {
+        // Voxy's raw Sodium/ClientLevel ingest path unfortunately calls this
+        // method with a null identifier.  In that case the only safe scope is
+        // the level currently being rendered; otherwise the ALLAY virtual
+        // tree can be polluted by ordinary LevelChunk sections.
+        boolean allayIdentifier = identifier != null
+            && AllvrDimensions.ALLAY_LEVEL.equals(identifier.key);
+        boolean allayCurrentLevel = identifier == null
+            && Minecraft.getInstance().level != null
+            && AllvrDimensions.isAllay(Minecraft.getInstance().level);
+        if (allayIdentifier || allayCurrentLevel) {
             cir.setReturnValue(false);
         }
     }

@@ -29,13 +29,15 @@ import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 /**
  * The ALLVR-to-Sodium data boundary.  This class owns no render resources and
  * never registers a synthetic chunk with ClientChunkCache: it snapshots the
- * 5x5x5 section neighbourhood Sodium's LevelSlice expects directly from the
+ * 3x3x3 section neighbourhood Sodium's LevelSlice expects directly from the
  * 32^3 cube cache.
  */
 public final class AllvrSodiumSectionSource {
 
-    /** LevelSlice's fixed 2-section neighbour radius in Sodium 0.8.13. */
-    public static final int CONTEXT_RADIUS = 2;
+    /** LevelSlice's fixed one-section neighbour radius in Sodium 0.8.13.
+     * The source constant is a two-block border rounded up to one section,
+     * so its cloned context is exactly 3x3x3, not 5x5x5. */
+    public static final int CONTEXT_RADIUS = 1;
     public static final int CONTEXT_SIDE = CONTEXT_RADIUS * 2 + 1;
     public static final int CONTEXT_SIZE = CONTEXT_SIDE * CONTEXT_SIDE * CONTEXT_SIDE;
 

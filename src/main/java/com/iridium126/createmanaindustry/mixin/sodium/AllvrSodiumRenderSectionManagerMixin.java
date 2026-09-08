@@ -34,7 +34,15 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
  * replace the vanilla section presence test, build snapshot, and renderer
  * private Y range for the Allay dimension.
  */
-@Mixin(value = RenderSectionManager.class, remap = false)
+/*
+ * Voxy also redirects RenderSection#setInfo in updateSectionInfo so it can
+ * ingest ordinary Sodium uploads.  Our Allay sections are virtual and must
+ * never enter that path: Voxy's callback indexes a real LevelChunk using the
+ * virtual Y and can throw when a section is removed.  Apply this mixin before
+ * Voxy so the wrap below remains the outer operation and can short-circuit
+ * that redirect for Allay while preserving Voxy in every other dimension.
+ */
+@Mixin(value = RenderSectionManager.class, remap = false, priority = 1500)
 public abstract class AllvrSodiumRenderSectionManagerMixin {
 
     @Inject(method = "onSectionAdded", at = @At("HEAD"), cancellable = true)
