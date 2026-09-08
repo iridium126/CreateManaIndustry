@@ -6,7 +6,7 @@
 >
 > 仓库基线：Create: Mana Industry `b774b41`；Minecraft 1.21.1 / NeoForge 21.1.236 / Java 21
 >
-> 对照版本：Sodium NeoForge `0.8.13-beta.1+mc1.21.1`；Iris NeoForge `1.8.14-beta.1+mc1.21.1`；Voxy `0.2.15-beta+1.21.1-neoforge`
+> 对照版本：Sodium NeoForge `0.8.13+mc1.21.1`；Iris NeoForge `1.8.14-beta.1+mc1.21.1`；Voxy `0.2.15-beta+1.21.1-neoforge`
 >
 > 最终决定：Sodium 成为本项目的**客户端硬依赖**；Allay 近景地形只接入 Sodium，不再建设原版地形渲染后端；Iris 与 Voxy 保持可选。
 >
@@ -134,7 +134,7 @@ Sodium 已经承担这些职责。直接接入虽然需要处理高 Y，但总�
 - **Voxy：客户端可选依赖。** 可用时提供远景；缺失或失败时稳定退化为 Sodium 近景 + 雾，不恢复 legacy LOD。
 - **服务端：不要求安装 Sodium。** required dependency 的 side 必须为 `CLIENT`，避免专用服务器加载客户端渲染模组。
 
-开发首版固定验证 Sodium `0.8.13-beta.1+mc1.21.1`。由于计划需要接入 `RenderSectionManager`、`LevelSlice` 和 cloned section 内部路径，不能一开始声明开放式 `[0.8,)`。先使用精确版本或窄范围；新增版本必须经过编译、mixin audit、冒烟、视觉和性能矩阵后再扩展。
+开发首版固定验证 Sodium `0.8.13+mc1.21.1`。由于计划需要接入 `RenderSectionManager`、`LevelSlice` 和 cloned section 内部路径，不能一开始声明开放式 `[0.8,)`。先使用精确版本或窄范围；新增版本必须经过编译、mixin audit、冒烟、视觉和性能矩阵后再扩展。
 
 ### 4.2 构建与发布
 

@@ -19,7 +19,7 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import com.iridium126.createmanaindustry.mixin.sodium.AllvrSodiumWorldRendererAccessor;
 
 /**
- * The single Sodium ABI adapter for the pinned {@code 0.8.13-beta.1+mc1.21.1}
+ * The single Sodium ABI adapter for the pinned {@code 0.8.13+mc1.21.1}
  * build (sodium-parity plan §7.1). Every Sodium class the bridge touches is
  * referenced HERE and only here, so a future Sodium version migrates by
  * replacing this one class (plus the {@code mixin.sodium} hook set). Mixins

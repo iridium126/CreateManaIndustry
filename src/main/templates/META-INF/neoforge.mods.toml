@@ -98,7 +98,7 @@ config="${mod_id}.mixins.json"
 [[dependencies.${mod_id}]]
     modId="sodium"
     type="required"
-    versionRange="[0.8.13-beta.1,0.8.14)"
+    versionRange="[0.8.13,0.8.14)"
     ordering="AFTER"
     side="CLIENT"
 

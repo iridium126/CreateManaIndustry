@@ -187,7 +187,13 @@ configurations {
 configurations {
     testCompileClasspath.extendsFrom compileClasspath
     testRuntimeClasspath.extendsFrom runtimeClasspath
+    // Sodium's CurseForge artifact is a NeoForge loader jar whose named
+    // implementation is nested under META-INF/jarjar.
+    sodiumDistribution
+    compileOnly.extendsFrom sodiumDistribution
 }
+
+def sodiumCoreJar = layout.buildDirectory.file("generated/sodium/sodium-core.jar")
 
 dependencies {
     // region3d persistence unit tests (pure JVM; plan P0/P2/P3). Test-only —
@@ -224,7 +230,8 @@ dependencies {
     compileOnly "net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}"
     implementation "maven.modrinth:3KUWeVhG:dqlL6EvF" // Veil
     compileOnly "curse.maven:irisshaders-455508:8242804"
-    compileOnly "curse.maven:sodium-394468:8756580"
+    sodiumDistribution "curse.maven:sodium-394468:8756580"
+    compileOnly files(sodiumCoreJar)
     // Voxy runtime adapter (voxy integration plan §8.2): compile against the
     // verified local build, never bundle it — Voxy stays a user-installed
     // optional dependency and its classes must not enter the CMI jar.
@@ -288,6 +295,61 @@ dependencies {
     runtimeOnly "curse.maven:cicada-989574:7068950"
     runtimeOnly "curse.maven:lavender-api-962916:6107175"
     runtimeOnly "curse.maven:cardinal-components-api-318449:7250871"
+}
+
+def sodiumDistributionFiles = configurations.getByName("sodiumDistribution").files
+
+// CurseForge's Sodium NeoForge jar is a loader/container jar. Extract its
+// nested named implementation automatically so private Sodium classes remain
+// available to compileJava without committing a copied core jar to libs/.
+def extractSodiumCoreJar = tasks.register("extractSodiumCoreJar") {
+    group = "sodium"
+    description = "Extracts Sodium's nested named implementation jar for compilation"
+    inputs.files(sodiumDistributionFiles)
+    outputs.file(sodiumCoreJar)
+
+    doLast {
+        def distribution = sodiumDistributionFiles
+                .find { it.name.toLowerCase(java.util.Locale.ROOT).contains("sodium") }
+        if (distribution == null) {
+            throw new GradleException("Could not resolve the Sodium CurseForge distribution jar")
+        }
+
+        def output = sodiumCoreJar.get().asFile
+        output.parentFile.mkdirs()
+        def outer = new java.util.zip.ZipFile(distribution)
+        try {
+            def nested = outer.entries().find { entry ->
+                !entry.directory
+                        && entry.name.startsWith("META-INF/jarjar/net.caffeinemc.sodium-")
+                        && entry.name.endsWith("-mod.jar")
+            }
+            if (nested == null) {
+                throw new GradleException("Sodium distribution does not contain a nested named implementation jar: ${distribution}")
+            }
+
+            def input = outer.getInputStream(nested)
+            try {
+                def outputStream = new FileOutputStream(output)
+                try {
+                    input.transferTo(outputStream)
+                } finally {
+                    outputStream.close()
+                }
+            } finally {
+                input.close()
+            }
+        } finally {
+            outer.close()
+        }
+    }
+}
+
+tasks.named("compileJava") {
+    dependsOn(extractSodiumCoreJar)
+}
+tasks.named("compileTestJava") {
+    dependsOn(extractSodiumCoreJar)
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
