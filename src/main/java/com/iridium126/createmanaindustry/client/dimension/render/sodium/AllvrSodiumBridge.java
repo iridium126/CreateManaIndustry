@@ -24,9 +24,6 @@ import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
  */
 public final class AllvrSodiumBridge {
 
-    /** Developer-only migration switch; never exposed as a normal config. */
-    private static final boolean LEGACY_ROLLBACK =
-        Boolean.getBoolean("createmanaindustry.legacyAllvrTerrain");
     private static final AllvrRenderYWindow WINDOW = new AllvrRenderYWindow();
     private static final LongOpenHashSet OWNED = new LongOpenHashSet();
     private static final ArrayDeque<Long> ADD_QUEUE = new ArrayDeque<>();
@@ -57,7 +54,7 @@ public final class AllvrSodiumBridge {
     }
 
     public static boolean active() {
-        return !LEGACY_ROLLBACK && initialized && AllvrSodiumSectionSource.isAllay(level);
+        return initialized && AllvrSodiumSectionSource.isAllay(level);
     }
 
     public static void bindLevel(ClientLevel newLevel) {

@@ -36,10 +36,7 @@ public final class ClientConfig {
 
     // ---- allay dimension (ALLVR) -------------------------------------------
 
-    private static ModConfigSpec.BooleanValue ALLVR_IRIS_INTEGRATION;
-    private static ModConfigSpec.BooleanValue ALLVR_IRIS_SHADOW_PASS;
     private static ModConfigSpec.BooleanValue ALLVR_LOD;
-    private static ModConfigSpec.EnumValue<AllvrLodBackendMode> ALLVR_LOD_BACKEND;
 
     static {
         BUILDER.comment("Volumetric mist rendering options.").push("rendering");
@@ -78,30 +75,14 @@ public final class ClientConfig {
                 .define("hexSprayRedirect", true);
         BUILDER.pop();
 
-        BUILDER.comment("Allay dimension (ALLVR) terrain renderer options.").push("allvr");
-        ALLVR_IRIS_INTEGRATION = BUILDER
-                .comment("Iris shader integration for allay dimension.")
-                .define("irisIntegration", false);
-        ALLVR_IRIS_SHADOW_PASS = BUILDER
-                .comment("Render allay terrain into shadow map.")
-                .define("irisShadowPass", true);
+        BUILDER.comment("Allay dimension (ALLVR) options.").push("allvr");
         ALLVR_LOD = BUILDER
                 .comment("Enable far-terrain LOD for allay dimension.")
                 .define("lod", true);
-        ALLVR_LOD_BACKEND = BUILDER
-                .comment("Far-terrain LOD backend mode.")
-                .defineEnum("lodBackend", AllvrLodBackendMode.AUTO);
         BUILDER.pop();
     }
 
     public static final ModConfigSpec SPEC = BUILDER.build();
-
-    /**
-     * Backend choice for the far-terrain LOD.
-     */
-    public enum AllvrLodBackendMode {
-        AUTO, VOXY, OFF
-    }
 
     public static double mistGlowStrength = 0.5;
     public static boolean mistDebugShadow = false;
@@ -113,10 +94,7 @@ public final class ClientConfig {
     public static int particleFadeDistance = 96;
     public static boolean shaderPackIntegration = true;
     public static boolean hexSprayRedirect = true;
-    public static boolean allvrIrisIntegration = false;
-    public static boolean allvrIrisShadowPass = true;
     public static boolean allvrLod = true;
-    public static AllvrLodBackendMode allvrLodBackend = AllvrLodBackendMode.AUTO;
 
     private ClientConfig() {}
 
@@ -134,10 +112,7 @@ public final class ClientConfig {
             particleFadeDistance = PARTICLE_FADE_DISTANCE.get();
             shaderPackIntegration = PARTICLE_SHADER_PACK_INTEGRATION.get();
             hexSprayRedirect = PARTICLE_HEX_SPRAY_REDIRECT.get();
-            allvrIrisIntegration = ALLVR_IRIS_INTEGRATION.get();
-            allvrIrisShadowPass = ALLVR_IRIS_SHADOW_PASS.get();
             allvrLod = ALLVR_LOD.get();
-            allvrLodBackend = ALLVR_LOD_BACKEND.get();
         }
     }
 }

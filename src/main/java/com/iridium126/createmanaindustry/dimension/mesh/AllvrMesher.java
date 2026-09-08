@@ -41,8 +41,7 @@ public final class AllvrMesher {
     }
 
     /** [axis*2 + dir] → the face Direction (dir 0 = positive axis). Also the
-     *  per-face material table order, shared with {@code AllvrRenderStateMap}
-     *  and the vertex shader's faceIdx. */
+     *  stable per-face material table order used by the LOD payload format. */
     public static final Direction[] FACES = {
         Direction.EAST, Direction.WEST,
         Direction.UP, Direction.DOWN,

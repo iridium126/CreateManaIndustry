@@ -1,32 +1,21 @@
 package com.iridium126.createmanaindustry.client.dimension;
 
-import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.List;
-
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.material.FluidState;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrBlockUpdatePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacket;
-import com.iridium126.createmanaindustry.client.dimension.render.AllvrCellMesher;
-import com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderStateMap;
 import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge;
 
 /**
@@ -34,9 +23,9 @@ import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSod
  * analogue of {@code ClientChunkCache}, filled by
  * {@code ClientboundAllvrCubePacket}/{@code ...ForgetCubePacket} and consumed
  * by {@code AllvrClientLevelMixin} (ClientLevel block reads inside the
- * dimension). No rendering yet (roadmap phase 3); the cache already powers
- * client-side collision, entity physics, block outlines and ray tracing, so a
- * player teleported onto an island stands on it.
+ * dimension) and the Sodium section source. The cache also powers client-side
+ * collision, entity physics, block outlines and ray tracing, so a player
+ * teleported onto an island stands on it.
  * <p>
  * Cache misses read as void air — the client never generates. All apply/forget
  * calls run on the main thread ({@code ctx.enqueueWork}); reads happen on the
@@ -47,9 +36,9 @@ public final class AllvrClientCubeCache {
 
     /**
      * Guards the cube map and cube contents. Main-thread writers (apply /
-     * forget / setBlock) and the mesher worker's snapshot reads both hold it —
-     * {@code LevelChunkSection} objects are not thread-safe against
-     * concurrent writes. Held briefly; no GL or world access inside.
+     * forget / setBlock) and Sodium's build snapshots both hold it — the cube
+     * section objects are not thread-safe against concurrent writes. Held
+     * briefly; no GL or world access inside.
      */
     public static final Object LOCK = new Object();
 
@@ -117,7 +106,6 @@ public final class AllvrClientCubeCache {
                 com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(packet.cubePos()), e);
             return;
         }
-        com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderStateMap.prepareCube(cube);
         synchronized (LOCK) {
             AllvrCube old = cubes.put(packet.cubePos(), cube);
             if (old != null) {
@@ -128,9 +116,6 @@ public final class AllvrClientCubeCache {
         }
         cube.onLoad(clientLevel);
         AllvrSodiumBridge.onCubeApplied(packet.cubePos());
-        // The old renderer remains source-compatible for the development
-        // rollback branch, but is never a production terrain owner.
-        com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE.onCubeApplied(packet.cubePos());
         if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
             CreateManaIndustry.LOGGER.debug("[Allvr] cube {} streamed ({} bytes, {} cubes cached)",
                 cube.getPos(), packet.payload().length, cubes.size());
@@ -147,7 +132,6 @@ public final class AllvrClientCubeCache {
             contentRevision++;
         }
         AllvrSodiumBridge.onCubeForgotten(cubePos);
-        com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE.onCubeForgotten(cubePos);
     }
 
     /** Keeps the block-entity worklist in step with a cube's BE set. */
@@ -253,28 +237,6 @@ public final class AllvrClientCubeCache {
         }
     }
 
-    /** Rebuilds the client-thread model snapshot after a resource reload. */
-    public static void prepareRenderResources() {
-        AllvrCube[] snapshot;
-        synchronized (LOCK) {
-            snapshot = cubes.values().toArray(new AllvrCube[0]);
-        }
-        for (AllvrCube cube : snapshot) {
-            AllvrRenderStateMap.prepareCube(cube);
-        }
-    }
-
-    /** Render-thread snapshot of ordinary/global block entities owned by cubes. */
-    public static List<BlockEntity> blockEntities() {
-        synchronized (LOCK) {
-            ArrayList<BlockEntity> result = new ArrayList<>();
-            for (AllvrCube cube : beCubes.values()) {
-                result.addAll(cube.getBlockEntities().values());
-            }
-            return result;
-        }
-    }
-
     /**
      * Client-side mirror of {@code AllvrCubeMap#setBlock} for the write paths
      * vanilla routes through {@code Level#setBlock} on the client (destroy /
@@ -309,7 +271,6 @@ public final class AllvrClientCubeCache {
             oldState.onRemove(clientLevel, pos, newState, false);
             updateBlockEntity(clientLevel, cube, pos, newState);
             newState.onPlace(clientLevel, pos, oldState, false);
-            com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderStateMap.idOf(newState);
             contentRevision++;
 
             int oldEmission = oldState.getLightEmission(clientLevel, pos);
@@ -321,14 +282,12 @@ public final class AllvrClientCubeCache {
                 cube.putEmitter(pos, newEmission);
             }
         }
-        // re-entrant LOCK acquisitions below (recursive setBlock via neighbour
-        // shape updates) are safe — Java monitors are reentrant
-        com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE
-            .onBlockChanged(pos, oldState, newState);
+        // The cache is updated before the Sodium notification so its build
+        // snapshot always observes the new state.
         AllvrSodiumBridge.onBlockChanged(pos, oldState, newState);
 
-        // mirror of Level#markAndNotifyBlock, minus renderer notification —
-        // cubes have no vanilla sections to re-render (ALLVR remesh, phase 3)
+        // Mirror of Level#markAndNotifyBlock, minus vanilla section
+        // notifications: Sodium receives the cube-backed update above.
         if ((flags & 1) != 0) {
             clientLevel.blockUpdated(pos, oldState.getBlock());
             if (newState.hasAnalogOutputSignal()) {
@@ -361,157 +320,6 @@ public final class AllvrClientCubeCache {
     public static BlockEntity getBlockEntity(BlockPos pos) {
         AllvrCube cube = cubes.get(com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.asLong(pos));
         return cube == null ? null : cube.getBlockEntity(pos);
-    }
-
-    /**
-     * Fills a padded 34³ mesher snapshot (states + occluder flags) for the
-     * cube at {@code key}. Lock-held work is bounded to the 3×3×3 neighborhood
-     * lookup, eight private {@link PalettedContainer#copy()} copies of the
-     * center sections and the thin padding strips — the 32³ interior is filled
-     * from the private copies after the lock is released, so main-thread cube
-     * writes never queue behind a full 39k-voxel scan. Missing cubes and
-     * neighbors fill as air. Arrays are caller-allocated ({@code PADDED³}
-     * each), as before.
-     */
-    @SuppressWarnings("unchecked")
-    public static void snapshotForMesher(long key, BlockState[] states, byte[] occludes) {
-        BlockState air = Blocks.AIR.defaultBlockState();
-        Arrays.fill(states, air);
-        Arrays.fill(occludes, (byte) 0);
-        AllvrCubePos cpos = AllvrCubePos.fromLong(key);
-        PalettedContainer<BlockState>[] own;
-        synchronized (LOCK) {
-            AllvrCube center = cubes.get(key);
-            if (center == null) {
-                return; // forgotten mid-flight — the all-air snapshot stays
-            }
-            LevelChunkSection[] sections = center.getSections();
-            own = new PalettedContainer[8];
-            for (int i = 0; i < 8; i++) {
-                own[i] = sections[i].getStates().copy();
-            }
-            Long2ObjectOpenHashMap<AllvrCube> hood = new Long2ObjectOpenHashMap<>(27);
-            for (int oy = -1; oy <= 1; oy++) {
-                for (int oz = -1; oz <= 1; oz++) {
-                    for (int ox = -1; ox <= 1; ox++) {
-                        long nkey = AllvrCubePos.asLong(cpos.getX() + ox, cpos.getY() + oy, cpos.getZ() + oz);
-                        AllvrCube neighbor = cubes.get(nkey);
-                        if (neighbor != null) {
-                            hood.put(nkey, neighbor);
-                        }
-                    }
-                }
-            }
-            BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-            // padding shell (any axis at -1 or 32) — live reads from neighbor sections
-            for (int y = -1; y <= AllvrMesher.CUBE; y++) {
-                boolean edgeY = y < 0 || y >= AllvrMesher.CUBE;
-                for (int z = -1; z <= AllvrMesher.CUBE; z++) {
-                    boolean edgeZ = z < 0 || z >= AllvrMesher.CUBE;
-                    for (int x = -1; x <= AllvrMesher.CUBE; x++) {
-                        boolean edgeX = x < 0 || x >= AllvrMesher.CUBE;
-                        if (!edgeX && !edgeY && !edgeZ) {
-                            continue; // interior filled below, outside the lock
-                        }
-                        // (x>>5, y>>5, z>>5) is the neighbor offset (−1|0|1) and
-                        // (x&31, …) the in-neighbor local coord for −1 and 32 alike
-                        AllvrCube neighbor = hood.get(AllvrCubePos.asLong(
-                            cpos.getX() + (x >> 5), cpos.getY() + (y >> 5), cpos.getZ() + (z >> 5)));
-                        BlockState state = air;
-                        if (neighbor != null) {
-                            state = neighbor.getBlockState(cursor.set(
-                                neighbor.getPos().minBlockX() + (x & 31),
-                                neighbor.getPos().minBlockY() + (y & 31),
-                                neighbor.getPos().minBlockZ() + (z & 31)));
-                        }
-                        int i = AllvrMesher.paddedIndex(x, y, z);
-                        states[i] = state;
-                        occludes[i] = AllvrMesher.occludesAt(state);
-                    }
-                }
-            }
-        }
-        // interior 32³ from the private copies — no main-thread writes can race these
-        for (int y = 0; y < AllvrMesher.CUBE; y++) {
-            for (int z = 0; z < AllvrMesher.CUBE; z++) {
-                for (int x = 0; x < AllvrMesher.CUBE; x++) {
-                    BlockState state =
-                        own[AllvrCube.sliceIndex(x >> 4, y >> 4, z >> 4)].get(x & 15, y & 15, z & 15);
-                    int i = AllvrMesher.paddedIndex(x, y, z);
-                    states[i] = state;
-                    occludes[i] = AllvrMesher.occludesAt(state);
-                }
-            }
-        }
-    }
-
-    /**
-     * Copies one 16³ render cell plus a one-block border (18³) for the near
-     * renderer.  The 32³ cube remains the cache/network ownership unit; this
-     * method only changes the immutable build snapshot granularity.
-     *
-     * <p>The lock covers reference lookup and palette reads only.  No Minecraft
-     * or GL object escapes to the worker and missing neighbouring cubes are
-     * represented as air, which is the same conservative seam behaviour as the
-     * cube snapshot path.
-     */
-    public static void snapshotForCell(long cellKey, BlockState[] states, byte[] occludes) {
-        if (states.length != com.iridium126.createmanaindustry.client.dimension.render.AllvrCellMesher.PADDED
-                * com.iridium126.createmanaindustry.client.dimension.render.AllvrCellMesher.PADDED
-                * com.iridium126.createmanaindustry.client.dimension.render.AllvrCellMesher.PADDED
-            || occludes.length != states.length) {
-            throw new IllegalArgumentException("cell snapshot arrays must be 18³");
-        }
-        BlockState air = Blocks.AIR.defaultBlockState();
-        Arrays.fill(states, air);
-        Arrays.fill(occludes, (byte) 0);
-
-        int cellX = com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderCellKey.cellX(cellKey);
-        int cellY = com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderCellKey.cellY(cellKey);
-        int cellZ = com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderCellKey.cellZ(cellKey);
-        int minX = cellX << 4;
-        int minY = cellY << 4;
-        int minZ = cellZ << 4;
-
-        synchronized (LOCK) {
-            // A cell border can touch at most the 3×3×3 cube neighbourhood.
-            Long2ObjectOpenHashMap<AllvrCube> hood = new Long2ObjectOpenHashMap<>(27);
-            int centerCubeX = minX >> 5;
-            int centerCubeY = minY >> 5;
-            int centerCubeZ = minZ >> 5;
-            for (int dy = -1; dy <= 1; dy++) {
-                for (int dz = -1; dz <= 1; dz++) {
-                    for (int dx = -1; dx <= 1; dx++) {
-                        long key = AllvrCubePos.asLong(centerCubeX + dx, centerCubeY + dy, centerCubeZ + dz);
-                        AllvrCube cube = cubes.get(key);
-                        if (cube != null) {
-                            hood.put(key, cube);
-                        }
-                    }
-                }
-            }
-            for (int y = -1; y <= AllvrCellMesher.CELL; y++) {
-                for (int z = -1; z <= AllvrCellMesher.CELL; z++) {
-                    for (int x = -1; x <= AllvrCellMesher.CELL; x++) {
-                        int bx = minX + x;
-                        int by = minY + y;
-                        int bz = minZ + z;
-                        AllvrCube cube = hood.get(AllvrCubePos.asLong(bx >> 5, by >> 5, bz >> 5));
-                        BlockState state = air;
-                        if (cube != null) {
-                            int lx = bx & 31;
-                            int ly = by & 31;
-                            int lz = bz & 31;
-                            LevelChunkSection section = cube.getSections()[AllvrCube.sliceIndex(lx >> 4, ly >> 4, lz >> 4)];
-                            state = section.getBlockState(lx & 15, ly & 15, lz & 15);
-                        }
-                        int index = AllvrCellMesher.paddedIndex(x, y, z);
-                        states[index] = state;
-                        occludes[index] = AllvrCellMesher.occludesAt(state);
-                    }
-                }
-            }
-        }
     }
 
     public static int size() {

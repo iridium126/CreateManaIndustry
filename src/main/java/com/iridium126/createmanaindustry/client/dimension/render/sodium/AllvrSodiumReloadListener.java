@@ -1,4 +1,4 @@
-package com.iridium126.createmanaindustry.client.dimension.render;
+package com.iridium126.createmanaindustry.client.dimension.render.sodium;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 
@@ -11,13 +11,14 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 
 /**
- * Rebuilds the ALLVR terrain program on resource reload (F3+T), mirroring the
- * particle engine's {@code ParticleShaderReloadListener}.
+ * Invalidates Sodium's cube-backed section snapshots on resource reload
+ * (F3+T), so the normal Sodium terrain pipeline rebuilds them with the new
+ * block models and render layers.
  */
 @EventBusSubscriber(modid = CreateManaIndustry.MODID, value = Dist.CLIENT)
-public final class AllvrShaderReloadListener {
+public final class AllvrSodiumReloadListener {
 
-    private AllvrShaderReloadListener() {}
+    private AllvrSodiumReloadListener() {}
 
     @SubscribeEvent
     public static void onRegisterReloadListeners(RegisterClientReloadListenersEvent event) {
@@ -29,8 +30,7 @@ public final class AllvrShaderReloadListener {
 
             @Override
             protected void apply(Void ignored, ResourceManager resourceManager, ProfilerFiller profilerFiller) {
-                com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.onResourceReload();
-                AllvrRenderer.INSTANCE.onResourceReload();
+                AllvrSodiumBridge.onResourceReload();
             }
         });
     }

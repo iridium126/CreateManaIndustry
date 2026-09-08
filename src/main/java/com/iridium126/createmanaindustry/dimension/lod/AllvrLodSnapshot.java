@@ -46,7 +46,7 @@ import java.util.List;
 public final class AllvrLodSnapshot {
 
     /** Server mesh codec: vanilla global state id, gated on canOcclude + full
-     *  block (the 4c gating decision). The client remaps ids on packet receive. */
+     *  block (the 4c gating decision). Voxy consumes the decoded payload. */
     public static final com.iridium126.createmanaindustry.dimension.mesh.AllvrMeshCodec SERVER_CODEC =
         state -> AllvrMesher.occludesAt(state) != 0 ? net.minecraft.world.level.block.Block.getId(state) : 0;
 

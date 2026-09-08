@@ -11,7 +11,6 @@ import net.minecraft.core.BlockPos;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.dimension.lod.AllvrLodBackendManager;
-import com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer;
 import com.iridium126.createmanaindustry.config.ClientConfig;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
@@ -42,7 +41,7 @@ import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodReques
  */
 public final class AllvrLodClientState {
 
-    /** Section requests sent per tick at throttle scale 1.0 (grilling Q5). */
+    /** New section requests sent per client tick. */
     private static final int REQUESTS_PER_TICK = 64;
     /** Per-level in-flight cap. */
     private static final int MAX_PENDING = 256;
@@ -143,7 +142,7 @@ public final class AllvrLodClientState {
         // A response can race an eviction, a forget, or a zero-dimension
         // bitmap. Only publish sections for requests still owned by this
         // level; otherwise a late payload would resurrect nodes now owned by
-        // the near renderer.
+        // Sodium's near terrain pass.
         if (levels[lvl] == null) {
             AllvrLodBackendManager.forget(lvl, packet.cellLong());
             return;
@@ -281,7 +280,7 @@ public final class AllvrLodClientState {
         syncSubscription();
         if (!farTerrainEnabled() || !AllvrLodBackendManager.requestsOpen()) {
             // near-only (voxy missing, disabled, or failed): no new requests,
-            // pending drained, no legacy retry (sodium-parity plan §6.3)
+            // pending drained; near-only mode has no alternate retry path
             for (int lvl = 0; lvl <= AllvrLodPos.MAX_LEVEL; lvl++) {
                 if (!pending[lvl].isEmpty() || !resident[lvl].isEmpty() || !empty[lvl].isEmpty()) {
                     clearLevel(lvl);
@@ -291,12 +290,7 @@ public final class AllvrLodClientState {
         }
         BlockPos player = mc.player.blockPosition();
         expirePending();
-        // frame-time EMA throttle (4c-2): the inflow of NEW requests scales
-        // down while frames run hot and recovers when healthy; the per-level
-        // in-flight cap is unchanged, so a throttle can never strand pending
-        // entries — they just complete slower
-        int perTick = (int) Math.max(1,
-            Math.round(REQUESTS_PER_TICK * AllvrRenderer.INSTANCE.lodRequestScale()));
+        int perTick = REQUESTS_PER_TICK;
         List<long[]> entries = new ArrayList<>();
         if (AllvrLodBackendManager.refillMode()) {
             // rebase REFILL: coarsest levels first so the horizon fills rough
@@ -327,14 +321,12 @@ public final class AllvrLodClientState {
     }
 
     /**
-     * Master gate for the far-terrain half (§6.1 precedence): the legacy
-     * {@code allvrLod} boolean survives as the master switch — {@code false}
-     * wins over every backend mode, and {@code lodBackend=OFF} is equivalent.
+     * Master gate for the far-terrain half: Voxy is the only far-terrain
+     * backend, so this single client option controls whether its request walk
+     * is active.
      */
     private static boolean farTerrainEnabled() {
-        // unique precedence (sodium-parity plan §6.1): the master boolean kills
-        // every backend mode, and lodBackend=OFF is equivalent to it
-        return ClientConfig.allvrLod && ClientConfig.allvrLodBackend != ClientConfig.AllvrLodBackendMode.OFF;
+        return ClientConfig.allvrLod;
     }
 
     private static void walkLevel(int lvl, LevelState state, BlockPos player, List<long[]> entries,

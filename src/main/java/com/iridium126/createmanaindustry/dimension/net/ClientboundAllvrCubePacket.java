@@ -40,8 +40,8 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  * axis) — the vanilla section/position narrow types are never used.
  * <p>
  * Light is carried as emitter events only; there is deliberately no
- * light-engine data on the wire (the client builds its own synthetic light,
- * roadmap phase 3+).
+ * light-engine data on the wire (the client samples light from the streamed
+ * cube cache).
  */
 public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implements CustomPacketPayload {
 

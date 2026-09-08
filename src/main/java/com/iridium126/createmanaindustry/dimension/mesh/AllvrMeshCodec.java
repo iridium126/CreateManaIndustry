@@ -7,16 +7,9 @@ import net.minecraft.world.level.block.state.BlockState;
  * written into the quad word's bits 28..43, or 0 for "not renderable" (the
  * mask cell stays empty and no quad is emitted).
  * <p>
- * Two implementations:
- * <ul>
- *   <li><b>Client</b> (full-res cubes): the {@code AllvrRenderStateMap}
- *       16-bit render id, gated on its per-state {@code renderable} flag
- *       (full-cube model assumption).</li>
- *   <li><b>Server</b> (LOD nodes): the vanilla global state id
- *       ({@code Block.getId}), gated on canOcclude + full-block collision —
- *       the 4c grilling gating decision. The client remaps vanilla ids to
- *       render ids once per quad on mesh-packet receive.</li>
- * </ul>
+ * The live implementation is the server-side LOD codec: the vanilla global
+ * state id ({@code Block.getId}), gated on canOcclude + full-block collision.
+ * The client-side terrain path is Sodium and does not use this codec.
  */
 @FunctionalInterface
 public interface AllvrMeshCodec {

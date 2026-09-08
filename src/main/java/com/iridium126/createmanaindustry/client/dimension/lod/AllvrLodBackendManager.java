@@ -13,23 +13,16 @@ import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 
 /**
  * Backend selection and lifecycle: Voxy is the ONLY far-terrain backend
- * (sodium-parity plan §2.1). AUTO enables the voxy adapter when the probed
- * Voxy build is present and otherwise enters the disabled backend — the
- * dimension then runs near-only with no far requests and no fallback
- * renderer. VOXY forces the adapter (unavailable → disabled with one clear
- * message); OFF always disables. Selection happens on level join (or a
- * config reload) — switching backends clears the client's pending/resident
- * bookkeeping so the request walk re-issues every node.
+ * (sodium-parity plan §2.1). The probed Voxy adapter is the only far-terrain
+ * implementation; when it is absent the dimension runs near-only with no far
+ * requests and no fallback renderer. Selection happens on level join (or a
+ * config reload) — switching availability clears the client's pending/
+ * resident bookkeeping so the request walk re-issues every node.
  * <p>
  * All entry points run on the main thread (client tick / enqueueWork), so
  * backend swaps are naturally serialized.
  */
 public final class AllvrLodBackendManager {
-
-    /** Explicit backend choice (sodium-parity plan §6.1). */
-    public enum Mode {
-        AUTO, VOXY, OFF
-    }
 
     private static final DisabledLodBackend DISABLED = new DisabledLodBackend();
 
@@ -43,9 +36,9 @@ public final class AllvrLodBackendManager {
     private AllvrLodBackendManager() {}
 
     /**
-     * Binds the manager to the client level: selects the backend per the
-     * config mode and the voxy probe, then enters it. Non-allay levels enter
-     * the disabled backend (no LOD work anywhere else).
+     * Binds the manager to the client level: selects Voxy when the client LOD
+     * switch and compatibility probe allow it, then enters it. Non-allay
+     * levels enter the disabled backend (no LOD work anywhere else).
      */
     public static void enter(ClientLevel level) {
         AllvrLodBackend selected = AllvrDimensions.isAllay(level) ? select() : DISABLED;
@@ -55,7 +48,7 @@ public final class AllvrLodBackendManager {
         }
         active = selected;
         active.enter(level);
-        CreateManaIndustry.LOGGER.info("[Allvr] LOD backend: {} ({})", active.debugState(), modeDescription());
+        CreateManaIndustry.LOGGER.info("[Allvr] LOD backend: {}", active.debugState());
     }
 
     /**
@@ -144,12 +137,8 @@ public final class AllvrLodBackendManager {
     }
 
     private static AllvrLodBackend select() {
-        ClientConfig.AllvrLodBackendMode mode = ClientConfig.allvrLodBackend;
-        return switch (mode) {
-            case OFF -> DISABLED;
-            case VOXY -> selectVoxy("explicit VOXY mode");
-            case AUTO -> voxyAvailable().available() ? selectVoxy("AUTO") : DISABLED;
-        };
+        return ClientConfig.allvrLod && voxyAvailable().available()
+            ? selectVoxy("configured") : DISABLED;
     }
 
     private static AllvrLodBackend selectVoxy(String via) {
@@ -163,8 +152,8 @@ public final class AllvrLodBackendManager {
             }
             availability = AllvrLodBackend.Availability.fail("adapter construction failed");
         }
-        // near-only is a defined product state, not a renderer failure: log it
-        // once per session, never retry a legacy path (sodium-parity plan §6.1)
+        // Near-only is a defined product state, not a renderer failure: log it
+        // once per session and do not activate an alternate terrain path.
         if (!warnedVoxyUnavailable) {
             warnedVoxyUnavailable = true;
             CreateManaIndustry.LOGGER.warn(
@@ -182,11 +171,4 @@ public final class AllvrLodBackendManager {
         return voxyAvailability;
     }
 
-    private static String modeDescription() {
-        return switch (ClientConfig.allvrLodBackend) {
-            case AUTO -> "config AUTO";
-            case VOXY -> "config VOXY";
-            case OFF -> "config OFF";
-        };
-    }
 }

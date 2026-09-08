@@ -28,8 +28,8 @@ import net.minecraft.world.level.material.FluidState;
  * flat generator with zero layers). Every other dimension is untouched —
  * the guard is a boolean field read plus one reference comparison.
  * <p>
- * Client levels are not intercepted (phase 1 is server-side only; the client
- * sees the empty window columns until ALLVR renders cubes in phase 3).
+ * Client block access is handled by {@link AllvrClientLevelMixin}, which
+ * reads the same streamed cubes while Sodium supplies the terrain render.
  */
 @Mixin(Level.class)
 public abstract class AllvrLevelMixin {

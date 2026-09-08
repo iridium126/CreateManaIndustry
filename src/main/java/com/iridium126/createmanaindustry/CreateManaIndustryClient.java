@@ -104,13 +104,10 @@ public class CreateManaIndustryClient {
         }
     }
 
-    /** Releases the GPU particle engine's and the ALLVR renderer's resources
-     *  when the game shuts down (plan §7.1: GL objects are closed explicitly
-     *  by their owning session). */
+    /** Releases the GPU particle engine's resources when the game shuts down. */
     @SubscribeEvent
     private static void onGameShuttingDown(GameShuttingDownEvent event) {
         CMIParticleEngine.INSTANCE.close();
-        com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE.close();
     }
 
     /**
@@ -209,11 +206,10 @@ public class CreateManaIndustryClient {
             // Allay-dimension streamed cubes die with the level (dimension
             // switch or logout); the server restarts the stream on re-entry.
             com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.clear();
-            // LOD state (bitmaps, pending requests, meshed set) with them
+            // LOD state (bitmaps, pending requests, resident set) with them
             com.iridium126.createmanaindustry.client.dimension.AllvrLodClientState.clear();
-            // and the renderer-side cube geometry (arena ranges + slots) with them
+            // and the Sodium-side section registrations with them
             com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.clear();
-            com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE.dropLevel();
             // The particle engine is self-hosted GL — reset regardless of Veil.
             // The reset must be SYNCHRONOUS here (NeoForge posts Unload inside
             // setLevel, BEFORE the dimension loading screen): the old queued

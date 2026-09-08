@@ -42,7 +42,7 @@ public final class SodiumApi_0813_1211 {
     }
 
     /** The pinned adapter is deliberately strict: a missing accessor is an
-     * ABI failure, not a reason to silently fall back to the legacy renderer. */
+     * ABI failure, not a reason to continue without the required bridge. */
     public static boolean hasSectionManager() {
         return worldRenderer() != null && sectionManager() != null;
     }
