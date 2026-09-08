@@ -154,7 +154,6 @@ public final class AllvrRenderer {
     private boolean warnedPack;
     private boolean warnedPatchFallback;
     private boolean warnedShadowEmpty;
-    private boolean warnedShadowExactFallback;
     private boolean loggedShadowStart;
     /** Shader rebuild throttle (5 s) so a failing compile can't spin per frame. */
     private long lastShaderRebuildMillis;
@@ -213,8 +212,6 @@ public final class AllvrRenderer {
         if (packInUse && ClientConfig.allvrIrisIntegration) {
             data = AllvrIrisDataHolder.current();
             if (data != null) {
-                AllvrVoxyUniforms.update(event.getModelViewMatrix(), event.getProjectionMatrix(),
-                    mc.options.renderDistance().get() * 16);
                 this.syncIrisData(data);
             }
         }
@@ -246,6 +243,14 @@ public final class AllvrRenderer {
         if (stage != chosen) {
             return;
         }
+        if (data != null) {
+            // Exactly once per rendered frame. Updating at every NeoForge
+            // stage advanced PREVIOUS_* several times inside the same frame,
+            // collapsing motion vectors to zero and leaving TAA history
+            // smeared across the sky while the camera turned.
+            AllvrVoxyUniforms.update(event.getModelViewMatrix(), event.getProjectionMatrix(),
+                mc.options.renderDistance().get() * 16);
+        }
         if (packInUse && !this.warnedPack) {
             this.warnedPack = true;
             chat(mc, data != null
@@ -259,7 +264,10 @@ public final class AllvrRenderer {
         this.recordFrameTime();
         boolean compat = this.tier == Tier.C;
         boolean programsReady = compat ? this.shaders.compatReady() : this.shaders.ready();
-        boolean backendReady = compat ? this.compat.ready() && this.buffers.ready() : this.buffers.ready();
+        // Tier C deliberately does not allocate the Tier B VAO/SSBO set.  Its
+        // own VAO is the backend readiness gate; the shared material TBO is
+        // created lazily by drawTerrain below.
+        boolean backendReady = compat ? this.compat.ready() : this.buffers.ready();
         if (!programsReady || !backendReady) {
             // rebuild throttle: a failed compile sets needsRebuild again — retry
             // at most once per 5 s instead of compiling every frame
@@ -344,7 +352,16 @@ public final class AllvrRenderer {
 
         this.extractFrustum(event.getProjectionMatrix(), event.getModelViewMatrix(), camPos);
         this.compatEntries = this.buildCompatCommands(camPos);
-        this.drawTerrain(event, level, camPos, data);
+        try {
+            this.drawTerrain(event, level, camPos, data);
+        } finally {
+            GL20.glUseProgram(0);
+            this.compat.unbind();
+            this.buffers.unbindStateTable();
+            RenderSystem.depthMask(true);
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.disableBlend();
+        }
         this.logGpuStats(this.renderCubes.size(), this.renderCubes.size(), -1, -1,
             this.compatEntries, " | compat (Tier C)");
     }
@@ -1249,7 +1266,9 @@ public final class AllvrRenderer {
                     CreateManaIndustry.LOGGER.warn("[Allvr] patched terrain programs unavailable — falling back "
                         + "to the unpatched draw (fallback chain, grilling decision ⑧)");
                 }
-                prog = this.shaders.terrain();
+                if (mode == 0) {
+                    prog = this.shaders.terrain();
+                }
             }
         }
         if (prog == 0) {
@@ -1279,11 +1298,10 @@ public final class AllvrRenderer {
         // TBO freshness parity: the state table must cover every id the mesher
         // registers (invalidateStateTable forces the re-upload after a
         // customId re-resolve — grilling decision ⑦)
-        if (this.tier == Tier.B) {
-            this.buffers.ensureStateTable(AllvrRenderStateMap.entryCount());
-        }
+        this.buffers.ensureStateTable(AllvrRenderStateMap.entryCount());
         GL20.glUseProgram(prog);
         if (this.tier == Tier.C) {
+            this.buffers.bindStateTable();
             this.compat.bindForDraw();
         } else {
             this.buffers.bindForDraw();
@@ -1383,7 +1401,11 @@ public final class AllvrRenderer {
 
         Minecraft mc = Minecraft.getInstance();
         MultiBufferSource.BufferSource buffers = mc.renderBuffers().bufferSource();
-        PoseStack pose = event.getPoseStack();
+        PoseStack pose = new PoseStack();
+        var modelView = RenderSystem.getModelViewStack();
+        modelView.pushMatrix();
+        modelView.set(event.getModelViewMatrix());
+        RenderSystem.applyModelViewMatrix();
         AllvrBlockAccess access = new AllvrBlockAccess(level);
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         try {
@@ -1412,7 +1434,12 @@ public final class AllvrRenderer {
                 }
             }
         } finally {
-            buffers.endBatch();
+            try {
+                buffers.endBatch();
+            } finally {
+                modelView.popMatrix();
+                RenderSystem.applyModelViewMatrix();
+            }
         }
     }
 
@@ -1454,7 +1481,11 @@ public final class AllvrRenderer {
         }
         Minecraft mc = Minecraft.getInstance();
         MultiBufferSource.BufferSource buffers = mc.renderBuffers().bufferSource();
-        PoseStack pose = event.getPoseStack();
+        PoseStack pose = new PoseStack();
+        var modelView = RenderSystem.getModelViewStack();
+        modelView.pushMatrix();
+        modelView.set(event.getModelViewMatrix());
+        RenderSystem.applyModelViewMatrix();
         float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
         try {
             for (BlockEntity entity : entities) {
@@ -1464,13 +1495,21 @@ public final class AllvrRenderer {
                     continue;
                 }
                 pose.pushPose();
-                pose.translate((float) (pos.getX() - camPos.x),
-                    (float) (pos.getY() - camPos.y), (float) (pos.getZ() - camPos.z));
-                mc.getBlockEntityRenderDispatcher().render(entity, partialTick, pose, buffers);
-                pose.popPose();
+                try {
+                    pose.translate((float) (pos.getX() - camPos.x),
+                        (float) (pos.getY() - camPos.y), (float) (pos.getZ() - camPos.z));
+                    mc.getBlockEntityRenderDispatcher().render(entity, partialTick, pose, buffers);
+                } finally {
+                    pose.popPose();
+                }
             }
         } finally {
-            buffers.endBatch();
+            try {
+                buffers.endBatch();
+            } finally {
+                modelView.popMatrix();
+                RenderSystem.applyModelViewMatrix();
+            }
         }
     }
 
@@ -1503,17 +1542,15 @@ public final class AllvrRenderer {
      * explicit count ({@code draw(n)}), keeping the GPU path's
      * GL_PARAMETER_BUFFER semantics untouched.
      * <p>
-     * The program is the shadow variant ({@code ALLVR_SHADOW_PASS}): it
+     * The program is the depth-only shadow variant ({@code ALLVR_SHADOW_PASS}): it
      * applies the pack's shadow-map distortion (mode/bias/depthScale from the
      * shared {@link com.iridium126.createmanaindustry.client.render.shaderpack.ShadowDistortionRegistry}
      * — the same conventions the mist Tyndall sampling uses) so our depth
-     * lands on the texels the pack's deferred stages actually sample. For
-     * ortho projections (every modern pack) the EXACT variant additionally
-     * dilates each quad's rasterized coverage to a superset of its true
-     * distorted image and recomputes the ray-plane hit per fragment
-     * (shadow.fsh) — per-texel exact coverage and depth with the greedy quad
-     * stream untouched (doc 4i 排查⑪; per-vertex distortion of large quads
-     * otherwise lands blocks away from the true image near the shadow center).
+     * lands on the texels the pack's deferred stages actually sample. The
+     * descriptor mesher bounds faces to four blocks per axis, keeping the
+     * nonlinear chord error small while retaining hardware early-Z. The old
+     * fragment-exact solve wrote gl_FragDepth and forced every overlapping
+     * island layer to shade every covered texel in both shadow maps.
      */
     private void drawShadowPass(Vec3 camPos) {
         Matrix4f shadowModelView = AllvrIrisDataHolder.shadowModelView();
@@ -1521,26 +1558,12 @@ public final class AllvrRenderer {
         if (shadowModelView == null || shadowProjection == null) {
             return; // no shadow pass ran this frame (shadows off / night config)
         }
-        // the fragment-exact program reconstructs the texel ray assuming an
-        // ortho shadow projection (clip.xy = view.xy / halfPlane, ray along
-        // view z) — every modern pack qualifies; a legacy perspective shadow
-        // projection falls back to the interpolated depth-only program
-        boolean ortho = shadowProjection.m33() == 1.0f;
-        int exactProg = this.shaders.shadowTerrain();
-        int prog = ortho ? exactProg : this.shaders.shadowTerrainSimple();
-        if (prog == 0 && ortho) {
-            prog = this.shaders.shadowTerrainSimple(); // exact program failed to build
-            if (prog != 0 && !this.warnedShadowExactFallback) {
-                this.warnedShadowExactFallback = true;
-                CreateManaIndustry.LOGGER.error("[Allvr] exact shadow program unavailable (compile/link failure?) "
-                    + "— using the legacy interpolated depth variant (large-quad distortion artifacts return; "
-                    + "check earlier shader compile errors)");
-            }
-        }
+        // Four-block mesh patches keep vertex-projected radial distortion
+        // stable and let the fixed-function depth path reject hidden layers.
+        int prog = this.shaders.shadowTerrainSimple();
         if (prog == 0) {
             return;
         }
-        boolean exact = prog == exactProg && exactProg != 0;
         int resolution = AllvrIrisDataHolder.shadowResolution();
         int commandCount = this.buildShadowCommands(shadowModelView, shadowProjection, camPos);
         if (commandCount == 0) {
@@ -1553,8 +1576,8 @@ public final class AllvrRenderer {
         }
         if (!this.loggedShadowStart) {
             this.loggedShadowStart = true;
-            CreateManaIndustry.LOGGER.info("[Allvr] shadow pass drawing: {} commands, program={} distortion mode={} "
-                + "bias={} depthScale={}", commandCount, exact ? "exact" : "legacy",
+            CreateManaIndustry.LOGGER.info("[Allvr] shadow pass drawing: {} commands, program=depth-only distortion mode={} "
+                + "bias={} depthScale={}", commandCount,
                 ShadowDistortionRegistry.resolveForCurrentPack().glslMode(),
                 ShadowDistortionRegistry.resolveForCurrentPack().bias(),
                 ShadowDistortionRegistry.resolveForCurrentPack().depthScale());
@@ -1593,6 +1616,12 @@ public final class AllvrRenderer {
         RenderSystem.enableDepthTest();
 
         this.buffers.uploadCommands(this.commands, commandCount);
+        // The fallback block/entity batches above bind their own VAOs and
+        // endBatch leaves ours inactive.  Both shadow targets issue an indexed
+        // draw, so restore the ALLVR VAO/IBO and descriptor bindings first.
+        // Without this each target generated GL_INVALID_OPERATION once per
+        // frame and no terrain depth reached either shadow map.
+        this.buffers.bindForDraw();
         int[] shadowTex = {AllvrIrisDataHolder.shadowDepthTexture(),
             AllvrIrisDataHolder.shadowDepthTextureNoTranslucents()};
         for (int tex : shadowTex) {
@@ -1998,7 +2027,14 @@ public final class AllvrRenderer {
             return;
         }
         this.lastStatsLogMillis = now;
-        String cpu = String.format(", cpu %.2fms", this.sliceEmaMs);
+        long quads = 0L;
+        long fallback = 0L;
+        for (Cube cube : this.renderCubes.values()) {
+            quads += Math.max(0, cube.quadCount);
+            fallback += cube.fallbackBlocks.length;
+        }
+        String cpu = String.format(", %d quads, %d fallback blocks, cpu %.2fms",
+            quads, fallback, this.sliceEmaMs);
         if (phase1 >= 0) {
             CreateManaIndustry.LOGGER.info(
                 "[Allvr] gpu frame: {} nodes ({} high water) → p1 {} + p2 {} = {} visible → {} commands{}{}",

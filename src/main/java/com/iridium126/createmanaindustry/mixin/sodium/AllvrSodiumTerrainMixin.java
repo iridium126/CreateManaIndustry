@@ -6,6 +6,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
+import com.iridium126.createmanaindustry.CreateManaIndustry;
 
 import net.minecraft.client.Minecraft;
 
@@ -15,7 +16,8 @@ import net.minecraft.client.Minecraft;
  * dispatches into {@code DefaultChunkRenderer.render} — cancelling the vanilla
  * method cannot stop that dispatch (both HEAD callbacks run), so sodium's
  * entry point is cancelled here instead. Also drops its per-frame GL state
- * machine out of ALLVR's draw window.
+ * machine out of ALLVR's draw window. A Voxy install is the exception because
+ * its opaque LOD pass injects immediately before Sodium ends CUTOUT rendering.
  * <p>
  * String mixin targets with {@code remap = false}: no compile-time sodium
  * dependency (build.gradle stays untouched); the mixin only applies when the
@@ -29,7 +31,8 @@ public abstract class AllvrSodiumTerrainMixin {
     @Inject(method = "render", at = @At("HEAD"), cancellable = true, remap = false)
     private void allvr$cancelSodiumTerrain(CallbackInfo ci) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level != null && mc.level.dimension() == AllvrDimensions.ALLAY_LEVEL) {
+        if (!CreateManaIndustry.VOXY_PORT_ACTIVE
+            && mc.level != null && mc.level.dimension() == AllvrDimensions.ALLAY_LEVEL) {
             ci.cancel();
         }
     }

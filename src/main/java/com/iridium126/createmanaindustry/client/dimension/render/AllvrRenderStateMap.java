@@ -273,12 +273,6 @@ public final class AllvrRenderStateMap {
             if (quad.getDirection() != AllvrMesher.FACES[i]) {
                 return NON_RENDERABLE;
             }
-            // A world-dependent tint cannot be represented by the immutable
-            // descriptor material table; route it through the generic model
-            // compiler where the real BlockAndTintGetter is available.
-            if (quad.isTinted()) {
-                return NON_RENDERABLE;
-            }
             var sprite = quad.getSprite();
             var ticker = sprite.createTicker();
             if (ticker != null) {
@@ -286,6 +280,19 @@ public final class AllvrRenderStateMap {
                 return NON_RENDERABLE;
             }
             float tr = 1, tg = 1, tb = 1;
+            if (quad.isTinted()) {
+                // The allay terrain uses one biome tint across a streamed
+                // render-state entry.  Resolve the color provider's documented
+                // default instead of routing every grass/leaves block through
+                // renderSingleBlock every frame; that old fallback path was
+                // the dominant 200-500 ms CPU cost in ordinary island views.
+                int rgb = mc.getBlockColors().getColor(state, null, null, quad.getTintIndex());
+                if (rgb != -1) {
+                    tr = ((rgb >> 16) & 0xFF) / 255.0f;
+                    tg = ((rgb >> 8) & 0xFF) / 255.0f;
+                    tb = (rgb & 0xFF) / 255.0f;
+                }
+            }
             faces[i] = new FaceMaterial(
                 sprite.getU0(), sprite.getV0(),
                 sprite.getU1() - sprite.getU0(), sprite.getV1() - sprite.getV0(),

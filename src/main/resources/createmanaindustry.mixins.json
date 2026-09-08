@@ -67,6 +67,7 @@
     "voxy.AllvrVoxyIngestMixin",
     "voxy.AllvrVoxyViewportMixin",
     "voxy.AllvrVoxyTopLevelRangeMixin",
+    "voxy.AllvrVoxyLodThresholdMixin",
     "render.LevelRendererBlockEntitiesMixin",
     "render.CachedBuffersMixin",
     "render.ModelsMixin",

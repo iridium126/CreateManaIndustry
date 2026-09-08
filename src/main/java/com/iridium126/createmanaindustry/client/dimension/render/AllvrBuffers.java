@@ -547,11 +547,23 @@ public final class AllvrBuffers {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, this.arenaBuffer);
         GL30.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, AllvrShaderCache.BIND_QUADS, this.arenaBuffer);
         GL30.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, AllvrShaderCache.BIND_CUBEINFO, this.cubeInfoBuffer);
+        this.bindStateTable();
+        glBindVertexArray(this.vao);
+        glBindBuffer(GL_DRAW_INDIRECT_BUFFER, this.commandBuffer);
+    }
+
+    /** Binds the material TBO shared by the Tier B and Tier C vertex paths. */
+    public void bindStateTable() {
         GL13.glActiveTexture(GL13.GL_TEXTURE0 + STATE_TBO_UNIT);
         GL11.glBindTexture(GL_TEXTURE_BUFFER, this.stateTbo);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        glBindVertexArray(this.vao);
-        glBindBuffer(GL_DRAW_INDIRECT_BUFFER, this.commandBuffer);
+    }
+
+    /** Releases only the shared material TBO (Tier C owns no Tier B buffers). */
+    public void unbindStateTable() {
+        GL13.glActiveTexture(GL13.GL_TEXTURE0 + STATE_TBO_UNIT);
+        GL11.glBindTexture(GL_TEXTURE_BUFFER, 0);
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
     }
 
     /** One glMultiDrawElementsIndirect over {@code n} commands. */
@@ -565,9 +577,7 @@ public final class AllvrBuffers {
         glBindVertexArray(0);
         GL30.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, AllvrShaderCache.BIND_QUADS, 0);
         GL30.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, AllvrShaderCache.BIND_CUBEINFO, 0);
-        GL13.glActiveTexture(GL13.GL_TEXTURE0 + STATE_TBO_UNIT);
-        GL11.glBindTexture(GL_TEXTURE_BUFFER, 0);
-        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        this.unbindStateTable();
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 

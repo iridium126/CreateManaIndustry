@@ -163,8 +163,8 @@ public final class AllvrShaderCache {
         this.compatTerrain = this.linkCompat(GLSL_DIR + "terrain.fsh", "", "compat terrain");
         this.shadowTerrain = linkShadowTerrain(GLSL_DIR + "shadow.fsh",
             "#define ALLVR_SHADOW_PASS\n#define ALLVR_SHADOW_EXACT\n", "terrain.vsh (shadow exact)");
-        this.shadowTerrainSimple = linkShadowTerrain(GLSL_DIR + "terrain.fsh",
-            "#define ALLVR_SHADOW_PASS\n", "terrain.vsh (shadow legacy)");
+        this.shadowTerrainSimple = linkShadowTerrain(GLSL_DIR + "shadow_simple.fsh",
+            "#define ALLVR_SHADOW_PASS\n", "terrain.vsh (shadow depth-only)");
         this.cullReset = compileCompute(GLSL_DIR + "gpu_cull_reset.comp");
         this.traversal = compileCompute(GLSL_DIR + "gpu_cull_traversal.comp");
         this.cullFinalize = compileCompute(GLSL_DIR + "gpu_cull_finalize.comp");

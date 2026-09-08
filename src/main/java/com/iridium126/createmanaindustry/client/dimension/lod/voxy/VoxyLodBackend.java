@@ -50,7 +50,11 @@ final class VoxyLodBackend implements AllvrLodBackend {
 
     @Override
     public boolean requestsOpen() {
-        return this.engine != null && this.state == STATE_STEADY;
+        // REFILL is specifically the coarse-first request phase.  apply()
+        // already accepts and drains writes in this state, so keeping the gate
+        // closed here produced an avoidable 60-tick blank LOD window after
+        // every Y rebase (and made the client's refill ordering unreachable).
+        return this.engine != null && this.state != STATE_DETACH;
     }
 
     @Override

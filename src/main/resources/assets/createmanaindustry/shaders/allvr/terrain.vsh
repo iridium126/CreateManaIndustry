@@ -31,7 +31,14 @@ layout(std430, binding = BIND_CUBEINFO) readonly buffer CubeInfoBuf {
     ivec4 cubeInfo[]; // xyz = absolute cube origin
 };
 #endif
+#ifdef ALLVR_COMPAT
+// GLSL 3.30 has sampler buffers but not layout(binding).  The renderer sets
+// uStateTable explicitly for both tiers, so the compat declaration needs no
+// layout qualifier.
+uniform samplerBuffer uStateTable;
+#else
 layout(binding = STATE_TBO_UNIT) uniform samplerBuffer uStateTable;
+#endif
 
 out vec2 vUvLocal;   // un-tiled quad-space uv (0..size), tiled in the fsh
 flat out vec4 vRect; // atlas sprite rect (u0, v0, du, dv)

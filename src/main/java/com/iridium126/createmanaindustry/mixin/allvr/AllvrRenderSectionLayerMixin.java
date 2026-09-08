@@ -7,6 +7,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
+import com.iridium126.createmanaindustry.CreateManaIndustry;
 
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -22,7 +23,10 @@ import net.minecraft.client.renderer.RenderType;
  * Sodium, when present, intercepts the same method and calls its own
  * {@code DefaultChunkRenderer.render} — that path is cancelled separately by
  * {@link AllvrSodiumTerrainMixin} (two HEAD callbacks on one method both run;
- * cancelling vanilla alone cannot stop sodium's).
+ * cancelling vanilla alone cannot stop sodium's). When Voxy is installed the
+ * empty shell pass is deliberately retained: Voxy mounts its LOD renderer on
+ * Sodium's CUTOUT pass, so cancelling this method also cancelled every LOD
+ * frame before it reached Voxy.
  */
 @Mixin(LevelRenderer.class)
 public abstract class AllvrRenderSectionLayerMixin {
@@ -35,7 +39,8 @@ public abstract class AllvrRenderSectionLayerMixin {
     private void allvr$cancelVanillaTerrain(RenderType renderType, double x, double y, double z,
                                             org.joml.Matrix4f frustrumMatrix, org.joml.Matrix4f projectionMatrix,
                                             CallbackInfo ci) {
-        if (this.level != null && this.level.dimension() == AllvrDimensions.ALLAY_LEVEL) {
+        if (!CreateManaIndustry.VOXY_PORT_ACTIVE
+            && this.level != null && this.level.dimension() == AllvrDimensions.ALLAY_LEVEL) {
             ci.cancel();
         }
     }

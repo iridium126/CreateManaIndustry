@@ -57,11 +57,11 @@ public final class AllvrVoxyUniforms {
         uniforms
             .uniform1i(UniformUpdateFrequency.PER_FRAME, "vxRenderDistance", () -> renderDistanceBlocks)
             .uniformMatrix(UniformUpdateFrequency.PER_FRAME, "vxViewProj",
-                () -> new Matrix4f(currentModelView()).mul(currentProjection()))
+                () -> new Matrix4f(currentProjection()).mul(currentModelView()))
             .uniformMatrix(UniformUpdateFrequency.PER_FRAME, "vxViewProjInv",
-                inverted(() -> new Matrix4f(currentModelView()).mul(currentProjection())))
+                inverted(() -> new Matrix4f(currentProjection()).mul(currentModelView())))
             .uniformMatrix(UniformUpdateFrequency.PER_FRAME, "vxViewProjPrev",
-                () -> new Matrix4f(PREVIOUS_MODEL_VIEW).mul(PREVIOUS_PROJECTION))
+                () -> new Matrix4f(PREVIOUS_PROJECTION).mul(PREVIOUS_MODEL_VIEW))
             .uniformMatrix(UniformUpdateFrequency.PER_FRAME, "vxModelView", AllvrVoxyUniforms::currentModelView)
             .uniformMatrix(UniformUpdateFrequency.PER_FRAME, "vxModelViewInv", inverted(AllvrVoxyUniforms::currentModelView))
             .uniformMatrix(UniformUpdateFrequency.PER_FRAME, "vxModelViewPrev", () -> PREVIOUS_MODEL_VIEW)

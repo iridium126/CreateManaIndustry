@@ -21,6 +21,11 @@ public final class AllvrCellMesher {
 
     public static final int CELL = 16;
     public static final int PADDED = 18;
+    /**
+     * Bounds nonlinear shadow-projection error without the old fragment-exact
+     * pass, whose gl_FragDepth write disabled early-Z on every island layer.
+     */
+    public static final int MAX_GREEDY_EXTENT = 4;
     private static final Direction[] FACES = AllvrMesher.FACES;
     private static final byte[][] UV_AXES = {
         {1, 2}, {2, 1}, {2, 0}, {0, 2}, {0, 1}, {1, 0}
@@ -98,12 +103,13 @@ public final class AllvrCellMesher {
                         continue;
                     }
                     int width = 1;
-                    while (u + width < CELL && this.mask[v * CELL + u + width] == id) {
+                    while (width < MAX_GREEDY_EXTENT && u + width < CELL
+                            && this.mask[v * CELL + u + width] == id) {
                         width++;
                     }
                     int height = 1;
                     outer:
-                    while (v + height < CELL) {
+                    while (height < MAX_GREEDY_EXTENT && v + height < CELL) {
                         for (int du = 0; du < width; du++) {
                             if (this.mask[(v + height) * CELL + u + du] != id) {
                                 break outer;

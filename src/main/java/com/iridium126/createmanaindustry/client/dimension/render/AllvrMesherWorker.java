@@ -4,9 +4,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.ItemBlockRenderTypes;
-import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.client.renderer.RenderType;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
@@ -143,10 +140,10 @@ public final class AllvrMesherWorker {
         AllvrMeshCodec codec = AllvrRenderStateMap.CLIENT_CODEC;
         AllvrCellLightBaker light = AllvrCellLightBaker.capture(key, occludes);
         return new BuildOutput(AllvrCellMesher.build(states, occludes, light, codec),
-            AllvrCellConnectivity.mask(occludes), collectFallbackBlocks(key, states, light));
+            AllvrCellConnectivity.mask(occludes), collectFallbackBlocks(key, states, occludes, light));
     }
 
-    private static AllvrFallbackBlock[] collectFallbackBlocks(long key, BlockState[] states,
+    private static AllvrFallbackBlock[] collectFallbackBlocks(long key, BlockState[] states, byte[] occludes,
                                                                AllvrCellLightBaker light) {
         java.util.ArrayList<AllvrFallbackBlock> blocks = new java.util.ArrayList<>();
         int minX = AllvrRenderCellKey.minBlockX(key);
@@ -166,8 +163,8 @@ public final class AllvrMesherWorker {
                     // Model and fluid ownership are independent. A waterlogged
                     // stair/fence must submit both its block model and its
                     // liquid surface; one boolean must not erase the other.
-                    boolean model = !descriptor;
-                    boolean renderFluid = fluid;
+                    boolean model = !descriptor && hasUnoccludedNeighbor(occludes, x, y, z);
+                    boolean renderFluid = fluid && hasFluidBoundary(states, state, x, y, z);
                     if (model || renderFluid) {
                         int sky = light.sky(x, z, (long) minY + y);
                         int block = light.block(x, z, (long) minY + y);
@@ -182,6 +179,27 @@ public final class AllvrMesherWorker {
             }
         }
         return blocks.toArray(AllvrFallbackBlock[]::new);
+    }
+
+    /** An entirely enclosed fallback model cannot contribute a fragment. */
+    private static boolean hasUnoccludedNeighbor(byte[] occludes, int x, int y, int z) {
+        return occludes[AllvrCellMesher.paddedIndex(x + 1, y, z)] == 0
+            || occludes[AllvrCellMesher.paddedIndex(x - 1, y, z)] == 0
+            || occludes[AllvrCellMesher.paddedIndex(x, y + 1, z)] == 0
+            || occludes[AllvrCellMesher.paddedIndex(x, y - 1, z)] == 0
+            || occludes[AllvrCellMesher.paddedIndex(x, y, z + 1)] == 0
+            || occludes[AllvrCellMesher.paddedIndex(x, y, z - 1)] == 0;
+    }
+
+    /** Skip only the provably invisible case: six identical fluid states. */
+    private static boolean hasFluidBoundary(BlockState[] states, BlockState state, int x, int y, int z) {
+        var fluid = state.getFluidState();
+        return !fluid.equals(states[AllvrCellMesher.paddedIndex(x + 1, y, z)].getFluidState())
+            || !fluid.equals(states[AllvrCellMesher.paddedIndex(x - 1, y, z)].getFluidState())
+            || !fluid.equals(states[AllvrCellMesher.paddedIndex(x, y + 1, z)].getFluidState())
+            || !fluid.equals(states[AllvrCellMesher.paddedIndex(x, y - 1, z)].getFluidState())
+            || !fluid.equals(states[AllvrCellMesher.paddedIndex(x, y, z + 1)].getFluidState())
+            || !fluid.equals(states[AllvrCellMesher.paddedIndex(x, y, z - 1)].getFluidState());
     }
 
     private AllvrMesherWorker() {}
