@@ -469,7 +469,7 @@ public final class AllvrLodMap {
             AllvrLodSectionData data = AllvrLodSectionData.build(
                 level, cellLong, gen, states, occludes, snapshot.light());
             if (data != null) data = data.withBiomes(snapshot.biomeIds(
-                this.level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.BIOME)));
+                this.level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.BIOME), data.indices()));
             payload = data == null ? ALL_AIR_PAYLOAD : AllvrLodSectionCodec.encode(data);
         } catch (Throwable t) {
             CreateManaIndustry.LOGGER.error("[Allvr] LOD section build failed on {} — client re-requests",

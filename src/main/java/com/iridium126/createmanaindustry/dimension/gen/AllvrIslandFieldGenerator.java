@@ -37,19 +37,37 @@ public final class AllvrIslandFieldGenerator {
 
     public void generate(AllvrCube cube) {
         int x0 = cube.getPos().minBlockX(), y0 = cube.getPos().minBlockY(), z0 = cube.getPos().minBlockZ();
+        // Island cells are sparse (the XZ spacing is several chunks). Resolve
+        // the bounds before touching the 512 biome cells: the vast majority of
+        // transport cubes are void and can stay at their default palette.
+        Island[] islands = islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
+        if (islands.length == 0) return;
         for (int sy = 0; sy < 2; sy++) for (int sz = 0; sz < 2; sz++) for (int sx = 0; sx < 2; sx++) {
+            int sectionX = x0 + sx * 16, sectionY = y0 + sy * 16, sectionZ = z0 + sz * 16;
+            boolean intersects = false;
+            for (Island island : islands) {
+                if (island.intersects(sectionX, sectionY, sectionZ, sectionX + 16, sectionY + 16, sectionZ + 16)) {
+                    intersects = true;
+                    break;
+                }
+            }
+            if (!intersects) continue;
             cube.getSections()[AllvrCube.sliceIndex(sx, sy, sz)].fillBiomesFromNoise(
                 (qx, qy, qz, sampler) -> biome(qx, qy, qz), terrain.random.sampler(),
                 (x0 >> 2) + sx * 4, (y0 >> 2) + sy * 4, (z0 >> 2) + sz * 4);
         }
-        Island[] islands = islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
         BlockPos.MutableBlockPos world = new BlockPos.MutableBlockPos();
         BlockPos.MutableBlockPos source = new BlockPos.MutableBlockPos();
+        // A 32x32 cube touches at most four source chunks per island. Keep the
+        // resolved columns local to this pass so the synchronized terrain cache
+        // is not entered once for every block column.
+        java.util.Map<Long, AllvrTerrainSource.Column> sourceColumns = new java.util.HashMap<>();
         for (Island island : islands) for (int z = z0; z < z0 + 32; z++) for (int x = x0; x < x0 + 32; x++) {
             double bottom = island.bottom(x, z);
             if (bottom >= y0 + 32) continue;
             int sx = x + island.sourceOffsetX(), sz = z + island.sourceOffsetZ();
-            var column = terrain.column(sx >> 4, sz >> 4);
+            long sourceKey = net.minecraft.world.level.ChunkPos.asLong(sx >> 4, sz >> 4);
+            var column = sourceColumns.computeIfAbsent(sourceKey, key -> terrain.column(sx >> 4, sz >> 4));
             int from = Math.max(y0, Math.max(island.minY(), (int) Math.ceil(bottom)));
             int to = Math.min(y0 + 32, island.maxY());
             for (int y = from; y < to; y++) {
@@ -74,7 +92,7 @@ public final class AllvrIslandFieldGenerator {
         }
     }
 
-    /** LOD shares complete decorated columns, including features that change the silhouette. */
+    /** LOD shares the same cached terrain columns and deterministic feature budget. */
     public BlockState evaluate(int x, int y, int z, Island[] islands) {
         for (Island island : islands) {
             if (!island.contains(x, y, z)) continue;

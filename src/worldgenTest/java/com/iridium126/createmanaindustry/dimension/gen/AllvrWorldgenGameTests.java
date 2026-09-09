@@ -55,11 +55,14 @@ public final class AllvrWorldgenGameTests {
             "Terralith's actual biome source must be used, not the vanilla preset");
         long start = System.nanoTime();
         var first = source.column(32768, -16384);
+        long afterFirst = System.nanoTime();
         long fingerprint = fingerprint(first);
         source.column(32769, -16384);
+        long afterSecond = System.nanoTime();
         var otherOrder = new AllvrTerrainSource(allay);
         otherOrder.column(32769, -16384);
         helper.assertTrue(fingerprint == fingerprint(otherOrder.column(32768, -16384)), "Decoration depends on request order");
+        long afterOrder = System.nanoTime();
         helper.assertTrue(helper.getLevel().getChunkSource().getChunk(32768, -16384, ChunkStatus.FULL, false) == null,
             "Template generation loaded a real Overworld chunk");
 
@@ -70,9 +73,15 @@ public final class AllvrWorldgenGameTests {
         var cube = new AllvrCube(AllvrCubePos.of((int) island.cx() >> 5, (island.cy() - 48) >> 5, (int) island.cz() >> 5),
             allay.registryAccess().registryOrThrow(Registries.BIOME));
         generator.generate(cube);
+        long afterCube = System.nanoTime();
         int solid = 0;
         for (var section : cube.getSections()) if (!section.hasOnlyAir()) solid++;
         helper.assertTrue(solid > 0, "High island cube is entirely empty");
+        var empty = new AllvrCube(AllvrCubePos.of(0, 0, 0),
+            allay.registryAccess().registryOrThrow(Registries.BIOME));
+        generator.generate(empty);
+        helper.assertTrue(java.util.Arrays.stream(empty.getSections()).allMatch(section -> section.hasOnlyAir()),
+            "Void cube unexpectedly contains terrain");
         int qx = cube.getPos().minBlockX() >> 2, qy = cube.getPos().minBlockY() >> 2, qz = cube.getPos().minBlockZ() >> 2;
         helper.assertTrue(cube.getNoiseBiome(qx, qy, qz).equals(generator.biome(qx, qy, qz)), "Cube biome palette disagrees with generator");
         int[] indices = new int[AllvrLodSectionData.CELLS];
@@ -89,6 +98,10 @@ public final class AllvrWorldgenGameTests {
         helper.assertTrue(java.util.Arrays.equals(indices, decoded.indices()), "LOD fluid/state data lost during round trip");
         biomeIds[0] = (1 << 20) - 1;
         helper.assertTrue(packetData.biomeIds()[0] != biomeIds[0], "Published biome data aliases mutable input");
+        System.out.println("ALLVR_WORLDGEN_TIMING firstMs=" + (afterFirst - start) / 1_000_000
+            + " secondMs=" + (afterSecond - afterFirst) / 1_000_000
+            + " orderMs=" + (afterOrder - afterSecond) / 1_000_000
+            + " cubeMs=" + (afterCube - afterOrder) / 1_000_000);
         System.out.println("ALLVR_WORLDGEN_SMOKE terralith=" + terralith + " possibleBiomes=" + source.biomeSource().possibleBiomes().size()
             + " fingerprint=" + fingerprint + " highY=" + cube.getPos().minBlockY() + " nonemptySections=" + solid
             + " elapsedMs=" + (System.nanoTime() - start) / 1_000_000);

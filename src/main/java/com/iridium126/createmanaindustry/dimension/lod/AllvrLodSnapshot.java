@@ -67,16 +67,57 @@ public final class AllvrLodSnapshot {
     }
 
     public int[] biomeIds(net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> registry) {
+        return biomeIds(registry, null);
+    }
+
+    /** Samples only occupied cells; void cells keep the zero/default biome id. */
+    public int[] biomeIds(net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> registry, int[] occupied) {
         int[] ids = new int[AllvrLodSectionData.CELLS];
-        java.util.Map<BlockPos, Integer> sampled = new java.util.HashMap<>();
+        QuartBiomeCache sampled = new QuartBiomeCache();
         int stride = pos.stride();
         for (int y = 0; y < 32; y++) for (int z = 0; z < 32; z++) for (int x = 0; x < 32; x++) {
-            BlockPos quart = new BlockPos((pos.minBlockX() + x * stride + stride / 2) >> 2,
-                (pos.minBlockY() + y * stride + stride / 2) >> 2, (pos.minBlockZ() + z * stride + stride / 2) >> 2);
-            ids[AllvrLodSectionData.cellIndex(x, y, z)] = sampled.computeIfAbsent(quart,
-                q -> registry.getId(generator.biome(q.getX(), q.getY(), q.getZ()).value()));
+            int index = AllvrLodSectionData.cellIndex(x, y, z);
+            if (occupied != null && occupied[index] == 0) continue;
+            int qx = (pos.minBlockX() + x * stride + stride / 2) >> 2;
+            int qy = (pos.minBlockY() + y * stride + stride / 2) >> 2;
+            int qz = (pos.minBlockZ() + z * stride + stride / 2) >> 2;
+            ids[index] = sampled.getOrCompute(qx, qy, qz, registry, generator);
         }
         return ids;
+    }
+
+    /** Allocation-free exact cache; 25-bit packing cannot represent 3 world axes in one long. */
+    private static final class QuartBiomeCache {
+        private static final int EMPTY = Integer.MIN_VALUE;
+        private final int[] xs = new int[1 << 16];
+        private final int[] ys = new int[1 << 16];
+        private final int[] zs = new int[1 << 16];
+        private final int[] values = new int[1 << 16];
+
+        QuartBiomeCache() { java.util.Arrays.fill(values, EMPTY); }
+
+        int getOrCompute(int x, int y, int z,
+                         net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> registry,
+                         AllvrIslandFieldGenerator generator) {
+            int slot = hash(x, y, z) & (values.length - 1);
+            while (true) {
+                int value = values[slot];
+                if (value == EMPTY) {
+                    xs[slot] = x; ys[slot] = y; zs[slot] = z;
+                    value = registry.getId(generator.biome(x, y, z).value());
+                    values[slot] = value;
+                    return value;
+                }
+                if (xs[slot] == x && ys[slot] == y && zs[slot] == z) return value;
+                slot = (slot + 1) & (values.length - 1);
+            }
+        }
+
+        private static int hash(int x, int y, int z) {
+            int h = x * 0x9E3779B9;
+            h = Integer.rotateLeft(h ^ y * 0x85EBCA6B, 13);
+            return Integer.rotateLeft(h ^ z * 0xC2B2AE35, 15);
+        }
     }
 
     /**
@@ -195,6 +236,10 @@ public final class AllvrLodSnapshot {
         int minBx = this.pos.minBlockX();
         int minBy = this.pos.minBlockY();
         int minBz = this.pos.minBlockZ();
+        if (this.islands.length == 0) {
+            applyOverlay(states, occludes);
+            return;
+        }
         for (int z = -1; z <= 32; z++) for (int x = -1; x <= 32; x++) {
             int wx = minBx + x * stride + stride / 2;
             int wz = minBz + z * stride + stride / 2;
@@ -208,6 +253,10 @@ public final class AllvrLodSnapshot {
                 }
             }
         }
+        applyOverlay(states, occludes);
+    }
+
+    private void applyOverlay(BlockState[] states, byte[] occludes) {
         // overlay always wins over the density field
         for (it.unimi.dsi.fastutil.ints.Int2ObjectMap.Entry<BlockState> e : this.overlay.cells().int2ObjectEntrySet()) {
             int idx = e.getIntKey();

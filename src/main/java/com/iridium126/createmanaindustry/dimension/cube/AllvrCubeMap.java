@@ -8,6 +8,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
@@ -81,6 +85,8 @@ public final class AllvrCubeMap {
     private static final int DEFAULT_FORGET_Y_RADIUS = DEFAULT_SEND_Y_RADIUS + 2;
     /** Max cubes streamed per player per tick. */
     private static final int SEND_BUDGET_PER_TICK = 24;
+    /** Bound background work queued while a player moves through an island. */
+    private static final int MAX_PENDING_GENERATIONS = 256;
     /** Shell-load time budget per tick. */
     private static final long TICK_BUDGET_NANOS = 3_000_000L;
     /** Far-cube unload scan cadence (ticks). */
@@ -122,6 +128,14 @@ public final class AllvrCubeMap {
     private final Long2ObjectOpenHashMap<AllvrCube> beCubes = new Long2ObjectOpenHashMap<>();
     private final Map<UUID, Subscription> subscriptions = new java.util.HashMap<>();
     private final AllvrCubeIoWorker worker;
+    /** Terrain generation never runs on the server tick thread for shell cubes. */
+    private final ExecutorService generationExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "allvr-terrain");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final ConcurrentHashMap<Long, CompletableFuture<AllvrCube>> pendingGenerations = new ConcurrentHashMap<>();
+    private final ConcurrentLinkedQueue<GeneratedCube> completedGenerations = new ConcurrentLinkedQueue<>();
     private final AllvrStorageDiagnostics diagnostics = new AllvrStorageDiagnostics();
 
     /** Dirty snapshot maintenance queue (FIFO, deduplicated by {@link #snapshotQueued}). */
@@ -144,6 +158,8 @@ public final class AllvrCubeMap {
         int forgetXzRadius = DEFAULT_FORGET_XZ_RADIUS;
         int forgetYRadius = DEFAULT_FORGET_Y_RADIUS;
     }
+
+    private record GeneratedCube(long key, AllvrCube cube, Throwable failure) {}
 
     public AllvrCubeMap(ServerLevel level) {
         this.level = level;
@@ -385,6 +401,15 @@ public final class AllvrCubeMap {
         if (cube != null) {
             return cube;
         }
+        CompletableFuture<AllvrCube> pending = pendingGenerations.get(key);
+        if (pending != null) {
+            try {
+                return installGenerated(key, pending.join());
+            } catch (java.util.concurrent.CompletionException e) {
+                pendingGenerations.remove(key, pending);
+                throw e;
+            }
+        }
         if (this.persistedIndex.contains(key)) {
             return this.loadPersisted(key, AllvrCubePos.of(cubeX, cubeY, cubeZ));
         }
@@ -398,6 +423,59 @@ public final class AllvrCubeMap {
         cube.onLoad(level);
         this.diagnostics.cubesGenerated.incrementAndGet();
         return cube;
+    }
+
+    /** Main-thread completion handoff for background terrain builds. */
+    private void drainCompletedGenerations() {
+        GeneratedCube completed;
+        while ((completed = completedGenerations.poll()) != null) {
+            if (completed.failure() != null) {
+                pendingGenerations.remove(completed.key());
+                CreateManaIndustry.LOGGER.error("[Allvr] async cube generation failed for {}",
+                    AllvrCubePos.fromLong(completed.key()), completed.failure());
+                continue;
+            }
+            installGenerated(completed.key(), completed.cube());
+        }
+    }
+
+    private AllvrCube installGenerated(long key, AllvrCube cube) {
+        pendingGenerations.remove(key);
+        AllvrCube existing = cubes.get(key);
+        if (existing != null) return existing;
+        if (closed || persistedIndex.contains(key)) return cube;
+        cubes.put(key, cube);
+        cube.rebuildDerivedState(level);
+        cube.onLoad(level);
+        diagnostics.cubesGenerated.incrementAndGet();
+        return cube;
+    }
+
+    /** Queues one deterministic build; results are installed by the tick thread. */
+    private void requestAsyncGeneration(int cubeX, int cubeY, int cubeZ) {
+        if (closed || pendingGenerations.size() >= MAX_PENDING_GENERATIONS) return;
+        long key = AllvrCubePos.asLong(cubeX, cubeY, cubeZ);
+        if (cubes.containsKey(key) || persistedIndex.contains(key) || pendingGenerations.containsKey(key)) return;
+        CompletableFuture<AllvrCube> future = CompletableFuture.supplyAsync(() -> {
+            AllvrCube cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
+            generator.generate(cube);
+            return cube;
+        }, generationExecutor);
+        CompletableFuture<AllvrCube> previous = pendingGenerations.putIfAbsent(key, future);
+        if (previous != null) return;
+        future.whenComplete((cube, failure) -> {
+            completedGenerations.add(new GeneratedCube(key, cube, failure));
+        });
+    }
+
+    /** Returns a loaded cube or schedules generation without blocking the tick. */
+    private AllvrCube getOrRequest(int cubeX, int cubeY, int cubeZ) {
+        long key = AllvrCubePos.asLong(cubeX, cubeY, cubeZ);
+        AllvrCube cube = cubes.get(key);
+        if (cube != null) return cube;
+        if (persistedIndex.contains(key)) return getOrGenerate(cubeX, cubeY, cubeZ);
+        requestAsyncGeneration(cubeX, cubeY, cubeZ);
+        return null;
     }
 
     public AllvrIslandFieldGenerator generator() { return this.generator; }
@@ -457,9 +535,9 @@ public final class AllvrCubeMap {
 
     /**
      * Per-tick driver: drains the snapshot maintenance queue (budgeted), then
-     * on join/teleport synchronously generates + streams the player's
-     * 3×3×3 cube neighborhood, then generates/shells outward within the
-     * per-tick time budget while streaming cube data to each player's client
+     * on join/teleport synchronously generates and streams the player's
+     * current cube, then queues the surrounding neighborhood for
+     * the background terrain worker while streaming completed cube data to each player's client
      * within the per-tick send budget. Cubes leaving the subscription range
      * (with hysteresis) are forgotten client-side.
      */
@@ -467,6 +545,7 @@ public final class AllvrCubeMap {
         // drain before the players.isEmpty() early-return: an empty server
         // still owes its queued snapshots (vanilla autosave parity)
         this.drainSnapshotQueue();
+        this.drainCompletedGenerations();
         List<ServerPlayer> players = level.players();
         if (players.isEmpty()) {
             return;
@@ -483,18 +562,15 @@ public final class AllvrCubeMap {
             AllvrCubePos pc = AllvrCubePos.of(player.blockPosition());
             Subscription sub = subscriptions.computeIfAbsent(player.getUUID(), k -> new Subscription());
             if (sub.lastCube == null || chebyshev(pc, sub.lastCube) > 2) {
-                for (int dy = -1; dy <= 1; dy++) {
-                    for (int dx = -1; dx <= 1; dx++) {
-                        for (int dz = -1; dz <= 1; dz++) {
-                            AllvrCube cube = getOrGenerate(pc.getX() + dx, pc.getY() + dy, pc.getZ() + dz);
-                            if (cube == null) {
-                                continue; // corrupt persisted cube — fail closed
-                            }
-                            long key = cube.getPos().asLong();
-                            if (sub.sent.add(key)) {
-                                player.connection.send(ClientboundAllvrCubePacket.of(cube, level.registryAccess()));
-                            }
-                        }
+                // Keep teleports and first join responsive: the old 3x3x3
+                // synchronous warm-up could invoke dozens of noise/feature
+                // builds in one server tick. The normal budgeted loop below
+                // streams the surrounding cubes over subsequent ticks.
+                AllvrCube cube = getOrGenerate(pc.getX(), pc.getY(), pc.getZ());
+                if (cube != null) {
+                    long key = cube.getPos().asLong();
+                    if (sub.sent.add(key)) {
+                        player.connection.send(ClientboundAllvrCubePacket.of(cube, level.registryAccess()));
                     }
                 }
                 sub.lastCube = pc;
@@ -530,7 +606,7 @@ public final class AllvrCubeMap {
                             if (System.nanoTime() > deadline) {
                                 break genLoop;
                             }
-                            AllvrCube cube = getOrGenerate(cx, cy, cz);
+                            AllvrCube cube = getOrRequest(cx, cy, cz);
                             if (cube == null) {
                                 continue;
                             }
@@ -709,6 +785,14 @@ public final class AllvrCubeMap {
                 ok = false; // saveAll logged the cause; close must not throw (§7.5)
             }
         }
+        generationExecutor.shutdownNow();
+        try {
+            generationExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+        pendingGenerations.clear();
+        completedGenerations.clear();
         this.worker.close();
         CreateManaIndustry.LOGGER.info("[Allvr] cube persistence closed ({}): {}",
             ok ? "clean" : "with errors", this.diagnostics);

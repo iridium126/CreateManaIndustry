@@ -47,6 +47,21 @@ import net.minecraft.world.ticks.ProtoChunkTicks;
  * Published columns contain palettes only, never NoiseChunk's mutable caches.
  */
 final class AllvrTerrainSource {
+    /**
+     * A source column owns one vanilla feature origin. Neighbouring origins are
+     * generated when their own columns are requested; doing a 3x3 decoration
+     * pass for every column multiplied worldgen work by up to nine.
+     */
+    private static final int FEATURE_ORIGIN_RADIUS = 0;
+    /**
+     * Placed features are the most expensive vanilla stage, especially with
+     * large datapacks such as Terralith. Decorate one deterministic source
+     * chunk out of four; every chunk still uses the datapack biome, noise and
+     * surface rules, while trees/vegetation remain visually distributed without
+     * turning a player move into a synchronous feature flood. The period can be
+     * set to 1/2/4/8 with -Dcreatemanaindustry.allay.feature_period.
+     */
+    private static final int FEATURE_CHUNK_PERIOD = featureChunkPeriod();
     private static final EnumSet<Heightmap.Types> HEIGHTMAPS = EnumSet.of(
         Heightmap.Types.WORLD_SURFACE_WG, Heightmap.Types.OCEAN_FLOOR_WG,
         Heightmap.Types.WORLD_SURFACE, Heightmap.Types.OCEAN_FLOOR,
@@ -92,10 +107,21 @@ final class AllvrTerrainSource {
         long key = ChunkPos.asLong(x, z);
         Column cached = columns.get(key);
         if (cached != null) return cached;
-        ProtoChunk result = copy(base(x, z));
-        // Every source origin owns an independent feature stamp. The same global
-        // order is used on BOTH sides of a chunk boundary, even after eviction.
-        for (int ox = x - 1; ox <= x + 1; ox++) for (int oz = z - 1; oz <= z + 1; oz++) {
+        Column source = base(x, z);
+        // Undecorated columns are immutable base snapshots. Returning them
+        // directly avoids a costly palette wire-copy and ProtoChunk freeze for
+        // the three out of four chunks that use the performance budget.
+        if (!shouldDecorate(x, z)) {
+            columns.put(key, source);
+            return source;
+        }
+        ProtoChunk result = copy(source);
+        // Selected source origins own independent feature stamps. A source
+        // chunk is either fully decorated or fully undecorated, so cache
+        // eviction and request order cannot change its result.
+        for (int ox = x - FEATURE_ORIGIN_RADIUS; ox <= x + FEATURE_ORIGIN_RADIUS; ox++)
+        for (int oz = z - FEATURE_ORIGIN_RADIUS; oz <= z + FEATURE_ORIGIN_RADIUS; oz++) {
+            if (!shouldDecorate(ox, oz)) continue;
             Stamp stamp = stamp(ox, oz);
             Map<BlockPos, Change> changes = stamp.chunks.get(key);
             if (changes == null) continue;
@@ -108,6 +134,22 @@ final class AllvrTerrainSource {
         cached = freeze(result);
         columns.put(key, cached);
         return cached;
+    }
+
+    private boolean shouldDecorate(int x, int z) {
+        long hash = level.getSeed() ^ (long) x * 0x9E3779B97F4A7C15L ^ (long) z * 0xBF58476D1CE4E5B9L;
+        return (mix(hash) & (FEATURE_CHUNK_PERIOD - 1)) == 0;
+    }
+
+    private static long mix(long h) {
+        h = (h ^ (h >>> 30)) * 0xBF58476D1CE4E5B9L;
+        h = (h ^ (h >>> 27)) * 0x94D049BB133111EBL;
+        return h ^ (h >>> 31);
+    }
+
+    private static int featureChunkPeriod() {
+        int requested = Integer.getInteger("createmanaindustry.allay.feature_period", 4);
+        return requested == 1 || requested == 2 || requested == 4 || requested == 8 ? requested : 4;
     }
 
     private Column base(int x, int z) {
@@ -228,7 +270,7 @@ final class AllvrTerrainSource {
 
     record Column(ChunkPos pos, LevelChunkSection[] sections, int minY, Map<BlockPos, CompoundTag> blockEntities) {
         BlockState block(int x, int y, int z) {
-            int section = Math.floorDiv(y - minY, 16);
+            int section = (y - minY) >> 4;
             return section < 0 || section >= sections.length ? Blocks.AIR.defaultBlockState()
                 : sections[section].getBlockState(x & 15, y & 15, z & 15);
         }
@@ -263,8 +305,13 @@ final class AllvrTerrainSource {
         private final net.minecraft.util.RandomSource featureRandom;
 
         FeatureRegion(int x, int z) {
-            super(level, null, ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.FEATURES), copy(base(x, z)));
+            this(x, z, copy(base(x, z)));
+        }
+
+        private FeatureRegion(int x, int z, ProtoChunk center) {
+            super(level, null, ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.FEATURES), center);
             origin = new ChunkPos(x, z);
+            workspace.put(origin.toLong(), center);
             featureRandom = random.getOrCreateRandomFactory(net.minecraft.resources.ResourceLocation.withDefaultNamespace("worldgen_region_random"))
                 .at(origin.getWorldPosition());
         }
