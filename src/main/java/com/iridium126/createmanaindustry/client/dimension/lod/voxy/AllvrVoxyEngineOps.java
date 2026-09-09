@@ -58,14 +58,26 @@ final class AllvrVoxyEngineOps {
             }
             if (lvl == 0) {
                 section.updateLvl0State();
+            } else {
+                // Voxy reads this hierarchy state from the section when the
+                // dirty event is consumed asynchronously.  A parent may have
+                // arrived after its children, so rebuild the current node's
+                // mask from the registry before publishing the write instead
+                // of relying on the arrival order of network responses.
+                section._unsafeSetNonEmptyChildren((byte) registry.ownedChildMask(
+                    lvl, vx, vy, vz));
             }
+            ownerReference = registry.register(lvl, key, vx, vy, vz, section, true, data.generation());
+            chainAncestors(engine, registry, section, lvl, vx, vy, vz);
+            // Publish only after ownership and all ancestor child bits are in
+            // place.  NodeManager runs off-thread and otherwise can observe
+            // a freshly-filled L1-L3 node with an empty child mask, reject it
+            // as an invalid leaf, and keep that fixed world position culled.
             engine.markDirty(section,
                 me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_BLOCK_BIT
                     | me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_CHILD_EXISTENCE_BIT
                     | me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_DONT_SAVE,
                 registry.neighborMask(lvl, vx, vy, vz));
-            ownerReference = registry.register(lvl, key, vx, vy, vz, section, true, data.generation());
-            chainAncestors(engine, registry, section, lvl, vx, vy, vz);
             return true;
         } catch (Throwable t) {
             throw t instanceof RuntimeException rt ? rt : new IllegalStateException(t);
@@ -157,6 +169,11 @@ final class AllvrVoxyEngineOps {
      * from the top (sparse topology, plan §7.4): every ancestor gains (or
      * keeps) the child bit, and a changed ancestor publishes the
      * CHILD_EXISTENCE dirty event that makes its node adopt the child.
+     * <p>
+     * The child state is copied to primitives before the acquired ancestor is
+     * released. Voxy may recycle a released {@code WorldSection} immediately;
+     * carrying the object into the next iteration would make the topology
+     * chain depend on allocator timing.
      * Level 4 belongs to Voxy's own tracker, so the walk releases there.
      */
     static void chainAncestors(me.cortex.voxy.common.world.WorldEngine engine,
@@ -164,32 +181,33 @@ final class AllvrVoxyEngineOps {
                                me.cortex.voxy.common.world.WorldSection child,
                                int lvl, int vx, int vy, int vz) {
         int ancLvl = lvl + 1;
-        int ancX = vx;
-        int ancY = vy;
-        int ancZ = vz;
-        me.cortex.voxy.common.world.WorldSection childSection = child;
+        int childX = vx;
+        int childY = vy;
+        int childZ = vz;
+        boolean childHasContent = child.getNonEmptyChildren() != 0
+            || child.getNonEmptyBlockCount() != 0;
         while (ancLvl <= me.cortex.voxy.common.world.WorldEngine.MAX_LOD_LAYER) {
-            ancX >>= 1;
-            ancY >>= 1;
-            ancZ >>= 1;
+            int ancX = childX >> 1;
+            int ancY = childY >> 1;
+            int ancZ = childZ >> 1;
             me.cortex.voxy.common.world.WorldSection ancestor =
                 engine.acquire(ancLvl, ancX, ancY, ancZ);
             long ancKey = VoxyApi_0215_1211.sectionKey(ancLvl, ancX, ancY, ancZ);
             byte before = ancestor.getNonEmptyChildren();
-            int changed = ancestor.updateEmptyChildState(childSection);
-            // Voxy's helper only consults child.getNonEmptyChildren(), which
-            // is zero for a data-owned L1..L3 leaf. The leaf's block count is
-            // the other valid source of existence; set only this child's bit,
-            // never all 255 bits, so an isolated high-level leaf is reachable
-            // without inventing descendants.
-            if (childSection.getNonEmptyBlockCount() != 0) {
-                byte wanted = (byte) (before | (1 << me.cortex.voxy.common.world.WorldSection
-                    .getChildIndex(childSection.x, childSection.y, childSection.z)));
-                if (wanted != ancestor.getNonEmptyChildren()) {
-                    ancestor._unsafeSetNonEmptyChildren(wanted);
-                    changed = 1;
-                }
+            int childIndex = me.cortex.voxy.common.world.WorldSection.getChildIndex(
+                childX, childY, childZ);
+            byte wanted = childHasContent
+                ? (byte) (before | (1 << childIndex))
+                : (byte) (before & ~(1 << childIndex));
+            int changed = wanted == before ? 0 : 1;
+            if (changed != 0) {
+                ancestor._unsafeSetNonEmptyChildren(wanted);
             }
+            // Read before releasing: the next parent must know whether this
+            // ancestor is itself reachable, but must not retain a raw object
+            // reference after Voxy is allowed to recycle it.
+            boolean ancestorHasContent = ancestor.getNonEmptyChildren() != 0
+                || ancestor.getNonEmptyBlockCount() != 0;
             if (changed != 0) {
                 engine.markDirty(ancestor,
                     me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_CHILD_EXISTENCE_BIT
@@ -207,7 +225,10 @@ final class AllvrVoxyEngineOps {
             } else {
                 ancestor.release(me.cortex.voxy.common.world.WorldSection.RELEASE_HINT_POSSIBLE_REUSE);
             }
-            childSection = ancestor;
+            childHasContent = ancestorHasContent;
+            childX = ancX;
+            childY = ancY;
+            childZ = ancZ;
             ancLvl++;
         }
     }
