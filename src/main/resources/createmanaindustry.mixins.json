@@ -43,6 +43,8 @@
     "allvr.AllvrLevelHeightAccessorMixin",
     "allvr.AllvrServerboundPosMixin",
     "allvr.AllvrServerLevelMixin",
+    "allvr.AllvrServerChunkCacheMixin",
+    "allvr.AllvrChunkMapMixin",
     "allvr.AllvrNaturalSpawnerMixin",
     "allvr.AllvrEntityMixin"
   ],

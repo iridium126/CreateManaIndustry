@@ -23,8 +23,10 @@ import net.minecraft.world.level.chunk.LevelChunk;
  * <p>
  * Persistence wiring (plan §7.5): {@link ServerLevel#save} HEAD/TAIL drive
  * the ALLVR save queue and the blocking flush (the event bus alone cannot
- * express {@code /save-all flush} — no flush parameter), and
- * {@link ServerLevel#close} idempotently drains + closes the storage and the
+ * express {@code /save-all flush} — no flush parameter). The companion
+ * ServerChunkCache/ChunkMap mixins cancel vanilla column-chunk persistence
+ * for this dimension, and {@link ServerLevel#close} idempotently drains +
+ * closes the storage and the
  * LOD pool. Both only ever touch an <i>existing</i> map ({@code peek}) —
  * saving or closing a never-visited allay level must not build the whole
  * subsystem. Exceptions are aggregated/logged so the vanilla close sequence
@@ -82,7 +84,8 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
     /**
      * HEAD of {@code save(progress, flush, skipSave)} — with saving enabled,
      * every loaded dirty cube joins the ALLVR snapshot queue before the
-     * vanilla save (and before {@code LevelEvent.Save}) runs.
+     * level-save event runs. Vanilla column-chunk saving is cancelled by the
+     * dedicated ServerChunkCache/ChunkMap mixins.
      */
     @Inject(method = "save(Lnet/minecraft/util/ProgressListener;ZZ)V",
         at = @At("HEAD"))

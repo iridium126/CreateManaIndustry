@@ -56,8 +56,8 @@ public final class AllvrCube implements AllvrOverlaySource {
     private long queuedVersion;
     /**
      * True when the cube's content came from (or has reached) persistent
-     * storage — such cubes override the deterministic generator on load and
-     * are the cross-session "edited" set members (plan §7.2).
+     * storage — generated and edited cubes both override deterministic
+     * regeneration on the next load.
      */
     private boolean persistedOverride;
     /** Guards double {@link #onLoad}/{@link #onUnload} (mirrors ChunkAccess.loaded). */

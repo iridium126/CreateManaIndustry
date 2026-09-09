@@ -266,8 +266,9 @@ public final class AllvrCubeMap {
         oldState.onRemove(level, pos, newState, false);
 
         long cubeKey = cube.getPos().asLong();
-        this.persistedIndex.add(cubeKey);
-        cube.markDirty();
+        // setBlockState already marks the cube dirty.  The persistence index
+        // is updated after the snapshot enters the IO worker, so a failed
+        // first snapshot cannot make a missing record look loadable later.
         this.queueSnapshot(cubeKey, false);
         if (this.lodMap != null) {
             this.lodMap.onBlockChanged(pos);
@@ -323,7 +324,6 @@ public final class AllvrCubeMap {
             return;
         }
         cube.markDirty();
-        this.persistedIndex.add(cube.getPos().asLong());
         this.queueSnapshot(cube.getPos().asLong(), false);
     }
 
@@ -444,12 +444,13 @@ public final class AllvrCubeMap {
         }
         cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
         generator.generate(cube);
-        // Deterministic terrain is not an edit. Keep freshly generated cubes
-        // clean so save-all serializes only player-modified overrides.
-        cube.markQueued(cube.mutationVersion());
         cubes.put(key, cube);
         cube.rebuildDerivedState(level);
         cube.onLoad(level);
+        // Generated terrain is itself the authoritative result of worldgen.
+        // Persist it through the bounded snapshot queue so the next session
+        // restores the complete cube without repeating noise/features.
+        this.markGeneratedForPersistence(cube);
         this.diagnostics.cubesGenerated.incrementAndGet();
         return cube;
     }
@@ -481,6 +482,7 @@ public final class AllvrCubeMap {
         cubes.put(key, cube);
         cube.rebuildDerivedState(level);
         cube.onLoad(level);
+        this.markGeneratedForPersistence(cube);
         diagnostics.cubesGenerated.incrementAndGet();
         return cube;
     }
@@ -507,7 +509,6 @@ public final class AllvrCubeMap {
                     // would let 256 queued cubes flood the global worldgen
                     // executor and defeat ticket backpressure.
                     generator.generateAsync(cube).join();
-                    cube.markQueued(cube.mutationVersion());
                     future.complete(cube);
                 } catch (Throwable failure) {
                     future.completeExceptionally(failure);
@@ -847,6 +848,11 @@ public final class AllvrCubeMap {
         try {
             AllvrCubeSnapshot snapshot = AllvrCubeSerializer.snapshot(cube, this.level);
             this.worker.enqueue(snapshot);
+            // A queued snapshot is already the newest authoritative state:
+            // subsequent loads must prefer it over deterministic generation,
+            // even before the asynchronous region commit finishes.
+            this.persistedIndex.add(cube.getPos().asLong());
+            cube.markPersistedOverride();
             cube.markQueued(snapshot.version());
             this.lastSnapshotTick.put(cube.getPos().asLong(), this.level.getGameTime());
             this.diagnostics.snapshotsBuilt.incrementAndGet();
@@ -858,6 +864,17 @@ public final class AllvrCubeMap {
                 cube.getPos(), e);
             return false;
         }
+    }
+
+    /**
+     * Makes a freshly generated cube storage-backed.  Worldgen is
+     * deterministic, but persisting its result avoids paying the complete
+     * noise/feature cost again after a restart and gives generated cubes the
+     * same unload/reload path as edited cubes.
+     */
+    private void markGeneratedForPersistence(AllvrCube cube) {
+        cube.markDirty();
+        this.queueSnapshot(cube.getPos().asLong(), true);
     }
 
     // ------------------------------------------------------------------
@@ -941,8 +958,8 @@ public final class AllvrCubeMap {
      * Cubes beyond every player's forget margins leave memory —
      * save-before-unload (plan §7.3): a dirty cube is snapshotted and
      * enqueued first; on failure (or while {@code level.noSave} is set) it
-     * stays pinned. Clean cubes unload freely — generated ones have no record
-     * (nothing to save), persisted ones have their disk/pending copy.
+     * stays pinned. Once a generated cube has entered the persistence queue,
+     * clean and edited cubes share the same disk/pending reload path.
      */
     private void unloadFarCubes(List<ServerPlayer> players) {
         if (this.cubes.isEmpty()) {
