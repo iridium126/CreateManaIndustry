@@ -261,7 +261,7 @@ void close();
 3. 只有确认存储中不存在该 key 时才调用 `AllvrIslandFieldGenerator`。
 4. 加载后的 cube 加入 `cubes`，按 BE 情况加入 `beCubes`，并执行 `onLoad`。
 
-已有持久化记录的 `getOrGenerate` 仍允许阻塞等待一次 I/O；未编辑 cube 通过 header index 可直接判定不存在。玩家当前 Cube 保留同步生成和直接交互语义，周边 shell 交给有界的单线程 terrain worker，完成后只在服务线程安装；直接交互遇到 pending 任务时保留 blocking fallback。
+已有持久化记录的 `getOrGenerate` 仍允许阻塞等待一次 I/O；未编辑 cube 通过 header index 可直接判定不存在。玩家当前 Cube 保留同步生成和直接交互语义，周边 shell 交给有界 terrain worker 池，完成后只在服务线程安装；直接交互遇到 pending 任务时保留 blocking fallback。
 
 写入阶段：
 

@@ -4,14 +4,17 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
@@ -63,8 +66,10 @@ import com.iridium126.createmanaindustry.dimension.storage.AllvrStorageDiagnosti
  *       is client-side (roadmap phase 5), gameplay light queries stay vanilla
  *       defaults until the gameplay stage (phase 7).</li>
  * </ul>
- * All cube/BE/section access happens on the server thread; the worker only
- * ever sees immutable {@link AllvrCubeSnapshot}s.
+ * Loaded cube/BE/section access happens on the server thread. Background
+ * workers only build unpublished cubes and hand them back through the
+ * completion queue; persistence still receives immutable
+ * {@link AllvrCubeSnapshot}s.
  */
 public final class AllvrCubeMap {
 
@@ -87,6 +92,9 @@ public final class AllvrCubeMap {
     private static final int SEND_BUDGET_PER_TICK = 24;
     /** Bound background work queued while a player moves through an island. */
     private static final int MAX_PENDING_GENERATIONS = 256;
+    /** Keep CPU use bounded while allowing independent cubes to generate in parallel. */
+    private static final int TERRAIN_WORKERS =
+        Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
     /** Shell-load time budget per tick. */
     private static final long TICK_BUDGET_NANOS = 3_000_000L;
     /** Far-cube unload scan cadence (ticks). */
@@ -129,13 +137,22 @@ public final class AllvrCubeMap {
     private final Map<UUID, Subscription> subscriptions = new java.util.HashMap<>();
     private final AllvrCubeIoWorker worker;
     /** Terrain generation never runs on the server tick thread for shell cubes. */
-    private final ExecutorService generationExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "allvr-terrain");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private final ThreadPoolExecutor generationExecutor = new ThreadPoolExecutor(
+        TERRAIN_WORKERS, TERRAIN_WORKERS,
+        0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(MAX_PENDING_GENERATIONS),
+        r -> {
+            Thread thread = new Thread(r, "allvr-terrain");
+            thread.setDaemon(true);
+            return thread;
+        }, new ThreadPoolExecutor.AbortPolicy());
     private final ConcurrentHashMap<Long, CompletableFuture<AllvrCube>> pendingGenerations = new ConcurrentHashMap<>();
+    /** Executor handles let CubicChunks-style ticket drops interrupt queued/running work. */
+    private final ConcurrentHashMap<Long, Future<?>> generationHandles = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<GeneratedCube> completedGenerations = new ConcurrentLinkedQueue<>();
+    /** Geometry ticket cache; it avoids repeating island hashes for void rings. */
+    private final Map<Long, Boolean> islandTicketCache = new LinkedHashMap<>(8192, .75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<Long, Boolean> eldest) { return size() > 8192; }
+    };
     private final AllvrStorageDiagnostics diagnostics = new AllvrStorageDiagnostics();
 
     /** Dirty snapshot maintenance queue (FIFO, deduplicated by {@link #snapshotQueued}). */
@@ -153,6 +170,9 @@ public final class AllvrCubeMap {
     private static final class Subscription {
         final LongOpenHashSet sent = new LongOpenHashSet();
         AllvrCubePos lastCube;
+        /** Resume the shell scan where the per-tick budget stopped. */
+        int scanRadius;
+        int scanIndex;
         int sendXzRadius = DEFAULT_SEND_XZ_RADIUS;
         int sendYRadius = DEFAULT_SEND_Y_RADIUS;
         int forgetXzRadius = DEFAULT_FORGET_XZ_RADIUS;
@@ -405,6 +425,12 @@ public final class AllvrCubeMap {
         if (pending != null) {
             try {
                 return installGenerated(key, pending.join());
+            } catch (java.util.concurrent.CancellationException e) {
+                // A player can teleport back into a cube in the same tick that
+                // its shell ticket was dropped. Reclaim the direct path by
+                // generating the required cube synchronously below.
+                pendingGenerations.remove(key, pending);
+                cancelGenerationHandle(key, pending);
             } catch (java.util.concurrent.CompletionException e) {
                 pendingGenerations.remove(key, pending);
                 throw e;
@@ -418,6 +444,9 @@ public final class AllvrCubeMap {
         }
         cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
         generator.generate(cube);
+        // Deterministic terrain is not an edit. Keep freshly generated cubes
+        // clean so save-all serializes only player-modified overrides.
+        cube.markQueued(cube.mutationVersion());
         cubes.put(key, cube);
         cube.rebuildDerivedState(level);
         cube.onLoad(level);
@@ -431,6 +460,10 @@ public final class AllvrCubeMap {
         while ((completed = completedGenerations.poll()) != null) {
             if (completed.failure() != null) {
                 pendingGenerations.remove(completed.key());
+                generationHandles.remove(completed.key());
+                if (completed.failure() instanceof java.util.concurrent.CancellationException) {
+                    continue;
+                }
                 CreateManaIndustry.LOGGER.error("[Allvr] async cube generation failed for {}",
                     AllvrCubePos.fromLong(completed.key()), completed.failure());
                 continue;
@@ -441,6 +474,7 @@ public final class AllvrCubeMap {
 
     private AllvrCube installGenerated(long key, AllvrCube cube) {
         pendingGenerations.remove(key);
+        generationHandles.remove(key);
         AllvrCube existing = cubes.get(key);
         if (existing != null) return existing;
         if (closed || persistedIndex.contains(key)) return cube;
@@ -455,16 +489,42 @@ public final class AllvrCubeMap {
     private void requestAsyncGeneration(int cubeX, int cubeY, int cubeZ) {
         if (closed || pendingGenerations.size() >= MAX_PENDING_GENERATIONS) return;
         long key = AllvrCubePos.asLong(cubeX, cubeY, cubeZ);
-        if (cubes.containsKey(key) || persistedIndex.contains(key) || pendingGenerations.containsKey(key)) return;
-        CompletableFuture<AllvrCube> future = CompletableFuture.supplyAsync(() -> {
-            AllvrCube cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
-            generator.generate(cube);
-            return cube;
-        }, generationExecutor);
+        if (cubes.containsKey(key) || persistedIndex.contains(key)) return;
+        // Reserve the coordinate before submitting work. This closes the
+        // small race where two callers could both submit the same expensive
+        // noise build before either future became visible in the map.
+        CompletableFuture<AllvrCube> future = new CompletableFuture<>();
         CompletableFuture<AllvrCube> previous = pendingGenerations.putIfAbsent(key, future);
         if (previous != null) return;
+        try {
+            Future<?> handle = generationExecutor.submit(() -> {
+                try {
+                    if (future.isCancelled()) return;
+                    AllvrCube cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
+                    generator.generate(cube);
+                    cube.markQueued(cube.mutationVersion());
+                    future.complete(cube);
+                } catch (Throwable failure) {
+                    future.completeExceptionally(failure);
+                }
+            });
+            generationHandles.put(key, handle);
+            // Cancellation can win the race between submit() and publishing
+            // the handle. Reclaim a queued FutureTask immediately in that
+            // case instead of waiting for a worker to dequeue it.
+            if (future.isDone() && generationHandles.remove(key, handle)) {
+                cancelQueuedHandle(handle);
+            }
+        } catch (java.util.concurrent.RejectedExecutionException failure) {
+            pendingGenerations.remove(key, future);
+            future.completeExceptionally(failure);
+            return;
+        }
         future.whenComplete((cube, failure) -> {
-            completedGenerations.add(new GeneratedCube(key, cube, failure));
+            generationHandles.remove(key);
+            if (!closed) {
+                completedGenerations.add(new GeneratedCube(key, cube, failure));
+            }
         });
     }
 
@@ -474,8 +534,51 @@ public final class AllvrCubeMap {
         AllvrCube cube = cubes.get(key);
         if (cube != null) return cube;
         if (persistedIndex.contains(key)) return getOrGenerate(cubeX, cubeY, cubeZ);
+        // A queued build already passed the geometry ticket test. Avoid
+        // re-running that test when another player or a later scan reaches it.
+        if (pendingGenerations.containsKey(key)) return null;
+        // Match CubicChunks' geometry/ticket filter: a void cube has no
+        // server-side object or generation task. Clients already interpret a
+        // missing cube as air, so sparse island space never fills the queue.
+        Boolean intersects = islandTicketCache.get(key);
+        if (intersects == null) {
+            intersects = generator.intersectsIsland(cubeX, cubeY, cubeZ);
+            islandTicketCache.put(key, intersects);
+        }
+        if (!intersects) return null;
         requestAsyncGeneration(cubeX, cubeY, cubeZ);
         return null;
+    }
+
+    /** Mirrors CubicChunks' dropQueuedCubeLoad: abandoned shells must not burn CPU. */
+    private void cancelGenerationsOutside(List<ServerPlayer> players) {
+        for (Map.Entry<Long, CompletableFuture<AllvrCube>> entry : pendingGenerations.entrySet()) {
+            AllvrCubePos pending = AllvrCubePos.fromLong(entry.getKey());
+            boolean needed = false;
+            for (ServerPlayer player : players) {
+                AllvrCubePos center = AllvrCubePos.of(player.blockPosition());
+                if (Math.abs(pending.getX() - center.getX()) <= GEN_RADIUS
+                    && Math.abs(pending.getY() - center.getY()) <= GEN_RADIUS
+                    && Math.abs(pending.getZ() - center.getZ()) <= GEN_RADIUS) {
+                    needed = true;
+                    break;
+                }
+            }
+            if (!needed && pendingGenerations.remove(entry.getKey(), entry.getValue())) {
+                cancelGenerationHandle(entry.getKey(), entry.getValue());
+            }
+        }
+    }
+
+    private void cancelGenerationHandle(long key, CompletableFuture<?> future) {
+        Future<?> handle = generationHandles.remove(key);
+        future.cancel(true);
+        if (handle != null) cancelQueuedHandle(handle);
+    }
+
+    private void cancelQueuedHandle(Future<?> handle) {
+        handle.cancel(true);
+        if (handle instanceof Runnable runnable) generationExecutor.remove(runnable);
     }
 
     public AllvrIslandFieldGenerator generator() { return this.generator; }
@@ -548,8 +651,10 @@ public final class AllvrCubeMap {
         this.drainCompletedGenerations();
         List<ServerPlayer> players = level.players();
         if (players.isEmpty()) {
+            cancelGenerationsOutside(players);
             return;
         }
+        cancelGenerationsOutside(players);
 
         long deadline = System.nanoTime() + TICK_BUDGET_NANOS;
         boolean capReached = cubes.size() >= MAX_LOADED_CUBES;
@@ -574,6 +679,8 @@ public final class AllvrCubeMap {
                     }
                 }
                 sub.lastCube = pc;
+                sub.scanRadius = 0;
+                sub.scanIndex = 0;
             }
         }
 
@@ -585,38 +692,60 @@ public final class AllvrCubeMap {
             }
             int sentCount = 0;
             int streamRadius = Math.max(GEN_RADIUS, Math.max(sub.sendXzRadius, sub.sendYRadius));
-            genLoop:
-            for (int r = 0; r <= streamRadius; r++) {
-                for (int dy = -r; dy <= r; dy++) {
-                    for (int dx = -r; dx <= r; dx++) {
-                        for (int dz = -r; dz <= r; dz++) {
-                            if (Math.max(Math.max(Math.abs(dx), Math.abs(dy)), Math.abs(dz)) != r) {
-                                continue;
-                            }
-                            int cx = pc.getX() + dx;
-                            int cy = pc.getY() + dy;
-                            int cz = pc.getZ() + dz;
-                            long key = AllvrCubePos.asLong(cx, cy, cz);
-                            boolean inSendRange = Math.abs(dx) <= sub.sendXzRadius
-                                && Math.abs(dy) <= sub.sendYRadius
-                                && Math.abs(dz) <= sub.sendXzRadius;
-                            if (sub.sent.contains(key) || (capReached && r > 2 && !inSendRange)) {
-                                continue;
-                            }
-                            if (System.nanoTime() > deadline) {
-                                break genLoop;
-                            }
-                            AllvrCube cube = getOrRequest(cx, cy, cz);
-                            if (cube == null) {
-                                continue;
-                            }
-                            if (inSendRange && sentCount < SEND_BUDGET_PER_TICK && sub.sent.add(key)) {
-                                player.connection.send(ClientboundAllvrCubePacket.of(cube, level.registryAccess()));
-                                sentCount++;
-                            }
-                        }
+            int scanRadius = sub.scanRadius;
+            int scanIndex = sub.scanIndex;
+            if (scanRadius > streamRadius) {
+                scanRadius = 0;
+                scanIndex = 0;
+            }
+            boolean budgetStopped = false;
+            scanLoop:
+            while (scanRadius <= streamRadius) {
+                int side = scanRadius * 2 + 1;
+                int sideSquared = side * side;
+                int total = sideSquared * side;
+                while (scanIndex < total) {
+                    int index = scanIndex;
+                    int dx = index % side - scanRadius;
+                    int dy = index / side % side - scanRadius;
+                    int dz = index / sideSquared - scanRadius;
+                    if (Math.max(Math.max(Math.abs(dx), Math.abs(dy)), Math.abs(dz)) != scanRadius) {
+                        scanIndex++;
+                        continue;
+                    }
+                    if (System.nanoTime() > deadline) {
+                        budgetStopped = true;
+                        break scanLoop;
+                    }
+                    scanIndex++;
+                    int cx = pc.getX() + dx;
+                    int cy = pc.getY() + dy;
+                    int cz = pc.getZ() + dz;
+                    long key = AllvrCubePos.asLong(cx, cy, cz);
+                    boolean inSendRange = Math.abs(dx) <= sub.sendXzRadius
+                        && Math.abs(dy) <= sub.sendYRadius
+                        && Math.abs(dz) <= sub.sendXzRadius;
+                    if (sub.sent.contains(key) || (capReached && scanRadius > 2 && !inSendRange)) {
+                        continue;
+                    }
+                    AllvrCube cube = getOrRequest(cx, cy, cz);
+                    if (cube == null) {
+                        continue;
+                    }
+                    if (inSendRange && sentCount < SEND_BUDGET_PER_TICK && sub.sent.add(key)) {
+                        player.connection.send(ClientboundAllvrCubePacket.of(cube, level.registryAccess()));
+                        sentCount++;
                     }
                 }
+                scanRadius++;
+                scanIndex = 0;
+            }
+            if (budgetStopped) {
+                sub.scanRadius = scanRadius;
+                sub.scanIndex = scanIndex;
+            } else {
+                sub.scanRadius = 0;
+                sub.scanIndex = 0;
             }
 
             forgetOutOfRange(player, pc, sub);

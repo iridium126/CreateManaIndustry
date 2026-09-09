@@ -28,6 +28,14 @@ public final class AllvrIslandFieldGenerator {
         return layout.islandsForBox(x0, y0, z0, x1, y1, z1);
     }
 
+    /** Cheap geometry-only ticket filter used before queuing background work. */
+    public boolean intersectsIsland(int cubeX, int cubeY, int cubeZ) {
+        int x = com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.cubeToMinBlock(cubeX);
+        int y = com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.cubeToMinBlock(cubeY);
+        int z = com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.cubeToMinBlock(cubeZ);
+        return islandsForBox(x, y, z, x + 32, y + 32, z + 32).length != 0;
+    }
+
     public Holder<Biome> biome(int qx, int qy, int qz) {
         int x = qx * 4, y = qy * 4, z = qz * 4;
         Island[] candidates = islandsForBox(x, y, z, x + 1, y + 1, z + 1);
@@ -59,8 +67,8 @@ public final class AllvrIslandFieldGenerator {
         BlockPos.MutableBlockPos world = new BlockPos.MutableBlockPos();
         BlockPos.MutableBlockPos source = new BlockPos.MutableBlockPos();
         // A 32x32 cube touches at most four source chunks per island. Keep the
-        // resolved columns local to this pass so the synchronized terrain cache
-        // is not entered once for every block column.
+        // resolved columns local to this pass so the shared terrain cache is
+        // not queried once for every block column.
         java.util.Map<Long, AllvrTerrainSource.Column> sourceColumns = new java.util.HashMap<>();
         for (Island island : islands) for (int z = z0; z < z0 + 32; z++) for (int x = x0; x < x0 + 32; x++) {
             double bottom = island.bottom(x, z);

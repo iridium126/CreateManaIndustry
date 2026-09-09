@@ -4,6 +4,8 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -48,20 +50,11 @@ import net.minecraft.world.ticks.ProtoChunkTicks;
  */
 final class AllvrTerrainSource {
     /**
-     * A source column owns one vanilla feature origin. Neighbouring origins are
-     * generated when their own columns are requested; doing a 3x3 decoration
-     * pass for every column multiplied worldgen work by up to nine.
+     * Vanilla decoration may write into the eight neighboring source chunks.
+     * Keep the full 3x3 origin window, like CubicChunks' population stage,
+     * then apply only the writes that belong to the requested column.
      */
-    private static final int FEATURE_ORIGIN_RADIUS = 0;
-    /**
-     * Placed features are the most expensive vanilla stage, especially with
-     * large datapacks such as Terralith. Decorate one deterministic source
-     * chunk out of four; every chunk still uses the datapack biome, noise and
-     * surface rules, while trees/vegetation remain visually distributed without
-     * turning a player move into a synchronous feature flood. The period can be
-     * set to 1/2/4/8 with -Dcreatemanaindustry.allay.feature_period.
-     */
-    private static final int FEATURE_CHUNK_PERIOD = featureChunkPeriod();
+    private static final int FEATURE_ORIGIN_RADIUS = 1;
     private static final EnumSet<Heightmap.Types> HEIGHTMAPS = EnumSet.of(
         Heightmap.Types.WORLD_SURFACE_WG, Heightmap.Types.OCEAN_FLOOR_WG,
         Heightmap.Types.WORLD_SURFACE, Heightmap.Types.OCEAN_FLOOR,
@@ -76,6 +69,11 @@ final class AllvrTerrainSource {
     private final Map<Long, Stamp> stamps = boundedMap(256);
     private final Map<Long, Column> columns = boundedMap(512);
     private final Map<Long, net.minecraft.world.level.biome.BiomeGenerationSettings> carverBiomes = boundedMap(2048);
+    /** Cache maps are bounded LRU; futures provide per-coordinate request de-duplication. */
+    private final Object cacheLock = new Object();
+    private final ConcurrentHashMap<Long, CompletableFuture<Column>> baseTasks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, CompletableFuture<Stamp>> stampTasks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, CompletableFuture<Column>> columnTasks = new ConcurrentHashMap<>();
 
     AllvrTerrainSource(ServerLevel allay) {
         level = allay.getServer().overworld();
@@ -96,86 +94,87 @@ final class AllvrTerrainSource {
 
     BiomeSource biomeSource() { return generator.getBiomeSource(); }
 
-    synchronized Column surfaceColumn(int x, int z) { return base(x, z); }
+    Column surfaceColumn(int x, int z) { return base(x, z); }
 
     Holder<Biome> biome(int x, int y, int z) {
         return biomeSource().getNoiseBiome(Math.floorDiv(x, 4), Math.floorDiv(y, 4), Math.floorDiv(z, 4), random.sampler());
     }
 
-    /** Serialized cache misses also protect feature implementations with mutable state. */
-    synchronized Column column(int x, int z) {
+    /** Per-coordinate futures collapse duplicate misses without serializing unrelated chunks. */
+    Column column(int x, int z) {
         long key = ChunkPos.asLong(x, z);
-        Column cached = columns.get(key);
+        Column cached;
+        synchronized (cacheLock) { cached = columns.get(key); }
         if (cached != null) return cached;
-        Column source = base(x, z);
-        // Undecorated columns are immutable base snapshots. Returning them
-        // directly avoids a costly palette wire-copy and ProtoChunk freeze for
-        // the three out of four chunks that use the performance budget.
-        if (!shouldDecorate(x, z)) {
-            columns.put(key, source);
-            return source;
+        CompletableFuture<Column> task = new CompletableFuture<>();
+        CompletableFuture<Column> existing = columnTasks.putIfAbsent(key, task);
+        if (existing != null) return existing.join();
+        try {
+            Column source = base(x, z);
+            ProtoChunk result = copy(source);
+            // Every source origin owns an independent feature stamp. Applying
+            // the fixed origin window makes cross-chunk trees and vegetation
+            // deterministic regardless of request order or cache eviction,
+            // while keeping the vanilla/datapack feature density complete.
+            for (int ox = x - FEATURE_ORIGIN_RADIUS; ox <= x + FEATURE_ORIGIN_RADIUS; ox++)
+            for (int oz = z - FEATURE_ORIGIN_RADIUS; oz <= z + FEATURE_ORIGIN_RADIUS; oz++) {
+                Stamp stamp = stamp(ox, oz);
+                Map<BlockPos, Change> changes = stamp.chunks.get(key);
+                if (changes == null) continue;
+                changes.forEach((pos, change) -> {
+                    result.setBlockState(pos, change.state, false);
+                    result.removeBlockEntity(pos);
+                    if (change.nbt != null) result.setBlockEntityNbt(change.nbt.copy());
+                });
+            }
+            cached = freeze(result);
+            synchronized (cacheLock) { columns.put(key, cached); }
+            task.complete(cached);
+            return cached;
+        } catch (Throwable failure) {
+            task.completeExceptionally(failure);
+            throw failure;
+        } finally {
+            columnTasks.remove(key, task);
         }
-        ProtoChunk result = copy(source);
-        // Selected source origins own independent feature stamps. A source
-        // chunk is either fully decorated or fully undecorated, so cache
-        // eviction and request order cannot change its result.
-        for (int ox = x - FEATURE_ORIGIN_RADIUS; ox <= x + FEATURE_ORIGIN_RADIUS; ox++)
-        for (int oz = z - FEATURE_ORIGIN_RADIUS; oz <= z + FEATURE_ORIGIN_RADIUS; oz++) {
-            if (!shouldDecorate(ox, oz)) continue;
-            Stamp stamp = stamp(ox, oz);
-            Map<BlockPos, Change> changes = stamp.chunks.get(key);
-            if (changes == null) continue;
-            changes.forEach((pos, change) -> {
-                result.setBlockState(pos, change.state, false);
-                result.removeBlockEntity(pos);
-                if (change.nbt != null) result.setBlockEntityNbt(change.nbt.copy());
-            });
-        }
-        cached = freeze(result);
-        columns.put(key, cached);
-        return cached;
-    }
-
-    private boolean shouldDecorate(int x, int z) {
-        long hash = level.getSeed() ^ (long) x * 0x9E3779B97F4A7C15L ^ (long) z * 0xBF58476D1CE4E5B9L;
-        return (mix(hash) & (FEATURE_CHUNK_PERIOD - 1)) == 0;
-    }
-
-    private static long mix(long h) {
-        h = (h ^ (h >>> 30)) * 0xBF58476D1CE4E5B9L;
-        h = (h ^ (h >>> 27)) * 0x94D049BB133111EBL;
-        return h ^ (h >>> 31);
-    }
-
-    private static int featureChunkPeriod() {
-        int requested = Integer.getInteger("createmanaindustry.allay.feature_period", 4);
-        return requested == 1 || requested == 2 || requested == 4 || requested == 8 ? requested : 4;
     }
 
     private Column base(int x, int z) {
         long key = ChunkPos.asLong(x, z);
-        Column cached = bases.get(key);
+        Column cached;
+        synchronized (cacheLock) { cached = bases.get(key); }
         if (cached != null) return cached;
-        ProtoChunk chunk = new ProtoChunk(new ChunkPos(x, z), UpgradeData.EMPTY, height, biomes, null);
-        chunk.setPersistedStatus(ChunkStatus.NOISE);
-        var fluid = new Aquifer.FluidStatus(settings.seaLevel(), settings.defaultFluid());
-        var lava = new Aquifer.FluidStatus(-54, Blocks.LAVA.defaultBlockState());
-        NoiseChunk noiseChunk = chunk.getOrCreateNoiseChunk(c -> NoiseChunk.forChunk(c, random, EmptyBeard.INSTANCE, settings,
-            (px, py, pz) -> py < Math.min(-54, settings.seaLevel()) ? lava : fluid, Blender.empty()));
-        chunk.fillBiomesFromNoise(biomeSource(), random.sampler());
-        // Preinstalled NoiseChunk uses an empty structure beard; no real chunk IO.
-        generator.fillFromNoise(Blender.empty(), random, level.structureManager(), chunk).join();
-        Map<BlockPos, Holder<Biome>> edgeBiomes = new HashMap<>();
-        generator.buildSurface(chunk, new WorldGenerationContext(generator, height), random, level.structureManager(),
-            new BiomeManager((qx, qy, qz) -> {
-                if ((qx >> 2) == x && (qz >> 2) == z) return chunk.getNoiseBiome(qx, qy, qz);
-                return edgeBiomes.computeIfAbsent(new BlockPos(qx, qy, qz),
-                    q -> biomeSource().getNoiseBiome(q.getX(), q.getY(), q.getZ(), random.sampler()));
-            }, BiomeManager.obfuscateSeed(level.getSeed())), biomes, Blender.empty());
-        carve(chunk, noiseChunk);
-        cached = freeze(chunk);
-        bases.put(key, cached);
-        return cached;
+        CompletableFuture<Column> task = new CompletableFuture<>();
+        CompletableFuture<Column> existing = baseTasks.putIfAbsent(key, task);
+        if (existing != null) return existing.join();
+        try {
+            ProtoChunk chunk = new ProtoChunk(new ChunkPos(x, z), UpgradeData.EMPTY, height, biomes, null);
+            chunk.setPersistedStatus(ChunkStatus.NOISE);
+            var fluid = new Aquifer.FluidStatus(settings.seaLevel(), settings.defaultFluid());
+            var lava = new Aquifer.FluidStatus(-54, Blocks.LAVA.defaultBlockState());
+            NoiseChunk noiseChunk = chunk.getOrCreateNoiseChunk(c -> NoiseChunk.forChunk(c, random, EmptyBeard.INSTANCE, settings,
+                (px, py, pz) -> py < Math.min(-54, settings.seaLevel()) ? lava : fluid, Blender.empty()));
+            chunk.fillBiomesFromNoise(biomeSource(), random.sampler());
+            // Preinstalled NoiseChunk uses an empty structure beard; no real chunk IO.
+            generator.fillFromNoise(Blender.empty(), random, level.structureManager(), chunk).join();
+            Map<BlockPos, Holder<Biome>> edgeBiomes = new HashMap<>();
+            generator.buildSurface(chunk, new WorldGenerationContext(generator, height), random, level.structureManager(),
+                new BiomeManager((qx, qy, qz) -> {
+                    if ((qx >> 2) == x && (qz >> 2) == z) return chunk.getNoiseBiome(qx, qy, qz);
+                    return edgeBiomes.computeIfAbsent(new BlockPos(qx, qy, qz),
+                        q -> biomeSource().getNoiseBiome(q.getX(), q.getY(), q.getZ(), random.sampler()));
+                }, BiomeManager.obfuscateSeed(level.getSeed())), biomes, Blender.empty());
+            carve(chunk, noiseChunk);
+            cached = freeze(chunk);
+            synchronized (cacheLock) { bases.put(key, cached); }
+            task.complete(cached);
+            return cached;
+        } catch (Throwable failure) {
+            task.completeExceptionally(failure);
+            throw failure;
+        } finally {
+            baseTasks.remove(key, task);
+        }
     }
 
     /** Vanilla's radius-eight carver pass, without allocating 289 empty neighbour columns. */
@@ -190,8 +189,7 @@ final class AllvrTerrainSource {
             for (int x = chunk.getPos().x - 8; x <= chunk.getPos().x + 8; x++) {
                 for (int z = chunk.getPos().z - 8; z <= chunk.getPos().z + 8; z++) {
                     var origin = new ChunkPos(x, z);
-                    var biomeSettings = carverBiomes.computeIfAbsent(origin.toLong(), key -> generator.getBiomeGenerationSettings(
-                        biomeSource().getNoiseBiome(origin.x * 4, 0, origin.z * 4, random.sampler())));
+                    var biomeSettings = carverSettings(origin);
                     int index = 0;
                     for (var carver : biomeSettings.getCarvers(step)) {
                         rng.setLargeFeatureSeed(level.getSeed() + index++, x, z);
@@ -204,41 +202,64 @@ final class AllvrTerrainSource {
         }
     }
 
+    private net.minecraft.world.level.biome.BiomeGenerationSettings carverSettings(ChunkPos origin) {
+        long key = origin.toLong();
+        synchronized (cacheLock) {
+            var cached = carverBiomes.get(key);
+            if (cached != null) return cached;
+        }
+        var resolved = generator.getBiomeGenerationSettings(
+            biomeSource().getNoiseBiome(origin.x * 4, 0, origin.z * 4, random.sampler()));
+        synchronized (cacheLock) {
+            var cached = carverBiomes.get(key);
+            if (cached != null) return cached;
+            carverBiomes.put(key, resolved);
+            return resolved;
+        }
+    }
+
     private Stamp stamp(int x, int z) {
         long key = ChunkPos.asLong(x, z);
-        Stamp cached = stamps.get(key);
+        Stamp cached;
+        synchronized (cacheLock) { cached = stamps.get(key); }
         if (cached != null) return cached;
-        FeatureRegion region = new FeatureRegion(x, z);
-        StructureManager structures = new StructureManager(region, new WorldOptions(level.getSeed(), false, false), null);
-        generator.applyBiomeDecoration(region, region.getChunk(x, z), structures);
-        Map<Long, Map<BlockPos, Change>> changes = new HashMap<>();
-        region.writes.forEach((pos, ignored) -> {
-            ChunkAccess chunk = region.getChunk(pos);
-            BlockState state = chunk.getBlockState(pos);
-            CompoundTag nbt = state.hasBlockEntity() ? chunk.getBlockEntityNbtForSaving(pos, level.registryAccess()) : null;
-            changes.computeIfAbsent(ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4), k -> new HashMap<>())
-                .put(pos, new Change(state, nbt));
-        });
-        cached = new Stamp(changes);
-        stamps.put(key, cached);
-        return cached;
+        CompletableFuture<Stamp> task = new CompletableFuture<>();
+        CompletableFuture<Stamp> existing = stampTasks.putIfAbsent(key, task);
+        if (existing != null) return existing.join();
+        try {
+            FeatureRegion region = new FeatureRegion(x, z);
+            StructureManager structures = new StructureManager(region, new WorldOptions(level.getSeed(), false, false), null);
+            generator.applyBiomeDecoration(region, region.getChunk(x, z), structures);
+            Map<Long, Map<BlockPos, Change>> changes = new HashMap<>();
+            region.writes.forEach((pos, ignored) -> {
+                ChunkAccess chunk = region.getChunk(pos);
+                BlockState state = chunk.getBlockState(pos);
+                CompoundTag nbt = state.hasBlockEntity() ? chunk.getBlockEntityNbtForSaving(pos, level.registryAccess()) : null;
+                changes.computeIfAbsent(ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4), k -> new HashMap<>())
+                    .put(pos, new Change(state, nbt));
+            });
+            cached = new Stamp(changes);
+            synchronized (cacheLock) { stamps.put(key, cached); }
+            task.complete(cached);
+            return cached;
+        } catch (Throwable failure) {
+            task.completeExceptionally(failure);
+            throw failure;
+        } finally {
+            stampTasks.remove(key, task);
+        }
     }
 
     private ProtoChunk copy(Column column) {
         LevelChunkSection[] sections = new LevelChunkSection[column.sections.length];
-        var buffer = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
-        try {
-            for (int i = 0; i < sections.length; i++) {
-                var section = column.sections[i];
-                // In 1.21.1 PalettedContainer.copy() retains the ORIGINAL palette's
-                // resize callback. A mutable copy adding its 17th material would
-                // resize/corrupt the cached source and then overflow its own bits.
-                // A wire round trip binds every palette to the new container.
-                var states = mutableCopy(section.getStates(), buffer);
-                sections[i] = new LevelChunkSection(states, section.getBiomes());
-            }
-        } finally {
-            buffer.release();
+        for (int i = 0; i < sections.length; i++) {
+            var section = column.sections[i];
+            // State palettes are restored from immutable bytes captured by
+            // freeze(). No worker calls PalettedContainer.write() on a shared
+            // cached section, which avoids ThreadingDetector failures when
+            // cube and LOD workers copy the same source column concurrently.
+            var states = restoreStates(column.stateData[i]);
+            sections[i] = new LevelChunkSection(states, section.getBiomes());
         }
         ProtoChunk chunk = new ProtoChunk(column.pos, UpgradeData.EMPTY, sections, new ProtoChunkTicks<>(),
             new ProtoChunkTicks<>(), height, biomes, null);
@@ -259,16 +280,48 @@ final class AllvrTerrainSource {
         return copy;
     }
 
+    private static net.minecraft.world.level.chunk.PalettedContainer<BlockState> restoreStates(byte[] data) {
+        var copy = new net.minecraft.world.level.chunk.PalettedContainer<BlockState>(
+            net.minecraft.world.level.block.Block.BLOCK_STATE_REGISTRY,
+            Blocks.AIR.defaultBlockState(),
+            net.minecraft.world.level.chunk.PalettedContainer.Strategy.SECTION_STATES);
+        var buffer = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.wrappedBuffer(data));
+        try {
+            copy.read(buffer);
+            return copy;
+        } finally {
+            buffer.release();
+        }
+    }
+
     private Column freeze(ProtoChunk chunk) {
         Map<BlockPos, CompoundTag> blockEntities = new HashMap<>();
         for (BlockPos pos : chunk.getBlockEntitiesPos()) {
             CompoundTag nbt = chunk.getBlockEntityNbtForSaving(pos, level.registryAccess());
             if (nbt != null) blockEntities.put(pos.immutable(), nbt.copy());
         }
-        return new Column(chunk.getPos(), chunk.getSections(), height.getMinBuildHeight(), blockEntities);
+        return new Column(chunk.getPos(), chunk.getSections(), height.getMinBuildHeight(), blockEntities,
+            snapshotStates(chunk.getSections()));
     }
 
-    record Column(ChunkPos pos, LevelChunkSection[] sections, int minY, Map<BlockPos, CompoundTag> blockEntities) {
+    private static byte[][] snapshotStates(LevelChunkSection[] sections) {
+        byte[][] data = new byte[sections.length][];
+        var buffer = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        try {
+            for (int i = 0; i < sections.length; i++) {
+                buffer.clear();
+                sections[i].getStates().write(buffer);
+                data[i] = new byte[buffer.writerIndex()];
+                buffer.getBytes(0, data[i]);
+            }
+        } finally {
+            buffer.release();
+        }
+        return data;
+    }
+
+    record Column(ChunkPos pos, LevelChunkSection[] sections, int minY, Map<BlockPos, CompoundTag> blockEntities,
+                  byte[][] stateData) {
         BlockState block(int x, int y, int z) {
             int section = (y - minY) >> 4;
             return section < 0 || section >= sections.length ? Blocks.AIR.defaultBlockState()
