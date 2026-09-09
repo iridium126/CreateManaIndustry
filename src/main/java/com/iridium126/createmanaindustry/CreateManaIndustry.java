@@ -48,6 +48,7 @@ import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacke
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrForgetCubePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodBitmapPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodForgetPacket;
+import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodGroupPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodSectionPacket;
 import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodRequestPacket;
 import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodSubscriptionPacket;
@@ -241,6 +242,10 @@ public class CreateManaIndustry {
                 ClientboundAllvrLodSectionPacket.TYPE,
                 ClientboundAllvrLodSectionPacket.STREAM_CODEC,
                 ClientboundAllvrLodSectionPacket::handle);
+        registrar.playToClient(
+                ClientboundAllvrLodGroupPacket.TYPE,
+                ClientboundAllvrLodGroupPacket.STREAM_CODEC,
+                ClientboundAllvrLodGroupPacket::handle);
         registrar.playToServer(
                 ServerboundAllvrLodRequestPacket.TYPE,
                 ServerboundAllvrLodRequestPacket.STREAM_CODEC,

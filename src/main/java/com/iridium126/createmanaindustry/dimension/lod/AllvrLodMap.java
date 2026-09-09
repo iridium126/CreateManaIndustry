@@ -29,7 +29,7 @@ import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandFieldGenerator
 import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodBitmapPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodForgetPacket;
-import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodSectionPacket;
+import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodGroupPacket;
 import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodRequestPacket;
 
 /**
@@ -116,6 +116,11 @@ public final class AllvrLodMap {
     private record BuiltSectionPayload(int level, long cellLong, long gen, long buildId,
                                       boolean success, byte[] payload,
                                       Map<UUID, ClientTicket> requesters) {}
+
+    private record LodGroupKey(int level, int originX, int originY, int originZ) {}
+
+    private record GroupReady(int level, long cellLong, long generation,
+                              ClientTicket ticket, byte[] payload) {}
 
     /**
      * Main-thread prep state of one queued node: the live overlay captured
@@ -494,14 +499,20 @@ public final class AllvrLodMap {
      * forget, not a payload.
      */
     private void drainSectionResults(List<ServerPlayer> players) {
-        BuiltSectionPayload result;
+        Map<UUID, Map<LodGroupKey, List<GroupReady>>> grouped = new HashMap<>();
+            BuiltSectionPayload result;
         while ((result = this.sectionResults.poll()) != null) {
             Request live = this.requests[result.level()].get(result.cellLong());
-            boolean sameRequest = live != null && live.gen == result.gen()
-                && live.buildId == result.buildId();
+            // buildId==0 denotes a cache hit queued directly by onRequest;
+            // it has no entry in the in-flight map but still carries a live
+            // client ticket and must be grouped as a successful response.
+            boolean immediate = result.buildId() == 0L;
+            boolean sameRequest = (immediate && this.gens[result.level()].get(result.cellLong()) == result.gen())
+                || (live != null && live.gen == result.gen()
+                && live.buildId == result.buildId());
             boolean stale = !sameRequest;
             Map<UUID, ClientTicket> requesters;
-            if (sameRequest) {
+            if (sameRequest && !immediate) {
                 // Keep the registry entry through queueing and the worker run;
                 // remove only the exact generation that produced this result.
                 this.requests[result.level()].remove(result.cellLong());
@@ -523,13 +534,75 @@ public final class AllvrLodMap {
                     player.connection.send(ClientboundAllvrLodForgetPacket.ticketed(result.level(),
                         result.cellLong(), ticket.sessionEpoch(), ticket.requestId(), !stale));
                 } else {
-                    player.connection.send(new ClientboundAllvrLodSectionPacket(
-                        ClientboundAllvrLodSectionPacket.PROTOCOL_VERSION, ticket.sessionEpoch(),
-                        ticket.requestId(), result.level(), result.cellLong(), (int) result.gen(),
-                        result.payload()));
+                    AllvrLodPos position = AllvrLodPos.fromCellLong(result.level(), result.cellLong());
+                    int ox = Math.floorDiv(position.cellX(), ClientboundAllvrLodGroupPacket.GROUP_SIZE)
+                        * ClientboundAllvrLodGroupPacket.GROUP_SIZE;
+                    int oy = Math.floorDiv(position.cellY(), ClientboundAllvrLodGroupPacket.GROUP_SIZE)
+                        * ClientboundAllvrLodGroupPacket.GROUP_SIZE;
+                    int oz = Math.floorDiv(position.cellZ(), ClientboundAllvrLodGroupPacket.GROUP_SIZE)
+                        * ClientboundAllvrLodGroupPacket.GROUP_SIZE;
+                    LodGroupKey groupKey = new LodGroupKey(result.level(), ox, oy, oz);
+                    grouped.computeIfAbsent(uuid, ignored -> new HashMap<>())
+                        .computeIfAbsent(groupKey, ignored -> new ArrayList<>())
+                        .add(new GroupReady(result.level(), result.cellLong(), result.gen(), ticket,
+                            result.payload()));
                 }
             }
         }
+        // Match voxymp's response shape: groups are assembled after the
+        // generation pool drains, then sent in small bounded packets instead
+        // of one custom payload per LOD node.
+        for (var playerEntry : grouped.entrySet()) {
+            ServerPlayer player = findPlayer(players, playerEntry.getKey());
+            if (player == null) continue;
+            List<ClientboundAllvrLodGroupPacket.Group> packetGroups = new ArrayList<>(
+                ClientboundAllvrLodGroupPacket.MAX_GROUPS);
+            for (var groupEntry : playerEntry.getValue().entrySet()) {
+                LodGroupKey key = groupEntry.getKey();
+                List<GroupReady> ready = groupEntry.getValue();
+                int includedMask = 0;
+                List<ClientboundAllvrLodGroupPacket.Entry> entries = new ArrayList<>(ready.size());
+                for (GroupReady item : ready) {
+                    AllvrLodPos position = AllvrLodPos.fromCellLong(item.level(), item.cellLong());
+                    int local = (position.cellX() - key.originX())
+                        | ((position.cellZ() - key.originZ()) << 1)
+                        | ((position.cellY() - key.originY()) << 2);
+                    if (local < 0 || local >= ClientboundAllvrLodGroupPacket.MAX_ENTRIES_PER_GROUP) {
+                        continue;
+                    }
+                    includedMask |= 1 << local;
+                    entries.add(new ClientboundAllvrLodGroupPacket.Entry(local,
+                        item.ticket().requestId(), (int) item.generation(), item.payload()));
+                }
+                if (entries.isEmpty()) continue;
+                packetGroups.add(new ClientboundAllvrLodGroupPacket.Group(key.level(), key.originX(),
+                    key.originY(), key.originZ(), includedMask, includedMask, entries));
+                if (packetGroups.size() == ClientboundAllvrLodGroupPacket.MAX_GROUPS) {
+                    player.connection.send(new ClientboundAllvrLodGroupPacket(
+                        ClientboundAllvrLodGroupPacket.PROTOCOL_VERSION,
+                        findEpoch(playerEntry.getValue(), entries.get(0).requestId()), packetGroups));
+                    packetGroups.clear();
+                }
+            }
+            if (!packetGroups.isEmpty()) {
+                // Every group in this response belongs to the same client
+                // session.  Read the epoch from the first ticket rather than
+                // inventing a server-side session value.
+                long epoch = packetGroups.get(0).entries().isEmpty() ? 0L
+                    : findEpoch(playerEntry.getValue(), packetGroups.get(0).entries().get(0).requestId());
+                player.connection.send(new ClientboundAllvrLodGroupPacket(
+                    ClientboundAllvrLodGroupPacket.PROTOCOL_VERSION, epoch, packetGroups));
+            }
+        }
+    }
+
+    private static long findEpoch(Map<LodGroupKey, List<GroupReady>> groups, long requestId) {
+        for (List<GroupReady> ready : groups.values()) {
+            for (GroupReady item : ready) {
+                if (item.ticket().requestId() == requestId) return item.ticket().sessionEpoch();
+            }
+        }
+        return 0L;
     }
 
     private static ServerPlayer findPlayer(List<ServerPlayer> players, UUID uuid) {
@@ -576,9 +649,13 @@ public final class AllvrLodMap {
             }
             byte[] cached = this.sectionCache[lvl].get(cellLong);
             if (cached != null) {
-                player.connection.send(new ClientboundAllvrLodSectionPacket(
-                    ClientboundAllvrLodSectionPacket.PROTOCOL_VERSION, sessionEpoch, requestId,
-                    lvl, cellLong, (int) this.gens[lvl].get(cellLong), cached));
+                // Cache hits take the same grouped response path as freshly
+                // built sections.  VoxyMP batches both cases; sending a
+                // single section here would reintroduce the old packet-per-
+                // node overhead whenever a client revisits an area.
+                this.sectionResults.add(new BuiltSectionPayload(lvl, cellLong,
+                    this.gens[lvl].get(cellLong), 0L, true, cached,
+                    Map.of(player.getUUID(), new ClientTicket(sessionEpoch, requestId))));
                 continue;
             }
             if (this.requests[lvl].size() >= MAX_INFLIGHT) {

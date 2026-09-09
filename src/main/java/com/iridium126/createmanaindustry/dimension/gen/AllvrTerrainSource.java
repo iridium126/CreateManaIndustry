@@ -1,8 +1,10 @@
 package com.iridium126.createmanaindustry.dimension.gen;
 
 import java.util.EnumSet;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -100,53 +102,73 @@ final class AllvrTerrainSource {
         return biomeSource().getNoiseBiome(Math.floorDiv(x, 4), Math.floorDiv(y, 4), Math.floorDiv(z, 4), random.sampler());
     }
 
-    /** Per-coordinate futures collapse duplicate misses without serializing unrelated chunks. */
+    /** Synchronous compatibility entry point for block/LOD queries. */
     Column column(int x, int z) {
+        return columnAsync(x, z).join();
+    }
+
+    /**
+     * Vanilla-style source-column pipeline.  The noise stage is already
+     * asynchronous in {@link NoiseBasedChunkGenerator}; keep that future
+     * intact instead of blocking a terrain worker on {@code join()}.
+     */
+    CompletableFuture<Column> columnAsync(int x, int z) {
         long key = ChunkPos.asLong(x, z);
         Column cached;
         synchronized (cacheLock) { cached = columns.get(key); }
-        if (cached != null) return cached;
+        if (cached != null) return CompletableFuture.completedFuture(cached);
         CompletableFuture<Column> task = new CompletableFuture<>();
         CompletableFuture<Column> existing = columnTasks.putIfAbsent(key, task);
-        if (existing != null) return existing.join();
+        if (existing != null) return existing;
         try {
-            Column source = base(x, z);
-            ProtoChunk result = copy(source);
-            // Every source origin owns an independent feature stamp. Applying
-            // the fixed origin window makes cross-chunk trees and vegetation
-            // deterministic regardless of request order or cache eviction,
-            // while keeping the vanilla/datapack feature density complete.
+            CompletableFuture<Column> sourceFuture = baseAsync(x, z);
+            List<CompletableFuture<Stamp>> stampFutures = new ArrayList<>(9);
             for (int ox = x - FEATURE_ORIGIN_RADIUS; ox <= x + FEATURE_ORIGIN_RADIUS; ox++)
             for (int oz = z - FEATURE_ORIGIN_RADIUS; oz <= z + FEATURE_ORIGIN_RADIUS; oz++) {
-                Stamp stamp = stamp(ox, oz);
-                Map<BlockPos, Change> changes = stamp.chunks.get(key);
-                if (changes == null) continue;
-                changes.forEach((pos, change) -> {
-                    result.setBlockState(pos, change.state, false);
-                    result.removeBlockEntity(pos);
-                    if (change.nbt != null) result.setBlockEntityNbt(change.nbt.copy());
-                });
+                stampFutures.add(stampAsync(ox, oz));
             }
-            cached = freeze(result);
-            synchronized (cacheLock) { columns.put(key, cached); }
-            task.complete(cached);
-            return cached;
+            CompletableFuture.allOf(stampFutures.toArray(CompletableFuture<?>[]::new)).thenApply(ignored -> {
+                Column source = sourceFuture.join();
+                ProtoChunk result = copy(source);
+                int stampIndex = 0;
+                for (int ox = x - FEATURE_ORIGIN_RADIUS; ox <= x + FEATURE_ORIGIN_RADIUS; ox++)
+                for (int oz = z - FEATURE_ORIGIN_RADIUS; oz <= z + FEATURE_ORIGIN_RADIUS; oz++) {
+                    Stamp stamp = stampFutures.get(stampIndex++).join();
+                    Map<BlockPos, Change> changes = stamp.chunks.get(key);
+                    if (changes == null) continue;
+                    changes.forEach((pos, change) -> {
+                        result.setBlockState(pos, change.state, false);
+                        result.removeBlockEntity(pos);
+                        if (change.nbt != null) result.setBlockEntityNbt(change.nbt.copy());
+                    });
+                }
+                Column finished = freeze(result);
+                synchronized (cacheLock) { columns.put(key, finished); }
+                return finished;
+            }).whenComplete((value, failure) -> {
+                if (failure != null) task.completeExceptionally(failure);
+                else task.complete(value);
+                columnTasks.remove(key, task);
+            });
         } catch (Throwable failure) {
             task.completeExceptionally(failure);
-            throw failure;
-        } finally {
             columnTasks.remove(key, task);
         }
+        return task;
     }
 
     private Column base(int x, int z) {
+        return baseAsync(x, z).join();
+    }
+
+    private CompletableFuture<Column> baseAsync(int x, int z) {
         long key = ChunkPos.asLong(x, z);
         Column cached;
         synchronized (cacheLock) { cached = bases.get(key); }
-        if (cached != null) return cached;
+        if (cached != null) return CompletableFuture.completedFuture(cached);
         CompletableFuture<Column> task = new CompletableFuture<>();
         CompletableFuture<Column> existing = baseTasks.putIfAbsent(key, task);
-        if (existing != null) return existing.join();
+        if (existing != null) return existing;
         try {
             ProtoChunk chunk = new ProtoChunk(new ChunkPos(x, z), UpgradeData.EMPTY, height, biomes, null);
             chunk.setPersistedStatus(ChunkStatus.NOISE);
@@ -156,25 +178,28 @@ final class AllvrTerrainSource {
                 (px, py, pz) -> py < Math.min(-54, settings.seaLevel()) ? lava : fluid, Blender.empty()));
             chunk.fillBiomesFromNoise(biomeSource(), random.sampler());
             // Preinstalled NoiseChunk uses an empty structure beard; no real chunk IO.
-            generator.fillFromNoise(Blender.empty(), random, level.structureManager(), chunk).join();
-            Map<BlockPos, Holder<Biome>> edgeBiomes = new HashMap<>();
-            generator.buildSurface(chunk, new WorldGenerationContext(generator, height), random, level.structureManager(),
-                new BiomeManager((qx, qy, qz) -> {
-                    if ((qx >> 2) == x && (qz >> 2) == z) return chunk.getNoiseBiome(qx, qy, qz);
-                    return edgeBiomes.computeIfAbsent(new BlockPos(qx, qy, qz),
-                        q -> biomeSource().getNoiseBiome(q.getX(), q.getY(), q.getZ(), random.sampler()));
-                }, BiomeManager.obfuscateSeed(level.getSeed())), biomes, Blender.empty());
-            carve(chunk, noiseChunk);
-            cached = freeze(chunk);
-            synchronized (cacheLock) { bases.put(key, cached); }
-            task.complete(cached);
-            return cached;
+            generator.fillFromNoise(Blender.empty(), random, level.structureManager(), chunk).thenApply(ignored -> {
+                Map<BlockPos, Holder<Biome>> edgeBiomes = new HashMap<>();
+                generator.buildSurface(chunk, new WorldGenerationContext(generator, height), random, level.structureManager(),
+                    new BiomeManager((qx, qy, qz) -> {
+                        if ((qx >> 2) == x && (qz >> 2) == z) return chunk.getNoiseBiome(qx, qy, qz);
+                        return edgeBiomes.computeIfAbsent(new BlockPos(qx, qy, qz),
+                            q -> biomeSource().getNoiseBiome(q.getX(), q.getY(), q.getZ(), random.sampler()));
+                    }, BiomeManager.obfuscateSeed(level.getSeed())), biomes, Blender.empty());
+                carve(chunk, noiseChunk);
+                Column finished = freeze(chunk);
+                synchronized (cacheLock) { bases.put(key, finished); }
+                return finished;
+            }).whenComplete((value, failure) -> {
+                if (failure != null) task.completeExceptionally(failure);
+                else task.complete(value);
+                baseTasks.remove(key, task);
+            });
         } catch (Throwable failure) {
             task.completeExceptionally(failure);
-            throw failure;
-        } finally {
             baseTasks.remove(key, task);
         }
+        return task;
     }
 
     /** Vanilla's radius-eight carver pass, without allocating 289 empty neighbour columns. */
@@ -218,36 +243,51 @@ final class AllvrTerrainSource {
         }
     }
 
-    private Stamp stamp(int x, int z) {
+    private CompletableFuture<Stamp> stampAsync(int x, int z) {
         long key = ChunkPos.asLong(x, z);
         Stamp cached;
         synchronized (cacheLock) { cached = stamps.get(key); }
-        if (cached != null) return cached;
+        if (cached != null) return CompletableFuture.completedFuture(cached);
         CompletableFuture<Stamp> task = new CompletableFuture<>();
         CompletableFuture<Stamp> existing = stampTasks.putIfAbsent(key, task);
-        if (existing != null) return existing.join();
+        if (existing != null) return existing;
         try {
-            FeatureRegion region = new FeatureRegion(x, z);
-            StructureManager structures = new StructureManager(region, new WorldOptions(level.getSeed(), false, false), null);
-            generator.applyBiomeDecoration(region, region.getChunk(x, z), structures);
-            Map<Long, Map<BlockPos, Change>> changes = new HashMap<>();
-            region.writes.forEach((pos, ignored) -> {
-                ChunkAccess chunk = region.getChunk(pos);
-                BlockState state = chunk.getBlockState(pos);
-                CompoundTag nbt = state.hasBlockEntity() ? chunk.getBlockEntityNbtForSaving(pos, level.registryAccess()) : null;
-                changes.computeIfAbsent(ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4), k -> new HashMap<>())
-                    .put(pos, new Change(state, nbt));
+            List<CompletableFuture<Column>> dependencies = new ArrayList<>(9);
+            for (int cx = x - FEATURE_ORIGIN_RADIUS; cx <= x + FEATURE_ORIGIN_RADIUS; cx++)
+            for (int cz = z - FEATURE_ORIGIN_RADIUS; cz <= z + FEATURE_ORIGIN_RADIUS; cz++) {
+                dependencies.add(baseAsync(cx, cz));
+            }
+            CompletableFuture.allOf(dependencies.toArray(CompletableFuture<?>[]::new)).thenApply(ignored -> {
+                Map<Long, Column> sources = new HashMap<>();
+                int dependencyIndex = 0;
+                for (int cx = x - FEATURE_ORIGIN_RADIUS; cx <= x + FEATURE_ORIGIN_RADIUS; cx++)
+                for (int cz = z - FEATURE_ORIGIN_RADIUS; cz <= z + FEATURE_ORIGIN_RADIUS; cz++) {
+                    sources.put(ChunkPos.asLong(cx, cz), dependencies.get(dependencyIndex++).join());
+                }
+                FeatureRegion region = new FeatureRegion(x, z, sources);
+                StructureManager structures = new StructureManager(region, new WorldOptions(level.getSeed(), false, false), null);
+                generator.applyBiomeDecoration(region, region.getChunk(x, z), structures);
+                Map<Long, Map<BlockPos, Change>> changes = new HashMap<>();
+                region.writes.forEach((pos, ignoredWrite) -> {
+                    ChunkAccess chunk = region.getChunk(pos);
+                    BlockState state = chunk.getBlockState(pos);
+                    CompoundTag nbt = state.hasBlockEntity() ? chunk.getBlockEntityNbtForSaving(pos, level.registryAccess()) : null;
+                    changes.computeIfAbsent(ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4), k -> new HashMap<>())
+                        .put(pos, new Change(state, nbt));
+                });
+                Stamp finished = new Stamp(changes);
+                synchronized (cacheLock) { stamps.put(key, finished); }
+                return finished;
+            }).whenComplete((value, failure) -> {
+                if (failure != null) task.completeExceptionally(failure);
+                else task.complete(value);
+                stampTasks.remove(key, task);
             });
-            cached = new Stamp(changes);
-            synchronized (cacheLock) { stamps.put(key, cached); }
-            task.complete(cached);
-            return cached;
         } catch (Throwable failure) {
             task.completeExceptionally(failure);
-            throw failure;
-        } finally {
             stampTasks.remove(key, task);
         }
+        return task;
     }
 
     private ProtoChunk copy(Column column) {
@@ -357,16 +397,29 @@ final class AllvrTerrainSource {
             }, false, false);
         private final net.minecraft.util.RandomSource featureRandom;
 
-        FeatureRegion(int x, int z) {
-            this(x, z, copy(base(x, z)));
+        FeatureRegion(int x, int z, Map<Long, Column> sources) {
+            this(x, z, copy(requireSource(sources, ChunkPos.asLong(x, z))), sources);
         }
 
-        private FeatureRegion(int x, int z, ProtoChunk center) {
+        private FeatureRegion(int x, int z, ProtoChunk center, Map<Long, Column> sources) {
             super(level, null, ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.FEATURES), center);
             origin = new ChunkPos(x, z);
             workspace.put(origin.toLong(), center);
-            featureRandom = random.getOrCreateRandomFactory(net.minecraft.resources.ResourceLocation.withDefaultNamespace("worldgen_region_random"))
+            featureRandom = random.getOrCreateRandomFactory(
+                net.minecraft.resources.ResourceLocation.withDefaultNamespace("worldgen_region_random"))
                 .at(origin.getWorldPosition());
+            for (int dx = -FEATURE_ORIGIN_RADIUS; dx <= FEATURE_ORIGIN_RADIUS;
+                 dx++) for (int dz = -FEATURE_ORIGIN_RADIUS; dz <= FEATURE_ORIGIN_RADIUS; dz++) {
+                int cx = x + dx, cz = z + dz;
+                long key = ChunkPos.asLong(cx, cz);
+                workspace.computeIfAbsent(key, ignored -> copy(requireSource(sources, key)));
+            }
+        }
+
+        private static Column requireSource(Map<Long, Column> sources, long key) {
+            Column source = sources.get(key);
+            if (source == null) throw new IllegalStateException("missing feature source " + key);
+            return source;
         }
 
         @Override public ChunkAccess getChunk(int x, int z, ChunkStatus status, boolean required) {
@@ -376,7 +429,7 @@ final class AllvrTerrainSource {
             }
             return workspace.computeIfAbsent(ChunkPos.asLong(x, z), key -> copy(base(x, z)));
         }
-        @Override public boolean hasChunk(int x, int z) { return origin.getChessboardDistance(x, z) <= 1; }
+        @Override public boolean hasChunk(int x, int z) { return origin.getChessboardDistance(x, z) <= FEATURE_ORIGIN_RADIUS; }
         @Override public Holder<Biome> getUncachedNoiseBiome(int x, int y, int z) {
             return biomeSource().getNoiseBiome(x, y, z, random.sampler());
         }
@@ -388,7 +441,8 @@ final class AllvrTerrainSource {
         // a player visiting the template coordinates must not change generation.
         @Override public net.minecraft.world.level.lighting.LevelLightEngine getLightEngine() { return unlit; }
         @Override public boolean ensureCanWrite(BlockPos pos) {
-            return !height.isOutsideBuildHeight(pos) && hasChunk(pos.getX() >> 4, pos.getZ() >> 4);
+            return !height.isOutsideBuildHeight(pos)
+                && origin.getChessboardDistance(pos.getX() >> 4, pos.getZ() >> 4) <= FEATURE_ORIGIN_RADIUS;
         }
         @Override public boolean setBlock(BlockPos pos, BlockState state, int flags, int recursion) {
             if (!ensureCanWrite(pos)) return false;

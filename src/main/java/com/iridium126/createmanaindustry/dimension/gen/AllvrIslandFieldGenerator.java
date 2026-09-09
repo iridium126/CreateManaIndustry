@@ -9,6 +9,11 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.ChunkPos;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /** Datapack terrain in local island coordinates, shared by cubes and LOD. */
 public final class AllvrIslandFieldGenerator {
@@ -50,6 +55,56 @@ public final class AllvrIslandFieldGenerator {
         // transport cubes are void and can stay at their default palette.
         Island[] islands = islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
         if (islands.length == 0) return;
+        Map<Long, AllvrTerrainSource.Column> sourceColumns = new HashMap<>();
+        collectSourceColumns(islands, x0, z0, (sourceChunkX, sourceChunkZ) ->
+            sourceColumns.computeIfAbsent(ChunkPos.asLong(sourceChunkX, sourceChunkZ),
+                ignored -> terrain.column(sourceChunkX, sourceChunkZ)));
+        fillCube(cube, islands, sourceColumns);
+    }
+
+    /**
+     * Background variant used by the cube ticket pipeline.  Each vanilla
+     * source chunk owns its own asynchronous noise/surface/features chain;
+     * only the final palette copy is performed after all source columns are
+     * complete.  This mirrors ChunkStatus' fan-out/fan-in shape and avoids a
+     * worker thread waiting on nested {@code fillFromNoise().join()} calls.
+     */
+    public CompletableFuture<Void> generateAsync(AllvrCube cube) {
+        int x0 = cube.getPos().minBlockX(), y0 = cube.getPos().minBlockY(), z0 = cube.getPos().minBlockZ();
+        Island[] islands = islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
+        if (islands.length == 0) return CompletableFuture.completedFuture(null);
+        Map<Long, CompletableFuture<AllvrTerrainSource.Column>> sourceFutures = new HashMap<>();
+        collectSourceColumns(islands, x0, z0, (sourceChunkX, sourceChunkZ) ->
+            sourceFutures.computeIfAbsent(ChunkPos.asLong(sourceChunkX, sourceChunkZ),
+                ignored -> terrain.columnAsync(sourceChunkX, sourceChunkZ)));
+        CompletableFuture<?>[] dependencies = sourceFutures.values().toArray(CompletableFuture<?>[]::new);
+        return CompletableFuture.allOf(dependencies).thenRun(() -> {
+            Map<Long, AllvrTerrainSource.Column> sourceColumns = new HashMap<>(sourceFutures.size());
+            sourceFutures.forEach((key, future) -> sourceColumns.put(key, future.join()));
+            fillCube(cube, islands, sourceColumns);
+        });
+    }
+
+    @FunctionalInterface
+    private interface SourceColumnConsumer {
+        void accept(int sourceChunkX, int sourceChunkZ);
+    }
+
+    private void collectSourceColumns(Island[] islands, int x0, int z0, SourceColumnConsumer consumer) {
+        for (Island island : islands) {
+            int minChunkX = Math.floorDiv(x0 + island.sourceOffsetX(), 16);
+            int maxChunkX = Math.floorDiv(x0 + 31 + island.sourceOffsetX(), 16);
+            int minChunkZ = Math.floorDiv(z0 + island.sourceOffsetZ(), 16);
+            int maxChunkZ = Math.floorDiv(z0 + 31 + island.sourceOffsetZ(), 16);
+            for (int sourceChunkZ = minChunkZ; sourceChunkZ <= maxChunkZ; sourceChunkZ++)
+            for (int sourceChunkX = minChunkX; sourceChunkX <= maxChunkX; sourceChunkX++) {
+                consumer.accept(sourceChunkX, sourceChunkZ);
+            }
+        }
+    }
+
+    private void fillCube(AllvrCube cube, Island[] islands, Map<Long, AllvrTerrainSource.Column> sourceColumns) {
+        int x0 = cube.getPos().minBlockX(), y0 = cube.getPos().minBlockY(), z0 = cube.getPos().minBlockZ();
         for (int sy = 0; sy < 2; sy++) for (int sz = 0; sz < 2; sz++) for (int sx = 0; sx < 2; sx++) {
             int sectionX = x0 + sx * 16, sectionY = y0 + sy * 16, sectionZ = z0 + sz * 16;
             boolean intersects = false;
@@ -66,16 +121,13 @@ public final class AllvrIslandFieldGenerator {
         }
         BlockPos.MutableBlockPos world = new BlockPos.MutableBlockPos();
         BlockPos.MutableBlockPos source = new BlockPos.MutableBlockPos();
-        // A 32x32 cube touches at most four source chunks per island. Keep the
-        // resolved columns local to this pass so the shared terrain cache is
-        // not queried once for every block column.
-        java.util.Map<Long, AllvrTerrainSource.Column> sourceColumns = new java.util.HashMap<>();
         for (Island island : islands) for (int z = z0; z < z0 + 32; z++) for (int x = x0; x < x0 + 32; x++) {
             double bottom = island.bottom(x, z);
             if (bottom >= y0 + 32) continue;
             int sx = x + island.sourceOffsetX(), sz = z + island.sourceOffsetZ();
             long sourceKey = net.minecraft.world.level.ChunkPos.asLong(sx >> 4, sz >> 4);
-            var column = sourceColumns.computeIfAbsent(sourceKey, key -> terrain.column(sx >> 4, sz >> 4));
+            var column = sourceColumns.get(sourceKey);
+            if (column == null) continue;
             int from = Math.max(y0, Math.max(island.minY(), (int) Math.ceil(bottom)));
             int to = Math.min(y0 + 32, island.maxY());
             for (int y = from; y < to; y++) {
@@ -129,5 +181,44 @@ public final class AllvrIslandFieldGenerator {
             }
             return null;
         };
+    }
+
+    /**
+     * Creates a node-scoped sampler backed by vanilla source-column snapshots.
+     * Voxy's server path captures each finished vanilla chunk once and then
+     * derives all LOD samples from that snapshot.  The old LOD loop recreated
+     * a slice list for every X/Z sample and repeatedly entered
+     * {@link AllvrTerrainSource#column}; this context shares the source-column
+     * map for the entire 34x34 padded node.
+     */
+    public LodSampleContext lodContext(Island[] islands) {
+        return new LodSampleContext(islands);
+    }
+
+    public final class LodSampleContext {
+        private final Island[] islands;
+        private final java.util.Map<Long, AllvrTerrainSource.Column> columns = new java.util.HashMap<>();
+
+        private LodSampleContext(Island[] islands) {
+            this.islands = islands;
+        }
+
+        public BlockState sample(int x, int y, int z) {
+            for (Island island : islands) {
+                if (!island.contains(x, y, z)) continue;
+                int sx = x + island.sourceOffsetX();
+                int sz = z + island.sourceOffsetZ();
+                long key = ChunkPos.asLong(sx >> 4, sz >> 4);
+                AllvrTerrainSource.Column column = columns.computeIfAbsent(key,
+                    ignored -> terrain.column(sx >> 4, sz >> 4));
+                BlockState state = column.block(sx, y - island.offsetY(), sz);
+                if (!state.isAir()) return state;
+            }
+            return null;
+        }
+
+        public int cachedColumnCount() {
+            return columns.size();
+        }
     }
 }

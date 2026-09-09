@@ -240,12 +240,17 @@ public final class AllvrLodSnapshot {
             applyOverlay(states, occludes);
             return;
         }
+        // Build one node-scoped source-chunk cache.  Every sample below is
+        // derived from a finished vanilla source column, matching Voxy's
+        // chunk-snapshot path and avoiding a new slice list/cache lookup for
+        // every X/Z sample.
+        AllvrIslandFieldGenerator.LodSampleContext sourceColumns =
+            generator.lodContext(this.islands);
         for (int z = -1; z <= 32; z++) for (int x = -1; x <= 32; x++) {
             int wx = minBx + x * stride + stride / 2;
             int wz = minBz + z * stride + stride / 2;
-            var column = generator.columnSampler(wx, wz, minBy - stride, minBy + 33 * stride, islands);
             for (int y = -1; y <= 32; y++) {
-                BlockState state = column.apply(minBy + y * stride + stride / 2);
+                BlockState state = sourceColumns.sample(wx, minBy + y * stride + stride / 2, wz);
                 if (state != null) {
                     int index = AllvrMesher.paddedIndex(x, y, z);
                     states[index] = state;

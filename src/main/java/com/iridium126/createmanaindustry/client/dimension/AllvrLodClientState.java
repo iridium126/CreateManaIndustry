@@ -20,6 +20,7 @@ import com.iridium126.createmanaindustry.dimension.lod.AllvrLodSectionCodec;
 import com.iridium126.createmanaindustry.dimension.lod.AllvrLodSectionData;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodBitmapPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodForgetPacket;
+import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodGroupPacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodSectionPacket;
 import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodRequestPacket;
 
@@ -185,6 +186,39 @@ public final class AllvrLodClientState {
             mc.level.getBiome(center);
         if (AllvrLodBackendManager.apply(data, biome)) {
             resident[lvl].add(packet.cellLong());
+        }
+    }
+
+    /** Applies a VoxyMP-style grouped response through the existing ticketed
+     * section boundary.  Group transport is deliberately decoded before the
+     * backend sees anything, so stale cells retain the same request/epoch
+     * checks as single-section responses. */
+    public static void applyGroup(ClientboundAllvrLodGroupPacket packet) {
+        if (!inDimension() || packet.protocolVersion() != ClientboundAllvrLodGroupPacket.PROTOCOL_VERSION) {
+            return;
+        }
+        for (ClientboundAllvrLodGroupPacket.Group group : packet.groups()) {
+            if (group.level() < 0 || group.level() > AllvrLodPos.MAX_LEVEL
+                || group.includedMask() == 0) {
+                continue;
+            }
+            int expected = Integer.bitCount(group.includedMask());
+            if (expected != group.entries().size()) {
+                CreateManaIndustry.LOGGER.warn("[Allvr] malformed LOD group mask at ({},{},{})",
+                    group.originX(), group.originY(), group.originZ());
+                continue;
+            }
+            for (ClientboundAllvrLodGroupPacket.Entry entry : group.entries()) {
+                int local = entry.localIndex();
+                int x = group.originX() + (local & 1);
+                int z = group.originZ() + ((local >>> 1) & 1);
+                int y = group.originY() + ((local >>> 2) & 1);
+                long cellLong = AllvrCubePos.asLong(x, y, z);
+                applySection(new ClientboundAllvrLodSectionPacket(
+                    ClientboundAllvrLodSectionPacket.PROTOCOL_VERSION,
+                    packet.sessionEpoch(), entry.requestId(), group.level(), cellLong,
+                    entry.generation(), entry.payload()));
+            }
         }
     }
 

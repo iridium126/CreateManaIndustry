@@ -501,7 +501,12 @@ public final class AllvrCubeMap {
                 try {
                     if (future.isCancelled()) return;
                     AllvrCube cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
-                    generator.generate(cube);
+                    // Hold this bounded worker until the complete vanilla
+                    // source-column fan-out finishes.  The individual noise
+                    // stages remain asynchronous, but returning here early
+                    // would let 256 queued cubes flood the global worldgen
+                    // executor and defeat ticket backpressure.
+                    generator.generateAsync(cube).join();
                     cube.markQueued(cube.mutationVersion());
                     future.complete(cube);
                 } catch (Throwable failure) {
