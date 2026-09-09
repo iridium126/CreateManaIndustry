@@ -151,7 +151,7 @@ public final class AllvrLodMap {
     public AllvrLodMap(ServerLevel level, AllvrCubeMap cubeMap) {
         this.level = level;
         this.cubeMap = cubeMap;
-        this.generator = new AllvrIslandFieldGenerator(level.getSeed());
+        this.generator = cubeMap.generator();
         this.field = new AllvrLodField(this.generator);
         for (int i = 0; i < 4; i++) {
             this.requests[i] = new Long2ObjectOpenHashMap<>();
@@ -468,6 +468,8 @@ public final class AllvrLodMap {
             snapshot.fill(states, occludes);
             AllvrLodSectionData data = AllvrLodSectionData.build(
                 level, cellLong, gen, states, occludes, snapshot.light());
+            if (data != null) data = data.withBiomes(snapshot.biomeIds(
+                this.level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.BIOME)));
             payload = data == null ? ALL_AIR_PAYLOAD : AllvrLodSectionCodec.encode(data);
         } catch (Throwable t) {
             CreateManaIndustry.LOGGER.error("[Allvr] LOD section build failed on {} — client re-requests",

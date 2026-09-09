@@ -1,312 +1,107 @@
 package com.iridium126.createmanaindustry.dimension.gen;
 
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.chunk.LevelChunkSection;
-
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
-import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
+import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandLayout.Island;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
 
-/**
- * Deterministic island-archipelago terrain for the allay dimension.
- * <p>
- * The world is a 3D lattice of large floating islands: each lattice cell
- * (XZ spacing ~2816, Y spacing ~512, odd layers offset by half a cell on both
- * horizontal axes) hosts exactly one island of ~2000×2000 blocks footprint and
- * ~200 blocks thickness, positioned/sized by a seed-stable hash. There is no
- * structure or feature stage and no caves — generation is a single pass over
- * the cube's 32³ voxels evaluating a union-of-rounded-boxes density field with
- * FBM-jagged edges. Determinism (same seed → same world) is load-bearing while
- * the dimension is in-memory only (roadmap phases 1–5 regenerate on restart).
- * <p>
- * Island interiors evaluate with cheap AABB/p-norm math only; the edge FBM is
- * reserved for the narrow shell band, keeping a full 32³ cube in the
- * microsecond-to-low-millisecond range.
- */
+/** Datapack terrain in local island coordinates, shared by cubes and LOD. */
 public final class AllvrIslandFieldGenerator {
+    private final ServerLevel level;
+    private final AllvrTerrainSource terrain;
+    private final AllvrIslandLayout layout;
 
-    /** Horizontal lattice spacing (88 cubes). Island footprint ≈ 2000 blocks. */
-    private static final int SPACING_XZ = 2816;
-    /** Vertical lattice spacing (16 cubes). Island thickness ≈ 200 blocks. */
-    private static final int SPACING_Y = 512;
-
-    /** Island half-width range (footprint 1360..2240 blocks). */
-    private static final double HALF_WIDTH_MIN = 680.0;
-    private static final double HALF_WIDTH_SPAN = 440.0;
-    /** Island half-thickness range (thickness 120..280 blocks). */
-    private static final double HALF_HEIGHT_MIN = 60.0;
-    private static final double HALF_HEIGHT_SPAN = 80.0;
-    /** Center jitter within the cell, keeps islands from touching. */
-    private static final double JITTER_XZ = 200.0;
-    private static final double JITTER_Y = 80.0;
-
-    /**
-     * Edge-noise amplitude in normalized box space — multiplied by half-width
-     * it yields ±50..100 block jaggedness on the silhouette.
-     */
-    private static final double EDGE_NOISE = 0.06;
-    /** Blocks beyond the max island extent that a candidate island can influence. */
-    private static final double INFLUENCE_MARGIN = HALF_WIDTH_MIN + HALF_WIDTH_SPAN + JITTER_XZ
-        + EDGE_NOISE * (HALF_WIDTH_MIN + HALF_WIDTH_SPAN) + 16;
-
-    /** Superellipse exponent — 8 reads as a box with rounded corners. */
-    private static final int SHAPE_EXPONENT = 8;
-
-    /** FBM jag bound in d-units (evaluate adds {@code fbm2 · EDGE_NOISE} within
-     *  {@code |d| < 2·EDGE_NOISE} of the ideal surface). Public: the LOD
-     *  classifiers size their q thresholds from it (doc §13 4c). */
-    public static final double EDGE_JAG = EDGE_NOISE;
-
-    /** Depth under the surface that counts as grass / dirt before stone. */
-    private static final double GRASS_BAND = 0.05;
-    private static final double DIRT_BAND = 0.22;
-
-    private static final BlockState STONE = Blocks.STONE.defaultBlockState();
-    private static final BlockState DIRT = Blocks.DIRT.defaultBlockState();
-    private static final BlockState GRASS_BLOCK = Blocks.GRASS_BLOCK.defaultBlockState();
-
-    private final long seed;
-
-    public AllvrIslandFieldGenerator(long seed) {
-        this.seed = seed;
+    public AllvrIslandFieldGenerator(ServerLevel level) {
+        this.level = level;
+        this.terrain = new AllvrTerrainSource(level);
+        var settings = terrain.settings;
+        this.layout = new AllvrIslandLayout(level.getSeed(), settings.noiseSettings().minY(),
+            settings.noiseSettings().height(), settings.seaLevel());
     }
 
-    /**
-     * Fills the cube's 8 sections from the density field. Air voxels are
-     * skipped (sections already default to air).
-     */
+    public Island[] islandsForBox(int x0, int y0, int z0, int x1, int y1, int z1) {
+        return layout.islandsForBox(x0, y0, z0, x1, y1, z1);
+    }
+
+    public Holder<Biome> biome(int qx, int qy, int qz) {
+        int x = qx * 4, y = qy * 4, z = qz * 4;
+        Island[] candidates = islandsForBox(x, y, z, x + 1, y + 1, z + 1);
+        Island island = candidates.length == 0 ? layout.nearest(x, y, z) : candidates[0];
+        return terrain.biome(x + island.sourceOffsetX(), y - island.offsetY(), z + island.sourceOffsetZ());
+    }
+
     public void generate(AllvrCube cube) {
-        AllvrCubePos cpos = cube.getPos();
-        int x0 = cpos.minBlockX();
-        int y0 = cpos.minBlockY();
-        int z0 = cpos.minBlockZ();
-
-        Island[] islands = collectIslands(x0, y0, z0);
-        if (islands.length == 0) {
-            return;
+        int x0 = cube.getPos().minBlockX(), y0 = cube.getPos().minBlockY(), z0 = cube.getPos().minBlockZ();
+        for (int sy = 0; sy < 2; sy++) for (int sz = 0; sz < 2; sz++) for (int sx = 0; sx < 2; sx++) {
+            cube.getSections()[AllvrCube.sliceIndex(sx, sy, sz)].fillBiomesFromNoise(
+                (qx, qy, qz, sampler) -> biome(qx, qy, qz), terrain.random.sampler(),
+                (x0 >> 2) + sx * 4, (y0 >> 2) + sy * 4, (z0 >> 2) + sz * 4);
         }
-
-        // fills the cube's 2×2×2 section slices (16³ each) — the slice index
-        // convention is AllvrCube.sliceIndex (Y-major); each slice evaluates
-        // only its own 16³ world AABB, keeping the per-cube field cost at 32³
-        for (int ssy = 0; ssy < 2; ssy++) {
-            for (int ssz = 0; ssz < 2; ssz++) {
-                for (int ssx = 0; ssx < 2; ssx++) {
-                    LevelChunkSection section = cube.getSections()[AllvrCube.sliceIndex(ssx, ssy, ssz)];
-                    for (int ly = 0; ly < 16; ly++) {
-                        int wy = y0 + (ssy << 4) + ly;
-                        for (int lz = 0; lz < 16; lz++) {
-                            int wz = z0 + (ssz << 4) + lz;
-                            for (int lx = 0; lx < 16; lx++) {
-                                int wx = x0 + (ssx << 4) + lx;
-                                BlockState state = evaluate(wx, wy, wz, islands);
-                                if (state != null) {
-                                    section.setBlockState(lx, ly, lz, state, false);
-                                }
-                            }
-                        }
+        Island[] islands = islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
+        BlockPos.MutableBlockPos world = new BlockPos.MutableBlockPos();
+        BlockPos.MutableBlockPos source = new BlockPos.MutableBlockPos();
+        for (Island island : islands) for (int z = z0; z < z0 + 32; z++) for (int x = x0; x < x0 + 32; x++) {
+            double bottom = island.bottom(x, z);
+            if (bottom >= y0 + 32) continue;
+            int sx = x + island.sourceOffsetX(), sz = z + island.sourceOffsetZ();
+            var column = terrain.column(sx >> 4, sz >> 4);
+            int from = Math.max(y0, Math.max(island.minY(), (int) Math.ceil(bottom)));
+            int to = Math.min(y0 + 32, island.maxY());
+            for (int y = from; y < to; y++) {
+                int sourceY = y - island.offsetY();
+                BlockState state = column.block(sx, sourceY, sz);
+                if (state.isAir()) continue;
+                var section = cube.getSections()[AllvrCube.sliceIndex((x - x0) >> 4, (y - y0) >> 4, (z - z0) >> 4)];
+                section.setBlockState(x & 15, y & 15, z & 15, state, false);
+                if (state.hasBlockEntity()) {
+                    world.set(x, y, z);
+                    CompoundTag nbt = column.blockEntities().get(source.set(sx, sourceY, sz));
+                    BlockEntity entity = null;
+                    if (nbt != null && !"DUMMY".equals(nbt.getString("id"))) {
+                        nbt = nbt.copy();
+                        nbt.putInt("x", x); nbt.putInt("y", y); nbt.putInt("z", z);
+                        entity = BlockEntity.loadStatic(world.immutable(), state, nbt, level.registryAccess());
                     }
+                    if (entity != null) cube.installBlockEntity(entity);
+                    else cube.updateBlockEntity(level, world.immutable(), state);
                 }
             }
         }
     }
 
-    /** Islands whose influence overlaps the cube AABB (at most ~27 candidates). */
-    private Island[] collectIslands(int x0, int y0, int z0) {
-        return islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
-    }
-
-    /**
-     * Islands whose influence (surface + FBM jag + jitter reach) can overlap
-     * the block AABB {@code [min, max)} — the LOD bitmap and snapshot builders
-     * use this with node-sized boxes (doc §13 4c).
-     */
-    public Island[] islandsForBox(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
-        int cx0 = Math.floorDiv(minX - (int) INFLUENCE_MARGIN, SPACING_XZ);
-        int cx1 = Math.floorDiv(maxX - 1 + (int) INFLUENCE_MARGIN, SPACING_XZ);
-        int cy0 = Math.floorDiv(minY - (int) INFLUENCE_MARGIN, SPACING_Y);
-        int cy1 = Math.floorDiv(maxY - 1 + (int) INFLUENCE_MARGIN, SPACING_Y);
-        int cz0 = Math.floorDiv(minZ - (int) INFLUENCE_MARGIN, SPACING_XZ);
-        int cz1 = Math.floorDiv(maxZ - 1 + (int) INFLUENCE_MARGIN, SPACING_XZ);
-
-        Island[] out = new Island[(cx1 - cx0 + 1) * (cy1 - cy0 + 1) * (cz1 - cz0 + 1)];
-        int n = 0;
-        for (int cx = cx0; cx <= cx1; cx++) {
-            for (int cy = cy0; cy <= cy1; cy++) {
-                for (int cz = cz0; cz <= cz1; cz++) {
-                    out[n++] = islandAt(cx, cy, cz);
-                }
-            }
-        }
-        return out;
-    }
-
-    /** Seed-stable island parameters for a lattice cell. */
-    public Island islandAt(int cellX, int cellY, int cellZ) {
-        long h = mix(seed
-            ^ cellX * 0x9E3779B97F4A7C15L
-            ^ cellY * 0xBF58476D1CE4E5B9L
-            ^ cellZ * 0x94D049BB133111EBL);
-
-        double halfWidth = HALF_WIDTH_MIN + HALF_WIDTH_SPAN * frac(h);
-        double halfHeight = HALF_HEIGHT_MIN + HALF_HEIGHT_SPAN * frac(h >>> 21);
-        double jitterX = (frac(h >>> 42) * 2.0 - 1.0) * JITTER_XZ;
-        double jitterY = (frac(mix(h ^ 0x165667B19E3779F9L)) * 2.0 - 1.0) * JITTER_Y;
-        double jitterZ = (frac(mix(h ^ 0x27D4EB2F165667C5L)) * 2.0 - 1.0) * JITTER_XZ;
-
-        // odd vertical layers shift half a cell on both horizontal axes, so
-        // consecutive layers never stack column-aligned and gaps leak skylight
-        double layerOffsetX = ((cellY & 1) != 0) ? SPACING_XZ * 0.5 : 0.0;
-        double layerOffsetZ = ((cellY & 1) != 0) ? SPACING_XZ * 0.5 : 0.0;
-
-        double cx = cellX * (double) SPACING_XZ + SPACING_XZ * 0.5 + jitterX + layerOffsetX;
-        double cy = cellY * (double) SPACING_Y + jitterY;
-        double cz = cellZ * (double) SPACING_XZ + SPACING_XZ * 0.5 + jitterZ + layerOffsetZ;
-
-        return new Island(cx, cy, cz, halfWidth, halfHeight, h);
-    }
-
-    /**
-     * Pure superellipse gauge² term for one island at a world point — the
-     * {@code q} of {@code d = q^(1/8) − 1} with NO FBM and NO pow (doc §13 4c:
-     * the LOD bitmap/snapshot classifiers compare q directly against
-     * precomputed per-level thresholds, since FBM only applies within
-     * {@code |d| < EDGE_NOISE·2}, i.e. {@code q ∈ ((1−2·EDGE)⁸, (1+2·EDGE)⁸)}).
-     */
-    public static double gaugeQ(Island island, double wx, double wy, double wz) {
-        double nx = Math.abs(wx - island.cx) / island.halfWidth;
-        double ny = Math.abs(wy - island.cy) / island.halfHeight;
-        double nz = Math.abs(wz - island.cz) / island.halfWidth;
-        double a = nx * nx;
-        double b = ny * ny;
-        double c = nz * nz;
-        double a4 = a * a;
-        double b4 = b * b;
-        double c4 = c * c;
-        return a4 * a4 + b4 * b4 + c4 * c4;
-    }
-
-    /**
-     * Solid material for a world voxel, or {@code null} for air. Interior
-     * voxels skip the edge FBM entirely. Public for the server LOD snapshot
-     * builder, which routes only FBM-band cells here (the q-only fast path
-     * covers the rest).
-     */
-    public BlockState evaluate(int wx, int wy, int wz, Island[] islands) {
-        double bestDepth = 0.0;
-        boolean solid = false;
+    /** LOD shares complete decorated columns, including features that change the silhouette. */
+    public BlockState evaluate(int x, int y, int z, Island[] islands) {
         for (Island island : islands) {
-            double ax = Math.abs(wx - island.cx);
-            if (ax > island.halfWidth + 96) {
-                continue;
-            }
-            double ay = Math.abs(wy - island.cy);
-            if (ay > island.halfHeight + 96) {
-                continue;
-            }
-            double az = Math.abs(wz - island.cz);
-            if (az > island.halfWidth + 96) {
-                continue;
-            }
-
-            double nx = ax / island.halfWidth;
-            double ny = ay / island.halfHeight;
-            double nz = az / island.halfWidth;
-
-            // superellipse (p=8) rounded box, d < 0 inside
-            double a = nx * nx;
-            double b = ny * ny;
-            double c = nz * nz;
-            double a4 = a * a;
-            double b4 = b * b;
-            double c4 = c * c;
-            double q = a4 * a4 + b4 * b4 + c4 * c4;
-            double d = Math.pow(q, 1.0 / SHAPE_EXPONENT) - 1.0;
-
-            // jagged edge: only the narrow shell band pays for the FBM
-            if (d > -EDGE_NOISE * 2.0 && d < EDGE_NOISE * 2.0) {
-                d += fbm2(wx, wy, wz, island.hash) * EDGE_NOISE;
-            }
-
-            if (d < 0.0) {
-                solid = true;
-                double depth = -d;
-                if (depth > bestDepth) {
-                    bestDepth = depth;
-                }
-            }
+            if (!island.contains(x, y, z)) continue;
+            int sx = x + island.sourceOffsetX(), sz = z + island.sourceOffsetZ();
+            BlockState state = terrain.column(sx >> 4, sz >> 4).block(sx, y - island.offsetY(), sz);
+            if (!state.isAir()) return state;
         }
+        return null;
+    }
 
-        if (!solid) {
+    /** Resolve caches once per XZ sample, not once per voxel in the LOD hot loop. */
+    public java.util.function.IntFunction<BlockState> columnSampler(int x, int z, int minY, int maxY, Island[] islands) {
+        record Slice(Island island, AllvrTerrainSource.Column column, double bottom, int x, int z) {}
+        java.util.List<Slice> slices = new java.util.ArrayList<>();
+        for (Island island : islands) {
+            double bottom = island.bottom(x, z);
+            if (bottom >= maxY || island.maxY() <= minY || island.minY() >= maxY) continue;
+            int sx = x + island.sourceOffsetX(), sz = z + island.sourceOffsetZ();
+            slices.add(new Slice(island, terrain.column(sx >> 4, sz >> 4), bottom, sx, sz));
+        }
+        return y -> {
+            for (Slice slice : slices) {
+                if (y < slice.bottom || y < slice.island.minY() || y >= slice.island.maxY()) continue;
+                BlockState state = slice.column.block(slice.x, y - slice.island.offsetY(), slice.z);
+                if (!state.isAir()) return state;
+            }
             return null;
-        }
-        if (bestDepth < GRASS_BAND) {
-            return GRASS_BLOCK;
-        }
-        if (bestDepth < DIRT_BAND) {
-            return DIRT;
-        }
-        return STONE;
-    }
-
-    /** Two octaves of value noise in [-1, 1]-ish, seed-stable per island. */
-    private static double fbm2(int x, int y, int z, long islandHash) {
-        double n = valueNoise(x * 0.020, y * 0.030, z * 0.020, islandHash)
-            + 0.5 * valueNoise(x * 0.043, y * 0.061, z * 0.043, islandHash ^ 0x2545F4914F6CDD1DL);
-        return n / 1.5;
-    }
-
-    /** Trilinear value noise; lattice corners hash to [-1, 1]. */
-    private static double valueNoise(double x, double y, double z, long hashSeed) {
-        int x0 = (int) Math.floor(x);
-        int y0 = (int) Math.floor(y);
-        int z0 = (int) Math.floor(z);
-        double xf = x - x0;
-        double yf = y - y0;
-        double zf = z - z0;
-        double u = xf * xf * (3.0 - 2.0 * xf);
-        double v = yf * yf * (3.0 - 2.0 * yf);
-        double w = zf * zf * (3.0 - 2.0 * zf);
-
-        double c000 = corner(x0, y0, z0, hashSeed);
-        double c100 = corner(x0 + 1, y0, z0, hashSeed);
-        double c010 = corner(x0, y0 + 1, z0, hashSeed);
-        double c110 = corner(x0 + 1, y0 + 1, z0, hashSeed);
-        double c001 = corner(x0, y0, z0 + 1, hashSeed);
-        double c101 = corner(x0 + 1, y0, z0 + 1, hashSeed);
-        double c011 = corner(x0, y0 + 1, z0 + 1, hashSeed);
-        double c111 = corner(x0 + 1, y0 + 1, z0 + 1, hashSeed);
-
-        double x00 = c000 + (c100 - c000) * u;
-        double x10 = c010 + (c110 - c010) * u;
-        double x01 = c001 + (c101 - c001) * u;
-        double x11 = c011 + (c111 - c011) * u;
-        double y0v = x00 + (x10 - x00) * v;
-        double y1v = x01 + (x11 - x01) * v;
-        return y0v + (y1v - y0v) * w;
-    }
-
-    private static double corner(int x, int y, int z, long hashSeed) {
-        long h = mix(hashSeed
-            ^ x * 0x9E3779B97F4A7C15L
-            ^ y * 0xC2B2AE3D27D4EB4FL
-            ^ z * 0x165667B19E3779F9L);
-        return frac(h) * 2.0 - 1.0;
-    }
-
-    private static long mix(long h) {
-        h ^= h >>> 33;
-        h *= 0xFF51AFD7ED558CCDL;
-        h ^= h >>> 33;
-        h *= 0xC4CEB9FE1A85EC53L;
-        h ^= h >>> 33;
-        return h;
-    }
-
-    private static double frac(long h) {
-        return (h >>> 11) * 0x1.0p-53;
-    }
-
-    public record Island(double cx, double cy, double cz, double halfWidth, double halfHeight, long hash) {
+        };
     }
 }

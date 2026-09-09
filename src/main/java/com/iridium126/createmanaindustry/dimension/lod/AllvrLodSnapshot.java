@@ -4,13 +4,12 @@ import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrOverlaySource;
 import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandFieldGenerator;
-import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandFieldGenerator.Island;
+import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandLayout.Island;
 import com.iridium126.createmanaindustry.dimension.mesh.AllvrMeshLight;
 import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
 
@@ -20,17 +19,10 @@ import java.util.List;
  * Builds the 34³ mesher snapshot for one LOD node from the island density
  * field plus player-edit overlay (doc §13 4c) — the server-side VoxelSource.
  * <p>
- * Classification is q-domain and pow-free. The true field is
- * {@code d = gauge + fbm·JAG} with FBM confined to {@code |gauge| < 2·JAG},
- * so {@code gauge < −JAG ⇒ solid} and {@code gauge > +JAG ⇒ air} hold
- * regardless of FBM; the remaining gauge shell routes through the generator's
- * own {@code evaluate} (full FBM + union + material bands). Material in the
- * q-only path needs no pow either — the depth bands translate to q thresholds,
- * and grass is impossible there because its band lies inside the FBM shell. A
- * 2×2×2 snapshot-cell group whose center classifies uniformly (every island
- * deeply solid or deeply air after the group's gauge-extent margin) fills its
- * 8 cells without per-cell work — the expected ≥70% evaluation cut of
- * grilling Q5.
+ * Samples the datapack's noise and surface columns. A geometric bound can
+ * reject void, but must never assert solid: arbitrary density functions may
+ * carve caves or overhangs anywhere inside an island. Decorated columns are
+ * shared with near cubes so terrain features have the same silhouette.
  * <p>
  * The overlay (captured on the server thread at enqueue time — see
  * {@link #capture}) overrides cells with real blocks from EDITED loaded
@@ -50,26 +42,9 @@ public final class AllvrLodSnapshot {
     public static final com.iridium126.createmanaindustry.dimension.mesh.AllvrMeshCodec SERVER_CODEC =
         state -> AllvrMesher.occludesAt(state) != 0 ? net.minecraft.world.level.block.Block.getId(state) : 0;
 
-    /** FBM application band in q: |gauge| < 2·JAG ⟺ q ∈ (BAND_LO, BAND_HI). */
-    private static final double BAND_LO_Q = Math.pow(1.0 - 2.0 * AllvrIslandFieldGenerator.EDGE_JAG, 8.0);
-    private static final double BAND_HI_Q = Math.pow(1.0 + 2.0 * AllvrIslandFieldGenerator.EDGE_JAG, 8.0);
-    /** Depth 0.22 (dirt/stone boundary) as a q threshold: depth < 0.22 ⟺ q > 0.78⁸. */
-    private static final double DIRT_Q = Math.pow(0.78, 8.0);
-    /** Worst-case presence check for the sky column samples: gauge < +JAG ⇒
-     *  possibly inside the island shell ⇒ block the sky conservatively. */
-    private static final double PRESENCE_Q = Math.pow(1.0 + AllvrIslandFieldGenerator.EDGE_JAG, 8.0);
-
-    private static final double GAUGE_GRADIENT = 2.0e-3;
-    private static final BlockState STONE = Blocks.STONE.defaultBlockState();
-    private static final BlockState DIRT = Blocks.DIRT.defaultBlockState();
-
     private final AllvrIslandFieldGenerator generator;
     private final AllvrLodPos pos;
     private final Island[] islands;
-    private final double cellSolidQ;
-    private final double cellAirQ;
-    private final double groupSolidQ;
-    private final double groupAirQ;
     private final Overlay overlay;
     /** The occluder array fill() was given — the light's column scan reads it. */
     private byte[] occludes;
@@ -79,13 +54,6 @@ public final class AllvrLodSnapshot {
         this.pos = pos;
         this.overlay = overlay;
         int stride = pos.stride();
-        double cellExt = GAUGE_GRADIENT * stride * Math.sqrt(3.0);
-        double groupExt = GAUGE_GRADIENT * 2.0 * stride * Math.sqrt(3.0);
-        double jag = AllvrIslandFieldGenerator.EDGE_JAG;
-        this.cellSolidQ = Math.pow(1.0 - jag - cellExt, 8.0);
-        this.cellAirQ = Math.pow(1.0 + jag + cellExt, 8.0);
-        this.groupSolidQ = Math.pow(1.0 - jag - groupExt, 8.0);
-        this.groupAirQ = Math.pow(1.0 + jag + groupExt, 8.0);
         int minBx = pos.minBlockX();
         int minBy = pos.minBlockY();
         int minBz = pos.minBlockZ();
@@ -96,6 +64,19 @@ public final class AllvrLodSnapshot {
 
     public static AllvrLodSnapshot create(AllvrIslandFieldGenerator generator, AllvrLodPos pos, Overlay overlay) {
         return new AllvrLodSnapshot(generator, pos, overlay);
+    }
+
+    public int[] biomeIds(net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> registry) {
+        int[] ids = new int[AllvrLodSectionData.CELLS];
+        java.util.Map<BlockPos, Integer> sampled = new java.util.HashMap<>();
+        int stride = pos.stride();
+        for (int y = 0; y < 32; y++) for (int z = 0; z < 32; z++) for (int x = 0; x < 32; x++) {
+            BlockPos quart = new BlockPos((pos.minBlockX() + x * stride + stride / 2) >> 2,
+                (pos.minBlockY() + y * stride + stride / 2) >> 2, (pos.minBlockZ() + z * stride + stride / 2) >> 2);
+            ids[AllvrLodSectionData.cellIndex(x, y, z)] = sampled.computeIfAbsent(quart,
+                q -> registry.getId(generator.biome(q.getX(), q.getY(), q.getZ()).value()));
+        }
+        return ids;
     }
 
     /**
@@ -180,19 +161,21 @@ public final class AllvrLodSnapshot {
                     int wy0 = minBy + (ly << pos.level());
                     int wz0 = minBz + (lz << pos.level());
                     BlockState found = null;
+                    BlockState fallback = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
                     for (int dy = 0; dy < stride && found == null; dy++) {
                         for (int dz = 0; dz < stride && found == null; dz++) {
                             for (int dx = 0; dx < stride && found == null; dx++) {
                     BlockState s = source.getBlockState(cursor.set(wx0 + dx, wy0 + dy, wz0 + dz));
+                    if (fallback.isAir() && !s.isAir()) fallback = s;
                     if (AllvrMesher.occludesAt(s) != 0) {
                         found = s;
                     }
                             }
                         }
                     }
-                    if (found != null) {
-                        cells.put(AllvrMesher.paddedIndex(lx, ly, lz), found);
-                    }
+                    // Empty edits must also override procedural terrain. Preserve
+                    // fluids/plants when the cell has no opaque representative.
+                    cells.put(AllvrMesher.paddedIndex(lx, ly, lz), found == null ? fallback : found);
                 }
             }
         }
@@ -212,26 +195,16 @@ public final class AllvrLodSnapshot {
         int minBx = this.pos.minBlockX();
         int minBy = this.pos.minBlockY();
         int minBz = this.pos.minBlockZ();
-        // 17 groups of 2×2×2 snapshot cells cover local −1..32 (pad ring included)
-        for (int gy = 0; gy < 17; gy++) {
-            double wy = minBy + 2 * gy * (double) stride;
-            for (int gz = 0; gz < 17; gz++) {
-                double wz = minBz + 2 * gz * (double) stride;
-                for (int gx = 0; gx < 17; gx++) {
-                    double wx = minBx + 2 * gx * (double) stride;
-                    int groupResult = this.classifyGroup(wx, wy, wz);
-                    if (groupResult == 0) {
-                        this.fillGroupPerCell(gx, gy, gz, states, occludes);
-                    } else if (groupResult == 1) {
-                        // uniformly solid — material from the full evaluate at
-                        // the center (deep cells: pure gauge, cheap)
-                        BlockState material = this.generator.evaluate((int) wx, (int) wy, (int) wz, this.islands);
-                        if (material == null) {
-                            material = STONE; // union edge — the q said solid
-                        }
-                        this.writeGroup(gx, gy, gz, material, states, occludes);
-                    }
-                    // groupResult == 2: uniformly air — arrays stay air
+        for (int z = -1; z <= 32; z++) for (int x = -1; x <= 32; x++) {
+            int wx = minBx + x * stride + stride / 2;
+            int wz = minBz + z * stride + stride / 2;
+            var column = generator.columnSampler(wx, wz, minBy - stride, minBy + 33 * stride, islands);
+            for (int y = -1; y <= 32; y++) {
+                BlockState state = column.apply(minBy + y * stride + stride / 2);
+                if (state != null) {
+                    int index = AllvrMesher.paddedIndex(x, y, z);
+                    states[index] = state;
+                    occludes[index] = AllvrMesher.occludesAt(state);
                 }
             }
         }
@@ -243,91 +216,10 @@ public final class AllvrLodSnapshot {
         }
     }
 
-    /** 0 = mixed (per-cell path), 1 = uniformly solid, 2 = uniformly air. */
-    private int classifyGroup(double wx, double wy, double wz) {
-        int result = 2; // air until some island says otherwise
-        for (Island island : this.islands) {
-            double q = AllvrIslandFieldGenerator.gaugeQ(island, wx, wy, wz);
-            if (q >= BAND_LO_Q && q <= BAND_HI_Q) {
-                return 0; // FBM band — only the full evaluate can decide
-            }
-            if (q < this.groupSolidQ) {
-                result = 1; // solid contribution — other islands may still
-                            // force the per-cell path, keep scanning
-            } else if (q <= this.groupAirQ) {
-                return 0; // inside the uncertainty shell — per-cell path
-            }
-            // q > groupAirQ: air contribution, result unchanged
-        }
-        return result;
-    }
-
-    private void fillGroupPerCell(int gx, int gy, int gz, BlockState[] states, byte[] occludes) {
-        int stride = this.pos.stride();
-        int minBx = this.pos.minBlockX();
-        int minBy = this.pos.minBlockY();
-        int minBz = this.pos.minBlockZ();
-        for (int dy = 0; dy < 2; dy++) {
-            int ly = 2 * gy - 1 + dy;
-            for (int dz = 0; dz < 2; dz++) {
-                int lz = 2 * gz - 1 + dz;
-                for (int dx = 0; dx < 2; dx++) {
-                    int lx = 2 * gx - 1 + dx;
-                    double wx = minBx + (lx + 0.5) * stride;
-                    double wy = minBy + (ly + 0.5) * stride;
-                    double wz = minBz + (lz + 0.5) * stride;
-                    BlockState state = this.classifyCell(wx, wy, wz);
-                    if (state != null) {
-                        int idx = AllvrMesher.paddedIndex(lx, ly, lz);
-                        states[idx] = state;
-                        occludes[idx] = AllvrMesher.occludesAt(state);
-                    }
-                }
-            }
-        }
-    }
-
-    /** Solid material for one snapshot cell, or null for air (q-only fast
-     *  path; FBM-band cells delegate to the generator's evaluate). */
-    private BlockState classifyCell(double wx, double wy, double wz) {
-        double minSolidQ = Double.MAX_VALUE;
-        for (Island island : this.islands) {
-            double q = AllvrIslandFieldGenerator.gaugeQ(island, wx, wy, wz);
-            if (q >= BAND_LO_Q && q <= BAND_HI_Q) {
-                return this.generator.evaluate((int) wx, (int) wy, (int) wz, this.islands);
-            }
-            if (q < this.cellSolidQ && q < minSolidQ) {
-                minSolidQ = q;
-            }
-            // q > cellAirQ: air contribution from this island
-        }
-        if (minSolidQ == Double.MAX_VALUE) {
-            return null;
-        }
-        return minSolidQ < DIRT_Q ? STONE : DIRT;
-    }
-
-    private void writeGroup(int gx, int gy, int gz, BlockState material, BlockState[] states, byte[] occludes) {
-        byte occ = AllvrMesher.occludesAt(material);
-        for (int dy = 0; dy < 2; dy++) {
-            int ly = 2 * gy - 1 + dy;
-            for (int dz = 0; dz < 2; dz++) {
-                int lz = 2 * gz - 1 + dz;
-                for (int dx = 0; dx < 2; dx++) {
-                    int lx = 2 * gx - 1 + dx;
-                    int idx = AllvrMesher.paddedIndex(lx, ly, lz);
-                    states[idx] = material;
-                    occludes[idx] = occ;
-                }
-            }
-        }
-    }
-
     /**
      * The node's {@link AllvrMeshLight}: sky = snapshot column scan plus six
-     * coarse density samples over the 128-block window above the node (no
-     * caves exist, and islands above sit ≥300 blocks out — a ~21-block sample
-     * pitch may miss thin overhangs, a documented LOD approximation); block
+     * conservative island-envelope samples over the 128-block window above the
+     * node (caves and thin overhangs are approximated at this distance); block
      * light = manhattan max-decay over the captured edited-cube emitters.
      * <p>
      * NB the mesher passes {@code y = originY() + local cell index}; with
@@ -381,21 +273,7 @@ public final class AllvrLodSnapshot {
             for (int k = 1; k <= 6; k++) {
                 double py = topAbs + window * k / 7.0;
                 for (Island island : this.aboveIslands) {
-                    double ax = Math.abs(wx - island.cx());
-                    if (ax > island.halfWidth() + 96) {
-                        continue;
-                    }
-                    double ay = Math.abs(py - island.cy());
-                    if (ay > island.halfHeight() + 96) {
-                        continue;
-                    }
-                    double az = Math.abs(wz - island.cz());
-                    if (az > island.halfWidth() + 96) {
-                        continue;
-                    }
-                    if (AllvrIslandFieldGenerator.gaugeQ(island, wx, py, wz) < PRESENCE_Q) {
-                        return 0; // possibly inside this island — block conservatively
-                    }
+                    if (island.contains((int) wx, (int) py, (int) wz)) return 0;
                 }
             }
             return 15;

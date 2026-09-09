@@ -98,6 +98,11 @@ public final class AllvrCube implements AllvrOverlaySource {
         return pos;
     }
 
+    public Holder<Biome> getNoiseBiome(int x, int y, int z) {
+        return sections[sliceIndex((x & 7) >> 2, (y & 7) >> 2, (z & 7) >> 2)]
+            .getNoiseBiome(x & 3, y & 3, z & 3);
+    }
+
     /**
      * Slice index within the 2×2×2 section grid, Y-major (each s* = 0..1) —
      * the single source shared by the block accessors and the island

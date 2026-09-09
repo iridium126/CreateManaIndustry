@@ -27,9 +27,9 @@ import com.iridium126.createmanaindustry.dimension.mesh.AllvrMesher;
  *   <li>{@code light[i]} packs sky in the low nibble, block light in the
  *       high nibble — the same byte layout Voxy's mapper composes.</li>
  * </ul>
- * Non-occluding states are already folded to air by the server (the LOD
- * material policy is full-occluder-only in v1), so {@code palette} only
- * holds renderable states plus air.
+ * All non-air states are preserved, including fluids and foliage. Occlusion
+ * affects light independently of material representation. Optional per-cell
+ * biome registry ids carry datapack grass, foliage and water tint into Voxy.
  * <p>
  * Instances are <b>validated, read-only values</b> (plan F03): the
  * constructor structurally validates every field and defensively copies the
@@ -56,6 +56,7 @@ public final class AllvrLodSectionData {
     private final BlockState[] palette;
     private final int[] indices;
     private final byte[] light;
+    private final int[] biomeIds;
 
     /**
      * Validated construction — the ONLY way a section comes into existence.
@@ -65,6 +66,11 @@ public final class AllvrLodSectionData {
      */
     public AllvrLodSectionData(int level, long cellLong, long generation,
                                BlockState[] palette, int[] indices, byte[] light) {
+        this(level, cellLong, generation, palette, indices, light, null);
+    }
+
+    public AllvrLodSectionData(int level, long cellLong, long generation,
+                               BlockState[] palette, int[] indices, byte[] light, int[] biomeIds) {
         if (level < 0 || level > AllvrLodPos.MAX_LEVEL) {
             throw new IllegalArgumentException("LOD level out of range: " + level);
         }
@@ -106,6 +112,17 @@ public final class AllvrLodSectionData {
         this.palette = palette.clone();
         this.indices = indices.clone();
         this.light = light.clone();
+        if (biomeIds != null) {
+            if (biomeIds.length != CELLS) throw new IllegalArgumentException("Bad biome cell count");
+            for (int id : biomeIds) if (id < 0 || id >= (1 << 20)) throw new IllegalArgumentException("Bad biome id " + id);
+        }
+        this.biomeIds = biomeIds == null ? null : biomeIds.clone();
+    }
+
+    public int[] biomeIds() { return biomeIds == null ? null : biomeIds.clone(); }
+
+    public AllvrLodSectionData withBiomes(int[] ids) {
+        return new AllvrLodSectionData(level, cellLong, generation, palette, indices, light, ids);
     }
 
     /** Cell index (0..32767) for local x/y/z in 0..31. */
@@ -156,7 +173,7 @@ public final class AllvrLodSectionData {
 
     /**
      * Builds the section from a filled 34³ padded snapshot (plan §6.2): the
-     * 32³ core cells are lifted out, non-occluders folded to air, the palette
+     * 32³ core cells are lifted out with fluids and foliage preserved, the palette
      * built with air first, and light sampled per cell from the snapshot's
      * own light sampler. Returns {@code null} for an all-air node — the
      * caller stores/sends a "no payload" marker instead of a full section.
@@ -174,7 +191,7 @@ public final class AllvrLodSectionData {
             for (int z = 0; z < 32; z++) {
                 for (int x = 0; x < 32; x++) {
                     int padded = AllvrMesher.paddedIndex(x, y, z);
-                    if (paddedOccludes[padded] == 0) {
+                    if (paddedStates[padded].isAir()) {
                         continue; // air — palette index 0 is implicit
                     }
                     BlockState state = paddedStates[padded];

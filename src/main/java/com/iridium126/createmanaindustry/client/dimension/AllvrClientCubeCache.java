@@ -53,6 +53,14 @@ public final class AllvrClientCubeCache {
     /** Binds the current client level (called on LevelEvent.Load). */
     public static void onLevelChanged(ClientLevel clientLevel) {
         level = clientLevel;
+        com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setBiomeResolver(AllvrClientCubeCache::getNoiseBiome);
+    }
+
+    public static net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> getNoiseBiome(int x, int y, int z) {
+        synchronized (LOCK) {
+            AllvrCube cube = cubes.get(AllvrCubePos.asLong(x >> 3, y >> 3, z >> 3));
+            return cube == null ? null : cube.getNoiseBiome(x, y, z);
+        }
     }
 
     public static ClientLevel currentLevel() {

@@ -1,5 +1,7 @@
 # Allay Dimension（allay_dimension）— ±3000 万 Y 轴维度 + 现代体素渲染重写 开发文档
 
+> 2026-09-09：地形生成已替换为数据包噪声、地表、carver 与群系装饰管线，详见 [Allay Dimension 数据包地形生成](allay-dimension-worldgen.md)。本文中旧版 §5.3 圆角盒、固定平原、无 feature/carver 的说明仅作历史记录。
+
 > 模组：CreateManaIndustry（机械动力：魔法工业）
 > 版本基线：1.21.1 / NeoForge 21.1.227 / Java 21 / Mixin（已有 `createmanaindustry.mixins.json` + `CMIMixinPlugin`）
 > 参考实现：`.refs/CubicChunks3`（NeoForge 21.6.4-beta / MC 1.21.6，作者声明"Not yet usable"，未完成重写）、`.refs/voxy`（Fabric 0.2.19-beta——**仅作为 GPU-Driven 体素渲染架构参考**，兼容性明确搁置）、`.refs/neoforge-21.1.227`（原版反编译源）、`.refs/sodium` / `.refs/Iris`（禁用目标与 mixin 目标核对）

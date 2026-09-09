@@ -148,7 +148,7 @@ public final class AllvrCubeMap {
     public AllvrCubeMap(ServerLevel level) {
         this.level = level;
         this.biomeRegistry = level.registryAccess().registryOrThrow(Registries.BIOME);
-        this.generator = new AllvrIslandFieldGenerator(level.getSeed());
+        this.generator = new AllvrIslandFieldGenerator(level);
         Path folder = DimensionType.getStorageFolder(level.dimension(),
             level.getServer().getWorldPath(LevelResource.ROOT)).resolve("region3d");
         try {
@@ -394,10 +394,13 @@ public final class AllvrCubeMap {
         cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
         generator.generate(cube);
         cubes.put(key, cube);
+        cube.rebuildDerivedState(level);
         cube.onLoad(level);
         this.diagnostics.cubesGenerated.incrementAndGet();
         return cube;
     }
+
+    public AllvrIslandFieldGenerator generator() { return this.generator; }
 
     /** Restores one persisted cube (service thread, one blocking I/O wait). */
     private AllvrCube loadPersisted(long key, AllvrCubePos pos) {

@@ -17,6 +17,16 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class AllvrClientBlockHook {
 
     private static volatile Function<BlockPos, BlockState> resolver;
+    private static volatile net.minecraft.world.level.biome.BiomeManager.NoiseBiomeSource biomeResolver;
+
+    public static void setBiomeResolver(net.minecraft.world.level.biome.BiomeManager.NoiseBiomeSource resolver) {
+        biomeResolver = resolver;
+    }
+
+    public static net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> biome(int x, int y, int z) {
+        var current = biomeResolver;
+        return current == null ? null : current.getNoiseBiome(x, y, z);
+    }
 
     /** Registers the client-side resolver (called once from client mod init). */
     public static void setResolver(Function<BlockPos, BlockState> blockResolver) {

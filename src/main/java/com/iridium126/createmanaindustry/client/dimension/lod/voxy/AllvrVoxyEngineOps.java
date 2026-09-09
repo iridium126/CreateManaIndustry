@@ -46,11 +46,18 @@ final class AllvrVoxyEngineOps {
             long[] raw = section._unsafeGetRawDataArray();
             int[] blockIds = VoxyApi_0215_1211.mappedBlockIds(engine.getMapper(), data.palette());
             int biomeId = engine.getMapper().getIdForBiome(biome);
+            int[] biomes = data.biomeIds();
+            java.util.Map<Integer, Integer> biomeMappings = new java.util.HashMap<>();
+            var clientLevel = net.minecraft.client.Minecraft.getInstance().level;
+            var biomeRegistry = clientLevel == null ? null
+                : clientLevel.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.BIOME);
             int[] indices = data.indices();
             byte[] light = data.light();
             for (int i = 0; i < AllvrLodSectionData.CELLS; i++) {
                 raw[i] = me.cortex.voxy.common.world.other.Mapper.composeMappingId(
-                    light[i], blockIds[indices[i]], biomeId);
+                    light[i], blockIds[indices[i]], biomes == null || biomeRegistry == null ? biomeId
+                        : biomeMappings.computeIfAbsent(biomes[i], id -> engine.getMapper().getIdForBiome(
+                            biomeRegistry.getHolder(id).orElseThrow(() -> new IllegalArgumentException("Unknown LOD biome " + id)))));
             }
             int delta = nonAirCount(data) - section.getNonEmptyBlockCount();
             if (delta != 0) {

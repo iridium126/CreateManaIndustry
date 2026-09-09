@@ -34,6 +34,25 @@ import net.minecraft.world.level.material.FluidState;
 @Mixin(Level.class)
 public abstract class AllvrLevelMixin {
 
+    /** Override LevelReader's default to bypass the empty column biome palettes. */
+    public net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> getNoiseBiome(int x, int y, int z) {
+        Level self = (Level) (Object) this;
+        if (self.dimension() == AllvrDimensions.ALLAY_LEVEL) {
+            if (self.isClientSide) {
+                var biome = com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.biome(x, y, z);
+                if (biome != null) return biome;
+            } else {
+                AllvrCubeMap map = allvr$map();
+                if (map != null) {
+                    var cube = map.peek(new BlockPos(x * 4, y * 4, z * 4));
+                    return cube == null ? map.generator().biome(x, y, z) : cube.getNoiseBiome(x, y, z);
+                }
+            }
+        }
+        var chunk = self.getChunk(x >> 2, z >> 2, net.minecraft.world.level.chunk.status.ChunkStatus.BIOMES, false);
+        return chunk == null ? self.getUncachedNoiseBiome(x, y, z) : chunk.getNoiseBiome(x, y, z);
+    }
+
     @Shadow
     public abstract void updateNeighbourForOutputSignal(BlockPos pos, Block block);
 

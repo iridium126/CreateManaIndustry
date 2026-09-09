@@ -19,6 +19,8 @@ import net.minecraft.world.level.block.state.BlockState;
  *   packedIndices    — byte array, LSB-first bit packing, format 2 only
  *   light            — uniform flag (varint): exactly 0 = one byte follows,
  *                      exactly 1 = 32768 bytes follow
+ *   biomes           — 0 = absent, 1 = one uniform registry id,
+ *                      2 = 32768 registry-id varints (each bounded to 20 bits)
  * </pre>
  * Protocol notes (review F01–F03):
  * <ul>
@@ -50,12 +52,12 @@ public final class AllvrLodSectionCodec {
      * legal domain, not a guess — worst legitimate encoding is
      * palette (≤ CELLS−1 non-air ids, 3-byte varints each, plus the count
      * varint) + indices (32768 × 16 bit) + light (32768 bytes + flag):
-     * ≈ 98.3 KB + 64 KB + 32.8 KB ≈ 195 KB. 256 KB carries headroom without
+     * ≈ 98.3 KB + 64 KB + 32.8 KB ≈ 195 KB. 384 KB includes up to 96 KB of per-cell biome ids and carries headroom without
      * admitting anything the codec itself would reject; the encoder
      * additionally refuses to emit an oversized payload so a server can never
      * produce a packet the client is required to drop.
      */
-    public static final int MAX_PAYLOAD_BYTES = 256 * 1024;
+    public static final int MAX_PAYLOAD_BYTES = 384 * 1024;
 
     private AllvrLodSectionCodec() {}
 
@@ -70,15 +72,15 @@ public final class AllvrLodSectionCodec {
         BlockState[] palette = data.palette();
         if (uniformIndex > 0) {
             out.varint(FORMAT_SINGLE);
-            out.varint(Block.getId(data.palette()[uniformIndex]));
+            out.varint(Block.getId(palette[uniformIndex]));
         } else {
             out.varint(FORMAT_PALETTE);
-            int nonAir = data.palette().length - 1;
+            int nonAir = palette.length - 1;
             out.varint(nonAir);
-            for (int i = 1; i < data.palette().length; i++) {
-                out.varint(Block.getId(data.palette()[i]));
+            for (int i = 1; i < palette.length; i++) {
+                out.varint(Block.getId(palette[i]));
             }
-            int bitWidth = bitWidth(data.palette().length);
+            int bitWidth = bitWidth(palette.length);
             out.varint(bitWidth);
             out.bytes(pack(indices, bitWidth));
         }
@@ -96,6 +98,16 @@ public final class AllvrLodSectionCodec {
         } else {
             out.varint(LIGHT_FULL);
             out.bytes(light);
+        }
+        int[] biomes = data.biomeIds();
+        if (biomes == null) {
+            out.varint(0);
+        } else {
+            boolean uniform = true;
+            for (int id : biomes) if (id != biomes[0]) { uniform = false; break; }
+            out.varint(uniform ? 1 : 2);
+            if (uniform) out.varint(biomes[0]);
+            else for (int id : biomes) out.varint(id);
         }
         byte[] encoded = out.toArray();
         if (encoded.length > MAX_PAYLOAD_BYTES) {
@@ -178,13 +190,20 @@ public final class AllvrLodSectionCodec {
         } else {
             throw new IllegalArgumentException("unknown light flag " + flag);
         }
+        int biomeFlag = in.varint();
+        int[] biomes = null;
+        if (biomeFlag == 1 || biomeFlag == 2) {
+            biomes = new int[AllvrLodSectionData.CELLS];
+            if (biomeFlag == 1) java.util.Arrays.fill(biomes, in.varint());
+            else for (int i = 0; i < biomes.length; i++) biomes[i] = in.varint();
+        } else if (biomeFlag != 0) throw new IllegalArgumentException("Bad biome flag " + biomeFlag);
         requireConsumed(in);
         if (indices == null) {
             indices = new int[AllvrLodSectionData.CELLS];
             java.util.Arrays.fill(indices, 1);
         }
         // constructor validates level/position/index-range/light-length too
-        return new AllvrLodSectionData(level, cellLong, generation, palette, indices, light);
+        return new AllvrLodSectionData(level, cellLong, generation, palette, indices, light, biomes);
     }
 
     /** The payload must end exactly at the last field — no trailing bytes. */

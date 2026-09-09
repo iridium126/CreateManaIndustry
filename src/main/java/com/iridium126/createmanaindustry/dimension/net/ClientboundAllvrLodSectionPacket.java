@@ -28,7 +28,7 @@ public record ClientboundAllvrLodSectionPacket(int protocolVersion, long session
                                                long cellLong, int generation, byte[] payload)
     implements CustomPacketPayload {
 
-    public static final int PROTOCOL_VERSION = 3;
+    public static final int PROTOCOL_VERSION = 4;
 
     /**
      * Hard payload byte cap (plan F03): derived from the real legal encoding
