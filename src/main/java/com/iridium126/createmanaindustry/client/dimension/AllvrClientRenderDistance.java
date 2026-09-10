@@ -7,7 +7,8 @@ import net.minecraft.client.Minecraft;
  * Sodium and Voxy both use Minecraft's effective render distance, so the
  * Allay bridge must use the same value when deciding how much near data to
  * request from the server.  The conversion helpers are kept free of any
- * Cube/LOD state so packet and geometry code cannot grow another fixed range.
+ * Cube and renderer state so packet and geometry code cannot grow another
+ * fixed range.
  */
 public final class AllvrClientRenderDistance {
 

@@ -1,7 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.voxy;
 
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
@@ -9,7 +8,6 @@ import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 
-import com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyTopLevelRange;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 
 /**
@@ -33,7 +31,7 @@ public abstract class AllvrVoxyTopLevelRangeMixin {
         target = "Lnet/minecraft/client/multiplayer/ClientLevel;getMinSection()I"), remap = false)
     private static int allvr$topLevelMinSectionY(int minSection) {
         if (isAllayLevel()) {
-            return AllvrVoxyTopLevelRange.TOP_LEVEL_MIN_SECTION_Y;
+            return -256;
         }
         return minSection;
     }
@@ -43,12 +41,11 @@ public abstract class AllvrVoxyTopLevelRangeMixin {
         target = "Lnet/minecraft/client/multiplayer/ClientLevel;getMaxSection()I"), remap = false)
     private static int allvr$topLevelMaxSectionY(int maxSection) {
         if (isAllayLevel()) {
-            return AllvrVoxyTopLevelRange.TOP_LEVEL_MAX_SECTION_EXCLUSIVE;
+            return 256;
         }
         return maxSection;
     }
 
-    @Unique
     private static boolean isAllayLevel() {
         ClientLevel level = Minecraft.getInstance().level;
         return level != null && AllvrDimensions.isAllay(level);

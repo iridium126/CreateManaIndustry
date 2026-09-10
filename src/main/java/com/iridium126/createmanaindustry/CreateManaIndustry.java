@@ -46,12 +46,6 @@ import com.iridium126.createmanaindustry.dimension.AllvrServerHandler;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrBlockUpdatePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrForgetCubePacket;
-import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodBitmapPacket;
-import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodForgetPacket;
-import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodGroupPacket;
-import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodSectionPacket;
-import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodRequestPacket;
-import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodSubscriptionPacket;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.level.BlockEvent;
@@ -226,36 +220,6 @@ public class CreateManaIndustry {
                 ClientboundAllvrBlockUpdatePacket.TYPE,
                 ClientboundAllvrBlockUpdatePacket.STREAM_CODEC,
                 ClientboundAllvrBlockUpdatePacket::handle);
-        // Allay dimension LOD pipeline (sodium-parity plan §6.2): surface-node
-        // bitmaps, batched section requests and per-node invalidation. The
-        // legacy server-meshed quad payload was deleted — the voxel section is
-        // the only wire format.
-        registrar.playToClient(
-                ClientboundAllvrLodBitmapPacket.TYPE,
-                ClientboundAllvrLodBitmapPacket.STREAM_CODEC,
-                ClientboundAllvrLodBitmapPacket::handle);
-        registrar.playToClient(
-                ClientboundAllvrLodForgetPacket.TYPE,
-                ClientboundAllvrLodForgetPacket.STREAM_CODEC,
-                ClientboundAllvrLodForgetPacket::handle);
-        registrar.playToClient(
-                ClientboundAllvrLodSectionPacket.TYPE,
-                ClientboundAllvrLodSectionPacket.STREAM_CODEC,
-                ClientboundAllvrLodSectionPacket::handle);
-        registrar.playToClient(
-                ClientboundAllvrLodGroupPacket.TYPE,
-                ClientboundAllvrLodGroupPacket.STREAM_CODEC,
-                ClientboundAllvrLodGroupPacket::handle);
-        registrar.playToServer(
-                ServerboundAllvrLodRequestPacket.TYPE,
-                ServerboundAllvrLodRequestPacket.STREAM_CODEC,
-                ServerboundAllvrLodRequestPacket::handle);
-        // F30: the client's far-terrain subscription handshake — a near-only
-        // client must cost the server zero LOD work (no bitmaps, no builds).
-        registrar.playToServer(
-                ServerboundAllvrLodSubscriptionPacket.TYPE,
-                ServerboundAllvrLodSubscriptionPacket.STREAM_CODEC,
-                ServerboundAllvrLodSubscriptionPacket::handle);
     }
 
     /**

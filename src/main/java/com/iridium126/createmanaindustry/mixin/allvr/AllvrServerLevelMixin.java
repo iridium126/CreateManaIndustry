@@ -26,8 +26,8 @@ import net.minecraft.world.level.chunk.LevelChunk;
  * express {@code /save-all flush} — no flush parameter). The companion
  * ServerChunkCache/ChunkMap mixins cancel vanilla column-chunk persistence
  * for this dimension, and {@link ServerLevel#close} idempotently drains +
- * closes the storage and the
- * LOD pool. Both only ever touch an <i>existing</i> map ({@code peek}) —
+ * closes the cube storage. Both only ever touch an <i>existing</i> map
+ * ({@code peek}) —
  * saving or closing a never-visited allay level must not build the whole
  * subsystem. Exceptions are aggregated/logged so the vanilla close sequence
  * continues.
@@ -46,9 +46,6 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
     @Unique
     private AllvrCubeMap allvr$cubeMap;
 
-    @Unique
-    private com.iridium126.createmanaindustry.dimension.lod.AllvrLodMap allvr$lodMap;
-
     @Override
     public AllvrCubeMap allvr$getCubeMap() {
         this.allvr$lazilyCreate();
@@ -60,12 +57,6 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
         return allvr$cubeMap;
     }
 
-    @Override
-    public com.iridium126.createmanaindustry.dimension.lod.AllvrLodMap allvr$getLodMap() {
-        this.allvr$lazilyCreate();
-        return allvr$lodMap;
-    }
-
     @Unique
     private void allvr$lazilyCreate() {
         ServerLevel self = (ServerLevel) (Object) this;
@@ -74,10 +65,6 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
         }
         if (allvr$cubeMap == null) {
             allvr$cubeMap = new AllvrCubeMap(self);
-        }
-        if (allvr$lodMap == null) {
-            allvr$lodMap = new com.iridium126.createmanaindustry.dimension.lod.AllvrLodMap(self, allvr$cubeMap);
-            allvr$cubeMap.setLodMap(allvr$lodMap);
         }
     }
 
@@ -135,13 +122,6 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
                 allvr$cubeMap.close();
             } catch (Throwable t) {
                 CreateManaIndustry.LOGGER.error("[Allvr] closing allvr cube persistence failed", t);
-            }
-        }
-        if (allvr$lodMap != null) {
-            try {
-                allvr$lodMap.close();
-            } catch (Throwable t) {
-                CreateManaIndustry.LOGGER.error("[Allvr] closing allvr LOD pipeline failed", t);
             }
         }
     }

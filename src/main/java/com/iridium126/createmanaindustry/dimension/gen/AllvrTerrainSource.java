@@ -102,7 +102,7 @@ final class AllvrTerrainSource {
         return biomeSource().getNoiseBiome(Math.floorDiv(x, 4), Math.floorDiv(y, 4), Math.floorDiv(z, 4), random.sampler());
     }
 
-    /** Synchronous compatibility entry point for block/LOD queries. */
+    /** Synchronous compatibility entry point for cube generation. */
     Column column(int x, int z) {
         return columnAsync(x, z).join();
     }
@@ -297,7 +297,7 @@ final class AllvrTerrainSource {
             // State palettes are restored from immutable bytes captured by
             // freeze(). No worker calls PalettedContainer.write() on a shared
             // cached section, which avoids ThreadingDetector failures when
-            // cube and LOD workers copy the same source column concurrently.
+            // Multiple cube workers can copy the same source column concurrently.
             var states = restoreStates(column.stateData[i]);
             sections[i] = new LevelChunkSection(states, section.getBiomes());
         }

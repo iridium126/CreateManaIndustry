@@ -101,8 +101,10 @@ public class CreateManaIndustryClient {
             // drained completely; there is no client-thread quota here.
             com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.tick();
             com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.tickBlockEntities();
-            // LOD request walk (bitmaps → batched C2S mesh requests + eviction)
-            com.iridium126.createmanaindustry.client.dimension.AllvrLodClientState.tick();
+            // Voxy is the client-side LOD owner.  Cube arrivals are ingested
+            // through Voxy's native section pipeline; there is no Allay LOD
+            // request/response protocol or server-side LOD state anymore.
+            com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest.tick();
         }
         com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.tick();
     }
@@ -209,8 +211,9 @@ public class CreateManaIndustryClient {
             // Allay-dimension streamed cubes die with the level (dimension
             // switch or logout); the server restarts the stream on re-entry.
             com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.clear();
-            // LOD state (bitmaps, pending requests, resident set) with them
-            com.iridium126.createmanaindustry.client.dimension.AllvrLodClientState.clear();
+            // Voxy owns persistent LOD state; only transient Allay ingest
+            // queues are cleared when the client level goes away.
+            com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest.clear();
             // and the Sodium-side section registrations with them
             com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.clear();
             // The particle engine is self-hosted GL — reset regardless of Veil.
@@ -236,9 +239,7 @@ public class CreateManaIndustryClient {
             // Bind the cube cache to the new client level (allay dimension only).
             com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.onLevelChanged(clientLevel);
             com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.bindLevel(clientLevel);
-            // Bind the LOD backend manager to the new client level too (voxy
-            // integration: the voxy adapter probes the engine from here).
-            com.iridium126.createmanaindustry.client.dimension.AllvrLodClientState.onLevelChanged(clientLevel);
+            com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest.bindLevel(clientLevel);
         }
     }
 }

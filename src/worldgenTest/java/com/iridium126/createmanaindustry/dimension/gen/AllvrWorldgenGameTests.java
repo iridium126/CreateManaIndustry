@@ -8,8 +8,6 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import com.iridium126.createmanaindustry.dimension.lod.AllvrLodSectionData;
-import com.iridium126.createmanaindustry.dimension.lod.AllvrLodSectionCodec;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -84,20 +82,6 @@ public final class AllvrWorldgenGameTests {
             "Void cube unexpectedly contains terrain");
         int qx = cube.getPos().minBlockX() >> 2, qy = cube.getPos().minBlockY() >> 2, qz = cube.getPos().minBlockZ() >> 2;
         helper.assertTrue(cube.getNoiseBiome(qx, qy, qz).equals(generator.biome(qx, qy, qz)), "Cube biome palette disagrees with generator");
-        int[] indices = new int[AllvrLodSectionData.CELLS];
-        int[] biomeIds = new int[AllvrLodSectionData.CELLS];
-        var registry = allay.registryAccess().registryOrThrow(Registries.BIOME);
-        int biomeCount = registry.size();
-        for (int i = 0; i < indices.length; i++) { indices[i] = i % 3; biomeIds[i] = i % biomeCount; }
-        var packetData = new AllvrLodSectionData(0, cube.getPos().asLong(), 1,
-            new net.minecraft.world.level.block.state.BlockState[]{Blocks.AIR.defaultBlockState(), Blocks.WATER.defaultBlockState(), Blocks.GRASS_BLOCK.defaultBlockState()},
-            indices, new byte[indices.length], biomeIds);
-        byte[] packet = AllvrLodSectionCodec.encode(packetData);
-        var decoded = AllvrLodSectionCodec.decode(0, cube.getPos().asLong(), 1, packet);
-        helper.assertTrue(java.util.Arrays.equals(biomeIds, decoded.biomeIds()), "LOD biome data lost during round trip");
-        helper.assertTrue(java.util.Arrays.equals(indices, decoded.indices()), "LOD fluid/state data lost during round trip");
-        biomeIds[0] = (1 << 20) - 1;
-        helper.assertTrue(packetData.biomeIds()[0] != biomeIds[0], "Published biome data aliases mutable input");
         System.out.println("ALLVR_WORLDGEN_TIMING firstMs=" + (afterFirst - start) / 1_000_000
             + " secondMs=" + (afterSecond - afterFirst) / 1_000_000
             + " orderMs=" + (afterOrder - afterSecond) / 1_000_000

@@ -37,7 +37,7 @@ import net.minecraft.world.level.chunk.PalettedContainerRO;
  * {@code install*} methods so deserialization never walks the live
  * {@code setBlockState} path (no dirty marking, no neighbour updates).
  */
-public final class AllvrCube implements AllvrOverlaySource {
+public final class AllvrCube {
 
     public static final int SECTIONS_PER_CUBE = 8;
 

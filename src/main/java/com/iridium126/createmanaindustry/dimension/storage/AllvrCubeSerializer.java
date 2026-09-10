@@ -5,7 +5,6 @@ package com.iridium126.createmanaindustry.dimension.storage;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 
-import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
@@ -24,7 +23,6 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
-import net.minecraft.world.level.chunk.PalettedContainerRO;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -232,64 +230,4 @@ public final class AllvrCubeSerializer {
                 "cube " + pos + ": decoding " + what + " failed: " + message));
     }
 
-    // ------------------------------------------------------------------
-    // persisted overlay (LOD-only decode, off-thread)
-    // ------------------------------------------------------------------
-
-    /**
-     * Decodes a record into the LOD-only immutable overlay — no block
-     * entities, no cube-map membership. Runs on IO/completion threads; the
-     * registry lookups inside the codec are read-only there. Uses the plain
-     * {@code getLightEmission()} accessor (no level context is dereferenced
-     * off-thread).
-     */
-    @SuppressWarnings("unchecked")
-    public static AllvrPersistedOverlay decodeOverlay(AllvrCubePos pos, CompoundTag raw, Registry<Biome> biomeRegistry)
-        throws AllvrCubeCorruptedException {
-        CompoundTag root = AllvrCubeDataFixes.update(raw);
-        checkCoord(root, "xPos", pos.getX(), pos);
-        checkCoord(root, "yPos", pos.getY(), pos);
-        checkCoord(root, "zPos", pos.getZ(), pos);
-        Codec<PalettedContainer<Holder<Biome>>> biomeCodec = biomeCodec(biomeRegistry);
-
-        PalettedContainerRO<BlockState>[] sections = new PalettedContainerRO[AllvrCube.SECTIONS_PER_CUBE];
-        ListTag sectionTags = root.getList("sections", Tag.TAG_COMPOUND);
-        boolean[] seen = new boolean[AllvrCube.SECTIONS_PER_CUBE];
-        for (int i = 0; i < sectionTags.size(); i++) {
-            CompoundTag sectionTag = sectionTags.getCompound(i);
-            int index = sectionTag.getByte("Index");
-            if (index < 0 || index >= AllvrCube.SECTIONS_PER_CUBE || seen[index]) {
-                throw new AllvrCubeCorruptedException("cube " + pos + ": section index " + index + " invalid/duplicate");
-            }
-            seen[index] = true;
-            sections[index] = parse(BLOCK_STATE_CODEC, sectionTag.getCompound("block_states"), pos,
-                "block_states[" + index + "]");
-        }
-        for (int i = 0; i < AllvrCube.SECTIONS_PER_CUBE; i++) {
-            if (sections[i] == null) {
-                sections[i] = new PalettedContainer<>(Block.BLOCK_STATE_REGISTRY, Blocks.AIR.defaultBlockState(),
-                    PalettedContainer.Strategy.SECTION_STATES);
-            }
-        }
-
-        Int2IntOpenHashMap emitters = new Int2IntOpenHashMap();
-        for (int s = 0; s < AllvrCube.SECTIONS_PER_CUBE; s++) {
-            int baseX = (s & 1) * 16;
-            int baseY = ((s >> 2) & 1) * 16;
-            int baseZ = ((s >> 1) & 1) * 16;
-            for (int ly = 0; ly < 16; ly++) {
-                for (int lz = 0; lz < 16; lz++) {
-                    for (int lx = 0; lx < 16; lx++) {
-                        BlockState state = sections[s].get(lx, ly, lz);
-                        int emission = state.getLightEmission();
-                        if (emission > 0) {
-                            int cell = ((baseY + ly) << 10) | ((baseZ + lz) << 5) | (baseX + lx);
-                            emitters.put(cell, emission);
-                        }
-                    }
-                }
-            }
-        }
-        return new AllvrPersistedOverlay(pos, sections, emitters);
-    }
 }

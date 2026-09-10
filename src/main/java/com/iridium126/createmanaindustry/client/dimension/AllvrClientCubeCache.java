@@ -227,6 +227,7 @@ public final class AllvrClientCubeCache {
         }
         cube.onLoad(clientLevel);
         AllvrSodiumBridge.onCubeApplied(cubePos);
+        com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest.onCubeApplied(cubePos);
         if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
             CreateManaIndustry.LOGGER.debug("[Allvr] cube {} streamed ({} bytes, {} cubes cached)",
                 cube.getPos(), payloadBytes, cubes.size());
@@ -267,6 +268,8 @@ public final class AllvrClientCubeCache {
             contentRevision++;
         }
         AllvrSodiumBridge.onCubeForgotten(cubePos);
+        // Voxy deliberately retains its LOD when a near cube is forgotten;
+        // the next cube publication will overwrite the affected sections.
     }
 
     /** Keeps the block-entity worklist in step with a cube's BE set. */
@@ -420,6 +423,7 @@ public final class AllvrClientCubeCache {
         // The cache is updated before the Sodium notification so its build
         // snapshot always observes the new state.
         AllvrSodiumBridge.onBlockChanged(pos, oldState, newState);
+        com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest.onBlockChanged(pos);
 
         // Mirror of Level#markAndNotifyBlock, minus vanilla section
         // notifications: Sodium receives the cube-backed update above.

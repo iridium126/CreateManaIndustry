@@ -15,7 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-/** Datapack terrain in local island coordinates, shared by cubes and LOD. */
+/** Datapack terrain in local island coordinates used by cube generation. */
 public final class AllvrIslandFieldGenerator {
     private final ServerLevel level;
     private final AllvrTerrainSource terrain;
@@ -152,73 +152,4 @@ public final class AllvrIslandFieldGenerator {
         }
     }
 
-    /** LOD shares the same cached terrain columns and deterministic feature budget. */
-    public BlockState evaluate(int x, int y, int z, Island[] islands) {
-        for (Island island : islands) {
-            if (!island.contains(x, y, z)) continue;
-            int sx = x + island.sourceOffsetX(), sz = z + island.sourceOffsetZ();
-            BlockState state = terrain.column(sx >> 4, sz >> 4).block(sx, y - island.offsetY(), sz);
-            if (!state.isAir()) return state;
-        }
-        return null;
-    }
-
-    /** Resolve caches once per XZ sample, not once per voxel in the LOD hot loop. */
-    public java.util.function.IntFunction<BlockState> columnSampler(int x, int z, int minY, int maxY, Island[] islands) {
-        record Slice(Island island, AllvrTerrainSource.Column column, double bottom, int x, int z) {}
-        java.util.List<Slice> slices = new java.util.ArrayList<>();
-        for (Island island : islands) {
-            double bottom = island.bottom(x, z);
-            if (bottom >= maxY || island.maxY() <= minY || island.minY() >= maxY) continue;
-            int sx = x + island.sourceOffsetX(), sz = z + island.sourceOffsetZ();
-            slices.add(new Slice(island, terrain.column(sx >> 4, sz >> 4), bottom, sx, sz));
-        }
-        return y -> {
-            for (Slice slice : slices) {
-                if (y < slice.bottom || y < slice.island.minY() || y >= slice.island.maxY()) continue;
-                BlockState state = slice.column.block(slice.x, y - slice.island.offsetY(), slice.z);
-                if (!state.isAir()) return state;
-            }
-            return null;
-        };
-    }
-
-    /**
-     * Creates a node-scoped sampler backed by vanilla source-column snapshots.
-     * Voxy's server path captures each finished vanilla chunk once and then
-     * derives all LOD samples from that snapshot.  The old LOD loop recreated
-     * a slice list for every X/Z sample and repeatedly entered
-     * {@link AllvrTerrainSource#column}; this context shares the source-column
-     * map for the entire 34x34 padded node.
-     */
-    public LodSampleContext lodContext(Island[] islands) {
-        return new LodSampleContext(islands);
-    }
-
-    public final class LodSampleContext {
-        private final Island[] islands;
-        private final java.util.Map<Long, AllvrTerrainSource.Column> columns = new java.util.HashMap<>();
-
-        private LodSampleContext(Island[] islands) {
-            this.islands = islands;
-        }
-
-        public BlockState sample(int x, int y, int z) {
-            for (Island island : islands) {
-                if (!island.contains(x, y, z)) continue;
-                int sx = x + island.sourceOffsetX();
-                int sz = z + island.sourceOffsetZ();
-                long key = ChunkPos.asLong(sx >> 4, sz >> 4);
-                AllvrTerrainSource.Column column = columns.computeIfAbsent(key,
-                    ignored -> terrain.column(sx >> 4, sz >> 4));
-                BlockState state = column.block(sx, y - island.offsetY(), sz);
-                if (!state.isAir()) return state;
-            }
-            return null;
-        }
-
-        public int cachedColumnCount() {
-            return columns.size();
-        }
-    }
 }

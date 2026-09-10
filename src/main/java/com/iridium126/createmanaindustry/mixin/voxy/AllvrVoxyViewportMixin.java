@@ -6,8 +6,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
 import net.minecraft.client.Minecraft;
 
-import com.iridium126.createmanaindustry.client.dimension.lod.AllvrLodBackendManager;
-import com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyYWindow;
+import com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyYSlab;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 
 /**
@@ -33,8 +32,8 @@ public abstract class AllvrVoxyViewportMixin {
         if (mc.level == null || !AllvrDimensions.isAllay(mc.level)) {
             return cameraY;
         }
-        AllvrVoxyYWindow window = AllvrLodBackendManager.voxyWindow();
-        return window == null ? cameraY : window.virtualCameraY(cameraY);
+        return AllvrVoxyYSlab.virtualCameraY(
+            AllvrVoxyYSlab.slabIdForLevel(mc.level), cameraY);
     }
 }
 

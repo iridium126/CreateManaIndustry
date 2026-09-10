@@ -42,7 +42,6 @@ import com.iridium126.createmanaindustry.dimension.storage.AllvrCubeCorruptedExc
 import com.iridium126.createmanaindustry.dimension.storage.AllvrCubeIoWorker;
 import com.iridium126.createmanaindustry.dimension.storage.AllvrCubeSerializer;
 import com.iridium126.createmanaindustry.dimension.storage.AllvrCubeSnapshot;
-import com.iridium126.createmanaindustry.dimension.storage.AllvrPersistedOverlay;
 import com.iridium126.createmanaindustry.dimension.storage.AllvrRegionCubeStorage;
 import com.iridium126.createmanaindustry.dimension.storage.AllvrStorageDiagnostics;
 
@@ -136,8 +135,6 @@ public final class AllvrCubeMap {
      * {@code editedCubes} (plan §2.2).
      */
     private final LongOpenHashSet persistedIndex = new LongOpenHashSet();
-    /** Attached by the ServerLevel mixin next to the LOD map; null until then. */
-    private com.iridium126.createmanaindustry.dimension.lod.AllvrLodMap lodMap;
     /**
      * Cubes that hold block entities — the ticking worklist (kept tiny: most
      * cubes are pure terrain). Vanilla's per-chunk {@code TickingTracker} is
@@ -295,9 +292,6 @@ public final class AllvrCubeMap {
         // is updated after the snapshot enters the IO worker, so a failed
         // first snapshot cannot make a missing record look loadable later.
         this.queueSnapshot(cubeKey, false);
-        if (this.lodMap != null) {
-            this.lodMap.onBlockChanged(pos);
-        }
 
         updateBlockEntity(cube, pos, newState);
         newState.onPlace(level, pos, oldState, false);
@@ -389,21 +383,7 @@ public final class AllvrCubeMap {
         return cube == null ? null : cube.getBlockEntity(pos);
     }
 
-    /** Whether the cube has a pending or disk record (LOD overlay hint). */
-    public boolean isPersisted(long cubeKey) {
-        return this.persistedIndex.contains(cubeKey);
-    }
-
-    /** Snapshot of edited/persisted cube coverage for the LOD bitmap union. */
-    public long[] persistedKeysSnapshot() {
-        return this.persistedIndex.toLongArray();
-    }
-
     /** Wired by the ServerLevel mixin after creating both maps. */
-    public void setLodMap(com.iridium126.createmanaindustry.dimension.lod.AllvrLodMap lodMap) {
-        this.lodMap = lodMap;
-    }
-
     public int getLoadedCubeCount() {
         return cubes.size();
     }
@@ -773,13 +753,6 @@ public final class AllvrCubeMap {
         return cube;
     }
 
-    /** Async decode of a persisted cube into the LOD-only overlay (plan §7.6). */
-    public CompletableFuture<AllvrPersistedOverlay> loadOverlayAsync(AllvrCubePos pos) {
-        Registry<net.minecraft.world.level.biome.Biome> biomes = this.biomeRegistry;
-        return this.worker.load(pos).thenApplyAsync(nbt -> decodePersistedOverlay(pos, nbt, biomes),
-            this.persistenceDecodeExecutor);
-    }
-
     /**
      * Deserializes a disk record off the region-file worker.  A missing record
      * is treated as a structural persistence failure so the caller can keep
@@ -797,23 +770,6 @@ public final class AllvrCubeMap {
             restored.rebuildEmitters();
             return restored;
         } catch (AllvrCubeCorruptedException e) {
-            throw new java.util.concurrent.CompletionException(e);
-        } finally {
-            this.diagnostics.persistedDecodeNanos.addAndGet(System.nanoTime() - start);
-        }
-    }
-
-    private AllvrPersistedOverlay decodePersistedOverlay(AllvrCubePos pos,
-                                                          java.util.Optional<CompoundTag> nbt,
-                                                          Registry<net.minecraft.world.level.biome.Biome> biomes) {
-        long start = System.nanoTime();
-        try {
-            if (nbt.isEmpty()) {
-                throw new java.util.concurrent.CompletionException(new java.io.IOException(
-                    "[Allvr] persisted index contains " + pos + " but no record was found"));
-            }
-            return AllvrCubeSerializer.decodeOverlay(pos, nbt.get(), biomes);
-        } catch (java.io.IOException e) {
             throw new java.util.concurrent.CompletionException(e);
         } finally {
             this.diagnostics.persistedDecodeNanos.addAndGet(System.nanoTime() - start);
