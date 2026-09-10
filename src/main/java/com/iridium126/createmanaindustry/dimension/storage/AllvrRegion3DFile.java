@@ -22,18 +22,21 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  * Commit protocol (per batch, single I/O thread):
  * <ol>
  *   <li>allocate contiguous payload sectors for every changed record and
- *       write them; {@code force(false)};</li>
+ *       write them;</li>
  *   <li>apply the slot updates onto the <b>inactive</b> header copy with a
- *       bumped generation and its CRC32C, write it whole, {@code force(true)};</li>
- *   <li>only now return the replaced sectors to the free list.</li>
+ *       bumped generation and its CRC32C, then write it whole;</li>
+ *   <li>only now return the replaced sectors to the free list. The file is
+ *       forced only by {@link #flush()} or {@link #close()}, like vanilla's
+ *       RegionFileStorage background saves.</li>
  * </ol>
  * Any interruption leaves either the old header active (old records readable,
  * new sectors orphaned into the free list on the next open) or the new header
  * complete — a torn header never passes its checksum. Both headers invalid is
  * reported as corruption and fails closed.
  * <p>
- * Threading: all access happens on the single I/O worker thread (the initial
- * enumeration runs through the worker before any concurrent task exists).
+ * Threading: the storage wrapper serializes commits/flush/close against
+ * reads. Positional record reads may run concurrently, while the mutable
+ * header/free-list state remains exclusive to a commit.
  */
 public final class AllvrRegion3DFile implements AutoCloseable {
 
@@ -61,6 +64,8 @@ public final class AllvrRegion3DFile implements AutoCloseable {
     private long generation;
     private final ArrayList<Run> freeRuns = new ArrayList<>();
     private int nextFreeSector = AllvrStorageFormat.PAYLOAD_START_SECTOR;
+    /** A background commit has changed the file since the last fsync. */
+    private boolean dirty;
     private boolean closed;
 
     private static final class Run {
@@ -109,9 +114,9 @@ public final class AllvrRegion3DFile implements AutoCloseable {
             // afterwards leaves at least one valid header
             this.generation = 1;
             this.activeHeader = 0;
-            writeHeaderCopy(1);
+            writeHeaderCopy(1, true);
             this.activeHeader = 1;
-            writeHeaderCopy(1);
+            writeHeaderCopy(1, true);
             this.activeHeader = 0;
             this.channel.force(true);
             return;
@@ -230,9 +235,10 @@ public final class AllvrRegion3DFile implements AutoCloseable {
 
     /**
      * Serializes the current slot tables + a bumped generation onto the
-     * inactive header copy and makes it active. Single durable step.
+     * inactive header copy and makes it active. The caller chooses whether
+     * this header update also forces the channel.
      */
-    private void writeHeaderCopy(long newGeneration) throws IOException {
+    private void writeHeaderCopy(long newGeneration, boolean force) throws IOException {
         ByteBuffer buf = ByteBuffer.allocate(HEADER_BYTES);
         buf.putLong(AllvrStorageFormat.MAGIC);
         buf.putInt(AllvrStorageFormat.REGION_FORMAT_VERSION);
@@ -255,7 +261,9 @@ public final class AllvrRegion3DFile implements AutoCloseable {
         while (buf.hasRemaining()) {
             this.channel.write(buf, base + buf.position());
         }
-        this.channel.force(true);
+        if (force) {
+            this.channel.force(true);
+        }
         this.generation = newGeneration;
     }
 
@@ -339,8 +347,6 @@ public final class AllvrRegion3DFile implements AutoCloseable {
             oldCounts[i] = this.slotSectors[slots[i]];
             i++;
         }
-        this.channel.force(false);
-
         // phase 2: shadow header commit onto the inactive copy
         int previousActive = this.activeHeader;
         this.activeHeader = 1 - previousActive;
@@ -354,7 +360,7 @@ public final class AllvrRegion3DFile implements AutoCloseable {
                 this.slotLength[slot] = payloads.get(slot).length;
                 this.slotCrc[slot] = crc.getValue();
             }
-            writeHeaderCopy(this.generation + 1);
+            writeHeaderCopy(this.generation + 1, false);
         } catch (IOException e) {
             // header commit failed — roll the in-memory tables back to the
             // still-durable old header so a retry starts from a clean state
@@ -362,12 +368,13 @@ public final class AllvrRegion3DFile implements AutoCloseable {
             throw e;
         }
 
-        // phase 3: release replaced sectors — only after the new header is durable
+        // phase 3: release replaced sectors — only after the new header is written
         for (int e = 0; e < size; e++) {
             if (oldCounts[e] > 0) {
                 this.free(oldOffsets[e], oldCounts[e]);
             }
         }
+        this.dirty = true;
     }
 
     private int allocate(int count) {
@@ -409,7 +416,10 @@ public final class AllvrRegion3DFile implements AutoCloseable {
     /** {@code channel.force} — flush() part of the storage interface. */
     public void flush() throws IOException {
         ensureOpen();
-        this.channel.force(false);
+        if (this.dirty) {
+            this.channel.force(false);
+            this.dirty = false;
+        }
     }
 
     public long generation() {
@@ -439,7 +449,14 @@ public final class AllvrRegion3DFile implements AutoCloseable {
         if (this.closed) {
             return;
         }
-        this.closed = true;
-        this.channel.close();
+        try {
+            if (this.dirty) {
+                this.channel.force(true);
+                this.dirty = false;
+            }
+        } finally {
+            this.closed = true;
+            this.channel.close();
+        }
     }
 }

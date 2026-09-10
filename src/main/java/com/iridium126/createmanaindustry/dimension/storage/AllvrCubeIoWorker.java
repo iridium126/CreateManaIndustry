@@ -7,11 +7,15 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,10 +26,10 @@ import net.minecraft.nbt.CompoundTag;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 
 /**
- * The single-threaded cube I/O worker (plan §7.1/§8, the
- * {@code AsyncBatchingCubeIO} analogue): owns an explicit OPEN → CLOSING →
- * CLOSED state, a latest-wins pending map, and the only thread that touches
- * region files.
+ * The cube I/O worker (plan §7.1/§8, the {@code AsyncBatchingCubeIO}
+ * analogue): owns an explicit OPEN → CLOSING → CLOSED state, a latest-wins
+ * pending map, and a single ordered mutation mailbox. Region3D opts into a
+ * bounded foreground read pool; writes and header mutations remain ordered.
  * <p>
  * Invariants (plan §8):
  * <ul>
@@ -55,6 +59,13 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
 
     private static final int MAX_FLUSH_RETRIES = 5;
     private static final long IO_ERROR_LOG_INTERVAL_MS = 10_000;
+    /** Small coalescing window; mirrors vanilla's low-priority background saves. */
+    private static final long BATCH_DELAY_MS = 2L;
+    /** Bound foreground reads so a fast player cannot grow an unbounded queue. */
+    private static final int MAX_PENDING_READS = 512;
+    /** Parallel region reads; the storage implementation still serializes mutations. */
+    private static final int READ_WORKERS =
+        Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
 
     private enum State {
         OPEN, CLOSING, CLOSED
@@ -62,7 +73,19 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
 
     private final AllvrCubeStorage storage;
     private final AllvrStorageDiagnostics diagnostics;
-    private final ExecutorService executor;
+    private final ScheduledExecutorService executor;
+    private final ThreadPoolExecutor readExecutor;
+    /** Ensures a burst of enqueue calls creates one delayed drain task. */
+    private final AtomicBoolean drainScheduled = new AtomicBoolean();
+    /**
+     * Foreground reads waiting in the mailbox.  Vanilla's IOWorker gives
+     * reads foreground priority over background stores; the counter lets the
+     * delayed save drain yield before it starts a batch when a player is
+     * already waiting for persisted cubes.
+     */
+    private final AtomicInteger queuedReads = new AtomicInteger();
+    /** Increments after each successful commit so a concurrent read can retry a stale snapshot. */
+    private final AtomicLong writeEpoch = new AtomicLong();
     /**
      * Cube key → newest pending write. {@code PendingWrite} instances are
      * immutable, so a batch's {@code remove(key, exactValue)} can never delete
@@ -91,11 +114,21 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
         this.storage = storage;
         this.diagnostics = diagnostics;
         AtomicInteger index = new AtomicInteger();
-        this.executor = Executors.newSingleThreadExecutor(r -> {
+        this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "CMI-AllvrCubeIo-" + index.incrementAndGet());
             t.setDaemon(true);
             return t;
         });
+        int workers = storage.supportsConcurrentReads() ? READ_WORKERS : 1;
+        AtomicInteger readIndex = new AtomicInteger();
+        this.readExecutor = new ThreadPoolExecutor(
+            workers, workers, 0L, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(MAX_PENDING_READS),
+            r -> {
+                Thread t = new Thread(r, "CMI-AllvrCubeRead-" + readIndex.incrementAndGet());
+                t.setDaemon(true);
+                return t;
+            }, new ThreadPoolExecutor.AbortPolicy());
     }
 
     // ------------------------------------------------------------------
@@ -119,9 +152,13 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
     }
 
     private void scheduleDrain() {
+        if (!this.drainScheduled.compareAndSet(false, true)) {
+            return;
+        }
         try {
-            this.executor.execute(this::drainOnce);
+            this.executor.schedule(this::drainOnce, BATCH_DELAY_MS, TimeUnit.MILLISECONDS);
         } catch (RejectedExecutionException e) {
+            this.drainScheduled.set(false);
             // racing close(); the cube map is shutting down anyway
             LOGGER.debug("[Allvr] drain scheduled after worker close — dropped", e);
         }
@@ -129,13 +166,27 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
 
     /** One batched write pass; failures keep the pending entries for retry. */
     private void drainOnce() {
-        if (this.pending.isEmpty()) {
+        this.drainScheduled.set(false);
+        if (this.pending.isEmpty()) return;
+        if (this.queuedReads.get() > 0) {
+            // Keep the region-file mailbox responsive to loadAsync callers.
+            // The delayed retry is still a background task, so a continuous
+            // read burst is drained first without allowing writes to run on
+            // the server thread.
+            this.scheduleDrain();
             return;
         }
         try {
             this.drainBatch();
         } catch (Exception e) {
             this.noteIoError(e instanceof IOException io ? io : new IOException(e));
+        } finally {
+            // New snapshots may have arrived while the batch was writing.
+            // Schedule exactly one follow-up batch instead of one executor
+            // task per enqueue call.
+            if (!this.pending.isEmpty() && this.state == State.OPEN) {
+                this.scheduleDrain();
+            }
         }
     }
 
@@ -149,8 +200,15 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
         }
         long start = System.nanoTime();
         this.storage.writeBatch(batch);
+        long elapsed = System.nanoTime() - start;
+        this.writeEpoch.incrementAndGet();
         this.diagnostics.regionCommits.incrementAndGet();
         this.diagnostics.recordsWritten.addAndGet(batch.size());
+        this.diagnostics.commitNanos.addAndGet(elapsed);
+        this.diagnostics.maxCommitNanos.accumulateAndGet(elapsed, Math::max);
+        if (batch.size() == 1) {
+            this.diagnostics.singleRecordCommits.incrementAndGet();
+        }
         long bytes = this.storage.bytesWritten();
         if (bytes >= 0) {
             this.diagnostics.payloadBytesWritten.set(bytes);
@@ -165,7 +223,7 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
         }
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("[Allvr] wrote {} cube record(s) in {} µs", batch.size(),
-                (System.nanoTime() - start) / 1000);
+                elapsed / 1000);
         }
     }
 
@@ -179,24 +237,72 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
      * payload is immutable so any thread may decode it.
      */
     public CompletableFuture<Optional<CompoundTag>> load(AllvrCubePos pos) {
-        PendingWrite write = this.pending.get(pos.asLong());
-        if (write != null) {
-            return CompletableFuture.completedFuture(Optional.of(write.tag));
-        }
         this.ensureOpen("load");
         CompletableFuture<Optional<CompoundTag>> future = new CompletableFuture<>();
+        this.queuedReads.incrementAndGet();
         try {
-            this.executor.execute(() -> {
-                try {
-                    future.complete(this.storage.read(pos));
-                } catch (Throwable t) {
-                    future.completeExceptionally(t);
-                }
-            });
+            Runnable readTask = () -> this.readOne(pos, future);
+            if (this.storage.supportsConcurrentReads()) {
+                // Region3D protects its handles with a read/write lock, so
+                // independent regions can read and inflate in parallel.
+                this.readExecutor.execute(readTask);
+            } else {
+                // Keep custom/test storages on the original single mailbox
+                // path unless they explicitly opt into concurrent reads.
+                this.executor.execute(readTask);
+            }
         } catch (RejectedExecutionException e) {
+            this.queuedReads.decrementAndGet();
             future.completeExceptionally(new IOException("allvr io worker closed", e));
         }
         return future;
+    }
+
+    private void readOne(AllvrCubePos pos, CompletableFuture<Optional<CompoundTag>> future) {
+        long key = pos.asLong();
+        try {
+            Optional<CompoundTag> result = Optional.empty();
+            // A write can overlap a disk read. The pending map handles writes
+            // not yet committed; the epoch catches a commit that completed
+            // after the read began, forcing a fresh read of the new header.
+            for (int attempt = 0; attempt < 8; attempt++) {
+                PendingWrite write = this.pending.get(key);
+                if (write != null) {
+                    future.complete(Optional.of(write.tag));
+                    return;
+                }
+                long epoch = this.writeEpoch.get();
+                result = this.readStorage(pos);
+                write = this.pending.get(key);
+                if (write != null) {
+                    future.complete(Optional.of(write.tag));
+                    return;
+                }
+                if (this.writeEpoch.get() == epoch) {
+                    future.complete(result);
+                    return;
+                }
+            }
+            // A sustained write storm is unusual; return the newest pending
+            // value if one exists, otherwise complete with the last stable
+            // storage result rather than spinning forever.
+            PendingWrite write = this.pending.get(key);
+            future.complete(write != null ? Optional.of(write.tag) : result);
+        } catch (Throwable t) {
+            future.completeExceptionally(t);
+        } finally {
+            this.queuedReads.decrementAndGet();
+        }
+    }
+
+    private Optional<CompoundTag> readStorage(AllvrCubePos pos) throws IOException {
+        long start = System.nanoTime();
+        try {
+            return this.storage.read(pos);
+        } finally {
+            this.diagnostics.persistedStorageReadCount.incrementAndGet();
+            this.diagnostics.persistedStorageReadNanos.addAndGet(System.nanoTime() - start);
+        }
     }
 
     /** Blocking one-shot read used by the synchronous load path (plan §7.3). */
@@ -328,6 +434,18 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
                 return;
             }
             this.state = State.CLOSING;
+        }
+        // Stop and drain foreground reads before closing region handles. The
+        // storage write lock also protects against an active read, but queued
+        // read tasks must not start after close() has closed their channel.
+        this.readExecutor.shutdown();
+        try {
+            if (!this.readExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
+                this.readExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            this.readExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
         }
         CompletableFuture<Void> done = new CompletableFuture<>();
         try {

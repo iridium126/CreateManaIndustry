@@ -34,11 +34,12 @@ import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 
 /**
- * Cube ↔ NBT on the service thread (plan §7.1) — the ALLVR counterpart of
+ * Cube ↔ NBT on the service/decode threads (plan §7.1) — the ALLVR counterpart of
  * {@code ChunkSerializer}, minus everything the cube layer does not own
  * (ticks, entities, heightmaps, light data). The region layer never touches
  * this schema; the worker never touches a live cube: both only see the
- * immutable {@link AllvrCubeSnapshot}.
+ * immutable {@link AllvrCubeSnapshot}. Loads run on the bounded persistence
+ * decode pool, while the cube map installs the result on the server thread.
  * <p>
  * Strictness (plan §6): section order is not trusted (reordered by
  * {@code Index}, duplicates/missing/out-of-range validated), block entities
@@ -72,7 +73,7 @@ public final class AllvrCubeSerializer {
     // ------------------------------------------------------------------
 
     /**
-     * Serializes a cube into its self-contained NBT record. Service thread
+     * Serializes a cube into its self-contained NBT record. Server thread
      * only — reads live sections and block entities. The returned snapshot
      * carries the captured mutation version so the worker can do
      * latest-wins bookkeeping.
@@ -146,9 +147,11 @@ public final class AllvrCubeSerializer {
 
     /**
      * Validates a record and restores it into a fresh {@link AllvrCube} —
-     * service thread only. Sections and BEs are installed via the loader-only
-     * paths (no dirty marking, no neighbour updates); the caller finishes with
-     * {@code onLoad} + {@code rebuildDerivedState} and owns lifecycle.
+     * persistence decode worker only. Sections and BEs are installed via the loader-only
+     * paths (no dirty marking, no neighbour updates); the caller rebuilds the
+     * level-independent emitter index off-thread, then finishes with
+     * {@code onLoad} on the server thread and owns lifecycle. Cubes with
+     * block entities may refresh level-dependent emissions after binding.
      *
      * @throws AllvrCubeCorruptedException on any structural damage — the cube
      *                                     must stay unloaded and the record must never be regenerated over

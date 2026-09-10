@@ -16,7 +16,20 @@ public final class AllvrStorageDiagnostics {
     public final AtomicLong recordsWritten = new AtomicLong();
     public final AtomicLong payloadBytesWritten = new AtomicLong();
     public final AtomicLong cubesLoadedFromDisk = new AtomicLong();
+    public final AtomicLong persistedLoadRequests = new AtomicLong();
+    public final AtomicLong persistedLoadFailures = new AtomicLong();
+    public final AtomicLong persistedLoadQuarantined = new AtomicLong();
+    public final AtomicLong persistedLoadNanos = new AtomicLong();
+    /** Physical region read/decompression/NBT parse time, excluding decode-pool work. */
+    public final AtomicLong persistedStorageReadNanos = new AtomicLong();
+    public final AtomicLong persistedStorageReadCount = new AtomicLong();
+    /** Time spent in the ChunkMap-style NBT/codec deserializer pool. */
+    public final AtomicLong persistedDecodeNanos = new AtomicLong();
     public final AtomicLong cubesGenerated = new AtomicLong();
+    public final AtomicLong snapshotNanos = new AtomicLong();
+    public final AtomicLong commitNanos = new AtomicLong();
+    public final AtomicLong maxCommitNanos = new AtomicLong();
+    public final AtomicLong singleRecordCommits = new AtomicLong();
     public volatile long lastSaveDurationMs = -1;
     public volatile long lastFlushDurationMs = -1;
     public volatile String lastIoError = "";
@@ -33,7 +46,18 @@ public final class AllvrStorageDiagnostics {
             + " records=" + this.recordsWritten.get()
             + " bytes=" + this.payloadBytesWritten.get()
             + " loadedFromDisk=" + this.cubesLoadedFromDisk.get()
+            + " loadRequests=" + this.persistedLoadRequests.get()
+            + " loadFailures=" + this.persistedLoadFailures.get()
+            + " loadQuarantined=" + this.persistedLoadQuarantined.get()
+            + " loadMs=" + (this.persistedLoadNanos.get() / 1_000_000L)
+            + " readMs=" + (this.persistedStorageReadNanos.get() / 1_000_000L)
+            + " reads=" + this.persistedStorageReadCount.get()
+            + " decodeMs=" + (this.persistedDecodeNanos.get() / 1_000_000L)
             + " generated=" + this.cubesGenerated.get()
+            + " snapshotMs=" + (this.snapshotNanos.get() / 1_000_000L)
+            + " commitMs=" + (this.commitNanos.get() / 1_000_000L)
+            + " maxCommitMs=" + (this.maxCommitNanos.get() / 1_000_000L)
+            + " singleRecordCommits=" + this.singleRecordCommits.get()
             + " lastSaveMs=" + this.lastSaveDurationMs
             + " lastFlushMs=" + this.lastFlushDurationMs
             + " lastIoError=" + this.lastIoError;

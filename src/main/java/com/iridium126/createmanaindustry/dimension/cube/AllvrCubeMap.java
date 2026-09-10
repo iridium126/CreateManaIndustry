@@ -6,7 +6,6 @@ import java.util.ArrayDeque;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,6 +38,7 @@ import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandFieldGenerator
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrBlockUpdatePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrForgetCubePacket;
+import com.iridium126.createmanaindustry.dimension.storage.AllvrCubeCorruptedException;
 import com.iridium126.createmanaindustry.dimension.storage.AllvrCubeIoWorker;
 import com.iridium126.createmanaindustry.dimension.storage.AllvrCubeSerializer;
 import com.iridium126.createmanaindustry.dimension.storage.AllvrCubeSnapshot;
@@ -92,6 +92,16 @@ public final class AllvrCubeMap {
     private static final int SEND_BUDGET_PER_TICK = 24;
     /** Bound background work queued while a player moves through an island. */
     private static final int MAX_PENDING_GENERATIONS = 256;
+    /** Bound disk reads for persisted cubes while a player moves. */
+    private static final int MAX_PENDING_PERSISTED_LOADS = 256;
+    /**
+     * Chunk loading in vanilla keeps the region-file mailbox independent from
+     * the expensive chunk deserializer.  Keep the same boundary here: the
+     * region worker only reads/decompresses NBT, while a small bounded pool
+     * validates the cube schema and rebuilds its emitter index.
+     */
+    private static final int PERSISTENCE_DECODE_WORKERS =
+        Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
     /** Keep CPU use bounded while allowing independent cubes to generate in parallel. */
     private static final int TERRAIN_WORKERS =
         Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
@@ -145,10 +155,21 @@ public final class AllvrCubeMap {
             thread.setDaemon(true);
             return thread;
         }, new ThreadPoolExecutor.AbortPolicy());
+    private final ThreadPoolExecutor persistenceDecodeExecutor = new ThreadPoolExecutor(
+        PERSISTENCE_DECODE_WORKERS, PERSISTENCE_DECODE_WORKERS,
+        0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(MAX_PENDING_PERSISTED_LOADS * 2),
+        r -> {
+            Thread thread = new Thread(r, "allvr-persist-decode");
+            thread.setDaemon(true);
+            return thread;
+        }, new ThreadPoolExecutor.AbortPolicy());
     private final ConcurrentHashMap<Long, CompletableFuture<AllvrCube>> pendingGenerations = new ConcurrentHashMap<>();
     /** Executor handles let CubicChunks-style ticket drops interrupt queued/running work. */
     private final ConcurrentHashMap<Long, Future<?>> generationHandles = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<GeneratedCube> completedGenerations = new ConcurrentLinkedQueue<>();
+    /** Persisted cube reads use the vanilla ChunkMap-style async handoff. */
+    private final ConcurrentHashMap<Long, CompletableFuture<AllvrCube>> pendingPersistedLoads = new ConcurrentHashMap<>();
+    private final ConcurrentLinkedQueue<PersistedCubeLoad> completedPersistedLoads = new ConcurrentLinkedQueue<>();
     /** Geometry ticket cache; it avoids repeating island hashes for void rings. */
     private final Map<Long, Boolean> islandTicketCache = new LinkedHashMap<>(8192, .75f, true) {
         @Override protected boolean removeEldestEntry(Map.Entry<Long, Boolean> eldest) { return size() > 8192; }
@@ -162,6 +183,8 @@ public final class AllvrCubeMap {
     private final it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap lastSnapshotTick = new it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap();
     /** Cube key → last failed persisted-load attempt (retry throttle). */
     private final it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap loadCooldown = new it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap();
+    /** Permanently failed records are not retried every cooldown interval. */
+    private final LongOpenHashSet failedPersistedLoads = new LongOpenHashSet();
     private boolean loggedCapWarning;
     private int unloadScanTicks;
     private boolean closed;
@@ -180,6 +203,8 @@ public final class AllvrCubeMap {
     }
 
     private record GeneratedCube(long key, AllvrCube cube, Throwable failure) {}
+    private record PersistedCubeLoad(long key, CompletableFuture<AllvrCube> future,
+        AllvrCube cube, Throwable failure) {}
 
     public AllvrCubeMap(ServerLevel level) {
         this.level = level;
@@ -436,6 +461,25 @@ public final class AllvrCubeMap {
                 throw e;
             }
         }
+        CompletableFuture<AllvrCube> pendingLoad = pendingPersistedLoads.get(key);
+        if (pendingLoad != null) {
+            try {
+                // Direct gameplay writes still require a complete cube.  The
+                // streaming path never takes this branch; it consumes the
+                // async completion queue instead.
+                return installPersistedCube(key, pendingLoad.join());
+            } catch (java.util.concurrent.CancellationException e) {
+                pendingPersistedLoads.remove(key, pendingLoad);
+            } catch (java.util.concurrent.CompletionException e) {
+                pendingPersistedLoads.remove(key, pendingLoad);
+                Throwable cause = e.getCause();
+                if (cause instanceof java.util.concurrent.CancellationException) {
+                    return null;
+                }
+                quarantinePersistedLoad(key, cause != null ? cause : e);
+                throw e;
+            }
+        }
         if (this.persistedIndex.contains(key)) {
             return this.loadPersisted(key, AllvrCubePos.of(cubeX, cubeY, cubeZ));
         }
@@ -444,9 +488,12 @@ public final class AllvrCubeMap {
         }
         cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
         generator.generate(cube);
+        cube.rebuildEmitters();
         cubes.put(key, cube);
-        cube.rebuildDerivedState(level);
         cube.onLoad(level);
+        if (cube.hasBlockEntities()) {
+            cube.rebuildContextualEmitters(level);
+        }
         // Generated terrain is itself the authoritative result of worldgen.
         // Persist it through the bounded snapshot queue so the next session
         // restores the complete cube without repeating noise/features.
@@ -480,8 +527,10 @@ public final class AllvrCubeMap {
         if (existing != null) return existing;
         if (closed || persistedIndex.contains(key)) return cube;
         cubes.put(key, cube);
-        cube.rebuildDerivedState(level);
         cube.onLoad(level);
+        if (cube.hasBlockEntities()) {
+            cube.rebuildContextualEmitters(level);
+        }
         this.markGeneratedForPersistence(cube);
         diagnostics.cubesGenerated.incrementAndGet();
         return cube;
@@ -509,6 +558,9 @@ public final class AllvrCubeMap {
                     // would let 256 queued cubes flood the global worldgen
                     // executor and defeat ticket backpressure.
                     generator.generateAsync(cube).join();
+                    // Emission lookup is level-independent; finish it on the
+                    // worker so the main thread only binds BE tickers.
+                    cube.rebuildEmitters();
                     future.complete(cube);
                 } catch (Throwable failure) {
                     future.completeExceptionally(failure);
@@ -539,7 +591,16 @@ public final class AllvrCubeMap {
         long key = AllvrCubePos.asLong(cubeX, cubeY, cubeZ);
         AllvrCube cube = cubes.get(key);
         if (cube != null) return cube;
-        if (persistedIndex.contains(key)) return getOrGenerate(cubeX, cubeY, cubeZ);
+        if (persistedIndex.contains(key)) {
+            if (failedPersistedLoads.contains(key)) {
+                return null;
+            }
+            // ChunkMap never blocks the server tick on a disk read. Keep the
+            // shell scan moving and install decoded data from the main-thread
+            // completion queue on a later tick.
+            requestAsyncPersistedLoad(cubeX, cubeY, cubeZ);
+            return null;
+        }
         // A queued build already passed the geometry ticket test. Avoid
         // re-running that test when another player or a later scan reaches it.
         if (pendingGenerations.containsKey(key)) return null;
@@ -574,6 +635,23 @@ public final class AllvrCubeMap {
                 cancelGenerationHandle(entry.getKey(), entry.getValue());
             }
         }
+        for (Map.Entry<Long, CompletableFuture<AllvrCube>> entry : pendingPersistedLoads.entrySet()) {
+            AllvrCubePos pending = AllvrCubePos.fromLong(entry.getKey());
+            boolean needed = false;
+            for (ServerPlayer player : players) {
+                AllvrCubePos center = AllvrCubePos.of(player.blockPosition());
+                if (Math.abs(pending.getX() - center.getX()) <= GEN_RADIUS
+                    && Math.abs(pending.getY() - center.getY()) <= GEN_RADIUS
+                    && Math.abs(pending.getZ() - center.getZ()) <= GEN_RADIUS) {
+                    needed = true;
+                    break;
+                }
+            }
+            if (!needed && pendingPersistedLoads.remove(entry.getKey(), entry.getValue())) {
+                entry.getValue().cancel(false);
+                loadCooldown.remove(entry.getKey());
+            }
+        }
     }
 
     private void cancelGenerationHandle(long key, CompletableFuture<?> future) {
@@ -589,9 +667,15 @@ public final class AllvrCubeMap {
 
     public AllvrIslandFieldGenerator generator() { return this.generator; }
 
-    /** Restores one persisted cube (service thread, one blocking I/O wait). */
+    /**
+     * Restores one persisted cube for a direct gameplay access.  Streaming
+     * requests use {@link #requestAsyncPersistedLoad} and never block here.
+     */
     private AllvrCube loadPersisted(long key, AllvrCubePos pos) {
         if (this.closed) {
+            return null;
+        }
+        if (this.failedPersistedLoads.contains(key)) {
             return null;
         }
         long now = this.level.getGameTime();
@@ -599,26 +683,23 @@ public final class AllvrCubeMap {
             return null;
         }
         this.loadCooldown.put(key, now);
+        long start = System.nanoTime();
+        this.diagnostics.persistedLoadRequests.incrementAndGet();
         try {
-            Optional<CompoundTag> nbt = this.worker.loadBlocking(pos);
-            if (nbt.isEmpty()) {
-                CreateManaIndustry.LOGGER.error(
-                    "[Allvr] persisted index contains {} but no record was found — cube stays unloaded (fail closed)", pos);
-                return null;
-            }
-            AllvrCube cube = AllvrCubeSerializer.load(pos, nbt.get(), this.level);
-            cube.markPersistedOverride();
-            cube.markQueued(cube.mutationVersion()); // clean: pending/disk IS this state
-            this.cubes.put(key, cube);
-            if (cube.hasBlockEntities()) {
-                this.beCubes.put(key, cube);
-            }
-            cube.onLoad(this.level);
-            cube.rebuildDerivedState(this.level);
-            this.diagnostics.cubesLoadedFromDisk.incrementAndGet();
-            CreateManaIndustry.LOGGER.info("[Allvr] restored cube {} from region3d", pos);
-            return cube;
+            // Keep the I/O worker available for the next foreground read while
+            // the bounded decode pool performs codec validation and emitter
+            // rebuilding.  This is the same storage/deserializer split used
+            // by vanilla's ChunkMap pipeline.
+            AllvrCube cube = this.worker.load(pos)
+                .thenApplyAsync(nbt -> decodePersistedCube(pos, nbt), this.persistenceDecodeExecutor)
+                .join();
+            AllvrCube installed = this.installPersistedCube(key, cube);
+            this.diagnostics.persistedLoadNanos.addAndGet(System.nanoTime() - start);
+            return installed;
         } catch (Exception e) {
+            this.diagnostics.persistedLoadNanos.addAndGet(System.nanoTime() - start);
+            this.diagnostics.persistedLoadFailures.incrementAndGet();
+            quarantinePersistedLoad(key, e);
             this.diagnostics.noteIoError(e.toString());
             CreateManaIndustry.LOGGER.error(
                 "[Allvr] failed to load persisted cube {} — stays unloaded; regeneration suppressed", pos, e);
@@ -626,20 +707,117 @@ public final class AllvrCubeMap {
         }
     }
 
+    /** Queues a persisted cube read without blocking the server thread. */
+    private void requestAsyncPersistedLoad(int cubeX, int cubeY, int cubeZ) {
+        if (this.closed || this.pendingPersistedLoads.size() >= MAX_PENDING_PERSISTED_LOADS) {
+            return;
+        }
+        long key = AllvrCubePos.asLong(cubeX, cubeY, cubeZ);
+        if (this.cubes.containsKey(key) || this.pendingPersistedLoads.containsKey(key)
+            || this.failedPersistedLoads.contains(key)) {
+            return;
+        }
+        long now = this.level.getGameTime();
+        if (this.loadCooldown.containsKey(key) && now - this.loadCooldown.get(key) < LOAD_RETRY_TICKS) {
+            return;
+        }
+        this.loadCooldown.put(key, now);
+        AllvrCubePos pos = AllvrCubePos.of(cubeX, cubeY, cubeZ);
+        long start = System.nanoTime();
+        this.diagnostics.persistedLoadRequests.incrementAndGet();
+        CompletableFuture<AllvrCube> future;
+        try {
+            future = this.worker.load(pos)
+                .thenApplyAsync(nbt -> decodePersistedCube(pos, nbt), this.persistenceDecodeExecutor);
+        } catch (Throwable failure) {
+            this.diagnostics.persistedLoadFailures.incrementAndGet();
+            quarantinePersistedLoad(key, failure);
+            this.diagnostics.persistedLoadNanos.addAndGet(System.nanoTime() - start);
+            this.diagnostics.noteIoError(failure.toString());
+            return;
+        }
+        CompletableFuture<AllvrCube> previous = this.pendingPersistedLoads.putIfAbsent(key, future);
+        if (previous != null) {
+            return;
+        }
+        future.whenComplete((cube, failure) -> {
+            this.diagnostics.persistedLoadNanos.addAndGet(System.nanoTime() - start);
+            if (!this.closed) {
+                this.completedPersistedLoads.add(new PersistedCubeLoad(key, future, cube, failure));
+            }
+        });
+    }
+
+    /** Installs decoded data on the server thread and binds its live state. */
+    private AllvrCube installPersistedCube(long key, AllvrCube cube) {
+        if (cube == null || this.closed) {
+            return null;
+        }
+        AllvrCube existing = this.cubes.get(key);
+        if (existing != null) {
+            return existing;
+        }
+        cube.markPersistedOverride();
+        cube.markQueued(cube.mutationVersion());
+        this.cubes.put(key, cube);
+        if (cube.hasBlockEntities()) {
+            this.beCubes.put(key, cube);
+        }
+        cube.onLoad(this.level);
+        if (cube.hasBlockEntities()) {
+            cube.rebuildContextualEmitters(this.level);
+        }
+        this.loadCooldown.remove(key);
+        this.diagnostics.cubesLoadedFromDisk.incrementAndGet();
+        CreateManaIndustry.LOGGER.debug("[Allvr] restored cube {} from region3d", cube.getPos());
+        return cube;
+    }
+
     /** Async decode of a persisted cube into the LOD-only overlay (plan §7.6). */
     public CompletableFuture<AllvrPersistedOverlay> loadOverlayAsync(AllvrCubePos pos) {
         Registry<net.minecraft.world.level.biome.Biome> biomes = this.biomeRegistry;
-        return this.worker.load(pos).thenApply(nbt -> {
+        return this.worker.load(pos).thenApplyAsync(nbt -> decodePersistedOverlay(pos, nbt, biomes),
+            this.persistenceDecodeExecutor);
+    }
+
+    /**
+     * Deserializes a disk record off the region-file worker.  A missing record
+     * is treated as a structural persistence failure so the caller can keep
+     * the persisted index authoritative and avoid silently regenerating over
+     * it.
+     */
+    private AllvrCube decodePersistedCube(AllvrCubePos pos, java.util.Optional<CompoundTag> nbt) {
+        long start = System.nanoTime();
+        try {
+            if (nbt.isEmpty()) {
+                throw new java.util.concurrent.CompletionException(new java.io.IOException(
+                    "persisted index contains " + pos + " but no record was found"));
+            }
+            AllvrCube restored = AllvrCubeSerializer.load(pos, nbt.get(), this.level);
+            restored.rebuildEmitters();
+            return restored;
+        } catch (AllvrCubeCorruptedException e) {
+            throw new java.util.concurrent.CompletionException(e);
+        } finally {
+            this.diagnostics.persistedDecodeNanos.addAndGet(System.nanoTime() - start);
+        }
+    }
+
+    private AllvrPersistedOverlay decodePersistedOverlay(AllvrCubePos pos,
+                                                          java.util.Optional<CompoundTag> nbt,
+                                                          Registry<net.minecraft.world.level.biome.Biome> biomes) {
+        long start = System.nanoTime();
+        try {
             if (nbt.isEmpty()) {
                 throw new java.util.concurrent.CompletionException(new java.io.IOException(
                     "[Allvr] persisted index contains " + pos + " but no record was found"));
             }
-            try {
-                return AllvrCubeSerializer.decodeOverlay(pos, nbt.get(), biomes);
-            } catch (java.io.IOException e) {
-                throw new java.util.concurrent.CompletionException(e);
-            }
-        });
+            return AllvrCubeSerializer.decodeOverlay(pos, nbt.get(), biomes);
+        } catch (java.io.IOException e) {
+            throw new java.util.concurrent.CompletionException(e);
+        } finally {
+            this.diagnostics.persistedDecodeNanos.addAndGet(System.nanoTime() - start);
+        }
     }
 
     /**
@@ -655,6 +833,7 @@ public final class AllvrCubeMap {
         // still owes its queued snapshots (vanilla autosave parity)
         this.drainSnapshotQueue();
         this.drainCompletedGenerations();
+        this.drainCompletedPersistedLoads();
         List<ServerPlayer> players = level.players();
         if (players.isEmpty()) {
             cancelGenerationsOutside(players);
@@ -677,7 +856,10 @@ public final class AllvrCubeMap {
                 // synchronous warm-up could invoke dozens of noise/feature
                 // builds in one server tick. The normal budgeted loop below
                 // streams the surrounding cubes over subsequent ticks.
-                AllvrCube cube = getOrGenerate(pc.getX(), pc.getY(), pc.getZ());
+                long centerKey = pc.asLong();
+                AllvrCube cube = persistedIndex.contains(centerKey)
+                    ? getOrRequest(pc.getX(), pc.getY(), pc.getZ())
+                    : getOrGenerate(pc.getX(), pc.getY(), pc.getZ());
                 if (cube != null) {
                     long key = cube.getPos().asLong();
                     if (sub.sent.add(key)) {
@@ -845,6 +1027,7 @@ public final class AllvrCubeMap {
      * never a silently dropped cube (plan §7.3).
      */
     private boolean trySnapshot(AllvrCube cube) {
+        long start = System.nanoTime();
         try {
             AllvrCubeSnapshot snapshot = AllvrCubeSerializer.snapshot(cube, this.level);
             this.worker.enqueue(snapshot);
@@ -856,14 +1039,81 @@ public final class AllvrCubeMap {
             cube.markQueued(snapshot.version());
             this.lastSnapshotTick.put(cube.getPos().asLong(), this.level.getGameTime());
             this.diagnostics.snapshotsBuilt.incrementAndGet();
+            this.diagnostics.snapshotNanos.addAndGet(System.nanoTime() - start);
             return true;
         } catch (Exception e) {
+            this.diagnostics.snapshotNanos.addAndGet(System.nanoTime() - start);
             this.diagnostics.snapshotsFailed.incrementAndGet();
             this.diagnostics.noteIoError(e.toString());
             CreateManaIndustry.LOGGER.error("[Allvr] snapshot failed for cube {} — cube kept in memory",
                 cube.getPos(), e);
             return false;
         }
+    }
+
+    /** Applies completed disk reads on the server thread, like ChunkMap. */
+    private void drainCompletedPersistedLoads() {
+        PersistedCubeLoad completed;
+        while ((completed = completedPersistedLoads.poll()) != null) {
+            this.pendingPersistedLoads.remove(completed.key(), completed.future());
+            if (closed) {
+                continue;
+            }
+            if (completed.failure() != null) {
+                if (completed.failure() instanceof java.util.concurrent.CancellationException) {
+                    continue;
+                }
+                diagnostics.persistedLoadFailures.incrementAndGet();
+                boolean quarantined = quarantinePersistedLoad(completed.key(), completed.failure());
+                diagnostics.noteIoError(completed.failure().toString());
+                CreateManaIndustry.LOGGER.error("[Allvr] async load failed for persisted cube {} — {}",
+                    AllvrCubePos.fromLong(completed.key()),
+                    quarantined ? "record quarantined; regeneration suppressed"
+                        : "transient failure; retry remains enabled",
+                    completed.failure());
+                continue;
+            }
+            try {
+                this.installPersistedCube(completed.key(), completed.cube());
+            } catch (Throwable failure) {
+                diagnostics.persistedLoadFailures.incrementAndGet();
+                quarantinePersistedLoad(completed.key(), failure);
+                diagnostics.noteIoError(failure.toString());
+                CreateManaIndustry.LOGGER.error("[Allvr] async cube install failed for {} — "
+                    + "regeneration suppressed", AllvrCubePos.fromLong(completed.key()), failure);
+            }
+        }
+    }
+
+    /**
+     * Classifies failures that cannot be repaired by retrying the same record.
+     * A failed record remains in {@link #persistedIndex} so deterministic
+     * generation can never overwrite it, but it is removed from the hot load
+     * path for the rest of this server session.
+     */
+    private boolean quarantinePersistedLoad(long key, Throwable failure) {
+        Throwable cause = failure;
+        while (cause instanceof java.util.concurrent.CompletionException
+            || cause instanceof java.util.concurrent.ExecutionException) {
+            if (cause.getCause() == null) {
+                break;
+            }
+            cause = cause.getCause();
+        }
+        boolean permanent = cause instanceof AllvrCubeCorruptedException
+            || cause instanceof net.minecraft.nbt.NbtAccounterException
+            || (cause instanceof java.io.IOException io
+                && io.getMessage() != null
+                && io.getMessage().startsWith("persisted index contains"));
+        if (permanent) {
+            boolean added = this.failedPersistedLoads.add(key);
+            if (added) {
+                this.diagnostics.persistedLoadQuarantined.incrementAndGet();
+            }
+            this.loadCooldown.remove(key);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -942,8 +1192,19 @@ public final class AllvrCubeMap {
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         }
+        persistenceDecodeExecutor.shutdownNow();
+        try {
+            persistenceDecodeExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
         pendingGenerations.clear();
         completedGenerations.clear();
+        for (CompletableFuture<AllvrCube> load : pendingPersistedLoads.values()) {
+            load.cancel(false);
+        }
+        pendingPersistedLoads.clear();
+        completedPersistedLoads.clear();
         this.worker.close();
         CreateManaIndustry.LOGGER.info("[Allvr] cube persistence closed ({}): {}",
             ok ? "clean" : "with errors", this.diagnostics);

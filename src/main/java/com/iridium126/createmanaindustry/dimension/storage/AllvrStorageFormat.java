@@ -13,10 +13,10 @@ package com.iridium126.createmanaindustry.dimension.storage;
  * </pre>
  * Each header holds the region identity, an incrementing generation, the
  * 4096 slot table and a trailing CRC32C over the whole header image. A batch
- * commit writes new payloads, {@code force(false)}, then rewrites the
- * <b>inactive</b> header copy with a bumped generation and {@code force(true)}
- * — so at every interruption either the old or the new header is complete
- * (plan §5.3).
+ * commit writes new payloads and rewrites the <b>inactive</b> header copy
+ * with a bumped generation; channel forcing is deferred to flush/close so
+ * background saves do not pay an fsync per batch, while the shadow header
+ * still gives crash recovery a valid old/new image (plan §5.3).
  */
 public final class AllvrStorageFormat {
 

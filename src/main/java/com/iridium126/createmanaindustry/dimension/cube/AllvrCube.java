@@ -257,6 +257,38 @@ public final class AllvrCube implements AllvrOverlaySource {
      * generator cubes start without emitters and bind tickers lazily.
      */
     public void rebuildDerivedState(Level level) {
+        this.rebuildContextualEmitters(level);
+        this.rebindAllTickers(level);
+    }
+
+    /**
+     * Rebuilds the immutable block-state portion of derived state. This uses
+     * the level-independent emission accessor and is safe to run on an
+     * unpublished cube-loading or terrain worker.
+     */
+    public void rebuildEmitters() {
+        this.emitters.clear();
+        for (int ly = 0; ly < AllvrCoords.DIAMETER_IN_BLOCKS; ly++) {
+            for (int lz = 0; lz < AllvrCoords.DIAMETER_IN_BLOCKS; lz++) {
+                for (int lx = 0; lx < AllvrCoords.DIAMETER_IN_BLOCKS; lx++) {
+                    BlockState state = this.sections[sectionIndex(lx, ly, lz)]
+                        .getBlockState(lx & 15, ly & 15, lz & 15);
+                    int emission = state.getLightEmission();
+                    if (emission > 0) {
+                        this.emitters.put((ly << 10) | (lz << 5) | lx, emission);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Refreshes emissions whose block implementation depends on live level
+     * state (for example a fuel tank's block-entity luminosity). Only cubes
+     * containing block entities need this server-thread pass; ordinary blocks
+     * use the cheaper level-independent index above.
+     */
+    public void rebuildContextualEmitters(Level level) {
         this.emitters.clear();
         int baseX = this.pos.minBlockX();
         int baseY = this.pos.minBlockY();
@@ -269,12 +301,11 @@ public final class AllvrCube implements AllvrOverlaySource {
                         .getBlockState(lx & 15, ly & 15, lz & 15);
                     int emission = state.getLightEmission(level, cursor.set(baseX + lx, baseY + ly, baseZ + lz));
                     if (emission > 0) {
-                        this.emitters.put(localIndex(cursor), emission);
+                        this.emitters.put((ly << 10) | (lz << 5) | lx, emission);
                     }
                 }
             }
         }
-        this.rebindAllTickers(level);
     }
 
     // ---- block entities -------------------------------------------------

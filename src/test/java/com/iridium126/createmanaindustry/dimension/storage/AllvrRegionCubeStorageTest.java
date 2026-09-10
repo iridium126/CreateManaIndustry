@@ -10,6 +10,9 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import net.minecraft.nbt.CompoundTag;
 
@@ -126,6 +129,35 @@ class AllvrRegionCubeStorageTest {
         // at its initial footprint (2 headers + 1 record sector)
         assertTrue(size < (AllvrStorageFormat.PAYLOAD_START_SECTOR + 2) * AllvrStorageFormat.SECTOR_BYTES,
             "file grew without bound: " + size);
+    }
+
+    @Test
+    void concurrentReadsAcrossRegionsAreConsistent() throws Exception {
+        Path folder = this.temp.resolve("parallel-region3d");
+        List<AllvrCubePos> positions = new ArrayList<>();
+        var batch = new java.util.LinkedHashMap<AllvrCubePos, CompoundTag>();
+        for (int i = 0; i < 32; i++) {
+            AllvrCubePos pos = AllvrCubePos.of(i * AllvrRegionIndex.DIAMETER, i & 3, -i * AllvrRegionIndex.DIAMETER);
+            positions.add(pos);
+            batch.put(pos, tag(i));
+        }
+        try (AllvrRegionCubeStorage storage = new AllvrRegionCubeStorage(folder)) {
+            storage.writeBatch(batch);
+            assertTrue(storage.supportsConcurrentReads());
+            ExecutorService readers = Executors.newFixedThreadPool(4);
+            try {
+                List<Future<Integer>> results = new ArrayList<>();
+                for (int i = 0; i < positions.size(); i++) {
+                    int expected = i;
+                    results.add(readers.submit(() -> storage.read(positions.get(expected)).orElseThrow().getInt("n")));
+                }
+                for (int i = 0; i < results.size(); i++) {
+                    assertEquals(i, results.get(i).get());
+                }
+            } finally {
+                readers.shutdownNow();
+            }
+        }
     }
 
     @Test

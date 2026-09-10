@@ -14,9 +14,10 @@ import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
  * durability only — no live cube objects ever cross this interface, and it
  * carries no pending-write knowledge (read-your-writes is the worker's job).
  * <p>
- * All implementations are confined to the single I/O thread; the initial
- * header enumeration runs through the worker before any concurrent task
- * exists. Batch writes are ordered per region (one header commit per batch).
+ * Implementations may opt into parallel read tasks. Such reads must be
+ * safe while no batch mutation is in progress; batch writes remain ordered
+ * per region (one header commit per batch). The initial header enumeration
+ * still runs through the worker before any concurrent task exists.
  */
 public interface AllvrCubeStorage extends AutoCloseable {
 
@@ -28,6 +29,16 @@ public interface AllvrCubeStorage extends AutoCloseable {
      * payloads throw {@link AllvrCubeCorruptedException}.
      */
     Optional<CompoundTag> read(AllvrCubePos pos) throws IOException;
+
+    /**
+     * Whether {@link #read(AllvrCubePos)} is safe to call concurrently with
+     * other reads. The default keeps small test/storage implementations on
+     * the original single-worker path; region3d opts in after protecting its
+     * file handles with a read/write lock.
+     */
+    default boolean supportsConcurrentReads() {
+        return false;
+    }
 
     /**
      * Atomically commits every given record (per region). Failures leave the
