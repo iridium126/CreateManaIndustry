@@ -64,6 +64,13 @@ public final class AllvrCube implements AllvrOverlaySource {
     private boolean loaded;
     private final LevelChunkSection[] sections = new LevelChunkSection[SECTIONS_PER_CUBE];
     /**
+     * Immutable 32x32 column opacity masks used by the client renderer's
+     * synthetic sky-light sampler.  The mask is prepared before a decoded
+     * cube is published whenever possible, so the render thread does not have
+     * to walk all 32,768 block states on the first mesh build.
+     */
+    private volatile int[] opacityColumns;
+    /**
      * Block entities keyed by the 15-bit in-cube cell index. Never key by
      * {@code BlockPos#asLong} here — its Y packing is only 12 bit, which
      * aliases positions beyond the vanilla build height.
@@ -141,9 +148,41 @@ public final class AllvrCube implements AllvrOverlaySource {
         int lz = AllvrCoords.blockToLocal(worldPos.getZ());
         BlockState old = sections[sectionIndex(lx, ly, lz)].setBlockState(lx & 15, ly & 15, lz & 15, state, useLocks);
         if (old != null && !old.equals(state)) {
+            opacityColumns = null;
             this.markDirty();
         }
         return old;
+    }
+
+    /**
+     * Returns the cached 32x32 opacity masks, building them once if this cube
+     * was created by a path that did not precompute client render data.
+     * Callers must treat the returned array as immutable.
+     */
+    public int[] opacityColumns() {
+        int[] cached = opacityColumns;
+        if (cached != null) {
+            return cached;
+        }
+        int[] built = new int[32 * 32];
+        for (int z = 0; z < 32; z++) {
+            for (int x = 0; x < 32; x++) {
+                int mask = 0;
+                for (int y = 0; y < 32; y++) {
+                    LevelChunkSection section = sections[sliceIndex(x >> 4, y >> 4, z >> 4)];
+                    if (section.getBlockState(x & 15, y & 15, z & 15).canOcclude()) {
+                        mask |= 1 << y;
+                    }
+                }
+                built[(z << 5) + x] = mask;
+            }
+        }
+        synchronized (this) {
+            if (opacityColumns == null) {
+                opacityColumns = built;
+            }
+            return opacityColumns;
+        }
     }
 
     // ---- persistence / lifecycle ------------------------------------------
@@ -244,6 +283,7 @@ public final class AllvrCube implements AllvrOverlaySource {
             throw new IllegalArgumentException("section index " + index + " outside 0.." + (SECTIONS_PER_CUBE - 1));
         }
         this.sections[index] = new LevelChunkSection(states, biomes);
+        this.opacityColumns = null;
     }
 
     /** Registers a restored block entity (loader path; ticker binding happens in {@link #onLoad}). */

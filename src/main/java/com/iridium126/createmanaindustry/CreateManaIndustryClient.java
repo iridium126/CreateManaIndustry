@@ -95,13 +95,16 @@ public class CreateManaIndustryClient {
     @SubscribeEvent
     private static void onClientTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
-        com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.tick();
         if (mc.level != null
             && mc.level.dimension() == com.iridium126.createmanaindustry.dimension.AllvrDimensions.ALLAY_LEVEL) {
+            // Publish packet decodes prepared off-thread. The handoff is
+            // drained completely; there is no client-thread quota here.
+            com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.tick();
             com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.tickBlockEntities();
             // LOD request walk (bitmaps → batched C2S mesh requests + eviction)
             com.iridium126.createmanaindustry.client.dimension.AllvrLodClientState.tick();
         }
+        com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.tick();
     }
 
     /** Releases the GPU particle engine's resources when the game shuts down. */

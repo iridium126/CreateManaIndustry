@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.mixin.sodium;
 
-import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge;
 import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumSectionSource;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
@@ -28,8 +27,7 @@ public abstract class AllvrSodiumClonedChunkSectionMixin {
         if (level instanceof ClientLevel clientLevel
             && clientLevel.dimension() == AllvrDimensions.ALLAY_LEVEL
             && AllvrSodiumBridge.active()) {
-            return AllvrSodiumSectionSource.lightData(clientLevel, pos,
-                AllvrClientCubeCache.contentRevision());
+            return AllvrSodiumSectionSource.lightData(clientLevel, pos);
         }
         return original.call(level, pos);
     }

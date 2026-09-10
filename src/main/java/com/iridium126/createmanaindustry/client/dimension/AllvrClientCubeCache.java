@@ -5,10 +5,18 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
+
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
@@ -27,10 +35,10 @@ import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSod
  * collision, entity physics, block outlines and ray tracing, so a player
  * teleported onto an island stands on it.
  * <p>
- * Cache misses read as void air — the client never generates. All apply/forget
- * calls run on the main thread ({@code ctx.enqueueWork}); reads happen on the
- * client thread. Cleared on level unload / world switch (see
- * {@code CreateManaIndustryClient}).
+ * Cache misses read as void air — the client never generates. Packet section
+ * decoding runs on a bounded worker pool; publication, forget and mutation
+ * calls run on the client game thread. Cleared on level unload / world switch
+ * (see {@code CreateManaIndustryClient}).
  */
 public final class AllvrClientCubeCache {
 
@@ -43,12 +51,42 @@ public final class AllvrClientCubeCache {
     public static final Object LOCK = new Object();
 
     private static ClientLevel level;
+    /**
+     * Packet section/BE decoding is deliberately outside the client game
+     * thread.  The vanilla chunk path decodes packet data before publishing a
+     * LevelChunk; doing the equivalent here prevents a burst of streamed cubes
+     * from blocking frame and input processing on the render/game thread.
+     */
+    private static final int CUBE_DECODE_WORKERS =
+        Math.max(1, Math.min(2, Runtime.getRuntime().availableProcessors() / 2));
+    private static final ThreadPoolExecutor CUBE_DECODE_EXECUTOR = new ThreadPoolExecutor(
+        CUBE_DECODE_WORKERS, CUBE_DECODE_WORKERS,
+        0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(256),
+        runnable -> {
+            Thread thread = new Thread(runnable, "allvr-client-cube-decode");
+            thread.setDaemon(true);
+            return thread;
+        }, new ThreadPoolExecutor.CallerRunsPolicy());
+    private static final AtomicLong NEXT_PACKET_SEQUENCE = new AtomicLong();
+    /** Incremented on level teardown so a late decode cannot publish into a
+     * newly created Allay level with the same dimension id. */
+    private static final AtomicLong CLIENT_SESSION_EPOCH = new AtomicLong();
+    /** Latest packet sequence per cube; prevents an older async decode from
+     * replacing a newer packet that finished first. */
+    private static final ConcurrentHashMap<Long, Long> LATEST_PACKET_SEQUENCE =
+        new ConcurrentHashMap<>();
+    private static final ConcurrentLinkedQueue<DecodedCube> COMPLETED_CUBES =
+        new ConcurrentLinkedQueue<>();
     /** Monotonic ALLVR content revision used by immutable Sodium snapshots. */
-    private static long contentRevision;
+    private static volatile long contentRevision;
     private static final Long2ObjectOpenHashMap<AllvrCube> cubes = new Long2ObjectOpenHashMap<>();
     /** Cubes that hold block entities — the client ticking worklist (mirrors
      *  the server cube map's registry; most cubes are pure terrain). */
     private static final Long2ObjectOpenHashMap<AllvrCube> beCubes = new Long2ObjectOpenHashMap<>();
+
+    private record DecodedCube(ClientLevel targetLevel, long sessionEpoch, long cubePos,
+                               int payloadBytes, AllvrCube cube, long sequence,
+                               Throwable failure) {}
 
     /** Binds the current client level (called on LevelEvent.Load). */
     public static void onLevelChanged(ClientLevel clientLevel) {
@@ -73,6 +111,11 @@ public final class AllvrClientCubeCache {
         }
     }
 
+    /** Lock-free render-thread generation check for immutable Sodium caches. */
+    public static long contentRevisionVolatile() {
+        return contentRevision;
+    }
+
     /** Internal read for a caller already holding {@link #LOCK}. */
     public static long contentRevisionUnsafe() {
         return contentRevision;
@@ -85,6 +128,7 @@ public final class AllvrClientCubeCache {
 
     /** Drops every streamed cube (level unload / dimension switch / logout). */
     public static void clear() {
+        CLIENT_SESSION_EPOCH.incrementAndGet();
         AllvrSodiumBridge.clear();
         synchronized (LOCK) {
             for (AllvrCube cube : cubes.values()) {
@@ -93,44 +137,132 @@ public final class AllvrClientCubeCache {
             cubes.clear();
             beCubes.clear();
             contentRevision++;
+            LATEST_PACKET_SEQUENCE.clear();
+            COMPLETED_CUBES.clear();
             level = null;
         }
     }
 
-    /** Main-thread apply of one streamed cube. A structurally malformed
-     *  payload (element cap breach, trailing bytes) drops the whole packet —
-     *  a half-applied cube would mix old sections with a failed tail. */
+    /**
+     * Queues one streamed cube for off-thread packet deserialization.  Only
+     * the publication and Sodium invalidation are performed on the client
+     * game thread, mirroring vanilla's packet-to-ChunkMap handoff.
+     */
+    public static void queueCube(ClientboundAllvrCubePacket packet) {
+        ClientLevel clientLevel = Minecraft.getInstance().level;
+        if (clientLevel == null || clientLevel.dimension() != AllvrDimensions.ALLAY_LEVEL) {
+            return;
+        }
+        RegistryAccess registryAccess = clientLevel.registryAccess();
+        long sequence = NEXT_PACKET_SEQUENCE.incrementAndGet();
+        long sessionEpoch = CLIENT_SESSION_EPOCH.get();
+        LATEST_PACKET_SEQUENCE.put(packet.cubePos(), sequence);
+        CUBE_DECODE_EXECUTOR.execute(() -> decodeAndQueueApply(
+            packet, clientLevel, registryAccess, sequence, sessionEpoch));
+    }
+
+    private static void decodeAndQueueApply(ClientboundAllvrCubePacket packet,
+                                             ClientLevel targetLevel,
+                                             RegistryAccess registryAccess,
+                                             long sequence,
+                                             long sessionEpoch) {
+        AllvrCube cube = null;
+        Throwable failure = null;
+        try {
+            cube = packet.decodeCube(registryAccess);
+            // Prepare the renderer's compact opacity columns while the cube
+            // is still unpublished.  Sodium's render thread can then build
+            // light snapshots without scanning 32^3 block states on demand.
+            cube.opacityColumns();
+        } catch (Throwable error) {
+            failure = error;
+        }
+        // A level switch or a queued forget may finish while this worker was
+        // decoding.  Drop the result before it reaches the publication queue;
+        // the sequence check below remains the final stale-packet guard.
+        if (CLIENT_SESSION_EPOCH.get() != sessionEpoch) {
+            return;
+        }
+        COMPLETED_CUBES.add(new DecodedCube(targetLevel, sessionEpoch, packet.cubePos(),
+            packet.payload().length, cube, sequence, failure));
+    }
+
+    /** Applies all completed packet decodes on the client game thread. Packet
+     * workers only append to {@link #COMPLETED_CUBES}; the handoff itself is
+     * not artificially delayed, matching the vanilla packet lifecycle. */
+    public static void tick() {
+        DecodedCube decoded;
+        while ((decoded = COMPLETED_CUBES.poll()) != null) {
+            applyDecodedCube(decoded.targetLevel(), decoded.sessionEpoch(), decoded.cubePos(),
+                decoded.payloadBytes(), decoded.cube(), decoded.sequence(), decoded.failure());
+        }
+    }
+
+    /**
+     * Main-thread apply of one already decoded streamed cube. A structurally
+     * malformed payload (element cap breach, trailing bytes) drops the whole
+     * packet — a half-applied cube would mix old sections with a failed tail.
+     */
+    private static void applyDecodedCube(ClientLevel targetLevel, long sessionEpoch,
+                                         long cubePos, int payloadBytes, AllvrCube cube,
+                                         long sequence, Throwable failure) {
+        ClientLevel clientLevel = Minecraft.getInstance().level;
+        if (clientLevel == null || clientLevel != targetLevel
+            || CLIENT_SESSION_EPOCH.get() != sessionEpoch
+            || clientLevel.dimension() != AllvrDimensions.ALLAY_LEVEL) {
+            return;
+        }
+        Long latest = LATEST_PACKET_SEQUENCE.get(cubePos);
+        if (latest != null && latest.longValue() != sequence) {
+            return;
+        }
+        if (failure != null) {
+            CreateManaIndustry.LOGGER.warn("[Allvr] malformed cube packet for {} — dropped",
+                com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(cubePos), failure);
+            return;
+        }
+        level = clientLevel;
+        synchronized (LOCK) {
+            AllvrCube old = cubes.put(cubePos, cube);
+            if (old != null) {
+                old.onUnload();
+            }
+            refreshBeCube(cubePos, cube);
+            contentRevision++;
+        }
+        cube.onLoad(clientLevel);
+        AllvrSodiumBridge.onCubeApplied(cubePos);
+        if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
+            CreateManaIndustry.LOGGER.debug("[Allvr] cube {} streamed ({} bytes, {} cubes cached)",
+                cube.getPos(), payloadBytes, cubes.size());
+        }
+    }
+
+    /**
+     * Synchronous compatibility entry point for code that explicitly wants
+     * to apply a packet on the client thread. Network handlers must use
+     * {@link #queueCube} so section decoding never runs on that thread.
+     */
     public static void applyCube(ClientboundAllvrCubePacket packet) {
         ClientLevel clientLevel = Minecraft.getInstance().level;
         if (clientLevel == null || clientLevel.dimension() != AllvrDimensions.ALLAY_LEVEL) {
             return;
         }
-        level = clientLevel;
-        AllvrCube cube;
         try {
-            cube = packet.decodeCube(clientLevel, clientLevel.registryAccess());
-        } catch (Exception e) {
-            CreateManaIndustry.LOGGER.warn("[Allvr] malformed cube packet for {} — dropped",
-                com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(packet.cubePos()), e);
-            return;
-        }
-        synchronized (LOCK) {
-            AllvrCube old = cubes.put(packet.cubePos(), cube);
-            if (old != null) {
-                old.onUnload();
-            }
-            refreshBeCube(packet.cubePos(), cube);
-            contentRevision++;
-        }
-        cube.onLoad(clientLevel);
-        AllvrSodiumBridge.onCubeApplied(packet.cubePos());
-        if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
-            CreateManaIndustry.LOGGER.debug("[Allvr] cube {} streamed ({} bytes, {} cubes cached)",
-                cube.getPos(), packet.payload().length, cubes.size());
+            long sequence = NEXT_PACKET_SEQUENCE.incrementAndGet();
+            LATEST_PACKET_SEQUENCE.put(packet.cubePos(), sequence);
+            applyDecodedCube(clientLevel, CLIENT_SESSION_EPOCH.get(), packet.cubePos(), packet.payload().length,
+                packet.decodeCube(clientLevel.registryAccess()), sequence, null);
+        } catch (Throwable error) {
+            applyDecodedCube(clientLevel, CLIENT_SESSION_EPOCH.get(), packet.cubePos(), packet.payload().length, null,
+                LATEST_PACKET_SEQUENCE.getOrDefault(packet.cubePos(), Long.MIN_VALUE), error);
         }
     }
 
     public static void forgetCube(long cubePos) {
+        // Keep a tombstone sequence so a decode that was already queued cannot
+        // resurrect a cube after the vanilla-style forget packet is applied.
+        LATEST_PACKET_SEQUENCE.put(cubePos, NEXT_PACKET_SEQUENCE.incrementAndGet());
         synchronized (LOCK) {
             AllvrCube old = cubes.remove(cubePos);
             if (old != null) {

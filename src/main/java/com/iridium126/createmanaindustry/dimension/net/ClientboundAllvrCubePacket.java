@@ -10,7 +10,6 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -99,16 +98,25 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
         return new ClientboundAllvrCubePacket(cube.getPos().asLong(), payload);
     }
 
-    /** Called on the client; decoded and applied on the main thread. */
+    /**
+     * Called on the client.  The packet bytes have already been copied by the
+     * network codec; the client cache decodes the eight sections on its
+     * bounded decode executor and only publishes the finished cube on the
+     * game thread.  Vanilla follows the same split: packet IO/deserialization
+     * is kept away from the render/game tick while section meshes are queued
+     * after the chunk becomes visible.
+     */
     public static void handle(ClientboundAllvrCubePacket packet, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> AllvrClientCubeCache.applyCube(packet));
+        AllvrClientCubeCache.queueCube(packet);
     }
 
-    /** Client-side decode into a fresh {@link AllvrCube} (main thread).
+    /** Client-side decode into a fresh unpublished {@link AllvrCube}.
      *  Throws on any structural violation (element count over the cap, a cell
      *  index outside the 15-bit cube layout, trailing bytes) so the caller
-     *  rejects the whole packet instead of half-applying it. */
-    public AllvrCube decodeCube(Level level, RegistryAccess registryAccess) {
+     *  rejects the whole packet instead of half-applying it.  This method does
+     *  not touch a live level or bind block-entity tickers, so it is safe to
+     *  run on the client packet decode executor. */
+    public AllvrCube decodeCube(RegistryAccess registryAccess) {
         AllvrCubePos pos = AllvrCubePos.fromLong(cubePos);
         AllvrCube cube = new AllvrCube(pos, registryAccess.registryOrThrow(Registries.BIOME));
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.wrappedBuffer(payload));
@@ -132,14 +140,10 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
             if (state.getBlock() instanceof net.minecraft.world.level.block.EntityBlock entityBlock) {
                 BlockEntity be = entityBlock.newBlockEntity(worldPos, state);
                 if (be != null) {
-                    be.setLevel(level);
                     if (tag != null) {
                         be.loadWithComponents(tag, registryAccess);
                     }
                     cube.putBlockEntity(worldPos, be);
-                    // bind the ticker for the streamed state (the vanilla chunk
-                    // packet path does the same for its BEs)
-                    cube.updateBlockEntity(level, worldPos, state);
                 }
             }
         }
@@ -158,6 +162,16 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
                 + " trailing bytes — codec mismatch");
         }
         return cube;
+    }
+
+    /**
+     * Compatibility overload for callers that still pass a level.  Level
+     * access is intentionally ignored during decode; {@link AllvrCube#onLoad}
+     * binds the level and rebinds tickers when the cube is published on the
+     * client thread.
+     */
+    public AllvrCube decodeCube(net.minecraft.world.level.Level level, RegistryAccess registryAccess) {
+        return decodeCube(registryAccess);
     }
 
     /** Cell layout is y&lt;&lt;10 | z&lt;&lt;5 | x over a 32³ cube (15 bits). */
