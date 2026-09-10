@@ -111,11 +111,6 @@ public final class AllvrClientCubeCache {
         }
     }
 
-    /** Lock-free render-thread generation check for immutable Sodium caches. */
-    public static long contentRevisionVolatile() {
-        return contentRevision;
-    }
-
     /** Internal read for a caller already holding {@link #LOCK}. */
     public static long contentRevisionUnsafe() {
         return contentRevision;

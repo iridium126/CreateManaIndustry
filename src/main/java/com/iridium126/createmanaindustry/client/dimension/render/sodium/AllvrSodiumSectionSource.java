@@ -10,6 +10,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -44,34 +45,36 @@ public final class AllvrSodiumSectionSource {
     private static final Long2ObjectLinkedOpenHashMap<LightCacheEntry> LIGHT_CACHE =
         new Long2ObjectLinkedOpenHashMap<>();
     private static final int LIGHT_CACHE_LIMIT = 1024;
-    /** Reuse immutable section copies per cube instance and mutation version.
-     * A global content revision changes for every streamed cube; tying this
-     * cache to that revision would recopy unchanged neighbours on every packet.
-     */
+    /** Reuse immutable section copies per cube instance and mutation version. */
     private static final int SECTION_COPY_CACHE_LIMIT = 512;
     private static final Long2ObjectLinkedOpenHashMap<SectionCopyCache> SECTION_COPY_CACHE =
         new Long2ObjectLinkedOpenHashMap<>();
     private static final Long2ObjectLinkedOpenHashMap<ClonedCache> CLONED_SECTION_CACHE =
         new Long2ObjectLinkedOpenHashMap<>();
     private static final int CLONED_SECTION_CACHE_LIMIT = 512;
-    private static long clonedContentRevision = Long.MIN_VALUE;
+    /** The synthetic ALLVR sections still need a real column carrier for
+     * Sodium's platform light/model hooks. Reuse the vanilla carrier lookup
+     * result across neighbouring rebuild contexts. */
+    private static final Long2ObjectLinkedOpenHashMap<LevelChunk> CARRIER_CACHE =
+        new Long2ObjectLinkedOpenHashMap<>();
+    private static final int CARRIER_CACHE_LIMIT = 512;
     private static long clonedResourceRevision = Long.MIN_VALUE;
     private static long clonedWindowEpoch = Long.MIN_VALUE;
 
     private static ClientLevel airSectionLevel;
     private static LevelChunkSection cachedAirSection;
+    private static ClientLevel carrierCacheLevel;
 
     private record SectionCopyCache(AllvrCube cube, long mutationVersion,
                                     LevelChunkSection[] sections) {}
 
-    private record ClonedCache(long contentRevision, long sourceFingerprint,
-                               long resourceRevision, long windowEpoch,
+    private record ClonedCache(long resourceRevision, long windowEpoch,
                                ClonedChunkSection section) {}
 
     private record LightInputs(int minY, int cubeY0, int[] columnMasks,
-                               List<Emitter> emitters, long fingerprint) {}
+                               List<Emitter> emitters) {}
 
-    private record LightCacheEntry(long dependencyFingerprint, DataLayer[] data) {}
+    private record LightCacheEntry(DataLayer[] data) {}
 
     private AllvrSodiumSectionSource() {}
 
@@ -91,8 +94,8 @@ public final class AllvrSodiumSectionSource {
         int originSectionY = window.originBlockY() >> 4;
         SectionPos absolutePos = SectionPos.of(virtualPos.getX(),
             virtualPos.getY() + originSectionY, virtualPos.getZ());
-        long cubeKey = AllvrCubePos.asLong(new BlockPos(absolutePos.minBlockX(),
-            absolutePos.minBlockY(), absolutePos.minBlockZ()));
+        long cubeKey = AllvrCubePos.asLong(absolutePos.getX() >> 1,
+            absolutePos.getY() >> 1, absolutePos.getZ() >> 1);
 
         synchronized (AllvrClientCubeCache.LOCK) {
             AllvrCube cube = AllvrClientCubeCache.peekCubeUnsafe(cubeKey);
@@ -132,15 +135,20 @@ public final class AllvrSodiumSectionSource {
     /** True when a source section should have a native Sodium RenderSection. */
     public static boolean hasContent(ClientLevel level, SectionPos virtualPos,
                                       long resourceRevision, long windowEpoch) {
+        return hasContent(level, virtualPos.getX(), virtualPos.getY(), virtualPos.getZ(),
+            resourceRevision, windowEpoch);
+    }
+
+    /** Primitive-coordinate overload used by the section bridge's hot paths. */
+    public static boolean hasContent(ClientLevel level, int virtualX, int virtualY, int virtualZ,
+                                     long resourceRevision, long windowEpoch) {
         if (!isAllay(level)) {
             return false;
         }
         AllvrRenderYWindow window = AllvrRenderWindowState.current();
         int originSectionY = window.originBlockY() >> 4;
-        SectionPos absolutePos = SectionPos.of(virtualPos.getX(),
-            virtualPos.getY() + originSectionY, virtualPos.getZ());
-        long cubeKey = AllvrCubePos.asLong(new BlockPos(absolutePos.minBlockX(),
-            absolutePos.minBlockY(), absolutePos.minBlockZ()));
+        int absoluteY = virtualY + originSectionY;
+        long cubeKey = AllvrCubePos.asLong(virtualX >> 1, absoluteY >> 1, virtualZ >> 1);
 
         /*
          * This predicate is called for every section around an arriving cube
@@ -155,11 +163,59 @@ public final class AllvrSodiumSectionSource {
             if (cube == null) {
                 return false;
             }
-            int localX = absolutePos.getX() & 1;
-            int localY = absolutePos.getY() & 1;
-            int localZ = absolutePos.getZ() & 1;
+            int localX = virtualX & 1;
+            int localY = absoluteY & 1;
+            int localZ = virtualZ & 1;
             LevelChunkSection section = cube.getSections()[AllvrCube.sliceIndex(localX, localY, localZ)];
             return section != null && !section.hasOnlyAir();
+        }
+    }
+
+    /**
+     * Invalidates cached cloned sections whose 3x3x3 mesh context or
+     * synthetic sky-light dependency can observe a cube update. Cube updates
+     * are published on the client thread before Sodium is asked to rebuild,
+     * so this keeps the render-side cache exact without globally invalidating
+     * every section on each packet.
+     */
+    public static void invalidateCube(long cubeKey) {
+        AllvrCubePos cube = AllvrCubePos.fromLong(cubeKey);
+        AllvrRenderYWindow window = AllvrRenderWindowState.current();
+        int minX = cube.getX() << 1;
+        int minY = window.virtualSectionY(cube.getY() << 1);
+        int minZ = cube.getZ() << 1;
+        /* Sky light samples up to 128 blocks upward. Keep those lower
+         * sections invalidated as well as the one-section mesh boundary. */
+        synchronized (AllvrClientCubeCache.LOCK) {
+            for (int y = minY - 8; y <= minY + 2; y++) {
+                for (int z = minZ - 1; z <= minZ + 2; z++) {
+                    for (int x = minX - 1; x <= minX + 2; x++) {
+                        CLONED_SECTION_CACHE.remove(SectionPos.asLong(x, y, z));
+                        LIGHT_CACHE.remove(SectionPos.asLong(x,
+                            window.absoluteSectionY(y), z));
+                    }
+                }
+            }
+        }
+    }
+
+    /** Invalidates one virtual section after a block mutation. */
+    public static void invalidateSection(int virtualX, int virtualY, int virtualZ) {
+        CLONED_SECTION_CACHE.remove(SectionPos.asLong(virtualX, virtualY, virtualZ));
+    }
+
+    /** Invalidates light data affected by one changed section column. */
+    public static void invalidateLightingSection(int virtualX, int virtualY, int virtualZ) {
+        AllvrRenderYWindow window = AllvrRenderWindowState.current();
+        int absoluteY = window.absoluteSectionY(virtualY);
+        synchronized (AllvrClientCubeCache.LOCK) {
+            for (int y = absoluteY - 8; y <= absoluteY + 2; y++) {
+                for (int z = virtualZ - 1; z <= virtualZ + 1; z++) {
+                    for (int x = virtualX - 1; x <= virtualX + 1; x++) {
+                        LIGHT_CACHE.remove(SectionPos.asLong(x, y, z));
+                    }
+                }
+            }
         }
     }
 
@@ -173,21 +229,18 @@ public final class AllvrSodiumSectionSource {
                                              long resourceRevision, long windowEpoch) {
         resetClonedCacheIfNeeded(resourceRevision, windowEpoch);
         ClonedChunkSection[] sections = new ClonedChunkSection[CONTEXT_SIZE];
-        LevelChunk[] carriers = new LevelChunk[CONTEXT_SIDE * CONTEXT_SIDE];
+        int originX = virtualOrigin.getX();
+        int originY = virtualOrigin.getY();
+        int originZ = virtualOrigin.getZ();
         int index = 0;
         for (int y = -CONTEXT_RADIUS; y <= CONTEXT_RADIUS; y++) {
             for (int z = -CONTEXT_RADIUS; z <= CONTEXT_RADIUS; z++) {
                 for (int x = -CONTEXT_RADIUS; x <= CONTEXT_RADIUS; x++) {
-                    SectionPos virtualPos = SectionPos.of(virtualOrigin.getX() + x,
-                        virtualOrigin.getY() + y, virtualOrigin.getZ() + z);
-                    int carrierIndex = (z + CONTEXT_RADIUS) * CONTEXT_SIDE
-                        + (x + CONTEXT_RADIUS);
-                    LevelChunk carrier = carriers[carrierIndex];
-                    if (carrier == null) {
-                        carrier = level.getChunk(virtualPos.getX(), virtualPos.getZ());
-                        carriers[carrierIndex] = carrier;
-                    }
-                    sections[index++] = clonedSection(level, carrier, virtualPos,
+                    int virtualX = originX + x;
+                    int virtualY = originY + y;
+                    int virtualZ = originZ + z;
+                    LevelChunk carrier = carrier(level, virtualX, virtualZ);
+                    sections[index++] = clonedSection(level, carrier, virtualX, virtualY, virtualZ,
                         resourceRevision, windowEpoch);
                 }
             }
@@ -231,34 +284,30 @@ public final class AllvrSodiumSectionSource {
         long key = SectionPos.asLong(absolutePos.getX(), absoluteSectionY, absolutePos.getZ());
         LightInputs inputs;
         synchronized (AllvrClientCubeCache.LOCK) {
-            long fingerprint = lightFingerprint(absoluteSectionY,
-                absolutePos.getX(), absolutePos.getZ());
             LightCacheEntry cached = LIGHT_CACHE.getAndMoveToLast(key);
-            if (cached != null && cached.dependencyFingerprint() == fingerprint) {
+            if (cached != null) {
                 return cached.data();
             }
             /* Capture only immutable primitive masks while the cube-map lock
              * is held; the expensive light-field build happens after unlock. */
-            inputs = captureLightInputs(absoluteSectionY, absolutePos.getX(), absolutePos.getZ(), fingerprint);
+            inputs = captureLightInputs(absoluteSectionY, absolutePos.getX(), absolutePos.getZ());
         }
         DataLayer[] built = buildLightData(inputs, absolutePos.getX(), absolutePos.getZ());
         synchronized (AllvrClientCubeCache.LOCK) {
             LightCacheEntry existing = LIGHT_CACHE.getAndMoveToLast(key);
-            if (existing != null && existing.dependencyFingerprint() == inputs.fingerprint()) {
+            if (existing != null) {
                 return existing.data();
             }
             if (LIGHT_CACHE.size() >= LIGHT_CACHE_LIMIT) {
                 LIGHT_CACHE.removeFirst();
             }
-            LIGHT_CACHE.putAndMoveToLast(key,
-                new LightCacheEntry(inputs.fingerprint(), built));
+            LIGHT_CACHE.putAndMoveToLast(key, new LightCacheEntry(built));
         }
         return built;
     }
 
     private static LightInputs captureLightInputs(int absoluteSectionY,
-                                                   int sectionX, int sectionZ,
-                                                   long fingerprint) {
+                                                   int sectionX, int sectionZ) {
         int minX = sectionX << 4;
         int minY = absoluteSectionY << 4;
         int minZ = sectionZ << 4;
@@ -310,39 +359,7 @@ public final class AllvrSodiumSectionSource {
                 }
             }
         }
-        return new LightInputs(minY, firstCubeY, columnMasks, emitters, fingerprint);
-    }
-
-    private static long lightFingerprint(int absoluteSectionY, int sectionX, int sectionZ) {
-        int minX = sectionX << 4;
-        int minY = absoluteSectionY << 4;
-        int minZ = sectionZ << 4;
-        int cubeX = Math.floorDiv(minX, 32);
-        int cubeZ = Math.floorDiv(minZ, 32);
-        int firstCubeY = Math.floorDiv(minY + 1, 32);
-        int lastCubeY = Math.floorDiv(minY + 143, 32);
-        long fingerprint = 0xcbf29ce484222325L;
-        for (int cubeY = firstCubeY; cubeY <= lastCubeY; cubeY++) {
-            fingerprint = mixCube(fingerprint, cubeX, cubeY, cubeZ);
-        }
-        int centerCubeY = Math.floorDiv(minY, 32);
-        for (int dy = -1; dy <= 1; dy++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                for (int dx = -1; dx <= 1; dx++) {
-                    fingerprint = mixCube(fingerprint, cubeX + dx, centerCubeY + dy, cubeZ + dz);
-                }
-            }
-        }
-        return fingerprint;
-    }
-
-    private static long mixCube(long fingerprint, int cubeX, int cubeY, int cubeZ) {
-        long key = AllvrCubePos.asLong(cubeX, cubeY, cubeZ);
-        AllvrCube cube = AllvrClientCubeCache.peekCubeUnsafe(key);
-        long value = key ^ (cube == null ? 0x9e3779b97f4a7c15L :
-            ((long) System.identityHashCode(cube) << 32) ^ cube.mutationVersion());
-        fingerprint ^= value;
-        return Long.rotateLeft(fingerprint, 27) * 0x9e3779b97f4a7c15L + 0x517cc1b727220a95L;
+        return new LightInputs(minY, firstCubeY, columnMasks, emitters);
     }
 
     private static int[] opacityMasks(AllvrCube cube) {
@@ -350,38 +367,49 @@ public final class AllvrSodiumSectionSource {
     }
 
     private static void resetClonedCacheIfNeeded(long resourceRevision, long windowEpoch) {
-        long contentRevision = AllvrClientCubeCache.contentRevisionVolatile();
         if (clonedResourceRevision == resourceRevision
             && clonedWindowEpoch == windowEpoch) {
-            clonedContentRevision = contentRevision;
             return;
         }
         CLONED_SECTION_CACHE.clear();
-        clonedContentRevision = contentRevision;
+        synchronized (AllvrClientCubeCache.LOCK) {
+            LIGHT_CACHE.clear();
+        }
+        CARRIER_CACHE.clear();
+        carrierCacheLevel = null;
         clonedResourceRevision = resourceRevision;
         clonedWindowEpoch = windowEpoch;
     }
 
+    private static LevelChunk carrier(ClientLevel level, int chunkX, int chunkZ) {
+        if (carrierCacheLevel != level) {
+            CARRIER_CACHE.clear();
+            carrierCacheLevel = level;
+        }
+        long key = ChunkPos.asLong(chunkX, chunkZ);
+        LevelChunk carrier = CARRIER_CACHE.getAndMoveToLast(key);
+        if (carrier != null) {
+            return carrier;
+        }
+        carrier = level.getChunk(chunkX, chunkZ);
+        if (CARRIER_CACHE.size() >= CARRIER_CACHE_LIMIT) {
+            CARRIER_CACHE.removeFirst();
+        }
+        CARRIER_CACHE.putAndMoveToLast(key, carrier);
+        return carrier;
+    }
+
     private static ClonedChunkSection clonedSection(ClientLevel level, LevelChunk carrier,
-                                                    SectionPos virtualPos,
+                                                    int virtualX, int virtualY, int virtualZ,
                                                     long resourceRevision,
                                                     long windowEpoch) {
-        long key = SectionPos.asLong(virtualPos.getX(), virtualPos.getY(), virtualPos.getZ());
+        long key = SectionPos.asLong(virtualX, virtualY, virtualZ);
         ClonedCache cached = CLONED_SECTION_CACHE.getAndMoveToLast(key);
-        if (cached != null && cached.contentRevision() == clonedContentRevision
-            && cached.resourceRevision() == resourceRevision
+        if (cached != null && cached.resourceRevision() == resourceRevision
             && cached.windowEpoch() == windowEpoch) {
             return cached.section();
         }
-        long sourceFingerprint = sectionFingerprint(virtualPos);
-        if (cached != null && cached.sourceFingerprint() == sourceFingerprint
-            && cached.resourceRevision() == resourceRevision
-            && cached.windowEpoch() == windowEpoch) {
-            CLONED_SECTION_CACHE.putAndMoveToLast(key,
-                new ClonedCache(clonedContentRevision, sourceFingerprint,
-                    resourceRevision, windowEpoch, cached.section()));
-            return cached.section();
-        }
+        SectionPos virtualPos = SectionPos.of(virtualX, virtualY, virtualZ);
         AllvrSodiumSectionSnapshot snapshot = snapshot(level, virtualPos,
             resourceRevision, windowEpoch);
         LevelChunkSection section = snapshot == null ? null : snapshot.section();
@@ -392,27 +420,8 @@ public final class AllvrSodiumSectionSource {
             CLONED_SECTION_CACHE.removeFirst();
         }
         CLONED_SECTION_CACHE.putAndMoveToLast(key,
-            new ClonedCache(clonedContentRevision, sourceFingerprint,
-                resourceRevision, windowEpoch, cloned));
+            new ClonedCache(resourceRevision, windowEpoch, cloned));
         return cloned;
-    }
-
-    private static long sectionFingerprint(SectionPos virtualPos) {
-        AllvrRenderYWindow window = AllvrRenderWindowState.current();
-        int absoluteSectionY = virtualPos.getY() + (window.originBlockY() >> 4);
-        long cubeKey = AllvrCubePos.asLong(
-            Math.floorDiv(virtualPos.getX(), 2),
-            Math.floorDiv(absoluteSectionY, 2),
-            Math.floorDiv(virtualPos.getZ(), 2));
-        synchronized (AllvrClientCubeCache.LOCK) {
-            AllvrCube cube = AllvrClientCubeCache.peekCubeUnsafe(cubeKey);
-            long source = cube == null ? 0x9e3779b97f4a7c15L
-                : cubeKey ^ ((long) System.identityHashCode(cube) << 32)
-                    ^ cube.mutationVersion();
-            long light = lightFingerprint(absoluteSectionY,
-                virtualPos.getX(), virtualPos.getZ());
-            return Long.rotateLeft(source ^ light, 17) * 0x9e3779b97f4a7c15L;
-        }
     }
 
     private static DataLayer[] buildLightData(LightInputs inputs,

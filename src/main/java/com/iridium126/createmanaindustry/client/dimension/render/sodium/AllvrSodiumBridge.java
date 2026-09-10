@@ -164,6 +164,7 @@ public final class AllvrSodiumBridge {
         if (!active() || !originInitialized) {
             return;
         }
+        AllvrSodiumSectionSource.invalidateCube(cubeKey);
         enqueueCubeSections(cubeKey);
         dirtyCubeBoundary(cubeKey);
     }
@@ -172,6 +173,7 @@ public final class AllvrSodiumBridge {
         if (!active() || !originInitialized) {
             return;
         }
+        AllvrSodiumSectionSource.invalidateCube(cubeKey);
         AllvrCubePos cube = AllvrCubePos.fromLong(cubeKey);
         for (int sy = 0; sy < 2; sy++) {
             for (int sz = 0; sz < 2; sz++) {
@@ -193,6 +195,8 @@ public final class AllvrSodiumBridge {
         int sx = absolutePos.getX() >> 4;
         int sy = absolutePos.getY() >> 4;
         int sz = absolutePos.getZ() >> 4;
+        AllvrSodiumSectionSource.invalidateLightingSection(sx,
+            WINDOW.virtualSectionY(sy), sz);
         long key = virtualKey(sx, sy, sz);
         scheduleDirty(key);
         if ((absolutePos.getX() & 15) == 0) scheduleDirty(virtualKey(sx - 1, sy, sz));
@@ -233,10 +237,12 @@ public final class AllvrSodiumBridge {
                     int absY = (cube.getY() << 1) + sy;
                     int absZ = (cube.getZ() << 1) + sz;
                     long key = virtualKey(absX, absY, absZ);
-                    if (AllvrSodiumSectionSource.hasContent(level, SectionPos.of(
-                        absX, WINDOW.virtualSectionY(absY), absZ),
+                    if (AllvrSodiumSectionSource.hasContent(level, absX,
+                        WINDOW.virtualSectionY(absY), absZ,
                         resourceRevision, WINDOW.epoch())) {
                         enqueueAdd(key);
+                    } else {
+                        enqueueRemove(key);
                     }
                 }
             }
@@ -249,7 +255,7 @@ public final class AllvrSodiumBridge {
             for (int sz = -1; sz <= 2; sz++) {
                 for (int sx = -1; sx <= 2; sx++) {
                     if (sx >= 0 && sx < 2 && sy >= 0 && sy < 2 && sz >= 0 && sz < 2) continue;
-                    scheduleDirty(virtualKey((cube.getX() << 1) + sx,
+                    scheduleExistingDirty(virtualKey((cube.getX() << 1) + sx,
                         (cube.getY() << 1) + sy, (cube.getZ() << 1) + sz));
                 }
             }
@@ -266,6 +272,7 @@ public final class AllvrSodiumBridge {
             return;
         }
         SectionPos pos = SectionPos.of(key);
+        AllvrSodiumSectionSource.invalidateSection(pos.getX(), pos.getY(), pos.getZ());
         RenderSectionManager manager = SodiumApi_0813_1211.sectionManager();
         if (manager == null) {
             return;
@@ -295,6 +302,16 @@ public final class AllvrSodiumBridge {
         if (OWNED.contains(key) && QUEUED_REBUILD.add(key)) {
             REBUILD_QUEUE.add(key);
         }
+    }
+
+    /** Boundary invalidation cannot create a new render section. New
+     * sections are admitted by enqueueCubeSections or the direct block-write
+     * path; skip the expensive content/lock check for absent neighbours. */
+    private static void scheduleExistingDirty(long key) {
+        if (!OWNED.contains(key) && !QUEUED_ADD.contains(key)) {
+            return;
+        }
+        scheduleDirty(key);
     }
 
     private static void drainAdds() {
