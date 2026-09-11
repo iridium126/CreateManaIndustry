@@ -25,6 +25,7 @@ import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrBlockUpdatePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacket;
 import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge;
+import com.iridium126.createmanaindustry.dimension.light.AllvrLightEngine;
 
 /**
  * Client-side registry of streamed cubes for the allay dimension — the cube
@@ -68,6 +69,14 @@ public final class AllvrClientCubeCache {
             return thread;
         }, new ThreadPoolExecutor.CallerRunsPolicy());
     private static final AtomicLong NEXT_PACKET_SEQUENCE = new AtomicLong();
+    /** Keep packet publication within the normal client tick budget. A burst
+     * of streamed air cubes must not make the render thread apply thousands
+     * of cube replacements in one frame. */
+    private static final int CUBE_APPLY_BUDGET = 64;
+    private static final long CUBE_APPLY_BUDGET_NANOS = 2_000_000L;
+    /** Keep the engine lock visible to Sodium for at most a small bounded
+     * batch; the remaining propagation carries over to the next client tick. */
+    private static final int CLIENT_LIGHT_BUDGET = 8_192;
     /** Incremented on level teardown so a late decode cannot publish into a
      * newly created Allay level with the same dimension id. */
     private static final AtomicLong CLIENT_SESSION_EPOCH = new AtomicLong();
@@ -75,11 +84,16 @@ public final class AllvrClientCubeCache {
      * replacing a newer packet that finished first. */
     private static final ConcurrentHashMap<Long, Long> LATEST_PACKET_SEQUENCE =
         new ConcurrentHashMap<>();
+    /** Packet tombstones are only needed while a decode can still be queued.
+     * Bound this map so exploring indefinitely cannot retain every cube key
+     * ever visited in the client session. */
+    private static final int PACKET_SEQUENCE_CACHE_LIMIT = 32_768;
     private static final ConcurrentLinkedQueue<DecodedCube> COMPLETED_CUBES =
         new ConcurrentLinkedQueue<>();
     /** Monotonic ALLVR content revision used by immutable Sodium snapshots. */
     private static volatile long contentRevision;
     private static final Long2ObjectOpenHashMap<AllvrCube> cubes = new Long2ObjectOpenHashMap<>();
+    private static AllvrLightEngine lightEngine;
     /** Cubes that hold block entities — the client ticking worklist (mirrors
      *  the server cube map's registry; most cubes are pure terrain). */
     private static final Long2ObjectOpenHashMap<AllvrCube> beCubes = new Long2ObjectOpenHashMap<>();
@@ -90,8 +104,45 @@ public final class AllvrClientCubeCache {
 
     /** Binds the current client level (called on LevelEvent.Load). */
     public static void onLevelChanged(ClientLevel clientLevel) {
+        if (lightEngine != null) {
+            lightEngine.clear();
+        }
         level = clientLevel;
+        lightEngine = clientLevel.dimension() == AllvrDimensions.ALLAY_LEVEL
+            ? new AllvrLightEngine(clientLevel, new AllvrLightEngine.Access() {
+                @Override
+                public BlockState getBlockState(BlockPos pos) {
+                    return AllvrClientCubeCache.getBlockState(pos);
+                }
+
+                @Override
+                public boolean isLoaded(BlockPos pos) {
+                    synchronized (LOCK) {
+                        return cubes.containsKey(AllvrCubePos.asLong(pos));
+                    }
+                }
+            }) : null;
+        com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setLightResolver(
+            (type, pos) -> type == net.minecraft.world.level.LightLayer.BLOCK
+                ? sampleBlockLight(pos) : sampleSkyLight(pos),
+            (pos, amount) -> Math.max(sampleBlockLight(pos), sampleSkyLight(pos) - amount));
         com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setBiomeResolver(AllvrClientCubeCache::getNoiseBiome);
+    }
+
+    public static AllvrLightEngine lightEngine() {
+        return lightEngine;
+    }
+
+    public static net.minecraft.world.level.chunk.DataLayer[] lightData(net.minecraft.core.SectionPos section) {
+        return lightEngine == null ? null : lightEngine.sectionData(section);
+    }
+
+    public static int sampleBlockLight(BlockPos pos) {
+        return lightEngine == null ? 0 : lightEngine.blockLight(pos);
+    }
+
+    public static int sampleSkyLight(BlockPos pos) {
+        return lightEngine == null ? 0 : lightEngine.skyLight(pos);
     }
 
     public static net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> getNoiseBiome(int x, int y, int z) {
@@ -103,6 +154,10 @@ public final class AllvrClientCubeCache {
 
     public static ClientLevel currentLevel() {
         return level;
+    }
+
+    public static boolean isAllay(ClientLevel candidate) {
+        return candidate != null && candidate.dimension() == AllvrDimensions.ALLAY_LEVEL;
     }
 
     public static long contentRevision() {
@@ -126,6 +181,9 @@ public final class AllvrClientCubeCache {
         CLIENT_SESSION_EPOCH.incrementAndGet();
         AllvrSodiumBridge.clear();
         synchronized (LOCK) {
+            if (lightEngine != null) {
+                lightEngine.clear();
+            }
             for (AllvrCube cube : cubes.values()) {
                 cube.onUnload();
             }
@@ -135,6 +193,8 @@ public final class AllvrClientCubeCache {
             LATEST_PACKET_SEQUENCE.clear();
             COMPLETED_CUBES.clear();
             level = null;
+            lightEngine = null;
+            com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setLightResolver(null, null);
         }
     }
 
@@ -151,7 +211,7 @@ public final class AllvrClientCubeCache {
         RegistryAccess registryAccess = clientLevel.registryAccess();
         long sequence = NEXT_PACKET_SEQUENCE.incrementAndGet();
         long sessionEpoch = CLIENT_SESSION_EPOCH.get();
-        LATEST_PACKET_SEQUENCE.put(packet.cubePos(), sequence);
+        rememberPacketSequence(packet.cubePos(), sequence);
         CUBE_DECODE_EXECUTOR.execute(() -> decodeAndQueueApply(
             packet, clientLevel, registryAccess, sequence, sessionEpoch));
     }
@@ -165,10 +225,6 @@ public final class AllvrClientCubeCache {
         Throwable failure = null;
         try {
             cube = packet.decodeCube(registryAccess);
-            // Prepare the renderer's compact opacity columns while the cube
-            // is still unpublished.  Sodium's render thread can then build
-            // light snapshots without scanning 32^3 block states on demand.
-            cube.opacityColumns();
         } catch (Throwable error) {
             failure = error;
         }
@@ -182,14 +238,30 @@ public final class AllvrClientCubeCache {
             packet.payload().length, cube, sequence, failure));
     }
 
-    /** Applies all completed packet decodes on the client game thread. Packet
-     * workers only append to {@link #COMPLETED_CUBES}; the handoff itself is
-     * not artificially delayed, matching the vanilla packet lifecycle. */
+    /** Applies a bounded batch of completed packet decodes on the client game
+     * thread. Packet workers only append to {@link #COMPLETED_CUBES}; the
+     * remaining queue carries over to the next tick like vanilla chunk
+     * publication under a packet burst. */
     public static void tick() {
+        long deadline = System.nanoTime() + CUBE_APPLY_BUDGET_NANOS;
         DecodedCube decoded;
-        while ((decoded = COMPLETED_CUBES.poll()) != null) {
+        int applied = 0;
+        while (applied < CUBE_APPLY_BUDGET
+            && (applied == 0 || System.nanoTime() < deadline)
+            && (decoded = COMPLETED_CUBES.poll()) != null) {
             applyDecodedCube(decoded.targetLevel(), decoded.sessionEpoch(), decoded.cubePos(),
                 decoded.payloadBytes(), decoded.cube(), decoded.sequence(), decoded.failure());
+            applied++;
+        }
+        if (lightEngine != null) {
+            lightEngine.tick(CLIENT_LIGHT_BUDGET);
+            for (long cubeKey : lightEngine.drainDirtyCubes()) {
+                if (lightEngine.hasLoadedCube(cubeKey)) {
+                    AllvrSodiumBridge.onCubeApplied(cubeKey);
+                    com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest
+                        .onCubeApplied(cubeKey);
+                }
+            }
         }
     }
 
@@ -226,12 +298,11 @@ public final class AllvrClientCubeCache {
             contentRevision++;
         }
         cube.onLoad(clientLevel);
+        if (lightEngine != null) {
+            lightEngine.onCubeLoaded(cube);
+        }
         AllvrSodiumBridge.onCubeApplied(cubePos);
         com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest.onCubeApplied(cubePos);
-        if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
-            CreateManaIndustry.LOGGER.debug("[Allvr] cube {} streamed ({} bytes, {} cubes cached)",
-                cube.getPos(), payloadBytes, cubes.size());
-        }
     }
 
     /**
@@ -246,7 +317,7 @@ public final class AllvrClientCubeCache {
         }
         try {
             long sequence = NEXT_PACKET_SEQUENCE.incrementAndGet();
-            LATEST_PACKET_SEQUENCE.put(packet.cubePos(), sequence);
+            rememberPacketSequence(packet.cubePos(), sequence);
             applyDecodedCube(clientLevel, CLIENT_SESSION_EPOCH.get(), packet.cubePos(), packet.payload().length,
                 packet.decodeCube(clientLevel.registryAccess()), sequence, null);
         } catch (Throwable error) {
@@ -258,18 +329,44 @@ public final class AllvrClientCubeCache {
     public static void forgetCube(long cubePos) {
         // Keep a tombstone sequence so a decode that was already queued cannot
         // resurrect a cube after the vanilla-style forget packet is applied.
-        LATEST_PACKET_SEQUENCE.put(cubePos, NEXT_PACKET_SEQUENCE.incrementAndGet());
+        rememberPacketSequence(cubePos, NEXT_PACKET_SEQUENCE.incrementAndGet());
+        AllvrCube unloaded;
         synchronized (LOCK) {
-            AllvrCube old = cubes.remove(cubePos);
-            if (old != null) {
-                old.onUnload();
+            unloaded = cubes.remove(cubePos);
+            if (unloaded != null) {
+                unloaded.onUnload();
             }
             beCubes.remove(cubePos);
             contentRevision++;
         }
+        // The light engine calls back into the cache while re-seeding its
+        // loaded neighbours.  Keep this outside LOCK; taking LOCK here would
+        // deadlock with Access#isLoaded during boundary propagation.
+        if (unloaded != null && lightEngine != null) {
+            lightEngine.onCubeUnloaded(unloaded);
+        }
         AllvrSodiumBridge.onCubeForgotten(cubePos);
         // Voxy deliberately retains its LOD when a near cube is forgotten;
         // the next cube publication will overwrite the affected sections.
+    }
+
+    private static void rememberPacketSequence(long cubePos, long sequence) {
+        LATEST_PACKET_SEQUENCE.put(cubePos, sequence);
+        int excess = LATEST_PACKET_SEQUENCE.size() - PACKET_SEQUENCE_CACHE_LIMIT;
+        if (excess <= 0) {
+            return;
+        }
+        // This is an opportunistic bound, not part of packet ordering. The
+        // bounded decode queue and session epoch still reject late results;
+        // the map no longer retains every cube visited during a long session.
+        for (var entry : LATEST_PACKET_SEQUENCE.entrySet()) {
+            if (excess <= 0) {
+                break;
+            }
+            if (LATEST_PACKET_SEQUENCE.remove(entry.getKey(), entry.getValue())) {
+                excess--;
+            }
+        }
     }
 
     /** Keeps the block-entity worklist in step with a cube's BE set. */
@@ -386,7 +483,7 @@ public final class AllvrClientCubeCache {
      * Unloaded cubes reject the write ({@code false}), mirroring vanilla's
      * "write to unloaded chunk fails": a block the player can target is always
      * inside a streamed cube. Light-emitter bookkeeping mirrors the server so
-     * the emitter table stays consistent for the phase-3 synthetic light.
+     * the emitter table stays consistent for the shared sparse light engine.
      */
     public static boolean setBlock(BlockPos pos, BlockState newState, int flags, int recursionLeft) {
         ClientLevel clientLevel = level;
@@ -423,6 +520,9 @@ public final class AllvrClientCubeCache {
         // The cache is updated before the Sodium notification so its build
         // snapshot always observes the new state.
         AllvrSodiumBridge.onBlockChanged(pos, oldState, newState);
+        if (lightEngine != null) {
+            lightEngine.onBlockChanged(pos);
+        }
         com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest.onBlockChanged(pos);
 
         // Mirror of Level#markAndNotifyBlock, minus vanilla section

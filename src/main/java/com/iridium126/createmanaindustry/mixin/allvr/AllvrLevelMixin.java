@@ -18,6 +18,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.level.LightLayer;
 
 /**
  * Routes block data access of the allay dimension to the cube map.
@@ -33,6 +34,38 @@ import net.minecraft.world.level.material.FluidState;
  */
 @Mixin(Level.class)
 public abstract class AllvrLevelMixin {
+
+    /** Routes vanilla gameplay light queries to the cube engine. */
+    public int getBrightness(LightLayer type, BlockPos pos) {
+        Level self = (Level) (Object) this;
+        AllvrCubeMap map = allvr$map();
+        if (map != null) {
+            return map.light(type, pos);
+        }
+        if (self.isClientSide && self.dimension() == AllvrDimensions.ALLAY_LEVEL) {
+            Integer light = com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.light(type, pos);
+            if (light != null) {
+                return light;
+            }
+        }
+        return self.getLightEngine().getLayerListener(type).getLightValue(pos);
+    }
+
+    /** Keeps LevelReader#getRawBrightness on the same source as getBrightness. */
+    public int getRawBrightness(BlockPos pos, int amount) {
+        Level self = (Level) (Object) this;
+        AllvrCubeMap map = allvr$map();
+        if (map != null) {
+            return map.rawLight(pos, amount);
+        }
+        if (self.isClientSide && self.dimension() == AllvrDimensions.ALLAY_LEVEL) {
+            Integer light = com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.rawLight(pos, amount);
+            if (light != null) {
+                return light;
+            }
+        }
+        return self.getLightEngine().getRawBrightness(pos, amount);
+    }
 
     /** Override LevelReader's default to bypass the empty column biome palettes. */
     public net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> getNoiseBiome(int x, int y, int z) {

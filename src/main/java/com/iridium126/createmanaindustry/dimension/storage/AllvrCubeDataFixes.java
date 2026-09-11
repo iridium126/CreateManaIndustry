@@ -8,17 +8,17 @@ import net.minecraft.nbt.CompoundTag;
  * the 32³ cube schema is not a vanilla chunk schema; migrations run here,
  * keyed by {@code AllvrFormatVersion}.
  * <p>
- * V1 accepts only version 1. Unknown newer versions fail closed — the record
+ * V2 accepts only version 2. Unknown newer versions fail closed — the record
  * is corrupt as far as this mod version is concerned and must never be
  * overwritten by a regeneration.
  */
 public final class AllvrCubeDataFixes {
 
-    static final int CURRENT_VERSION = 1;
+    static final int CURRENT_VERSION = 2;
 
     /**
      * Validates and (in future versions) migrates a cube root tag to the
-     * current schema. Returns the tag unchanged for V1.
+     * current schema. Returns the tag unchanged for V2.
      *
      * @throws AllvrCubeCorruptedException on missing or unknown versions
      */

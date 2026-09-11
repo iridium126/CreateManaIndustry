@@ -90,6 +90,7 @@ public final class AllvrSodiumBridge {
     }
 
     public static void clear() {
+        AllvrSodiumSectionSource.clear();
         RenderSectionManager manager = SodiumApi_0813_1211.sectionManager();
         if (manager != null && active()) {
             for (long key : OWNED) {

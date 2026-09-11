@@ -31,6 +31,7 @@ import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.dimension.DimensionType;
+import net.minecraft.world.level.LightLayer;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
@@ -44,6 +45,7 @@ import com.iridium126.createmanaindustry.dimension.storage.AllvrCubeSerializer;
 import com.iridium126.createmanaindustry.dimension.storage.AllvrCubeSnapshot;
 import com.iridium126.createmanaindustry.dimension.storage.AllvrRegionCubeStorage;
 import com.iridium126.createmanaindustry.dimension.storage.AllvrStorageDiagnostics;
+import com.iridium126.createmanaindustry.dimension.light.AllvrLightEngine;
 
 /**
  * Server-side registry of loaded cubes for one allay-dimension
@@ -61,9 +63,9 @@ import com.iridium126.createmanaindustry.dimension.storage.AllvrStorageDiagnosti
  *       budget (§11), far-cube unload is save-before-unload, and
  *       {@link #saveAll}/{@link #close} mirror vanilla autosave, {@code
  *       /save-all flush} and shutdown semantics (plan §7.3);</li>
- *   <li>light: nothing here touches the vanilla light engine; rendering light
- *       is client-side (roadmap phase 5), gameplay light queries stay vanilla
- *       defaults until the gameplay stage (phase 7).</li>
+ *   <li>light: a sparse vanilla-style increase/decrease engine tracks both
+ *       block and sky light for loaded cubes; vanilla column lighting remains
+ *       untouched outside this dimension.</li>
  * </ul>
  * Loaded cube/BE/section access happens on the server thread. Background
  * workers only build unpublished cubes and hand them back through the
@@ -106,6 +108,9 @@ public final class AllvrCubeMap {
         Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
     /** Shell-load time budget per tick. */
     private static final long TICK_BUDGET_NANOS = 3_000_000L;
+    /** Keep async generation/read completions from monopolising the tick. */
+    private static final int COMPLETION_INSTALL_BUDGET = 16;
+    private static final long COMPLETION_INSTALL_BUDGET_NANOS = 2_000_000L;
     /** Far-cube unload scan cadence (ticks). */
     private static final int UNLOAD_SCAN_TICKS = 40;
     /**
@@ -127,6 +132,7 @@ public final class AllvrCubeMap {
     private final ServerLevel level;
     private final Registry<net.minecraft.world.level.biome.Biome> biomeRegistry;
     private final AllvrIslandFieldGenerator generator;
+    private final AllvrLightEngine lightEngine;
     private final Long2ObjectOpenHashMap<AllvrCube> cubes = new Long2ObjectOpenHashMap<>();
     /**
      * Cross-session persisted/edited index: cube keys with a pending or disk
@@ -207,6 +213,17 @@ public final class AllvrCubeMap {
         this.level = level;
         this.biomeRegistry = level.registryAccess().registryOrThrow(Registries.BIOME);
         this.generator = new AllvrIslandFieldGenerator(level);
+        this.lightEngine = new AllvrLightEngine(level, new AllvrLightEngine.Access() {
+            @Override
+            public BlockState getBlockState(BlockPos pos) {
+                return AllvrCubeMap.this.getBlockState(pos);
+            }
+
+            @Override
+            public boolean isLoaded(BlockPos pos) {
+                return cubes.containsKey(AllvrCubePos.asLong(pos));
+            }
+        });
         Path folder = DimensionType.getStorageFolder(level.dimension(),
             level.getServer().getWorldPath(LevelResource.ROOT)).resolve("region3d");
         try {
@@ -296,8 +313,7 @@ public final class AllvrCubeMap {
         updateBlockEntity(cube, pos, newState);
         newState.onPlace(level, pos, oldState, false);
 
-        // light emitter tracking (wire "light source events"; consumed by the
-        // phase-3 synthetic light sampler)
+        // Keep the compact emitter index in sync with the shared light engine.
         int oldEmission = oldState.getLightEmission(level, pos);
         int newEmission = newState.getLightEmission(level, pos);
         if (oldEmission > 0) {
@@ -306,9 +322,11 @@ public final class AllvrCubeMap {
         if (newEmission > 0) {
             cube.putEmitter(pos, newEmission);
         }
+        this.lightEngine.onBlockChanged(pos);
 
-        // mirror of Level#markAndNotifyBlock, minus light engine / chunk-status
-        // concerns (cubes have no LevelChunk)
+        // Mirror Level#markAndNotifyBlock's neighbour/update semantics;
+        // light propagation was queued above and chunk-status work is omitted
+        // because cubes have no LevelChunk.
         if ((flags & 2) != 0) {
             // vanilla sendBlockUpdated equivalent: authoritative per-block push
             // to subscribed clients (the initiating player's own prediction
@@ -469,11 +487,13 @@ public final class AllvrCubeMap {
         cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
         generator.generate(cube);
         cube.rebuildEmitters();
+        cube.prepareSkyTopOpaque();
         cubes.put(key, cube);
         cube.onLoad(level);
         if (cube.hasBlockEntities()) {
             cube.rebuildContextualEmitters(level);
         }
+        this.lightEngine.onCubeLoaded(cube);
         // Generated terrain is itself the authoritative result of worldgen.
         // Persist it through the bounded snapshot queue so the next session
         // restores the complete cube without repeating noise/features.
@@ -484,8 +504,12 @@ public final class AllvrCubeMap {
 
     /** Main-thread completion handoff for background terrain builds. */
     private void drainCompletedGenerations() {
+        long start = System.nanoTime();
+        int installed = 0;
         GeneratedCube completed;
-        while ((completed = completedGenerations.poll()) != null) {
+        while (installed < COMPLETION_INSTALL_BUDGET
+            && System.nanoTime() - start < COMPLETION_INSTALL_BUDGET_NANOS
+            && (completed = completedGenerations.poll()) != null) {
             if (completed.failure() != null) {
                 pendingGenerations.remove(completed.key());
                 generationHandles.remove(completed.key());
@@ -497,6 +521,7 @@ public final class AllvrCubeMap {
                 continue;
             }
             installGenerated(completed.key(), completed.cube());
+            installed++;
         }
     }
 
@@ -511,6 +536,7 @@ public final class AllvrCubeMap {
         if (cube.hasBlockEntities()) {
             cube.rebuildContextualEmitters(level);
         }
+        this.lightEngine.onCubeLoaded(cube);
         this.markGeneratedForPersistence(cube);
         diagnostics.cubesGenerated.incrementAndGet();
         return cube;
@@ -541,6 +567,7 @@ public final class AllvrCubeMap {
                     // Emission lookup is level-independent; finish it on the
                     // worker so the main thread only binds BE tickers.
                     cube.rebuildEmitters();
+                    cube.prepareSkyTopOpaque();
                     future.complete(cube);
                 } catch (Throwable failure) {
                     future.completeExceptionally(failure);
@@ -632,6 +659,16 @@ public final class AllvrCubeMap {
                 loadCooldown.remove(entry.getKey());
             }
         }
+    }
+
+    public int light(LightLayer type, BlockPos pos) {
+        return type == LightLayer.BLOCK
+            ? this.lightEngine.blockLight(pos) : this.lightEngine.skyLight(pos);
+    }
+
+    public int rawLight(BlockPos pos, int amount) {
+        return Math.max(this.lightEngine.blockLight(pos),
+            this.lightEngine.skyLight(pos) - amount);
     }
 
     private void cancelGenerationHandle(long key, CompletableFuture<?> future) {
@@ -738,7 +775,7 @@ public final class AllvrCubeMap {
             return existing;
         }
         cube.markPersistedOverride();
-        cube.markQueued(cube.mutationVersion());
+        cube.markQueued(cube.mutationVersion(), cube.lightVersion());
         this.cubes.put(key, cube);
         if (cube.hasBlockEntities()) {
             this.beCubes.put(key, cube);
@@ -747,9 +784,9 @@ public final class AllvrCubeMap {
         if (cube.hasBlockEntities()) {
             cube.rebuildContextualEmitters(this.level);
         }
+        this.lightEngine.onCubeLoaded(cube);
         this.loadCooldown.remove(key);
         this.diagnostics.cubesLoadedFromDisk.incrementAndGet();
-        CreateManaIndustry.LOGGER.debug("[Allvr] restored cube {} from region3d", cube.getPos());
         return cube;
     }
 
@@ -768,6 +805,7 @@ public final class AllvrCubeMap {
             }
             AllvrCube restored = AllvrCubeSerializer.load(pos, nbt.get(), this.level);
             restored.rebuildEmitters();
+            restored.prepareSkyTopOpaque();
             return restored;
         } catch (AllvrCubeCorruptedException e) {
             throw new java.util.concurrent.CompletionException(e);
@@ -785,6 +823,15 @@ public final class AllvrCubeMap {
      * (with hysteresis) are forgotten client-side.
      */
     public void tick() {
+        this.lightEngine.tick(16_384);
+        // Light changes are persisted through the same coalescing queue as
+        // block mutations. The engine only reports cubes whose published
+        // section data changed, so unchanged generated cubes do not churn IO.
+        for (long key : this.lightEngine.drainDirtyCubes()) {
+            if (this.cubes.containsKey(key)) {
+                this.queueSnapshot(key, false);
+            }
+        }
         // drain before the players.isEmpty() early-return: an empty server
         // still owes its queued snapshots (vanilla autosave parity)
         this.drainSnapshotQueue();
@@ -985,14 +1032,14 @@ public final class AllvrCubeMap {
     private boolean trySnapshot(AllvrCube cube) {
         long start = System.nanoTime();
         try {
-            AllvrCubeSnapshot snapshot = AllvrCubeSerializer.snapshot(cube, this.level);
+            AllvrCubeSnapshot snapshot = AllvrCubeSerializer.snapshot(cube, this.level, this.lightEngine);
             this.worker.enqueue(snapshot);
             // A queued snapshot is already the newest authoritative state:
             // subsequent loads must prefer it over deterministic generation,
             // even before the asynchronous region commit finishes.
             this.persistedIndex.add(cube.getPos().asLong());
             cube.markPersistedOverride();
-            cube.markQueued(snapshot.version());
+            cube.markQueued(snapshot.version(), snapshot.lightVersion());
             this.lastSnapshotTick.put(cube.getPos().asLong(), this.level.getGameTime());
             this.diagnostics.snapshotsBuilt.incrementAndGet();
             this.diagnostics.snapshotNanos.addAndGet(System.nanoTime() - start);
@@ -1009,8 +1056,12 @@ public final class AllvrCubeMap {
 
     /** Applies completed disk reads on the server thread, like ChunkMap. */
     private void drainCompletedPersistedLoads() {
+        long start = System.nanoTime();
+        int installed = 0;
         PersistedCubeLoad completed;
-        while ((completed = completedPersistedLoads.poll()) != null) {
+        while (installed < COMPLETION_INSTALL_BUDGET
+            && System.nanoTime() - start < COMPLETION_INSTALL_BUDGET_NANOS
+            && (completed = completedPersistedLoads.poll()) != null) {
             this.pendingPersistedLoads.remove(completed.key(), completed.future());
             if (closed) {
                 continue;
@@ -1031,6 +1082,7 @@ public final class AllvrCubeMap {
             }
             try {
                 this.installPersistedCube(completed.key(), completed.cube());
+                installed++;
             } catch (Throwable failure) {
                 diagnostics.persistedLoadFailures.incrementAndGet();
                 quarantinePersistedLoad(completed.key(), failure);
@@ -1161,6 +1213,7 @@ public final class AllvrCubeMap {
         }
         pendingPersistedLoads.clear();
         completedPersistedLoads.clear();
+        this.lightEngine.clear();
         this.worker.close();
         CreateManaIndustry.LOGGER.info("[Allvr] cube persistence closed ({}): {}",
             ok ? "clean" : "with errors", this.diagnostics);
@@ -1223,6 +1276,12 @@ public final class AllvrCubeMap {
                 cube.onUnload();
                 this.cubes.remove(key);
                 this.beCubes.remove(key);
+                // Cooldown bookkeeping is only meaningful while a cube is
+                // resident.  Discard it with the cube so exploration cannot
+                // grow a map entry for every unloaded coordinate.
+                this.lastSnapshotTick.remove(key);
+                this.loadCooldown.remove(key);
+                this.lightEngine.onCubeUnloaded(cube);
                 dropped++;
                 // persistedIndex keeps the key: record/pending exist ⟹ override
             }

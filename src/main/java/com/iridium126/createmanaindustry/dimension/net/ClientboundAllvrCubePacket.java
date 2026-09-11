@@ -161,6 +161,11 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
             throw new IllegalArgumentException("cube payload has " + buf.readableBytes()
                 + " trailing bytes — codec mismatch");
         }
+        // Prepare the local sky columns on the packet worker.  The client
+        // render/tick thread must never scan a 32³ cube to answer a light
+        // query.
+        cube.prepareSkyTopOpaque();
+        cube.prepareSkyLightLayers();
         return cube;
     }
 

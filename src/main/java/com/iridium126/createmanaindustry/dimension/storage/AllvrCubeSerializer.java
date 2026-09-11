@@ -8,6 +8,7 @@ import com.mojang.serialization.DataResult;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
+import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -23,6 +24,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.DataLayer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,11 +32,13 @@ import org.slf4j.LoggerFactory;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
+import com.iridium126.createmanaindustry.dimension.light.AllvrLightEngine;
 
 /**
  * Cube ↔ NBT on the service/decode threads (plan §7.1) — the ALLVR counterpart of
  * {@code ChunkSerializer}, minus everything the cube layer does not own
- * (ticks, entities, heightmaps, light data). The region layer never touches
+ * (ticks, entities and vanilla heightmaps). Block and sky light layers are
+ * stored in the same 2048-byte-per-section form as vanilla. The region layer never touches
  * this schema; the worker never touches a live cube: both only see the
  * immutable {@link AllvrCubeSnapshot}. Loads run on the bounded persistence
  * decode pool, while the cube map installs the result on the server thread.
@@ -77,10 +81,13 @@ public final class AllvrCubeSerializer {
      * latest-wins bookkeeping.
      */
     @SuppressWarnings("unchecked")
-    public static AllvrCubeSnapshot snapshot(AllvrCube cube, ServerLevel level) {        CompoundTag root = new CompoundTag();
+    public static AllvrCubeSnapshot snapshot(AllvrCube cube, ServerLevel level,
+                                             AllvrLightEngine lightEngine) {
+        CompoundTag root = new CompoundTag();
         NbtUtils.addCurrentDataVersion(root);
         root.putInt("AllvrFormatVersion", FORMAT_VERSION);
         root.putInt("GeneratorVersion", GENERATOR_VERSION);
+        root.putBoolean("isLightOn", true);
         AllvrCubePos pos = cube.getPos();
         root.putInt("xPos", pos.getX());
         root.putInt("yPos", pos.getY());
@@ -100,6 +107,14 @@ public final class AllvrCubeSerializer {
             sectionTag.put("biomes", encodeOrThrow(
                 biomeCodec.encodeStart(NbtOps.INSTANCE, (PalettedContainer<Holder<Biome>>) section.getBiomes()),
                 pos, "biomes[" + i + "]"));
+            int sectionX = i & 1;
+            int sectionZ = (i >> 1) & 1;
+            int sectionY = (i >> 2) & 1;
+            SectionPos sectionPos = SectionPos.of((pos.getX() << 1) + sectionX,
+                (pos.getY() << 1) + sectionY, (pos.getZ() << 1) + sectionZ);
+            DataLayer[] light = lightEngine.copySectionData(sectionPos);
+            sectionTag.putByteArray("SkyLight", light[0].getData().clone());
+            sectionTag.putByteArray("BlockLight", light[1].getData().clone());
             sections.add(sectionTag);
         }
         root.put("sections", sections);
@@ -120,7 +135,7 @@ public final class AllvrCubeSerializer {
             }
         }
         root.put("block_entities", blockEntities);
-        return new AllvrCubeSnapshot(pos, cube.mutationVersion(), root);
+        return new AllvrCubeSnapshot(pos, cube.mutationVersion(), cube.lightVersion(), root);
     }
 
     private static Tag encodeOrThrow(DataResult<Tag> result, AllvrCubePos pos, String what) {
@@ -157,7 +172,10 @@ public final class AllvrCubeSerializer {
     public static AllvrCube load(AllvrCubePos pos, CompoundTag raw, ServerLevel level)
         throws AllvrCubeCorruptedException {
         CompoundTag root = AllvrCubeDataFixes.update(raw);
-        NbtUtils.getDataVersion(root, -1); // recorded for future migrations; V1 has none
+        NbtUtils.getDataVersion(root, -1); // recorded for future migrations
+        if (!root.getBoolean("isLightOn")) {
+            throw new AllvrCubeCorruptedException("cube " + pos + ": light data is disabled");
+        }
 
         checkCoord(root, "xPos", pos.getX(), pos);
         checkCoord(root, "yPos", pos.getY(), pos);
@@ -168,7 +186,13 @@ public final class AllvrCubeSerializer {
             biomeCodec(level.registryAccess().registryOrThrow(Registries.BIOME));
 
         ListTag sections = root.getList("sections", Tag.TAG_COMPOUND);
+        if (sections.size() != AllvrCube.SECTIONS_PER_CUBE) {
+            throw new AllvrCubeCorruptedException("cube " + pos + ": expected "
+                + AllvrCube.SECTIONS_PER_CUBE + " sections, got " + sections.size());
+        }
         boolean[] seen = new boolean[AllvrCube.SECTIONS_PER_CUBE];
+        DataLayer[] skyLight = new DataLayer[AllvrCube.SECTIONS_PER_CUBE];
+        DataLayer[] blockLight = new DataLayer[AllvrCube.SECTIONS_PER_CUBE];
         for (int i = 0; i < sections.size(); i++) {
             CompoundTag sectionTag = sections.getCompound(i);
             int index = sectionTag.getByte("Index");
@@ -184,8 +208,10 @@ public final class AllvrCubeSerializer {
             PalettedContainer<Holder<Biome>> biomes = parse(
                 biomeCodec, sectionTag.getCompound("biomes"), pos, "biomes[" + index + "]");
             cube.installSection(index, states, biomes);
+            skyLight[index] = parseLight(sectionTag, "SkyLight", pos, index);
+            blockLight[index] = parseLight(sectionTag, "BlockLight", pos, index);
         }
-        // sections absent from the list keep the fresh-cube default (air + plains) — plan §6
+        cube.installRestoredLight(skyLight, blockLight);
 
         ListTag blockEntities = root.getList("block_entities", Tag.TAG_COMPOUND);
         for (int i = 0; i < blockEntities.size(); i++) {
@@ -228,6 +254,21 @@ public final class AllvrCubeSerializer {
             .promotePartial(message -> LOGGER.error("[Allvr] cube {}: partial error decoding {}: {}", pos, what, message))
             .getOrThrow(message -> new AllvrCubeCorruptedException(
                 "cube " + pos + ": decoding " + what + " failed: " + message));
+    }
+
+    private static DataLayer parseLight(CompoundTag section, String key,
+                                        AllvrCubePos pos, int index)
+        throws AllvrCubeCorruptedException {
+        if (!section.contains(key, Tag.TAG_BYTE_ARRAY)) {
+            throw new AllvrCubeCorruptedException("cube " + pos + ": section " + index
+                + " missing " + key + " light layer");
+        }
+        byte[] data = section.getByteArray(key);
+        if (data.length != 2048) {
+            throw new AllvrCubeCorruptedException("cube " + pos + ": section " + index
+                + " " + key + " length " + data.length + " (expected 2048)");
+        }
+        return new DataLayer(data);
     }
 
 }

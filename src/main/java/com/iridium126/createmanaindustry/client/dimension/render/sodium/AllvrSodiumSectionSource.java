@@ -1,7 +1,6 @@
 package com.iridium126.createmanaindustry.client.dimension.render.sodium;
 
 import java.util.List;
-import java.util.ArrayList;
 
 import net.caffeinemc.mods.sodium.client.world.cloned.ChunkRenderContext;
 import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSection;
@@ -42,9 +41,6 @@ public final class AllvrSodiumSectionSource {
     public static final int CONTEXT_SIDE = CONTEXT_RADIUS * 2 + 1;
     public static final int CONTEXT_SIZE = CONTEXT_SIDE * CONTEXT_SIDE * CONTEXT_SIDE;
 
-    private static final Long2ObjectLinkedOpenHashMap<LightCacheEntry> LIGHT_CACHE =
-        new Long2ObjectLinkedOpenHashMap<>();
-    private static final int LIGHT_CACHE_LIMIT = 1024;
     /** Reuse immutable section copies per cube instance and mutation version. */
     private static final int SECTION_COPY_CACHE_LIMIT = 512;
     private static final Long2ObjectLinkedOpenHashMap<SectionCopyCache> SECTION_COPY_CACHE =
@@ -71,12 +67,23 @@ public final class AllvrSodiumSectionSource {
     private record ClonedCache(long resourceRevision, long windowEpoch,
                                ClonedChunkSection section) {}
 
-    private record LightInputs(int minY, int cubeY0, int[] columnMasks,
-                               List<Emitter> emitters) {}
-
-    private record LightCacheEntry(DataLayer[] data) {}
-
     private AllvrSodiumSectionSource() {}
+
+    /** Drops all world-owned section/carrier references on level teardown. */
+    public static void clear() {
+        synchronized (AllvrClientCubeCache.LOCK) {
+            SECTION_COPY_CACHE.clear();
+            CLONED_SECTION_CACHE.clear();
+            CARRIER_CACHE.clear();
+            clonedResourceRevision = Long.MIN_VALUE;
+            clonedWindowEpoch = Long.MIN_VALUE;
+            carrierCacheLevel = null;
+        }
+        synchronized (AllvrSodiumSectionSource.class) {
+            airSectionLevel = null;
+            cachedAirSection = null;
+        }
+    }
 
     public static boolean isAllay(ClientLevel level) {
         return level != null && level.dimension() == AllvrDimensions.ALLAY_LEVEL;
@@ -173,7 +180,7 @@ public final class AllvrSodiumSectionSource {
 
     /**
      * Invalidates cached cloned sections whose 3x3x3 mesh context or
-     * synthetic sky-light dependency can observe a cube update. Cube updates
+     * sparse light dependency can observe a cube update. Cube updates
      * are published on the client thread before Sodium is asked to rebuild,
      * so this keeps the render-side cache exact without globally invalidating
      * every section on each packet.
@@ -184,18 +191,21 @@ public final class AllvrSodiumSectionSource {
         int minX = cube.getX() << 1;
         int minY = window.virtualSectionY(cube.getY() << 1);
         int minZ = cube.getZ() << 1;
-        /* Sky light samples up to 128 blocks upward. Keep those lower
-         * sections invalidated as well as the one-section mesh boundary. */
+        /* Keep the cloned mesh boundary invalidated. Light snapshots are
+         * owned by the shared sparse engine and are dropped below. */
         synchronized (AllvrClientCubeCache.LOCK) {
-            for (int y = minY - 8; y <= minY + 2; y++) {
+            // Direct sky is owned by the cube's immutable column snapshot;
+            // only the cube and its one-section mesh boundary can change.
+            for (int y = minY - 1; y <= minY + 2; y++) {
                 for (int z = minZ - 1; z <= minZ + 2; z++) {
                     for (int x = minX - 1; x <= minX + 2; x++) {
                         CLONED_SECTION_CACHE.remove(SectionPos.asLong(x, y, z));
-                        LIGHT_CACHE.remove(SectionPos.asLong(x,
-                            window.absoluteSectionY(y), z));
                     }
                 }
             }
+        }
+        if (AllvrClientCubeCache.lightEngine() != null) {
+            AllvrClientCubeCache.lightEngine().invalidateCubeSections(cubeKey);
         }
     }
 
@@ -206,16 +216,11 @@ public final class AllvrSodiumSectionSource {
 
     /** Invalidates light data affected by one changed section column. */
     public static void invalidateLightingSection(int virtualX, int virtualY, int virtualZ) {
-        AllvrRenderYWindow window = AllvrRenderWindowState.current();
-        int absoluteY = window.absoluteSectionY(virtualY);
-        synchronized (AllvrClientCubeCache.LOCK) {
-            for (int y = absoluteY - 8; y <= absoluteY + 2; y++) {
-                for (int z = virtualZ - 1; z <= virtualZ + 1; z++) {
-                    for (int x = virtualX - 1; x <= virtualX + 1; x++) {
-                        LIGHT_CACHE.remove(SectionPos.asLong(x, y, z));
-                    }
-                }
-            }
+        if (AllvrClientCubeCache.lightEngine() != null) {
+            AllvrClientCubeCache.lightEngine().invalidateCubeSections(
+                AllvrCubePos.asLong(virtualX >> 1,
+                    AllvrRenderWindowState.current().absoluteSectionY(virtualY) >> 1,
+                    virtualZ >> 1));
         }
     }
 
@@ -269,112 +274,16 @@ public final class AllvrSodiumSectionSource {
         return sections;
     }
 
-    /**
-     * Supplies immutable per-section light snapshots to Sodium's cloned
-     * section constructor. The cache is keyed by the cube identities and
-     * mutation versions that can affect this section's sky/block light, so an
-     * unrelated streamed cube does not force every visible section to rebuild
-     * its light field.
-     */
+    /** Supplies the last completed vanilla-style light snapshot for Sodium. */
     public static DataLayer[] lightData(ClientLevel level, SectionPos absolutePos) {
-        if (!isAllay(level)) {
-            return null;
-        }
-        int absoluteSectionY = absolutePos.getY();
-        long key = SectionPos.asLong(absolutePos.getX(), absoluteSectionY, absolutePos.getZ());
-        LightInputs inputs;
-        synchronized (AllvrClientCubeCache.LOCK) {
-            LightCacheEntry cached = LIGHT_CACHE.getAndMoveToLast(key);
-            if (cached != null) {
-                return cached.data();
-            }
-            /* Capture only immutable primitive masks while the cube-map lock
-             * is held; the expensive light-field build happens after unlock. */
-            inputs = captureLightInputs(absoluteSectionY, absolutePos.getX(), absolutePos.getZ());
-        }
-        DataLayer[] built = buildLightData(inputs, absolutePos.getX(), absolutePos.getZ());
-        synchronized (AllvrClientCubeCache.LOCK) {
-            LightCacheEntry existing = LIGHT_CACHE.getAndMoveToLast(key);
-            if (existing != null) {
-                return existing.data();
-            }
-            if (LIGHT_CACHE.size() >= LIGHT_CACHE_LIMIT) {
-                LIGHT_CACHE.removeFirst();
-            }
-            LIGHT_CACHE.putAndMoveToLast(key, new LightCacheEntry(built));
-        }
-        return built;
-    }
-
-    private static LightInputs captureLightInputs(int absoluteSectionY,
-                                                   int sectionX, int sectionZ) {
-        int minX = sectionX << 4;
-        int minY = absoluteSectionY << 4;
-        int minZ = sectionZ << 4;
-        int firstCubeY = Math.floorDiv(minY + 1, 32);
-        int lastCubeY = Math.floorDiv(minY + 143, 32);
-        int cubeLayers = lastCubeY - firstCubeY + 1;
-        int[] columnMasks = new int[cubeLayers * 256];
-        int cubeX = Math.floorDiv(minX, 32);
-        int cubeZ = Math.floorDiv(minZ, 32);
-        int localSectionX = Math.floorMod(minX, 32);
-        int localSectionZ = Math.floorMod(minZ, 32);
-
-        for (int layer = 0; layer < cubeLayers; layer++) {
-            AllvrCube cube = AllvrClientCubeCache.peekCubeUnsafe(
-                AllvrCubePos.asLong(cubeX, firstCubeY + layer, cubeZ));
-            if (cube == null) {
-                continue;
-            }
-            int[] masks = opacityMasks(cube);
-            int target = layer * 256;
-            for (int z = 0; z < 16; z++) {
-                int sourceZ = localSectionZ + z;
-                for (int x = 0; x < 16; x++) {
-                    columnMasks[target + (z << 4) + x] =
-                        masks[(sourceZ << 5) + localSectionX + x];
-                }
-            }
-        }
-
-        List<Emitter> emitters = new ArrayList<>();
-        int centerCubeY = Math.floorDiv(minY, 32);
-        for (int dy = -1; dy <= 1; dy++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                for (int dx = -1; dx <= 1; dx++) {
-                    AllvrCube cube = AllvrClientCubeCache.peekCubeUnsafe(
-                        AllvrCubePos.asLong(cubeX + dx, centerCubeY + dy, cubeZ + dz));
-                    if (cube == null || cube.getEmitters().isEmpty()) {
-                        continue;
-                    }
-                    for (it.unimi.dsi.fastutil.ints.Int2IntMap.Entry entry
-                        : cube.getEmitters().int2IntEntrySet()) {
-                        int cell = entry.getIntKey();
-                        emitters.add(new Emitter(
-                            cube.getPos().minBlockX() + (cell & 31),
-                            cube.getPos().minBlockY() + (cell >> 10),
-                            cube.getPos().minBlockZ() + ((cell >> 5) & 31),
-                            entry.getIntValue()));
-                    }
-                }
-            }
-        }
-        return new LightInputs(minY, firstCubeY, columnMasks, emitters);
-    }
-
-    private static int[] opacityMasks(AllvrCube cube) {
-        return cube.opacityColumns();
+        return isAllay(level) ? AllvrClientCubeCache.lightData(absolutePos) : null;
     }
 
     private static void resetClonedCacheIfNeeded(long resourceRevision, long windowEpoch) {
-        if (clonedResourceRevision == resourceRevision
-            && clonedWindowEpoch == windowEpoch) {
+        if (clonedResourceRevision == resourceRevision && clonedWindowEpoch == windowEpoch) {
             return;
         }
         CLONED_SECTION_CACHE.clear();
-        synchronized (AllvrClientCubeCache.LOCK) {
-            LIGHT_CACHE.clear();
-        }
         CARRIER_CACHE.clear();
         carrierCacheLevel = null;
         clonedResourceRevision = resourceRevision;
@@ -401,8 +310,7 @@ public final class AllvrSodiumSectionSource {
 
     private static ClonedChunkSection clonedSection(ClientLevel level, LevelChunk carrier,
                                                     int virtualX, int virtualY, int virtualZ,
-                                                    long resourceRevision,
-                                                    long windowEpoch) {
+                                                    long resourceRevision, long windowEpoch) {
         long key = SectionPos.asLong(virtualX, virtualY, virtualZ);
         ClonedCache cached = CLONED_SECTION_CACHE.getAndMoveToLast(key);
         if (cached != null && cached.resourceRevision() == resourceRevision
@@ -423,68 +331,6 @@ public final class AllvrSodiumSectionSource {
             new ClonedCache(resourceRevision, windowEpoch, cloned));
         return cloned;
     }
-
-    private static DataLayer[] buildLightData(LightInputs inputs,
-                                               int sectionX, int sectionZ) {
-        int minX = sectionX << 4;
-        int minY = inputs.minY();
-        int minZ = sectionZ << 4;
-        DataLayer block = new DataLayer(0);
-        DataLayer sky = new DataLayer(0);
-
-        // Sky exposure is column-shaped. Check the compact 32-block masks
-        // directly, so each sample visits at most five cube layers instead of
-        // first expanding 143 samples into a temporary bitset.
-        for (int z = 0; z < 16; z++) {
-            for (int x = 0; x < 16; x++) {
-                int column = (z << 4) + x;
-                for (int y = 0; y < 16; y++) {
-                    int from = minY + y + 1;
-                    if (!hasOpaque(inputs.columnMasks(), inputs.cubeY0(), column,
-                        from, from + 128)) {
-                        sky.set(x, y, z, 15);
-                    }
-                }
-            }
-        }
-
-        for (Emitter emitter : inputs.emitters()) {
-            for (int y = 0; y < 16; y++) {
-                for (int z = 0; z < 16; z++) {
-                    for (int x = 0; x < 16; x++) {
-                        int value = emitter.level - Math.abs(emitter.x - (minX + x))
-                            - Math.abs(emitter.y - (minY + y))
-                            - Math.abs(emitter.z - (minZ + z));
-                        if (value > 0 && value > block.get(x, y, z)) {
-                            block.set(x, y, z, Math.min(15, value));
-                        }
-                    }
-                }
-            }
-        }
-        // LightLayer is ordered SKY(0), BLOCK(1) in 1.21.1.
-        return new DataLayer[] { sky, block };
-    }
-
-    private static boolean hasOpaque(int[] columns, int cubeY0, int column,
-                                     int fromInclusive, int toExclusive) {
-        int firstLayer = Math.floorDiv(fromInclusive, 32) - cubeY0;
-        int lastLayer = Math.floorDiv(toExclusive - 1, 32) - cubeY0;
-        for (int layer = firstLayer; layer <= lastLayer; layer++) {
-            int from = layer == firstLayer ? fromInclusive & 31 : 0;
-            int to = layer == lastLayer ? ((toExclusive - 1) & 31) + 1 : 32;
-            int mask = -1 << from;
-            if (to < 32) {
-                mask &= (1 << to) - 1;
-            }
-            if ((columns[layer * 256 + column] & mask) != 0) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private record Emitter(int x, int y, int z, int level) {}
 
     private static LevelChunkSection copySection(LevelChunkSection source) {
         if (source == null) {

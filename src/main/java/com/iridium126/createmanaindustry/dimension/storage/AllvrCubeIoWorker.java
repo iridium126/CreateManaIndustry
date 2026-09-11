@@ -100,12 +100,14 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
     private static final class PendingWrite {
         final AllvrCubePos pos;
         final long version;
+        final long lightVersion;
         final CompoundTag tag;
         final CompletableFuture<Void> durable = new CompletableFuture<>();
 
-        PendingWrite(AllvrCubePos pos, long version, CompoundTag tag) {
+        PendingWrite(AllvrCubePos pos, long version, long lightVersion, CompoundTag tag) {
             this.pos = pos;
             this.version = version;
+            this.lightVersion = lightVersion;
             this.tag = tag;
         }
     }
@@ -141,7 +143,7 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
      */
     public void enqueue(AllvrCubeSnapshot snapshot) {
         this.ensureOpen("enqueue");
-        PendingWrite write = new PendingWrite(snapshot.pos(), snapshot.version(), snapshot.tag());
+        PendingWrite write = new PendingWrite(snapshot.pos(), snapshot.version(), snapshot.lightVersion(), snapshot.tag());
         PendingWrite previous = this.pending.put(snapshot.pos().asLong(), write);
         if (previous != null) {
             // superseded before it reached disk — the newer record carries the
@@ -221,10 +223,10 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
                 write.durable.complete(null);
             }
         }
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("[Allvr] wrote {} cube record(s) in {} µs", batch.size(),
-                elapsed / 1000);
-        }
+        // Do not log every region commit.  Autosave traffic can contain
+        // thousands of small batches; formatting one DEBUG line per batch
+        // runs on the single I/O worker and can become a second persistence
+        // bottleneck. Diagnostics already retain commit count and latency.
     }
 
     // ------------------------------------------------------------------

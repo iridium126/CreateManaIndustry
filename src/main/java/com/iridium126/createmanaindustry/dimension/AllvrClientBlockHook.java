@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.dimension;
 import java.util.function.Function;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -18,6 +19,8 @@ public final class AllvrClientBlockHook {
 
     private static volatile Function<BlockPos, BlockState> resolver;
     private static volatile net.minecraft.world.level.biome.BiomeManager.NoiseBiomeSource biomeResolver;
+    private static volatile java.util.function.BiFunction<LightLayer, BlockPos, Integer> lightResolver;
+    private static volatile java.util.function.BiFunction<BlockPos, Integer, Integer> rawLightResolver;
 
     public static void setBiomeResolver(net.minecraft.world.level.biome.BiomeManager.NoiseBiomeSource resolver) {
         biomeResolver = resolver;
@@ -36,6 +39,22 @@ public final class AllvrClientBlockHook {
     public static BlockState resolve(BlockPos pos) {
         Function<BlockPos, BlockState> current = resolver;
         return current == null ? Blocks.VOID_AIR.defaultBlockState() : current.apply(pos);
+    }
+
+    public static void setLightResolver(java.util.function.BiFunction<LightLayer, BlockPos, Integer> resolver,
+                                         java.util.function.BiFunction<BlockPos, Integer, Integer> rawResolver) {
+        lightResolver = resolver;
+        rawLightResolver = rawResolver;
+    }
+
+    public static Integer light(LightLayer type, BlockPos pos) {
+        var current = lightResolver;
+        return current == null ? null : current.apply(type, pos);
+    }
+
+    public static Integer rawLight(BlockPos pos, int amount) {
+        var current = rawLightResolver;
+        return current == null ? null : current.apply(pos, amount);
     }
 
     private AllvrClientBlockHook() {}
