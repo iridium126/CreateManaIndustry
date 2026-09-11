@@ -10,6 +10,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.Holder;
 import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.chunk.LevelChunkSection;
@@ -43,9 +44,16 @@ public final class AllvrVoxyClientIngest {
     });
     private static final AtomicLong LEVEL_EPOCH = new AtomicLong();
 
-    private static ClientLevel level;
-    private static long slabId;
-    private static boolean initialized;
+    private static volatile ClientLevel level;
+    private static volatile long slabId;
+    private static volatile boolean initialized;
+    /**
+     * Voxy creates its renderer from LevelRenderer#allChanged(), which can
+     * race the NeoForge level-load callback by one client frame. Keep a
+     * refresh pending until the level and player are both usable so the
+     * renderer's top-level Y range is built for the correct Allay slab.
+     */
+    private static volatile boolean rendererRefreshPending;
     private static boolean residentScanQueued;
     private static long prewarmedSlab = Long.MIN_VALUE;
     private static final ArrayDeque<Long> SECTION_QUEUE = new ArrayDeque<>();
@@ -59,7 +67,21 @@ public final class AllvrVoxyClientIngest {
         if (newLevel != null && AllvrDimensions.isAllay(newLevel)) {
             slabId = AllvrVoxyYSlab.slabIdForLevel(newLevel);
             initialized = true;
+            rendererRefreshPending = true;
         }
+    }
+
+    /**
+     * Returns the slab currently used by the ingest bridge for this level.
+     * Camera and WorldIdentifier mixins must use this value instead of
+     * independently consulting Minecraft#player: during a dimension switch
+     * those two observations can describe different frames of the transition.
+     */
+    public static long activeSlabId(Level targetLevel) {
+        if (targetLevel != null && targetLevel == level && initialized) {
+            return slabId;
+        }
+        return AllvrVoxyYSlab.slabIdForLevel(targetLevel);
     }
 
     public static void clear() {
@@ -68,6 +90,7 @@ public final class AllvrVoxyClientIngest {
         QUEUED_SECTIONS.clear();
         residentScanQueued = false;
         prewarmedSlab = Long.MIN_VALUE;
+        rendererRefreshPending = false;
         initialized = false;
         level = null;
     }
@@ -107,6 +130,20 @@ public final class AllvrVoxyClientIngest {
         maybePrewarm(wantedSlab, mc.player.blockPosition().getY());
         if (wantedSlab != slabId) {
             switchSlab(wantedSlab);
+            return;
+        }
+
+        // The first Voxy renderer may have been constructed before the
+        // allay LevelEvent.Load callback ran. Recreate it once after the
+        // active level/player are known, even when the initial slab already
+        // happens to match the player.
+        if (rendererRefreshPending) {
+            if (refreshRenderer()) {
+                rendererRefreshPending = false;
+                prewarmedSlab = wantedSlab;
+                CreateManaIndustry.LOGGER.info(
+                    "[Allvr] refreshed Voxy renderer for Allay Y slab {}", wantedSlab);
+            }
             return;
         }
 
@@ -180,25 +217,34 @@ public final class AllvrVoxyClientIngest {
         });
     }
 
+    private static boolean refreshRenderer() {
+        try {
+            var renderer = (me.cortex.voxy.client.core.IGetVoxyRenderSystem)
+                Minecraft.getInstance().levelRenderer;
+            renderer.voxy$shutdownRenderer();
+            renderer.voxy$createRenderer();
+            return true;
+        } catch (Throwable t) {
+            if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
+                CreateManaIndustry.LOGGER.debug("[Allvr] Voxy renderer refresh deferred", t);
+            }
+            return false;
+        }
+    }
+
     private static void switchSlab(long wantedSlab) {
         long previousSlab = slabId;
         slabId = wantedSlab;
         SECTION_QUEUE.clear();
         QUEUED_SECTIONS.clear();
         residentScanQueued = false;
-        try {
-            var renderer = (me.cortex.voxy.client.core.IGetVoxyRenderSystem)
-                Minecraft.getInstance().levelRenderer;
-            renderer.voxy$shutdownRenderer();
-            renderer.voxy$createRenderer();
+        if (refreshRenderer()) {
+            rendererRefreshPending = false;
             prewarmedSlab = wantedSlab;
             CreateManaIndustry.LOGGER.info("[Allvr] switched Voxy Y slab to {}", wantedSlab);
-        } catch (Throwable t) {
+        } else {
             slabId = previousSlab;
             prewarmedSlab = Long.MIN_VALUE;
-            if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
-                CreateManaIndustry.LOGGER.debug("[Allvr] Voxy Y slab switch deferred", t);
-            }
         }
     }
 

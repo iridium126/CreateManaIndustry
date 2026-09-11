@@ -98,7 +98,7 @@ class AllvrCubeIoWorkerTest {
         CompoundTag tag = new CompoundTag();
         tag.putInt("v", version);
         tag.putString("name", name);
-        return new AllvrCubeSnapshot(AllvrCubePos.of(0, 0, 0), version, tag);
+        return new AllvrCubeSnapshot(AllvrCubePos.of(0, 0, 0), version, 0L, tag);
     }
 
     private static void awaitPendingEmpty(AllvrCubeIoWorker worker) throws InterruptedException {
@@ -260,7 +260,7 @@ class AllvrCubeIoWorkerTest {
         storage.disk.put(AllvrCubePos.of(10, 0, 0), new CompoundTag());
         AllvrCubeIoWorker worker = new AllvrCubeIoWorker(storage, new AllvrStorageDiagnostics());
         try {
-            worker.enqueue(new AllvrCubeSnapshot(AllvrCubePos.of(20, 0, 0), 1, new CompoundTag()));
+            worker.enqueue(new AllvrCubeSnapshot(AllvrCubePos.of(20, 0, 0), 1L, 0L, new CompoundTag()));
             // pending entry is visible without waiting for the drain
             var keys = new java.util.HashSet<>(worker.persistedKeysSnapshot());
             assertTrue(keys.contains(AllvrCubePos.of(10, 0, 0).asLong()));

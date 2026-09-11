@@ -16,7 +16,13 @@ import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager;
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
+import net.caffeinemc.mods.sodium.client.render.chunk.ChunkRenderer;
+import net.caffeinemc.mods.sodium.client.render.chunk.ChunkRenderMatrices;
+import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderListIterable;
 import net.caffeinemc.mods.sodium.client.render.chunk.data.BuiltSectionInfo;
+import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
+import net.caffeinemc.mods.sodium.client.render.viewport.CameraTransform;
+import net.caffeinemc.mods.sodium.client.gl.device.CommandList;
 import net.caffeinemc.mods.sodium.client.world.LevelSlice;
 import net.caffeinemc.mods.sodium.client.world.cloned.ChunkRenderContext;
 import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
@@ -118,6 +124,44 @@ public abstract class AllvrSodiumRenderSectionManagerMixin {
     private double cmi$virtualDrawCameraY(double cameraY) {
         return AllvrSodiumBridge.active()
             ? AllvrSodiumBridge.window().virtualCameraY(cameraY) : cameraY;
+    }
+
+    /**
+     * Voxy's optional DefaultChunkRenderer hook consumes the CameraTransform
+     * created by this method. Its no-shader path calls Voxy setup with that
+     * already-window-relative Y, while the solid hook receives the absolute
+     * Y from SodiumWorldRenderer. Mark only this nested call so Voxy can
+     * distinguish the two coordinate frames without changing Sodium's own
+     * camera math.
+     */
+    @WrapOperation(method = "renderLayer",
+        at = @At(value = "INVOKE",
+            target = "Lnet/caffeinemc/mods/sodium/client/render/chunk/ChunkRenderer;"
+                + "render(Lnet/caffeinemc/mods/sodium/client/render/chunk/ChunkRenderMatrices;"
+                + "Lnet/caffeinemc/mods/sodium/client/gl/device/CommandList;"
+                + "Lnet/caffeinemc/mods/sodium/client/render/chunk/lists/ChunkRenderListIterable;"
+                + "Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/TerrainRenderPass;"
+                + "Lnet/caffeinemc/mods/sodium/client/render/viewport/CameraTransform;Z)V"))
+    private void cmi$markVoxyWindowCamera(ChunkRenderer renderer,
+                                          ChunkRenderMatrices matrices,
+                                          CommandList commandList,
+                                          ChunkRenderListIterable renderLists,
+                                          TerrainRenderPass pass,
+                                          CameraTransform camera,
+                                          boolean indexedRenderingEnabled,
+                                          Operation<Void> original) {
+        if (AllvrSodiumBridge.active()) {
+            AllvrSodiumBridge.enterVoxyWindowCameraFrame();
+            try {
+                original.call(renderer, matrices, commandList, renderLists, pass,
+                    camera, indexedRenderingEnabled);
+            } finally {
+                AllvrSodiumBridge.exitVoxyWindowCameraFrame();
+            }
+            return;
+        }
+        original.call(renderer, matrices, commandList, renderLists, pass,
+            camera, indexedRenderingEnabled);
     }
 
     @Redirect(method = "isOutOfGraph",

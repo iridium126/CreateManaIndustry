@@ -42,6 +42,14 @@ public final class AllvrSodiumBridge {
     private static volatile ClientLevel level;
     private static volatile long resourceRevision;
     private static volatile boolean initialized;
+    /**
+     * Voxy's Sodium CUTOUT hook runs inside RenderSectionManager#renderLayer
+     * after that method's camera Y has been converted into the Sodium window.
+     * Keep this scoped to the wrapped chunk-render call so Voxy can restore
+     * the absolute camera before applying its own slab conversion.
+     */
+    private static final ThreadLocal<Integer> VOXY_WINDOW_CAMERA_DEPTH =
+        ThreadLocal.withInitial(() -> 0);
     /** No cube event may be mapped until the first camera-centered origin is published. */
     private static boolean originInitialized;
     private static double lastCameraY;
@@ -58,6 +66,23 @@ public final class AllvrSodiumBridge {
 
     public static long resourceRevision() {
         return resourceRevision;
+    }
+
+    public static void enterVoxyWindowCameraFrame() {
+        VOXY_WINDOW_CAMERA_DEPTH.set(VOXY_WINDOW_CAMERA_DEPTH.get() + 1);
+    }
+
+    public static void exitVoxyWindowCameraFrame() {
+        int depth = VOXY_WINDOW_CAMERA_DEPTH.get() - 1;
+        if (depth <= 0) {
+            VOXY_WINDOW_CAMERA_DEPTH.remove();
+        } else {
+            VOXY_WINDOW_CAMERA_DEPTH.set(depth);
+        }
+    }
+
+    public static boolean voxyWindowCameraFrameActive() {
+        return VOXY_WINDOW_CAMERA_DEPTH.get() > 0;
     }
 
     public static boolean active() {

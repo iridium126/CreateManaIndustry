@@ -74,21 +74,15 @@ import com.iridium126.createmanaindustry.dimension.light.AllvrLightEngine;
  */
 public final class AllvrCubeMap {
 
-    /** One transport cube's unchanged world-space edge length. */
-    private static final int CUBE_EDGE_BLOCKS = 32;
     /** Per-player server-memory/simulation shell, in cubes. */
     private static final int GEN_RADIUS = 8;
     /**
-     * Default per-player client subscription radii (xz, y), used until the
-     * client sends its effective Minecraft render distance. The Y radius
-     * equals XZ so a player flying straight up never falls into a gap between
-     * Sodium near terrain and Voxy far terrain.
+     * Per-player vertical client subscription radius. Horizontal subscription
+     * distance comes from the vanilla view distance reported by
+     * {@link ServerPlayer#requestedViewDistance()} and is evaluated with the
+     * vanilla circular chunk geometry. Y intentionally remains independent.
      */
-    private static final int DEFAULT_SEND_XZ_RADIUS = 8;
     private static final int DEFAULT_SEND_Y_RADIUS = 8;
-    /** Forget margin beyond the send radii (hysteresis against jitter at the edge). */
-    private static final int DEFAULT_FORGET_XZ_RADIUS = DEFAULT_SEND_XZ_RADIUS + 2;
-    private static final int DEFAULT_FORGET_Y_RADIUS = DEFAULT_SEND_Y_RADIUS + 2;
     /** Max cubes streamed per player per tick. */
     private static final int SEND_BUDGET_PER_TICK = 24;
     /** Bound background work queued while a player moves through an island. */
@@ -199,10 +193,8 @@ public final class AllvrCubeMap {
         /** Resume the shell scan where the per-tick budget stopped. */
         int scanRadius;
         int scanIndex;
-        int sendXzRadius = DEFAULT_SEND_XZ_RADIUS;
+        int renderDistanceChunks = AllvrVanillaRenderDistance.MIN_CHUNKS;
         int sendYRadius = DEFAULT_SEND_Y_RADIUS;
-        int forgetXzRadius = DEFAULT_FORGET_XZ_RADIUS;
-        int forgetYRadius = DEFAULT_FORGET_Y_RADIUS;
     }
 
     private record GeneratedCube(long key, AllvrCube cube, Throwable failure) {}
@@ -247,23 +239,6 @@ public final class AllvrCubeMap {
     /** Persistence diagnostics snapshot (plan §7.3). */
     public AllvrStorageDiagnostics diagnostics() {
         return this.diagnostics;
-    }
-
-    /**
-     * Updates the near-cube stream for one client. Minecraft's render distance
-     * is measured in 16-block chunks, while the Allay transport remains based
-     * on unchanged 32³ cubes. The server-side generation/simulation shell is
-     * intentionally kept separate and remains capped by {@link #GEN_RADIUS}.
-     */
-    public void setClientRenderDistance(UUID uuid, int renderDistanceChunks) {
-        Subscription sub = this.subscriptions.computeIfAbsent(uuid, k -> new Subscription());
-        int chunks = Math.max(2, Math.min(64, renderDistanceChunks));
-        int blocks = chunks * 16;
-        int radius = Math.max(1, (blocks + CUBE_EDGE_BLOCKS - 1) / CUBE_EDGE_BLOCKS);
-        sub.sendXzRadius = radius;
-        sub.sendYRadius = radius;
-        sub.forgetXzRadius = radius + 2;
-        sub.forgetYRadius = radius + 2;
     }
 
     // ------------------------------------------------------------------
@@ -628,32 +603,14 @@ public final class AllvrCubeMap {
     private void cancelGenerationsOutside(List<ServerPlayer> players) {
         for (Map.Entry<Long, CompletableFuture<AllvrCube>> entry : pendingGenerations.entrySet()) {
             AllvrCubePos pending = AllvrCubePos.fromLong(entry.getKey());
-            boolean needed = false;
-            for (ServerPlayer player : players) {
-                AllvrCubePos center = AllvrCubePos.of(player.blockPosition());
-                if (Math.abs(pending.getX() - center.getX()) <= GEN_RADIUS
-                    && Math.abs(pending.getY() - center.getY()) <= GEN_RADIUS
-                    && Math.abs(pending.getZ() - center.getZ()) <= GEN_RADIUS) {
-                    needed = true;
-                    break;
-                }
-            }
+            boolean needed = isNeededByAnyPlayer(pending, players);
             if (!needed && pendingGenerations.remove(entry.getKey(), entry.getValue())) {
                 cancelGenerationHandle(entry.getKey(), entry.getValue());
             }
         }
         for (Map.Entry<Long, CompletableFuture<AllvrCube>> entry : pendingPersistedLoads.entrySet()) {
             AllvrCubePos pending = AllvrCubePos.fromLong(entry.getKey());
-            boolean needed = false;
-            for (ServerPlayer player : players) {
-                AllvrCubePos center = AllvrCubePos.of(player.blockPosition());
-                if (Math.abs(pending.getX() - center.getX()) <= GEN_RADIUS
-                    && Math.abs(pending.getY() - center.getY()) <= GEN_RADIUS
-                    && Math.abs(pending.getZ() - center.getZ()) <= GEN_RADIUS) {
-                    needed = true;
-                    break;
-                }
-            }
+            boolean needed = isNeededByAnyPlayer(pending, players);
             if (!needed && pendingPersistedLoads.remove(entry.getKey(), entry.getValue())) {
                 entry.getValue().cancel(false);
                 loadCooldown.remove(entry.getKey());
@@ -819,8 +776,8 @@ public final class AllvrCubeMap {
      * on join/teleport synchronously generates and streams the player's
      * current cube, then queues the surrounding neighborhood for
      * the background terrain worker while streaming completed cube data to each player's client
-     * within the per-tick send budget. Cubes leaving the subscription range
-     * (with hysteresis) are forgotten client-side.
+     * within the per-tick send budget. Cubes leaving the vanilla horizontal
+     * circle or the independent vertical range are forgotten client-side.
      */
     public void tick() {
         this.lightEngine.tick(16_384);
@@ -854,6 +811,7 @@ public final class AllvrCubeMap {
         for (ServerPlayer player : players) {
             AllvrCubePos pc = AllvrCubePos.of(player.blockPosition());
             Subscription sub = subscriptions.computeIfAbsent(player.getUUID(), k -> new Subscription());
+            updateRenderDistance(player, sub);
             if (sub.lastCube == null || chebyshev(pc, sub.lastCube) > 2) {
                 // Keep teleports and first join responsive: the old 3x3x3
                 // synchronous warm-up could invoke dozens of noise/feature
@@ -878,11 +836,16 @@ public final class AllvrCubeMap {
         for (ServerPlayer player : players) {
             AllvrCubePos pc = AllvrCubePos.of(player.blockPosition());
             Subscription sub = subscriptions.computeIfAbsent(player.getUUID(), k -> new Subscription());
+            updateRenderDistance(player, sub);
             if (capReached && chebyshev(pc, playerCubeCenter(sub)) > 2) {
                 continue;
             }
             int sentCount = 0;
-            int streamRadius = Math.max(GEN_RADIUS, Math.max(sub.sendXzRadius, sub.sendYRadius));
+            int horizontalScanRadius = AllvrVanillaRenderDistance
+                .cubeScanRadiusForChunks(sub.renderDistanceChunks);
+            int horizontalShellRadius = Math.max(GEN_RADIUS, horizontalScanRadius);
+            int verticalShellRadius = Math.max(GEN_RADIUS, sub.sendYRadius);
+            int streamRadius = Math.max(horizontalShellRadius, verticalShellRadius);
             int scanRadius = sub.scanRadius;
             int scanIndex = sub.scanIndex;
             if (scanRadius > streamRadius) {
@@ -890,6 +853,8 @@ public final class AllvrCubeMap {
                 scanIndex = 0;
             }
             boolean budgetStopped = false;
+            int playerChunkX = AllvrVanillaRenderDistance.blockToChunk(player.getX());
+            int playerChunkZ = AllvrVanillaRenderDistance.blockToChunk(player.getZ());
             scanLoop:
             while (scanRadius <= streamRadius) {
                 int side = scanRadius * 2 + 1;
@@ -912,10 +877,17 @@ public final class AllvrCubeMap {
                     int cx = pc.getX() + dx;
                     int cy = pc.getY() + dy;
                     int cz = pc.getZ() + dz;
+                    // The scan cursor is a cube for resumability, but the
+                    // actual shell is anisotropic: horizontal render distance
+                    // must not silently increase Allay's independent Y range.
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) > horizontalShellRadius
+                        || Math.abs(dy) > verticalShellRadius) {
+                        continue;
+                    }
                     long key = AllvrCubePos.asLong(cx, cy, cz);
-                    boolean inSendRange = Math.abs(dx) <= sub.sendXzRadius
-                        && Math.abs(dy) <= sub.sendYRadius
-                        && Math.abs(dz) <= sub.sendXzRadius;
+                    boolean inSendRange = AllvrVanillaRenderDistance.isCubeWithinCylinder(
+                        AllvrCubePos.of(cx, cy, cz), playerChunkX, playerChunkZ,
+                        pc.getY(), sub.renderDistanceChunks, sub.sendYRadius);
                     if (sub.sent.contains(key) || (capReached && scanRadius > 2 && !inSendRange)) {
                         continue;
                     }
@@ -1225,8 +1197,8 @@ public final class AllvrCubeMap {
     // ------------------------------------------------------------------
 
     /**
-     * Cubes beyond every player's forget margins leave memory —
-     * save-before-unload (plan §7.3): a dirty cube is snapshotted and
+     * Cubes beyond every player's simulation shell and render cylinder leave
+     * memory — save-before-unload (plan §7.3): a dirty cube is snapshotted and
      * enqueued first; on failure (or while {@code level.noSave} is set) it
      * stays pinned. Once a generated cube has entered the persistence queue,
      * clean and edited cubes share the same disk/pending reload path.
@@ -1243,10 +1215,7 @@ public final class AllvrCubeMap {
             AllvrCubePos cpos = AllvrCubePos.fromLong(key);
             boolean nearAnyPlayer = false;
             for (ServerPlayer player : players) {
-                AllvrCubePos pc = AllvrCubePos.of(player.blockPosition());
-                if (Math.abs(cpos.getX() - pc.getX()) <= DEFAULT_FORGET_XZ_RADIUS
-                    && Math.abs(cpos.getZ() - pc.getZ()) <= DEFAULT_FORGET_XZ_RADIUS
-                    && Math.abs(cpos.getY() - pc.getY()) <= DEFAULT_FORGET_Y_RADIUS) {
+                if (isNeededByPlayer(cpos, player)) {
                     nearAnyPlayer = true;
                     break;
                 }
@@ -1302,14 +1271,14 @@ public final class AllvrCubeMap {
         }
         LongIterator it = sub.sent.iterator();
         LongList forget = null;
+        int playerChunkX = AllvrVanillaRenderDistance.blockToChunk(player.getX());
+        int playerChunkZ = AllvrVanillaRenderDistance.blockToChunk(player.getZ());
         while (it.hasNext()) {
             long key = it.nextLong();
             AllvrCubePos cpos = AllvrCubePos.fromLong(key);
-            int dxCube = cpos.getX() - pc.getX();
-            int dyCube = cpos.getY() - pc.getY();
-            int dzCube = cpos.getZ() - pc.getZ();
-            if (Math.max(Math.abs(dxCube), Math.abs(dzCube)) > sub.forgetXzRadius
-                || Math.abs(dyCube) > sub.forgetYRadius) {
+            if (!AllvrVanillaRenderDistance.isCubeWithinCylinder(
+                cpos, playerChunkX, playerChunkZ, pc.getY(),
+                sub.renderDistanceChunks, sub.sendYRadius)) {
                 if (forget == null) {
                     forget = new LongArrayList();
                 }
@@ -1332,6 +1301,47 @@ public final class AllvrCubeMap {
     private static int chebyshev(AllvrCubePos a, AllvrCubePos b) {
         return Math.max(Math.max(Math.abs(a.getX() - b.getX()), Math.abs(a.getY() - b.getY())),
             Math.abs(a.getZ() - b.getZ()));
+    }
+
+    private boolean isNeededByAnyPlayer(AllvrCubePos cube, List<ServerPlayer> players) {
+        for (ServerPlayer player : players) {
+            if (isNeededByPlayer(cube, player)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Keeps both the fixed simulation shell and the dynamic render cylinder alive. */
+    private boolean isNeededByPlayer(AllvrCubePos cube, ServerPlayer player) {
+        AllvrCubePos center = AllvrCubePos.of(player.blockPosition());
+        if (chebyshev(cube, center) <= GEN_RADIUS) {
+            return true;
+        }
+        Subscription sub = subscriptions.computeIfAbsent(player.getUUID(), k -> new Subscription());
+        updateRenderDistance(player, sub);
+        return AllvrVanillaRenderDistance.isCubeWithinCylinder(
+            cube,
+            AllvrVanillaRenderDistance.blockToChunk(player.getX()),
+            AllvrVanillaRenderDistance.blockToChunk(player.getZ()),
+            center.getY(), sub.renderDistanceChunks, sub.sendYRadius);
+    }
+
+    /**
+     * Uses the same values vanilla uses for its real chunk tracking view:
+     * the client's requested distance, capped by the server's global view
+     * distance. No Allay-specific client packet is necessary because the
+     * vanilla client-information packet already updates requestedViewDistance.
+     */
+    private void updateRenderDistance(ServerPlayer player, Subscription sub) {
+        int serverViewDistance = this.level.getServer().getPlayerList().getViewDistance();
+        int effective = Math.min(player.requestedViewDistance(), serverViewDistance);
+        int next = AllvrVanillaRenderDistance.clampChunks(effective);
+        if (sub.renderDistanceChunks != next) {
+            sub.renderDistanceChunks = next;
+            sub.scanRadius = 0;
+            sub.scanIndex = 0;
+        }
     }
 
     // ------------------------------------------------------------------

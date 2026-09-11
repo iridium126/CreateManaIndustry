@@ -2,11 +2,14 @@ package com.iridium126.createmanaindustry.mixin.voxy;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 
 import net.minecraft.client.Minecraft;
+import me.cortex.voxy.client.core.VoxyRenderSystem;
 
+import com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest;
 import com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyYSlab;
+import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 
 /**
@@ -17,23 +20,34 @@ import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
  * consumer of the viewport — frustum, Hi-Z, section translation — sees a
  * consistent camera, and the GPU never receives a ±30M float.
  * <p>
- * Both render entry paths (sodium without iris, iris captured viewport)
- * funnel through {@code Viewport.setCamera}, so this single patch covers
- * them. Only applies while the client level is the allay dimension; the
- * offset is zero everywhere else.
+ * Both render entry paths (sodium without iris, iris captured viewport) call
+ * {@code VoxyRenderSystem.setupViewport}. Patch the exact camera argument at
+ * that common setup point, rather than relying on a generic method-variable
+ * injection in {@code Viewport.setCamera}.
  */
-@Mixin(value = me.cortex.voxy.client.core.rendering.Viewport.class, remap = false)
+@Mixin(value = VoxyRenderSystem.class, remap = false)
 public abstract class AllvrVoxyViewportMixin {
 
-    @ModifyVariable(method = "setCamera(DDD)Lme/cortex/voxy/client/core/rendering/Viewport;",
-        at = @At("HEAD"), ordinal = 1, argsOnly = true, remap = false)
+    @ModifyArg(
+        method = "setupViewport(Lorg/joml/Matrix4fc;Lorg/joml/Matrix4fc;DDD)Lme/cortex/voxy/client/core/rendering/Viewport;",
+        at = @At(
+            value = "INVOKE",
+            target = "Lme/cortex/voxy/client/core/rendering/Viewport;setCamera(DDD)Lme/cortex/voxy/client/core/rendering/Viewport;",
+            remap = false
+        ),
+        index = 1,
+        remap = false
+    )
     private double allvr$virtualCameraY(double cameraY) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || !AllvrDimensions.isAllay(mc.level)) {
             return cameraY;
         }
+        if (AllvrSodiumBridge.voxyWindowCameraFrameActive()) {
+            cameraY += AllvrSodiumBridge.window().originBlockY();
+        }
         return AllvrVoxyYSlab.virtualCameraY(
-            AllvrVoxyYSlab.slabIdForLevel(mc.level), cameraY);
+            AllvrVoxyClientIngest.activeSlabId(mc.level), cameraY);
     }
 }
 

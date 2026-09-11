@@ -2,6 +2,8 @@ package com.iridium126.createmanaindustry.client.dimension;
 
 import net.minecraft.client.Minecraft;
 
+import com.iridium126.createmanaindustry.dimension.cube.AllvrVanillaRenderDistance;
+
 /**
  * The one client-side source of truth for Allay's near render distance.
  * Sodium and Voxy both use Minecraft's effective render distance, so the
@@ -12,16 +14,14 @@ import net.minecraft.client.Minecraft;
  */
 public final class AllvrClientRenderDistance {
 
-    /** A vanilla client never exposes a useful render distance below two. */
-    private static final int MIN_RENDER_DISTANCE_CHUNKS = 2;
     /** Allay's storage/render cube edge is fixed at 32 blocks. */
-    public static final int CUBE_BLOCKS = 32;
+    public static final int CUBE_BLOCKS = AllvrVanillaRenderDistance.CUBE_BLOCKS;
 
     private AllvrClientRenderDistance() {}
 
     /** Minecraft's effective render distance in chunks (the Sodium/Voxy value). */
     public static int chunks() {
-        return Math.max(MIN_RENDER_DISTANCE_CHUNKS,
+        return AllvrVanillaRenderDistance.clampChunks(
             Minecraft.getInstance().options.getEffectiveRenderDistance());
     }
 
@@ -31,7 +31,7 @@ public final class AllvrClientRenderDistance {
     }
 
     public static int blocksForChunks(int renderDistanceChunks) {
-        return Math.max(MIN_RENDER_DISTANCE_CHUNKS, renderDistanceChunks) * 16;
+        return AllvrVanillaRenderDistance.clampChunks(renderDistanceChunks) * 16;
     }
 
     /** Number of 32-block cubes needed to cover the near distance. */
