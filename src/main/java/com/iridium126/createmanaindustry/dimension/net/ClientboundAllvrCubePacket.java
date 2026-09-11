@@ -20,7 +20,6 @@ import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 
-import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
 /**
@@ -32,15 +31,12 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  *                                   cube costs ~100 bytes, an air cube ~50)
  *   varint BE count
  *     BE × { short cellIndex, update-tag NBT }   (cell = y&lt;&lt;10 | z&lt;&lt;5 | x, 15 bit)
- *   varint emitter count
- *     emitter × { short cellIndex, varint emission }
  * </pre>
  * The position is {@link AllvrCubePos#asLong()} written directly (21 bit per
  * axis) — the vanilla section/position narrow types are never used.
  * <p>
- * Light is carried as emitter events only; there is deliberately no
- * light-engine data on the wire (the client samples light from the streamed
- * cube cache).
+ * Light is derived from the streamed block states by the client-side vanilla
+ * light engine; no auxiliary light data is sent.
  */
 public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implements CustomPacketPayload {
 
@@ -54,9 +50,6 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
      *  each — anything above can only be a malformed/hostile stream, and the
      *  client must reject it instead of looping on a giant count. */
     public static final int MAX_BLOCK_ENTRIES = 32 * 32 * 32;
-    public static final int MAX_EMITTER_ENTRIES = 32 * 32 * 32;
-    /** Vanilla light emission range (checked arithmetic on the wire value). */
-    public static final int MAX_EMISSION = 15;
 
     private static void encode(RegistryFriendlyByteBuf buffer, ClientboundAllvrCubePacket p) {
         buffer.writeLong(p.cubePos);
@@ -85,12 +78,6 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
             buf.writeShort(entry.getIntKey());
             CompoundTag tag = entry.getValue().getUpdateTag(registryAccess);
             buf.writeNbt(tag.isEmpty() ? null : tag);
-        }
-        Int2IntMap emitters = cube.getEmitters();
-        buf.writeVarInt(emitters.size());
-        for (Int2IntMap.Entry entry : emitters.int2IntEntrySet()) {
-            buf.writeShort(entry.getIntKey());
-            buf.writeVarInt(entry.getIntValue());
         }
         byte[] payload = new byte[byteBuf.readableBytes()];
         byteBuf.readBytes(payload);
@@ -147,25 +134,10 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
                 }
             }
         }
-        int emitterCount = buf.readVarInt();
-        if (emitterCount < 0 || emitterCount > MAX_EMITTER_ENTRIES) {
-            throw new IllegalArgumentException("cube emitter count out of range: " + emitterCount);
-        }
-        for (int i = 0; i < emitterCount; i++) {
-            int cell = buf.readShort() & 0xFFFF;
-            requireCell(cell);
-            int emission = Math.min(Math.max(0, buf.readVarInt()), MAX_EMISSION);
-            cube.putEmitter(new BlockPos(baseX + (cell & 31), baseY + (cell >> 10), baseZ + ((cell >> 5) & 31)), emission);
-        }
         if (buf.readableBytes() != 0) {
             throw new IllegalArgumentException("cube payload has " + buf.readableBytes()
                 + " trailing bytes — codec mismatch");
         }
-        // Prepare the local sky columns on the packet worker.  The client
-        // render/tick thread must never scan a 32³ cube to answer a light
-        // query.
-        cube.prepareSkyTopOpaque();
-        cube.prepareSkyLightLayers();
         return cube;
     }
 

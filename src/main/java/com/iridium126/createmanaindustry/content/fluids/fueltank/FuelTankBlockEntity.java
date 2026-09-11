@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.content.fluids.fueltank;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -27,7 +26,6 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.lighting.LevelLightEngine;
 import net.minecraft.world.phys.AABB;
 
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -70,7 +68,7 @@ public class FuelTankBlockEntity extends CopycatBlockEntity
 	protected BlockPos lastKnownPos;
 	protected boolean updateConnectivity;
 	protected boolean updateCapability;
-	/** Emitted light, propagated per-block from the fluid (mirrors Create). */
+	/** Contextual luminosity materialized into each part's block state. */
 	protected int luminosity;
 
 	/**
@@ -336,17 +334,10 @@ public class FuelTankBlockEntity extends CopycatBlockEntity
 			int newLum = (int) (newFluidStack.getFluid().getFluidType().getLightLevel(newFluidStack) / 1.2f);
 			if (luminosity != newLum) {
 				luminosity = newLum;
-				// Every part's block reads its light emission from the controller's luminosity,
-				// so only the light engine needs re-evaluating at each part.
-				if (!level.isClientSide) {
-					Set<BlockPos> cells = basins != null ? basins.basinByCell.keySet() : Set.of(worldPosition);
-					for (BlockPos p : cells)
-						level.getChunkSource().getLightEngine().checkBlock(p);
-				}
 			}
-			// Keep the shader-facing LIT flag in step with the fluid surface even
-			// when the luminosity itself is unchanged: surface movement changes
-			// WHICH cells are bright without changing the fluid type or its light.
+			// Materialize both the shader-facing LIT flag and the numeric vanilla
+			// light level. Surface movement can change which cells are bright
+			// without changing the fluid type or its luminosity.
 			if (!level.isClientSide && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
 				FuelTankBlock.refreshLitStates(serverLevel,
 					basins != null ? basins.basinByCell.keySet() : List.of(worldPosition), this);
@@ -669,7 +660,6 @@ public class FuelTankBlockEntity extends CopycatBlockEntity
 		super.read(tag, registries, clientPacket);
 
 		BlockPos controllerBefore = controller;
-		int prevLum = luminosity;
 		luminosity = tag.getInt("Luminosity");
 
 		lastKnownPos = null;
@@ -739,7 +729,6 @@ public class FuelTankBlockEntity extends CopycatBlockEntity
 			updateConnectivity = true;
 
 		if (clientPacket && isController()) {
-			FuelTankConnectivity.BasinData prevBasins = basins;
 			if (tag.contains("BasinGeometry")) {
 				basins = FuelTankConnectivity.BasinData.readFromNBT(registries, tag.getCompound("BasinGeometry"),
 						worldPosition);
@@ -751,46 +740,6 @@ public class FuelTankBlockEntity extends CopycatBlockEntity
 					basins.initChasers(basins.surfaces);
 			}
 
-			// Light emission re-check (mirrors Create's FluidTankBlockEntity#read,
-			// extended to the whole group): the client's light engine must be told
-			// when the emission of any cell changed — otherwise it only learns the
-			// tank's glow from an unrelated block update that happens to force a
-			// re-pull. The luminosity is controller-authoritative (every part's
-			// block reads its emission from the controller), so the controller
-			// re-checks on:
-			//  - luminosity transitions (0 <-> luminous), and
-			//  - basin geometry changes, and
-			//  - liquid surfaces crossing a cell boundary (floor change), so a
-			//    continuously filling/draining tank relights without block updates.
-			if (level != null && level.isClientSide) {
-				Set<BlockPos> cells = null;
-				if (luminosity != prevLum || tag.contains("BasinGeometry")) {
-					cells = basins != null ? basins.basinByCell.keySet() : Set.of(worldPosition);
-				} else if (tag.contains("Surfaces") && basins != null && prevBasins != null
-						&& prevBasins.surfaces != null) {
-					if (basins.surfaces.length != prevBasins.surfaces.length) {
-						cells = basins.basinByCell.keySet();
-					} else {
-						for (int i = 0; i < basins.surfaces.length; i++) {
-							if ((int) Math.floor(basins.surfaces[i]) == (int) Math.floor(prevBasins.surfaces[i]))
-								continue;
-							final int basinId = i;
-							if (cells == null)
-								cells = new HashSet<>();
-							final Set<BlockPos> target = cells;
-							basins.basinByCell.forEach((p, b) -> {
-								if (b == basinId)
-									target.add(p);
-							});
-						}
-					}
-				}
-				if (cells != null && !cells.isEmpty()) {
-					LevelLightEngine lightEngine = level.getChunkSource().getLightEngine();
-					for (BlockPos p : cells)
-						lightEngine.checkBlock(p);
-				}
-			}
 		}
 
 		if (tag.contains("ForceFluidLevel") || fluidLevel == null)

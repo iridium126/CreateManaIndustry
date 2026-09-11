@@ -206,8 +206,8 @@ public class CreateManaIndustry {
                 ServerboundStormPositionsPacket.TYPE,
                 ServerboundStormPositionsPacket.STREAM_CODEC,
                 ServerboundStormPositionsPacket::handle);
-        // Allay dimension cube streaming: block data + block entities + light
-        // emitter events per cube, plus forget packets on subscription exit.
+        // Allay dimension cube streaming: block data + block entities; the
+        // client-side vanilla light engine derives light from block states.
         registrar.playToClient(
                 ClientboundAllvrCubePacket.TYPE,
                 ClientboundAllvrCubePacket.STREAM_CODEC,

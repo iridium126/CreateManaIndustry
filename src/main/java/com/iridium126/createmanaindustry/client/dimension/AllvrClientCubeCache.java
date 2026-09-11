@@ -121,6 +121,11 @@ public final class AllvrClientCubeCache {
                         return cubes.containsKey(AllvrCubePos.asLong(pos));
                     }
                 }
+
+                @Override
+                public net.minecraft.world.level.block.entity.BlockEntity getBlockEntity(BlockPos pos) {
+                    return AllvrClientCubeCache.getBlockEntity(pos);
+                }
             }) : null;
         com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setLightResolver(
             (type, pos) -> type == net.minecraft.world.level.LightLayer.BLOCK
@@ -482,8 +487,8 @@ public final class AllvrClientCubeCache {
      * <p>
      * Unloaded cubes reject the write ({@code false}), mirroring vanilla's
      * "write to unloaded chunk fails": a block the player can target is always
-     * inside a streamed cube. Light-emitter bookkeeping mirrors the server so
-     * the emitter table stays consistent for the shared sparse light engine.
+     * inside a streamed cube. The shared vanilla light engine observes the
+     * resulting block-state change directly.
      */
     public static boolean setBlock(BlockPos pos, BlockState newState, int flags, int recursionLeft) {
         ClientLevel clientLevel = level;
@@ -508,14 +513,6 @@ public final class AllvrClientCubeCache {
             newState.onPlace(clientLevel, pos, oldState, false);
             contentRevision++;
 
-            int oldEmission = oldState.getLightEmission(clientLevel, pos);
-            int newEmission = newState.getLightEmission(clientLevel, pos);
-            if (oldEmission > 0) {
-                cube.removeEmitter(pos);
-            }
-            if (newEmission > 0) {
-                cube.putEmitter(pos, newEmission);
-            }
         }
         // The cache is updated before the Sodium notification so its build
         // snapshot always observes the new state.

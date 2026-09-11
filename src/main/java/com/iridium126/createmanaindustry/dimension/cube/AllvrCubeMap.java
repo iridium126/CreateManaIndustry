@@ -93,7 +93,7 @@ public final class AllvrCubeMap {
      * Chunk loading in vanilla keeps the region-file mailbox independent from
      * the expensive chunk deserializer.  Keep the same boundary here: the
      * region worker only reads/decompresses NBT, while a small bounded pool
-     * validates the cube schema and rebuilds its emitter index.
+     * validates the cube schema before the main thread binds its live state.
      */
     private static final int PERSISTENCE_DECODE_WORKERS =
         Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
@@ -215,6 +215,11 @@ public final class AllvrCubeMap {
             public boolean isLoaded(BlockPos pos) {
                 return cubes.containsKey(AllvrCubePos.asLong(pos));
             }
+
+            @Override
+            public BlockEntity getBlockEntity(BlockPos pos) {
+                return AllvrCubeMap.this.getBlockEntity(pos);
+            }
         });
         Path folder = DimensionType.getStorageFolder(level.dimension(),
             level.getServer().getWorldPath(LevelResource.ROOT)).resolve("region3d");
@@ -288,15 +293,6 @@ public final class AllvrCubeMap {
         updateBlockEntity(cube, pos, newState);
         newState.onPlace(level, pos, oldState, false);
 
-        // Keep the compact emitter index in sync with the shared light engine.
-        int oldEmission = oldState.getLightEmission(level, pos);
-        int newEmission = newState.getLightEmission(level, pos);
-        if (oldEmission > 0) {
-            cube.removeEmitter(pos);
-        }
-        if (newEmission > 0) {
-            cube.putEmitter(pos, newEmission);
-        }
         this.lightEngine.onBlockChanged(pos);
 
         // Mirror Level#markAndNotifyBlock's neighbour/update semantics;
@@ -461,13 +457,8 @@ public final class AllvrCubeMap {
         }
         cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
         generator.generate(cube);
-        cube.rebuildEmitters();
-        cube.prepareSkyTopOpaque();
         cubes.put(key, cube);
         cube.onLoad(level);
-        if (cube.hasBlockEntities()) {
-            cube.rebuildContextualEmitters(level);
-        }
         this.lightEngine.onCubeLoaded(cube);
         // Generated terrain is itself the authoritative result of worldgen.
         // Persist it through the bounded snapshot queue so the next session
@@ -508,9 +499,6 @@ public final class AllvrCubeMap {
         if (closed || persistedIndex.contains(key)) return cube;
         cubes.put(key, cube);
         cube.onLoad(level);
-        if (cube.hasBlockEntities()) {
-            cube.rebuildContextualEmitters(level);
-        }
         this.lightEngine.onCubeLoaded(cube);
         this.markGeneratedForPersistence(cube);
         diagnostics.cubesGenerated.incrementAndGet();
@@ -539,10 +527,6 @@ public final class AllvrCubeMap {
                     // would let 256 queued cubes flood the global worldgen
                     // executor and defeat ticket backpressure.
                     generator.generateAsync(cube).join();
-                    // Emission lookup is level-independent; finish it on the
-                    // worker so the main thread only binds BE tickers.
-                    cube.rebuildEmitters();
-                    cube.prepareSkyTopOpaque();
                     future.complete(cube);
                 } catch (Throwable failure) {
                     future.completeExceptionally(failure);
@@ -738,9 +722,6 @@ public final class AllvrCubeMap {
             this.beCubes.put(key, cube);
         }
         cube.onLoad(this.level);
-        if (cube.hasBlockEntities()) {
-            cube.rebuildContextualEmitters(this.level);
-        }
         this.lightEngine.onCubeLoaded(cube);
         this.loadCooldown.remove(key);
         this.diagnostics.cubesLoadedFromDisk.incrementAndGet();
@@ -761,8 +742,6 @@ public final class AllvrCubeMap {
                     "persisted index contains " + pos + " but no record was found"));
             }
             AllvrCube restored = AllvrCubeSerializer.load(pos, nbt.get(), this.level);
-            restored.rebuildEmitters();
-            restored.prepareSkyTopOpaque();
             return restored;
         } catch (AllvrCubeCorruptedException e) {
             throw new java.util.concurrent.CompletionException(e);

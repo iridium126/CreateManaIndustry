@@ -161,10 +161,8 @@ public final class AllvrCubeSerializer {
     /**
      * Validates a record and restores it into a fresh {@link AllvrCube} —
      * persistence decode worker only. Sections and BEs are installed via the loader-only
-     * paths (no dirty marking, no neighbour updates); the caller rebuilds the
-     * level-independent emitter index off-thread, then finishes with
-     * {@code onLoad} on the server thread and owns lifecycle. Cubes with
-     * block entities may refresh level-dependent emissions after binding.
+     * paths (no dirty marking, no neighbour updates); the caller finishes with
+     * {@code onLoad} on the server thread and owns lifecycle.
      *
      * @throws AllvrCubeCorruptedException on any structural damage — the cube
      *                                     must stay unloaded and the record must never be regenerated over

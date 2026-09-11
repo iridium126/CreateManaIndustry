@@ -46,6 +46,7 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition.Builder;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.block.state.properties.IntegerProperty;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.Shapes;
@@ -96,23 +97,23 @@ public class FuelTankBlock extends CopycatBlock {
 	public static final BooleanProperty SIDE_OPEN = BooleanProperty.create("side_open");
 	/**
 	 * The per-cell brightness rule ({@link #refreshLitStates}) materialized as a
-	 * blockstate, and the single source of truth for everything that depends
-	 * on it: {@link #getLightEmission} (fluid part), the rose quartz lamp
-	 * shell's POWERING skin ({@code FuelTankModel#displayMaterial}) and
-	 * shader-side colored lights (Photon seeds its LPV from block IDs alone
-	 * and never consults the vanilla light level, so an unstored flag would
-	 * let a drained cell keep glowing pink).
+	 * blockstate. {@link #LIT} drives the visible/lamp state, while this cached
+	 * numeric value is the value returned by the no-context
+	 * {@code BlockState#getLightEmission()} API used by vanilla's light-source
+	 * scan. Keeping both values in the state is required because vanilla does
+	 * not consult a block entity while discovering light sources.
 	 * <p>
 	 * Refreshed on fluid changes and after connectivity regrouping, self-healed
 	 * by controller lazy ticks; eventually consistent within one lazy-tick
 	 * period for paths that bypass both.
 	 */
 	public static final BooleanProperty LIT = BooleanProperty.create("lit");
+	public static final IntegerProperty LIGHT_LEVEL = IntegerProperty.create("light_level", 0, 15);
 
 	public FuelTankBlock(Properties properties) {
 		super(properties);
 		registerDefaultState(defaultBlockState().setValue(TOP_OPEN, true).setValue(SIDE_OPEN, true)
-			.setValue(LIT, false));
+			.setValue(LIT, false).setValue(LIGHT_LEVEL, 0));
 	}
 
 	public static boolean isFuelTank(BlockState state) {
@@ -121,7 +122,7 @@ public class FuelTankBlock extends CopycatBlock {
 
 	@Override
 	protected void createBlockStateDefinition(Builder<Block, BlockState> builder) {
-		builder.add(TOP_OPEN, SIDE_OPEN, LIT);
+		builder.add(TOP_OPEN, SIDE_OPEN, LIT, LIGHT_LEVEL);
 	}
 
 	@Override
@@ -411,11 +412,18 @@ public class FuelTankBlock extends CopycatBlock {
 		return reversed ? pos.getY() >= (int) Math.floor(surface) : pos.getY() <= (int) Math.floor(surface);
 	}
 
-	/** Writes {@code lit} into one cell's {@link #LIT} flag when it changed. */
+	/**
+	 * Materializes the complete vanilla light state for one cell. The numeric
+	 * level is deliberately written alongside {@link #LIT}; the vanilla light
+	 * engine only sees the cached, context-free block-state value.
+	 */
 	private static void setLit(net.minecraft.server.level.ServerLevel level, BlockPos pos, BlockState state,
 		boolean lit) {
-		if (state.getValue(LIT) != lit)
-			level.setBlock(pos, state.setValue(LIT, lit), UPDATE_CLIENTS);
+		BlockState target = state.setValue(LIT, lit);
+		int emission = Mth.clamp(target.getLightEmission(level, pos), 0, 15);
+		target = target.setValue(LIGHT_LEVEL, emission);
+		if (!state.equals(target))
+			level.setBlock(pos, target, UPDATE_CLIENTS);
 	}
 
 	/**

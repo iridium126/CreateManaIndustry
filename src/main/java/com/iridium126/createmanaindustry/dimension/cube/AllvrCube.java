@@ -1,11 +1,7 @@
 package com.iridium126.createmanaindustry.dimension.cube;
 
-import java.util.Arrays;
-
-import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
@@ -20,8 +16,6 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.chunk.PalettedContainerRO;
 import net.minecraft.world.level.chunk.DataLayer;
-import net.minecraft.world.phys.shapes.Shapes;
-import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
  * A 32×32×32 cube — the allay dimension's unit of block data, mirroring
@@ -80,22 +74,6 @@ public final class AllvrCube {
      */
     private final Int2ObjectOpenHashMap<BlockEntity> blockEntities = new Int2ObjectOpenHashMap<>();
     /**
-     * Light-emitting blocks (cell index → emission) — the wire-format "light
-     * source events" of the cube. Maintained on setBlock on the server,
-     * filled from the packet on the client; consumed by the shared
-     * sparse light engine. The island generator only produces
-     * stone/dirt/grass, so generated cubes start without emitters.
-     */
-    private final Int2IntOpenHashMap emitters = new Int2IntOpenHashMap();
-    /** Highest locally occluding block for each X/Z column.  The client
-     * computes this while decoding the packet so render-time light sampling
-     * never has to walk a 32³ cube. */
-    private volatile int[] skyTopOpaque;
-    /** Immutable direct-sky snapshots for the eight local sections. Replaced
-     * copy-on-write after a block edit so Sodium workers never observe a
-     * partially updated layer. */
-    private volatile DataLayer[] skyLightLayers;
-    /**
      * Light layers decoded from a persisted record. They stay off the live
      * engine until the cube is published on the server thread, which keeps
      * deserialization free of queue work and dirty notifications.
@@ -145,163 +123,6 @@ public final class AllvrCube {
 
     public LevelChunkSection[] getSections() {
         return sections;
-    }
-
-    /** Returns the prepared local sky mask, or {@code null} before preparation. */
-    public int[] skyTopOpaque() {
-        return skyTopOpaque;
-    }
-
-    /**
-     * Builds the local sky mask from immutable section data.  ALLVR terrain
-     * uses full opaque terrain blocks for its island shells; checking
-     * {@link BlockState#canOcclude()} keeps this worker-safe and avoids a
-     * level callback for every voxel.
-     */
-    public void prepareSkyTopOpaque() {
-        int[] tops = new int[32 * 32];
-        Arrays.fill(tops, -1);
-        for (int z = 0; z < 32; z++) {
-            for (int x = 0; x < 32; x++) {
-                for (int y = 31; y >= 0; y--) {
-                    BlockState state = sections[sectionIndex(x, y, z)]
-                        .getBlockState(x & 15, y & 15, z & 15);
-                    if (!state.isAir() && state.canOcclude()) {
-                        tops[(z << 5) | x] = y;
-                        break;
-                    }
-                }
-            }
-        }
-        skyTopOpaque = tops;
-    }
-
-    /**
-     * Vanilla-equivalent sky source scan for the server. A source is created
-     * when the lower block has non-zero light blocking or the two adjacent
-     * faces fully occlude one another, matching
-     * {@code ChunkSkyLightSources#isEdgeOccluded}. The no-argument variant is
-     * retained for packet workers, where only immutable block state is safe to
-     * inspect.
-     */
-    public void prepareSkyTopOpaque(Level level) {
-        int[] tops = new int[32 * 32];
-        Arrays.fill(tops, -1);
-        BlockPos.MutableBlockPos abovePos = new BlockPos.MutableBlockPos();
-        BlockPos.MutableBlockPos currentPos = new BlockPos.MutableBlockPos();
-        for (int z = 0; z < 32; z++) {
-            for (int x = 0; x < 32; x++) {
-                BlockState above = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
-                for (int y = 31; y >= 0; y--) {
-                    int wx = pos.minBlockX() + x;
-                    int wy = pos.minBlockY() + y;
-                    int wz = pos.minBlockZ() + z;
-                    abovePos.set(wx, wy + 1, wz);
-                    currentPos.set(wx, wy, wz);
-                    BlockState current = sections[sectionIndex(x, y, z)]
-                        .getBlockState(x & 15, y & 15, z & 15);
-                    if (current.getLightBlock(level, currentPos) != 0
-                        || Shapes.faceShapeOccludes(faceOcclusion(level, abovePos, above, Direction.DOWN),
-                            faceOcclusion(level, currentPos, current, Direction.UP))) {
-                        tops[(z << 5) | x] = y;
-                        break;
-                    }
-                    above = current;
-                }
-            }
-        }
-        skyTopOpaque = tops;
-    }
-
-    private static VoxelShape faceOcclusion(Level level, BlockPos pos, BlockState state, net.minecraft.core.Direction side) {
-        return state.canOcclude() && state.useShapeForLightOcclusion()
-            ? state.getFaceOcclusionShape(level, pos, side) : Shapes.empty();
-    }
-
-    /** Builds direct-sky layers from the prepared local column tops. This is
-     * intentionally called while packet data is still on a decode worker;
-     * Sodium's render thread can then only return the immutable layer. */
-    public void prepareSkyLightLayers() {
-        int[] tops = skyTopOpaque;
-        if (tops == null) {
-            prepareSkyTopOpaque();
-            tops = skyTopOpaque;
-        }
-        DataLayer[] layers = new DataLayer[SECTIONS_PER_CUBE];
-        for (int sectionY = 0; sectionY < 2; sectionY++) {
-            int localY = sectionY << 4;
-            for (int sectionZ = 0; sectionZ < 2; sectionZ++) {
-                for (int sectionX = 0; sectionX < 2; sectionX++) {
-                    boolean fullSky = true;
-                    for (int z = 0; z < 16 && fullSky; z++) {
-                        int topRow = (sectionZ << 4 | z) << 5;
-                        for (int x = 0; x < 16; x++) {
-                            if (localY <= tops[topRow | (sectionX << 4) | x]) {
-                                fullSky = false;
-                                break;
-                            }
-                        }
-                    }
-                    DataLayer layer = new DataLayer(fullSky ? 15 : 0);
-                    if (!fullSky) {
-                        for (int z = 0; z < 16; z++) {
-                            int topRow = (sectionZ << 4 | z) << 5;
-                            for (int x = 0; x < 16; x++) {
-                                int top = tops[topRow | (sectionX << 4) | x];
-                                for (int y = 0; y < 16; y++) {
-                                    if (localY + y > top) {
-                                        layer.set(x, y, z, 15);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    layers[sliceIndex(sectionX, sectionY, sectionZ)] = layer;
-                }
-            }
-        }
-        skyLightLayers = layers;
-    }
-
-    public DataLayer skyLightLayer(int sectionIndex) {
-        DataLayer[] layers = skyLightLayers;
-        return layers == null ? null : layers[sectionIndex];
-    }
-
-    /** Refreshes one column after a block edit without rebuilding the cube. */
-    public void refreshSkyTopOpaque(int localX, int localZ) {
-        int[] tops = skyTopOpaque;
-        if (tops == null) {
-            prepareSkyTopOpaque();
-            return;
-        }
-        int top = -1;
-        for (int y = 31; y >= 0; y--) {
-            BlockState state = sections[sectionIndex(localX, y, localZ)]
-                .getBlockState(localX & 15, y & 15, localZ & 15);
-            if (!state.isAir() && state.canOcclude()) {
-                top = y;
-                break;
-            }
-        }
-        int[] updatedTops = tops.clone();
-        updatedTops[(localZ << 5) | localX] = top;
-        skyTopOpaque = updatedTops;
-        DataLayer[] layers = skyLightLayers;
-        if (layers == null) {
-            return;
-        }
-        DataLayer[] updatedLayers = layers.clone();
-        for (int sectionY = 0; sectionY < 2; sectionY++) {
-            int localY = sectionY << 4;
-            int sectionIndex = sliceIndex(localX >> 4, sectionY, localZ >> 4);
-            DataLayer layer = layers[sectionIndex].copy();
-            for (int y = 0; y < 16; y++) {
-                layer.set(localX & 15, y, localZ & 15, localY + y > top ? 15 : 0);
-            }
-            updatedLayers[sectionIndex] = layer;
-        }
-        skyLightLayers = updatedLayers;
     }
 
     public BlockState getBlockState(BlockPos worldPos) {
@@ -474,61 +295,9 @@ public final class AllvrCube {
         return result;
     }
 
-    /**
-     * Rebuilds everything derivable from BlockState after a bulk load:
-     * the emitter index (wire light events) and every BE ticker. Loader path;
-     * generator cubes start without emitters and bind tickers lazily.
-     */
+    /** Rebinds block-entity tickers after a bulk load. */
     public void rebuildDerivedState(Level level) {
-        this.rebuildContextualEmitters(level);
         this.rebindAllTickers(level);
-    }
-
-    /**
-     * Rebuilds the immutable block-state portion of derived state. This uses
-     * the level-independent emission accessor and is safe to run on an
-     * unpublished cube-loading or terrain worker.
-     */
-    public void rebuildEmitters() {
-        this.emitters.clear();
-        for (int ly = 0; ly < AllvrCoords.DIAMETER_IN_BLOCKS; ly++) {
-            for (int lz = 0; lz < AllvrCoords.DIAMETER_IN_BLOCKS; lz++) {
-                for (int lx = 0; lx < AllvrCoords.DIAMETER_IN_BLOCKS; lx++) {
-                    BlockState state = this.sections[sectionIndex(lx, ly, lz)]
-                        .getBlockState(lx & 15, ly & 15, lz & 15);
-                    int emission = state.getLightEmission();
-                    if (emission > 0) {
-                        this.emitters.put((ly << 10) | (lz << 5) | lx, emission);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Refreshes emissions whose block implementation depends on live level
-     * state (for example a fuel tank's block-entity luminosity). Only cubes
-     * containing block entities need this server-thread pass; ordinary blocks
-     * use the cheaper level-independent index above.
-     */
-    public void rebuildContextualEmitters(Level level) {
-        this.emitters.clear();
-        int baseX = this.pos.minBlockX();
-        int baseY = this.pos.minBlockY();
-        int baseZ = this.pos.minBlockZ();
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        for (int ly = 0; ly < AllvrCoords.DIAMETER_IN_BLOCKS; ly++) {
-            for (int lz = 0; lz < AllvrCoords.DIAMETER_IN_BLOCKS; lz++) {
-                for (int lx = 0; lx < AllvrCoords.DIAMETER_IN_BLOCKS; lx++) {
-                    BlockState state = this.sections[sectionIndex(lx, ly, lz)]
-                        .getBlockState(lx & 15, ly & 15, lz & 15);
-                    int emission = state.getLightEmission(level, cursor.set(baseX + lx, baseY + ly, baseZ + lz));
-                    if (emission > 0) {
-                        this.emitters.put((ly << 10) | (lz << 5) | lx, emission);
-                    }
-                }
-            }
-        }
     }
 
     // ---- block entities -------------------------------------------------
@@ -633,20 +402,6 @@ public final class AllvrCube {
         } else {
             this.tickers.put(localIndex(pos), ticker);
         }
-    }
-
-    // ---- light emitters ----------------------------------------------------
-
-    public void putEmitter(BlockPos worldPos, int emission) {
-        emitters.put(localIndex(worldPos), emission);
-    }
-
-    public void removeEmitter(BlockPos worldPos) {
-        emitters.remove(localIndex(worldPos));
-    }
-
-    public Int2IntOpenHashMap getEmitters() {
-        return emitters;
     }
 
     /** Holder of the cube's uniform biome (plains), for future consumers. */
