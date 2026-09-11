@@ -12,7 +12,6 @@ import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 
@@ -58,11 +57,12 @@ public final class SodiumApi_0813_1211 {
         return new ChunkRenderContext(origin, sections, volume, renderers);
     }
 
-    /** Clones one section for the build context (bridge path supplies the
-     *  cube-backed {@link LevelChunkSection}). */
-    public static ClonedChunkSection cloneSection(Level level, LevelChunk chunk,
-                                                  LevelChunkSection section, SectionPos pos) {
-        return new ClonedChunkSection(level, chunk, section, pos);
+    /** Clones one section for the build context without registering a carrier
+     *  in ClientChunkCache.  The Allay mixin supplies its own block-entity and
+     *  auxiliary-light snapshots to Sodium's constructor. */
+    public static ClonedChunkSection cloneSection(Level level, LevelChunkSection section,
+                                                  SectionPos pos) {
+        return new ClonedChunkSection(level, null, section, pos);
     }
 
     /** NeoForge AddSectionGeometryEvent appenders for one section origin. */
@@ -84,6 +84,10 @@ public final class SodiumApi_0813_1211 {
 
     public static void scheduleRebuild(RenderSectionManager manager, int x, int y, int z, boolean important) {
         manager.scheduleRebuild(x, y, z, important);
+    }
+
+    public static boolean isSectionBuilt(RenderSectionManager manager, int x, int y, int z) {
+        return manager.isSectionBuilt(x, y, z);
     }
 
     public static void markGraphDirty(RenderSectionManager manager) {
@@ -124,6 +128,7 @@ public final class SodiumApi_0813_1211 {
             rsm.getMethod("onSectionAdded", int.class, int.class, int.class);
             rsm.getMethod("onSectionRemoved", int.class, int.class, int.class);
             rsm.getMethod("scheduleRebuild", int.class, int.class, int.class, boolean.class);
+            rsm.getMethod("isSectionBuilt", int.class, int.class, int.class);
             rsm.getMethod("createRebuildTask",
                 Class.forName("net.caffeinemc.mods.sodium.client.render.chunk.RenderSection", false, loader), int.class);
             Class<?> slice = Class.forName("net.caffeinemc.mods.sodium.client.world.LevelSlice", false, loader);

@@ -50,6 +50,7 @@
   ],
   "client": [
     "allvr.AllvrClientLevelMixin",
+    "allvr.AllvrClientPacketListenerMixin",
     "allvr.AllvrPredictionHandlerMixin",
     "allvr.AllvrGetLightColorMixin",
     "sodium.AllvrSodiumWorldRendererAccessor",

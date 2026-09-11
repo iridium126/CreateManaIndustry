@@ -10,7 +10,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Future;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -97,9 +96,6 @@ public final class AllvrCubeMap {
      */
     private static final int PERSISTENCE_DECODE_WORKERS =
         Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
-    /** Keep CPU use bounded while allowing independent cubes to generate in parallel. */
-    private static final int TERRAIN_WORKERS =
-        Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
     /** Shell-load time budget per tick. */
     private static final long TICK_BUDGET_NANOS = 3_000_000L;
     /** Keep async generation/read completions from monopolising the tick. */
@@ -143,15 +139,6 @@ public final class AllvrCubeMap {
     private final Long2ObjectOpenHashMap<AllvrCube> beCubes = new Long2ObjectOpenHashMap<>();
     private final Map<UUID, Subscription> subscriptions = new java.util.HashMap<>();
     private final AllvrCubeIoWorker worker;
-    /** Terrain generation never runs on the server tick thread for shell cubes. */
-    private final ThreadPoolExecutor generationExecutor = new ThreadPoolExecutor(
-        TERRAIN_WORKERS, TERRAIN_WORKERS,
-        0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(MAX_PENDING_GENERATIONS),
-        r -> {
-            Thread thread = new Thread(r, "allvr-terrain");
-            thread.setDaemon(true);
-            return thread;
-        }, new ThreadPoolExecutor.AbortPolicy());
     private final ThreadPoolExecutor persistenceDecodeExecutor = new ThreadPoolExecutor(
         PERSISTENCE_DECODE_WORKERS, PERSISTENCE_DECODE_WORKERS,
         0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(MAX_PENDING_PERSISTED_LOADS * 2),
@@ -161,8 +148,6 @@ public final class AllvrCubeMap {
             return thread;
         }, new ThreadPoolExecutor.AbortPolicy());
     private final ConcurrentHashMap<Long, CompletableFuture<AllvrCube>> pendingGenerations = new ConcurrentHashMap<>();
-    /** Executor handles let CubicChunks-style ticket drops interrupt queued/running work. */
-    private final ConcurrentHashMap<Long, Future<?>> generationHandles = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<GeneratedCube> completedGenerations = new ConcurrentLinkedQueue<>();
     /** Persisted cube reads use the vanilla ChunkMap-style async handoff. */
     private final ConcurrentHashMap<Long, CompletableFuture<AllvrCube>> pendingPersistedLoads = new ConcurrentHashMap<>();
@@ -197,7 +182,14 @@ public final class AllvrCubeMap {
         int sendYRadius = DEFAULT_SEND_Y_RADIUS;
     }
 
-    private record GeneratedCube(long key, AllvrCube cube, Throwable failure) {}
+    /**
+     * A completed request retains its request future.  This is the cube
+     * equivalent of ChunkMap checking that a ChunkHolder future is still the
+     * current one before publishing it; a completion that lost its ticket is
+     * never allowed to resurrect a cube.
+     */
+    private record GeneratedCube(long key, CompletableFuture<AllvrCube> request,
+                                 AllvrCube cube, Throwable failure) {}
     private record PersistedCubeLoad(long key, CompletableFuture<AllvrCube> future,
         AllvrCube cube, Throwable failure) {}
 
@@ -418,13 +410,12 @@ public final class AllvrCubeMap {
         CompletableFuture<AllvrCube> pending = pendingGenerations.get(key);
         if (pending != null) {
             try {
-                return installGenerated(key, pending.join());
+                return installGenerated(key, pending, pending.join());
             } catch (java.util.concurrent.CancellationException e) {
                 // A player can teleport back into a cube in the same tick that
                 // its shell ticket was dropped. Reclaim the direct path by
                 // generating the required cube synchronously below.
                 pendingGenerations.remove(key, pending);
-                cancelGenerationHandle(key, pending);
             } catch (java.util.concurrent.CompletionException e) {
                 pendingGenerations.remove(key, pending);
                 throw e;
@@ -476,9 +467,16 @@ public final class AllvrCubeMap {
         while (installed < COMPLETION_INSTALL_BUDGET
             && System.nanoTime() - start < COMPLETION_INSTALL_BUDGET_NANOS
             && (completed = completedGenerations.poll()) != null) {
+            // A completion can already be in the queue when the player moves
+            // away.  ChunkMap drops that result when its holder/ticket is no
+            // longer current; do the same before touching the live map.
+            if (pendingGenerations.get(completed.key()) != completed.request()
+                || !isNeededByAnyPlayer(AllvrCubePos.fromLong(completed.key()), level.players())) {
+                pendingGenerations.remove(completed.key(), completed.request());
+                continue;
+            }
             if (completed.failure() != null) {
-                pendingGenerations.remove(completed.key());
-                generationHandles.remove(completed.key());
+                pendingGenerations.remove(completed.key(), completed.request());
                 if (completed.failure() instanceof java.util.concurrent.CancellationException) {
                     continue;
                 }
@@ -486,17 +484,19 @@ public final class AllvrCubeMap {
                     AllvrCubePos.fromLong(completed.key()), completed.failure());
                 continue;
             }
-            installGenerated(completed.key(), completed.cube());
+            installGenerated(completed.key(), completed.request(), completed.cube());
             installed++;
         }
     }
 
-    private AllvrCube installGenerated(long key, AllvrCube cube) {
-        pendingGenerations.remove(key);
-        generationHandles.remove(key);
+    private AllvrCube installGenerated(long key, CompletableFuture<AllvrCube> request,
+                                        AllvrCube cube) {
+        if (request != null && !pendingGenerations.remove(key, request)) {
+            return cubes.get(key);
+        }
         AllvrCube existing = cubes.get(key);
         if (existing != null) return existing;
-        if (closed || persistedIndex.contains(key)) return cube;
+        if (closed || persistedIndex.contains(key)) return null;
         cubes.put(key, cube);
         cube.onLoad(level);
         this.lightEngine.onCubeLoaded(cube);
@@ -505,7 +505,13 @@ public final class AllvrCubeMap {
         return cube;
     }
 
-    /** Queues one deterministic build; results are installed by the tick thread. */
+    /**
+     * Queues one deterministic build; results are installed by the tick
+     * thread.  The expensive stages deliberately run on Minecraft's normal
+     * world-generation executor, just like ChunkMap/ChunkStatus.  Allay no
+     * longer creates a second terrain worker pool that competes with the
+     * vanilla chunk builder.
+     */
     private void requestAsyncGeneration(int cubeX, int cubeY, int cubeZ) {
         if (closed || pendingGenerations.size() >= MAX_PENDING_GENERATIONS) return;
         long key = AllvrCubePos.asLong(cubeX, cubeY, cubeZ);
@@ -517,37 +523,32 @@ public final class AllvrCubeMap {
         CompletableFuture<AllvrCube> previous = pendingGenerations.putIfAbsent(key, future);
         if (previous != null) return;
         try {
-            Future<?> handle = generationExecutor.submit(() -> {
-                try {
-                    if (future.isCancelled()) return;
-                    AllvrCube cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
-                    // Hold this bounded worker until the complete vanilla
-                    // source-column fan-out finishes.  The individual noise
-                    // stages remain asynchronous, but returning here early
-                    // would let 256 queued cubes flood the global worldgen
-                    // executor and defeat ticket backpressure.
-                    generator.generateAsync(cube).join();
-                    future.complete(cube);
-                } catch (Throwable failure) {
+            AllvrCube cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
+            // generateAsync() is backed by the same vanilla noise/worldgen
+            // executor used by NoiseBasedChunkGenerator.  Only the future
+            // completion is handed back to this main-thread-owned map.
+            generator.generateAsync(cube).whenComplete((ignored, failure) -> {
+                if (future.isCancelled()) {
+                    return;
+                }
+                if (failure != null) {
                     future.completeExceptionally(failure);
+                } else {
+                    future.complete(cube);
                 }
             });
-            generationHandles.put(key, handle);
-            // Cancellation can win the race between submit() and publishing
-            // the handle. Reclaim a queued FutureTask immediately in that
-            // case instead of waiting for a worker to dequeue it.
-            if (future.isDone() && generationHandles.remove(key, handle)) {
-                cancelQueuedHandle(handle);
-            }
         } catch (java.util.concurrent.RejectedExecutionException failure) {
+            pendingGenerations.remove(key, future);
+            future.completeExceptionally(failure);
+            return;
+        } catch (Throwable failure) {
             pendingGenerations.remove(key, future);
             future.completeExceptionally(failure);
             return;
         }
         future.whenComplete((cube, failure) -> {
-            generationHandles.remove(key);
             if (!closed) {
-                completedGenerations.add(new GeneratedCube(key, cube, failure));
+                completedGenerations.add(new GeneratedCube(key, future, cube, failure));
             }
         });
     }
@@ -589,7 +590,7 @@ public final class AllvrCubeMap {
             AllvrCubePos pending = AllvrCubePos.fromLong(entry.getKey());
             boolean needed = isNeededByAnyPlayer(pending, players);
             if (!needed && pendingGenerations.remove(entry.getKey(), entry.getValue())) {
-                cancelGenerationHandle(entry.getKey(), entry.getValue());
+                entry.getValue().cancel(true);
             }
         }
         for (Map.Entry<Long, CompletableFuture<AllvrCube>> entry : pendingPersistedLoads.entrySet()) {
@@ -610,17 +611,6 @@ public final class AllvrCubeMap {
     public int rawLight(BlockPos pos, int amount) {
         return Math.max(this.lightEngine.blockLight(pos),
             this.lightEngine.skyLight(pos) - amount);
-    }
-
-    private void cancelGenerationHandle(long key, CompletableFuture<?> future) {
-        Future<?> handle = generationHandles.remove(key);
-        future.cancel(true);
-        if (handle != null) cancelQueuedHandle(handle);
-    }
-
-    private void cancelQueuedHandle(Future<?> handle) {
-        handle.cancel(true);
-        if (handle instanceof Runnable runnable) generationExecutor.remove(runnable);
     }
 
     public AllvrIslandFieldGenerator generator() { return this.generator; }
@@ -711,6 +701,10 @@ public final class AllvrCubeMap {
         if (cube == null || this.closed) {
             return null;
         }
+        // A direct gameplay access may consume a pending request before its
+        // completion reaches the main-thread queue. The later completion is
+        // then stale, just like a replaced vanilla ChunkHolder future.
+        this.pendingPersistedLoads.remove(key);
         AllvrCube existing = this.cubes.get(key);
         if (existing != null) {
             return existing;
@@ -768,8 +762,8 @@ public final class AllvrCubeMap {
                 this.queueSnapshot(key, false);
             }
         }
-        // drain before the players.isEmpty() early-return: an empty server
-        // still owes its queued snapshots (vanilla autosave parity)
+        // Drain before the players.isEmpty() early-return: an empty server
+        // still owes its queued snapshots (vanilla autosave parity).
         this.drainSnapshotQueue();
         this.drainCompletedGenerations();
         this.drainCompletedPersistedLoads();
@@ -792,14 +786,12 @@ public final class AllvrCubeMap {
             Subscription sub = subscriptions.computeIfAbsent(player.getUUID(), k -> new Subscription());
             updateRenderDistance(player, sub);
             if (sub.lastCube == null || chebyshev(pc, sub.lastCube) > 2) {
-                // Keep teleports and first join responsive: the old 3x3x3
-                // synchronous warm-up could invoke dozens of noise/feature
-                // builds in one server tick. The normal budgeted loop below
-                // streams the surrounding cubes over subsequent ticks.
+                // ChunkMap does not block the server tick for a missing
+                // holder. Queue even the center cube and let the completion
+                // handoff below publish it on a later tick; direct gameplay
+                // writes retain the separate synchronous compatibility path.
                 long centerKey = pc.asLong();
-                AllvrCube cube = persistedIndex.contains(centerKey)
-                    ? getOrRequest(pc.getX(), pc.getY(), pc.getZ())
-                    : getOrGenerate(pc.getX(), pc.getY(), pc.getZ());
+                AllvrCube cube = getOrRequest(pc.getX(), pc.getY(), pc.getZ());
                 if (cube != null) {
                     long key = cube.getPos().asLong();
                     if (sub.sent.add(key)) {
@@ -1013,6 +1005,11 @@ public final class AllvrCubeMap {
         while (installed < COMPLETION_INSTALL_BUDGET
             && System.nanoTime() - start < COMPLETION_INSTALL_BUDGET_NANOS
             && (completed = completedPersistedLoads.poll()) != null) {
+            if (this.pendingPersistedLoads.get(completed.key()) != completed.future()
+                || !isNeededByAnyPlayer(AllvrCubePos.fromLong(completed.key()), level.players())) {
+                this.pendingPersistedLoads.remove(completed.key(), completed.future());
+                continue;
+            }
             this.pendingPersistedLoads.remove(completed.key(), completed.future());
             if (closed) {
                 continue;
@@ -1144,12 +1141,6 @@ public final class AllvrCubeMap {
             } catch (RuntimeException e) {
                 ok = false; // saveAll logged the cause; close must not throw (§7.5)
             }
-        }
-        generationExecutor.shutdownNow();
-        try {
-            generationExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
         }
         persistenceDecodeExecutor.shutdownNow();
         try {

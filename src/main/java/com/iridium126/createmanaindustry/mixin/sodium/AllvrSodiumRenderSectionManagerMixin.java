@@ -2,6 +2,8 @@ package com.iridium126.createmanaindustry.mixin.sodium;
 
 import org.joml.Vector3dc;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
@@ -27,6 +29,7 @@ import net.caffeinemc.mods.sodium.client.world.LevelSlice;
 import net.caffeinemc.mods.sodium.client.world.cloned.ChunkRenderContext;
 import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -51,12 +54,25 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 @Mixin(value = RenderSectionManager.class, remap = false, priority = 1500)
 public abstract class AllvrSodiumRenderSectionManagerMixin {
 
+    @Shadow @Final private ClientLevel level;
+
     @Inject(method = "onSectionAdded", at = @At("HEAD"), cancellable = true)
     private void cmi$allaySectionAdded(int x, int y, int z, CallbackInfo ci) {
-        ClientLevel level = AllvrSodiumBridge.level();
-        if (level != null && level.dimension() == AllvrDimensions.ALLAY_LEVEL
-            && !AllvrSodiumSectionLifecycle.internalAdd()) {
-            AllvrSodiumBridge.nativeSectionAdd((RenderSectionManager) (Object) this, x, y, z);
+        ClientLevel level = this.level;
+        if (level == null) {
+            level = Minecraft.getInstance().level;
+        }
+        if (level == null) {
+            level = AllvrSodiumBridge.level();
+        }
+        if (level != null && level.dimension() == AllvrDimensions.ALLAY_LEVEL) {
+            if (AllvrSodiumSectionLifecycle.internalAdd()) {
+                return;
+            }
+            // The cube bridge owns the virtual section coordinates. Reject
+            // vanilla's column onChunkAdded sweep instead of registering
+            // placeholders at the client's formal-height Y values. The
+            // bridge enters the scoped internalAdd path for its own nodes.
             ci.cancel();
         }
     }

@@ -74,6 +74,10 @@ public abstract class AllvrLevelMixin {
             if (self.isClientSide) {
                 var biome = com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.biome(x, y, z);
                 if (biome != null) return biome;
+                // A missing cube is void, not a reason to synchronously ask
+                // ClientChunkCache for a vanilla column.  Keep the lookup
+                // side-effect free until the cube stream reaches this area.
+                return self.getUncachedNoiseBiome(x, y, z);
             } else {
                 AllvrCubeMap map = allvr$map();
                 if (map != null) {

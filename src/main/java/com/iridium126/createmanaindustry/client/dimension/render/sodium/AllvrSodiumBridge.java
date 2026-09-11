@@ -28,9 +28,11 @@ public final class AllvrSodiumBridge {
     private static final LongOpenHashSet OWNED = new LongOpenHashSet();
     private static final ArrayDeque<Long> ADD_QUEUE = new ArrayDeque<>();
     private static final ArrayDeque<Long> REMOVE_QUEUE = new ArrayDeque<>();
+    private static final ArrayDeque<Long> REPLACE_QUEUE = new ArrayDeque<>();
     private static final ArrayDeque<Long> REBUILD_QUEUE = new ArrayDeque<>();
     private static final Set<Long> QUEUED_ADD = new HashSet<>();
     private static final Set<Long> QUEUED_REMOVE = new HashSet<>();
+    private static final Set<Long> QUEUED_REPLACE = new HashSet<>();
     private static final Set<Long> QUEUED_REBUILD = new HashSet<>();
     /** Vanilla spreads section registration across client ticks; cap both
      * count and CPU time so a burst of cube packets cannot monopolise a frame. */
@@ -126,9 +128,11 @@ public final class AllvrSodiumBridge {
         OWNED.clear();
         ADD_QUEUE.clear();
         REMOVE_QUEUE.clear();
+        REPLACE_QUEUE.clear();
         REBUILD_QUEUE.clear();
         QUEUED_ADD.clear();
         QUEUED_REMOVE.clear();
+        QUEUED_REPLACE.clear();
         QUEUED_REBUILD.clear();
         WINDOW.reset();
         initialized = false;
@@ -150,9 +154,11 @@ public final class AllvrSodiumBridge {
                 // resident set against the real camera position instead.
                 ADD_QUEUE.clear();
                 REMOVE_QUEUE.clear();
+                REPLACE_QUEUE.clear();
                 REBUILD_QUEUE.clear();
                 QUEUED_ADD.clear();
                 QUEUED_REMOVE.clear();
+                QUEUED_REPLACE.clear();
                 QUEUED_REBUILD.clear();
                 WINDOW.initializeAt(WINDOW.nextOrigin(lastCameraY));
                 originInitialized = true;
@@ -167,6 +173,8 @@ public final class AllvrSodiumBridge {
         }
 
         if (WINDOW.isDetaching()) {
+            REPLACE_QUEUE.clear();
+            QUEUED_REPLACE.clear();
             REBUILD_QUEUE.clear();
             QUEUED_REBUILD.clear();
             drainRemoves();
@@ -178,6 +186,7 @@ public final class AllvrSodiumBridge {
         }
 
         drainRemoves();
+        drainReplacements();
         drainAdds();
         drainRebuilds();
         if (WINDOW.phase() == AllvrRenderYWindow.Phase.REFILL
@@ -191,7 +200,7 @@ public final class AllvrSodiumBridge {
             return;
         }
         AllvrSodiumSectionSource.invalidateCube(cubeKey);
-        enqueueCubeSections(cubeKey);
+        enqueueCubeSections(cubeKey, true);
         dirtyCubeBoundary(cubeKey);
     }
 
@@ -223,6 +232,7 @@ public final class AllvrSodiumBridge {
         int sz = absolutePos.getZ() >> 4;
         AllvrSodiumSectionSource.invalidateLightingSection(sx,
             WINDOW.virtualSectionY(sy), sz);
+        enqueueCubeSections(AllvrCubePos.asLong(absolutePos), false);
         long key = virtualKey(sx, sy, sz);
         scheduleDirty(key);
         if ((absolutePos.getX() & 15) == 0) scheduleDirty(virtualKey(sx - 1, sy, sz));
@@ -250,12 +260,13 @@ public final class AllvrSodiumBridge {
 
     private static void enqueueAllResidentCubes() {
         for (long cubeKey : AllvrClientCubeCache.cubeKeys()) {
-            enqueueCubeSections(cubeKey);
+            enqueueCubeSections(cubeKey, false);
         }
     }
 
-    private static void enqueueCubeSections(long cubeKey) {
+    private static void enqueueCubeSections(long cubeKey, boolean replaceExisting) {
         AllvrCubePos cube = AllvrCubePos.fromLong(cubeKey);
+        boolean register = AllvrSodiumSectionSource.cubeIsLoaded(level, cubeKey);
         for (int sy = 0; sy < 2; sy++) {
             for (int sz = 0; sz < 2; sz++) {
                 for (int sx = 0; sx < 2; sx++) {
@@ -263,10 +274,31 @@ public final class AllvrSodiumBridge {
                     int absY = (cube.getY() << 1) + sy;
                     int absZ = (cube.getZ() << 1) + sz;
                     long key = virtualKey(absX, absY, absZ);
-                    if (AllvrSodiumSectionSource.hasContent(level, absX,
-                        WINDOW.virtualSectionY(absY), absZ,
-                        resourceRevision, WINDOW.epoch())) {
-                        enqueueAdd(key);
+                    SectionPos virtualPos = SectionPos.of(key);
+                    if (register) {
+                        if (!OWNED.contains(key)) {
+                            enqueueAdd(key);
+                        } else if (replaceExisting) {
+                            enqueueReplace(key);
+                        } else if (AllvrSodiumSectionSource.hasContent(level, absX,
+                            WINDOW.virtualSectionY(absY), absZ,
+                            resourceRevision, WINDOW.epoch())) {
+                            RenderSectionManager manager = SodiumApi_0813_1211.sectionManager();
+                            if (manager != null && SodiumApi_0813_1211.isSectionBuilt(manager,
+                                virtualPos.getX(), virtualPos.getY(), virtualPos.getZ())) {
+                                enqueueRebuild(key);
+                            } else {
+                                enqueueReplace(key);
+                            }
+                        } else {
+                            RenderSectionManager manager = SodiumApi_0813_1211.sectionManager();
+                            if (manager != null && SodiumApi_0813_1211.isSectionBuilt(manager,
+                                virtualPos.getX(), virtualPos.getY(), virtualPos.getZ())) {
+                                // A formerly solid section must be rebuilt to
+                                // publish Sodium's EMPTY built-info state.
+                                enqueueRebuild(key);
+                            }
+                        }
                     } else {
                         enqueueRemove(key);
                     }
@@ -303,10 +335,22 @@ public final class AllvrSodiumBridge {
         if (manager == null) {
             return;
         }
-        if (AllvrSodiumSectionSource.hasContent(level, pos, resourceRevision, WINDOW.epoch())) {
+        if (AllvrSodiumSectionSource.shouldRegisterSection(level, pos,
+            resourceRevision, WINDOW.epoch())) {
             if (!OWNED.contains(key)) {
                 enqueueAdd(key);
-            } else {
+            } else if (AllvrSodiumSectionSource.hasContent(level, pos,
+                resourceRevision, WINDOW.epoch())) {
+                if (SodiumApi_0813_1211.isSectionBuilt(manager,
+                    pos.getX(), pos.getY(), pos.getZ())) {
+                    enqueueRebuild(key);
+                } else {
+                    enqueueReplace(key);
+                }
+            } else if (SodiumApi_0813_1211.isSectionBuilt(manager,
+                pos.getX(), pos.getY(), pos.getZ())) {
+                // A formerly solid section must be rebuilt to publish
+                // Sodium's EMPTY built-info state.
                 enqueueRebuild(key);
             }
         } else {
@@ -322,6 +366,11 @@ public final class AllvrSodiumBridge {
     private static void enqueueRemove(long key) {
         if ((!OWNED.contains(key) && !QUEUED_ADD.contains(key)) || !QUEUED_REMOVE.add(key)) return;
         REMOVE_QUEUE.add(key);
+    }
+
+    private static void enqueueReplace(long key) {
+        if (!OWNED.contains(key) || !QUEUED_REPLACE.add(key)) return;
+        REPLACE_QUEUE.add(key);
     }
 
     private static void enqueueRebuild(long key) {
@@ -350,17 +399,32 @@ public final class AllvrSodiumBridge {
             && (processed == 0 || System.nanoTime() < deadline)) {
             long key = ADD_QUEUE.removeFirst();
             QUEUED_ADD.remove(key);
-            if (!AllvrSodiumSectionSource.hasContent(level, SectionPos.of(key), resourceRevision, WINDOW.epoch())) continue;
+            if (!AllvrSodiumSectionSource.shouldRegisterSection(level, SectionPos.of(key),
+                resourceRevision, WINDOW.epoch())) continue;
             SectionPos pos = SectionPos.of(key);
-            // Sodium may have registered an empty placeholder for this
-            // virtual coordinate while the ClientLevel was being created.
-            // onSectionAdded() intentionally returns for an existing key, so
-            // invalidate/rebuild first; it is a no-op when the section is not
-            // present, after which onSectionAdded creates the real section.
-            SodiumApi_0813_1211.scheduleRebuild(manager, pos.getX(), pos.getY(), pos.getZ(), true);
-            SodiumApi_0813_1211.onSectionAdded(manager, pos.getX(), pos.getY(), pos.getZ());
+            SodiumApi_0813_1211.onSectionRemoved(manager, pos.getX(), pos.getY(), pos.getZ());
+            AllvrSodiumSectionLifecycle.nativeAdd(manager, pos.getX(), pos.getY(), pos.getZ());
             OWNED.add(key);
             processed++;
+        }
+    }
+
+    /** Replaces an existing node when an unbuilt/queued section changed. */
+    private static void drainReplacements() {
+        RenderSectionManager manager = SodiumApi_0813_1211.sectionManager();
+        if (manager == null) return;
+        int budget = SECTION_BUDGET;
+        while (budget-- > 0 && !REPLACE_QUEUE.isEmpty()) {
+            long key = REPLACE_QUEUE.removeFirst();
+            QUEUED_REPLACE.remove(key);
+            if (!OWNED.contains(key)) continue;
+            SectionPos pos = SectionPos.of(key);
+            SodiumApi_0813_1211.onSectionRemoved(manager, pos.getX(), pos.getY(), pos.getZ());
+            OWNED.remove(key);
+            if (AllvrSodiumSectionSource.shouldRegisterSection(level, pos,
+                resourceRevision, WINDOW.epoch())) {
+                enqueueAdd(key);
+            }
         }
     }
 
@@ -375,6 +439,7 @@ public final class AllvrSodiumBridge {
             SodiumApi_0813_1211.onSectionRemoved(manager, pos.getX(), pos.getY(), pos.getZ());
             OWNED.remove(key);
             QUEUED_ADD.remove(key);
+            QUEUED_REPLACE.remove(key);
             QUEUED_REBUILD.remove(key);
         }
     }
@@ -392,15 +457,14 @@ public final class AllvrSodiumBridge {
             QUEUED_REBUILD.remove(key);
             if (!OWNED.contains(key)) continue;
             SectionPos pos = SectionPos.of(key);
-            if (AllvrSodiumSectionSource.hasContent(level, pos, resourceRevision, WINDOW.epoch())) {
+            if (AllvrSodiumSectionSource.shouldRegisterSection(level, pos,
+                resourceRevision, WINDOW.epoch())) {
                 SodiumApi_0813_1211.scheduleRebuild(manager, pos.getX(), pos.getY(), pos.getZ(), true);
+            } else {
+                enqueueRemove(key);
             }
             processed++;
         }
     }
 
-    /** Called by the RenderSectionManager mixin around its native add method. */
-    public static void nativeSectionAdd(RenderSectionManager manager, int x, int y, int z) {
-        AllvrSodiumSectionLifecycle.nativeAdd(manager, x, y, z);
-    }
 }

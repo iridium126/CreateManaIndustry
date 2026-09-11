@@ -7,18 +7,12 @@ import org.spongepowered.asm.mixin.injection.At;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
-import com.iridium126.createmanaindustry.dimension.cube.AllvrCubeMap;
-import com.iridium126.createmanaindustry.dimension.cube.AllvrServerLevelDuck;
 
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockCollisions;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.CollisionGetter;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * The vanilla collision iterator ({@code Entity#collide}, suffocation checks
@@ -26,15 +20,17 @@ import net.minecraft.world.level.block.state.BlockState;
  * {@code Level#getBlockState}: per XZ column it fetches the chunk via
  * {@code getChunkForCollisions} and reads {@code LevelChunk#getBlockState}
  * directly (vanilla fast path). Inside the allay dimension those column
- * chunks are empty air shells and positions sit outside their section range
- * (reads as air), so entities fall through every island — on both the client
- * and the server.
+ * chunks are transport shells and are not kept resident by the cube loader;
+ * after the vanilla chunk tick is disabled, {@code getChunkForCollisions}
+ * can return either an empty shell or {@code null}. The former loses the
+ * cube state and the latter makes the iterator skip the position entirely.
  * <p>
- * Wrapping the iterator's single {@code BlockGetter#getBlockState} call site
- * routes allay reads to the cube data (client → streamed cube cache via the
- * common-side hook, server → the per-level cube map) and leaves every other
- * dimension untouched. Unloaded cubes resolve to air, mirroring vanilla's
- * "no collision in unloaded chunks" behavior without triggering generation.
+ * For Allay, make the iterator use the current {@link Level} as its
+ * {@link BlockGetter}. The existing Allay {@code Level#getBlockState} routes
+ * reads to the server cube map or the client cube cache, so the complete
+ * vanilla iterator keeps working without a column chunk. This also makes the
+ * {@code onlySuffocatingBlocks} path use the same source as normal movement;
+ * unloaded cubes still resolve to air and do not trigger generation.
  */
 @Mixin(BlockCollisions.class)
 public abstract class AllvrBlockCollisionsMixin {
@@ -43,18 +39,20 @@ public abstract class AllvrBlockCollisionsMixin {
     @Final
     private CollisionGetter collisionGetter;
 
-    @WrapOperation(method = "computeNext", at = @At(value = "INVOKE",
-        target = "Lnet/minecraft/world/level/BlockGetter;getBlockState(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState;"))
-    private BlockState allvr$collideGetBlockState(BlockGetter getter, BlockPos pos, Operation<BlockState> original) {
-        if (this.collisionGetter instanceof Level level && level.dimension() == AllvrDimensions.ALLAY_LEVEL) {
-            if (level.isClientSide) {
-                return AllvrClientBlockHook.resolve(pos);
-            }
-            if (level instanceof AllvrServerLevelDuck duck) {
-                AllvrCubeMap map = duck.allvr$getCubeMap();
-                return map == null ? Blocks.VOID_AIR.defaultBlockState() : map.getBlockState(pos);
-            }
+    /**
+     * Vanilla's {@code BlockCollisions#getChunk} caches the result of this
+     * call by XZ chunk. Allay has no authoritative column chunks, so returning
+     * the level is intentional: it supplies a stable, non-null BlockGetter
+     * while the dimension-specific Level mixins provide the actual cube data.
+     */
+    @WrapOperation(method = "getChunk", at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/world/level/CollisionGetter;getChunkForCollisions(II)Lnet/minecraft/world/level/BlockGetter;"))
+    private BlockGetter allvr$useCubeBackedGetter(CollisionGetter getter, int chunkX, int chunkZ,
+                                                   Operation<BlockGetter> original) {
+        if (this.collisionGetter instanceof Level level
+            && level.dimension() == AllvrDimensions.ALLAY_LEVEL) {
+            return level;
         }
-        return original.call(getter, pos);
+        return original.call(getter, chunkX, chunkZ);
     }
 }

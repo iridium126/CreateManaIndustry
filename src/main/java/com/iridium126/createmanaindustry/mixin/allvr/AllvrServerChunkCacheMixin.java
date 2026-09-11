@@ -18,10 +18,26 @@ import net.minecraft.server.level.ServerChunkCache;
 @Mixin(ServerChunkCache.class)
 public abstract class AllvrServerChunkCacheMixin {
 
+    /**
+     * Allay owns its residency in {@code AllvrCubeMap}.  The vanilla tick
+     * would otherwise run DistanceManager, promote empty LevelChunk holders,
+     * and call ChunkMap's unload/send pipeline even though no column chunk is
+     * ever a valid Allay data source.
+     */
+    @Inject(method = "tick(Ljava/util/function/BooleanSupplier;Z)V",
+            at = @At("HEAD"), cancellable = true)
+    private void allvr$skipVanillaChunkTick(java.util.function.BooleanSupplier hasTime,
+                                             boolean tickChunks, CallbackInfo ci) {
+        ServerChunkCache self = (ServerChunkCache) (Object) this;
+        if (self.getLevel().dimension() == AllvrDimensions.ALLAY_LEVEL) {
+            ci.cancel();
+        }
+    }
+
     @Inject(method = "save(Z)V", at = @At("HEAD"), cancellable = true)
     private void allvr$skipVanillaChunkSave(boolean flush, CallbackInfo ci) {
         ServerChunkCache self = (ServerChunkCache) (Object) this;
-        if (self.level.dimension() == AllvrDimensions.ALLAY_LEVEL) {
+        if (self.getLevel().dimension() == AllvrDimensions.ALLAY_LEVEL) {
             ci.cancel();
         }
     }

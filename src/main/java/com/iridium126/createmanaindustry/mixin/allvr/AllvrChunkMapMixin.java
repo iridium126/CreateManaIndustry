@@ -12,7 +12,9 @@ import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 /**
  * Defense in depth for vanilla chunk persistence.  ChunkMap can save from its
@@ -36,6 +38,28 @@ public abstract class AllvrChunkMapMixin {
     private void allvr$skipVanillaChunkSave(ChunkAccess chunk, CallbackInfoReturnable<Boolean> cir) {
         if (this.level.dimension() == AllvrDimensions.ALLAY_LEVEL) {
             cir.setReturnValue(false);
+        }
+    }
+
+    /**
+     * Keep vanilla entity bookkeeping available, but do not create a normal
+     * circular chunk-tracking view for an Allay player.  The cube map owns the
+     * render/simulation tickets and sends cube packets directly.
+     */
+    @Inject(method = "updateChunkTracking(Lnet/minecraft/server/level/ServerPlayer;)V",
+            at = @At("HEAD"), cancellable = true)
+    private void allvr$skipVanillaChunkTracking(ServerPlayer player, CallbackInfo ci) {
+        if (this.level.dimension() == AllvrDimensions.ALLAY_LEVEL) {
+            ci.cancel();
+        }
+    }
+
+    /** Final guard: no empty LevelChunk can become a vanilla terrain packet. */
+    @Inject(method = "onChunkReadyToSend(Lnet/minecraft/world/level/chunk/LevelChunk;)V",
+            at = @At("HEAD"), cancellable = true)
+    private void allvr$skipVanillaChunkPacket(LevelChunk chunk, CallbackInfo ci) {
+        if (this.level.dimension() == AllvrDimensions.ALLAY_LEVEL) {
+            ci.cancel();
         }
     }
 }

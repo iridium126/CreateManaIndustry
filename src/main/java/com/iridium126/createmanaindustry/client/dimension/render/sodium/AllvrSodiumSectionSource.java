@@ -9,16 +9,17 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.core.SectionPos;
-import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.biome.Biome;
-import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.chunk.PalettedContainerRO;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
+import it.unimi.dsi.fastutil.ints.Int2ReferenceMap;
+import it.unimi.dsi.fastutil.ints.Int2ReferenceOpenHashMap;
 
 import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 import com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderYWindow;
@@ -48,19 +49,11 @@ public final class AllvrSodiumSectionSource {
     private static final Long2ObjectLinkedOpenHashMap<ClonedCache> CLONED_SECTION_CACHE =
         new Long2ObjectLinkedOpenHashMap<>();
     private static final int CLONED_SECTION_CACHE_LIMIT = 512;
-    /** The synthetic ALLVR sections still need a real column carrier for
-     * Sodium's platform light/model hooks. Reuse the vanilla carrier lookup
-     * result across neighbouring rebuild contexts. */
-    private static final Long2ObjectLinkedOpenHashMap<LevelChunk> CARRIER_CACHE =
-        new Long2ObjectLinkedOpenHashMap<>();
-    private static final int CARRIER_CACHE_LIMIT = 512;
     private static long clonedResourceRevision = Long.MIN_VALUE;
     private static long clonedWindowEpoch = Long.MIN_VALUE;
 
     private static ClientLevel airSectionLevel;
     private static LevelChunkSection cachedAirSection;
-    private static ClientLevel carrierCacheLevel;
-
     private record SectionCopyCache(AllvrCube cube, long mutationVersion,
                                     LevelChunkSection[] sections) {}
 
@@ -74,10 +67,8 @@ public final class AllvrSodiumSectionSource {
         synchronized (AllvrClientCubeCache.LOCK) {
             SECTION_COPY_CACHE.clear();
             CLONED_SECTION_CACHE.clear();
-            CARRIER_CACHE.clear();
             clonedResourceRevision = Long.MIN_VALUE;
             clonedWindowEpoch = Long.MIN_VALUE;
-            carrierCacheLevel = null;
         }
         synchronized (AllvrSodiumSectionSource.class) {
             airSectionLevel = null;
@@ -130,7 +121,7 @@ public final class AllvrSodiumSectionSource {
             int sectionIndex = AllvrCube.sliceIndex(localX, localY, localZ);
             LevelChunkSection copy = cached[sectionIndex];
             if (copy == null) {
-                copy = copySection(live);
+                copy = live == null ? airSection(level) : copySection(live);
                 cached[sectionIndex] = copy;
             }
             return new AllvrSodiumSectionSnapshot(virtualPos, absolutePos, cubeKey,
@@ -175,6 +166,40 @@ public final class AllvrSodiumSectionSource {
             int localZ = virtualZ & 1;
             LevelChunkSection section = cube.getSections()[AllvrCube.sliceIndex(localX, localY, localZ)];
             return section != null && !section.hasOnlyAir();
+        }
+    }
+
+    /**
+     * Sodium's occlusion graph is a six-neighbour graph, not just a set of
+     * sections with geometry. Keep every section of a loaded cube as a graph
+     * node so an air section or an all-air cube cannot break visibility
+     * between two solid sections. This does not create a vanilla LevelChunk;
+     * it only mirrors the lightweight RenderSection nodes vanilla keeps for
+     * loaded chunks.
+     */
+    public static boolean shouldRegisterSection(ClientLevel level, SectionPos virtualPos,
+                                                long resourceRevision, long windowEpoch) {
+        return shouldRegisterSection(level, virtualPos.getX(), virtualPos.getY(), virtualPos.getZ(),
+            resourceRevision, windowEpoch);
+    }
+
+    public static boolean shouldRegisterSection(ClientLevel level, int virtualX, int virtualY, int virtualZ,
+                                                long resourceRevision, long windowEpoch) {
+        if (!isAllay(level)) {
+            return false;
+        }
+        int absoluteY = virtualY + (AllvrRenderWindowState.current().originBlockY() >> 4);
+        long cubeKey = AllvrCubePos.asLong(virtualX >> 1, absoluteY >> 1, virtualZ >> 1);
+        return cubeIsLoaded(level, cubeKey);
+    }
+
+    /** Returns whether this cube is present in the streamed client cache. */
+    public static boolean cubeIsLoaded(ClientLevel level, long cubeKey) {
+        if (!isAllay(level)) {
+            return false;
+        }
+        synchronized (AllvrClientCubeCache.LOCK) {
+            return AllvrClientCubeCache.peekCubeUnsafe(cubeKey) != null;
         }
     }
 
@@ -226,9 +251,9 @@ public final class AllvrSodiumSectionSource {
 
     /**
      * Creates the exact ChunkRenderContext shape expected by Sodium's native
-     * ChunkBuilderMeshingTask.  The LevelChunk passed to ClonedChunkSection is
-     * only the existing column carrier for platform light/model hooks; all
-     * block state and biome data come from the immutable ALLVR section copy.
+     * ChunkBuilderMeshingTask. All block state, biome, block-entity and light
+     * data come from immutable ALLVR snapshots; no LevelChunk is registered or
+     * used as a transport carrier.
      */
     public static ChunkRenderContext prepare(ClientLevel level, SectionPos virtualOrigin,
                                              long resourceRevision, long windowEpoch) {
@@ -244,8 +269,7 @@ public final class AllvrSodiumSectionSource {
                     int virtualX = originX + x;
                     int virtualY = originY + y;
                     int virtualZ = originZ + z;
-                    LevelChunk carrier = carrier(level, virtualX, virtualZ);
-                    sections[index++] = clonedSection(level, carrier, virtualX, virtualY, virtualZ,
+                    sections[index++] = clonedSection(level, virtualX, virtualY, virtualZ,
                         resourceRevision, windowEpoch);
                 }
             }
@@ -279,36 +303,50 @@ public final class AllvrSodiumSectionSource {
         return isAllay(level) ? AllvrClientCubeCache.lightData(absolutePos) : null;
     }
 
+    /**
+     * Supplies the block entities for one absolute section directly from the
+     * cube store.  Sodium normally obtains this map from a LevelChunk during
+     * ClonedChunkSection construction; Allay has no resident LevelChunk, so
+     * the same snapshot is produced here instead.
+     */
+    public static Int2ReferenceMap<BlockEntity> blockEntities(SectionPos absolutePos) {
+        long cubeKey = AllvrCubePos.asLong(absolutePos.getX() >> 1,
+            absolutePos.getY() >> 1, absolutePos.getZ() >> 1);
+        Int2ReferenceOpenHashMap<BlockEntity> result = null;
+        synchronized (AllvrClientCubeCache.LOCK) {
+            AllvrCube cube = AllvrClientCubeCache.peekCubeUnsafe(cubeKey);
+            if (cube == null || !cube.hasBlockEntities()) {
+                return null;
+            }
+            for (BlockEntity blockEntity : cube.getBlockEntities().values()) {
+                SectionPos entitySection = SectionPos.of(blockEntity.getBlockPos());
+                if (!entitySection.equals(absolutePos)) {
+                    continue;
+                }
+                if (result == null) {
+                    result = new Int2ReferenceOpenHashMap<>();
+                }
+                BlockPos pos = blockEntity.getBlockPos();
+                result.put(net.caffeinemc.mods.sodium.client.world.LevelSlice.getLocalBlockIndex(
+                    pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15), blockEntity);
+            }
+        }
+        if (result != null) {
+            result.trim();
+        }
+        return result;
+    }
+
     private static void resetClonedCacheIfNeeded(long resourceRevision, long windowEpoch) {
         if (clonedResourceRevision == resourceRevision && clonedWindowEpoch == windowEpoch) {
             return;
         }
         CLONED_SECTION_CACHE.clear();
-        CARRIER_CACHE.clear();
-        carrierCacheLevel = null;
         clonedResourceRevision = resourceRevision;
         clonedWindowEpoch = windowEpoch;
     }
 
-    private static LevelChunk carrier(ClientLevel level, int chunkX, int chunkZ) {
-        if (carrierCacheLevel != level) {
-            CARRIER_CACHE.clear();
-            carrierCacheLevel = level;
-        }
-        long key = ChunkPos.asLong(chunkX, chunkZ);
-        LevelChunk carrier = CARRIER_CACHE.getAndMoveToLast(key);
-        if (carrier != null) {
-            return carrier;
-        }
-        carrier = level.getChunk(chunkX, chunkZ);
-        if (CARRIER_CACHE.size() >= CARRIER_CACHE_LIMIT) {
-            CARRIER_CACHE.removeFirst();
-        }
-        CARRIER_CACHE.putAndMoveToLast(key, carrier);
-        return carrier;
-    }
-
-    private static ClonedChunkSection clonedSection(ClientLevel level, LevelChunk carrier,
+    private static ClonedChunkSection clonedSection(ClientLevel level,
                                                     int virtualX, int virtualY, int virtualZ,
                                                     long resourceRevision, long windowEpoch) {
         long key = SectionPos.asLong(virtualX, virtualY, virtualZ);
@@ -322,8 +360,7 @@ public final class AllvrSodiumSectionSource {
             resourceRevision, windowEpoch);
         LevelChunkSection section = snapshot == null ? null : snapshot.section();
         SectionPos dataPos = snapshot == null ? virtualPos : snapshot.absolutePos();
-        ClonedChunkSection cloned = SodiumApi_0813_1211.cloneSection(level, carrier,
-            section, dataPos);
+        ClonedChunkSection cloned = SodiumApi_0813_1211.cloneSection(level, section, dataPos);
         if (CLONED_SECTION_CACHE.size() >= CLONED_SECTION_CACHE_LIMIT) {
             CLONED_SECTION_CACHE.removeFirst();
         }
