@@ -43,3 +43,4 @@ repo/
 .claude
 .agents
 loom-remap/remapped-libs/
+logs/

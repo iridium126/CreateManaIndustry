@@ -1,0 +1,40 @@
+package com.iridium126.createmanaindustry.mixin.voxy;
+
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
+
+/**
+ * Vanilla ingest gate for the allay dimension (voxy integration plan §7.5-3):
+ * voxy's own chunk ingest would write real client chunks (the 384-block
+ * build window) into the same engine ALLVR injects virtual sections into —
+ * the two would fight over the same virtual keys. While the client level is
+ * the allay dimension, {@code isIngestEnabled} returns false so no vanilla
+ * ingest path can fire for it; every other dimension keeps Voxy's own value.
+ * <p>
+ * Applied only when the voxy mod is present (the mixin plugin gate).
+ */
+@Mixin(value = me.cortex.voxy.client.VoxyClientInstance.class, remap = false)
+public abstract class AllvrVoxyIngestMixin {
+
+    @Inject(method = "isIngestEnabled", at = @At("HEAD"), cancellable = true, remap = false)
+    private void allvr$blockAllayIngest(me.cortex.voxy.commonImpl.WorldIdentifier identifier,
+                                        CallbackInfoReturnable<Boolean> cir) {
+        // The method is called for the identifier being considered, which is
+        // not necessarily the level currently displayed by Minecraft.  Using
+        // mc.level here could disable ingest for an unrelated world during a
+        // dimension transition and could allow a late allay ingest through.
+        boolean allayIdentifier = identifier != null
+            && AllvrDimensions.ALLAY_LEVEL.equals(identifier.key);
+        // A non-null Allay identifier is the automatic vanilla chunk-ingest
+        // path and must stay disabled because Allay uses empty column shells.
+        // rawIngest(engine, ...) intentionally passes null and is the native
+        // Voxy entry point used by the cube bridge, so it must remain enabled.
+        if (allayIdentifier) {
+            cir.setReturnValue(false);
+        }
+    }
+}

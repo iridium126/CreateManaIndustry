@@ -36,90 +36,49 @@ public final class ClientConfig {
 
     // ---- allay dimension (ALLVR) -------------------------------------------
 
-    private static ModConfigSpec.BooleanValue ALLVR_GPU_PIPELINE;
-    private static ModConfigSpec.BooleanValue ALLVR_IRIS_INTEGRATION;
-    private static ModConfigSpec.BooleanValue ALLVR_IRIS_SHADOW_PASS;
     private static ModConfigSpec.BooleanValue ALLVR_LOD;
 
     static {
         BUILDER.comment("Volumetric mist rendering options.").push("rendering");
         MIST_GLOW_STRENGTH = BUILDER
-                .comment("Global multiplier for the glow of volumetric mist produced by glowing fluids (per-fluid glow derives from the fluid's light level).")
+                .comment("Global multiplier for mist glow.")
                 .defineInRange("mistGlowStrength", 0.5, 0.0, 100.0);
         MIST_DEBUG_SHADOW = BUILDER
-                .comment("DEBUG: visualize the Tyndall shadow-map sampling as mist color (green = lit, red = occluded). Temporary diagnostic.")
+                .comment("Debug shadow visualization.")
                 .define("mistDebugShadow", false);
         FUEL_ROD_BLOOM_RING_STRENGTH = BUILDER
-                .comment("Global multiplier for the glowing ring above a formed fuel rod (ring radius diffuses from maxRadius to 2x maxRadius while pulsing).")
+                .comment("Bloom ring strength multiplier.")
                 .defineInRange("fuelRodBloomRingStrength", 1.0, 0.0, 100.0);
         BUILDER.pop();
 
         BUILDER.comment("GPU particle engine options.").push("particles");
         PARTICLE_ENABLED = BUILDER
-                .comment("Master switch for the GPU particle engine (self-hosted GL, no Veil needed). "
-                        + "Turning it off drops all live particles immediately.")
+                .comment("Master switch for GPU particles.")
                 .define("enabled", true);
         PARTICLE_MAX_COUNT = BUILDER
-                .comment("Maximum live particles allocated in GPU memory (64 bytes each, double-buffered). "
-                        + "Also capped by the GPU's max shader-storage-block size.")
+                .comment("Maximum live particles allocated.")
                 .defineInRange("maxParticles", 2_000_000, 1_000, 4_000_000);
         PARTICLE_BUDGET_MS = BUILDER
-                .comment("Frame-time budget (ms) for particle update+draw; the engine auto-scales emission to stay under it.")
+                .comment("Frame-time budget (ms) for particles.")
                 .defineInRange("frameBudgetMs", 16.6, 1.0, 50.0);
         PARTICLE_AUTO_THROTTLE = BUILDER
-                .comment("Automatically reduce emission rate when the frame budget is exceeded.")
+                .comment("Auto throttle emission when budget exceeded.")
                 .define("autoThrottle", true);
         PARTICLE_FADE_DISTANCE = BUILDER
-                .comment("Distance in blocks at which particles start fading out; they are fully "
-                        + "invisible 24 blocks further. Raise to see particles farther away — "
-                        + "the alpha sort range adapts automatically. Note: particles do not "
-                        + "match vanilla fog, so very high values with a short render distance "
-                        + "can look out of place.")
+                .comment("Particle fade distance in blocks.")
                 .defineInRange("fadeDistance", 96, 16, 256);
         PARTICLE_SHADER_PACK_INTEGRATION = BUILDER
-                .comment("When a shader pack is active, route MODEL (allay) particle drawing through the")
-                .comment("pack's own lighting pipeline via iris-veil-compat's world render hook, so the")
-                .comment("models receive pack fog, tone mapping and surface lighting. Sprite particles are")
-                .comment("unaffected and keep the self-drawn path. Falls back automatically when no pack")
-                .comment("is in use or the merged program fails to build. true = auto-enable when possible.")
+                .comment("Enable shader pack integration for model particles.")
                 .define("shaderPackIntegration", true);
         PARTICLE_HEX_SPRAY_REDIRECT = BUILDER
-                .comment("Redirect Hexcasting's cast/conjure particle sprays (ParticleSpray -> MsgCastParticleS2C) "
-                        + "to the GPU particle engine's conjure replication (additive hexagonal wisps, pigment "
-                        + "colors preserved via spawn-time sampling). Falls back to the vanilla particle path "
-                        + "automatically when the engine is unavailable. Default true.")
+                .comment("Redirect Hexcasting sprays to GPU engine.")
                 .define("hexSprayRedirect", true);
         BUILDER.pop();
 
-        BUILDER.comment("Allay dimension (ALLVR) terrain renderer options.").push("allvr");
-        ALLVR_GPU_PIPELINE = BUILDER
-                .comment("Use the GPU-driven terrain pipeline (node tree + compute frustum cull + MDI command "
-                        + "generation + glMultiDrawElementsIndirectCount) instead of the CPU per-cube path. "
-                        + "Falls back to the CPU path automatically when the GL capability probe or shader "
-                        + "compile fails. Stage 4a slice: frustum culling only (HiZ occlusion and LOD arrive "
-                        + "in 4b/4c).")
-                .define("gpuPipeline", false);
-        ALLVR_IRIS_INTEGRATION = BUILDER
-                .comment("ALLVR iris shader-pack integration (voxy contract): when the active shader pack "
-                        + "ships a voxy.json adaptation (Photon, Complementary, ...), allay-dimension terrain "
-                        + "renders through the pack's own colortex targets and lighting patch instead of the "
-                        + "unlit post-composite fallback. Packs without voxy.json keep the fallback. Shared "
-                        + "shader surfaces (VOXY define, vx* uniforms/samplers, extended colortex set) are "
-                        + "yielded to the voxy mod while it is installed (coexistence).")
-                .define("irisIntegration", false);
-        ALLVR_IRIS_SHADOW_PASS = BUILDER
-                .comment("Render allay-dimension terrain into the shader pack's shadow map (depth-only MDI): "
-                        + "entities/particles receive island cast shadows, and packs whose deferred lighting "
-                        + "shadow-samples the gbuffer (Photon) get real terrain self-shadowing. Requires "
-                        + "irisIntegration and an active pack with a shadow pass.")
-                .define("irisShadowPass", true);
+        BUILDER.comment("Allay dimension (ALLVR) options.").push("allvr");
         ALLVR_LOD = BUILDER
-                .comment("Far-terrain LOD for the allay dimension (4c-1): beyond the full-resolution cube streaming "
-                        + "radius the server streams server-meshed LOD nodes (band table 256/512/1024/2048 blocks, "
-                        + "server-side allvrLodDistance caps the extent). Requires the GPU terrain pipeline "
-                        + "(gpuPipeline) — LOD nodes only flow through the GPU-driven draw path. Streaming extent "
-                        + "is server-authoritative; this switch only turns the client's request/render half on.")
-                .define("lod", false);
+                .comment("Enable far-terrain LOD for allay dimension.")
+                .define("lod", true);
         BUILDER.pop();
     }
 
@@ -135,10 +94,7 @@ public final class ClientConfig {
     public static int particleFadeDistance = 96;
     public static boolean shaderPackIntegration = true;
     public static boolean hexSprayRedirect = true;
-    public static boolean allvrGpuPipeline = false;
-    public static boolean allvrIrisIntegration = false;
-    public static boolean allvrIrisShadowPass = true;
-    public static boolean allvrLod = false;
+    public static boolean allvrLod = true;
 
     private ClientConfig() {}
 
@@ -156,9 +112,6 @@ public final class ClientConfig {
             particleFadeDistance = PARTICLE_FADE_DISTANCE.get();
             shaderPackIntegration = PARTICLE_SHADER_PACK_INTEGRATION.get();
             hexSprayRedirect = PARTICLE_HEX_SPRAY_REDIRECT.get();
-            allvrGpuPipeline = ALLVR_GPU_PIPELINE.get();
-            allvrIrisIntegration = ALLVR_IRIS_INTEGRATION.get();
-            allvrIrisShadowPass = ALLVR_IRIS_SHADOW_PASS.get();
             allvrLod = ALLVR_LOD.get();
         }
     }

@@ -1,0 +1,10 @@
+// Development-only sources/resources; never included by a normal build.
+gradle.projectsEvaluated {
+    def project = gradle.rootProject
+    def mode = project.findProperty('allvrTestPack') ?: 'vanilla'
+    if (!(mode in ['vanilla', 'terralith'])) throw new GradleException('allvrTestPack must be vanilla or terralith')
+    project.sourceSets.main.java.srcDir(project.file('src/worldgenTest/java'))
+    project.sourceSets.main.resources.srcDir(project.file('build/allvr-worldgen-test-resources-' + mode))
+    project.neoForge.runs.gameTestServer.gameDirectory = project.file('build/allvr-worldgen-test-run-' + mode)
+    project.neoForge.runs.gameTestServer.systemProperty('allvr.testTerralith', (mode == 'terralith').toString())
+}

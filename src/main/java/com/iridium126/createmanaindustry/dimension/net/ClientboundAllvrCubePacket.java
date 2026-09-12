@@ -10,7 +10,6 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -21,7 +20,6 @@ import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 
-import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
 /**
@@ -33,15 +31,12 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  *                                   cube costs ~100 bytes, an air cube ~50)
  *   varint BE count
  *     BE × { short cellIndex, update-tag NBT }   (cell = y&lt;&lt;10 | z&lt;&lt;5 | x, 15 bit)
- *   varint emitter count
- *     emitter × { short cellIndex, varint emission }
  * </pre>
  * The position is {@link AllvrCubePos#asLong()} written directly (21 bit per
  * axis) — the vanilla section/position narrow types are never used.
  * <p>
- * Light is carried as emitter events only; there is deliberately no
- * light-engine data on the wire (the client builds its own synthetic light,
- * roadmap phase 3+).
+ * Light is derived from the streamed block states by the client-side vanilla
+ * light engine; no auxiliary light data is sent.
  */
 public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implements CustomPacketPayload {
 
@@ -50,6 +45,11 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundAllvrCubePacket> STREAM_CODEC =
         StreamCodec.of(ClientboundAllvrCubePacket::encode, ClientboundAllvrCubePacket::decode);
+
+    /** Hard element caps (sodium-parity plan §7.1): one entry per cube cell
+     *  each — anything above can only be a malformed/hostile stream, and the
+     *  client must reject it instead of looping on a giant count. */
+    public static final int MAX_BLOCK_ENTRIES = 32 * 32 * 32;
 
     private static void encode(RegistryFriendlyByteBuf buffer, ClientboundAllvrCubePacket p) {
         buffer.writeLong(p.cubePos);
@@ -79,25 +79,31 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
             CompoundTag tag = entry.getValue().getUpdateTag(registryAccess);
             buf.writeNbt(tag.isEmpty() ? null : tag);
         }
-        Int2IntMap emitters = cube.getEmitters();
-        buf.writeVarInt(emitters.size());
-        for (Int2IntMap.Entry entry : emitters.int2IntEntrySet()) {
-            buf.writeShort(entry.getIntKey());
-            buf.writeVarInt(entry.getIntValue());
-        }
         byte[] payload = new byte[byteBuf.readableBytes()];
         byteBuf.readBytes(payload);
         byteBuf.release();
         return new ClientboundAllvrCubePacket(cube.getPos().asLong(), payload);
     }
 
-    /** Called on the client; decoded and applied on the main thread. */
+    /**
+     * Called on the client.  The packet bytes have already been copied by the
+     * network codec; the client cache decodes the eight sections on its
+     * bounded decode executor and only publishes the finished cube on the
+     * game thread.  Vanilla follows the same split: packet IO/deserialization
+     * is kept away from the render/game tick while section meshes are queued
+     * after the chunk becomes visible.
+     */
     public static void handle(ClientboundAllvrCubePacket packet, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> AllvrClientCubeCache.applyCube(packet));
+        AllvrClientCubeCache.queueCube(packet);
     }
 
-    /** Client-side decode into a fresh {@link AllvrCube} (main thread). */
-    public AllvrCube decodeCube(Level level, RegistryAccess registryAccess) {
+    /** Client-side decode into a fresh unpublished {@link AllvrCube}.
+     *  Throws on any structural violation (element count over the cap, a cell
+     *  index outside the 15-bit cube layout, trailing bytes) so the caller
+     *  rejects the whole packet instead of half-applying it.  This method does
+     *  not touch a live level or bind block-entity tickers, so it is safe to
+     *  run on the client packet decode executor. */
+    public AllvrCube decodeCube(RegistryAccess registryAccess) {
         AllvrCubePos pos = AllvrCubePos.fromLong(cubePos);
         AllvrCube cube = new AllvrCube(pos, registryAccess.registryOrThrow(Registries.BIOME));
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.wrappedBuffer(payload));
@@ -109,31 +115,46 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
         int baseY = pos.minBlockY();
         int baseZ = pos.minBlockZ();
         int beCount = buf.readVarInt();
+        if (beCount < 0 || beCount > MAX_BLOCK_ENTRIES) {
+            throw new IllegalArgumentException("cube BE count out of range: " + beCount);
+        }
         for (int i = 0; i < beCount; i++) {
             int cell = buf.readShort() & 0xFFFF;
+            requireCell(cell);
             CompoundTag tag = buf.readNbt();
             BlockPos worldPos = new BlockPos(baseX + (cell & 31), baseY + (cell >> 10), baseZ + ((cell >> 5) & 31));
             BlockState state = cube.getBlockState(worldPos);
             if (state.getBlock() instanceof net.minecraft.world.level.block.EntityBlock entityBlock) {
                 BlockEntity be = entityBlock.newBlockEntity(worldPos, state);
                 if (be != null) {
-                    be.setLevel(level);
                     if (tag != null) {
                         be.loadWithComponents(tag, registryAccess);
                     }
                     cube.putBlockEntity(worldPos, be);
-                    // bind the ticker for the streamed state (the vanilla chunk
-                    // packet path does the same for its BEs)
-                    cube.updateBlockEntity(level, worldPos, state);
                 }
             }
         }
-        int emitterCount = buf.readVarInt();
-        for (int i = 0; i < emitterCount; i++) {
-            int cell = buf.readShort() & 0xFFFF;
-            int emission = buf.readVarInt();
-            cube.putEmitter(new BlockPos(baseX + (cell & 31), baseY + (cell >> 10), baseZ + ((cell >> 5) & 31)), emission);
+        if (buf.readableBytes() != 0) {
+            throw new IllegalArgumentException("cube payload has " + buf.readableBytes()
+                + " trailing bytes — codec mismatch");
         }
         return cube;
+    }
+
+    /**
+     * Compatibility overload for callers that still pass a level.  Level
+     * access is intentionally ignored during decode; {@link AllvrCube#onLoad}
+     * binds the level and rebinds tickers when the cube is published on the
+     * client thread.
+     */
+    public AllvrCube decodeCube(net.minecraft.world.level.Level level, RegistryAccess registryAccess) {
+        return decodeCube(registryAccess);
+    }
+
+    /** Cell layout is y&lt;&lt;10 | z&lt;&lt;5 | x over a 32³ cube (15 bits). */
+    private static void requireCell(int cell) {
+        if (cell > 32767) {
+            throw new IllegalArgumentException("cube cell index out of range: " + cell);
+        }
     }
 }

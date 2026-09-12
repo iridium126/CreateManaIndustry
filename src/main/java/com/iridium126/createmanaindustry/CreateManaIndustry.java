@@ -46,10 +46,6 @@ import com.iridium126.createmanaindustry.dimension.AllvrServerHandler;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrBlockUpdatePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrForgetCubePacket;
-import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodBitmapPacket;
-import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodForgetPacket;
-import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrLodMeshPacket;
-import com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrLodRequestPacket;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.level.BlockEvent;
@@ -79,16 +75,6 @@ public class CreateManaIndustry {
     public static boolean VEIL_ACTIVE = false;
     public static boolean ARS_ACTIVE = false;
     public static boolean IRISVEIL_ACTIVE = false;
-    public static boolean IRIS_ACTIVE = false;
-    /**
-     * A voxy port is installed. Voxy owns the pack-facing VOXY surface globally
-     * (the {@code VOXY} define via its StandardMacros hook, the vx* uniforms and
-     * depth samplers, the extended colortex set), so ALLVR's shared-surface hooks
-     * (mixin.allvriris.shared.*) are apply-time gated off while this is set.
-     * ALLVR's own patch pipeline still coexists with voxy (its duck interfaces
-     * and fields are separately named).
-     */
-    public static boolean VOXY_PORT_ACTIVE = false;
 
     public static final CreateRegistrate REGISTRATE = CreateRegistrate.create(MODID);
 
@@ -114,10 +100,9 @@ public class CreateManaIndustry {
         VEIL_ACTIVE = ModList.get().isLoaded("veil");
         ARS_ACTIVE = ModList.get().isLoaded("ars_nouveau");
         IRISVEIL_ACTIVE = ModList.get().isLoaded("irisveil");
-        IRIS_ACTIVE = ModList.get().isLoaded("iris");
-        VOXY_PORT_ACTIVE = ModList.get().isLoaded("voxy");
 
         REGISTRATE.registerEventListeners(modEventBus);
+        com.iridium126.createmanaindustry.dimension.gen.AllvrChunkGenerator.register(modEventBus);
         modEventBus.addListener(CMICapabilities::register);
         modEventBus.addListener(CreateManaIndustry::registerPayloads);
         CMICreativeModeTabs.register(modEventBus);
@@ -221,8 +206,8 @@ public class CreateManaIndustry {
                 ServerboundStormPositionsPacket.TYPE,
                 ServerboundStormPositionsPacket.STREAM_CODEC,
                 ServerboundStormPositionsPacket::handle);
-        // Allay dimension cube streaming: block data + block entities + light
-        // emitter events per cube, plus forget packets on subscription exit.
+        // Allay dimension cube streaming: block data + block entities; the
+        // client-side vanilla light engine derives light from block states.
         registrar.playToClient(
                 ClientboundAllvrCubePacket.TYPE,
                 ClientboundAllvrCubePacket.STREAM_CODEC,
@@ -235,25 +220,6 @@ public class CreateManaIndustry {
                 ClientboundAllvrBlockUpdatePacket.TYPE,
                 ClientboundAllvrBlockUpdatePacket.STREAM_CODEC,
                 ClientboundAllvrBlockUpdatePacket::handle);
-        // Allay dimension LOD pipeline (4c-1): surface-node bitmaps, batched
-        // mesh requests, mesh responses (vanilla state ids, client-remapped)
-        // and per-node invalidation.
-        registrar.playToClient(
-                ClientboundAllvrLodBitmapPacket.TYPE,
-                ClientboundAllvrLodBitmapPacket.STREAM_CODEC,
-                ClientboundAllvrLodBitmapPacket::handle);
-        registrar.playToClient(
-                ClientboundAllvrLodMeshPacket.TYPE,
-                ClientboundAllvrLodMeshPacket.STREAM_CODEC,
-                ClientboundAllvrLodMeshPacket::handle);
-        registrar.playToClient(
-                ClientboundAllvrLodForgetPacket.TYPE,
-                ClientboundAllvrLodForgetPacket.STREAM_CODEC,
-                ClientboundAllvrLodForgetPacket::handle);
-        registrar.playToServer(
-                ServerboundAllvrLodRequestPacket.TYPE,
-                ServerboundAllvrLodRequestPacket.STREAM_CODEC,
-                ServerboundAllvrLodRequestPacket::handle);
     }
 
     /**

@@ -74,9 +74,9 @@ public class CreateManaIndustryClient {
         // NB: Stage is a plain class of constants (not an enum) in this NeoForge
         // version, so stage dispatch must use identity comparison, not switch.
         var stage = event.getStage();
-        // ALLVR terrain: AFTER_SKY normally, AFTER_LEVEL under an active iris
-        // pack (stage-adaptive coexistence, chosen inside the renderer).
-        com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE.onRenderStage(event);
+        // ALLVR terrain is rendered by Sodium's normal terrain pass.  There is
+        // deliberately no second ALLVR terrain draw here; Iris therefore sees
+        // the same pass/framebuffer/material path as ordinary Sodium sections.
         if (stage == RenderLevelStageEvent.Stage.AFTER_SKY) {
             CMIParticleEngine.INSTANCE.beginFrame(event.getCamera(),
                     event.getModelViewMatrix(), event.getProjectionMatrix(), event.getPartialTick());
@@ -97,10 +97,16 @@ public class CreateManaIndustryClient {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level != null
             && mc.level.dimension() == com.iridium126.createmanaindustry.dimension.AllvrDimensions.ALLAY_LEVEL) {
+            // Publish packet decodes prepared off-thread. The handoff is
+            // drained completely; there is no client-thread quota here.
+            com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.tick();
             com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.tickBlockEntities();
-            // LOD request walk (bitmaps → batched C2S mesh requests + eviction)
-            com.iridium126.createmanaindustry.client.dimension.AllvrLodClientState.tick();
+            // Voxy is the client-side LOD owner.  Cube arrivals are ingested
+            // through Voxy's native section pipeline; there is no Allay LOD
+            // request/response protocol or server-side LOD state anymore.
+            com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest.tick();
         }
+        com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.tick();
     }
 
     /** Releases the GPU particle engine's resources when the game shuts down. */
@@ -154,6 +160,14 @@ public class CreateManaIndustryClient {
 
     @SubscribeEvent
     private static void onClientSetup(FMLClientSetupEvent event) {
+        var sodium = com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumCompatibilityProbe.probe();
+        if (!sodium.available()) {
+            throw new IllegalStateException("Create: Mana Industry requires Sodium "
+                + com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumCompatibilityProbe.VERSION_PREFIX
+                + " for the Allay terrain bridge: " + sodium.reason());
+        }
+        CreateManaIndustry.LOGGER.info("[Allvr] Sodium native terrain bridge enabled: adapter Sodium_0813_1211 ({})",
+            sodium.reason());
         event.enqueueWork(() -> {
             PonderIndex.addPlugin(new CMIPonderPlugin());
 
@@ -197,10 +211,11 @@ public class CreateManaIndustryClient {
             // Allay-dimension streamed cubes die with the level (dimension
             // switch or logout); the server restarts the stream on re-entry.
             com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.clear();
-            // LOD state (bitmaps, pending requests, meshed set) with them
-            com.iridium126.createmanaindustry.client.dimension.AllvrLodClientState.clear();
-            // and the renderer-side cube geometry (arena ranges + slots) with them
-            com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderer.INSTANCE.dropLevel();
+            // Voxy owns persistent LOD state; only transient Allay ingest
+            // queues are cleared when the client level goes away.
+            com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest.clear();
+            // and the Sodium-side section registrations with them
+            com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.clear();
             // The particle engine is self-hosted GL — reset regardless of Veil.
             // The reset must be SYNCHRONOUS here (NeoForge posts Unload inside
             // setLevel, BEFORE the dimension loading screen): the old queued
@@ -223,6 +238,8 @@ public class CreateManaIndustryClient {
             CMIParticleEngine.INSTANCE.onLevelChanged();
             // Bind the cube cache to the new client level (allay dimension only).
             com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.onLevelChanged(clientLevel);
+            com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.bindLevel(clientLevel);
+            com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest.bindLevel(clientLevel);
         }
     }
 }

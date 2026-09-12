@@ -181,7 +181,27 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
+// The persistence unit tests compile/run against the mod's own classes plus
+// the (registry-free) Minecraft classes — ModDevGradle only wires the main
+// source set, so extend the test classpaths from the main ones.
+configurations {
+    testCompileClasspath.extendsFrom compileClasspath
+    testRuntimeClasspath.extendsFrom runtimeClasspath
+    // Sodium's CurseForge artifact is a NeoForge loader jar whose named
+    // implementation is nested under META-INF/jarjar.
+    sodiumDistribution
+    compileOnly.extendsFrom sodiumDistribution
+}
+
+def sodiumCoreJar = layout.buildDirectory.file("generated/sodium/sodium-core.jar")
+
 dependencies {
+    // region3d persistence unit tests (pure JVM; plan P0/P2/P3). Test-only —
+    // never published; no legacy regionlib dependency is introduced.
+    testImplementation platform("org.junit:junit-bom:5.10.2")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
@@ -210,6 +230,12 @@ dependencies {
     compileOnly "net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}"
     implementation "maven.modrinth:3KUWeVhG:dqlL6EvF" // Veil
     compileOnly "curse.maven:irisshaders-455508:8242804"
+    sodiumDistribution "curse.maven:sodium-394468:8756580"
+    compileOnly files(sodiumCoreJar)
+    // Voxy runtime adapter (voxy integration plan §8.2): compile against the
+    // verified local build, never bundle it — Voxy stays a user-installed
+    // optional dependency and its classes must not enter the CMI jar.
+    compileOnly files("run/mods/voxy-0.2.15-beta+1.21.1-neoforge.jar")
     // GLSL AST transformation for the shader-pack particle path. Provided at runtime
     // Provided by iris-veil-compat (JarJar) -- compile against 2.0.1, never bundle (AGPL).
     compileOnly "io.github.douira:glsl-transformer:2.0.1"
@@ -271,6 +297,61 @@ dependencies {
     runtimeOnly "curse.maven:cardinal-components-api-318449:7250871"
 }
 
+def sodiumDistributionFiles = configurations.getByName("sodiumDistribution").files
+
+// CurseForge's Sodium NeoForge jar is a loader/container jar. Extract its
+// nested named implementation automatically so private Sodium classes remain
+// available to compileJava without committing a copied core jar to libs/.
+def extractSodiumCoreJar = tasks.register("extractSodiumCoreJar") {
+    group = "sodium"
+    description = "Extracts Sodium's nested named implementation jar for compilation"
+    inputs.files(sodiumDistributionFiles)
+    outputs.file(sodiumCoreJar)
+
+    doLast {
+        def distribution = sodiumDistributionFiles
+                .find { it.name.toLowerCase(java.util.Locale.ROOT).contains("sodium") }
+        if (distribution == null) {
+            throw new GradleException("Could not resolve the Sodium CurseForge distribution jar")
+        }
+
+        def output = sodiumCoreJar.get().asFile
+        output.parentFile.mkdirs()
+        def outer = new java.util.zip.ZipFile(distribution)
+        try {
+            def nested = outer.entries().find { entry ->
+                !entry.directory
+                        && entry.name.startsWith("META-INF/jarjar/net.caffeinemc.sodium-")
+                        && entry.name.endsWith("-mod.jar")
+            }
+            if (nested == null) {
+                throw new GradleException("Sodium distribution does not contain a nested named implementation jar: ${distribution}")
+            }
+
+            def input = outer.getInputStream(nested)
+            try {
+                def outputStream = new FileOutputStream(output)
+                try {
+                    input.transferTo(outputStream)
+                } finally {
+                    outputStream.close()
+                }
+            } finally {
+                input.close()
+            }
+        } finally {
+            outer.close()
+        }
+    }
+}
+
+tasks.named("compileJava") {
+    dependsOn(extractSodiumCoreJar)
+}
+tasks.named("compileTestJava") {
+    dependsOn(extractSodiumCoreJar)
+}
+
 // This block of code expands all declared replace properties in the specified resource targets.
 // A missing property will result in an error. Properties are expanded using ${} Groovy notation.
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
@@ -318,5 +399,13 @@ idea {
     module {
         downloadSources = true
         downloadJavadoc = true
+    }
+}
+// region3d persistence unit tests (plan §10.1): pure JVM, no game launch.
+tasks.named('test', Test) {
+    useJUnitPlatform()
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
     }
 }

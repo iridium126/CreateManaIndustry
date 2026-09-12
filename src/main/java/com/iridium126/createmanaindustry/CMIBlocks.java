@@ -164,6 +164,7 @@ public final class CMIBlocks {
             .block("molten_salt_fuel_tank", FuelTankBlock::new)
             .initialProperties(SharedProperties::softMetal)
             .properties(p -> p.noOcclusion()
+                    .lightLevel(state -> state.getValue(FuelTankBlock.LIGHT_LEVEL))
                     .isRedstoneConductor((p1, p2, p3) -> true))
             .transform(TagGen.pickaxeOnly())
             .blockstate((c, p) -> p.getVariantBuilder(c.get())
@@ -176,7 +177,7 @@ public final class CMIBlocks {
                                 .modelFile(p.models()
                                         .getExistingFile(p.modLoc("block/molten_salt_fuel_tank/" + variant)))
                                 .build();
-                    }))
+                    }, FuelTankBlock.LIGHT_LEVEL))
             .onRegister(CreateRegistrate.blockModel(() -> FuelTankModel::new))
             .transform(mountedFluidStorage(CMIMountedStorageTypes.MOLTEN_SALT_FUEL_TANK))
             .onRegister(movementBehaviour(new FuelTankMovementBehavior()))

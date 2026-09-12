@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.dimension.cube;
 
-import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -15,6 +14,8 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.PalettedContainerRO;
+import net.minecraft.world.level.chunk.DataLayer;
 
 /**
  * A 32×32×32 cube — the allay dimension's unit of block data, mirroring
@@ -24,14 +25,47 @@ import net.minecraft.world.level.chunk.PalettedContainer;
  * <p>
  * Sections default to air with a plains biome (vanilla
  * {@link LevelChunkSection#LevelChunkSection(Registry)} defaults), matching
- * the dimension's fixed-biome design. Storage is in-memory only until the
- * region3d persistence stage (roadmap phase 6).
+ * the dimension's fixed-biome design.
+ * <p>
+ * Persistence (roadmap phase 6): the block and light versions form the
+ * dirty/versioning protocol of the save pipeline — every authoritative change
+ * bumps one of them, the serializer snapshots the cube and records both queued
+ * versions, and {@link #needsSnapshot()} is the single
+ * "must snapshot before this cube may leave memory" question. {@link #onLoad}
+ * / {@link #onUnload} bracket the BE lifecycle the way {@code LevelChunk}
+ * does; the loader installs restored sections/BEs through the dedicated
+ * {@code install*} methods so deserialization never walks the live
+ * {@code setBlockState} path (no dirty marking, no neighbour updates).
  */
 public final class AllvrCube {
 
     public static final int SECTIONS_PER_CUBE = 8;
 
     private final AllvrCubePos pos;
+    /**
+     * Bumped on every authoritative mutation (block write, BE content
+     * change). Monotonic per cube instance; snapshots record the value they
+     * captured so a late older write can never be mistaken for the newest
+     * state (plan §8.3).
+     */
+    private long mutationVersion;
+    /**
+     * Version of the newest snapshot successfully handed to the IO worker.
+     * {@code mutationVersion > queuedVersion} ⟺ dirty for saving.
+     */
+    private long queuedVersion;
+    /** Bumped when a published block/sky light value changes. */
+    private long lightVersion;
+    /** Light version captured by the newest snapshot handed to the IO worker. */
+    private long queuedLightVersion;
+    /**
+     * True when the cube's content came from (or has reached) persistent
+     * storage — generated and edited cubes both override deterministic
+     * regeneration on the next load.
+     */
+    private boolean persistedOverride;
+    /** Guards double {@link #onLoad}/{@link #onUnload} (mirrors ChunkAccess.loaded). */
+    private boolean loaded;
     private final LevelChunkSection[] sections = new LevelChunkSection[SECTIONS_PER_CUBE];
     /**
      * Block entities keyed by the 15-bit in-cube cell index. Never key by
@@ -40,13 +74,12 @@ public final class AllvrCube {
      */
     private final Int2ObjectOpenHashMap<BlockEntity> blockEntities = new Int2ObjectOpenHashMap<>();
     /**
-     * Light-emitting blocks (cell index → emission) — the wire-format "light
-     * source events" of the cube. Maintained on setBlock on the server,
-     * filled from the packet on the client; consumed by the phase-3
-     * synthetic light sampler. The island generator only produces
-     * stone/dirt/grass, so generated cubes start without emitters.
+     * Light layers decoded from a persisted record. They stay off the live
+     * engine until the cube is published on the server thread, which keeps
+     * deserialization free of queue work and dirty notifications.
      */
-    private final Int2IntOpenHashMap emitters = new Int2IntOpenHashMap();
+    private DataLayer[] restoredSkyLight;
+    private DataLayer[] restoredBlockLight;
     /**
      * Block-entity tickers keyed by the 15-bit cell index, resolved from
      * {@code BlockState#getTicker} at creation/rebind time — the same caching
@@ -66,6 +99,11 @@ public final class AllvrCube {
 
     public AllvrCubePos getPos() {
         return pos;
+    }
+
+    public Holder<Biome> getNoiseBiome(int x, int y, int z) {
+        return sections[sliceIndex((x & 7) >> 2, (y & 7) >> 2, (z & 7) >> 2)]
+            .getNoiseBiome(x & 3, y & 3, z & 3);
     }
 
     /**
@@ -104,7 +142,162 @@ public final class AllvrCube {
         int lx = AllvrCoords.blockToLocal(worldPos.getX());
         int ly = AllvrCoords.blockToLocal(worldPos.getY());
         int lz = AllvrCoords.blockToLocal(worldPos.getZ());
-        return sections[sectionIndex(lx, ly, lz)].setBlockState(lx & 15, ly & 15, lz & 15, state, useLocks);
+        BlockState old = sections[sectionIndex(lx, ly, lz)].setBlockState(lx & 15, ly & 15, lz & 15, state, useLocks);
+        if (old != null && !old.equals(state)) {
+            this.markDirty();
+        }
+        return old;
+    }
+
+    // ---- persistence / lifecycle ------------------------------------------
+
+    public long mutationVersion() {
+        return mutationVersion;
+    }
+
+    /** Bumps the mutation version — called after every authoritative change. */
+    public void markDirty() {
+        mutationVersion++;
+    }
+
+    public boolean needsSnapshot() {
+        return mutationVersion > queuedVersion || lightVersion > queuedLightVersion;
+    }
+
+    /** Records that a snapshot of {@code version} was enqueued (never regresses). */
+    public void markQueued(long version) {
+        markQueued(version, lightVersion);
+    }
+
+    /** Records both content and light versions captured by one snapshot. */
+    public void markQueued(long version, long capturedLightVersion) {
+        if (version > queuedVersion) {
+            queuedVersion = version;
+        }
+        if (capturedLightVersion > queuedLightVersion) {
+            queuedLightVersion = capturedLightVersion;
+        }
+    }
+
+    public long lightVersion() {
+        return lightVersion;
+    }
+
+    /** Marks a published light change without treating it as a block mutation. */
+    public void markLightDirty() {
+        lightVersion++;
+    }
+
+    public boolean persistedOverride() {
+        return persistedOverride;
+    }
+
+    /** Marks the cube as storage-backed (set once; never cleared on a live cube). */
+    public void markPersistedOverride() {
+        this.persistedOverride = true;
+    }
+
+    public boolean isLoaded() {
+        return loaded;
+    }
+
+    /**
+     * Activates restored (or freshly generated) block entities: level binding,
+     * removal-flag clear and ticker rebind — the {@code LevelChunk#postProcessGeneration}
+     * / BE-load slice of vanilla. Idempotent.
+     */
+    public void onLoad(Level level) {
+        if (this.loaded) {
+            return;
+        }
+        this.loaded = true;
+        for (BlockEntity be : this.blockEntities.values()) {
+            be.setLevel(level);
+            be.clearRemoved();
+        }
+        this.rebindAllTickers(level);
+    }
+
+    /**
+     * Deactivates the cube before it leaves memory: stops tickers and marks
+     * every BE removed — lifecycle cleanup only, never a data change (the
+     * save snapshot is taken <i>before</i> this runs; plan §7.2).
+     */
+    public void onUnload() {
+        for (BlockEntity be : this.blockEntities.values()) {
+            if (be != null) {
+                be.setRemoved();
+            }
+        }
+        this.tickers.clear();
+        this.loaded = false;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void rebindAllTickers(Level level) {
+        for (it.unimi.dsi.fastutil.ints.Int2ObjectMap.Entry<BlockEntity> e : this.blockEntities.int2ObjectEntrySet()) {
+            BlockEntity be = e.getValue();
+            if (be == null || be.isRemoved()) {
+                continue;
+            }
+            BlockPos pos = be.getBlockPos();
+            BlockState state = this.getBlockState(pos);
+            BlockEntityTicker<BlockEntity> ticker =
+                state.getTicker(level, (BlockEntityType<BlockEntity>) be.getType());
+            if (ticker == null) {
+                this.tickers.remove(e.getIntKey());
+            } else {
+                this.tickers.put(e.getIntKey(), ticker);
+            }
+        }
+    }
+
+    // ---- loader-only installation (persistence path) ------------------------
+
+    /**
+     * Replaces one section wholesale — loader path only. Recounts the section
+     * through the container constructor, never touching the live write path.
+     */
+    public void installSection(int index, PalettedContainer<BlockState> states,
+                               PalettedContainerRO<Holder<Biome>> biomes) {
+        if (index < 0 || index >= SECTIONS_PER_CUBE) {
+            throw new IllegalArgumentException("section index " + index + " outside 0.." + (SECTIONS_PER_CUBE - 1));
+        }
+        this.sections[index] = new LevelChunkSection(states, biomes);
+    }
+
+    /** Registers a restored block entity (loader path; ticker binding happens in {@link #onLoad}). */
+    public void installBlockEntity(BlockEntity be) {
+        this.blockEntities.put(localIndex(be.getBlockPos()), be);
+    }
+
+    /** Loader-only hand-off for light layers decoded from the cube record. */
+    public void installRestoredLight(DataLayer[] sky, DataLayer[] block) {
+        if ((sky != null && sky.length != SECTIONS_PER_CUBE)
+            || (block != null && block.length != SECTIONS_PER_CUBE)) {
+            throw new IllegalArgumentException("restored light arrays must contain " + SECTIONS_PER_CUBE + " sections");
+        }
+        this.restoredSkyLight = sky;
+        this.restoredBlockLight = block;
+    }
+
+    /** Consumes loader-only sky data when the cube is published to the light engine. */
+    public DataLayer[] takeRestoredSkyLight() {
+        DataLayer[] result = this.restoredSkyLight;
+        this.restoredSkyLight = null;
+        return result;
+    }
+
+    /** Consumes loader-only block data when the cube is published to the light engine. */
+    public DataLayer[] takeRestoredBlockLight() {
+        DataLayer[] result = this.restoredBlockLight;
+        this.restoredBlockLight = null;
+        return result;
+    }
+
+    /** Rebinds block-entity tickers after a bulk load. */
+    public void rebuildDerivedState(Level level) {
+        this.rebindAllTickers(level);
     }
 
     // ---- block entities -------------------------------------------------
@@ -144,6 +337,7 @@ public final class AllvrCube {
             existing = be;
         }
         if (existing != null) {
+            existing.setBlockState(newState);
             this.rebindTicker(level, pos, newState, existing);
         }
     }
@@ -157,8 +351,13 @@ public final class AllvrCube {
     }
 
     public BlockEntity removeBlockEntity(BlockPos worldPos) {
-        this.tickers.remove(localIndex(worldPos));
-        return blockEntities.remove(localIndex(worldPos));
+        int cell = localIndex(worldPos);
+        this.tickers.remove(cell);
+        BlockEntity removed = blockEntities.remove(cell);
+        if (removed != null) {
+            removed.setRemoved();
+        }
+        return removed;
     }
 
     public Int2ObjectOpenHashMap<BlockEntity> getBlockEntities() {
@@ -203,20 +402,6 @@ public final class AllvrCube {
         } else {
             this.tickers.put(localIndex(pos), ticker);
         }
-    }
-
-    // ---- light emitters ----------------------------------------------------
-
-    public void putEmitter(BlockPos worldPos, int emission) {
-        emitters.put(localIndex(worldPos), emission);
-    }
-
-    public void removeEmitter(BlockPos worldPos) {
-        emitters.remove(localIndex(worldPos));
-    }
-
-    public Int2IntOpenHashMap getEmitters() {
-        return emitters;
     }
 
     /** Holder of the cube's uniform biome (plains), for future consumers. */

@@ -14,6 +14,27 @@ import net.minecraft.core.BlockPos;
  */
 public final class AllvrDimensionLimits {
 
+    public static final int VANILLA_MIN_Y = -128;
+    public static final int VANILLA_MAX_Y = 384;
+
+    /** One extra chunk of prefetch keeps crossings ahead of the visible band. */
+    public static boolean intersectsVanillaView(double playerY, int viewDistanceChunks) {
+        int reach = (viewDistanceChunks + 1) * 16;
+        return playerY + reach >= VANILLA_MIN_Y && playerY - reach < VANILLA_MAX_Y;
+    }
+
+    public static boolean isVanillaY(int y) {
+        return y >= VANILLA_MIN_Y && y < VANILLA_MAX_Y;
+    }
+
+    public static boolean isVanillaSection(int sectionY) {
+        return sectionY >= (VANILLA_MIN_Y >> 4) && sectionY < (VANILLA_MAX_Y >> 4);
+    }
+
+    public static boolean isVanillaCube(int cubeY) {
+        return cubeY >= (VANILLA_MIN_Y >> 5) && cubeY < (VANILLA_MAX_Y >> 5);
+    }
+
     /** Soft Y boundary, ±. Inside the CubePos encoding range with ~11% headroom. */
     public static final int Y_BOUND = 30_000_000;
 
@@ -25,7 +46,9 @@ public final class AllvrDimensionLimits {
     }
 
     public static boolean isInBounds(int x, int y, int z) {
-        return Math.abs(x) <= XZ_BOUND && Math.abs(y) <= Y_BOUND && Math.abs(z) <= XZ_BOUND;
+        return x >= -XZ_BOUND && x <= XZ_BOUND
+            && y >= -Y_BOUND && y <= Y_BOUND
+            && z >= -XZ_BOUND && z <= XZ_BOUND;
     }
 
     public static int clampY(int y) {

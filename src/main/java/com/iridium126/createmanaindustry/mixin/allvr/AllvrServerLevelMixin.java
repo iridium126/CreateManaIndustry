@@ -6,35 +6,24 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubeMap;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrServerLevelDuck;
 
+import net.minecraft.util.ProgressListener;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.chunk.LevelChunk;
 
 /**
- * Attaches the per-level {@link AllvrCubeMap} to the allay dimension's
- * {@link ServerLevel}. The map is created lazily on first block access or
- * tick (server thread only), so nothing runs for other dimensions and no
- * work happens before the dimension is actually entered.
- * <p>
- * Also cancels vanilla per-column chunk ticking ({@code tickChunk}: thunder
- * target search, ice/snow RNG and the per-section random-tick loop) inside
- * the allay dimension — columns are deterministic air shells whose sections
- * all fail the {@code isRandomlyTicking()} counter check, so the body is pure
- * overhead there, and cube blocks never receive random ticks through this
- * path anyway. Phase 7 replaces it with cube-side random/scheduled ticking
- * (doc §13); until then gameplay ticking is intentionally absent.
+ * Attaches the cube map and its independent persistence to the server level.
+ * Native chunk ticking, saving and closing proceed normally. Cube save hooks
+ * only flush an existing map, so saving does not initialize an unused store.
  */
 @Mixin(ServerLevel.class)
 public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
 
     @Unique
     private AllvrCubeMap allvr$cubeMap;
-
-    @Unique
-    private com.iridium126.createmanaindustry.dimension.lod.AllvrLodMap allvr$lodMap;
 
     @Override
     public AllvrCubeMap allvr$getCubeMap() {
@@ -43,9 +32,8 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
     }
 
     @Override
-    public com.iridium126.createmanaindustry.dimension.lod.AllvrLodMap allvr$getLodMap() {
-        this.allvr$lazilyCreate();
-        return allvr$lodMap;
+    public AllvrCubeMap allvr$peekCubeMap() {
+        return allvr$cubeMap;
     }
 
     @Unique
@@ -57,16 +45,64 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
         if (allvr$cubeMap == null) {
             allvr$cubeMap = new AllvrCubeMap(self);
         }
-        if (allvr$lodMap == null) {
-            allvr$lodMap = new com.iridium126.createmanaindustry.dimension.lod.AllvrLodMap(self, allvr$cubeMap);
-            allvr$cubeMap.setLodMap(allvr$lodMap);
+    }
+
+    /**
+     * HEAD of {@code save(progress, flush, skipSave)} — with saving enabled,
+     * every loaded dirty cube joins the ALLVR snapshot queue before the
+     * level-save event runs. Native column chunks remain in the vanilla save
+     * pipeline; this hook only adds the independent cube store.
+     */
+    @Inject(method = "save(Lnet/minecraft/util/ProgressListener;ZZ)V",
+        at = @At("HEAD"))
+    private void allvr$saveQueue(ProgressListener progress, boolean flush, boolean skipSave, CallbackInfo ci) {
+        if (skipSave) {
+            return;
+        }
+        AllvrCubeMap map = this.allvr$peekCubeMap();
+        if (map != null) {
+            try {
+                map.saveAll(false);
+            } catch (Exception e) {
+                CreateManaIndustry.LOGGER.error("[Allvr] queueing allvr cube save failed", e);
+            }
         }
     }
 
-    @Inject(method = "tickChunk", at = @At("HEAD"), cancellable = true)
-    private void allvr$skipTickChunk(LevelChunk chunk, int randomTickSpeed, CallbackInfo ci) {
-        if (((ServerLevel) (Object) this).dimension() == AllvrDimensions.ALLAY_LEVEL) {
-            ci.cancel();
+    /**
+     * RETURN of {@code save(progress, flush, skipSave)} — the {@code flush}
+     * variant blocks until every ALLVR record is durable (after the vanilla
+     * worker flush), mirroring {@code /save-all flush}.
+     */
+    @Inject(method = "save(Lnet/minecraft/util/ProgressListener;ZZ)V",
+        at = @At("RETURN"))
+    private void allvr$saveFlush(ProgressListener progress, boolean flush, boolean skipSave, CallbackInfo ci) {
+        if (skipSave || !flush) {
+            return;
+        }
+        AllvrCubeMap map = this.allvr$peekCubeMap();
+        if (map != null) {
+            map.saveAll(true); // throws on failure so /save-all cannot pretend success
         }
     }
+
+    /**
+     * HEAD of {@code close()} — idempotent allvr shutdown before the vanilla
+     * level resources close. Exceptions are caught: the vanilla close
+     * sequence must continue.
+     */
+    @Inject(method = "close()V", at = @At("HEAD"))
+    private void allvr$close(CallbackInfo ci) {
+        if (((ServerLevel) (Object) this).dimension() != AllvrDimensions.ALLAY_LEVEL) {
+            return;
+        }
+        if (allvr$cubeMap != null) {
+            try {
+                allvr$cubeMap.close();
+            } catch (Throwable t) {
+                CreateManaIndustry.LOGGER.error("[Allvr] closing allvr cube persistence failed", t);
+            }
+        }
+    }
+
 }

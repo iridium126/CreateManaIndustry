@@ -17,8 +17,8 @@ import net.neoforged.neoforge.event.tick.LevelTickEvent;
  * constructor on {@code NeoForge.EVENT_BUS}.
  * <ul>
  *   <li>{@code LevelTickEvent.Post} — drives cube generation + per-player
- *       streaming (the cube layer replaces the vanilla ticket machinery
- *       entirely; no DistanceManager/ChunkMap mixins are involved).</li>
+ *       streaming outside the central native chunk band. Vanilla owns the
+ *       central chunks independently.</li>
  *   <li>logout / dimension change — drops the player's cube subscription so
  *       the stream restarts cleanly on re-entry.</li>
  * </ul>
@@ -31,7 +31,6 @@ public final class AllvrServerHandler {
             AllvrCubeMap map = ((AllvrServerLevelDuck) serverLevel).allvr$getCubeMap();
             if (map != null) {
                 map.tick();
-                ((AllvrServerLevelDuck) serverLevel).allvr$getLodMap().tick();
             }
         }
     }
@@ -56,7 +55,6 @@ public final class AllvrServerHandler {
         if (allayLevel != null) {
             UUID uuid = player.getUUID();
             ((AllvrServerLevelDuck) allayLevel).allvr$getCubeMap().resetPlayer(uuid);
-            ((AllvrServerLevelDuck) allayLevel).allvr$getLodMap().resetPlayer(uuid);
         }
     }
 

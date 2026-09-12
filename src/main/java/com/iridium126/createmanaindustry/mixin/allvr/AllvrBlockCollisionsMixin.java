@@ -7,54 +7,36 @@ import org.spongepowered.asm.mixin.injection.At;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
-import com.iridium126.createmanaindustry.dimension.cube.AllvrCubeMap;
-import com.iridium126.createmanaindustry.dimension.cube.AllvrServerLevelDuck;
 
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockCollisions;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.CollisionGetter;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
 
-/**
- * The vanilla collision iterator ({@code Entity#collide}, suffocation checks
- * and {@code findSupportingBlock} all share it) does NOT go through
- * {@code Level#getBlockState}: per XZ column it fetches the chunk via
- * {@code getChunkForCollisions} and reads {@code LevelChunk#getBlockState}
- * directly (vanilla fast path). Inside the allay dimension those column
- * chunks are empty air shells and positions sit outside their section range
- * (reads as air), so entities fall through every island — on both the client
- * and the server.
- * <p>
- * Wrapping the iterator's single {@code BlockGetter#getBlockState} call site
- * routes allay reads to the cube data (client → streamed cube cache via the
- * common-side hook, server → the per-level cube map) and leaves every other
- * dimension untouched. Unloaded cubes resolve to air, mirroring vanilla's
- * "no collision in unloaded chunks" behavior without triggering generation.
- */
+/** Keeps the native cached-chunk collision fast path for queries contained in the chunk band. */
 @Mixin(BlockCollisions.class)
 public abstract class AllvrBlockCollisionsMixin {
+
+    @Shadow @Final private net.minecraft.world.phys.AABB box;
 
     @Shadow
     @Final
     private CollisionGetter collisionGetter;
 
-    @WrapOperation(method = "computeNext", at = @At(value = "INVOKE",
-        target = "Lnet/minecraft/world/level/BlockGetter;getBlockState(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState;"))
-    private BlockState allvr$collideGetBlockState(BlockGetter getter, BlockPos pos, Operation<BlockState> original) {
-        if (this.collisionGetter instanceof Level level && level.dimension() == AllvrDimensions.ALLAY_LEVEL) {
-            if (level.isClientSide) {
-                return AllvrClientBlockHook.resolve(pos);
-            }
-            if (level instanceof AllvrServerLevelDuck duck) {
-                AllvrCubeMap map = duck.allvr$getCubeMap();
-                return map == null ? Blocks.VOID_AIR.defaultBlockState() : map.getBlockState(pos);
-            }
+    /** A boundary-spanning iterator needs the Level's per-position routing for both stores. */
+    @WrapOperation(method = "getChunk", at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/world/level/CollisionGetter;getChunkForCollisions(II)Lnet/minecraft/world/level/BlockGetter;"))
+    private BlockGetter allvr$useCubeBackedGetter(CollisionGetter getter, int chunkX, int chunkZ,
+                                                   Operation<BlockGetter> original) {
+        if (this.collisionGetter instanceof Level level
+            && level.dimension() == AllvrDimensions.ALLAY_LEVEL
+            && (net.minecraft.util.Mth.floor(box.minY - 1.0E-7) - 1
+                    < com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.VANILLA_MIN_Y
+                || net.minecraft.util.Mth.floor(box.maxY + 1.0E-7) + 1
+                    >= com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.VANILLA_MAX_Y)) {
+            return level;
         }
-        return original.call(getter, pos);
+        return original.call(getter, chunkX, chunkZ);
     }
 }
