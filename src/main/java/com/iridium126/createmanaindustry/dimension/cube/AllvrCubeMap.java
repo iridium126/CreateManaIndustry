@@ -33,6 +33,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.LightLayer;
+import net.minecraft.core.Direction;
+import net.minecraft.world.entity.Entity;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
@@ -356,6 +358,98 @@ public final class AllvrCubeMap {
         }
         cube.markDirty();
         this.queueSnapshot(cube.getPos().asLong(), false);
+    }
+
+    /**
+     * Cube-aware equivalent of {@link Level#isLoaded(BlockPos)}.  This is a
+     * residency query only: unlike a block read or write it must never create
+     * a cube as a side effect.
+     */
+    public boolean isLoaded(BlockPos pos) {
+        if (!AllvrDimensionLimits.isInBounds(pos)) {
+            return false;
+        }
+        AllvrCube cube = this.cubes.get(AllvrCubePos.asLong(pos));
+        return cube != null && cube.isLoaded();
+    }
+
+    /**
+     * Cube-aware equivalent of {@link Level#setBlockEntity(BlockEntity)}.
+     * Native LevelChunk registration is deliberately bypassed for cube
+     * positions, while retaining vanilla's state/type validation and BE
+     * lifecycle bookkeeping.
+     */
+    public void setBlockEntity(BlockEntity blockEntity) {
+        BlockPos pos = blockEntity.getBlockPos().immutable();
+        if (!AllvrDimensionLimits.isInBounds(pos)) {
+            return;
+        }
+        AllvrCube cube = this.getOrGenerate(AllvrCubePos.of(pos));
+        if (cube == null) {
+            return;
+        }
+        BlockState state = cube.getBlockState(pos);
+        if (!state.hasBlockEntity()) {
+            CreateManaIndustry.LOGGER.warn(
+                "Trying to set block entity {} at position {}, but state {} does not allow it",
+                blockEntity, pos, state);
+            return;
+        }
+
+        BlockState entityState = blockEntity.getBlockState();
+        if (state != entityState) {
+            if (!blockEntity.getType().isValid(state)) {
+                CreateManaIndustry.LOGGER.warn(
+                    "Trying to set block entity {} at position {}, but state {} is not valid for its type",
+                    blockEntity, pos, state);
+                return;
+            }
+            if (state.getBlock() != entityState.getBlock()) {
+                CreateManaIndustry.LOGGER.warn(
+                    "Block state mismatch on block entity {} in position {}, {} != {}, updating",
+                    blockEntity, pos, entityState, state);
+            }
+            blockEntity.setBlockState(state);
+        }
+
+        blockEntity.setLevel(this.level);
+        blockEntity.clearRemoved();
+        BlockEntity previous = cube.getBlockEntity(pos);
+        if (previous != null && previous != blockEntity) {
+            previous.setRemoved();
+        }
+        cube.putBlockEntity(pos, blockEntity);
+        cube.rebuildDerivedState(this.level);
+        cube.markDirty();
+        refreshBeCube(cube);
+        queueSnapshot(cube.getPos().asLong(), false);
+        this.level.addFreshBlockEntities(java.util.List.of(blockEntity));
+    }
+
+    /** Cube-aware equivalent of {@link Level#removeBlockEntity(BlockPos)}. */
+    public BlockEntity removeBlockEntity(BlockPos pos) {
+        if (!AllvrDimensionLimits.isInBounds(pos)) {
+            return null;
+        }
+        AllvrCube cube = this.cubes.get(AllvrCubePos.asLong(pos));
+        if (cube == null) {
+            return null;
+        }
+        BlockEntity removed = cube.removeBlockEntity(pos);
+        if (removed != null) {
+            cube.markDirty();
+            refreshBeCube(cube);
+            queueSnapshot(cube.getPos().asLong(), false);
+        }
+        return removed;
+    }
+
+    /** Cube-aware equivalent of Level#loadedAndEntityCanStandOnFace. */
+    public boolean loadedAndEntityCanStandOnFace(BlockPos pos, Entity entity, Direction direction) {
+        if (!this.isLoaded(pos)) {
+            return false;
+        }
+        return this.getBlockState(pos).entityCanStandOnFace(this.level, pos, entity, direction);
     }
 
     /** Authoritative per-block push to every client subscribed to this cube

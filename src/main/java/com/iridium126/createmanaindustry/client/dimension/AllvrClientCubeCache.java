@@ -7,6 +7,8 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.Direction;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -136,6 +138,8 @@ public final class AllvrClientCubeCache {
                 ? sampleBlockLight(pos) : sampleSkyLight(pos),
             (pos, amount) -> Math.max(sampleBlockLight(pos), sampleSkyLight(pos) - amount));
         com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setBiomeResolver(AllvrClientCubeCache::getNoiseBiome);
+        com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setLoadedResolver(
+            AllvrClientCubeCache::isLoaded);
     }
 
     public static AllvrLightEngine lightEngine() {
@@ -207,6 +211,7 @@ public final class AllvrClientCubeCache {
             level = null;
             lightEngine = null;
             com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setLightResolver(null, null);
+            com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setLoadedResolver(null);
         }
     }
 
@@ -606,6 +611,95 @@ public final class AllvrClientCubeCache {
     public static BlockEntity getBlockEntity(BlockPos pos) {
         AllvrCube cube = cubes.get(com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.asLong(pos));
         return cube == null ? null : cube.getBlockEntity(pos);
+    }
+
+    /** Client-side residency query for common LevelReader routing. */
+    public static boolean isLoaded(BlockPos pos) {
+        if (!com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isInBounds(pos)) {
+            return false;
+        }
+        synchronized (LOCK) {
+            AllvrCube cube = cubes.get(AllvrCubePos.asLong(pos));
+            return level != null && level.dimension() == AllvrDimensions.ALLAY_LEVEL
+                && cube != null && cube.isLoaded();
+        }
+    }
+
+    /** Client-side equivalent of Level#setBlockEntity for cube positions. */
+    public static void setBlockEntity(BlockEntity blockEntity) {
+        ClientLevel clientLevel = level;
+        if (clientLevel == null || clientLevel.dimension() != AllvrDimensions.ALLAY_LEVEL) {
+            return;
+        }
+        BlockPos pos = blockEntity.getBlockPos().immutable();
+        if (!com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isInBounds(pos)) {
+            return;
+        }
+        boolean installed = false;
+        synchronized (LOCK) {
+            AllvrCube cube = cubes.get(AllvrCubePos.asLong(pos));
+            if (cube == null || !cube.isLoaded()) {
+                return;
+            }
+            BlockState state = cube.getBlockState(pos);
+            if (!state.hasBlockEntity()) {
+                return;
+            }
+            BlockState entityState = blockEntity.getBlockState();
+            if (state != entityState) {
+                if (!blockEntity.getType().isValid(state)) {
+                    return;
+                }
+                blockEntity.setBlockState(state);
+            }
+            blockEntity.setLevel(clientLevel);
+            blockEntity.clearRemoved();
+            BlockEntity previous = cube.getBlockEntity(pos);
+            if (previous != null && previous != blockEntity) {
+                previous.setRemoved();
+            }
+            cube.putBlockEntity(pos, blockEntity);
+            cube.rebuildDerivedState(clientLevel);
+            cube.markDirty();
+            refreshBeCube(cube.getPos().asLong(), cube);
+            contentRevision++;
+            installed = true;
+        }
+        if (installed) {
+            clientLevel.addFreshBlockEntities(java.util.List.of(blockEntity));
+        }
+    }
+
+    /** Client-side equivalent of Level#removeBlockEntity for cube positions. */
+    public static BlockEntity removeBlockEntity(BlockPos pos) {
+        if (!com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isInBounds(pos)) {
+            return null;
+        }
+        synchronized (LOCK) {
+            AllvrCube cube = cubes.get(AllvrCubePos.asLong(pos));
+            if (cube == null) {
+                return null;
+            }
+            BlockEntity removed = cube.removeBlockEntity(pos);
+            if (removed != null) {
+                cube.markDirty();
+                refreshBeCube(cube.getPos().asLong(), cube);
+                contentRevision++;
+            }
+            return removed;
+        }
+    }
+
+    /** Client-side equivalent of Level#loadedAndEntityCanStandOnFace. */
+    public static boolean loadedAndEntityCanStandOnFace(BlockPos pos, Entity entity, Direction direction) {
+        if (!com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isInBounds(pos)) {
+            return false;
+        }
+        synchronized (LOCK) {
+            AllvrCube cube = cubes.get(AllvrCubePos.asLong(pos));
+            return cube != null && cube.isLoaded()
+                && cube.getBlockState(pos).entityCanStandOnFace(level, pos, entity, direction);
+        }
     }
 
     public static int size() {

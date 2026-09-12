@@ -14,6 +14,9 @@ import com.iridium126.createmanaindustry.dimension.cube.AllvrCubeMap;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrServerLevelDuck;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.SectionPos;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -97,6 +100,135 @@ public abstract class AllvrLevelMixin {
         return self instanceof AllvrServerLevelDuck duck ? duck.allvr$getCubeMap() : null;
     }
 
+    /** Returns null when this is not a cube-backed Allay position. */
+    @Unique
+    private Boolean allvr$isCubeLoaded(BlockPos pos) {
+        Level self = (Level) (Object) this;
+        if (self.dimension() != AllvrDimensions.ALLAY_LEVEL
+            || AllvrDimensionLimits.isVanillaY(pos.getY())) {
+            return null;
+        }
+        if (self.isClientSide) {
+            return com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.isLoaded(pos);
+        }
+        AllvrCubeMap map = allvr$map();
+        return map == null ? Boolean.FALSE : map.isLoaded(pos);
+    }
+
+    /** Preserve LevelReader's native X/Z-only hasChunk query. */
+    @Unique
+    private boolean allvr$nativeHasChunk(int chunkX, int chunkZ) {
+        Level self = (Level) (Object) this;
+        return self.getChunkSource().hasChunk(chunkX, chunkZ);
+    }
+
+    /** Preserve LevelReader's native X/Z rectangle query. */
+    @Unique
+    private boolean allvr$nativeHasChunksAt(int fromX, int fromZ, int toX, int toZ) {
+        int minChunkX = SectionPos.blockToSectionCoord(Math.min(fromX, toX));
+        int maxChunkX = SectionPos.blockToSectionCoord(Math.max(fromX, toX));
+        int minChunkZ = SectionPos.blockToSectionCoord(Math.min(fromZ, toZ));
+        int maxChunkZ = SectionPos.blockToSectionCoord(Math.max(fromZ, toZ));
+        for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+            for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+                if (!allvr$nativeHasChunk(chunkX, chunkZ)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Checks every loaded cube intersecting an X/Y/Z box. The central band is
+     * checked through the native column cache; cube sections are checked by
+     * their resident 32-block cube key without generating anything.
+     */
+    @Unique
+    private boolean allvr$hasChunksAt(int fromX, int fromY, int fromZ,
+                                      int toX, int toY, int toZ) {
+        Level self = (Level) (Object) this;
+        int minX = Math.min(fromX, toX), maxX = Math.max(fromX, toX);
+        int minY = Math.min(fromY, toY), maxY = Math.max(fromY, toY);
+        int minZ = Math.min(fromZ, toZ), maxZ = Math.max(fromZ, toZ);
+        if (self.dimension() != AllvrDimensions.ALLAY_LEVEL) {
+            if (maxY < self.getMinBuildHeight() || minY >= self.getMaxBuildHeight()) {
+                return false;
+            }
+            return allvr$nativeHasChunksAt(minX, minZ, maxX, maxZ);
+        }
+        if (maxY < -AllvrDimensionLimits.Y_BOUND || minY > AllvrDimensionLimits.Y_BOUND) {
+            return false;
+        }
+
+        if (minY < AllvrDimensionLimits.VANILLA_MAX_Y
+            && maxY >= AllvrDimensionLimits.VANILLA_MIN_Y
+            && !allvr$nativeHasChunksAt(minX, minZ, maxX, maxZ)) {
+            return false;
+        }
+
+        int minCubeX = Math.floorDiv(minX, 32);
+        int maxCubeX = Math.floorDiv(maxX, 32);
+        int minCubeZ = Math.floorDiv(minZ, 32);
+        int maxCubeZ = Math.floorDiv(maxZ, 32);
+        int lowerMaxY = Math.min(maxY, AllvrDimensionLimits.VANILLA_MIN_Y - 1);
+        if (minY <= lowerMaxY
+            && !allvr$hasCubeRange(minCubeX, Math.floorDiv(minY, 32), minCubeZ,
+                maxCubeX, Math.floorDiv(lowerMaxY, 32), maxCubeZ)) {
+            return false;
+        }
+        int upperMinY = Math.max(minY, AllvrDimensionLimits.VANILLA_MAX_Y);
+        if (upperMinY <= maxY
+            && !allvr$hasCubeRange(minCubeX, Math.floorDiv(upperMinY, 32), minCubeZ,
+                maxCubeX, Math.floorDiv(maxY, 32), maxCubeZ)) {
+            return false;
+        }
+        return true;
+    }
+
+    @Unique
+    private boolean allvr$hasCubeRange(int minCubeX, int minCubeY, int minCubeZ,
+                                       int maxCubeX, int maxCubeY, int maxCubeZ) {
+        for (int cubeY = minCubeY; cubeY <= maxCubeY; cubeY++) {
+            for (int cubeZ = minCubeZ; cubeZ <= maxCubeZ; cubeZ++) {
+                for (int cubeX = minCubeX; cubeX <= maxCubeX; cubeX++) {
+                    BlockPos sample = new BlockPos(cubeX << 5, cubeY << 5, cubeZ << 5);
+                    Boolean loaded = allvr$isCubeLoaded(sample);
+                    if (!Boolean.TRUE.equals(loaded)) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    /** X/Z-only LevelReader overload. */
+    public boolean hasChunkAt(int x, int z) {
+        return allvr$nativeHasChunk(SectionPos.blockToSectionCoord(x), SectionPos.blockToSectionCoord(z));
+    }
+
+    /** Y-aware LevelReader overload used by neighbor and comparator updates. */
+    public boolean hasChunkAt(BlockPos pos) {
+        Boolean loaded = allvr$isCubeLoaded(pos);
+        return loaded != null ? loaded : allvr$nativeHasChunk(
+            SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()));
+    }
+
+    public boolean hasChunksAt(BlockPos from, BlockPos to) {
+        return allvr$hasChunksAt(from.getX(), from.getY(), from.getZ(),
+            to.getX(), to.getY(), to.getZ());
+    }
+
+    public boolean hasChunksAt(int fromX, int fromY, int fromZ,
+                               int toX, int toY, int toZ) {
+        return allvr$hasChunksAt(fromX, fromY, fromZ, toX, toY, toZ);
+    }
+
+    public boolean hasChunksAt(int fromX, int fromZ, int toX, int toZ) {
+        return allvr$nativeHasChunksAt(fromX, fromZ, toX, toZ);
+    }
+
     @Inject(method = "getBlockState", at = @At("HEAD"), cancellable = true)
     private void allvr$getBlockState(BlockPos pos, CallbackInfoReturnable<BlockState> cir) {
         AllvrCubeMap map = AllvrDimensionLimits.isVanillaY(pos.getY()) ? null : allvr$map();
@@ -133,6 +265,50 @@ public abstract class AllvrLevelMixin {
         AllvrCubeMap map = AllvrDimensionLimits.isVanillaY(pos.getY()) ? null : allvr$map();
         if (map != null) {
             cir.setReturnValue(map.getBlockEntity(pos));
+        }
+    }
+
+    @Inject(method = "setBlockEntity", at = @At("HEAD"), cancellable = true)
+    private void allvr$setBlockEntity(BlockEntity blockEntity, CallbackInfo ci) {
+        BlockPos pos = blockEntity.getBlockPos();
+        AllvrCubeMap map = AllvrDimensionLimits.isVanillaY(pos.getY()) ? null : allvr$map();
+        if (map != null) {
+            map.setBlockEntity(blockEntity);
+            ci.cancel();
+        }
+    }
+
+    @Inject(method = "removeBlockEntity", at = @At("HEAD"), cancellable = true)
+    private void allvr$removeBlockEntity(BlockPos pos, CallbackInfo ci) {
+        AllvrCubeMap map = AllvrDimensionLimits.isVanillaY(pos.getY()) ? null : allvr$map();
+        if (map != null) {
+            map.removeBlockEntity(pos);
+            // Level#removeBlockEntity always emits this comparator/neighbor
+            // notification, including when the target BE was already absent.
+            this.updateNeighbourForOutputSignal(pos, map.getBlockState(pos).getBlock());
+            ci.cancel();
+        }
+    }
+
+    @Inject(method = "isLoaded", at = @At("HEAD"), cancellable = true)
+    private void allvr$isLoaded(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
+        if (!AllvrDimensionLimits.isVanillaY(pos.getY())) {
+            Boolean loaded = allvr$isCubeLoaded(pos);
+            if (loaded != null) {
+                cir.setReturnValue(loaded);
+            }
+        }
+    }
+
+    @Inject(method = "loadedAndEntityCanStandOnFace", at = @At("HEAD"), cancellable = true)
+    private void allvr$loadedAndEntityCanStandOnFace(BlockPos pos, Entity entity,
+                                                      Direction direction,
+                                                      CallbackInfoReturnable<Boolean> cir) {
+        if (!AllvrDimensionLimits.isVanillaY(pos.getY())) {
+            AllvrCubeMap map = allvr$map();
+            if (map != null) {
+                cir.setReturnValue(map.loadedAndEntityCanStandOnFace(pos, entity, direction));
+            }
         }
     }
 

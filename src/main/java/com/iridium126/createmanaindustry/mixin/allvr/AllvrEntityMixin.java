@@ -55,6 +55,12 @@ public abstract class AllvrEntityMixin {
         if (self instanceof ServerPlayer) {
             return;
         }
+        // The central band is owned by vanilla LevelChunk instances.  It is
+        // intentionally absent from AllvrCubeMap, so a null cube lookup there
+        // must never be interpreted as an unloaded entity area.
+        if (AllvrDimensionLimits.isVanillaY(self.blockPosition().getY())) {
+            return;
+        }
         if (level instanceof AllvrServerLevelDuck duck) {
             AllvrCubeMap map = duck.allvr$getCubeMap();
             if (map != null && map.peek(self.blockPosition()) == null) {

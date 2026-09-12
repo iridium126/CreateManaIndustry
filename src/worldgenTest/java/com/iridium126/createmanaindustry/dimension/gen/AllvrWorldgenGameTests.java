@@ -3,12 +3,20 @@ package com.iridium126.createmanaindustry.dimension.gen;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.core.Direction;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -24,6 +32,46 @@ public final class AllvrWorldgenGameTests {
             failure.printStackTrace();
             throw failure;
         }
+    }
+
+    @GameTest(template = "worldgen_test", timeoutTicks = 200)
+    public static void centralEntitiesAndCubeApis(GameTestHelper helper) {
+        var allay = helper.getLevel().getServer().getLevel(AllvrDimensions.ALLAY_LEVEL);
+        helper.assertTrue(allay != null, "Test preset must include Allay Dimension");
+        int x = helper.absolutePos(BlockPos.ZERO).getX();
+        int z = helper.absolutePos(BlockPos.ZERO).getZ();
+        allay.getChunk(x >> 4, z >> 4);
+
+        ItemEntity item = new ItemEntity(allay, x + 0.5, 200.5, z + 0.5,
+            new ItemStack(Items.DIRT));
+        item.setDeltaMovement(0.2, 0.0, 0.0);
+        double initialX = item.getX();
+        item.tick();
+        helper.assertTrue(item.getX() != initialX,
+            "Non-player entity in the native central band did not tick");
+
+        BlockPos cubePos = new BlockPos(x + 2, 384, z + 2);
+        helper.assertTrue(!allay.isLoaded(cubePos), "Cube unexpectedly loaded before access");
+        allay.setBlock(cubePos, Blocks.STONE.defaultBlockState(), 3);
+        helper.assertTrue(allay.isLoaded(cubePos), "Cube-aware Level#isLoaded returned false");
+        helper.assertTrue(allay.hasChunkAt(cubePos), "Cube-aware Level#hasChunkAt returned false");
+        helper.assertTrue(allay.hasChunksAt(cubePos, cubePos),
+            "Cube-aware Level#hasChunksAt returned false");
+        helper.assertTrue(allay.loadedAndEntityCanStandOnFace(cubePos, item, Direction.UP),
+            "Cube-aware standing query did not read the cube state");
+
+        BlockPos chestPos = cubePos.above();
+        BlockState chestState = Blocks.CHEST.defaultBlockState();
+        allay.setBlock(chestPos, chestState, 3);
+        BlockEntity replacement = BlockEntityType.CHEST.create(chestPos, chestState);
+        helper.assertTrue(replacement != null, "Could not create test chest block entity");
+        allay.setBlockEntity(replacement);
+        helper.assertTrue(allay.getBlockEntity(chestPos) == replacement,
+            "Cube-aware Level#setBlockEntity did not replace the cube BE");
+        allay.removeBlockEntity(chestPos);
+        helper.assertTrue(allay.getBlockEntity(chestPos) == null,
+            "Cube-aware Level#removeBlockEntity left a cube BE behind");
+        helper.succeed();
     }
 
     private static void run(GameTestHelper helper) {
