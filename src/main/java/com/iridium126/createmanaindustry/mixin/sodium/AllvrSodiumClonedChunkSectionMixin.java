@@ -23,7 +23,7 @@ import org.spongepowered.asm.mixin.injection.At;
 @Mixin(value = ClonedChunkSection.class, remap = false)
 public abstract class AllvrSodiumClonedChunkSectionMixin {
 
-    /** Marker-only ABI object: Allay has no LevelChunk auxiliary light owner. */
+    /** Marker for cube sections, which have no LevelChunk auxiliary light owner. */
     private static final SodiumAuxiliaryLightManager ALLAY_AUX_LIGHT_MANAGER =
         new SodiumAuxiliaryLightManager() {};
 
@@ -41,7 +41,7 @@ public abstract class AllvrSodiumClonedChunkSectionMixin {
                                             PlatformLevelAccess access, LevelChunk carrier,
                                             SectionPos pos,
                                             Operation<SodiumAuxiliaryLightManager> original) {
-        if (carrier == null || (AllvrSodiumBridge.active()
+        if (carrier == null || (!com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaSection(pos.getY()) && AllvrSodiumBridge.active()
             && AllvrSodiumBridge.level() != null
             && AllvrSodiumBridge.level().dimension() == AllvrDimensions.ALLAY_LEVEL)) {
             return ALLAY_AUX_LIGHT_MANAGER;
@@ -57,7 +57,7 @@ public abstract class AllvrSodiumClonedChunkSectionMixin {
     private Int2ReferenceMap<BlockEntity> cmi$allayBlockEntities(
                                             LevelChunk carrier, SectionPos pos,
                                             Operation<Int2ReferenceMap<BlockEntity>> original) {
-        if (carrier == null || (AllvrSodiumBridge.active()
+        if (carrier == null || (!com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaSection(pos.getY()) && AllvrSodiumBridge.active()
             && AllvrSodiumBridge.level() != null
             && AllvrSodiumBridge.level().dimension() == AllvrDimensions.ALLAY_LEVEL)) {
             return AllvrSodiumSectionSource.blockEntities(pos);
@@ -73,7 +73,8 @@ public abstract class AllvrSodiumClonedChunkSectionMixin {
                                             Operation<DataLayer[]> original) {
         if (level instanceof ClientLevel clientLevel
             && clientLevel.dimension() == AllvrDimensions.ALLAY_LEVEL
-            && AllvrSodiumBridge.active()) {
+            && AllvrSodiumBridge.active()
+            && !com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaSection(pos.getY())) {
             return AllvrSodiumSectionSource.lightData(clientLevel, pos);
         }
         return original.call(level, pos);

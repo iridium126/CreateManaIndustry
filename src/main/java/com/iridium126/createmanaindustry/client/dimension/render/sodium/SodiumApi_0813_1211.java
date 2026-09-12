@@ -62,7 +62,9 @@ public final class SodiumApi_0813_1211 {
      *  auxiliary-light snapshots to Sodium's constructor. */
     public static ClonedChunkSection cloneSection(Level level, LevelChunkSection section,
                                                   SectionPos pos) {
-        return new ClonedChunkSection(level, null, section, pos);
+        var carrier = com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaSection(pos.getY())
+            ? level.getChunkSource().getChunk(pos.getX(), pos.getZ(), net.minecraft.world.level.chunk.status.ChunkStatus.FULL, false) : null;
+        return new ClonedChunkSection(level, (net.minecraft.world.level.chunk.LevelChunk) carrier, section, pos);
     }
 
     /** NeoForge AddSectionGeometryEvent appenders for one section origin. */
@@ -79,11 +81,11 @@ public final class SodiumApi_0813_1211 {
     }
 
     public static void onSectionRemoved(RenderSectionManager manager, int x, int y, int z) {
-        manager.onSectionRemoved(x, y, z);
+        AllvrSodiumSectionLifecycle.nativeRemove(manager, x, y, z);
     }
 
     public static void scheduleRebuild(RenderSectionManager manager, int x, int y, int z, boolean important) {
-        manager.scheduleRebuild(x, y, z, important);
+        AllvrSodiumSectionLifecycle.nativeRebuild(manager, x, y, z, important);
     }
 
     public static boolean isSectionBuilt(RenderSectionManager manager, int x, int y, int z) {

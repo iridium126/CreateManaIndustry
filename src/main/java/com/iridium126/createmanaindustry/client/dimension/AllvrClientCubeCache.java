@@ -216,6 +216,8 @@ public final class AllvrClientCubeCache {
      * game thread, mirroring vanilla's packet-to-ChunkMap handoff.
      */
     public static void queueCube(ClientboundAllvrCubePacket packet) {
+        if (com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaCube(
+            AllvrCubePos.fromLong(packet.cubePos()).getY())) return;
         ClientLevel clientLevel = Minecraft.getInstance().level;
         if (clientLevel == null || clientLevel.dimension() != AllvrDimensions.ALLAY_LEVEL) {
             return;
@@ -335,6 +337,8 @@ public final class AllvrClientCubeCache {
      * {@link #queueCube} so section decoding never runs on that thread.
      */
     public static void applyCube(ClientboundAllvrCubePacket packet) {
+        if (com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaCube(
+            AllvrCubePos.fromLong(packet.cubePos()).getY())) return;
         ClientLevel clientLevel = Minecraft.getInstance().level;
         if (clientLevel == null || clientLevel.dimension() != AllvrDimensions.ALLAY_LEVEL) {
             return;

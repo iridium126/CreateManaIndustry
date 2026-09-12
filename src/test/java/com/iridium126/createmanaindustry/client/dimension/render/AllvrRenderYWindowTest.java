@@ -13,7 +13,7 @@ class AllvrRenderYWindowTest {
         AllvrRenderYWindow window = new AllvrRenderYWindow();
         assertEquals(0, window.originBlockY());
         assertEquals(0, window.virtualBlockY(0));
-        assertEquals(512, window.nextOrigin(700));
+        assertEquals(1536, window.nextOrigin(1500));
 
         long before = window.epoch();
         window.beginDetach();
@@ -27,6 +27,18 @@ class AllvrRenderYWindowTest {
         assertEquals(AllvrRenderYWindow.Phase.REFILL, window.phase());
         window.endRebase();
         assertFalse(window.isRebasing());
+    }
+
+    @Test
+    void centralChunksKeepAbsoluteSectionKeysAndReturnFromHighAltitude() {
+        AllvrRenderYWindow window = new AllvrRenderYWindow();
+        for (int y : new int[] {-128, -1, 0, 383, 700}) {
+            assertEquals(0, window.nextOrigin(y));
+            assertFalse(window.needsRebase(y));
+        }
+        window.initializeAt(2560);
+        assertTrue(window.needsRebase(383));
+        assertEquals(0, window.nextOrigin(383));
     }
 
     @Test

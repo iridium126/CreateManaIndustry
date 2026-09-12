@@ -69,12 +69,28 @@ public abstract class AllvrSodiumRenderSectionManagerMixin {
             if (AllvrSodiumSectionLifecycle.internalAdd()) {
                 return;
             }
-            // The cube bridge owns the virtual section coordinates. Reject
-            // vanilla's column onChunkAdded sweep instead of registering
-            // placeholders at the client's formal-height Y values. The
-            // bridge enters the scoped internalAdd path for its own nodes.
-            ci.cancel();
+            // Native central sections keep the column lifecycle at origin 0.
+            // Away from the band, register them in the current virtual window.
+            if (AllvrSodiumBridge.onVanillaSectionAdded(x, y, z)) ci.cancel();
         }
+    }
+
+    @Inject(method = "onSectionRemoved", at = @At("HEAD"), cancellable = true)
+    private void cmi$allaySectionRemoved(int x, int y, int z, CallbackInfo ci) {
+        if (AllvrSodiumBridge.active() && !AllvrSodiumSectionLifecycle.internalRemove()
+            && AllvrSodiumBridge.onVanillaSectionRemoved(x, y, z)) ci.cancel();
+    }
+
+    @com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod(method = "scheduleRebuild")
+    private void cmi$allayRebuild(int x, int y, int z, boolean important, Operation<Void> original) {
+        if (AllvrSodiumBridge.active()) {
+            if (!AllvrSodiumSectionLifecycle.internalRebuild()) {
+                y = AllvrSodiumBridge.window().virtualSectionY(y);
+            }
+            if (y < -8192 || y >= 8192) return;
+            AllvrSodiumSectionSource.invalidateSection(x, y, z);
+        }
+        original.call(x, y, z, important);
     }
 
     @Redirect(method = "onSectionAdded",
@@ -105,6 +121,11 @@ public abstract class AllvrSodiumRenderSectionManagerMixin {
     private boolean cmi$allaySetInfo(RenderSection section, BuiltSectionInfo info,
                                      Operation<Boolean> original) {
         if (AllvrSodiumBridge.active()) {
+            int absoluteY = AllvrSodiumBridge.window().absoluteSectionY(section.getChunkY());
+            if (com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaSection(absoluteY)) {
+                com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest
+                    .onChunkSectionBuilt(section.getChunkX(), absoluteY, section.getChunkZ());
+            }
             return section.setInfo(info);
         }
         return original.call(section, info);
@@ -119,6 +140,10 @@ public abstract class AllvrSodiumRenderSectionManagerMixin {
         if (level instanceof ClientLevel clientLevel
             && clientLevel.dimension() == AllvrDimensions.ALLAY_LEVEL
             && AllvrSodiumBridge.active()) {
+            int absoluteY = AllvrSodiumBridge.window().absoluteSectionY(pos.getY());
+            if (AllvrSodiumBridge.window().originBlockY() == 0 && absoluteY > -8 && absoluteY < 23) {
+                return original.call(level, pos, cache);
+            }
             return AllvrSodiumSectionSource.prepare(clientLevel, pos,
                 AllvrSodiumBridge.resourceRevision(), AllvrSodiumBridge.window().epoch());
         }

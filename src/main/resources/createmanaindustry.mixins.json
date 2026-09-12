@@ -43,14 +43,11 @@
     "allvr.AllvrLevelHeightAccessorMixin",
     "allvr.AllvrServerboundPosMixin",
     "allvr.AllvrServerLevelMixin",
-    "allvr.AllvrServerChunkCacheMixin",
     "allvr.AllvrChunkMapMixin",
-    "allvr.AllvrNaturalSpawnerMixin",
     "allvr.AllvrEntityMixin"
   ],
   "client": [
     "allvr.AllvrClientLevelMixin",
-    "allvr.AllvrClientPacketListenerMixin",
     "allvr.AllvrPredictionHandlerMixin",
     "allvr.AllvrGetLightColorMixin",
     "sodium.AllvrSodiumWorldRendererAccessor",

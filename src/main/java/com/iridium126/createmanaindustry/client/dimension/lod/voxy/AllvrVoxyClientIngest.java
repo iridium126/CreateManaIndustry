@@ -103,6 +103,10 @@ public final class AllvrVoxyClientIngest {
         enqueueCubeSections(cubeKey);
     }
 
+    public static void onChunkSectionBuilt(int x, int y, int z) {
+        if (initialized && VoxyApi_0215_1211.modInstalled()) enqueueSection(x, y, z);
+    }
+
     public static void onBlockChanged(net.minecraft.core.BlockPos pos) {
         if (!initialized || !VoxyApi_0215_1211.modInstalled()) return;
         int sx = pos.getX() >> 4;
@@ -277,7 +281,11 @@ public final class AllvrVoxyClientIngest {
             return;
         }
         LevelChunkSection snapshot;
-        synchronized (AllvrClientCubeCache.LOCK) {
+        if (com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaSection(absolute.getY())) {
+            var chunk = level.getChunkSource().getChunk(absolute.getX(), absolute.getZ(), false);
+            if (chunk == null) return;
+            snapshot = copySection(chunk.getSection(level.getSectionIndexFromSectionY(absolute.getY())));
+        } else synchronized (AllvrClientCubeCache.LOCK) {
             AllvrCube cube = AllvrClientCubeCache.peekCubeUnsafe(
                 AllvrCubePos.asLong(absolute.getX() >> 1, absolute.getY() >> 1, absolute.getZ() >> 1));
             if (cube == null) return;

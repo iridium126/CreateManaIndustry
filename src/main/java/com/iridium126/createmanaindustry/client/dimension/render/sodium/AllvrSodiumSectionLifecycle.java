@@ -11,6 +11,25 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 public final class AllvrSodiumSectionLifecycle {
 
     private record AddRequest(ClientLevel level, int x, int y, int z) {}
+    private static boolean removing;
+    private static boolean rebuilding;
+
+    public static boolean internalRebuild() { return rebuilding; }
+
+    public static void nativeRebuild(RenderSectionManager manager, int x, int y, int z, boolean important) {
+        rebuilding = true;
+        try { manager.scheduleRebuild(x, y, z, important); }
+        finally { rebuilding = false; }
+    }
+
+    public static boolean internalRemove() { return removing; }
+
+    public static void nativeRemove(RenderSectionManager manager, int x, int y, int z) {
+        removing = true;
+        try { manager.onSectionRemoved(x, y, z); }
+        finally { removing = false; }
+    }
+
     private static final AtomicReference<AddRequest> NATIVE_ADD = new AtomicReference<>();
 
     private AllvrSodiumSectionLifecycle() {}

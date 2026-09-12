@@ -25,6 +25,7 @@ import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 public final class AllvrSodiumBridge {
 
     private static final AllvrRenderYWindow WINDOW = new AllvrRenderYWindow();
+    private static final LongOpenHashSet VANILLA_COLUMNS = new LongOpenHashSet();
     private static final LongOpenHashSet OWNED = new LongOpenHashSet();
     private static final ArrayDeque<Long> ADD_QUEUE = new ArrayDeque<>();
     private static final ArrayDeque<Long> REMOVE_QUEUE = new ArrayDeque<>();
@@ -126,6 +127,7 @@ public final class AllvrSodiumBridge {
             }
         }
         OWNED.clear();
+        VANILLA_COLUMNS.clear();
         ADD_QUEUE.clear();
         REMOVE_QUEUE.clear();
         REPLACE_QUEUE.clear();
@@ -258,7 +260,40 @@ public final class AllvrSodiumBridge {
         }
     }
 
+    /** Called by Sodium's normal column lifecycle; keep native keys near the chunk band. */
+    public static boolean onVanillaSectionAdded(int x, int y, int z) {
+        VANILLA_COLUMNS.add(net.minecraft.world.level.ChunkPos.asLong(x, z));
+        if (WINDOW.originBlockY() == 0 && !WINDOW.isDetaching()) {
+            OWNED.add(SectionPos.asLong(x, y, z));
+            return false;
+        }
+        int virtualY = WINDOW.virtualSectionY(y);
+        if (virtualY >= -8192 && virtualY < 8192 && !WINDOW.isDetaching()) {
+            enqueueAdd(SectionPos.asLong(x, virtualY, z));
+        }
+        return true;
+    }
+
+    public static boolean onVanillaSectionRemoved(int x, int y, int z) {
+        VANILLA_COLUMNS.remove(net.minecraft.world.level.ChunkPos.asLong(x, z));
+        if (WINDOW.originBlockY() == 0) {
+            OWNED.remove(SectionPos.asLong(x, y, z));
+            return false;
+        }
+        int virtualY = WINDOW.virtualSectionY(y);
+        if (virtualY >= -8192 && virtualY < 8192) enqueueRemove(SectionPos.asLong(x, virtualY, z));
+        return true;
+    }
+
     private static void enqueueAllResidentCubes() {
+        for (long column : VANILLA_COLUMNS) {
+            int x = net.minecraft.world.level.ChunkPos.getX(column);
+            int z = net.minecraft.world.level.ChunkPos.getZ(column);
+            for (int y = -8; y < 24; y++) {
+                int virtualY = WINDOW.virtualSectionY(y);
+                if (virtualY >= -8192 && virtualY < 8192) enqueueAdd(SectionPos.asLong(x, virtualY, z));
+            }
+        }
         for (long cubeKey : AllvrClientCubeCache.cubeKeys()) {
             enqueueCubeSections(cubeKey, false);
         }

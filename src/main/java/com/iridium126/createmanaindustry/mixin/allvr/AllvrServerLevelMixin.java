@@ -13,32 +13,11 @@ import com.iridium126.createmanaindustry.dimension.cube.AllvrServerLevelDuck;
 
 import net.minecraft.util.ProgressListener;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.chunk.LevelChunk;
 
 /**
- * Attaches the per-level {@link AllvrCubeMap} to the allay dimension's
- * {@link ServerLevel}. The map is created lazily on first block access or
- * tick (server thread only), so nothing runs for other dimensions and no
- * work happens before the dimension is actually entered.
- * <p>
- * Persistence wiring (plan §7.5): {@link ServerLevel#save} HEAD/TAIL drive
- * the ALLVR save queue and the blocking flush (the event bus alone cannot
- * express {@code /save-all flush} — no flush parameter). The companion
- * ServerChunkCache/ChunkMap mixins cancel vanilla column-chunk persistence
- * for this dimension, and {@link ServerLevel#close} idempotently drains +
- * closes the cube storage. Both only ever touch an <i>existing</i> map
- * ({@code peek}) —
- * saving or closing a never-visited allay level must not build the whole
- * subsystem. Exceptions are aggregated/logged so the vanilla close sequence
- * continues.
- * <p>
- * Also cancels vanilla per-column chunk ticking ({@code tickChunk}: thunder
- * target search, ice/snow RNG and the per-section random-tick loop) inside
- * the allay dimension — columns are deterministic air shells whose sections
- * all fail the {@code isRandomlyTicking()} counter check, so the body is pure
- * overhead there, and cube blocks never receive random ticks through this
- * path anyway. Phase 7 replaces it with cube-side random/scheduled ticking
- * (doc §13); until then gameplay ticking is intentionally absent.
+ * Attaches the cube map and its independent persistence to the server level.
+ * Native chunk ticking, saving and closing proceed normally. Cube save hooks
+ * only flush an existing map, so saving does not initialize an unused store.
  */
 @Mixin(ServerLevel.class)
 public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
@@ -71,8 +50,8 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
     /**
      * HEAD of {@code save(progress, flush, skipSave)} — with saving enabled,
      * every loaded dirty cube joins the ALLVR snapshot queue before the
-     * level-save event runs. Vanilla column-chunk saving is cancelled by the
-     * dedicated ServerChunkCache/ChunkMap mixins.
+     * level-save event runs. Native column chunks remain in the vanilla save
+     * pipeline; this hook only adds the independent cube store.
      */
     @Inject(method = "save(Lnet/minecraft/util/ProgressListener;ZZ)V",
         at = @At("HEAD"))
@@ -126,10 +105,4 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
         }
     }
 
-    @Inject(method = "tickChunk", at = @At("HEAD"), cancellable = true)
-    private void allvr$skipTickChunk(LevelChunk chunk, int randomTickSpeed, CallbackInfo ci) {
-        if (((ServerLevel) (Object) this).dimension() == AllvrDimensions.ALLAY_LEVEL) {
-            ci.cancel();
-        }
-    }
 }

@@ -99,11 +99,13 @@ public final class AllvrRenderYWindow {
 
     /** True while the player sits inside the rebase trigger band. */
     public boolean needsRebase(double playerY) {
+        if (playerY >= -1024 && playerY < 1024) return this.originBlockY != 0;
         return Math.abs(playerY - this.originBlockY) >= REBASE_TRIGGER_BLOCKS;
     }
 
     /** The nearest 512-aligned origin for a player Y. */
     public int nextOrigin(double playerY) {
+        if (playerY >= -1024 && playerY < 1024) return 0;
         return (int) Math.rint(playerY / (double) ALIGN_BLOCKS) * ALIGN_BLOCKS;
     }
 

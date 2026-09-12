@@ -24,14 +24,14 @@ import it.unimi.dsi.fastutil.ints.Int2ReferenceOpenHashMap;
 import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 import com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderYWindow;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
+import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 
 /**
- * The ALLVR-to-Sodium data boundary.  This class owns no render resources and
- * never registers a synthetic chunk with ClientChunkCache: it snapshots the
- * 3x3x3 section neighbourhood Sodium's LevelSlice expects directly from the
- * 32^3 cube cache.
+ * Supplies cube and boundary mesh contexts. Central sections come from real
+ * ClientChunkCache chunks, including native light, model data and block entities.
+ * Interior central meshes use Sodium's own LevelSlice/cache directly.
  */
 public final class AllvrSodiumSectionSource {
 
@@ -95,6 +95,13 @@ public final class AllvrSodiumSectionSource {
         long cubeKey = AllvrCubePos.asLong(absolutePos.getX() >> 1,
             absolutePos.getY() >> 1, absolutePos.getZ() >> 1);
 
+        if (AllvrDimensionLimits.isVanillaSection(absolutePos.getY())) {
+            var chunk = level.getChunkSource().getChunk(absolutePos.getX(), absolutePos.getZ(), false);
+            LevelChunkSection section = chunk == null ? airSection(level)
+                : chunk.getSection(level.getSectionIndexFromSectionY(absolutePos.getY()));
+            return new AllvrSodiumSectionSnapshot(virtualPos, absolutePos, cubeKey,
+                0L, 0L, resourceRevision, windowEpoch, copySection(section));
+        }
         synchronized (AllvrClientCubeCache.LOCK) {
             AllvrCube cube = AllvrClientCubeCache.peekCubeUnsafe(cubeKey);
             if (cube == null) {
@@ -146,6 +153,10 @@ public final class AllvrSodiumSectionSource {
         AllvrRenderYWindow window = AllvrRenderWindowState.current();
         int originSectionY = window.originBlockY() >> 4;
         int absoluteY = virtualY + originSectionY;
+        if (AllvrDimensionLimits.isVanillaSection(absoluteY)) {
+            var chunk = level.getChunkSource().getChunk(virtualX, virtualZ, false);
+            return chunk != null && !chunk.getSection(level.getSectionIndexFromSectionY(absoluteY)).hasOnlyAir();
+        }
         long cubeKey = AllvrCubePos.asLong(virtualX >> 1, absoluteY >> 1, virtualZ >> 1);
 
         /*
@@ -189,6 +200,9 @@ public final class AllvrSodiumSectionSource {
             return false;
         }
         int absoluteY = virtualY + (AllvrRenderWindowState.current().originBlockY() >> 4);
+        if (AllvrDimensionLimits.isVanillaSection(absoluteY)) {
+            return level.getChunkSource().getChunk(virtualX, virtualZ, false) != null;
+        }
         long cubeKey = AllvrCubePos.asLong(virtualX >> 1, absoluteY >> 1, virtualZ >> 1);
         return cubeIsLoaded(level, cubeKey);
     }
@@ -300,7 +314,21 @@ public final class AllvrSodiumSectionSource {
 
     /** Supplies the last completed vanilla-style light snapshot for Sodium. */
     public static DataLayer[] lightData(ClientLevel level, SectionPos absolutePos) {
-        return isAllay(level) ? AllvrClientCubeCache.lightData(absolutePos) : null;
+        if (!isAllay(level)) return null;
+        if (AllvrDimensionLimits.isVanillaSection(absolutePos.getY())) {
+            var engine = level.getLightEngine();
+            return new DataLayer[] {
+                copyLightLayer(engine.getLayerListener(net.minecraft.world.level.LightLayer.SKY)
+                    .getDataLayerData(absolutePos)),
+                copyLightLayer(engine.getLayerListener(net.minecraft.world.level.LightLayer.BLOCK)
+                    .getDataLayerData(absolutePos))
+            };
+        }
+        return AllvrClientCubeCache.lightData(absolutePos);
+    }
+
+    private static DataLayer copyLightLayer(DataLayer layer) {
+        return layer == null ? null : layer.copy();
     }
 
     /**
@@ -350,6 +378,16 @@ public final class AllvrSodiumSectionSource {
                                                     int virtualX, int virtualY, int virtualZ,
                                                     long resourceRevision, long windowEpoch) {
         long key = SectionPos.asLong(virtualX, virtualY, virtualZ);
+        int absoluteY = AllvrSodiumBridge.window().absoluteSectionY(virtualY);
+        // Native chunks mutate independently of cube revisions. Let Sodium's own
+        // cache handle the central fast path; boundary contexts take a fresh clone.
+        if (AllvrDimensionLimits.isVanillaSection(absoluteY)) {
+            var chunk = level.getChunkSource().getChunk(virtualX, virtualZ, false);
+            var section = chunk == null ? airSection(level)
+                : chunk.getSection(level.getSectionIndexFromSectionY(absoluteY));
+            return SodiumApi_0813_1211.cloneSection(level, section,
+                SectionPos.of(virtualX, absoluteY, virtualZ));
+        }
         ClonedCache cached = CLONED_SECTION_CACHE.getAndMoveToLast(key);
         if (cached != null && cached.resourceRevision() == resourceRevision
             && cached.windowEpoch() == windowEpoch) {

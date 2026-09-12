@@ -485,6 +485,7 @@ public final class AllvrCubeMap {
      * regenerated over.
      */
     public AllvrCube getOrGenerate(int cubeX, int cubeY, int cubeZ) {
+        if (AllvrDimensionLimits.isVanillaCube(cubeY)) throw new IllegalArgumentException("Vanilla chunk band");
         long key = AllvrCubePos.asLong(cubeX, cubeY, cubeZ);
         AllvrCube cube = cubes.get(key);
         if (cube != null) {
@@ -642,6 +643,7 @@ public final class AllvrCubeMap {
 
     /** Returns a loaded cube or schedules generation without blocking the tick. */
     private AllvrCube getOrRequest(int cubeX, int cubeY, int cubeZ) {
+        if (AllvrDimensionLimits.isVanillaCube(cubeY)) return null;
         long key = AllvrCubePos.asLong(cubeX, cubeY, cubeZ);
         AllvrCube cube = cubes.get(key);
         if (cube != null) return cube;
@@ -971,6 +973,7 @@ public final class AllvrCubeMap {
                     int cx = pc.getX() + dx;
                     int cy = pc.getY() + dy;
                     int cz = pc.getZ() + dz;
+                    if (AllvrDimensionLimits.isVanillaCube(cy)) continue;
                     long key = AllvrCubePos.asLong(cx, cy, cz);
                     boolean inSendRange = AllvrVanillaRenderDistance.isCubeWithinCylinder(
                         cx, cy, cz, playerChunkX, playerChunkZ,

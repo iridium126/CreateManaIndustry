@@ -44,6 +44,7 @@ public final class AllvrWorldgenGameTests {
         } finally { buffer.release(); }
         var allay = helper.getLevel().getServer().getLevel(AllvrDimensions.ALLAY_LEVEL);
         helper.assertTrue(allay != null, "Test preset must include Allay Dimension");
+        verifyCentralChunks(helper, allay);
         var source = new AllvrTerrainSource(allay);
         boolean terralith = allay.registryAccess().registryOrThrow(Registries.BIOME).keySet().stream()
             .anyMatch(key -> key.getNamespace().equals("terralith"));
@@ -75,7 +76,7 @@ public final class AllvrWorldgenGameTests {
         int solid = 0;
         for (var section : cube.getSections()) if (!section.hasOnlyAir()) solid++;
         helper.assertTrue(solid > 0, "High island cube is entirely empty");
-        var empty = new AllvrCube(AllvrCubePos.of(0, 0, 0),
+        var empty = new AllvrCube(AllvrCubePos.of(0, 10000, 0),
             allay.registryAccess().registryOrThrow(Registries.BIOME));
         generator.generate(empty);
         helper.assertTrue(java.util.Arrays.stream(empty.getSections()).allMatch(section -> section.hasOnlyAir()),
@@ -90,6 +91,82 @@ public final class AllvrWorldgenGameTests {
             + " fingerprint=" + fingerprint + " highY=" + cube.getPos().minBlockY() + " nonemptySections=" + solid
             + " elapsedMs=" + (System.nanoTime() - start) / 1_000_000);
         helper.succeed();
+    }
+
+    private static void verifyCentralChunks(GameTestHelper helper, net.minecraft.server.level.ServerLevel allay) {
+        helper.assertTrue(allay.getMinBuildHeight() == -128 && allay.getMaxBuildHeight() == 384,
+            "Native chunk height is not [-128, 384)");
+        helper.assertTrue(allay.getChunkSource().getGenerator() instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator,
+            "ChunkMap must recognize the native noise generator and initialize its real RandomState");
+        int cx = helper.absolutePos(net.minecraft.core.BlockPos.ZERO).getX() >> 4;
+        int cz = helper.absolutePos(net.minecraft.core.BlockPos.ZERO).getZ() >> 4;
+        var chunk = allay.getChunk(cx, cz);
+        int minX = chunk.getPos().getMinBlockX(), minZ = chunk.getPos().getMinBlockZ();
+        allay.getChunk(cx + 1, cz);
+        allay.getChunk(cx - 1, cz);
+        allay.getChunk(cx, cz + 1);
+        allay.getChunk(cx, cz - 1);
+        helper.assertTrue(chunk.getSectionsCount() == 32, "Native chunk must contain 32 sections");
+        var pos = new net.minecraft.core.BlockPos.MutableBlockPos();
+        int terrain = 0;
+        for (int y = -128; y < 384; y++) for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
+            pos.set(minX + x, y, minZ + z);
+            var state = chunk.getBlockState(pos);
+            helper.assertTrue(!state.is(Blocks.BEDROCK), "Central terrain generated bedrock at " + pos);
+            if (!state.isAir()) terrain++;
+            helper.assertTrue(allay.getBlockState(pos) == state, "Level reads bypass native chunk at " + pos);
+        }
+        helper.assertTrue(terrain > 256, "Central chunk is an empty shell");
+        var map = ((com.iridium126.createmanaindustry.dimension.cube.AllvrServerLevelDuck) allay).allvr$getCubeMap();
+        for (int y : new int[] {-128, -1, 0, 383}) {
+            var target = new net.minecraft.core.BlockPos(minX + 1, y, minZ + 1);
+            allay.setBlock(target, Blocks.CHEST.defaultBlockState(), 3);
+            helper.assertTrue(chunk.getBlockState(target).is(Blocks.CHEST), "Write missed native chunk at " + y);
+            helper.assertTrue(allay.getBlockEntity(target) == chunk.getBlockEntity(target)
+                && chunk.getBlockEntity(target) != null, "Native block entity missing at " + y);
+            helper.assertTrue(map.peek(target) == null, "Central block duplicated in cube map");
+        }
+        allay.getChunkSource().save(true);
+        var saved = net.minecraft.world.level.chunk.storage.ChunkSerializer.write(allay, chunk);
+        var restored = net.minecraft.world.level.chunk.storage.ChunkSerializer.read(allay, allay.getPoiManager(),
+            new net.minecraft.world.level.chunk.storage.RegionStorageInfo("allvr-test", allay.dimension(), "chunk"), chunk.getPos(), saved);
+        helper.assertTrue(saved.getInt("yPos") == -8, "Native serializer used wrong minimum section");
+        for (int y : new int[] {-128, -1, 0, 383}) {
+            var target = new net.minecraft.core.BlockPos(minX + 1, y, minZ + 1);
+            helper.assertTrue(restored.getBlockState(target).is(Blocks.CHEST), "Native save roundtrip lost boundary block");
+        }
+        for (int y : new int[] {-129, -160, -25600000}) {
+            var cube = new AllvrCube(AllvrCubePos.of(0, y >> 5, 0),
+                allay.registryAccess().registryOrThrow(Registries.BIOME));
+            map.generator().generate(cube);
+            for (var section : cube.getSections()) for (int ly = 0; ly < 16; ly++)
+                for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++)
+                    helper.assertTrue(section.getBlockState(x, ly, z).is(Blocks.DEEPSLATE), "Lower cube is not solid deepslate");
+        }
+        for (int y : new int[] {-129, 384}) {
+            var target = new net.minecraft.core.BlockPos(minX + 2, y, minZ + 2);
+            allay.setBlock(target, Blocks.DIAMOND_BLOCK.defaultBlockState(), 3);
+            helper.assertTrue(map.peek(target) != null && map.peek(target).getBlockState(target).is(Blocks.DIAMOND_BLOCK),
+                "Outside-boundary write missed the cube at " + y);
+            helper.assertTrue(allay.getBlockState(target).is(Blocks.DIAMOND_BLOCK), "Cube boundary read failed at " + y);
+            helper.assertTrue(chunk.getBlockState(target).isAir(), "Cube write leaked into native chunk");
+        }
+        // Configuration preserves arbitrary biome sources for future Allay biomes.
+        var biome = allay.registryAccess().registryOrThrow(Registries.BIOME)
+            .getHolderOrThrow(net.minecraft.world.level.biome.Biomes.DESERT);
+        var settings = allay.registryAccess().registryOrThrow(Registries.NOISE_SETTINGS).getHolderOrThrow(AllvrChunkGenerator.SETTINGS);
+        var configured = new net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator(
+            new net.minecraft.world.level.biome.FixedBiomeSource(biome), settings);
+        var biomes = allay.registryAccess().registryOrThrow(Registries.MULTI_NOISE_BIOME_SOURCE_PARAMETER_LIST)
+            .getHolderOrThrow(net.minecraft.world.level.biome.MultiNoiseBiomeSourceParameterLists.OVERWORLD);
+        var generator = new AllvrChunkGenerator(java.util.Optional.empty(), java.util.Optional.of(configured), settings, biomes);
+        helper.assertTrue(generator.getBiomeSource() == configured.getBiomeSource(), "Configured biome source was replaced");
+        var ops = net.minecraft.resources.RegistryOps.create(com.mojang.serialization.JsonOps.INSTANCE, allay.registryAccess());
+        var encoded = AllvrChunkGenerator.CODEC.codec().encodeStart(ops, generator).getOrThrow();
+        var decoded = AllvrChunkGenerator.CODEC.codec().parse(ops, encoded).getOrThrow();
+        helper.assertTrue(decoded.getBiomeSource().possibleBiomes().equals(java.util.Set.of(biome)),
+            "Custom biome source did not survive dimension codec roundtrip");
+        System.out.println("ALLVR_HYBRID_SMOKE nativeSections=32 terrainBlocks=" + terrain + " lowerCubes=3");
     }
 
     private static long fingerprint(AllvrTerrainSource.Column column) {

@@ -3,6 +3,8 @@ package com.iridium126.createmanaindustry.dimension.gen;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandLayout.Island;
 import net.minecraft.core.BlockPos;
+import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.core.Holder;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
@@ -35,6 +37,8 @@ public final class AllvrIslandFieldGenerator {
 
     /** Cheap geometry-only ticket filter used before queuing background work. */
     public boolean intersectsIsland(int cubeX, int cubeY, int cubeZ) {
+        if (AllvrDimensionLimits.isVanillaCube(cubeY)) return false;
+        if (cubeY < (AllvrDimensionLimits.VANILLA_MIN_Y >> 5)) return true;
         int x = com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.cubeToMinBlock(cubeX);
         int y = com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.cubeToMinBlock(cubeY);
         int z = com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.cubeToMinBlock(cubeZ);
@@ -53,6 +57,7 @@ public final class AllvrIslandFieldGenerator {
         // Island cells are sparse (the XZ spacing is several chunks). Resolve
         // the bounds before touching the 512 biome cells: the vast majority of
         // transport cubes are void and can stay at their default palette.
+        if (generateLowerBand(cube)) return;
         Island[] islands = islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
         if (islands.length == 0) return;
         Map<Long, AllvrTerrainSource.Column> sourceColumns = new HashMap<>();
@@ -71,6 +76,7 @@ public final class AllvrIslandFieldGenerator {
      */
     public CompletableFuture<Void> generateAsync(AllvrCube cube) {
         int x0 = cube.getPos().minBlockX(), y0 = cube.getPos().minBlockY(), z0 = cube.getPos().minBlockZ();
+        if (generateLowerBand(cube)) return CompletableFuture.completedFuture(null);
         Island[] islands = islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
         if (islands.length == 0) return CompletableFuture.completedFuture(null);
         Map<Long, CompletableFuture<AllvrTerrainSource.Column>> sourceFutures = new HashMap<>();
@@ -83,6 +89,23 @@ public final class AllvrIslandFieldGenerator {
             sourceFutures.forEach((key, future) -> sourceColumns.put(key, future.join()));
             fillCube(cube, islands, sourceColumns);
         });
+    }
+
+    private boolean generateLowerBand(AllvrCube cube) {
+        int y = cube.getPos().minBlockY();
+        if (AllvrDimensionLimits.isVanillaY(y)) {
+            throw new IllegalArgumentException("Central band belongs to vanilla chunks: " + cube.getPos());
+        }
+        if (y >= AllvrDimensionLimits.VANILLA_MIN_Y) return false;
+        // A single-value vanilla palette per section: no noise, features or terrain cache work.
+        for (int i = 0; i < cube.getSections().length; i++) {
+            var old = cube.getSections()[i];
+            cube.getSections()[i] = new net.minecraft.world.level.chunk.LevelChunkSection(
+                new net.minecraft.world.level.chunk.PalettedContainer<>(
+                    net.minecraft.world.level.block.Block.BLOCK_STATE_REGISTRY, Blocks.DEEPSLATE.defaultBlockState(),
+                    net.minecraft.world.level.chunk.PalettedContainer.Strategy.SECTION_STATES), old.getBiomes());
+        }
+        return true;
     }
 
     @FunctionalInterface
