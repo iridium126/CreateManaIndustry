@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.dimension;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
@@ -97,6 +98,9 @@ public final class AllvrClientCubeCache {
     /** Cubes that hold block entities — the client ticking worklist (mirrors
      *  the server cube map's registry; most cubes are pure terrain). */
     private static final Long2ObjectOpenHashMap<AllvrCube> beCubes = new Long2ObjectOpenHashMap<>();
+    private static final LongOpenHashSet tickingBeCubeKeys = new LongOpenHashSet();
+    private static boolean simulationTicketsDirty = true;
+    private static long simulationCenter = Long.MIN_VALUE;
 
     private record DecodedCube(ClientLevel targetLevel, long sessionEpoch, long cubePos,
                                int payloadBytes, AllvrCube cube, long sequence,
@@ -194,6 +198,9 @@ public final class AllvrClientCubeCache {
             }
             cubes.clear();
             beCubes.clear();
+            tickingBeCubeKeys.clear();
+            simulationTicketsDirty = true;
+            simulationCenter = Long.MIN_VALUE;
             contentRevision++;
             LATEST_PACKET_SEQUENCE.clear();
             COMPLETED_CUBES.clear();
@@ -222,10 +229,18 @@ public final class AllvrClientCubeCache {
     }
 
     private static void decodeAndQueueApply(ClientboundAllvrCubePacket packet,
-                                             ClientLevel targetLevel,
-                                             RegistryAccess registryAccess,
-                                             long sequence,
-                                             long sessionEpoch) {
+                                              ClientLevel targetLevel,
+                                              RegistryAccess registryAccess,
+                                              long sequence,
+                                              long sessionEpoch) {
+        // A newer packet may have superseded this one while it was waiting
+        // for a decode worker. Vanilla's packet pipeline drops stale holder
+        // results before publication; do the same before paying the section
+        // palette/BE decode cost.
+        if (CLIENT_SESSION_EPOCH.get() != sessionEpoch
+            || !isLatestPacket(packet.cubePos(), sequence)) {
+            return;
+        }
         AllvrCube cube = null;
         Throwable failure = null;
         try {
@@ -262,9 +277,7 @@ public final class AllvrClientCubeCache {
             lightEngine.tick(CLIENT_LIGHT_BUDGET);
             for (long cubeKey : lightEngine.drainDirtyCubes()) {
                 if (lightEngine.hasLoadedCube(cubeKey)) {
-                    AllvrSodiumBridge.onCubeApplied(cubeKey);
-                    com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest
-                        .onCubeApplied(cubeKey);
+                    notifyCubePublished(cubeKey);
                 }
             }
         }
@@ -305,9 +318,15 @@ public final class AllvrClientCubeCache {
         cube.onLoad(clientLevel);
         if (lightEngine != null) {
             lightEngine.onCubeLoaded(cube);
+        } else {
+            notifyCubePublished(cubePos);
         }
+    }
+
+    private static void notifyCubePublished(long cubePos) {
         AllvrSodiumBridge.onCubeApplied(cubePos);
-        com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest.onCubeApplied(cubePos);
+        com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest
+            .onCubeApplied(cubePos);
     }
 
     /**
@@ -342,6 +361,7 @@ public final class AllvrClientCubeCache {
                 unloaded.onUnload();
             }
             beCubes.remove(cubePos);
+            tickingBeCubeKeys.remove(cubePos);
             contentRevision++;
         }
         // The light engine calls back into the cache while re-seeding its
@@ -374,12 +394,24 @@ public final class AllvrClientCubeCache {
         }
     }
 
+    private static boolean isLatestPacket(long cubePos, long sequence) {
+        Long latest = LATEST_PACKET_SEQUENCE.get(cubePos);
+        // An opportunistically evicted entry is not evidence that this task
+        // is stale; applyDecodedCube remains the authoritative final guard.
+        return latest == null || latest.longValue() == sequence;
+    }
+
     /** Keeps the block-entity worklist in step with a cube's BE set. */
     private static void refreshBeCube(long key, AllvrCube cube) {
         if (cube.hasBlockEntities()) {
-            beCubes.put(key, cube);
+            if (beCubes.put(key, cube) != cube) {
+                simulationTicketsDirty = true;
+            }
         } else {
-            beCubes.remove(key);
+            if (beCubes.remove(key) != null) {
+                tickingBeCubeKeys.remove(key);
+                simulationTicketsDirty = true;
+            }
         }
     }
 
@@ -401,14 +433,28 @@ public final class AllvrClientCubeCache {
             return;
         }
         AllvrCubePos pc = AllvrCubePos.of(player.blockPosition());
-        // snapshot: a ticker can write blocks (adding/removing BEs → registry writes)
-        for (AllvrCube cube : beCubes.values().toArray(new AllvrCube[0])) {
-            if (!cube.hasBlockEntities()) {
-                continue;
+        long center = pc.asLong();
+        if (center != simulationCenter) {
+            simulationCenter = center;
+            simulationTicketsDirty = true;
+        }
+        if (simulationTicketsDirty) {
+            tickingBeCubeKeys.clear();
+            for (long key : beCubes.keySet()) {
+                AllvrCube cube = beCubes.get(key);
+                if (cube == null) continue;
+                AllvrCubePos cpos = cube.getPos();
+                if (Math.abs(cpos.getX() - pc.getX()) <= 8 && Math.abs(cpos.getZ() - pc.getZ()) <= 8
+                    && Math.abs(cpos.getY() - pc.getY()) <= 8) {
+                    tickingBeCubeKeys.add(key);
+                }
             }
-            AllvrCubePos cpos = cube.getPos();
-            if (Math.abs(cpos.getX() - pc.getX()) <= 8 && Math.abs(cpos.getZ() - pc.getZ()) <= 8
-                && Math.abs(cpos.getY() - pc.getY()) <= 8) {
+            simulationTicketsDirty = false;
+        }
+        // snapshot: a ticker can write blocks (adding/removing BEs → registry writes)
+        for (long key : tickingBeCubeKeys.toLongArray()) {
+            AllvrCube cube = beCubes.get(key);
+            if (cube != null && cube.hasBlockEntities()) {
                 cube.tickBlockEntities(clientLevel);
             }
         }

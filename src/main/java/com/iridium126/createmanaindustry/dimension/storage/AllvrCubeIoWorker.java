@@ -61,6 +61,12 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
     private static final long IO_ERROR_LOG_INTERVAL_MS = 10_000;
     /** Small coalescing window; mirrors vanilla's low-priority background saves. */
     private static final long BATCH_DELAY_MS = 2L;
+    /**
+     * Keep one background commit close to vanilla IOWorker's one-record
+     * mailbox semantics without throwing away Region3D's useful batching.
+     * This bounds the time for which a foreground load waits on the write lock.
+     */
+    private static final int MAX_BACKGROUND_BATCH = 64;
     /** Bound foreground reads so a fast player cannot grow an unbounded queue. */
     private static final int MAX_PENDING_READS = 512;
     /** Parallel region reads; the storage implementation still serializes mutations. */
@@ -196,9 +202,13 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
         if (this.pending.isEmpty()) {
             return;
         }
-        Map<AllvrCubePos, CompoundTag> batch = new java.util.HashMap<>(this.pending.size());
+        Map<AllvrCubePos, CompoundTag> batch = new java.util.HashMap<>(
+            Math.min(this.pending.size(), MAX_BACKGROUND_BATCH));
         for (PendingWrite write : this.pending.values()) {
             batch.put(write.pos, write.tag);
+            if (batch.size() >= MAX_BACKGROUND_BATCH) {
+                break;
+            }
         }
         long start = System.nanoTime();
         this.storage.writeBatch(batch);
@@ -376,16 +386,20 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
     }
 
     private void drainUntilEmpty() throws IOException {
-        for (int attempt = 0; attempt < MAX_FLUSH_RETRIES && !this.pending.isEmpty(); attempt++) {
+        int failures = 0;
+        while (!this.pending.isEmpty() && failures < MAX_FLUSH_RETRIES) {
             try {
                 this.drainBatch();
+                failures = 0;
             } catch (Exception e) {
+                failures++;
                 this.noteIoError(e instanceof IOException io ? io : new IOException(e));
             }
         }
         if (!this.pending.isEmpty()) {
             IOException failure = new IOException("[Allvr] " + this.pending.size()
-                + " cube record(s) still pending after " + MAX_FLUSH_RETRIES + " drain attempts — last failure",
+                + " cube record(s) still pending after " + MAX_FLUSH_RETRIES
+                + " consecutive drain failures — last failure",
                 this.lastIoException);
             this.diagnostics.noteIoError(failure.toString());
             throw failure;

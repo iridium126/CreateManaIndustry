@@ -3,9 +3,11 @@ package com.iridium126.createmanaindustry.dimension.cube;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -101,8 +103,12 @@ public final class AllvrCubeMap {
     /** Keep async generation/read completions from monopolising the tick. */
     private static final int COMPLETION_INSTALL_BUDGET = 16;
     private static final long COMPLETION_INSTALL_BUDGET_NANOS = 2_000_000L;
-    /** Far-cube unload scan cadence (ticks). */
-    private static final int UNLOAD_SCAN_TICKS = 40;
+    /**
+     * Safety cadence for cubes loaded by direct gameplay access. Normal
+     * player-tracking changes trigger the unload pass immediately, so stable
+     * players do not repeatedly scan the entire residency map.
+     */
+    private static final int UNLOAD_SCAN_TICKS = 200;
     /**
      * Session cube cap. Uniform island-interior cubes are a few hundred bytes
      * but shell cubes carry real section data; past the cap only cubes within
@@ -137,6 +143,9 @@ public final class AllvrCubeMap {
      * deliberately not involved; see {@link #tickBlockEntities}.
      */
     private final Long2ObjectOpenHashMap<AllvrCube> beCubes = new Long2ObjectOpenHashMap<>();
+    /** Cubes with a simulation ticket for at least one current player. */
+    private final LongOpenHashSet tickingBeCubeKeys = new LongOpenHashSet();
+    private boolean simulationTicketsDirty = true;
     private final Map<UUID, Subscription> subscriptions = new java.util.HashMap<>();
     private final AllvrCubeIoWorker worker;
     private final ThreadPoolExecutor persistenceDecodeExecutor = new ThreadPoolExecutor(
@@ -167,6 +176,20 @@ public final class AllvrCubeMap {
     private final it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap loadCooldown = new it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap();
     /** Permanently failed records are not retried every cooldown interval. */
     private final LongOpenHashSet failedPersistedLoads = new LongOpenHashSet();
+    /**
+     * Vanilla sends an already-built chunk packet to every eligible player.
+     * Keep a small access-ordered cache because Allay cube payloads are
+     * immutable for a cube mutation version and are often sent to several
+     * players during the same exploration burst.
+     */
+    private static final int CUBE_PACKET_CACHE_LIMIT = 512;
+    private final Map<Long, CachedCubePacket> cubePacketCache =
+        new LinkedHashMap<>(CUBE_PACKET_CACHE_LIMIT, .75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<Long, CachedCubePacket> eldest) {
+                return size() > CUBE_PACKET_CACHE_LIMIT;
+            }
+        };
     private boolean loggedCapWarning;
     private int unloadScanTicks;
     private boolean closed;
@@ -175,11 +198,17 @@ public final class AllvrCubeMap {
     private static final class Subscription {
         final LongOpenHashSet sent = new LongOpenHashSet();
         AllvrCubePos lastCube;
+        /** Vanilla's tracking center is a chunk, even though storage is a cube. */
+        int lastPlayerChunkX = Integer.MIN_VALUE;
+        int lastPlayerChunkZ = Integer.MIN_VALUE;
         /** Resume the shell scan where the per-tick budget stopped. */
         int scanRadius;
         int scanIndex;
         int renderDistanceChunks = AllvrVanillaRenderDistance.MIN_CHUNKS;
         int sendYRadius = DEFAULT_SEND_Y_RADIUS;
+        /** A stable player must not rescan the full shell every tick. */
+        boolean scanDirty = true;
+        boolean forgetDirty = true;
     }
 
     /**
@@ -192,6 +221,8 @@ public final class AllvrCubeMap {
                                  AllvrCube cube, Throwable failure) {}
     private record PersistedCubeLoad(long key, CompletableFuture<AllvrCube> future,
         AllvrCube cube, Throwable failure) {}
+    private record CachedCubePacket(AllvrCube cube, long mutationVersion,
+                                    ClientboundAllvrCubePacket packet) {}
 
     public AllvrCubeMap(ServerLevel level) {
         this.level = level;
@@ -344,6 +375,53 @@ public final class AllvrCubeMap {
         }
     }
 
+    private ClientboundAllvrCubePacket packetFor(AllvrCube cube) {
+        long key = cube.getPos().asLong();
+        long mutationVersion = cube.mutationVersion();
+        CachedCubePacket cached = this.cubePacketCache.get(key);
+        if (cached != null && cached.cube() == cube && cached.mutationVersion() == mutationVersion) {
+            return cached.packet();
+        }
+        ClientboundAllvrCubePacket packet = ClientboundAllvrCubePacket.of(cube, level.registryAccess());
+        this.cubePacketCache.put(key, new CachedCubePacket(cube, mutationVersion, packet));
+        return packet;
+    }
+
+    /**
+     * Incremental equivalent of ChunkMap's holder update when a cube becomes
+     * resident. A residency event no longer wakes every subscription's full
+     * shell scan; the scan remains responsible only for discovering missing
+     * requests after a player ticket/view change.
+     */
+    private void announceCubeLoaded(AllvrCube cube) {
+        long key = cube.getPos().asLong();
+        ClientboundAllvrCubePacket packet = null;
+        for (ServerPlayer player : level.players()) {
+            Subscription sub = subscriptions.get(player.getUUID());
+            if (sub == null) continue;
+            AllvrCubePos center = AllvrCubePos.of(player.blockPosition());
+            if (AllvrVanillaRenderDistance.isCubeWithinCylinder(
+                cube.getPos().getX(), cube.getPos().getY(), cube.getPos().getZ(),
+                AllvrVanillaRenderDistance.blockToChunk(player.getX()),
+                AllvrVanillaRenderDistance.blockToChunk(player.getZ()),
+                center.getY(), sub.renderDistanceChunks, sub.sendYRadius)
+                && sub.sent.add(key)) {
+                if (packet == null) packet = packetFor(cube);
+                player.connection.send(packet);
+            }
+        }
+    }
+
+    /** Sends the forget edge immediately when an unneeded resident cube drops. */
+    private void forgetCubeForPlayers(long key, List<ServerPlayer> players) {
+        for (ServerPlayer player : players) {
+            Subscription sub = subscriptions.get(player.getUUID());
+            if (sub != null && sub.sent.remove(key)) {
+                player.connection.send(new ClientboundAllvrForgetCubePacket(key));
+            }
+        }
+    }
+
     private void updateBlockEntity(AllvrCube cube, BlockPos pos, BlockState newState) {
         cube.updateBlockEntity(level, pos, newState);
         refreshBeCube(cube);
@@ -353,9 +431,14 @@ public final class AllvrCubeMap {
     private void refreshBeCube(AllvrCube cube) {
         long key = cube.getPos().asLong();
         if (cube.hasBlockEntities()) {
-            this.beCubes.put(key, cube);
+            if (this.beCubes.put(key, cube) != cube) {
+                this.simulationTicketsDirty = true;
+            }
         } else {
-            this.beCubes.remove(key);
+            if (this.beCubes.remove(key) != null) {
+                this.tickingBeCubeKeys.remove(key);
+                this.simulationTicketsDirty = true;
+            }
         }
     }
 
@@ -449,8 +532,10 @@ public final class AllvrCubeMap {
         cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
         generator.generate(cube);
         cubes.put(key, cube);
+        refreshBeCube(cube);
         cube.onLoad(level);
         this.lightEngine.onCubeLoaded(cube);
+        announceCubeLoaded(cube);
         // Generated terrain is itself the authoritative result of worldgen.
         // Persist it through the bounded snapshot queue so the next session
         // restores the complete cube without repeating noise/features.
@@ -498,8 +583,10 @@ public final class AllvrCubeMap {
         if (existing != null) return existing;
         if (closed || persistedIndex.contains(key)) return null;
         cubes.put(key, cube);
+        refreshBeCube(cube);
         cube.onLoad(level);
         this.lightEngine.onCubeLoaded(cube);
+        announceCubeLoaded(cube);
         this.markGeneratedForPersistence(cube);
         diagnostics.cubesGenerated.incrementAndGet();
         return cube;
@@ -712,11 +799,10 @@ public final class AllvrCubeMap {
         cube.markPersistedOverride();
         cube.markQueued(cube.mutationVersion(), cube.lightVersion());
         this.cubes.put(key, cube);
-        if (cube.hasBlockEntities()) {
-            this.beCubes.put(key, cube);
-        }
+        refreshBeCube(cube);
         cube.onLoad(this.level);
         this.lightEngine.onCubeLoaded(cube);
+        announceCubeLoaded(cube);
         this.loadCooldown.remove(key);
         this.diagnostics.cubesLoadedFromDisk.incrementAndGet();
         return cube;
@@ -769,10 +855,27 @@ public final class AllvrCubeMap {
         this.drainCompletedPersistedLoads();
         List<ServerPlayer> players = level.players();
         if (players.isEmpty()) {
-            cancelGenerationsOutside(players);
+            if (!subscriptions.isEmpty() || !pendingGenerations.isEmpty()
+                || !pendingPersistedLoads.isEmpty()) {
+                subscriptions.clear();
+                cancelGenerationsOutside(players);
+            }
+            tickingBeCubeKeys.clear();
+            simulationTicketsDirty = true;
             return;
         }
-        cancelGenerationsOutside(players);
+
+        // A pending generation/read only needs revalidation when the player
+        // ticket set changes. Vanilla's DistanceManager updates ticket
+        // holders on movement/distance changes; scanning every pending future
+        // against every player on every stable tick was the opposite of that
+        // behavior.
+        Set<UUID> activePlayers = new HashSet<>(players.size());
+        for (ServerPlayer player : players) activePlayers.add(player.getUUID());
+        boolean subscriptionsChanged = subscriptions.size() != activePlayers.size();
+        if (subscriptions.keySet().removeIf(uuid -> !activePlayers.contains(uuid))) {
+            subscriptionsChanged = true;
+        }
 
         long deadline = System.nanoTime() + TICK_BUDGET_NANOS;
         boolean capReached = cubes.size() >= MAX_LOADED_CUBES;
@@ -784,18 +887,18 @@ public final class AllvrCubeMap {
         for (ServerPlayer player : players) {
             AllvrCubePos pc = AllvrCubePos.of(player.blockPosition());
             Subscription sub = subscriptions.computeIfAbsent(player.getUUID(), k -> new Subscription());
-            updateRenderDistance(player, sub);
-            if (sub.lastCube == null || chebyshev(pc, sub.lastCube) > 2) {
+            boolean cubeCenterChanged = sub.lastCube == null || !pc.equals(sub.lastCube);
+            if (prepareSubscription(player, pc, sub)) subscriptionsChanged = true;
+            if (cubeCenterChanged) {
                 // ChunkMap does not block the server tick for a missing
                 // holder. Queue even the center cube and let the completion
                 // handoff below publish it on a later tick; direct gameplay
                 // writes retain the separate synchronous compatibility path.
-                long centerKey = pc.asLong();
                 AllvrCube cube = getOrRequest(pc.getX(), pc.getY(), pc.getZ());
                 if (cube != null) {
                     long key = cube.getPos().asLong();
                     if (sub.sent.add(key)) {
-                        player.connection.send(ClientboundAllvrCubePacket.of(cube, level.registryAccess()));
+                        player.connection.send(packetFor(cube));
                     }
                 }
                 sub.lastCube = pc;
@@ -803,12 +906,23 @@ public final class AllvrCubeMap {
                 sub.scanIndex = 0;
             }
         }
+        if (subscriptionsChanged) {
+            simulationTicketsDirty = true;
+            cancelGenerationsOutside(players);
+        }
 
         for (ServerPlayer player : players) {
             AllvrCubePos pc = AllvrCubePos.of(player.blockPosition());
             Subscription sub = subscriptions.computeIfAbsent(player.getUUID(), k -> new Subscription());
-            updateRenderDistance(player, sub);
+            prepareSubscription(player, pc, sub);
             if (capReached && chebyshev(pc, playerCubeCenter(sub)) > 2) {
+                continue;
+            }
+            if (!sub.scanDirty && sub.scanRadius == 0 && sub.scanIndex == 0) {
+                if (sub.forgetDirty) {
+                    forgetOutOfRange(player, pc, sub);
+                    sub.forgetDirty = false;
+                }
                 continue;
             }
             int sentCount = 0;
@@ -824,18 +938,27 @@ public final class AllvrCubeMap {
                 scanIndex = 0;
             }
             boolean budgetStopped = false;
+            boolean sendPending = false;
             int playerChunkX = AllvrVanillaRenderDistance.blockToChunk(player.getX());
             int playerChunkZ = AllvrVanillaRenderDistance.blockToChunk(player.getZ());
             scanLoop:
             while (scanRadius <= streamRadius) {
-                int side = scanRadius * 2 + 1;
-                int sideSquared = side * side;
-                int total = sideSquared * side;
+                // The old cursor walked a (2r+1)^3 cube at every radius and
+                // filtered the independent Y range afterwards. This keeps the
+                // same near-to-far shell order while enumerating only the
+                // anisotropic box that can actually be needed.
+                int xRadius = Math.min(scanRadius, horizontalShellRadius);
+                int yRadius = Math.min(scanRadius, verticalShellRadius);
+                int sideX = xRadius * 2 + 1;
+                int sideY = yRadius * 2 + 1;
+                int sideZ = sideX;
+                int sideXY = sideX * sideY;
+                int total = sideXY * sideZ;
                 while (scanIndex < total) {
                     int index = scanIndex;
-                    int dx = index % side - scanRadius;
-                    int dy = index / side % side - scanRadius;
-                    int dz = index / sideSquared - scanRadius;
+                    int dx = index % sideX - xRadius;
+                    int dy = index / sideX % sideY - yRadius;
+                    int dz = index / sideXY - xRadius;
                     if (Math.max(Math.max(Math.abs(dx), Math.abs(dy)), Math.abs(dz)) != scanRadius) {
                         scanIndex++;
                         continue;
@@ -848,16 +971,9 @@ public final class AllvrCubeMap {
                     int cx = pc.getX() + dx;
                     int cy = pc.getY() + dy;
                     int cz = pc.getZ() + dz;
-                    // The scan cursor is a cube for resumability, but the
-                    // actual shell is anisotropic: horizontal render distance
-                    // must not silently increase Allay's independent Y range.
-                    if (Math.max(Math.abs(dx), Math.abs(dz)) > horizontalShellRadius
-                        || Math.abs(dy) > verticalShellRadius) {
-                        continue;
-                    }
                     long key = AllvrCubePos.asLong(cx, cy, cz);
                     boolean inSendRange = AllvrVanillaRenderDistance.isCubeWithinCylinder(
-                        AllvrCubePos.of(cx, cy, cz), playerChunkX, playerChunkZ,
+                        cx, cy, cz, playerChunkX, playerChunkZ,
                         pc.getY(), sub.renderDistanceChunks, sub.sendYRadius);
                     if (sub.sent.contains(key) || (capReached && scanRadius > 2 && !inSendRange)) {
                         continue;
@@ -866,9 +982,16 @@ public final class AllvrCubeMap {
                     if (cube == null) {
                         continue;
                     }
-                    if (inSendRange && sentCount < SEND_BUDGET_PER_TICK && sub.sent.add(key)) {
-                        player.connection.send(ClientboundAllvrCubePacket.of(cube, level.registryAccess()));
-                        sentCount++;
+                    if (inSendRange && !sub.sent.contains(key)) {
+                        if (sentCount < SEND_BUDGET_PER_TICK && sub.sent.add(key)) {
+                            player.connection.send(packetFor(cube));
+                            sentCount++;
+                        } else {
+                            // Keep the subscription dirty after a complete
+                            // pass. Vanilla's tracking difference is retried
+                            // until every eligible holder has been sent.
+                            sendPending = true;
+                        }
                     }
                 }
                 scanRadius++;
@@ -877,16 +1000,26 @@ public final class AllvrCubeMap {
             if (budgetStopped) {
                 sub.scanRadius = scanRadius;
                 sub.scanIndex = scanIndex;
+                sub.scanDirty = true;
+            } else if (sendPending) {
+                sub.scanRadius = 0;
+                sub.scanIndex = 0;
+                sub.scanDirty = true;
             } else {
                 sub.scanRadius = 0;
                 sub.scanIndex = 0;
+                sub.scanDirty = false;
             }
 
-            forgetOutOfRange(player, pc, sub);
+            if (sub.forgetDirty) {
+                forgetOutOfRange(player, pc, sub);
+                sub.forgetDirty = false;
+            }
         }
 
-        this.tickBlockEntities(players);
-        if (++this.unloadScanTicks >= UNLOAD_SCAN_TICKS) {
+        rebuildSimulationTickets(players);
+        this.tickBlockEntities();
+        if (subscriptionsChanged || ++this.unloadScanTicks >= UNLOAD_SCAN_TICKS) {
             this.unloadScanTicks = 0;
             this.unloadFarCubes(players);
         }
@@ -900,21 +1033,35 @@ public final class AllvrCubeMap {
      * ticks only while within the shell radius of some player — the
      * unload-distance equivalent of vanilla's simulation-distance gating.
      */
-    private void tickBlockEntities(List<ServerPlayer> players) {
-        if (this.beCubes.isEmpty()) {
+    private void rebuildSimulationTickets(List<ServerPlayer> players) {
+        if (!simulationTicketsDirty) {
             return;
         }
-        // snapshot: a ticker can setBlock (adding/removing BEs → registry writes)
-        for (AllvrCube cube : this.beCubes.values().toArray(new AllvrCube[0])) {
-            if (!cube.hasBlockEntities()) {
-                continue;
-            }
+        tickingBeCubeKeys.clear();
+        for (long key : beCubes.keySet()) {
+            AllvrCube cube = beCubes.get(key);
+            if (cube == null) continue;
             AllvrCubePos cpos = cube.getPos();
             for (ServerPlayer player : players) {
                 if (chebyshev(AllvrCubePos.of(player.blockPosition()), cpos) <= GEN_RADIUS) {
-                    cube.tickBlockEntities(level);
+                    tickingBeCubeKeys.add(key);
                     break;
                 }
+            }
+        }
+        simulationTicketsDirty = false;
+    }
+
+    /** Ticks only cubes with a current simulation ticket. */
+    private void tickBlockEntities() {
+        if (tickingBeCubeKeys.isEmpty()) {
+            return;
+        }
+        // snapshot: a ticker can setBlock (adding/removing BEs → registry writes)
+        for (long key : tickingBeCubeKeys.toLongArray()) {
+            AllvrCube cube = beCubes.get(key);
+            if (cube != null && cube.hasBlockEntities()) {
+                cube.tickBlockEntities(level);
             }
         }
     }
@@ -1155,6 +1302,7 @@ public final class AllvrCubeMap {
         }
         pendingPersistedLoads.clear();
         completedPersistedLoads.clear();
+        this.cubePacketCache.clear();
         this.lightEngine.clear();
         this.worker.close();
         CreateManaIndustry.LOGGER.info("[Allvr] cube persistence closed ({}): {}",
@@ -1212,9 +1360,11 @@ public final class AllvrCubeMap {
                         continue; // snapshot failure → keep in memory, retry next scan
                     }
                 }
+                forgetCubeForPlayers(key, players);
                 cube.onUnload();
                 this.cubes.remove(key);
                 this.beCubes.remove(key);
+                this.tickingBeCubeKeys.remove(key);
                 // Cooldown bookkeeping is only meaningful while a cube is
                 // resident.  Discard it with the cube so exploration cannot
                 // grow a map entry for every unloaded coordinate.
@@ -1245,9 +1395,9 @@ public final class AllvrCubeMap {
         int playerChunkZ = AllvrVanillaRenderDistance.blockToChunk(player.getZ());
         while (it.hasNext()) {
             long key = it.nextLong();
-            AllvrCubePos cpos = AllvrCubePos.fromLong(key);
             if (!AllvrVanillaRenderDistance.isCubeWithinCylinder(
-                cpos, playerChunkX, playerChunkZ, pc.getY(),
+                AllvrCubePos.extractX(key), AllvrCubePos.extractY(key), AllvrCubePos.extractZ(key),
+                playerChunkX, playerChunkZ, pc.getY(),
                 sub.renderDistanceChunks, sub.sendYRadius)) {
                 if (forget == null) {
                     forget = new LongArrayList();
@@ -1265,7 +1415,9 @@ public final class AllvrCubeMap {
 
     /** Drops one player's subscription so cubes are re-streamed from scratch. */
     public void resetPlayer(UUID uuid) {
-        subscriptions.remove(uuid);
+        if (subscriptions.remove(uuid) != null) {
+            simulationTicketsDirty = true;
+        }
     }
 
     private static int chebyshev(AllvrCubePos a, AllvrCubePos b) {
@@ -1291,7 +1443,7 @@ public final class AllvrCubeMap {
         Subscription sub = subscriptions.computeIfAbsent(player.getUUID(), k -> new Subscription());
         updateRenderDistance(player, sub);
         return AllvrVanillaRenderDistance.isCubeWithinCylinder(
-            cube,
+            cube.getX(), cube.getY(), cube.getZ(),
             AllvrVanillaRenderDistance.blockToChunk(player.getX()),
             AllvrVanillaRenderDistance.blockToChunk(player.getZ()),
             center.getY(), sub.renderDistanceChunks, sub.sendYRadius);
@@ -1303,7 +1455,27 @@ public final class AllvrCubeMap {
      * distance. No Allay-specific client packet is necessary because the
      * vanilla client-information packet already updates requestedViewDistance.
      */
-    private void updateRenderDistance(ServerPlayer player, Subscription sub) {
+    private boolean prepareSubscription(ServerPlayer player, AllvrCubePos center, Subscription sub) {
+        boolean changed = updateRenderDistance(player, sub);
+        int playerChunkX = AllvrVanillaRenderDistance.blockToChunk(player.getX());
+        int playerChunkZ = AllvrVanillaRenderDistance.blockToChunk(player.getZ());
+        boolean cubeCenterChanged = sub.lastCube == null || !center.equals(sub.lastCube);
+        boolean vanillaCenterChanged = sub.lastPlayerChunkX != playerChunkX
+            || sub.lastPlayerChunkZ != playerChunkZ;
+        if (cubeCenterChanged || vanillaCenterChanged) {
+            sub.lastCube = center;
+            sub.lastPlayerChunkX = playerChunkX;
+            sub.lastPlayerChunkZ = playerChunkZ;
+            sub.scanRadius = 0;
+            sub.scanIndex = 0;
+            sub.scanDirty = true;
+            sub.forgetDirty = true;
+            changed = true;
+        }
+        return changed;
+    }
+
+    private boolean updateRenderDistance(ServerPlayer player, Subscription sub) {
         int serverViewDistance = this.level.getServer().getPlayerList().getViewDistance();
         int effective = Math.min(player.requestedViewDistance(), serverViewDistance);
         int next = AllvrVanillaRenderDistance.clampChunks(effective);
@@ -1311,7 +1483,11 @@ public final class AllvrCubeMap {
             sub.renderDistanceChunks = next;
             sub.scanRadius = 0;
             sub.scanIndex = 0;
+            sub.scanDirty = true;
+            sub.forgetDirty = true;
+            return true;
         }
+        return false;
     }
 
     // ------------------------------------------------------------------

@@ -144,13 +144,33 @@ public final class AllvrRegionCubeStorage implements AllvrCubeStorage {
         if (cubes.isEmpty()) {
             return;
         }
+        // NBT serialization and deflate are CPU work, not part of the region
+        // index commit. Keep readers out of the commit window only; vanilla's
+        // IOWorker likewise separates record preparation from the final file
+        // operation. The read lock also prevents close() from ending the
+        // reusable deflater while this batch is being prepared.
+        Map<AllvrCubePos, byte[]> records = new LinkedHashMap<>(cubes.size());
+        this.accessLock.readLock().lock();
+        try {
+            for (Map.Entry<AllvrCubePos, CompoundTag> entry : cubes.entrySet()) {
+                // writeBatch is normally serialized by AllvrCubeIoWorker, but
+                // the codec itself is shared and must remain correct if a
+                // caller submits two flushes concurrently.
+                synchronized (this.deflater) {
+                    records.put(entry.getKey(), this.compress(entry.getValue()));
+                }
+            }
+        } finally {
+            this.accessLock.readLock().unlock();
+        }
+
         this.accessLock.writeLock().lock();
         try {
             Files.createDirectories(this.folder);
             Long2ObjectMap<Int2ObjectMap<byte[]>> perRegion = new Long2ObjectOpenHashMap<>();
-            for (Map.Entry<AllvrCubePos, CompoundTag> entry : cubes.entrySet()) {
+            for (Map.Entry<AllvrCubePos, byte[]> entry : records.entrySet()) {
                 AllvrCubePos pos = entry.getKey();
-                byte[] record = this.compress(entry.getValue());
+                byte[] record = entry.getValue();
                 this.bytesWritten += record.length;
                 perRegion.computeIfAbsent(regionKey(pos), k -> new it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<>())
                     .put(slot(pos), record);

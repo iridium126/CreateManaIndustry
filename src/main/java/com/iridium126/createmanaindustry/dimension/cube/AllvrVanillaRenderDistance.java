@@ -51,12 +51,27 @@ public final class AllvrVanillaRenderDistance {
                                                int playerCubeY,
                                                int renderDistanceChunks,
                                                int verticalCubeRadius) {
-        if (Math.abs(cube.getY() - playerCubeY) > verticalCubeRadius) {
+        return isCubeWithinCylinder(cube.getX(), cube.getY(), cube.getZ(),
+            playerChunkX, playerChunkZ, playerCubeY, renderDistanceChunks, verticalCubeRadius);
+    }
+
+    /**
+     * Allocation-free form used by the server tracking hot path. The
+     * geometry is deliberately shared with the object overload above so the
+     * tracking result cannot diverge from vanilla's circle-to-cylinder rule.
+     */
+    public static boolean isCubeWithinCylinder(int cubeX, int cubeY, int cubeZ,
+                                               int playerChunkX,
+                                               int playerChunkZ,
+                                               int playerCubeY,
+                                               int renderDistanceChunks,
+                                               int verticalCubeRadius) {
+        if (Math.abs(cubeY - playerCubeY) > verticalCubeRadius) {
             return false;
         }
 
-        int firstChunkX = cube.getX() * CHUNKS_PER_CUBE;
-        int firstChunkZ = cube.getZ() * CHUNKS_PER_CUBE;
+        int firstChunkX = cubeX * CHUNKS_PER_CUBE;
+        int firstChunkZ = cubeZ * CHUNKS_PER_CUBE;
         int viewDistance = clampChunks(renderDistanceChunks);
         for (int chunkX = firstChunkX; chunkX < firstChunkX + CHUNKS_PER_CUBE; chunkX++) {
             for (int chunkZ = firstChunkZ; chunkZ < firstChunkZ + CHUNKS_PER_CUBE; chunkZ++) {

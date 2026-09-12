@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.BiConsumer;
+import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
@@ -16,6 +17,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
@@ -23,6 +25,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.chunk.LightChunk;
 import net.minecraft.world.level.chunk.LightChunkGetter;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.lighting.ChunkSkyLightSources;
 import net.minecraft.world.level.lighting.LevelLightEngine;
 import net.minecraft.world.level.lighting.LightEngine;
@@ -58,6 +61,15 @@ import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
  */
 public final class AllvrLightEngine {
 
+    /**
+     * The same cheap palette-level test used by vanilla ChunkAccess before it
+     * scans a section. Dynamic emitters must be included here because their
+     * final emission can depend on the position supplied to the fine filter.
+     */
+    private static final Predicate<BlockState> POSSIBLE_BLOCK_LIGHT_SOURCE =
+        state -> state.hasDynamicLightEmission()
+            || state.getLightEmission(EmptyBlockGetter.INSTANCE, BlockPos.ZERO) != 0;
+
     public interface Access {
         BlockState getBlockState(BlockPos pos);
 
@@ -78,6 +90,7 @@ public final class AllvrLightEngine {
     private final Long2ObjectOpenHashMap<AllvrCube> loadedCubes = new Long2ObjectOpenHashMap<>();
     private final Int2ObjectOpenHashMap<EngineShard> shards = new Int2ObjectOpenHashMap<>();
     private final LongOpenHashSet dirtyCubes = new LongOpenHashSet();
+    private int lightShardCursor;
 
     public AllvrLightEngine(Level level, Access access) {
         this.access = access;
@@ -98,6 +111,7 @@ public final class AllvrLightEngine {
 
             DataLayer[] restoredSky = cube.takeRestoredSkyLight();
             DataLayer[] restoredBlock = cube.takeRestoredBlockLight();
+            boolean restoredLight = restoredSky != null && restoredBlock != null;
             forEachSection(cube, (section, index) -> {
                 SectionPos localSection = shard.toLocalSection(section);
                 // A resident Allvr section is a real light-storage section,
@@ -112,12 +126,16 @@ public final class AllvrLightEngine {
                 }
             });
 
-            // This is the vanilla chunk-load source pass, limited to the four
-            // virtual chunk columns represented by this cube. It discovers
-            // sources from BlockState values; neighbouring columns are not
-            // replayed here.
-            forEachChunkColumn(cube, shard.vanilla::propagateLightSources);
-            markCubeDirty(key);
+            // Match ThreadedLevelLightEngine#lightChunk(chunk, isLighted): a
+            // persisted light array is already authoritative and must not be
+            // followed by a second full source replay. Fresh/client cubes do
+            // not carry light data, so they use vanilla's source discovery.
+            if (!restoredLight) {
+                forEachChunkColumn(cube, shard.vanilla::propagateLightSources);
+            }
+            // Publication invalidates render consumers, but loading a
+            // persisted light array is not itself a new persistence mutation.
+            markCubePublished(key);
         }
     }
 
@@ -152,20 +170,37 @@ public final class AllvrLightEngine {
     }
 
     /**
-     * Runs vanilla's complete pending propagation pass. The old custom
-     * implementation exposed a node budget; LevelLightEngine intentionally
-     * owns the queue and drains it atomically, so the argument is retained
-     * only for the existing cube-map call sites.
+     * Runs pending propagation in a round-robin shard scheduler. Vanilla's
+     * LevelLightEngine owns each queue and only exposes an all-queue drain, so
+     * the budget is enforced at shard boundaries; this still prevents one
+     * light window from consuming the entire multi-window budget.
      */
     public int tick(int budget) {
         if (budget <= 0) {
             return 0;
         }
         synchronized (lock) {
-            int processed = 0;
-            for (EngineShard shard : shards.values()) {
-                processed += shard.vanilla.runLightUpdates();
+            EngineShard[] active = shards.values().toArray(new EngineShard[0]);
+            if (active.length == 0) {
+                return 0;
             }
+            int start = Math.floorMod(lightShardCursor, active.length);
+            int processed = 0;
+            int examined = 0;
+            while (examined < active.length) {
+                EngineShard shard = active[(start + examined) % active.length];
+                // LevelLightEngine#runLightUpdates is an all-queue drain. Do
+                // not enter it for idle Y windows; a tall Allay world can
+                // retain several shards while only one has live work.
+                if (shard.vanilla.hasLightWork()) {
+                    processed += shard.vanilla.runLightUpdates();
+                }
+                examined++;
+                if (processed >= budget) {
+                    break;
+                }
+            }
+            lightShardCursor = (start + examined) % active.length;
             return processed;
         }
     }
@@ -378,7 +413,13 @@ public final class AllvrLightEngine {
             BlockPos localPos = toLocal(worldPos);
             AllvrLightChunk column = lightChunks.get(ChunkPos.asLong(
                 SectionPos.blockToSectionCoord(localPos.getX()), SectionPos.blockToSectionCoord(localPos.getZ())));
-            if (column != null) column.skySources.invalidate();
+            if (column != null) {
+                // LevelChunk updates its sky-source heightmap for one local
+                // column before asking SkyLightEngine to check the node. Do
+                // the same here; cube load/unload still invalidates the whole
+                // table because its vertical membership changed.
+                column.skySources.update(lightLevelView, localPos.getX(), localPos.getY(), localPos.getZ());
+            }
             vanilla.checkBlock(localPos);
         }
 
@@ -402,7 +443,11 @@ public final class AllvrLightEngine {
         }
     }
 
-    private void markCubeDirty(long key) {
+    private void markCubePublished(long key) {
+        dirtyCubes.add(key);
+    }
+
+    private void markLightChanged(long key) {
         dirtyCubes.add(key);
         AllvrCube cube = loadedCubes.get(key);
         if (cube != null) {
@@ -411,7 +456,7 @@ public final class AllvrLightEngine {
     }
 
     private void markSectionDirty(SectionPos section) {
-        markCubeDirty(AllvrCubePos.asLong(section.getX() >> 1,
+        markLightChanged(AllvrCubePos.asLong(section.getX() >> 1,
             section.getY() >> 1, section.getZ() >> 1));
     }
 
@@ -549,24 +594,36 @@ public final class AllvrLightEngine {
         public void findBlockLightSources(BiConsumer<BlockPos, BlockState> output) {
             int cubeX = chunkX >> 1;
             int cubeZ = chunkZ >> 1;
+            int localChunkX = chunkX - (cubeX << 1);
+            int localChunkZ = chunkZ - (cubeZ << 1);
+            BlockPos.MutableBlockPos localPos = new BlockPos.MutableBlockPos();
             for (AllvrCube cube : cubeColumns.values()) {
                 AllvrCubePos cubePos = cube.getPos();
                 if (!owner.ownsCube(cube) || cubePos.getX() != cubeX || cubePos.getZ() != cubeZ) {
                     continue;
                 }
                 int baseX = cubePos.minBlockX();
-                int baseY = cubePos.minBlockY();
+                int baseY = cubePos.minBlockY() - owner.originY;
                 int baseZ = cubePos.minBlockZ();
-                int localChunkX = chunkX - (cubeX << 1);
-                int localChunkZ = chunkZ - (cubeZ << 1);
-                for (int localZ = localChunkZ * 16; localZ < localChunkZ * 16 + 16; localZ++) {
-                    for (int localX = localChunkX * 16; localX < localChunkX * 16 + 16; localX++) {
-                        for (int localY = 0; localY < AllvrCoords.DIAMETER_IN_BLOCKS; localY++) {
-                            BlockPos localPos = new BlockPos(
-                                baseX + localX, baseY + localY - owner.originY, baseZ + localZ);
-                            BlockState state = getBlockState(localPos);
-                            if (state.getLightEmission() > 0) {
-                                output.accept(localPos, state);
+                int chunkBaseX = baseX + localChunkX * 16;
+                int chunkBaseZ = baseZ + localChunkZ * 16;
+                LevelChunkSection[] sections = cube.getSections();
+                for (int sectionY = 0; sectionY < 2; sectionY++) {
+                    LevelChunkSection section = sections[AllvrCube.sliceIndex(
+                        localChunkX, sectionY, localChunkZ)];
+                    if (!section.maybeHas(POSSIBLE_BLOCK_LIGHT_SOURCE)) {
+                        continue;
+                    }
+                    int sectionBaseY = baseY + sectionY * 16;
+                    for (int localY = 0; localY < 16; localY++) {
+                        for (int localZ = 0; localZ < 16; localZ++) {
+                            for (int localX = 0; localX < 16; localX++) {
+                                BlockState state = section.getBlockState(localX, localY, localZ);
+                                localPos.set(chunkBaseX + localX, sectionBaseY + localY,
+                                    chunkBaseZ + localZ);
+                                if (state.getLightEmission(owner.lightLevelView, localPos) != 0) {
+                                    output.accept(localPos, state);
+                                }
                             }
                         }
                     }
@@ -613,6 +670,7 @@ public final class AllvrLightEngine {
         private final int chunkX;
         private final int chunkZ;
         private final AllvrLightChunk column;
+        private List<AllvrCube> sortedCubes = List.of();
         private boolean dirty = true;
 
         private AllvrSkyLightSources(AllvrLightChunk column) {
@@ -645,39 +703,46 @@ public final class AllvrLightEngine {
                 }
             }
             cubes.sort(Comparator.comparingInt((AllvrCube cube) -> cube.getPos().getY()).reversed());
+            sortedCubes = cubes;
 
             for (int localZ = 0; localZ < 16; localZ++) {
                 for (int localX = 0; localX < 16; localX++) {
-                    int highest = NEGATIVE_INFINITY;
-                    for (AllvrCube cube : cubes) {
-                        AllvrCubePos cubePos = cube.getPos();
-                        int baseX = cubePos.minBlockX();
-                        int localBaseY = cubePos.minBlockY() - owner.originY;
-                        int baseZ = cubePos.minBlockZ();
-                        if (localBaseY > VANILLA_MAX_Y || localBaseY + 31 < VANILLA_MIN_Y) {
-                            continue;
-                        }
-                        int cubeLocalX = (chunkX - (cubePos.getX() << 1)) * 16 + localX;
-                        int cubeLocalZ = (chunkZ - (cubePos.getZ() << 1)) * 16 + localZ;
-                        BlockPos.MutableBlockPos abovePos = new BlockPos.MutableBlockPos(
-                            baseX + cubeLocalX, localBaseY + 32, baseZ + cubeLocalZ);
-                        BlockState above = owner.lightLevelView.getBlockState(abovePos);
-                        for (int localY = 31; localY >= 0; localY--) {
-                            BlockPos.MutableBlockPos currentPos = new BlockPos.MutableBlockPos(
-                                baseX + cubeLocalX, localBaseY + localY, baseZ + cubeLocalZ);
-                            BlockState current = owner.lightLevelView.getBlockState(currentPos);
-                            if (isEdgeOccluded(abovePos, above, currentPos, current)) {
-                                highest = Math.max(highest, currentPos.getY() + 1);
-                                break;
-                            }
-                            abovePos.set(currentPos);
-                            above = current;
-                        }
-                    }
-                    lowestSources[(localZ << 4) | localX] = highest;
+                    rebuildColumn(localX, localZ);
                 }
             }
             dirty = false;
+        }
+
+        /** Recomputes one heightmap cell, matching vanilla's update granularity. */
+        private void rebuildColumn(int localX, int localZ) {
+            int highest = NEGATIVE_INFINITY;
+            for (AllvrCube cube : sortedCubes) {
+                AllvrCubePos cubePos = cube.getPos();
+                int baseX = cubePos.minBlockX();
+                int localBaseY = cubePos.minBlockY() - owner.originY;
+                int baseZ = cubePos.minBlockZ();
+                if (localBaseY > VANILLA_MAX_Y || localBaseY + 31 < VANILLA_MIN_Y) {
+                    continue;
+                }
+                int cubeLocalX = (chunkX - (cubePos.getX() << 1)) * 16 + localX;
+                int cubeLocalZ = (chunkZ - (cubePos.getZ() << 1)) * 16 + localZ;
+                BlockPos.MutableBlockPos abovePos = new BlockPos.MutableBlockPos(
+                    baseX + cubeLocalX, localBaseY + 32, baseZ + cubeLocalZ);
+                BlockPos.MutableBlockPos currentPos = new BlockPos.MutableBlockPos(
+                    baseX + cubeLocalX, localBaseY + 31, baseZ + cubeLocalZ);
+                BlockState above = owner.lightLevelView.getBlockState(abovePos);
+                for (int localY = 31; localY >= 0; localY--) {
+                    currentPos.setY(localBaseY + localY);
+                    BlockState current = owner.lightLevelView.getBlockState(currentPos);
+                    if (isEdgeOccluded(abovePos, above, currentPos, current)) {
+                        highest = Math.max(highest, currentPos.getY() + 1);
+                        break;
+                    }
+                    abovePos.set(currentPos);
+                    above = current;
+                }
+            }
+            lowestSources[(localZ << 4) | localX] = highest;
         }
 
         private boolean isEdgeOccluded(BlockPos abovePos, BlockState above,
@@ -704,7 +769,11 @@ public final class AllvrLightEngine {
 
         @Override
         public boolean update(BlockGetter ignored, int x, int y, int z) {
-            dirty = true;
+            if (dirty) {
+                rebuild();
+            } else {
+                rebuildColumn(x & 15, z & 15);
+            }
             return true;
         }
     }
