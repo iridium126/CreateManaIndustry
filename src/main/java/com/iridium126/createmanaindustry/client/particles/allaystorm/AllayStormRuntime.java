@@ -695,9 +695,20 @@ public final class AllayStormRuntime {
      * pool swap): the just-swapped pool is now the authoritative read source,
      * so every kill target provably compacted away. Until then the pending id
      * keeps the grid pass armed and refires the kill.
+     * <p>
+     * Also drops the member identity map. update.comp returns on the kill
+     * BEFORE its per-frame map rebuild (the early return precedes the memberMap
+     * write), so the killed generation's entries persist pointing at pool slots
+     * the next compaction hands to other particles — and the rebuild only ever
+     * writes PRESENT members, so nothing else removes them. A member-keyed
+     * combat spawn (tracking bursts survive a stop) would then resolve a dead
+     * member onto a recycled slot. Clearing here is race-free: this frame's
+     * emit pass already consumed the map, and the next update rebuilds it
+     * before emit reads it again.
      */
     public void retireKill() {
         this.stormKillEmitId = -1;
+        this.engine.gpu().clearMemberMap();
     }
 
     // ---- crosshair hit-query snapshot plumbing -------------------------------

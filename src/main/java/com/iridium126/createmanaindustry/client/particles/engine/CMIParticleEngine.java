@@ -2379,10 +2379,18 @@ public final class CMIParticleEngine {
             int[] counts = this.gpu.readbackCounts(this.pendingSlot);
             int alive = counts[0];
             int translucent = counts[1];
-            if (alive < 0 || alive > cap)
+            // Saturate against cap, never zero: the GPU-side slot guards keep
+            // the true live count <= cap, so cap itself stays a sound dispatch
+            // bound, while a 0 would collapse the next update dispatch and
+            // mass-drop every particle beyond it at compaction.
+            if (alive < 0)
                 alive = 0;
-            if (translucent < 0 || translucent > cap)
+            else if (alive > cap)
+                alive = cap;
+            if (translucent < 0)
                 translucent = 0;
+            else if (translucent > cap)
+                translucent = cap;
             this.aliveKnown = alive;
             this.translucentKnown = translucent;
             this.spawnDelta = 0;
