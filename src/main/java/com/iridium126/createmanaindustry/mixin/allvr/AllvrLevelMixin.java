@@ -205,6 +205,14 @@ public abstract class AllvrLevelMixin {
 
     /** X/Z-only LevelReader overload. */
     public boolean hasChunkAt(int x, int z) {
+        Level self = (Level) (Object) this;
+        if (self.isClientSide && self.dimension() == AllvrDimensions.ALLAY_LEVEL) {
+            Boolean cubeLoaded = com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook
+                .isChunkLoaded(x, z);
+            if (cubeLoaded != null) {
+                return cubeLoaded;
+            }
+        }
         return allvr$nativeHasChunk(SectionPos.blockToSectionCoord(x), SectionPos.blockToSectionCoord(z));
     }
 

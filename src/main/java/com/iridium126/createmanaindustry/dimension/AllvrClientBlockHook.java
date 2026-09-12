@@ -19,6 +19,7 @@ public final class AllvrClientBlockHook {
 
     private static volatile Function<BlockPos, BlockState> resolver;
     private static volatile Function<BlockPos, Boolean> loadedResolver;
+    private static volatile java.util.function.BiFunction<Integer, Integer, Boolean> chunkResolver;
     private static volatile net.minecraft.world.level.biome.BiomeManager.NoiseBiomeSource biomeResolver;
     private static volatile java.util.function.BiFunction<LightLayer, BlockPos, Integer> lightResolver;
     private static volatile java.util.function.BiFunction<BlockPos, Integer, Integer> rawLightResolver;
@@ -50,6 +51,16 @@ public final class AllvrClientBlockHook {
 
     public static void setLoadedResolver(Function<BlockPos, Boolean> resolver) {
         loadedResolver = resolver;
+    }
+
+    /** Client bridge for LevelReader's X/Z-only hasChunkAt query. */
+    public static Boolean isChunkLoaded(int x, int z) {
+        var current = chunkResolver;
+        return current == null ? null : current.apply(x, z);
+    }
+
+    public static void setChunkResolver(java.util.function.BiFunction<Integer, Integer, Boolean> resolver) {
+        chunkResolver = resolver;
     }
 
     public static void setLightResolver(java.util.function.BiFunction<LightLayer, BlockPos, Integer> resolver,

@@ -54,12 +54,28 @@ public final class AllvrVoxyClientIngest {
      * renderer's top-level Y range is built for the correct Allay slab.
      */
     private static volatile boolean rendererRefreshPending;
+    /** Marks the bridge's own raw-ingest call so the automatic Voxy upload
+     * guard can leave the native path untouched. */
+    private static final ThreadLocal<Boolean> BRIDGE_INGEST =
+        ThreadLocal.withInitial(() -> false);
     private static boolean residentScanQueued;
     private static long prewarmedSlab = Long.MIN_VALUE;
     private static final ArrayDeque<Long> SECTION_QUEUE = new ArrayDeque<>();
     private static final HashSet<Long> QUEUED_SECTIONS = new HashSet<>();
 
     private AllvrVoxyClientIngest() {}
+
+    public static void beginBridgeIngest() {
+        BRIDGE_INGEST.set(true);
+    }
+
+    public static void endBridgeIngest() {
+        BRIDGE_INGEST.remove();
+    }
+
+    public static boolean isBridgeIngest() {
+        return BRIDGE_INGEST.get();
+    }
 
     public static void bindLevel(ClientLevel newLevel) {
         clear();
@@ -300,8 +316,13 @@ public final class AllvrVoxyClientIngest {
             ? null : layers[0].copy();
         DataLayer block = layers == null || layers.length < 2 || layers[1] == null
             ? null : layers[1].copy();
-        me.cortex.voxy.common.world.service.VoxelIngestService.rawIngest(
-            engine, snapshot, absolute.getX(), virtualY, absolute.getZ(), block, sky);
+        beginBridgeIngest();
+        try {
+            me.cortex.voxy.common.world.service.VoxelIngestService.rawIngest(
+                engine, snapshot, absolute.getX(), virtualY, absolute.getZ(), block, sky);
+        } finally {
+            endBridgeIngest();
+        }
     }
 
     private static LevelChunkSection copySection(LevelChunkSection source) {

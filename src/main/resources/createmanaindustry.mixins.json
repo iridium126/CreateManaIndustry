@@ -52,6 +52,7 @@
     "allvr.AllvrGetLightColorMixin",
     "sodium.AllvrSodiumWorldRendererAccessor",
     "sodium.AllvrSodiumRenderSectionManagerMixin",
+    "sodium.AllvrSodiumOcclusionCullerMixin",
     "sodium.AllvrSodiumViewportMixin",
     "sodium.AllvrSodiumClonedChunkSectionMixin",
     "sodium.AllvrSodiumChunkBuilderMeshingTaskMixin",
