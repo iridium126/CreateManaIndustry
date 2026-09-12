@@ -13,9 +13,8 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Keep native tickets and packets near the central band; leave save/IO/tick pipelines intact. */
+/** Keep native column packets near the central band while retaining entity/block tickets. */
 @Mixin(ChunkMap.class)
 public abstract class AllvrChunkMapMixin {
     @Shadow @Final ServerLevel level;
@@ -28,16 +27,13 @@ public abstract class AllvrChunkMapMixin {
         return !AllvrDimensionLimits.intersectsVanillaView(player.getY(), getPlayerViewDistance(player));
     }
 
-    @Inject(method = "skipPlayer", at = @At("HEAD"), cancellable = true)
-    private void allvr$skipDistantColumnTickets(ServerPlayer player, CallbackInfoReturnable<Boolean> cir) {
-        // Vanilla move/updatePlayerStatus performs ticket removal/re-addition
-        // when this predicate changes, including vertical-only movement.
-        if (allvr$outsideChunkView(player)) cir.setReturnValue(true);
-    }
-
     @Inject(method = "updateChunkTracking", at = @At("HEAD"), cancellable = true)
     private void allvr$limitColumnView(ServerPlayer player, CallbackInfo ci) {
         if (allvr$outsideChunkView(player)) {
+            // Keep the player's DistanceManager ticket active so vanilla's
+            // entity manager continues ticking mobs in the cube shell. Only
+            // suppress column packet tracking; block reads in this Y range
+            // are routed by AllvrLevelMixin to the cube store.
             if (player.getChunkTrackingView() != ChunkTrackingView.EMPTY) {
                 applyChunkTrackingView(player, ChunkTrackingView.EMPTY);
             }

@@ -19,4 +19,10 @@ public interface AllvrServerLevelDuck {
      */
     AllvrCubeMap allvr$peekCubeMap();
 
+    /**
+     * Synchronizes vanilla entity visibility/ticking with loaded Allay cubes.
+     * This is invoked immediately before the server entity pass.
+     */
+    void allvr$syncEntityTicking();
+
 }

@@ -22,6 +22,9 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.ticks.ScheduledTick;
+import net.minecraft.world.ticks.TickPriority;
 import net.minecraft.world.level.LightLayer;
 
 /**
@@ -274,6 +277,26 @@ public abstract class AllvrLevelMixin {
         if (map != null) {
             cir.setReturnValue(map.getBlockEntity(pos));
         }
+    }
+
+    /**
+     * LevelAccessor exposes scheduleTick as interface defaults. A class
+     * method on Level wins that dispatch and sends cube positions to the
+     * independent queue while central positions retain native LevelTicks.
+     */
+    public void scheduleTick(BlockPos pos, Fluid fluid, int delay, TickPriority priority) {
+        AllvrCubeMap map = AllvrDimensionLimits.isVanillaY(pos.getY()) ? null : allvr$map();
+        if (map != null) {
+            map.scheduleFluidTick(pos, fluid, delay, priority);
+            return;
+        }
+        Level self = (Level) (Object) this;
+        self.getFluidTicks().schedule(new ScheduledTick<>(fluid, pos,
+            self.getGameTime() + Math.max(0, delay), priority, self.nextSubTickCount()));
+    }
+
+    public void scheduleTick(BlockPos pos, Fluid fluid, int delay) {
+        this.scheduleTick(pos, fluid, delay, TickPriority.NORMAL);
     }
 
     @Inject(method = "setBlockEntity", at = @At("HEAD"), cancellable = true)

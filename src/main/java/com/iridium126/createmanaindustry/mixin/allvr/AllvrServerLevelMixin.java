@@ -1,18 +1,29 @@
 package com.iridium126.createmanaindustry.mixin.allvr;
 
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubeMap;
+import com.iridium126.createmanaindustry.dimension.cube.AllvrEntitySectionManagerDuck;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrServerLevelDuck;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.llamalad7.mixinextras.sugar.Local;
 
 import net.minecraft.util.ProgressListener;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.DistanceManager;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.entity.PersistentEntitySectionManager;
+import java.util.function.BooleanSupplier;
 
 /**
  * Attaches the cube map and its independent persistence to the server level.
@@ -21,6 +32,9 @@ import net.minecraft.server.level.ServerLevel;
  */
 @Mixin(ServerLevel.class)
 public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
+
+    @Shadow @Final
+    private PersistentEntitySectionManager<Entity> entityManager;
 
     @Unique
     private AllvrCubeMap allvr$cubeMap;
@@ -34,6 +48,48 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
     @Override
     public AllvrCubeMap allvr$peekCubeMap() {
         return allvr$cubeMap;
+    }
+
+    @Override
+    public void allvr$syncEntityTicking() {
+        AllvrCubeMap map = this.allvr$peekCubeMap();
+        if (map != null) {
+            ((AllvrEntitySectionManagerDuck) (Object) this.entityManager)
+                .allvr$syncCubeEntityTicking(map);
+        }
+    }
+
+    /** Run after native chunk status updates and immediately before entities tick. */
+    @Inject(method = "tick", at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/world/level/entity/EntityTickList;forEach(Ljava/util/function/Consumer;)V"))
+    private void allvr$syncCubeEntityTicking(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
+        ServerLevel self = (ServerLevel) (Object) this;
+        if (self.dimension() == AllvrDimensions.ALLAY_LEVEL) {
+            this.allvr$syncEntityTicking();
+        }
+    }
+
+    /**
+     * Vanilla's entity pass has a second X/Z-only gate after the entity list
+     * has been populated.  A loaded cube is the authoritative simulation
+     * ticket for its Y range, so let its entities pass that gate even when no
+     * native column ticket happens to cover the same X/Z position.
+     */
+    @WrapOperation(method = "lambda$tick$2", at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/server/level/DistanceManager;inEntityTickingRange(J)Z"))
+    private boolean allvr$allowLoadedCubeEntityTicking(DistanceManager distanceManager, long chunkPos,
+                                                         Operation<Boolean> original,
+                                                         @Local(argsOnly = true) Entity entity) {
+        ServerLevel self = (ServerLevel) (Object) this;
+        if (self.dimension() == AllvrDimensions.ALLAY_LEVEL
+            && !AllvrDimensionLimits.isVanillaY(entity.blockPosition().getY())
+            && self instanceof AllvrServerLevelDuck duck) {
+            AllvrCubeMap map = duck.allvr$peekCubeMap();
+            if (map != null && map.isLoaded(entity.blockPosition())) {
+                return true;
+            }
+        }
+        return original.call(distanceManager, chunkPos);
     }
 
     @Unique
