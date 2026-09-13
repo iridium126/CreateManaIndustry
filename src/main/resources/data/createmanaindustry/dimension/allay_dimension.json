@@ -1,6 +1,20 @@
 {
   "type": "createmanaindustry:allay",
   "generator": {
-    "type": "createmanaindustry:allay_islands"
+    "type": "createmanaindustry:allay_islands",
+    "terrain": {
+      "biome_source": {
+        "type": "minecraft:fixed",
+        "biome": "createmanaindustry:crystal_plains"
+      },
+      "settings": "minecraft:overworld"
+    },
+    "chunks": {
+      "biome_source": {
+        "type": "minecraft:fixed",
+        "biome": "createmanaindustry:crystal_plains"
+      },
+      "settings": "createmanaindustry:allay"
+    }
   }
 }
