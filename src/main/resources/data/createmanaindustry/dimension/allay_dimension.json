@@ -5,14 +5,14 @@
     "terrain": {
       "biome_source": {
         "type": "minecraft:fixed",
-        "biome": "createmanaindustry:crystal_plains"
+        "biome": "createmanaindustry:crystal_bloom_plains"
       },
       "settings": "minecraft:overworld"
     },
     "chunks": {
       "biome_source": {
         "type": "minecraft:fixed",
-        "biome": "createmanaindustry:crystal_plains"
+        "biome": "createmanaindustry:crystal_bloom_plains"
       },
       "settings": "createmanaindustry:smooth"
     }
