@@ -1,0 +1,28 @@
+{
+  "type": "minecraft:add",
+  "argument1": {
+    "type": "minecraft:mul",
+    "argument1": {
+      "type": "minecraft:add",
+      "argument1": {
+        "type": "minecraft:noise",
+        "noise": "createmanaindustry:vegetation",
+        "xz_scale": 0.2,
+        "y_scale": 0
+      },
+      "argument2": {
+        "type": "minecraft:noise",
+        "noise": "createmanaindustry:vegetation1",
+        "xz_scale": 1,
+        "y_scale": 0
+      }
+    },
+    "argument2": 0.05
+  },
+  "argument2": {
+    "type": "minecraft:noise",
+    "noise": "createmanaindustry:vegetation",
+    "xz_scale": 0.2,
+    "y_scale": 0
+  }
+}

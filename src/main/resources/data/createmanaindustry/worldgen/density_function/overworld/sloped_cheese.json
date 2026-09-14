@@ -1,0 +1,5 @@
+{
+  "type": "minecraft:add",
+  "argument1": "createmanaindustry:smooth/terrain/vertical_depth_gradient",
+  "argument2": 0
+}

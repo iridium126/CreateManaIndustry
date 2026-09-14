@@ -1,0 +1,5 @@
+{
+  "type": "minecraft:mul",
+  "argument1": "createmanaindustry:smooth/climate/biome_temperature_adjustment",
+  "argument2": 1
+}

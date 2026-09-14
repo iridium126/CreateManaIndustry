@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:mul",
+  "argument1": {
+    "type": "minecraft:half_negative",
+    "argument": "createmanaindustry:smooth/terrain/erosion/stage_e_combined"
+  },
+  "argument2": -1
+}

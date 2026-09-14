@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:cache_once",
+  "argument": {
+    "type": "minecraft:add",
+    "argument1": {
+      "type": "minecraft:mul",
+      "argument1": {
+        "type": "minecraft:abs",
+        "argument": {
+          "type": "minecraft:noise",
+          "noise": "createmanaindustry:smooth/caves/secondary_shape_noise",
+          "xz_scale": 0.65,
+          "y_scale": 1
+        }
+      },
+      "argument2": -0.2
+    },
+    "argument2": 0.1
+  }
+}

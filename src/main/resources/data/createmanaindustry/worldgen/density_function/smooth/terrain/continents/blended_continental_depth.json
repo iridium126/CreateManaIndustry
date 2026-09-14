@@ -1,0 +1,55 @@
+{
+  "type": "minecraft:flat_cache",
+  "argument": {
+    "type": "minecraft:mul",
+    "argument1": {
+      "type": "minecraft:blend_density",
+      "argument": {
+        "type": "minecraft:spline",
+        "spline": {
+          "coordinate": "createmanaindustry:smooth/terrain/continents/continental_shape_spline",
+          "points": [
+            {
+              "location": -0.85,
+              "derivative": 0,
+              "value": -0.4
+            },
+            {
+              "location": -0.75,
+              "derivative": 0,
+              "value": {
+                "coordinate": {
+                  "type": "minecraft:abs",
+                  "argument": "createmanaindustry:smooth/terrain/erosion/stage_e_primary_noise"
+                },
+                "points": [
+                  {
+                    "location": -1,
+                    "derivative": 0,
+                    "value": -0.45
+                  },
+                  {
+                    "location": 1,
+                    "derivative": 0,
+                    "value": -0.85
+                  }
+                ]
+              }
+            },
+            {
+              "location": -0.6,
+              "derivative": 0,
+              "value": -0.6
+            },
+            {
+              "location": 0.95,
+              "derivative": 0,
+              "value": 1
+            }
+          ]
+        }
+      }
+    },
+    "argument2": -1
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:cache_2d",
+  "argument": {
+    "type": "minecraft:flat_cache",
+    "argument": {
+      "type": "minecraft:mul",
+      "argument1": "createmanaindustry:smooth/terrain/erosion/stage_e_inverted",
+      "argument2": -1
+    }
+  }
+}

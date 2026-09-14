@@ -2,24 +2,8 @@
   "feature": "createmanaindustry:crystal_tree",
   "placement": [
     {
-      "type": "minecraft:count",
-      "count": {
-        "type": "minecraft:weighted_list",
-        "distribution": [
-          {
-            "data": 0,
-            "weight": 11
-          },
-          {
-            "data": 1,
-            "weight": 3
-          },
-          {
-            "data": 2,
-            "weight": 1
-          }
-        ]
-      }
+      "type": "minecraft:rarity_filter",
+      "chance": 20
     },
     {
       "type": "minecraft:in_square"

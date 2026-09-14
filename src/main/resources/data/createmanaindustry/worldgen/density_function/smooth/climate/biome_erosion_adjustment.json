@@ -1,0 +1,25 @@
+{
+  "type": "minecraft:add",
+  "argument1": {
+    "type": "minecraft:range_choice",
+    "input": "createmanaindustry:smooth/terrain/continents/inverted_continental_shape",
+    "min_inclusive": -1,
+    "max_exclusive": 0.6,
+    "when_in_range": {
+      "type": "minecraft:mul",
+      "argument1": {
+        "type": "minecraft:add",
+        "argument1": "createmanaindustry:smooth/terrain/continents/inverted_continental_shape",
+        "argument2": {
+          "type": "minecraft:noise",
+          "noise": "createmanaindustry:erosion1",
+          "xz_scale": 1,
+          "y_scale": 0
+        }
+      },
+      "argument2": 0.35
+    },
+    "when_out_of_range": 0.2
+  },
+  "argument2": "createmanaindustry:smooth/terrain/continents/inverted_continental_shape"
+}

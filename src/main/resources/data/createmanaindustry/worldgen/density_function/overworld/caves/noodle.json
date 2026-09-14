@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:add",
+  "argument1": {
+    "type": "minecraft:range_choice",
+    "input": "createmanaindustry:smooth/terrain/caves/magma_cave_density",
+    "min_inclusive": -1,
+    "max_exclusive": 0,
+    "when_in_range": "createmanaindustry:smooth/terrain/caves/magma_cave_density",
+    "when_out_of_range": {
+      "type": "minecraft:range_choice",
+      "input": "createmanaindustry:smooth/terrain/caves/noodle_cave_density",
+      "min_inclusive": -1,
+      "max_exclusive": 1,
+      "when_in_range": "createmanaindustry:smooth/terrain/caves/noodle_cave_density",
+      "when_out_of_range": 2
+    }
+  },
+  "argument2": 0
+}

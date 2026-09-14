@@ -1,0 +1,44 @@
+{
+  "type": "minecraft:cache_once",
+  "argument": {
+    "type": "minecraft:add",
+    "argument1": {
+      "type": "minecraft:spline",
+      "spline": {
+        "coordinate": {
+          "type": "minecraft:noise",
+          "noise": "createmanaindustry:temperature",
+          "xz_scale": 2.5,
+          "y_scale": 0
+        },
+        "points": [
+          {
+            "location": -0.2,
+            "derivative": 0,
+            "value": 1
+          },
+          {
+            "location": 0.3,
+            "derivative": 0,
+            "value": {
+              "coordinate": "createmanaindustry:smooth/terrain/caves/shape/secondary_offset_noise",
+              "points": [
+                {
+                  "location": -1,
+                  "derivative": 0,
+                  "value": -1
+                },
+                {
+                  "location": 1,
+                  "derivative": 0,
+                  "value": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "argument2": 0
+  }
+}

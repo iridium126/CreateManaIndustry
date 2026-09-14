@@ -14,7 +14,7 @@
         "type": "minecraft:fixed",
         "biome": "createmanaindustry:crystal_plains"
       },
-      "settings": "createmanaindustry:allay"
+      "settings": "createmanaindustry:smooth"
     }
   }
 }
