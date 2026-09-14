@@ -193,7 +193,198 @@ configurations {
     compileOnly.extendsFrom sodiumDistribution
 }
 
-def sodiumCoreJar = layout.buildDirectory.file("generated/sodium/sodium-core.jar")
+// Sodium's named implementation jar is cached outside build/ so a normal
+// clean does not force Gradle to unpack the same dependency again. The
+// resolved outer distribution remains a task input, so changing its version
+// or contents invalidates and refreshes this cache automatically.
+def sodiumCoreJar = project.file(".gradle/sodium/sodium-core.jar")
+
+// Build Voxy from the upstream multiversion branch and keep the resulting jar
+// outside build/ so a normal `clean` does not throw away this relatively
+// expensive optional dependency build.
+def voxyRepoUrl = "https://github.com/m3t4f1v3/voxy.git"
+def voxyRepoBranch = "multiversion"
+def voxyMinecraftVersion = "1.21.1"
+def voxyLoader = "neoforge"
+def voxyVersion = providers.gradleProperty("voxy_version").orElse("0.2.15-beta").get()
+def voxyArtifactName = "voxy-${voxyVersion}+${voxyMinecraftVersion}-${voxyLoader}.jar"
+def voxyCacheRoot = project.file(".gradle/voxy")
+def voxySourceDir = project.file("${voxyCacheRoot}/source")
+def voxyCachedJar = project.file("${voxyCacheRoot}/artifacts/${voxyArtifactName}")
+def voxyUpstreamJar = project.file(
+        "${voxySourceDir}/versions/${voxyMinecraftVersion}-${voxyLoader}/build/libs/${voxyArtifactName}"
+)
+def voxyRebuild = providers.gradleProperty("voxy_rebuild")
+        .map { it.toBoolean() }
+        .orElse(false)
+        .get()
+
+// The clone is deliberately shallow, single-branch, and tagless. A cached
+// artifact is checked first so subsequent builds do not even need to clone or
+// invoke Voxy's Gradle build again.
+def cloneVoxy = tasks.register("cloneVoxy", Exec) {
+    group = "voxy"
+    description = "Clones Voxy's multiversion branch when its cached jar is absent"
+    inputs.property("repository", voxyRepoUrl)
+    inputs.property("branch", voxyRepoBranch)
+    outputs.dir(voxySourceDir)
+    onlyIf {
+        if (voxyCachedJar.isFile() && !voxyRebuild) {
+            return false
+        }
+        if (voxySourceDir.exists() && !new File(voxySourceDir, ".git").isDirectory()) {
+            throw new GradleException("Voxy cache path is not a Git checkout: ${voxySourceDir}")
+        }
+        return !voxySourceDir.isDirectory()
+    }
+    doFirst {
+        voxyCacheRoot.mkdirs()
+    }
+    workingDir(voxyCacheRoot)
+    commandLine(
+            "git", "clone",
+            "--branch", voxyRepoBranch,
+            "--single-branch",
+            "--depth", "1",
+            "--no-tags",
+            voxyRepoUrl,
+            voxySourceDir.absolutePath
+    )
+}
+
+def voxySettingsFile = new File(voxySourceDir, "settings.gradle.kts")
+def voxyStonecutterFile = new File(voxySourceDir, "stonecutter.gradle.kts")
+def voxyPatchMarker = new File(voxyCacheRoot, "neoforge-only.marker")
+def voxyActiveMarker = new File(voxyCacheRoot, "neoforge-active.marker")
+
+// The upstream checkout is a multi-version Stonecutter project. Restrict the
+// cached checkout's generated project model to the one artifact CMI consumes;
+// otherwise Voxy configures unrelated Fabric/Forge variants before reaching
+// NeoForge and needlessly downloads their toolchains.
+def prepareVoxy = tasks.register("prepareVoxy") {
+    group = "voxy"
+    description = "Restricts the cached Voxy checkout to its NeoForge 1.21.1 variant"
+    dependsOn(cloneVoxy)
+    inputs.file(voxySettingsFile)
+    inputs.file(voxyStonecutterFile)
+    outputs.file(voxyPatchMarker)
+    outputs.upToDateWhen { !voxyRebuild && voxyPatchMarker.isFile() }
+    onlyIf { voxyRebuild || !voxyCachedJar.isFile() }
+    doLast {
+        if (!voxySettingsFile.isFile() || !voxyStonecutterFile.isFile()) {
+            throw new GradleException("Voxy checkout is missing its Stonecutter settings")
+        }
+
+        def settingsText = voxySettingsFile.getText("UTF-8")
+        def targetMatch = '        match("1.21.1", "neoforge")'
+        if (!settingsText.contains(targetMatch)) {
+            def reducedSettings = settingsText.replaceFirst(
+                    /(?m)^\s*match\("1\.20\.1",\s*"fabric",\s*"forge"\)\s*\r?\n\s*match\("1\.21\.1",\s*"fabric",\s*"neoforge"\)/,
+                    targetMatch
+            )
+            if (reducedSettings == settingsText) {
+                throw new GradleException("Unexpected Voxy settings layout; cannot select 1.21.1 NeoForge")
+            }
+            settingsText = reducedSettings
+        }
+        settingsText = settingsText.replaceFirst(
+                /(?m)^\s*vcsVersion\s*=\s*"[^"]+"\s*$/,
+                '        vcsVersion = "1.21.1-neoforge"'
+        )
+        if (settingsText.findAll(/(?m)^\s*match\(/).size() != 1 || !settingsText.contains(targetMatch)) {
+            throw new GradleException("Voxy settings did not reduce to exactly the NeoForge 1.21.1 variant")
+        }
+
+        def stonecutterText = voxyStonecutterFile.getText("UTF-8")
+        if (!stonecutterText.contains('active("1.21.1-neoforge")')) {
+            def targetStonecutterText = stonecutterText.replaceFirst(
+                    /active\("1\.20\.1-fabric"\)/,
+                    'active("1.21.1-neoforge")'
+            )
+            if (targetStonecutterText == stonecutterText) {
+                throw new GradleException("Unexpected Voxy Stonecutter layout; cannot activate NeoForge 1.21.1")
+            }
+            stonecutterText = targetStonecutterText
+        }
+
+        voxySettingsFile.setText(settingsText, "UTF-8")
+        voxyStonecutterFile.setText(stonecutterText, "UTF-8")
+        voxyPatchMarker.parentFile.mkdirs()
+        voxyPatchMarker.setText("target=${voxyMinecraftVersion}-${voxyLoader}\n", "UTF-8")
+    }
+}
+
+def voxyGradleCommand = org.gradle.internal.os.OperatingSystem.current().isWindows()
+        ? ["cmd", "/c", "gradlew.bat"]
+        : ["./gradlew"]
+def voxyGradleArguments = ["--no-daemon", "--console=plain", "--configure-on-demand"]
+if (voxyRebuild) {
+    voxyGradleArguments += "--rerun-tasks"
+}
+
+// Stonecutter keeps the active shared sources in the checkout. Refresh that
+// active view in a separate invocation before asking for the variant jar;
+// combining the switch and compile tasks in one Gradle invocation can trigger
+// Gradle's implicit-output validation in Stonecutter 0.9.4.
+def activateVoxy = tasks.register("activateVoxy", Exec) {
+    group = "voxy"
+    description = "Refreshes Voxy's active shared sources for NeoForge 1.21.1"
+    dependsOn(prepareVoxy)
+    inputs.file(voxySettingsFile)
+    inputs.file(voxyStonecutterFile)
+    outputs.file(voxyActiveMarker)
+    outputs.upToDateWhen { !voxyRebuild && voxyActiveMarker.isFile() }
+    onlyIf { voxyRebuild || (!voxyCachedJar.isFile() && !voxyActiveMarker.isFile()) }
+    workingDir(voxySourceDir)
+    commandLine(*(voxyGradleCommand + voxyGradleArguments + [
+            "stonecutterSwitchTo${voxyMinecraftVersion}-${voxyLoader}"
+    ]))
+    doLast {
+        voxyActiveMarker.parentFile.mkdirs()
+        voxyActiveMarker.setText("target=${voxyMinecraftVersion}-${voxyLoader}\n", "UTF-8")
+    }
+}
+
+def buildVoxy = tasks.register("buildVoxy", Exec) {
+    group = "voxy"
+    description = "Builds Voxy's NeoForge 1.21.1 jar from the cached multiversion checkout"
+    dependsOn(activateVoxy)
+    inputs.property("minecraftVersion", voxyMinecraftVersion)
+    inputs.property("loader", voxyLoader)
+    inputs.property("version", voxyVersion)
+    outputs.file(voxyUpstreamJar)
+    outputs.upToDateWhen { !voxyRebuild && voxyUpstreamJar.isFile() }
+    onlyIf {
+        voxyRebuild || (!voxyCachedJar.isFile() && !voxyUpstreamJar.isFile())
+    }
+    workingDir(voxySourceDir)
+    commandLine(*(voxyGradleCommand + voxyGradleArguments + [
+            ":${voxyMinecraftVersion}-${voxyLoader}:jar"
+    ]))
+}
+
+def cacheVoxy = tasks.register("cacheVoxy") {
+    group = "voxy"
+    description = "Copies the Voxy NeoForge 1.21.1 jar into the persistent project cache"
+    dependsOn(buildVoxy)
+    inputs.file(voxyUpstreamJar)
+    outputs.file(voxyCachedJar)
+    outputs.upToDateWhen { !voxyRebuild && voxyCachedJar.isFile() }
+    onlyIf { voxyRebuild || !voxyCachedJar.isFile() }
+    doLast {
+        if (!voxyUpstreamJar.isFile()) {
+            throw new GradleException(
+                    "Voxy build completed without producing the expected artifact: ${voxyUpstreamJar}"
+            )
+        }
+        voxyCachedJar.parentFile.mkdirs()
+        java.nio.file.Files.copy(
+                voxyUpstreamJar.toPath(),
+                voxyCachedJar.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+        )
+    }
+}
 
 dependencies {
     // region3d persistence unit tests (pure JVM; plan P0/P2/P3). Test-only —
@@ -232,10 +423,9 @@ dependencies {
     compileOnly "curse.maven:irisshaders-455508:8242804"
     sodiumDistribution "curse.maven:sodium-394468:8756580"
     compileOnly files(sodiumCoreJar)
-    // Voxy runtime adapter (voxy integration plan §8.2): compile against the
-    // verified local build, never bundle it — Voxy stays a user-installed
-    // optional dependency and its classes must not enter the CMI jar.
-    compileOnly files("run/mods/voxy-0.2.15-beta+1.21.1-neoforge.jar")
+    // Voxy runtime adapter: compile against the locally built/cached artifact,
+    // never bundle it — Voxy remains a user-installed optional dependency.
+    compileOnly files(voxyCachedJar)
     // GLSL AST transformation for the shader-pack particle path. Provided at runtime
     // Provided by iris-veil-compat (JarJar) -- compile against 2.0.1, never bundle (AGPL).
     compileOnly "io.github.douira:glsl-transformer:2.0.1"
@@ -301,10 +491,11 @@ def sodiumDistributionFiles = configurations.getByName("sodiumDistribution").fil
 
 // CurseForge's Sodium NeoForge jar is a loader/container jar. Extract its
 // nested named implementation automatically so private Sodium classes remain
-// available to compileJava without committing a copied core jar to libs/.
+// available to compileJava without committing a copied core jar to libs/ or
+// rebuilding it after every clean.
 def extractSodiumCoreJar = tasks.register("extractSodiumCoreJar") {
     group = "sodium"
-    description = "Extracts Sodium's nested named implementation jar for compilation"
+    description = "Extracts and caches Sodium's nested named implementation jar"
     inputs.files(sodiumDistributionFiles)
     outputs.file(sodiumCoreJar)
 
@@ -315,7 +506,7 @@ def extractSodiumCoreJar = tasks.register("extractSodiumCoreJar") {
             throw new GradleException("Could not resolve the Sodium CurseForge distribution jar")
         }
 
-        def output = sodiumCoreJar.get().asFile
+        def output = sodiumCoreJar
         output.parentFile.mkdirs()
         def outer = new java.util.zip.ZipFile(distribution)
         try {
@@ -346,10 +537,10 @@ def extractSodiumCoreJar = tasks.register("extractSodiumCoreJar") {
 }
 
 tasks.named("compileJava") {
-    dependsOn(extractSodiumCoreJar)
+    dependsOn(extractSodiumCoreJar, cacheVoxy)
 }
 tasks.named("compileTestJava") {
-    dependsOn(extractSodiumCoreJar)
+    dependsOn(extractSodiumCoreJar, cacheVoxy)
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
