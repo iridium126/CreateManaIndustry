@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:mul",
+  "argument1": {
+    "type": "minecraft:add",
+    "argument1": {
+      "type": "minecraft:mul",
+      "argument1": {
+        "type": "minecraft:abs",
+        "argument": "createmanaindustry:smooth/terrain/erosion/stage_b_primary_noise"
+      },
+      "argument2": -0.5
+    },
+    "argument2": "createmanaindustry:smooth/terrain/erosion/stage_a_combined"
+  },
+  "argument2": 1
+}

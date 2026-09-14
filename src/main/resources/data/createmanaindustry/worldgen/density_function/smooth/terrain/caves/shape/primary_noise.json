@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:cache_once",
+  "argument": {
+    "type": "minecraft:abs",
+    "argument": {
+      "type": "minecraft:noise",
+      "noise": "createmanaindustry:smooth/caves/primary_shape_noise",
+      "xz_scale": 0.4,
+      "y_scale": 1
+    }
+  }
+}

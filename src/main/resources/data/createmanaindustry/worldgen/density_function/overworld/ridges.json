@@ -1,0 +1,5 @@
+{
+  "type": "minecraft:mul",
+  "argument1": "createmanaindustry:smooth/terrain/ridges/primary_ridge_shape",
+  "argument2": 1
+}

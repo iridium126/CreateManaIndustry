@@ -38,7 +38,9 @@ import com.tterrag.registrate.util.nullness.NonNullBiConsumer;
 import net.neoforged.neoforge.client.model.generators.ConfiguredModel;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RotatedPillarBlock;
 import net.minecraft.world.level.block.SoundType;
@@ -211,6 +213,28 @@ public final class CMIBlocks {
             .register();
 
     /**
+     * Crystal logs — the complete four-block counterpart to Minecraft's oak
+     * log family. The two wood variants intentionally reuse the prepared bark
+     * textures on every face, just as vanilla wood blocks reuse their bark
+     * texture instead of using a log end texture.
+     */
+    public static final BlockEntry<RotatedPillarBlock> CRYSTAL_LOG = crystalLog(
+            "crystal_log", Blocks.OAK_LOG, "Crystal Log",
+            "block/crystal_log/crystal_log", "block/crystal_log/crystal_log_top");
+
+    public static final BlockEntry<RotatedPillarBlock> STRIPPED_CRYSTAL_LOG = crystalLog(
+            "stripped_crystal_log", Blocks.STRIPPED_OAK_LOG, "Stripped Crystal Log",
+            "block/crystal_log/stripped_crystal_log", "block/crystal_log/stripped_crystal_log_top");
+
+    public static final BlockEntry<RotatedPillarBlock> CRYSTAL_WOOD = crystalWood(
+            "crystal_wood", Blocks.OAK_WOOD, CRYSTAL_LOG, "Crystal Wood",
+            "block/crystal_log/crystal_log");
+
+    public static final BlockEntry<RotatedPillarBlock> STRIPPED_CRYSTAL_WOOD = crystalWood(
+            "stripped_crystal_wood", Blocks.STRIPPED_OAK_WOOD, STRIPPED_CRYSTAL_LOG,
+            "Stripped Crystal Wood", "block/crystal_log/stripped_crystal_log");
+
+    /**
      * Deposition lid — visually and behaviourally identical to
      * {@code create:framed_glass_trapdoor}, but carrying a
      * {@code DepositionLidBlockEntity} so a sealed basin can run
@@ -245,6 +269,52 @@ public final class CMIBlocks {
                 .loot((p, lb) -> p.dropSelf(lb))
                 .item()
                 .transform(ModelGen.customItemModel())
+                .register();
+    }
+
+    private static BlockEntry<RotatedPillarBlock> crystalLog(String name,
+            Block vanillaProperties, String lang, String sideTexture, String endTexture) {
+        return REGISTRATE.block(name, RotatedPillarBlock::new)
+                .initialProperties(() -> vanillaProperties)
+                .tag(BlockTags.LOGS)
+                .tag(BlockTags.LOGS_THAT_BURN)
+                .transform(TagGen.axeOnly())
+                .blockstate((c, p) -> p.axisBlock(c.get(),
+                        p.modLoc(sideTexture), p.modLoc(endTexture)))
+                .loot((p, block) -> p.dropSelf(block))
+                .item()
+                .tag(ItemTags.LOGS)
+                .tag(ItemTags.LOGS_THAT_BURN)
+                .build()
+                .lang(lang)
+                .register();
+    }
+
+    private static BlockEntry<RotatedPillarBlock> crystalWood(String name,
+            Block vanillaProperties, BlockEntry<RotatedPillarBlock> source, String lang,
+            String texture) {
+        return REGISTRATE.block(name, RotatedPillarBlock::new)
+                .initialProperties(() -> vanillaProperties)
+                .tag(BlockTags.LOGS)
+                .tag(BlockTags.LOGS_THAT_BURN)
+                .transform(TagGen.axeOnly())
+                .blockstate((c, p) -> p.axisBlock(c.get(),
+                        p.modLoc(texture), p.modLoc(texture)))
+                .loot((p, block) -> p.dropSelf(block))
+                .item()
+                .tag(ItemTags.LOGS)
+                .tag(ItemTags.LOGS_THAT_BURN)
+                .build()
+                .recipe((c, p) -> ShapedRecipeBuilder.shaped(
+                                RecipeCategory.BUILDING_BLOCKS, c.get(), 3)
+                        .define('#', source.get().asItem())
+                        .pattern("##")
+                        .pattern("##")
+                        .group("bark")
+                        .unlockedBy("has_" + source.getId().getPath(),
+                                RegistrateRecipeProvider.has(source.get().asItem()))
+                        .save(p, CreateManaIndustry.modLoc(c.getName())))
+                .lang(lang)
                 .register();
     }
 

@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:cache_once",
+  "argument": {
+    "type": "minecraft:range_choice",
+    "input": "createmanaindustry:overworld/caves/entrances1",
+    "min_inclusive": -1,
+    "max_exclusive": 0.1,
+    "when_in_range": "createmanaindustry:overworld/caves/entrances1",
+    "when_out_of_range": 1
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "type": "minecraft:cache_once",
+  "argument": {
+    "type": "minecraft:clamp",
+    "input": {
+      "type": "minecraft:add",
+      "argument1": {
+        "type": "minecraft:spline",
+        "spline": {
+          "coordinate": "createmanaindustry:smooth/terrain/continents/continental_shape_spline",
+          "points": [
+            {
+              "location": 0,
+              "derivative": 0,
+              "value": {
+                "coordinate": "createmanaindustry:smooth/terrain/caves/shape/temperature_spline",
+                "points": [
+                  {
+                    "location": -1,
+                    "derivative": 0,
+                    "value": -1
+                  },
+                  {
+                    "location": 1,
+                    "derivative": 0,
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            {
+              "location": 0.1,
+              "derivative": 0,
+              "value": {
+                "coordinate": "createmanaindustry:smooth/terrain/continents/continental_shape_spline",
+                "points": [
+                  {
+                    "location": 0.3,
+                    "derivative": 0,
+                    "value": 1
+                  },
+                  {
+                    "location": 0.4,
+                    "derivative": 0,
+                    "value": {
+                      "coordinate": "createmanaindustry:smooth/terrain/caves/shape/secondary_temperature_spline",
+                      "points": [
+                        {
+                          "location": -1,
+                          "derivative": 0,
+                          "value": -1
+                        },
+                        {
+                          "location": 1,
+                          "derivative": 0,
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "argument2": 0
+    },
+    "min": -1,
+    "max": 1
+  }
+}

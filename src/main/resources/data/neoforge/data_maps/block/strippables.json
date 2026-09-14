@@ -1,0 +1,10 @@
+{
+  "values": {
+    "createmanaindustry:crystal_log": {
+      "stripped_block": "createmanaindustry:stripped_crystal_log"
+    },
+    "createmanaindustry:crystal_wood": {
+      "stripped_block": "createmanaindustry:stripped_crystal_wood"
+    }
+  }
+}

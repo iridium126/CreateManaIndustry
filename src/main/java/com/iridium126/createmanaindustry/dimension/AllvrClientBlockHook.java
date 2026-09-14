@@ -18,6 +18,8 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class AllvrClientBlockHook {
 
     private static volatile Function<BlockPos, BlockState> resolver;
+    private static volatile Function<BlockPos, Boolean> loadedResolver;
+    private static volatile java.util.function.BiFunction<Integer, Integer, Boolean> chunkResolver;
     private static volatile net.minecraft.world.level.biome.BiomeManager.NoiseBiomeSource biomeResolver;
     private static volatile java.util.function.BiFunction<LightLayer, BlockPos, Integer> lightResolver;
     private static volatile java.util.function.BiFunction<BlockPos, Integer, Integer> rawLightResolver;
@@ -39,6 +41,26 @@ public final class AllvrClientBlockHook {
     public static BlockState resolve(BlockPos pos) {
         Function<BlockPos, BlockState> current = resolver;
         return current == null ? Blocks.VOID_AIR.defaultBlockState() : current.apply(pos);
+    }
+
+    /** Client-side residency bridge used by common LevelReader methods. */
+    public static Boolean isLoaded(BlockPos pos) {
+        Function<BlockPos, Boolean> current = loadedResolver;
+        return current == null ? null : current.apply(pos);
+    }
+
+    public static void setLoadedResolver(Function<BlockPos, Boolean> resolver) {
+        loadedResolver = resolver;
+    }
+
+    /** Client bridge for LevelReader's X/Z-only hasChunkAt query. */
+    public static Boolean isChunkLoaded(int x, int z) {
+        var current = chunkResolver;
+        return current == null ? null : current.apply(x, z);
+    }
+
+    public static void setChunkResolver(java.util.function.BiFunction<Integer, Integer, Boolean> resolver) {
+        chunkResolver = resolver;
     }
 
     public static void setLightResolver(java.util.function.BiFunction<LightLayer, BlockPos, Integer> resolver,

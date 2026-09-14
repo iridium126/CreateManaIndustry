@@ -23,19 +23,19 @@ public class CMIHexActions {
     public static final DeferredHolder<ActionRegistryEntry, ActionRegistryEntry> READ_IOTA_FROM_BLOCK =
             ACTIONS.register("read_iota_from_block", () ->
                     new ActionRegistryEntry(
-                            HexPattern.fromAngles("wqwqwqwqwqwaw", HexDir.NORTH_WEST),
+                            HexPattern.fromAngleString("wqwqwqwqwqwaw", HexDir.NORTH_WEST),
                             OpReadIotaFromBlock.INSTANCE));
 
     public static final DeferredHolder<ActionRegistryEntry, ActionRegistryEntry> LIGHT_BURNER =
             ACTIONS.register("light_burner", () ->
                     new ActionRegistryEntry(
-                            HexPattern.fromAngles("qwawq", HexDir.NORTH_EAST),
+                            HexPattern.fromAngleString("qwawq", HexDir.NORTH_EAST),
                             OpLightBurner.INSTANCE));
 
     public static final DeferredHolder<ActionRegistryEntry, ActionRegistryEntry> PLAYERS_IN_CIRCLE =
             ACTIONS.register("players_in_circle", () ->
                     new ActionRegistryEntry(
-                            HexPattern.fromAngles("eaqwqaewa", HexDir.SOUTH_WEST),
+                            HexPattern.fromAngleString("eaqwqaewa", HexDir.SOUTH_WEST),
                             OpPlayersInCircle.INSTANCE));
 
     public static void register(IEventBus modEventBus) {

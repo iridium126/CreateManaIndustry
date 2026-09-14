@@ -12,6 +12,7 @@ import net.createmod.ponder.foundation.PonderIndex;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.EntityHitResult;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -40,6 +41,25 @@ public class CreateManaIndustryClient {
         // servers never load them), so the resolver is injected here instead.
         com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setResolver(
             com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache::getBlockState);
+        // LevelReader#hasChunkAt(int, int) has no Y parameter, but the client
+        // uses it as the movement gate for LocalPlayer#tick. In the Allay
+        // cube range, resolve the query against the player's current cube;
+        // otherwise the intentionally empty vanilla column would make the
+        // client skip both movement simulation and position packets.
+        com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setChunkResolver(
+            (x, z) -> {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.level == null || mc.player == null
+                    || mc.level.dimension() != com.iridium126.createmanaindustry.dimension.AllvrDimensions.ALLAY_LEVEL) {
+                    return null;
+                }
+                int y = mc.player.blockPosition().getY();
+                if (com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaY(y)) {
+                    return null;
+                }
+                return com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache
+                    .isLoaded(new BlockPos(x, y, z));
+            });
 
         // Register the Veil post-processing uniform injection listeners.
         // The mist/fuel-rod-glow pipelines are added/removed on demand when

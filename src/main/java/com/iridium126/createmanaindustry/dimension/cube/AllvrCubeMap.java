@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -33,6 +34,12 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.LightLayer;
+import net.minecraft.core.Direction;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.ticks.ScheduledTick;
+import net.minecraft.world.ticks.TickPriority;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
@@ -145,6 +152,22 @@ public final class AllvrCubeMap {
     private final Long2ObjectOpenHashMap<AllvrCube> beCubes = new Long2ObjectOpenHashMap<>();
     /** Cubes with a simulation ticket for at least one current player. */
     private final LongOpenHashSet tickingBeCubeKeys = new LongOpenHashSet();
+    /**
+     * Fluid ticks for cube-backed positions. Vanilla's LevelTicks is backed
+     * by the column ChunkMap ticking predicate and therefore cannot see the
+     * cube-only Y ranges. Keep vanilla ScheduledTick ordering and dedupe here.
+     */
+    private static final int MAX_FLUID_TICKS_PER_TICK = 65_536;
+    private final PriorityQueue<ScheduledTick<Fluid>> fluidTicks =
+        new PriorityQueue<>(ScheduledTick.DRAIN_ORDER);
+    private final Set<FluidTickKey> scheduledFluidTicks = new HashSet<>();
+
+    private record FluidTickKey(Fluid fluid, int x, int y, int z) {
+        static FluidTickKey of(ScheduledTick<Fluid> tick) {
+            BlockPos pos = tick.pos();
+            return new FluidTickKey(tick.type(), pos.getX(), pos.getY(), pos.getZ());
+        }
+    }
     private boolean simulationTicketsDirty = true;
     private final Map<UUID, Subscription> subscriptions = new java.util.HashMap<>();
     private final AllvrCubeIoWorker worker;
@@ -264,6 +287,46 @@ public final class AllvrCubeMap {
         return level;
     }
 
+    /** Schedules a vanilla fluid tick for a cube-backed position. */
+    public void scheduleFluidTick(BlockPos pos, Fluid fluid, int delay, TickPriority priority) {
+        if (!AllvrDimensionLimits.isInBounds(pos)
+            || AllvrDimensionLimits.isVanillaY(pos.getY())) {
+            return;
+        }
+        ScheduledTick<Fluid> tick = new ScheduledTick<>(fluid, pos,
+            this.level.getGameTime() + Math.max(0, delay), priority,
+            this.level.nextSubTickCount());
+        if (this.scheduledFluidTicks.add(FluidTickKey.of(tick))) {
+            this.fluidTicks.add(tick);
+        }
+    }
+
+    public void scheduleFluidTick(BlockPos pos, Fluid fluid, int delay) {
+        this.scheduleFluidTick(pos, fluid, delay, TickPriority.NORMAL);
+    }
+
+    /** Runs the cube fluid queue with vanilla's 65,536 tick safety cap. */
+    public void tickFluids() {
+        long gameTime = this.level.getGameTime();
+        int processed = 0;
+        while (processed < MAX_FLUID_TICKS_PER_TICK
+            && !this.fluidTicks.isEmpty()
+            && this.fluidTicks.peek().triggerTick() <= gameTime) {
+            ScheduledTick<Fluid> tick = this.fluidTicks.poll();
+            this.scheduledFluidTicks.remove(FluidTickKey.of(tick));
+            processed++;
+            BlockPos pos = tick.pos();
+            AllvrCube cube = this.cubes.get(AllvrCubePos.asLong(pos));
+            if (cube == null || !cube.isLoaded()) {
+                continue;
+            }
+            FluidState state = this.level.getFluidState(pos);
+            if (state.is(tick.type())) {
+                state.tick(this.level, pos);
+            }
+        }
+    }
+
     /** Persistence diagnostics snapshot (plan §7.3). */
     public AllvrStorageDiagnostics diagnostics() {
         return this.diagnostics;
@@ -356,6 +419,98 @@ public final class AllvrCubeMap {
         }
         cube.markDirty();
         this.queueSnapshot(cube.getPos().asLong(), false);
+    }
+
+    /**
+     * Cube-aware equivalent of {@link Level#isLoaded(BlockPos)}.  This is a
+     * residency query only: unlike a block read or write it must never create
+     * a cube as a side effect.
+     */
+    public boolean isLoaded(BlockPos pos) {
+        if (!AllvrDimensionLimits.isInBounds(pos)) {
+            return false;
+        }
+        AllvrCube cube = this.cubes.get(AllvrCubePos.asLong(pos));
+        return cube != null && cube.isLoaded();
+    }
+
+    /**
+     * Cube-aware equivalent of {@link Level#setBlockEntity(BlockEntity)}.
+     * Native LevelChunk registration is deliberately bypassed for cube
+     * positions, while retaining vanilla's state/type validation and BE
+     * lifecycle bookkeeping.
+     */
+    public void setBlockEntity(BlockEntity blockEntity) {
+        BlockPos pos = blockEntity.getBlockPos().immutable();
+        if (!AllvrDimensionLimits.isInBounds(pos)) {
+            return;
+        }
+        AllvrCube cube = this.getOrGenerate(AllvrCubePos.of(pos));
+        if (cube == null) {
+            return;
+        }
+        BlockState state = cube.getBlockState(pos);
+        if (!state.hasBlockEntity()) {
+            CreateManaIndustry.LOGGER.warn(
+                "Trying to set block entity {} at position {}, but state {} does not allow it",
+                blockEntity, pos, state);
+            return;
+        }
+
+        BlockState entityState = blockEntity.getBlockState();
+        if (state != entityState) {
+            if (!blockEntity.getType().isValid(state)) {
+                CreateManaIndustry.LOGGER.warn(
+                    "Trying to set block entity {} at position {}, but state {} is not valid for its type",
+                    blockEntity, pos, state);
+                return;
+            }
+            if (state.getBlock() != entityState.getBlock()) {
+                CreateManaIndustry.LOGGER.warn(
+                    "Block state mismatch on block entity {} in position {}, {} != {}, updating",
+                    blockEntity, pos, entityState, state);
+            }
+            blockEntity.setBlockState(state);
+        }
+
+        blockEntity.setLevel(this.level);
+        blockEntity.clearRemoved();
+        BlockEntity previous = cube.getBlockEntity(pos);
+        if (previous != null && previous != blockEntity) {
+            previous.setRemoved();
+        }
+        cube.putBlockEntity(pos, blockEntity);
+        cube.rebuildDerivedState(this.level);
+        cube.markDirty();
+        refreshBeCube(cube);
+        queueSnapshot(cube.getPos().asLong(), false);
+        this.level.addFreshBlockEntities(java.util.List.of(blockEntity));
+    }
+
+    /** Cube-aware equivalent of {@link Level#removeBlockEntity(BlockPos)}. */
+    public BlockEntity removeBlockEntity(BlockPos pos) {
+        if (!AllvrDimensionLimits.isInBounds(pos)) {
+            return null;
+        }
+        AllvrCube cube = this.cubes.get(AllvrCubePos.asLong(pos));
+        if (cube == null) {
+            return null;
+        }
+        BlockEntity removed = cube.removeBlockEntity(pos);
+        if (removed != null) {
+            cube.markDirty();
+            refreshBeCube(cube);
+            queueSnapshot(cube.getPos().asLong(), false);
+        }
+        return removed;
+    }
+
+    /** Cube-aware equivalent of Level#loadedAndEntityCanStandOnFace. */
+    public boolean loadedAndEntityCanStandOnFace(BlockPos pos, Entity entity, Direction direction) {
+        if (!this.isLoaded(pos)) {
+            return false;
+        }
+        return this.getBlockState(pos).entityCanStandOnFace(this.level, pos, entity, direction);
     }
 
     /** Authoritative per-block push to every client subscribed to this cube
@@ -841,6 +996,15 @@ public final class AllvrCubeMap {
      * circle or the independent vertical range are forgotten client-side.
      */
     public void tick() {
+        // Drain before the players.isEmpty() early-return: an empty server
+        // still owes its queued snapshots (vanilla autosave parity).
+        this.drainSnapshotQueue();
+        this.drainCompletedGenerations();
+        this.drainCompletedPersistedLoads();
+        // Run fluid ticks after completed cube publications so a tick queued
+        // for a cube that finished loading this frame is not discarded as a
+        // cache miss. The light pass below then sees all fluid block writes.
+        this.tickFluids();
         this.lightEngine.tick(16_384);
         // Light changes are persisted through the same coalescing queue as
         // block mutations. The engine only reports cubes whose published
@@ -850,11 +1014,6 @@ public final class AllvrCubeMap {
                 this.queueSnapshot(key, false);
             }
         }
-        // Drain before the players.isEmpty() early-return: an empty server
-        // still owes its queued snapshots (vanilla autosave parity).
-        this.drainSnapshotQueue();
-        this.drainCompletedGenerations();
-        this.drainCompletedPersistedLoads();
         List<ServerPlayer> players = level.players();
         if (players.isEmpty()) {
             if (!subscriptions.isEmpty() || !pendingGenerations.isEmpty()
@@ -1305,6 +1464,8 @@ public final class AllvrCubeMap {
         }
         pendingPersistedLoads.clear();
         completedPersistedLoads.clear();
+        this.fluidTicks.clear();
+        this.scheduledFluidTicks.clear();
         this.cubePacketCache.clear();
         this.lightEngine.clear();
         this.worker.close();

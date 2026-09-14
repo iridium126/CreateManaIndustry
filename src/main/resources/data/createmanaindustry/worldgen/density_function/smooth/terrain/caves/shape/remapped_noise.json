@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:add",
+  "argument1": {
+    "type": "minecraft:mul",
+    "argument1": "createmanaindustry:smooth/terrain/caves/shape/combined_noise",
+    "argument2": -0.1
+  },
+  "argument2": 0.1
+}

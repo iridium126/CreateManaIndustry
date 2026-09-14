@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:cache_2d",
+  "argument": {
+    "type": "minecraft:mul",
+    "argument1": {
+      "type": "minecraft:flat_cache",
+      "argument": "createmanaindustry:smooth/terrain/continents/continental_shape_spline"
+    },
+    "argument2": -1
+  }
+}

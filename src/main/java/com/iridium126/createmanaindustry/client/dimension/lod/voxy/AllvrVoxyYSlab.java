@@ -39,6 +39,15 @@ public final class AllvrVoxyYSlab {
         if (mc.player != null && mc.level == level) {
             return slabIdForBlockY(mc.player.blockPosition().getY());
         }
+        // The vanilla Allay level is constructed before the client player is
+        // attached.  Its formal min build height (-128) is a chunk-pipeline
+        // boundary, not a Voxy slab boundary; using it here selects slab -1
+        // and briefly renders the native band one slab above the camera.  Use
+        // the canonical slab containing the native band until the player Y is
+        // available, after which the client tick selects the exact slab.
+        if (com.iridium126.createmanaindustry.dimension.AllvrDimensions.isAllay(level)) {
+            return 0L;
+        }
         return slabIdForBlockY(level.getMinBuildHeight());
     }
 

@@ -1,0 +1,29 @@
+{
+  "type": "minecraft:flat_cache",
+  "argument": {
+    "type": "minecraft:mul",
+    "argument1": {
+      "type": "minecraft:spline",
+      "spline": {
+        "coordinate": {
+          "type": "minecraft:add",
+          "argument1": "createmanaindustry:smooth/terrain/ridges/primary_ridge_shape",
+          "argument2": "createmanaindustry:smooth/terrain/ridges/secondary_ridge_shape"
+        },
+        "points": [
+          {
+            "location": -0.5,
+            "derivative": 0,
+            "value": -1
+          },
+          {
+            "location": 1,
+            "derivative": 0,
+            "value": 1
+          }
+        ]
+      }
+    },
+    "argument2": 1
+  }
+}

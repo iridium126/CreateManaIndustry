@@ -4,12 +4,15 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -44,6 +47,43 @@ public abstract class AllvrClientLevelMixin {
         Level self = (Level) (Object) this;
         if (!AllvrDimensionLimits.isVanillaY(pos.getY()) && allvr$isAllayClient(self)) {
             cir.setReturnValue(AllvrClientCubeCache.getBlockEntity(pos));
+        }
+    }
+
+    @Inject(method = "isLoaded", at = @At("HEAD"), cancellable = true)
+    private void allvr$clientIsLoaded(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
+        Level self = (Level) (Object) this;
+        if (!AllvrDimensionLimits.isVanillaY(pos.getY()) && allvr$isAllayClient(self)) {
+            cir.setReturnValue(AllvrClientCubeCache.isLoaded(pos));
+        }
+    }
+
+    @Inject(method = "loadedAndEntityCanStandOnFace", at = @At("HEAD"), cancellable = true)
+    private void allvr$clientLoadedAndEntityCanStandOnFace(BlockPos pos, Entity entity,
+                                                            Direction direction,
+                                                            CallbackInfoReturnable<Boolean> cir) {
+        Level self = (Level) (Object) this;
+        if (!AllvrDimensionLimits.isVanillaY(pos.getY()) && allvr$isAllayClient(self)) {
+            cir.setReturnValue(AllvrClientCubeCache.loadedAndEntityCanStandOnFace(pos, entity, direction));
+        }
+    }
+
+    @Inject(method = "setBlockEntity", at = @At("HEAD"), cancellable = true)
+    private void allvr$clientSetBlockEntity(BlockEntity blockEntity, CallbackInfo ci) {
+        Level self = (Level) (Object) this;
+        if (!AllvrDimensionLimits.isVanillaY(blockEntity.getBlockPos().getY()) && allvr$isAllayClient(self)) {
+            AllvrClientCubeCache.setBlockEntity(blockEntity);
+            ci.cancel();
+        }
+    }
+
+    @Inject(method = "removeBlockEntity", at = @At("HEAD"), cancellable = true)
+    private void allvr$clientRemoveBlockEntity(BlockPos pos, CallbackInfo ci) {
+        Level self = (Level) (Object) this;
+        if (!AllvrDimensionLimits.isVanillaY(pos.getY()) && allvr$isAllayClient(self)) {
+            AllvrClientCubeCache.removeBlockEntity(pos);
+            self.updateNeighbourForOutputSignal(pos, self.getBlockState(pos).getBlock());
+            ci.cancel();
         }
     }
 

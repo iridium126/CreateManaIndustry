@@ -202,7 +202,19 @@ public final class AllvrSodiumBridge {
             return;
         }
         AllvrSodiumSectionSource.invalidateCube(cubeKey);
-        enqueueCubeSections(cubeKey, true);
+        /*
+         * A light update also publishes the cube through the client light
+         * engine.  Existing RenderSections must stay resident while their
+         * snapshot is rebuilt; forcing a section replacement here would call
+         * onSectionRemoved followed by onSectionAdded and leave one frame
+         * with no geometry (visible as a flash during block edits).
+         *
+         * Newly published cubes still take the add path because they are not
+         * in OWNED yet.  An owned section is rebuilt in place when it is
+         * already built, while an unbuilt section may still be replaced to
+         * discard a stale pending build.
+         */
+        enqueueCubeSections(cubeKey);
         dirtyCubeBoundary(cubeKey);
     }
 
@@ -234,7 +246,9 @@ public final class AllvrSodiumBridge {
         int sz = absolutePos.getZ() >> 4;
         AllvrSodiumSectionSource.invalidateLightingSection(sx,
             WINDOW.virtualSectionY(sy), sz);
-        enqueueCubeSections(AllvrCubePos.asLong(absolutePos), false);
+        // A block write only changes this section and, at a section edge, its
+        // six direct neighbours. Re-enqueueing all eight sections of the cube
+        // would create avoidable pending replacements during an edit.
         long key = virtualKey(sx, sy, sz);
         scheduleDirty(key);
         if ((absolutePos.getX() & 15) == 0) scheduleDirty(virtualKey(sx - 1, sy, sz));
@@ -295,11 +309,11 @@ public final class AllvrSodiumBridge {
             }
         }
         for (long cubeKey : AllvrClientCubeCache.cubeKeys()) {
-            enqueueCubeSections(cubeKey, false);
+            enqueueCubeSections(cubeKey);
         }
     }
 
-    private static void enqueueCubeSections(long cubeKey, boolean replaceExisting) {
+    private static void enqueueCubeSections(long cubeKey) {
         AllvrCubePos cube = AllvrCubePos.fromLong(cubeKey);
         boolean register = AllvrSodiumSectionSource.cubeIsLoaded(level, cubeKey);
         for (int sy = 0; sy < 2; sy++) {
@@ -313,8 +327,6 @@ public final class AllvrSodiumBridge {
                     if (register) {
                         if (!OWNED.contains(key)) {
                             enqueueAdd(key);
-                        } else if (replaceExisting) {
-                            enqueueReplace(key);
                         } else if (AllvrSodiumSectionSource.hasContent(level, absX,
                             WINDOW.virtualSectionY(absY), absZ,
                             resourceRevision, WINDOW.epoch())) {

@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/cube_column",
+  "textures": {
+    "end": "createmanaindustry:block/crystal_log/crystal_log_top",
+    "side": "createmanaindustry:block/crystal_log/crystal_log"
+  }
+}
