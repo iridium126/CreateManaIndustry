@@ -1,0 +1,7 @@
+// Isolated integration tests; not included in the published mod.
+gradle.projectsEvaluated {
+    def project = gradle.rootProject
+    project.sourceSets.main.java.srcDir(project.file('src/markovTest/java'))
+    project.sourceSets.main.resources.srcDir(project.file('build/markov-test-resources'))
+    project.neoForge.runs.gameTestServer.gameDirectory = project.file('build/markov-test-run')
+}

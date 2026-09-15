@@ -1,0 +1,58 @@
+<?xml version='1.0' encoding='utf-8'?>
+<sequence values="BXTNSWRYUCGEgDH" origin="True" symmetry="()">
+  <!--Height proof: shortest leader reaches z=3 and two guaranteed leaf rounds reach z=5 (6 blocks). Highest branch can reach z=10; four bounded leaf rounds reach at most z=14 (15 blocks). Grid height 18 leaves spare headroom.-->
+  <!--NaturalSmallTree: compact deciduous tree. One voxel is one block. Use 19x19x18 or larger. Height is bounded by growth, not by clipping. Space-separated XML slices are TOP to BOTTOM.-->
+  <!--B air; N/D bark and wood; G/E/g leaves. X/T/S/W/R/Y/U/C are transient. Horizontal symmetries preserve gravity.-->
+  <!--1. Place the origin on the ground, then choose a trunk length of 2 through 8. The upper two cells accept scaffold buds.-->
+  <all in="X B" out="B X" />
+  <!--Reserve the lowest three air layers as H so the trunk stays visible. The central seed column remains free for wood. H is cleared at the end.-->
+  <prl in="B" out="H" />
+  <prl in="H *" out="B *" steps="1" />
+  <prl in="B H" out="H *" steps="2" />
+  <one steps="1">
+    <rule in="B X" out="T N" />
+    <rule in="B B X" out="T S N" />
+    <rule in="B B B X" out="T S N N" />
+    <rule in="B B B B X" out="T S N N N" />
+    <rule in="B B B B B X" out="T S N N N N" />
+    <rule in="B B B B B B X" out="T S N N N N N" />
+    <rule in="B B B B B B B X" out="T S N N N N N N" />
+  </one>
+  <!--2. A short leader extends above the fork, keeping a connected wooden core in the crown.-->
+  <all in="B T" out="T S" steps="2" />
+  <prl in="T" out="W" />
+  <!--3. One bud in each compass direction is attached at a random fork height.-->
+  <one in="SB" out="*R" steps="1" />
+  <one in="BS" out="Y*" steps="1" />
+  <one in="S/B" out="*/U" steps="1" />
+  <one in="B/S" out="C/*" steps="1" />
+  <!--4. Two rounds of short, upward-biased scaffold growth. Competing paths vary branch inclination; elbows give face-connected wood.-->
+  <all steps="2">
+    <rule in="RB" out="NR" />
+    <rule in="*B RB" out="*R NN" />
+    <rule in="BY" out="YN" />
+    <rule in="B* BY" out="Y* NN" />
+    <rule in="U/B" out="N/U" />
+    <rule in="*/B U/B" out="*/U N/N" />
+    <rule in="B/C" out="C/N" />
+    <rule in="B/* B/C" out="C/* N/N" />
+  </all>
+  <prl>
+    <rule in="R" out="W" />
+    <rule in="Y" out="W" />
+    <rule in="U" out="W" />
+    <rule in="C" out="W" />
+    <rule in="S" out="N" />
+  </prl>
+  <!--5. Leaves form around branch ends. Every added leaf has a face-adjacent supporting voxel; bounded rounds prevent oversized crowns.-->
+  <convolution neighborhood="VonNeumann" steps="1" in="B" out="G" values="W" sum="1..6" />
+  <convolution neighborhood="VonNeumann" steps="1" in="B" out="G" values="G" sum="1..6" />
+  <convolution neighborhood="VonNeumann" steps="1" in="B" out="G" values="G" sum="1..6" p="0.88" />
+  <convolution neighborhood="VonNeumann" steps="1" in="B" out="G" values="G" sum="2..6" p="0.75" />
+  <!--6. Finish branch tips and shade foliage by exposure, with subtle bark variation. No construction symbols remain.-->
+  <prl in="W" out="N" />
+  <prl in="B G" out="* g" p="0.78" steps="1" />
+  <prl in="G B" out="E *" p="0.7" steps="1" />
+  <prl in="N" out="D" p="0.2" steps="1" />
+  <prl in="H" out="B" />
+</sequence>

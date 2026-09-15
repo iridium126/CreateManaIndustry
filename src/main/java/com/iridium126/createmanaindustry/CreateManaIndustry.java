@@ -102,6 +102,7 @@ public class CreateManaIndustry {
         IRISVEIL_ACTIVE = ModList.get().isLoaded("irisveil");
 
         REGISTRATE.registerEventListeners(modEventBus);
+        com.iridium126.createmanaindustry.worldgen.markov.MarkovTreeFeature.register(modEventBus);
         com.iridium126.createmanaindustry.dimension.gen.AllvrChunkGenerator.register(modEventBus);
         modEventBus.addListener(CMICapabilities::register);
         modEventBus.addListener(CreateManaIndustry::registerPayloads);

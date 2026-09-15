@@ -1,0 +1,17 @@
+{
+  "type": "createmanaindustry:markov_tree",
+  "config": {
+    "model": "createmanaindustry:natural_small_tree",
+    "width": 19,
+    "depth": 19,
+    "height": 18,
+    "max_steps": 1000,
+    "palette": {
+      "N": { "Name": "createmanaindustry:crystal_log", "Properties": { "axis": "y" } },
+      "D": { "Name": "createmanaindustry:stripped_crystal_log", "Properties": { "axis": "y" } },
+      "G": { "Name": "hexcasting:aventurine_edified_leaves", "Properties": { "persistent": "false", "distance": "7", "waterlogged": "false" } },
+      "E": { "Name": "hexcasting:aventurine_edified_leaves", "Properties": { "persistent": "false", "distance": "7", "waterlogged": "false" } },
+      "g": { "Name": "hexcasting:aventurine_edified_leaves", "Properties": { "persistent": "false", "distance": "7", "waterlogged": "false" } }
+    }
+  }
+}

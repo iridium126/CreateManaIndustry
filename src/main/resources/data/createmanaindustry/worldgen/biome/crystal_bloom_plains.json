@@ -72,7 +72,7 @@
     ],
     [
       "minecraft:patch_tall_grass_2",
-      "minecraft:trees_plains",
+      "createmanaindustry:natural_small_tree",
       "minecraft:flower_plains",
       "minecraft:patch_grass_plain",
       "minecraft:brown_mushroom_normal",
