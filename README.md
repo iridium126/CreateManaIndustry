@@ -181,6 +181,13 @@ The kinetic blocks' **stress** values (`impact` / `capacity` sections) also live
 ./gradlew build
 ```
 
+## Development Documentation
+
+The complete development-documentation index (GPU particles, ALLVR, Allay
+Storm, shaderpack integration, persistence, and open review items) is in
+[docs/README.md](./docs/README.md). The GPU particle engine details are in
+[docs/particle-engine-dev.md](./docs/particle-engine-dev.md).
+
 ## License
 
 MIT License
