@@ -257,7 +257,43 @@ void main() {
         writeBuf.data[wb + 3u] = vec4(0.0, 20.0, mseed, uintBitsToFloat(eid));
         return;
     }
-    if (spawnStyle > 3.5) {
+    if (spawnStyle > 4.5) {
+        // ---- direct Hex conjure_particle (style 5) -----------------------
+        // ClientLevel.addParticle supplies the exact ConjureParticle
+        // constructor values. c.xyz has already been converted to blocks/s;
+        // c.w is RGB in the low 24 bits and uses the otherwise-unused alpha
+        // bit as the vanilla "all three velocity components are non-zero"
+        // gravity flag. Unlike style 4 there is no spray sampling: one GPU
+        // invocation represents exactly one original particle.
+        vec3 origin = vec3(emitCmd.entries[eb + 0u], emitCmd.entries[eb + 1u],
+                emitCmd.entries[eb + 2u]);
+        vec3 vel = vec3(emitCmd.entries[eb + 8u], emitCmd.entries[eb + 9u],
+                emitCmd.entries[eb + 10u]);
+        uint packedColor = floatBitsToUint(emitCmd.entries[eb + 11u]);
+        vec3 directColor = vec3(float((packedColor >> 16u) & 0xFFu),
+                float((packedColor >> 8u) & 0xFFu), float(packedColor & 0xFFu)) / 255.0;
+        bool directGravity = (packedColor & 0x80000000u) != 0u;
+        float roll = hash1(seed + 74.1) * 6.2831853; // fixed random roll
+        // ConjureParticle: (int)(64 / ((r + 3) * .25)) ticks. Keep the
+        // integer cast before converting to seconds, unlike the spray path's
+        // continuous approximation; this is observable at the lifetime edge.
+        float lifetimeTicks = floor(64.0 / ((hash1(seed + 75.1) + 3.0) * 0.25));
+        float maxLife = max(lifetimeTicks / 20.0, 0.1);
+        // SingleQuadParticle default [0.1, 0.2) × .9 = [0.09, .18).
+        float baseSize = mix(2.0 / 3.0, 4.0 / 3.0, hash1(seed + 13.1));
+        uint slot = atomicAdd(counter.writeSlot, 1u);
+        if (slot >= uCapacity)
+            return;
+        uint wb = slot * 4u;
+        writeBuf.data[wb + 0u] = vec4(origin, baseSize);
+        writeBuf.data[wb + 1u] = vec4(vel, roll);
+        // p2.w stays signed only for this style: update.comp reads its sign
+        // as the per-particle gravity bit; additive.vsh uses abs() for alpha.
+        writeBuf.data[wb + 2u] = vec4(directColor, directGravity ? -1.0 : 1.0);
+        writeBuf.data[wb + 3u] = vec4(0.0, maxLife, seed, uintBitsToFloat(eid));
+        return;
+    }
+    if (spawnStyle > 3.5 && spawnStyle < 4.5) {
         // ---- hex spray (style 4): Hexcasting ParticleSpray replication -----
         // MsgCastParticleS2C.Handler's exact sampling. Spawn position = the
         // spray origin + a uniform-sphere offset of radius u·fuzziness/2 —

@@ -18,7 +18,8 @@ out vec2 vUv;
 out vec3 vColor;
 out float vAlpha;
 out float vDist;
-// colorMode 4 (Hexcasting pigment) marker for the fsh: hexagonal cloud shape
+// colorMode 4/5 (Hexcasting pigment/direct conjure) marker for the fsh:
+// hexagonal cloud shape
 flat out float vHex;
 
 vec2 quadCorner(int v) {
@@ -70,7 +71,8 @@ void main() {
         keyA = mix(c0.a, c1.a, f);
     }
     float hexShape = 0.0;
-    // colorMode (header 17.x): 4 = Hexcasting pigment wheel. The 8 keyframe
+    // colorMode (header 17.x): 4 = Hexcasting pigment wheel, 5 = direct
+    // ConjureParticle RGB. The 8 keyframe
     // slots hold a WHEEL sampled from the caster's pigment at spray time (not
     // a life gradient): the phase is the particle's velocity direction
     // projected on the fixed gradient axis, cubic-eased between adjacent
@@ -80,7 +82,14 @@ void main() {
     // within one spray). Plus the exact ConjureParticle shrink: quadSize
     // ×= 0.96 per tick = e^(-ln(1/0.96)·20·age).
     float colorMode = emitters.u[hb + 17u].x;
-    if (colorMode > 3.5) {
+    if (colorMode > 4.5) {
+        // Direct conjure_particle freezes its ARGB color at construction time;
+        // the original alpha byte is intentionally ignored by Hexcasting.
+        col = p2.rgb;
+        keyA = 0.3;
+        hexShape = 1.0;
+        size *= exp(-0.816432 * p3.x);
+    } else if (colorMode > 3.5) {
         vec3 v = p1.xyz;
         float vlen = length(v);
         vec3 n = vlen > 1e-5 ? v / vlen : vec3(0.0, 1.0, 0.0);
@@ -98,7 +107,10 @@ void main() {
         hexShape = 1.0;
         size *= exp(-0.816432 * p3.x);
     }
-    col *= p2.rgb;
+    // Style 4 uses white keyframes multiplied by p2.rgb; style 5 already put
+    // its direct RGB in col and must not square the color.
+    if (colorMode < 4.5)
+        col *= p2.rgb;
 
     // per-emitter glow multiplier (header u[hb+6].w) — the additive brightness
     // is allowed to exceed 1.0 (saturates against the user's target while
@@ -121,7 +133,10 @@ void main() {
     vDist = length(worldPos - uCamPos);
     // alpha: per-particle intensity × keyframe alpha × lifetime fade × emitter glow
     // (additive allows >1.0 here; brightness is trimmed per-emitter in the headers)
-    vAlpha = p2.w * keyA * (1.0 - life) * emitterGlow;
+    // Direct style uses the sign of p2.w for its per-particle gravity bit.
+    // That sign is not visual data, so recover the original intensity here.
+    float intensity = colorMode > 4.5 ? abs(p2.w) : p2.w;
+    vAlpha = intensity * keyA * (1.0 - life) * emitterGlow;
     vColor = col;
     vHex = hexShape;
 }

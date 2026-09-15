@@ -32,7 +32,7 @@ public final class ClientConfig {
     private static ModConfigSpec.BooleanValue PARTICLE_AUTO_THROTTLE;
     private static ModConfigSpec.IntValue PARTICLE_FADE_DISTANCE;
     private static ModConfigSpec.BooleanValue PARTICLE_SHADER_PACK_INTEGRATION;
-    private static ModConfigSpec.BooleanValue PARTICLE_HEX_SPRAY_REDIRECT;
+    private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT;
 
     // ---- allay dimension (ALLVR) -------------------------------------------
 
@@ -70,9 +70,9 @@ public final class ClientConfig {
         PARTICLE_SHADER_PACK_INTEGRATION = BUILDER
                 .comment("Enable shader pack integration for model particles.")
                 .define("shaderPackIntegration", true);
-        PARTICLE_HEX_SPRAY_REDIRECT = BUILDER
-                .comment("Redirect Hexcasting sprays to GPU engine.")
-                .define("hexSprayRedirect", true);
+        PARTICLE_HEX_REDIRECT = BUILDER
+                .comment("Redirect Hexcasting conjure particles and sprays to GPU engine.")
+                .define("hexParticleRedirect", true);
         BUILDER.pop();
 
         BUILDER.comment("Allay dimension (ALLVR) options.").push("allvr");
@@ -93,7 +93,7 @@ public final class ClientConfig {
     public static boolean particleAutoThrottle = true;
     public static int particleFadeDistance = 96;
     public static boolean shaderPackIntegration = true;
-    public static boolean hexSprayRedirect = true;
+    public static boolean hexParticleRedirect = true;
     public static boolean allvrLod = true;
 
     private ClientConfig() {}
@@ -111,7 +111,7 @@ public final class ClientConfig {
             particleAutoThrottle = PARTICLE_AUTO_THROTTLE.get();
             particleFadeDistance = PARTICLE_FADE_DISTANCE.get();
             shaderPackIntegration = PARTICLE_SHADER_PACK_INTEGRATION.get();
-            hexSprayRedirect = PARTICLE_HEX_SPRAY_REDIRECT.get();
+            hexParticleRedirect = PARTICLE_HEX_REDIRECT.get();
             allvrLod = ALLVR_LOD.get();
         }
     }

@@ -416,6 +416,12 @@ void main() {
 
     vec3 gravity = emitters.u[hb + 2u].xyz;
     float drag = emitters.u[hb + 2u].w;
+    // Direct Hex conjure particles carry the vanilla all-components-nonzero
+    // gravity condition in the sign of p2.w; their shared emitter header must
+    // remain gravity-free because other direct particles may not have gravity.
+    float spawnStyle = emitters.u[hb + 17u].y;
+    if (spawnStyle > 4.5)
+        gravity = p2.w < 0.0 ? vec3(0.0, 0.16, 0.0) : vec3(0.0);
     vec3 accel = emitters.u[hb + 3u].xyz;
     float windStrength = emitters.u[hb + 3u].w;
     vec3 windDir = emitters.u[hb + 4u].xyz;

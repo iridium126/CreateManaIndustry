@@ -36,7 +36,7 @@ public class HexSprayRedirectMixin {
     @Inject(method = "handle(Lat/petrak/hexcasting/common/msgs/MsgCastParticleS2C;)V",
             at = @At("HEAD"), cancellable = true)
     private static void cmi$redirectHexSpray(MsgCastParticleS2C msg, CallbackInfo ci) {
-        if (!ClientConfig.hexSprayRedirect)
+        if (!ClientConfig.hexParticleRedirect)
             return;
         CMIParticleEngine engine = CMIParticleEngine.INSTANCE;
         if (!engine.available())

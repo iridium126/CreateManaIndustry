@@ -209,6 +209,8 @@ public final class CMIParticleEngine {
     private final boolean[] emitRingSpawn = new boolean[ParticleBuffers.MAX_EMIT_COMMANDS];
     /** Hex-spray command marker: c slots carry {vel.xyz b/s, packed fuzz/spread} instead of light/member fields. */
     private final boolean[] emitHex = new boolean[ParticleBuffers.MAX_EMIT_COMMANDS];
+    /** Direct conjure marker: c.w carries packed RGB plus the per-particle gravity bit. */
+    private final boolean[] emitHexDirect = new boolean[ParticleBuffers.MAX_EMIT_COMMANDS];
     private final Vec3[] emitHexVel = new Vec3[ParticleBuffers.MAX_EMIT_COMMANDS];
     private final float[] emitHexParams = new float[ParticleBuffers.MAX_EMIT_COMMANDS];
 
@@ -255,7 +257,13 @@ public final class CMIParticleEngine {
             float fuzz, float spread, int count, float[] wheel) {
     }
 
+    /** One direct Hexcasting {@code conjure_particle} (spawnStyle 5). */
+    private record HexParticle(float x, float y, float z, float vx, float vy, float vz,
+            int color, boolean gravity) {
+    }
+
     private final List<HexSpray> hexSprays = new ArrayList<>();
+    private final List<HexParticle> hexParticles = new ArrayList<>();
 
     /**
      * Client-side Hexcasting conjure spray (spawnStyle 4): the vanilla
@@ -271,6 +279,27 @@ public final class CMIParticleEngine {
         this.hexSprays.add(new HexSpray((float) pos.x, (float) pos.y, (float) pos.z,
                 (float) vel.x, (float) vel.y, (float) vel.z,
                 (float) fuzziness, (float) spread, count, wheelRGBA));
+    }
+
+    /**
+     * Queues one direct Hexcasting {@code conjure_particle}. The incoming
+     * velocity is the exact vanilla constructor value in blocks/tick; the GPU
+     * simulation uses blocks/second, so conversion happens once here. Vanilla
+     * assigns gravity only when ALL THREE constructor components are non-zero.
+     */
+    public void spawnHexParticle(Vec3 pos, Vec3 velocityPerTick, int color) {
+        if (!this.available())
+            return;
+        boolean gravity = velocityPerTick.x != 0.0 && velocityPerTick.y != 0.0 && velocityPerTick.z != 0.0;
+        this.hexParticles.add(new HexParticle((float) pos.x, (float) pos.y, (float) pos.z,
+                (float) (velocityPerTick.x * 20.0), (float) (velocityPerTick.y * 20.0),
+                (float) (velocityPerTick.z * 20.0), color, gravity));
+    }
+
+    /** Packs RGB in the low 24 bits; the unused ARGB alpha bit carries gravity. */
+    private static float packHexDirectColor(int color, boolean gravity) {
+        int packed = (color & 0x00FF_FFFF) | (gravity ? 0x8000_0000 : 0);
+        return Float.intBitsToFloat(packed);
     }
 
     /** fuzz (÷2) and spread (÷π), each 16-bit, packed into one float. */
@@ -676,6 +705,8 @@ public final class CMIParticleEngine {
         }
         this.pending.clear();
         this.streams.clear();
+        this.hexSprays.clear();
+        this.hexParticles.clear();
         resetPoolState();
         this.uniformLocations.clear();
         this.initialized = false;
@@ -929,6 +960,8 @@ public final class CMIParticleEngine {
         }
         if (doClear) {
             this.streams.clear();
+            this.hexSprays.clear();
+            this.hexParticles.clear();
             this.gpu.clearParticles();
             resetPoolState();
             this.storm.resetStormState();
@@ -965,6 +998,7 @@ public final class CMIParticleEngine {
         // overwritten with stale spray params (combat light = vel.x ≈ 0 →
         // blacked-out particles).
         java.util.Arrays.fill(this.emitHex, false);
+        java.util.Arrays.fill(this.emitHexDirect, false);
         var schedule = new AllayStormRuntime.EmitSchedule(this.emitIds, this.emitCounts, this.emitOrigins,
                 this.emitTranslucent, this.emitOriginRef, this.emitLight, this.emitMemberBase, this.emitMemberKey,
                 this.emitRingSpawn);
@@ -1072,6 +1106,45 @@ public final class CMIParticleEngine {
             totalSpawn += n;
             entryCount++;
         }
+        // Direct Hexcasting conjure particles (spawnStyle 5): one command per
+        // vanilla particle because each call can carry a different solid RGB
+        // color, velocity and gravity condition. The shared direct spec keeps
+        // emitter pressure constant; those per-particle values ride c slots.
+        EmitterSpec directHexSpec = HexSpecs.directSpec();
+        int directHexId = Integer.MIN_VALUE;
+        for (HexParticle hp : this.hexParticles) {
+            if (entryCount >= ParticleBuffers.MAX_EMIT_COMMANDS)
+                break;
+            if (directHexId == Integer.MIN_VALUE) {
+                Integer existing = this.emitterIds.get(directHexSpec);
+                if (existing != null) {
+                    directHexId = existing;
+                } else {
+                    directHexId = ensureEmitter(directHexSpec);
+                    if (directHexId >= 0)
+                        this.gpu.setEmitterHeader(directHexId, HexSpecs.packedDirectHeader(directHexSpec));
+                }
+            }
+            if (directHexId < 0)
+                break;
+            Vec3 origin = new Vec3(hp.x(), hp.y(), hp.z());
+            this.emitIds[entryCount] = directHexId;
+            this.emitCounts[entryCount] = 1;
+            this.emitOrigins[entryCount] = origin;
+            this.emitTranslucent[entryCount] = false; // additive
+            this.emitOriginRef[entryCount] = 0f;
+            this.emitLight[entryCount] = 0f;
+            this.emitMemberKey[entryCount] = 0;
+            this.emitRingSpawn[entryCount] = false;
+            this.emitHex[entryCount] = true;
+            this.emitHexDirect[entryCount] = true;
+            this.emitHexVel[entryCount] = new Vec3(hp.vx(), hp.vy(), hp.vz());
+            this.emitHexParams[entryCount] = packHexDirectColor(hp.color(), hp.gravity());
+            totalSpawn++;
+            entryCount++;
+        }
+        this.hexParticles.clear();
+
         // Hexcasting conjure sprays (spawnStyle 4): ONE emit command per
         // spray — the per-particle cone/fuzz sampling is GPU-side (emit.comp).
         // Each distinct pigment wheel is a distinct spec (the colors ride the
@@ -1102,6 +1175,7 @@ public final class CMIParticleEngine {
             this.emitMemberKey[entryCount] = 0;
             this.emitRingSpawn[entryCount] = false;
             this.emitHex[entryCount] = true;
+            this.emitHexDirect[entryCount] = false;
             this.emitHexVel[entryCount] = new Vec3(hs.vx(), hs.vy(), hs.vz());
             this.emitHexParams[entryCount] = packHexParams(hs.fuzz(), hs.spread());
             totalSpawn += hs.count();
@@ -1138,6 +1212,7 @@ public final class CMIParticleEngine {
                     this.emitMemberKey[w] = this.emitMemberKey[i];
                     this.emitRingSpawn[w] = this.emitRingSpawn[i];
                     this.emitHex[w] = this.emitHex[i];
+                    this.emitHexDirect[w] = this.emitHexDirect[i];
                     this.emitHexVel[w] = this.emitHexVel[i];
                     this.emitHexParams[w] = this.emitHexParams[i];
                     totalSpawn += n;
@@ -1186,8 +1261,9 @@ public final class CMIParticleEngine {
                 // (storm style 3), combat member key (c.z: memberIdx+1, 0 =
                 // legacy pool-index source; consumed only by combat styles 1/2),
                 // ring-spawn flag (c.w: storm growth members spawn on the ring).
-                // Hex sprays (style 4) reuse all four: {vel.xyz b/s,
-                // intBitsToFloat(fuzz16 | spread16<<16)} — see emit.comp.
+                // Hex commands (style 4/5) reuse all four: {vel.xyz b/s,
+                // intBitsToFloat(fuzz/spread or direct RGB+gravity)} — see
+                // emit.comp.
                 if (this.emitHex[i]) {
                     this.emitFront.put((float) this.emitHexVel[i].x).put((float) this.emitHexVel[i].y)
                             .put((float) this.emitHexVel[i].z).put(this.emitHexParams[i]);

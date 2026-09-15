@@ -1,5 +1,6 @@
 // Additive particle fragment shader: soft radial falloff + distance fade.
-// colorMode-4 (Hexcasting pigment) particles carry flat vHex = 1 and switch
+// colorMode-4/5 (Hexcasting pigment/direct conjure) particles carry flat
+// vHex = 1 and switch
 // to a procedural replica of hexcasting's cloud.png: a pointy-top hexagonal
 // soft glow (pure-white RGB, the shape lives entirely in the alpha channel —
 // 32×32, hexagon spanning texels 1..30, ~2.5-texel soft edge).

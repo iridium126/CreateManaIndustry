@@ -14,8 +14,9 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Engine-private emitter spec for the Hexcasting conjure spray (spawnStyle 4)
- * — a faithful GPU port of {@code ConjureParticle} + {@code ParticleSpray}:
+ * Engine-private emitter specs for Hexcasting's custom conjure particles
+ * (spawnStyle 4/5) — faithful GPU ports of {@code ConjureParticle} plus
+ * {@code ParticleSpray}:
  * additive fullbright hexagonal soft-glow billboards, linear alpha fade from
  * 0.3, exact exponential shrink (quadSize ×= 0.96/tick), fixed random roll,
  * no collision, friction 0.96 → drag, gravity field −0.01 → upward drift,
@@ -33,9 +34,12 @@ import net.minecraft.world.phys.Vec3;
  * <p>
  * Reserved header slots (storm owns 18/19; specs stay position-free):
  * <pre>
- *  17.x  colorMode 4: keyframes = pigment wheel (this spec)
+ *  17.x  colorMode 4: keyframes = pigment wheel (spray spec)
  *  17.y  spawnStyle 4: hex spray — emit command c slots carry
  *        {vel.xyz b/s, intBitsToFloat(fuzz16 | spread16<<16)}
+ *  17.x  colorMode 5: direct ARGB color (direct spec)
+ *  17.y  spawnStyle 5: direct conjure particle — c slots carry
+ *        {vel.xyz b/s, intBitsToFloat(rgb | gravityFlag)}
  * </pre>
  */
 public final class HexSpecs {
@@ -47,8 +51,10 @@ public final class HexSpecs {
     // ---- colorMode values (header 17.x) ----
     public static final float COLOR_NONE = 0f;
     public static final float COLOR_PIGMENT = 4f;
+    public static final float COLOR_DIRECT = 5f;
     // spawnStyle (header 17.y)
     public static final float STYLE_HEX_SPRAY = 4f;
+    public static final float STYLE_HEX_DIRECT = 5f;
 
     /**
      * The fixed pigment gradient axis — MUST match
@@ -73,6 +79,28 @@ public final class HexSpecs {
     /** ConjureParticle lifetime 256/(r+3) ticks (= 64/((r+3)·0.25)) → (3.2, 4.267] s (continuous, no integer-tick cast — poof precedent). */
     private static final double CONJURE_LIFE_MIN = 256.0 / 4.0 / 20.0;
     private static final double CONJURE_LIFE_MAX = 256.0 / 3.0 / 20.0;
+
+    /** Shared position-independent spec for direct {@code conjure_particle} calls. */
+    private static final EmitterSpec DIRECT_SPEC = EmitterSpec.builder()
+            .shape(EmitterShape.POINT)
+            .speed(0, 0) // velocity comes from the direct particle command
+            .life(CONJURE_LIFE_MIN, CONJURE_LIFE_MAX)
+            .sizeOverLife(CONJURE_SIZE, CONJURE_SIZE, 1.0)
+            // Direct particles carry their per-particle gravity bit in the
+            // command; keeping the header gravity at zero is essential because
+            // some ConjureParticle instances deliberately have no gravity.
+            .gravity(0, 0, 0)
+            .drag(CONJURE_DRAG)
+            .material(EmitterSpec.Material.ADDITIVE)
+            .collide(EmitterSpec.CollideMode.NONE)
+            .colors(new float[] { 1f, 1f, 1f, 1f, 1f, 1f, 1f, 1f })
+            .glow(1.0)
+            .build();
+
+    /** Returns the one deduplicated emitter spec used by direct particles. */
+    public static EmitterSpec directSpec() {
+        return DIRECT_SPEC;
+    }
 
     // /cmip spray pigment presets
     public enum Pigment {
@@ -114,6 +142,14 @@ public final class HexSpecs {
         float[] h = spec.packed().clone();
         h[HDR_COLOR_MODE] = COLOR_PIGMENT;
         h[HDR_SPAWN_STYLE] = STYLE_HEX_SPRAY;
+        return h;
+    }
+
+    /** Header clone for a direct, already-coloured {@code conjure_particle}. */
+    public static float[] packedDirectHeader(EmitterSpec spec) {
+        float[] h = spec.packed().clone();
+        h[HDR_COLOR_MODE] = COLOR_DIRECT;
+        h[HDR_SPAWN_STYLE] = STYLE_HEX_DIRECT;
         return h;
     }
 
