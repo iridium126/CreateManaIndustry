@@ -7,6 +7,8 @@ import static com.simibubi.create.api.contraption.storage.fluid.MountedFluidStor
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlock;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlockItem;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerMovementBehaviour;
+import com.iridium126.createmanaindustry.content.decoration.AventurineEdifiedLeavesBlock;
+import com.iridium126.createmanaindustry.datagen.CMIRegistrateExtensions;
 import com.iridium126.createmanaindustry.content.fluids.condenser.CondenserBlock;
 import com.iridium126.createmanaindustry.content.fluids.condenser.WeatheringCondenserBlock;
 import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankBlock;
@@ -218,21 +220,15 @@ public final class CMIBlocks {
      * textures on every face, just as vanilla wood blocks reuse their bark
      * texture instead of using a log end texture.
      */
-    public static final BlockEntry<RotatedPillarBlock> CRYSTAL_LOG = crystalLog(
-            "crystal_log", Blocks.OAK_LOG, "Crystal Log",
-            "block/crystal_log/crystal_log", "block/crystal_log/crystal_log_top");
+    /** Hexcasting-gated crystal wood set; null when Hexcasting is not installed. */
+    public static BlockEntry<RotatedPillarBlock> CRYSTAL_LOG;
+    public static BlockEntry<RotatedPillarBlock> STRIPPED_CRYSTAL_LOG;
+    public static BlockEntry<RotatedPillarBlock> CRYSTAL_WOOD;
+    public static BlockEntry<RotatedPillarBlock> STRIPPED_CRYSTAL_WOOD;
 
-    public static final BlockEntry<RotatedPillarBlock> STRIPPED_CRYSTAL_LOG = crystalLog(
-            "stripped_crystal_log", Blocks.STRIPPED_OAK_LOG, "Stripped Crystal Log",
-            "block/crystal_log/stripped_crystal_log", "block/crystal_log/stripped_crystal_log_top");
-
-    public static final BlockEntry<RotatedPillarBlock> CRYSTAL_WOOD = crystalWood(
-            "crystal_wood", Blocks.OAK_WOOD, CRYSTAL_LOG, "Crystal Wood",
-            "block/crystal_log/crystal_log");
-
-    public static final BlockEntry<RotatedPillarBlock> STRIPPED_CRYSTAL_WOOD = crystalWood(
-            "stripped_crystal_wood", Blocks.STRIPPED_OAK_WOOD, STRIPPED_CRYSTAL_LOG,
-            "Stripped Crystal Wood", "block/crystal_log/stripped_crystal_log");
+    /** No-item leaves used by the Markov tree; null when Hexcasting is absent. */
+    public static BlockEntry<AventurineEdifiedLeavesBlock> AVENTURINE_EDIFIED_LEAVES_1;
+    public static BlockEntry<AventurineEdifiedLeavesBlock> AVENTURINE_EDIFIED_LEAVES_2;
 
     /**
      * Deposition lid — visually and behaviourally identical to
@@ -387,6 +383,9 @@ public final class CMIBlocks {
     }
 
     public static void register() {
+        if (CreateManaIndustry.HEX_ACTIVE) {
+            registerHexcastingBlocks();
+        }
         if (CreateManaIndustry.TRICKSTER_ACTIVE) {
             KINETIC_MANA_GENERATOR = REGISTRATE
                     .block("kinetic_mana_generator", KineticManaGeneratorBlock::new)
@@ -410,5 +409,46 @@ public final class CMIBlocks {
                     })
                     .register();
         }
+    }
+
+    private static void registerHexcastingBlocks() {
+        CRYSTAL_LOG = crystalLog(
+                "crystal_log", Blocks.OAK_LOG, "Crystal Log",
+                "block/crystal_log/crystal_log", "block/crystal_log/crystal_log_top");
+        STRIPPED_CRYSTAL_LOG = crystalLog(
+                "stripped_crystal_log", Blocks.STRIPPED_OAK_LOG, "Stripped Crystal Log",
+                "block/crystal_log/stripped_crystal_log", "block/crystal_log/stripped_crystal_log_top");
+        CRYSTAL_WOOD = crystalWood(
+                "crystal_wood", Blocks.OAK_WOOD, CRYSTAL_LOG, "Crystal Wood",
+                "block/crystal_log/crystal_log");
+        STRIPPED_CRYSTAL_WOOD = crystalWood(
+                "stripped_crystal_wood", Blocks.STRIPPED_OAK_WOOD, STRIPPED_CRYSTAL_LOG,
+                "Stripped Crystal Wood", "block/crystal_log/stripped_crystal_log");
+
+        AVENTURINE_EDIFIED_LEAVES_1 = aventurineEdifiedLeaves(
+                "aventurine_edified_leaves_1");
+        AVENTURINE_EDIFIED_LEAVES_2 = aventurineEdifiedLeaves(
+                "aventurine_edified_leaves_2");
+    }
+
+    /**
+     * Hexcasting's leaves use an oak-leaves property copy with a blue map
+     * color, cutout-mipped rendering, and no BlockItem.  The Registrate
+     * extensions below generate its blockstate, model, optional tags, and
+     * conditional loot table.
+     */
+    @SuppressWarnings("removal")
+    private static BlockEntry<AventurineEdifiedLeavesBlock> aventurineEdifiedLeaves(String name) {
+        var builder = REGISTRATE.block(name, AventurineEdifiedLeavesBlock::new)
+                .initialProperties(() -> Blocks.OAK_LEAVES)
+                .properties(p -> p.mapColor(MapColor.COLOR_BLUE))
+                .addLayer(() -> RenderType::cutoutMipped)
+                .transform(CMIRegistrateExtensions.leavesModel("block/" + name));
+        CMIRegistrateExtensions.optionalBlockTags(builder, BlockTags.LEAVES, BlockTags.MINEABLE_WITH_HOE);
+        CMIRegistrateExtensions.conditionalLoot(builder,
+                CMIRegistrateExtensions.leavesLoot(
+                        net.minecraft.resources.ResourceLocation.parse("hexcasting:aventurine_edified_leaves")),
+                CMIRegistrateExtensions.hexcastingCondition());
+        return builder.lang("Aventurine Edified Leaves").register();
     }
 }

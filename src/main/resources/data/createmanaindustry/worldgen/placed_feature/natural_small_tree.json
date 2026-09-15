@@ -1,4 +1,7 @@
 {
+  "neoforge:conditions": [
+    { "type": "neoforge:mod_loaded", "modid": "hexcasting" }
+  ],
   "feature": "createmanaindustry:natural_small_tree",
   "placement": [
     { "type": "minecraft:count", "count": { "type": "minecraft:weighted_list", "distribution": [

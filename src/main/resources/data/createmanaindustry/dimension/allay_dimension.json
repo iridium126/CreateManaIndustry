@@ -1,4 +1,7 @@
 {
+  "neoforge:conditions": [
+    { "type": "neoforge:mod_loaded", "modid": "hexcasting" }
+  ],
   "type": "createmanaindustry:allay",
   "generator": {
     "type": "createmanaindustry:allay_islands",

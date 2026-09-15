@@ -15,6 +15,7 @@ import com.iridium126.createmanaindustry.compat.trickster.KineticStressTrickRegi
 import com.iridium126.createmanaindustry.config.ClientConfig;
 import com.iridium126.createmanaindustry.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlock;
+import com.iridium126.createmanaindustry.datagen.CMIRegistrate;
 import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelRodStructure;
 import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankBlock;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlock;
@@ -23,7 +24,6 @@ import com.simibubi.create.api.stress.BlockStressValues;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlockEntity;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorTooltipModifier;
 import com.mojang.logging.LogUtils;
-import com.simibubi.create.foundation.data.CreateRegistrate;
 import com.simibubi.create.foundation.item.ItemDescription;
 import com.simibubi.create.foundation.item.KineticStats;
 import com.simibubi.create.foundation.item.TooltipModifier;
@@ -76,7 +76,7 @@ public class CreateManaIndustry {
     public static boolean ARS_ACTIVE = false;
     public static boolean IRISVEIL_ACTIVE = false;
 
-    public static final CreateRegistrate REGISTRATE = CreateRegistrate.create(MODID);
+    public static final CMIRegistrate REGISTRATE = CMIRegistrate.create(MODID);
 
     static {
         REGISTRATE.defaultCreativeTab(CMICreativeModeTabs.MAIN_TAB.getKey());

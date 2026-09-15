@@ -100,6 +100,8 @@
   "block.createmanaindustry.waxed_oxidized_condenser": "Waxed Oxidized Condenser",
   "block.createmanaindustry.allay_burner": "Allay Burner",
   "block.createmanaindustry.deposition_lid": "Deposition Lid",
+  "block.createmanaindustry.aventurine_edified_leaves_1": "Aventurine Edified Leaves",
+  "block.createmanaindustry.aventurine_edified_leaves_2": "Aventurine Edified Leaves",
   "item.createmanaindustry.allay_burner": "Allay Burner",
   "item.createmanaindustry.empty_allay_burner": "Empty Allay Burner",
   "create.recipe.heat_requirement.allayheated": "Allay-Heated",

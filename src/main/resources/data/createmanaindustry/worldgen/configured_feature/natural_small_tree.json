@@ -1,4 +1,7 @@
 {
+  "neoforge:conditions": [
+    { "type": "neoforge:mod_loaded", "modid": "hexcasting" }
+  ],
   "type": "createmanaindustry:markov_tree",
   "config": {
     "model": "createmanaindustry:natural_small_tree",
@@ -9,8 +12,8 @@
     "palette": {
       "N": { "Name": "createmanaindustry:crystal_log", "Properties": { "axis": "y" } },
       "D": { "Name": "createmanaindustry:stripped_crystal_log", "Properties": { "axis": "y" } },
-      "G": { "Name": "hexcasting:aventurine_edified_leaves", "Properties": { "persistent": "false", "distance": "7", "waterlogged": "false" } },
-      "E": { "Name": "hexcasting:aventurine_edified_leaves", "Properties": { "persistent": "false", "distance": "7", "waterlogged": "false" } },
+      "G": { "Name": "createmanaindustry:aventurine_edified_leaves_1", "Properties": { "persistent": "false", "distance": "7", "waterlogged": "false" } },
+      "E": { "Name": "createmanaindustry:aventurine_edified_leaves_2", "Properties": { "persistent": "false", "distance": "7", "waterlogged": "false" } },
       "g": { "Name": "hexcasting:aventurine_edified_leaves", "Properties": { "persistent": "false", "distance": "7", "waterlogged": "false" } }
     }
   }

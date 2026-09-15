@@ -1,0 +1,12 @@
+{
+  "values": [
+    {
+      "id": "createmanaindustry:aventurine_edified_leaves_1",
+      "required": false
+    },
+    {
+      "id": "createmanaindustry:aventurine_edified_leaves_2",
+      "required": false
+    }
+  ]
+}
