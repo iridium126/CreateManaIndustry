@@ -52,7 +52,7 @@
 
 普通 Chunk 在 FEATURES 阶段放置，高空 Cube 在同步/异步地形生成结束后放置。正常高度图、Section 计数和旧方块实体移除路径继续生效。生成版本升级到 3，已有 Chunk/Cube 仍以存档内方块为准，不自动重种或覆盖玩家修改；验收完整新树应使用新世界。
 
-原来的 `WorldTreeLayout` / `WorldTreeDescriptor` 及其几何测试保留为旧实现参考，生产生成路径不再调用它们。`world-tree-design.md` 中洞穴、探索路线和平台等概念不参与 EpicRedwood 模型改写，以保持逐体素一致。
+EpicRedwood 是当前唯一的生产世界树生成路径。`world-tree-design.md` 中洞穴、探索路线和平台等概念不参与 EpicRedwood 模型改写，以保持逐体素一致。
 
 ## 验证与复现
 
@@ -79,7 +79,7 @@
 python scripts/prepare-allvr-worldgen-test.py
 New-Item -ItemType Directory -Force build/epic-redwood-test-run/mods | Out-Null
 Get-ChildItem -LiteralPath run/mods -Filter 'owo-lib-neoforge-*.jar' | Copy-Item -Destination build/epic-redwood-test-run/mods
-./gradlew.bat -I scripts/world-tree-test.init.gradle runGameTestServer --offline
+./gradlew.bat -I scripts/epic-redwood-test.init.gradle runGameTestServer --offline
 ```
 
 参考对照需要 .NET 9 和 JDK 21，运行游戏本身不需要 .NET、`.refs` 或外部进程。参考解释器使用稠密数组，需额外预留内存；压缩参考文件写入 `build/redwood-validation`。游戏测试覆盖 Chunk/Cube 的 383/384 接缝、32³ 同步/异步一致、树梢和负坐标、Create 方块映射、玩家编辑后的存档往返。测试世界位于 `build/epic-redwood-test-run`，重复执行会复用它；测试类和测试结构不进入正式 JAR。

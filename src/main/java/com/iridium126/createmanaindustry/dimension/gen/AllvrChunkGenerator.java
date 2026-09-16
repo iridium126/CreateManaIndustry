@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.dimension.gen;
 
 import java.util.Optional;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
-import com.iridium126.createmanaindustry.dimension.gen.worldtree.WorldTreeGenerator;
+import com.iridium126.createmanaindustry.dimension.gen.worldtree.EpicRedwoodGenerator;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.Holder;
@@ -38,8 +38,8 @@ public final class AllvrChunkGenerator extends NoiseBasedChunkGenerator {
 
     private final Optional<NoiseBasedChunkGenerator> terrain;
     private final Optional<NoiseBasedChunkGenerator> chunks;
-    private WorldTreeGenerator worldTree;
-    private long worldTreeSeed;
+    private EpicRedwoodGenerator epicRedwoodGenerator;
+    private long epicRedwoodSeed;
 
     public AllvrChunkGenerator(Optional<NoiseBasedChunkGenerator> terrain,
                                Optional<NoiseBasedChunkGenerator> chunks,
@@ -59,18 +59,18 @@ public final class AllvrChunkGenerator extends NoiseBasedChunkGenerator {
 
     public Optional<NoiseBasedChunkGenerator> terrain() { return terrain; }
 
-    private synchronized WorldTreeGenerator worldTree(long seed) {
-        if (worldTree == null || worldTreeSeed != seed) {
-            worldTree = new WorldTreeGenerator(seed);
-            worldTreeSeed = seed;
+    private synchronized EpicRedwoodGenerator epicRedwood(long seed) {
+        if (epicRedwoodGenerator == null || epicRedwoodSeed != seed) {
+            epicRedwoodGenerator = new EpicRedwoodGenerator(seed);
+            epicRedwoodSeed = seed;
         }
-        return worldTree;
+        return epicRedwoodGenerator;
     }
 
     @Override
     public void applyBiomeDecoration(WorldGenLevel level, ChunkAccess chunk, StructureManager structures) {
         super.applyBiomeDecoration(level, chunk, structures);
-        worldTree(level.getSeed()).generate(chunk);
+        epicRedwood(level.getSeed()).generate(chunk);
     }
 
     @Override protected MapCodec<? extends ChunkGenerator> codec() { return CODEC; }

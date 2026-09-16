@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.dimension.gen;
 
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandLayout.Island;
-import com.iridium126.createmanaindustry.dimension.gen.worldtree.WorldTreeGenerator;
+import com.iridium126.createmanaindustry.dimension.gen.worldtree.EpicRedwoodGenerator;
 import net.minecraft.core.BlockPos;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
 import net.minecraft.world.level.block.Blocks;
@@ -23,11 +23,11 @@ public final class AllvrIslandFieldGenerator {
     private final ServerLevel level;
     private final AllvrTerrainSource terrain;
     private final AllvrIslandLayout layout;
-    private final WorldTreeGenerator worldTree;
+    private final EpicRedwoodGenerator epicRedwood;
 
     public AllvrIslandFieldGenerator(ServerLevel level) {
         this.level = level;
-        this.worldTree = new WorldTreeGenerator(level.getSeed());
+        this.epicRedwood = new EpicRedwoodGenerator(level.getSeed());
         this.terrain = new AllvrTerrainSource(level);
         var settings = terrain.settings;
         this.layout = new AllvrIslandLayout(level.getSeed(), settings.noiseSettings().minY(),
@@ -45,7 +45,7 @@ public final class AllvrIslandFieldGenerator {
         int x = com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.cubeToMinBlock(cubeX);
         int y = com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.cubeToMinBlock(cubeY);
         int z = com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.cubeToMinBlock(cubeZ);
-        return worldTree.intersectsCell(x, y, z)
+        return epicRedwood.intersectsCell(x, y, z)
             || islandsForBox(x, y, z, x + 32, y + 32, z + 32).length != 0;
     }
 
@@ -64,7 +64,7 @@ public final class AllvrIslandFieldGenerator {
         if (generateLowerBand(cube)) return;
         Island[] islands = islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
         if (islands.length == 0) {
-            worldTree.generate(cube);
+            epicRedwood.generate(cube);
             return;
         }
         Map<Long, AllvrTerrainSource.Column> sourceColumns = new HashMap<>();
@@ -72,7 +72,7 @@ public final class AllvrIslandFieldGenerator {
             sourceColumns.computeIfAbsent(ChunkPos.asLong(sourceChunkX, sourceChunkZ),
                 ignored -> terrain.column(sourceChunkX, sourceChunkZ)));
         fillCube(cube, islands, sourceColumns);
-        worldTree.generate(cube);
+        epicRedwood.generate(cube);
     }
 
     /**
@@ -87,8 +87,8 @@ public final class AllvrIslandFieldGenerator {
         if (generateLowerBand(cube)) return CompletableFuture.completedFuture(null);
         Island[] islands = islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
         if (islands.length == 0) {
-            return worldTree.intersectsCell(x0, y0, z0)
-                ? CompletableFuture.runAsync(() -> worldTree.generate(cube), net.minecraft.Util.backgroundExecutor())
+            return epicRedwood.intersectsCell(x0, y0, z0)
+                ? CompletableFuture.runAsync(() -> epicRedwood.generate(cube), net.minecraft.Util.backgroundExecutor())
                 : CompletableFuture.completedFuture(null);
         }
         Map<Long, CompletableFuture<AllvrTerrainSource.Column>> sourceFutures = new HashMap<>();
@@ -100,7 +100,7 @@ public final class AllvrIslandFieldGenerator {
             Map<Long, AllvrTerrainSource.Column> sourceColumns = new HashMap<>(sourceFutures.size());
             sourceFutures.forEach((key, future) -> sourceColumns.put(key, future.join()));
             fillCube(cube, islands, sourceColumns);
-            worldTree.generate(cube);
+            epicRedwood.generate(cube);
         });
     }
 

@@ -19,9 +19,12 @@ final class EpicRedwoodTree {
         int seed = (int)worldSeed;
         TREES.values().removeIf(reference -> reference.get() == null);
         var reference = TREES.get(seed);
-        EpicRedwoodTree tree = reference == null ? null : reference.get();
-        if (tree == null) { tree = new EpicRedwoodTree(seed); TREES.put(seed, new WeakReference<>(tree)); }
-        return tree;
+        EpicRedwoodTree epicRedwood = reference == null ? null : reference.get();
+        if (epicRedwood == null) {
+            epicRedwood = new EpicRedwoodTree(seed);
+            TREES.put(seed, new WeakReference<>(epicRedwood));
+        }
+        return epicRedwood;
     }
 
     RedwoodVolume volume() {
