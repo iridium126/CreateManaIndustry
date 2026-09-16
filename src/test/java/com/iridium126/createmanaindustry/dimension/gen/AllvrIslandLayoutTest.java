@@ -26,7 +26,7 @@ class AllvrIslandLayoutTest {
         }
     }
 
-    @Test void independentHashesGiveRealSizeAndVerticalVariation() {
+    @Test void distanceGradientAndIndependentHashesGiveSizeAndVerticalVariation() {
         var layout = new AllvrIslandLayout(42, -64, 384, 63);
         double min = Double.POSITIVE_INFINITY, max = 0;
         int low = Integer.MAX_VALUE, high = Integer.MIN_VALUE;
@@ -43,7 +43,7 @@ class AllvrIslandLayoutTest {
     @Test void keelAndCoordinateMappingHaveNoCubeBoundaryDiscontinuity() {
         var layout = new AllvrIslandLayout(99, -64, 384, 63);
         var island = layout.islandAt(-1, 40000, 0);
-        assertTrue(island.bottom(island.cx(), island.cz()) < island.cy() - 70);
+        assertTrue(island.bottom(island.cx(), island.cz()) < island.cy() - 50);
         assertEquals(Double.POSITIVE_INFINITY, island.bottom(island.cx() + 1500, island.cz()));
         assertEquals(63, island.cy() - island.offsetY());
         assertEquals(0, island.sourceOffsetX() & 15);
@@ -61,5 +61,61 @@ class AllvrIslandLayoutTest {
             var b = layout.islandAt(0, layer + 1, 0);
             assertTrue(a.maxY() < b.minY());
         }
+    }
+
+    @Test void sizeIncreasesSmoothlyWithDistanceAndKeepsWholeOutlineOutsideOrigin() {
+        double previous = 0;
+        for (int distance = 501; distance <= 30_000_000; distance += 137) {
+            double radius = AllvrIslandLayout.radiusAtDistance(distance);
+            assertTrue(radius > previous);
+            assertTrue(radius * 1.06 <= distance - 500);
+            assertTrue(radius * 1.06 < AllvrIslandLayout.MAX_RADIUS);
+            previous = radius;
+        }
+        assertEquals(0, AllvrIslandLayout.radiusAtDistance(0));
+        assertEquals(0, AllvrIslandLayout.radiusAtDistance(500));
+    }
+
+    @Test void originIsEmptyAcrossSeedsAndVerticalLayers() {
+        for (long seed : new long[]{0, 42, 126, -999}) {
+            var layout = new AllvrIslandLayout(seed, -64, 384, 63);
+            for (int layer : new int[]{-46874, -1, 0, 1, 2, 46874}) {
+                for (int ix = -1; ix <= 0; ix++) for (int iz = -1; iz <= 0; iz++) {
+                    var island = layout.islandAt(ix, layer, iz);
+                    for (int x = -499; x <= 499; x += 31) for (int z = -499; z <= 499; z += 31) {
+                        if (Math.hypot(x, z) >= 500) continue;
+                        assertEquals(Double.POSITIVE_INFINITY, island.bottom(x, z));
+                        assertFalse(island.contains(x, island.cy(), z));
+                    }
+                    if (island.radius() == 0) {
+                        assertFalse(island.intersects(-500, island.minY(), -500, 500, island.maxY(), 500));
+                    }
+                }
+            }
+        }
+    }
+
+    @Test void pointedKeelRisesTowardsRimAndShellSpansCubeBoundaries() {
+        var island = new AllvrIslandLayout(99, -64, 384, 63).islandAt(10, 3, 10);
+        double tip = island.bottom(island.cx(), island.cz());
+        for (int direction = 0; direction < 16; direction++) {
+            double angle = direction * Math.PI / 8;
+            double previous = tip;
+            for (int step = 1; step <= 90; step++) {
+                double x = island.cx() + island.radius() * step / 100 * Math.cos(angle);
+                double z = island.cz() + island.radius() * step / 100 * Math.sin(angle);
+                double bottom = island.bottom(x, z);
+                assertTrue(bottom > previous, "Keel must narrow towards its tip");
+                previous = bottom;
+                if (bottom < island.cy() - 12) {
+                    int shellTop = island.shellTop(x, z, bottom);
+                    assertTrue(shellTop >= Math.ceil(bottom) + 3);
+                    for (int y = (int) Math.ceil(bottom); y < shellTop; y++) {
+                        assertTrue(island.contains((int) Math.round(x), y + 1, (int) Math.round(z)));
+                    }
+                }
+            }
+        }
+        assertTrue(island.bottom(island.cx() + island.radius() * .01, island.cz()) - tip > .5);
     }
 }

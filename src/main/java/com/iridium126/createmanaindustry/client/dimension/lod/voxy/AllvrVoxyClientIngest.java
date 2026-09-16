@@ -48,9 +48,9 @@ public final class AllvrVoxyClientIngest {
     private static volatile long slabId;
     private static volatile boolean initialized;
     /**
-     * Voxy creates its renderer from LevelRenderer#allChanged(), which can
-     * race the NeoForge level-load callback by one client frame. Keep a
-     * refresh pending until the level and player are both usable so the
+     * Voxy creates its renderer from LevelRenderer#allChanged() before the
+     * new player is installed during a dimension switch. Keep a refresh
+     * pending until the level and player are both usable so the
      * renderer's top-level Y range is built for the correct Allay slab.
      */
     private static volatile boolean rendererRefreshPending;
@@ -154,7 +154,7 @@ public final class AllvrVoxyClientIngest {
         }
 
         // The first Voxy renderer may have been constructed before the
-        // allay LevelEvent.Load callback ran. Recreate it once after the
+        // new player was installed. Recreate it once after the
         // active level/player are known, even when the initial slab already
         // happens to match the player.
         if (rendererRefreshPending) {

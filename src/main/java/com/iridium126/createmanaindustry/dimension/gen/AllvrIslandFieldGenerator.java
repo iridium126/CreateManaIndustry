@@ -166,9 +166,14 @@ public final class AllvrIslandFieldGenerator {
             if (column == null) continue;
             int from = Math.max(y0, Math.max(island.minY(), (int) Math.ceil(bottom)));
             int to = Math.min(y0 + 32, island.maxY());
+            int shellTop = island.shellTop(x, z, bottom);
             for (int y = from; y < to; y++) {
                 int sourceY = y - island.offsetY();
-                BlockState state = column.block(sx, sourceY, sz);
+                // Seal underside caves and aquifers too, so the calcite skin is continuous.
+                BlockState state = y < shellTop ? Blocks.CALCITE.defaultBlockState()
+                    : column.block(sx, sourceY, sz);
+                if (y >= shellTop && y < bottom + 3 && !state.isAir()
+                    && state.getFluidState().isEmpty()) state = Blocks.CALCITE.defaultBlockState();
                 if (state.isAir()) continue;
                 var section = cube.getSections()[AllvrCube.sliceIndex((x - x0) >> 4, (y - y0) >> 4, (z - z0) >> 4)];
                 section.setBlockState(x & 15, y & 15, z & 15, state, false);

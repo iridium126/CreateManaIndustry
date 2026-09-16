@@ -109,7 +109,7 @@ public final class AllvrSodiumBridge {
         initialized = true;
         resourceRevision++;
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == newLevel && mc.player != null) {
+        if (mc.level == newLevel && mc.player != null && mc.player.level() == newLevel) {
             lastCameraY = mc.gameRenderer.getMainCamera().getPosition().y;
             WINDOW.initializeAt(WINDOW.nextOrigin(lastCameraY));
             originInitialized = true;
@@ -151,7 +151,7 @@ public final class AllvrSodiumBridge {
         if (mc.player != null) {
             lastCameraY = mc.gameRenderer.getMainCamera().getPosition().y;
             if (!originInitialized) {
-                // Packets can arrive before LevelEvent.Load has a usable
+                // Packets can arrive before the installed level has a usable
                 // camera.  Discard any pre-init mapping and seed the whole
                 // resident set against the real camera position instead.
                 ADD_QUEUE.clear();

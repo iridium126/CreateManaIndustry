@@ -12,7 +12,6 @@ import net.createmod.ponder.foundation.PonderIndex;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.EntityHitResult;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -42,10 +41,10 @@ public class CreateManaIndustryClient {
         com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setResolver(
             com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache::getBlockState);
         // LevelReader#hasChunkAt(int, int) has no Y parameter, but the client
-        // uses it as the movement gate for LocalPlayer#tick. In the Allay
-        // cube range, resolve the query against the player's current cube;
-        // otherwise the intentionally empty vanilla column would make the
-        // client skip both movement simulation and position packets.
+        // uses it as the movement gate for LocalPlayer#tick. An unloaded
+        // Allay cube is a valid void-air area, so it must not make the client
+        // skip movement simulation and position packets while the server is
+        // asynchronously loading the cube after the player enters it.
         com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setChunkResolver(
             (x, z) -> {
                 Minecraft mc = Minecraft.getInstance();
@@ -57,8 +56,7 @@ public class CreateManaIndustryClient {
                 if (com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaY(y)) {
                     return null;
                 }
-                return com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache
-                    .isLoaded(new BlockPos(x, y, z));
+                return Boolean.TRUE;
             });
 
         // Register the Veil post-processing uniform injection listeners.
@@ -254,12 +252,10 @@ public class CreateManaIndustryClient {
      */
     @SubscribeEvent
     private static void onLevelLoad(LevelEvent.Load event) {
-        if (event.getLevel() instanceof net.minecraft.client.multiplayer.ClientLevel clientLevel) {
+        if (event.getLevel() instanceof net.minecraft.client.multiplayer.ClientLevel) {
             CMIParticleEngine.INSTANCE.onLevelChanged();
-            // Bind the cube cache to the new client level (allay dimension only).
-            com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.onLevelChanged(clientLevel);
-            com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge.bindLevel(clientLevel);
-            com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest.bindLevel(clientLevel);
+            // Terrain binds in AllvrMinecraftLevelMixin after the old world's
+            // Unload; this constructor-time Load is too early for that state.
         }
     }
 }

@@ -108,7 +108,7 @@ public final class AllvrClientCubeCache {
                                int payloadBytes, AllvrCube cube, long sequence,
                                Throwable failure) {}
 
-    /** Binds the current client level (called on LevelEvent.Load). */
+    /** Binds the installed client level before its renderers are initialized. */
     public static void onLevelChanged(ClientLevel clientLevel) {
         if (lightEngine != null) {
             lightEngine.clear();

@@ -49,6 +49,7 @@
     "allvr.AllvrEntityMixin"
   ],
   "client": [
+    "allvr.AllvrMinecraftLevelMixin",
     "allvr.AllvrClientLevelMixin",
     "allvr.AllvrClientEntityTickingMixin",
     "allvr.AllvrPredictionHandlerMixin",
