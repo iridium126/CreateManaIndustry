@@ -83,6 +83,13 @@ public final class AllvrIslandFieldGenerator {
      * worker thread waiting on nested {@code fillFromNoise().join()} calls.
      */
     public CompletableFuture<Void> generateAsync(AllvrCube cube) {
+        // Even dependency discovery builds source chunks and samples biomes.
+        // Never do that on the ticket thread, including when caches are warm.
+        return CompletableFuture.supplyAsync(() -> prepareAsync(cube), net.minecraft.Util.backgroundExecutor())
+            .thenCompose(future -> future);
+    }
+
+    private CompletableFuture<Void> prepareAsync(AllvrCube cube) {
         int x0 = cube.getPos().minBlockX(), y0 = cube.getPos().minBlockY(), z0 = cube.getPos().minBlockZ();
         if (generateLowerBand(cube)) return CompletableFuture.completedFuture(null);
         Island[] islands = islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
@@ -96,12 +103,12 @@ public final class AllvrIslandFieldGenerator {
             sourceFutures.computeIfAbsent(ChunkPos.asLong(sourceChunkX, sourceChunkZ),
                 ignored -> terrain.columnAsync(sourceChunkX, sourceChunkZ)));
         CompletableFuture<?>[] dependencies = sourceFutures.values().toArray(CompletableFuture<?>[]::new);
-        return CompletableFuture.allOf(dependencies).thenRun(() -> {
+        return CompletableFuture.allOf(dependencies).thenRunAsync(() -> {
             Map<Long, AllvrTerrainSource.Column> sourceColumns = new HashMap<>(sourceFutures.size());
             sourceFutures.forEach((key, future) -> sourceColumns.put(key, future.join()));
             fillCube(cube, islands, sourceColumns);
             epicRedwood.generate(cube);
-        });
+        }, net.minecraft.Util.backgroundExecutor());
     }
 
     private boolean generateLowerBand(AllvrCube cube) {
@@ -152,7 +159,7 @@ public final class AllvrIslandFieldGenerator {
             }
             if (!intersects) continue;
             cube.getSections()[AllvrCube.sliceIndex(sx, sy, sz)].fillBiomesFromNoise(
-                (qx, qy, qz, sampler) -> biome(qx, qy, qz), terrain.random.sampler(),
+                (qx, qy, qz, sampler) -> biomeFromCandidates(qx, qy, qz, islands), terrain.random.sampler(),
                 (x0 >> 2) + sx * 4, (y0 >> 2) + sy * 4, (z0 >> 2) + sz * 4);
         }
         BlockPos.MutableBlockPos world = new BlockPos.MutableBlockPos();
@@ -191,6 +198,19 @@ public final class AllvrIslandFieldGenerator {
                 }
             }
         }
+    }
+
+    private Holder<Biome> biomeFromCandidates(int qx, int qy, int qz, Island[] islands) {
+        int x = qx * 4, y = qy * 4, z = qz * 4;
+        // The cube candidates are a superset of every biome cell's candidates,
+        // in the same deterministic order. Avoid rebuilding the layout 512 times.
+        for (Island island : islands) {
+            if (island.intersects(x, y, z, x + 1, y + 1, z + 1)) {
+                return terrain.biome(x + island.sourceOffsetX(), y - island.offsetY(), z + island.sourceOffsetZ());
+            }
+        }
+        Island island = layout.nearest(x, y, z);
+        return terrain.biome(x + island.sourceOffsetX(), y - island.offsetY(), z + island.sourceOffsetZ());
     }
 
 }

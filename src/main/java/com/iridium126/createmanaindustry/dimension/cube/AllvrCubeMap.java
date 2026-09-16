@@ -828,6 +828,16 @@ public final class AllvrCubeMap {
         return null;
     }
 
+    /** Called after getOrRequest, which has already resolved the geometry ticket. */
+    private boolean isRequestBackpressured(long key) {
+        if (persistedIndex.contains(key)) {
+            return !failedPersistedLoads.contains(key) && !pendingPersistedLoads.containsKey(key)
+                && pendingPersistedLoads.size() >= MAX_PENDING_PERSISTED_LOADS;
+        }
+        return Boolean.TRUE.equals(islandTicketCache.get(key)) && !pendingGenerations.containsKey(key)
+            && pendingGenerations.size() >= MAX_PENDING_GENERATIONS;
+    }
+
     /** Mirrors CubicChunks' dropQueuedCubeLoad: abandoned shells must not burn CPU. */
     private void cancelGenerationsOutside(List<ServerPlayer> players) {
         for (Map.Entry<Long, CompletableFuture<AllvrCube>> entry : pendingGenerations.entrySet()) {
@@ -1142,6 +1152,14 @@ public final class AllvrCubeMap {
                     }
                     AllvrCube cube = getOrRequest(cx, cy, cz);
                     if (cube == null) {
+                        if (isRequestBackpressured(key)) {
+                            // The request was not accepted. Retain this exact
+                            // cursor until a completion frees capacity; otherwise
+                            // a stationary player's scan can finish with holes.
+                            scanIndex--;
+                            budgetStopped = true;
+                            break scanLoop;
+                        }
                         continue;
                     }
                     if (inSendRange && !sub.sent.contains(key)) {

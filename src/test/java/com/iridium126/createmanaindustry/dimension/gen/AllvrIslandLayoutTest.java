@@ -5,6 +5,33 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AllvrIslandLayoutTest {
+    @Test void cubeCandidatesPreservePointQueryOrderForBiomeCells() {
+        for (long seed : new long[] {0, 126, -99}) {
+            var layout = new AllvrIslandLayout(seed, -64, 384, 63);
+            for (int layer : new int[] {-40000, -1, 0, 1, 40000}) {
+                var island = layout.islandAt(-1, layer, 2);
+                for (double edge : new double[] {-1.06, 0, 1.06}) {
+                    int x0 = ((int) (island.cx() + edge * island.radius()) >> 5) << 5;
+                    int z0 = ((int) island.cz() >> 5) << 5;
+                    for (int boundary : new int[] {island.minY(), island.cy(), island.maxY()}) {
+                        int y0 = (boundary >> 5) << 5;
+                        var candidates = layout.islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
+                        for (int y = y0; y < y0 + 32; y += 4)
+                        for (int z = z0; z < z0 + 32; z += 4)
+                        for (int x = x0; x < x0 + 32; x += 4) {
+                            var filtered = new java.util.ArrayList<AllvrIslandLayout.Island>();
+                            for (var candidate : candidates) {
+                                if (candidate.intersects(x, y, z, x + 1, y + 1, z + 1)) filtered.add(candidate);
+                            }
+                            assertArrayEquals(layout.islandsForBox(x, y, z, x + 1, y + 1, z + 1),
+                                filtered.toArray(AllvrIslandLayout.Island[]::new));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     @Test void candidateBoundsIncludeNegativeAndOddLayersAtExtremeHeights() {
         var layout = new AllvrIslandLayout(126L, -64, 384, 63);
         for (int layer : new int[]{-46874, -3, -2, -1, 0, 1, 2, 3, 46874}) {

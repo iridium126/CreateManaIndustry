@@ -50,7 +50,9 @@ public final class AllvrWorldgenGameTests {
         helper.assertTrue(item.getX() != initialX,
             "Non-player entity in the native central band did not tick");
 
-        BlockPos cubePos = new BlockPos(x + 2, 384, z + 2);
+        // GameTest structures are only a few blocks apart, so they can share
+        // a 32-block cube. Keep this test outside the boundary test's Y=384 cube.
+        BlockPos cubePos = new BlockPos(x + 2, 448, z + 2);
         helper.assertTrue(!allay.isLoaded(cubePos), "Cube unexpectedly loaded before access");
         allay.setBlock(cubePos, Blocks.STONE.defaultBlockState(), 3);
         helper.assertTrue(allay.isLoaded(cubePos), "Cube-aware Level#isLoaded returned false");
@@ -124,6 +126,30 @@ public final class AllvrWorldgenGameTests {
         int solid = 0;
         for (var section : cube.getSections()) if (!section.hasOnlyAir()) solid++;
         helper.assertTrue(solid > 0, "High island cube is entirely empty");
+        // Warm caches used to execute the complete cube copy on the caller.
+        // Concurrent requests must still publish independent, identical palettes.
+        var replicas = new java.util.ArrayList<AllvrCube>();
+        var builds = new java.util.ArrayList<java.util.concurrent.CompletableFuture<Void>>();
+        for (int i = 0; i < 4; i++) {
+            var replica = new AllvrCube(cube.getPos(), allay.registryAccess().registryOrThrow(Registries.BIOME));
+            replicas.add(replica);
+            builds.add(generator.generateAsync(replica));
+        }
+        java.util.concurrent.CompletableFuture.allOf(builds.toArray(java.util.concurrent.CompletableFuture<?>[]::new))
+            .orTimeout(60, java.util.concurrent.TimeUnit.SECONDS).join();
+        for (var replica : replicas) for (int i = 0; i < cube.getSections().length; i++) {
+            var expected = cube.getSections()[i];
+            var actual = replica.getSections()[i];
+            helper.assertTrue(expected != actual, "Async cubes share mutable sections");
+            for (int y = 0; y < 16; y++) for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
+                helper.assertTrue(expected.getBlockState(x, y, z) == actual.getBlockState(x, y, z),
+                    "Async cube differs from synchronous generation");
+            }
+            for (int y = 0; y < 4; y++) for (int z = 0; z < 4; z++) for (int x = 0; x < 4; x++) {
+                helper.assertTrue(expected.getNoiseBiome(x, y, z).equals(actual.getNoiseBiome(x, y, z)),
+                    "Async cube biome differs from synchronous generation");
+            }
+        }
         var empty = new AllvrCube(AllvrCubePos.of(0, 10000, 0),
             allay.registryAccess().registryOrThrow(Registries.BIOME));
         generator.generate(empty);

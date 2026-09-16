@@ -127,7 +127,9 @@ final class AllvrTerrainSource {
             for (int oz = z - FEATURE_ORIGIN_RADIUS; oz <= z + FEATURE_ORIGIN_RADIUS; oz++) {
                 stampFutures.add(stampAsync(ox, oz));
             }
-            CompletableFuture.allOf(stampFutures.toArray(CompletableFuture<?>[]::new)).thenApply(ignored -> {
+            List<CompletableFuture<?>> dependencies = new ArrayList<>(stampFutures);
+            dependencies.add(sourceFuture);
+            CompletableFuture.allOf(dependencies.toArray(CompletableFuture<?>[]::new)).thenApplyAsync(ignored -> {
                 Column source = sourceFuture.join();
                 ProtoChunk result = copy(source);
                 int stampIndex = 0;
@@ -145,7 +147,7 @@ final class AllvrTerrainSource {
                 Column finished = freeze(result);
                 synchronized (cacheLock) { columns.put(key, finished); }
                 return finished;
-            }).whenComplete((value, failure) -> {
+            }, net.minecraft.Util.backgroundExecutor()).whenComplete((value, failure) -> {
                 if (failure != null) task.completeExceptionally(failure);
                 else task.complete(value);
                 columnTasks.remove(key, task);
@@ -178,7 +180,7 @@ final class AllvrTerrainSource {
                 (px, py, pz) -> py < Math.min(-54, settings.seaLevel()) ? lava : fluid, Blender.empty()));
             chunk.fillBiomesFromNoise(biomeSource(), random.sampler());
             // Preinstalled NoiseChunk uses an empty structure beard; no real chunk IO.
-            generator.fillFromNoise(Blender.empty(), random, level.structureManager(), chunk).thenApply(ignored -> {
+            generator.fillFromNoise(Blender.empty(), random, level.structureManager(), chunk).thenApplyAsync(ignored -> {
                 Map<BlockPos, Holder<Biome>> edgeBiomes = new HashMap<>();
                 generator.buildSurface(chunk, new WorldGenerationContext(generator, height), random, level.structureManager(),
                     new BiomeManager((qx, qy, qz) -> {
@@ -190,7 +192,7 @@ final class AllvrTerrainSource {
                 Column finished = freeze(chunk);
                 synchronized (cacheLock) { bases.put(key, finished); }
                 return finished;
-            }).whenComplete((value, failure) -> {
+            }, net.minecraft.Util.backgroundExecutor()).whenComplete((value, failure) -> {
                 if (failure != null) task.completeExceptionally(failure);
                 else task.complete(value);
                 baseTasks.remove(key, task);
@@ -257,7 +259,7 @@ final class AllvrTerrainSource {
             for (int cz = z - FEATURE_ORIGIN_RADIUS; cz <= z + FEATURE_ORIGIN_RADIUS; cz++) {
                 dependencies.add(baseAsync(cx, cz));
             }
-            CompletableFuture.allOf(dependencies.toArray(CompletableFuture<?>[]::new)).thenApply(ignored -> {
+            CompletableFuture.allOf(dependencies.toArray(CompletableFuture<?>[]::new)).thenApplyAsync(ignored -> {
                 Map<Long, Column> sources = new HashMap<>();
                 int dependencyIndex = 0;
                 for (int cx = x - FEATURE_ORIGIN_RADIUS; cx <= x + FEATURE_ORIGIN_RADIUS; cx++)
@@ -278,7 +280,7 @@ final class AllvrTerrainSource {
                 Stamp finished = new Stamp(changes);
                 synchronized (cacheLock) { stamps.put(key, finished); }
                 return finished;
-            }).whenComplete((value, failure) -> {
+            }, net.minecraft.Util.backgroundExecutor()).whenComplete((value, failure) -> {
                 if (failure != null) task.completeExceptionally(failure);
                 else task.complete(value);
                 stampTasks.remove(key, task);
@@ -389,6 +391,7 @@ final class AllvrTerrainSource {
     private final class FeatureRegion extends WorldGenRegion {
         private final ChunkPos origin;
         private final Map<Long, ProtoChunk> workspace = new HashMap<>();
+        private final Map<Long, Column> sources;
         private final Map<BlockPos, Boolean> writes = new HashMap<>();
         private final net.minecraft.world.level.lighting.LevelLightEngine unlit = new net.minecraft.world.level.lighting.LevelLightEngine(
             new net.minecraft.world.level.chunk.LightChunkGetter() {
@@ -403,17 +406,14 @@ final class AllvrTerrainSource {
 
         private FeatureRegion(int x, int z, ProtoChunk center, Map<Long, Column> sources) {
             super(level, null, ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.FEATURES), center);
+            this.sources = sources;
             origin = new ChunkPos(x, z);
             workspace.put(origin.toLong(), center);
             featureRandom = random.getOrCreateRandomFactory(
                 net.minecraft.resources.ResourceLocation.withDefaultNamespace("worldgen_region_random"))
                 .at(origin.getWorldPosition());
-            for (int dx = -FEATURE_ORIGIN_RADIUS; dx <= FEATURE_ORIGIN_RADIUS;
-                 dx++) for (int dz = -FEATURE_ORIGIN_RADIUS; dz <= FEATURE_ORIGIN_RADIUS; dz++) {
-                int cx = x + dx, cz = z + dz;
-                long key = ChunkPos.asLong(cx, cz);
-                workspace.computeIfAbsent(key, ignored -> copy(requireSource(sources, key)));
-            }
+            // Neighbors remain immutable until a feature actually reads/writes
+            // them. Each avoided copy also avoids rebuilding six heightmaps.
         }
 
         private static Column requireSource(Map<Long, Column> sources, long key) {
@@ -427,7 +427,7 @@ final class AllvrTerrainSource {
                 if (!required) return null;
                 throw new IllegalArgumentException("Feature read outside its vanilla region: " + x + "," + z + " from " + origin);
             }
-            return workspace.computeIfAbsent(ChunkPos.asLong(x, z), key -> copy(base(x, z)));
+            return workspace.computeIfAbsent(ChunkPos.asLong(x, z), key -> copy(requireSource(sources, key)));
         }
         @Override public boolean hasChunk(int x, int z) { return origin.getChessboardDistance(x, z) <= FEATURE_ORIGIN_RADIUS; }
         @Override public Holder<Biome> getUncachedNoiseBiome(int x, int y, int z) {
