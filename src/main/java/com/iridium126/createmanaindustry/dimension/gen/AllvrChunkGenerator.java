@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.dimension.gen;
 
 import java.util.Optional;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
+import com.iridium126.createmanaindustry.dimension.gen.worldtree.WorldTreeGenerator;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.Holder;
@@ -13,6 +14,9 @@ import net.minecraft.world.level.biome.MultiNoiseBiomeSource;
 import net.minecraft.world.level.biome.MultiNoiseBiomeSourceParameterList;
 import net.minecraft.world.level.biome.MultiNoiseBiomeSourceParameterLists;
 import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.WorldGenLevel;
+import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.neoforged.bus.api.IEventBus;
@@ -34,6 +38,8 @@ public final class AllvrChunkGenerator extends NoiseBasedChunkGenerator {
 
     private final Optional<NoiseBasedChunkGenerator> terrain;
     private final Optional<NoiseBasedChunkGenerator> chunks;
+    private WorldTreeGenerator worldTree;
+    private long worldTreeSeed;
 
     public AllvrChunkGenerator(Optional<NoiseBasedChunkGenerator> terrain,
                                Optional<NoiseBasedChunkGenerator> chunks,
@@ -52,6 +58,21 @@ public final class AllvrChunkGenerator extends NoiseBasedChunkGenerator {
     }
 
     public Optional<NoiseBasedChunkGenerator> terrain() { return terrain; }
+
+    private synchronized WorldTreeGenerator worldTree(long seed) {
+        if (worldTree == null || worldTreeSeed != seed) {
+            worldTree = new WorldTreeGenerator(seed);
+            worldTreeSeed = seed;
+        }
+        return worldTree;
+    }
+
+    @Override
+    public void applyBiomeDecoration(WorldGenLevel level, ChunkAccess chunk, StructureManager structures) {
+        super.applyBiomeDecoration(level, chunk, structures);
+        worldTree(level.getSeed()).generate(chunk);
+    }
+
     @Override protected MapCodec<? extends ChunkGenerator> codec() { return CODEC; }
     public static void register(IEventBus bus) { TYPES.register(bus); }
 }

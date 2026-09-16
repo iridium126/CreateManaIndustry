@@ -53,11 +53,16 @@ public final class MarkovModel {
     }
 
     public byte[] generate(int seed, int maxSteps) {
+        return generateExecution(seed, maxSteps).state;
+    }
+
+    /** Exposes the continuing upstream random stream for staged model execution. */
+    public Execution generateExecution(int seed, int maxSteps) {
         Execution execution = new Execution(compiler, seed, maxSteps);
         if (origin) execution.state[compiler.x / 2 + compiler.y / 2 * compiler.x
                 + compiler.z / 2 * compiler.x * compiler.y] = 1;
         program.execute(execution);
-        return execution.state;
+        return execution;
     }
 
     public String values() { return compiler.values; }
@@ -98,7 +103,7 @@ public final class MarkovModel {
         private final Map<String, NodeCompiler> extensions;
 
         private Compiler(Element root, int x, int y, int z, Map<String, NodeCompiler> extensions) {
-            if (x < 1 || y < 1 || z < 1 || (long)x * y * z > 1_048_576)
+            if (x < 1 || y < 1 || z < 1 || (long)x * y * z > 2_097_152)
                 throw new IllegalArgumentException("Invalid grid dimensions");
             this.x = x; this.y = y; this.z = z; volume = x * y * z;
             this.extensions = Map.copyOf(extensions);
@@ -123,7 +128,8 @@ public final class MarkovModel {
         }
 
         public Operation compile(Element e) {
-            if (e.hasAttribute("symmetry") && !e.getAttribute("symmetry").equals("()"))
+            if (e.hasAttribute("symmetry") && !e.getAttribute("symmetry").equals("()")
+                    && !(e.getAttribute("symmetry").equals("(xy)") && List.of("one", "all", "prl").contains(e.getTagName())))
                 throw new IllegalArgumentException("Unsupported symmetry: " + e.getAttribute("symmetry"));
             return switch (e.getTagName()) {
                 case "sequence" -> {
@@ -145,23 +151,35 @@ public final class MarkovModel {
             checkAttributes(e, "in", "out", "p", "steps", "symmetry");
             List<Element> elements = children(e);
             if (elements.isEmpty()) elements = List.of(e);
-            Rule[] rules = new Rule[elements.size()];
-            for (int i = 0; i < rules.length; i++) {
+            List<Rule> rules = new ArrayList<>();
+            for (int i = 0; i < elements.size(); i++) {
                 Element r = elements.get(i);
                 if (r != e && !r.getTagName().equals("rule"))
                     throw new IllegalArgumentException("Unsupported rule child: " + r.getTagName());
                 checkAttributes(r, "in", "out", "p", "symmetry", r == e ? "steps" : "");
-                if (r.hasAttribute("symmetry") && !r.getAttribute("symmetry").equals("()"))
+                String symmetry = r.hasAttribute("symmetry") ? r.getAttribute("symmetry") : e.getAttribute("symmetry");
+                if (!symmetry.isEmpty() && !List.of("()", "(xy)").contains(symmetry))
                     throw new IllegalArgumentException("Unsupported rule symmetry");
-                rules[i] = new Rule(r, this);
+                Pattern in = Pattern.parse(required(r, "in")), out = Pattern.parse(required(r, "out"));
+                List<String> seen = new ArrayList<>();
+                for (int rotation = 0; rotation < (symmetry.equals("(xy)") ? 4 : 1); rotation++) {
+                    for (int reflect = 0; reflect < (symmetry.equals("(xy)") ? 2 : 1); reflect++) {
+                        Pattern a = reflect == 0 ? in : in.reflected(), b = reflect == 0 ? out : out.reflected();
+                        String key = a.x + ":" + a.y + ":" + new String(a.data) + ":" + new String(b.data);
+                        if (!seen.contains(key)) { seen.add(key); rules.add(new Rule(a, b, probability(r), this)); }
+                    }
+                    in = in.rotated(); out = out.rotated();
+                }
             }
-            return new Rewrite(e.getTagName(), rules, integer(e, "steps", 0), this);
+            return new Rewrite(e.getTagName(), rules.toArray(Rule[]::new), integer(e, "steps", 0), this);
         }
 
         private Operation compileConvolution(Element e) {
             checkAttributes(e, "in", "out", "p", "steps", "neighborhood", "periodic", "values", "sum");
-            if (!required(e, "neighborhood").equals("VonNeumann") || bool(e, "periodic", false))
-                throw new IllegalArgumentException("Supported convolution: nonperiodic VonNeumann");
+            String neighborhood = required(e, "neighborhood");
+            if (!List.of("VonNeumann", "NoCorners").contains(neighborhood) || bool(e, "periodic", false))
+                throw new IllegalArgumentException("Supported convolution: nonperiodic VonNeumann/NoCorners");
+            int neighbors = neighborhood.equals("NoCorners") ? 18 : 6;
             List<Element> elements = children(e);
             if (elements.isEmpty()) elements = List.of(e);
             ConvRule[] rules = new ConvRule[elements.size()];
@@ -175,11 +193,11 @@ public final class MarkovModel {
                 if (r.hasAttribute("values") != r.hasAttribute("sum"))
                     throw new IllegalArgumentException("Convolution values and sum must be paired");
                 for (char c : r.getAttribute("values").toCharArray()) mask |= 1 << value(c);
-                boolean[] sums = new boolean[7];
+                boolean[] sums = new boolean[neighbors + 1];
                 if (r.hasAttribute("sum")) for (String interval : r.getAttribute("sum").split(",")) {
                     String[] bounds = interval.split("\\.\\.");
                     int min = Integer.parseInt(bounds[0]), max = Integer.parseInt(bounds[bounds.length - 1]);
-                    if (bounds.length > 2 || min < 0 || max > 6 || max < min) throw new IllegalArgumentException("Invalid sum");
+                    if (bounds.length > 2 || min < 0 || max > neighbors || max < min) throw new IllegalArgumentException("Invalid sum");
                     Arrays.fill(sums, min, max + 1, true);
                 } else Arrays.fill(sums, true);
                 rules[i] = new ConvRule(value(single(r, "in")), (byte)value(single(r, "out")), mask, sums, probability(r));
@@ -201,6 +219,12 @@ public final class MarkovModel {
                             if (yy + 1 < y) count[i + x]++;
                             if (zz > 0) count[i - x * y]++;
                             if (zz + 1 < z) count[i + x * y]++;
+                            if (neighbors == 18) for (int dz = -1; dz <= 1; dz++)
+                                for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+                                    if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) != 2) continue;
+                                    if (xx + dx >= 0 && xx + dx < x && yy + dy >= 0 && yy + dy < y && zz + dz >= 0 && zz + dz < z)
+                                        count[i + dx + dy * x + dz * x * y]++;
+                                }
                         }
                     }
                     boolean changed = false;
@@ -225,16 +249,16 @@ public final class MarkovModel {
     private static final class Rule {
         final int x, y, z;
         final int[] input, offsets, writeOffsets;
+        final int[] checkMasks, checkOffsets;
         final byte[] output;
         final int[][] shifts;
         final double p;
 
-        Rule(Element e, Compiler c) {
-            Pattern in = Pattern.parse(required(e, "in")), out = Pattern.parse(required(e, "out"));
+        Rule(Pattern in, Pattern out, double probability, Compiler c) {
             x = in.x; y = in.y; z = in.z;
             if (x != out.x || y != out.y || z != out.z || x > c.x || y > c.y || z > c.z)
                 throw new IllegalArgumentException("Rule dimensions must agree and fit the grid");
-            p = probability(e);
+            p = probability;
             input = new int[in.data.length];
             offsets = new int[input.length];
             IntList writes = new IntList(), outputs = new IntList();
@@ -256,10 +280,19 @@ public final class MarkovModel {
             for (int i = 0; i < output.length; i++) output[i] = (byte)outputs.data[i];
             shifts = new int[positions.length][];
             for (int v = 0; v < positions.length; v++) shifts[v] = positions[v].array();
+            // Wildcards do not constrain a match. Check non-air anchors first; retain the
+            // original shift enumeration and write order, which affect upstream RNG order.
+            IntList checks = new IntList(), addresses = new IntList();
+            int wildcard = (1 << c.values.length()) - 1;
+            for (int pass = 0; pass < 2; pass++) for (int i = 0; i < input.length; i++)
+                if (input[i] != wildcard && ((input[i] & 1) == 0 ? 0 : 1) == pass) {
+                    checks.add(input[i]); addresses.add(offsets[i]);
+                }
+            checkMasks = checks.array(); checkOffsets = addresses.array();
         }
 
         boolean matches(byte[] state, int at) {
-            for (int i = 0; i < input.length; i++) if ((input[i] & (1 << state[at + offsets[i]])) == 0) return false;
+            for (int i = 0; i < checkMasks.length; i++) if ((checkMasks[i] & (1 << state[at + checkOffsets[i]])) == 0) return false;
             return true;
         }
     }
@@ -380,6 +413,18 @@ public final class MarkovModel {
     }
 
     private record Pattern(int x, int y, int z, char[] data) {
+        Pattern reflected() {
+            char[] result = new char[data.length];
+            for (int zz = 0; zz < z; zz++) for (int yy = 0; yy < y; yy++) for (int xx = 0; xx < x; xx++)
+                result[xx + yy * x + zz * x * y] = data[x - 1 - xx + yy * x + zz * x * y];
+            return new Pattern(x, y, z, result);
+        }
+        Pattern rotated() {
+            char[] result = new char[data.length];
+            for (int zz = 0; zz < z; zz++) for (int yy = 0; yy < x; yy++) for (int xx = 0; xx < y; xx++)
+                result[xx + yy * y + zz * x * y] = data[x - 1 - yy + xx * x + zz * x * y];
+            return new Pattern(y, x, z, result);
+        }
         static Pattern parse(String text) {
             String[] layers = text.split(" ", -1);
             String[] first = layers[0].split("/", -1);

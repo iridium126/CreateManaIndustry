@@ -1,0 +1,11 @@
+{
+  "D": {"Name": "minecraft:dark_oak_wood", "Properties": {"axis": "y"}},
+  "N": {"Name": "minecraft:spruce_wood", "Properties": {"axis": "y"}},
+  "n": {"Name": "minecraft:stripped_spruce_wood", "Properties": {"axis": "y"}},
+  "G": {"Name": "minecraft:spruce_leaves", "Properties": {"persistent": "true", "distance": "1"}},
+  "E": {"Name": "minecraft:dark_oak_leaves", "Properties": {"persistent": "true", "distance": "1"}},
+  "g": {"Name": "minecraft:azalea_leaves", "Properties": {"persistent": "true", "distance": "1"}},
+  "J": {"Name": "minecraft:mangrove_roots", "Properties": {"waterlogged": "false"}},
+  "V": {"Name": "minecraft:oak_leaves", "Properties": {"persistent": "true", "distance": "1"}},
+  "M": {"Name": "minecraft:moss_block"}
+}

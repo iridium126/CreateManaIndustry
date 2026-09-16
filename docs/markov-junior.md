@@ -51,7 +51,9 @@ XML 是开发者打包资源，**不由数据包资源重载器替换**；修改
 
 已支持嵌套 `sequence`、`one`、`all`、`prl`、非周期 `VonNeumann convolution`，
 包括多规则、通配符、概率和步骤限制。当前 profile 要求根节点明确声明 `symmetry="()"`。
-未实现 WFC、Map、Path、搜索/field/observe、union、其他对称群和外部图案文件。
+另支持规则节点的水平 `(xy)` 对称展开及三维 `NoCorners` 卷积。
+悦灵世界树通过专用 `EpicRedwoodModel` 执行两级 uniform Map 与 `redwoodDetail` 细化，详见
+[世界树实现](world-tree-implementation.md)。通用 profile 仍未实现 WFC、通用 Map、Path、搜索/field/observe、union、其他对称群和外部图案文件。
 未支持的节点或属性会明确报错，避免静默执行出不同结果。
 
 `MarkovModel.load(xml, x, y, z, Map<String, NodeCompiler>)` 接受额外节点编译器。

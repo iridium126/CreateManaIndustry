@@ -48,7 +48,7 @@ class MarkovModelTest {
     @Test void rejectsUnsupportedSyntaxAndIncompleteRuns() throws Exception {
         var model = model();
         assertThrows(IllegalStateException.class, () -> model.generate(0, 1));
-        for (String body : new String[] {"<wfc/>", "<one in='B' out='X' symmetry='(xy)'/>",
+        for (String body : new String[] {"<wfc/>", "<one in='B' out='X' symmetry='(xyz)'/>",
                 "<prl in='B' out='X' p='NaN'/>", "<prl in='B' out='X' search='True'/>"}) {
             var xml = new ByteArrayInputStream(("<sequence values='BX' symmetry='()'>" + body + "</sequence>").getBytes(StandardCharsets.UTF_8));
             assertThrows(IllegalArgumentException.class, () -> MarkovModel.load(xml, 19, 19, 18));

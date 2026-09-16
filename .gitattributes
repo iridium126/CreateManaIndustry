@@ -3,3 +3,5 @@
 # are changed when only line endings change.
 src/generated/**/.cache/* text eol=lf
 src/generated/**/*.json text eol=lf
+# Preserve the exact reference model bytes used by the voxel validation harness.
+src/main/resources/data/createmanaindustry/markov/epic_redwood_3072.xml -text

@@ -1,0 +1,1039 @@
+<?xml version='1.0' encoding='utf-8'?>
+<sequence values="BXTADNnWGEgJVvRYUCIOPQ" origin="True" symmetry="()">
+  <!--EpicRedwood3072. Base grid 81 x 81 x 192; nested map 2 2 4 then 4 4 4 gives 648 x 648 x 3072. The live leader reaches base Z=191: occupied height, not only canvas height, is exactly 3072. Inspired by CarmaTower: structural grammar first, material detail after mapping. XML slices run TOP to BOTTOM.-->
+  <!--B air; D/N/n redwood bark and wood; E/G/g needles; J/V hanging vines. All other symbols are temporary. X/T leader, RYUCIOPQ compass growth tips. Gravity is never rotated.-->
+  <all in="X B" out="B X" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********X**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/********TTTTT********/******TTTTTTTTT******/****TTTTTTTTTTTTT****/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/****TTTTTTTTTTTTT****/******TTTTTTTTT******/********TTTTT********/*********************" steps="1" />
+  <!--1. Flared foot and a massive tapering bole. Smaller slices keep the original center, producing a continuous load-bearing trunk.-->
+  <one in="*********************/********BBBBB********/******BBBBBBBBB******/****BBBBBBBBBBBBB****/***BBBBBBBBBBBBBBB***/***BBBBBBBBBBBBBBB***/**BBBBBBBBBBBBBBBBB**/**BBBBBBBBBBBBBBBBB**/*BBBBBBBBBBBBBBBBBBB*/*BBBBBBBBBBBBBBBBBBB*/*BBBBBBBBBBBBBBBBBBB*/*BBBBBBBBBBBBBBBBBBB*/*BBBBBBBBBBBBBBBBBBB*/**BBBBBBBBBBBBBBBBB**/**BBBBBBBBBBBBBBBBB**/***BBBBBBBBBBBBBBB***/***BBBBBBBBBBBBBBB***/****BBBBBBBBBBBBB****/******BBBBBBBBB******/********BBBBB********/********************* *********************/********TTTTT********/******TTTTTTTTT******/****TTTTTTTTTTTTT****/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/****TTTTTTTTTTTTT****/******TTTTTTTTT******/********TTTTT********/*********************" out="*********************/********TTTTT********/******TTTTTTTTT******/****TTTTTTTTTTTTT****/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/****TTTTTTTTTTTTT****/******TTTTTTTTT******/********TTTTT********/********************* *********************/********DDDDD********/******DDDDDDDDD******/****DDDDDDDDDDDDD****/***DDDDDDDDDDDDDDD***/***DDDDDDDDDDDDDDD***/**DDDDDDDDDDDDDDDDD**/**DDDDDDDDDDDDDDDDD**/*DDDDDDDDDDDDDDDDDDD*/*DDDDDDDDDDDDDDDDDDD*/*DDDDDDDDDDDDDDDDDDD*/*DDDDDDDDDDDDDDDDDDD*/*DDDDDDDDDDDDDDDDDDD*/**DDDDDDDDDDDDDDDDD**/**DDDDDDDDDDDDDDDDD**/***DDDDDDDDDDDDDDD***/***DDDDDDDDDDDDDDD***/****DDDDDDDDDDDDD****/******DDDDDDDDD******/********DDDDD********/*********************" steps="2" />
+  <one in="*********************/********TTTTT********/******TTTTTTTTT******/****TTTTTTTTTTTTT****/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/*TTTTTTTTTTTTTTTTTTT*/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/****TTTTTTTTTTTTT****/******TTTTTTTTT******/********TTTTT********/*********************" out="*********************/********DDDDD********/******DDTTTTTDD******/****DDTTTTTTTTTDD****/***DDTTTTTTTTTTTDD***/***DTTTTTTTTTTTTTD***/**DTTTTTTTTTTTTTTTD**/**DTTTTTTTTTTTTTTTD**/*DTTTTTTTTTTTTTTTTTD*/*DTTTTTTTTTTTTTTTTTD*/*DTTTTTTTTTTTTTTTTTD*/*DTTTTTTTTTTTTTTTTTD*/*DTTTTTTTTTTTTTTTTTD*/**DTTTTTTTTTTTTTTTD**/**DTTTTTTTTTTTTTTTD**/***DTTTTTTTTTTTTTD***/***DDTTTTTTTTTTTDD***/****DDTTTTTTTTTDD****/******DDTTTTTDD******/********DDDDD********/*********************" steps="1" />
+  <one in="*********************/*********************/********BBBBB********/******BBBBBBBBB******/*****BBBBBBBBBBB*****/****BBBBBBBBBBBBB****/***BBBBBBBBBBBBBBB***/***BBBBBBBBBBBBBBB***/**BBBBBBBBBBBBBBBBB**/**BBBBBBBBBBBBBBBBB**/**BBBBBBBBBBBBBBBBB**/**BBBBBBBBBBBBBBBBB**/**BBBBBBBBBBBBBBBBB**/***BBBBBBBBBBBBBBB***/***BBBBBBBBBBBBBBB***/****BBBBBBBBBBBBB****/*****BBBBBBBBBBB*****/******BBBBBBBBB******/********BBBBB********/*********************/********************* *********************/*********************/********TTTTT********/******TTTTTTTTT******/*****TTTTTTTTTTT*****/****TTTTTTTTTTTTT****/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/****TTTTTTTTTTTTT****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/********TTTTT********/*********************/*********************" out="*********************/*********************/********TTTTT********/******TTTTTTTTT******/*****TTTTTTTTTTT*****/****TTTTTTTTTTTTT****/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/****TTTTTTTTTTTTT****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/********TTTTT********/*********************/********************* *********************/*********************/********DDDDD********/******DDDDDDDDD******/*****DDDDDDDDDDD*****/****DDDDDDDDDDDDD****/***DDDDDDDDDDDDDDD***/***DDDDDDDDDDDDDDD***/**DDDDDDDDDDDDDDDDD**/**DDDDDDDDDDDDDDDDD**/**DDDDDDDDDDDDDDDDD**/**DDDDDDDDDDDDDDDDD**/**DDDDDDDDDDDDDDDDD**/***DDDDDDDDDDDDDDD***/***DDDDDDDDDDDDDDD***/****DDDDDDDDDDDDD****/*****DDDDDDDDDDD*****/******DDDDDDDDD******/********DDDDD********/*********************/*********************" steps="3" />
+  <one in="*********************/*********************/********TTTTT********/******TTTTTTTTT******/*****TTTTTTTTTTT*****/****TTTTTTTTTTTTT****/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/**TTTTTTTTTTTTTTTTT**/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/****TTTTTTTTTTTTT****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/********TTTTT********/*********************/*********************" out="*********************/*********************/********NNNNN********/******NNNTTTNNN******/*****NNTTTTTTTNN*****/****NTTTTTTTTTTTN****/***NNTTTTTTTTTTTNN***/***NTTTTTTTTTTTTTN***/**NNTTTTTTTTTTTTTNN**/**NTTTTTTTTTTTTTTTN**/**NTTTTTTTTTTTTTTTN**/**NTTTTTTTTTTTTTTTN**/**NNTTTTTTTTTTTTTNN**/***NTTTTTTTTTTTTTN***/***NNTTTTTTTTTTTNN***/****NTTTTTTTTTTTN****/*****NNTTTTTTTNN*****/******NNNTTTNNN******/********NNNNN********/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********BBB*********/*******BBBBBBB*******/*****BBBBBBBBBBB*****/*****BBBBBBBBBBB*****/****BBBBBBBBBBBBB****/****BBBBBBBBBBBBB****/***BBBBBBBBBBBBBBB***/***BBBBBBBBBBBBBBB***/***BBBBBBBBBBBBBBB***/****BBBBBBBBBBBBB****/****BBBBBBBBBBBBB****/*****BBBBBBBBBBB*****/*****BBBBBBBBBBB*****/*******BBBBBBB*******/*********BBB*********/*********************/*********************/********************* *********************/*********************/*********************/*********TTT*********/*******TTTTTTT*******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*******TTTTTTT*******/*********TTT*********/*********************/*********************/*********************" out="*********************/*********************/*********************/*********TTT*********/*******TTTTTTT*******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*******TTTTTTT*******/*********TTT*********/*********************/*********************/********************* *********************/*********************/*********************/*********NNN*********/*******NNNNNNN*******/*****NNNNNNNNNNN*****/*****NNNNNNNNNNN*****/****NNNNNNNNNNNNN****/****NNNNNNNNNNNNN****/***NNNNNNNNNNNNNNN***/***NNNNNNNNNNNNNNN***/***NNNNNNNNNNNNNNN***/****NNNNNNNNNNNNN****/****NNNNNNNNNNNNN****/*****NNNNNNNNNNN*****/*****NNNNNNNNNNN*****/*******NNNNNNN*******/*********NNN*********/*********************/*********************/*********************" steps="7" />
+  <one in="*********************/*********************/*********************/*********TTT*********/*******TTTTTTT*******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/***TTTTTTTTTTTTTTT***/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*******TTTTTTT*******/*********TTT*********/*********************/*********************/*********************" out="*********************/*********************/*********************/*********NNN*********/*******NTTTTTN*******/*****NNTTTTTTTNN*****/*****NTTTTTTTTTN*****/****NTTTTTTTTTTTN****/****TTTTTTTTTTTTT****/***NTTTTTTTTTTTTTN***/***NTTTTTTTTTTTTTN***/***NTTTTTTTTTTTTTN***/****TTTTTTTTTTTTT****/****NTTTTTTTTTTTN****/*****NTTTTTTTTTN*****/*****NNTTTTTTTNN*****/*******NTTTTTN*******/*********NNN*********/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/********BBBBB********/*******BBBBBBB*******/******BBBBBBBBB******/*****BBBBBBBBBBB*****/****BBBBBBBBBBBBB****/****BBBBBBBBBBBBB****/****BBBBBBBBBBBBB****/****BBBBBBBBBBBBB****/****BBBBBBBBBBBBB****/*****BBBBBBBBBBB*****/******BBBBBBBBB******/*******BBBBBBB*******/********BBBBB********/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/********NNNNN********/*******NNNNNNN*******/******NNNNNNNNN******/*****NNNNNNNNNNN*****/****NNNNNNNNNNNNN****/****NNNNNNNNNNNNN****/****NNNNNNNNNNNNN****/****NNNNNNNNNNNNN****/****NNNNNNNNNNNNN****/*****NNNNNNNNNNN*****/******NNNNNNNNN******/*******NNNNNNN*******/********NNNNN********/*********************/*********************/*********************/*********************" steps="18" />
+  <one in="*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/****TTTTTTTTTTTTT****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/********NNNNN********/*******NTTTTTN*******/******NTTTTTTTN******/*****NTTTTTTTTTN*****/****NTTTTTTTTTTTN****/****NTTTTTTTTTTTN****/****NTTTTTTTTTTTN****/****NTTTTTTTTTTTN****/****NTTTTTTTTTTTN****/*****NTTTTTTTTTN*****/******NTTTTTTTN******/*******NTTTTTN*******/********NNNNN********/*********************/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/*********************/********BBBBB********/*******BBBBBBB*******/******BBBBBBBBB******/*****BBBBBBBBBBB*****/*****BBBBBBBBBBB*****/*****BBBBBBBBBBB*****/*****BBBBBBBBBBB*****/*****BBBBBBBBBBB*****/******BBBBBBBBB******/*******BBBBBBB*******/********BBBBB********/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/********NNNNN********/*******NNNNNNN*******/******NNNNNNNNN******/*****NNNNNNNNNNN*****/*****NNNNNNNNNNN*****/*****NNNNNNNNNNN*****/*****NNNNNNNNNNN*****/*****NNNNNNNNNNN*****/******NNNNNNNNN******/*******NNNNNNN*******/********NNNNN********/*********************/*********************/*********************/*********************/*********************" steps="24" />
+  <!--Branch tier Z=54: up to 10 coarse growth rounds. Randomly select an incomplete whorl; the crown narrows toward the leader.-->
+  <one steps="1">
+    <rule in="*********************/*********************/*********************/*********************/*********************/********TTTTT********/******BTTTTTTT*******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTTB****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/******BTTTTTTTB******/********TTTTT********/**********B**********/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/******Q**************/*********************/*********************/*********************/****************R****/*********************/*********************/*********************/******O*******I******/*********************/**********U**********/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/**********B**********/********TTTTT********/******BTTTTTTTB******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/****BTTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/*******TTTTTTTB******/********TTTTT********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/**********C**********/*********************/******Q*******P******/*********************/*********************/*********************/****Y****************/*********************/*********************/*********************/**************I******/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/**********B**********/********TTTTT********/*******TTTTTTTB******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/****BTTTTTTTTTTTB****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/******BTTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/**********C**********/*********************/**************P******/*********************/*********************/*********************/****Y***********R****/*********************/*********************/*********************/******O**************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/**********B**********/********TTTTT********/******BTTTTTTT*******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTTB****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/*******TTTTTTTB******/********TTTTT********/**********B**********/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/**********C**********/*********************/******Q**************/*********************/*********************/*********************/****************R****/*********************/*********************/*********************/**************I******/*********************/**********U**********/*********************/*********************/*********************/*********************" />
+  </one>
+  <all steps="3">
+    <rule in="RB" out="NR" />
+    <rule in="*B RB" out="*R NN" />
+    <rule in="RB/*B" out="NN/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *N/NN" />
+    <rule in="BY" out="YN" />
+    <rule in="B* BY" out="Y* NN" />
+    <rule in="BY/B*" out="NN/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** N*/NN" />
+    <rule in="U/B" out="N/U" />
+    <rule in="*/B U/B" out="*/U N/N" />
+    <rule in="UB/*B" out="NN/*U" />
+    <rule in="**/B* BU/B*" out="**/U* NN/N*" />
+    <rule in="B/C" out="C/N" />
+    <rule in="B/* B/C" out="C/* N/N" />
+    <rule in="*B/CB" out="*C/NN" />
+    <rule in="B*/** B*/BC" out="C*/** N*/NN" />
+    <rule in="IB/*B" out="NN/*I" />
+    <rule in="**/*B IB/*B" out="**/*I NN/*N" />
+    <rule in="IB" out="NI" />
+    <rule in="*/B I/B" out="*/I N/N" />
+    <rule in="BO/B*" out="NN/O*" />
+    <rule in="**/B* BO/B*" out="**/O* NN/N*" />
+    <rule in="BO" out="ON" />
+    <rule in="*/B O/B" out="*/O N/N" />
+    <rule in="*B/PB" out="*P/NN" />
+    <rule in="*B/** *B/PB" out="*P/** *N/NN" />
+    <rule in="PB" out="NP" />
+    <rule in="B/* B/P" out="P/* N/N" />
+    <rule in="B*/BQ" out="Q*/NN" />
+    <rule in="B*/** B*/BQ" out="Q*/** N*/NN" />
+    <rule in="BQ" out="QN" />
+    <rule in="B/* B/Q" out="Q/* N/N" />
+  </all>
+  <all steps="7">
+    <rule in="RB" out="WR" />
+    <rule in="*B RB" out="*R WW" />
+    <rule in="RB/*B" out="WW/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *W/WW" />
+    <rule in="BY" out="YW" />
+    <rule in="B* BY" out="Y* WW" />
+    <rule in="BY/B*" out="WW/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** W*/WW" />
+    <rule in="U/B" out="W/U" />
+    <rule in="*/B U/B" out="*/U W/W" />
+    <rule in="UB/*B" out="WW/*U" />
+    <rule in="**/B* BU/B*" out="**/U* WW/W*" />
+    <rule in="B/C" out="C/W" />
+    <rule in="B/* B/C" out="C/* W/W" />
+    <rule in="*B/CB" out="*C/WW" />
+    <rule in="B*/** B*/BC" out="C*/** W*/WW" />
+    <rule in="IB/*B" out="WW/*I" />
+    <rule in="**/*B IB/*B" out="**/*I WW/*W" />
+    <rule in="IB" out="WI" />
+    <rule in="*/B I/B" out="*/I W/W" />
+    <rule in="BO/B*" out="WW/O*" />
+    <rule in="**/B* BO/B*" out="**/O* WW/W*" />
+    <rule in="BO" out="OW" />
+    <rule in="*/B O/B" out="*/O W/W" />
+    <rule in="*B/PB" out="*P/WW" />
+    <rule in="*B/** *B/PB" out="*P/** *W/WW" />
+    <rule in="PB" out="WP" />
+    <rule in="B/* B/P" out="P/* W/W" />
+    <rule in="B*/BQ" out="Q*/WW" />
+    <rule in="B*/** B*/BQ" out="Q*/** W*/WW" />
+    <rule in="BQ" out="QW" />
+    <rule in="B/* B/Q" out="Q/* W/W" />
+  </all>
+  <prl>
+    <rule in="R" out="N" />
+    <rule in="Y" out="N" />
+    <rule in="U" out="N" />
+    <rule in="C" out="N" />
+    <rule in="I" out="N" />
+    <rule in="O" out="N" />
+    <rule in="P" out="N" />
+    <rule in="Q" out="N" />
+  </prl>
+  <one in="*********************/*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/********NTTTN********/*******TTTTTTT*******/******TTTTTTTTT******/*****NTTTTTTTTTN*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****NTTTTTTTTTN*****/******TTTTTTTTT******/*******TTTTTTT*******/********NTTTN********/*********************/*********************/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********BBB*********/*******BBBBBBB*******/******BBBBBBBBB******/******BBBBBBBBB******/*****BBBBBBBBBBB*****/*****BBBBBBBBBBB*****/*****BBBBBBBBBBB*****/******BBBBBBBBB******/******BBBBBBBBB******/*******BBBBBBB*******/*********BBB*********/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********TTT*********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTT*******/*********TTT*********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********TTT*********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTT*******/*********TTT*********/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********NNN*********/*******NNNNNNN*******/******NNNNNNNNN******/******NNNNNNNNN******/*****NNNNNNNNNNN*****/*****NNNNNNNNNNN*****/*****NNNNNNNNNNN*****/******NNNNNNNNN******/******NNNNNNNNN******/*******NNNNNNN*******/*********NNN*********/*********************/*********************/*********************/*********************/*********************" steps="12" />
+  <!--Branch tier Z=66: up to 17 coarse growth rounds. Randomly select an incomplete whorl; the crown narrows toward the leader.-->
+  <one steps="1">
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********TTT*********/******BTTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTTB****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/******TTTTTTTTT******/******BTTTTTTTB******/*********TTT*********/**********B**********/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/******Q**************/*********************/*********************/*********************/****************R****/*********************/*********************/*********************/******O*******I******/*********************/**********U**********/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/**********B**********/*********TTT*********/******BTTTTTTTB******/******TTTTTTTTT******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/****BTTTTTTTTTTT*****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTTB******/*********TTT*********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/**********C**********/*********************/******Q*******P******/*********************/*********************/*********************/****Y****************/*********************/*********************/*********************/**************I******/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/**********B**********/*********TTT*********/*******TTTTTTTB******/******TTTTTTTTT******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/****BTTTTTTTTTTTB****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/******TTTTTTTTT******/******BTTTTTTT*******/*********TTT*********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/**********C**********/*********************/**************P******/*********************/*********************/*********************/****Y***********R****/*********************/*********************/*********************/******O**************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/**********B**********/*********TTT*********/******BTTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTTB****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTTB******/*********TTT*********/**********B**********/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/**********C**********/*********************/******Q**************/*********************/*********************/*********************/****************R****/*********************/*********************/*********************/**************I******/*********************/**********U**********/*********************/*********************/*********************/*********************" />
+  </one>
+  <all steps="5">
+    <rule in="RB" out="NR" />
+    <rule in="*B RB" out="*R NN" />
+    <rule in="RB/*B" out="NN/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *N/NN" />
+    <rule in="BY" out="YN" />
+    <rule in="B* BY" out="Y* NN" />
+    <rule in="BY/B*" out="NN/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** N*/NN" />
+    <rule in="U/B" out="N/U" />
+    <rule in="*/B U/B" out="*/U N/N" />
+    <rule in="UB/*B" out="NN/*U" />
+    <rule in="**/B* BU/B*" out="**/U* NN/N*" />
+    <rule in="B/C" out="C/N" />
+    <rule in="B/* B/C" out="C/* N/N" />
+    <rule in="*B/CB" out="*C/NN" />
+    <rule in="B*/** B*/BC" out="C*/** N*/NN" />
+    <rule in="IB/*B" out="NN/*I" />
+    <rule in="**/*B IB/*B" out="**/*I NN/*N" />
+    <rule in="IB" out="NI" />
+    <rule in="*/B I/B" out="*/I N/N" />
+    <rule in="BO/B*" out="NN/O*" />
+    <rule in="**/B* BO/B*" out="**/O* NN/N*" />
+    <rule in="BO" out="ON" />
+    <rule in="*/B O/B" out="*/O N/N" />
+    <rule in="*B/PB" out="*P/NN" />
+    <rule in="*B/** *B/PB" out="*P/** *N/NN" />
+    <rule in="PB" out="NP" />
+    <rule in="B/* B/P" out="P/* N/N" />
+    <rule in="B*/BQ" out="Q*/NN" />
+    <rule in="B*/** B*/BQ" out="Q*/** N*/NN" />
+    <rule in="BQ" out="QN" />
+    <rule in="B/* B/Q" out="Q/* N/N" />
+  </all>
+  <all steps="12">
+    <rule in="RB" out="WR" />
+    <rule in="*B RB" out="*R WW" />
+    <rule in="RB/*B" out="WW/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *W/WW" />
+    <rule in="BY" out="YW" />
+    <rule in="B* BY" out="Y* WW" />
+    <rule in="BY/B*" out="WW/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** W*/WW" />
+    <rule in="U/B" out="W/U" />
+    <rule in="*/B U/B" out="*/U W/W" />
+    <rule in="UB/*B" out="WW/*U" />
+    <rule in="**/B* BU/B*" out="**/U* WW/W*" />
+    <rule in="B/C" out="C/W" />
+    <rule in="B/* B/C" out="C/* W/W" />
+    <rule in="*B/CB" out="*C/WW" />
+    <rule in="B*/** B*/BC" out="C*/** W*/WW" />
+    <rule in="IB/*B" out="WW/*I" />
+    <rule in="**/*B IB/*B" out="**/*I WW/*W" />
+    <rule in="IB" out="WI" />
+    <rule in="*/B I/B" out="*/I W/W" />
+    <rule in="BO/B*" out="WW/O*" />
+    <rule in="**/B* BO/B*" out="**/O* WW/W*" />
+    <rule in="BO" out="OW" />
+    <rule in="*/B O/B" out="*/O W/W" />
+    <rule in="*B/PB" out="*P/WW" />
+    <rule in="*B/** *B/PB" out="*P/** *W/WW" />
+    <rule in="PB" out="WP" />
+    <rule in="B/* B/P" out="P/* W/W" />
+    <rule in="B*/BQ" out="Q*/WW" />
+    <rule in="B*/** B*/BQ" out="Q*/** W*/WW" />
+    <rule in="BQ" out="QW" />
+    <rule in="B/* B/Q" out="Q/* W/W" />
+  </all>
+  <prl>
+    <rule in="R" out="N" />
+    <rule in="Y" out="N" />
+    <rule in="U" out="N" />
+    <rule in="C" out="N" />
+    <rule in="I" out="N" />
+    <rule in="O" out="N" />
+    <rule in="P" out="N" />
+    <rule in="Q" out="N" />
+  </prl>
+  <one in="*********************/*********************/*********************/*********************/*********************/*********TTT*********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/*****TTTTTTTTTTT*****/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTT*******/*********TTT*********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********NNN*********/*******NTTTTTN*******/******NTTTTTTTN******/******TTTTTTTTT******/*****NTTTTTTTTTN*****/*****NTTTTTTTTTN*****/*****NTTTTTTTTTN*****/******TTTTTTTTT******/******NTTTTTTTN******/*******NTTTTTN*******/*********NNN*********/*********************/*********************/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/********BBBBB********/*******BBBBBBB*******/******BBBBBBBBB******/******BBBBBBBBB******/******BBBBBBBBB******/******BBBBBBBBB******/******BBBBBBBBB******/*******BBBBBBB*******/********BBBBB********/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/********NNNNN********/*******NNNNNNN*******/******NNNNNNNNN******/******NNNNNNNNN******/******NNNNNNNNN******/******NNNNNNNNN******/******NNNNNNNNN******/*******NNNNNNN*******/********NNNNN********/*********************/*********************/*********************/*********************/*********************/*********************" steps="12" />
+  <!--Branch tier Z=78: up to 22 coarse growth rounds. Randomly select an incomplete whorl; the crown narrows toward the leader.-->
+  <one steps="1">
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/******B*TTTTT********/******BTTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTTB*****/******TTTTTTTTT******/******TTTTTTTTT******/******BTTTTTTTB******/******B*TTTTT*B******/**********B**********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/******Q**************/******N**************/*********************/*********************/***************R*****/*********************/*********************/******N*******N******/******O*******I******/**********U**********/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/**********B**********/******B*TTTTT*B******/******BTTTTTTTB******/******TTTTTTTTT******/******TTTTTTTTT******/*****BTTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTTB******/********TTTTT*B******/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/**********C**********/******Q*******P******/******N*******N******/*********************/*********************/*****Y***************/*********************/*********************/**************N******/**************I******/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/**********B**********/********TTTTT*B******/*******TTTTTTTB******/******TTTTTTTTT******/******TTTTTTTTT******/*****BTTTTTTTTTB*****/******TTTTTTTTT******/******TTTTTTTTT******/******BTTTTTTT*******/******B*TTTTT********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/**********C**********/**************P******/**************N******/*********************/*********************/*****Y*********R*****/*********************/*********************/******N**************/******O**************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/**********B**********/******B*TTTTT********/******BTTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTTB*****/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTTB******/********TTTTT*B******/**********B**********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/**********C**********/******Q**************/******N**************/*********************/*********************/***************R*****/*********************/*********************/**************N******/**************I******/**********U**********/*********************/*********************/*********************/*********************/*********************" />
+  </one>
+  <all steps="7">
+    <rule in="RB" out="NR" />
+    <rule in="*B RB" out="*R NN" />
+    <rule in="RB/*B" out="NN/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *N/NN" />
+    <rule in="BY" out="YN" />
+    <rule in="B* BY" out="Y* NN" />
+    <rule in="BY/B*" out="NN/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** N*/NN" />
+    <rule in="U/B" out="N/U" />
+    <rule in="*/B U/B" out="*/U N/N" />
+    <rule in="UB/*B" out="NN/*U" />
+    <rule in="**/B* BU/B*" out="**/U* NN/N*" />
+    <rule in="B/C" out="C/N" />
+    <rule in="B/* B/C" out="C/* N/N" />
+    <rule in="*B/CB" out="*C/NN" />
+    <rule in="B*/** B*/BC" out="C*/** N*/NN" />
+    <rule in="IB/*B" out="NN/*I" />
+    <rule in="**/*B IB/*B" out="**/*I NN/*N" />
+    <rule in="IB" out="NI" />
+    <rule in="*/B I/B" out="*/I N/N" />
+    <rule in="BO/B*" out="NN/O*" />
+    <rule in="**/B* BO/B*" out="**/O* NN/N*" />
+    <rule in="BO" out="ON" />
+    <rule in="*/B O/B" out="*/O N/N" />
+    <rule in="*B/PB" out="*P/NN" />
+    <rule in="*B/** *B/PB" out="*P/** *N/NN" />
+    <rule in="PB" out="NP" />
+    <rule in="B/* B/P" out="P/* N/N" />
+    <rule in="B*/BQ" out="Q*/NN" />
+    <rule in="B*/** B*/BQ" out="Q*/** N*/NN" />
+    <rule in="BQ" out="QN" />
+    <rule in="B/* B/Q" out="Q/* N/N" />
+  </all>
+  <all steps="15">
+    <rule in="RB" out="WR" />
+    <rule in="*B RB" out="*R WW" />
+    <rule in="RB/*B" out="WW/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *W/WW" />
+    <rule in="BY" out="YW" />
+    <rule in="B* BY" out="Y* WW" />
+    <rule in="BY/B*" out="WW/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** W*/WW" />
+    <rule in="U/B" out="W/U" />
+    <rule in="*/B U/B" out="*/U W/W" />
+    <rule in="UB/*B" out="WW/*U" />
+    <rule in="**/B* BU/B*" out="**/U* WW/W*" />
+    <rule in="B/C" out="C/W" />
+    <rule in="B/* B/C" out="C/* W/W" />
+    <rule in="*B/CB" out="*C/WW" />
+    <rule in="B*/** B*/BC" out="C*/** W*/WW" />
+    <rule in="IB/*B" out="WW/*I" />
+    <rule in="**/*B IB/*B" out="**/*I WW/*W" />
+    <rule in="IB" out="WI" />
+    <rule in="*/B I/B" out="*/I W/W" />
+    <rule in="BO/B*" out="WW/O*" />
+    <rule in="**/B* BO/B*" out="**/O* WW/W*" />
+    <rule in="BO" out="OW" />
+    <rule in="*/B O/B" out="*/O W/W" />
+    <rule in="*B/PB" out="*P/WW" />
+    <rule in="*B/** *B/PB" out="*P/** *W/WW" />
+    <rule in="PB" out="WP" />
+    <rule in="B/* B/P" out="P/* W/W" />
+    <rule in="B*/BQ" out="Q*/WW" />
+    <rule in="B*/** B*/BQ" out="Q*/** W*/WW" />
+    <rule in="BQ" out="QW" />
+    <rule in="B/* B/Q" out="Q/* W/W" />
+  </all>
+  <prl>
+    <rule in="R" out="N" />
+    <rule in="Y" out="N" />
+    <rule in="U" out="N" />
+    <rule in="C" out="N" />
+    <rule in="I" out="N" />
+    <rule in="O" out="N" />
+    <rule in="P" out="N" />
+    <rule in="Q" out="N" />
+  </prl>
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/********BBBBB********/*******BBBBBBB*******/******BBBBBBBBB******/******BBBBBBBBB******/******BBBBBBBBB******/******BBBBBBBBB******/******BBBBBBBBB******/*******BBBBBBB*******/********BBBBB********/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/********NNNNN********/*******NNNNNNN*******/******NNNNNNNNN******/******NNNNNNNNN******/******NNNNNNNNN******/******NNNNNNNNN******/******NNNNNNNNN******/*******NNNNNNN*******/********NNNNN********/*********************/*********************/*********************/*********************/*********************/*********************" steps="13" />
+  <!--Branch tier Z=91: up to 25 coarse growth rounds. Randomly select an incomplete whorl; the crown narrows toward the leader.-->
+  <one steps="1">
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/******B*TTTTT********/******BTTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTTB*****/******TTTTTTTTT******/******TTTTTTTTT******/******BTTTTTTTB******/******B*TTTTT*B******/**********B**********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/******Q**************/******N**************/*********************/*********************/***************R*****/*********************/*********************/******N*******N******/******O*******I******/**********U**********/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/**********B**********/******B*TTTTT*B******/******BTTTTTTTB******/******TTTTTTTTT******/******TTTTTTTTT******/*****BTTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTTB******/********TTTTT*B******/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/**********C**********/******Q*******P******/******N*******N******/*********************/*********************/*****Y***************/*********************/*********************/**************N******/**************I******/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/**********B**********/********TTTTT*B******/*******TTTTTTTB******/******TTTTTTTTT******/******TTTTTTTTT******/*****BTTTTTTTTTB*****/******TTTTTTTTT******/******TTTTTTTTT******/******BTTTTTTT*******/******B*TTTTT********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/**********C**********/**************P******/**************N******/*********************/*********************/*****Y*********R*****/*********************/*********************/******N**************/******O**************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/**********B**********/******B*TTTTT********/******BTTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTTB*****/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTTB******/********TTTTT*B******/**********B**********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/**********C**********/******Q**************/******N**************/*********************/*********************/***************R*****/*********************/*********************/**************N******/**************I******/**********U**********/*********************/*********************/*********************/*********************/*********************" />
+  </one>
+  <all steps="8">
+    <rule in="RB" out="NR" />
+    <rule in="*B RB" out="*R NN" />
+    <rule in="RB/*B" out="NN/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *N/NN" />
+    <rule in="BY" out="YN" />
+    <rule in="B* BY" out="Y* NN" />
+    <rule in="BY/B*" out="NN/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** N*/NN" />
+    <rule in="U/B" out="N/U" />
+    <rule in="*/B U/B" out="*/U N/N" />
+    <rule in="UB/*B" out="NN/*U" />
+    <rule in="**/B* BU/B*" out="**/U* NN/N*" />
+    <rule in="B/C" out="C/N" />
+    <rule in="B/* B/C" out="C/* N/N" />
+    <rule in="*B/CB" out="*C/NN" />
+    <rule in="B*/** B*/BC" out="C*/** N*/NN" />
+    <rule in="IB/*B" out="NN/*I" />
+    <rule in="**/*B IB/*B" out="**/*I NN/*N" />
+    <rule in="IB" out="NI" />
+    <rule in="*/B I/B" out="*/I N/N" />
+    <rule in="BO/B*" out="NN/O*" />
+    <rule in="**/B* BO/B*" out="**/O* NN/N*" />
+    <rule in="BO" out="ON" />
+    <rule in="*/B O/B" out="*/O N/N" />
+    <rule in="*B/PB" out="*P/NN" />
+    <rule in="*B/** *B/PB" out="*P/** *N/NN" />
+    <rule in="PB" out="NP" />
+    <rule in="B/* B/P" out="P/* N/N" />
+    <rule in="B*/BQ" out="Q*/NN" />
+    <rule in="B*/** B*/BQ" out="Q*/** N*/NN" />
+    <rule in="BQ" out="QN" />
+    <rule in="B/* B/Q" out="Q/* N/N" />
+  </all>
+  <all steps="17">
+    <rule in="RB" out="WR" />
+    <rule in="*B RB" out="*R WW" />
+    <rule in="RB/*B" out="WW/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *W/WW" />
+    <rule in="BY" out="YW" />
+    <rule in="B* BY" out="Y* WW" />
+    <rule in="BY/B*" out="WW/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** W*/WW" />
+    <rule in="U/B" out="W/U" />
+    <rule in="*/B U/B" out="*/U W/W" />
+    <rule in="UB/*B" out="WW/*U" />
+    <rule in="**/B* BU/B*" out="**/U* WW/W*" />
+    <rule in="B/C" out="C/W" />
+    <rule in="B/* B/C" out="C/* W/W" />
+    <rule in="*B/CB" out="*C/WW" />
+    <rule in="B*/** B*/BC" out="C*/** W*/WW" />
+    <rule in="IB/*B" out="WW/*I" />
+    <rule in="**/*B IB/*B" out="**/*I WW/*W" />
+    <rule in="IB" out="WI" />
+    <rule in="*/B I/B" out="*/I W/W" />
+    <rule in="BO/B*" out="WW/O*" />
+    <rule in="**/B* BO/B*" out="**/O* WW/W*" />
+    <rule in="BO" out="OW" />
+    <rule in="*/B O/B" out="*/O W/W" />
+    <rule in="*B/PB" out="*P/WW" />
+    <rule in="*B/** *B/PB" out="*P/** *W/WW" />
+    <rule in="PB" out="WP" />
+    <rule in="B/* B/P" out="P/* W/W" />
+    <rule in="B*/BQ" out="Q*/WW" />
+    <rule in="B*/** B*/BQ" out="Q*/** W*/WW" />
+    <rule in="BQ" out="QW" />
+    <rule in="B/* B/Q" out="Q/* W/W" />
+  </all>
+  <prl>
+    <rule in="R" out="N" />
+    <rule in="Y" out="N" />
+    <rule in="U" out="N" />
+    <rule in="C" out="N" />
+    <rule in="I" out="N" />
+    <rule in="O" out="N" />
+    <rule in="P" out="N" />
+    <rule in="Q" out="N" />
+  </prl>
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/********NTTTN********/*******NTTTTTN*******/******NTTTTTTTN******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/******NTTTTTTTN******/*******NTTTTTN*******/********NTTTN********/*********************/*********************/*********************/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********BBB*********/********BBBBB********/*******BBBBBBB*******/******BBBBBBBBB******/******BBBBBBBBB******/******BBBBBBBBB******/*******BBBBBBB*******/********BBBBB********/*********BBB*********/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********NNN*********/********NNNNN********/*******NNNNNNN*******/******NNNNNNNNN******/******NNNNNNNNN******/******NNNNNNNNN******/*******NNNNNNN*******/********NNNNN********/*********NNN*********/*********************/*********************/*********************/*********************/*********************/*********************" steps="13" />
+  <!--Branch tier Z=104: up to 25 coarse growth rounds. Randomly select an incomplete whorl; the crown narrows toward the leader.-->
+  <one steps="1">
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/*******BTTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTTB*****/******TTTTTTTTT******/*******TTTTTTT*******/*******BTTTTTB*******/*********TTT*********/**********B**********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*******Q*************/*********************/*********************/***************R*****/*********************/*********************/*******O*****I*******/*********************/**********U**********/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/**********B**********/*********TTT*********/*******BTTTTTB*******/*******TTTTTTT*******/******TTTTTTTTT******/*****BTTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTTB*******/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/**********C**********/*********************/*******Q*****P*******/*********************/*********************/*****Y***************/*********************/*********************/*************I*******/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/**********B**********/*********TTT*********/********TTTTTB*******/*******TTTTTTT*******/******TTTTTTTTT******/*****BTTTTTTTTTB*****/******TTTTTTTTT******/*******TTTTTTT*******/*******BTTTTT********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/**********C**********/*********************/*************P*******/*********************/*********************/*****Y*********R*****/*********************/*********************/*******O*************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/**********B**********/*********TTT*********/*******BTTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTTB*****/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTTB*******/*********TTT*********/**********B**********/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/**********C**********/*********************/*******Q*************/*********************/*********************/***************R*****/*********************/*********************/*************I*******/*********************/**********U**********/*********************/*********************/*********************/*********************/*********************" />
+  </one>
+  <all steps="8">
+    <rule in="RB" out="NR" />
+    <rule in="*B RB" out="*R NN" />
+    <rule in="RB/*B" out="NN/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *N/NN" />
+    <rule in="BY" out="YN" />
+    <rule in="B* BY" out="Y* NN" />
+    <rule in="BY/B*" out="NN/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** N*/NN" />
+    <rule in="U/B" out="N/U" />
+    <rule in="*/B U/B" out="*/U N/N" />
+    <rule in="UB/*B" out="NN/*U" />
+    <rule in="**/B* BU/B*" out="**/U* NN/N*" />
+    <rule in="B/C" out="C/N" />
+    <rule in="B/* B/C" out="C/* N/N" />
+    <rule in="*B/CB" out="*C/NN" />
+    <rule in="B*/** B*/BC" out="C*/** N*/NN" />
+    <rule in="IB/*B" out="NN/*I" />
+    <rule in="**/*B IB/*B" out="**/*I NN/*N" />
+    <rule in="IB" out="NI" />
+    <rule in="*/B I/B" out="*/I N/N" />
+    <rule in="BO/B*" out="NN/O*" />
+    <rule in="**/B* BO/B*" out="**/O* NN/N*" />
+    <rule in="BO" out="ON" />
+    <rule in="*/B O/B" out="*/O N/N" />
+    <rule in="*B/PB" out="*P/NN" />
+    <rule in="*B/** *B/PB" out="*P/** *N/NN" />
+    <rule in="PB" out="NP" />
+    <rule in="B/* B/P" out="P/* N/N" />
+    <rule in="B*/BQ" out="Q*/NN" />
+    <rule in="B*/** B*/BQ" out="Q*/** N*/NN" />
+    <rule in="BQ" out="QN" />
+    <rule in="B/* B/Q" out="Q/* N/N" />
+  </all>
+  <all steps="17">
+    <rule in="RB" out="WR" />
+    <rule in="*B RB" out="*R WW" />
+    <rule in="RB/*B" out="WW/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *W/WW" />
+    <rule in="BY" out="YW" />
+    <rule in="B* BY" out="Y* WW" />
+    <rule in="BY/B*" out="WW/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** W*/WW" />
+    <rule in="U/B" out="W/U" />
+    <rule in="*/B U/B" out="*/U W/W" />
+    <rule in="UB/*B" out="WW/*U" />
+    <rule in="**/B* BU/B*" out="**/U* WW/W*" />
+    <rule in="B/C" out="C/W" />
+    <rule in="B/* B/C" out="C/* W/W" />
+    <rule in="*B/CB" out="*C/WW" />
+    <rule in="B*/** B*/BC" out="C*/** W*/WW" />
+    <rule in="IB/*B" out="WW/*I" />
+    <rule in="**/*B IB/*B" out="**/*I WW/*W" />
+    <rule in="IB" out="WI" />
+    <rule in="*/B I/B" out="*/I W/W" />
+    <rule in="BO/B*" out="WW/O*" />
+    <rule in="**/B* BO/B*" out="**/O* WW/W*" />
+    <rule in="BO" out="OW" />
+    <rule in="*/B O/B" out="*/O W/W" />
+    <rule in="*B/PB" out="*P/WW" />
+    <rule in="*B/** *B/PB" out="*P/** *W/WW" />
+    <rule in="PB" out="WP" />
+    <rule in="B/* B/P" out="P/* W/W" />
+    <rule in="B*/BQ" out="Q*/WW" />
+    <rule in="B*/** B*/BQ" out="Q*/** W*/WW" />
+    <rule in="BQ" out="QW" />
+    <rule in="B/* B/Q" out="Q/* W/W" />
+  </all>
+  <prl>
+    <rule in="R" out="N" />
+    <rule in="Y" out="N" />
+    <rule in="U" out="N" />
+    <rule in="C" out="N" />
+    <rule in="I" out="N" />
+    <rule in="O" out="N" />
+    <rule in="P" out="N" />
+    <rule in="Q" out="N" />
+  </prl>
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/********TTTTT********/*******TTTTTTT*******/******TTTTTTTTT******/******TTTTTTTTT******/******TTTTTTTTT******/*******TTTTTTT*******/********TTTTT********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********NNN*********/********TTTTT********/*******TTTTTTT*******/******NTTTTTTTN******/******NTTTTTTTN******/******NTTTTTTTN******/*******TTTTTTT*******/********TTTTT********/*********NNN*********/*********************/*********************/*********************/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/********BBBBB********/*******BBBBBBB*******/*******BBBBBBB*******/*******BBBBBBB*******/*******BBBBBBB*******/*******BBBBBBB*******/********BBBBB********/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/********NNNNN********/*******NNNNNNN*******/*******NNNNNNN*******/*******NNNNNNN*******/*******NNNNNNN*******/*******NNNNNNN*******/********NNNNN********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="13" />
+  <!--Branch tier Z=117: up to 24 coarse growth rounds. Randomly select an incomplete whorl; the crown narrows toward the leader.-->
+  <one steps="1">
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*******BTTTTT********/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTTB******/*******TTTTTTT*******/*******TTTTTTT*******/*******BTTTTTB*******/**********B**********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*******Q*************/*********************/*********************/**************R******/*********************/*********************/*******O*****I*******/**********U**********/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/*******BTTTTTB*******/*******TTTTTTT*******/*******TTTTTTT*******/******BTTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/********TTTTTB*******/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/**********C**********/*******Q*****P*******/*********************/*********************/******Y**************/*********************/*********************/*************I*******/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/********TTTTTB*******/*******TTTTTTT*******/*******TTTTTTT*******/******BTTTTTTTB******/*******TTTTTTT*******/*******TTTTTTT*******/*******BTTTTT********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/**********C**********/*************P*******/*********************/*********************/******Y*******R******/*********************/*********************/*******O*************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/*******BTTTTT********/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTTB******/*******TTTTTTT*******/*******TTTTTTT*******/********TTTTTB*******/**********B**********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/**********C**********/*******Q*************/*********************/*********************/**************R******/*********************/*********************/*************I*******/**********U**********/*********************/*********************/*********************/*********************/*********************/*********************" />
+  </one>
+  <all steps="8">
+    <rule in="RB" out="NR" />
+    <rule in="*B RB" out="*R NN" />
+    <rule in="RB/*B" out="NN/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *N/NN" />
+    <rule in="BY" out="YN" />
+    <rule in="B* BY" out="Y* NN" />
+    <rule in="BY/B*" out="NN/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** N*/NN" />
+    <rule in="U/B" out="N/U" />
+    <rule in="*/B U/B" out="*/U N/N" />
+    <rule in="UB/*B" out="NN/*U" />
+    <rule in="**/B* BU/B*" out="**/U* NN/N*" />
+    <rule in="B/C" out="C/N" />
+    <rule in="B/* B/C" out="C/* N/N" />
+    <rule in="*B/CB" out="*C/NN" />
+    <rule in="B*/** B*/BC" out="C*/** N*/NN" />
+    <rule in="IB/*B" out="NN/*I" />
+    <rule in="**/*B IB/*B" out="**/*I NN/*N" />
+    <rule in="IB" out="NI" />
+    <rule in="*/B I/B" out="*/I N/N" />
+    <rule in="BO/B*" out="NN/O*" />
+    <rule in="**/B* BO/B*" out="**/O* NN/N*" />
+    <rule in="BO" out="ON" />
+    <rule in="*/B O/B" out="*/O N/N" />
+    <rule in="*B/PB" out="*P/NN" />
+    <rule in="*B/** *B/PB" out="*P/** *N/NN" />
+    <rule in="PB" out="NP" />
+    <rule in="B/* B/P" out="P/* N/N" />
+    <rule in="B*/BQ" out="Q*/NN" />
+    <rule in="B*/** B*/BQ" out="Q*/** N*/NN" />
+    <rule in="BQ" out="QN" />
+    <rule in="B/* B/Q" out="Q/* N/N" />
+  </all>
+  <all steps="16">
+    <rule in="RB" out="WR" />
+    <rule in="*B RB" out="*R WW" />
+    <rule in="RB/*B" out="WW/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *W/WW" />
+    <rule in="BY" out="YW" />
+    <rule in="B* BY" out="Y* WW" />
+    <rule in="BY/B*" out="WW/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** W*/WW" />
+    <rule in="U/B" out="W/U" />
+    <rule in="*/B U/B" out="*/U W/W" />
+    <rule in="UB/*B" out="WW/*U" />
+    <rule in="**/B* BU/B*" out="**/U* WW/W*" />
+    <rule in="B/C" out="C/W" />
+    <rule in="B/* B/C" out="C/* W/W" />
+    <rule in="*B/CB" out="*C/WW" />
+    <rule in="B*/** B*/BC" out="C*/** W*/WW" />
+    <rule in="IB/*B" out="WW/*I" />
+    <rule in="**/*B IB/*B" out="**/*I WW/*W" />
+    <rule in="IB" out="WI" />
+    <rule in="*/B I/B" out="*/I W/W" />
+    <rule in="BO/B*" out="WW/O*" />
+    <rule in="**/B* BO/B*" out="**/O* WW/W*" />
+    <rule in="BO" out="OW" />
+    <rule in="*/B O/B" out="*/O W/W" />
+    <rule in="*B/PB" out="*P/WW" />
+    <rule in="*B/** *B/PB" out="*P/** *W/WW" />
+    <rule in="PB" out="WP" />
+    <rule in="B/* B/P" out="P/* W/W" />
+    <rule in="B*/BQ" out="Q*/WW" />
+    <rule in="B*/** B*/BQ" out="Q*/** W*/WW" />
+    <rule in="BQ" out="QW" />
+    <rule in="B/* B/Q" out="Q/* W/W" />
+  </all>
+  <prl>
+    <rule in="R" out="N" />
+    <rule in="Y" out="N" />
+    <rule in="U" out="N" />
+    <rule in="C" out="N" />
+    <rule in="I" out="N" />
+    <rule in="O" out="N" />
+    <rule in="P" out="N" />
+    <rule in="Q" out="N" />
+  </prl>
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/********TTTTT********/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/********TTTTT********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/********NTTTN********/*******NTTTTTN*******/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/*******NTTTTTN*******/********NTTTN********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********BBB*********/********BBBBB********/*******BBBBBBB*******/*******BBBBBBB*******/*******BBBBBBB*******/********BBBBB********/*********BBB*********/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/********TTTTT********/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/********TTTTT********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/********TTTTT********/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/********TTTTT********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********NNN*********/********NNNNN********/*******NNNNNNN*******/*******NNNNNNN*******/*******NNNNNNN*******/********NNNNN********/*********NNN*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="13" />
+  <!--Branch tier Z=130: up to 22 coarse growth rounds. Randomly select an incomplete whorl; the crown narrows toward the leader.-->
+  <one steps="1">
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*******B*TTT*********/*******BTTTTT********/*******TTTTTTT*******/*******TTTTTTTB******/*******TTTTTTT*******/*******BTTTTTB*******/*******B*TTT*B*******/**********B**********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*******Q*************/*******N*************/*********************/**************R******/*********************/*******N*****N*******/*******O*****I*******/**********U**********/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/*******B*TTT*B*******/*******BTTTTTB*******/*******TTTTTTT*******/******BTTTTTTT*******/*******TTTTTTT*******/********TTTTTB*******/*********TTT*B*******/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/**********C**********/*******Q*****P*******/*******N*****N*******/*********************/******Y**************/*********************/*************N*******/*************I*******/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/*********TTT*B*******/********TTTTTB*******/*******TTTTTTT*******/******BTTTTTTTB******/*******TTTTTTT*******/*******BTTTTT********/*******B*TTT*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/**********C**********/*************P*******/*************N*******/*********************/******Y*******R******/*********************/*******N*************/*******O*************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/*******B*TTT*********/*******BTTTTT********/*******TTTTTTT*******/*******TTTTTTTB******/*******TTTTTTT*******/********TTTTTB*******/*********TTT*B*******/**********B**********/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/**********C**********/*******Q*************/*******N*************/*********************/**************R******/*********************/*************N*******/*************I*******/**********U**********/*********************/*********************/*********************/*********************/*********************/*********************" />
+  </one>
+  <all steps="7">
+    <rule in="RB" out="NR" />
+    <rule in="*B RB" out="*R NN" />
+    <rule in="RB/*B" out="NN/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *N/NN" />
+    <rule in="BY" out="YN" />
+    <rule in="B* BY" out="Y* NN" />
+    <rule in="BY/B*" out="NN/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** N*/NN" />
+    <rule in="U/B" out="N/U" />
+    <rule in="*/B U/B" out="*/U N/N" />
+    <rule in="UB/*B" out="NN/*U" />
+    <rule in="**/B* BU/B*" out="**/U* NN/N*" />
+    <rule in="B/C" out="C/N" />
+    <rule in="B/* B/C" out="C/* N/N" />
+    <rule in="*B/CB" out="*C/NN" />
+    <rule in="B*/** B*/BC" out="C*/** N*/NN" />
+    <rule in="IB/*B" out="NN/*I" />
+    <rule in="**/*B IB/*B" out="**/*I NN/*N" />
+    <rule in="IB" out="NI" />
+    <rule in="*/B I/B" out="*/I N/N" />
+    <rule in="BO/B*" out="NN/O*" />
+    <rule in="**/B* BO/B*" out="**/O* NN/N*" />
+    <rule in="BO" out="ON" />
+    <rule in="*/B O/B" out="*/O N/N" />
+    <rule in="*B/PB" out="*P/NN" />
+    <rule in="*B/** *B/PB" out="*P/** *N/NN" />
+    <rule in="PB" out="NP" />
+    <rule in="B/* B/P" out="P/* N/N" />
+    <rule in="B*/BQ" out="Q*/NN" />
+    <rule in="B*/** B*/BQ" out="Q*/** N*/NN" />
+    <rule in="BQ" out="QN" />
+    <rule in="B/* B/Q" out="Q/* N/N" />
+  </all>
+  <all steps="15">
+    <rule in="RB" out="WR" />
+    <rule in="*B RB" out="*R WW" />
+    <rule in="RB/*B" out="WW/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *W/WW" />
+    <rule in="BY" out="YW" />
+    <rule in="B* BY" out="Y* WW" />
+    <rule in="BY/B*" out="WW/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** W*/WW" />
+    <rule in="U/B" out="W/U" />
+    <rule in="*/B U/B" out="*/U W/W" />
+    <rule in="UB/*B" out="WW/*U" />
+    <rule in="**/B* BU/B*" out="**/U* WW/W*" />
+    <rule in="B/C" out="C/W" />
+    <rule in="B/* B/C" out="C/* W/W" />
+    <rule in="*B/CB" out="*C/WW" />
+    <rule in="B*/** B*/BC" out="C*/** W*/WW" />
+    <rule in="IB/*B" out="WW/*I" />
+    <rule in="**/*B IB/*B" out="**/*I WW/*W" />
+    <rule in="IB" out="WI" />
+    <rule in="*/B I/B" out="*/I W/W" />
+    <rule in="BO/B*" out="WW/O*" />
+    <rule in="**/B* BO/B*" out="**/O* WW/W*" />
+    <rule in="BO" out="OW" />
+    <rule in="*/B O/B" out="*/O W/W" />
+    <rule in="*B/PB" out="*P/WW" />
+    <rule in="*B/** *B/PB" out="*P/** *W/WW" />
+    <rule in="PB" out="WP" />
+    <rule in="B/* B/P" out="P/* W/W" />
+    <rule in="B*/BQ" out="Q*/WW" />
+    <rule in="B*/** B*/BQ" out="Q*/** W*/WW" />
+    <rule in="BQ" out="QW" />
+    <rule in="B/* B/Q" out="Q/* W/W" />
+  </all>
+  <prl>
+    <rule in="R" out="N" />
+    <rule in="Y" out="N" />
+    <rule in="U" out="N" />
+    <rule in="C" out="N" />
+    <rule in="I" out="N" />
+    <rule in="O" out="N" />
+    <rule in="P" out="N" />
+    <rule in="Q" out="N" />
+  </prl>
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/********TTTTT********/*******TTTTTTT*******/*******TTTTTTT*******/*******TTTTTTT*******/********TTTTT********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********NNN*********/********TTTTT********/*******NTTTTTN*******/*******NTTTTTN*******/*******NTTTTTN*******/********TTTTT********/*********NNN*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********BBBBB********/********BBBBB********/********BBBBB********/********BBBBB********/********BBBBB********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********TTTTT********/********TTTTT********/********TTTTT********/********TTTTT********/********TTTTT********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********TTTTT********/********TTTTT********/********TTTTT********/********TTTTT********/********TTTTT********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********NNNNN********/********NNNNN********/********NNNNN********/********NNNNN********/********NNNNN********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="13" />
+  <!--Branch tier Z=143: up to 19 coarse growth rounds. Randomly select an incomplete whorl; the crown narrows toward the leader.-->
+  <one steps="1">
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*******B*************/*******BTTTTT********/********TTTTT********/********TTTTTB*******/********TTTTT********/*******BTTTTTB*******/*******B**B**B*******/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*******Q*************/*******N*************/*********************/*************R*******/*********************/*******N*****N*******/*******O**U**I*******/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*******B**B**B*******/*******BTTTTTB*******/********TTTTT********/*******BTTTTT********/********TTTTT********/********TTTTTB*******/*************B*******/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*******Q**C**P*******/*******N*****N*******/*********************/*******Y*************/*********************/*************N*******/*************I*******/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********B**B*******/********TTTTTB*******/********TTTTT********/*******BTTTTTB*******/********TTTTT********/*******BTTTTT********/*******B*************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********C**P*******/*************N*******/*********************/*******Y*****R*******/*********************/*******N*************/*******O*************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*******B**B**********/*******BTTTTT********/********TTTTT********/********TTTTTB*******/********TTTTT********/********TTTTTB*******/**********B**B*******/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*******Q**C**********/*******N*************/*********************/*************R*******/*********************/*************N*******/**********U**I*******/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+  </one>
+  <all steps="6">
+    <rule in="RB" out="NR" />
+    <rule in="*B RB" out="*R NN" />
+    <rule in="RB/*B" out="NN/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *N/NN" />
+    <rule in="BY" out="YN" />
+    <rule in="B* BY" out="Y* NN" />
+    <rule in="BY/B*" out="NN/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** N*/NN" />
+    <rule in="U/B" out="N/U" />
+    <rule in="*/B U/B" out="*/U N/N" />
+    <rule in="UB/*B" out="NN/*U" />
+    <rule in="**/B* BU/B*" out="**/U* NN/N*" />
+    <rule in="B/C" out="C/N" />
+    <rule in="B/* B/C" out="C/* N/N" />
+    <rule in="*B/CB" out="*C/NN" />
+    <rule in="B*/** B*/BC" out="C*/** N*/NN" />
+    <rule in="IB/*B" out="NN/*I" />
+    <rule in="**/*B IB/*B" out="**/*I NN/*N" />
+    <rule in="IB" out="NI" />
+    <rule in="*/B I/B" out="*/I N/N" />
+    <rule in="BO/B*" out="NN/O*" />
+    <rule in="**/B* BO/B*" out="**/O* NN/N*" />
+    <rule in="BO" out="ON" />
+    <rule in="*/B O/B" out="*/O N/N" />
+    <rule in="*B/PB" out="*P/NN" />
+    <rule in="*B/** *B/PB" out="*P/** *N/NN" />
+    <rule in="PB" out="NP" />
+    <rule in="B/* B/P" out="P/* N/N" />
+    <rule in="B*/BQ" out="Q*/NN" />
+    <rule in="B*/** B*/BQ" out="Q*/** N*/NN" />
+    <rule in="BQ" out="QN" />
+    <rule in="B/* B/Q" out="Q/* N/N" />
+  </all>
+  <all steps="13">
+    <rule in="RB" out="WR" />
+    <rule in="*B RB" out="*R WW" />
+    <rule in="RB/*B" out="WW/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *W/WW" />
+    <rule in="BY" out="YW" />
+    <rule in="B* BY" out="Y* WW" />
+    <rule in="BY/B*" out="WW/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** W*/WW" />
+    <rule in="U/B" out="W/U" />
+    <rule in="*/B U/B" out="*/U W/W" />
+    <rule in="UB/*B" out="WW/*U" />
+    <rule in="**/B* BU/B*" out="**/U* WW/W*" />
+    <rule in="B/C" out="C/W" />
+    <rule in="B/* B/C" out="C/* W/W" />
+    <rule in="*B/CB" out="*C/WW" />
+    <rule in="B*/** B*/BC" out="C*/** W*/WW" />
+    <rule in="IB/*B" out="WW/*I" />
+    <rule in="**/*B IB/*B" out="**/*I WW/*W" />
+    <rule in="IB" out="WI" />
+    <rule in="*/B I/B" out="*/I W/W" />
+    <rule in="BO/B*" out="WW/O*" />
+    <rule in="**/B* BO/B*" out="**/O* WW/W*" />
+    <rule in="BO" out="OW" />
+    <rule in="*/B O/B" out="*/O W/W" />
+    <rule in="*B/PB" out="*P/WW" />
+    <rule in="*B/** *B/PB" out="*P/** *W/WW" />
+    <rule in="PB" out="WP" />
+    <rule in="B/* B/P" out="P/* W/W" />
+    <rule in="B*/BQ" out="Q*/WW" />
+    <rule in="B*/** B*/BQ" out="Q*/** W*/WW" />
+    <rule in="BQ" out="QW" />
+    <rule in="B/* B/Q" out="Q/* W/W" />
+  </all>
+  <prl>
+    <rule in="R" out="N" />
+    <rule in="Y" out="N" />
+    <rule in="U" out="N" />
+    <rule in="C" out="N" />
+    <rule in="I" out="N" />
+    <rule in="O" out="N" />
+    <rule in="P" out="N" />
+    <rule in="Q" out="N" />
+  </prl>
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********TTTTT********/********TTTTT********/********TTTTT********/********TTTTT********/********TTTTT********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********NTTTN********/********TTTTT********/********TTTTT********/********TTTTT********/********NTTTN********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********BBB*********/********BBBBB********/********BBBBB********/********BBBBB********/*********BBB*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/********TTTTT********/********TTTTT********/********TTTTT********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/********TTTTT********/********TTTTT********/********TTTTT********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********NNN*********/********NNNNN********/********NNNNN********/********NNNNN********/*********NNN*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="12" />
+  <!--Branch tier Z=155: up to 16 coarse growth rounds. Randomly select an incomplete whorl; the crown narrows toward the leader.-->
+  <one steps="1">
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********BTTT*********/********TTTTT********/********TTTTTB*******/********TTTTT********/********BTTTB********/**********B**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********Q************/*********************/*************R*******/*********************/********O***I********/**********U**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/********BTTTB********/********TTTTT********/*******BTTTTT********/********TTTTT********/*********TTTB********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********C**********/********Q***P********/*********************/*******Y*************/*********************/************I********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/*********TTTB********/********TTTTT********/*******BTTTTTB*******/********TTTTT********/********BTTT*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********C**********/************P********/*********************/*******Y*****R*******/*********************/********O************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/********BTTT*********/********TTTTT********/********TTTTTB*******/********TTTTT********/*********TTTB********/**********B**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********C**********/********Q************/*********************/*************R*******/*********************/************I********/**********U**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+  </one>
+  <all steps="5">
+    <rule in="RB" out="NR" />
+    <rule in="*B RB" out="*R NN" />
+    <rule in="RB/*B" out="NN/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *N/NN" />
+    <rule in="BY" out="YN" />
+    <rule in="B* BY" out="Y* NN" />
+    <rule in="BY/B*" out="NN/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** N*/NN" />
+    <rule in="U/B" out="N/U" />
+    <rule in="*/B U/B" out="*/U N/N" />
+    <rule in="UB/*B" out="NN/*U" />
+    <rule in="**/B* BU/B*" out="**/U* NN/N*" />
+    <rule in="B/C" out="C/N" />
+    <rule in="B/* B/C" out="C/* N/N" />
+    <rule in="*B/CB" out="*C/NN" />
+    <rule in="B*/** B*/BC" out="C*/** N*/NN" />
+    <rule in="IB/*B" out="NN/*I" />
+    <rule in="**/*B IB/*B" out="**/*I NN/*N" />
+    <rule in="IB" out="NI" />
+    <rule in="*/B I/B" out="*/I N/N" />
+    <rule in="BO/B*" out="NN/O*" />
+    <rule in="**/B* BO/B*" out="**/O* NN/N*" />
+    <rule in="BO" out="ON" />
+    <rule in="*/B O/B" out="*/O N/N" />
+    <rule in="*B/PB" out="*P/NN" />
+    <rule in="*B/** *B/PB" out="*P/** *N/NN" />
+    <rule in="PB" out="NP" />
+    <rule in="B/* B/P" out="P/* N/N" />
+    <rule in="B*/BQ" out="Q*/NN" />
+    <rule in="B*/** B*/BQ" out="Q*/** N*/NN" />
+    <rule in="BQ" out="QN" />
+    <rule in="B/* B/Q" out="Q/* N/N" />
+  </all>
+  <all steps="11">
+    <rule in="RB" out="WR" />
+    <rule in="*B RB" out="*R WW" />
+    <rule in="RB/*B" out="WW/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *W/WW" />
+    <rule in="BY" out="YW" />
+    <rule in="B* BY" out="Y* WW" />
+    <rule in="BY/B*" out="WW/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** W*/WW" />
+    <rule in="U/B" out="W/U" />
+    <rule in="*/B U/B" out="*/U W/W" />
+    <rule in="UB/*B" out="WW/*U" />
+    <rule in="**/B* BU/B*" out="**/U* WW/W*" />
+    <rule in="B/C" out="C/W" />
+    <rule in="B/* B/C" out="C/* W/W" />
+    <rule in="*B/CB" out="*C/WW" />
+    <rule in="B*/** B*/BC" out="C*/** W*/WW" />
+    <rule in="IB/*B" out="WW/*I" />
+    <rule in="**/*B IB/*B" out="**/*I WW/*W" />
+    <rule in="IB" out="WI" />
+    <rule in="*/B I/B" out="*/I W/W" />
+    <rule in="BO/B*" out="WW/O*" />
+    <rule in="**/B* BO/B*" out="**/O* WW/W*" />
+    <rule in="BO" out="OW" />
+    <rule in="*/B O/B" out="*/O W/W" />
+    <rule in="*B/PB" out="*P/WW" />
+    <rule in="*B/** *B/PB" out="*P/** *W/WW" />
+    <rule in="PB" out="WP" />
+    <rule in="B/* B/P" out="P/* W/W" />
+    <rule in="B*/BQ" out="Q*/WW" />
+    <rule in="B*/** B*/BQ" out="Q*/** W*/WW" />
+    <rule in="BQ" out="QW" />
+    <rule in="B/* B/Q" out="Q/* W/W" />
+  </all>
+  <prl>
+    <rule in="R" out="N" />
+    <rule in="Y" out="N" />
+    <rule in="U" out="N" />
+    <rule in="C" out="N" />
+    <rule in="I" out="N" />
+    <rule in="O" out="N" />
+    <rule in="P" out="N" />
+    <rule in="Q" out="N" />
+  </prl>
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/********TTTTT********/********TTTTT********/********TTTTT********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********NTN*********/********NTTTN********/********TTTTT********/********NTTTN********/*********NTN*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/*********BBB*********/********BBBBB********/*********BBB*********/**********B**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********T**********/*********TTT*********/********TTTTT********/*********TTT*********/**********T**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********T**********/*********TTT*********/********TTTTT********/*********TTT*********/**********T**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********N**********/*********NNN*********/********NNNNN********/*********NNN*********/**********N**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="11" />
+  <!--Branch tier Z=166: up to 12 coarse growth rounds. Randomly select an incomplete whorl; the crown narrows toward the leader.-->
+  <one steps="1">
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********B*T**********/********BTTT*********/********TTTTTB*******/********BTTTB********/********B*T*B********/**********B**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********Q************/********N************/*************R*******/********N***N********/********O***I********/**********U**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/********B*T*B********/********BTTTB********/*******BTTTTT********/*********TTTB********/**********T*B********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********C**********/********Q***P********/********N***N********/*******Y*************/************N********/************I********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/**********T*B********/*********TTTB********/*******BTTTTTB*******/********BTTT*********/********B*T**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********C**********/************P********/************N********/*******Y*****R*******/********N************/********O************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/********B*T**********/********BTTT*********/********TTTTTB*******/*********TTTB********/**********T*B********/**********B**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********C**********/********Q************/********N************/*************R*******/************N********/************I********/**********U**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+  </one>
+  <all steps="4">
+    <rule in="RB" out="NR" />
+    <rule in="*B RB" out="*R NN" />
+    <rule in="RB/*B" out="NN/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *N/NN" />
+    <rule in="BY" out="YN" />
+    <rule in="B* BY" out="Y* NN" />
+    <rule in="BY/B*" out="NN/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** N*/NN" />
+    <rule in="U/B" out="N/U" />
+    <rule in="*/B U/B" out="*/U N/N" />
+    <rule in="UB/*B" out="NN/*U" />
+    <rule in="**/B* BU/B*" out="**/U* NN/N*" />
+    <rule in="B/C" out="C/N" />
+    <rule in="B/* B/C" out="C/* N/N" />
+    <rule in="*B/CB" out="*C/NN" />
+    <rule in="B*/** B*/BC" out="C*/** N*/NN" />
+    <rule in="IB/*B" out="NN/*I" />
+    <rule in="**/*B IB/*B" out="**/*I NN/*N" />
+    <rule in="IB" out="NI" />
+    <rule in="*/B I/B" out="*/I N/N" />
+    <rule in="BO/B*" out="NN/O*" />
+    <rule in="**/B* BO/B*" out="**/O* NN/N*" />
+    <rule in="BO" out="ON" />
+    <rule in="*/B O/B" out="*/O N/N" />
+    <rule in="*B/PB" out="*P/NN" />
+    <rule in="*B/** *B/PB" out="*P/** *N/NN" />
+    <rule in="PB" out="NP" />
+    <rule in="B/* B/P" out="P/* N/N" />
+    <rule in="B*/BQ" out="Q*/NN" />
+    <rule in="B*/** B*/BQ" out="Q*/** N*/NN" />
+    <rule in="BQ" out="QN" />
+    <rule in="B/* B/Q" out="Q/* N/N" />
+  </all>
+  <all steps="8">
+    <rule in="RB" out="WR" />
+    <rule in="*B RB" out="*R WW" />
+    <rule in="RB/*B" out="WW/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *W/WW" />
+    <rule in="BY" out="YW" />
+    <rule in="B* BY" out="Y* WW" />
+    <rule in="BY/B*" out="WW/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** W*/WW" />
+    <rule in="U/B" out="W/U" />
+    <rule in="*/B U/B" out="*/U W/W" />
+    <rule in="UB/*B" out="WW/*U" />
+    <rule in="**/B* BU/B*" out="**/U* WW/W*" />
+    <rule in="B/C" out="C/W" />
+    <rule in="B/* B/C" out="C/* W/W" />
+    <rule in="*B/CB" out="*C/WW" />
+    <rule in="B*/** B*/BC" out="C*/** W*/WW" />
+    <rule in="IB/*B" out="WW/*I" />
+    <rule in="**/*B IB/*B" out="**/*I WW/*W" />
+    <rule in="IB" out="WI" />
+    <rule in="*/B I/B" out="*/I W/W" />
+    <rule in="BO/B*" out="WW/O*" />
+    <rule in="**/B* BO/B*" out="**/O* WW/W*" />
+    <rule in="BO" out="OW" />
+    <rule in="*/B O/B" out="*/O W/W" />
+    <rule in="*B/PB" out="*P/WW" />
+    <rule in="*B/** *B/PB" out="*P/** *W/WW" />
+    <rule in="PB" out="WP" />
+    <rule in="B/* B/P" out="P/* W/W" />
+    <rule in="B*/BQ" out="Q*/WW" />
+    <rule in="B*/** B*/BQ" out="Q*/** W*/WW" />
+    <rule in="BQ" out="QW" />
+    <rule in="B/* B/Q" out="Q/* W/W" />
+  </all>
+  <prl>
+    <rule in="R" out="N" />
+    <rule in="Y" out="N" />
+    <rule in="U" out="N" />
+    <rule in="C" out="N" />
+    <rule in="I" out="N" />
+    <rule in="O" out="N" />
+    <rule in="P" out="N" />
+    <rule in="Q" out="N" />
+  </prl>
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********T**********/*********TTT*********/********TTTTT********/*********TTT*********/**********T**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********N**********/*********TTT*********/********NTTTN********/*********TTT*********/**********N**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********BBB*********/*********BBB*********/*********BBB*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/*********TTT*********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/*********TTT*********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********NNN*********/*********NNN*********/*********NNN*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="10" />
+  <!--Branch tier Z=176: up to 6 coarse growth rounds. Randomly select an incomplete whorl; the crown narrows toward the leader.-->
+  <one steps="1">
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********B************/********BTTT*********/*********TTTB********/********BTTTB********/********B*B*B********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********Q************/********N************/************R********/********N***N********/********O*U*I********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********B*B*B********/********BTTTB********/********BTTT*********/*********TTTB********/************B********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********Q*C*P********/********N***N********/********Y************/************N********/************I********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********B*B********/*********TTTB********/********BTTTB********/********BTTT*********/********B************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********C*P********/************N********/********Y***R********/********N************/********O************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+    <rule in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********B*B**********/********BTTT*********/*********TTTB********/*********TTTB********/**********B*B********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********Q*C**********/********N************/************R********/************N********/**********U*I********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" />
+  </one>
+  <all steps="2">
+    <rule in="RB" out="NR" />
+    <rule in="*B RB" out="*R NN" />
+    <rule in="RB/*B" out="NN/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *N/NN" />
+    <rule in="BY" out="YN" />
+    <rule in="B* BY" out="Y* NN" />
+    <rule in="BY/B*" out="NN/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** N*/NN" />
+    <rule in="U/B" out="N/U" />
+    <rule in="*/B U/B" out="*/U N/N" />
+    <rule in="UB/*B" out="NN/*U" />
+    <rule in="**/B* BU/B*" out="**/U* NN/N*" />
+    <rule in="B/C" out="C/N" />
+    <rule in="B/* B/C" out="C/* N/N" />
+    <rule in="*B/CB" out="*C/NN" />
+    <rule in="B*/** B*/BC" out="C*/** N*/NN" />
+    <rule in="IB/*B" out="NN/*I" />
+    <rule in="**/*B IB/*B" out="**/*I NN/*N" />
+    <rule in="IB" out="NI" />
+    <rule in="*/B I/B" out="*/I N/N" />
+    <rule in="BO/B*" out="NN/O*" />
+    <rule in="**/B* BO/B*" out="**/O* NN/N*" />
+    <rule in="BO" out="ON" />
+    <rule in="*/B O/B" out="*/O N/N" />
+    <rule in="*B/PB" out="*P/NN" />
+    <rule in="*B/** *B/PB" out="*P/** *N/NN" />
+    <rule in="PB" out="NP" />
+    <rule in="B/* B/P" out="P/* N/N" />
+    <rule in="B*/BQ" out="Q*/NN" />
+    <rule in="B*/** B*/BQ" out="Q*/** N*/NN" />
+    <rule in="BQ" out="QN" />
+    <rule in="B/* B/Q" out="Q/* N/N" />
+  </all>
+  <all steps="4">
+    <rule in="RB" out="WR" />
+    <rule in="*B RB" out="*R WW" />
+    <rule in="RB/*B" out="WW/*R" />
+    <rule in="*B/** *B/RB" out="*R/** *W/WW" />
+    <rule in="BY" out="YW" />
+    <rule in="B* BY" out="Y* WW" />
+    <rule in="BY/B*" out="WW/Y*" />
+    <rule in="B*/** B*/BY" out="Y*/** W*/WW" />
+    <rule in="U/B" out="W/U" />
+    <rule in="*/B U/B" out="*/U W/W" />
+    <rule in="UB/*B" out="WW/*U" />
+    <rule in="**/B* BU/B*" out="**/U* WW/W*" />
+    <rule in="B/C" out="C/W" />
+    <rule in="B/* B/C" out="C/* W/W" />
+    <rule in="*B/CB" out="*C/WW" />
+    <rule in="B*/** B*/BC" out="C*/** W*/WW" />
+    <rule in="IB/*B" out="WW/*I" />
+    <rule in="**/*B IB/*B" out="**/*I WW/*W" />
+    <rule in="IB" out="WI" />
+    <rule in="*/B I/B" out="*/I W/W" />
+    <rule in="BO/B*" out="WW/O*" />
+    <rule in="**/B* BO/B*" out="**/O* WW/W*" />
+    <rule in="BO" out="OW" />
+    <rule in="*/B O/B" out="*/O W/W" />
+    <rule in="*B/PB" out="*P/WW" />
+    <rule in="*B/** *B/PB" out="*P/** *W/WW" />
+    <rule in="PB" out="WP" />
+    <rule in="B/* B/P" out="P/* W/W" />
+    <rule in="B*/BQ" out="Q*/WW" />
+    <rule in="B*/** B*/BQ" out="Q*/** W*/WW" />
+    <rule in="BQ" out="QW" />
+    <rule in="B/* B/Q" out="Q/* W/W" />
+  </all>
+  <prl>
+    <rule in="R" out="N" />
+    <rule in="Y" out="N" />
+    <rule in="U" out="N" />
+    <rule in="C" out="N" />
+    <rule in="I" out="N" />
+    <rule in="O" out="N" />
+    <rule in="P" out="N" />
+    <rule in="Q" out="N" />
+  </prl>
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********TTT*********/*********TTT*********/*********TTT*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********NTN*********/*********TTT*********/*********NTN*********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/*********BBB*********/**********B**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********T**********/*********TTT*********/**********T**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********T**********/*********TTT*********/**********T**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********N**********/*********NNN*********/**********N**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="7" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********T**********/*********TTT*********/**********T**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********N**********/*********NTN*********/**********N**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="1" />
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********T**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********T**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********N**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="2" />
+  <!--2. Outer twigs carry dense needle sprays. Bounded growth leaves air between tiers; no foliage fills the exposed lower bole.-->
+  <convolution neighborhood="VonNeumann" steps="1" in="B" out="G" values="W" sum="1..6" p="0.9" />
+  <convolution neighborhood="NoCorners" steps="3" in="B" out="G" values="G" sum="2..18" p="0.72" />
+  <convolution neighborhood="VonNeumann" steps="1" in="G" out="B" values="DNWTG" sum="0" />
+  <!--3. Sparse hanging vines, anchored below foliage. prl implements probabilities; all does not weight rules by p.-->
+  <prl in="G B B" out="* v *" p="0.016" steps="1" />
+  <prl in="v B" out="J v" steps="1" />
+  <prl in="v" out="V" steps="1" p="0.17" />
+  <prl in="v B" out="J v" steps="1" />
+  <prl in="v" out="V" steps="1" p="0.17" />
+  <prl in="v B" out="J v" steps="1" />
+  <prl in="v" out="V" steps="1" p="0.17" />
+  <prl in="v B" out="J v" steps="1" />
+  <prl in="v" out="V" steps="1" p="0.17" />
+  <prl in="v B" out="J v" steps="1" />
+  <prl in="v" out="V" steps="1" p="0.17" />
+  <prl in="v B" out="J v" steps="1" />
+  <prl in="v" out="V" steps="1" p="0.17" />
+  <prl in="v B" out="J v" steps="1" />
+  <prl in="v" out="V" steps="1" p="0.17" />
+  <prl in="v B" out="J v" steps="1" />
+  <prl in="v" out="V" steps="1" p="0.17" />
+  <prl in="v B" out="J v" steps="1" />
+  <prl in="v" out="V" steps="1" p="0.17" />
+  <prl in="v B" out="J v" steps="1" />
+  <prl in="v" out="V" steps="1" p="0.17" />
+  <prl in="v B" out="J v" steps="1" />
+  <prl in="v" out="V" steps="1" p="0.17" />
+  <prl in="v B" out="J v" steps="1" />
+  <prl in="v" out="V" steps="1" p="0.17" />
+  <prl in="v" out="V" />
+  <prl in="JB" out="*V" symmetry="(xy)" steps="1" p="0.12" />
+  <prl in="B G" out="* g" steps="1" p="0.7" />
+  <prl in="G B" out="E *" steps="1" p="0.55" />
+  <prl in="W" out="N" />
+  <!--4. Living terminal shoot. Six final levels bring the tip to 191 inclusive, independent of seed.-->
+  <one in="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********B**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********T**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" out="*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********T**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/********************* *********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/**********G**********/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************/*********************" steps="6" />
+  <prl in="T" out="g" />
+  <prl in="N" out="D" steps="1" p="0.12" />
+  <prl in="N" out="n" steps="1" p="0.15" />
+  <!--5. First map resolves branch cross sections and vertical bark fibers at 162 x 162 x 768.-->
+  <map scale="2 2 4" values="BDNnGEgJVM" symmetry="()" redwoodDetail="1">
+    <!--Continuous world-coordinate reconstruction after this map: round surfaces, preserve rooted connectivity; never repeat a tile-local texture. Requires the opt-in redwoodDetail extension.-->
+    <rule in="D" out="DD/DD DD/DD DD/DD DD/DD" />
+    <rule in="N" out="NN/NN NN/NN NN/NN NN/NN" />
+    <rule in="n" out="nn/nn nn/nn nn/nn nn/nn" />
+    <rule in="G" out="GG/GG GG/GG GG/GG GG/GG" />
+    <rule in="E" out="EE/EE EE/EE EE/EE EE/EE" />
+    <rule in="g" out="gg/gg gg/gg gg/gg gg/gg" />
+    <rule in="J" out="JJ/JJ JJ/JJ JJ/JJ JJ/JJ" />
+    <rule in="V" out="VV/VV VV/VV VV/VV VV/VV" />
+    <!--6. Second map makes the full 648 x 648 x 3072 volume. Bark carries long grain; needles have subtle edge serration. The exported model is full resolution; previewScale only reduces its PNG preview.-->
+    <map scale="4 4 4" values="BDNnGEgJVM" symmetry="()" redwoodDetail="2">
+      <!--Continuous world-coordinate reconstruction after this map: round surfaces, preserve rooted connectivity; never repeat a tile-local texture. Requires the opt-in redwoodDetail extension.-->
+      <rule in="D" out="DDDD/DDDD/DDDD/DDDD DDDD/DDDD/DDDD/DDDD DDDD/DDDD/DDDD/DDDD DDDD/DDDD/DDDD/DDDD" />
+      <rule in="N" out="NNNN/NNNN/NNNN/NNNN NNNN/NNNN/NNNN/NNNN NNNN/NNNN/NNNN/NNNN NNNN/NNNN/NNNN/NNNN" />
+      <rule in="n" out="nnnn/nnnn/nnnn/nnnn nnnn/nnnn/nnnn/nnnn nnnn/nnnn/nnnn/nnnn nnnn/nnnn/nnnn/nnnn" />
+      <rule in="G" out="GGGG/GGGG/GGGG/GGGG GGGG/GGGG/GGGG/GGGG GGGG/GGGG/GGGG/GGGG GGGG/GGGG/GGGG/GGGG" />
+      <rule in="E" out="EEEE/EEEE/EEEE/EEEE EEEE/EEEE/EEEE/EEEE EEEE/EEEE/EEEE/EEEE EEEE/EEEE/EEEE/EEEE" />
+      <rule in="g" out="gggg/gggg/gggg/gggg gggg/gggg/gggg/gggg gggg/gggg/gggg/gggg gggg/gggg/gggg/gggg" />
+      <rule in="J" out="JJJJ/JJJJ/JJJJ/JJJJ JJJJ/JJJJ/JJJJ/JJJJ JJJJ/JJJJ/JJJJ/JJJJ JJJJ/JJJJ/JJJJ/JJJJ" />
+      <rule in="V" out="VVVV/VVVV/VVVV/VVVV VVVV/VVVV/VVVV/VVVV VVVV/VVVV/VVVV/VVVV VVVV/VVVV/VVVV/VVVV" />
+    </map>
+  </map>
+</sequence>

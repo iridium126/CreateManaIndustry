@@ -62,7 +62,7 @@ public final class AllvrCubeSerializer {
      * cubes keep full snapshots and so are immune, but the version lets future
      * migrations reason about unedited regions.
      */
-    public static final int GENERATOR_VERSION = 1;
+    public static final int GENERATOR_VERSION = 3; // EpicRedwood3072; existing snapshots are never regenerated.
 
     private static final Codec<PalettedContainer<BlockState>> BLOCK_STATE_CODEC = PalettedContainer.codecRW(
         Block.BLOCK_STATE_REGISTRY, BlockState.CODEC, PalettedContainer.Strategy.SECTION_STATES,

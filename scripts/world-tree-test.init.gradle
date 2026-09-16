@@ -1,0 +1,7 @@
+// Isolated tree integration test. Prepare resources with prepare-allvr-worldgen-test.py first.
+gradle.projectsEvaluated {
+    def project = gradle.rootProject
+    project.sourceSets.main.java.srcDir(project.file('src/worldTreeTest/java'))
+    project.sourceSets.main.resources.srcDir(project.file('build/allvr-worldgen-test-resources-vanilla'))
+    project.neoForge.runs.gameTestServer.gameDirectory = project.file('build/epic-redwood-test-run')
+}
