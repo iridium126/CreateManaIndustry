@@ -161,6 +161,8 @@ localY = worldY - TREE_BASE_Y
 
 进行计算。
 
+当前 EpicRedwood 生产模型的 `TREE_BASE_Y` 为 96，因此模型最低层位于世界 Y=96。
+
 推荐世界树地上高度约：
 
 ```text

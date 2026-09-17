@@ -5,7 +5,6 @@ import com.iridium126.createmanaindustry.worldgen.markov.EpicRedwoodModel;
 import com.mojang.serialization.JsonOps;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.state.BlockState;
 
 /** Developer-owned classpath palette for EpicRedwood material symbols. */
@@ -22,10 +21,8 @@ public final class EpicRedwoodPalette {
             String key = String.valueOf(EpicRedwoodModel.VALUES.charAt(i));
             if (!json.has(key)) throw new IllegalArgumentException("Missing EpicRedwood material: " + key);
             BlockState state = BlockState.CODEC.parse(JsonOps.INSTANCE, json.get(key)).getOrThrow();
-            String namespace = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getNamespace();
-            if ((!namespace.equals("minecraft") && !namespace.equals("create"))
-                    || state.isAir() || !state.getFluidState().isEmpty() || state.hasBlockEntity())
-                throw new IllegalArgumentException("EpicRedwood materials require non-air, fluid-free minecraft/create blocks without block entities: " + key);
+            if (state.isAir() || !state.getFluidState().isEmpty() || state.hasBlockEntity())
+                throw new IllegalArgumentException("EpicRedwood materials require a registered, non-air, fluid-free block without a block entity: " + key);
             states[i] = state;
         }
     }

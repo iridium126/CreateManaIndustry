@@ -9,7 +9,8 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 /** Writes EpicRedwood blocks only while a new chunk or cube is being generated. */
 public final class EpicRedwoodGenerator {
     private static final int MIN_XZ = -EpicRedwoodModel.WIDTH / 2;
-    private static final int BASE_Y = 64;
+    /** World-space Y of the model's local layer zero. */
+    public static final int BASE_Y = 96;
 
     private final EpicRedwoodTree epicRedwood;
     private final EpicRedwoodPalette palette;
