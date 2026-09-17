@@ -1012,9 +1012,10 @@
   <prl in="T" out="g" />
   <prl in="N" out="D" steps="1" p="0.12" />
   <prl in="N" out="n" steps="1" p="0.15" />
+  <!--Generation retains the exact crown and vine envelope. The expanded map alphabet separates needle tips (H), vine heartwood (K), shaded vine leaves (L), rare flowers (F), and fine rachises (t).-->
   <!--5. First map resolves branch cross sections and vertical bark fibers at 162 x 162 x 768.-->
-  <map scale="2 2 4" values="BDNnGEgJVM" symmetry="()" redwoodDetail="1">
-    <!--Continuous world-coordinate reconstruction after this map: round surfaces, preserve rooted connectivity; never repeat a tile-local texture. Requires the opt-in redwoodDetail extension.-->
+  <map scale="2 2 4" values="BDNnGEgJVMHKLFt" symmetry="()" redwoodDetail="1">
+    <!--Continuous world-coordinate reconstruction after this map: round surfaces, retain the original density envelope; never repeat a tile-local texture. Requires the opt-in redwoodDetail extension.-->
     <rule in="D" out="DD/DD DD/DD DD/DD DD/DD" />
     <rule in="N" out="NN/NN NN/NN NN/NN NN/NN" />
     <rule in="n" out="nn/nn nn/nn nn/nn nn/nn" />
@@ -1023,9 +1024,9 @@
     <rule in="g" out="gg/gg gg/gg gg/gg gg/gg" />
     <rule in="J" out="JJ/JJ JJ/JJ JJ/JJ JJ/JJ" />
     <rule in="V" out="VV/VV VV/VV VV/VV VV/VV" />
-    <!--6. Second map makes the full 648 x 648 x 3072 volume. Bark carries long grain; needles have subtle edge serration. The exported model is full resolution; previewScale only reduces its PNG preview.-->
-    <map scale="4 4 4" values="BDNnGEgJVM" symmetry="()" redwoodDetail="2">
-      <!--Continuous world-coordinate reconstruction after this map: round surfaces, preserve rooted connectivity; never repeat a tile-local texture. Requires the opt-in redwoodDetail extension.-->
+    <!--6. Second map makes the full 648 x 648 x 3072 volume. Bark carries long grain; hollow paired needle sprays and twisted leafy lianas replace solid foliage. The exported model is full resolution; previewScale only reduces its PNG preview.-->
+    <map scale="4 4 4" values="BDNnGEgJVMHKLFt" symmetry="()" redwoodDetail="2">
+      <!--Continuous world-coordinate reconstruction after this map: round surfaces, retain the original density envelope; never repeat a tile-local texture. Requires the opt-in redwoodDetail extension.-->
       <rule in="D" out="DDDD/DDDD/DDDD/DDDD DDDD/DDDD/DDDD/DDDD DDDD/DDDD/DDDD/DDDD DDDD/DDDD/DDDD/DDDD" />
       <rule in="N" out="NNNN/NNNN/NNNN/NNNN NNNN/NNNN/NNNN/NNNN NNNN/NNNN/NNNN/NNNN NNNN/NNNN/NNNN/NNNN" />
       <rule in="n" out="nnnn/nnnn/nnnn/nnnn nnnn/nnnn/nnnn/nnnn nnnn/nnnn/nnnn/nnnn nnnn/nnnn/nnnn/nnnn" />
@@ -1034,6 +1035,12 @@
       <rule in="g" out="gggg/gggg/gggg/gggg gggg/gggg/gggg/gggg gggg/gggg/gggg/gggg gggg/gggg/gggg/gggg" />
       <rule in="J" out="JJJJ/JJJJ/JJJJ/JJJJ JJJJ/JJJJ/JJJJ/JJJJ JJJJ/JJJJ/JJJJ/JJJJ JJJJ/JJJJ/JJJJ/JJJJ" />
       <rule in="V" out="VVVV/VVVV/VVVV/VVVV VVVV/VVVV/VVVV/VVVV VVVV/VVVV/VVVV/VVVV VVVV/VVVV/VVVV/VVVV" />
+      <rule in="M" out="MMMM/MMMM/MMMM/MMMM MMMM/MMMM/MMMM/MMMM MMMM/MMMM/MMMM/MMMM MMMM/MMMM/MMMM/MMMM" />
+      <rule in="H" out="HHHH/HHHH/HHHH/HHHH HHHH/HHHH/HHHH/HHHH HHHH/HHHH/HHHH/HHHH HHHH/HHHH/HHHH/HHHH" />
+      <rule in="K" out="KKKK/KKKK/KKKK/KKKK KKKK/KKKK/KKKK/KKKK KKKK/KKKK/KKKK/KKKK KKKK/KKKK/KKKK/KKKK" />
+      <rule in="L" out="LLLL/LLLL/LLLL/LLLL LLLL/LLLL/LLLL/LLLL LLLL/LLLL/LLLL/LLLL LLLL/LLLL/LLLL/LLLL" />
+      <rule in="F" out="FFFF/FFFF/FFFF/FFFF FFFF/FFFF/FFFF/FFFF FFFF/FFFF/FFFF/FFFF FFFF/FFFF/FFFF/FFFF" />
+      <rule in="t" out="tttt/tttt/tttt/tttt tttt/tttt/tttt/tttt tttt/tttt/tttt/tttt tttt/tttt/tttt/tttt" />
     </map>
   </map>
 </sequence>

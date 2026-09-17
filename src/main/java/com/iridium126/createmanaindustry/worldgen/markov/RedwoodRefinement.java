@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.worldgen.markov;
 
 import java.util.BitSet;
 
-/** Float-for-float port of the reference project's opt-in RedwoodRefinement.cs. */
+/** Continuous envelope reconstruction followed by hollow botanical detail. */
 final class RedwoodRefinement {
     private static int hash(int x, int y, int z, int seed) {
         int h = seed ^ x * 0x9E3779B9 ^ y * 0x85EBCA6B ^ z * 0xC2B2AE35;
@@ -21,7 +21,7 @@ final class RedwoodRefinement {
         int sx=stage==1?2:4, sy=sx, sz=4;
         RedwoodVolume target=new RedwoodVolume(source.x*sx,source.y*sy,source.z*sz);
         byte[] family=new byte[values.length()];
-        for(int i=0;i<family.length;i++) family[i]=(byte)("DNnM".indexOf(values.charAt(i))>=0?1:"GEg".indexOf(values.charAt(i))>=0?2:"JV".indexOf(values.charAt(i))>=0?3:0);
+        for(int i=0;i<family.length;i++) family[i]=(byte)("DNnMt".indexOf(values.charAt(i))>=0?1:"GEgH".indexOf(values.charAt(i))>=0?2:"JVKLF".indexOf(values.charAt(i))>=0?3:0);
         // Both map stages have precisely this target palette (validated by EpicRedwoodModel).
         byte dark=1,bark=2,light=3,leaf=4,shade=5,sun=6,vine=7,vineLeaf=8,moss=9;
         BitSet active=new BitSet(source.x*source.y*source.z);
@@ -33,6 +33,7 @@ final class RedwoodRefinement {
                 if(a>=0&&b>=0&&c>=0&&a<source.x&&b<source.y&&c<source.z) active.set(a+b*source.x+c*plane);
             }
         }
+        RedwoodBotany botany = stage == 2 ? new RedwoodBotany(target.x, target.y, target.z, seed) : null;
         int worldStep=stage==1?4:1;
         for(int parent=active.nextSetBit(0);parent>=0;parent=active.nextSetBit(parent+1)) {
             int px=parent%source.x,py=parent/source.x%source.y,pz=parent/plane;
@@ -75,10 +76,20 @@ final class RedwoodRefinement {
                 }
                 else if(kind==2) color=(broad*.65f+fine*.35f)<.39f?shade:(broad*.65f+fine*.35f)>.62f?sun:leaf;
                 else color=fine>.62f?vineLeaf:vine;
+                if(stage==1 && kind==1 && old==14) color=14;
+                if(stage==2 && z>0 && z<target.z-1) {
+                    if(kind==2) {
+                        color=botany.needle(wx,wy,wz,broad*.65f+fine*.35f);
+                        // A living leader supports the sparse terminal sprays, inside the same envelope.
+                        float tipX=wx-target.x*.5f, tipY=wy-target.y*.5f;
+                        if(wz>target.z-256 && tipX*tipX+tipY*tipY<2.5f) color=14;
+                    }
+                    else if(kind==3) color=botany.vine(wx,wy,wz);
+                }
                 target.set(x,y,z,color);
             }
         }
-        target.retainRoot();
+        // Thin diagonal needles intentionally need not form one six-connected component.
         return target;
     }
 }

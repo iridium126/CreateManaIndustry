@@ -5,9 +5,9 @@ import java.util.Map;
 import java.util.function.BiConsumer;
 import org.w3c.dom.Element;
 
-/** Executes the unchanged packaged EpicRedwood3072 XML with specialized sparse map stages. */
+/** Executes the packaged EpicRedwood3072 XML with specialized sparse map stages. */
 public final class EpicRedwoodModel {
-    public static final String VALUES = "BDNnGEgJVM";
+    public static final String VALUES = "BDNnGEgJVMHKLFt";
     public static final int WIDTH = 648, HEIGHT = 3072;
     private final MarkovModel structure;
 
@@ -50,6 +50,7 @@ public final class EpicRedwoodModel {
         for (int i = 0; i < map.getAttributes().getLength(); i++)
             if (!java.util.List.of("scale", "values", "symmetry", "redwoodDetail").contains(map.getAttributes().item(i).getNodeName()))
                 throw new IllegalArgumentException("Unsupported EpicRedwood map attribute");
+        String inputs = stage == 1 ? "DNnGEgJV" : VALUES.substring(1);
         StringBuilder seen = new StringBuilder();
         int maps = 0;
         for (var node = map.getFirstChild(); node != null; node = node.getNextSibling()) {
@@ -58,7 +59,7 @@ public final class EpicRedwoodModel {
             if (!child.getTagName().equals("rule") || child.getAttributes().getLength() != 2)
                 throw new IllegalArgumentException("Unsupported EpicRedwood map child");
             String in = child.getAttribute("in");
-            if (in.length() != 1 || "DNnGEgJV".indexOf(in.charAt(0)) < 0 || seen.indexOf(in) >= 0)
+            if (in.length() != 1 || inputs.indexOf(in.charAt(0)) < 0 || seen.indexOf(in) >= 0)
                 throw new IllegalArgumentException("Unsupported EpicRedwood mapping input");
             int side = stage == 1 ? 2 : 4;
             String row = in.repeat(side), layer = String.join("/", java.util.Collections.nCopies(side, row));
@@ -66,7 +67,7 @@ public final class EpicRedwoodModel {
                 throw new IllegalArgumentException("EpicRedwood sparse map requires uniform replication");
             seen.append(in);
         }
-        if (seen.length() != 8 || maps != (stage == 1 ? 1 : 0))
+        if (seen.length() != inputs.length() || maps != (stage == 1 ? 1 : 0))
             throw new IllegalArgumentException("Incomplete EpicRedwood map");
     }
 }

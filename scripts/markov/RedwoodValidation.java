@@ -37,7 +37,7 @@ public class RedwoodValidation {
                 }
             });
             if (reference.read() != -1) throw new AssertionError("Trailing reference voxels");
-            System.out.println("PASS: every voxel matches upstream, seed=" + seed);
+            System.out.println("PASS: every voxel matches MarkovJunior + botanical extension, seed=" + seed);
         }
     }
 }
