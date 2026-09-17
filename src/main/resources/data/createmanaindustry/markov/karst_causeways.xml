@@ -1,0 +1,18 @@
+<!-- Polar unwrap: X=radius 90..210, Y=angle (160 cells, duplicated seam).
+     Endpoint lattice follows RegularPath.xml; all/prl are upstream primitives.
+     O = pier junction, P/T = paved radial route, C = connecting arcade. -->
+<sequence values="BOPCT" origin="True" symmetry="()">
+  <all>
+    <rule in="O/B/B/B/B/B/B/B/B/B/B/B/B/B/B/B/B" out="O/B/B/B/B/B/B/B/B/B/B/B/B/B/B/B/O"/>
+    <rule in="B/B/B/B/B/B/B/B/B/B/B/B/B/B/B/B/O" out="O/B/B/B/B/B/B/B/B/B/B/B/B/B/B/B/O"/>
+  </all>
+  <all>
+    <rule in="OB" out="OP"/><rule in="BO" out="PO"/>
+    <rule in="PB" out="PP"/><rule in="BP" out="PP"/>
+  </all>
+  <all>
+    <rule in="O/B" out="O/C"/><rule in="B/O" out="C/O"/>
+    <rule in="C/B" out="C/C"/><rule in="B/C" out="C/C"/>
+  </all>
+  <prl in="P" out="T" p="0.27" steps="1"/>
+</sequence>

@@ -45,6 +45,7 @@
     "allvr.AllvrServerLevelMixin",
     "allvr.AllvrPersistentEntitySectionManagerMixin",
     "allvr.AllvrChunkMapMixin",
+    "allvr.AllvrWorldGenRegionMixin",
     "allvr.AllvrTrackedEntityMixin",
     "allvr.AllvrEntityMixin"
   ],

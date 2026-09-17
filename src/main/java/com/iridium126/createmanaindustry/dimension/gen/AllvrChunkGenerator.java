@@ -40,6 +40,8 @@ public final class AllvrChunkGenerator extends NoiseBasedChunkGenerator {
     private final Optional<NoiseBasedChunkGenerator> chunks;
     private EpicRedwoodGenerator epicRedwoodGenerator;
     private long epicRedwoodSeed;
+    private AllvrSanctuaryGenerator sanctuaryGenerator;
+    private long sanctuarySeed;
 
     public AllvrChunkGenerator(Optional<NoiseBasedChunkGenerator> terrain,
                                Optional<NoiseBasedChunkGenerator> chunks,
@@ -59,6 +61,23 @@ public final class AllvrChunkGenerator extends NoiseBasedChunkGenerator {
 
     public Optional<NoiseBasedChunkGenerator> terrain() { return terrain; }
 
+    private synchronized AllvrSanctuaryGenerator sanctuary(long seed) {
+        if (sanctuaryGenerator == null || sanctuarySeed != seed) {
+            sanctuaryGenerator = new AllvrSanctuaryGenerator(seed, getSeaLevel(), generatorSettings().value().defaultFluid());
+            sanctuarySeed = seed;
+        }
+        return sanctuaryGenerator;
+    }
+
+    @Override
+    public void applyCarvers(net.minecraft.server.level.WorldGenRegion level, long seed,
+            net.minecraft.world.level.levelgen.RandomState random,
+            net.minecraft.world.level.biome.BiomeManager biomes, StructureManager structures,
+            ChunkAccess chunk, net.minecraft.world.level.levelgen.GenerationStep.Carving step) {
+        super.applyCarvers(level, seed, random, biomes, structures, chunk, step);
+        sanctuary(level.getSeed()).sculpt(chunk, false);
+    }
+
     private synchronized EpicRedwoodGenerator epicRedwood(long seed) {
         if (epicRedwoodGenerator == null || epicRedwoodSeed != seed) {
             epicRedwoodGenerator = new EpicRedwoodGenerator(seed);
@@ -70,6 +89,9 @@ public final class AllvrChunkGenerator extends NoiseBasedChunkGenerator {
     @Override
     public void applyBiomeDecoration(WorldGenLevel level, ChunkAccess chunk, StructureManager structures) {
         super.applyBiomeDecoration(level, chunk, structures);
+        var sanctuary = sanctuary(level.getSeed());
+        sanctuary.sculpt(chunk, true);
+        sanctuary.decorate(chunk);
         epicRedwood(level.getSeed()).generate(chunk);
     }
 

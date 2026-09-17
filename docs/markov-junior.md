@@ -1,5 +1,7 @@
 # MarkovJunior 世界生成
 
+悦灵原点新增 `karst_causeways.xml` 十路拱桥模型，沿用这里的通用执行器；地形、极坐标映射及原版对照命令见 [原点喀斯特地形与拱桥](allay-sanctuary.md)。
+
 `crystal_bloom_plains` 的 `minecraft:trees_plains` 已替换为
 `createmanaindustry:natural_small_tree`，保留原版平原树的频率和 placement filters。
 本次兼容范围按确认覆盖 NaturalSmallTree 的全部执行语义，并提供额外节点的编译扩展接口。

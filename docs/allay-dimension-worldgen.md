@@ -26,6 +26,8 @@ ALLVR 不是把整个世界强行塞进 `LevelChunk`。生成器按 Y 分带：
 
 ## 3. 中央带约束
 
+原点周围有专用地形整形阶段：90格平台Y=95、500格内缓坡、500～700格平滑过渡，以及100～200格喀斯特环谷与MarkovJunior拱桥。详见 [原点地形](allay-sanctuary.md)。
+
 中央带沿用原版 chunk pipeline：noise、aquifer、surface rule、carver、结构、feature、光照、高度图、POI、方块实体和原版存档。其上下边界是半开区间 `[-128, 384)`，不要写成包含 384。
 
 默认 allay noise settings 使用石头/水、原版 overworld noise router 和 deepslate 底部 surface rule；具体数值以 JSON 为准，文档不复制大型 noise 树。
