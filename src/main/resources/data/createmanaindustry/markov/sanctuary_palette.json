@@ -1,0 +1,16 @@
+{
+  "path": {"Name":"minecraft:stone_bricks"},
+  "path_slab": {"Name":"minecraft:stone_brick_slab","Properties":{"type":"bottom","waterlogged":"false"}},
+  "bridge_deck": {"Name":"minecraft:spruce_planks"},
+  "bridge_slab": {"Name":"minecraft:spruce_slab","Properties":{"type":"bottom","waterlogged":"false"}},
+  "timber": {"Name":"minecraft:stripped_dark_oak_log","Properties":{"axis":"y"}},
+  "rope": {"Name":"minecraft:chain","Properties":{"axis":"y","waterlogged":"false"}},
+  "light": {"Name":"minecraft:ochre_froglight","Properties":{"axis":"y"}},
+  "root_bark": {"Name":"minecraft:dark_oak_wood","Properties":{"axis":"y"}},
+  "root_core": {"Name":"minecraft:stripped_dark_oak_wood","Properties":{"axis":"y"}},
+  "root_moss": {"Name":"minecraft:moss_block"},
+  "support": {"Name":"minecraft:mossy_stone_bricks"},
+  "wall_base": {"Name":"minecraft:dripstone_block"},
+  "wall_light": {"Name":"minecraft:calcite"},
+  "wall_dark": {"Name":"minecraft:andesite"}
+}

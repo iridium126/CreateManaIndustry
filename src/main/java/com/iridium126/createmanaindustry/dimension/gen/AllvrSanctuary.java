@@ -1,30 +1,11 @@
 package com.iridium126.createmanaindustry.dimension.gen;
 
-import com.iridium126.createmanaindustry.worldgen.markov.MarkovModel;
-
 /** Pure, world-coordinate field shared by generation, previews and regression checks. */
 public final class AllvrSanctuary {
     public static final int GROUND = 95, INNER = 100, OUTER = 200, DEPTH = 100;
     public static final int FLAT_RADIUS = 90, CALM_RADIUS = 500, BLEND_RADIUS = 700;
-    public static final int WIDTH = 121, ANGLES = 161;
-    private static final MarkovModel MODEL = load();
-    private final byte[] routes;
     private final long seed;
-    private final double rotation;
-
-    public AllvrSanctuary(long seed) {
-        this.seed = seed;
-        routes = MODEL.generate((int) (seed ^ (seed >>> 32)), 2000);
-        rotation = unit(seed) * Math.PI * 2;
-    }
-
-    private static MarkovModel load() {
-        try (var xml = AllvrSanctuary.class.getResourceAsStream(
-                "/data/createmanaindustry/markov/karst_causeways.xml")) {
-            if (xml == null) throw new IllegalStateException("Missing causeway model");
-            return MarkovModel.load(xml, WIDTH, ANGLES, 1);
-        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
-    }
+    public AllvrSanctuary(long seed) { this.seed = seed; }
 
     public static double smooth(double t) {
         t = Math.max(0, Math.min(1, t));
@@ -42,43 +23,12 @@ public final class AllvrSanctuary {
 
     public Column column(int x, int z) {
         double radius = Math.hypot(x, z), theta = Math.atan2(z, x);
-        double angle = theta - rotation - .018 * Math.sin((radius - 100) * Math.PI / 100)
-            * Math.sin(theta * 3 + rotation);
-        double a = (angle / (Math.PI * 2) * 160 % 160 + 160) % 160;
-        int row = (int) Math.floor(a + .5) % 160;
-        int col = (int) Math.round(radius - 90);
-        boolean radial = col >= 0 && col < WIDTH && routes[col + row * WIDTH] != 0
-            && MODEL.values().charAt(routes[col + row * WIDTH]) != 'C';
-        boolean connector = Math.abs(radius - 150) <= 2.5 && routes[60 + row * WIDTH] != 0;
-        boolean weathered = col >= 0 && col < WIDTH && MODEL.values().charAt(routes[col + row * WIDTH]) == 'T';
-        double underside = GROUND + 1;
-        if (radial) {
-            double u = ((radius - 100) % 50 + 50) % 50;
-            underside = arch(u, 50, 33);
-            if (radius < 104 || radius > 196 || Math.abs(radius - 150) < 4) underside = -12;
-        }
-        if (connector) {
-            double arc = (a % 16) / 16 * (Math.PI * 300 / 10);
-            underside = Math.min(underside, arch(arc, Math.PI * 300 / 10, 38));
-            if (Math.min(a % 16, 16 - a % 16) < .65) underside = -12;
-        }
         double floor = GROUND - DEPTH + 4 * Math.abs(noise(x / 23.0, 0, z / 23.0))
             + 3 * Math.abs(noise(x / 7.0, 0, z / 7.0));
-        return new Column(x, z, radius, theta, (int) Math.floor(floor),
-            radial || connector, (int) Math.floor(underside), Math.min(a % 16, 16 - a % 16),
-            Math.abs(radius - 150), weathered);
+        return new Column(x, z, radius, theta, (int) Math.floor(floor));
     }
 
-    private static double arch(double distance, double span, double rise) {
-        double u = 2 * distance / span - 1;
-        return GROUND - 5 - rise + rise * Math.sqrt(Math.max(0, 1 - u * u));
-    }
-
-    public record Column(int x, int z, double radius, double theta, int floor,
-                         boolean bridge, int underside, double laneDistance, double ringDistance, boolean weathered) {
-        public boolean masonry(int y) { return bridge && y >= underside && y <= GROUND; }
-        public boolean pathCenter() { return laneDistance < .23 || ringDistance < 1.25; }
-    }
+    public record Column(int x, int z, double radius, double theta, int floor) {}
 
     static boolean suppressSideGroundVegetation(Column c, int y) {
         return y == GROUND && (c.radius() < INNER || c.radius() > OUTER);

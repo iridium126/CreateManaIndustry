@@ -1,18 +1,41 @@
-<!-- Polar unwrap: X=radius 90..210, Y=angle (160 cells, duplicated seam).
-     Endpoint lattice follows RegularPath.xml; all/prl are upstream primitives.
-     O = pier junction, P/T = paved radial route, C = connecting arcade. -->
-<sequence values="BOPCT" origin="True" symmetry="()">
+<!-- 7 radial x 60 angular x 7 vertical modules; Markov Z points upward.
+  Apartemazements/Paths inspiration: Line + Up/Down + junction/platform modules,
+  then structural/detail passes. This uses upstream rewrite primitives (no WFC port).
+  I/W: inner/outer junction; L/N: wall gallery; A/D/E/F: vertical connectors;
+  H: main suspension span; R: root-to-root span; G: vanilla geode branch; P: lookout.
+  Ten stations, three inhabited levels. Angular wrap is joined by the geometry adapter. -->
+<sequence values="BOIWSLNUVJKADEFHRGPTQ" origin="True" symmetry="()">
   <all>
-    <rule in="O/B/B/B/B/B/B/B/B/B/B/B/B/B/B/B/B" out="O/B/B/B/B/B/B/B/B/B/B/B/B/B/B/B/O"/>
-    <rule in="B/B/B/B/B/B/B/B/B/B/B/B/B/B/B/B/O" out="O/B/B/B/B/B/B/B/B/B/B/B/B/B/B/B/O"/>
+    <rule in="O/B/B/B/B/B/B" out="O/B/B/B/B/B/O"/>
+    <rule in="B/B/B/B/B/B/O" out="O/B/B/B/B/B/O"/>
   </all>
+  <all in="BBBOBBB" out="IBBSBBW"/>
   <all>
-    <rule in="OB" out="OP"/><rule in="BO" out="PO"/>
-    <rule in="PB" out="PP"/><rule in="BP" out="PP"/>
+    <rule in="B B I" out="I B I"/><rule in="I B B" out="I B I"/>
+    <rule in="B B W" out="W B W"/><rule in="W B B" out="W B W"/>
   </all>
+  <prl>
+    <rule in="B I B I B I B" out="B I V I U I B"/>
+    <rule in="B W B W B W B" out="B W K W J W B"/>
+  </prl>
+  <one in="U" out="A" steps="2"/><one in="V" out="D" steps="2"/>
+  <one in="J" out="E" steps="2"/><one in="K" out="F" steps="2"/>
+  <prl>
+    <rule in="U" out="B"/><rule in="V" out="B"/>
+    <rule in="J" out="B"/><rule in="K" out="B"/>
+  </prl>
   <all>
-    <rule in="O/B" out="O/C"/><rule in="B/O" out="C/O"/>
-    <rule in="C/B" out="C/C"/><rule in="B/C" out="C/C"/>
+    <rule in="I/B" out="I/L"/><rule in="B/I" out="L/I"/>
+    <rule in="L/B" out="L/L"/><rule in="B/L" out="L/L"/>
+    <rule in="W/B" out="W/N"/><rule in="B/W" out="N/W"/>
+    <rule in="N/B" out="N/N"/><rule in="B/N" out="N/N"/>
   </all>
-  <prl in="P" out="T" p="0.27" steps="1"/>
+  <!-- Separate lower root anchors from the middle gallery: six main and four root spans. -->
+  <prl in="S B B" out="S B Q"/>
+  <one in="S" out="H" steps="6"/>
+  <one in="Q" out="R" steps="4"/>
+  <all in="Q" out="B"/>
+  <one in="S" out="G" steps="2"/>
+  <all in="S" out="P"/>
+  <prl in="L" out="T" p="0.22" steps="1"/>
 </sequence>

@@ -91,6 +91,7 @@ public final class AllvrChunkGenerator extends NoiseBasedChunkGenerator {
         super.applyBiomeDecoration(level, chunk, structures);
         var sanctuary = sanctuary(level.getSeed());
         sanctuary.sculpt(chunk, true);
+        sanctuary.structures(level, chunk);
         sanctuary.decorate(chunk);
         epicRedwood(level.getSeed()).generate(chunk);
     }
