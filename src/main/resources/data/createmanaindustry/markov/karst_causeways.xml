@@ -2,9 +2,9 @@
   Apartemazements/Paths inspiration: Line + Up/Down + junction/platform modules,
   then structural/detail passes. This uses upstream rewrite primitives (no WFC port).
   I/W: inner/outer junction; L/N: wall gallery; A/D/E/F: vertical connectors;
-  H: main suspension span; R: root-to-root span; G: vanilla geode branch; P: lookout.
+  H: main suspension span; R: root-to-root span; P: lookout. Geodes are placed independently on the valley floor.
   Ten stations, three inhabited levels. Angular wrap is joined by the geometry adapter. -->
-<sequence values="BOIWSLNUVJKADEFHRGPTQ" origin="True" symmetry="()">
+<sequence values="BOIWSLNUVJKADEFHRPTQ" origin="True" symmetry="()">
   <all>
     <rule in="O/B/B/B/B/B/B" out="O/B/B/B/B/B/O"/>
     <rule in="B/B/B/B/B/B/O" out="O/B/B/B/B/B/O"/>
@@ -35,7 +35,6 @@
   <one in="S" out="H" steps="6"/>
   <one in="Q" out="R" steps="4"/>
   <all in="Q" out="B"/>
-  <one in="S" out="G" steps="2"/>
   <all in="S" out="P"/>
   <prl in="L" out="T" p="0.22" steps="1"/>
 </sequence>

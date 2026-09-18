@@ -26,7 +26,13 @@ class AllvrSanctuaryTest {
             assertEquals(4,n.routes().stream().filter(r->r.kind().equals("root-bridge")).count());
             assertEquals(8,n.routes().stream().filter(r->r.kind().equals("ramp")).count());
             assertEquals(10,n.routes().stream().filter(r->r.kind().equals("entrance")).count());
-            assertEquals(2,n.geodes().size());
+            assertTrue(n.geodes().size() >= 1 && n.geodes().size() <= 3);
+            for (var geode : n.geodes()) {
+                double radius = Math.hypot(geode.x(), geode.z());
+                assertTrue(radius >= 115 && radius <= 185, "Geode must sit in the valley floor band");
+                assertTrue(geode.y() >= -8 && geode.y() <= 2, "Geode anchor must sit just below the valley floor");
+                assertEquals(SanctuaryNetwork.NONE, n.get((int)Math.round(geode.x()), (int)Math.round(geode.y()), (int)Math.round(geode.z())));
+            }
             assertEquals(10,n.roots().size());
             for(var root:n.roots()) {
                 var first=root.points().getFirst();var last=root.points().getLast();
@@ -53,6 +59,30 @@ class AllvrSanctuaryTest {
     @Test void actualWalkwayVoxelsAreReachableAndHaveHeadroom() {
         for(long seed:new long[]{0,42,137,-1}) verifyReachable(new SanctuaryNetwork(seed));
     }
+
+    @Test void stackedBottomSlabsMergeIntoAFullStep() {
+        assertEquals(SanctuaryNetwork.PATH,
+            SanctuaryNetwork.mergeBottomSlab(SanctuaryNetwork.PATH_SLAB,SanctuaryNetwork.PATH_SLAB));
+        assertEquals(SanctuaryNetwork.DECK,
+            SanctuaryNetwork.mergeBottomSlab(SanctuaryNetwork.DECK_SLAB,SanctuaryNetwork.DECK_SLAB));
+        assertEquals(SanctuaryNetwork.DECK,
+            SanctuaryNetwork.mergeBottomSlab(SanctuaryNetwork.PATH_SLAB,SanctuaryNetwork.DECK_SLAB));
+        assertEquals(SanctuaryNetwork.PATH,
+            SanctuaryNetwork.mergeBottomSlab(SanctuaryNetwork.DECK_SLAB,SanctuaryNetwork.PATH_SLAB));
+        assertEquals(SanctuaryNetwork.PATH_SLAB,
+            SanctuaryNetwork.mergeBottomSlab(SanctuaryNetwork.PATH_SLAB,SanctuaryNetwork.NONE));
+        for(long seed:new long[]{0,42,137,-1}) {
+            var n=new SanctuaryNetwork(seed);
+            n.forEach((x,y,z,m)-> {
+                if(m==SanctuaryNetwork.PATH_SLAB || m==SanctuaryNetwork.DECK_SLAB) {
+                    int below=n.get(x,y-1,z);
+                    assertFalse(below==SanctuaryNetwork.PATH_SLAB || below==SanctuaryNetwork.DECK_SLAB,
+                        "Floating bottom slab at "+x+","+y+","+z+" current="+m+" below="+below);
+                }
+            });
+        }
+    }
+
     private static void verifyReachable(SanctuaryNetwork n) {
         // Construct a graph of actual floor blocks. Half-slabs and full steps are distinct surfaces.
         var floors=new java.util.HashMap<Long,Double>();
@@ -96,5 +126,30 @@ class AllvrSanctuaryTest {
             var c=f.column(x,z);assertTrue(c.floor()>=-5 && c.floor()<=2);assertFalse(f.cavity(c,-5));
             if(c.radius()<=90) for(int y=-5;y<=95;y++) assertFalse(f.cavity(c,y));
         }
+    }
+
+    @Test void lavaExclusionCoversSanctuaryDisc() {
+        assertTrue(AllvrSanctuary.lavaExcluded(0, 0));
+        assertTrue(AllvrSanctuary.lavaExcluded(200, 0));
+        assertTrue(AllvrSanctuary.lavaExcluded(-200, -200) == false);
+        assertTrue(AllvrSanctuary.lavaExcluded(120, 160));
+        assertFalse(AllvrSanctuary.lavaExcluded(201, 0));
+        assertFalse(AllvrSanctuary.lavaExcluded(0, -201));
+        // Chunk status work runs on workers beyond Integer.MAX_VALUE in the worst case.
+        assertTrue(AllvrSanctuary.lavaExcluded(-30_000_000, 0) == false);
+        assertTrue(AllvrSanctuary.lavaExcluded(0, 30_000_000) == false);
+        // ChunkGenerator passes the placed feature's ResourceKey.toString(), so the bare
+        // id never matched and the mixin silently no-op'd; guard the exact runtime labels
+        // of every lava-writing feature in the biome against registry drift.
+        for (String id : new String[]{"lake_lava_surface", "lake_lava_underground", "spring_lava"}) {
+            var key = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.PLACED_FEATURE,
+                net.minecraft.resources.ResourceLocation.withDefaultNamespace(id));
+            assertEquals("ResourceKey[minecraft:worldgen/placed_feature / minecraft:" + id + "]", key.toString());
+            assertTrue(AllvrSanctuary.isLavaFeatureLabel(key.toString()), "Missing lava label for " + id);
+            assertFalse(AllvrSanctuary.isLavaFeatureLabel("minecraft:" + id), "Bare id must not match");
+            assertFalse(AllvrSanctuary.isLavaFeatureLabel(null), "Null label must not match");
+        }
+        assertFalse(AllvrSanctuary.isLavaFeatureLabel(
+            "ResourceKey[minecraft:worldgen/placed_feature / minecraft:spring_water]"), "Water spring must not match");
     }
 }

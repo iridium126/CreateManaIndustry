@@ -11,10 +11,11 @@ import me.cortex.voxy.commonImpl.WorldIdentifier;
  * key without allowing two absolute heights to share a persistent key.
  *
  * <p>Voxy L0 sections are 32 blocks wide and its section key reserves 8 bits
- * for Y, so one engine can represent 256 L0 sections = 8192 blocks.  A slab
- * is centred on a deterministic 8192-block band.  The slab is a persistence
- * namespace as well as a coordinate frame; crossing it creates/selects a
- * different Voxy {@link WorldIdentifier}.</p>
+ * for Y, so one engine can represent 256 L0 sections = 8192 blocks. A slab
+ * is centred on a deterministic 8192-block band shifted 512 blocks downward
+ * so the Allay native band has more headroom above it. The slab is a
+ * persistence namespace as well as a coordinate frame; crossing it
+ * creates/selects a different Voxy {@link WorldIdentifier}.</p>
  */
 public final class AllvrVoxyYSlab {
 
@@ -23,14 +24,22 @@ public final class AllvrVoxyYSlab {
     public static final int BLOCKS_PER_SLAB = L0_BLOCKS * L0_CELLS_PER_SLAB;
     public static final int SECTION_BLOCKS = 16;
     public static final int SECTIONS_PER_SLAB = BLOCKS_PER_SLAB / SECTION_BLOCKS;
-    public static final int SECTION_CENTER_OFFSET = SECTIONS_PER_SLAB / 2;
+    /** Absolute displacement of every Voxy Y window from its old position. */
+    public static final int WINDOW_SHIFT_BLOCKS = -512;
+    public static final int WINDOW_CENTER_BLOCK_OFFSET =
+        BLOCKS_PER_SLAB / 2 + WINDOW_SHIFT_BLOCKS;
+    public static final int SECTION_CENTER_OFFSET =
+        WINDOW_CENTER_BLOCK_OFFSET / SECTION_BLOCKS;
     public static final int MIN_VIRTUAL_SECTION_Y = -256;
     public static final int MAX_VIRTUAL_SECTION_Y = 255;
 
     private AllvrVoxyYSlab() {}
 
     public static long slabIdForBlockY(int blockY) {
-        return Math.floorDiv(blockY, BLOCKS_PER_SLAB);
+        // The shifted bands are [id * size - 512, (id + 1) * size - 512).
+        // Select the band after translating the coordinate back by the
+        // window displacement, keeping the active window around the player.
+        return Math.floorDiv(blockY - WINDOW_SHIFT_BLOCKS, BLOCKS_PER_SLAB);
     }
 
     public static long slabIdForLevel(Level level) {
@@ -52,7 +61,7 @@ public final class AllvrVoxyYSlab {
     }
 
     public static int slabCenterBlockY(long slabId) {
-        long center = slabId * (long) BLOCKS_PER_SLAB + BLOCKS_PER_SLAB / 2L;
+        long center = slabId * (long) BLOCKS_PER_SLAB + WINDOW_CENTER_BLOCK_OFFSET;
         return (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, center));
     }
 

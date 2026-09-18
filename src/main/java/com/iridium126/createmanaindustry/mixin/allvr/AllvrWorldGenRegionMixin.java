@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Filters the vanilla central-chunk feature path as well as cube template decoration. */
+/** Filters vanilla lava lakes and lava springs in the native central-chunk feature path. */
 @Mixin(WorldGenRegion.class)
 public abstract class AllvrWorldGenRegionMixin {
     @Shadow @Final private ServerLevel level;
@@ -22,12 +22,12 @@ public abstract class AllvrWorldGenRegionMixin {
 
     @Inject(method = "setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)Z",
         at = @At("HEAD"), cancellable = true)
-    private void allvr$skipLavaSurface(BlockPos pos, BlockState state, int flags, int recursion,
-                                        CallbackInfoReturnable<Boolean> cir) {
+    private void allvr$skipLava(BlockPos pos, BlockState state, int flags, int recursion,
+                                CallbackInfoReturnable<Boolean> cir) {
         if (level.dimension() == AllvrDimensions.ALLAY_LEVEL
             && currentlyGenerating != null
-            && "minecraft:lake_lava_surface".equals(currentlyGenerating.get())
-            && AllvrSanctuary.lavaSurfaceExcluded(pos.getX(), pos.getZ())) {
+            && AllvrSanctuary.isLavaFeatureLabel(currentlyGenerating.get())
+            && AllvrSanctuary.lavaExcluded(pos.getX(), pos.getZ())) {
             cir.setReturnValue(false);
         }
     }

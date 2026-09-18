@@ -34,8 +34,21 @@ public final class AllvrSanctuary {
         return y == GROUND && (c.radius() < INNER || c.radius() > OUTER);
     }
 
-    public static boolean lavaSurfaceExcluded(int x, int z) {
+    public static boolean lavaExcluded(int x, int z) {
         return (long) x * x + (long) z * z <= 200L * 200L;
+    }
+
+    /**
+     * WorldGenRegion#setCurrentlyGenerating receives ResourceKey.toString(), not the bare feature id.
+     * Covers every lava-writing placed feature in the sanctuary biome: both lakes and the lava spring.
+     */
+    public static final java.util.Set<String> LAVA_FEATURE_LABELS = java.util.Set.of(
+        "ResourceKey[minecraft:worldgen/placed_feature / minecraft:lake_lava_surface]",
+        "ResourceKey[minecraft:worldgen/placed_feature / minecraft:lake_lava_underground]",
+        "ResourceKey[minecraft:worldgen/placed_feature / minecraft:spring_lava]");
+
+    public static boolean isLavaFeatureLabel(String label) {
+        return label != null && LAVA_FEATURE_LABELS.contains(label);
     }
 
     /** Eroded limestone walls: fluting, strata, overhangs and a talus toe; never cuts r<=90. */

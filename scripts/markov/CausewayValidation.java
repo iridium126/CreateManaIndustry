@@ -16,11 +16,11 @@ public class CausewayValidation {
         for (int seed : new int[]{0, 1, 42, 137, 2026, -1, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
             byte[] java = model.generate(seed, 4000), reference = Files.readAllBytes(root.resolve(seed + ".bin"));
             if (!Arrays.equals(java, reference)) throw new AssertionError("Upstream mismatch " + seed);
-            for (char symbol : new char[]{'H','R','G','A','D','E','F'}) {
+            for (char symbol : new char[]{'H','R','A','D','E','F'}) {
                 int count=0; for(byte value:java) if(model.values().charAt(value)==symbol) count++;
                 if(count!=(symbol=='H'?6:symbol=='R'?4:2)) throw new AssertionError("Missing module "+symbol+" count="+count);
             }
-            System.out.println("PARITY seed="+seed+" 3D modules, 10 bridges, 8 ramps, 2 geodes intact");
+            System.out.println("PARITY seed="+seed+" 3D modules, 10 bridges, 8 ramps, no geode branches");
         }
         var f = new AllvrSanctuary(137);
         var network = new SanctuaryNetwork(137);

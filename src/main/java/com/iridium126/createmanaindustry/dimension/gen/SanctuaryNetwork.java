@@ -15,6 +15,10 @@ public final class SanctuaryNetwork {
     private final List<Route> routes = new ArrayList<>();
     private final List<Root> roots = new ArrayList<>();
     private final List<Point> geodes = new ArrayList<>();
+    // Route identity lets a vertical overlap move the whole connected surface,
+    // instead of removing one cell from a bridge or gallery junction.
+    private final Map<Long,Integer> slabOwners = new HashMap<>();
+    private final long seed;
     private final AllvrSanctuary terrain;
     private final double rotation;
     private final byte[] modules;
@@ -32,6 +36,7 @@ public final class SanctuaryNetwork {
     public List<Point> geodes() { return Collections.unmodifiableList(geodes); }
 
     public SanctuaryNetwork(long seed) {
+        this.seed = seed;
         terrain = new AllvrSanctuary(seed);
         rotation = AllvrSanctuary.unit(seed) * Math.PI * 2;
         modules = MODEL.generate((int)(seed ^ seed >>> 32), 4000);
@@ -67,11 +72,6 @@ public final class SanctuaryNetwork {
             } else if (module=='R') {
                 Point a=rootWalk(station,.40),b=rootWalk((station+1)%10,.40);
                 suspension(a,b,1.7,4,"root-bridge");
-            } else if (module=='G') {
-                Point start=wall(1,1,angle);
-                Point center=polar(221,start.y+3,angle);
-                geodes.add(center);
-                addRoute("geode",t -> Point.lerp(start,center.add(0,-3,0),t),1.6,false,false);
             } else if (module=='P') {
                 Point p=wall(0,2,angle);
                 addRoute("lookout",t -> p.add(Math.cos(angle+rotation)*t*9,0,Math.sin(angle+rotation)*t*9),3.4,false,true);
@@ -94,6 +94,13 @@ public final class SanctuaryNetwork {
             Point exit=wall(1,0,angle+rootTwist(i)*.92+.40);
             addRoute("root-exit",t -> recessedJoin(tail,exit,t,25),1.5,false,true);
         }
+        // Routes can overlap in either stamping order.  A lower route may be
+        // written after the upper slab has already been emitted, so normalize
+        // the finished voxel graph once more before carving headroom.
+        mergeAdjacentBottomSlabs();
+        // Amethyst geodes are independent valley-floor landmarks.  They deliberately
+        // do not consume a Markov module or turn into player-facing side branches.
+        placeBottomGeodes();
         // All routing is complete before carving headroom; cables/foliage cannot close the main paths.
         for (long pos:clearances) {
             int x=(int)(pos>>40), y=(int)((pos>>20)&0xfffff)-512, z=(int)(pos&0xfffff)-512;
@@ -101,6 +108,50 @@ public final class SanctuaryNetwork {
             if(material<PATH || material>DECK_SLAB) put(x,y,z,CLEAR);
         }
         clearances.clear();
+    }
+
+    private void placeBottomGeodes() {
+        int desired = 1 + (int)(AllvrSanctuary.unit(terrain.hash(913, -41, (int)(seed ^ (seed >>> 32)))) * 3.0);
+        int accepted = 0;
+        for (int attempt = 0; attempt < 192 && accepted < desired; attempt++) {
+            long h = terrain.hash(37 * attempt + 11, -777, (int)(seed + attempt * 131L));
+            double angle = AllvrSanctuary.unit(h) * Math.PI * 2.0 + rotation;
+            double radius = 120.0 + AllvrSanctuary.unit(terrain.hash(attempt, -778, (int)(h >>> 32))) * 62.0;
+            int x = (int)Math.round(radius * Math.cos(angle));
+            int z = (int)Math.round(radius * Math.sin(angle));
+            // Keep the feature's positive sampling offsets in solid rock.  Its
+            // upper shell then breaks naturally into the open valley floor.
+            int y = terrain.column(x, z).floor() - 1;
+            Point candidate = new Point(x, y, z);
+            if (validGeodeCandidate(candidate, 16.0) && geodes.stream().noneMatch(p -> Math.hypot(p.x-x, p.z-z) < 44.0)) {
+                geodes.add(candidate);
+                accepted++;
+            }
+        }
+        // A sparse fallback keeps the contract at 1..3 even for an unusually dense
+        // routing seed, while retaining a broad, separated composition on the floor.
+        for (int i = accepted; i < desired; i++) {
+            double angle = rotation + (i + .5) * Math.PI * 2.0 / desired;
+            double radius = 134.0 + i * 24.0;
+            int x = (int)Math.round(radius * Math.cos(angle)), z = (int)Math.round(radius * Math.sin(angle));
+            int y = terrain.column(x, z).floor() - 1;
+            Point candidate = new Point(x, y, z);
+            if (geodes.stream().noneMatch(p -> Math.hypot(p.x-x, p.z-z) < 44.0)) geodes.add(candidate);
+        }
+    }
+
+    private boolean validGeodeCandidate(Point p, double radius) {
+        double radial = Math.hypot(p.x, p.z);
+        if (radial < 115.0 || radial > 185.0) return false;
+        int cx = (int)Math.round(p.x), cy = (int)Math.round(p.y), cz = (int)Math.round(p.z);
+        for (int dz = -16; dz <= 16; dz++) for (int dx = -16; dx <= 16; dx++) {
+            if (dx * dx + dz * dz > radius * radius) continue;
+            for (int dy = -10; dy <= 10; dy += 2) {
+                int material = get(cx + dx, cy + dy, cz + dz);
+                if (material != NONE && material != CLEAR) return false;
+            }
+        }
+        return true;
     }
 
     private static MarkovModel load() {
@@ -239,6 +290,7 @@ public final class SanctuaryNetwork {
     }
 
     private void addRoute(String kind,DoubleFunction<Point> curve,double width,boolean wood,boolean wallSupport) {
+        int owner=routes.size();
         var points=new ArrayList<Point>();points.add(curve.apply(0));
         for(int i=0;i<128;i++) subdivide(curve,i/128.0,curve.apply(i/128.0),(i+1)/128.0,curve.apply((i+1)/128.0),points,0);
         for(int step=0;step<points.size();step++) {
@@ -248,10 +300,19 @@ public final class SanctuaryNetwork {
             for(int z=(int)Math.floor(p.z-width);z<=p.z+width;z++) for(int x=(int)Math.floor(p.x-width);x<=p.x+width;x++) {
                 double d=Math.hypot(x-p.x,z-p.z);
                 if(d>width) continue;
-                put(x,floor,z,material);
-                if(!wood) put(x,floor-1,z,SUPPORT);
+                // Two adjacent bottom slabs leave a half-block void between their
+                // collision shapes.  Treat a bottom slab below as the lower half
+                // of the current step and fill that lower cell with its full block.
+                int placedFloor=floor;
+                int placedMaterial=mergeBottomSlab(material,get(x,floor-1,z));
+                if(placedMaterial!=material) placedFloor--;
+                put(x,placedFloor,z,placedMaterial);
+                long placed=position(x,placedFloor,z);
+                if(placedMaterial==PATH_SLAB || placedMaterial==DECK_SLAB) slabOwners.put(placed,owner);
+                else slabOwners.remove(placed);
+                if(!wood) put(x,placedFloor-1,z,SUPPORT);
                 // Full width headroom is reserved independently of stamping order.
-                for(int y=floor+1;y<=floor+4;y++) clearances.add(position(x,y,z));
+                for(int y=placedFloor+1;y<=placedFloor+4;y++) clearances.add(position(x,y,z));
             }
             if(wallSupport && step%14==0) {
                 // Corbels slope back into the rock; no freestanding stone columns to the floor.
@@ -264,6 +325,49 @@ public final class SanctuaryNetwork {
             }
         }
         routes.add(new Route(kind,List.copyOf(points),width));
+    }
+
+    /** Returns the lower slab's full-block symbol when two bottom slabs stack. */
+    static int mergeBottomSlab(int material,int below) {
+        if(material!=PATH_SLAB && material!=DECK_SLAB) return material;
+        if(below==PATH_SLAB) return PATH;
+        if(below==DECK_SLAB) return DECK;
+        return material;
+    }
+
+    private void mergeAdjacentBottomSlabs() {
+        var starts=new ArrayList<int[]>();
+        forEach((x,y,z,m)-> {
+            if(m!=PATH_SLAB && m!=DECK_SLAB) return;
+            int above=get(x,y+1,z);
+            if(above!=PATH_SLAB && above!=DECK_SLAB) return;
+            Integer upperOwner=slabOwners.get(position(x,y+1,z));
+            if(upperOwner!=null) starts.add(new int[]{x,y+1,z,upperOwner});
+        });
+        var shifted=new HashSet<Long>();
+        for(int[] start:starts) shiftSlabComponent(start[0],start[1],start[2],start[3],shifted);
+    }
+
+    /** Move one connected route surface down as a unit, then clear its old layer. */
+    private void shiftSlabComponent(int startX,int upperY,int startZ,int owner,Set<Long> shifted) {
+        var queue=new ArrayDeque<int[]>();queue.add(new int[]{startX,upperY,startZ});
+        while(!queue.isEmpty()) {
+            int[] cell=queue.removeFirst();int x=cell[0],y=cell[1],z=cell[2];
+            long key=position(x,y,z);
+            if(!shifted.add(key) || !Objects.equals(slabOwners.get(key),owner)) continue;
+            int slab=get(x,y,z);if(slab!=PATH_SLAB && slab!=DECK_SLAB) continue;
+            int below=get(x,y-1,z),merged=mergeBottomSlab(slab,below);
+            if(merged==slab && below!=NONE && below!=CLEAR) continue;
+            put(x,y-1,z,merged==slab?slab:merged);
+            if(slab==PATH_SLAB && merged==slab) put(x,y-2,z,SUPPORT);
+            clearances.add(position(x,y,z));
+            for(int clearanceY=y-1;clearanceY<=y+2;clearanceY++) clearances.add(position(x,clearanceY,z));
+            put(x,y,z,CLEAR);
+            slabOwners.remove(key);
+            if(merged==PATH_SLAB || merged==DECK_SLAB) slabOwners.put(position(x,y-1,z),owner);
+            for(int[] d:new int[][]{{1,0},{-1,0},{0,1},{0,-1}})
+                if(Objects.equals(slabOwners.get(position(x+d[0],y,z+d[1])),owner)) queue.add(new int[]{x+d[0],y,z+d[1]});
+        }
     }
 
     private static void subdivide(DoubleFunction<Point> curve,double a,Point pa,double b,Point pb,List<Point> out,int depth) {
