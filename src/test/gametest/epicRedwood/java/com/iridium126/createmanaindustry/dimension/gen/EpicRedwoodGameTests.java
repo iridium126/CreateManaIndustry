@@ -29,8 +29,10 @@ public final class EpicRedwoodGameTests {
         for (int y = 96; y < 384 && !nativeTreeFound; y++) for (int z = 0; z < 16 && !nativeTreeFound; z++) for (int x = 0; x < 16; x++) {
             var expected = epicRedwood.sample(x, y, z);
             if (expected != null) {
-                helper.assertTrue(chunk.getBlockState(new BlockPos(x, y, z)) == expected,
-                    "Native FEATURES stage did not generate the shifted trunk");
+                var actual = chunk.getBlockState(new BlockPos(x, y, z));
+                helper.assertTrue(actual == expected,
+                    "Native FEATURES stage mismatch at " + x + "," + y + "," + z
+                        + " expected=" + expected + " actual=" + actual);
                 nativeTreeFound = true;
             }
         }
@@ -72,6 +74,14 @@ public final class EpicRedwoodGameTests {
         }
         try (var input = EpicRedwoodGameTests.class.getResourceAsStream("/data/createmanaindustry/markov/epic_redwood_palette.json")) {
             var json = com.google.gson.JsonParser.parseReader(new java.io.InputStreamReader(input, java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+            var bundledPalette = new EpicRedwoodPalette(json);
+            boolean sawDarkOak = false, sawSpruce = false;
+            for (long seed = 0; seed < 128; seed++) {
+                var state = bundledPalette.state(1, seed);
+                sawDarkOak |= state.is(net.minecraft.world.level.block.Blocks.DARK_OAK_WOOD);
+                sawSpruce |= state.is(net.minecraft.world.level.block.Blocks.SPRUCE_WOOD);
+            }
+            helper.assertTrue(sawDarkOak && sawSpruce, "Weighted D variants did not mix");
             json.add("D", com.google.gson.JsonParser.parseString("{\"Name\":\"createmanaindustry:prismarine_quartz_block\"}"));
             helper.assertTrue(new EpicRedwoodPalette(json).state(1).is(CMIBlocks.PRISMARINE_QUARTZ_BLOCK.get()), "Cross-namespace mapping rejected");
             json.remove("N");

@@ -56,7 +56,8 @@ final class SanctuaryGeodes {
             // A passage can open the shell after vanilla placement; remove buds whose parent it cuts away.
             if(state.getBlock() instanceof net.minecraft.world.level.block.AmethystClusterBlock) {
                 var parent=pos.relative(state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING).getOpposite());
-                var support=owner.material(owner.network.get(parent.getX(),parent.getY(),parent.getZ()));
+                var support=owner.material(owner.network.get(parent.getX(),parent.getY(),parent.getZ()),
+                    parent.getX(),parent.getY(),parent.getZ());
                 if(support==null) support=generated.getOrDefault(parent,owner.naturalState(owner.field.column(parent.getX(),parent.getZ()),parent.getY()));
                 if(!support.isCollisionShapeFullBlock(net.minecraft.world.level.EmptyBlockGetter.INSTANCE,parent)) state=net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
             }

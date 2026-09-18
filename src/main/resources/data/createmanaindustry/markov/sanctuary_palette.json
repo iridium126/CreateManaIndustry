@@ -10,7 +10,10 @@
   "root_core": {"Name":"minecraft:stripped_dark_oak_wood","Properties":{"axis":"y"}},
   "root_moss": {"Name":"minecraft:moss_block"},
   "support": {"Name":"minecraft:mossy_stone_bricks"},
-  "wall_base": {"Name":"minecraft:dripstone_block"},
+  "wall_base": {"variants":[
+    {"weight":3,"state":{"Name":"minecraft:dripstone_block"}},
+    {"weight":1,"state":{"Name":"minecraft:tuff"}}
+  ]},
   "wall_light": {"Name":"minecraft:calcite"},
   "wall_dark": {"Name":"minecraft:andesite"}
 }

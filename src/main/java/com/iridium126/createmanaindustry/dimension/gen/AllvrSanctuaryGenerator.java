@@ -15,16 +15,22 @@ final class AllvrSanctuaryGenerator {
     final SanctuaryNetwork network;
     private final SanctuaryPalette palette;
     private final SanctuaryGeodes geodes;
+    private final long seed;
     private final int seaLevel;
     private final BlockState fluid;
     private static final BlockState AIR = Blocks.AIR.defaultBlockState();
     BlockState material(int symbol) { return palette.material(symbol); }
+
+    BlockState material(int symbol, int x, int y, int z) {
+        return palette.material(symbol, BlockStateVariants.coordinateSeed(seed, x, y, z));
+    }
 
     AllvrSanctuaryGenerator(long seed, int seaLevel, BlockState fluid) {
         this(seed,seaLevel,fluid,SanctuaryPalette.bundled());
     }
 
     AllvrSanctuaryGenerator(long seed, int seaLevel, BlockState fluid, SanctuaryPalette palette) {
+        this.seed = seed;
         field = new AllvrSanctuary(seed);
         network = new SanctuaryNetwork(seed);
         this.palette = palette;
@@ -66,7 +72,8 @@ final class AllvrSanctuaryGenerator {
         if (y == 95) return Blocks.GRASS_BLOCK.defaultBlockState();
         if (y > 91 && c.radius() < 96) return Blocks.DIRT.defaultBlockState();
         double strata = field.noise(c.x() / 27.0, y / 5.0, c.z() / 27.0);
-        return palette.get(strata > .32 ? "wall_light" : strata < -.35 ? "wall_dark" : "wall_base");
+        return palette.get(strata > .32 ? "wall_light" : strata < -.35 ? "wall_dark" : "wall_base",
+            BlockStateVariants.coordinateSeed(seed, c.x(), y, c.z()));
     }
 
     void structures(net.minecraft.world.level.WorldGenLevel level, ChunkAccess chunk) {
@@ -75,7 +82,7 @@ final class AllvrSanctuaryGenerator {
         var pos = new BlockPos.MutableBlockPos();
         for (int y=-16;y<=110;y++) for (int z=chunk.getPos().getMinBlockZ();z<chunk.getPos().getMinBlockZ()+16;z++)
         for (int x=chunk.getPos().getMinBlockX();x<chunk.getPos().getMinBlockX()+16;x++) {
-            var state=palette.material(network.get(x,y,z));
+            var state=material(network.get(x,y,z), x, y, z);
             if (state!=null) chunk.setBlockState(pos.set(x,y,z),state,false);
         }
     }

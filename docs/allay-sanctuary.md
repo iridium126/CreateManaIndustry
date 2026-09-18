@@ -56,11 +56,20 @@
 | `root_bark` / `root_core` / `root_moss` | 主根与分根树皮、内部木质、表面苔藓 |
 | `wall_base` / `wall_light` / `wall_dark` | 喀斯特岩壁和谷底的主材、浅色层、深色层 |
 
-每项是完整Minecraft BlockState，支持模组命名空间和方块属性，例如：
+每项可以是完整 Minecraft BlockState，也可以是带权重的 `variants` 对象。后者会在同一个材质符号下均匀覆盖坐标并按权重抽取，例如：
 
 ```json
 "root_bark": { "Name": "minecraft:dark_oak_wood", "Properties": { "axis": "y" } }
 ```
+
+```json
+"wall_base": { "variants": [
+  { "weight": 3, "state": { "Name": "minecraft:dripstone_block" } },
+  { "weight": 1, "state": { "Name": "minecraft:tuff" } }
+] }
+```
+
+选择输入为世界种子和方块坐标的稳定哈希，因此同一方块在 `sample`、区块写入、跨区块反向生成中结果一致，不受遍历顺序影响；权重 `3:1` 表示长期约四分之三与四分之一的比例。每个候选方块都单独执行下方的材质校验。
 
 所有项必须存在，未知键或无法解码的方块会明确报错。禁止空气、流体及方块实体；结构材质要求完整碰撞立方体，两个`*_slab`项必须是下半砖。绳索和发光节点允许非完整立方体。
 

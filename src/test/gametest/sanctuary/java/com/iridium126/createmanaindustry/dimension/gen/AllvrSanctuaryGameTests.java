@@ -81,7 +81,12 @@ public final class AllvrSanctuaryGameTests {
         try(var stream=AllvrSanctuaryGameTests.class.getResourceAsStream("/data/createmanaindustry/markov/sanctuary_palette.json")) {
             json=com.google.gson.JsonParser.parseReader(new java.io.InputStreamReader(stream)).getAsJsonObject();
         }
-        new SanctuaryPalette(json);
+        var bundled = new SanctuaryPalette(json);
+        int wallBase = SanctuaryPalette.KEYS.indexOf("wall_base") + 2;
+        var wallMaterials = new HashSet<net.minecraft.world.level.block.Block>();
+        for (long seed = 0; seed < 128; seed++) wallMaterials.add(bundled.material(wallBase, seed).getBlock());
+        helper.assertTrue(wallMaterials.contains(Blocks.DRIPSTONE_BLOCK)
+            && wallMaterials.contains(Blocks.TUFF), "Weighted wall_base variants did not mix");
         var custom=json.deepCopy();
         custom.add("bridge_deck",com.google.gson.JsonParser.parseString("{\"Name\":\"createmanaindustry:prismarine_quartz_block\"}"));
         var palette=new SanctuaryPalette(custom);

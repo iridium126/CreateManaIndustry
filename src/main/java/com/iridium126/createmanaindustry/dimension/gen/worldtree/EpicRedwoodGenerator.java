@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.dimension.gen.worldtree;
 
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
+import com.iridium126.createmanaindustry.dimension.gen.BlockStateVariants;
 import com.iridium126.createmanaindustry.worldgen.markov.EpicRedwoodModel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
@@ -14,8 +15,10 @@ public final class EpicRedwoodGenerator {
 
     private final EpicRedwoodTree epicRedwood;
     private final EpicRedwoodPalette palette;
+    private final long seed;
 
     public EpicRedwoodGenerator(long seed) {
+        this.seed = seed;
         epicRedwood = EpicRedwoodTree.forSeed(seed);
         palette = EpicRedwoodPalette.bundled();
     }
@@ -35,7 +38,8 @@ public final class EpicRedwoodGenerator {
 
     public BlockState sample(int x, int y, int z) {
         if (!intersects(x, y, z, 1)) return null;
-        return palette.state(epicRedwood.volume().get(x - MIN_XZ, z - MIN_XZ, y - BASE_Y));
+        return palette.state(epicRedwood.volume().get(x - MIN_XZ, z - MIN_XZ, y - BASE_Y),
+            BlockStateVariants.coordinateSeed(seed, x, y, z));
     }
 
     public void generate(ChunkAccess chunk) {
@@ -71,7 +75,8 @@ public final class EpicRedwoodGenerator {
         var volume = epicRedwood.volume();
         if (!volume.intersects(x0 - MIN_XZ, z0 - MIN_XZ, y0 - BASE_Y, 16)) return;
         for (int y = y0; y < y0 + 16; y++) for (int z = z0; z < z0 + 16; z++) for (int x = x0; x < x0 + 16; x++) {
-            BlockState state = palette.state(volume.get(x - MIN_XZ, z - MIN_XZ, y - BASE_Y));
+            BlockState state = palette.state(volume.get(x - MIN_XZ, z - MIN_XZ, y - BASE_Y),
+                BlockStateVariants.coordinateSeed(seed, x, y, z));
             if (state != null) writer.set(x, y, z, state);
         }
     }

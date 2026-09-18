@@ -18,7 +18,7 @@
 ## 方块映射
 
 开发者配置：`src/main/resources/data/createmanaindustry/markov/epic_redwood_palette.json`。
-全部 14 个实体材料必须配置，B 不可配置。允许任意命名空间，但方块必须已注册、非空气、无流体、无方块实体。
+全部 14 个实体材料必须配置，B 不可配置。每个材料可以直接填写 BlockState，也可以填写带正整数权重的 `variants` 对象，将一种 MarkovJunior 符号稳定地映射为多种方块。允许任意命名空间，但每个候选方块必须已注册、非空气、无流体、无方块实体。
 
 | 符号 | 用途 | 默认方块 |
 | --- | --- | --- |
@@ -32,6 +32,17 @@
 | M | 树皮苔藓 | 苔藓块 |
 
 全部叶片使用 `persistent=true`；木藤采用无需邻接支撑的实体方块。资源是 classpath 配置，修改后需重新构建并重启。
+
+例如，`D` 可以配置为：
+
+```json
+"D": { "variants": [
+  { "weight": 3, "state": { "Name": "minecraft:dark_oak_wood", "Properties": { "axis": "y" } } },
+  { "weight": 1, "state": { "Name": "minecraft:spruce_wood", "Properties": { "axis": "y" } } }
+] }
+```
+
+生成器以世界种子和方块坐标计算稳定哈希后按权重选择，预览与实际写入保持一致，`3:1` 表示约四分之三与四分之一的空间混合比例。
 生成版本为 5。已有 Chunk/Cube 不自动重种，也不会覆盖玩家修改；验收整棵新版树请使用新世界。
 
 ## 2026-09-17 验证
