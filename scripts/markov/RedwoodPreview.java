@@ -1,4 +1,4 @@
-import com.iridium126.createmanaindustry.worldgen.markov.*;
+import com.iridium126.createmanaindustry.dimension.gen.markov.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.file.*;

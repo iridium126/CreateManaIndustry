@@ -1,19 +1,82 @@
 {
-  "path": {"Name":"minecraft:stone_bricks"},
-  "path_slab": {"Name":"minecraft:stone_brick_slab","Properties":{"type":"bottom","waterlogged":"false"}},
-  "bridge_deck": {"Name":"minecraft:spruce_planks"},
-  "bridge_slab": {"Name":"minecraft:spruce_slab","Properties":{"type":"bottom","waterlogged":"false"}},
-  "timber": {"Name":"minecraft:stripped_dark_oak_log","Properties":{"axis":"y"}},
-  "rope": {"Name":"minecraft:chain","Properties":{"axis":"y","waterlogged":"false"}},
-  "light": {"Name":"minecraft:ochre_froglight","Properties":{"axis":"y"}},
-  "root_bark": {"Name":"minecraft:dark_oak_wood","Properties":{"axis":"y"}},
-  "root_core": {"Name":"minecraft:stripped_dark_oak_wood","Properties":{"axis":"y"}},
-  "root_moss": {"Name":"minecraft:moss_block"},
-  "support": {"Name":"minecraft:mossy_stone_bricks"},
-  "wall_base": {"variants":[
-    {"weight":3,"state":{"Name":"minecraft:dripstone_block"}},
-    {"weight":1,"state":{"Name":"minecraft:tuff"}}
-  ]},
-  "wall_light": {"Name":"minecraft:calcite"},
-  "wall_dark": {"Name":"minecraft:andesite"}
+  "path": {
+    "variants": [
+      {"weight": 8, "state": {"Name": "minecraft:stone_bricks"}},
+      {"weight": 4, "state": {"Name": "minecraft:stone"}},
+      {"weight": 1, "state": {"Name": "minecraft:cracked_stone_bricks"}},
+      {"weight": 1, "state": {"Name": "minecraft:mossy_stone_bricks"}}
+    ]
+  },
+  "path_slab": {
+    "variants": [
+      {"weight": 8, "state": {"Name": "minecraft:stone_brick_slab", "Properties": {"type": "bottom", "waterlogged": "false"}}},
+      {"weight": 4, "state": {"Name": "minecraft:stone_slab", "Properties": {"type": "bottom", "waterlogged": "false"}}},
+      {"weight": 1, "state": {"Name": "minecraft:mossy_stone_brick_slab", "Properties": {"type": "bottom", "waterlogged": "false"}}}
+    ]
+  },
+  "bridge_deck": {
+    "variants": [
+      {"weight": 3, "state": {"Name": "minecraft:spruce_planks"}},
+      {"weight": 1, "state": {"Name": "minecraft:oak_planks"}}
+    ]
+  },
+  "bridge_slab": {
+    "variants": [
+      {"weight": 3, "state": {"Name": "minecraft:spruce_slab", "Properties": {"type": "bottom", "waterlogged": "false"}}},
+      {"weight": 1, "state": {"Name": "minecraft:oak_slab", "Properties": {"type": "bottom", "waterlogged": "false"}}}
+    ]
+  },
+  "timber": {
+    "Name": "minecraft:stripped_dark_oak_log",
+    "Properties": {"axis": "y"}
+  },
+  "rope": {
+    "variants": [
+      {"weight": 3, "state": {"Name": "minecraft:oak_fence"}},
+      {"weight": 2, "state": {"Name": "minecraft:jungle_fence"}},
+      {"weight": 1, "state": {"Name": "minecraft:birch_fence"}}
+    ]
+  },
+  "light": {
+    "Name": "minecraft:ochre_froglight",
+    "Properties": {"axis": "y"}
+  },
+  "root_bark": {
+    "Name": "minecraft:dark_oak_wood",
+    "Properties": {"axis": "y"}
+  },
+  "root_core": {
+    "Name": "minecraft:stripped_dark_oak_wood",
+    "Properties": {"axis": "y"}
+  },
+  "root_moss": {
+    "Name": "minecraft:moss_block"
+  },
+  "support": {
+    "variants": [
+      {"weight": 9, "state": {"Name": "minecraft:mossy_stone_bricks"}},
+      {"weight": 3, "state": {"Name": "minecraft:cracked_stone_bricks"}},
+      {"weight": 1, "state": {"Name": "minecraft:mossy_cobblestone"}},
+      {"weight": 1, "state": {"Name": "minecraft:cobblestone"}}
+    ]
+  },
+  "wall_base": {
+    "variants": [
+      {"weight": 2, "state": {"Name": "minecraft:stone"}},
+      {"weight": 1, "state": {"Name": "minecraft:andesite"}}
+    ]
+  },
+  "wall_light": {
+    "variants": [
+      {"weight": 3, "state": {"Name": "minecraft:calcite"}},
+      {"weight": 1, "state": {"Name": "minecraft:stone"}}
+    ]
+  },
+  "wall_dark": {
+    "variants": [
+      {"weight": 9, "state": {"Name": "minecraft:deepslate"}},
+      {"weight": 3, "state": {"Name": "minecraft:dripstone_block"}},
+      {"weight": 1, "state": {"Name": "minecraft:granite"}}
+    ]
+  }
 }

@@ -1,4 +1,4 @@
-package com.iridium126.createmanaindustry.worldgen.markov;
+package com.iridium126.createmanaindustry.dimension.gen.markov;
 
 /** Small botanical forms clipped by the original crown/liana density envelope. */
 final class RedwoodBotany {

@@ -1,4 +1,4 @@
-package com.iridium126.createmanaindustry.worldgen.markov;
+package com.iridium126.createmanaindustry.dimension.gen.markov;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import net.minecraft.core.BlockPos;

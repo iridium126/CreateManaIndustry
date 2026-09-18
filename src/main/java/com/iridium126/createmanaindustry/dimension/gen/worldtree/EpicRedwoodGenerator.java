@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.dimension.gen.worldtree;
 
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.gen.BlockStateVariants;
-import com.iridium126.createmanaindustry.worldgen.markov.EpicRedwoodModel;
+import com.iridium126.createmanaindustry.dimension.gen.markov.EpicRedwoodModel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;

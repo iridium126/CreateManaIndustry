@@ -4,7 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.List;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -15,13 +15,9 @@ public final class SanctuaryPalette {
     public static final List<String> KEYS=List.of("path","path_slab","bridge_deck","bridge_slab",
         "timber","rope","light","root_bark","root_core","root_moss","support",
         "wall_base","wall_light","wall_dark");
-    private final Map<String,BlockStateVariants> states;
+    private final BlockStatePalette palette;
     public SanctuaryPalette(JsonObject json) {
-        var parsed=new HashMap<String,BlockStateVariants>();
-        for(String key:json.keySet()) if(!KEYS.contains(key)) throw new IllegalArgumentException("Unknown sanctuary material: "+key);
-        for(String key:KEYS) {
-            if(!json.has(key)) throw new IllegalArgumentException("Missing sanctuary material: "+key);
-            parsed.put(key, BlockStateVariants.parse(json.get(key), "Sanctuary material: " + key, state -> {
+        palette = BlockStatePalette.parse(json, KEYS, "sanctuary", (key, state) -> {
                 if(state.isAir() || !state.getFluidState().isEmpty() || state.hasBlockEntity())
                     throw new IllegalArgumentException("Sanctuary material must be registered, non-air, dry and without block entity: "+key);
                 if(key.endsWith("_slab") && (!state.hasProperty(BlockStateProperties.SLAB_TYPE)
@@ -30,12 +26,10 @@ public final class SanctuaryPalette {
                 if(!key.endsWith("_slab") && !key.equals("rope") && !key.equals("light")
                         && !state.isCollisionShapeFullBlock(net.minecraft.world.level.EmptyBlockGetter.INSTANCE,net.minecraft.core.BlockPos.ZERO))
                     throw new IllegalArgumentException("Structural sanctuary material needs a full collision cube: "+key);
-            }));
-        }
-        states=Map.copyOf(parsed);
+            });
     }
     public BlockState get(String key) { return get(key, 0L); }
-    public BlockState get(String key, long randomSeed) { return Objects.requireNonNull(states.get(key),key).choose(randomSeed); }
+    public BlockState get(String key, long randomSeed) { return palette.get(key, randomSeed); }
     public BlockState material(int symbol) {
         return material(symbol, 0L);
     }

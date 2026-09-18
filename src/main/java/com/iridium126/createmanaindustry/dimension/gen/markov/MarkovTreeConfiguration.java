@@ -1,4 +1,4 @@
-package com.iridium126.createmanaindustry.worldgen.markov;
+package com.iridium126.createmanaindustry.dimension.gen.markov;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;

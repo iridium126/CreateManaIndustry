@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.dimension.gen.worldtree;
 
-import com.iridium126.createmanaindustry.worldgen.markov.EpicRedwoodModel;
-import com.iridium126.createmanaindustry.worldgen.markov.RedwoodVolume;
+import com.iridium126.createmanaindustry.dimension.gen.markov.EpicRedwoodModel;
+import com.iridium126.createmanaindustry.dimension.gen.markov.RedwoodVolume;
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
 import java.util.Map;

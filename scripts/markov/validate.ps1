@@ -7,7 +7,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Upstream build failed' }
     dotnet run --project scripts/markov/ReferenceBenchmark.csproj -c Release -- build/markov-upstream/Upstream.dll src/main/resources/data/createmanaindustry/markov/natural_small_tree.xml build/markov-validation
     if ($LASTEXITCODE -ne 0) { throw 'Reference benchmark failed' }
-    javac -d build/markov-validation src/main/java/com/iridium126/createmanaindustry/worldgen/markov/DotNetRandom.java src/main/java/com/iridium126/createmanaindustry/worldgen/markov/MarkovModel.java scripts/markov/MarkovValidation.java
+    javac -d build/markov-validation src/main/java/com/iridium126/createmanaindustry/dimension/gen/markov/DotNetRandom.java src/main/java/com/iridium126/createmanaindustry/dimension/gen/markov/MarkovModel.java scripts/markov/MarkovValidation.java
     if ($LASTEXITCODE -ne 0) { throw 'Java compilation failed' }
     java -cp build/markov-validation MarkovValidation src/main/resources/data/createmanaindustry/markov/natural_small_tree.xml build/markov-validation
     if ($LASTEXITCODE -ne 0) { throw 'Correctness or performance gate failed' }

@@ -9,7 +9,7 @@ try {
     dotnet build scripts/markov/RedwoodReference.csproj -c Release -o build/redwood-reference
     if ($LASTEXITCODE -ne 0) { throw 'Reference harness build failed' }
     $sources = @('DotNetRandom', 'MarkovModel', 'RedwoodVolume', 'RedwoodRefinement', 'RedwoodBotany', 'EpicRedwoodModel') | ForEach-Object {
-        "src/main/java/com/iridium126/createmanaindustry/worldgen/markov/$_.java"
+        "src/main/java/com/iridium126/createmanaindustry/dimension/gen/markov/$_.java"
     }
     javac -d build/redwood-validation @sources scripts/markov/RedwoodValidation.java scripts/markov/RedwoodPreview.java
     if ($LASTEXITCODE -ne 0) { throw 'Java compilation failed' }

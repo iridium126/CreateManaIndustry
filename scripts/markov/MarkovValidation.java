@@ -1,4 +1,4 @@
-import com.iridium126.createmanaindustry.worldgen.markov.MarkovModel;
+import com.iridium126.createmanaindustry.dimension.gen.markov.MarkovModel;
 import java.nio.*;
 import java.nio.file.*;
 import java.util.*;

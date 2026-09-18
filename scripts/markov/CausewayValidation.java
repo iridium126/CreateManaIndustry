@@ -1,6 +1,6 @@
 import com.iridium126.createmanaindustry.dimension.gen.AllvrSanctuary;
 import com.iridium126.createmanaindustry.dimension.gen.SanctuaryNetwork;
-import com.iridium126.createmanaindustry.worldgen.markov.MarkovModel;
+import com.iridium126.createmanaindustry.dimension.gen.markov.MarkovModel;
 import java.nio.file.*;
 import java.util.*;
 import java.awt.image.BufferedImage;

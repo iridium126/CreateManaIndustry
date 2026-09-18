@@ -1,4 +1,4 @@
-package com.iridium126.createmanaindustry.worldgen.markov;
+package com.iridium126.createmanaindustry.dimension.gen.markov;
 
 /** Seeded System.Random compatibility, including its draw order. */
 public final class DotNetRandom {

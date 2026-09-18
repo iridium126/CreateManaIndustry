@@ -8,6 +8,25 @@
 
 ## 开发者配置
 
+代码按生成职责集中在 `src/main/java/com/iridium126/createmanaindustry/dimension/gen`：
+
+- `markov/` 是可复用的 MarkovJunior 编译器、执行器和 Feature 适配器；未来的建筑模型直接复用 `MarkovModel` 或 `MarkovTreeFeature`。
+- `markov/` 中的 `EpicRedwoodModel`、`RedwoodVolume`、`RedwoodRefinement` 和 `RedwoodBotany` 是世界树专用扩展，和通用执行器共用同一个包层级。
+- `BlockStatePalette` 负责命名键、严格 JSON 校验和确定性取样；`BlockStateVariants` 只负责单个键的加权方块状态列表。世界树和悦灵 sanctuary palette 均通过这两个类解析。
+
+palette 的任意键都可以写成单个状态，也可以写成按权重混合的状态列表。权重不需要归一化，生成器使用世界种子和方块坐标确定性取样：
+
+```json
+"wall_base": {
+  "variants": [
+    { "weight": 5, "state": { "Name": "minecraft:stone" } },
+    { "weight": 2, "state": { "Name": "minecraft:andesite" } }
+  ]
+}
+```
+
+原来的 `worldgen/markov` 包已迁移到 `dimension/gen/markov`；验证脚本、注册入口和测试使用相同的新包路径，避免未来增加建筑模型时再次分散生成代码。
+
 修改 `src/main/resources/data/createmanaindustry/worldgen/configured_feature/natural_small_tree.json`
 的 `config.palette`，或通过数据包覆盖相同资源位置。每个字符映射一个完整 Minecraft `BlockState`：
 
