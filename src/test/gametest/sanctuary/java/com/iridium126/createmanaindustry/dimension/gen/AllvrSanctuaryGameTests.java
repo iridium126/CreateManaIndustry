@@ -12,6 +12,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FenceBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.LanternBlock;
+import net.minecraft.world.level.block.VineBlock;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.chunk.ProtoChunk;
 import net.minecraft.world.level.chunk.UpgradeData;
@@ -56,6 +57,9 @@ public final class AllvrSanctuaryGameTests {
         for(long key:targets) expected.put(key,generate(helper,forwardGenerator,new ChunkPos(key)));
         var reverse=new ArrayList<>(targets);Collections.reverse(reverse);
         var pos=new BlockPos.MutableBlockPos();
+        for(long anchor:forwardGenerator.network.timberAnchorColumns())
+            helper.assertTrue(forwardGenerator.network.timberAnchorColumnConnected((int)(anchor>>32),(int)anchor),
+                "Floating timber anchor column at "+(int)(anchor>>32)+","+(int)anchor);
         int checked=0,amethyst=0,budding=0,clusters=0,roots=0,ropes=0,gates=0,lanterns=0,clear=0;
         for(long key:reverse) {
             var actual=generate(helper,reverseGenerator,new ChunkPos(key));
@@ -78,9 +82,22 @@ public final class AllvrSanctuaryGameTests {
                     lanterns++;
                     helper.assertTrue(state.getValue(BlockStateProperties.HANGING), "Path lantern must hang at "+pos);
                 }
+                if(state.getBlock() instanceof VineBlock) for(Direction face:Direction.Plane.HORIZONTAL)
+                    if(state.getValue(VineBlock.getPropertyForFace(face)))
+                        helper.assertTrue(AllvrSanctuaryGenerator.canHostSideVine(
+                            forwardGenerator.network.get(x+face.getStepX(),y,z+face.getStepZ())),
+                            "Side vine attached to a half slab at "+pos);
                 if(material==SanctuaryNetwork.ROPE && forwardGenerator.network.isVerticalRope(x,y,z))
                     helper.assertTrue(state.getBlock() instanceof FenceBlock,
                         "Vertical rope intersection must remain a fence at "+pos);
+                if(material==SanctuaryNetwork.ROPE && forwardGenerator.network.get(x,y-1,z)==SanctuaryNetwork.TIMBER)
+                    helper.assertTrue(forwardGenerator.network.isVerticalRope(x,y,z),
+                        "Rope above timber must be vertical at "+pos);
+                if(material==SanctuaryNetwork.TIMBER) {
+                    int below=forwardGenerator.network.get(x,y-1,z);
+                    helper.assertTrue(below!=SanctuaryNetwork.PATH_SLAB && below!=SanctuaryNetwork.DECK_SLAB,
+                        "Timber stands on a half slab at "+pos);
+                }
                 if(Math.hypot(x,z)<=90 && y==95) helper.assertTrue(state.is(Blocks.GRASS_BLOCK),"Platform changed");
                 if(Math.hypot(x,z)>=700 && y==110) helper.assertTrue(state.is(Blocks.STONE),"Outer terrain changed");
             }

@@ -66,11 +66,38 @@ class AllvrSanctuaryTest {
     @Test void verticalHangersKeepTheirTopRopeVertical() {
         for(long seed:new long[]{0,42,137,-1}) {
             var n=new SanctuaryNetwork(seed);
+            int[] ropes={0};
             n.forEach((x,y,z,m)-> {
+                if(m==SanctuaryNetwork.ROPE) ropes[0]++;
                 if(m==SanctuaryNetwork.ROPE && n.isVerticalRope(x,y-1,z))
                     assertTrue(n.isVerticalRope(x,y,z),
                         "Top of a continuous hanger must remain vertical at "+x+","+y+","+z);
+                if(m==SanctuaryNetwork.ROPE && n.get(x,y-1,z)==SanctuaryNetwork.TIMBER)
+                    assertTrue(n.isVerticalRope(x,y,z),
+                        "Rope directly above timber must be vertical at "+x+","+y+","+z);
+                if(m==SanctuaryNetwork.TIMBER) {
+                    int below=n.get(x,y-1,z);
+                    assertFalse(below==SanctuaryNetwork.PATH_SLAB || below==SanctuaryNetwork.DECK_SLAB,
+                        "Timber must not stand on a half slab at "+x+","+y+","+z);
+                }
             });
+            assertTrue(ropes[0]>0,"Route clearance removed every rope");
+        }
+    }
+
+    @Test void sideVinesRejectHalfSlabFaces() {
+        assertFalse(AllvrSanctuaryGenerator.canHostSideVine(SanctuaryNetwork.PATH_SLAB));
+        assertFalse(AllvrSanctuaryGenerator.canHostSideVine(SanctuaryNetwork.DECK_SLAB));
+        assertTrue(AllvrSanctuaryGenerator.canHostSideVine(SanctuaryNetwork.PATH));
+        assertTrue(AllvrSanctuaryGenerator.canHostSideVine(SanctuaryNetwork.DECK));
+    }
+
+    @Test void timberAnchorTowersReachARealSupport() {
+        for(long seed:new long[]{0,42,137,-1}) {
+            var n=new SanctuaryNetwork(seed);
+            for(long key:n.timberAnchorColumns())
+                assertTrue(n.timberAnchorColumnConnected((int)(key>>32),(int)key),
+                    "Floating timber anchor column at "+(int)(key>>32)+","+(int)key);
         }
     }
 

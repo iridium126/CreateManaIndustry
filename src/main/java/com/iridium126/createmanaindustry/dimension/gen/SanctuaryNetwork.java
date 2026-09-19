@@ -19,6 +19,10 @@ public final class SanctuaryNetwork {
     private final Set<Long> verticalRopes = new HashSet<>();
     private final Map<Long, Direction> horizontalRopes = new HashMap<>();
     private final Map<Long, Integer> verticalRopeConnections = new HashMap<>();
+    // World-space columns occupied by the vertical timber anchor towers.  The
+    // route clearance pass can cut a tower into separate runs; these columns
+    // are repaired after all routes have been stamped.
+    private final Set<Long> timberAnchorColumns = new HashSet<>();
     // Route identity lets a vertical overlap move the whole connected surface,
     // instead of removing one cell from a bridge or gallery junction.
     private final Map<Long,Integer> slabOwners = new HashMap<>();
@@ -88,7 +92,7 @@ public final class SanctuaryNetwork {
         }
         for (int station=0; station<10; station++) {
             double angle=station*Math.PI/5;
-            Point rim=polar(219,96,angle-.36),end=wall(1,2,angle);
+            Point end=wall(1,2,angle);
             addRoute("entrance",t -> {
                 double a=angle-.36+.36*t;
                 return polar(219+(Math.hypot(end.x,end.z)-219)*t,96+(end.y-96)*AllvrSanctuary.smooth(t),a);
@@ -114,16 +118,100 @@ public final class SanctuaryNetwork {
         for (long pos : clearances) {
             int x = (int) (pos >> 40), y = (int) ((pos >> 20) & 0xfffff) - 512, z = (int) (pos & 0xfffff) - 512;
             int material = get(x, y, z);
-            if (material < PATH || material > TIMBER)
+            // Route headroom must not erase cable or its periodic light markers;
+            // those blocks are structural fixtures rather than terrain fill.
+            if (material < PATH || material > LIGHT)
                 put(x, y, z, CLEAR);
         }
         clearances.clear();
+        replaceSlabsBelowTimber();
+        repairTimberAnchorColumns();
+        // Anchor repair may extend a timber run into a cell that was clear
+        // during the first pass; normalize those newly created bottoms too.
+        replaceSlabsBelowTimber();
         promoteVerticalRopeChains();
         calculateVerticalRopeConnections();
     }
 
+    /** Replace route half-steps directly below timber with full timber supports. */
+    private void replaceSlabsBelowTimber() {
+        var cells = new ArrayList<int[]>();
+        forEach((x, y, z, material) -> {
+            if (material == TIMBER && (get(x, y - 1, z) == PATH_SLAB || get(x, y - 1, z) == DECK_SLAB))
+                cells.add(new int[]{x, y - 1, z});
+        });
+        for (int[] cell : cells) replaceSlabWithTimber(cell[0], cell[1], cell[2]);
+    }
+
+    /** Join every timber run in an anchor column to the first solid block below it. */
+    private void repairTimberAnchorColumns() {
+        for (long key : timberAnchorColumns) {
+            int x = (int) (key >> 32), z = (int) key;
+            scanTimberAnchorColumn(x, z, true);
+        }
+    }
+
+    private boolean scanTimberAnchorColumn(int x, int z, boolean repair) {
+        boolean connected = true;
+        for (int y = -16; y <= 110;) {
+            while (y <= 110 && get(x, y, z) != TIMBER) y++;
+            if (y > 110) break;
+            int runStart = y;
+            while (y + 1 <= 110 && get(x, y + 1, z) == TIMBER) y++;
+            int below = runStart - 1;
+            if (below >= -16 && !isTimberSupport(x, below, z)) {
+                connected = false;
+                if (!repair) return false;
+                int support = below;
+                while (support >= -16 && !isTimberSupport(x, support, z)) support--;
+                for (int fill = below; fill > support; fill--) {
+                    int material = get(x, fill, z);
+                    if (material == NONE || material == CLEAR) put(x, fill, z, TIMBER);
+                    else break;
+                }
+            }
+            y++;
+        }
+        return connected;
+    }
+
+    private boolean isTimberSupport(int x, int y, int z) {
+        int material = get(x, y, z);
+        if (material == NONE) return y <= 95 && !terrain.cavity(terrain.column(x, z), y);
+        // Any emitted block, including a fence or light at a junction, closes
+        // the visible gap below the timber.  Only explicit clearance is air.
+        return material != CLEAR;
+    }
+
+    private void replaceSlabWithTimber(int x, int y, int z) {
+        long key = position(x, y, z);
+        byte[] data = pages.get(page(x, y, z));
+        if (data == null) return;
+        data[(x & 15) | ((z & 15) << 4) | ((y & 15) << 8)] = (byte) TIMBER;
+        slabOwners.remove(key);
+        verticalRopes.remove(key);
+        horizontalRopes.remove(key);
+    }
+
+    Set<Long> timberAnchorColumns() {
+        return Collections.unmodifiableSet(timberAnchorColumns);
+    }
+
+    boolean timberAnchorColumnConnected(int x, int z) {
+        return scanTimberAnchorColumn(x, z, false);
+    }
+
     /** Promote every contiguous rope directly above a vertical hanger. */
     private void promoteVerticalRopeChains() {
+        // Timber anchor posts are also vertical rope roots.  Register their
+        // first rope cell before extending through any contiguous cable above.
+        forEach((x, y, z, material) -> {
+            if (material == TIMBER && get(x, y + 1, z) == ROPE) {
+                long key = position(x, y + 1, z);
+                verticalRopes.add(key);
+                horizontalRopes.remove(key);
+            }
+        });
         for(long key:new ArrayList<>(verticalRopes)) {
             int x=(int)(key>>40), y=(int)(((key>>20)&0xfffff)-512), z=(int)((key&0xfffff)-512);
             for(int aboveY=y+1;;aboveY++) {
@@ -327,8 +415,16 @@ public final class SanctuaryNetwork {
         Direction connectionDirection=horizontalDirection(a,b);
         for(int side:new int[]{-1,1}) {
             // Tall timber anchor towers, a catenary-like cable and regularly spaced hangers.
-            for(Point end:List.of(a,b)) for(int y=(int)end.y-3;y<=end.y+7;y++)
-                put((int)Math.round(end.x+nx*side*(width+.8)),y,(int)Math.round(end.z+nz*side*(width+.8)),TIMBER);
+            for(Point end:List.of(a,b)) {
+                int towerX=(int)Math.round(end.x+nx*side*(width+.8));
+                int towerZ=(int)Math.round(end.z+nz*side*(width+.8));
+                timberAnchorColumns.add(columnKey(towerX,towerZ));
+                // The tower stands on the bridge/root surface.  Starting three
+                // blocks below the deck left a visible unsupported timber tail
+                // whenever the clearance pass removed the intervening cells.
+                int towerBottom=(int)Math.ceil(end.y)-1;
+                for(int y=towerBottom;y<=end.y+7;y++) put(towerX,y,towerZ,TIMBER);
+            }
             if(kind.equals("wall-bridge")) for(Point end:List.of(a,b)) {
                 Point tower=end.add(nx*side*(width+.8),0,nz*side*(width+.8));
                 double r=Math.hypot(tower.x,tower.z),anchor=r<150?88:216;
@@ -454,6 +550,7 @@ public final class SanctuaryNetwork {
     }
 
     private static long position(int x,int y,int z) { return ((long)x<<40)|((long)(y+512)<<20)|(z+512); }
+    private static long columnKey(int x,int z) { return ((long)x<<32) ^ (z&0xffffffffL); }
     private static long page(int x,int y,int z) { return position(x>>4,y>>4,z>>4); }
     private void put(int x,int y,int z,int value) {
         if(x < -250 || x > 250 || z < -250 || z > 250 || y < -16 || y > 110) return;

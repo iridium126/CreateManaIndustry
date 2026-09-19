@@ -128,6 +128,15 @@ final class AllvrSanctuaryGenerator {
         return y <= 95 && !field.cavity(c, y);
     }
 
+    /** Side vines need a full face; a bottom slab leaves a visible half-block gap. */
+    static boolean canHostSideVine(int material) {
+        return material!=SanctuaryNetwork.PATH_SLAB && material!=SanctuaryNetwork.DECK_SLAB;
+    }
+
+    private boolean vineSupport(int x, int y, int z) {
+        return canHostSideVine(network.get(x,y,z)) && solid(x,y,z);
+    }
+
     void decorate(ChunkAccess chunk) {
         int x0 = chunk.getPos().getMinBlockX(), z0 = chunk.getPos().getMinBlockZ();
         var pos = new BlockPos.MutableBlockPos();
@@ -160,7 +169,7 @@ final class AllvrSanctuaryGenerator {
                 }
                 if (!here && !above && choice < .065 && y < 94) {
                     for (Direction face : Direction.Plane.HORIZONTAL) {
-                        if (!solid(x + face.getStepX(), y, z + face.getStepZ())) continue;
+                        if (!vineSupport(x + face.getStepX(), y, z + face.getStepZ())) continue;
                         var vine = Blocks.VINE.defaultBlockState().setValue(VineBlock.getPropertyForFace(face), true);
                         chunk.setBlockState(pos.set(x, y, z), vine, false);
                         break;
