@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.dimension.gen;
 import com.iridium126.createmanaindustry.dimension.gen.markov.MarkovModel;
 import java.util.*;
 import java.util.function.DoubleFunction;
+import net.minecraft.core.Direction;
 
 /** Immutable, sparsely paged architecture compiled from a genuine three-dimensional MJ program. */
 public final class SanctuaryNetwork {
@@ -15,6 +16,9 @@ public final class SanctuaryNetwork {
     private final List<Route> routes = new ArrayList<>();
     private final List<Root> roots = new ArrayList<>();
     private final List<Point> geodes = new ArrayList<>();
+    private final Set<Long> verticalRopes = new HashSet<>();
+    private final Map<Long, Direction> horizontalRopes = new HashMap<>();
+    private final Map<Long, Integer> verticalRopeConnections = new HashMap<>();
     // Route identity lets a vertical overlap move the whole connected surface,
     // instead of removing one cell from a bridge or gallery junction.
     private final Map<Long,Integer> slabOwners = new HashMap<>();
@@ -34,6 +38,11 @@ public final class SanctuaryNetwork {
     public List<Route> routes() { return Collections.unmodifiableList(routes); }
     public List<Root> roots() { return Collections.unmodifiableList(roots); }
     public List<Point> geodes() { return Collections.unmodifiableList(geodes); }
+    public boolean isVerticalRope(int x, int y, int z) { return verticalRopes.contains(position(x, y, z)); }
+    public Direction ropeConnectionDirection(int x, int y, int z) { return horizontalRopes.get(position(x, y, z)); }
+    public boolean verticalRopeConnects(int x, int y, int z, Direction direction) {
+        return (verticalRopeConnections.getOrDefault(position(x, y, z), 0) & directionBit(direction)) != 0;
+    }
 
     public SanctuaryNetwork(long seed) {
         this.seed = seed;
@@ -102,12 +111,65 @@ public final class SanctuaryNetwork {
         // do not consume a Markov module or turn into player-facing side branches.
         placeBottomGeodes();
         // All routing is complete before carving headroom; cables/foliage cannot close the main paths.
-        for (long pos:clearances) {
-            int x=(int)(pos>>40), y=(int)((pos>>20)&0xfffff)-512, z=(int)(pos&0xfffff)-512;
-            int material=get(x,y,z);
-            if(material<PATH || material>DECK_SLAB) put(x,y,z,CLEAR);
+        for (long pos : clearances) {
+            int x = (int) (pos >> 40), y = (int) ((pos >> 20) & 0xfffff) - 512, z = (int) (pos & 0xfffff) - 512;
+            int material = get(x, y, z);
+            if (material < PATH || material > TIMBER)
+                put(x, y, z, CLEAR);
         }
         clearances.clear();
+        promoteVerticalRopeChains();
+        calculateVerticalRopeConnections();
+    }
+
+    /** Promote every contiguous rope directly above a vertical hanger. */
+    private void promoteVerticalRopeChains() {
+        for(long key:new ArrayList<>(verticalRopes)) {
+            int x=(int)(key>>40), y=(int)(((key>>20)&0xfffff)-512), z=(int)((key&0xfffff)-512);
+            for(int aboveY=y+1;;aboveY++) {
+                if(get(x,aboveY,z)!=ROPE) break;
+                long above=position(x,aboveY,z);
+                verticalRopes.add(above);
+                horizontalRopes.remove(above);
+            }
+        }
+    }
+
+    private void calculateVerticalRopeConnections() {
+        // Resolve the fence shape from the complete voxel graph before chunks are emitted;
+        // this keeps connection states identical regardless of chunk generation order.
+        for(long key:verticalRopes) {
+            int x=(int)(key>>40), y=(int)(((key>>20)&0xfffff)-512), z=(int)((key&0xfffff)-512);
+            int mask=0;
+            for(Direction direction:Direction.Plane.HORIZONTAL) {
+                int nx=x+direction.getStepX(), nz=z+direction.getStepZ(), material=get(nx,y,nz);
+                boolean connects;
+                if(material==ROPE) {
+                    if(verticalRopes.contains(position(nx,y,nz))) connects=true;
+                    else {
+                        Direction extension=horizontalRopes.get(position(nx,y,nz));
+                        connects=extension!=null && extension.getAxis()==direction.getAxis();
+                    }
+                } else if(material==NONE) {
+                    var column=terrain.column(nx,nz);
+                    connects=y<=95 && !terrain.cavity(column,y);
+                } else {
+                    connects=material!=CLEAR && material!=PATH_SLAB && material!=DECK_SLAB;
+                }
+                if(connects) mask|=directionBit(direction);
+            }
+            if(mask!=0) verticalRopeConnections.put(key,mask);
+        }
+    }
+
+    private static int directionBit(Direction direction) {
+        return switch(direction) {
+            case NORTH -> 1;
+            case EAST -> 2;
+            case SOUTH -> 4;
+            case WEST -> 8;
+            default -> 0;
+        };
     }
 
     private void placeBottomGeodes() {
@@ -262,6 +324,7 @@ public final class SanctuaryNetwork {
         DoubleFunction<Point> curve=t -> Point.lerp(a,b,t).add(0,-4*sag*t*(1-t),0);
         addRoute(kind,curve,width,true,false);
         double length=Math.hypot(b.x-a.x,b.z-a.z),nx=-(b.z-a.z)/length,nz=(b.x-a.x)/length;
+        Direction connectionDirection=horizontalDirection(a,b);
         for(int side:new int[]{-1,1}) {
             // Tall timber anchor towers, a catenary-like cable and regularly spaced hangers.
             for(Point end:List.of(a,b)) for(int y=(int)end.y-3;y<=end.y+7;y++)
@@ -274,19 +337,31 @@ public final class SanctuaryNetwork {
                     double t=k/80.0;
                     sphere(Point.lerp(tower.add(0,-2,0),rock,t),.9,TIMBER);
                     Point cable=Point.lerp(tower.add(0,7,0),rock.add(0,10,0),t);
-                    put((int)Math.round(cable.x),(int)Math.round(cable.y),(int)Math.round(cable.z),ROPE);
+                    putHorizontalRope((int)Math.round(cable.x),(int)Math.round(cable.y),(int)Math.round(cable.z),connectionDirection);
                 }
             }
             for(int step=0;step<=length*3;step++) {
                 double t=step/(length*3),offset=side*(width+.8);
                 Point deck=curve.apply(t),cable=Point.lerp(a,b,t).add(nx*offset,7-4*(sag+4)*t*(1-t),nz*offset);
                 int x=(int)Math.round(cable.x),z=(int)Math.round(cable.z),y=(int)Math.round(cable.y);
-                put(x,y,z,step%45==0?LIGHT:ROPE);
-                if(step%15==0) for(int hy=(int)Math.ceil(deck.y);hy<y;hy++) put(x,hy,z,ROPE);
+                if(step%45==0) put(x,y,z,LIGHT);
+                else putHorizontalRope(x,y,z,connectionDirection);
+                if(step%15==0) for(int hy=(int)Math.ceil(deck.y);hy<=y;hy++) {
+                    // Keep the periodic light marker at cable height, but make
+                    // every actual rope voxel in the hanger's vertical run own
+                    // the vertical-rope priority, including the former top gate.
+                    if(get(x,hy,z)!=LIGHT) putVerticalRope(x,hy,z);
+                }
                 // Lower hand rope stays about 1.5 blocks above the walking surface.
-                put(x,(int)Math.floor(deck.y+1.5),z,ROPE);
+                putHorizontalRope(x,(int)Math.floor(deck.y+1.5),z,connectionDirection);
             }
         }
+    }
+
+    private static Direction horizontalDirection(Point a, Point b) {
+        double dx=b.x-a.x,dz=b.z-a.z;
+        if (Math.abs(dx)>=Math.abs(dz)) return dx>=0 ? Direction.EAST : Direction.WEST;
+        return dz>=0 ? Direction.SOUTH : Direction.NORTH;
     }
 
     private void addRoute(String kind,DoubleFunction<Point> curve,double width,boolean wood,boolean wallSupport) {
@@ -386,6 +461,30 @@ public final class SanctuaryNetwork {
         int old=data[(x&15)|((z&15)<<4)|((y&15)<<8)];
         if(old>=PATH && old<=DECK_SLAB && value>DECK_SLAB) return;
         data[(x&15)|((z&15)<<4)|((y&15)<<8)]=(byte)value;
+        if(value!=ROPE) {
+            long key=position(x,y,z);
+            verticalRopes.remove(key);
+            horizontalRopes.remove(key);
+        }
+    }
+    private void putVerticalRope(int x,int y,int z) {
+        put(x,y,z,ROPE);
+        if(get(x,y,z)==ROPE) {
+            long key=position(x,y,z);
+            verticalRopes.add(key);
+            horizontalRopes.remove(key);
+        }
+    }
+    private void putHorizontalRope(int x,int y,int z,Direction connectionDirection) {
+        // A vertical hanger owns an intersection.  Keep its fence so the crossing
+        // remains a continuous post instead of being replaced by a gate.
+        long key=position(x,y,z);
+        if(verticalRopes.contains(key)) return;
+        put(x,y,z,ROPE);
+        if(get(x,y,z)==ROPE) {
+            verticalRopes.remove(key);
+            horizontalRopes.put(key,connectionDirection);
+        }
     }
     public int get(int x,int y,int z) {
         byte[] data=pages.get(page(x,y,z));

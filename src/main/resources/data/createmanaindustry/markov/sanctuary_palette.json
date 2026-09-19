@@ -30,7 +30,7 @@
     "Name": "minecraft:stripped_dark_oak_log",
     "Properties": {"axis": "y"}
   },
-  "rope": {
+  "rope_vertical": {
     "variants": [
       {"weight": 3, "state": {"Name": "minecraft:oak_fence"}},
       {"weight": 2, "state": {"Name": "minecraft:jungle_fence"}},
@@ -78,5 +78,16 @@
       {"weight": 3, "state": {"Name": "minecraft:dripstone_block"}},
       {"weight": 1, "state": {"Name": "minecraft:granite"}}
     ]
+  },
+  "rope_horizontal": {
+    "variants": [
+      {"weight": 3, "state": {"Name": "minecraft:oak_fence_gate", "Properties": {"facing": "north", "in_wall": "false", "open": "false", "powered": "false"}}},
+      {"weight": 2, "state": {"Name": "minecraft:jungle_fence_gate", "Properties": {"facing": "north", "in_wall": "false", "open": "false", "powered": "false"}}},
+      {"weight": 1, "state": {"Name": "minecraft:birch_fence_gate", "Properties": {"facing": "north", "in_wall": "false", "open": "false", "powered": "false"}}}
+    ]
+  },
+  "lantern": {
+    "Name": "minecraft:lantern",
+    "Properties": {"hanging": "true", "waterlogged": "false"}
   }
 }

@@ -11,6 +11,12 @@ import net.minecraft.world.level.levelgen.Heightmap;
 
 /** Chunk-local writes only: independent of generation order and neighboring chunk availability. */
 final class AllvrSanctuaryGenerator {
+    private static final int LANTERN_MIN_CLEARANCE = 5;
+    private static final int LANTERN_MAX_CLEARANCE = 8;
+    private static final double LANTERN_CHANCE = .05;
+    // Inner root-access joins recess to roughly r=74; include their full path width.
+    private static final double LANTERN_SCAN_MIN_RADIUS = 68;
+    private static final double LANTERN_SCAN_MAX_RADIUS = 230;
     final AllvrSanctuary field;
     final SanctuaryNetwork network;
     private final SanctuaryPalette palette;
@@ -82,9 +88,34 @@ final class AllvrSanctuaryGenerator {
         var pos = new BlockPos.MutableBlockPos();
         for (int y=-16;y<=110;y++) for (int z=chunk.getPos().getMinBlockZ();z<chunk.getPos().getMinBlockZ()+16;z++)
         for (int x=chunk.getPos().getMinBlockX();x<chunk.getPos().getMinBlockX()+16;x++) {
-            var state=material(network.get(x,y,z), x, y, z);
+            var state=structureState(network.get(x,y,z), x, y, z);
             if (state!=null) chunk.setBlockState(pos.set(x,y,z),state,false);
         }
+    }
+
+    private BlockState structureState(int symbol, int x, int y, int z) {
+        long randomSeed=BlockStateVariants.coordinateSeed(seed, x, y, z);
+        if(symbol==SanctuaryNetwork.ROPE) {
+            if(network.isVerticalRope(x,y,z)) {
+                BlockState state=palette.verticalRope(randomSeed);
+                for(Direction direction:Direction.Plane.HORIZONTAL)
+                    state=state.setValue(fenceProperty(direction),network.verticalRopeConnects(x,y,z,direction));
+                return state;
+            }
+            Direction direction=network.ropeConnectionDirection(x,y,z);
+            return palette.horizontalRope(direction==null ? Direction.NORTH : direction, randomSeed);
+        }
+        return palette.material(symbol, randomSeed);
+    }
+
+    private static net.minecraft.world.level.block.state.properties.BooleanProperty fenceProperty(Direction direction) {
+        return switch(direction) {
+            case NORTH -> BlockStateProperties.NORTH;
+            case EAST -> BlockStateProperties.EAST;
+            case SOUTH -> BlockStateProperties.SOUTH;
+            case WEST -> BlockStateProperties.WEST;
+            default -> throw new IllegalArgumentException("Fence connections must be horizontal");
+        };
     }
 
     private boolean solid(int x, int y, int z) {
@@ -138,6 +169,63 @@ final class AllvrSanctuaryGenerator {
             }
         }
         trees(chunk);
+        pathLanterns(chunk);
+    }
+
+    private void pathLanterns(ChunkAccess chunk) {
+        int x0=chunk.getPos().getMinBlockX(), z0=chunk.getPos().getMinBlockZ();
+        var pos=new BlockPos.MutableBlockPos();
+        for(int z=z0;z<z0+16;z++) for(int x=x0;x<x0+16;x++) {
+            var c=field.column(x,z);
+            // Includes the inward excursion of layer ramps while avoiding a full
+            // height scan in unrelated outer terrain chunks.
+            if(c.radius()<LANTERN_SCAN_MIN_RADIUS || c.radius()>LANTERN_SCAN_MAX_RADIUS) continue;
+            for(int y=Math.max(c.floor(),chunk.getMinBuildHeight());y<=95;y++) {
+                int material=network.get(x,y,z);
+                if(material!=SanctuaryNetwork.PATH && material!=SanctuaryNetwork.PATH_SLAB) continue;
+                // Seeded world-space randomness is stable across chunk borders while
+                // allowing lamps on ramps and other inter-layer passages.
+                if(AllvrSanctuary.unit(BlockStateVariants.coordinateSeed(seed,x,y,z))>=LANTERN_CHANCE) continue;
+                int ceiling=findPathCeiling(c,x,y,z);
+                int clearance=ceiling-y;
+                // Berry vines illuminate the broad galleries; lanterns belong only
+                // to the low, enclosed rock passages with usable headroom.
+                if(ceiling<0 || clearance<LANTERN_MIN_CLEARANCE || clearance>LANTERN_MAX_CLEARANCE) continue;
+                int chainLength=lanternChainLength(seed,x,ceiling,z);
+                int chainY=ceiling-1,lanternY=chainY-chainLength;
+                if(!isPathClearanceCell(network.get(x,chainY,z))
+                    || !isPathClearanceCell(network.get(x,lanternY,z))) continue;
+                if(!chunk.getBlockState(pos.set(x,chainY,z)).isAir()
+                    || !chunk.getBlockState(pos.set(x,lanternY,z)).isAir()) continue;
+                if(chainLength==1) {
+                    BlockState chain=Blocks.CHAIN.defaultBlockState()
+                        .setValue(BlockStateProperties.AXIS,Direction.Axis.Y);
+                    chunk.setBlockState(pos.set(x,chainY,z),chain,false);
+                }
+                chunk.setBlockState(pos.set(x,lanternY,z),palette.lantern(
+                    BlockStateVariants.coordinateSeed(seed,x,lanternY,z)),false);
+            }
+        }
+    }
+
+    private static boolean isPathClearanceCell(int material) {
+        return material==SanctuaryNetwork.CLEAR;
+    }
+
+    /** Deterministic 50/50 choice so adjacent chunks do not change fixture layout. */
+    static int lanternChainLength(long worldSeed,int x,int ceilingY,int z) {
+        return (int)(BlockStateVariants.coordinateSeed(worldSeed,x,ceilingY,z)&1L);
+    }
+
+    private int findPathCeiling(AllvrSanctuary.Column c,int x,int floorY,int z) {
+        for(int y=floorY+3;y<=95;y++) {
+            int material=network.get(x,y,z);
+            if(material==SanctuaryNetwork.NONE && !field.cavity(c,y)) return y;
+            // Root paths can run beneath the generated root crown rather than
+            // beneath limestone. Treat a solid root/support voxel as their roof.
+            if(material>=SanctuaryNetwork.ROOT_BARK && material<=SanctuaryNetwork.SUPPORT) return y;
+        }
+        return -1;
     }
 
     /** Sparse small rooted trees, stamped from a shared anchor lattice across chunk borders. */

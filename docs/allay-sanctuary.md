@@ -51,7 +51,7 @@
 | `path` / `path_slab` | 壁道、坡道、根系路径的完整地砖/半砖 |
 | `bridge_deck` / `bridge_slab` | 吊桥木板与半砖踏步 |
 | `timber` | 桥塔和木斜撑 |
-| `rope` / `light` | 主索、扶索、吊杆 / 发光标记 |
+| `rope_vertical` / `rope_horizontal` / `light` / `lantern` | 竖向吊杆 fence / 沿桥延伸方向连接的关闭 fence gate / 发光标记 / 低净空岩层路径下按5%随机放置的悬挂灯笼（0或1节链条） |
 | `support` | 壁道悬臂承托 |
 | `root_bark` / `root_core` / `root_moss` | 主根与分根树皮、内部木质、表面苔藓 |
 | `wall_base` / `wall_light` / `wall_dark` | 喀斯特岩壁和谷底的主材、浅色层、深色层 |

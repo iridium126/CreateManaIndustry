@@ -26,6 +26,9 @@ class AllvrSanctuaryTest {
             assertEquals(4,n.routes().stream().filter(r->r.kind().equals("root-bridge")).count());
             assertEquals(8,n.routes().stream().filter(r->r.kind().equals("ramp")).count());
             assertEquals(10,n.routes().stream().filter(r->r.kind().equals("entrance")).count());
+            double innerRootAccess=n.routes().stream().filter(r->r.kind().equals("root-access"))
+                .flatMap(r->r.points().stream()).mapToDouble(p->Math.hypot(p.x(),p.z())).min().orElseThrow();
+            assertTrue(innerRootAccess<84,"Inner root-access join must enter the inner rock band");
             assertTrue(n.geodes().size() >= 1 && n.geodes().size() <= 3);
             for (var geode : n.geodes()) {
                 double radius = Math.hypot(geode.x(), geode.z());
@@ -58,6 +61,17 @@ class AllvrSanctuaryTest {
 
     @Test void actualWalkwayVoxelsAreReachableAndHaveHeadroom() {
         for(long seed:new long[]{0,42,137,-1}) verifyReachable(new SanctuaryNetwork(seed));
+    }
+
+    @Test void verticalHangersKeepTheirTopRopeVertical() {
+        for(long seed:new long[]{0,42,137,-1}) {
+            var n=new SanctuaryNetwork(seed);
+            n.forEach((x,y,z,m)-> {
+                if(m==SanctuaryNetwork.ROPE && n.isVerticalRope(x,y-1,z))
+                    assertTrue(n.isVerticalRope(x,y,z),
+                        "Top of a continuous hanger must remain vertical at "+x+","+y+","+z);
+            });
+        }
     }
 
     @Test void stackedBottomSlabsMergeIntoAFullStep() {

@@ -2,12 +2,17 @@ package com.iridium126.createmanaindustry.dimension.gen;
 
 import java.util.*;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FenceBlock;
+import net.minecraft.world.level.block.FenceGateBlock;
+import net.minecraft.world.level.block.LanternBlock;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.chunk.ProtoChunk;
 import net.minecraft.world.level.chunk.UpgradeData;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -51,7 +56,7 @@ public final class AllvrSanctuaryGameTests {
         for(long key:targets) expected.put(key,generate(helper,forwardGenerator,new ChunkPos(key)));
         var reverse=new ArrayList<>(targets);Collections.reverse(reverse);
         var pos=new BlockPos.MutableBlockPos();
-        int checked=0,amethyst=0,budding=0,clusters=0,roots=0,ropes=0,clear=0;
+        int checked=0,amethyst=0,budding=0,clusters=0,roots=0,ropes=0,gates=0,lanterns=0,clear=0;
         for(long key:reverse) {
             var actual=generate(helper,reverseGenerator,new ChunkPos(key));
             var original=expected.get(key);int x0=actual.getPos().getMinBlockX(),z0=actual.getPos().getMinBlockZ();
@@ -64,14 +69,25 @@ public final class AllvrSanctuaryGameTests {
                 if(state.is(Blocks.BUDDING_AMETHYST)) budding++;
                 if(state.getBlock() instanceof net.minecraft.world.level.block.AmethystClusterBlock) clusters++;
                 if(state.is(Blocks.DARK_OAK_WOOD) || state.is(Blocks.STRIPPED_DARK_OAK_WOOD)) roots++;
-                if(state.is(Blocks.CHAIN)) ropes++;
+                if(state.getBlock() instanceof FenceBlock) ropes++;
+                if(state.getBlock() instanceof FenceGateBlock) {
+                    gates++;
+                    helper.assertFalse(state.getValue(FenceGateBlock.OPEN), "Horizontal rope gate opened at "+pos);
+                }
+                if(state.getBlock() instanceof LanternBlock) {
+                    lanterns++;
+                    helper.assertTrue(state.getValue(BlockStateProperties.HANGING), "Path lantern must hang at "+pos);
+                }
+                if(material==SanctuaryNetwork.ROPE && forwardGenerator.network.isVerticalRope(x,y,z))
+                    helper.assertTrue(state.getBlock() instanceof FenceBlock,
+                        "Vertical rope intersection must remain a fence at "+pos);
                 if(Math.hypot(x,z)<=90 && y==95) helper.assertTrue(state.is(Blocks.GRASS_BLOCK),"Platform changed");
                 if(Math.hypot(x,z)>=700 && y==110) helper.assertTrue(state.is(Blocks.STONE),"Outer terrain changed");
             }
         }
         helper.assertTrue(amethyst>100 && budding>10 && clusters>5,"Missing genuine geode layers/buds");
-        helper.assertTrue(roots>100 && ropes>20 && clear>500,"Missing roots/ropes/paths");
-        System.out.println("SANCTUARY_V2 blocks="+checked+" amethyst="+amethyst+" budding="+budding+" clusters="+clusters+" roots="+roots+" ropes="+ropes);
+        helper.assertTrue(roots>100 && ropes>20 && gates>20 && lanterns>5 && clear>500,"Missing roots/ropes/paths/lanterns");
+        System.out.println("SANCTUARY_V2 blocks="+checked+" amethyst="+amethyst+" budding="+budding+" clusters="+clusters+" roots="+roots+" ropes="+ropes+" gates="+gates+" lanterns="+lanterns);
         helper.succeed();
     }
 
@@ -82,6 +98,25 @@ public final class AllvrSanctuaryGameTests {
             json=com.google.gson.JsonParser.parseReader(new java.io.InputStreamReader(stream)).getAsJsonObject();
         }
         var bundled = new SanctuaryPalette(json);
+        var verticalRope=bundled.get("rope_vertical",0L);
+        helper.assertTrue(verticalRope.getBlock() instanceof FenceBlock,"rope_vertical must resolve to a fence");
+        var horizontalRope=bundled.get("rope_horizontal",0L);
+        helper.assertTrue(horizontalRope.getBlock() instanceof FenceGateBlock
+            && !horizontalRope.getValue(FenceGateBlock.OPEN)
+            && !horizontalRope.getValue(FenceGateBlock.POWERED),
+            "rope_horizontal must resolve to a closed, unpowered fence gate");
+        helper.assertTrue(bundled.horizontalRope(Direction.EAST,0L)
+                .getValue(BlockStateProperties.HORIZONTAL_FACING)==Direction.SOUTH,
+            "A bridge extending east must use a gate whose connection axis is east-west");
+        helper.assertTrue(bundled.lantern(0L).getBlock() instanceof LanternBlock
+                && bundled.lantern(0L).getValue(BlockStateProperties.HANGING),
+            "lantern material must be a hanging lantern");
+        int zeroChain=0,oneChain=0;
+        for(int x=0;x<32;x++) {
+            if(AllvrSanctuaryGenerator.lanternChainLength(42L,x,22,7)==0) zeroChain++;
+            else oneChain++;
+        }
+        helper.assertTrue(zeroChain>0 && oneChain>0,"Lantern chain length must mix 0 and 1");
         int wallBase = SanctuaryPalette.KEYS.indexOf("wall_base") + 2;
         var wallMaterials = new HashSet<net.minecraft.world.level.block.Block>();
         for (long seed = 0; seed < 128; seed++) wallMaterials.add(bundled.material(wallBase, seed).getBlock());
