@@ -13,6 +13,7 @@ import net.minecraft.world.level.block.FenceBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.LanternBlock;
 import net.minecraft.world.level.block.VineBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.chunk.ProtoChunk;
 import net.minecraft.world.level.chunk.UpgradeData;
@@ -23,6 +24,16 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder("createmanaindustry")
 @PrefixGameTestTemplate(false)
 public final class AllvrSanctuaryGameTests {
+    private static boolean vegetation(BlockState state) {
+        return state.is(Blocks.MOSS_BLOCK) || state.is(Blocks.FLOWERING_AZALEA)
+            || state.is(Blocks.AZALEA) || state.is(Blocks.OXEYE_DAISY)
+            || state.is(Blocks.FERN) || state.is(Blocks.SHORT_GRASS)
+            || state.is(Blocks.CAVE_VINES) || state.is(Blocks.CAVE_VINES_PLANT)
+            || state.getBlock() instanceof VineBlock
+            || state.is(Blocks.ROOTED_DIRT) || state.is(Blocks.OAK_LOG)
+            || state.is(Blocks.AZALEA_LEAVES) || state.is(Blocks.FLOWERING_AZALEA_LEAVES);
+    }
+
     private static ProtoChunk generate(GameTestHelper helper,AllvrSanctuaryGenerator generator,ChunkPos pos) {
         var registry=helper.getLevel().registryAccess().registryOrThrow(Registries.BIOME);
         var chunk=new ProtoChunk(pos,UpgradeData.EMPTY,LevelHeightAccessor.create(-128,512),registry,null);
@@ -93,6 +104,10 @@ public final class AllvrSanctuaryGameTests {
                 if(material==SanctuaryNetwork.ROPE && forwardGenerator.network.get(x,y-1,z)==SanctuaryNetwork.TIMBER)
                     helper.assertTrue(forwardGenerator.network.isVerticalRope(x,y,z),
                         "Rope above timber must be vertical at "+pos);
+                if(material==SanctuaryNetwork.ROPE
+                    || material==SanctuaryNetwork.TIMBER && !forwardGenerator.network.isTimberTop(x,y,z))
+                    helper.assertFalse(vegetation(state),
+                        "Vegetation cut through structural "+(material==SanctuaryNetwork.TIMBER?"timber":"rope")+" at "+pos);
                 if(material==SanctuaryNetwork.TIMBER) {
                     int below=forwardGenerator.network.get(x,y-1,z);
                     helper.assertTrue(below!=SanctuaryNetwork.PATH_SLAB && below!=SanctuaryNetwork.DECK_SLAB,

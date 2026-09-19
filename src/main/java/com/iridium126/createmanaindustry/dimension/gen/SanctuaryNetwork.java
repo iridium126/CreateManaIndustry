@@ -201,6 +201,13 @@ public final class SanctuaryNetwork {
         return scanTimberAnchorColumn(x, z, false);
     }
 
+    /** A top timber voxel may receive a surface decoration when its crown is free. */
+    boolean isTimberTop(int x, int y, int z) {
+        if (get(x, y, z) != TIMBER) return false;
+        int above = get(x, y + 1, z);
+        return above != TIMBER && above != ROPE && above != LIGHT;
+    }
+
     /** Promote every contiguous rope directly above a vertical hanger. */
     private void promoteVerticalRopeChains() {
         // Timber anchor posts are also vertical rope roots.  Register their
@@ -556,6 +563,10 @@ public final class SanctuaryNetwork {
         if(x < -250 || x > 250 || z < -250 || z > 250 || y < -16 || y > 110) return;
         byte[] data=pages.computeIfAbsent(page(x,y,z),k->new byte[4096]);
         int old=data[(x&15)|((z&15)<<4)|((y&15)<<8)];
+        // Cable runs may cross an anchor tower, but must never cut a timber
+        // voxel in half.  A rope directly above the tower is promoted later;
+        // a rope on the same voxel loses to the structural timber.
+        if(old==TIMBER && value==ROPE) return;
         if(old>=PATH && old<=DECK_SLAB && value>DECK_SLAB) return;
         data[(x&15)|((z&15)<<4)|((y&15)<<8)]=(byte)value;
         if(value!=ROPE) {
@@ -590,6 +601,27 @@ public final class SanctuaryNetwork {
     public boolean hasChunk(int x,int z) {
         for(int y=-1;y<=6;y++) if(pages.containsKey(page(x<<4,y<<4,z<<4))) return true;
         return false;
+    }
+    /**
+     * Visits only emitted sanctuary cells in one chunk.  The old structure
+     * writer queried all 127*16*16 coordinates, most of which are NONE; the
+     * page walk keeps the same sparse representation while avoiding those
+     * repeated map lookups and palette calls.
+     */
+    public void forEachChunk(int chunkX, int chunkZ, Visitor visitor) {
+        int x0 = chunkX << 4, z0 = chunkZ << 4;
+        for (int pageY = -1; pageY <= 6; pageY++) {
+            byte[] data = pages.get(page(x0, pageY << 4, z0));
+            if (data == null) continue;
+            int y0 = pageY << 4;
+            for (int i = 0; i < data.length; i++) {
+                int material = data[i] & 0xff;
+                if (material == NONE) continue;
+                int y = y0 + (i >> 8);
+                if (y > 110) continue;
+                visitor.accept(x0 + (i & 15), y, z0 + ((i >> 4) & 15), material);
+            }
+        }
     }
     @FunctionalInterface public interface Visitor { void accept(int x,int y,int z,int material); }
     public void forEach(Visitor visitor) {

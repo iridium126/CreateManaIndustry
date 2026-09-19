@@ -56,7 +56,16 @@ final class AllvrSanctuaryGenerator {
             var c = field.column(x, z);
             boolean ring = radius >= 70 && radius <= 248;
             int bottom = ring ? -16 : Math.min(old, top) - 8;
-            for (int y = Math.max(bottom, chunk.getMinBuildHeight()); y < chunk.getMaxBuildHeight(); y++) {
+            // Above the current world surface the desired state is always air
+            // (or the sea-level fluid).  The previous unbounded loop walked all
+            // 384 build-height levels even when the chunk stopped near y=110.
+            // WORLD_SURFACE_WG also sees feature blocks written before the
+            // restore pass, so the bound still clears decorated ring columns.
+            int existingTop = Math.max(old,
+                chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, x & 15, z & 15));
+            int desiredTop = ring ? AllvrSanctuary.GROUND : Math.max(top, seaLevel);
+            int upper = Math.min(chunk.getMaxBuildHeight(), Math.max(existingTop, desiredTop) + 1);
+            for (int y = Math.max(bottom, chunk.getMinBuildHeight()); y < upper; y++) {
                 BlockState state;
                 if (ring) state = naturalState(c, y);
                 else if (y > top) state = y <= seaLevel ? fluid : AIR;
@@ -84,16 +93,15 @@ final class AllvrSanctuaryGenerator {
 
     void structures(net.minecraft.world.level.WorldGenLevel level, ChunkAccess chunk) {
         geodes.apply(level, chunk);
-        if (!network.hasChunk(chunk.getPos().x, chunk.getPos().z)) return;
         var pos = new BlockPos.MutableBlockPos();
-        for (int y=-16;y<=110;y++) for (int z=chunk.getPos().getMinBlockZ();z<chunk.getPos().getMinBlockZ()+16;z++)
-        for (int x=chunk.getPos().getMinBlockX();x<chunk.getPos().getMinBlockX()+16;x++) {
-            var state=structureState(network.get(x,y,z), x, y, z);
+        network.forEachChunk(chunk.getPos().x, chunk.getPos().z, (x, y, z, symbol) -> {
+            var state=structureState(symbol, x, y, z);
             if (state!=null) chunk.setBlockState(pos.set(x,y,z),state,false);
-        }
+        });
     }
 
     private BlockState structureState(int symbol, int x, int y, int z) {
+        if (symbol == SanctuaryNetwork.CLEAR) return AIR;
         long randomSeed=BlockStateVariants.coordinateSeed(seed, x, y, z);
         if(symbol==SanctuaryNetwork.ROPE) {
             if(network.isVerticalRope(x,y,z)) {
@@ -124,17 +132,19 @@ final class AllvrSanctuaryGenerator {
 
     private boolean solid(AllvrSanctuary.Column c, int y) {
         int material=network.get(c.x(),y,c.z());
-        if (material!=SanctuaryNetwork.NONE) return material!=SanctuaryNetwork.CLEAR && material!=SanctuaryNetwork.ROPE;
+        if (material!=SanctuaryNetwork.NONE) return material!=SanctuaryNetwork.CLEAR;
         return y <= 95 && !field.cavity(c, y);
     }
 
     /** Side vines need a full face; a bottom slab leaves a visible half-block gap. */
     static boolean canHostSideVine(int material) {
-        return material!=SanctuaryNetwork.PATH_SLAB && material!=SanctuaryNetwork.DECK_SLAB;
+        return material!=SanctuaryNetwork.PATH_SLAB && material!=SanctuaryNetwork.DECK_SLAB
+            && material!=SanctuaryNetwork.ROPE && material!=SanctuaryNetwork.LIGHT;
     }
 
     private boolean vineSupport(int x, int y, int z) {
-        return canHostSideVine(network.get(x,y,z)) && solid(x,y,z);
+        int material=network.get(x,y,z);
+        return canHostSideVine(material) && solid(x,y,z);
     }
 
     void decorate(ChunkAccess chunk) {
@@ -148,26 +158,38 @@ final class AllvrSanctuaryGenerator {
                 if (geodes.near(x,y,z) || reserved==SanctuaryNetwork.CLEAR || reserved==SanctuaryNetwork.ROPE || reserved==SanctuaryNetwork.LIGHT) continue;
                 boolean here = solid(c, y), above = solid(c, y + 1);
                 double choice = AllvrSanctuary.unit(field.hash(x, y, z));
+                boolean timberTop = reserved==SanctuaryNetwork.TIMBER
+                    && network.isTimberTop(x,y,z)
+                    && network.get(x,y+1,z)==SanctuaryNetwork.NONE
+                    && !above;
+                if(timberTop) {
+                    // Anchor posts always receive a deterministic crown.  The
+                    // top voxel is intentionally replaceable; the post's
+                    // structural middle remains untouched.
+                    BlockState plant = vegetation(choice);
+                    chunk.setBlockState(pos.set(x, y, z), Blocks.MOSS_BLOCK.defaultBlockState(), false);
+                    chunk.setBlockState(pos.set(x, y + 1, z), plant, false);
+                    continue;
+                }
                 if (here && !above && !AllvrSanctuary.suppressSideGroundVegetation(c, y)
                         && network.get(x,y+1,z)!=SanctuaryNetwork.CLEAR
-                        && network.get(x,y,z)!=SanctuaryNetwork.ROPE && network.get(x,y,z)!=SanctuaryNetwork.LIGHT && choice < .19) {
+                        && choice < .19) {
+                    BlockState plant = vegetation(choice);
                     chunk.setBlockState(pos.set(x, y, z), Blocks.MOSS_BLOCK.defaultBlockState(), false);
-                    BlockState plant = (choice < .018 ? Blocks.FLOWERING_AZALEA : choice < .045 ? Blocks.AZALEA
-                        : choice < .075 ? Blocks.OXEYE_DAISY : choice < .11 ? Blocks.FERN
-                        : Blocks.SHORT_GRASS).defaultBlockState();
                     chunk.setBlockState(pos.set(x, y + 1, z), plant, false);
                 }
                 // Hanging berries originate on a real ceiling, with a head at the free tip.
-                if (!here && above && choice < .14) {
+                if (!here && above && network.get(x,y+1,z)!=SanctuaryNetwork.ROPE && choice < .14) {
                     int length = 4 + (int) (choice * 60);
-                    for (int d = 0; d < length && y - d > c.floor() && !solid(c, y - d) && network.get(x,y-d,z)!=SanctuaryNetwork.CLEAR; d++) {
+                    for (int d = 0; d < length && y - d > c.floor() && !solid(c, y - d)
+                            && network.get(x,y-d,z)==SanctuaryNetwork.NONE; d++) {
                         boolean tip = d == length - 1 || solid(c, y - d - 1);
                         var vine = (tip ? Blocks.CAVE_VINES : Blocks.CAVE_VINES_PLANT).defaultBlockState()
                             .setValue(BlockStateProperties.BERRIES, d % 3 == 0 || tip);
                         chunk.setBlockState(pos.set(x, y - d, z), vine, false);
                     }
                 }
-                if (!here && !above && choice < .065 && y < 94) {
+                if (reserved==SanctuaryNetwork.NONE && !here && !above && choice < .065 && y < 94) {
                     for (Direction face : Direction.Plane.HORIZONTAL) {
                         if (!vineSupport(x + face.getStepX(), y, z + face.getStepZ())) continue;
                         var vine = Blocks.VINE.defaultBlockState().setValue(VineBlock.getPropertyForFace(face), true);
@@ -181,21 +203,41 @@ final class AllvrSanctuaryGenerator {
         pathLanterns(chunk);
     }
 
+    private static BlockState vegetation(double choice) {
+        return (choice < .018 ? Blocks.FLOWERING_AZALEA : choice < .045 ? Blocks.AZALEA
+            : choice < .075 ? Blocks.OXEYE_DAISY : choice < .11 ? Blocks.FERN
+            : Blocks.SHORT_GRASS).defaultBlockState();
+    }
+
     private void pathLanterns(ChunkAccess chunk) {
         int x0=chunk.getPos().getMinBlockX(), z0=chunk.getPos().getMinBlockZ();
         var pos=new BlockPos.MutableBlockPos();
+        // A path cell used to scan upward independently, repeating the same
+        // ceiling search for every block in a column.  Build the nearest
+        // usable ceiling table once per column instead.
+        int minBuildHeight=chunk.getMinBuildHeight();
+        int ceilingBase=Math.min(minBuildHeight,96);
+        int[] ceilings = new int[96-ceilingBase+1];
         for(int z=z0;z<z0+16;z++) for(int x=x0;x<x0+16;x++) {
             var c=field.column(x,z);
             // Includes the inward excursion of layer ramps while avoiding a full
             // height scan in unrelated outer terrain chunks.
             if(c.radius()<LANTERN_SCAN_MIN_RADIUS || c.radius()>LANTERN_SCAN_MAX_RADIUS) continue;
-            for(int y=Math.max(c.floor(),chunk.getMinBuildHeight());y<=95;y++) {
+            int floor=Math.max(c.floor(),minBuildHeight);
+            if(floor>95) continue;
+            for(int y=95;y>=floor;y--) {
+                int candidate=y+3;
+                int index=y-ceilingBase;
+                ceilings[index]=candidate<=95 && isPathCeiling(c,x,candidate,z)
+                    ? candidate : (y<95 ? ceilings[index+1] : -1);
+            }
+            for(int y=floor;y<=95;y++) {
                 int material=network.get(x,y,z);
                 if(material!=SanctuaryNetwork.PATH && material!=SanctuaryNetwork.PATH_SLAB) continue;
                 // Seeded world-space randomness is stable across chunk borders while
                 // allowing lamps on ramps and other inter-layer passages.
                 if(AllvrSanctuary.unit(BlockStateVariants.coordinateSeed(seed,x,y,z))>=LANTERN_CHANCE) continue;
-                int ceiling=findPathCeiling(c,x,y,z);
+                int ceiling=ceilings[y-ceilingBase];
                 int clearance=ceiling-y;
                 // Berry vines illuminate the broad galleries; lanterns belong only
                 // to the low, enclosed rock passages with usable headroom.
@@ -226,15 +268,12 @@ final class AllvrSanctuaryGenerator {
         return (int)(BlockStateVariants.coordinateSeed(worldSeed,x,ceilingY,z)&1L);
     }
 
-    private int findPathCeiling(AllvrSanctuary.Column c,int x,int floorY,int z) {
-        for(int y=floorY+3;y<=95;y++) {
-            int material=network.get(x,y,z);
-            if(material==SanctuaryNetwork.NONE && !field.cavity(c,y)) return y;
-            // Root paths can run beneath the generated root crown rather than
-            // beneath limestone. Treat a solid root/support voxel as their roof.
-            if(material>=SanctuaryNetwork.ROOT_BARK && material<=SanctuaryNetwork.SUPPORT) return y;
-        }
-        return -1;
+    private boolean isPathCeiling(AllvrSanctuary.Column c,int x,int y,int z) {
+        int material=network.get(x,y,z);
+        if(material==SanctuaryNetwork.NONE && !field.cavity(c,y)) return true;
+        // Root paths can run beneath the generated root crown rather than
+        // beneath limestone. Treat a solid root/support voxel as their roof.
+        return material>=SanctuaryNetwork.ROOT_BARK && material<=SanctuaryNetwork.SUPPORT;
     }
 
     /** Sparse small rooted trees, stamped from a shared anchor lattice across chunk borders. */
@@ -271,7 +310,8 @@ final class AllvrSanctuaryGenerator {
                     else if (dy >= 4 && dx * dx + dz * dz + (dy - 5) * (dy - 5) <= 7)
                         b = ((h & 16) == 0 ? Blocks.AZALEA_LEAVES : Blocks.FLOWERING_AZALEA_LEAVES)
                             .defaultBlockState().setValue(BlockStateProperties.PERSISTENT, true);
-                    if (b != null) chunk.setBlockState(pos.set(x, ground + dy, z), b, false);
+                    if (b != null && network.get(x, ground + dy, z)==SanctuaryNetwork.NONE)
+                        chunk.setBlockState(pos.set(x, ground + dy, z), b, false);
                 }
             }
         }

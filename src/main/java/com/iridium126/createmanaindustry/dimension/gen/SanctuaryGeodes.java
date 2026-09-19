@@ -20,6 +20,7 @@ import net.minecraft.world.level.material.FluidState;
 final class SanctuaryGeodes {
     private final AllvrSanctuaryGenerator owner;
     private volatile Map<BlockPos,BlockState> stamp;
+    private volatile Map<Long,Map<BlockPos,BlockState>> stampByChunk=Map.of();
     SanctuaryGeodes(AllvrSanctuaryGenerator owner) { this.owner=owner; }
 
     private synchronized Map<BlockPos,BlockState> generate(WorldGenLevel level) {
@@ -36,6 +37,11 @@ final class SanctuaryGeodes {
                 throw new IllegalStateException("Vanilla amethyst_geode placement failed at "+origin);
             result.putAll(region.writes);
         }
+        var byChunk=new HashMap<Long,Map<BlockPos,BlockState>>();
+        result.forEach((pos,state) -> byChunk.computeIfAbsent(
+            ChunkPos.asLong(pos.getX()>>4,pos.getZ()>>4), ignored -> new HashMap<>()).put(pos,state));
+        stampByChunk=byChunk.entrySet().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
+            Map.Entry::getKey, entry -> Map.copyOf(entry.getValue())));
         return stamp=Map.copyOf(result);
     }
 
@@ -51,8 +57,9 @@ final class SanctuaryGeodes {
             if(p.x()+22>=x && p.x()-22<x+16 && p.z()+22>=z && p.z()-22<z+16) intersects=true;
         if(!intersects) return;
         var generated=generate(level);
-        generated.forEach((pos,state)->{
-            if((pos.getX()>>4)!=chunk.getPos().x || (pos.getZ()>>4)!=chunk.getPos().z) return;
+        var writes=stampByChunk.get(ChunkPos.asLong(chunk.getPos().x,chunk.getPos().z));
+        if(writes==null) return;
+        writes.forEach((pos,state)->{
             // A passage can open the shell after vanilla placement; remove buds whose parent it cuts away.
             if(state.getBlock() instanceof net.minecraft.world.level.block.AmethystClusterBlock) {
                 var parent=pos.relative(state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING).getOpposite());

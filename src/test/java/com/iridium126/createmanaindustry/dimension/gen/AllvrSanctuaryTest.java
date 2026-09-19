@@ -88,8 +88,11 @@ class AllvrSanctuaryTest {
     @Test void sideVinesRejectHalfSlabFaces() {
         assertFalse(AllvrSanctuaryGenerator.canHostSideVine(SanctuaryNetwork.PATH_SLAB));
         assertFalse(AllvrSanctuaryGenerator.canHostSideVine(SanctuaryNetwork.DECK_SLAB));
+        assertFalse(AllvrSanctuaryGenerator.canHostSideVine(SanctuaryNetwork.ROPE));
+        assertFalse(AllvrSanctuaryGenerator.canHostSideVine(SanctuaryNetwork.LIGHT));
         assertTrue(AllvrSanctuaryGenerator.canHostSideVine(SanctuaryNetwork.PATH));
         assertTrue(AllvrSanctuaryGenerator.canHostSideVine(SanctuaryNetwork.DECK));
+        assertTrue(AllvrSanctuaryGenerator.canHostSideVine(SanctuaryNetwork.TIMBER));
     }
 
     @Test void timberAnchorTowersReachARealSupport() {
