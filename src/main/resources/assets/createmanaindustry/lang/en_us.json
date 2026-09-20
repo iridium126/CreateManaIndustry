@@ -182,6 +182,8 @@
   "createmanaindustry.ponder.allay_burner/mist.text_2": "The mist can be reclaimed with a Condenser and is required for mist-based recipes",
   "death.attack.storm_peck": "%1$s was pecked apart by an allay storm",
   "death.attack.storm_peck.player": "%1$s was pecked apart by an allay storm while trying to escape %2$s",
+  "block.createmanaindustry.glowing_vine": "Glowing Vine",
+  "item.createmanaindustry.glowing_vine": "Glowing Vine",
   "hexcasting.entry.createmanaindustry.industrial_patterns": "Industrial Patterns",
   "hexcasting.page.createmanaindustry.industrial_patterns.1": "The times move on, and so does technique. Knowing Hex Casting well enough by now, I joined its lore to the ways of machinery — and from that union came these industrial patterns, and an industrialized craft of Media. Magic was never mysterious; Hex Casting is merely a craft lost for too long. I am good with it, and upon it I will build my glory.",
   "hexcasting.page.createmanaindustry.industrial_patterns.read_iota_from_block": "Read the $(thing)Iota/$ stored on an item resting on a $(item)Depot/$ or $(item)Placard/$ straight off the block, pushing it onto the $(thing)stack/$ — no need to pick the item up.$(br2)Consumes one $(thing)vector/$ — the position. Miscasts if the target is not a Depot or Placard, holds no item, or the item bears no Iota.",

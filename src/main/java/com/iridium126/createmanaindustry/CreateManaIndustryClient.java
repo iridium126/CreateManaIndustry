@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry;
 
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
+import com.iridium126.createmanaindustry.client.particles.GlowingVineParticleClient;
 import com.iridium126.createmanaindustry.client.render.fuelrod.FuelRodBloomHandler;
 import com.iridium126.createmanaindustry.client.render.mist.MistClientHandler;
 import com.iridium126.createmanaindustry.client.render.InlineTrickRenderer;
@@ -12,7 +13,9 @@ import net.createmod.ponder.foundation.PonderIndex;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.BiomeColors;
 import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.level.FoliageColor;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
@@ -113,6 +116,7 @@ public class CreateManaIndustryClient {
     @SubscribeEvent
     private static void onClientTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
+        GlowingVineParticleClient.tick(mc);
         if (mc.level != null
             && mc.level.dimension() == com.iridium126.createmanaindustry.dimension.AllvrDimensions.ALLAY_LEVEL) {
             // Publish packet decodes prepared off-thread. The handoff is
@@ -207,6 +211,15 @@ public class CreateManaIndustryClient {
     @SubscribeEvent
     private static void onRegisterBlockColors(RegisterColorHandlersEvent.Block event) {
 		event.register(CopycatBlock.wrappedColor(), CMIBlocks.MOLTEN_SALT_FUEL_TANK.get());
+		event.register((state, level, pos, tintIndex) -> level != null && pos != null
+			? BiomeColors.getAverageFoliageColor(level, pos)
+			: FoliageColor.getDefaultColor(), CMIBlocks.GLOWING_VINE.get());
+	}
+
+	/** Mirrors vanilla ItemColors.createDefault's foliage tint for vine items. */
+	@SubscribeEvent
+	private static void onRegisterItemColors(RegisterColorHandlersEvent.Item event) {
+		event.register((stack, tintIndex) -> FoliageColor.getDefaultColor(), CMIBlocks.GLOWING_VINE.get());
 	}
 
     /**
@@ -222,6 +235,7 @@ public class CreateManaIndustryClient {
         // (no dimension), so without a clear on dimension switch they'd linger at
         // the same absolute coordinates in the new dimension.
         if (event.getLevel() instanceof net.minecraft.client.multiplayer.ClientLevel) {
+            GlowingVineParticleClient.clear();
             if (CreateManaIndustry.VEIL_ACTIVE) {
                 MistClientHandler.clearAll();
                 FuelRodBloomHandler.clearAll();
@@ -253,6 +267,7 @@ public class CreateManaIndustryClient {
     @SubscribeEvent
     private static void onLevelLoad(LevelEvent.Load event) {
         if (event.getLevel() instanceof net.minecraft.client.multiplayer.ClientLevel) {
+            GlowingVineParticleClient.clear();
             CMIParticleEngine.INSTANCE.onLevelChanged();
             // Terrain binds in AllvrMinecraftLevelMixin after the old world's
             // Unload; this constructor-time Load is too early for that state.

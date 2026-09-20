@@ -18,9 +18,30 @@ out vec2 vUv;
 out vec3 vColor;
 out float vAlpha;
 out float vDist;
-// colorMode 4/5 (Hexcasting pigment/direct conjure) marker for the fsh:
+// colorMode 4/5/6 (Hexcasting pigment/direct conjure and vine wheel) marker for the fsh:
 // hexagonal cloud shape
 flat out float vHex;
+
+float hash1(float p) {
+    p = fract(p * 0.1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return fract(p);
+}
+
+// The same cubic wheel interpolation used by Hex Spray. Keeping this in one
+// helper makes the vine's deterministic sample use exactly the existing
+// pigment-wheel colour path.
+vec4 sampleHexWheel(uint hb, float phase) {
+    float fIdx = clamp(phase, 0.0, 1.0) * 8.0;
+    int wbase = min(7, int(floor(fIdx)));
+    float tRaw = fract(fIdx);
+    float t = tRaw < 0.5 ? 4.0 * tRaw * tRaw * tRaw
+            : 1.0 - pow(-2.0 * tRaw + 2.0, 3.0) / 2.0;
+    vec4 c0 = emitters.u[hb + 8u + uint(wbase)];
+    vec4 c1 = emitters.u[hb + 8u + uint((wbase + 1) & 7)];
+    return mix(c0, c1, t);
+}
 
 vec2 quadCorner(int v) {
     switch (v) {
@@ -72,8 +93,9 @@ void main() {
     }
     float hexShape = 0.0;
     // colorMode (header 17.x): 4 = Hexcasting pigment wheel, 5 = direct
-    // ConjureParticle RGB. The 8 keyframe
-    // slots hold a WHEEL sampled from the caster's pigment at spray time (not
+    // conjure RGB, 6 = deterministic random sample from the same wheel.
+    // For wheel modes, the 8 keyframe slots hold a WHEEL sampled from the
+    // caster's pigment at spray time (not
     // a life gradient): the phase is the particle's velocity direction
     // projected on the fixed gradient axis, cubic-eased between adjacent
     // wheel colors exactly like ADPigment.morphBetweenColors. The per-spray
@@ -82,7 +104,13 @@ void main() {
     // within one spray). Plus the exact ConjureParticle shrink: quadSize
     // ×= 0.96 per tick = e^(-ln(1/0.96)·20·age).
     float colorMode = emitters.u[hb + 17u].x;
-    if (colorMode > 4.5) {
+    if (colorMode > 5.5) {
+        vec4 wheel = sampleHexWheel(hb, hash1(p3.z + 91.7));
+        col = wheel.rgb;
+        keyA = wheel.a;
+        hexShape = 1.0;
+        size *= exp(-0.816432 * p3.x);
+    } else if (colorMode > 4.5) {
         // Direct conjure_particle freezes its ARGB color at construction time;
         // the original alpha byte is intentionally ignored by Hexcasting.
         col = p2.rgb;
@@ -95,15 +123,9 @@ void main() {
         vec3 n = vlen > 1e-5 ? v / vlen : vec3(0.0, 1.0, 0.0);
         // MUST match HexSpecs.GRADIENT_DIR = normalize(0.3, 0.8, 0.5)
         float g = dot(n, normalize(vec3(0.3, 0.8, 0.5))) * 0.5 + 0.5;
-        float fIdx = g * 8.0;
-        int wbase = min(7, int(floor(fIdx)));
-        float tRaw = fract(fIdx);
-        float t = tRaw < 0.5 ? 4.0 * tRaw * tRaw * tRaw
-                : 1.0 - pow(-2.0 * tRaw + 2.0, 3.0) / 2.0;
-        vec4 c0 = emitters.u[hb + 8u + uint(wbase)];
-        vec4 c1 = emitters.u[hb + 8u + uint((wbase + 1) & 7)];
-        col = mix(c0.rgb, c1.rgb, t);
-        keyA = mix(c0.a, c1.a, t);
+        vec4 wheel = sampleHexWheel(hb, g);
+        col = wheel.rgb;
+        keyA = wheel.a;
         hexShape = 1.0;
         size *= exp(-0.816432 * p3.x);
     }

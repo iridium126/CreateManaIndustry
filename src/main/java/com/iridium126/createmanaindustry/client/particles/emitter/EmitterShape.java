@@ -4,7 +4,7 @@ package com.iridium126.createmanaindustry.client.particles.emitter;
  * Emission shapes used by the GPU particle engine's spawn pass.
  * <p>
  * The numeric order matches the compute shader's {@code shape} switch
- * (POINT=0, BOX=1, SPHERE=2, CONE=3) packed into the emitter header.
+ * (POINT=0, BOX=1, SPHERE=2, CONE=3, PLANE=4) packed into the emitter header.
  */
 public enum EmitterShape {
     /** Bare point origin. */
@@ -14,7 +14,9 @@ public enum EmitterShape {
     /** Ball of radius {@code size}. */
     SPHERE,
     /** Directional spray: height {@code size}, axis = windDirection, half-angle tan = coneTanHalf. */
-    CONE;
+    CONE,
+    /** Uniform square plane, centered on the spawn origin and oriented by the emitter plane normal. */
+    PLANE;
 
     public float index() {
         return this.ordinal();

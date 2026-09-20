@@ -8,6 +8,7 @@ import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlock;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlockItem;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerMovementBehaviour;
 import com.iridium126.createmanaindustry.content.decoration.AventurineEdifiedLeavesBlock;
+import com.iridium126.createmanaindustry.content.decoration.GlowingVineBlock;
 import com.iridium126.createmanaindustry.datagen.CMIRegistrateExtensions;
 import com.iridium126.createmanaindustry.content.fluids.condenser.CondenserBlock;
 import com.iridium126.createmanaindustry.content.fluids.condenser.WeatheringCondenserBlock;
@@ -212,6 +213,21 @@ public final class CMIBlocks {
                     RecipeCategory.BUILDING_BLOCKS, c::get, 2))
             .simpleItem()
             .lang("Block of Prismarine Quartz")
+            .register();
+
+    /** Vanilla vine attachment/shape rules, with growth disabled and full block light. */
+    @SuppressWarnings("removal") // addLayer is deprecated but remains Registrate's render-layer hook
+    public static final BlockEntry<GlowingVineBlock> GLOWING_VINE = REGISTRATE
+            .block("glowing_vine", GlowingVineBlock::new)
+            .initialProperties(() -> Blocks.VINE)
+            .properties(p -> p.lightLevel(state -> 14))
+            .addLayer(() -> RenderType::cutoutMipped)
+            .blockstate((c, p) -> {})
+            .loot((lt, block) -> lt.dropSelf(block))
+            .item()
+            .model(NonNullBiConsumer.noop())
+            .build()
+            .lang("Glowing Vine")
             .register();
 
     /**

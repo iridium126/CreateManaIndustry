@@ -50,6 +50,8 @@
     "allvr.AllvrEntityMixin"
   ],
   "client": [
+    "particles.GlowingVineLevelMixin",
+    "particles.GlowingVineClientLevelMixin",
     "allvr.AllvrMinecraftLevelMixin",
     "allvr.AllvrClientLevelMixin",
     "allvr.AllvrClientEntityTickingMixin",

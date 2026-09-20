@@ -99,6 +99,8 @@
   "block.createmanaindustry.deposition_lid": "气相沉积盖",
   "block.createmanaindustry.aventurine_edified_leaves_1": "砂蓝启迪树叶",
   "block.createmanaindustry.aventurine_edified_leaves_2": "砂蓝启迪树叶",
+  "block.createmanaindustry.glowing_vine": "发光藤蔓",
+  "item.createmanaindustry.glowing_vine": "发光藤蔓",
   "item.createmanaindustry.allay_burner": "悦灵燃烧室",
   "item.createmanaindustry.empty_allay_burner": "空悦灵燃烧室",
   "create.recipe.heat_requirement.allayheated": "悦灵加热",

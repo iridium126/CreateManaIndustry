@@ -4,10 +4,13 @@ import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.allaystorm.AllayStormRuntime;
@@ -158,7 +161,14 @@ public final class CMIParticleEngine {
         }
     }
 
-    private record StreamReq(EmitterSpec spec, Vec3 origin, double rate, double duration) {
+    /** Handle for one live stream; the stream is removed with {@link #removeStream(StreamHandle)}. */
+    public record StreamHandle(long id) {
+    }
+
+    private record StreamReq(StreamHandle handle, EmitterSpec spec, Vec3 origin, double rate, double duration) {
+    }
+
+    private record StreamCancel(StreamHandle handle) {
     }
 
     /** Live animation-switch request posted from a client thread. */
@@ -167,6 +177,7 @@ public final class CMIParticleEngine {
 
     /** Active stream consumed each frame on the render thread. */
     private static final class Stream {
+        final long id;
         final EmitterSpec spec;
         final Vec3 origin;
         final double rate;
@@ -174,7 +185,8 @@ public final class CMIParticleEngine {
         double elapsed;
         double accumulator;
 
-        Stream(EmitterSpec spec, Vec3 origin, double rate, double duration) {
+        Stream(long id, EmitterSpec spec, Vec3 origin, double rate, double duration) {
+            this.id = id;
             this.spec = spec;
             this.origin = origin;
             this.rate = rate;
@@ -183,8 +195,11 @@ public final class CMIParticleEngine {
     }
 
     private final ConcurrentLinkedQueue<Object> pending = new ConcurrentLinkedQueue<>();
+    private final AtomicLong nextStreamId = new AtomicLong(1L);
     private final Map<EmitterSpec, Integer> emitterIds = new HashMap<>();
     private final List<Stream> streams = new ArrayList<>();
+    /** Render-thread ids cancelled before their request reaches the stream list. */
+    private final Set<Long> cancelledStreamIds = new HashSet<>();
     private final ParticleBuffers gpu = new ParticleBuffers();
     private final ParticlePrograms programs = new ParticlePrograms();
     private final ParticleFrameProfiler profiler = new ParticleFrameProfiler();
@@ -575,9 +590,21 @@ public final class CMIParticleEngine {
         this.pending.add(new Burst(spec, origin, count, true));
     }
 
-    /** Streams {@code rate} particles/second for {@code seconds} (<= 0 = until cleared). */
-    public void stream(EmitterSpec spec, Vec3 origin, double rate, double seconds) {
-        this.pending.add(new StreamReq(spec, origin, rate, seconds));
+    /**
+     * Streams {@code rate} particles/second for {@code seconds}; {@code seconds <= 0}
+     * creates an infinite stream that remains live until {@link #removeStream(StreamHandle)}
+     * or {@link #clear()} is called.
+     */
+    public StreamHandle stream(EmitterSpec spec, Vec3 origin, double rate, double seconds) {
+        StreamHandle handle = new StreamHandle(this.nextStreamId.getAndIncrement());
+        this.pending.add(new StreamReq(handle, spec, origin, rate, seconds));
+        return handle;
+    }
+
+    /** Stops one stream without removing particles that it has already emitted. */
+    public void removeStream(StreamHandle handle) {
+        if (handle != null)
+            this.pending.add(new StreamCancel(handle));
     }
 
     /**
@@ -681,6 +708,19 @@ public final class CMIParticleEngine {
         return this.initialized && !this.disabled && this.programs.ready();
     }
 
+    /** Distance where the particle shaders begin their configured fade. */
+    public double fadeDistanceBlocks() {
+        return ClientConfig.particleFadeDistance;
+    }
+
+    /**
+     * Distance at which particle streams can be stopped: the configured fade
+     * distance plus the same ramp used by the render/sort path.
+     */
+    public double renderDistanceBlocks() {
+        return ClientConfig.particleFadeDistance + FADE_RAMP_BLOCKS;
+    }
+
     /** Called on resource reload so shaders recompile next frame. */
     public void requestProgramRebuild() {
         this.programs.requestRebuild();
@@ -705,6 +745,7 @@ public final class CMIParticleEngine {
         }
         this.pending.clear();
         this.streams.clear();
+        this.cancelledStreamIds.clear();
         this.hexSprays.clear();
         this.hexParticles.clear();
         resetPoolState();
@@ -885,6 +926,7 @@ public final class CMIParticleEngine {
     private void dropAll() {
         this.pending.clear();
         this.streams.clear();
+        this.cancelledStreamIds.clear();
         this.gpu.clearParticles();
         resetPoolState();
         this.storm.resetStormState();
@@ -951,7 +993,14 @@ public final class CMIParticleEngine {
             if (item instanceof Burst b) {
                 bursts.add(b);
             } else if (item instanceof StreamReq sr) {
-                this.streams.add(new Stream(sr.spec(), sr.origin(), sr.rate(), sr.duration()));
+                if (!this.cancelledStreamIds.remove(sr.handle().id())) {
+                    this.streams.add(new Stream(sr.handle().id(), sr.spec(), sr.origin(), sr.rate(), sr.duration()));
+                }
+            } else if (item instanceof StreamCancel sc) {
+                long id = sc.handle().id();
+                boolean removed = this.streams.removeIf(stream -> stream.id == id);
+                if (!removed)
+                    this.cancelledStreamIds.add(id);
             } else if (item instanceof AnimReq ar) {
                 applyAnimation(ar.spec(), ar.animation());
             } else if (item instanceof Boolean) {

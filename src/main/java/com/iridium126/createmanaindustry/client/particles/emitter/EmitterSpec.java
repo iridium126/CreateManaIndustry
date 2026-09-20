@@ -30,12 +30,12 @@ import net.minecraft.world.phys.Vec3;
  *  16:  reserved 0 (collision bake slices are selected per particle on the
  *      GPU — the header deliberately carries no world-position state),
  *      spriteCount, 0, 0
- *  17:  animation(0 FLY..3 DEATH, MODEL only), spawnStyle (storm members
- *      write 3 post-pack), .z is MATERIALLY SPLIT — MODEL reads it as
- *      heldItem (0 none, 1..6 sword tier — see {@link HeldItem}) while
- *      textured (ALPHA/OPAQUE) reads it as lightMode (1 = p2.w carries the
- *      spawn-time packed light, e.g. vanilla cherry leaves), 0
- *  18..19: reserved (storm parameters + anchor for storm specs)
+ *  17:  animation (0 FLY..3 DEATH, MODEL only), shader colour mode (additive),
+ *      spawnStyle (storm members write 3 post-pack), .z is MATERIALLY SPLIT —
+ *      MODEL reads it as heldItem while textured (ALPHA/OPAQUE) reads it as
+ *      lightMode (1 = p2.w carries the spawn-time packed light), 0
+ *  18:   reserved (storm parameters)
+ *  19:   plane normal xyz for {@link EmitterShape#PLANE}, zero otherwise
  * </pre>
  */
 public final class EmitterSpec {
@@ -213,6 +213,8 @@ public final class EmitterSpec {
     public final Vec3 acceleration;  // constant blocks/s^2
     public final double windStrength;// blocks/s^2 along windDirection
     public final Vec3 windDirection; // unit-ish; also the cone spray axis
+    /** Unit normal used by {@link EmitterShape#PLANE}; zero for other shapes. */
+    public final Vec3 planeNormal;
     public final double rotation;    // initial billboard roll, radians (per-particle randomised around it)
     public final double coneTanHalf; // tan(half opening angle) for CONE
     /** Keyframe colours as a flat RGBA array; {@code colors.length/4} entries (2..8). */
@@ -252,6 +254,8 @@ public final class EmitterSpec {
      * is the cherry-alignment switch).
      */
     public final boolean lightmap;
+    /** Additive shader colour mode carried in header 17.x for non-MODEL emitters. */
+    public final int shaderColorMode;
 
     private final float[] packed;
 
@@ -271,6 +275,7 @@ public final class EmitterSpec {
         this.acceleration = b.acceleration;
         this.windStrength = b.windStrength;
         this.windDirection = b.windDirection;
+        this.planeNormal = b.planeNormal.lengthSqr() > 1e-12 ? b.planeNormal.normalize() : Vec3.ZERO;
         this.rotation = b.rotation;
         this.coneTanHalf = b.coneTanHalf;
         this.colors = b.colors.length == 0
@@ -285,6 +290,7 @@ public final class EmitterSpec {
         this.animation = Objects.requireNonNull(b.animation, "animation");
         this.heldItem = Objects.requireNonNull(b.heldItem, "heldItem");
         this.lightmap = b.lightmap;
+        this.shaderColorMode = Math.max(0, Math.min(255, b.shaderColorMode));
         this.packed = pack();
     }
 
@@ -339,11 +345,15 @@ public final class EmitterSpec {
         f[16 * 4 + 1] = spriteCount;
         f[16 * 4 + 2] = 0f;
         f[16 * 4 + 3] = 0f;
-        // 17: animation (MODEL only), spawnStyle (storm writes post-pack),
-        // heldItem (MODEL) / lightMode (textured) — material split, 0
-        f[17 * 4 + 0] = animation.index();
+        // 17: animation (MODEL only), shader colour mode (additive), spawnStyle
+        // (storm writes post-pack), heldItem (MODEL) / lightMode (textured)
+        // — material split, 0
+        f[17 * 4 + 0] = material == Material.MODEL ? animation.index() : shaderColorMode;
         f[17 * 4 + 2] = material == Material.MODEL ? heldItem.index() : (lightmap ? 1f : 0f);
-        // 18..19 stay zero
+        // 18 stays zero; 19 carries the PLANE basis normal.
+        f[19 * 4 + 0] = (float) planeNormal.x;
+        f[19 * 4 + 1] = (float) planeNormal.y;
+        f[19 * 4 + 2] = (float) planeNormal.z;
         return f;
     }
 
@@ -398,6 +408,7 @@ public final class EmitterSpec {
         private Vec3 acceleration = Vec3.ZERO;
         private double windStrength = 0;
         private Vec3 windDirection = new Vec3(0, 1, 0);
+        private Vec3 planeNormal = Vec3.ZERO;
         private double rotation = 0;
         private double coneTanHalf = 0.577f; // ~30 degrees
         private float[] colors = new float[] { 1f, 1f, 1f, 1f };
@@ -410,6 +421,7 @@ public final class EmitterSpec {
         private Animation animation = Animation.FLY;
         private HeldItem heldItem = HeldItem.NONE;
         private boolean lightmap = false;
+        private int shaderColorMode = 0;
 
         public Builder shape(EmitterShape v) { this.shape = v; return this; }
         public Builder size(double v) { this.size = v; return this; }
@@ -424,6 +436,10 @@ public final class EmitterSpec {
         public Builder acceleration(double x, double y, double z) { this.acceleration = new Vec3(x, y, z); return this; }
         public Builder wind(double strength, double x, double y, double z) {
             this.windStrength = strength; this.windDirection = new Vec3(x, y, z); return this;
+        }
+        /** Sets the square-plane orientation used by {@link EmitterShape#PLANE}. */
+        public Builder planeNormal(double x, double y, double z) {
+            this.planeNormal = new Vec3(x, y, z); return this;
         }
         public Builder rotation(double v) { this.rotation = v; return this; }
         public Builder cone(double tanHalfAngle) { this.coneTanHalf = tanHalfAngle; return this; }
@@ -468,6 +484,8 @@ public final class EmitterSpec {
          * heldItem — which is itself MODEL-only, so the two never collide.
          */
         public Builder lightmap(boolean v) { this.lightmap = v; return this; }
+        /** Sets the additive vertex-shader colour mode carried in header 17.x. */
+        public Builder shaderColorMode(int v) { this.shaderColorMode = v; return this; }
 
         public EmitterSpec build() {
             return new EmitterSpec(this);
