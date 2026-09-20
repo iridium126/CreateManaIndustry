@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.particles;
 
-import com.iridium126.createmanaindustry.client.particles.GlowingVineParticleClient;
+import com.iridium126.createmanaindustry.client.particles.BlockParticleEmitterClient;
 
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Keeps the vine candidate index current without polling the whole world. */
+/** Keeps the block emitter index current without polling the whole world. */
 @Mixin(Level.class)
 public abstract class GlowingVineLevelMixin {
     @Inject(method = "setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)Z",
@@ -19,7 +19,7 @@ public abstract class GlowingVineLevelMixin {
     private void cmi$trackGlowingVine(BlockPos pos, BlockState state, int flags, int recursionLeft,
             CallbackInfoReturnable<Boolean> cir) {
         Level level = (Level) (Object) this;
-        if (level instanceof ClientLevel clientLevel)
-            GlowingVineParticleClient.onBlockChanged(clientLevel, pos);
+        if (cir.getReturnValueZ() && level instanceof ClientLevel clientLevel)
+            BlockParticleEmitterClient.onBlockChanged(clientLevel, pos);
     }
 }

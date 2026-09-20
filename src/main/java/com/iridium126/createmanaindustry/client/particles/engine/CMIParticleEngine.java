@@ -197,6 +197,10 @@ public final class CMIParticleEngine {
     private final ConcurrentLinkedQueue<Object> pending = new ConcurrentLinkedQueue<>();
     private final AtomicLong nextStreamId = new AtomicLong(1L);
     private final Map<EmitterSpec, Integer> emitterIds = new HashMap<>();
+    private final BlockEmitterTable blockEmitters = new BlockEmitterTable();
+
+    public BlockEmitterTable blockEmitters() { return this.blockEmitters; }
+
     private final List<Stream> streams = new ArrayList<>();
     /** Render-thread ids cancelled before their request reaches the stream list. */
     private final Set<Long> cancelledStreamIds = new HashSet<>();
@@ -729,6 +733,7 @@ public final class CMIParticleEngine {
     /** Frees all GPU resources on client shutdown. Safe when never initialised. */
     public void close() {
         try {
+            this.blockEmitters.free();
             this.gpu.free();
         } catch (RuntimeException | LinkageError e) {
             CreateManaIndustry.LOGGER.warn("[CMI particles] GPU free failed", e);
@@ -1287,10 +1292,13 @@ public final class CMIParticleEngine {
         // keep the snapshot+delta dispatch bound sound on the aborted-frame
         // path. Purely a hoist — every consumer below (updateBound,
         // aliveEstimate, translucentUpper) already saw these spawns included.
-        this.spawnDelta += totalSpawn;
+        int blockSpawnBound = this.blockEmitters.spawnBound(dt, Math.max(0.0, Math.min(1.0, this.scale)), cap);
+        // GPU visibility makes this an upper bound. Saturation avoids overflow
+        // if the asynchronous counter snapshot is delayed for many frames.
+        this.spawnDelta = (int) Math.min(cap, (long) this.spawnDelta + totalSpawn + blockSpawnBound);
         this.translucentSpawnDelta += translucentSpawnTotal;
         // Handoff for runDraws' empty-guard: final count after free-pool capping.
-        this.frameEntryCount = entryCount;
+        this.frameEntryCount = entryCount + (blockSpawnBound > 0 ? 1 : 0);
 
         // 4. Upload emit commands into the next ring slot + emitters.
         int ringId = this.gpu.nextEmitBuffer();
@@ -1481,6 +1489,29 @@ public final class CMIParticleEngine {
                 setFloatUniform(this.programs.emit(), "uStormConvPhase", this.storm.convPhase());
                 setFloatUniform(this.programs.emit(), "uStormConvRate", this.storm.convRate());
                 GL43.glDispatchCompute(Math.max(1, (totalSpawn + 63) / 64), 1, 1);
+                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+            }
+
+            if (blockSpawnBound > 0) {
+                int be = this.programs.blockEmit();
+                GL20.glUseProgram(be);
+                this.gpu.bindParticleWrite(1);
+                this.gpu.bindCounter(3, slot);
+                this.gpu.bindEmitters(5);
+                this.blockEmitters.uploadAndBind();
+                setUIntUniform(be, "uEmitterCount", this.blockEmitters.dispatchSize());
+                setUIntUniform(be, "uCapacity", cap);
+                setFloatUniform(be, "uDtScale", dt * (float) Math.max(0.0, Math.min(1.0, this.scale)));
+                setFloatUniform(be, "uSeed", (float) (this.frameSeed & 0xffff));
+                setUIntUniform(be, "uEmitterOffset", (int) (Integer.toUnsignedLong(this.frameSeed * 16777619)
+                        % this.blockEmitters.dispatchSize()));
+                Vec3 blockCamera = camera.getPosition();
+                setFloatUniform(be, "uCamPos", (float) blockCamera.x, (float) blockCamera.y, (float) blockCamera.z);
+                float range = (float) renderDistanceBlocks();
+                setFloatUniform(be, "uRangeSquared", range * range);
+                extractFrustum(projectionMatrix, view);
+                GL20.glUniform4fv(loc(be, "uFrustum"), this.frustumPlanes);
+                GL43.glDispatchCompute((this.blockEmitters.dispatchSize() + 3) / 4, 1, 1);
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
             }
 

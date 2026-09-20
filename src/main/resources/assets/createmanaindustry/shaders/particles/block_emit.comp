@@ -1,0 +1,78 @@
+// Four emitters per workgroup, 16 lanes per emitter. No command search,
+// storm/Hex branches, CPU spawn list, visibility readback or per-particle atomic.
+layout(local_size_x = 64) in;
+layout(std430, binding = BIND_POOL_WRITE) buffer ParticleWrite { vec4 data[]; } writeBuf;
+layout(std430, binding = BIND_COUNTER) buffer CounterBuf { uint writeSlot; uint spare; uint translucentCensus; } counter;
+layout(std430, binding = BIND_EMITTER) readonly buffer EmitterBuf { vec4 u[]; } emitters;
+struct BlockEmitter { vec4 originRate; vec4 params; }; // eid, phase, conservative cull radius, reserved
+layout(std430, binding = BIND_EMITCMD) buffer BlockEmitters { BlockEmitter data[]; } blocks;
+uniform uint uEmitterCount;
+uniform uint uEmitterOffset;
+uniform uint uCapacity;
+uniform float uDtScale;
+uniform float uSeed;
+uniform vec3 uCamPos;
+uniform float uRangeSquared;
+uniform vec4 uFrustum[6];
+shared uint counts[4];
+shared uint bases[4];
+shared vec4 origins[4];
+shared uint specs[4];
+
+float hash1(float p) {
+    p = fract(p * 0.1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return fract(p);
+}
+
+vec3 randomDir(float s) {
+    float a = hash1(s + 21.1) * 6.2831853;
+    float c = hash1(s + 22.1) * 2.0 - 1.0;
+    float r = sqrt(max(0.0, 1.0 - c * c));
+    return vec3(cos(a) * r, c, sin(a) * r);
+}
+
+
+#define CMI_BLOCK_EMISSION
+#pragma cmi_include chunks/classic_spawn.glsl
+
+void main() {
+    uint cluster = gl_LocalInvocationID.x / 16u;
+    uint lane = gl_LocalInvocationID.x % 16u;
+    uint work = gl_WorkGroupID.x * 4u + cluster;
+    uint index = (work + uEmitterOffset) % uEmitterCount;
+    if (lane == 0u) {
+        counts[cluster] = 0u;
+        bases[cluster] = 0u;
+        origins[cluster] = vec4(0.0);
+        specs[cluster] = 0u;
+        if (work < uEmitterCount) {
+            BlockEmitter e = blocks.data[index];
+            vec3 rel = e.originRate.xyz - uCamPos;
+            bool visible = e.originRate.w > 0.0 && dot(rel, rel) <= uRangeSquared;
+            // Cull the effect envelope, not just the attached face.
+            for (int p = 0; p < 6; p++)
+                visible = visible && dot(uFrustum[p].xyz, rel) + uFrustum[p].w >= -e.params.z;
+            if (visible && uDtScale > 0.0) {
+                float want = e.params.y + e.originRate.w * uDtScale;
+                uint count = uint(floor(want));
+                blocks.data[index].params.y = fract(want);
+                if (count > 0u) {
+                    // One reservation for all particles from this emitter.
+                    uint base = atomicAdd(counter.writeSlot, count);
+                    counts[cluster] = min(count, uCapacity - min(base, uCapacity));
+                    bases[cluster] = base;
+                    origins[cluster] = e.originRate;
+                    specs[cluster] = uint(e.params.x);
+                }
+            }
+            // Culled emitters freeze their sub-particle fraction: no catch-up burst.
+        }
+    }
+    barrier(); // Every lane reaches this, including the partial final group.
+    for (uint inner = lane; inner < counts[cluster]; inner += 16u) {
+        float seed = hash1(float(index) * 17.17 + uSeed) * 100000.0 + float(inner) * 317.0;
+        cmiSpawnClassic(specs[cluster], seed, origins[cluster].xyz, 0.0, bases[cluster] + inner);
+    }
+}

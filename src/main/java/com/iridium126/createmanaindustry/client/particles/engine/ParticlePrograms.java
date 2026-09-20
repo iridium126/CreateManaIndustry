@@ -129,6 +129,7 @@ public final class ParticlePrograms {
     private int reset;
     private int update;
     private int emit;
+    private int blockEmit;
     private int keygen;
     private int radixHist;
     private int radixScan;
@@ -162,6 +163,7 @@ public final class ParticlePrograms {
         this.reset = compileCompute(GLSL_DIR + "reset.comp");
         this.update = compileCompute(GLSL_DIR + "update.comp");
         this.emit = compileCompute(GLSL_DIR + "emit.comp");
+        this.blockEmit = compileCompute(GLSL_DIR + "block_emit.comp");
         this.keygen = compileCompute(GLSL_DIR + "keygen.comp");
         this.radixHist = compileCompute(GLSL_DIR + "radix_hist.comp");
         this.radixScan = compileCompute(GLSL_DIR + "radix_scan.comp");
@@ -204,7 +206,7 @@ public final class ParticlePrograms {
     }
 
     public boolean ready() {
-        return this.reset != 0 && this.update != 0 && this.emit != 0 && this.render != 0
+        return this.blockEmit != 0 && this.reset != 0 && this.update != 0 && this.emit != 0 && this.render != 0
                 && this.texturedRender != 0 && this.modelRender != 0
                 && this.keygen != 0 && this.radixHist != 0 && this.radixScan != 0
                 && this.radixScatter != 0 && this.capture != 0 && this.grid != 0
@@ -218,6 +220,8 @@ public final class ParticlePrograms {
     public int update() {
         return this.update;
     }
+
+    public int blockEmit() { return this.blockEmit; }
 
     public int emit() {
         return this.emit;
@@ -425,14 +429,14 @@ public final class ParticlePrograms {
     /** Deletes all program ids. Render-thread only. */
     public void delete() {
         for (int p : new int[] {
-                this.reset, this.update, this.emit, this.keygen,
+                this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
                 this.grid, this.hit, this.stormPos, this.waveContact,
                 this.render, this.texturedRender, this.modelRender }) {
             if (p != 0)
                 GL20.glDeleteProgram(p);
         }
-        this.reset = this.update = this.emit = this.keygen = 0;
+        this.reset = this.update = this.emit = this.blockEmit = this.keygen = 0;
         this.radixHist = this.radixScan = this.radixScatter = this.capture = 0;
         this.grid = this.hit = this.stormPos = this.waveContact = 0;
         this.render = this.texturedRender = this.modelRender = 0;

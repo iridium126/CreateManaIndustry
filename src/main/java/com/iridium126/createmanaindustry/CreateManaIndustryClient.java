@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry;
 
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
-import com.iridium126.createmanaindustry.client.particles.GlowingVineParticleClient;
+import com.iridium126.createmanaindustry.client.particles.BlockParticleEmitterClient;
 import com.iridium126.createmanaindustry.client.render.fuelrod.FuelRodBloomHandler;
 import com.iridium126.createmanaindustry.client.render.mist.MistClientHandler;
 import com.iridium126.createmanaindustry.client.render.InlineTrickRenderer;
@@ -116,7 +116,7 @@ public class CreateManaIndustryClient {
     @SubscribeEvent
     private static void onClientTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
-        GlowingVineParticleClient.tick(mc);
+        BlockParticleEmitterClient.tick(mc);
         if (mc.level != null
             && mc.level.dimension() == com.iridium126.createmanaindustry.dimension.AllvrDimensions.ALLAY_LEVEL) {
             // Publish packet decodes prepared off-thread. The handoff is
@@ -235,7 +235,7 @@ public class CreateManaIndustryClient {
         // (no dimension), so without a clear on dimension switch they'd linger at
         // the same absolute coordinates in the new dimension.
         if (event.getLevel() instanceof net.minecraft.client.multiplayer.ClientLevel) {
-            GlowingVineParticleClient.clear();
+            BlockParticleEmitterClient.clear();
             if (CreateManaIndustry.VEIL_ACTIVE) {
                 MistClientHandler.clearAll();
                 FuelRodBloomHandler.clearAll();
@@ -267,7 +267,7 @@ public class CreateManaIndustryClient {
     @SubscribeEvent
     private static void onLevelLoad(LevelEvent.Load event) {
         if (event.getLevel() instanceof net.minecraft.client.multiplayer.ClientLevel) {
-            GlowingVineParticleClient.clear();
+            BlockParticleEmitterClient.clear();
             CMIParticleEngine.INSTANCE.onLevelChanged();
             // Terrain binds in AllvrMinecraftLevelMixin after the old world's
             // Unload; this constructor-time Load is too early for that state.
