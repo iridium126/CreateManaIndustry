@@ -124,31 +124,50 @@ public final class SanctuaryNetwork {
                 put(x, y, z, CLEAR);
         }
         clearances.clear();
-        replaceSlabsBelowTimber();
-        repairTimberAnchorColumns();
-        // Anchor repair may extend a timber run into a cell that was clear
-        // during the first pass; normalize those newly created bottoms too.
-        replaceSlabsBelowTimber();
+        // Slab-to-timber promotion and anchor repair can expose one another:
+        // promoting a slab can reveal a new timber run, while repairing that
+        // run can put timber directly above another slab. Iterate to a fixed
+        // point so the final voxel graph has neither disconnected runs nor
+        // timber standing on a half slab.
+        for (int pass = 0; pass < 8; pass++) {
+            boolean slabsChanged = replaceSlabsBelowTimber();
+            boolean anchorsChanged = repairTimberAnchorColumns();
+            if (!slabsChanged && !anchorsChanged)
+                break;
+        }
         promoteVerticalRopeChains();
         calculateVerticalRopeConnections();
     }
 
-    /** Replace route half-steps directly below timber with full timber supports. */
-    private void replaceSlabsBelowTimber() {
+    /** Replace only the palette's bottom-slab materials directly below timber. */
+    private boolean replaceSlabsBelowTimber() {
         var cells = new ArrayList<int[]>();
         forEach((x, y, z, material) -> {
-            if (material == TIMBER && (get(x, y - 1, z) == PATH_SLAB || get(x, y - 1, z) == DECK_SLAB))
+            if (material == TIMBER && isBottomSlabMaterial(get(x, y - 1, z)))
                 cells.add(new int[]{x, y - 1, z});
         });
         for (int[] cell : cells) replaceSlabWithTimber(cell[0], cell[1], cell[2]);
+        return !cells.isEmpty();
+    }
+
+    /**
+     * Slab type is encoded by the palette contract: *_slab entries are loaded
+     * only when their BlockStateProperties.SLAB_TYPE is BOTTOM. Full blocks,
+     * and any future TOP slab symbol, remain valid supports below timber.
+     */
+    private static boolean isBottomSlabMaterial(int material) {
+        return material == PATH_SLAB || material == DECK_SLAB;
     }
 
     /** Join every timber run in an anchor column to the first solid block below it. */
-    private void repairTimberAnchorColumns() {
+    private boolean repairTimberAnchorColumns() {
+        boolean changed = false;
         for (long key : timberAnchorColumns) {
             int x = (int) (key >> 32), z = (int) key;
-            scanTimberAnchorColumn(x, z, true);
+            if (!scanTimberAnchorColumn(x, z, true))
+                changed = true;
         }
+        return changed;
     }
 
     private boolean scanTimberAnchorColumn(int x, int z, boolean repair) {
