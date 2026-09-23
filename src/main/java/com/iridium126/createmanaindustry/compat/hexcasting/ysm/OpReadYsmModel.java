@@ -21,12 +21,11 @@ public final class OpReadYsmModel implements ConstMediaAction {
         try {
             var result = YsmServerRuntime.get(env.getWorld().getServer()).read(player);
             if (result.status() != YsmSnapshotStore.Status.READY) throw new MishapYsm(result.reason());
-            var roots = result.snapshot().roots();
-            List<Iota> groups = roots.stream().<Iota>map(GroupIota::new).toList();
-            ListIota model = new ListIota(groups);
-            if (IotaType.isTooLargeToSerialize(List.of(model)))
-                throw new MishapYsm("Model geometry exceeds Hexcasting's iota serialization limit");
-            return List.of(model);
+            var stored = YsmServerRuntime.get(env.getWorld().getServer()).references().persist(result.snapshot());
+            if (stored.state() != com.iridium126.createmanaindustry.compat.ysm.YsmReferenceStore.State.READY)
+                throw new MishapYsm(stored.reason());
+            List<Iota> groups = stored.roots().stream().<Iota>map(GroupRefIota::new).toList();
+            return List.of(new ListIota(groups));
         } catch (IllegalStateException | IllegalArgumentException failure) { throw new MishapYsm(failure.getMessage()); }
     }
 }

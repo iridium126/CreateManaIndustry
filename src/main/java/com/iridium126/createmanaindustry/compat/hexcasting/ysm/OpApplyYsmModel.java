@@ -26,24 +26,30 @@ public final class OpApplyYsmModel implements SpellAction {
         env.assertVecInRange(target.position());
         if (!(args.get(1) instanceof ListIota list) || list.getList().isEmpty())
             throw MishapInvalidIota.ofType(args.get(1), 1, "list.group");
-        var roots = new ArrayList<YsmGeometry.Group>();
+        var rootKeys = new ArrayList<String>();
         for (Iota iota : list.getList()) {
-            if (!(iota instanceof GroupIota group)) throw MishapInvalidIota.ofType(iota, 1, "group");
-            roots.add(group.value());
+            if (!(iota instanceof GroupRefIota group)) throw MishapInvalidIota.ofType(iota, 1, "group_ref");
+            rootKeys.add(group.key());
         }
+        var runtime = YsmServerRuntime.get(env.getWorld().getServer());
+        List<YsmGeometry.Group> roots;
+        try { roots = runtime.references().materializeGroups(rootKeys); }
+        catch (IllegalArgumentException | IllegalStateException failure) { throw new MishapYsm(failure.getMessage()); }
         YsmResourceArchive archive;
         String existingModel = null;
         String sourceTexture = null;
         YsmResourceArchive sourceArchive = null;
         try {
             if (roots.getFirst().root() == null) throw new IllegalArgumentException("Expected a complete geometry file list");
-            var runtime = YsmServerRuntime.get(env.getWorld().getServer());
             var source = runtime.require(roots.getFirst().root().snapshot());
             if (source.roots().equals(roots)) {
-                existingModel = runtime.sourceModelId(source.digest()).orElseThrow(() -> new IllegalStateException("Source model is no longer loaded"));
-                sourceTexture = source.defaultTexture();
-                sourceArchive = source.archive();
-                archive = null;
+                var loadedSource = runtime.sourceModelId(source.digest());
+                if (loadedSource.isPresent()) {
+                    existingModel = loadedSource.get();
+                    sourceTexture = source.defaultTexture();
+                    sourceArchive = source.archive();
+                    archive = null;
+                } else archive = source.archive();
             } else {
                 var prepared = runtime.prepare(roots);
                 if (prepared.state() != YsmPreparedCache.State.READY) throw new MishapYsm(prepared.reason());

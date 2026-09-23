@@ -45,6 +45,10 @@ public final class YsmModelSnapshot {
         var model = YsmCompiledModel.decode(bytes);
         return new YsmModelSnapshot(model.digest(), model.roots(), new YsmResourceArchive(YsmCompiledExporter.build(model, model.roots())));
     }
+    public static YsmModelSnapshot fromArchive(YsmResourceArchive archive) {
+        var model = new YsmPlaintextModel(archive);
+        return new YsmModelSnapshot(model.digest(), model.roots(), model.source());
+    }
     public String digest() { return digest; }
     public List<Group> roots() { return roots; }
     public long weight() { return weight; }

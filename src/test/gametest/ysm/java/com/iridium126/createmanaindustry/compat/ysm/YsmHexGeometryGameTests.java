@@ -41,6 +41,25 @@ public final class YsmHexGeometryGameTests {
         helper.succeed();
     }
     @GameTest(template = "worldgen_test")
+    public static void compactReferenceIotaCodecs(GameTestHelper helper) {
+        String key = "ab".repeat(32);
+        var buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), helper.getLevel().registryAccess());
+        try {
+            GroupRefIota group = new GroupRefIota(key);
+            GroupRefIota.TYPE.streamCodec().encode(buffer, group);
+            helper.assertTrue(buffer.readableBytes() == 32, "Group reference network payload is not 32 bytes");
+            GroupRefIota decoded = GroupRefIota.TYPE.streamCodec().decode(buffer);
+            helper.assertTrue(decoded.key().equals(key) && decoded.size() == 1 && decoded.depth() == 1,
+                    "Group reference stream round trip failed");
+        } finally { buffer.release(); }
+
+        var tag = GroupRefIota.TYPE.codec().codec().encodeStart(net.minecraft.nbt.NbtOps.INSTANCE,
+                new GroupRefIota(key)).getOrThrow();
+        var decoded = GroupRefIota.TYPE.codec().codec().parse(net.minecraft.nbt.NbtOps.INSTANCE, tag).getOrThrow();
+        helper.assertTrue(decoded.key().equals(key), "Persistent group reference codec round trip failed");
+        helper.succeed();
+    }
+    @GameTest(template = "worldgen_test")
     public static void greatSpellTagsAndSlateExclusion(GameTestHelper helper) {
         var registry = at.petrak.hexcasting.xplat.IXplatAbstractions.INSTANCE.getActionRegistry();
         for (String action : List.of("ysm_model_read", "ysm_model_apply", "ysm_model_export")) {

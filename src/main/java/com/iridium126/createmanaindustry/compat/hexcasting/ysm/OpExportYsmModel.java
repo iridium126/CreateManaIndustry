@@ -25,15 +25,18 @@ public final class OpExportYsmModel implements SpellAction {
             throw new MishapYsm("A connected player client is required for YSM export");
         if (!(args.getFirst() instanceof ListIota list) || list.getList().isEmpty())
             throw MishapInvalidIota.ofType(args.getFirst(), 0, "list.group");
-        var roots = new ArrayList<YsmGeometry.Group>();
+        var rootKeys = new ArrayList<String>();
         for (Iota iota : list.getList()) {
-            if (!(iota instanceof GroupIota group)) throw MishapInvalidIota.ofType(iota, 0, "group");
-            roots.add(group.value());
+            if (!(iota instanceof GroupRefIota group)) throw MishapInvalidIota.ofType(iota, 0, "group_ref");
+            rootKeys.add(group.key());
         }
+        var runtime = YsmServerRuntime.get(env.getWorld().getServer());
+        List<YsmGeometry.Group> roots;
+        try { roots = runtime.references().materializeGroups(rootKeys); }
+        catch (IllegalArgumentException | IllegalStateException failure) { throw new MishapYsm(failure.getMessage()); }
         YsmResourceArchive archive;
         try {
             if (roots.getFirst().root() == null) throw new IllegalArgumentException("Expected a complete geometry file list");
-            var runtime = YsmServerRuntime.get(env.getWorld().getServer());
             if (!runtime.transfers().canQueue()) throw new IllegalStateException("YSM export queue is full; retry later");
             var source = runtime.require(roots.getFirst().root().snapshot());
             if (source.roots().equals(roots)) archive = source.archive();

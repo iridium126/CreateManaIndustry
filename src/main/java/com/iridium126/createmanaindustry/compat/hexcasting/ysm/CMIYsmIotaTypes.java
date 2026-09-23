@@ -12,6 +12,8 @@ public final class CMIYsmIotaTypes {
     static {
         TYPES.register("cube", () -> CubeIota.TYPE);
         TYPES.register("group", () -> GroupIota.TYPE);
+        TYPES.register("cube_ref", () -> CubeRefIota.TYPE);
+        TYPES.register("group_ref", () -> GroupRefIota.TYPE);
     }
     public static void register(IEventBus bus) { TYPES.register(bus); }
     private CMIYsmIotaTypes() {}

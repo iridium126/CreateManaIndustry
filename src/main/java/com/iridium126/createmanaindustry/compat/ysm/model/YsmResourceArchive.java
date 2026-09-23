@@ -90,9 +90,15 @@ public final class YsmResourceArchive {
     public byte[] encode() {
         try {
             var bytes = new ByteArrayOutputStream(byteSize);
-            try (var output = new DataOutputStream(bytes)) { write(output); }
+            writeTo(bytes);
             return bytes.toByteArray();
         } catch (IOException impossible) { throw new IllegalStateException(impossible); }
+    }
+    /** Writes the canonical archive form without allocating a second array for the entire bundle. */
+    public void writeTo(OutputStream destination) throws IOException {
+        var output = new DataOutputStream(destination);
+        write(output);
+        output.flush();
     }
     private void write(DataOutputStream output) throws IOException {
         output.writeInt(MAGIC); output.writeInt(files.size());

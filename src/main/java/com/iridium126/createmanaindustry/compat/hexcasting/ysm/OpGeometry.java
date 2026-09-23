@@ -3,6 +3,8 @@ package com.iridium126.createmanaindustry.compat.hexcasting.ysm;
 import java.util.ArrayList;
 import java.util.List;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
+import com.iridium126.createmanaindustry.compat.ysm.YsmReferenceStore;
+import com.iridium126.createmanaindustry.compat.ysm.YsmServerRuntime;
 import at.petrak.hexcasting.api.casting.castables.ConstMediaAction;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
 import at.petrak.hexcasting.api.casting.iota.*;
@@ -18,22 +20,24 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
     @Override public List<Iota> execute(List<? extends Iota> args, CastingEnvironment env) throws Mishap {
         if (property.equals("create")) return List.of(cube ? new CubeIota(Cube.empty()) : new GroupIota(Group.empty()));
         Iota target = args.get(0);
-        if (cube && !(target instanceof CubeIota) || !cube && !(target instanceof GroupIota))
-            throw new MishapInvalidIota(target, getArgc() - 1, Component.translatable("hexcasting.iota.createmanaindustry:" + (cube ? "cube" : "group")));
+        if (cube && !(target instanceof CubeIota) && !(target instanceof CubeRefIota)
+                || !cube && !(target instanceof GroupIota) && !(target instanceof GroupRefIota))
+            throw new MishapInvalidIota(target, getArgc() - 1,
+                    Component.translatable("hexcasting.iota.createmanaindustry:" + (cube ? "cube" : "group")));
         try {
-            Iota result = cube ? cube((CubeIota) target, setter ? args.get(1) : null)
-                    : group((GroupIota) target, setter ? args.get(1) : null);
-            if (IotaType.isTooLargeToSerialize(List.of(result)))
-                throw new MishapYsm("Edited geometry exceeds Hexcasting's iota serialization limit");
+            Iota result = cube ? cube(target, setter ? args.get(1) : null, env)
+                    : group(target, setter ? args.get(1) : null, env);
             return List.of(result);
-        } catch (IllegalArgumentException failure) {
+        } catch (IllegalArgumentException | IllegalStateException failure) {
             throw new MishapInvalidIota(setter ? args.get(1) : target, 0,
                     Component.translatable("createmanaindustry.hex.ysm.valid_geometry", Component.literal(failure.getMessage())));
         }
     }
 
-    private Iota cube(CubeIota input, Iota replacement) {
-        Cube c = input.value();
+    private Iota cube(Iota input, Iota replacement, CastingEnvironment env) {
+        boolean reference = input instanceof CubeRefIota;
+        YsmReferenceStore store = reference ? store(env) : null;
+        Cube c = reference ? store.readCube(((CubeRefIota) input).key()) : ((CubeIota) input).value();
         if (!setter) return switch (property) {
             case "origin" -> vector(c.origin()); case "size" -> vector(c.size());
             case "pivot" -> vector(c.pivot()); case "rotation" -> vector(c.rotation()); case "scale" -> vector(c.scale());
@@ -42,19 +46,27 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
                     new DoubleIota(f.width()), new DoubleIota(f.height()), new DoubleIota(f.rotation()), new BooleanIota(f.visible())))).toList());
             default -> throw new IllegalArgumentException("Unknown cube property");
         };
-        return new CubeIota(new Cube(property.equals("origin") ? vector(replacement) : c.origin(),
+        Cube edited = new Cube(property.equals("origin") ? vector(replacement) : c.origin(),
                 property.equals("size") ? vector(replacement) : c.size(), property.equals("pivot") ? vector(replacement) : c.pivot(),
                 property.equals("rotation") ? vector(replacement) : c.rotation(), property.equals("scale") ? vector(replacement) : c.scale(),
                 property.equals("inflate") ? number(replacement) : c.inflate(), property.equals("visible") ? bool(replacement) : c.visible(),
-                property.equals("uv") ? faces(replacement) : c.faces(), c.extraJson()));
+                property.equals("uv") ? faces(replacement) : c.faces(), c.extraJson());
+        return reference ? new CubeRefIota(store.writeCube(edited)) : new CubeIota(edited);
     }
-    private Iota group(GroupIota input, Iota replacement) {
-        Group g = input.value();
+    private Iota group(Iota input, Iota replacement, CastingEnvironment env) {
+        boolean reference = input instanceof GroupRefIota;
+        YsmReferenceStore store = reference ? store(env) : null;
+        YsmReferenceStore.GroupNode node = reference ? store.readGroup(((GroupRefIota) input).key()) : null;
+        Group g = reference ? node.value() : ((GroupIota) input).value();
         if (!setter) return switch (property) {
             case "name" -> text(g.name()); case "pivot" -> vector(g.pivot());
             case "rotation" -> vector(g.rotation()); case "scale" -> vector(g.scale()); case "visible" -> new BooleanIota(g.visible());
-            case "cubes" -> new ListIota(g.cubes().stream().<Iota>map(CubeIota::new).toList());
-            case "children" -> new ListIota(g.children().stream().<Iota>map(GroupIota::new).toList());
+            case "cubes" -> new ListIota(reference
+                    ? store.cubeKeys(node).stream().<Iota>map(CubeRefIota::new).toList()
+                    : g.cubes().stream().<Iota>map(CubeIota::new).toList());
+            case "children" -> new ListIota(reference
+                    ? store.groupKeys(node).stream().<Iota>map(GroupRefIota::new).toList()
+                    : g.children().stream().<Iota>map(GroupIota::new).toList());
             case "part" -> text(root(g).part()); case "source" -> text(root(g).snapshot());
             case "texture_size" -> new Vec3Iota(new Vec3(root(g).textureWidth(), root(g).textureHeight(), 0));
             default -> throw new IllegalArgumentException("Unknown group property");
@@ -66,10 +78,22 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
             Root old = root(g);
             root = new Root(old.snapshot(), old.part(), (int)v.x(), (int)v.y(), old.descriptionJson());
         }
-        return new GroupIota(new Group(property.equals("name") ? text(replacement) : g.name(),
+        if (!reference) return new GroupIota(new Group(property.equals("name") ? text(replacement) : g.name(),
+                    property.equals("pivot") ? vector(replacement) : g.pivot(), property.equals("rotation") ? vector(replacement) : g.rotation(),
+                    property.equals("scale") ? vector(replacement) : g.scale(), property.equals("visible") ? bool(replacement) : g.visible(),
+                    property.equals("cubes") ? cubes(replacement) : g.cubes(), property.equals("children") ? groups(replacement) : g.children(), root, g.extraJson()));
+
+        List<String> cubeKeys = property.equals("cubes") ? referenceCubes(replacement, store) : store.cubeKeys(node);
+        List<String> groupKeys = property.equals("children") ? referenceGroups(replacement, store) : store.groupKeys(node);
+        Group header = new Group(property.equals("name") ? text(replacement) : g.name(),
                 property.equals("pivot") ? vector(replacement) : g.pivot(), property.equals("rotation") ? vector(replacement) : g.rotation(),
                 property.equals("scale") ? vector(replacement) : g.scale(), property.equals("visible") ? bool(replacement) : g.visible(),
-                property.equals("cubes") ? cubes(replacement) : g.cubes(), property.equals("children") ? groups(replacement) : g.children(), root, g.extraJson()));
+                List.of(), List.of(), root, g.extraJson());
+        return new GroupRefIota(store.writeGroup(header, cubeKeys, groupKeys));
+    }
+    private static YsmReferenceStore store(CastingEnvironment env) {
+        if (env == null || env.getWorld().getServer() == null) throw new IllegalStateException("YSM reference requires a server world");
+        return YsmServerRuntime.get(env.getWorld().getServer()).references();
     }
     private static Root root(Group group) {
         if (group.root() == null) throw new IllegalArgumentException("Expected a geometry file root");
@@ -109,6 +133,24 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
             groups.add(g.value());
         }
         return groups;
+    }
+    private static List<String> referenceCubes(Iota iota, YsmReferenceStore store) {
+        var keys = new ArrayList<String>();
+        for (Iota entry : list(iota)) {
+            if (entry instanceof CubeRefIota ref) { store.readCube(ref.key()); keys.add(ref.key()); }
+            else if (entry instanceof CubeIota cube) keys.add(store.writeCube(cube.value()));
+            else throw new IllegalArgumentException("Expected only cube iotas");
+        }
+        return keys;
+    }
+    private static List<String> referenceGroups(Iota iota, YsmReferenceStore store) {
+        var keys = new ArrayList<String>();
+        for (Iota entry : list(iota)) {
+            if (entry instanceof GroupRefIota ref) { store.readGroup(ref.key()); keys.add(ref.key()); }
+            else if (entry instanceof GroupIota group) keys.add(store.writeTree(group.value()));
+            else throw new IllegalArgumentException("Expected only group iotas");
+        }
+        return keys;
     }
     private static List<Face> faces(Iota iota) {
         List<Iota> entries = list(iota);

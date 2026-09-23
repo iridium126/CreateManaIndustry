@@ -22,6 +22,7 @@ public final class YsmServerRuntime implements AutoCloseable {
     private static YsmServerRuntime active;
     private final MinecraftServer server;
     private final YsmSnapshotStore snapshots = new YsmSnapshotStore();
+    private final YsmReferenceStore references;
     private final YsmPreparedCache prepared = new YsmPreparedCache();
     private final com.iridium126.createmanaindustry.compat.ysm.net.YsmServerArchives transfers;
     private final CompletableFuture<YsmRuntimeSymbols.Snapshot> mapping;
@@ -29,6 +30,7 @@ public final class YsmServerRuntime implements AutoCloseable {
     private String failure;
     private YsmServerRuntime(MinecraftServer server) {
         this.server = server;
+        this.references = new YsmReferenceStore(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT));
         this.transfers = new com.iridium126.createmanaindustry.compat.ysm.net.YsmServerArchives(server);
         var file = ModList.get().getModFileById(YsmRuntimeSymbols.MOD_ID);
         var path = file.getFile().getFilePath();
@@ -98,12 +100,22 @@ public final class YsmServerRuntime implements AutoCloseable {
                 snapshots.prewarm(modelId, List.of(root.resolve("custom").resolve(modelId), root.resolve("builtin").resolve(modelId)));
                 result = snapshots.query(modelId);
             }
+            if (result.status() == YsmSnapshotStore.Status.READY) references.persist(result.snapshot());
             return result;
         } catch (ReflectiveOperationException | IllegalArgumentException | NoSuchElementException exception) {
             throw new IllegalStateException("Unable to read YSM player resources: " + exception.getMessage(), exception);
         }
     }
-    public YsmModelSnapshot require(String digest) { symbols(); return snapshots.require(digest); }
+    public YsmModelSnapshot require(String digest) {
+        symbols();
+        try { return snapshots.require(digest); }
+        catch (IllegalArgumentException missingMemorySnapshot) {
+            var result = references.querySnapshot(digest);
+            if (result.state() == YsmReferenceStore.State.READY) return result.snapshot();
+            throw new IllegalStateException(result.reason());
+        }
+    }
+    public YsmReferenceStore references() { return references; }
     public Optional<String> sourceModelId(String digest) { symbols(); return snapshots.modelIdForDigest(digest); }
     public YsmOverrideManager overrides() {
         if (overrides == null) overrides = new YsmOverrideManager(server, symbols(), transfers);
@@ -126,7 +138,7 @@ public final class YsmServerRuntime implements AutoCloseable {
     }
     @Override public void close() {
         if (overrides != null) overrides.close();
-        mapping.cancel(false); prepared.close(); snapshots.close(); transfers.close();
+        mapping.cancel(false); prepared.close(); snapshots.close(); references.close(); transfers.close();
     }
     private YsmServerRuntime() { throw new AssertionError(); }
 }

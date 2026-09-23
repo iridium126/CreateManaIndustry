@@ -77,10 +77,7 @@ public final class GroupIota extends Iota {
         } catch (IllegalArgumentException failure) { return new GarbageIota(); }
     }
     public static final IotaType<GroupIota> TYPE = new IotaType<>() {
-        private final MapCodec<GroupIota> codec = YsmGeometryCodecs.GROUP.xmap(GroupIota::new, GroupIota::value)
-                .validate(iota -> IotaType.isTooLargeToSerialize(List.of(iota))
-                        ? com.mojang.serialization.DataResult.error(() -> "YSM group exceeds Hexcasting serialization limits")
-                        : com.mojang.serialization.DataResult.success(iota)).fieldOf("value");
+        private final MapCodec<GroupIota> codec = YsmGeometryCodecs.GROUP.xmap(GroupIota::new, GroupIota::value).fieldOf("value");
         private final StreamCodec<RegistryFriendlyByteBuf, GroupIota> stream = YsmGeometryCodecs.GROUP_STREAM.map(GroupIota::new, GroupIota::value);
         @Override public MapCodec<GroupIota> codec() { return codec; }
         @Override public StreamCodec<RegistryFriendlyByteBuf, GroupIota> streamCodec() { return stream; }
