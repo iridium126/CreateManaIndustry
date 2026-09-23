@@ -3,7 +3,6 @@ package com.iridium126.createmanaindustry.compat.hexcasting.ysm;
 import java.util.ArrayList;
 import java.util.List;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
-import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometryIO;
 import at.petrak.hexcasting.api.casting.castables.ConstMediaAction;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
 import at.petrak.hexcasting.api.casting.iota.*;
@@ -24,10 +23,6 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
         try {
             Iota result = cube ? cube((CubeIota) target, setter ? args.get(1) : null)
                     : group((GroupIota) target, setter ? args.get(1) : null);
-            if (setter) {
-                if (result instanceof CubeIota ci) YsmGeometryIO.encodeCube(ci.value());
-                else if (result instanceof GroupIota gi) YsmGeometryIO.encodeGroup(gi.value());
-            }
             if (IotaType.isTooLargeToSerialize(List.of(result)))
                 throw new MishapYsm("Edited geometry exceeds Hexcasting's iota serialization limit");
             return List.of(result);
@@ -95,13 +90,13 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
         if (!(iota instanceof BooleanIota b)) throw new IllegalArgumentException("Expected a boolean");
         return b.getBool();
     }
-    private static List<Iota> list(Iota iota, int max) {
-        if (!(iota instanceof ListIota l) || l.getList().size() > max) throw new IllegalArgumentException("Expected a bounded list");
+    private static List<Iota> list(Iota iota) {
+        if (!(iota instanceof ListIota l)) throw new IllegalArgumentException("Expected a list");
         var values = new ArrayList<Iota>(); l.getList().forEach(values::add); return values;
     }
     private static List<Cube> cubes(Iota iota) {
         var cubes = new ArrayList<Cube>();
-        for (Iota entry : list(iota, 4096)) {
+        for (Iota entry : list(iota)) {
             if (!(entry instanceof CubeIota c)) throw new IllegalArgumentException("Expected only cube iotas");
             cubes.add(c.value());
         }
@@ -109,18 +104,18 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
     }
     private static List<Group> groups(Iota iota) {
         var groups = new ArrayList<Group>();
-        for (Iota entry : list(iota, 4096)) {
+        for (Iota entry : list(iota)) {
             if (!(entry instanceof GroupIota g)) throw new IllegalArgumentException("Expected only group iotas");
             groups.add(g.value());
         }
         return groups;
     }
     private static List<Face> faces(Iota iota) {
-        List<Iota> entries = list(iota, 6);
+        List<Iota> entries = list(iota);
         if (entries.size() != 6) throw new IllegalArgumentException("Expected six UV faces");
         var faces = new ArrayList<Face>();
         for (Iota entry : entries) {
-            var fields = list(entry, 6);
+            var fields = list(entry);
             if (fields.size() != 6) throw new IllegalArgumentException("Expected six fields per UV face");
             double rotation = number(fields.get(4));
             if (rotation != 0 && rotation != 90 && rotation != 180 && rotation != 270) throw new IllegalArgumentException("Invalid UV rotation");
@@ -131,7 +126,7 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
     private static Iota text(String value) { return new ListIota(value.codePoints().mapToObj(cp -> (Iota)new DoubleIota(cp)).toList()); }
     private static String text(Iota iota) {
         var out = new StringBuilder();
-        for (Iota entry : list(iota, 1024)) {
+        for (Iota entry : list(iota)) {
             double number = number(entry);
             if (number != Math.rint(number) || number < 0 || number > 0x10ffff || number >= 0xd800 && number <= 0xdfff)
                 throw new IllegalArgumentException("Invalid Unicode scalar value");

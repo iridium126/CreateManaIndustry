@@ -17,7 +17,8 @@ public final class CubeIota extends Iota {
     @Override public boolean isTruthy() { return value.visible(); }
     @Override protected boolean toleratesOther(Iota other) { return other instanceof CubeIota cube && value.equals(cube.value); }
     @Override public int hashCode() { return value.hashCode(); }
-    @Override public int size() { return 24 + (value.extraJson().length() + 7) / 8; }
+    @Override public int size() { return 1; }
+    @Override public int depth() { return 1; }
     @Override public Component display() { return Component.translatable("createmanaindustry.iota.cube", value.size().x(), value.size().y(), value.size().z()); }
     public static final IotaType<CubeIota> TYPE = new IotaType<>() {
         private final MapCodec<CubeIota> codec = YsmGeometryCodecs.CUBE.xmap(CubeIota::new, CubeIota::value)

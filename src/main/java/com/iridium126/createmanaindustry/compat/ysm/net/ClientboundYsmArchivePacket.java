@@ -45,7 +45,7 @@ public record ClientboundYsmArchivePacket(byte kind, UUID transfer, UUID target,
         }
         String digest = in.readUtf(64), modelId = in.readUtf(128); int size = in.readVarInt();
         if (kind != CLEAR && (digest.length() != 64 || !digest.matches("[0-9a-f]{64}")
-                || size < 1 || size > 64 * 1024 * 1024)) throw new DecoderException("Invalid YSM archive header");
+                || size < 1 || size > Integer.MAX_VALUE - 8)) throw new DecoderException("Invalid YSM archive header");
         return begin(kind, transfer, target, revision, digest, modelId, size);
     }
     @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }

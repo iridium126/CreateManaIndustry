@@ -24,7 +24,7 @@ public final class OpApplyYsmModel implements SpellAction {
             throw MishapInvalidIota.ofType(args.get(0), 0, "entity.player");
         if (target.serverLevel() != env.getWorld()) throw new MishapYsm("Target player is in another dimension");
         env.assertVecInRange(target.position());
-        if (!(args.get(1) instanceof ListIota list) || list.getList().isEmpty() || list.getList().size() > 4096)
+        if (!(args.get(1) instanceof ListIota list) || list.getList().isEmpty())
             throw MishapInvalidIota.ofType(args.get(1), 1, "list.group");
         var roots = new ArrayList<YsmGeometry.Group>();
         for (Iota iota : list.getList()) {

@@ -23,7 +23,7 @@ public final class OpExportYsmModel implements SpellAction {
     @Override public Result execute(List<? extends Iota> args, CastingEnvironment env) throws Mishap {
         if (!(env.getCastingEntity() instanceof ServerPlayer caster) || caster.hasDisconnected())
             throw new MishapYsm("A connected player client is required for YSM export");
-        if (!(args.getFirst() instanceof ListIota list) || list.getList().isEmpty() || list.getList().size() > 4096)
+        if (!(args.getFirst() instanceof ListIota list) || list.getList().isEmpty())
             throw MishapInvalidIota.ofType(args.getFirst(), 0, "list.group");
         var roots = new ArrayList<YsmGeometry.Group>();
         for (Iota iota : list.getList()) {

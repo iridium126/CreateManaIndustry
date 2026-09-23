@@ -9,10 +9,10 @@ import java.util.Deque;
 import java.util.List;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
 
-/** Versioned, bounded representation shared by persistence and network codecs. */
+/** Versioned representation shared by persistence and network codecs. */
 public final class YsmGeometryIO {
-    // Persistence/network limit for one Hexcasting iota; it is not a YSM parser quota.
-    public static final int MAX_BYTES = 1024 * 1024;
+    /** Practical JVM byte-array ceiling; the geometry codec has no smaller payload quota. */
+    public static final int MAX_BYTES = Integer.MAX_VALUE - 8;
     private static final int VERSION = 1;
 
     public static byte[] encodeCube(Cube cube) { return encode(out -> writeCube(out, cube)); }
@@ -45,11 +45,11 @@ public final class YsmGeometryIO {
         try (var out = new DataOutputStream(new FilterOutputStream(bytes) {
             private long count;
             @Override public void write(int value) throws IOException {
-                if (++count > MAX_BYTES) throw new IOException("Geometry exceeds byte limit");
+                if (++count > MAX_BYTES) throw new IOException("Geometry exceeds Java byte-array limit");
                 out.write(value);
             }
             @Override public void write(byte[] data, int offset, int length) throws IOException {
-                if (length > MAX_BYTES - count) throw new IOException("Geometry exceeds byte limit");
+                if (length > MAX_BYTES - count) throw new IOException("Geometry exceeds Java byte-array limit");
                 count += length;
                 out.write(data, offset, length);
             }
@@ -61,7 +61,7 @@ public final class YsmGeometryIO {
     }
 
     private static <T> T decode(byte[] bytes, Reader<T> reader) {
-        if (bytes.length > MAX_BYTES) throw new IllegalArgumentException("Geometry exceeds byte limit");
+        if (bytes.length > MAX_BYTES) throw new IllegalArgumentException("Geometry exceeds Java byte-array limit");
         try (var in = new DataInputStream(new ByteArrayInputStream(bytes))) {
             if (in.readUnsignedByte() != VERSION) throw new IOException("Unsupported geometry encoding version");
             T value = reader.read(in);
