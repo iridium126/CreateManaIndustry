@@ -42,8 +42,14 @@ public final class YsmPlaintextModel {
             JsonObject files = config.getAsJsonObject("files");
             if (files == null || !files.has("player")) throw new IllegalArgumentException("Missing player resource configuration");
             entity(source, files.getAsJsonObject("player"));
-            for (String kind : List.of("vehicles", "projectiles")) if (files.has(kind))
-                for (JsonElement item : files.getAsJsonArray(kind)) entity(source, item.getAsJsonObject());
+            for (String kind : List.of("vehicles", "projectiles", "sub_entities")) if (files.has(kind)) {
+                JsonElement collection = files.get(kind);
+                if (collection.isJsonArray()) {
+                    for (JsonElement item : collection.getAsJsonArray()) entity(source, item.getAsJsonObject());
+                } else if (collection.isJsonObject()) {
+                    for (var item : collection.getAsJsonObject().entrySet()) entity(source, item.getValue().getAsJsonObject());
+                } else throw new IllegalArgumentException("Invalid entity resource configuration");
+            }
             if (config.has("properties")) {
                 JsonObject properties = config.getAsJsonObject("properties");
                 for (String key : List.of("gui_background", "gui_foreground")) if (properties.has(key)) reference(source, properties.get(key));
@@ -57,7 +63,7 @@ public final class YsmPlaintextModel {
         }
     }
     private static void entity(YsmResourceArchive source, JsonObject entity) {
-        for (String key : List.of("model", "texture", "animation", "animation_controllers"))
+        for (String key : List.of("model", "texture", "animation", "animation_controllers", "controller"))
             if (entity.has(key)) reference(source, entity.get(key));
     }
     private static void reference(YsmResourceArchive source, JsonElement value) {

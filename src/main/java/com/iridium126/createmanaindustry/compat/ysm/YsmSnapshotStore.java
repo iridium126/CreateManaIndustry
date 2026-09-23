@@ -43,7 +43,6 @@ public final class YsmSnapshotStore implements AutoCloseable {
                     var snapshot = YsmModelSnapshot.load(matches.getFirst());
                     synchronized (this) {
                         if (closed || requests.get(modelId) != result) { result.cancel(false); return; }
-                        if (snapshot.weight() > MAX_WEIGHT) throw new IllegalArgumentException("Decoded model exceeds cache limit");
                         if (!snapshots.containsKey(snapshot.digest())) {
                             while (!snapshots.isEmpty() && (snapshots.size() >= MAX_SNAPSHOTS || weight + snapshot.weight() > MAX_WEIGHT)) {
                                 var eldest = snapshots.entrySet().iterator();

@@ -7,9 +7,7 @@ import com.iridium126.createmanaindustry.compat.ysm.internal.security.YsmCrypt;
 public final class YsmZstd {
     public static byte[] decompress(byte[] data) throws IOException {
         try (var in = new ZstdInputStream(new ByteArrayInputStream(wash(data.clone())))) {
-            byte[] output = in.readNBytes(YsmCrypt.MAX_BYTES + 1);
-            if (output.length > YsmCrypt.MAX_BYTES) throw new IOException("YSM decompressed resource limit exceeded");
-            return output;
+            return in.readAllBytes();
         }
     }
     private static byte[] wash(byte[] data) {

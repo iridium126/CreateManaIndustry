@@ -4,25 +4,20 @@ import com.iridium126.createmanaindustry.compat.ysm.internal.algorithms.*;
 import java.nio.*;
 import java.util.Arrays;
 public final class YsmCrypt {
-    public static final int MAX_BYTES = 64 * 1024 * 1024;
+    // Java stores encrypted and decompressed input in byte arrays. Mirror the
+    // reference parser's lack of a smaller file-size quota up to that boundary.
+    public static final int MAX_BYTES = Integer.MAX_VALUE - 8;
     private static final long SEED_FILE_VERIFICATION = 0x9E5599DB80C67C29L;
     private static final long SEED_RES_VERIFICATION = 0xA62B1A2C43842BC3L;
     private static final long SEED_KEY_DERIVATION = 0xD017CBBA7B5D3581L;
-    public static byte[] decryptYsmFile(byte[] fileData) throws Exception {
-        if (fileData.length > MAX_BYTES || fileData.length < 8 + 24 + 32 + 8) {
-            throw new RuntimeException("Invalid YSM file: File too short.");
+    public record Decrypted(int resourceFormat, byte[] payload) {}
+
+    public static Decrypted decryptCrypto3(byte[] fileData) throws Exception {
+        if (fileData.length < 8 + 24 + 32 + 8) {
+            throw new IllegalArgumentException("Invalid YSM file size");
         }
-
-        int headerLength = 0;
-        while (headerLength < fileData.length && fileData[headerLength] != 0x00) {
-            headerLength++;
-        }
-
-//        String headerString = new String(fileData, 0, headerLength, StandardCharsets.UTF_8);
-//        System.out.println(headerString);
-
+        YsmFileFormat.Header header = YsmFileFormat.v3(fileData);
         int tailOffset = fileData.length - 64;
-        if (headerLength + 5 >= tailOffset) throw new IllegalArgumentException("Invalid YSM header boundary");
         byte[] key = Arrays.copyOfRange(fileData, tailOffset, tailOffset + 32);
         byte[] iv = Arrays.copyOfRange(fileData, tailOffset + 32, tailOffset + 56);
         long fileHash = ByteBuffer.wrap(fileData, tailOffset + 56, 8).order(ByteOrder.LITTLE_ENDIAN).getLong();
@@ -33,14 +28,7 @@ public final class YsmCrypt {
             throw new RuntimeException("Corrupted YSM file: File hash mismatch.");
         }
 
-        int ptrBinaryData = headerLength + 1;
-        int crypto = ByteBuffer.wrap(fileData, ptrBinaryData, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
-        if (crypto != 3) {
-            throw new RuntimeException("Invalid YSM file: Crypto version is not 3.");
-        }
-        ptrBinaryData += 4;
-
-        byte[] encryptedBinaryData = Arrays.copyOfRange(fileData, ptrBinaryData, tailOffset);
+        byte[] encryptedBinaryData = Arrays.copyOfRange(fileData, header.payloadOffset(), tailOffset);
         byte[] chachaDecrypted = modifiedChaChaDecrypt(encryptedBinaryData, key, iv, SEED_RES_VERIFICATION);
 
         byte[] keyIv = new byte[56];
@@ -57,7 +45,7 @@ public final class YsmCrypt {
         if (zstdOffset >= xorredData.length) throw new IllegalArgumentException("Invalid YSM padding");
         byte[] bytes = Arrays.copyOfRange(xorredData, zstdOffset, xorredData.length);
 
-        return YsmZstd.decompress(bytes);
+        return new Decrypted(header.resourceFormat(), YsmZstd.decompress(bytes));
     }
 
     private static byte[] modifiedChaChaDecrypt(byte[] data, byte[] key, byte[] iv, long seed) throws Exception {

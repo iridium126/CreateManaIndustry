@@ -62,7 +62,8 @@ class ZstdFrameDecompressor
 
     private static final int V07_MAGIC_NUMBER = 0xFD2FB527;
 
-    static final int MAX_WINDOW_SIZE = 1 << 23;
+    // Match the reference Zstd decoder's ZSTD_WINDOWLOG_LIMIT_DEFAULT (2^27).
+    static final int MAX_WINDOW_SIZE = 1 << 27;
 
     private static final int[] LITERALS_LENGTH_BASE = {
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,

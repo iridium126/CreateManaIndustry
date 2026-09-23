@@ -3,24 +3,47 @@ package com.iridium126.createmanaindustry.compat.ysm.model;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
 
 /** Versioned, bounded representation shared by persistence and network codecs. */
 public final class YsmGeometryIO {
+    // Persistence/network limit for one Hexcasting iota; it is not a YSM parser quota.
     public static final int MAX_BYTES = 1024 * 1024;
     private static final int VERSION = 1;
 
     public static byte[] encodeCube(Cube cube) { return encode(out -> writeCube(out, cube)); }
     public static byte[] encodeGroup(Group group) { return encode(out -> writeGroup(out, group)); }
     public static Cube decodeCube(byte[] bytes) { return decode(bytes, in -> readCube(in)); }
-    public static Group decodeGroup(byte[] bytes) { return decode(bytes, in -> readGroup(in, 1, new int[]{0})); }
+    public static Group decodeGroup(byte[] bytes) { return decode(bytes, YsmGeometryIO::readGroup); }
+
+    /** Estimates cache weight without imposing the iota codec's per-value byte cap. */
+    public static long estimateGroupSize(Group root) {
+        long size = 0;
+        var pending = new ArrayDeque<Group>();
+        pending.push(root);
+        while (!pending.isEmpty()) {
+            Group group = pending.pop();
+            size += textWeight(group.name()) + 3L * 24 + 2 + textWeight(group.extraJson()) + 8;
+            if (group.root() != null) {
+                Root file = group.root();
+                size += textWeight(file.snapshot()) + textWeight(file.part()) + 8 + textWeight(file.descriptionJson());
+            }
+            for (Cube cube : group.cubes())
+                size += 5L * 24 + 8 + 1 + 6L * 37 + textWeight(cube.extraJson());
+            for (Group child : group.children()) pending.push(child);
+        }
+        return size;
+    }
+    private static long textWeight(String value) { return 4L + 3L * value.length(); }
 
     private static byte[] encode(Writer writer) {
         var bytes = new ByteArrayOutputStream();
         try (var out = new DataOutputStream(new FilterOutputStream(bytes) {
-            private int count;
+            private long count;
             @Override public void write(int value) throws IOException {
                 if (++count > MAX_BYTES) throw new IOException("Geometry exceeds byte limit");
                 out.write(value);
@@ -85,35 +108,72 @@ public final class YsmGeometryIO {
         return value != 0;
     }
     private static void writeGroup(DataOutputStream out, Group group) throws IOException {
-        text(out, group.name()); vector(out, group.pivot()); vector(out, group.rotation()); vector(out, group.scale());
-        out.writeBoolean(group.visible()); out.writeBoolean(group.root() != null);
-        if (group.root() != null) {
-            Root root = group.root(); text(out, root.snapshot()); text(out, root.part());
-            out.writeInt(root.textureWidth()); out.writeInt(root.textureHeight()); text(out, root.descriptionJson());
+        Deque<Group> pending = new ArrayDeque<>();
+        pending.push(group);
+        while (!pending.isEmpty()) {
+            Group current = pending.pop();
+            text(out, current.name()); vector(out, current.pivot()); vector(out, current.rotation()); vector(out, current.scale());
+            out.writeBoolean(current.visible()); out.writeBoolean(current.root() != null);
+            if (current.root() != null) {
+                Root root = current.root(); text(out, root.snapshot()); text(out, root.part());
+                out.writeInt(root.textureWidth()); out.writeInt(root.textureHeight()); text(out, root.descriptionJson());
+            }
+            text(out, current.extraJson()); out.writeInt(current.cubes().size());
+            for (Cube cube : current.cubes()) writeCube(out, cube);
+            out.writeInt(current.children().size());
+            for (int i = current.children().size() - 1; i >= 0; i--) pending.push(current.children().get(i));
         }
-        text(out, group.extraJson()); out.writeInt(group.cubes().size());
-        for (Cube cube : group.cubes()) writeCube(out, cube);
-        out.writeInt(group.children().size());
-        for (Group child : group.children()) writeGroup(out, child);
     }
-    private static Group readGroup(DataInputStream in, int depth, int[] nodes) throws IOException {
-        if (depth > YsmGeometry.MAX_DEPTH || ++nodes[0] > YsmGeometry.MAX_NODES) throw new IOException("Geometry complexity limit exceeded");
+
+    private static final class GroupFrame {
+        private final String name, extra;
+        private final Vector pivot, rotation, scale;
+        private final boolean visible;
+        private final Root root;
+        private final List<Cube> cubes;
+        private final int childCount;
+        private final List<Group> children = new ArrayList<>();
+        private GroupFrame(String name, Vector pivot, Vector rotation, Vector scale, boolean visible, Root root,
+                String extra, List<Cube> cubes, int childCount) {
+            this.name = name; this.pivot = pivot; this.rotation = rotation; this.scale = scale;
+            this.visible = visible; this.root = root; this.extra = extra; this.cubes = cubes; this.childCount = childCount;
+        }
+        private Group build() { return new Group(name, pivot, rotation, scale, visible, cubes, children, root, extra); }
+    }
+
+    private static GroupFrame readGroupFrame(DataInputStream in) throws IOException {
         String name = text(in);
         Vector pivot = vector(in), rotation = vector(in), scale = vector(in);
         boolean visible = bool(in);
         Root root = bool(in) ? new Root(text(in), text(in), in.readInt(), in.readInt(), text(in)) : null;
         String extra = text(in);
-        int cubeCount = count(in, nodes[0]); nodes[0] += cubeCount;
-        List<Cube> cubes = new ArrayList<>(cubeCount);
+        int cubeCount = count(in);
+        List<Cube> cubes = new ArrayList<>(Math.min(cubeCount, 1024));
         for (int i = 0; i < cubeCount; i++) cubes.add(readCube(in));
-        int childCount = count(in, nodes[0]);
-        List<Group> children = new ArrayList<>(childCount);
-        for (int i = 0; i < childCount; i++) children.add(readGroup(in, depth + 1, nodes));
-        return new Group(name, pivot, rotation, scale, visible, cubes, children, root, extra);
+        int childCount = count(in);
+        return new GroupFrame(name, pivot, rotation, scale, visible, root, extra, cubes, childCount);
     }
-    private static int count(DataInputStream in, int used) throws IOException {
+
+    private static Group readGroup(DataInputStream in) throws IOException {
+        Deque<GroupFrame> pending = new ArrayDeque<>();
+        pending.push(readGroupFrame(in));
+        while (true) {
+            GroupFrame frame = pending.peek();
+            if (frame.children.size() < frame.childCount) {
+                pending.push(readGroupFrame(in));
+                continue;
+            }
+            Group completed = frame.build();
+            pending.pop();
+            if (pending.isEmpty()) return completed;
+            pending.peek().children.add(completed);
+        }
+    }
+    private static int count(DataInputStream in) throws IOException {
         int count = in.readInt();
-        if (count < 0 || count > YsmGeometry.MAX_NODES - used) throw new IOException("Invalid geometry list length");
+        // Every serialized list element consumes at least one byte. This is an
+        // input-integrity check, not a model node quota.
+        if (count < 0 || count > in.available()) throw new IOException("Invalid geometry list length");
         return count;
     }
     private interface Writer { void write(DataOutputStream out) throws IOException; }

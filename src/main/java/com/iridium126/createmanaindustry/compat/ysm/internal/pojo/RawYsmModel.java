@@ -11,6 +11,7 @@ public class RawYsmModel {
     public RawMainEntity mainEntity = new RawMainEntity();
     public Map<String, RawSubEntity> vehicles = new LinkedHashMap<>();
     public Map<String, RawSubEntity> projectiles = new LinkedHashMap<>();
+    public Map<String, RawSubEntity> subEntities = new LinkedHashMap<>();
     public Map<String, RawDataFile> soundFiles = new LinkedHashMap<>();
     public Map<String, RawDataFile> functionFiles = new LinkedHashMap<>();
     public Map<String, RawLanguageFile> languageFiles = new LinkedHashMap<>(); // locale -> key/value
@@ -165,6 +166,7 @@ public class RawYsmModel {
     }
 
     public static class RawAnimationController {
+        public String fileName;
         public String name;
         public String hash;
         public String animationName;
@@ -183,6 +185,7 @@ public class RawYsmModel {
         public List<String> onExit = new ArrayList<>();
         public List<String> soundEffects = new ArrayList<>();
         public float blendTransitionValue;
+        public boolean hasBlendTransitionValue;
         public boolean blendViaShortestPath;
         public Map<Float, Float> blendTransitions = new LinkedHashMap<>();
     }

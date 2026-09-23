@@ -7,10 +7,12 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
-/** Bounded immutable resource bundle. The digest covers both paths and contents. */
+/** Immutable resource bundle. The digest covers both paths and contents. */
 public final class YsmResourceArchive {
-    public static final int MAX_BYTES = 64 * 1024 * 1024;
-    public static final int MAX_FILES = 4096;
+    // The reference parser has no fixed bundle-size or file-count quota. Keep
+    // only the maximum size representable by the byte[] based archive format.
+    public static final int MAX_BYTES = Integer.MAX_VALUE - 8;
+    public static final int MAX_FILES = Integer.MAX_VALUE;
     private static final int MAGIC = 0x59534d01;
     private final SortedMap<String, byte[]> files;
     private final String digest;
@@ -18,7 +20,7 @@ public final class YsmResourceArchive {
     private final String defaultTexture;
 
     public YsmResourceArchive(Map<String, byte[]> input) {
-        if (input.isEmpty() || input.size() > MAX_FILES) throw new IllegalArgumentException("Invalid resource count");
+        if (input.isEmpty()) throw new IllegalArgumentException("Invalid resource count");
         var copy = new TreeMap<String, byte[]>();
         Set<String> names = new HashSet<>();
         long size = 8;
@@ -28,7 +30,7 @@ public final class YsmResourceArchive {
             if (!names.add(path.toLowerCase(Locale.ROOT))) throw new IllegalArgumentException("Case-colliding resource paths");
             byte[] bytes = Objects.requireNonNull(entry.getValue(), "Missing resource bytes");
             size += 8L + path.getBytes(StandardCharsets.UTF_8).length + bytes.length;
-            if (size > MAX_BYTES) throw new IllegalArgumentException("Resource archive exceeds 64 MiB");
+            if (size > MAX_BYTES) throw new IllegalArgumentException("Resource archive exceeds Java byte-array limit");
             copy.put(path, bytes.clone());
         }
         for (String path : copy.keySet()) {
@@ -46,7 +48,6 @@ public final class YsmResourceArchive {
             var json = YsmJson.object(config);
             if (json.has("properties") && json.getAsJsonObject("properties").has("default_texture")) {
                 texture = json.getAsJsonObject("properties").get("default_texture").getAsString();
-                if (texture.length() > 1024) throw new IllegalArgumentException("Invalid default texture name");
             }
         }
         defaultTexture = texture == null || texture.isBlank() ? "default" : texture;
@@ -72,11 +73,10 @@ public final class YsmResourceArchive {
                 if (Files.isSymbolicLink(path) || !path.toRealPath().startsWith(root)) throw new IOException("Linked model resource is not allowed");
                 if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) continue;
                 if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) throw new IOException("Non-regular model resource");
-                if (files.size() >= MAX_FILES || Files.size(path) > MAX_BYTES - size) throw new IOException("Model resource limit exceeded");
-                byte[] bytes;
-                try (var input = Files.newInputStream(path)) { bytes = input.readNBytes((int)(MAX_BYTES - size) + 1); }
+                if (Files.size(path) > MAX_BYTES - size) throw new IOException("Model resource package exceeds Java byte-array limit");
+                byte[] bytes = Files.readAllBytes(path);
                 size += bytes.length;
-                if (size > MAX_BYTES) throw new IOException("Model resource limit exceeded");
+                if (size > MAX_BYTES) throw new IOException("Model resource package exceeds Java byte-array limit");
                 files.put(root.relativize(path).toString().replace('\\', '/'), bytes);
             }
         }
@@ -103,15 +103,15 @@ public final class YsmResourceArchive {
         }
     }
     public static YsmResourceArchive decode(byte[] bytes) {
-        if (bytes.length > MAX_BYTES) throw new IllegalArgumentException("Resource archive exceeds 64 MiB");
+        if (bytes.length > MAX_BYTES) throw new IllegalArgumentException("Resource archive exceeds Java byte-array limit");
         try (var input = new DataInputStream(new ByteArrayInputStream(bytes))) {
             if (input.readInt() != MAGIC) throw new IllegalArgumentException("Unknown resource archive version");
             int count = input.readInt();
-            if (count < 1 || count > MAX_FILES) throw new IllegalArgumentException("Invalid resource count");
+            if (count < 1 || count > input.available() / 8) throw new IllegalArgumentException("Invalid resource count");
             var files = new LinkedHashMap<String, byte[]>();
             for (int i = 0; i < count; i++) {
                 int length = input.readInt();
-                if (length < 1 || length > 4096 || length > input.available()) throw new IllegalArgumentException("Invalid resource path length");
+                if (length < 1 || length > input.available()) throw new IllegalArgumentException("Invalid resource path length");
                 byte[] name = input.readNBytes(length);
                 String path = new String(name, StandardCharsets.UTF_8);
                 if (!Arrays.equals(name, path.getBytes(StandardCharsets.UTF_8))) throw new IllegalArgumentException("Invalid UTF-8 resource path");

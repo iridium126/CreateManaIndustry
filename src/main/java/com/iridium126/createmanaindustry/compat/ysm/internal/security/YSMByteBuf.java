@@ -8,9 +8,7 @@ import java.nio.charset.StandardCharsets;
 /** Bounded little-endian reader for the OpenYSM-derived resource parser. */
 public final class YSMByteBuf implements AutoCloseable {
     private final ByteBuffer data;
-    private int collectionElements;
     public YSMByteBuf(byte[] bytes) {
-        if (bytes.length > YsmCrypt.MAX_BYTES) throw new IllegalArgumentException("YSM resource exceeds byte limit");
         data = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
     }
     public int getOffset() { return data.position(); }
@@ -44,9 +42,7 @@ public final class YSMByteBuf implements AutoCloseable {
     }
     public int readCount() {
         int count = readVarInt();
-        if (count < 0 || count > 65536 || count > data.remaining() || count > 1_000_000 - collectionElements)
-            throw new IllegalArgumentException("YSM collection limit exceeded");
-        collectionElements += count;
+        if (count < 0 || count > data.remaining()) throw new IllegalArgumentException("Invalid YSM collection length");
         return count;
     }
     public byte[] readByteArray() {
@@ -56,7 +52,7 @@ public final class YSMByteBuf implements AutoCloseable {
     }
     public String readString() {
         int length = readVarInt();
-        if (length < 0 || length > 1024 * 1024 || length > data.remaining()) throw new IllegalArgumentException("Invalid YSM string length");
+        if (length < 0 || length > data.remaining()) throw new IllegalArgumentException("Invalid YSM string length");
         ByteBuffer slice = data.slice(); slice.limit(length);
         try {
             String value = StandardCharsets.UTF_8.newDecoder().decode(slice).toString();

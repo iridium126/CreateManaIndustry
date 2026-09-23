@@ -8,7 +8,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
 
-/** Both paths reject malformed or oversized data; neither substitutes another model. */
+/** Both paths reject malformed data; neither substitutes another model. */
 public final class YsmGeometryCodecs {
     public static final Codec<Cube> CUBE = codec(YsmGeometryIO::decodeCube, YsmGeometryIO::encodeCube);
     public static final Codec<Group> GROUP = codec(YsmGeometryIO::decodeGroup, YsmGeometryIO::encodeGroup);
@@ -17,7 +17,7 @@ public final class YsmGeometryCodecs {
 
     private static <T> Codec<T> codec(Function<byte[], T> decode, Function<T, byte[]> encode) {
         return Codec.STRING.flatXmap(value -> {
-            if (value.length() > ((YsmGeometryIO.MAX_BYTES + 2) / 3) * 4)
+            if ((long) value.length() > ((YsmGeometryIO.MAX_BYTES + 2L) / 3L) * 4L)
                 return DataResult.error(() -> "YSM geometry exceeds byte limit");
             try { return DataResult.success(decode.apply(Base64.getDecoder().decode(value))); }
             catch (IllegalArgumentException failure) { return DataResult.error(() -> "Invalid YSM geometry: " + failure.getMessage()); }

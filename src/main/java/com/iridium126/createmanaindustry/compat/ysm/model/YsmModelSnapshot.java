@@ -6,6 +6,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.Group;
+import com.iridium126.createmanaindustry.compat.ysm.internal.security.YsmFileFormat;
+import com.iridium126.createmanaindustry.compat.ysm.internal.security.YsmLegacyArchiveParser;
 
 /** One source snapshot shared by all its geometry iotas. Loading is worker-thread work. */
 public final class YsmModelSnapshot {
@@ -17,7 +19,7 @@ public final class YsmModelSnapshot {
     private YsmModelSnapshot(String digest, List<Group> roots, YsmResourceArchive resources) {
         this.digest = digest; this.roots = List.copyOf(roots); this.resources = resources;
         var parts = new HashSet<String>(); long weight = resources.byteSize();
-        for (Group root : roots) { parts.add(root.root().part()); weight += 4L * YsmGeometryIO.encodeGroup(root).length; }
+        for (Group root : roots) { parts.add(root.root().part()); weight += 4L * YsmGeometryIO.estimateGroupSize(root); }
         this.parts = Set.copyOf(parts); this.weight = weight;
         if (!digest.equals(YsmGeometry.validateRoots(roots, parts))) throw new IllegalArgumentException("Source snapshot mismatch");
         YsmPlaintextModel.validateReferences(resources);
@@ -27,9 +29,19 @@ public final class YsmModelSnapshot {
             var model = new YsmPlaintextModel(YsmResourceArchive.readDirectory(path));
             return new YsmModelSnapshot(model.digest(), model.roots(), model.source());
         }
-        byte[] bytes;
-        try (var input = Files.newInputStream(path)) { bytes = input.readNBytes(YsmResourceArchive.MAX_BYTES + 1); }
-        if (bytes.length > YsmResourceArchive.MAX_BYTES) throw new IOException("Compiled model exceeds size limit");
+        byte[] bytes = Files.readAllBytes(path);
+        int cryptoVersion;
+        try { cryptoVersion = YsmFileFormat.cryptoVersion(bytes); }
+        catch (IllegalArgumentException failure) { throw new IOException("Invalid YSM file header", failure); }
+        if (cryptoVersion < 3) {
+            try {
+                var archive = new YsmResourceArchive(YsmLegacyArchiveParser.decrypt(bytes));
+                var model = new YsmPlaintextModel(archive);
+                return new YsmModelSnapshot(model.digest(), model.roots(), model.source());
+            } catch (Exception failure) {
+                throw new IOException("Invalid legacy YSM resource archive", failure);
+            }
+        }
         var model = YsmCompiledModel.decode(bytes);
         return new YsmModelSnapshot(model.digest(), model.roots(), new YsmResourceArchive(YsmCompiledExporter.build(model, model.roots())));
     }

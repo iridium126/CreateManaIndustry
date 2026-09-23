@@ -3,6 +3,8 @@ package com.iridium126.createmanaindustry.compat.ysm.model;
 import com.google.gson.*;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,6 +15,23 @@ import java.util.Set;
 public final class YsmGeometryReader {
     private static final String[] FACES = {"north", "south", "east", "west", "up", "down"};
     private record IndexedCube(int order, Cube cube) {}
+    private static final class BoneFrame {
+        private final String name, extra;
+        private final Vector pivot, rotation;
+        private final boolean visible;
+        private final List<Cube> cubes;
+        private final List<String> childNames;
+        private final List<Group> descendants = new ArrayList<>();
+        private int nextChild;
+        private BoneFrame(String name, String extra, Vector pivot, Vector rotation, boolean visible,
+                List<Cube> cubes, List<String> childNames) {
+            this.name = name; this.extra = extra; this.pivot = pivot; this.rotation = rotation;
+            this.visible = visible; this.cubes = cubes; this.childNames = childNames;
+        }
+        private Group build() {
+            return new Group(name, pivot, rotation, Vector.ONE, visible, cubes, descendants, null, extra);
+        }
+    }
     public static Group read(String source, String part, String json) {
         try {
             JsonObject document = YsmJson.resource(json);
@@ -26,7 +45,6 @@ public final class YsmGeometryReader {
             Map<String, JsonObject> bones = new LinkedHashMap<>();
             Map<String, List<String>> children = new LinkedHashMap<>();
             JsonArray data = geometry.has("bones") ? geometry.getAsJsonArray("bones") : new JsonArray();
-            if (data.size() >= YsmGeometry.MAX_NODES) throw new IllegalArgumentException("Too many bones");
             for (JsonElement element : data) {
                 JsonObject bone = element.getAsJsonObject(); String name = bone.get("name").getAsString();
                 if (name.isBlank() || bones.putIfAbsent(name, bone) != null) throw new IllegalArgumentException("Duplicate or empty bone name");
@@ -35,9 +53,26 @@ public final class YsmGeometryReader {
             }
             for (String parent : children.keySet()) if (!parent.isEmpty() && !bones.containsKey(parent))
                 throw new IllegalArgumentException("Missing parent bone");
-            Set<String> visited = new HashSet<>(); int[] nodes = {1};
+            Set<String> visited = new HashSet<>();
             List<Group> groups = new ArrayList<>();
-            for (String name : children.getOrDefault("", List.of())) groups.add(bone(name, bones, children, visited, 2, nodes));
+            Deque<BoneFrame> pending = new ArrayDeque<>();
+            for (String name : children.getOrDefault("", List.of())) {
+                if (!visited.add(name)) throw new IllegalArgumentException("Cyclic bone hierarchy");
+                pending.push(boneFrame(name, bones, children));
+                while (!pending.isEmpty()) {
+                    BoneFrame frame = pending.peek();
+                    if (frame.nextChild < frame.childNames.size()) {
+                        String child = frame.childNames.get(frame.nextChild++);
+                        if (!visited.add(child)) throw new IllegalArgumentException("Cyclic bone hierarchy");
+                        pending.push(boneFrame(child, bones, children));
+                        continue;
+                    }
+                    Group completed = frame.build();
+                    pending.pop();
+                    if (pending.isEmpty()) groups.add(completed);
+                    else pending.peek().descendants.add(completed);
+                }
+            }
             if (visited.size() != bones.size()) throw new IllegalArgumentException("Cyclic bone hierarchy");
             geometry.remove("bones"); geometry.remove("description");
             return new Group(part, Vector.ZERO, Vector.ZERO, Vector.ONE, true, List.of(), groups, root, document.toString());
@@ -45,10 +80,7 @@ public final class YsmGeometryReader {
             throw new IllegalArgumentException("Malformed geometry document", failure);
         }
     }
-    private static Group bone(String name, Map<String, JsonObject> bones, Map<String, List<String>> children,
-            Set<String> visited, int depth, int[] count) {
-        if (depth > YsmGeometry.MAX_DEPTH || ++count[0] > YsmGeometry.MAX_NODES || !visited.add(name))
-            throw new IllegalArgumentException("Geometry hierarchy exceeds limits");
+    private static BoneFrame boneFrame(String name, Map<String, JsonObject> bones, Map<String, List<String>> children) {
         JsonObject data = bones.get(name).deepCopy();
         Vector pivot = vector(data, "pivot", Vector.ZERO), rotation = vector(data, "rotation", Vector.ZERO);
         boolean mirror = bool(data, "mirror", false);
@@ -56,13 +88,11 @@ public final class YsmGeometryReader {
         boolean visible = bool(data, "createmanaindustry:visible", true);
         List<IndexedCube> ordered = new ArrayList<>();
         if (data.has("cubes")) for (JsonElement element : data.getAsJsonArray("cubes")) {
-            if (++count[0] > YsmGeometry.MAX_NODES) throw new IllegalArgumentException("Too many cubes");
             JsonObject item = element.getAsJsonObject();
             ordered.add(new IndexedCube(integer(item, "createmanaindustry:order", ordered.size()), cube(item, mirror, inflate)));
         }
         if (data.has("createmanaindustry:hidden_cubes"))
             for (JsonElement element : data.getAsJsonArray("createmanaindustry:hidden_cubes")) {
-                if (++count[0] > YsmGeometry.MAX_NODES) throw new IllegalArgumentException("Too many cubes");
                 JsonObject item = element.getAsJsonObject();
                 ordered.add(new IndexedCube(integer(item, "createmanaindustry:order", ordered.size()), cube(item, mirror, inflate)));
             }
@@ -74,11 +104,10 @@ public final class YsmGeometryReader {
                 throw new IllegalArgumentException("Invalid hidden cube order");
             cubes.add(item.cube()); lastOrder = item.order();
         }
-        List<Group> descendants = new ArrayList<>();
-        for (String child : children.getOrDefault(name, List.of())) descendants.add(bone(child, bones, children, visited, depth + 1, count));
         for (String key : List.of("name", "parent", "pivot", "rotation", "cubes",
                 "createmanaindustry:visible", "createmanaindustry:hidden_cubes")) data.remove(key);
-        return new Group(name, pivot, rotation, Vector.ONE, visible, cubes, descendants, null, data.toString());
+        return new BoneFrame(name, data.toString(), pivot, rotation, visible, cubes,
+                children.getOrDefault(name, List.of()));
     }
     private static Cube cube(JsonObject input, boolean boneMirror, double boneInflate) {
         JsonObject data = input.deepCopy();

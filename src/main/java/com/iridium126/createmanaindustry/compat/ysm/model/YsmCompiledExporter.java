@@ -29,34 +29,37 @@ public final class YsmCompiledExporter {
         JsonObject meta = new JsonObject(); meta.addProperty("name", model.metadata.name); meta.addProperty("tips", model.metadata.tips);
         JsonObject license = new JsonObject(); license.addProperty("type", model.metadata.licenseType); license.addProperty("desc", model.metadata.licenseDescription);
         meta.add("license", license); meta.add("link", strings(model.metadata.links));
-        JsonArray authors = new JsonArray(); int authorIndex = 0;
+        JsonArray authors = new JsonArray();
         for (var author : model.metadata.authors) {
             JsonObject entry = new JsonObject(); entry.addProperty("name", author.name); entry.addProperty("role", author.role); entry.addProperty("comment", author.comment);
             entry.add("contact", strings(author.contacts));
             if (author.avatarImage != null) {
-                String path = "avatars/author_" + authorIndex + ".png";
+                String avatarName = author.avatar == null || author.avatar.isBlank() ? author.name : author.avatar;
+                String path = "avatar/" + safeFilename(avatarName + ".png");
                 put(path, image(author.avatarImage)); entry.addProperty("avatar", path);
             }
-            authors.add(entry); authorIndex++;
+            authors.add(entry);
         }
-        if (!model.metadata.extraAvatars.isEmpty()) throw unsupported("Unassociated author images");
+        for (RawImage avatar : model.metadata.extraAvatars)
+            put("avatar/" + safeFilename(avatar.name + ".png"), image(avatar));
         meta.add("authors", authors); config.add("metadata", meta);
         config.add("properties", properties(model.properties));
         JsonObject fileConfig = new JsonObject(), player = new JsonObject(), geometries = new JsonObject();
         if (model.mainEntity.mainModel != null) geometries.addProperty("main", "models/main.json");
         if (model.mainEntity.armModel != null) geometries.addProperty("arm", "models/arm.json");
         player.add("model", geometries);
-        player.add("texture", textures("player", model.mainEntity.textures));
-        player.add("animation", animations("player", model.mainEntity.animationFiles));
+        player.add("texture", textures(model.mainEntity.textures));
+        player.add("animation", animations(model.mainEntity.animationFiles));
         player.add("animation_controllers", controllers("player", model.mainEntity.animationControllers));
         fileConfig.add("player", player);
         fileConfig.add("vehicles", entities("vehicle", model.vehicles));
-        fileConfig.add("projectiles", entities("projectile", model.projectiles));
+        fileConfig.add("projectiles", entities("projectiles", model.projectiles));
+        fileConfig.add("sub_entities", entities("SubEntity", model.subEntities));
         fileConfig.addProperty("sound_path", "sounds");
         config.add("files", fileConfig);
-        model.soundFiles.forEach((name, data) -> put("sounds/" + leaf(name, ".ogg"), data.data));
-        model.functionFiles.forEach((name, data) -> put("functions/" + leaf(name, ".molang"), data.data));
-        model.languageFiles.forEach((name, data) -> json("lang/" + leaf(name, ".json"), strings(data.data)));
+        model.soundFiles.forEach((name, data) -> put(mappedPath("sounds", name, ".ogg"), data.data));
+        model.functionFiles.forEach((name, data) -> put(mappedPath("functions", name, ".molang"), data.data));
+        model.languageFiles.forEach((name, data) -> json(mappedPath("lang", name, ".json"), strings(data.data)));
         json("ysm.json", config);
     }
     private JsonObject properties(RawProperties properties) {
@@ -85,95 +88,120 @@ public final class YsmCompiledExporter {
         }
         out.add("extra_animation_buttons", buttons);
         for (RawImage image : properties.backgroundImages) {
-            if (!"gui_background".equals(image.name) && !"gui_foreground".equals(image.name)) throw unsupported("Unknown GUI image reference");
-            String path = "background/" + image.name + ".png"; put(path, image(image)); out.addProperty(image.name, path);
+            String path;
+            if ("gui_background".equals(image.name) && !properties.guiBackground.isEmpty()) path = properties.guiBackground;
+            else if ("gui_foreground".equals(image.name) && !properties.guiForeground.isEmpty()) path = properties.guiForeground;
+            else path = "background/" + leaf(image.name, ".png");
+            YsmCompiledExporter.safePath(path); put(path, image(image));
         }
-        if (!properties.guiBackground.isEmpty() && !out.has("gui_background") || !properties.guiForeground.isEmpty() && !out.has("gui_foreground"))
-            throw unsupported("Missing GUI image resource");
+        if (!properties.guiBackground.isEmpty()) out.addProperty("gui_background", properties.guiBackground);
+        if (!properties.guiForeground.isEmpty()) out.addProperty("gui_foreground", properties.guiForeground);
         return out;
     }
-    private JsonArray entities(String kind, Map<String, RawSubEntity> entities) {
-        JsonArray out = new JsonArray(); int index = 0;
-        for (var entity : entities.values()) {
+    private JsonObject entities(String kind, Map<String, RawSubEntity> entities) {
+        JsonObject out = new JsonObject();
+        for (var entry : entities.entrySet()) {
+            String modelName = entry.getKey();
+            RawSubEntity entity = entry.getValue();
             JsonObject item = new JsonObject();
-            if (entity.matchIds == null || entity.matchIds.length == 0) throw unsupported("Missing entity match references");
-            JsonArray match = new JsonArray(); for (String id : entity.matchIds) match.add(id); item.add("match", match);
-            if (entity.model != null) item.addProperty("model", "models/" + kind + "_" + index + ".json");
-            item.add("texture", textures(kind + "_" + index, entity.textures));
-            var animations = animations(kind + "_" + index, entity.animationFiles);
-            if (animations.size() > 1) throw unsupported("Multiple sub-entity animation files");
-            if (!animations.isEmpty()) item.add("animation", animations.entrySet().iterator().next().getValue());
-            var controllers = controllers(kind + "_" + index, entity.animationControllers);
-            if (!controllers.isEmpty()) item.add("animation_controllers", controllers);
-            out.add(item); index++;
+            if (entity.model != null) item.addProperty("model", "models/" + safeFilename(modelName + ".json"));
+            String texture = entityTexture(modelName, entity.textures);
+            if (texture != null) item.addProperty("texture", texture);
+            if (!entity.animationFiles.isEmpty()) {
+                String path = "animations/" + kind + "/" + safeFilename(modelName + ".animation.json");
+                animationDocument(entity.animationFiles, path);
+                item.addProperty("animation", path);
+            }
+            var controllerNamespace = kind + "/" + modelName;
+            var controllers = controllers(controllerNamespace, entity.animationControllers);
+            if (!controllers.isEmpty()) item.add("controller", controllers.get(0));
+            out.add(modelName, item);
         }
         return out;
     }
-    private JsonArray textures(String namespace, Map<String, RawTexture> textures) {
+    private String entityTexture(String modelName, Map<String, RawTexture> textures) {
+        if (textures.isEmpty()) return null;
+        String basePath = "textures/" + safeFilename(modelName + ".png");
+        RawTexture base = textures.values().iterator().next();
+        put(basePath, png(base.data, base.width, base.height, base.imageFormat));
+        Set<Integer> seen = new HashSet<>();
+        for (RawTexture.SubTexture sub : base.subTextures) {
+            if (!seen.add(sub.specularType)) throw unsupported("Duplicate entity subtexture");
+            String suffix = switch (sub.specularType) { case 1 -> "_normal"; case 2 -> "_specular"; default -> throw unsupported("Unknown subtexture type"); };
+            put("textures/" + safeFilename(modelName + suffix + ".png"), png(sub.data, sub.width, sub.height, sub.imageFormat));
+        }
+        return basePath;
+    }
+    private JsonArray textures(Map<String, RawTexture> textures) {
         JsonArray out = new JsonArray();
         for (var texture : textures.values()) {
-            String path = "textures/" + namespace + "/" + leaf(texture.name, ".png");
+            String path = "textures/" + safeFilename(texture.name + ".png");
             put(path, png(texture.data, texture.width, texture.height, texture.imageFormat));
             if (texture.subTextures.isEmpty()) { out.add(path); continue; }
             JsonObject entry = new JsonObject(); entry.addProperty("uv", path);
             for (var sub : texture.subTextures) {
                 String kind = switch(sub.specularType) { case 1 -> "normal"; case 2 -> "specular"; default -> throw unsupported("Unknown subtexture type"); };
                 if (entry.has(kind)) throw unsupported("Duplicate subtexture type");
-                String subPath = "textures/" + namespace + "/" + kind + "_" + leaf(texture.name, ".png");
+                String suffix = "normal".equals(kind) ? "_normal" : "_specular";
+                String subPath = "textures/" + safeFilename(texture.name + suffix + ".png");
                 put(subPath, png(sub.data, sub.width, sub.height, sub.imageFormat)); entry.addProperty(kind, subPath);
             }
             out.add(entry);
         }
         return out;
     }
-    private JsonObject animations(String namespace, Map<String, RawAnimationFile> files) {
+    private JsonObject animations(Map<String, RawAnimationFile> files) {
         JsonObject references = new JsonObject();
         for (var file : files.entrySet()) {
-            JsonObject animations = new JsonObject();
-            for (var animation : file.getValue().animations.values()) {
+            String component = switch (file.getKey()) { case "fp_arm" -> "fp.arm"; case "irons_spell_books" -> "iss"; default -> file.getKey(); };
+            String path = "animations/" + safeFilename(component + ".animation.json");
+            animationDocument(Map.of(file.getKey(), file.getValue()), path);
+            references.addProperty(file.getKey(), path);
+        }
+        return references;
+    }
+    private void animationDocument(Map<String, RawAnimationFile> files, String path) {
+        JsonObject animations = new JsonObject();
+        for (var file : files.values()) for (var animation : file.animations.values()) {
                 JsonObject value = new JsonObject();
-                if (Float.isFinite(animation.length)) value.addProperty("animation_length", animation.length);
-                else if (animation.length != Float.POSITIVE_INFINITY) throw unsupported("Invalid animation length sentinel");
+                if (Float.isFinite(animation.length) && animation.length > 0) value.addProperty("animation_length", animation.length);
                 switch(animation.loopMode) {
-                    case 0 -> value.addProperty("loop", false); case 1 -> value.addProperty("loop", true);
-                    case 2 -> { } case 3 -> value.addProperty("loop", "hold_on_last_frame"); default -> throw unsupported("Unknown animation loop mode");
+                    case 0 -> { } case 1 -> value.addProperty("loop", true);
+                    case 2 -> { } case 3 -> value.addProperty("loop", "hold_on_last_frame"); default -> { }
                 }
                 if (animation.blendWeight != null) value.add("blend_weight", scalar(animation.blendWeight));
                 JsonObject bones = new JsonObject();
                 for (var bone : animation.boneAnimations) {
                     JsonObject channels = new JsonObject(); channel(channels, "rotation", bone.rotation); channel(channels, "position", bone.position); channel(channels, "scale", bone.scale);
-                    if (bones.has(bone.boneName)) throw unsupported("Duplicate animation bone"); bones.add(bone.boneName, channels);
+                    if (!channels.isEmpty()) bones.add(bone.boneName, channels);
                 }
-                value.add("bones", bones); JsonObject timeline = new JsonObject();
+                if (!bones.isEmpty()) value.add("bones", bones);
+                JsonObject timeline = new JsonObject();
                 for (var event : animation.timelineEvents) {
-                    String time = time(event.timestamp); JsonArray events = timeline.has(time) ? timeline.getAsJsonArray(time) : new JsonArray();
+                    String time = time(event.timestamp); JsonArray events = new JsonArray();
                     event.events.forEach(events::add); timeline.add(time, events);
                 }
                 if (!timeline.isEmpty()) value.add("timeline", timeline);
                 JsonObject sounds = new JsonObject();
                 for (var sound : animation.soundEffects) {
-                    String time = time(sound.timestamp); if (sounds.has(time)) throw unsupported("Multiple sounds at one timestamp");
+                    String time = time(sound.timestamp);
                     JsonObject effect = new JsonObject(); effect.addProperty("effect", sound.effectName); sounds.add(time, effect);
                 }
                 if (!sounds.isEmpty()) value.add("sound_effects", sounds);
-                if (animations.has(animation.name)) throw unsupported("Duplicate animation name"); animations.add(animation.name, value);
-            }
-            JsonObject document = new JsonObject(); document.addProperty("format_version", "1.8.0"); document.add("animations", animations);
-            String path = "animations/" + namespace + "/" + leaf(file.getKey(), ".json"); json(path, document); references.addProperty(file.getKey(), path);
+                animations.add(animation.name, value);
         }
-        return references;
+        JsonObject document = new JsonObject(); document.addProperty("format_version", "1.8.0"); document.add("animations", animations); json(path, document);
     }
     private static void channel(JsonObject bone, String name, List<RawKeyframe> frames) {
         if (frames.isEmpty()) return;
         JsonObject out = new JsonObject();
         for (var frame : frames) {
-            String time = time(frame.timestamp); if (out.has(time)) throw unsupported("Duplicate animation keyframe");
+            String time = time(frame.timestamp);
             JsonObject keyframe = new JsonObject();
             JsonArray post = new JsonArray(); for (Object item : frame.postData) post.add(scalar(item)); keyframe.add("post", post);
             if (frame.hasPreData) { JsonArray pre = new JsonArray(); for (Object item : frame.preData) pre.add(scalar(item)); keyframe.add("pre", pre); }
             if (frame.interpolationMode == 1) keyframe.addProperty("lerp_mode", "step");
             else if (frame.interpolationMode == 2) keyframe.addProperty("lerp_mode", "catmullrom");
-            else if (frame.interpolationMode != 0) throw unsupported("Unknown keyframe interpolation");
             out.add(time, keyframe);
         }
         bone.add(name, out);
@@ -181,25 +209,67 @@ public final class YsmCompiledExporter {
     private JsonArray controllers(String namespace, Map<String, RawAnimationController> controllers) {
         JsonArray references = new JsonArray();
         if (controllers.isEmpty()) return references;
-        JsonObject content = new JsonObject();
+        Map<String, JsonObject> fileContents = new LinkedHashMap<>();
         for (var controller : controllers.values()) {
-            JsonObject c = new JsonObject(); c.addProperty("initial_state", controller.initialState); JsonObject states = new JsonObject();
+            JsonObject c = new JsonObject();
+            if (controller.initialState != null && !controller.initialState.isEmpty()) c.addProperty("initial_state", controller.initialState);
+            JsonObject states = new JsonObject();
             for (var state : controller.states) {
-                JsonObject s = new JsonObject(); JsonArray animations = conditional(state.animations), transitions = conditional(state.transitions);
-                s.add("animations", animations); s.add("transitions", transitions);
-                s.add("on_entry", array(state.onEntry)); s.add("on_exit", array(state.onExit)); s.add("sound_effects", array(state.soundEffects));
-                if (state.blendTransitions.isEmpty()) s.addProperty("blend_transition", state.blendTransitionValue);
-                else { JsonObject curve = new JsonObject(); state.blendTransitions.forEach((k,v) -> curve.addProperty(time(k),v)); s.add("blend_transition", curve); }
-                s.addProperty("blend_via_shortest_path", state.blendViaShortestPath);
+                JsonObject s = new JsonObject(); JsonArray animations = animationEntries(state.animations), transitions = conditional(state.transitions);
+                if (!animations.isEmpty()) s.add("animations", animations);
+                if (!transitions.isEmpty()) s.add("transitions", transitions);
+                if (!state.onEntry.isEmpty()) s.add("on_entry", array(state.onEntry));
+                if (!state.onExit.isEmpty()) s.add("on_exit", array(state.onExit));
+                if (!state.soundEffects.isEmpty()) {
+                    JsonArray effects = new JsonArray();
+                    for (String name : state.soundEffects) { JsonObject effect = new JsonObject(); effect.addProperty("effect", name); effects.add(effect); }
+                    s.add("sound_effects", effects);
+                }
+                if (state.hasBlendTransitionValue) s.addProperty("blend_transition", state.blendTransitionValue);
+                else if (!state.blendTransitions.isEmpty()) { JsonObject curve = new JsonObject(); state.blendTransitions.forEach((k,v) -> curve.addProperty(time(k),v)); s.add("blend_transitions", curve); }
+                if (state.blendViaShortestPath) s.addProperty("blend_via_shortest_path", true);
                 if (states.has(state.name)) throw unsupported("Duplicate controller state"); states.add(state.name,s);
             }
-            c.add("states",states); if (content.has(controller.name)) throw unsupported("Duplicate controller name"); content.add(controller.name,c);
+            c.add("states",states);
+            String fileName = "player".equals(namespace) ? controller.fileName : namespace;
+            if (fileName == null || fileName.isBlank()) fileName = "controller";
+            JsonObject content = fileContents.computeIfAbsent(fileName, ignored -> new JsonObject());
+            content.add(controller.name, c);
         }
-        JsonObject document = new JsonObject(); document.addProperty("format_version","1.10.0"); document.add("animation_controllers",content);
-        String path = "animation_controllers/" + namespace + ".json"; json(path,document); references.add(path); return references;
+        for (var file : fileContents.entrySet()) {
+            JsonObject document = new JsonObject(); document.addProperty("format_version","1.19.0"); document.add("animation_controllers",file.getValue());
+            String path = controllerPath(file.getKey(), "player".equals(namespace));
+            json(path,document); references.add(path);
+        }
+        return references;
+    }
+    private static String controllerPath(String name, boolean player) {
+        String pathName = name;
+        if (player) pathName = safeFilename(name.replace('/', '_'));
+        else {
+            String[] parts = name.split("/", -1);
+            for (int i = 0; i < parts.length; i++) parts[i] = safeFilename(parts[i]);
+            pathName = String.join("/", parts);
+        }
+        String path = "controller/" + pathName + ".json";
+        safePath(path);
+        return path;
+    }
+    static String safeFilename(String name) {
+        String result = name.replaceAll("[\\\\/:*?\"<>|]", "_");
+        while (result.endsWith(" ") || result.endsWith(".")) result = result.substring(0, result.length() - 1);
+        return result.isEmpty() ? "unnamed_file" : result;
     }
     private static JsonArray conditional(Map<String,String> values) {
         JsonArray out = new JsonArray(); values.forEach((key,value) -> { JsonObject item=new JsonObject();item.addProperty(key,value);out.add(item); });return out;
+    }
+    private static JsonArray animationEntries(Map<String,String> values) {
+        JsonArray out = new JsonArray();
+        values.forEach((key, value) -> {
+            if (value == null || value.isEmpty()) out.add(key);
+            else { JsonObject item = new JsonObject(); item.addProperty(key, value); out.add(item); }
+        });
+        return out;
     }
     private static JsonArray array(List<String> values) { JsonArray out=new JsonArray();values.forEach(out::add);return out; }
     private static JsonObject strings(Map<String,String> values) { JsonObject out=new JsonObject();values.forEach(out::addProperty);return out; }
@@ -225,15 +295,26 @@ public final class YsmCompiledExporter {
     private void put(String path,byte[] data) {
         safePath(path);
         if(data==null || files.keySet().stream().anyMatch(existing -> existing.equalsIgnoreCase(path)))throw unsupported("Missing or duplicate resource");
-        if(files.size()>=4096 || data.length>64*1024*1024L-bytes)throw unsupported("Resource package size limit");
+        if(data.length>YsmResourceArchive.MAX_BYTES-bytes)throw unsupported("Resource package exceeds Java byte-array limit");
         files.put(path,data.clone()); bytes+=data.length;
     }
     private static String leaf(String name,String suffix) {
         if(name==null || name.isBlank() || name.contains("/") || name.contains("\\"))throw unsupported("Invalid resource name");
         String result=name.endsWith(suffix)?name:name+suffix;safePath(result);return result;
     }
+    private static String mappedPath(String folder, String name, String suffix) {
+        if (name == null || name.isBlank()) throw unsupported("Invalid resource name");
+        String relative = name.replace('\\', '/');
+        if (!relative.endsWith(suffix)) relative += suffix;
+        int slash = relative.lastIndexOf('/');
+        String filename = relative.substring(slash + 1);
+        relative = (slash < 0 ? "" : relative.substring(0, slash + 1)) + safeFilename(filename);
+        String path = folder + "/" + relative;
+        safePath(path);
+        return path;
+    }
     public static void safePath(String path) {
-        if(path==null || path.length()>1024 || path.startsWith("/") || path.matches(".*[\\\\:\\x00<>\"|?*].*"))throw unsupported("Unsafe resource path");
+        if(path==null || path.startsWith("/") || path.matches(".*[\\\\:\\x00<>\"|?*].*"))throw unsupported("Unsafe resource path");
         if (path.codePoints().anyMatch(c -> Character.isISOControl(c) || c >= 0xD800 && c <= 0xDFFF))
             throw unsupported("Invalid resource path characters");
         for(String part:path.split("/",-1)) {
