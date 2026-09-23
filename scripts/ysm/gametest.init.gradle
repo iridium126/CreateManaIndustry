@@ -1,0 +1,21 @@
+gradle.projectsEvaluated {
+    def project = gradle.rootProject
+    def fixture = project.file('run/mods/ysm-2.6.5-neoforge+mc1.21.1-release.jar')
+    if (!fixture.isFile()) throw new GradleException('Local YSM 2.6.5 fixture is required')
+    project.dependencies.add('localRuntime', project.files(fixture))
+    project.dependencies.add('localRuntime', project.files(project.file('run/mods/owo-lib-neoforge-0.13.0-alpha.15+1.21.jar')))
+    project.sourceSets.main.java.srcDir(project.file('src/test/gametest/ysm/java'))
+    if (System.getProperty('cmi.ysm.dataOnly') == 'true') {
+        project.sourceSets.main.java.exclude('**/YsmRuntimeGameTests.java')
+    }
+    project.sourceSets.main.resources.srcDir(project.file('build/allvr-worldgen-test-resources-vanilla'))
+    project.neoForge.runs.gameTestServer.gameDirectory = project.file('build/ysm-test-run')
+    project.neoForge.runs.gameTestServer.systemProperty('cmi.ysm.fixture', fixture.absolutePath)
+    def runtimeHome = System.getProperty('cmi.ysm.javaHome')
+    if (runtimeHome != null) {
+        project.tasks.named('runGameTestServer', JavaExec) {
+            javaLauncher.set((org.gradle.jvm.toolchain.JavaLauncher) null)
+            executable = new File(runtimeHome, 'bin/java.exe').absolutePath
+        }
+    }
+}

@@ -1,4 +1,4 @@
-// Adapted from OpenYSM (MIT); see META-INF/licenses/ysm-OpenYSM-MIT.txt.
+// Adapted from OpenYSM (MIT); see licenses/openysm.
 package com.iridium126.createmanaindustry.compat.ysm.internal.algorithms;/* Luis Bodart A01635000 */
 
 /* Mersenne Twister de 64 bits (MT19937-64) */

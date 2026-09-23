@@ -12,7 +12,7 @@ import org.w3c.dom.Element;
 
 /**
  * Immutable compiled MarkovJunior program. Coordinates follow upstream: X/Y horizontal, Z up.
- * Port of Maxim Gumin's MIT-licensed algorithms; see META-INF/licenses/MarkovJunior.txt.
+ * Port of Maxim Gumin's MIT-licensed algorithms; see licenses/markov-junior.
  * Each invocation owns its mutable state, so a compiled model is safe across worldgen workers.
  */
 public final class MarkovModel {

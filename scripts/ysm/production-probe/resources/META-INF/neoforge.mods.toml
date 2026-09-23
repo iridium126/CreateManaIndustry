@@ -1,0 +1,14 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="All Rights Reserved"
+[[mods]]
+modId="cmi_ysm_probe"
+version="1.0"
+displayName="CMI YSM Production Probe"
+description="Isolated native availability and player-state validation. Stops its test server after probing."
+[[dependencies.cmi_ysm_probe]]
+modId="yes_steve_model"
+type="required"
+versionRange="[2.6.5-neoforge+mc1.21.1]"
+ordering="AFTER"
+side="BOTH"

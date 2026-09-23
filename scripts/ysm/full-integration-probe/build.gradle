@@ -1,0 +1,17 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.141'
+}
+layout.buildDirectory = file('../../../build/ysm-full-integration-probe')
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+neoForge { version = '21.1.236' }
+def modProperties = new Properties()
+file('../../../gradle.properties').withInputStream { modProperties.load(it) }
+def cmiJar = file("../../../build/libs/createmanaindustry-${modProperties.getProperty('mod_version')}.jar")
+if (!cmiJar.isFile()) throw new GradleException("Build the CMI jar first: ${cmiJar}")
+dependencies { compileOnly files(cmiJar) }
+sourceSets.main.java {
+    srcDirs = ['.']
+    include '**/YsmFullIntegrationProbe.java', '**/YsmFullClientProbe.java', '**/YsmClientProbe.java'
+}
+sourceSets.main.resources.srcDirs = ['resources']

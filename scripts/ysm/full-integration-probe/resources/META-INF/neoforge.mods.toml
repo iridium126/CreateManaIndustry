@@ -1,0 +1,14 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="All Rights Reserved"
+[[mods]]
+modId="cmi_ysm_full_probe"
+version="1.0"
+displayName="CMI YSM Full Integration Probe"
+description="Isolated real-player YSM edit, export, and restore validation."
+[[dependencies.cmi_ysm_full_probe]]
+modId="createmanaindustry"
+type="required"
+versionRange="[0.2.5,)"
+ordering="AFTER"
+side="BOTH"

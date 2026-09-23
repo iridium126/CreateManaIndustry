@@ -2,13 +2,13 @@ YSM resource compatibility implementation
 
 The internal algorithms, raw resource model and binary resource parser are
 adapted from OpenYSM, copyright (c) 2026 OpenYSM, under the MIT License.
-See ysm-OpenYSM-MIT.txt. Changes include package relocation, removing native
+See licenses/openysm. Changes include package relocation, removing native
 dependencies, retaining only file decoding, bounded input and decompression,
 strict primitive/string readers, and removing diagnostic model-data output.
 
 The internal zstd package is the pure Java decoder distributed by OpenYSM.
 Files carrying Apache License 2.0 headers retain those headers. The Apache
-License text is included in ysm-zstd-APACHE-2.0.txt. The package was relocated;
+License text is included in licenses/zstd. The package was relocated;
 only dependencies of the streaming decoder are included.
 
 The independently implemented cuboid reconstruction uses the geometry and

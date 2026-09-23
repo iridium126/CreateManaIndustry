@@ -1,0 +1,17 @@
+gradle.projectsEvaluated {
+    def project = gradle.rootProject
+    def validation = project.sourceSets.create('ysmValidation') {
+        java.srcDir(project.file('scripts/ysm/validation'))
+        compileClasspath += project.sourceSets.main.output + project.sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+    project.tasks.register('validateCompiledYsm', JavaExec) {
+        dependsOn(project.tasks.named('compileYsmValidationJava'))
+        classpath = validation.runtimeClasspath
+        mainClass = 'com.iridium126.createmanaindustry.compat.ysm.validation.YsmCompiledModelValidation'
+        maxHeapSize = '256m'
+        def sample = System.getProperty('cmi.ysm.sample')
+        if (sample == null) throw new GradleException('Specify -Dcmi.ysm.sample=<local model file>')
+        args(project.file(sample).absolutePath)
+    }
+}

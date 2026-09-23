@@ -1,0 +1,10 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.141'
+}
+layout.buildDirectory = file('../../../build/ysm-client-diagnostic')
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+neoForge { version = '21.1.236' }
+sourceSets.main.java.srcDirs = ['.']
+sourceSets.main.java.include '**/YsmClientDiagnostic.java'
+sourceSets.main.resources.srcDirs = ['resources']
