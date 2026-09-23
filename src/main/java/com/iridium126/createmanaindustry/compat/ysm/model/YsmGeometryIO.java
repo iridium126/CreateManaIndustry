@@ -1,0 +1,122 @@
+package com.iridium126.createmanaindustry.compat.ysm.model;
+
+import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
+
+/** Versioned, bounded representation shared by persistence and network codecs. */
+public final class YsmGeometryIO {
+    public static final int MAX_BYTES = 1024 * 1024;
+    private static final int VERSION = 1;
+
+    public static byte[] encodeCube(Cube cube) { return encode(out -> writeCube(out, cube)); }
+    public static byte[] encodeGroup(Group group) { return encode(out -> writeGroup(out, group)); }
+    public static Cube decodeCube(byte[] bytes) { return decode(bytes, in -> readCube(in)); }
+    public static Group decodeGroup(byte[] bytes) { return decode(bytes, in -> readGroup(in, 1, new int[]{0})); }
+
+    private static byte[] encode(Writer writer) {
+        var bytes = new ByteArrayOutputStream();
+        try (var out = new DataOutputStream(new FilterOutputStream(bytes) {
+            private int count;
+            @Override public void write(int value) throws IOException {
+                if (++count > MAX_BYTES) throw new IOException("Geometry exceeds byte limit");
+                out.write(value);
+            }
+            @Override public void write(byte[] data, int offset, int length) throws IOException {
+                if (length > MAX_BYTES - count) throw new IOException("Geometry exceeds byte limit");
+                count += length;
+                out.write(data, offset, length);
+            }
+        })) {
+            out.writeByte(VERSION);
+            writer.write(out);
+            return bytes.toByteArray();
+        } catch (IOException failure) { throw new IllegalArgumentException(failure.getMessage(), failure); }
+    }
+
+    private static <T> T decode(byte[] bytes, Reader<T> reader) {
+        if (bytes.length > MAX_BYTES) throw new IllegalArgumentException("Geometry exceeds byte limit");
+        try (var in = new DataInputStream(new ByteArrayInputStream(bytes))) {
+            if (in.readUnsignedByte() != VERSION) throw new IOException("Unsupported geometry encoding version");
+            T value = reader.read(in);
+            if (in.available() != 0) throw new IOException("Trailing geometry data");
+            return value;
+        } catch (IOException failure) { throw new IllegalArgumentException("Invalid geometry data: " + failure.getMessage(), failure); }
+    }
+
+    private static void vector(DataOutputStream out, Vector v) throws IOException {
+        out.writeDouble(v.x()); out.writeDouble(v.y()); out.writeDouble(v.z());
+    }
+    private static Vector vector(DataInputStream in) throws IOException {
+        return new Vector(in.readDouble(), in.readDouble(), in.readDouble());
+    }
+    private static void text(DataOutputStream out, String value) throws IOException {
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        out.writeInt(bytes.length); out.write(bytes);
+    }
+    private static String text(DataInputStream in) throws IOException {
+        int length = in.readInt();
+        if (length < 0 || length > MAX_BYTES || length > in.available()) throw new IOException("Invalid text length");
+        return StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(in.readNBytes(length))).toString();
+    }
+    private static void writeCube(DataOutputStream out, Cube cube) throws IOException {
+        vector(out, cube.origin()); vector(out, cube.size()); vector(out, cube.pivot());
+        vector(out, cube.rotation()); vector(out, cube.scale());
+        out.writeDouble(cube.inflate()); out.writeBoolean(cube.visible());
+        for (Face face : cube.faces()) {
+            out.writeDouble(face.u()); out.writeDouble(face.v()); out.writeDouble(face.width()); out.writeDouble(face.height());
+            out.writeInt(face.rotation()); out.writeBoolean(face.visible());
+        }
+        text(out, cube.extraJson());
+    }
+    private static Cube readCube(DataInputStream in) throws IOException {
+        Vector origin = vector(in), size = vector(in), pivot = vector(in), rotation = vector(in), scale = vector(in);
+        double inflate = in.readDouble(); boolean visible = bool(in);
+        List<Face> faces = new ArrayList<>(6);
+        for (int i = 0; i < 6; i++) faces.add(new Face(in.readDouble(), in.readDouble(), in.readDouble(), in.readDouble(), in.readInt(), bool(in)));
+        return new Cube(origin, size, pivot, rotation, scale, inflate, visible, faces, text(in));
+    }
+    private static boolean bool(DataInputStream in) throws IOException {
+        int value = in.readUnsignedByte();
+        if (value > 1) throw new IOException("Invalid boolean");
+        return value != 0;
+    }
+    private static void writeGroup(DataOutputStream out, Group group) throws IOException {
+        text(out, group.name()); vector(out, group.pivot()); vector(out, group.rotation()); vector(out, group.scale());
+        out.writeBoolean(group.visible()); out.writeBoolean(group.root() != null);
+        if (group.root() != null) {
+            Root root = group.root(); text(out, root.snapshot()); text(out, root.part());
+            out.writeInt(root.textureWidth()); out.writeInt(root.textureHeight()); text(out, root.descriptionJson());
+        }
+        text(out, group.extraJson()); out.writeInt(group.cubes().size());
+        for (Cube cube : group.cubes()) writeCube(out, cube);
+        out.writeInt(group.children().size());
+        for (Group child : group.children()) writeGroup(out, child);
+    }
+    private static Group readGroup(DataInputStream in, int depth, int[] nodes) throws IOException {
+        if (depth > YsmGeometry.MAX_DEPTH || ++nodes[0] > YsmGeometry.MAX_NODES) throw new IOException("Geometry complexity limit exceeded");
+        String name = text(in);
+        Vector pivot = vector(in), rotation = vector(in), scale = vector(in);
+        boolean visible = bool(in);
+        Root root = bool(in) ? new Root(text(in), text(in), in.readInt(), in.readInt(), text(in)) : null;
+        String extra = text(in);
+        int cubeCount = count(in, nodes[0]); nodes[0] += cubeCount;
+        List<Cube> cubes = new ArrayList<>(cubeCount);
+        for (int i = 0; i < cubeCount; i++) cubes.add(readCube(in));
+        int childCount = count(in, nodes[0]);
+        List<Group> children = new ArrayList<>(childCount);
+        for (int i = 0; i < childCount; i++) children.add(readGroup(in, depth + 1, nodes));
+        return new Group(name, pivot, rotation, scale, visible, cubes, children, root, extra);
+    }
+    private static int count(DataInputStream in, int used) throws IOException {
+        int count = in.readInt();
+        if (count < 0 || count > YsmGeometry.MAX_NODES - used) throw new IOException("Invalid geometry list length");
+        return count;
+    }
+    private interface Writer { void write(DataOutputStream out) throws IOException; }
+    private interface Reader<T> { T read(DataInputStream in) throws IOException; }
+    private YsmGeometryIO() {}
+}

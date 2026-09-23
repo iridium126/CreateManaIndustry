@@ -3,14 +3,7 @@ package com.iridium126.createmanaindustry;
 import org.slf4j.Logger;
 
 import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexActions;
-import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexIotaTypes;
-import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexTrickActions;
 import com.iridium126.createmanaindustry.compat.hexcasting.CMISlatePatternRecipes;
-import com.iridium126.createmanaindustry.compat.hexcasting.InlineTrickData;
-import com.iridium126.createmanaindustry.compat.hexcasting.circle.CircleSlateManaPool;
-import com.iridium126.createmanaindustry.compat.hexcasting.circle.SlateKnotInteraction;
-import com.iridium126.createmanaindustry.compat.trickster.CMITricksterIotaRegister;
-import com.samsthenerd.inline.api.InlineAPI;
 import com.iridium126.createmanaindustry.compat.trickster.KineticStressTrickRegister;
 import com.iridium126.createmanaindustry.config.ClientConfig;
 import com.iridium126.createmanaindustry.config.ServerConfig;
@@ -126,17 +119,14 @@ public class CreateManaIndustry {
             CMIHexActions.register(modEventBus);
             NeoForge.EVENT_BUS.addListener(CMISlatePatternRecipes::onServerStarted);
         }
+        if (HEX_ACTIVE && ModList.get().isLoaded("yes_steve_model")) {
+            com.iridium126.createmanaindustry.compat.hexcasting.ysm.CMIYsmIotaTypes.register(modEventBus);
+            com.iridium126.createmanaindustry.compat.hexcasting.ysm.CMIYsmActions.register(modEventBus);
+            com.iridium126.createmanaindustry.compat.ysm.YsmServerRuntime.register();
+        }
         if (HEX_ACTIVE && TRICKSTER_ACTIVE) {
-            // TrickIota + inline spell-tree rendering + read_trick_from_item
-            // (hexcasting hard-depends on inline, so the InlineAPI call is safe here)
-            CMIHexIotaTypes.register(modEventBus);
-            InlineAPI.INSTANCE.addDataType(InlineTrickData.InlineTrickDataType.INSTANCE);
-            CMIHexTrickActions.register(modEventBus);
-            // Trickster fragment storing a Hexcasting iota + read_iota trick
-            CMITricksterIotaRegister.register();
-            // execute_trick circle support: slate knot slot interactions + mana pool type
-            SlateKnotInteraction.register();
-            CircleSlateManaPool.ensureTypeRegistered();
+            // Keep Inline and Trickster types out of this constructor's verifier.
+            com.iridium126.createmanaindustry.compat.hexcasting.HexTricksBootstrap.register(modEventBus);
         }
 
         // Fuel rod structure recognition: glass has no block entity, so its
@@ -168,6 +158,10 @@ public class CreateManaIndustry {
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar(MODID).versioned("1");
+        registrar.playToClient(
+                com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket.TYPE,
+                com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket::handle);
         registrar.playToClient(
                 ClientboundMistSyncPacket.TYPE,
                 ClientboundMistSyncPacket.STREAM_CODEC,

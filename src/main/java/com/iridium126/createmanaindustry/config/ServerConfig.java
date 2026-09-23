@@ -87,6 +87,8 @@ public final class ServerConfig {
     private static ModConfigSpec.LongValue TRINKET_MAX_MEDIA;
     private static ModConfigSpec.LongValue ARTIFACT_MAX_MEDIA;
     private static ModConfigSpec.LongValue BATTERY_MAX_MEDIA;
+    private static ModConfigSpec.IntValue YSM_APPLY_CRYSTALS;
+    private static ModConfigSpec.IntValue YSM_EXPORT_CRYSTALS;
 
     static {
         BUILDER.comment("Fluid conversion ratios — how much mana/media/source one bucket holds.").push("fluid");
@@ -202,6 +204,12 @@ public final class ServerConfig {
         BATTERY_MAX_MEDIA = BUILDER
                 .comment("Maximum media capacity for incomplete media batteries.")
                 .defineInRange("batteryMaxMedia", 640000000L, 10000L, Long.MAX_VALUE);
+        YSM_APPLY_CRYSTALS = BUILDER
+                .comment("Charged amethyst units consumed when applying a temporary YSM model edit.")
+                .defineInRange("ysmApplyCrystalUnits", 1, 0, 64);
+        YSM_EXPORT_CRYSTALS = BUILDER
+                .comment("Charged amethyst units consumed when exporting a YSM model.")
+                .defineInRange("ysmExportCrystalUnits", 1, 0, 64);
         BUILDER.pop();
 
     }
@@ -268,6 +276,8 @@ public final class ServerConfig {
     public static long trinketMaxMedia = 64000000L;
     public static long artifactMaxMedia = 640000000L;
     public static long batteryMaxMedia = 640000000L;
+    public static int ysmApplyCrystalUnits = 1;
+    public static int ysmExportCrystalUnits = 1;
 
     // ---- stress accessors (BlockStressValues providers) --------------------
 
@@ -354,6 +364,8 @@ public final class ServerConfig {
             trinketMaxMedia = TRINKET_MAX_MEDIA.get();
             artifactMaxMedia = ARTIFACT_MAX_MEDIA.get();
             batteryMaxMedia = BATTERY_MAX_MEDIA.get();
+            ysmApplyCrystalUnits = YSM_APPLY_CRYSTALS.get();
+            ysmExportCrystalUnits = YSM_EXPORT_CRYSTALS.get();
         }
     }
 }
