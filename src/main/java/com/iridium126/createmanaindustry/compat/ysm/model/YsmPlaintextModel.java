@@ -17,7 +17,11 @@ public final class YsmPlaintextModel {
             if (!path.endsWith(".json") || path.equals("ysm.json")) continue;
             byte[] bytes = source.resource(path);
             String text = utf8(bytes);
-            if (YsmJson.resource(text).has("minecraft:geometry")) geometry.add(YsmGeometryReader.read(source.digest(), path, text));
+            JsonObject document = YsmJson.resource(text);
+            if (!document.has("minecraft:geometry")) continue;
+            JsonArray geometries = document.getAsJsonArray("minecraft:geometry");
+            for (int index = 0; index < geometries.size(); index++)
+                geometry.add(YsmGeometryReader.read(source.digest(), path, text, index));
         }
         if (geometry.isEmpty()) throw new IllegalArgumentException("No supported geometry files in model");
         roots = List.copyOf(geometry);
@@ -26,7 +30,7 @@ public final class YsmPlaintextModel {
     public String digest() { return source.digest(); }
     public List<Group> roots() { return roots; }
     public YsmResourceArchive source() { return source; }
-    private Set<String> parts() { var result = new HashSet<String>(); for (Group root : roots) result.add(root.root().part()); return result; }
+    private Set<String> parts() { var result = new HashSet<String>(); for (Group root : roots) result.add(root.root().identity()); return result; }
     public static void validateReferences(YsmResourceArchive source) {
         try {
             JsonObject config = YsmJson.object(utf8(source.resource("ysm.json")));

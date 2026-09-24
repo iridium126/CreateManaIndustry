@@ -2,27 +2,48 @@ package com.iridium126.createmanaindustry.compat.ysm.model;
 
 import com.google.gson.*;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /** Bedrock geometry serialization; unsupported transforms fail before publishing. */
 public final class YsmGeometryJson {
     private static final String[] FACES = {"north", "south", "east", "west", "up", "down"};
     public static JsonObject write(Group root) {
-        if (root.root() == null) throw new IllegalArgumentException("Expected geometry file root");
-        JsonObject document = object(root.extraJson());
+        return write(List.of(root));
+    }
+    /** Replaces selected geometry entries together while retaining every unselected entry in the document. */
+    public static JsonObject write(List<Group> roots) {
+        if (roots.isEmpty()) throw new IllegalArgumentException("Expected at least one geometry file root");
+        Group first = roots.getFirst();
+        if (first.root() == null) throw new IllegalArgumentException("Expected geometry file root");
+        String part = first.root().part();
+        String snapshot = first.root().snapshot();
+        JsonObject document = object(first.extraJson());
         if (!document.has("format_version")) document.addProperty("format_version", "1.12.0");
-        JsonObject geometry = document.has("minecraft:geometry")
-                ? document.getAsJsonArray("minecraft:geometry").get(0).getAsJsonObject().deepCopy() : new JsonObject();
-        JsonObject description = object(root.root().descriptionJson());
-        description.addProperty("texture_width", root.root().textureWidth());
-        description.addProperty("texture_height", root.root().textureHeight());
-        geometry.add("description", description);
-        JsonArray bones = new JsonArray();
-        for (Group child : root.children()) bone(child, null, true, bones);
-        geometry.add("bones", bones);
-        JsonArray geometries = new JsonArray(); geometries.add(geometry);
+        JsonArray geometries = new JsonArray();
         if (document.has("minecraft:geometry")) {
-            JsonArray original = document.getAsJsonArray("minecraft:geometry");
-            for (int i = 1; i < original.size(); i++) geometries.add(original.get(i).deepCopy());
+            for (JsonElement original : document.getAsJsonArray("minecraft:geometry")) geometries.add(original.deepCopy());
+        }
+        Set<Integer> written = new HashSet<>();
+        for (Group root : roots) {
+            Root metadata = root.root();
+            if (metadata == null || !part.equals(metadata.part()) || !snapshot.equals(metadata.snapshot()))
+                throw new IllegalArgumentException("Geometry roots must come from the same source file");
+            int index = metadata.geometryIndex();
+            if (!written.add(index)) throw new IllegalArgumentException("Duplicate geometry index");
+            if (index > geometries.size() || (index < geometries.size() && !geometries.get(index).isJsonObject()))
+                throw new IllegalArgumentException("Geometry index is outside the source document");
+            JsonObject geometry = index < geometries.size() ? geometries.get(index).getAsJsonObject().deepCopy() : new JsonObject();
+            JsonObject description = object(metadata.descriptionJson());
+            description.addProperty("texture_width", metadata.textureWidth());
+            description.addProperty("texture_height", metadata.textureHeight());
+            geometry.add("description", description);
+            JsonArray bones = new JsonArray();
+            for (Group child : root.children()) bone(child, null, true, bones);
+            geometry.add("bones", bones);
+            if (index == geometries.size()) geometries.add(geometry);
+            else geometries.set(index, geometry);
         }
         document.add("minecraft:geometry", geometries);
         return document;
@@ -70,11 +91,11 @@ public final class YsmGeometryJson {
         for (int i = 0; i < 6; i++) {
             Face face = cube.faces().get(i);
             if (!face.visible()) continue;
-            if (face.rotation() != 0) throw new IllegalArgumentException("Per-face UV quarter turns require verified native export support");
             JsonObject data = out.has("uv") && out.get("uv").isJsonObject()
                     && out.getAsJsonObject("uv").has(FACES[i]) ? out.getAsJsonObject("uv").getAsJsonObject(FACES[i]).deepCopy() : new JsonObject();
             data.add("uv", numbers(face.u(), face.v())); data.add("uv_size", numbers(face.width(), face.height()));
-            data.remove("uv_rotation");
+            if (face.rotation() == 0) data.remove("uv_rotation");
+            else data.addProperty("uv_rotation", face.rotation());
             uv.add(FACES[i], data);
         }
         out.add("uv", uv);

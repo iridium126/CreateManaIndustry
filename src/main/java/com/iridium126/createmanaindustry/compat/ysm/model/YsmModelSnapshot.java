@@ -19,7 +19,7 @@ public final class YsmModelSnapshot {
     private YsmModelSnapshot(String digest, List<Group> roots, YsmResourceArchive resources) {
         this.digest = digest; this.roots = List.copyOf(roots); this.resources = resources;
         var parts = new HashSet<String>(); long weight = resources.byteSize();
-        for (Group root : roots) { parts.add(root.root().part()); weight += 4L * YsmGeometryIO.estimateGroupSize(root); }
+        for (Group root : roots) { parts.add(root.root().identity()); weight += 4L * YsmGeometryIO.estimateGroupSize(root); }
         this.parts = Set.copyOf(parts); this.weight = weight;
         if (!digest.equals(YsmGeometry.validateRoots(roots, parts))) throw new IllegalArgumentException("Source snapshot mismatch");
     }
@@ -54,7 +54,10 @@ public final class YsmModelSnapshot {
         if (!digest.equals(YsmGeometry.validateRoots(edited, parts))) throw new IllegalArgumentException("Source snapshot mismatch");
         var files = new LinkedHashMap<String, byte[]>();
         for (String path : resources.paths()) files.put(path, resources.resource(path));
-        for (Group root : edited) files.put(root.root().part(), YsmGeometryJson.write(root).toString().getBytes(StandardCharsets.UTF_8));
+        var byPart = new LinkedHashMap<String, List<Group>>();
+        for (Group root : edited) byPart.computeIfAbsent(root.root().part(), ignored -> new ArrayList<>()).add(root);
+        for (var entry : byPart.entrySet())
+            files.put(entry.getKey(), YsmGeometryJson.write(entry.getValue()).toString().getBytes(StandardCharsets.UTF_8));
         var result = new YsmResourceArchive(files);
         YsmPlaintextModel.validateReferences(result);
         return result;

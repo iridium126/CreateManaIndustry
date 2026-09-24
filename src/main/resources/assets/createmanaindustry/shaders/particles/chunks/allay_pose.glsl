@@ -4,7 +4,8 @@
 //   - ShaderPackProgramCompiler (shader-pack merged programs)
 // Injected verbatim by ParticlePrograms' #pragma cmi_include mechanism.
 // Everything is prefixed cmi so injected pack programs cannot collide.
-// Port reference: .refs/neoforge-21.1.227/net/minecraft/client/model/AllayModel.java
+// Port reference: Minecraft 1.21.1 source context at https://github.com/neoforged/NeoForge/tree/1.21.1
+// Vanilla class: net.minecraft.client.model.AllayModel
 //
 // The pose-free storm math (hash, wave rolls/claim, typhoon home) lives in
 // chunks/allay_storm.glsl, top-included below — the ONLY nested include in

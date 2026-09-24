@@ -16,7 +16,7 @@ public final class YsmCompiledExporter {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
     public static Map<String, byte[]> build(YsmCompiledModel snapshot, List<Group> roots) {
-        Set<String> parts = new HashSet<>(); snapshot.roots().forEach(g -> parts.add(g.root().part()));
+        Set<String> parts = new HashSet<>(); snapshot.roots().forEach(g -> parts.add(g.root().identity()));
         if (!snapshot.digest().equals(YsmGeometry.validateRoots(roots, parts))) throw new IllegalArgumentException("Source snapshot mismatch");
         var exporter = new YsmCompiledExporter();
         for (Group root : roots) exporter.json(root.root().part(), YsmGeometryJson.write(root));

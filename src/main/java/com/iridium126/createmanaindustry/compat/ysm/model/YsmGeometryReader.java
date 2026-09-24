@@ -28,15 +28,18 @@ public final class YsmGeometryReader {
         }
     }
     public static Group read(String source, String part, String json) {
+        return read(source, part, json, 0);
+    }
+    public static Group read(String source, String part, String json, int geometryIndex) {
         try {
             JsonObject document = YsmJson.resource(json);
             JsonArray geometries = document.getAsJsonArray("minecraft:geometry");
-            if (geometries == null || geometries.isEmpty())
+            if (geometries == null || geometries.isEmpty() || geometryIndex < 0 || geometryIndex >= geometries.size())
                 throw new IllegalArgumentException("Expected a geometry in the file");
-            JsonObject geometry = geometries.get(0).getAsJsonObject();
+            JsonObject geometry = geometries.get(geometryIndex).getAsJsonObject();
             JsonObject description = geometry.getAsJsonObject("description");
             var root = new Root(source, part, integer(description, "texture_width", 64),
-                    integer(description, "texture_height", 64), description.toString());
+                    integer(description, "texture_height", 64), description.toString(), geometryIndex);
             Map<String, JsonObject> bones = new LinkedHashMap<>();
             Map<String, List<String>> children = new LinkedHashMap<>();
             JsonArray data = geometry.has("bones") ? geometry.getAsJsonArray("bones") : new JsonArray();
@@ -47,8 +50,8 @@ public final class YsmGeometryReader {
                 children.computeIfAbsent(parent, ignored -> new ArrayList<>()).add(name);
             }
             List<Group> groups = YsmBoneHierarchy.build(bones, children, name -> boneFrame(name, bones, children));
-            geometry.remove("bones"); geometry.remove("description");
-            return new Group(part, Vector.ZERO, Vector.ZERO, Vector.ONE, true, List.of(), groups, root, document.toString());
+            String name = geometries.size() == 1 ? part : part + " [geometry " + (geometryIndex + 1) + "]";
+            return new Group(name, Vector.ZERO, Vector.ZERO, Vector.ONE, true, List.of(), groups, root, document.toString());
         } catch (IllegalStateException | NullPointerException | ClassCastException failure) {
             throw new IllegalArgumentException("Malformed geometry document", failure);
         }
@@ -111,7 +114,8 @@ public final class YsmGeometryReader {
                 double[] extent = face.has("uv_size") ? array(face.get("uv_size"), 2)
                         : new double[]{i < 2 || i > 3 ? size.x() : size.z(), i < 4 ? size.y() : size.z()};
                 int turn = integer(face, "uv_rotation", 0);
-                if (turn != 0) throw new IllegalArgumentException("UV quarter turns need verified YSM support");
+                if (turn != 0 && turn != 90 && turn != 180 && turn != 270)
+                    throw new IllegalArgumentException("UV rotation must be 0, 90, 180 or 270");
                 faces.add(new Face(offset[0], offset[1], extent[0], extent[1], turn, true));
                 face.remove("uv"); face.remove("uv_size");
             }

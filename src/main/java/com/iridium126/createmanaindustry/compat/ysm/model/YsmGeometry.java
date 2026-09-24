@@ -30,12 +30,12 @@ public final class YsmGeometry {
         }
     }
 
+    /** Size may be signed; baked YSM geometry uses signs to preserve face orientation. */
     public record Cube(Vector origin, Vector size, Vector pivot, Vector rotation, Vector scale,
             double inflate, boolean visible, List<Face> faces, String extraJson) {
         public Cube {
             Objects.requireNonNull(origin); Objects.requireNonNull(size); Objects.requireNonNull(pivot);
             Objects.requireNonNull(rotation); Objects.requireNonNull(scale); finite(inflate);
-            if (size.x < 0 || size.y < 0 || size.z < 0) throw new IllegalArgumentException("Negative cube size");
             if (scale.x <= 0 || scale.y <= 0 || scale.z <= 0) throw new IllegalArgumentException("Non-positive scale");
             faces = List.copyOf(faces);
             if (faces.size() != 6) throw new IllegalArgumentException("A cube must have six face entries");
@@ -49,7 +49,11 @@ public final class YsmGeometry {
     }
 
     /** Only file roots carry provenance; ordinary bones must have a null root. */
-    public record Root(String snapshot, String part, int textureWidth, int textureHeight, String descriptionJson) {
+    public record Root(String snapshot, String part, int textureWidth, int textureHeight,
+            String descriptionJson, int geometryIndex) {
+        public Root(String snapshot, String part, int textureWidth, int textureHeight, String descriptionJson) {
+            this(snapshot, part, textureWidth, textureHeight, descriptionJson, 0);
+        }
         public Root {
             if (snapshot == null || !snapshot.matches("[0-9a-f]{64}"))
                 throw new IllegalArgumentException("Invalid resource snapshot digest");
@@ -62,8 +66,10 @@ public final class YsmGeometry {
             }
             if (textureWidth < 1 || textureHeight < 1)
                 throw new IllegalArgumentException("Invalid texture dimensions");
+            if (geometryIndex < 0) throw new IllegalArgumentException("Invalid geometry index");
             json(descriptionJson);
         }
+        public String identity() { return part + "\u0000" + geometryIndex; }
     }
 
     public record Group(String name, Vector pivot, Vector rotation, Vector scale, boolean visible,
@@ -94,7 +100,7 @@ public final class YsmGeometry {
             if (root == null) throw new IllegalArgumentException("Expected geometry file root");
             if (snapshot == null) snapshot = root.snapshot;
             if (!snapshot.equals(root.snapshot)) throw new IllegalArgumentException("Mixed model snapshots");
-            if (!parts.add(root.part)) throw new IllegalArgumentException("Duplicate geometry file");
+            if (!parts.add(root.identity())) throw new IllegalArgumentException("Duplicate geometry root");
             Set<String> names = new HashSet<>();
             var pending = new ArrayDeque<Group>(group.children);
             while (!pending.isEmpty()) {

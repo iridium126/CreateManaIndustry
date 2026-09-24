@@ -396,6 +396,8 @@ public class YSMBinaryDeserializer implements AutoCloseable{
 
 
         if (format > 26) {
+            // Target format follows YSMParserV3::deserializeModern in
+            // https://github.com/OpenYSMDev/YSMParser: count, then all names.
             int subModelCount = reader.readCount();
             for (int i = 0; i < subModelCount; i++) {
                 String name = normalizeSubModelName(reader.readString());

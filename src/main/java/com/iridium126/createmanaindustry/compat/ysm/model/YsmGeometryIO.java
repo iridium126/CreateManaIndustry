@@ -13,11 +13,11 @@ import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
 public final class YsmGeometryIO {
     /** Practical JVM byte-array ceiling; the geometry codec has no smaller payload quota. */
     public static final int MAX_BYTES = Integer.MAX_VALUE - 8;
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
 
     public static byte[] encodeCube(Cube cube) { return encode(out -> writeCube(out, cube)); }
     public static byte[] encodeGroup(Group group) { return encode(out -> writeGroup(out, group)); }
-    public static Cube decodeCube(byte[] bytes) { return decode(bytes, in -> readCube(in)); }
+    public static Cube decodeCube(byte[] bytes) { return decode(bytes, (in, version) -> readCube(in)); }
     public static Group decodeGroup(byte[] bytes) { return decode(bytes, YsmGeometryIO::readGroup); }
 
     /** Estimates cache weight without imposing the iota codec's per-value byte cap. */
@@ -30,7 +30,7 @@ public final class YsmGeometryIO {
             size += textWeight(group.name()) + 3L * 24 + 2 + textWeight(group.extraJson()) + 8;
             if (group.root() != null) {
                 Root file = group.root();
-                size += textWeight(file.snapshot()) + textWeight(file.part()) + 8 + textWeight(file.descriptionJson());
+                size += textWeight(file.snapshot()) + textWeight(file.part()) + 12 + textWeight(file.descriptionJson());
             }
             for (Cube cube : group.cubes())
                 size += 5L * 24 + 8 + 1 + 6L * 37 + textWeight(cube.extraJson());
@@ -63,8 +63,9 @@ public final class YsmGeometryIO {
     private static <T> T decode(byte[] bytes, Reader<T> reader) {
         if (bytes.length > MAX_BYTES) throw new IllegalArgumentException("Geometry exceeds Java byte-array limit");
         try (var in = new DataInputStream(new ByteArrayInputStream(bytes))) {
-            if (in.readUnsignedByte() != VERSION) throw new IOException("Unsupported geometry encoding version");
-            T value = reader.read(in);
+            int version = in.readUnsignedByte();
+            if (version < 1 || version > VERSION) throw new IOException("Unsupported geometry encoding version");
+            T value = reader.read(in, version);
             if (in.available() != 0) throw new IOException("Trailing geometry data");
             return value;
         } catch (IOException failure) { throw new IllegalArgumentException("Invalid geometry data: " + failure.getMessage(), failure); }
@@ -117,6 +118,7 @@ public final class YsmGeometryIO {
             if (current.root() != null) {
                 Root root = current.root(); text(out, root.snapshot()); text(out, root.part());
                 out.writeInt(root.textureWidth()); out.writeInt(root.textureHeight()); text(out, root.descriptionJson());
+                out.writeInt(root.geometryIndex());
             }
             text(out, current.extraJson()); out.writeInt(current.cubes().size());
             for (Cube cube : current.cubes()) writeCube(out, cube);
@@ -141,11 +143,18 @@ public final class YsmGeometryIO {
         private Group build() { return new Group(name, pivot, rotation, scale, visible, cubes, children, root, extra); }
     }
 
-    private static GroupFrame readGroupFrame(DataInputStream in) throws IOException {
+    private static GroupFrame readGroupFrame(DataInputStream in, int version) throws IOException {
         String name = text(in);
         Vector pivot = vector(in), rotation = vector(in), scale = vector(in);
         boolean visible = bool(in);
-        Root root = bool(in) ? new Root(text(in), text(in), in.readInt(), in.readInt(), text(in)) : null;
+        Root root = null;
+        if (bool(in)) {
+            String snapshot = text(in), part = text(in);
+            int textureWidth = in.readInt(), textureHeight = in.readInt();
+            String description = text(in);
+            int geometryIndex = version >= 2 ? in.readInt() : 0;
+            root = new Root(snapshot, part, textureWidth, textureHeight, description, geometryIndex);
+        }
         String extra = text(in);
         int cubeCount = count(in);
         List<Cube> cubes = new ArrayList<>(Math.min(cubeCount, 1024));
@@ -154,13 +163,13 @@ public final class YsmGeometryIO {
         return new GroupFrame(name, pivot, rotation, scale, visible, root, extra, cubes, childCount);
     }
 
-    private static Group readGroup(DataInputStream in) throws IOException {
+    private static Group readGroup(DataInputStream in, int version) throws IOException {
         Deque<GroupFrame> pending = new ArrayDeque<>();
-        pending.push(readGroupFrame(in));
+        pending.push(readGroupFrame(in, version));
         while (true) {
             GroupFrame frame = pending.peek();
             if (frame.children.size() < frame.childCount) {
-                pending.push(readGroupFrame(in));
+                pending.push(readGroupFrame(in, version));
                 continue;
             }
             Group completed = frame.build();
@@ -177,6 +186,6 @@ public final class YsmGeometryIO {
         return count;
     }
     private interface Writer { void write(DataOutputStream out) throws IOException; }
-    private interface Reader<T> { T read(DataInputStream in) throws IOException; }
+    private interface Reader<T> { T read(DataInputStream in, int version) throws IOException; }
     private YsmGeometryIO() {}
 }

@@ -15,7 +15,8 @@ import org.joml.Quaternionf;
  * neither restyle nor re-resolution this path.
  *
  * <p>Geometry — a verbatim port of vanilla {@code ItemModelGenerator}
- * (reference: .refs/neoforge-21.1.227 .../renderer/block/model/ItemModelGenerator.java):
+ * (Minecraft 1.21.1 source context: https://github.com/neoforged/NeoForge/tree/1.21.1;
+ * class: {@code net.minecraft.client.renderer.block.model.ItemModelGenerator}):
  * the full-quad pair spanning {@code (0,0,7.5) .. (16,16,8.5)} in pixel units
  * (front SOUTH face at z = 8.5/16, back NORTH face at z = 7.5/16, 1 px apart)
  * plus the silhouette SIDE SHELLS the old bake omitted. The side shell is what

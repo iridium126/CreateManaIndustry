@@ -123,7 +123,7 @@ public record OpGeometry(boolean setter) implements ConstMediaAction {
                     || v.x() < 1 || v.y() < 1 || v.x() > Integer.MAX_VALUE || v.y() > Integer.MAX_VALUE)
                 throw new IllegalArgumentException("Texture size must use positive integer width and height, followed by 0");
             Root old = root(g);
-            root = new Root(old.snapshot(), old.part(), (int)v.x(), (int)v.y(), old.descriptionJson());
+            root = new Root(old.snapshot(), old.part(), (int)v.x(), (int)v.y(), old.descriptionJson(), old.geometryIndex());
         }
         List<String> cubeKeys = property.equals("cubes") ? referenceCubes(replacement, store) : store.cubeKeys(node);
         List<String> groupKeys = property.equals("children") ? referenceGroups(replacement, store) : store.groupKeys(node);

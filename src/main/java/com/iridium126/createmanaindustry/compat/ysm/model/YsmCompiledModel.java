@@ -49,7 +49,7 @@ public final class YsmCompiledModel {
             addEntityRoots(roots, digest, resources.vehicles);
             addEntityRoots(roots, digest, resources.projectiles);
             addEntityRoots(roots, digest, resources.subEntities);
-            Set<String> parts = new HashSet<>(); roots.forEach(g -> parts.add(g.root().part()));
+            Set<String> parts = new HashSet<>(); roots.forEach(g -> parts.add(g.root().identity()));
             YsmGeometry.validateRoots(roots, parts);
             return new YsmCompiledModel(digest, resources, roots);
         } catch (IllegalArgumentException failure) { throw failure; }

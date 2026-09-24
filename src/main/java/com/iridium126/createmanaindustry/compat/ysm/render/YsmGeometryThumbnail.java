@@ -77,10 +77,12 @@ public final class YsmGeometryThumbnail {
         forEachCube(root, alone, (cube, transform) -> {
             if (cube.faces().stream().noneMatch(Face::visible)) return;
             double inflate = cube.inflate();
-            double minX = cube.origin().x() - inflate, minY = cube.origin().y() - inflate, minZ = cube.origin().z() - inflate;
-            double maxX = cube.origin().x() + cube.size().x() + inflate;
-            double maxY = cube.origin().y() + cube.size().y() + inflate;
-            double maxZ = cube.origin().z() + cube.size().z() + inflate;
+            double x0 = cube.origin().x() - inflate, y0 = cube.origin().y() - inflate, z0 = cube.origin().z() - inflate;
+            double x1 = cube.origin().x() + cube.size().x() + inflate;
+            double y1 = cube.origin().y() + cube.size().y() + inflate;
+            double z1 = cube.origin().z() + cube.size().z() + inflate;
+            double minX = Math.min(x0, x1), minY = Math.min(y0, y1), minZ = Math.min(z0, z1);
+            double maxX = Math.max(x0, x1), maxY = Math.max(y0, y1), maxZ = Math.max(z0, z1);
             for (int mask = 0; mask < 8; mask++) {
                 Point point = project(transform.point((mask & 1) == 0 ? minX : maxX,
                         (mask & 2) == 0 ? minY : maxY, (mask & 4) == 0 ? minZ : maxZ));
@@ -98,13 +100,18 @@ public final class YsmGeometryThumbnail {
         double x1 = cube.origin().x() + cube.size().x() + inflate;
         double y1 = cube.origin().y() + cube.size().y() + inflate;
         double z1 = cube.origin().z() + cube.size().z() + inflate;
+        // Signed sizes are emitted by YSMParser's baked-geometry restoration. Keep
+        // each named Bedrock face on its physical local-space side when an axis flips.
+        double westX = Math.min(x0, x1), eastX = Math.max(x0, x1);
+        double downY = Math.min(y0, y1), upY = Math.max(y0, y1);
+        double northZ = Math.min(z0, z1), southZ = Math.max(z0, z1);
         double[][] points = new double[][] {
-                {x0,y0,z0}, {x0,y1,z0}, {x1,y1,z0}, {x1,y0,z0},
-                {x1,y0,z1}, {x1,y1,z1}, {x0,y1,z1}, {x0,y0,z1},
-                {x1,y0,z0}, {x1,y1,z0}, {x1,y1,z1}, {x1,y0,z1},
-                {x0,y0,z1}, {x0,y1,z1}, {x0,y1,z0}, {x0,y0,z0},
-                {x0,y1,z0}, {x0,y1,z1}, {x1,y1,z1}, {x1,y1,z0},
-                {x0,y0,z1}, {x0,y0,z0}, {x1,y0,z0}, {x1,y0,z1}
+                {westX,downY,northZ}, {westX,upY,northZ}, {eastX,upY,northZ}, {eastX,downY,northZ},
+                {eastX,downY,southZ}, {eastX,upY,southZ}, {westX,upY,southZ}, {westX,downY,southZ},
+                {eastX,downY,northZ}, {eastX,upY,northZ}, {eastX,upY,southZ}, {eastX,downY,southZ},
+                {westX,downY,southZ}, {westX,upY,southZ}, {westX,upY,northZ}, {westX,downY,northZ},
+                {westX,upY,northZ}, {westX,upY,southZ}, {eastX,upY,southZ}, {eastX,upY,northZ},
+                {westX,downY,southZ}, {westX,downY,northZ}, {eastX,downY,northZ}, {eastX,downY,southZ}
         };
         for (int faceIndex = 0; faceIndex < 6; faceIndex++) {
             Face face = cube.faces().get(faceIndex);
@@ -127,12 +134,18 @@ public final class YsmGeometryThumbnail {
         double[][] uv = {{face.u(), face.v() + face.height()}, {face.u(), face.v()},
                 {face.u() + face.width(), face.v()}, {face.u() + face.width(), face.v() + face.height()}};
         if (face.rotation() == 0) return uv;
-        double centerU = face.u() + face.width() * .5, centerV = face.v() + face.height() * .5;
-        double radians = Math.toRadians(face.rotation()), cosine = Math.cos(radians), sine = Math.sin(radians);
         for (double[] point : uv) {
-            double du = point[0] - centerU, dv = point[1] - centerV;
-            point[0] = centerU + du * cosine - dv * sine;
-            point[1] = centerV + du * sine + dv * cosine;
+            double x = face.width() == 0 ? 0.5 : (point[0] - face.u()) / face.width();
+            double y = face.height() == 0 ? 0.5 : (point[1] - face.v()) / face.height();
+            double rotatedX, rotatedY;
+            switch (face.rotation()) {
+                case 90 -> { rotatedX = 1 - y; rotatedY = x; }
+                case 180 -> { rotatedX = 1 - x; rotatedY = 1 - y; }
+                case 270 -> { rotatedX = y; rotatedY = 1 - x; }
+                default -> throw new IllegalArgumentException("Unsupported UV rotation");
+            }
+            point[0] = face.u() + rotatedX * face.width();
+            point[1] = face.v() + rotatedY * face.height();
         }
         return uv;
     }
