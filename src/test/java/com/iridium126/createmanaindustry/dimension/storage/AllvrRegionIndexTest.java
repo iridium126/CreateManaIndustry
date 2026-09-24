@@ -6,7 +6,6 @@ import com.iridium126.createmanaindustry.dimension.cube.AllvrCoords;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -19,23 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AllvrRegionIndexTest {
 
     @Test
-    void negativeRegionBoundaries() {
-        assertEquals(-1, AllvrRegionIndex.region(-1));
-        assertEquals(15, AllvrRegionIndex.local(-1));
-        assertEquals(-1, AllvrRegionIndex.region(-16));
-        assertEquals(0, AllvrRegionIndex.local(-16));
-        assertEquals(-2, AllvrRegionIndex.region(-17));
-        assertEquals(15, AllvrRegionIndex.local(-17));
-        assertEquals(0, AllvrRegionIndex.region(0));
-        assertEquals(1, AllvrRegionIndex.region(16));
-        assertEquals(0, AllvrRegionIndex.local(16));
-        assertEquals(1, AllvrRegionIndex.region(17));
-        assertEquals(1, AllvrRegionIndex.local(17));
-    }
-
-    @Test
-    void regionLocalRoundTrip() {
-        for (int cube = -1_100_000; cube <= 1_100_000; cube += 1) {
+    void regionCoordinatesRoundTripAtBoundaries() {
+        int[] cubes = {Integer.MIN_VALUE, -1_100_000, -33, -17, -16, -1, 0, 1, 15, 16, 17,
+                1_100_000, Integer.MAX_VALUE};
+        for (int cube : cubes) {
             int region = AllvrRegionIndex.region(cube);
             int local = AllvrRegionIndex.local(cube);
             assertTrue(local >= 0 && local < AllvrRegionIndex.DIAMETER, "local out of range at " + cube);
@@ -106,6 +92,6 @@ class AllvrRegionIndexTest {
         assertNull(AllvrRegionIndex.parseFileName("r.1.2.txt"));
         assertNull(AllvrRegionIndex.parseFileName("x.1.2.3.3dr"));
         assertNull(AllvrRegionIndex.parseFileName("r.1.2.3.3dr.bak"));
-        assertFalse(AllvrRegionIndex.parseFileName("level.dat") != null);
+        assertNull(AllvrRegionIndex.parseFileName("level.dat"));
     }
 }

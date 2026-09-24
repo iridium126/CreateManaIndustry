@@ -15,7 +15,8 @@ class ClientboundYsmPreviewPacketTest {
         assertTrue(packet.cube());
         assertArrayEquals(new byte[] {1, 2, 3, 4}, packet.png());
         assertThrows(IllegalArgumentException.class,
-                () -> ClientboundYsmPreviewPacket.image(key, false, new byte[16 * 1024 + 1]));
+                () -> ClientboundYsmPreviewPacket.image(key, false,
+                        new byte[ClientboundYsmPreviewPacket.MAX_IMAGE_BYTES + 1]));
         assertThrows(IllegalArgumentException.class,
                 () -> ClientboundYsmPreviewPacket.image("not-a-key", false, new byte[] {1}));
     }

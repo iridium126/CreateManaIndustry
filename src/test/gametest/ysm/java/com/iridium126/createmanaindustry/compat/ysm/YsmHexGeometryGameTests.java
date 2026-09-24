@@ -69,7 +69,8 @@ public final class YsmHexGeometryGameTests {
             oversized.writeByte(com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmPreviewPacket.IMAGE);
             oversized.writeByteArray(java.util.HexFormat.of().parseHex(key));
             oversized.writeBoolean(false);
-            oversized.writeByteArray(new byte[16 * 1024 + 1]);
+            oversized.writeByteArray(new byte[
+                    com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmPreviewPacket.MAX_IMAGE_BYTES + 1]);
             try {
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmPreviewPacket.STREAM_CODEC.decode(oversized);
                 helper.fail("Oversized preview image accepted");
@@ -78,7 +79,7 @@ public final class YsmHexGeometryGameTests {
         helper.succeed();
     }
     @GameTest(template = "worldgen_test")
-    public static void fourGeometryIotasAttachInlineData(GameTestHelper helper) {
+    public static void geometryIotasAttachInlineData(GameTestHelper helper) {
         if (!net.neoforged.fml.ModList.get().isLoaded("inline")) {
             helper.succeed();
             return;

@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.compat.ysm.net;
 
 import io.netty.handler.codec.DecoderException;
 import java.util.HexFormat;
+import com.iridium126.createmanaindustry.compat.ysm.render.YsmGeometryThumbnail;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -12,7 +13,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 public record ClientboundYsmPreviewPacket(byte kind, String key, boolean cube, byte[] png,
         boolean retryable, String reason) implements CustomPacketPayload {
     public static final byte IMAGE = 0, ERROR = 1;
-    public static final int MAX_IMAGE_BYTES = 16 * 1024;
+    public static final int MAX_IMAGE_BYTES = YsmGeometryThumbnail.MAX_PNG_BYTES;
     public static final Type<ClientboundYsmPreviewPacket> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath("createmanaindustry", "ysm_preview"));
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundYsmPreviewPacket> STREAM_CODEC =
@@ -33,7 +34,7 @@ public record ClientboundYsmPreviewPacket(byte kind, String key, boolean cube, b
         reason = reason == null ? "" : reason;
         if (reason.length() > 512) reason = reason.substring(0, 512);
         if (kind == IMAGE && (png.length == 0 || png.length > MAX_IMAGE_BYTES))
-            throw new IllegalArgumentException("YSM preview PNG must be 1 to 16 KiB");
+            throw new IllegalArgumentException("YSM preview PNG must be 1 to 70 KiB");
         if (kind == ERROR && png.length != 0) throw new IllegalArgumentException("Error response cannot contain a preview PNG");
     }
     @Override public byte[] png() { return png.clone(); }

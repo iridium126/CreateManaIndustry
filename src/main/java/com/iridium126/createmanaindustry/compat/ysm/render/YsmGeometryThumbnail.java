@@ -14,8 +14,8 @@ import javax.imageio.ImageIO;
 
 /** Server-safe CPU orthographic rasterizer for fixed-size, static YSM previews. */
 public final class YsmGeometryThumbnail {
-    public static final int SIZE = 40;
-    public static final int MAX_PNG_BYTES = 16 * 1024;
+    public static final int SIZE = 128;
+    public static final int MAX_PNG_BYTES = 70 * 1024;
     private static final double AZIMUTH = Math.toRadians(35), ELEVATION = Math.toRadians(24);
     private static final int[] BRIGHTNESS = {190, 215, 165, 180, 255, 135};
     private record Work(Group group, Matrix parent) {}
@@ -32,7 +32,7 @@ public final class YsmGeometryThumbnail {
         try (var output = new ByteArrayOutputStream()) {
             if (!ImageIO.write(image, "png", output)) throw new IllegalStateException("PNG encoder is unavailable");
             byte[] png = output.toByteArray();
-            if (png.length > MAX_PNG_BYTES) throw new IllegalStateException("YSM preview PNG exceeds 16 KiB");
+            if (png.length > MAX_PNG_BYTES) throw new IllegalStateException("YSM preview PNG exceeds 70 KiB");
             return png;
         } catch (IOException failure) { throw new IllegalStateException("Unable to encode YSM preview PNG", failure); }
     }
