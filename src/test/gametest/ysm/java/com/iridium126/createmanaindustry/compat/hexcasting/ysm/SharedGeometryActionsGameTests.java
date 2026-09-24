@@ -191,14 +191,10 @@ public final class SharedGeometryActionsGameTests {
         return new ListIota(List.of(face, face, face, face, face, face));
     }
 
-    private static ListIota textValue(String text) {
-        return new ListIota(text.codePoints().mapToObj(codePoint -> (Iota) new DoubleIota(codePoint)).toList());
-    }
+    private static StringIota textValue(String text) { return new StringIota(text); }
 
     private static String text(Iota value) {
-        var out = new StringBuilder();
-        for (Iota entry : ((ListIota) value).getList()) out.appendCodePoint((int) ((DoubleIota) entry).getDouble());
-        return out.toString();
+        return ((StringIota) value).value();
     }
 
     private static void assertVector(GameTestHelper helper, Iota actual, Vec3 expected, String message) {

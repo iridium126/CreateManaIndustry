@@ -5,7 +5,6 @@ import java.util.List;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
 import com.iridium126.createmanaindustry.compat.ysm.YsmReferenceStore;
 import com.iridium126.createmanaindustry.compat.ysm.YsmServerRuntime;
-import com.iridium126.createmanaindustry.compat.ysm.YsmChatMessages;
 import at.petrak.hexcasting.api.casting.castables.ConstMediaAction;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
 import at.petrak.hexcasting.api.casting.iota.*;
@@ -32,8 +31,7 @@ public record OpGeometry(boolean setter) implements ConstMediaAction {
         try {
             propertyIndex = propertyIndex(args.get(1));
         } catch (IllegalArgumentException failure) {
-            throw new MishapInvalidIota(args.get(1), setter ? 1 : 0,
-                    YsmChatMessages.invalidGeometry(failure.getMessage()));
+            throw new MishapInvalidGeometry(failure.getMessage());
         }
 
         String property = PROPERTIES.get(propertyIndex);
@@ -43,15 +41,13 @@ public record OpGeometry(boolean setter) implements ConstMediaAction {
                     Component.translatable("hexcasting.iota.createmanaindustry:" + (cubeProperty ? "cube" : "group")));
         }
         if (setter && propertyIndex >= 12)
-            throw new MishapInvalidIota(args.get(1), 1,
-                    YsmChatMessages.invalidGeometry("Property is read-only"));
+            throw new MishapInvalidGeometry("Property is read-only");
 
         try {
             Iota result = applyGeometry(target, propertyIndex, setter ? args.get(2) : null, store(env));
             return List.of(result);
         } catch (IllegalArgumentException | IllegalStateException failure) {
-            throw new MishapInvalidIota(setter ? args.get(2) : target, 0,
-                    YsmChatMessages.invalidGeometry(failure.getMessage()));
+            throw new MishapInvalidGeometry(failure.getMessage());
         }
     }
 
@@ -107,12 +103,12 @@ public record OpGeometry(boolean setter) implements ConstMediaAction {
         YsmReferenceStore.GroupNode node = store.readGroup(reference.key());
         Group g = node.value();
         if (!setter) return switch (property) {
-            case "name" -> text(g.name()); case "pivot" -> vector(g.pivot());
+            case "name" -> new StringIota(g.name()); case "pivot" -> vector(g.pivot());
             case "rotation" -> vector(g.rotation()); case "scale" -> vector(g.scale()); case "visible" -> new BooleanIota(g.visible());
             case "cubes" -> new ListIota(store.cubeKeys(node).stream().<Iota>map(CubeIota::new).toList());
             case "children" -> new ListIota(store.groupKeys(node).stream().<Iota>map(GroupIota::new).toList());
-            case "part" -> text(node.sourcePart() == null ? "" : node.sourcePart());
-            case "source" -> text(node.sourceDigest() == null ? "" : node.sourceDigest());
+            case "part" -> new StringIota(node.sourcePart() == null ? "" : node.sourcePart());
+            case "source" -> new StringIota(node.sourceDigest() == null ? "" : node.sourceDigest());
             case "texture_size" -> {
                 Root source = root(g);
                 yield new Vec3Iota(new Vec3(source.textureWidth(), source.textureHeight(), 0));
@@ -131,7 +127,7 @@ public record OpGeometry(boolean setter) implements ConstMediaAction {
         }
         List<String> cubeKeys = property.equals("cubes") ? referenceCubes(replacement, store) : store.cubeKeys(node);
         List<String> groupKeys = property.equals("children") ? referenceGroups(replacement, store) : store.groupKeys(node);
-        Group header = new Group(property.equals("name") ? text(replacement) : g.name(),
+        Group header = new Group(property.equals("name") ? string(replacement) : g.name(),
                 property.equals("pivot") ? vector(replacement) : g.pivot(), property.equals("rotation") ? vector(replacement) : g.rotation(),
                 property.equals("scale") ? vector(replacement) : g.scale(), property.equals("visible") ? bool(replacement) : g.visible(),
                 List.of(), List.of(), root, g.extraJson());
@@ -193,15 +189,8 @@ public record OpGeometry(boolean setter) implements ConstMediaAction {
         }
         return faces;
     }
-    private static Iota text(String value) { return new ListIota(value.codePoints().mapToObj(cp -> (Iota)new DoubleIota(cp)).toList()); }
-    private static String text(Iota iota) {
-        var out = new StringBuilder();
-        for (Iota entry : list(iota)) {
-            double number = number(entry);
-            if (number != Math.rint(number) || number < 0 || number > 0x10ffff || number >= 0xd800 && number <= 0xdfff)
-                throw new IllegalArgumentException("Invalid Unicode scalar value");
-            out.appendCodePoint((int)number);
-        }
-        return out.toString();
+    private static String string(Iota iota) {
+        if (iota instanceof StringIota value) return value.value();
+        throw new IllegalArgumentException("Expected a String Iota");
     }
 }

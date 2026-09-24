@@ -77,6 +77,7 @@ public final class YsmChatMessages {
         if (value.equals("expected a finite number")) return Component.translatable(PREFIX + "reason.finite_number");
         if (value.equals("expected a boolean")) return Component.translatable(PREFIX + "reason.boolean");
         if (value.equals("expected a list")) return Component.translatable(PREFIX + "reason.list");
+        if (value.equals("expected a string iota")) return Component.translatable(PREFIX + "reason.string");
         if (value.equals("expected only cube iotas")) return Component.translatable(PREFIX + "reason.cubes_only");
         if (value.equals("expected only group iotas")) return Component.translatable(PREFIX + "reason.groups_only");
         if (value.equals("property index must be an integer")) return Component.translatable(PREFIX + "reason.property_index_integer");
@@ -90,6 +91,9 @@ public final class YsmChatMessages {
         if (value.startsWith("texture size must be")) return Component.translatable(PREFIX + "reason.texture_size");
         if (value.equals("expected a geometry file root"))
             return Component.translatable(PREFIX + "reason.geometry_root_required");
+        if (value.equals("file roots cannot have a bone transform or cubes")
+                || value.equals("geometry roots cannot contain cubes"))
+            return Component.translatable(PREFIX + "reason.file_root_geometry");
         if (value.equals("invalid unicode scalar value")) return Component.translatable(PREFIX + "reason.unicode");
         if (value.contains("invalid") || value.contains("expected") || value.contains("unsupported"))
             return Component.translatable(PREFIX + "reason.invalid_data");
