@@ -5,6 +5,7 @@ import java.util.List;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
 import com.iridium126.createmanaindustry.compat.ysm.YsmReferenceStore;
 import com.iridium126.createmanaindustry.compat.ysm.YsmServerRuntime;
+import com.iridium126.createmanaindustry.compat.ysm.YsmChatMessages;
 import at.petrak.hexcasting.api.casting.castables.ConstMediaAction;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
 import at.petrak.hexcasting.api.casting.iota.*;
@@ -14,35 +15,76 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
 
 /** Pure immutable editing operations. No world changes or resource loading occur here. */
-public record OpGeometry(boolean cube, String property, boolean setter) implements ConstMediaAction {
-    @Override public int getArgc() { return property.equals("create") ? 0 : setter ? 2 : 1; }
+public record OpGeometry(boolean setter) implements ConstMediaAction {
+    static final List<String> PROPERTIES = List.of("origin", "size", "pivot", "rotation", "scale", "inflate",
+            "visible", "uv", "name", "cubes", "children", "texture_size", "part", "source");
+
+    @Override public int getArgc() { return setter ? 3 : 2; }
     @Override public long getMediaCost() { return 0; }
+
     @Override public List<Iota> execute(List<? extends Iota> args, CastingEnvironment env) throws Mishap {
-        if (property.equals("create")) {
-            try {
-                YsmReferenceStore store = store(env);
-                return List.of(cube ? new CubeIota(store.writeCube(Cube.empty()))
-                        : new GroupIota(store.writeTree(Group.empty())));
-            } catch (IllegalArgumentException | IllegalStateException failure) {
-                throw new MishapYsm(failure.getMessage());
-            }
-        }
         Iota target = args.get(0);
-        if (cube && !(target instanceof CubeIota) || !cube && !(target instanceof GroupIota))
+        if (!(target instanceof CubeIota) && !(target instanceof GroupIota))
             throw new MishapInvalidIota(target, getArgc() - 1,
-                    Component.translatable("hexcasting.iota.createmanaindustry:" + (cube ? "cube" : "group")));
+                    Component.translatable("hexcasting.iota.createmanaindustry:geometry"));
+
+        int propertyIndex;
         try {
-            Iota result = cube ? cube(target, setter ? args.get(1) : null, env)
-                    : group(target, setter ? args.get(1) : null, env);
+            propertyIndex = propertyIndex(args.get(1));
+        } catch (IllegalArgumentException failure) {
+            throw new MishapInvalidIota(args.get(1), setter ? 1 : 0,
+                    YsmChatMessages.invalidGeometry(failure.getMessage()));
+        }
+
+        String property = PROPERTIES.get(propertyIndex);
+        if (!supports(propertyIndex, target)) {
+            boolean cubeProperty = propertyIndex <= 1 || propertyIndex == 5 || propertyIndex == 7;
+            throw new MishapInvalidIota(target, getArgc() - 1,
+                    Component.translatable("hexcasting.iota.createmanaindustry:" + (cubeProperty ? "cube" : "group")));
+        }
+        if (setter && propertyIndex >= 12)
+            throw new MishapInvalidIota(args.get(1), 1,
+                    YsmChatMessages.invalidGeometry("Property is read-only"));
+
+        try {
+            Iota result = applyGeometry(target, propertyIndex, setter ? args.get(2) : null, store(env));
             return List.of(result);
         } catch (IllegalArgumentException | IllegalStateException failure) {
-            throw new MishapInvalidIota(setter ? args.get(1) : target, 0,
-                    Component.translatable("createmanaindustry.hex.ysm.valid_geometry", Component.literal(failure.getMessage())));
+            throw new MishapInvalidIota(setter ? args.get(2) : target, 0,
+                    YsmChatMessages.invalidGeometry(failure.getMessage()));
         }
     }
 
-    private Iota cube(Iota input, Iota replacement, CastingEnvironment env) {
-        YsmReferenceStore store = store(env);
+    Iota applyGeometry(Iota input, int propertyIndex, Iota replacement, YsmReferenceStore store) {
+        if (propertyIndex < 0 || propertyIndex >= PROPERTIES.size())
+            throw new IllegalArgumentException("Property index must be between 0 and 13");
+        if (!supports(propertyIndex, input))
+            throw new IllegalArgumentException("Property is not available for this geometry reference");
+        if (setter && propertyIndex >= 12)
+            throw new IllegalArgumentException("Property is read-only");
+
+        String property = PROPERTIES.get(propertyIndex);
+        if (input instanceof CubeIota) return cube(input, property, replacement, store);
+        return group(input, property, replacement, store);
+    }
+
+    static int propertyIndex(Iota selector) {
+        if (!(selector instanceof DoubleIota value)) throw new IllegalArgumentException("Expected a number");
+        double index = value.getDouble();
+        if (!Double.isFinite(index)) throw new IllegalArgumentException("Expected a finite number");
+        if (index != Math.rint(index)) throw new IllegalArgumentException("Property index must be an integer");
+        if (index < 0 || index >= PROPERTIES.size())
+            throw new IllegalArgumentException("Property index must be between 0 and 13");
+        return (int) index;
+    }
+
+    private static boolean supports(int propertyIndex, Iota target) {
+        if (target instanceof CubeIota) return propertyIndex <= 7;
+        if (target instanceof GroupIota) return propertyIndex >= 2 && propertyIndex <= 13 && propertyIndex != 5;
+        return false;
+    }
+
+    private Iota cube(Iota input, String property, Iota replacement, YsmReferenceStore store) {
         CubeIota reference = (CubeIota) input;
         Cube c = store.readCube(reference.key());
         if (!setter) return switch (property) {
@@ -60,8 +102,7 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
                 property.equals("uv") ? faces(replacement) : c.faces(), c.extraJson());
         return new CubeIota(store.writeCubeReference(edited, reference.key()));
     }
-    private Iota group(Iota input, Iota replacement, CastingEnvironment env) {
-        YsmReferenceStore store = store(env);
+    private Iota group(Iota input, String property, Iota replacement, YsmReferenceStore store) {
         GroupIota reference = (GroupIota) input;
         YsmReferenceStore.GroupNode node = store.readGroup(reference.key());
         Group g = node.value();
@@ -70,14 +111,21 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
             case "rotation" -> vector(g.rotation()); case "scale" -> vector(g.scale()); case "visible" -> new BooleanIota(g.visible());
             case "cubes" -> new ListIota(store.cubeKeys(node).stream().<Iota>map(CubeIota::new).toList());
             case "children" -> new ListIota(store.groupKeys(node).stream().<Iota>map(GroupIota::new).toList());
-            case "part" -> text(root(g).part()); case "source" -> text(root(g).snapshot());
-            case "texture_size" -> new Vec3Iota(new Vec3(root(g).textureWidth(), root(g).textureHeight(), 0));
+            case "part" -> text(node.sourcePart() == null ? "" : node.sourcePart());
+            case "source" -> text(node.sourceDigest() == null ? "" : node.sourceDigest());
+            case "texture_size" -> {
+                Root source = root(g);
+                yield new Vec3Iota(new Vec3(source.textureWidth(), source.textureHeight(), 0));
+            }
             default -> throw new IllegalArgumentException("Unknown group property");
         };
         Root root = g.root();
         if (property.equals("texture_size")) {
+            if (root == null) throw new IllegalArgumentException("Expected a geometry file root");
             Vector v = vector(replacement);
-            if (v.z() != 0 || v.x() != Math.rint(v.x()) || v.y() != Math.rint(v.y())) throw new IllegalArgumentException("Texture size must be (integer width, integer height, 0)");
+            if (v.z() != 0 || v.x() != Math.rint(v.x()) || v.y() != Math.rint(v.y())
+                    || v.x() < 1 || v.y() < 1 || v.x() > Integer.MAX_VALUE || v.y() > Integer.MAX_VALUE)
+                throw new IllegalArgumentException("Texture size must use positive integer width and height, followed by 0");
             Root old = root(g);
             root = new Root(old.snapshot(), old.part(), (int)v.x(), (int)v.y(), old.descriptionJson());
         }
@@ -89,7 +137,7 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
                 List.of(), List.of(), root, g.extraJson());
         return new GroupIota(store.writeGroupReference(header, cubeKeys, groupKeys, reference.key()));
     }
-    private static YsmReferenceStore store(CastingEnvironment env) {
+    static YsmReferenceStore store(CastingEnvironment env) {
         if (env == null || env.getWorld().getServer() == null) throw new IllegalStateException("YSM reference requires a server world");
         return YsmServerRuntime.get(env.getWorld().getServer()).references();
     }

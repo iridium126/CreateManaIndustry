@@ -4,45 +4,38 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
 import at.petrak.hexcasting.api.casting.ActionRegistryEntry;
 import at.petrak.hexcasting.api.casting.math.HexDir;
 import at.petrak.hexcasting.api.casting.math.HexPattern;
+import at.petrak.hexcasting.common.lib.HexRegistries;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredRegister;
-import at.petrak.hexcasting.common.lib.HexRegistries;
 
-/** Fixed pure-data patterns. IDs and pattern indices must remain stable after release. */
+/** Fixed pure-data YSM patterns. */
 public final class CMIYsmActions {
-    private static final DeferredRegister<ActionRegistryEntry> ACTIONS = DeferredRegister.create(HexRegistries.ACTION, CreateManaIndustry.MODID);
+    private static final DeferredRegister<ActionRegistryEntry> ACTIONS =
+            DeferredRegister.create(HexRegistries.ACTION, CreateManaIndustry.MODID);
+
     static {
-        add(0, true, "create", false);
-        String[] cubes = {"origin", "size", "pivot", "rotation", "scale", "inflate", "visible", "uv"};
-        for (int i = 0; i < cubes.length; i++) {
-            add(1 + 2 * i, true, cubes[i], false);
-            add(2 + 2 * i, true, cubes[i], true);
-        }
-        add(17, false, "create", false);
-        String[] groups = {"name", "pivot", "rotation", "scale", "visible", "cubes", "children", "texture_size"};
-        for (int i = 0; i < groups.length; i++) {
-            add(18 + 2 * i, false, groups[i], false);
-            add(19 + 2 * i, false, groups[i], true);
-        }
-        add(34, false, "part", false);
-        add(35, false, "source", false);
+        ACTIONS.register("ysm_cube_create", () -> new ActionRegistryEntry(
+                HexPattern.fromAngleString("wewewewewewdwew", HexDir.SOUTH_WEST),
+                new OpCreateYsmGeometry(true)));
+        ACTIONS.register("ysm_group_create", () -> new ActionRegistryEntry(
+                HexPattern.fromAngleString("qwqwqwqwqwqeqqqdqqqdqqqdqqqdqqqdqqq", HexDir.WEST),
+                new OpCreateYsmGeometry(false)));
+        ACTIONS.register("ysm_geometry_get", () -> new ActionRegistryEntry(
+                HexPattern.fromAngleString("aqqqqqeawqwaw", HexDir.EAST),
+                new OpGeometry(false)));
+        ACTIONS.register("ysm_geometry_set", () -> new ActionRegistryEntry(
+                HexPattern.fromAngleString("deeeeeqawqwaw", HexDir.EAST),
+                new OpGeometry(true)));
         ACTIONS.register("ysm_model_read", () -> new ActionRegistryEntry(
-                HexPattern.fromAngleString("qwwqweqwwqw", HexDir.EAST), new OpReadYsmModel()));
+                HexPattern.fromAngleString("wqqqdqqqaedewqqqdqqqdqqqaedewqqqwwqwawqqawd", HexDir.SOUTH_WEST), new OpReadYsmModel()));
         ACTIONS.register("ysm_model_apply", () -> new ActionRegistryEntry(
-                HexPattern.fromAngleString("qwwqweqwwqe", HexDir.EAST), new OpApplyYsmModel()));
+                HexPattern.fromAngleString("wqqqdqqqaedewqqqdqqqaedewqqqdqqqaedwqqqqq", HexDir.SOUTH_WEST), new OpApplyYsmModel()));
         ACTIONS.register("ysm_model_export", () -> new ActionRegistryEntry(
-                HexPattern.fromAngleString("qwwqweqwwqa", HexDir.EAST), new OpExportYsmModel()));
+                HexPattern.fromAngleString("qqqwwqwawqwwqqqeqeqqqdqqqeqqwwwqqqwwwwqqq", HexDir.SOUTH_WEST), new OpExportYsmModel()));
         ACTIONS.register("ysm_model_restore", () -> new ActionRegistryEntry(
-                HexPattern.fromAngleString("qwwqweqwwqq", HexDir.EAST), new OpRestoreYsmModel()));
+                HexPattern.fromAngleString("wdedwqwdedwqwdedw", HexDir.NORTH_WEST), new OpRestoreYsmModel()));
     }
-    private static void add(int index, boolean cube, String property, boolean setter) {
-        String id = "ysm_" + (cube ? "cube_" : "group_") + property + (property.equals("create") ? "" : setter ? "_set" : "_get");
-        // Every three-angle segment returns to EAST; x increases throughout, avoiding retraced edges.
-        StringBuilder angles = new StringBuilder("wewqwwqwe");
-        for (int bit = 5; bit >= 0; bit--) angles.append((index & (1 << bit)) == 0 ? "ewq" : "qwe");
-        String pattern = angles.toString();
-        ACTIONS.register(id, () -> new ActionRegistryEntry(HexPattern.fromAngleString(pattern, HexDir.EAST), new OpGeometry(cube, property, setter)));
-    }
+
     public static void register(IEventBus bus) { ACTIONS.register(bus); }
     private CMIYsmActions() {}
 }

@@ -7,12 +7,17 @@
   "flag": "mod:yes_steve_model",
   "pages": [
     "hexcasting.page.createmanaindustry.ysm_model_editing.intro",
-    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_model_read", "input": "entity", "output": "list", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.read"},
-    "hexcasting.page.createmanaindustry.ysm_model_editing.values",
+    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_model_read", "input": "entity", "output": "list of group references", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.read"},
+    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_group_create", "input": "", "output": "group reference", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.create_group"},
+    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_cube_create", "input": "", "output": "cube reference", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.create_cube"},
+    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_geometry_get", "input": "cube/group reference, integer index", "output": "property value", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.get"},
+    "hexcasting.page.createmanaindustry.ysm_model_editing.cube_properties",
+    "hexcasting.page.createmanaindustry.ysm_model_editing.group_properties",
+    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_geometry_set", "input": "cube/group reference, integer index, value", "output": "updated reference", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.set"},
     "hexcasting.page.createmanaindustry.ysm_model_editing.example",
     "hexcasting.page.createmanaindustry.ysm_model_editing.limits",
-    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_model_apply", "input": "entity, list", "output": "", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.apply"},
+    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_model_apply", "input": "entity, list of group references", "output": "", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.apply"},
     {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_model_restore", "input": "entity", "output": "", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.restore"},
-    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_model_export", "input": "list", "output": "", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.export"}
+    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_model_export", "input": "list of group references", "output": "", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.export"}
   ]
 }

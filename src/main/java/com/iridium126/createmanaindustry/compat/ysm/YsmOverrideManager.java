@@ -92,7 +92,7 @@ public final class YsmOverrideManager implements AutoCloseable {
             if (error != null) {
                 if (deployments.get(archive.digest()) == promisedDeployment) deployments.remove(archive.digest());
                 LOGGER.warn("Temporary YSM model deployment failed for {}", modelId, error);
-                inform(id, "YSM model application failed: " + error.getMessage()); return;
+                inform(id, YsmChatMessages.applicationFailed(error.getMessage())); return;
             }
             restoreSelections(request.selections);
             activate(request, loadedId);
@@ -113,16 +113,22 @@ public final class YsmOverrideManager implements AutoCloseable {
         select(target, replacement);
         overrides.put(id, new ActiveOverride(original, replacement, archive));
         transfers.apply(target, revision, modelId, archive);
+        inform(id, YsmChatMessages.applicationSucceeded());
     }
-    public void restore(ServerPlayer target) {
+    public boolean restore(ServerPlayer target) {
         if (target.server != server || target.hasDisconnected()) throw new IllegalStateException("Target player left the server");
         UUID id = target.getUUID(); revisions.merge(id, 1L, Long::sum);
         pendingReassert.remove(id);
         ActiveOverride prior = overrides.remove(id);
+        boolean restored = false;
         if (prior != null) {
-            if (selection(target).model.equals(prior.selected.model)) select(target, prior.original);
+            if (selection(target).model.equals(prior.selected.model)) {
+                select(target, prior.original);
+                restored = true;
+            }
             transfers.clear(target, revisions.get(id));
         }
+        return restored;
     }
     public void forget(ServerPlayer target) {
         UUID id = target.getUUID(); revisions.merge(id, 1L, Long::sum);
@@ -180,7 +186,7 @@ public final class YsmOverrideManager implements AutoCloseable {
         select(target, replacement);
         overrides.put(request.player, new ActiveOverride(request.original, replacement, request.archive));
         transfers.apply(target, request.revision, modelId, request.archive);
-        inform(request.player, "Temporary YSM model applied");
+        inform(request.player, YsmChatMessages.applicationSucceeded());
     }
     private void reloadNext() {
         if (loading || loads.isEmpty() || closed) return;
@@ -270,9 +276,9 @@ public final class YsmOverrideManager implements AutoCloseable {
             symbols.playerSelect().bind(getClass().getClassLoader()).invoke(state, selection.model, selection.texture);
         } catch (ReflectiveOperationException failure) { throw new IllegalStateException("Unable to select YSM model", failure); }
     }
-    private void inform(UUID player, String message) {
+    private void inform(UUID player, Component message) {
         ServerPlayer target = server.getPlayerList().getPlayer(player);
-        if (target != null) target.sendSystemMessage(Component.literal(message));
+        if (target != null) target.sendSystemMessage(message);
     }
     private static void removeDirectory(Path directory) throws IOException {
         if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) return;

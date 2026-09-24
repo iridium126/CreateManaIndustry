@@ -25,7 +25,8 @@ public final class OpRestoreYsmModel implements SpellAction {
     private record Restore(UUID target) implements RenderedSpell {
         @Override public void cast(CastingEnvironment env) {
             ServerPlayer player = env.getWorld().getServer().getPlayerList().getPlayer(target);
-            if (player != null) YsmServerRuntime.get(env.getWorld().getServer()).overrides().restore(player);
+            if (player != null && YsmServerRuntime.get(env.getWorld().getServer()).overrides().restore(player))
+                player.sendSystemMessage(com.iridium126.createmanaindustry.compat.ysm.YsmChatMessages.modelRestored());
         }
     }
 }

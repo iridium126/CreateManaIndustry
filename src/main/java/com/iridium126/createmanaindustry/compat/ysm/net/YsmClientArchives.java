@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.compat.ysm.net;
 
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
+import com.iridium126.createmanaindustry.compat.ysm.YsmChatMessages;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Path;
 import java.util.*;
@@ -22,6 +23,7 @@ public final class YsmClientArchives {
     private static final Map<UUID, Long> REVISIONS = new HashMap<>();
     private static final Map<UUID, Incoming> INCOMING = new HashMap<>();
     private static long session;
+    private record ExportResult(String path, String error) {}
     private record Incoming(ClientboundYsmArchivePacket header, ByteArrayOutputStream bytes, int next, long lastActivity) {
         Incoming append(byte[] chunk) { bytes.writeBytes(chunk); return new Incoming(header, bytes, next + 1, System.nanoTime()); }
     }
@@ -48,7 +50,7 @@ public final class YsmClientArchives {
                     Minecraft.getInstance().execute(() -> {
                         if (startedInSession != session) return;
                         if (failure != null || !archive.digest().equals(header.digest())) {
-                            message("YSM model transfer failed: archive digest mismatch"); return;
+                            message(YsmChatMessages.transferCheckFailed()); return;
                         }
                         if (header.kind() == ClientboundYsmArchivePacket.APPLY
                                 && header.revision() != REVISIONS.getOrDefault(header.target(), Long.MIN_VALUE)) return;
@@ -79,15 +81,15 @@ public final class YsmClientArchives {
         Path gameDirectory = Minecraft.getInstance().gameDirectory.toPath();
         long startedInSession = session;
         CompletableFuture.supplyAsync(() -> {
-            try { return archive.export(gameDirectory).toString(); }
-            catch (Exception failure) { return "ERROR: " + failure.getMessage(); }
+            try { return new ExportResult(archive.export(gameDirectory).toString(), null); }
+            catch (Exception failure) { return new ExportResult(null, failure.getMessage()); }
         }).thenAccept(result -> Minecraft.getInstance().execute(() -> {
-            if (startedInSession == session)
-                message(result.startsWith("ERROR: ") ? "YSM export failed: " + result.substring(7) : "YSM model exported to " + result);
+            if (startedInSession == session) message(result.error() == null
+                    ? YsmChatMessages.exportSucceeded(result.path()) : YsmChatMessages.exportFailed(result.error()));
         }));
     }
-    private static void message(String message) {
-        if (Minecraft.getInstance().player != null) Minecraft.getInstance().player.sendSystemMessage(Component.literal(message));
+    private static void message(Component message) {
+        if (Minecraft.getInstance().player != null) Minecraft.getInstance().player.sendSystemMessage(message);
     }
     @SubscribeEvent public static void onTick(ClientTickEvent.Post event) {
         long now = System.nanoTime();
@@ -100,7 +102,7 @@ public final class YsmClientArchives {
                 cursor.remove();
             }
         }
-        if (lostExport) message("YSM export failed: transfer was interrupted");
+        if (lostExport) message(YsmChatMessages.transferInterrupted());
     }
     @SubscribeEvent public static void onLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         session++;

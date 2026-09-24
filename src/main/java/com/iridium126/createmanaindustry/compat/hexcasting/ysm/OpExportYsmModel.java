@@ -11,11 +11,11 @@ import at.petrak.hexcasting.api.casting.mishaps.*;
 import com.iridium126.createmanaindustry.compat.hexcasting.HexCompat;
 import com.iridium126.createmanaindustry.compat.ysm.YsmPreparedCache;
 import com.iridium126.createmanaindustry.compat.ysm.YsmServerRuntime;
+import com.iridium126.createmanaindustry.compat.ysm.YsmChatMessages;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
 import com.iridium126.createmanaindustry.config.ServerConfig;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.network.chat.Component;
 
 /** Creates a complete plaintext archive, then sends an approved export job to the caster's client. */
 public final class OpExportYsmModel implements SpellAction {
@@ -57,7 +57,7 @@ public final class OpExportYsmModel implements SpellAction {
             ServerPlayer player = server.getPlayerList().getPlayer(caster);
             if (player != null && !player.hasDisconnected()) {
                 try { YsmServerRuntime.get(server).transfers().export(player, archive); }
-                catch (IllegalStateException failure) { player.sendSystemMessage(Component.literal("YSM export failed: " + failure.getMessage())); }
+                catch (IllegalStateException failure) { player.sendSystemMessage(YsmChatMessages.exportFailed(failure.getMessage())); }
             }
         }
     }

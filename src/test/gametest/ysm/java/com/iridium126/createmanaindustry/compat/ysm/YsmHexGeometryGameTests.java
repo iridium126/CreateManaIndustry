@@ -145,6 +145,51 @@ public final class YsmHexGeometryGameTests {
         helper.assertTrue(recipes.stream().anyMatch(recipe -> recipe.id().getPath().endsWith("/ysm_cube_create")), "Ordinary geometry action lost its slate recipe");
         helper.succeed();
     }
+
+    @GameTest(template = "worldgen_test")
+    public static void indexedGeometryActionsAndDirectPatternsAreRegistered(GameTestHelper helper) {
+        var registry = at.petrak.hexcasting.xplat.IXplatAbstractions.INSTANCE.getActionRegistry();
+        for (String id : List.of("ysm_cube_create", "ysm_group_create", "ysm_geometry_get", "ysm_geometry_set",
+                "ysm_model_read", "ysm_model_apply", "ysm_model_export", "ysm_model_restore")) {
+            var key = net.minecraft.resources.ResourceKey.create(at.petrak.hexcasting.common.lib.HexRegistries.ACTION,
+                    net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("createmanaindustry", id));
+            helper.assertTrue(registry.get(key) != null, "Expected YSM action is missing: " + id);
+        }
+
+        var expectedPatterns = java.util.Map.of(
+                "ysm_cube_create", "wewqwwqweewqewqewqewqewqewq",
+                "ysm_group_create", "wewqwwqweewqqweewqewqewqqwe",
+                "ysm_geometry_get", "wewqwwqweqweewqewqqweewqewq",
+                "ysm_geometry_set", "wewqwwqweqweewqewqqweewqqwe");
+        for (var expected : expectedPatterns.entrySet()) {
+            var key = net.minecraft.resources.ResourceKey.create(at.petrak.hexcasting.common.lib.HexRegistries.ACTION,
+                    net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("createmanaindustry", expected.getKey()));
+            var pattern = at.petrak.hexcasting.api.casting.math.HexPattern.fromAngleString(expected.getValue(),
+                    at.petrak.hexcasting.api.casting.math.HexDir.EAST);
+            helper.assertTrue(registry.get(key).prototype().equals(pattern),
+                    "YSM action has the wrong direct angle pattern: " + expected.getKey());
+        }
+
+        var oldProperties = new java.util.ArrayList<String>();
+        for (String property : List.of("origin", "size", "pivot", "rotation", "scale", "inflate", "visible", "uv")) {
+            oldProperties.add("ysm_cube_" + property);
+            oldProperties.add("ysm_group_" + property);
+        }
+        for (String property : List.of("name", "cubes", "children", "texture_size", "part", "source")) {
+            oldProperties.add("ysm_cube_" + property);
+            oldProperties.add("ysm_group_" + property);
+        }
+        for (String property : List.of("pivot", "rotation", "scale", "visible"))
+            oldProperties.add("ysm_geometry_" + property);
+        for (String oldAction : oldProperties) {
+            for (String operation : List.of("get", "set")) {
+                var oldKey = net.minecraft.resources.ResourceKey.create(at.petrak.hexcasting.common.lib.HexRegistries.ACTION,
+                        net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("createmanaindustry", oldAction + "_" + operation));
+                helper.assertTrue(registry.get(oldKey) == null, "Removed property action is still registered: " + oldAction);
+            }
+        }
+        helper.succeed();
+    }
     @GameTest(template = "worldgen_test")
     public static void immutableEditingAndTraversal(GameTestHelper helper) throws Exception {
         var world = java.nio.file.Files.createTempDirectory("cmi-ysm-iota-gametest-");
