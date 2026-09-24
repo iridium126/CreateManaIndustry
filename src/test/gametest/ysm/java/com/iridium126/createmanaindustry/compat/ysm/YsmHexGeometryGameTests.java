@@ -84,14 +84,19 @@ public final class YsmHexGeometryGameTests {
             return;
         }
         String key = "ef".repeat(32);
-        List<Iota> values = List.of(new GroupRefIota(key), new CubeRefIota("12".repeat(32)));
+        List<Iota> values = List.of(new GroupIota(key), new CubeIota("12".repeat(32)));
         List<com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData.Kind> expected = List.of(
-                com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData.Kind.GROUP_REF,
-                com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData.Kind.CUBE_REF);
+                com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData.Kind.GROUP,
+                com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData.Kind.CUBE);
         for (int i = 0; i < values.size(); i++) {
             var inline = ((com.samsthenerd.inline.impl.InlineStyle) values.get(i).display().getStyle()).getInlineData();
             helper.assertTrue(inline instanceof com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData data
                     && data.kind() == expected.get(i), "Geometry Iota display did not attach its Inline preview data");
+            var data = (com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData) inline;
+            var encoded = data.getType().getCodec().encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, data).getOrThrow();
+            var decoded = data.getType().getCodec().parse(net.minecraft.nbt.NbtOps.INSTANCE, encoded).getOrThrow();
+            helper.assertTrue(decoded.kind() == data.kind() && decoded.key().equals(data.key()),
+                    "Inline geometry data codec round trip failed");
         }
         helper.succeed();
     }
@@ -100,17 +105,17 @@ public final class YsmHexGeometryGameTests {
         String key = "ab".repeat(32);
         var buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), helper.getLevel().registryAccess());
         try {
-            GroupRefIota group = new GroupRefIota(key);
-            GroupRefIota.TYPE.streamCodec().encode(buffer, group);
+            GroupIota group = new GroupIota(key);
+            GroupIota.TYPE.streamCodec().encode(buffer, group);
             helper.assertTrue(buffer.readableBytes() == 32, "Group reference network payload is not 32 bytes");
-            GroupRefIota decoded = GroupRefIota.TYPE.streamCodec().decode(buffer);
+            GroupIota decoded = GroupIota.TYPE.streamCodec().decode(buffer);
             helper.assertTrue(decoded.key().equals(key) && decoded.size() == 1 && decoded.depth() == 1,
                     "Group reference stream round trip failed");
         } finally { buffer.release(); }
 
-        var tag = GroupRefIota.TYPE.codec().codec().encodeStart(net.minecraft.nbt.NbtOps.INSTANCE,
-                new GroupRefIota(key)).getOrThrow();
-        var decoded = GroupRefIota.TYPE.codec().codec().parse(net.minecraft.nbt.NbtOps.INSTANCE, tag).getOrThrow();
+        var tag = GroupIota.TYPE.codec().codec().encodeStart(net.minecraft.nbt.NbtOps.INSTANCE,
+                new GroupIota(key)).getOrThrow();
+        var decoded = GroupIota.TYPE.codec().codec().parse(net.minecraft.nbt.NbtOps.INSTANCE, tag).getOrThrow();
         helper.assertTrue(decoded.key().equals(key), "Persistent group reference codec round trip failed");
         helper.succeed();
     }
@@ -167,9 +172,9 @@ public final class YsmHexGeometryGameTests {
             String renamedKey = store.writeGroupReference(renamed, store.cubeKeys(groupNode), List.of(), groupWithCube);
             helper.assertTrue(store.readGroup(renamedKey).value().name().equals("骨😀"), "Unicode group name was not preserved");
 
-            var groupIota = new GroupRefIota(groupWithCube);
+            var groupIota = new GroupIota(groupWithCube);
             helper.assertTrue(groupIota.visit(iota -> iota) == groupIota, "Identity traversal rebuilt an atomic reference");
-            helper.assertTrue(groupIota.visit(iota -> iota instanceof CubeRefIota ? new NullIota() : iota) == groupIota,
+            helper.assertTrue(groupIota.visit(iota -> iota instanceof CubeIota ? new NullIota() : iota) == groupIota,
                     "Generic traversal entered the referenced geometry tree");
         } finally {
             try (var paths = java.nio.file.Files.walk(world)) {

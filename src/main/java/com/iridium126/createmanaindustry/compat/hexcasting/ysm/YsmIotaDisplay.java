@@ -8,11 +8,11 @@ import net.neoforged.fml.ModList;
 public final class YsmIotaDisplay {
     private static final String INLINE_DATA = "com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData";
 
-    public static Component groupRef(String key, Component fallback) {
-        return inline("groupRef", key, fallback);
+    public static Component group(String key, Component fallback) {
+        return inline("group", key, fallback);
     }
-    public static Component cubeRef(String key, Component fallback) {
-        return inline("cubeRef", key, fallback);
+    public static Component cube(String key, Component fallback) {
+        return inline("cube", key, fallback);
     }
 
     private static Component inline(String factory, String key, Component fallback) {

@@ -24,7 +24,7 @@ public final class OpReadYsmModel implements ConstMediaAction {
             var stored = YsmServerRuntime.get(env.getWorld().getServer()).references().persist(result.snapshot());
             if (stored.state() != com.iridium126.createmanaindustry.compat.ysm.YsmReferenceStore.State.READY)
                 throw new MishapYsm(stored.reason());
-            List<Iota> groups = stored.roots().stream().<Iota>map(GroupRefIota::new).toList();
+            List<Iota> groups = stored.roots().stream().<Iota>map(GroupIota::new).toList();
             return List.of(new ListIota(groups));
         } catch (IllegalStateException | IllegalArgumentException failure) { throw new MishapYsm(failure.getMessage()); }
     }

@@ -3,32 +3,27 @@ package com.iridium126.createmanaindustry.compat.ysm.model;
 import com.google.gson.*;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
 import java.util.ArrayList;
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /** Reads Bedrock geometry without discarding unknown document, bone or cube fields. */
 public final class YsmGeometryReader {
     private static final String[] FACES = {"north", "south", "east", "west", "up", "down"};
     private record IndexedCube(int order, Cube cube) {}
-    private static final class BoneFrame {
+    private static final class BoneFrame implements YsmBoneHierarchy.Node {
         private final String name, extra;
         private final Vector pivot, rotation;
         private final boolean visible;
         private final List<Cube> cubes;
         private final List<String> childNames;
-        private final List<Group> descendants = new ArrayList<>();
-        private int nextChild;
         private BoneFrame(String name, String extra, Vector pivot, Vector rotation, boolean visible,
                 List<Cube> cubes, List<String> childNames) {
             this.name = name; this.extra = extra; this.pivot = pivot; this.rotation = rotation;
             this.visible = visible; this.cubes = cubes; this.childNames = childNames;
         }
-        private Group build() {
+        @Override public List<String> childNames() { return childNames; }
+        @Override public Group build(List<Group> descendants) {
             return new Group(name, pivot, rotation, Vector.ONE, visible, cubes, descendants, null, extra);
         }
     }
@@ -51,29 +46,7 @@ public final class YsmGeometryReader {
                 String parent = bone.has("parent") ? bone.get("parent").getAsString() : "";
                 children.computeIfAbsent(parent, ignored -> new ArrayList<>()).add(name);
             }
-            for (String parent : children.keySet()) if (!parent.isEmpty() && !bones.containsKey(parent))
-                throw new IllegalArgumentException("Missing parent bone");
-            Set<String> visited = new HashSet<>();
-            List<Group> groups = new ArrayList<>();
-            Deque<BoneFrame> pending = new ArrayDeque<>();
-            for (String name : children.getOrDefault("", List.of())) {
-                if (!visited.add(name)) throw new IllegalArgumentException("Cyclic bone hierarchy");
-                pending.push(boneFrame(name, bones, children));
-                while (!pending.isEmpty()) {
-                    BoneFrame frame = pending.peek();
-                    if (frame.nextChild < frame.childNames.size()) {
-                        String child = frame.childNames.get(frame.nextChild++);
-                        if (!visited.add(child)) throw new IllegalArgumentException("Cyclic bone hierarchy");
-                        pending.push(boneFrame(child, bones, children));
-                        continue;
-                    }
-                    Group completed = frame.build();
-                    pending.pop();
-                    if (pending.isEmpty()) groups.add(completed);
-                    else pending.peek().descendants.add(completed);
-                }
-            }
-            if (visited.size() != bones.size()) throw new IllegalArgumentException("Cyclic bone hierarchy");
+            List<Group> groups = YsmBoneHierarchy.build(bones, children, name -> boneFrame(name, bones, children));
             geometry.remove("bones"); geometry.remove("description");
             return new Group(part, Vector.ZERO, Vector.ZERO, Vector.ONE, true, List.of(), groups, root, document.toString());
         } catch (IllegalStateException | NullPointerException | ClassCastException failure) {

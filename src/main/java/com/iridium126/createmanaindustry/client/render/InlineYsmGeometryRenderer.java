@@ -27,7 +27,8 @@ public final class InlineYsmGeometryRenderer implements InlineRenderer<InlineYsm
         pose.pushPose();
         pose.translate(0.0f, -4.0f, 0.0f);
         if (entry.texture != null) {
-            graphics.blit(entry.texture, 0, 0, 0.0F, 0.0F, CELL, CELL,
+            graphics.blit(entry.texture, 0, 0, CELL, CELL, 0.0F, 0.0F,
+                    YsmGeometryThumbnail.SIZE, YsmGeometryThumbnail.SIZE,
                     YsmGeometryThumbnail.SIZE, YsmGeometryThumbnail.SIZE);
         } else if (entry.error != null) {
             graphics.fill(1, 1, CELL - 1, CELL - 1, 0x993f1720);

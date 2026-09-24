@@ -10,7 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 
 /** Inline payload carrying only a compact persistent geometry reference. */
 public final class InlineYsmGeometryData implements InlineData<InlineYsmGeometryData> {
-    public enum Kind { GROUP_REF, CUBE_REF }
+    public enum Kind { GROUP, CUBE }
     public static final ResourceLocation RENDERER_ID = CreateManaIndustry.modLoc("ysm_geometry");
     public static final InlineYsmGeometryDataType TYPE = new InlineYsmGeometryDataType();
 
@@ -21,15 +21,15 @@ public final class InlineYsmGeometryData implements InlineData<InlineYsmGeometry
     private InlineYsmGeometryData(Kind kind, String key) {
         this.kind = Objects.requireNonNull(kind);
         this.key = checkedKey(key);
-        this.cacheKey = "ref:" + (kind == Kind.CUBE_REF ? "c:" : "g:") + key;
+        this.cacheKey = "ref:" + (kind == Kind.CUBE ? "c:" : "g:") + key;
     }
 
-    public static InlineYsmGeometryData groupRef(String key) { return new InlineYsmGeometryData(Kind.GROUP_REF, key); }
-    public static InlineYsmGeometryData cubeRef(String key) { return new InlineYsmGeometryData(Kind.CUBE_REF, key); }
+    public static InlineYsmGeometryData group(String key) { return new InlineYsmGeometryData(Kind.GROUP, key); }
+    public static InlineYsmGeometryData cube(String key) { return new InlineYsmGeometryData(Kind.CUBE, key); }
 
     public Kind kind() { return kind; }
     public String key() { return key; }
-    public boolean isCube() { return kind == Kind.CUBE_REF; }
+    public boolean isCube() { return kind == Kind.CUBE; }
     public String cacheKey() { return cacheKey; }
 
     @Override public InlineYsmGeometryDataType getType() { return TYPE; }
@@ -37,15 +37,15 @@ public final class InlineYsmGeometryData implements InlineData<InlineYsmGeometry
     @Override public Component asText(boolean withExtra) { return Component.literal("◈").withStyle(asStyle(withExtra)); }
 
     private String encode() {
-        return "1:" + (kind == Kind.CUBE_REF ? "cr:" : "gr:") + key;
+        return "1:" + (kind == Kind.CUBE ? "c:" : "g:") + key;
     }
 
     private static InlineYsmGeometryData decode(String value) {
         String[] parts = value.split(":", 3);
         if (parts.length != 3 || !parts[0].equals("1")) throw new IllegalArgumentException("Unknown YSM inline preview version");
         return switch (parts[1]) {
-            case "gr" -> groupRef(parts[2]);
-            case "cr" -> cubeRef(parts[2]);
+            case "g" -> group(parts[2]);
+            case "c" -> cube(parts[2]);
             default -> throw new IllegalArgumentException("Unknown YSM inline preview kind");
         };
     }

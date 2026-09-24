@@ -11,11 +11,9 @@ Files carrying Apache License 2.0 headers retain those headers. The Apache
 License text is included in licenses/zstd. The package was relocated;
 only dependencies of the streaming decoder are included.
 
-The cuboid reconstruction method `YsmBakedGeometry.reconstruct` is an
-independent exact-fit implementation based on geometry and coordinate-system
-observations in YSM-Report and YSMParser. The compiled YSM import path uses
-`reconstructReference`, an adaptation of YSMParser's UV-tangent scored
-Blockbench-cube restoration algorithm, licensed under MIT in `ysmparser`.
-Unsupported cubes are skipped as in YSMParser.
+The compiled YSM import path uses `YsmBakedGeometry.reconstructReference`, an
+adaptation of YSMParser's UV-tangent scored Blockbench-cube restoration
+algorithm, licensed under MIT in `ysmparser`. Unsupported cubes are skipped
+as in YSMParser.
 
 No proprietary YSM binaries or user model samples are included.

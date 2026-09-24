@@ -28,7 +28,7 @@ public final class OpApplyYsmModel implements SpellAction {
             throw MishapInvalidIota.ofType(args.get(1), 1, "list.group");
         var rootKeys = new ArrayList<String>();
         for (Iota iota : list.getList()) {
-            if (!(iota instanceof GroupRefIota group)) throw MishapInvalidIota.ofType(iota, 1, "group_ref");
+            if (!(iota instanceof GroupIota group)) throw MishapInvalidIota.ofType(iota, 1, "group");
             rootKeys.add(group.key());
         }
         var runtime = YsmServerRuntime.get(env.getWorld().getServer());

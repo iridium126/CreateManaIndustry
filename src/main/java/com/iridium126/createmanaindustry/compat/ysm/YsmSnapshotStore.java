@@ -9,14 +9,14 @@ import java.util.concurrent.*;
 public final class YsmSnapshotStore implements AutoCloseable {
     public enum Status { MISSING, LOADING, READY, FAILED }
     public record Result(Status status, YsmModelSnapshot snapshot, String reason) {}
-    private static final long MAX_WEIGHT = 256L * 1024 * 1024;
-    private static final int MAX_SNAPSHOTS = 32;
+    private final YsmSnapshotCache snapshots;
     private final ThreadPoolExecutor worker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(16), action -> { var thread = new Thread(action, "CMI YSM resource loader"); thread.setDaemon(true); return thread; });
     private final Map<String, CompletableFuture<String>> requests = new HashMap<>();
-    private final LinkedHashMap<String, YsmModelSnapshot> snapshots = new LinkedHashMap<>(16, .75f, true);
-    private long weight;
     private boolean closed;
+
+    public YsmSnapshotStore() { this(new YsmSnapshotCache()); }
+    YsmSnapshotStore(YsmSnapshotCache snapshots) { this.snapshots = Objects.requireNonNull(snapshots); }
 
     /** Caller obtains trusted source paths from the server model catalog, never from client input. */
     public synchronized void prewarm(String modelId, Path source) {
@@ -28,7 +28,7 @@ public final class YsmSnapshotStore implements AutoCloseable {
         if (requests.containsKey(modelId)) return;
         if (requests.size() >= 256) {
             requests.entrySet().removeIf(entry -> entry.getValue().isDone()
-                    && (entry.getValue().isCompletedExceptionally() || !snapshots.containsKey(entry.getValue().getNow(null))));
+                    && (entry.getValue().isCompletedExceptionally() || !snapshots.contains(entry.getValue().getNow(null))));
             if (requests.size() >= 256) throw new IllegalStateException("Too many pending model snapshots");
         }
         var result = new CompletableFuture<String>();
@@ -43,13 +43,7 @@ public final class YsmSnapshotStore implements AutoCloseable {
                     var snapshot = YsmModelSnapshot.load(matches.getFirst());
                     synchronized (this) {
                         if (closed || requests.get(modelId) != result) { result.cancel(false); return; }
-                        if (!snapshots.containsKey(snapshot.digest())) {
-                            while (!snapshots.isEmpty() && (snapshots.size() >= MAX_SNAPSHOTS || weight + snapshot.weight() > MAX_WEIGHT)) {
-                                var eldest = snapshots.entrySet().iterator();
-                                weight -= eldest.next().getValue().weight(); eldest.remove();
-                            }
-                            snapshots.put(snapshot.digest(), snapshot); weight += snapshot.weight();
-                        }
+                        snapshots.put(snapshot);
                         result.complete(snapshot.digest());
                     }
                 } catch (Exception failure) { result.completeExceptionally(failure); }
@@ -85,7 +79,7 @@ public final class YsmSnapshotStore implements AutoCloseable {
         for (var entry : requests.entrySet()) {
             var future = entry.getValue();
             if (future.isDone() && !future.isCompletedExceptionally() && !future.isCancelled()
-                    && digest.equals(future.getNow(null)) && snapshots.containsKey(digest))
+                    && digest.equals(future.getNow(null)) && snapshots.contains(digest))
                 return Optional.of(entry.getKey());
         }
         return Optional.empty();
@@ -95,6 +89,6 @@ public final class YsmSnapshotStore implements AutoCloseable {
     }
     @Override public synchronized void close() {
         closed = true; requests.values().forEach(future -> future.cancel(false)); requests.clear();
-        snapshots.clear(); weight = 0; worker.shutdownNow();
+        snapshots.clear(); worker.shutdownNow();
     }
 }

@@ -26,15 +26,6 @@ public final class YsmPlaintextModel {
     public String digest() { return source.digest(); }
     public List<Group> roots() { return roots; }
     public YsmResourceArchive source() { return source; }
-    public YsmResourceArchive apply(List<Group> edited) {
-        if (!digest().equals(YsmGeometry.validateRoots(edited, parts()))) throw new IllegalArgumentException("Source snapshot mismatch");
-        var files = new LinkedHashMap<String, byte[]>();
-        for (String path : source.paths()) files.put(path, source.resource(path));
-        for (Group root : edited) files.put(root.root().part(), YsmGeometryJson.write(root).toString().getBytes(StandardCharsets.UTF_8));
-        var archive = new YsmResourceArchive(files);
-        validateReferences(archive);
-        return archive;
-    }
     private Set<String> parts() { var result = new HashSet<String>(); for (Group root : roots) result.add(root.root().part()); return result; }
     public static void validateReferences(YsmResourceArchive source) {
         try {

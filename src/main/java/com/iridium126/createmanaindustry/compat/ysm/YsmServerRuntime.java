@@ -21,7 +21,8 @@ public final class YsmServerRuntime implements AutoCloseable {
     private static final org.slf4j.Logger LOGGER = com.mojang.logging.LogUtils.getLogger();
     private static YsmServerRuntime active;
     private final MinecraftServer server;
-    private final YsmSnapshotStore snapshots = new YsmSnapshotStore();
+    private final YsmSnapshotCache snapshotCache = new YsmSnapshotCache();
+    private final YsmSnapshotStore snapshots;
     private final YsmReferenceStore references;
     private final YsmPreparedCache prepared = new YsmPreparedCache();
     private final com.iridium126.createmanaindustry.compat.ysm.net.YsmServerArchives transfers;
@@ -31,7 +32,8 @@ public final class YsmServerRuntime implements AutoCloseable {
     private String failure;
     private YsmServerRuntime(MinecraftServer server) {
         this.server = server;
-        this.references = new YsmReferenceStore(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT));
+        this.snapshots = new YsmSnapshotStore(snapshotCache);
+        this.references = new YsmReferenceStore(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT), snapshotCache);
         this.transfers = new com.iridium126.createmanaindustry.compat.ysm.net.YsmServerArchives(server);
         this.previews = new com.iridium126.createmanaindustry.compat.ysm.net.YsmServerPreviews(server, references);
         var file = ModList.get().getModFileById(YsmRuntimeSymbols.MOD_ID);

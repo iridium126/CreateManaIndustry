@@ -22,28 +22,24 @@ public final class YsmModelSnapshot {
         for (Group root : roots) { parts.add(root.root().part()); weight += 4L * YsmGeometryIO.estimateGroupSize(root); }
         this.parts = Set.copyOf(parts); this.weight = weight;
         if (!digest.equals(YsmGeometry.validateRoots(roots, parts))) throw new IllegalArgumentException("Source snapshot mismatch");
-        YsmPlaintextModel.validateReferences(resources);
     }
     public static YsmModelSnapshot load(Path path) throws IOException {
-        if (Files.isDirectory(path)) {
-            var model = new YsmPlaintextModel(YsmResourceArchive.readDirectory(path));
-            return new YsmModelSnapshot(model.digest(), model.roots(), model.source());
-        }
+        if (Files.isDirectory(path)) return fromArchive(YsmResourceArchive.readDirectory(path));
         byte[] bytes = Files.readAllBytes(path);
         int cryptoVersion;
         try { cryptoVersion = YsmFileFormat.cryptoVersion(bytes); }
         catch (IllegalArgumentException failure) { throw new IOException("Invalid YSM file header", failure); }
         if (cryptoVersion < 3) {
             try {
-                var archive = new YsmResourceArchive(YsmLegacyArchiveParser.decrypt(bytes));
-                var model = new YsmPlaintextModel(archive);
-                return new YsmModelSnapshot(model.digest(), model.roots(), model.source());
+                return fromArchive(new YsmResourceArchive(YsmLegacyArchiveParser.decrypt(bytes)));
             } catch (Exception failure) {
                 throw new IOException("Invalid legacy YSM resource archive", failure);
             }
         }
         var model = YsmCompiledModel.decode(bytes);
-        return new YsmModelSnapshot(model.digest(), model.roots(), new YsmResourceArchive(YsmCompiledExporter.build(model, model.roots())));
+        var archive = new YsmResourceArchive(YsmCompiledExporter.build(model, model.roots()));
+        YsmPlaintextModel.validateReferences(archive);
+        return new YsmModelSnapshot(model.digest(), model.roots(), archive);
     }
     public static YsmModelSnapshot fromArchive(YsmResourceArchive archive) {
         var model = new YsmPlaintextModel(archive);

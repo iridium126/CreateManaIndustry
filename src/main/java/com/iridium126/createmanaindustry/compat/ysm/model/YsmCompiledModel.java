@@ -13,28 +13,26 @@ import com.iridium126.createmanaindustry.compat.ysm.model.YsmBakedGeometry.*;
 
 /** A parsed resource snapshot. Heavy decoding must be invoked off the game thread. */
 public final class YsmCompiledModel {
-    private static final class BoneFrame {
+    private static final class BoneFrame implements YsmBoneHierarchy.Node {
         private final String name;
         private final Vector pivot, rotation;
         private final List<Cube> cubes;
         private final List<String> childNames;
-        private final List<Group> children = new ArrayList<>();
-        private int nextChild;
         private BoneFrame(String name, Vector pivot, Vector rotation, List<Cube> cubes, List<String> childNames) {
             this.name = name; this.pivot = pivot; this.rotation = rotation; this.cubes = cubes; this.childNames = childNames;
         }
-        private Group build() {
+        @Override public List<String> childNames() { return childNames; }
+        @Override public Group build(List<Group> children) {
             return new Group(name, new Vector(-pivot.x(), pivot.y(), pivot.z()),
                     new Vector(-Math.toDegrees(rotation.x()), -Math.toDegrees(rotation.y()), Math.toDegrees(rotation.z())),
                     Vector.ONE, true, cubes, children, null, "{}");
         }
     }
     private final String digest;
-    private final byte[] source;
     private final RawYsmModel resources;
     private final List<Group> roots;
-    private YsmCompiledModel(String digest, byte[] source, RawYsmModel resources, List<Group> roots) {
-        this.digest = digest; this.source = source; this.resources = resources; this.roots = List.copyOf(roots);
+    private YsmCompiledModel(String digest, RawYsmModel resources, List<Group> roots) {
+        this.digest = digest; this.resources = resources; this.roots = List.copyOf(roots);
     }
     public static YsmCompiledModel decode(byte[] input) {
         byte[] source = input.clone();
@@ -53,15 +51,12 @@ public final class YsmCompiledModel {
             addEntityRoots(roots, digest, resources.subEntities);
             Set<String> parts = new HashSet<>(); roots.forEach(g -> parts.add(g.root().part()));
             YsmGeometry.validateRoots(roots, parts);
-            return new YsmCompiledModel(digest, source, resources, roots);
+            return new YsmCompiledModel(digest, resources, roots);
         } catch (IllegalArgumentException failure) { throw failure; }
         catch (Exception failure) { throw new IllegalArgumentException("Invalid compiled YSM resource: " + failure.getMessage(), failure); }
     }
     public String digest() { return digest; }
     public List<Group> roots() { return roots; }
-    public int formatVersion() { return resources.formatVersion; }
-    public int sourceSize() { return source.length; }
-    public byte[] sourceBytes() { return source.clone(); }
     // Internal export implementation may inspect resources; iotas only carry the digest.
     RawYsmModel resources() { return resources; }
 
@@ -79,29 +74,7 @@ public final class YsmCompiledModel {
                 throw new IllegalArgumentException("Missing or duplicate compiled bone name");
             children.computeIfAbsent(bone.parentName == null ? "" : bone.parentName, k -> new ArrayList<>()).add(bone.name);
         }
-        for (String parent : children.keySet()) if (!parent.isEmpty() && !bones.containsKey(parent))
-            throw new IllegalArgumentException("Compiled bone parent is missing");
-        var visited = new HashSet<String>();
-        var top = new ArrayList<Group>();
-        var pending = new ArrayDeque<BoneFrame>();
-        for (String name : children.getOrDefault("", List.of())) {
-            if (!visited.add(name)) throw new IllegalArgumentException("Compiled bone hierarchy contains a cycle");
-            pending.push(boneFrame(name, bones, children, width, height));
-            while (!pending.isEmpty()) {
-                BoneFrame frame = pending.peek();
-                if (frame.nextChild < frame.childNames.size()) {
-                    String child = frame.childNames.get(frame.nextChild++);
-                    if (!visited.add(child)) throw new IllegalArgumentException("Compiled bone hierarchy contains a cycle");
-                    pending.push(boneFrame(child, bones, children, width, height));
-                    continue;
-                }
-                Group completed = frame.build();
-                pending.pop();
-                if (pending.isEmpty()) top.add(completed);
-                else pending.peek().children.add(completed);
-            }
-        }
-        if (visited.size() != bones.size()) throw new IllegalArgumentException("Compiled bone hierarchy contains a cycle");
+        var top = YsmBoneHierarchy.build(bones, children, name -> boneFrame(name, bones, children, width, height));
         JsonObject description = new JsonObject();
         description.addProperty("identifier", geometry.identifier);
         description.addProperty("texture_width", width); description.addProperty("texture_height", height);

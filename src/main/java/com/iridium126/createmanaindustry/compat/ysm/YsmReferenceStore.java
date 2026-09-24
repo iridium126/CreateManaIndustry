@@ -36,13 +36,12 @@ public final class YsmReferenceStore implements AutoCloseable {
     private static final int LIST_MAGIC = 0x594c5301;
     private static final int REF_MAGIC = 0x59524601;
     private static final int MAX_FANOUT = 256;
-    private static final long MAX_SOURCE_CACHE_WEIGHT = 256L * 1024 * 1024;
-    private static final int MAX_SOURCE_CACHE_COUNT = 8;
     private static final int MAX_WRITE_RESULT_COUNT = 32;
 
     private final Path root;
     private final Path archives;
     private final Path objects;
+    private final YsmSnapshotCache sourceSnapshots;
     private byte[] namespace;
     private final ThreadPoolExecutor worker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(16), task -> {
@@ -52,11 +51,14 @@ public final class YsmReferenceStore implements AutoCloseable {
             });
     private final LinkedHashMap<String, CompletableFuture<List<String>>> writes = new LinkedHashMap<>(16, .75f, true);
     private final Map<String, CompletableFuture<YsmModelSnapshot>> loads = new HashMap<>();
-    private final LinkedHashMap<String, YsmModelSnapshot> sourceCache = new LinkedHashMap<>(16, .75f, true);
-    private long sourceCacheWeight;
     private boolean closed;
 
     public YsmReferenceStore(Path worldRoot) {
+        this(worldRoot, new YsmSnapshotCache());
+    }
+
+    YsmReferenceStore(Path worldRoot, YsmSnapshotCache sourceSnapshots) {
+        this.sourceSnapshots = Objects.requireNonNull(sourceSnapshots);
         root = worldRoot.toAbsolutePath().normalize().resolve("data").resolve("createmanaindustry").resolve("ysm");
         archives = root.resolve("archives");
         objects = root.resolve("objects");
@@ -95,7 +97,7 @@ public final class YsmReferenceStore implements AutoCloseable {
         if (!future.isDone()) return new SnapshotResult(State.LOADING, null, List.of(), "YSM model is being saved; retry later");
         try {
             List<String> roots = future.join();
-            rememberSource(snapshot);
+            sourceSnapshots.put(snapshot);
             return new SnapshotResult(State.READY, snapshot, roots, "");
         } catch (CompletionException | CancellationException failure) {
             Throwable cause = failure.getCause() == null ? failure : failure.getCause();
@@ -108,7 +110,7 @@ public final class YsmReferenceStore implements AutoCloseable {
     public synchronized SnapshotResult querySnapshot(String digest) {
         requireOpen();
         requireKey(digest);
-        YsmModelSnapshot cached = sourceCache.get(digest);
+        YsmModelSnapshot cached = sourceSnapshots.get(digest);
         if (cached != null) return new SnapshotResult(State.READY, cached, List.of(), "");
         Path archive = archivePath(digest);
         if (!Files.exists(archive, LinkOption.NOFOLLOW_LINKS))
@@ -138,7 +140,7 @@ public final class YsmReferenceStore implements AutoCloseable {
         try {
             YsmModelSnapshot snapshot = future.join();
             loads.remove(digest, future);
-            rememberSource(snapshot);
+            sourceSnapshots.put(snapshot);
             return new SnapshotResult(State.READY, snapshot, List.of(), "");
         } catch (CompletionException | CancellationException failure) {
             Throwable cause = failure.getCause() == null ? failure : failure.getCause();
@@ -699,21 +701,6 @@ public final class YsmReferenceStore implements AutoCloseable {
         return new IllegalArgumentException("Invalid stored YSM " + kind + " " + key.substring(0, 12) + ": " + failure.getMessage(), failure);
     }
 
-    private synchronized void rememberSource(YsmModelSnapshot snapshot) {
-        if (snapshot.weight() > MAX_SOURCE_CACHE_WEIGHT) {
-            YsmModelSnapshot previous = sourceCache.remove(snapshot.digest());
-            if (previous != null) sourceCacheWeight -= previous.weight();
-            return;
-        }
-        YsmModelSnapshot previous = sourceCache.put(snapshot.digest(), snapshot);
-        if (previous != null) sourceCacheWeight -= previous.weight();
-        sourceCacheWeight += snapshot.weight();
-        var iterator = sourceCache.entrySet().iterator();
-        while (!sourceCache.isEmpty() && (sourceCache.size() > MAX_SOURCE_CACHE_COUNT || sourceCacheWeight > MAX_SOURCE_CACHE_WEIGHT)) {
-            var eldest = iterator.next(); sourceCacheWeight -= eldest.getValue().weight(); iterator.remove();
-        }
-    }
-
     private void trimWriteResults() {
         while (writes.size() > MAX_WRITE_RESULT_COUNT) {
             var iterator = writes.entrySet().iterator();
@@ -733,7 +720,7 @@ public final class YsmReferenceStore implements AutoCloseable {
         closed = true;
         writes.values().forEach(future -> future.cancel(false));
         loads.values().forEach(future -> future.cancel(false));
-        writes.clear(); loads.clear(); sourceCache.clear(); sourceCacheWeight = 0;
+        writes.clear(); loads.clear(); sourceSnapshots.clear();
         worker.shutdownNow();
     }
 
