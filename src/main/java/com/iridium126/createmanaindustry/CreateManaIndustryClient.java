@@ -5,6 +5,7 @@ import com.iridium126.createmanaindustry.client.particles.BlockParticleEmitterCl
 import com.iridium126.createmanaindustry.client.render.fuelrod.FuelRodBloomHandler;
 import com.iridium126.createmanaindustry.client.render.mist.MistClientHandler;
 import com.iridium126.createmanaindustry.client.render.InlineTrickRenderer;
+import com.iridium126.createmanaindustry.client.render.InlineYsmGeometryRenderer;
 import com.iridium126.createmanaindustry.ponder.CMIPonderPlugin;
 import com.samsthenerd.inline.api.client.InlineClientAPI;
 import com.simibubi.create.content.decoration.copycat.CopycatBlock;
@@ -79,6 +80,9 @@ public class CreateManaIndustryClient {
 
         if (CreateManaIndustry.HEX_ACTIVE && CreateManaIndustry.TRICKSTER_ACTIVE)
             InlineClientAPI.INSTANCE.addRenderer(InlineTrickRenderer.INSTANCE);
+        if (CreateManaIndustry.HEX_ACTIVE && net.neoforged.fml.ModList.get().isLoaded("yes_steve_model")
+                && net.neoforged.fml.ModList.get().isLoaded("inline"))
+            InlineClientAPI.INSTANCE.addRenderer(InlineYsmGeometryRenderer.INSTANCE);
     }
 
     /**

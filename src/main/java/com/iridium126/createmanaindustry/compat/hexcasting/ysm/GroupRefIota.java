@@ -24,7 +24,8 @@ public final class GroupRefIota extends Iota {
     @Override public int hashCode() { return key.hashCode(); }
     @Override public int size() { return 1; }
     @Override public int depth() { return 1; }
-    @Override public Component display() { return Component.translatable("createmanaindustry.iota.group_ref", key.substring(0, 12)); }
+    @Override public Component display() { return YsmIotaDisplay.groupRef(key,
+            Component.translatable("createmanaindustry.iota.group_ref", key.substring(0, 12))); }
 
     public static final IotaType<GroupRefIota> TYPE = new IotaType<>() {
         private final MapCodec<GroupRefIota> codec = YsmReferenceIotaCodecs.persistent(GroupRefIota::new, GroupRefIota::key).fieldOf("value");

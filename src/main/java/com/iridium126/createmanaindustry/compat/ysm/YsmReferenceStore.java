@@ -20,11 +20,21 @@ public final class YsmReferenceStore implements AutoCloseable {
     public record SnapshotResult(State state, YsmModelSnapshot snapshot, List<String> roots, String reason) {
         public SnapshotResult { roots = roots == null ? List.of() : List.copyOf(roots); }
     }
-    public record GroupNode(Group value, String cubeList, String groupList) {}
+    public record GroupNode(Group value, String cubeList, String groupList, String nodeKey,
+            String sourceDigest, String sourcePart) {
+        public GroupNode(Group value, String cubeList, String groupList) {
+            this(value, cubeList, groupList, "", null, null);
+        }
+    }
+    public record PreviewData(Group group, Cube cube, int textureWidth, int textureHeight, byte[] texture) {
+        public PreviewData { texture = texture == null ? null : texture.clone(); }
+        @Override public byte[] texture() { return texture == null ? null : texture.clone(); }
+    }
 
     private static final int CUBE_MAGIC = 0x59435501;
     private static final int GROUP_MAGIC = 0x59475201;
     private static final int LIST_MAGIC = 0x594c5301;
+    private static final int REF_MAGIC = 0x59524601;
     private static final int MAX_FANOUT = 256;
     private static final long MAX_SOURCE_CACHE_WEIGHT = 256L * 1024 * 1024;
     private static final int MAX_SOURCE_CACHE_COUNT = 8;
@@ -66,8 +76,13 @@ public final class YsmReferenceStore implements AutoCloseable {
                 worker.execute(() -> {
                     try {
                         writeArchive(snapshot.archive());
-                        List<String> roots = writeGroups(snapshot.roots());
-                        submitted.complete(roots);
+                        List<String> rawRoots = writeGroups(snapshot.roots());
+                        var roots = new ArrayList<String>(rawRoots.size());
+                        for (int index = 0; index < rawRoots.size(); index++) {
+                            Root source = snapshot.roots().get(index).root();
+                            roots.add(withPreviewSource(rawRoots.get(index), false, source.snapshot(), source.part()));
+                        }
+                        submitted.complete(List.copyOf(roots));
                     } catch (Throwable failure) {
                         submitted.completeExceptionally(failure);
                     }
@@ -133,7 +148,8 @@ public final class YsmReferenceStore implements AutoCloseable {
     }
 
     public Cube readCube(String key) {
-        byte[] bytes = readObject(key);
+        ReferenceTarget target = resolveReference(key, true);
+        byte[] bytes = readObject(target.nodeKey());
         try (var input = new DataInputStream(new ByteArrayInputStream(bytes))) {
             if (input.readInt() != CUBE_MAGIC) throw new IOException("Expected a cube node");
             byte[] geometry = input.readAllBytes();
@@ -144,7 +160,8 @@ public final class YsmReferenceStore implements AutoCloseable {
     }
 
     public GroupNode readGroup(String key) {
-        byte[] bytes = readObject(key);
+        ReferenceTarget target = resolveReference(key, false);
+        byte[] bytes = readObject(target.nodeKey());
         try (var input = new DataInputStream(new ByteArrayInputStream(bytes))) {
             if (input.readInt() != GROUP_MAGIC) throw new IOException("Expected a group node");
             int headerLength = input.readInt();
@@ -154,14 +171,24 @@ public final class YsmReferenceStore implements AutoCloseable {
             String cubeList = readKey(input);
             String groupList = readKey(input);
             if (input.available() != 0) throw new IOException("Trailing group node bytes");
-            return new GroupNode(value, cubeList, groupList);
+            String digest = target.sourceDigest();
+            String part = target.sourcePart();
+            if (digest == null && value.root() != null) {
+                digest = value.root().snapshot();
+                part = value.root().part();
+            }
+            return new GroupNode(value, cubeList, groupList, target.nodeKey(), digest, part);
         } catch (IOException | IllegalArgumentException failure) {
             throw invalidObject("group", key, failure);
         }
     }
 
-    public List<String> cubeKeys(GroupNode group) { return readList(group.cubeList(), ListKind.CUBE); }
-    public List<String> groupKeys(GroupNode group) { return readList(group.groupList(), ListKind.GROUP); }
+    public List<String> cubeKeys(GroupNode group) {
+        return attachSource(readList(group.cubeList(), ListKind.CUBE), true, group.sourceDigest(), group.sourcePart());
+    }
+    public List<String> groupKeys(GroupNode group) {
+        return attachSource(readList(group.groupList(), ListKind.GROUP), false, group.sourceDigest(), group.sourcePart());
+    }
 
     public String writeCube(Cube cube) {
         try {
@@ -178,7 +205,7 @@ public final class YsmReferenceStore implements AutoCloseable {
         Objects.requireNonNull(value);
         if (!value.cubes().isEmpty() || !value.children().isEmpty())
             throw new IllegalArgumentException("Group node metadata must not contain inline children");
-        List<String> cubes = List.copyOf(cubeKeys), groups = List.copyOf(groupKeys);
+        List<String> cubes = rawKeys(cubeKeys, true), groups = rawKeys(groupKeys, false);
         if (value.root() != null && !cubes.isEmpty()) throw new IllegalArgumentException("Geometry roots cannot contain cubes");
         for (String key : cubes) readCube(key);
         for (String key : groups) {
@@ -198,6 +225,127 @@ public final class YsmReferenceStore implements AutoCloseable {
     }
 
     public String writeTree(Cube cube) { return writeCube(cube); }
+
+    /** Gives a freshly stored value the same source preview context as an edited reference. */
+    public String writeCubeReference(Cube cube, String sourceKey) {
+        String key = writeCube(cube);
+        ReferenceTarget source = resolveReference(sourceKey, true);
+        return withPreviewSource(key, true, source.sourceDigest(), source.sourcePart());
+    }
+
+    /** Gives a freshly stored value the same source preview context as an edited reference. */
+    public String writeGroupReference(Group value, List<String> cubeKeys, List<String> groupKeys, String sourceKey) {
+        String key = writeGroup(value, cubeKeys, groupKeys);
+        ReferenceTarget source = resolveReference(sourceKey, false);
+        String digest = source.sourceDigest();
+        String part = source.sourcePart();
+        if (digest == null && value.root() != null) {
+            digest = value.root().snapshot();
+            part = value.root().part();
+        }
+        return withPreviewSource(key, false, digest, part);
+    }
+
+    /** Stores a standalone group value and preserves provenance when it is a geometry-file root. */
+    public String writeTreeReference(Group value) {
+        String key = writeTree(value);
+        Root source = value.root();
+        return source == null ? key : withPreviewSource(key, false, source.snapshot(), source.part());
+    }
+
+    /** Builds a full preview on demand. A null texture means the geometry has no source archive. */
+    public PreviewData preview(String key, boolean cube) {
+        ReferenceTarget target = resolveReference(key, cube);
+        Cube cubeValue = cube ? readCube(key) : null;
+        Group groupValue = cube ? null : materializeGroups(List.of(key)).getFirst();
+        String digest = target.sourceDigest();
+        String part = target.sourcePart();
+        if (digest == null && groupValue != null && groupValue.root() != null) {
+            digest = groupValue.root().snapshot();
+            part = groupValue.root().part();
+        }
+        if (digest == null) return new PreviewData(groupValue, cubeValue, 64, 64, null);
+        SnapshotResult source = querySnapshot(digest);
+        if (source.state() != State.READY) throw new IllegalStateException(source.reason());
+        String selectedPart = part;
+        Root root = source.snapshot().roots().stream().map(Group::root).filter(Objects::nonNull)
+                .filter(value -> value.part().equals(selectedPart)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Referenced YSM geometry part is missing from its source"));
+        return new PreviewData(groupValue, cubeValue, root.textureWidth(), root.textureHeight(),
+                source.snapshot().archive().textureForPart(selectedPart));
+    }
+
+    private ReferenceTarget resolveReference(String key, boolean cube) {
+        byte[] bytes = readObject(key);
+        try (var input = new DataInputStream(new ByteArrayInputStream(bytes))) {
+            int magic = input.readInt();
+            if (magic == REF_MAGIC) {
+                int type = input.readUnsignedByte();
+                if (type != (cube ? 2 : 1)) throw new IOException("YSM reference kind mismatch");
+                String node = readKey(input);
+                String digest = input.readUTF();
+                String part = readText(input);
+                if (input.available() != 0 || !digest.matches("[0-9a-f]{64}") || part.isBlank())
+                    throw new IOException("Invalid YSM preview reference");
+                new Root(digest, part, 64, 64, "{}");
+                byte[] target = readObject(node);
+                int expected = cube ? CUBE_MAGIC : GROUP_MAGIC;
+                if (target.length < 4 || new DataInputStream(new ByteArrayInputStream(target)).readInt() != expected)
+                    throw new IOException("Referenced geometry node has the wrong kind");
+                return new ReferenceTarget(node, cube, digest, part);
+            }
+            if (magic != (cube ? CUBE_MAGIC : GROUP_MAGIC))
+                throw new IOException("Expected a " + (cube ? "cube" : "group") + " reference");
+            return new ReferenceTarget(key, cube, null, null);
+        } catch (IOException failure) {
+            throw invalidObject(cube ? "cube reference" : "group reference", key, failure);
+        }
+    }
+
+    private List<String> rawKeys(List<String> keys, boolean cube) {
+        var result = new ArrayList<String>(keys.size());
+        for (String key : keys) result.add(resolveReference(key, cube).nodeKey());
+        return List.copyOf(result);
+    }
+
+    private List<String> attachSource(List<String> keys, boolean cube, String digest, String part) {
+        if (digest == null) return keys;
+        var result = new ArrayList<String>(keys.size());
+        for (String key : keys) result.add(withPreviewSource(key, cube, digest, part));
+        return List.copyOf(result);
+    }
+
+    private String withPreviewSource(String nodeKey, boolean cube, String digest, String part) {
+        if (digest == null) return nodeKey;
+        requireKey(digest);
+        if (part == null || part.isBlank()) throw new IllegalArgumentException("Missing YSM source part for preview handle");
+        try {
+            new Root(digest, part, 64, 64, "{}");
+            var bytes = new ByteArrayOutputStream();
+            try (var output = new DataOutputStream(bytes)) {
+                output.writeInt(REF_MAGIC);
+                output.writeByte(cube ? 2 : 1);
+                writeKey(output, nodeKey);
+                output.writeUTF(digest);
+                writeText(output, part);
+            }
+            return writeObject(bytes.toByteArray());
+        } catch (IOException impossible) { throw new IllegalStateException(impossible); }
+    }
+
+    private static void writeText(DataOutputStream output, String text) throws IOException {
+        byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        output.writeInt(bytes.length); output.write(bytes);
+    }
+    private static String readText(DataInputStream input) throws IOException {
+        int length = input.readInt();
+        if (length < 1 || length > input.available()) throw new IOException("Invalid YSM preview source path length");
+        byte[] bytes = input.readNBytes(length);
+        String text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        if (!Arrays.equals(bytes, text.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+            throw new IOException("Invalid YSM preview source path encoding");
+        return text;
+    }
 
     /** Stores an inline geometry tree bottom-up and returns its immutable root key. */
     public String writeTree(Group rootGroup) {
@@ -601,4 +749,5 @@ public final class YsmReferenceStore implements AutoCloseable {
     }
     private record ListEntry(String key, int size) {}
     private record ListNode(ListKind kind, boolean leaf, List<String> values, List<ListEntry> children, int size) {}
+    private record ReferenceTarget(String nodeKey, boolean cube, String sourceDigest, String sourcePart) {}
 }

@@ -30,7 +30,9 @@ class YsmReferenceStoreTest {
                 var boneNode = store.readGroup(boneKey);
                 oldCube = store.cubeKeys(boneNode).getFirst();
                 var cube = store.readCube(oldCube);
-                assertEquals(oldCube, store.writeCube(cube), "identical cube content should share its node");
+                assertEquals(oldCube, store.writeCubeReference(cube, oldCube), "identical geometry and source should share its preview handle");
+                assertArrayEquals(new byte[]{1, 2, 3, 4}, store.preview(oldCube, true).texture(),
+                        "cube references inherit the source texture context");
 
                 var edited = new YsmGeometry.Cube(new YsmGeometry.Vector(7, 8, 9), cube.size(), cube.pivot(),
                         cube.rotation(), cube.scale(), cube.inflate(), cube.visible(), cube.faces(), cube.extraJson());
@@ -56,6 +58,8 @@ class YsmReferenceStoreTest {
                 assertEquals(snapshot.archive().digest(), restoredSource.archive().digest());
                 assertEquals(0, reopened.materializeGroups(List.of(oldRoot)).getFirst()
                         .children().getFirst().cubes().getFirst().origin().x());
+                assertArrayEquals(new byte[]{1, 2, 3, 4}, reopened.preview(oldCube, true).texture(),
+                        "preview handles retain source context after reopening the world store");
                 assertEquals(7, reopened.materializeGroups(List.of(newRoot)).getFirst()
                         .children().getFirst().cubes().getFirst().origin().x());
                 assertNotEquals(oldCube, newCube);
@@ -70,6 +74,7 @@ class YsmReferenceStoreTest {
                         .roots().getFirst().children().getFirst().cubes().getFirst());
                 assertNotEquals(oldCube, otherCube, "references must not resolve accidentally in another world");
                 assertThrows(IllegalArgumentException.class, () -> other.readCube(oldCube));
+                assertThrows(IllegalArgumentException.class, () -> other.preview(oldCube, true));
             } finally { deleteTree(otherWorld); }
 
             Path object = world.resolve("data/createmanaindustry/ysm/objects")

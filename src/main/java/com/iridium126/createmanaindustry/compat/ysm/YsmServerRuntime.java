@@ -25,6 +25,7 @@ public final class YsmServerRuntime implements AutoCloseable {
     private final YsmReferenceStore references;
     private final YsmPreparedCache prepared = new YsmPreparedCache();
     private final com.iridium126.createmanaindustry.compat.ysm.net.YsmServerArchives transfers;
+    private final com.iridium126.createmanaindustry.compat.ysm.net.YsmServerPreviews previews;
     private final CompletableFuture<YsmRuntimeSymbols.Snapshot> mapping;
     private YsmOverrideManager overrides;
     private String failure;
@@ -32,6 +33,7 @@ public final class YsmServerRuntime implements AutoCloseable {
         this.server = server;
         this.references = new YsmReferenceStore(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT));
         this.transfers = new com.iridium126.createmanaindustry.compat.ysm.net.YsmServerArchives(server);
+        this.previews = new com.iridium126.createmanaindustry.compat.ysm.net.YsmServerPreviews(server, references);
         var file = ModList.get().getModFileById(YsmRuntimeSymbols.MOD_ID);
         var path = file.getFile().getFilePath();
         String version = ModList.get().getModContainerById(YsmRuntimeSymbols.MOD_ID).orElseThrow().getModInfo().getVersion().toString();
@@ -46,7 +48,9 @@ public final class YsmServerRuntime implements AutoCloseable {
             if (active != null && active.server == event.getServer()) { active.close(); active = null; }
         });
         NeoForge.EVENT_BUS.addListener((ServerTickEvent.Post event) -> {
-            if (active != null && active.server == event.getServer()) active.transfers.tick();
+            if (active != null && active.server == event.getServer()) {
+                active.transfers.tick();
+            }
             if (active == null || active.server != event.getServer() || event.getServer().getTickCount() % 20 != 0) return;
             for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
                 try { active.read(player); }
@@ -59,6 +63,8 @@ public final class YsmServerRuntime implements AutoCloseable {
                 active.overrides.forget(player);
             if (active != null && event.getEntity() instanceof ServerPlayer player)
                 active.transfers.forget(player.getUUID());
+            if (active != null && event.getEntity() instanceof ServerPlayer player)
+                active.previews.forget(player.getUUID());
         });
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.entity.player.PlayerEvent.StartTracking event) -> {
             if (active != null && active.overrides != null && event.getEntity() instanceof ServerPlayer viewer
@@ -122,6 +128,10 @@ public final class YsmServerRuntime implements AutoCloseable {
         return overrides;
     }
     public com.iridium126.createmanaindustry.compat.ysm.net.YsmServerArchives transfers() { return transfers; }
+    public void requestPreview(ServerPlayer player, String key, boolean cube) {
+        if (player.server != server || player.hasDisconnected()) throw new IllegalStateException("Preview requester left this world");
+        previews.request(player, key, cube);
+    }
     public YsmPreparedCache.Result prepare(List<com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.Group> roots) {
         if (roots.isEmpty() || roots.getFirst().root() == null) throw new IllegalArgumentException("Expected a complete geometry file list");
         return prepared.getOrPrepare(require(roots.getFirst().root().snapshot()), roots);
@@ -138,7 +148,7 @@ public final class YsmServerRuntime implements AutoCloseable {
     }
     @Override public void close() {
         if (overrides != null) overrides.close();
-        mapping.cancel(false); prepared.close(); snapshots.close(); references.close(); transfers.close();
+        mapping.cancel(false); prepared.close(); snapshots.close(); references.close(); transfers.close(); previews.close();
     }
     private YsmServerRuntime() { throw new AssertionError(); }
 }

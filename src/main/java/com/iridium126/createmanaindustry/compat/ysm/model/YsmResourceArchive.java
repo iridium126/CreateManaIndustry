@@ -6,6 +6,8 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 /** Immutable resource bundle. The digest covers both paths and contents. */
 public final class YsmResourceArchive {
@@ -87,6 +89,98 @@ public final class YsmResourceArchive {
         if (bytes == null) throw new IllegalArgumentException("Missing resource: " + path);
         return bytes.clone();
     }
+
+    /** Selects the configured UV texture for a geometry resource, preferring YSM's default texture. */
+    public byte[] textureForPart(String part) {
+        JsonObject config = YsmJson.object(new String(resource("ysm.json"), StandardCharsets.UTF_8));
+        JsonObject fileTable = config.getAsJsonObject("files");
+        JsonObject selected = null;
+        if (fileTable != null) {
+            for (var entry : fileTable.entrySet()) {
+                if (!entry.getValue().isJsonObject()) continue;
+                JsonObject entity = entry.getValue().getAsJsonObject();
+                if (entity.has("model") && containsPath(entity.get("model"), part)) {
+                    selected = entity;
+                    break;
+                }
+            }
+            if (selected == null && fileTable.has("player") && fileTable.get("player").isJsonObject())
+                selected = fileTable.getAsJsonObject("player");
+        }
+        if ((selected == null || !selected.has("texture")) && fileTable != null
+                && fileTable.has("player") && fileTable.get("player").isJsonObject())
+            selected = fileTable.getAsJsonObject("player");
+        if (selected == null || !selected.has("texture")) return null;
+        var candidates = new ArrayList<TextureCandidate>();
+        collectTextures(selected.get("texture"), "", candidates);
+        if (candidates.isEmpty() && fileTable != null && fileTable.has("player")
+                && fileTable.get("player").isJsonObject()) {
+            JsonObject player = fileTable.getAsJsonObject("player");
+            if (player != selected && player.has("texture")) collectTextures(player.get("texture"), "", candidates);
+        }
+        String preferred = defaultTexture.toLowerCase(Locale.ROOT);
+        for (TextureCandidate candidate : candidates) {
+            if (candidate.label().equalsIgnoreCase(preferred) || textureName(candidate.path()).equalsIgnoreCase(preferred)) {
+                byte[] bytes = imageResource(candidate.path());
+                if (bytes != null) return bytes;
+            }
+        }
+        for (TextureCandidate candidate : candidates) {
+            byte[] bytes = imageResource(candidate.path());
+            if (bytes != null) return bytes;
+        }
+        return null;
+    }
+
+    private boolean containsPath(JsonElement value, String path) {
+        if (value == null || value.isJsonNull()) return false;
+        if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) return path.equals(value.getAsString());
+        if (value.isJsonArray()) {
+            for (JsonElement child : value.getAsJsonArray()) if (containsPath(child, path)) return true;
+        } else if (value.isJsonObject()) {
+            for (var entry : value.getAsJsonObject().entrySet()) if (containsPath(entry.getValue(), path)) return true;
+        }
+        return false;
+    }
+
+    private static void collectTextures(JsonElement value, String inheritedLabel, List<TextureCandidate> out) {
+        if (value == null || value.isJsonNull()) return;
+        if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
+            out.add(new TextureCandidate(inheritedLabel, value.getAsString()));
+            return;
+        }
+        if (value.isJsonArray()) {
+            for (JsonElement child : value.getAsJsonArray()) collectTextures(child, inheritedLabel, out);
+            return;
+        }
+        if (!value.isJsonObject()) return;
+        JsonObject object = value.getAsJsonObject();
+        String label = inheritedLabel;
+        for (String name : List.of("name", "id", "key")) {
+            if (object.has(name) && object.get(name).isJsonPrimitive() && object.getAsJsonPrimitive(name).isString()) {
+                label = object.get(name).getAsString();
+                break;
+            }
+        }
+        if (object.has("uv")) collectTextures(object.get("uv"), label, out);
+        else for (var entry : object.entrySet()) {
+            if (List.of("name", "id", "key").contains(entry.getKey())) continue;
+            collectTextures(entry.getValue(), entry.getKey(), out);
+        }
+    }
+
+    private byte[] imageResource(String path) {
+        if (path == null || !(path.toLowerCase(Locale.ROOT).endsWith(".png")
+                || path.toLowerCase(Locale.ROOT).endsWith(".jpg") || path.toLowerCase(Locale.ROOT).endsWith(".jpeg"))) return null;
+        return files.containsKey(path) ? resource(path) : null;
+    }
+
+    private static String textureName(String path) {
+        int slash = path.lastIndexOf('/');
+        int dot = path.lastIndexOf('.');
+        return path.substring(slash + 1, dot > slash ? dot : path.length());
+    }
+    private record TextureCandidate(String label, String path) {}
     public byte[] encode() {
         try {
             var bytes = new ByteArrayOutputStream(byteSize);

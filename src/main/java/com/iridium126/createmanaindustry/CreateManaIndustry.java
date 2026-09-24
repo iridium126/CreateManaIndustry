@@ -123,6 +123,8 @@ public class CreateManaIndustry {
             com.iridium126.createmanaindustry.compat.hexcasting.ysm.CMIYsmIotaTypes.register(modEventBus);
             com.iridium126.createmanaindustry.compat.hexcasting.ysm.CMIYsmActions.register(modEventBus);
             com.iridium126.createmanaindustry.compat.ysm.YsmServerRuntime.register();
+            if (ModList.get().isLoaded("inline"))
+                com.iridium126.createmanaindustry.compat.hexcasting.ysm.YsmInlineBootstrap.register();
         }
         if (HEX_ACTIVE && TRICKSTER_ACTIVE) {
             // Keep Inline and Trickster types out of this constructor's verifier.
@@ -162,6 +164,14 @@ public class CreateManaIndustry {
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket.TYPE,
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket.STREAM_CODEC,
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket::handle);
+        registrar.playToClient(
+                com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmPreviewPacket.TYPE,
+                com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmPreviewPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmPreviewPacket::handle);
+        registrar.playToServer(
+                com.iridium126.createmanaindustry.compat.ysm.net.ServerboundYsmPreviewRequestPacket.TYPE,
+                com.iridium126.createmanaindustry.compat.ysm.net.ServerboundYsmPreviewRequestPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.compat.ysm.net.ServerboundYsmPreviewRequestPacket::handle);
         registrar.playToClient(
                 ClientboundMistSyncPacket.TYPE,
                 ClientboundMistSyncPacket.STREAM_CODEC,

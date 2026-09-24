@@ -18,12 +18,19 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
     @Override public int getArgc() { return property.equals("create") ? 0 : setter ? 2 : 1; }
     @Override public long getMediaCost() { return 0; }
     @Override public List<Iota> execute(List<? extends Iota> args, CastingEnvironment env) throws Mishap {
-        if (property.equals("create")) return List.of(cube ? new CubeIota(Cube.empty()) : new GroupIota(Group.empty()));
+        if (property.equals("create")) {
+            try {
+                YsmReferenceStore store = store(env);
+                return List.of(cube ? new CubeRefIota(store.writeCube(Cube.empty()))
+                        : new GroupRefIota(store.writeTree(Group.empty())));
+            } catch (IllegalArgumentException | IllegalStateException failure) {
+                throw new MishapYsm(failure.getMessage());
+            }
+        }
         Iota target = args.get(0);
-        if (cube && !(target instanceof CubeIota) && !(target instanceof CubeRefIota)
-                || !cube && !(target instanceof GroupIota) && !(target instanceof GroupRefIota))
+        if (cube && !(target instanceof CubeRefIota) || !cube && !(target instanceof GroupRefIota))
             throw new MishapInvalidIota(target, getArgc() - 1,
-                    Component.translatable("hexcasting.iota.createmanaindustry:" + (cube ? "cube" : "group")));
+                    Component.translatable("hexcasting.iota.createmanaindustry:" + (cube ? "cube_ref" : "group_ref")));
         try {
             Iota result = cube ? cube(target, setter ? args.get(1) : null, env)
                     : group(target, setter ? args.get(1) : null, env);
@@ -35,9 +42,9 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
     }
 
     private Iota cube(Iota input, Iota replacement, CastingEnvironment env) {
-        boolean reference = input instanceof CubeRefIota;
-        YsmReferenceStore store = reference ? store(env) : null;
-        Cube c = reference ? store.readCube(((CubeRefIota) input).key()) : ((CubeIota) input).value();
+        YsmReferenceStore store = store(env);
+        CubeRefIota reference = (CubeRefIota) input;
+        Cube c = store.readCube(reference.key());
         if (!setter) return switch (property) {
             case "origin" -> vector(c.origin()); case "size" -> vector(c.size());
             case "pivot" -> vector(c.pivot()); case "rotation" -> vector(c.rotation()); case "scale" -> vector(c.scale());
@@ -51,22 +58,18 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
                 property.equals("rotation") ? vector(replacement) : c.rotation(), property.equals("scale") ? vector(replacement) : c.scale(),
                 property.equals("inflate") ? number(replacement) : c.inflate(), property.equals("visible") ? bool(replacement) : c.visible(),
                 property.equals("uv") ? faces(replacement) : c.faces(), c.extraJson());
-        return reference ? new CubeRefIota(store.writeCube(edited)) : new CubeIota(edited);
+        return new CubeRefIota(store.writeCubeReference(edited, reference.key()));
     }
     private Iota group(Iota input, Iota replacement, CastingEnvironment env) {
-        boolean reference = input instanceof GroupRefIota;
-        YsmReferenceStore store = reference ? store(env) : null;
-        YsmReferenceStore.GroupNode node = reference ? store.readGroup(((GroupRefIota) input).key()) : null;
-        Group g = reference ? node.value() : ((GroupIota) input).value();
+        YsmReferenceStore store = store(env);
+        GroupRefIota reference = (GroupRefIota) input;
+        YsmReferenceStore.GroupNode node = store.readGroup(reference.key());
+        Group g = node.value();
         if (!setter) return switch (property) {
             case "name" -> text(g.name()); case "pivot" -> vector(g.pivot());
             case "rotation" -> vector(g.rotation()); case "scale" -> vector(g.scale()); case "visible" -> new BooleanIota(g.visible());
-            case "cubes" -> new ListIota(reference
-                    ? store.cubeKeys(node).stream().<Iota>map(CubeRefIota::new).toList()
-                    : g.cubes().stream().<Iota>map(CubeIota::new).toList());
-            case "children" -> new ListIota(reference
-                    ? store.groupKeys(node).stream().<Iota>map(GroupRefIota::new).toList()
-                    : g.children().stream().<Iota>map(GroupIota::new).toList());
+            case "cubes" -> new ListIota(store.cubeKeys(node).stream().<Iota>map(CubeRefIota::new).toList());
+            case "children" -> new ListIota(store.groupKeys(node).stream().<Iota>map(GroupRefIota::new).toList());
             case "part" -> text(root(g).part()); case "source" -> text(root(g).snapshot());
             case "texture_size" -> new Vec3Iota(new Vec3(root(g).textureWidth(), root(g).textureHeight(), 0));
             default -> throw new IllegalArgumentException("Unknown group property");
@@ -78,18 +81,13 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
             Root old = root(g);
             root = new Root(old.snapshot(), old.part(), (int)v.x(), (int)v.y(), old.descriptionJson());
         }
-        if (!reference) return new GroupIota(new Group(property.equals("name") ? text(replacement) : g.name(),
-                    property.equals("pivot") ? vector(replacement) : g.pivot(), property.equals("rotation") ? vector(replacement) : g.rotation(),
-                    property.equals("scale") ? vector(replacement) : g.scale(), property.equals("visible") ? bool(replacement) : g.visible(),
-                    property.equals("cubes") ? cubes(replacement) : g.cubes(), property.equals("children") ? groups(replacement) : g.children(), root, g.extraJson()));
-
         List<String> cubeKeys = property.equals("cubes") ? referenceCubes(replacement, store) : store.cubeKeys(node);
         List<String> groupKeys = property.equals("children") ? referenceGroups(replacement, store) : store.groupKeys(node);
         Group header = new Group(property.equals("name") ? text(replacement) : g.name(),
                 property.equals("pivot") ? vector(replacement) : g.pivot(), property.equals("rotation") ? vector(replacement) : g.rotation(),
                 property.equals("scale") ? vector(replacement) : g.scale(), property.equals("visible") ? bool(replacement) : g.visible(),
                 List.of(), List.of(), root, g.extraJson());
-        return new GroupRefIota(store.writeGroup(header, cubeKeys, groupKeys));
+        return new GroupRefIota(store.writeGroupReference(header, cubeKeys, groupKeys, reference.key()));
     }
     private static YsmReferenceStore store(CastingEnvironment env) {
         if (env == null || env.getWorld().getServer() == null) throw new IllegalStateException("YSM reference requires a server world");
@@ -118,27 +116,10 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
         if (!(iota instanceof ListIota l)) throw new IllegalArgumentException("Expected a list");
         var values = new ArrayList<Iota>(); l.getList().forEach(values::add); return values;
     }
-    private static List<Cube> cubes(Iota iota) {
-        var cubes = new ArrayList<Cube>();
-        for (Iota entry : list(iota)) {
-            if (!(entry instanceof CubeIota c)) throw new IllegalArgumentException("Expected only cube iotas");
-            cubes.add(c.value());
-        }
-        return cubes;
-    }
-    private static List<Group> groups(Iota iota) {
-        var groups = new ArrayList<Group>();
-        for (Iota entry : list(iota)) {
-            if (!(entry instanceof GroupIota g)) throw new IllegalArgumentException("Expected only group iotas");
-            groups.add(g.value());
-        }
-        return groups;
-    }
     private static List<String> referenceCubes(Iota iota, YsmReferenceStore store) {
         var keys = new ArrayList<String>();
         for (Iota entry : list(iota)) {
             if (entry instanceof CubeRefIota ref) { store.readCube(ref.key()); keys.add(ref.key()); }
-            else if (entry instanceof CubeIota cube) keys.add(store.writeCube(cube.value()));
             else throw new IllegalArgumentException("Expected only cube iotas");
         }
         return keys;
@@ -147,7 +128,6 @@ public record OpGeometry(boolean cube, String property, boolean setter) implemen
         var keys = new ArrayList<String>();
         for (Iota entry : list(iota)) {
             if (entry instanceof GroupRefIota ref) { store.readGroup(ref.key()); keys.add(ref.key()); }
-            else if (entry instanceof GroupIota group) keys.add(store.writeTree(group.value()));
             else throw new IllegalArgumentException("Expected only group iotas");
         }
         return keys;

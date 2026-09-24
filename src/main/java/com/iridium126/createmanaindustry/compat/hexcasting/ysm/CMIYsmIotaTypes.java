@@ -10,8 +10,6 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 public final class CMIYsmIotaTypes {
     private static final DeferredRegister<IotaType<?>> TYPES = DeferredRegister.create(HexRegistries.IOTA_TYPE, CreateManaIndustry.MODID);
     static {
-        TYPES.register("cube", () -> CubeIota.TYPE);
-        TYPES.register("group", () -> GroupIota.TYPE);
         TYPES.register("cube_ref", () -> CubeRefIota.TYPE);
         TYPES.register("group_ref", () -> GroupRefIota.TYPE);
     }

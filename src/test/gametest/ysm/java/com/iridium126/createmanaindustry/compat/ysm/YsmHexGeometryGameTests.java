@@ -3,10 +3,8 @@ package com.iridium126.createmanaindustry.compat.ysm;
 import java.util.List;
 import com.iridium126.createmanaindustry.compat.hexcasting.ysm.*;
 import at.petrak.hexcasting.api.casting.iota.*;
-import at.petrak.hexcasting.api.casting.mishaps.Mishap;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.world.phys.Vec3;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -38,6 +36,63 @@ public final class YsmHexGeometryGameTests {
                 helper.fail("Oversized archive chunk accepted");
             } catch (io.netty.handler.codec.DecoderException expected) { }
         } finally { oversized.release(); }
+        helper.succeed();
+    }
+    @GameTest(template = "worldgen_test")
+    public static void inlinePreviewPacketCodecs(GameTestHelper helper) {
+        String key = "cd".repeat(32);
+        var request = new com.iridium126.createmanaindustry.compat.ysm.net.ServerboundYsmPreviewRequestPacket(key, true);
+        var requestBuffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), helper.getLevel().registryAccess());
+        try {
+            var codec = com.iridium126.createmanaindustry.compat.ysm.net.ServerboundYsmPreviewRequestPacket.STREAM_CODEC;
+            codec.encode(requestBuffer, request);
+            helper.assertTrue(requestBuffer.readableBytes() == 34, "Preview request must contain the kind, key length, and 32-byte key");
+            var decoded = codec.decode(requestBuffer);
+            helper.assertTrue(decoded.key().equals(key) && decoded.cube() && !requestBuffer.isReadable(),
+                    "Preview request codec round trip failed");
+        } finally { requestBuffer.release(); }
+
+        byte[] png = new byte[] {1, 2, 3};
+        var response = com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmPreviewPacket.image(key, true, png);
+        var responseBuffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), helper.getLevel().registryAccess());
+        try {
+            var codec = com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmPreviewPacket.STREAM_CODEC;
+            codec.encode(responseBuffer, response);
+            var decoded = codec.decode(responseBuffer);
+            helper.assertTrue(decoded.key().equals(key) && decoded.kind() == response.kind()
+                    && decoded.cube() && java.util.Arrays.equals(decoded.png(), png),
+                    "Preview image codec round trip failed");
+        } finally { responseBuffer.release(); }
+
+        var oversized = new RegistryFriendlyByteBuf(Unpooled.buffer(), helper.getLevel().registryAccess());
+        try {
+            oversized.writeByte(com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmPreviewPacket.IMAGE);
+            oversized.writeByteArray(java.util.HexFormat.of().parseHex(key));
+            oversized.writeBoolean(false);
+            oversized.writeByteArray(new byte[16 * 1024 + 1]);
+            try {
+                com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmPreviewPacket.STREAM_CODEC.decode(oversized);
+                helper.fail("Oversized preview image accepted");
+            } catch (io.netty.handler.codec.DecoderException expected) { }
+        } finally { oversized.release(); }
+        helper.succeed();
+    }
+    @GameTest(template = "worldgen_test")
+    public static void fourGeometryIotasAttachInlineData(GameTestHelper helper) {
+        if (!net.neoforged.fml.ModList.get().isLoaded("inline")) {
+            helper.succeed();
+            return;
+        }
+        String key = "ef".repeat(32);
+        List<Iota> values = List.of(new GroupRefIota(key), new CubeRefIota("12".repeat(32)));
+        List<com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData.Kind> expected = List.of(
+                com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData.Kind.GROUP_REF,
+                com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData.Kind.CUBE_REF);
+        for (int i = 0; i < values.size(); i++) {
+            var inline = ((com.samsthenerd.inline.impl.InlineStyle) values.get(i).display().getStyle()).getInlineData();
+            helper.assertTrue(inline instanceof com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData data
+                    && data.kind() == expected.get(i), "Geometry Iota display did not attach its Inline preview data");
+        }
         helper.succeed();
     }
     @GameTest(template = "worldgen_test")
@@ -85,28 +140,42 @@ public final class YsmHexGeometryGameTests {
         helper.succeed();
     }
     @GameTest(template = "worldgen_test")
-    public static void immutableEditingAndTraversal(GameTestHelper helper) throws Mishap {
-        var original = (CubeIota) op(true, "create", false);
-        var moved = (CubeIota) op(true, "origin", true, original, new Vec3Iota(new Vec3(3, 4, 5)));
-        helper.assertTrue(original.value().origin().x() == 0 && moved.value().origin().x() == 3, "Cube editing mutated its source");
-        var blank = (GroupIota) op(false, "create", false);
-        var group = (GroupIota) op(false, "cubes", true, blank, new ListIota(List.of(moved)));
-        helper.assertTrue(blank.value().cubes().isEmpty() && group.value().cubes().size() == 1, "List replacement mutated its source");
-        var renamed = (GroupIota) op(false, "name", true, group, new ListIota(List.of(new DoubleIota(0x9aa8), new DoubleIota(0x1f600))));
-        helper.assertTrue(renamed.value().name().equals("骨😀"), "Unicode name was not preserved");
-        helper.assertTrue(group.visit(iota -> iota) == group, "Identity traversal rebuilt a group");
-        var traversed = group.visit(iota -> iota instanceof CubeIota ? original : iota);
-        helper.assertTrue(traversed instanceof GroupIota g && g.value().cubes().getFirst().equals(original.value()), "Traversal did not replace cube");
-        helper.assertTrue(group.visit(iota -> iota instanceof CubeIota ? new NullIota() : iota) instanceof GarbageIota, "Incompatible traversal was not rejected");
-        try {
-            op(false, "name", true, group, new ListIota(List.of(new DoubleIota(0xd800))));
-            helper.fail("Unpaired Unicode surrogate accepted");
-        } catch (Mishap expected) { }
-        Iota uv = op(true, "uv", false, moved);
-        helper.assertTrue(op(true, "uv", true, moved, uv).equals(moved), "Per-face UV did not round trip");
+    public static void immutableEditingAndTraversal(GameTestHelper helper) throws Exception {
+        var world = java.nio.file.Files.createTempDirectory("cmi-ysm-iota-gametest-");
+        try (var store = new com.iridium126.createmanaindustry.compat.ysm.YsmReferenceStore(world)) {
+            var original = com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.Cube.empty();
+            String originalKey = store.writeCube(original);
+            var moved = new com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.Cube(
+                    new com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.Vector(3, 4, 5), original.size(),
+                    original.pivot(), original.rotation(), original.scale(), original.inflate(), original.visible(),
+                    original.faces(), original.extraJson());
+            String movedKey = store.writeCubeReference(moved, originalKey);
+            helper.assertTrue(store.readCube(originalKey).origin().x() == 0 && store.readCube(movedKey).origin().x() == 3,
+                    "Cube edit changed the original node");
+
+            var blank = com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.Group.empty();
+            String blankKey = store.writeTree(blank);
+            var group = new com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.Group(blank.name(), blank.pivot(),
+                    blank.rotation(), blank.scale(), blank.visible(), List.of(), List.of(), null, blank.extraJson());
+            String groupWithCube = store.writeGroupReference(group, List.of(movedKey), List.of(), blankKey);
+            var groupNode = store.readGroup(groupWithCube);
+            helper.assertTrue(store.cubeKeys(groupNode).equals(List.of(movedKey)) && store.readGroup(blankKey).value().cubes().isEmpty(),
+                    "Group list edit changed its original node");
+
+            var renamed = new com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.Group("骨😀", group.pivot(),
+                    group.rotation(), group.scale(), group.visible(), List.of(), List.of(), null, group.extraJson());
+            String renamedKey = store.writeGroupReference(renamed, store.cubeKeys(groupNode), List.of(), groupWithCube);
+            helper.assertTrue(store.readGroup(renamedKey).value().name().equals("骨😀"), "Unicode group name was not preserved");
+
+            var groupIota = new GroupRefIota(groupWithCube);
+            helper.assertTrue(groupIota.visit(iota -> iota) == groupIota, "Identity traversal rebuilt an atomic reference");
+            helper.assertTrue(groupIota.visit(iota -> iota instanceof CubeRefIota ? new NullIota() : iota) == groupIota,
+                    "Generic traversal entered the referenced geometry tree");
+        } finally {
+            try (var paths = java.nio.file.Files.walk(world)) {
+                for (var path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) java.nio.file.Files.deleteIfExists(path);
+            }
+        }
         helper.succeed();
-    }
-    private static Iota op(boolean cube, String property, boolean setter, Iota... args) throws Mishap {
-        return new OpGeometry(cube, property, setter).execute(List.of(args), null).getFirst();
     }
 }
