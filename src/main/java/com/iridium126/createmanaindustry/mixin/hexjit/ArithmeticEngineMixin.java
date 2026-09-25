@@ -9,6 +9,7 @@ import at.petrak.hexcasting.api.casting.eval.vm.CastingImage;
 import at.petrak.hexcasting.api.casting.eval.vm.SpellContinuation;
 import at.petrak.hexcasting.api.casting.math.HexPattern;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.*;
+import com.iridium126.createmanaindustry.config.ServerConfig;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import java.util.HashMap;
@@ -29,7 +30,7 @@ public abstract class ArithmeticEngineMixin {
     private void cmi$run(HexPattern pattern, CastingEnvironment env, CastingImage image,
                          SpellContinuation continuation, CallbackInfoReturnable<OperationResult> result) throws Throwable {
         CompiledCall code = HexJitRuntime.arithmeticCode();
-        if (code == null || HexJitConfig.mode != HexJitConfig.Mode.AUTO || !HexJitRuntime.enabled()) return;
+        if (code == null || ServerConfig.hexJitMode != ServerConfig.HexJitMode.AUTO || !HexJitRuntime.enabled()) return;
         Object raw = operators.get(pattern);
         // Unknown ABI, missing pattern and underflow are left to the original method, before reading any Iota types.
         if (!(raw instanceof ArithmeticCandidates candidates) || candidates.cmi$arity() < 0
@@ -40,7 +41,7 @@ public abstract class ArithmeticEngineMixin {
         }
         ArithmeticSite site = cmi$sites.get(pattern);
         if (site == null || !site.valid(candidates, epoch)) {
-            if (cmi$sites.size() >= HexJitConfig.maxUnits) cmi$sites.clear();
+            if (cmi$sites.size() >= ServerConfig.hexJitMaxUnits) cmi$sites.clear();
             site = new ArithmeticSite(candidates, epoch);
             cmi$sites.put(pattern, site);
         }

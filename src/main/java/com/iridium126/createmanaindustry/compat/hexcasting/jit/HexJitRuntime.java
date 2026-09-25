@@ -1,11 +1,10 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
 import java.util.concurrent.atomic.AtomicLong;
+import com.iridium126.createmanaindustry.config.ServerConfig;
+import net.neoforged.bus.api.IEventBus;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.ModContainer;
-import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.OnDatapackSyncEvent;
@@ -23,10 +22,13 @@ public final class HexJitRuntime {
     private static volatile String invalidation = "startup";
     private HexJitRuntime() {}
 
-    public static void register(IEventBus modBus, ModContainer container) {
-        container.registerConfig(ModConfig.Type.SERVER, HexJitConfig.SPEC, "createmanaindustry-hex-jit.toml");
-        modBus.addListener((ModConfigEvent.Loading event) -> { if (event.getConfig().getSpec() == HexJitConfig.SPEC) HexJitConfig.reload(); });
-        modBus.addListener((ModConfigEvent.Reloading event) -> { if (event.getConfig().getSpec() == HexJitConfig.SPEC) HexJitConfig.reload(); });
+    public static void register(IEventBus modBus) {
+        modBus.addListener((ModConfigEvent.Loading event) -> {
+            if (event.getConfig().getSpec() == ServerConfig.SPEC) invalidate("server config loaded");
+        });
+        modBus.addListener((ModConfigEvent.Reloading event) -> {
+            if (event.getConfig().getSpec() == ServerConfig.SPEC) invalidate("server config reloaded");
+        });
         NeoForge.EVENT_BUS.addListener((ServerStartingEvent event) -> { owner = Thread.currentThread(); invalidate("server starting"); });
         NeoForge.EVENT_BUS.addListener((ServerStoppedEvent event) -> {
             if (cache != null) cache.close();
@@ -45,7 +47,7 @@ public final class HexJitRuntime {
     }
 
     public static boolean enabled() {
-        return HexJitConfig.mode != HexJitConfig.Mode.OFF && Thread.currentThread() == owner && JitCompatibility.ready();
+        return ServerConfig.hexJitMode != ServerConfig.HexJitMode.OFF && Thread.currentThread() == owner && JitCompatibility.ready();
     }
     public static long generation() { return EPOCH.get(); }
     public static long nextSite() { return SITES.incrementAndGet(); }
@@ -63,14 +65,15 @@ public final class HexJitRuntime {
         long epoch = generation();
         if (cache == null || cacheEpoch != epoch) {
             if (cache != null) cache.close();
-            cache = new CompilationCache(HexJitConfig.threshold, HexJitConfig.maxUnits, HexJitConfig.byteBudget);
+            cache = new CompilationCache(ServerConfig.hexJitThreshold, ServerConfig.hexJitMaxUnits,
+                    ServerConfig.hexJitByteBudget);
             cacheEpoch = epoch;
         }
-        return cache.acquire(site, description, HexJitConfig.mode == HexJitConfig.Mode.AUTO);
+        return cache.acquire(site, description, ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO);
     }
 
     public static String status() {
-        return "mode=" + HexJitConfig.mode + ", compatibility=" + JitCompatibility.status()
+        return "mode=" + ServerConfig.hexJitMode + ", compatibility=" + JitCompatibility.status()
                 + ", epoch=" + generation() + ", invalidation=" + invalidation + ", "
                 + (cache == null ? "no compiled sites" : cache.stats());
     }

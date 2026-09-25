@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 import at.petrak.hexcasting.api.casting.castables.Action;
 import at.petrak.hexcasting.api.casting.ActionRegistryEntry;
 import at.petrak.hexcasting.xplat.IXplatAbstractions;
+import com.iridium126.createmanaindustry.config.ServerConfig;
 import java.util.IdentityHashMap;
 
 /** Only registry-owned ordinary actions enter this cache; never special-handler instances. */
@@ -23,7 +24,7 @@ public final class ActionSites {
             + "Lat/petrak/hexcasting/api/casting/iota/Iota;)Lat/petrak/hexcasting/api/casting/eval/ParenthesizedOperationResult;", true);
     private ActionSites() {}
     public static CompiledCall acquire(Action action, boolean parens) {
-        if ((!HexJitConfig.compileActions && HexJitConfig.mode != HexJitConfig.Mode.PROFILE) || !HexJitRuntime.enabled()) return null;
+        if ((!ServerConfig.hexJitCompileActions && ServerConfig.hexJitMode != ServerConfig.HexJitMode.PROFILE) || !HexJitRuntime.enabled()) return null;
         if (epoch != HexJitRuntime.generation()) { clear(); epoch = HexJitRuntime.generation(); }
         if (!registryLoaded) {
             var registry = IXplatAbstractions.INSTANCE.getActionRegistry();
@@ -37,7 +38,7 @@ public final class ActionSites {
         if (!REGISTERED.containsKey(action)) return null;
         long[] ids = SITES.get(action);
         if (ids == null) {
-            if (SITES.size() >= HexJitConfig.maxUnits) clear();
+            if (SITES.size() >= ServerConfig.hexJitMaxUnits) clear();
             ids = new long[] {HexJitRuntime.nextSite(), HexJitRuntime.nextSite()};
             SITES.put(action, ids);
         }

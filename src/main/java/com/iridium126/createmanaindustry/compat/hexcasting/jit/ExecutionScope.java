@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
+import com.iridium126.createmanaindustry.config.ServerConfig;
+
 /** Optional observer bookkeeping. Scopes hold booleans only and are removed in finally blocks. */
 public final class ExecutionScope implements AutoCloseable {
     private static final ThreadLocal<ExecutionScope> CURRENT = new ThreadLocal<>();
@@ -11,7 +13,7 @@ public final class ExecutionScope implements AutoCloseable {
     public void startStep() { compiled = false; notifying = false; }
     public void notifying(boolean value) { notifying = value; }
     public static void markCompiled() {
-        if (!HexJitConfig.skipObservers) return;
+        if (!ServerConfig.hexJitSkipObservers) return;
         ExecutionScope scope = CURRENT.get();
         if (scope != null) scope.compiled = true;
     }

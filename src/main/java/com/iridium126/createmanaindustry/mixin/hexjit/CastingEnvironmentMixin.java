@@ -4,7 +4,7 @@ import at.petrak.hexcasting.api.casting.eval.CastResult;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironmentComponent;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope;
-import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitConfig;
+import com.iridium126.createmanaindustry.config.ServerConfig;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.SkippablePostExecutionObserver;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -18,7 +18,7 @@ public abstract class CastingEnvironmentMixin {
                     "onPostExecution(Lat/petrak/hexcasting/api/casting/eval/CastResult;)V"))
     private void cmi$observe(CastingEnvironmentComponent.PostExecution observer, CastResult result,
                              Operation<Void> original) {
-        if (HexJitConfig.skipObservers && observer instanceof SkippablePostExecutionObserver
+        if (ServerConfig.hexJitSkipObservers && observer instanceof SkippablePostExecutionObserver
                 && ExecutionScope.maySkip()) return;
         original.call(observer, result);
     }

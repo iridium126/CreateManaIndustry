@@ -13,6 +13,7 @@ import at.petrak.hexcasting.api.utils.TreeList;
 import at.petrak.hexcasting.common.lib.hex.*;
 import at.petrak.hexcasting.common.casting.PatternRegistryManifest;
 import at.petrak.hexcasting.xplat.IXplatAbstractions;
+import com.iridium126.createmanaindustry.config.ServerConfig;
 import java.lang.management.ManagementFactory;
 import java.util.*;
 import java.util.function.Predicate;
@@ -57,41 +58,41 @@ public final class HexJitGameTests {
                 "Test add-on throwing action was overridden: " + throwingMatch.getClass().getName());
         helper.assertTrue(PatternRegistryManifest.matchPattern(JitTestAddon.DYNAMIC, env) instanceof PatternShapeMatch.Special,
                 "Test add-on dynamic handler pattern collided");
-        HexJitConfig.threshold = 2;
-        HexJitConfig.compileActions = true;
-        HexJitConfig.mode = HexJitConfig.Mode.AUTO;
+        ServerConfig.hexJitThreshold = 2;
+        ServerConfig.hexJitCompileActions = true;
+        ServerConfig.hexJitMode = ServerConfig.HexJitMode.AUTO;
         HexJitRuntime.invalidate("differential warmup");
         List<Scenario> corpus = corpus();
-        for (int pass = 0; pass < 10; pass++) for (Scenario scenario : corpus) run(helper, scenario, HexJitConfig.Mode.AUTO);
+        for (int pass = 0; pass < 10; pass++) for (Scenario scenario : corpus) run(helper, scenario, ServerConfig.HexJitMode.AUTO);
         helper.runAfterDelay(10, () -> {
             try {
                 for (int pass = 0; pass < 3; pass++) for (Scenario scenario : corpus) {
-                    Snapshot baseline = run(helper, scenario, HexJitConfig.Mode.OFF);
-                    Snapshot jit = run(helper, scenario, HexJitConfig.Mode.AUTO);
+                    Snapshot baseline = run(helper, scenario, ServerConfig.HexJitMode.OFF);
+                    Snapshot jit = run(helper, scenario, ServerConfig.HexJitMode.AUTO);
                     helper.assertTrue(baseline.equals(jit), "Differential mismatch: " + scenario.name + "\n" + baseline + "\n" + jit);
                 }
                 helper.assertTrue(HexJitRuntime.status().matches("(?s).*compiledHits=[1-9][0-9]*.*"), "No compiled execution: " + HexJitRuntime.status());
                 helper.assertTrue(ActionSites.compiledHits() > 0, "PatternIota did not dispatch a compiled add-on Action");
-                HexJitConfig.skipObservers = true;
+                ServerConfig.hexJitSkipObservers = true;
                 long observerStart = TestEnvironment.SKIPPABLE_CALLS.get();
                 Snapshot observerBaseline = run(helper, corpus.stream().filter(s -> s.name.equals("addon action and continuation"))
-                        .findFirst().orElseThrow(), HexJitConfig.Mode.OFF);
+                        .findFirst().orElseThrow(), ServerConfig.HexJitMode.OFF);
                 long baselineObserverCalls = TestEnvironment.SKIPPABLE_CALLS.get() - observerStart;
                 Snapshot observerJit = run(helper, corpus.stream().filter(s -> s.name.equals("addon action and continuation"))
-                        .findFirst().orElseThrow(), HexJitConfig.Mode.AUTO);
+                        .findFirst().orElseThrow(), ServerConfig.HexJitMode.AUTO);
                 long jitObserverCalls = TestEnvironment.SKIPPABLE_CALLS.get() - observerStart - baselineObserverCalls;
                 helper.assertTrue(observerBaseline.equals(observerJit), "Stateful observer was skipped on a compiled Action");
                 helper.assertTrue(baselineObserverCalls > jitObserverCalls, "Explicitly skippable observer was not omitted");
-                HexJitConfig.skipObservers = false;
+                ServerConfig.hexJitSkipObservers = false;
                 overloadCache(helper);
                 benchmark(helper);
                 HexJitRuntime.invalidate("test reload");
-                for (Scenario scenario : corpus) helper.assertTrue(run(helper, scenario, HexJitConfig.Mode.OFF)
-                        .equals(run(helper, scenario, HexJitConfig.Mode.AUTO)), "Reload mismatch: " + scenario.name);
+                for (Scenario scenario : corpus) helper.assertTrue(run(helper, scenario, ServerConfig.HexJitMode.OFF)
+                        .equals(run(helper, scenario, ServerConfig.HexJitMode.AUTO)), "Reload mismatch: " + scenario.name);
                 System.out.println("HEXJIT_VALIDATION " + HexJitRuntime.status());
                 helper.succeed();
             } catch (Throwable error) { helper.fail(error.toString()); }
-            finally { HexJitConfig.reload(); }
+            finally { ServerConfig.refreshHexJitSettings(); }
         });
     }
 
@@ -133,8 +134,8 @@ public final class HexJitGameTests {
         return cases;
     }
 
-    private static Snapshot run(GameTestHelper helper, Scenario scenario, HexJitConfig.Mode mode) {
-        HexJitConfig.mode = mode;
+    private static Snapshot run(GameTestHelper helper, Scenario scenario, ServerConfig.HexJitMode mode) {
+        ServerConfig.hexJitMode = mode;
         var env = new TestEnvironment(helper.getLevel());
         env.limit = scenario.opLimit;
         env.getWorld().random.setSeed(9128374L);
@@ -159,13 +160,13 @@ public final class HexJitGameTests {
         };
         var engine = new ArithmeticEngine(List.of(extension));
         var image = new CastingImage(TreeList.from(List.<Iota>of(new DoubleIota(4))), 0, TreeList.empty(), false, false, 0, new CompoundTag());
-        HexJitConfig.mode = HexJitConfig.Mode.AUTO;
+        ServerConfig.hexJitMode = ServerConfig.HexJitMode.AUTO;
         for (int i = 0; i < 50; i++) {
             var result = engine.run(Arithmetic.ADD, new TestEnvironment(helper.getLevel()), image, SpellContinuation.Done.INSTANCE);
             helper.assertTrue(result.getNewImage().getOpsConsumed() == 7, "Addon operator bypassed");
         }
         helper.assertTrue(predicates[0] == 1, "First-match cache semantics changed");
-        HexJitConfig.mode = HexJitConfig.Mode.OFF;
+        ServerConfig.hexJitMode = ServerConfig.HexJitMode.OFF;
         engine.run(Arithmetic.ADD, new TestEnvironment(helper.getLevel()), image, SpellContinuation.Done.INSTANCE);
         helper.assertTrue(predicates[0] == 1, "JIT did not populate the original engine cache");
     }
@@ -176,21 +177,21 @@ public final class HexJitGameTests {
         var bean = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
         benchmarkCold(engine, env, bean);
         HexJitRuntime.invalidate("hot arithmetic benchmark");
-        HexJitConfig.threshold = 2;
+        ServerConfig.hexJitThreshold = 2;
         for (int depth : new int[] {2, 64, 1024}) {
             var values = new ArrayList<Iota>();
             for (int i = 0; i < depth; i++) values.add(new DoubleIota(i));
             var image = new CastingImage(TreeList.from(values), 0, TreeList.empty(), false, false, 0, new CompoundTag());
             // Alternate rounds to avoid always measuring the same mode first.
             for (int round = 0; round < 6; round++) {
-                HexJitConfig.mode = (round & 1) == 0 ? HexJitConfig.Mode.OFF : HexJitConfig.Mode.AUTO;
+                ServerConfig.hexJitMode = (round & 1) == 0 ? ServerConfig.HexJitMode.OFF : ServerConfig.HexJitMode.AUTO;
                 for (int i = 0; i < 10000; i++) blackhole = engine.run(Arithmetic.ADD, env, image, SpellContinuation.Done.INSTANCE);
                 long allocated = bean.getThreadAllocatedBytes(Thread.currentThread().threadId());
                 long start = System.nanoTime();
                 for (int i = 0; i < 50000; i++) blackhole = engine.run(Arithmetic.ADD, env, image, SpellContinuation.Done.INSTANCE);
                 long elapsed = System.nanoTime() - start;
                 long bytes = bean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - allocated;
-                System.out.println("HEXJIT_BENCH depth=" + depth + " mode=" + HexJitConfig.mode + " round=" + round
+                System.out.println("HEXJIT_BENCH depth=" + depth + " mode=" + ServerConfig.hexJitMode + " round=" + round
                         + " ns/op=" + elapsed / 50000.0 + " bytes/op=" + bytes / 50000.0);
             }
         }
@@ -202,7 +203,7 @@ public final class HexJitGameTests {
         var image = new CastingImage(TreeList.from(List.<Iota>of(new DoubleIota(1), new DoubleIota(2))),
                 0, TreeList.empty(), false, false, 0, new CompoundTag());
         var arithmetics = Arrays.asList(template.arithmetics);
-        HexJitConfig.threshold = 64;
+        ServerConfig.hexJitThreshold = 64;
         for (int round = 0; round < 16; round++) {
             var interpreted = new ArrayList<ArithmeticEngine>(perRound);
             var specialized = new ArrayList<ArithmeticEngine>(perRound);
@@ -210,7 +211,7 @@ public final class HexJitGameTests {
                 interpreted.add(new ArithmeticEngine(arithmetics));
                 specialized.add(new ArithmeticEngine(arithmetics));
             }
-            HexJitConfig.mode = HexJitConfig.Mode.OFF;
+            ServerConfig.hexJitMode = ServerConfig.HexJitMode.OFF;
             long allocated = bean.getThreadAllocatedBytes(Thread.currentThread().threadId());
             long start = System.nanoTime();
             for (ArithmeticEngine fresh : interpreted)
@@ -221,7 +222,7 @@ public final class HexJitGameTests {
                     + " bytes/op=" + bytes / (double) perRound);
 
             HexJitRuntime.invalidate("cold arithmetic benchmark");
-            HexJitConfig.mode = HexJitConfig.Mode.AUTO;
+            ServerConfig.hexJitMode = ServerConfig.HexJitMode.AUTO;
             HexJitRuntime.acquire(ArithmeticSite.CALL_SITE, ArithmeticSite.CALL); // Create cache outside timing.
             allocated = bean.getThreadAllocatedBytes(Thread.currentThread().threadId());
             start = System.nanoTime();

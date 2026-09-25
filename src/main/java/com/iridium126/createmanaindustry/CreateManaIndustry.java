@@ -143,13 +143,13 @@ public class CreateManaIndustry {
         NeoForge.EVENT_BUS.addListener(AllvrServerHandler::onPlayerLoggedOut);
         NeoForge.EVENT_BUS.addListener(AllvrServerHandler::onPlayerChangedDimension);
 
-        // Server-authoritative gameplay + stress config (synced to clients), and
+        // Server-authoritative gameplay, stress and JIT config (synced to clients), and
         // the client-only rendering config. ServerConfig.build() must run after
         // block registration so the stress defaults are populated.
         ServerConfig.build();
         modContainer.registerConfig(ModConfig.Type.SERVER, ServerConfig.SPEC);
         if (HEX_ACTIVE) {
-            com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime.register(modEventBus, modContainer);
+            com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime.register(modEventBus);
         }
         BlockStressValues.IMPACTS.registerProvider(ServerConfig::getImpact);
         BlockStressValues.CAPACITIES.registerProvider(ServerConfig::getCapacity);

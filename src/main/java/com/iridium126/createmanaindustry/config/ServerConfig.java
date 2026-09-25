@@ -33,6 +33,15 @@ import net.neoforged.neoforge.common.ModConfigSpec.ConfigValue;
 @EventBusSubscriber(modid = CreateManaIndustry.MODID)
 public final class ServerConfig {
 
+    public enum HexJitMode { OFF, PROFILE, AUTO }
+
+    public static volatile HexJitMode hexJitMode = HexJitMode.AUTO;
+    public static volatile int hexJitThreshold = 64;
+    public static volatile int hexJitMaxUnits = 1024;
+    public static volatile long hexJitByteBudget = 16L << 20;
+    public static volatile boolean hexJitCompileActions;
+    public static volatile boolean hexJitSkipObservers;
+
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     // ---- fluid -------------------------------------------------------------
@@ -89,6 +98,12 @@ public final class ServerConfig {
     private static ModConfigSpec.LongValue BATTERY_MAX_MEDIA;
     private static ModConfigSpec.IntValue YSM_APPLY_CRYSTALS;
     private static ModConfigSpec.IntValue YSM_EXPORT_CRYSTALS;
+    private static ModConfigSpec.EnumValue<HexJitMode> HEX_JIT_MODE;
+    private static ModConfigSpec.IntValue HEX_JIT_THRESHOLD;
+    private static ModConfigSpec.IntValue HEX_JIT_MAX_UNITS;
+    private static ModConfigSpec.IntValue HEX_JIT_BYTE_BUDGET_MIB;
+    private static ModConfigSpec.BooleanValue HEX_JIT_COMPILE_ACTIONS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_SKIP_OBSERVERS;
 
     static {
         BUILDER.comment("Fluid conversion ratios — how much mana/media/source one bucket holds.").push("fluid");
@@ -191,7 +206,7 @@ public final class ServerConfig {
                 .defineInRange("stormChaseY", 128, 40, 300);
         BUILDER.pop();
 
-        BUILDER.comment("Incomplete Hexcasting item media capacities (in Hexcasting dust units, 1 dust = 10,000).").push("hexcasting");
+        BUILDER.comment("Hexcasting integration settings.").push("hexcasting");
         CYPHER_MAX_MEDIA = BUILDER
                 .comment("Maximum media capacity for incomplete cyphers.")
                 .defineInRange("cypherMaxMedia", 6400000L, 10000L, Long.MAX_VALUE);
@@ -210,6 +225,26 @@ public final class ServerConfig {
         YSM_EXPORT_CRYSTALS = BUILDER
                 .comment("Charged amethyst units consumed when exporting a YSM model.")
                 .defineInRange("ysmExportCrystalUnits", 1, 0, 64);
+        BUILDER.comment("Server-side Hex JIT controls. These tune execution only; compiled calls preserve Hexcasting action semantics.").push("jit");
+        HEX_JIT_MODE = BUILDER
+                .comment("OFF uses the interpreter; PROFILE counts hot calls without compiling; AUTO enables tiered compilation.")
+                .defineEnum("mode", HexJitMode.AUTO);
+        HEX_JIT_THRESHOLD = BUILDER
+                .comment("Valid executions at a shared call site before compilation is requested.")
+                .defineInRange("hotThreshold", 64, 1, 1000000);
+        HEX_JIT_MAX_UNITS = BUILDER
+                .comment("Maximum compiled call sites retained at once.")
+                .defineInRange("maxUnits", 1024, 1, 65536);
+        HEX_JIT_BYTE_BUDGET_MIB = BUILDER
+                .comment("Maximum generated class bytecode retained by the JIT, in MiB.")
+                .defineInRange("bytecodeBudgetMiB", 16, 1, 256);
+        HEX_JIT_COMPILE_ACTIONS = BUILDER
+                .comment("Experimental ordinary Action call-site compilation; disabled until it demonstrates a net benefit.")
+                .define("compileActions", false);
+        HEX_JIT_SKIP_OBSERVERS = BUILDER
+                .comment("Allow skipping only PostExecution observers that explicitly implement SkippablePostExecutionObserver.")
+                .define("skipDeclaredObservers", false);
+        BUILDER.pop();
         BUILDER.pop();
 
     }
@@ -366,6 +401,17 @@ public final class ServerConfig {
             batteryMaxMedia = BATTERY_MAX_MEDIA.get();
             ysmApplyCrystalUnits = YSM_APPLY_CRYSTALS.get();
             ysmExportCrystalUnits = YSM_EXPORT_CRYSTALS.get();
+            refreshHexJitSettings();
         }
+    }
+
+    /** Copies the loaded server config values into the optional JIT runtime. */
+    public static void refreshHexJitSettings() {
+        hexJitMode = HEX_JIT_MODE.get();
+        hexJitThreshold = HEX_JIT_THRESHOLD.get();
+        hexJitMaxUnits = HEX_JIT_MAX_UNITS.get();
+        hexJitByteBudget = (long) HEX_JIT_BYTE_BUDGET_MIB.get() << 20;
+        hexJitCompileActions = HEX_JIT_COMPILE_ACTIONS.get();
+        hexJitSkipObservers = HEX_JIT_SKIP_OBSERVERS.get();
     }
 }
