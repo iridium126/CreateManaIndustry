@@ -148,6 +148,9 @@ public class CreateManaIndustry {
         // block registration so the stress defaults are populated.
         ServerConfig.build();
         modContainer.registerConfig(ModConfig.Type.SERVER, ServerConfig.SPEC);
+        if (HEX_ACTIVE) {
+            com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime.register(modEventBus, modContainer);
+        }
         BlockStressValues.IMPACTS.registerProvider(ServerConfig::getImpact);
         BlockStressValues.CAPACITIES.registerProvider(ServerConfig::getCapacity);
 

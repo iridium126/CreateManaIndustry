@@ -1,0 +1,20 @@
+{
+    "required": false,
+    "minVersion": "0.8.7",
+    "package": "com.iridium126.createmanaindustry.mixin.hexjit",
+    "plugin": "com.iridium126.createmanaindustry.mixin.hexjit.HexJitMixinPlugin",
+    "compatibilityLevel": "JAVA_21",
+    "priority": 1,
+    "mixins": [
+        "CandidatesMixin",
+        "ArithmeticEngineMixin",
+        "PatternIotaMixin",
+        "CastingVMMixin",
+        "CastingEnvironmentMixin",
+        "FrameEvaluateMixin",
+        "PatternRegistryMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}
