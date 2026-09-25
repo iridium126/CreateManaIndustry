@@ -103,12 +103,12 @@ public record OpGeometry(boolean setter) implements ConstMediaAction {
         YsmReferenceStore.GroupNode node = store.readGroup(reference.key());
         Group g = node.value();
         if (!setter) return switch (property) {
-            case "name" -> new StringIota(g.name()); case "pivot" -> vector(g.pivot());
+            case "name" -> StringIota.makeUnchecked(g.name()); case "pivot" -> vector(g.pivot());
             case "rotation" -> vector(g.rotation()); case "scale" -> vector(g.scale()); case "visible" -> new BooleanIota(g.visible());
             case "cubes" -> new ListIota(store.cubeKeys(node).stream().<Iota>map(CubeIota::new).toList());
             case "children" -> new ListIota(store.groupKeys(node).stream().<Iota>map(GroupIota::new).toList());
-            case "part" -> new StringIota(node.sourcePart() == null ? "" : node.sourcePart());
-            case "source" -> new StringIota(node.sourceDigest() == null ? "" : node.sourceDigest());
+            case "part" -> StringIota.makeUnchecked(node.sourcePart() == null ? "" : node.sourcePart());
+            case "source" -> StringIota.makeUnchecked(node.sourceDigest() == null ? "" : node.sourceDigest());
             case "texture_size" -> {
                 Root source = root(g);
                 yield new Vec3Iota(new Vec3(source.textureWidth(), source.textureHeight(), 0));
@@ -190,7 +190,7 @@ public record OpGeometry(boolean setter) implements ConstMediaAction {
         return faces;
     }
     private static String string(Iota iota) {
-        if (iota instanceof StringIota value) return value.value();
+        if (iota instanceof StringIota value) return value.getString();
         throw new IllegalArgumentException("Expected a String Iota");
     }
 }

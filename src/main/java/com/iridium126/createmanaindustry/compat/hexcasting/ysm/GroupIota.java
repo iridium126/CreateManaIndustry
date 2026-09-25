@@ -22,8 +22,6 @@ public final class GroupIota extends Iota {
     @Override public boolean isTruthy() { return true; }
     @Override protected boolean toleratesOther(Iota other) { return other instanceof GroupIota group && key.equals(group.key); }
     @Override public int hashCode() { return key.hashCode(); }
-    @Override public int size() { return 1; }
-    @Override public int depth() { return 1; }
     @Override public Component display() { return YsmIotaDisplay.group(key,
             Component.translatable("createmanaindustry.iota.group", key.substring(0, 12))); }
 
@@ -32,7 +30,6 @@ public final class GroupIota extends Iota {
         private final StreamCodec<RegistryFriendlyByteBuf, GroupIota> stream = YsmReferenceIotaCodecs.network(GroupIota::new, GroupIota::key);
         @Override public MapCodec<GroupIota> codec() { return codec; }
         @Override public StreamCodec<RegistryFriendlyByteBuf, GroupIota> streamCodec() { return stream; }
-        @Override public int color() { return 0xffa9d68b; }
-        @Override public boolean usesListCommas() { return true; }
+        @Override public int color() { return 0xff_7be495; }
     };
 }

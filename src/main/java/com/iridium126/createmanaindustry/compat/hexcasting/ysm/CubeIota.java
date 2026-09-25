@@ -22,8 +22,6 @@ public final class CubeIota extends Iota {
     @Override public boolean isTruthy() { return true; }
     @Override protected boolean toleratesOther(Iota other) { return other instanceof CubeIota cube && key.equals(cube.key); }
     @Override public int hashCode() { return key.hashCode(); }
-    @Override public int size() { return 1; }
-    @Override public int depth() { return 1; }
     @Override public Component display() { return YsmIotaDisplay.cube(key,
             Component.translatable("createmanaindustry.iota.cube", key.substring(0, 12))); }
 
@@ -32,7 +30,6 @@ public final class CubeIota extends Iota {
         private final StreamCodec<RegistryFriendlyByteBuf, CubeIota> stream = YsmReferenceIotaCodecs.network(CubeIota::new, CubeIota::key);
         @Override public MapCodec<CubeIota> codec() { return codec; }
         @Override public StreamCodec<RegistryFriendlyByteBuf, CubeIota> streamCodec() { return stream; }
-        @Override public int color() { return 0xff71c8d6; }
-        @Override public boolean usesListCommas() { return true; }
+        @Override public int color() { return 0xff_88cdf6; }
     };
 }

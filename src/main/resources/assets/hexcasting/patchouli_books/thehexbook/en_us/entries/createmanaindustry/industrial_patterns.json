@@ -1,7 +1,7 @@
 {
   "name": "hexcasting.entry.createmanaindustry.industrial_patterns",
   "category": "hexcasting:createmanaindustry",
-  "icon": "createmanaindustry:kinetics_spell_core",
+  "icon": "createmanaindustry:allay_burner",
   "sortnum": 2,
   "advancement": "hexcasting:root",
   "pages": [

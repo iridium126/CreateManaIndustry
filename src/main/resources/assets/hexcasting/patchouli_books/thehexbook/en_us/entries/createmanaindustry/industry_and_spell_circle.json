@@ -1,7 +1,7 @@
 {
   "name": "hexcasting.entry.createmanaindustry.industry_and_spell_circle",
   "category": "hexcasting:createmanaindustry",
-  "icon": "hexcasting:thought_knot",
+  "icon": "hexcasting:slate",
   "sortnum": 3,
   "advancement": "hexcasting:enlightenment",
   "pages": [

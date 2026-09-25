@@ -16,51 +16,34 @@ import net.minecraft.network.codec.StreamCodec;
 public final class StringIota extends Iota {
     private final String value;
 
-    public StringIota(String value) {
+    private StringIota(String string) {
         super(() -> TYPE);
-        this.value = Objects.requireNonNull(value, "value");
+        this.value = Objects.requireNonNull(string, "string");
     }
 
-    public String value() { return value; }
+    public static StringIota make(String value) { return new StringIota(value); }
+    public static StringIota makeUnchecked(String value) { return new StringIota(value); }
 
-    @Override public boolean isTruthy() { return !value.isEmpty(); }
+    public String getString() { return value; }
+
+    @Override public boolean isTruthy() { return !getString().isEmpty(); }
     @Override protected boolean toleratesOther(Iota other) {
-        return other instanceof StringIota string && value.equals(string.value);
+        return typesMatch(this, other) && other instanceof StringIota string && getString().equals(string.getString());
     }
-    @Override public int hashCode() { return value.hashCode(); }
-    @Override public int size() { return 1; }
-    @Override public int depth() { return 1; }
+    @Override public int hashCode() { return getString().hashCode(); }
     @Override public Component display() {
-        return Component.literal(quoted(value)).withStyle(ChatFormatting.GREEN);
-    }
-
-    private static String quoted(String value) {
-        StringBuilder result = new StringBuilder(value.length() + 2).append('"');
-        value.codePoints().forEach(codePoint -> {
-            switch (codePoint) {
-                case '\\' -> result.append("\\\\");
-                case '"' -> result.append("\\\"");
-                case '\n' -> result.append("\\n");
-                case '\r' -> result.append("\\r");
-                case '\t' -> result.append("\\t");
-                default -> {
-                    if (Character.isISOControl(codePoint)) result.append(String.format("\\u%04x", codePoint));
-                    else result.appendCodePoint(codePoint);
-                }
-            }
-        });
-        return result.append('"').toString();
+        return Component.translatable("createmanaindustry.tooltip.string", getString())
+                .withStyle(ChatFormatting.LIGHT_PURPLE);
     }
 
     public static final IotaType<StringIota> TYPE = new IotaType<>() {
-        private final MapCodec<StringIota> codec = Codec.STRING.xmap(StringIota::new, StringIota::value).fieldOf("value");
+        private final MapCodec<StringIota> codec = Codec.STRING.xmap(StringIota::make, StringIota::getString).fieldOf("value");
         private final StreamCodec<RegistryFriendlyByteBuf, StringIota> streamCodec = ByteBufCodecs.STRING_UTF8
-                .map(StringIota::new, StringIota::value)
+                .map(StringIota::makeUnchecked, StringIota::getString)
                 .mapStream(buffer -> buffer);
 
         @Override public MapCodec<StringIota> codec() { return codec; }
         @Override public StreamCodec<RegistryFriendlyByteBuf, StringIota> streamCodec() { return streamCodec; }
-        @Override public int color() { return 0xff_9fda7c; }
-        @Override public boolean usesListCommas() { return false; }
+        @Override public int color() { return 0xffff55ff; }
     };
 }

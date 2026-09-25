@@ -1,7 +1,7 @@
 {
   "name": "hexcasting.entry.createmanaindustry.casting_item_production",
   "category": "hexcasting:createmanaindustry",
-  "icon": "createmanaindustry:incomplete_cypher",
+  "icon": "hexcasting:artifact",
   "sortnum": 1,
   "advancement": "hexcasting:root",
   "pages": [
