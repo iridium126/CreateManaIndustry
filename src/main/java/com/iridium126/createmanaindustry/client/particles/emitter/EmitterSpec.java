@@ -326,7 +326,10 @@ public final class EmitterSpec {
         f[5 * 4 + 3] = (float) sizeEnd;
         f[6 * 4 + 0] = (float) sizeEase;
         f[6 * 4 + 1] = (float) coneTanHalf;
-        int count = Math.max(2, Math.min(MAX_COLORS, colors.length / 4));
+        // A single keyframe is valid; the shader handles it as a constant
+        // colour. Keep the count within the available complete RGBA frames,
+        // and let the loop below pad the remaining GPU slots with the last one.
+        int count = Math.max(1, Math.min(MAX_COLORS, colors.length / 4));
         f[6 * 4 + 2] = count;
         f[6 * 4 + 3] = (float) glow;
         // 7: material, collideMode, flutter, spin

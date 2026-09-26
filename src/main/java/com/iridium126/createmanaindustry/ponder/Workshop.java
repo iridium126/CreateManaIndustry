@@ -165,15 +165,22 @@ final class Workshop {
         scene.effects().rotationDirectionIndicator(pos);
     }
     void drive(BlockPos machine, Direction.Axis axis) {
+        drive(machine, axis, 32);
+    }
+    void drive(BlockPos machine, Direction.Axis axis, float rpm) {
         // Visible demonstration drive, as in Create's own Ponder schematics.
         Direction negative = Direction.fromAxisAndDirection(axis, Direction.AxisDirection.NEGATIVE);
         BlockPos shaft = machine.relative(negative);
         place(shaft, AllBlocks.SHAFT.getDefaultState().setValue(BlockStateProperties.AXIS, axis));
-        place(shaft.relative(negative), AllBlocks.CREATIVE_MOTOR.getDefaultState()
+        BlockPos motor = shaft.relative(negative);
+        place(motor, AllBlocks.CREATIVE_MOTOR.getDefaultState()
                 .setValue(BlockStateProperties.FACING, negative.getOpposite()));
-        speed(shaft.relative(negative), 32);
-        speed(shaft, 32);
-        speed(machine, 32);
+        scene.world().modifyBlockEntityNBT(util.select().position(motor),
+                com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity.class,
+                nbt -> nbt.putInt("ScrollValue", (int) rpm));
+        speed(motor, rpm);
+        speed(shaft, rpm);
+        speed(machine, rpm);
     }
     void cogDrive(BlockPos machine) {
         BlockPos gear = machine.west();

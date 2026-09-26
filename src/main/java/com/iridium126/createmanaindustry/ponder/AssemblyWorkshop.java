@@ -38,9 +38,11 @@ final class AssemblyWorkshop {
                 nbt.put("Controller", NbtUtils.writeBlockPos(p(1, 1, 3)));
                 nbt.putInt("Length", 7); nbt.putInt("Index", index);
             });
-            w.speed(pos, 32);
+            w.speed(pos, -32);
         }
-        w.drive(p(1, 1, 3), Direction.Axis.Z);
+        // Facing EAST makes positive motor rotation move items west, so the
+        // power source and every belt segment share the same negative RPM.
+        w.drive(p(1, 1, 3), Direction.Axis.Z, -32);
         w.place(deployer, AllBlocks.DEPLOYER.getDefaultState().setValue(BlockStateProperties.FACING, Direction.DOWN)
                 .setValue(DirectionalAxisKineticBlock.AXIS_ALONG_FIRST_COORDINATE, false));
         w.drive(deployer, Direction.Axis.Z);

@@ -325,6 +325,11 @@ public class CondenserBlockEntity extends SmartBlockEntity {
 
         @Override
         public boolean canHaveFlowToward(BlockState state, Direction direction) {
+            // Pipe model-data lookups can query cached behaviours while Ponder
+            // sections are being hidden or replaced. In that case the adjacent
+            // state may already be air (or another block without an AXIS).
+            if (!state.hasProperty(BlockStateProperties.AXIS))
+                return false;
             Direction.Axis axis = state.getValue(BlockStateProperties.AXIS);
             return direction.getAxis() == axis;
         }

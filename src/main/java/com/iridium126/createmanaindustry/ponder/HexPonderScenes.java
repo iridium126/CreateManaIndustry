@@ -93,7 +93,7 @@ public final class HexPonderScenes {
         w.place(drain, AllBlocks.ITEM_DRAIN.get()); w.display(drain, full);
         w.text(drain, "A finished Media Battery can exchange its stored media as Liquid Media.", "成品媒质之瓶可以把内部媒质转换成液态媒质来存取。");
         w.display(drain, empty); w.liquid(drain, CMIFluids.LIQUID_MEDIA.get(), Math.min(1000, amount));
-        w.text(drain, "Use an Item Drain to empty it. The bottle remains; its stored media decreases.", "用动力排泄口抽出媒质。瓶子会保留，只减少内部储量。");
+        w.text(drain, "Use an Item Drain to empty it. The bottle remains; its stored media decreases.", "用分液池抽出媒质。瓶子会保留，只减少内部储量。");
         w.pipe(drain.south(), Direction.NORTH, Direction.SOUTH); w.pump(drain.south(2), Direction.SOUTH);
         w.tank(drain.south(3), CMIFluids.LIQUID_MEDIA.get(), amount);
         w.liquid(drain, CMIFluids.LIQUID_MEDIA.get(), 0);
