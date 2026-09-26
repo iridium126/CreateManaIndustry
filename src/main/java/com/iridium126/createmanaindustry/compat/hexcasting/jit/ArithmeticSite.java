@@ -26,7 +26,7 @@ public final class ArithmeticSite {
                     + "Lat/petrak/hexcasting/api/casting/eval/OperationResult;", false);
     private final ArithmeticCandidates candidates;
     private final long generation;
-    private HashCons lastKey;
+    private Operator lastOperator;
     private IotaType<?> top, second, third;
 
     public ArithmeticSite(ArithmeticCandidates candidates, long generation) {
@@ -51,10 +51,11 @@ public final class ArithmeticSite {
         IotaType<?> b = arity > 1 ? stack.get(size - 2).getType() : null;
         IotaType<?> c = arity > 2 ? stack.get(size - 3).getType() : null;
         Operator operator = null;
-        if (arity <= 3 && lastKey != null && a == top && b == second && c == third) {
-            // The upstream map remains authoritative, even if another caller has cleared/replaced an entry.
-            operator = originalCache.get(lastKey);
-        }
+        // The engine's cache is write-once for a given pattern/type tuple: it retains the first
+        // candidate accepted by the original ordered predicate scan. Once that exact result is
+        // known, avoid rebuilding/hash-walking the recursive HashCons key on every hot hit.
+        if (arity <= 3 && lastOperator != null && a == top && b == second && c == third)
+            operator = lastOperator;
         if (operator == null) {
             HashCons key = new HashCons.Pattern(pattern);
             var args = new ArrayList<Iota>(arity);
@@ -71,7 +72,12 @@ public final class ArithmeticSite {
                 throw new NoOperatorCandidatesException(candidates.cmi$pattern(), args,
                         "No implementation candidates for op " + candidates.cmi$pattern() + " on args: " + args);
             });
-            if (arity <= 3) { lastKey = key; top = a; second = b; third = c; }
+            if (arity <= 3) {
+                lastOperator = operator;
+                top = a;
+                second = b;
+                third = c;
+            }
         }
         if (code == null) return operator.operate(env, image, continuation);
         ExecutionScope.markCompiled();

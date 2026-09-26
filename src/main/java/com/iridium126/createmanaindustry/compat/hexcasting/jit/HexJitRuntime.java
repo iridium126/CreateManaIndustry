@@ -49,6 +49,8 @@ public final class HexJitRuntime {
     public static boolean enabled() {
         return ServerConfig.hexJitMode != ServerConfig.HexJitMode.OFF && Thread.currentThread() == owner && JitCompatibility.ready();
     }
+    /** Fast-path callers have already checked AUTO mode and their feature-specific compatibility gate. */
+    public static boolean onServerThread() { return Thread.currentThread() == owner; }
     public static long generation() { return EPOCH.get(); }
     public static long nextSite() { return SITES.incrementAndGet(); }
     public static void invalidate(String reason) {

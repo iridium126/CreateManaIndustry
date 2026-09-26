@@ -9,9 +9,15 @@
         "CandidatesMixin",
         "ArithmeticEngineMixin",
         "PatternIotaMixin",
+        "CompoundTagAccessor",
         "CastingVMMixin",
+        "HexDirMixin",
+        "EntityMotionBatchMixin",
         "CastingEnvironmentMixin",
         "FrameEvaluateMixin",
+        "TreeListAccessor",
+        "TreeListBigAccessor",
+        "TreeList2Accessor",
         "PatternRegistryMixin"
     ],
     "injectors": {

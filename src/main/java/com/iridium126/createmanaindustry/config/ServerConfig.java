@@ -41,6 +41,12 @@ public final class ServerConfig {
     public static volatile long hexJitByteBudget = 16L << 20;
     public static volatile boolean hexJitCompileActions;
     public static volatile boolean hexJitSkipObservers;
+    public static volatile boolean hexJitCoalesceDecorations;
+    public static volatile boolean hexJitBatchAddMotion;
+    public static volatile boolean hexJitFastAddMotionArguments;
+    public static volatile boolean hexJitFastStackValidation;
+    public static volatile boolean hexJitReuseFrameTail;
+    public static volatile boolean hexJitFastSpecialHandlerMath;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
@@ -104,6 +110,12 @@ public final class ServerConfig {
     private static ModConfigSpec.IntValue HEX_JIT_BYTE_BUDGET_MIB;
     private static ModConfigSpec.BooleanValue HEX_JIT_COMPILE_ACTIONS;
     private static ModConfigSpec.BooleanValue HEX_JIT_SKIP_OBSERVERS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_COALESCE_DECORATIONS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_BATCH_ADD_MOTION;
+    private static ModConfigSpec.BooleanValue HEX_JIT_FAST_ADD_MOTION_ARGUMENTS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_FAST_STACK_VALIDATION;
+    private static ModConfigSpec.BooleanValue HEX_JIT_REUSE_FRAME_TAIL;
+    private static ModConfigSpec.BooleanValue HEX_JIT_FAST_SPECIAL_HANDLER_MATH;
 
     static {
         BUILDER.comment("Fluid conversion ratios — how much mana/media/source one bucket holds.").push("fluid");
@@ -244,6 +256,24 @@ public final class ServerConfig {
         HEX_JIT_SKIP_OBSERVERS = BUILDER
                 .comment("Allow skipping only PostExecution observers that explicitly implement SkippablePostExecutionObserver.")
                 .define("skipDeclaredObservers", false);
+        HEX_JIT_COALESCE_DECORATIONS = BUILDER
+                .comment("Within one JIT cast, emit only one copy of each identical Hexcasting particle spray and pigment.")
+                .define("coalesceDecorations", false);
+        HEX_JIT_BATCH_ADD_MOTION = BUILDER
+                .comment("Batch repeated Hexcasting Add Motion vector writes while preserving ordered double additions.")
+                .define("batchAddMotion", false);
+        HEX_JIT_FAST_ADD_MOTION_ARGUMENTS = BUILDER
+                .comment("Use a compact two-iota argument list for the stock Hexcasting Add Motion action after exact bytecode verification.")
+                .define("fastAddMotionArguments", true);
+        HEX_JIT_FAST_STACK_VALIDATION = BUILDER
+                .comment("Use indexed validation for Hexcasting's immutable TreeList casting stacks after exact bytecode verification.")
+                .define("fastStackValidation", true);
+        HEX_JIT_REUSE_FRAME_TAIL = BUILDER
+                .comment("Reuse FrameEvaluate's immutable TreeList tail instead of slicing it twice for one step after exact upstream bytecode verification.")
+                .define("reuseFrameTail", true);
+        HEX_JIT_FAST_SPECIAL_HANDLER_MATH = BUILDER
+                .comment("Avoid cloning Hexcasting's direction enum arrays during special-pattern matching after exact upstream bytecode verification.")
+                .define("fastSpecialHandlerMath", false);
         BUILDER.pop();
         BUILDER.pop();
 
@@ -413,5 +443,11 @@ public final class ServerConfig {
         hexJitByteBudget = (long) HEX_JIT_BYTE_BUDGET_MIB.get() << 20;
         hexJitCompileActions = HEX_JIT_COMPILE_ACTIONS.get();
         hexJitSkipObservers = HEX_JIT_SKIP_OBSERVERS.get();
+        hexJitCoalesceDecorations = HEX_JIT_COALESCE_DECORATIONS.get();
+        hexJitBatchAddMotion = HEX_JIT_BATCH_ADD_MOTION.get();
+        hexJitFastAddMotionArguments = HEX_JIT_FAST_ADD_MOTION_ARGUMENTS.get();
+        hexJitFastStackValidation = HEX_JIT_FAST_STACK_VALIDATION.get();
+        hexJitReuseFrameTail = HEX_JIT_REUSE_FRAME_TAIL.get();
+        hexJitFastSpecialHandlerMath = HEX_JIT_FAST_SPECIAL_HANDLER_MATH.get();
     }
 }
