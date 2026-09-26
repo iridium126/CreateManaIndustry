@@ -1,0 +1,24 @@
+layout(local_size_x = 64) in;
+layout(std430, binding = BIND_POOL_WRITE) buffer HexPool { vec4 data[]; } pool;
+layout(std430, binding = BIND_COUNTER) buffer Counter { uint writeSlot; uint spare; uint census; } counter;
+#pragma cmi_include chunks/hex_pattern.glsl
+uniform uint uCapacity;
+uniform uint uEmitter;
+void main() {
+    uint slot = gl_GlobalInvocationID.x;
+    if (slot >= uint(hexInput.v[0].x)) return;
+    uint b = hexBase(slot), handle = floatBitsToUint(hexInput.v[b].x);
+    if (!hexValid(handle)) return;
+    if (hexLive.index[slot] != 0u) {
+        pool.data[(hexLive.index[slot]-1u)*4u+2u] = hexPatternColor(slot);
+        return;
+    }
+    uint index = atomicAdd(counter.writeSlot, 1u);
+    if (index >= uCapacity) { atomicAdd(counter.writeSlot, -1u); return; }
+    vec3 anchor = hexInput.v[HEX_ANCHORS + floatBitsToUint(hexInput.v[b].w)].xyz;
+    pool.data[index * 4u] = vec4(anchor, hexInput.v[b + 1u].w);
+    pool.data[index * 4u + 1u] = vec4(0);
+    pool.data[index * 4u + 2u] = hexPatternColor(slot);
+    pool.data[index * 4u + 3u] = vec4(0, hexInput.v[b + 1u].x / 20.0, uintBitsToFloat(handle), uintBitsToFloat(uEmitter));
+    hexLive.index[slot] = index + 1u;
+}

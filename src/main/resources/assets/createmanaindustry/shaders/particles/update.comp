@@ -358,6 +358,8 @@ void spawnDeathPoof(uint hb, vec4 p0, vec4 p1, vec4 p3) {
     }
 }
 
+#pragma cmi_include chunks/hex_pattern_state.glsl
+
 void main() {
     uint idx = gl_GlobalInvocationID.x;
     if (idx >= prevCounter.live)
@@ -377,6 +379,22 @@ void main() {
     if (eid == uKillEmit)
         return; // storm stopped: drop out of the compacted output immediately
     uint hb = eid * VEC4_PER_EMITTER;
+    if (emitters.u[hb + 7u].x > 3.5) {
+        uint handle = floatBitsToUint(p3.z);
+        if (!hexValid(handle)) return;
+        uint metaSlot = handle & 4095u, b = hexBase(metaSlot);
+        uint dst = atomicAdd(counter.writeSlot, 1u);
+        if (dst >= uCapacity) { atomicAdd(counter.writeSlot, -1u); return; }
+        vec3 anchor = hexInput.v[HEX_ANCHORS + floatBitsToUint(hexInput.v[b].w)].xyz;
+        writeBuf.data[dst*4u] = vec4(anchor,hexInput.v[b+1u].w);
+        writeBuf.data[dst*4u+1u] = vec4(0);
+        // The small reconciliation dispatch refreshes color once per holder.
+        // Keep pigment FP64 arithmetic out of the general million-particle update kernel.
+        writeBuf.data[dst*4u+2u] = p2;
+        writeBuf.data[dst*4u+3u] = vec4(p3.x+uDt,p3.y,p3.z,p3.w);
+        hexLive.index[metaSlot] = dst+1u;
+        return;
+    }
 
     // Header rows 18 and 7 are each read ONCE here. Row 18's storm gate is
     // consulted three more times below (damage scan, storm steering,

@@ -22,6 +22,8 @@ out float vDist;
 // hexagonal cloud shape
 flat out float vHex;
 
+#pragma cmi_include chunks/hex_color.glsl
+
 float hash1(float p) {
     p = fract(p * 0.1031);
     p *= p + 33.33;
@@ -36,8 +38,7 @@ vec4 sampleHexWheel(uint hb, float phase) {
     float fIdx = clamp(phase, 0.0, 1.0) * 8.0;
     int wbase = min(7, int(floor(fIdx)));
     float tRaw = fract(fIdx);
-    float t = tRaw < 0.5 ? 4.0 * tRaw * tRaw * tRaw
-            : 1.0 - pow(-2.0 * tRaw + 2.0, 3.0) / 2.0;
+    float t = hexCubic(tRaw);
     vec4 c0 = emitters.u[hb + 8u + uint(wbase)];
     vec4 c1 = emitters.u[hb + 8u + uint((wbase + 1) & 7)];
     return mix(c0, c1, t);

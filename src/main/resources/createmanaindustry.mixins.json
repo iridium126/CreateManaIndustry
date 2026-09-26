@@ -93,7 +93,8 @@
     "iris.IncludeGraphMixin",
     "iris.MixinProgramDirectives",
     "hexcasting.HexSprayRedirectMixin",
-    "hexcasting.HexConjureParticleRedirectMixin"
+    "hexcasting.HexConjureParticleRedirectMixin",
+    "hexcasting.HexPatternRedirectMixin"
   ],
   "injectors": {
     "defaultRequire": 1

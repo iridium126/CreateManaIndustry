@@ -83,6 +83,7 @@ public final class ParticlePrograms {
         sb.append("#define IDX_CNT_MODELOP ").append(ParticleBuffers.IDX_CNT_MODELOP).append('\n');
         sb.append("#define IDX_CNT_CARRIER ").append(ParticleBuffers.IDX_CNT_CARRIER).append('\n');
         sb.append("#define IDX_CNT_GHOST ").append(ParticleBuffers.IDX_CNT_GHOST).append('\n');
+        sb.append("#define IDX_CNT_PATTERN ").append(ParticleBuffers.IDX_CNT_PATTERN).append('\n');
         sb.append("#define IDX_CNT_ALPHA ").append(ParticleBuffers.IDX_CNT_ALPHA).append('\n');
         sb.append("#define VEC4_PER_PARTICLE ").append(ParticleBuffers.VEC4_PER_PARTICLE).append("u\n");
         sb.append("#define VEC4_PER_EMITTER ").append(ParticleBuffers.VEC4_PER_EMITTER).append("u\n");
@@ -141,6 +142,7 @@ public final class ParticlePrograms {
     private int waveContact;    // dive-wave contact self-report detection (storm waves)
     private int render;          // additive billboards (soft circle)
     private int texturedRender;  // textured sprite billboards: uMode 0 blended / 1 OPAQUE cutout
+    private int hexReconcile, hexPrepare, hexRender;
     private int modelRender;     // instanced allay models via one merged multi-draw
 
     private volatile boolean dirty = true;
@@ -176,6 +178,9 @@ public final class ParticlePrograms {
         this.render = link(GLSL_DIR + "additive.vsh", GLSL_DIR + "additive.fsh");
         this.texturedRender = link(GLSL_DIR + "textured.vsh", GLSL_DIR + "textured.fsh");
         this.modelRender = link(GLSL_DIR + "model.vsh", GLSL_DIR + "model.fsh");
+        this.hexReconcile = compileCompute(GLSL_DIR + "hex_reconcile.comp");
+        this.hexPrepare = compileCompute(GLSL_DIR + "hex_prepare.comp");
+        this.hexRender = link(GLSL_DIR + "hex_pattern.vsh", GLSL_DIR + "hex_pattern.fsh");
         if (!this.ready()) {
             // Restore the dirty flag: a transient failure (e.g. first-frame
             // resources not yet ready) must retry next frame, not latch the
@@ -212,6 +217,11 @@ public final class ParticlePrograms {
                 && this.radixScatter != 0 && this.capture != 0 && this.grid != 0
                 && this.hit != 0 && this.stormPos != 0 && this.waveContact != 0;
     }
+
+    public boolean hexReady() { return hexReconcile != 0 && hexPrepare != 0 && hexRender != 0; }
+    public int hexReconcile() { return hexReconcile; }
+    public int hexPrepare() { return hexPrepare; }
+    public int hexRender() { return hexRender; }
 
     public int reset() {
         return this.reset;
@@ -432,7 +442,7 @@ public final class ParticlePrograms {
                 this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
                 this.grid, this.hit, this.stormPos, this.waveContact,
-                this.render, this.texturedRender, this.modelRender }) {
+                this.render, this.texturedRender, this.modelRender, this.hexReconcile, this.hexPrepare, this.hexRender }) {
             if (p != 0)
                 GL20.glDeleteProgram(p);
         }
@@ -440,5 +450,6 @@ public final class ParticlePrograms {
         this.radixHist = this.radixScan = this.radixScatter = this.capture = 0;
         this.grid = this.hit = this.stormPos = this.waveContact = 0;
         this.render = this.texturedRender = this.modelRender = 0;
+        this.hexReconcile = this.hexPrepare = this.hexRender = 0;
     }
 }

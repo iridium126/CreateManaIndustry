@@ -67,7 +67,7 @@ public final class ParticleBuffers {
      * (held item, instances from the carrier region), model translucent
      * segment, ALPHA blended billboards.
      */
-    public static final int INDIRECT_COMMANDS = 6;
+    public static final int INDIRECT_COMMANDS = 7;
     /**
      * Uniform byte stride of every indirect command. ELEMENT commands
      * ({@code glDrawElementsIndirect}, commands 2/3) read the full
@@ -89,7 +89,7 @@ public final class ParticleBuffers {
      * every translucent draw command gets an exact instanceCount and no
      * vertex invocations are wasted filtering foreign-type items.
      */
-    public static final int RADIX_BINS = 512;
+    public static final int RADIX_BINS = 1024;
 
     // The binding constants below are the SINGLE SOURCE OF TRUTH for the
     // GLSL side too: ParticlePrograms#commonPrelude generates #define lines
@@ -292,6 +292,7 @@ public final class ParticleBuffers {
     public static final int IDX_CNT_GHOST = cmdField(4, 1);
     /** instanceCount of cmd5 — ALPHA blended billboards. EXACT sprite-item count (the upper partition). */
     public static final int IDX_CNT_ALPHA = cmdField(5, 1);
+    public static final int IDX_CNT_PATTERN = cmdField(6, 1);
 
     /**
      * Depth-band count of the sort key's LOW BYTE (one counting-sort pass).
@@ -1068,7 +1069,7 @@ public final class ParticleBuffers {
      * of the world's rendering after our frame.
      */
     public void unbindShaders() {
-        for (int i = 0; i <= CARRIERSINK_BB; i++) {
+        for (int i = 0; i <= HexPatternBuffers.POINT_BIND; i++) {
             GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, i, 0);
         }
     }

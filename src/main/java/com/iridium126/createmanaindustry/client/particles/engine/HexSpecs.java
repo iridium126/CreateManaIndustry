@@ -170,10 +170,10 @@ public final class HexSpecs {
         for (int k = 0; k < 8; k++) {
             double d = 2.0 * (k + 0.5) / 8.0 - 1.0;
             Vec3 dir = g.scale(d).add(e1.scale(Math.sqrt(Math.max(0.0, 1.0 - d * d))));
-            int c = provider.getColor(t, dir);
-            wheel[k * 4 + 0] = FastColor.ARGB32.red(c) / 255f;
-            wheel[k * 4 + 1] = FastColor.ARGB32.green(c) / 255f;
-            wheel[k * 4 + 2] = FastColor.ARGB32.blue(c) / 255f;
+            int c = HexPigmentColors.sample(provider, t, dir);
+            wheel[k * 4 + 0] = HexPigmentColors.channel(c, 16);
+            wheel[k * 4 + 1] = HexPigmentColors.channel(c, 8);
+            wheel[k * 4 + 2] = HexPigmentColors.channel(c, 0);
             // alpha: constant 0.3 (ConjureParticle's start alpha); the linear
             // (1 - life) fade is the additive path's lifetime term
             wheel[k * 4 + 3] = 0.3f;

@@ -115,9 +115,10 @@ void main() {
     // translucent census BEFORE the cull test: every live ALPHA/MODEL particle
     // counts (off-screen included) so the dual-mode decision and the radix
     // dispatch sizing can never undersize when the camera swings
-    if (matId >= 0.5 && matId < 2.5)
+    if ((matId >= 0.5 && matId < 2.5) || matId > 3.5)
         atomicAdd(counter.translucentCensus, 1u);
 
+    if (matId > 3.5) radius = p0.w;
     if (!sphereVisible(p0.xyz - uCamPos, radius))
         return;
 
@@ -125,6 +126,10 @@ void main() {
         // ADDITIVE: dense permutation, order irrelevant
         uint pos = atomicAdd(indirect.cmd[IDX_CNT_ADD], 1u);
         orderAdd.order[pos] = g;
+    } else if (matId > 3.5) {
+        uint slot = atomicAdd(counter.sortItems, 1u);
+        sortOut.kv[slot] = uvec2((2u << SORT_KEY_TYPE_SHIFT) | depthKey(p0.xyz), (g << 2) | 2u);
+        atomicAdd(indirect.cmd[IDX_CNT_PATTERN], 1u);
     } else if (matId >= 2.5) {
         // OPAQUE cutout sprite: dense permutation, depth writes make it
         // order-independent like the MODEL opaque segment

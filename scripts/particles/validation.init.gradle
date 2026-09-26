@@ -1,0 +1,15 @@
+// Opt-in real-driver validation; does not alter the production dependency graph.
+allprojects {
+    afterEvaluate {
+        def kotlin = configurations.create('hexGpuValidationKotlin')
+        dependencies.add(kotlin.name, 'org.jetbrains.kotlin:kotlin-stdlib:2.3.0')
+        // The current workspace's independent Hex JIT sources import Kotlin directly.
+        tasks.named('compileJava') { classpath += kotlin }
+        tasks.register('validateHexGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/HexPatternGpuValidation.java'
+            workingDir = project.projectDir
+        }
+    }
+}

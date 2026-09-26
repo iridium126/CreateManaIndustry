@@ -40,5 +40,6 @@ void main() {
     indirect.cmd[IDX_CNT_CARRIER] = 0u;
     indirect.cmd[IDX_CNT_GHOST] = 0u;
     indirect.cmd[IDX_CNT_ALPHA] = 0u;
+    indirect.cmd[IDX_CNT_PATTERN] = 0u;
     hitOut.pair = uvec4(0xFFFFFFFFu, 0u, 0xFFFFFFFFu, 0u);
 }

@@ -33,6 +33,7 @@ public final class ClientConfig {
     private static ModConfigSpec.IntValue PARTICLE_FADE_DISTANCE;
     private static ModConfigSpec.BooleanValue PARTICLE_SHADER_PACK_INTEGRATION;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT;
+    private static ModConfigSpec.BooleanValue PARTICLE_HEX_PATTERN_REDIRECT;
 
     // ---- allay dimension (ALLVR) -------------------------------------------
 
@@ -73,6 +74,7 @@ public final class ClientConfig {
         PARTICLE_HEX_REDIRECT = BUILDER
                 .comment("Redirect Hexcasting conjure particles and sprays to GPU engine.")
                 .define("hexParticleRedirect", true);
+        PARTICLE_HEX_PATTERN_REDIRECT = BUILDER.comment("Render Hexcasting orbiting patterns with GPU particles.").define("hexPatternRedirect", true);
         BUILDER.pop();
 
         BUILDER.comment("Allay dimension (ALLVR) options.").push("allvr");
@@ -94,6 +96,7 @@ public final class ClientConfig {
     public static int particleFadeDistance = 96;
     public static boolean shaderPackIntegration = true;
     public static boolean hexParticleRedirect = true;
+    public static boolean hexPatternRedirect = true;
     public static boolean allvrLod = true;
 
     private ClientConfig() {}
@@ -112,6 +115,7 @@ public final class ClientConfig {
             particleFadeDistance = PARTICLE_FADE_DISTANCE.get();
             shaderPackIntegration = PARTICLE_SHADER_PACK_INTEGRATION.get();
             hexParticleRedirect = PARTICLE_HEX_REDIRECT.get();
+            hexPatternRedirect = PARTICLE_HEX_PATTERN_REDIRECT.get();
             allvrLod = ALLVR_LOD.get();
         }
     }

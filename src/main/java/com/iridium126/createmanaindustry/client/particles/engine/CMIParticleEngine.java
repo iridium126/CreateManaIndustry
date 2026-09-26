@@ -145,6 +145,17 @@ public final class CMIParticleEngine {
      * their latest samples are summed as the throttle input.
      */
     private static final int TIMER_RING = 4;
+    private final HexPatternBuffers hexPatternBuffers = new HexPatternBuffers();
+    private HexPatternRuntime hexPatterns;
+    private int hexSlots, hexCount, hexEmitter = -1;
+    private final EmitterSpec hexPatternSpec = EmitterSpec.builder()
+            .material(EmitterSpec.Material.HEX_PATTERN).life(1, 1).sizeOverLife(1, 1, 1).build();
+
+    public boolean redirectsHexPatterns(net.minecraft.world.entity.player.Player player) {
+        return ClientConfig.particleEnabled && ClientConfig.hexPatternRedirect && frameArmed
+                && programs.hexReady() && hexPatterns != null && hexPatterns.redirected(player);
+    }
+
 
     /** One-shot burst request posted from a client thread. */
     private static final class Burst {
@@ -728,11 +739,15 @@ public final class CMIParticleEngine {
     /** Called on resource reload so shaders recompile next frame. */
     public void requestProgramRebuild() {
         this.programs.requestRebuild();
+        if (this.hexPatterns != null) this.hexPatterns.reset();
     }
 
     /** Frees all GPU resources on client shutdown. Safe when never initialised. */
     public void close() {
         try {
+            this.hexPatternBuffers.free();
+            this.hexPatterns = null;
+            this.hexSlots = this.hexCount = 0;
             this.blockEmitters.free();
             this.gpu.free();
         } catch (RuntimeException | LinkageError e) {
@@ -1248,7 +1263,19 @@ public final class CMIParticleEngine {
         // selects its meaning per command, so a dropped entry here would pair
         // surviving commands with stale slots' metadata (wrong member identity,
         // blacked-out combat light, hex flags leaking across types).
-        int free = Math.max(0, cap - this.aliveKnown - this.spawnDelta - SAFETY_MARGIN);
+        if (CreateManaIndustry.HEX_ACTIVE) {
+            this.hexPatternBuffers.ensure();
+            if (this.hexPatterns == null)
+                this.hexPatterns = new HexPatternRuntime(this.hexPatternBuffers);
+        }
+        if (this.hexPatterns != null) {
+            int patternBudget = Math.max(this.hexCount, cap - this.aliveKnown - this.spawnDelta - SAFETY_MARGIN);
+            this.hexEmitter = ensureEmitter(this.hexPatternSpec);
+            this.hexSlots = this.hexPatterns.prepare(deltaTracker, camera, patternBudget,
+                    ClientConfig.hexPatternRedirect && this.programs.hexReady() && this.hexEmitter >= 0);
+            this.hexCount = this.hexPatterns.count();
+        }
+        int free = Math.max(0, cap - this.aliveKnown - this.spawnDelta - SAFETY_MARGIN - this.hexCount);
         if (totalSpawn > free) {
             double k = free <= 0 ? 0 : (double) free / totalSpawn;
             totalSpawn = 0;
@@ -1279,7 +1306,8 @@ public final class CMIParticleEngine {
         // Translucent spawns (ALPHA sprites + MODEL parts, CPU-exact even when
         // the snapshot is stale) latch the sorted path until a fresh census
         // reads zero.
-        int translucentSpawnTotal = 0;
+        int hexSpawnEstimate = this.hexPatterns == null ? 0 : this.hexPatterns.spawnEstimate();
+        int translucentSpawnTotal = this.hexCount;
         for (int i = 0; i < entryCount; i++)
             if (this.emitTranslucent[i])
                 translucentSpawnTotal += this.emitCounts[i];
@@ -1295,8 +1323,8 @@ public final class CMIParticleEngine {
         int blockSpawnBound = this.blockEmitters.spawnBound(dt, Math.max(0.0, Math.min(1.0, this.scale)), cap);
         // GPU visibility makes this an upper bound. Saturation avoids overflow
         // if the asynchronous counter snapshot is delayed for many frames.
-        this.spawnDelta = (int) Math.min(cap, (long) this.spawnDelta + totalSpawn + blockSpawnBound);
-        this.translucentSpawnDelta += translucentSpawnTotal;
+        this.spawnDelta = (int) Math.min(cap, (long) this.spawnDelta + totalSpawn + blockSpawnBound + hexSpawnEstimate);
+        this.translucentSpawnDelta += translucentSpawnTotal - this.hexCount + hexSpawnEstimate;
         // Handoff for runDraws' empty-guard: final count after free-pool capping.
         this.frameEntryCount = entryCount + (blockSpawnBound > 0 ? 1 : 0);
 
@@ -1417,6 +1445,8 @@ public final class CMIParticleEngine {
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             }
 
+            if (this.hexPatterns != null)
+                this.hexPatternBuffers.begin();
             GL20.glUseProgram(this.programs.update());
             this.gpu.bindParticleRead(0);
             this.gpu.bindParticleWrite(1);
@@ -1467,6 +1497,14 @@ public final class CMIParticleEngine {
             // kill was consumed by this dispatch must refire next frame or the
             // untouched storm members would survive on a never-rebuilt grid.
 
+            if (this.hexCount > 0 && this.programs.hexReady()) {
+                int hp = this.programs.hexReconcile();
+                GL20.glUseProgram(hp);
+                setUIntUniform(hp, "uCapacity", cap);
+                setUIntUniform(hp, "uEmitter", this.hexEmitter);
+                GL43.glDispatchCompute((this.hexSlots + 63) / 64, 1, 1);
+                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+            }
             if (entryCount > 0) {
                 GL20.glUseProgram(this.programs.emit());
                 this.gpu.bindParticleWrite(1);
@@ -1615,6 +1653,14 @@ public final class CMIParticleEngine {
                 }
             }
             this.frameFinalPerm = finalPerm; // draw-phase handoff (-1 = fast path)
+            if (this.hexCount > 0 && finalPerm >= 0 && this.programs.hexReady()) {
+                GL20.glUseProgram(this.programs.hexPrepare());
+                this.gpu.bindParticleWrite(ParticleBuffers.PARTICLE_BB_WRITE);
+                this.gpu.bindSort(ParticleBuffers.SORTREAD_BINDING, finalPerm);
+                this.hexPatternBuffers.bind();
+                GL43.glDispatchCompute(this.hexCount, 1, 1);
+                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_COMMAND_BARRIER_BIT);
+            }
 
             // 6b. Continuous crosshair hit query (player melee targeting): one
             // tiny dispatch over the freshly written pool; the 8-byte result
@@ -1810,6 +1856,7 @@ public final class CMIParticleEngine {
                 }
                 if (this.frameSorted) {
                     drawPass(2, view, projectionMatrix, camera);
+                    drawHexPatterns(view, projectionMatrix, camera);
                 }
                 this.gpu.bindOrderAdd();
                 drawPass(0, view, projectionMatrix, camera);
@@ -1890,6 +1937,27 @@ public final class CMIParticleEngine {
      * future geometry bake flips it, swap {@code glFrontFace} — do not reorder
      * the data.
      */
+    private void drawHexPatterns(Matrix4fc view, Matrix4fc projection, Camera camera) {
+        if (hexCount == 0 || !programs.hexReady()) return;
+        int program = programs.hexRender();
+        GL20.glUseProgram(program);
+        gpu.bindNewestPool(ParticleBuffers.PARTICLE_BB_WRITE);
+        hexPatternBuffers.bind();
+        gpu.bindVao();
+        setMat4Uniform(program, "ModelViewMat", view);
+        setMat4Uniform(program, "ProjMat", projection);
+        Vec3 position = camera.getPosition();
+        setFloatUniform(program, "uCamPos", (float) position.x, (float) position.y, (float) position.z);
+        RenderSystem.enableDepthTest();
+        RenderSystem.disableCull();
+        RenderSystem.enableBlend();
+        RenderSystem.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        RenderSystem.depthMask(true);
+        hexPatternBuffers.draw(hexCount);
+        RenderSystem.enableCull();
+        RenderSystem.disableBlend();
+    }
+
     private void drawModels(Matrix4fc view, Matrix4fc projectionMatrix, Camera camera) {
         int prog = this.programs.modelRender();
         if (prog == 0)
@@ -2706,6 +2774,8 @@ public final class CMIParticleEngine {
      * so freshly arrived storm state of the new level is never wiped by this.
      */
     public void onLevelChanged() {
+        if (this.hexPatterns != null) this.hexPatterns.reset();
+        this.hexCount = this.hexSlots = 0;
         if (this.initialized) {
             dropAll();
             this.collisionBake.reset();

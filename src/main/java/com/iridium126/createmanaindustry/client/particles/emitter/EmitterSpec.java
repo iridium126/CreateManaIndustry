@@ -57,7 +57,9 @@ public final class EmitterSpec {
          * sorting. For sprites whose texels are (near) pure 0/255 alpha,
          * e.g. the vanilla cherry petals.
          */
-        OPAQUE(3);
+        OPAQUE(3),
+        /** Variable path geometry attached to a Hexcasting holder. */
+        HEX_PATTERN(4);
 
         final int index;
 
@@ -70,7 +72,7 @@ public final class EmitterSpec {
         }
 
         public static Material byIndex(int i) {
-            return i == 1 ? ALPHA : (i == 2 ? MODEL : (i == 3 ? OPAQUE : ADDITIVE));
+            return i == 4 ? HEX_PATTERN : i == 1 ? ALPHA : (i == 2 ? MODEL : (i == 3 ? OPAQUE : ADDITIVE));
         }
     }
 
