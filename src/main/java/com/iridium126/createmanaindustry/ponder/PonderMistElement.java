@@ -27,7 +27,7 @@ import org.joml.Vector4f;
 
 /**
  * A Ponder scene element that renders a billboarded mist volume around a
- * position, used by the Allay Burner mist scene. The real Veil post-processing
+ * position, shared by the workshop's mist scenes. The real Veil post-processing
  * mist can never render inside a Ponder viewport — the scene is drawn in the
  * GUI phase after every post pass, with its own camera and orthographic
  * projection — so the mist is drawn as soft billboard sprites in the scene's
@@ -40,7 +40,7 @@ public class PonderMistElement implements PonderSceneElement {
     private static final ResourceLocation MIST_TEXTURE =
             ResourceLocation.fromNamespaceAndPath("createmanaindustry", "textures/misc/ponder_mist");
     /** Radius lerp speed per tick (blocks). */
-    private static final float LERP_SPEED = 0.5f;
+    private static final float LERP_SPEED = 0.06f;
     /** Golden angle (radians) — spreads Fibonacci-sphere sprites evenly. */
     private static final double GOLDEN_ANGLE = 2.399963229728653;
 
@@ -82,20 +82,30 @@ public class PonderMistElement implements PonderSceneElement {
         Minecraft.getInstance().getTextureManager().register(MIST_TEXTURE, new DynamicTexture(image));
     }
 
-    /** Liquid Soul tint, RGB (0.35, 0.55, 1.0). */
-    private static final int MIST_RGB = 0x598CFF;
+    /** Scene-selected fluid tint (packed RGB). */
+    private int mistRgb;
 
     private final BlockPos center;
-    private final float targetRadius;
+    private float targetRadius;
     private final float alpha;
     private float displayRadius = 0f;
     private boolean active = false;
     private boolean visible = true;
 
     public PonderMistElement(BlockPos center, float radius, float alpha) {
-        this.center = center;
-        this.targetRadius = radius;
+        this(center, radius, alpha, 0x598CFF);
+    }
+
+    public PonderMistElement(BlockPos center, float radius, float alpha, int color) {
+        this.center = center.immutable();
+        this.targetRadius = Math.max(.1f, radius);
         this.alpha = alpha;
+        this.mistRgb = color & 0xFFFFFF;
+    }
+
+    public void setAppearance(float radius, int color) {
+        this.targetRadius = Math.max(.1f, radius);
+        this.mistRgb = color & 0xFFFFFF;
     }
 
     /** Toggles the mist fade-in/out. Called by scene instructions. */
@@ -146,8 +156,7 @@ public class PonderMistElement implements PonderSceneElement {
         // The pose's normal matrix is the world->screen rotation (plus uniform
         // scale); its transpose maps screen offsets back to world offsets, so
         // the sprites always face the scene camera.
-        Matrix3f normal = pose.last().normal();
-        normal.transpose();
+        Matrix3f normal = new Matrix3f(pose.last().normal()).transpose();
 
         float r = displayRadius;
         Vec3 mistCenter = Vec3.atCenterOf(center).add(0, 1, 0);
@@ -191,7 +200,8 @@ public class PonderMistElement implements PonderSceneElement {
         float half = size / 2f;
         Vector3f corner = new Vector3f();
         Vector4f vertex = new Vector4f();
-        for (int i = 0; i < 4; i++) {
+        // Perimeter order; 0,1,2,3 produces a self-intersecting quad.
+        for (int i : new int[] {0, 1, 3, 2}) {
             float u = (i & 1) == 0 ? -half : half;
             float v = (i & 2) == 0 ? -half : half;
             corner.set(u, v, 0);
@@ -207,8 +217,8 @@ public class PonderMistElement implements PonderSceneElement {
         }
     }
 
-    private static int packColor(float alpha) {
+    private int packColor(float alpha) {
         int a = (int) (Mth.clamp(alpha, 0, 1) * 255);
-        return (a << 24) | MIST_RGB;
+        return (a << 24) | mistRgb;
     }
 }

@@ -16,9 +16,9 @@ spell-casting item production, and more — all through Create's mechanical syst
 - **Kinetic Atomizer** — atomizes piped fluids into a volumetric mist field whose
   radius scales with speed. Mist concentration decays with distance; overlapping
   fields combine. Required for mist-based recipes.
-- **Condenser** — condenses mist back into liquid when water flows through it,
+- **Condenser** — condenses mist back into liquid when Coolant flows through it,
   injecting the recovered fluid into a Create Item Drain below. Efficiency
-  scales with water pressure and mist concentration.
+  scales with coolant flow and mist concentration. Press ice to make Coolant.
 - **Allay Burner** — a blaze-burner-style heat source centered on a captured
   allay. It burns amethyst materials and Liquid Media for burn time, mirrors a
   Jukebox's record slot, and emits a Liquid Soul mist field while burning.
@@ -35,9 +35,9 @@ spell-casting item production, and more — all through Create's mechanical syst
 - **Liquid Media** — a pink, glowing fluid that stores Hexcasting media
   (1 bucket = `mediaPerBucket` media units, default 400,000). Bridge fluid
   between Create and Hexcasting energy systems.
-- **Bidirectional conversion** — Heated Mixing: Liquid Media ↔ Liquid Mana (1:1).
-  Mist Mixing via Kinetic Atomizer: Liquid Mana → Liquid Media vapour.
-  Condenser: mist → Liquid Media. Full circulation roundtrip.
+- **Media conversion** — Heated Mixing converts Liquid Media into Liquid Mana
+  at 1:1. Atomizers turn supported fluids into mist; Condensers recover the
+  mist's fluid with a separate Coolant circuit and an Item Drain below.
 
 ### Recipe Types
 
@@ -54,7 +54,8 @@ spell-casting item production, and more — all through Create's mechanical syst
   and speed to any kinetic block entity at a mana cost, with configurable
   magnitude and duration.
 - **Sequenced assembly** — craft Trickster knots via Create's assembly line:
-  incomplete knot → Spout filling with Liquid Mana → Mechanical Press.
+  Emerald + Glass under a Deployer → incomplete knot → repeated Spout filling
+  with Liquid Mana → intact knot. Pressing an intact knot makes a cracked knot.
   Supports emerald, prismatic, diamond, echo, and astral knots.
 - **Display Link targets** — write text into Spell Construct and Modular
   Spell Construct arguments. Individual arguments or core+argument pairs.
