@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.content.fluids.condenser;
 
 import java.util.List;
 
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.fluids.mist.MistFieldStore;
 import com.simibubi.create.AllParticleTypes;
 import com.simibubi.create.content.fluids.FluidPropagator;

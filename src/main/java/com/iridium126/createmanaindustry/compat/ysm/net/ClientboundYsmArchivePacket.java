@@ -1,5 +1,8 @@
 package com.iridium126.createmanaindustry.compat.ysm.net;
 
+import com.iridium126.createmanaindustry.infrastructure.network.ClientPayloadHandler;
+import java.util.function.Consumer;
+
 import io.netty.handler.codec.DecoderException;
 import java.util.UUID;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -13,6 +16,9 @@ public record ClientboundYsmArchivePacket(byte kind, UUID transfer, UUID target,
         String digest, String modelId, int size, int index, byte[] bytes) implements CustomPacketPayload {
     public static final int APPLY = 0, EXPORT = 1, CLEAR = 2, CHUNK = 3;
     public static final int CHUNK_BYTES = 16 * 1024;
+    private static final ClientPayloadHandler<ClientboundYsmArchivePacket> CLIENT_HANDLER =
+            new ClientPayloadHandler<>();
+
     public static final Type<ClientboundYsmArchivePacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("createmanaindustry", "ysm_archive"));
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundYsmArchivePacket> STREAM_CODEC =
             StreamCodec.of(ClientboundYsmArchivePacket::encode, ClientboundYsmArchivePacket::decode);
@@ -49,7 +55,12 @@ public record ClientboundYsmArchivePacket(byte kind, UUID transfer, UUID target,
         return begin(kind, transfer, target, revision, digest, modelId, size);
     }
     @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    /** Installs the client receiver during client startup. */
+    public static void installClientHandler(Consumer<? super ClientboundYsmArchivePacket> handler) {
+        CLIENT_HANDLER.install(handler);
+    }
+
     public static void handle(ClientboundYsmArchivePacket packet, IPayloadContext context) {
-        context.enqueueWork(() -> com.iridium126.createmanaindustry.compat.ysm.net.YsmClientArchives.accept(packet));
+        context.enqueueWork(() -> CLIENT_HANDLER.dispatch(packet));
     }
 }

@@ -10,7 +10,7 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.content.fluids.mist.MistSync;
 import com.iridium126.createmanaindustry.content.fluids.mist.MistFieldStore;
 import com.iridium126.createmanaindustry.compat.hexcasting.HexCompat;
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.simibubi.create.api.equipment.goggles.IHaveGoggleInformation;
 import com.simibubi.create.content.fluids.tank.FluidTankBlock;
 import com.simibubi.create.content.processing.basin.BasinBlock;

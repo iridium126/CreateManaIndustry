@@ -6,7 +6,7 @@ import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
 
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.simibubi.create.api.equipment.goggles.IHaveGoggleInformation;
 import com.simibubi.create.content.decoration.copycat.CopycatBlockEntity;
 import com.simibubi.create.foundation.blockEntity.IMultiBlockEntityContainer;

@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
 import at.petrak.hexcasting.api.casting.ParticleSpray;
 import at.petrak.hexcasting.api.pigment.FrozenPigment;
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;

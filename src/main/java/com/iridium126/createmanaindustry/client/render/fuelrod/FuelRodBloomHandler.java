@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.config.ClientConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelRodStructure;
 import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelRodSync;
 

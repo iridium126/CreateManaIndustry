@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.compat.trickster;
 import java.util.List;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.kinetics.temporarykinetics.TemporaryKinetics;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 

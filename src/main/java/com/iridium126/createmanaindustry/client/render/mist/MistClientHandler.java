@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.CMIFluids;
-import com.iridium126.createmanaindustry.config.ClientConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.content.fluids.mist.MistSync;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.math.Axis;

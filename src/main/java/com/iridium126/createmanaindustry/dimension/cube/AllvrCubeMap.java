@@ -44,7 +44,7 @@ import net.minecraft.world.ticks.TickPriority;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
 import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandFieldGenerator;
-import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrBlockUpdatePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrForgetCubePacket;

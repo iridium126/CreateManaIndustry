@@ -19,11 +19,11 @@ import net.minecraft.world.level.chunk.PalettedContainer;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumSectionSource;
-import com.iridium126.createmanaindustry.config.ClientConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
-import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
 
 /**
  * Client-only Allay bridge into Voxy's normal ingest service.

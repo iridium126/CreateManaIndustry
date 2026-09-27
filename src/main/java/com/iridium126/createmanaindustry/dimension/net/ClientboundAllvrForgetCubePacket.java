@@ -1,12 +1,14 @@
 package com.iridium126.createmanaindustry.dimension.net;
 
+import com.iridium126.createmanaindustry.infrastructure.network.ClientPayloadHandler;
+import java.util.function.Consumer;
+
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 
 /**
  * Tells the client to drop one previously streamed cube (player moved out of
@@ -14,6 +16,9 @@ import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
  * {@code AllvrCubePos.asLong()}.
  */
 public record ClientboundAllvrForgetCubePacket(long cubePos) implements CustomPacketPayload {
+    private static final ClientPayloadHandler<ClientboundAllvrForgetCubePacket> CLIENT_HANDLER =
+            new ClientPayloadHandler<>();
+
 
     public static final CustomPacketPayload.Type<ClientboundAllvrForgetCubePacket> TYPE =
         new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("allvr_forget_cube"));
@@ -34,7 +39,12 @@ public record ClientboundAllvrForgetCubePacket(long cubePos) implements CustomPa
         return TYPE;
     }
 
+    /** Installs the client receiver during client startup. */
+    public static void installClientHandler(Consumer<? super ClientboundAllvrForgetCubePacket> handler) {
+        CLIENT_HANDLER.install(handler);
+    }
+
     public static void handle(ClientboundAllvrForgetCubePacket packet, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> AllvrClientCubeCache.forgetCube(packet.cubePos));
+        ctx.enqueueWork(() -> CLIENT_HANDLER.dispatch(packet));
     }
 }

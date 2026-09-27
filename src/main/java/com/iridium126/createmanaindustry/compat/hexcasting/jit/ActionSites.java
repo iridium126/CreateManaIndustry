@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 import at.petrak.hexcasting.api.casting.castables.Action;
 import at.petrak.hexcasting.api.casting.ActionRegistryEntry;
 import at.petrak.hexcasting.xplat.IXplatAbstractions;
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import java.util.IdentityHashMap;
 import net.minecraft.resources.ResourceKey;
 

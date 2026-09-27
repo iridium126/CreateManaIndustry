@@ -13,7 +13,7 @@ import com.iridium126.createmanaindustry.compat.ysm.YsmPreparedCache;
 import com.iridium126.createmanaindustry.compat.ysm.YsmServerRuntime;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import net.minecraft.server.level.ServerPlayer;
 
 /** Validates a complete edit before media is checked; rendered effects stage it afterwards. */

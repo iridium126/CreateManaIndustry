@@ -1,5 +1,8 @@
 package com.iridium126.createmanaindustry.compat.ysm.net;
 
+import com.iridium126.createmanaindustry.infrastructure.network.ClientPayloadHandler;
+import java.util.function.Consumer;
+
 import io.netty.handler.codec.DecoderException;
 import java.util.HexFormat;
 import com.iridium126.createmanaindustry.compat.ysm.render.YsmGeometryThumbnail;
@@ -14,6 +17,9 @@ public record ClientboundYsmPreviewPacket(byte kind, String key, boolean cube, b
         boolean retryable, String reason) implements CustomPacketPayload {
     public static final byte IMAGE = 0, ERROR = 1;
     public static final int MAX_IMAGE_BYTES = YsmGeometryThumbnail.MAX_PNG_BYTES;
+    private static final ClientPayloadHandler<ClientboundYsmPreviewPacket> CLIENT_HANDLER =
+            new ClientPayloadHandler<>();
+
     public static final Type<ClientboundYsmPreviewPacket> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath("createmanaindustry", "ysm_preview"));
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundYsmPreviewPacket> STREAM_CODEC =
@@ -61,7 +67,12 @@ public record ClientboundYsmPreviewPacket(byte kind, String key, boolean cube, b
         return error(key, cube, in.readBoolean(), in.readUtf(512));
     }
     @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    /** Installs the client receiver during client startup. */
+    public static void installClientHandler(Consumer<? super ClientboundYsmPreviewPacket> handler) {
+        CLIENT_HANDLER.install(handler);
+    }
+
     public static void handle(ClientboundYsmPreviewPacket packet, IPayloadContext context) {
-        context.enqueueWork(() -> com.iridium126.createmanaindustry.client.render.YsmClientPreviews.accept(packet));
+        context.enqueueWork(() -> CLIENT_HANDLER.dispatch(packet));
     }
 }

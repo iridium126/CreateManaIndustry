@@ -10,15 +10,15 @@ import java.util.UUID;
 
 import com.iridium126.createmanaindustry.CMIAttachments;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.config.ServerConfig;
-import com.iridium126.createmanaindustry.network.ClientboundStormCenterPacket;
-import com.iridium126.createmanaindustry.network.ClientboundStormDamagePacket;
-import com.iridium126.createmanaindustry.network.ClientboundStormPositionsPacket;
-import com.iridium126.createmanaindustry.network.ClientboundStormStatePacket;
-import com.iridium126.createmanaindustry.network.ClientboundStormWavePacket;
-import com.iridium126.createmanaindustry.network.ServerboundStormHitPacket;
-import com.iridium126.createmanaindustry.network.ServerboundStormPositionsPacket;
-import com.iridium126.createmanaindustry.network.ServerboundStormWaveContactPacket;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormCenterPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormDamagePacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormPositionsPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormStatePacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormHitPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormPositionsPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket;
 
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import net.minecraft.core.BlockPos;

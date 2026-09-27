@@ -4,7 +4,7 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleGLUtil;
-import com.iridium126.createmanaindustry.config.ClientConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.irisshaders.iris.shadows.ShadowRenderer;

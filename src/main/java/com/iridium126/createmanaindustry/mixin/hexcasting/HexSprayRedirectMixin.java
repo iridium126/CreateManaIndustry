@@ -7,7 +7,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
 import com.iridium126.createmanaindustry.client.particles.engine.HexSpecs;
-import com.iridium126.createmanaindustry.config.ClientConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 
 import at.petrak.hexcasting.api.casting.ParticleSpray;
 import at.petrak.hexcasting.common.msgs.MsgCastParticleS2C;

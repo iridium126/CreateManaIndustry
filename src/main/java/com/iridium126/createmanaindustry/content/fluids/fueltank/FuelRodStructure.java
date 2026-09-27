@@ -8,7 +8,7 @@ import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
 
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 
 import net.createmod.catnip.nbt.NBTHelper;
 import net.minecraft.core.BlockPos;

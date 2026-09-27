@@ -6,7 +6,21 @@ import com.iridium126.createmanaindustry.client.render.fuelrod.FuelRodBloomHandl
 import com.iridium126.createmanaindustry.client.render.mist.MistClientHandler;
 import com.iridium126.createmanaindustry.client.render.InlineTrickRenderer;
 import com.iridium126.createmanaindustry.client.render.InlineYsmGeometryRenderer;
-import com.iridium126.createmanaindustry.ponder.CMIPonderPlugin;
+import com.iridium126.createmanaindustry.client.ponder.CMIPonderPlugin;
+import com.iridium126.createmanaindustry.client.particles.allaystorm.AllayStormClientHandler;
+import com.iridium126.createmanaindustry.client.render.YsmClientPreviews;
+import com.iridium126.createmanaindustry.compat.ysm.client.YsmClientArchives;
+import com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket;
+import com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmPreviewPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormCenterPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormDamagePacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormPositionsPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormStatePacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket;
+import com.iridium126.createmanaindustry.content.fluids.mist.network.ClientboundMistSyncPacket;
+import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrBlockUpdatePacket;
+import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacket;
+import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrForgetCubePacket;
 import com.samsthenerd.inline.api.client.InlineClientAPI;
 import com.simibubi.create.content.decoration.copycat.CopycatBlock;
 
@@ -39,6 +53,25 @@ public class CreateManaIndustryClient {
     public CreateManaIndustryClient(ModContainer container) {
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
 
+        // Common payload handlers expose typed installation points instead of
+        // linking client-only implementations into classes loaded on servers.
+        ClientboundStormStatePacket.installClientHandler(AllayStormClientHandler::onState);
+        ClientboundStormDamagePacket.installClientHandler(AllayStormClientHandler::onDamage);
+        ClientboundStormPositionsPacket.installClientHandler(AllayStormClientHandler::onPositions);
+        ClientboundStormCenterPacket.installClientHandler(AllayStormClientHandler::onCenter);
+        ClientboundStormWavePacket.installClientHandler(AllayStormClientHandler::onWave);
+        ClientboundAllvrCubePacket.installClientHandler(
+                com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache::queueCube);
+        ClientboundAllvrBlockUpdatePacket.installClientHandler(
+                com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache::applyBlockUpdate);
+        ClientboundAllvrForgetCubePacket.installClientHandler(
+                packet -> com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache
+                        .forgetCube(packet.cubePos()));
+        if (net.neoforged.fml.ModList.get().isLoaded("yes_steve_model")) {
+            ClientboundYsmPreviewPacket.installClientHandler(YsmClientPreviews::accept);
+            ClientboundYsmArchivePacket.installClientHandler(YsmClientArchives::accept);
+        }
+
         // Bridge the client cube cache into the common-side collision mixin —
         // the common bytecode must not reference client classes (dedicated
         // servers never load them), so the resolver is injected here instead.
@@ -69,6 +102,8 @@ public class CreateManaIndustryClient {
         // and FuelRodBloomHandler.onRodSync(). The Veil pipelines and the iris
         // gbuffer hooks are all initialised inside the handlers' init().
         if (CreateManaIndustry.VEIL_ACTIVE) {
+            ClientboundMistSyncPacket.installClientHandler(packet ->
+                    MistClientHandler.setActive(packet.pos(), packet.fluid(), packet.radius()));
             MistClientHandler.init();
             FuelRodBloomHandler.init();
         }

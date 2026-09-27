@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.allaystorm.AllayStormRuntime;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
-import com.iridium126.createmanaindustry.config.ClientConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.mixin.vanilla.MinecraftInvoker;
 
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -2429,7 +2429,7 @@ public final class CMIParticleEngine {
             // rides along so all clients ease the struck member to the exact
             // spot before playing hurt-flash / corpse / poof there.
             net.neoforged.neoforge.network.PacketDistributor.sendToServer(
-                    new com.iridium126.createmanaindustry.network.ServerboundStormHitPacket(
+                    new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormHitPacket(
                             memberIdx, total, kbVecX, kbVecZ, light, crit, magic, hearts,
                             hitPos.x - this.storm.center().x, hitPos.y - this.storm.center().y,
                             hitPos.z - this.storm.center().z));

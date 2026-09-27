@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.compat.ysm;
 
-import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
 
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmModelSnapshot;
 import java.nio.file.Path;

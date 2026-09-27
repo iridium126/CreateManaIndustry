@@ -8,8 +8,8 @@ import org.spongepowered.asm.mixin.injection.At;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import com.iridium126.createmanaindustry.collision.BlockCollisionChunkCacheAccess;
-import com.iridium126.createmanaindustry.collision.BlockCollisionRoutingScope;
+import com.iridium126.createmanaindustry.dimension.collision.BlockCollisionChunkCacheAccess;
+import com.iridium126.createmanaindustry.dimension.collision.BlockCollisionRoutingScope;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;

@@ -17,7 +17,7 @@ import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.IotaStackValidation;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.JitCompatibility;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.TreeList2Access;
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;

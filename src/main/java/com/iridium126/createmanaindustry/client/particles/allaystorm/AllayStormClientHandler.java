@@ -1,10 +1,10 @@
 package com.iridium126.createmanaindustry.client.particles.allaystorm;
 
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
-import com.iridium126.createmanaindustry.network.ClientboundStormCenterPacket;
-import com.iridium126.createmanaindustry.network.ClientboundStormDamagePacket;
-import com.iridium126.createmanaindustry.network.ClientboundStormPositionsPacket;
-import com.iridium126.createmanaindustry.network.ClientboundStormStatePacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormCenterPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormDamagePacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormPositionsPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormStatePacket;
 
 import net.minecraft.world.phys.Vec3;
 
@@ -63,7 +63,7 @@ public final class AllayStormClientHandler {
 
     /** {@link ClientboundStormWavePacket}: dive-wave launch / abort event. */
     public static void onWave(
-            com.iridium126.createmanaindustry.network.ClientboundStormWavePacket packet) {
+            com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket packet) {
         CMIParticleEngine.INSTANCE.applyWave(packet.waveId(), packet.abort(), packet.waveSeed(),
                 packet.fraction(), packet.targetEntityId(), packet.path(),
                 packet.assembleSec(), packet.diveUntilSec(), packet.swordTier());

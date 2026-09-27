@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.content.fluids;
 
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 
 public final class CMIFluidConversions {
     private CMIFluidConversions() {}

@@ -29,7 +29,7 @@ import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrBlockUpda
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacket;
 import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge;
 import com.iridium126.createmanaindustry.dimension.light.AllvrLightEngine;
-import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
 
 /**
  * Client-side registry of streamed cubes for the allay dimension — the cube

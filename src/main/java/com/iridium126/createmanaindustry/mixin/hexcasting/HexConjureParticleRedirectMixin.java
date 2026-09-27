@@ -6,7 +6,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
-import com.iridium126.createmanaindustry.config.ClientConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 
 import at.petrak.hexcasting.common.particles.ConjureParticleOptions;
 import net.minecraft.client.multiplayer.ClientLevel;

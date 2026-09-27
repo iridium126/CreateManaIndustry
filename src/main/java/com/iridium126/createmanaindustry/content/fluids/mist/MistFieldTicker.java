@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.content.fluids.mist;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.network.ClientboundMistSyncPacket;
+import com.iridium126.createmanaindustry.content.fluids.mist.network.ClientboundMistSyncPacket;
 
 import net.minecraft.server.level.ServerLevel;
 import net.neoforged.bus.api.SubscribeEvent;

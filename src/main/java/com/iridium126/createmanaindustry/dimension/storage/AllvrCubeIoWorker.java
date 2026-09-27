@@ -24,7 +24,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.nbt.CompoundTag;
 
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
-import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
 
 /**
  * The cube I/O worker (plan §7.1/§8, the {@code AsyncBatchingCubeIO}

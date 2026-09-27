@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.compat.ysm;
 
-import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
 
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
 import com.iridium126.createmanaindustry.compat.ysm.net.YsmServerArchives;

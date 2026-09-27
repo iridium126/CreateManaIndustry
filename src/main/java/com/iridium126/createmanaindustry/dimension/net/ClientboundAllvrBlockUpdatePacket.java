@@ -1,5 +1,8 @@
 package com.iridium126.createmanaindustry.dimension.net;
 
+import com.iridium126.createmanaindustry.infrastructure.network.ClientPayloadHandler;
+import java.util.function.Consumer;
+
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -7,7 +10,6 @@ import net.minecraft.nbt.CompoundTag;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 
 /**
  * One authoritative server-side block change inside the allay dimension —
@@ -28,6 +30,9 @@ import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 public record ClientboundAllvrBlockUpdatePacket(long cubePos, int cellIndex, int stateId,
                                                 CompoundTag blockEntityTag)
         implements CustomPacketPayload {
+    private static final ClientPayloadHandler<ClientboundAllvrBlockUpdatePacket> CLIENT_HANDLER =
+            new ClientPayloadHandler<>();
+
 
     public static final CustomPacketPayload.Type<ClientboundAllvrBlockUpdatePacket> TYPE =
         new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("allvr_block_update"));
@@ -52,7 +57,12 @@ public record ClientboundAllvrBlockUpdatePacket(long cubePos, int cellIndex, int
         return TYPE;
     }
 
+    /** Installs the client receiver during client startup. */
+    public static void installClientHandler(Consumer<? super ClientboundAllvrBlockUpdatePacket> handler) {
+        CLIENT_HANDLER.install(handler);
+    }
+
     public static void handle(ClientboundAllvrBlockUpdatePacket packet, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> AllvrClientCubeCache.applyBlockUpdate(packet));
+        ctx.enqueueWork(() -> CLIENT_HANDLER.dispatch(packet));
     }
 }

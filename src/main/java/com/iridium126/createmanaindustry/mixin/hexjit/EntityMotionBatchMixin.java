@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.mixin.hexjit;
 
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope;
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import net.minecraft.world.entity.Entity;

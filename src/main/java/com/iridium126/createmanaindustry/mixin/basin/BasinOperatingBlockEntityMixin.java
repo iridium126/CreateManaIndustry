@@ -18,7 +18,7 @@ import com.iridium126.createmanaindustry.content.kinetics.depositionlid.Depositi
 import com.iridium126.createmanaindustry.content.recipes.MistOutput;
 import com.iridium126.createmanaindustry.content.recipes.MistRecipe;
 import com.iridium126.createmanaindustry.content.recipes.MistRequirement;
-import com.iridium126.createmanaindustry.network.ClientboundMistSyncPacket;
+import com.iridium126.createmanaindustry.content.fluids.mist.network.ClientboundMistSyncPacket;
 import com.simibubi.create.content.processing.basin.BasinBlockEntity;
 import com.simibubi.create.content.processing.basin.BasinOperatingBlockEntity;
 

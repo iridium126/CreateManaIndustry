@@ -4,7 +4,7 @@ import at.petrak.hexcasting.api.item.MediaHolderItem;
 
 import com.iridium126.createmanaindustry.CMIFluids;
 import com.iridium126.createmanaindustry.CMIItems;
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.fluids.CMIFluidConversions;
 import com.iridium126.createmanaindustry.content.items.IncompleteHexItem;
 import com.iridium126.createmanaindustry.content.items.IncompleteMediaBatteryItem;

@@ -14,7 +14,7 @@ import com.iridium126.createmanaindustry.compat.ysm.YsmServerRuntime;
 import com.iridium126.createmanaindustry.compat.ysm.YsmChatMessages;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import net.minecraft.server.level.ServerPlayer;
 
 /** Creates a complete plaintext archive, then sends an approved export job to the caster's client. */

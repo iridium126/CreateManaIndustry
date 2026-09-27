@@ -1,5 +1,8 @@
 package com.iridium126.createmanaindustry.dimension.net;
 
+import com.iridium126.createmanaindustry.infrastructure.network.ClientPayloadHandler;
+import java.util.function.Consumer;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
@@ -16,7 +19,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 
@@ -39,6 +41,9 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  * light engine; no auxiliary light data is sent.
  */
 public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implements CustomPacketPayload {
+    private static final ClientPayloadHandler<ClientboundAllvrCubePacket> CLIENT_HANDLER =
+            new ClientPayloadHandler<>();
+
 
     public static final CustomPacketPayload.Type<ClientboundAllvrCubePacket> TYPE =
         new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("allvr_cube"));
@@ -93,8 +98,13 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
      * is kept away from the render/game tick while section meshes are queued
      * after the chunk becomes visible.
      */
+    /** Installs the client receiver during client startup. */
+    public static void installClientHandler(Consumer<? super ClientboundAllvrCubePacket> handler) {
+        CLIENT_HANDLER.install(handler);
+    }
+
     public static void handle(ClientboundAllvrCubePacket packet, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> AllvrClientCubeCache.queueCube(packet));
+        ctx.enqueueWork(() -> CLIENT_HANDLER.dispatch(packet));
     }
 
     /** Client-side decode into a fresh unpublished {@link AllvrCube}.

@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
 import java.util.concurrent.atomic.AtomicLong;
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import net.neoforged.bus.api.IEventBus;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;

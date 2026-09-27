@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.compat.hexcasting;
 
 import java.util.List;
 
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlock;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlockEntity;
 import com.iridium126.createmanaindustry.mixin.burner.BlazeBurnerBlockEntityAccessor;

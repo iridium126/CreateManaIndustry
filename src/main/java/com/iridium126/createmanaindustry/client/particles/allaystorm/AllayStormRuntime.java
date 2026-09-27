@@ -6,9 +6,9 @@ import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngi
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers;
 import com.iridium126.createmanaindustry.content.allaystorm.AllayStormData;
 import com.iridium126.createmanaindustry.content.allaystorm.AllayStormManager;
-import com.iridium126.createmanaindustry.network.ClientboundStormStatePacket;
-import com.iridium126.createmanaindustry.network.ServerboundStormPositionsPacket;
-import com.iridium126.createmanaindustry.network.ServerboundStormWaveContactPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormStatePacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormPositionsPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket;
 
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import net.minecraft.client.Minecraft;

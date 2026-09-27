@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.content.allaystorm;
 import java.util.BitSet;
 
 import it.unimi.dsi.fastutil.ints.Int2FloatOpenHashMap;
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;

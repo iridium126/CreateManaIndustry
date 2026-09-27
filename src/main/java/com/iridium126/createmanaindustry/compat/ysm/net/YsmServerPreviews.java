@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.compat.ysm.net;
 
-import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
 
 import com.iridium126.createmanaindustry.compat.ysm.YsmReferenceStore;
 import com.iridium126.createmanaindustry.compat.ysm.render.YsmGeometryThumbnail;

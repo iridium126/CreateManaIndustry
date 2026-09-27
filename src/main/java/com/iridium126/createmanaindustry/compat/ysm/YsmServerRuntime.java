@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.compat.ysm;
 
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmCompiledExporter;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmModelSnapshot;
-import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;

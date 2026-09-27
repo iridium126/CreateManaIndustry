@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.content.kinetics.kineticatomizer;
 import java.util.List;
 
 import com.iridium126.createmanaindustry.CMITags;
-import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.fluids.mist.MistSync;
 import com.iridium126.createmanaindustry.content.fluids.mist.MistFieldStore;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
