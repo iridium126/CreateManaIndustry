@@ -2,7 +2,8 @@ package com.iridium126.createmanaindustry.mixin.hexjit;
 
 import at.petrak.hexcasting.api.casting.math.HexAngle;
 import at.petrak.hexcasting.api.casting.math.HexDir;
-import com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope;
+import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime;
+import com.iridium126.createmanaindustry.compat.hexcasting.jit.JitCompatibility;
 import com.iridium126.createmanaindustry.config.ServerConfig;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -41,8 +42,9 @@ public abstract class HexDirMixin {
     }
 
     @Unique private static boolean cmi$enabledForCast() {
-        if (!ServerConfig.hexJitFastSpecialHandlerMath) return false;
-        ExecutionScope scope = ExecutionScope.current();
-        return scope != null && scope.fastSpecialHandlerMathEnabled();
+        return ServerConfig.hexJitFastSpecialHandlerMath
+                && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
+                && HexJitRuntime.onServerThread()
+                && JitCompatibility.specialHandlerMathReady();
     }
 }

@@ -20,6 +20,7 @@ public final class HexJitRuntime {
     private static long cacheEpoch = -1;
     private static volatile CompiledCall arithmeticCode;
     private static volatile String invalidation = "startup";
+    private static volatile Runnable cacheInvalidator;
     private HexJitRuntime() {}
 
     public static void register(IEventBus modBus) {
@@ -32,6 +33,7 @@ public final class HexJitRuntime {
         NeoForge.EVENT_BUS.addListener((ServerStartingEvent event) -> { owner = Thread.currentThread(); invalidate("server starting"); });
         NeoForge.EVENT_BUS.addListener((ServerStoppedEvent event) -> {
             if (cache != null) cache.close();
+            AddMotionNormalizationCache.releaseThreadState();
             cache = null; owner = null; invalidate("server stopped");
             ActionSites.clear();
         });
@@ -53,10 +55,14 @@ public final class HexJitRuntime {
     public static boolean onServerThread() { return Thread.currentThread() == owner; }
     public static long generation() { return EPOCH.get(); }
     public static long nextSite() { return SITES.incrementAndGet(); }
+    /** Optional Hexcasting-specific caches register here without making bootstrap require Hexcasting. */
+    public static void registerCacheInvalidator(Runnable invalidator) { cacheInvalidator = invalidator; }
     public static void invalidate(String reason) {
         arithmeticCode = null;
         invalidation = reason;
         EPOCH.incrementAndGet();
+        Runnable invalidator = cacheInvalidator;
+        if (invalidator != null) invalidator.run();
     }
 
     public static CompiledCall arithmeticCode() { return arithmeticCode; }

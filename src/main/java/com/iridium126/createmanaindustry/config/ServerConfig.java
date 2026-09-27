@@ -44,9 +44,14 @@ public final class ServerConfig {
     public static volatile boolean hexJitCoalesceDecorations;
     public static volatile boolean hexJitBatchAddMotion;
     public static volatile boolean hexJitFastAddMotionArguments;
+    public static volatile boolean hexJitMemoAddMotionNormalization;
     public static volatile boolean hexJitFastStackValidation;
+    public static volatile boolean hexJitCacheStackMetrics = true;
     public static volatile boolean hexJitReuseFrameTail;
-    public static volatile boolean hexJitFastSpecialHandlerMath;
+    public static volatile boolean hexJitFastSpecialHandlerMath = true;
+    public static volatile boolean hexJitFastSpecialHandlerLookup;
+    public static volatile boolean hexJitFastNumberLiterals = true;
+    public static volatile boolean hexJitCacheNormalPatternLookup = true;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
@@ -113,9 +118,14 @@ public final class ServerConfig {
     private static ModConfigSpec.BooleanValue HEX_JIT_COALESCE_DECORATIONS;
     private static ModConfigSpec.BooleanValue HEX_JIT_BATCH_ADD_MOTION;
     private static ModConfigSpec.BooleanValue HEX_JIT_FAST_ADD_MOTION_ARGUMENTS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_MEMO_ADD_MOTION_NORMALIZATION;
     private static ModConfigSpec.BooleanValue HEX_JIT_FAST_STACK_VALIDATION;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_STACK_METRICS;
     private static ModConfigSpec.BooleanValue HEX_JIT_REUSE_FRAME_TAIL;
     private static ModConfigSpec.BooleanValue HEX_JIT_FAST_SPECIAL_HANDLER_MATH;
+    private static ModConfigSpec.BooleanValue HEX_JIT_FAST_SPECIAL_HANDLER_LOOKUP;
+    private static ModConfigSpec.BooleanValue HEX_JIT_FAST_NUMBER_LITERALS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_NORMAL_PATTERN_LOOKUP;
 
     static {
         BUILDER.comment("Fluid conversion ratios — how much mana/media/source one bucket holds.").push("fluid");
@@ -265,15 +275,30 @@ public final class ServerConfig {
         HEX_JIT_FAST_ADD_MOTION_ARGUMENTS = BUILDER
                 .comment("Use a compact two-iota argument list for the stock Hexcasting Add Motion action after exact bytecode verification.")
                 .define("fastAddMotionArguments", true);
+        HEX_JIT_MEMO_ADD_MOTION_NORMALIZATION = BUILDER
+                .comment("Reuse bit-identical Vec3 normalization results inside the stock Add Motion action after exact bytecode verification.")
+                .define("memoAddMotionNormalization", true);
         HEX_JIT_FAST_STACK_VALIDATION = BUILDER
                 .comment("Use indexed validation for Hexcasting's immutable TreeList casting stacks after exact bytecode verification.")
                 .define("fastStackValidation", true);
+        HEX_JIT_CACHE_STACK_METRICS = BUILDER
+                .comment("Cache serialization metrics for shared immutable TreeList2 segments during one cast after exact bytecode verification.")
+                .define("cacheStackMetrics", true);
         HEX_JIT_REUSE_FRAME_TAIL = BUILDER
                 .comment("Reuse FrameEvaluate's immutable TreeList tail instead of slicing it twice for one step after exact upstream bytecode verification.")
                 .define("reuseFrameTail", true);
         HEX_JIT_FAST_SPECIAL_HANDLER_MATH = BUILDER
                 .comment("Avoid cloning Hexcasting's direction enum arrays during special-pattern matching after exact upstream bytecode verification.")
-                .define("fastSpecialHandlerMath", false);
+                .define("fastSpecialHandlerMath", true);
+        HEX_JIT_FAST_SPECIAL_HANDLER_LOOKUP = BUILDER
+                .comment("Cache the ordered special-handler factory registry while still evaluating every factory for each pattern.")
+                .define("fastSpecialHandlerLookup", false);
+        HEX_JIT_CACHE_NORMAL_PATTERN_LOOKUP = BUILDER
+                .comment("Cache normal registry matches on immutable PatternIota instances until the pattern registry epoch changes.")
+                .define("cacheNormalPatternLookup", true);
+        HEX_JIT_FAST_NUMBER_LITERALS = BUILDER
+                .comment("Use the verified zero-argument fast path for Hexcasting's built-in number-literal special handler.")
+                .define("fastNumberLiterals", true);
         BUILDER.pop();
         BUILDER.pop();
 
@@ -446,8 +471,13 @@ public final class ServerConfig {
         hexJitCoalesceDecorations = HEX_JIT_COALESCE_DECORATIONS.get();
         hexJitBatchAddMotion = HEX_JIT_BATCH_ADD_MOTION.get();
         hexJitFastAddMotionArguments = HEX_JIT_FAST_ADD_MOTION_ARGUMENTS.get();
+        hexJitMemoAddMotionNormalization = HEX_JIT_MEMO_ADD_MOTION_NORMALIZATION.get();
         hexJitFastStackValidation = HEX_JIT_FAST_STACK_VALIDATION.get();
+        hexJitCacheStackMetrics = HEX_JIT_CACHE_STACK_METRICS.get();
         hexJitReuseFrameTail = HEX_JIT_REUSE_FRAME_TAIL.get();
         hexJitFastSpecialHandlerMath = HEX_JIT_FAST_SPECIAL_HANDLER_MATH.get();
+        hexJitFastSpecialHandlerLookup = HEX_JIT_FAST_SPECIAL_HANDLER_LOOKUP.get();
+        hexJitFastNumberLiterals = HEX_JIT_FAST_NUMBER_LITERALS.get();
+        hexJitCacheNormalPatternLookup = HEX_JIT_CACHE_NORMAL_PATTERN_LOOKUP.get();
     }
 }

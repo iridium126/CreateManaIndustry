@@ -15,49 +15,54 @@ import net.minecraft.world.phys.Vec3;
 
 /** Optional observer bookkeeping. Scopes hold booleans only and are removed in finally blocks. */
 public final class ExecutionScope implements AutoCloseable {
-    private static final ThreadLocal<ExecutionScope> CURRENT = new ThreadLocal<>();
+    /** Server casts are single-threaded; keep their hot context out of ThreadLocalMap. */
+    private static volatile ExecutionScope serverCurrent;
+    /** Preserve isolation for non-server callers and independent worker-thread scopes. */
+    private static final ThreadLocal<ExecutionScope> OTHER_THREADS = new ThreadLocal<>();
     private static long lastMotionPushes;
     private static long lastMotionWrites;
     private final ExecutionScope previous;
+    private final boolean serverThreadScope;
+    private final Thread ownerThread;
     private MotionState motions;
     private boolean compiled;
     private boolean notifying;
     private boolean addMotionEffect;
     private final boolean batchMotion;
-    private final boolean fastSpecialHandlerMath;
     private Map<ParticleSpray, List<PigmentSnapshot>> emittedParticles;
     private ParticleSpray lastSpray;
     private PigmentSnapshot lastPigment;
     private boolean hasLastParticle;
-    private ExecutionScope(boolean batchMotion, boolean fastSpecialHandlerMath) {
-        previous = CURRENT.get();
+    private ExecutionScope(boolean batchMotion) {
+        ownerThread = Thread.currentThread();
+        serverThreadScope = HexJitRuntime.onServerThread();
+        previous = serverThreadScope ? serverCurrent : OTHER_THREADS.get();
         motions = previous == null ? null : previous.motions;
         this.batchMotion = batchMotion || previous != null && previous.batchMotion;
-        this.fastSpecialHandlerMath = fastSpecialHandlerMath || previous != null && previous.fastSpecialHandlerMath;
         if (previous == null) {
             lastMotionPushes = 0;
             lastMotionWrites = 0;
         }
-        CURRENT.set(this);
+        if (serverThreadScope) serverCurrent = this; else OTHER_THREADS.set(this);
     }
-    public static ExecutionScope enter(boolean batchMotion, boolean fastSpecialHandlerMath) {
-        return new ExecutionScope(batchMotion, fastSpecialHandlerMath);
+    public static ExecutionScope enter(boolean batchMotion) {
+        return new ExecutionScope(batchMotion);
     }
     public void startStep() { compiled = false; notifying = false; }
     public void notifying(boolean value) { notifying = value; }
     public static void markCompiled() {
         if (!ServerConfig.hexJitSkipObservers) return;
-        ExecutionScope scope = CURRENT.get();
+        ExecutionScope scope = current();
         if (scope != null) scope.compiled = true;
     }
-    public static ExecutionScope current() { return CURRENT.get(); }
+    public static ExecutionScope current() {
+        return HexJitRuntime.onServerThread() ? serverCurrent : OTHER_THREADS.get();
+    }
     public static long lastMotionPushes() { return lastMotionPushes; }
     public static long lastMotionWrites() { return lastMotionWrites; }
     public void addMotionEffect(boolean value) { addMotionEffect = value; }
     public boolean inAddMotionEffect() { return addMotionEffect; }
     public boolean batchMotionEnabled() { return batchMotion; }
-    public boolean fastSpecialHandlerMathEnabled() { return fastSpecialHandlerMath; }
-
     /** Preserve each Vec3.add rounding step while deferring only Entity's field writes and allocations. */
     public void accumulateMotion(Entity entity, double x, double y, double z) {
         MotionState state = motionState();
@@ -95,13 +100,13 @@ public final class ExecutionScope implements AutoCloseable {
     }
 
     public static boolean maySkip() {
-        ExecutionScope scope = CURRENT.get();
+        ExecutionScope scope = current();
         return scope != null && scope.compiled && scope.notifying;
     }
 
     /** Returns true when this exact spray/pigment pair should still be sent to clients. */
     public boolean emitParticle(ParticleSpray spray, FrozenPigment pigment) {
-        if (!ServerConfig.hexJitCoalesceDecorations) {
+        if (!ServerConfig.hexJitCoalesceDecorations || !JitCompatibility.particleCoalescingReady()) {
             return true;
         }
         if (hasLastParticle && spray.equals(lastSpray) && lastPigment.matches(pigment)) {
@@ -142,6 +147,7 @@ public final class ExecutionScope implements AutoCloseable {
     }
 
     @Override public void close() {
+        if (Thread.currentThread() != ownerThread) return;
         try {
             if (previous == null) flushAllMotion();
             if (emittedParticles != null) emittedParticles.clear();
@@ -150,7 +156,13 @@ public final class ExecutionScope implements AutoCloseable {
                 lastMotionPushes = motions == null ? 0 : motions.pushes;
                 lastMotionWrites = motions == null ? 0 : motions.writes;
             }
-            if (previous == null) CURRENT.remove(); else CURRENT.set(previous);
+            if (serverThreadScope) {
+                serverCurrent = previous;
+            } else if (previous == null) {
+                OTHER_THREADS.remove();
+            } else {
+                OTHER_THREADS.set(previous);
+            }
         }
     }
 

@@ -19,12 +19,19 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
     private static final String OWN = "com.iridium126.createmanaindustry.mixin.hexjit.";
     private static final String ROOT = "at/petrak/hexcasting/";
     private static final String ENTITY = "net/minecraft/world/entity/Entity";
+    private static final String VEC3 = "net/minecraft/world/phys/Vec3";
+    private static final String PARTICLE_SIDE_EFFECT = ROOT
+            + "api/casting/eval/sideeffects/OperatorSideEffect$Particles";
     private static final String IOTA_TYPE = ROOT + "api/casting/iota/IotaType";
     private static final String IOTA = ROOT + "api/casting/iota/Iota";
     private static final String CASTING_VM = ROOT + "api/casting/eval/vm/CastingVM";
     private static final String SPELL_ACTION = ROOT + "api/casting/castables/SpellAction";
     private static final String ADD_MOTION = ROOT + "common/casting/actions/spells/OpAddMotion";
     private static final String NBT_COMPOUND = "net/minecraft/nbt/CompoundTag";
+    private static final String NUMBER_LITERAL = ROOT + "common/casting/actions/math/SpecialHandlerNumberLiteral";
+    private static final String NUMBER_LITERAL_INNER = NUMBER_LITERAL + "$InnerAction";
+    private static final String CONST_MEDIA_ACTION = ROOT + "api/casting/castables/ConstMediaAction";
+    private static final String DOUBLE_IOTA = ROOT + "api/casting/iota/DoubleIota";
     private static final String TREE_LIST = ROOT + "api/utils/TreeList";
     private static final String HEX_DIR = ROOT + "api/casting/math/HexDir";
     private static final String HEX_ANGLE = ROOT + "api/casting/math/HexAngle";
@@ -45,6 +52,11 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
             SPELL_ACTION, "acbafdd1ad867a0509ee20b10ae7c72c1774b7171d8d77d8542e44efc21868e2",
             ADD_MOTION, "341462d61f65dd0a115be14ed3868985d7f91888bd6ecbdab1dd7554e4147e03",
             NBT_COMPOUND, "7616e1f84d10bfad84bd1934fde392bc5ef29a216b25389643cbb2251424f4aa");
+    private static final Map<String, String> NUMBER_LITERAL_HASHES = Map.of(
+            NUMBER_LITERAL, "d11de498526f9e8ab671d6bcd62fced072c1b0730c8db8b94fb876d96bc6560f",
+            NUMBER_LITERAL_INNER, "802cfd77a6652d509968aa6d7563d90aca84a9da9d56eed5fec72d456eadfec2",
+            CONST_MEDIA_ACTION, "28d1c44cac93ba1cf8ea21e11d6c20e6274ee0296806dc2bd1aae04936067291",
+            DOUBLE_IOTA, "6a07bc3c346b33b39dccc380b96e0d5912a3882eea956880980506760a69d56f");
     private static final String IOTA_TYPE_HASH = "b4f34a58fe271171c9e4a508a04abeca85e6755124d4fd0c19bf5119de64d935";
     private static final Map<String, String> DEFAULT_IOTA_METRIC_HASHES = Map.of(
             IOTA, "48da3833538c0412c73eacc135bd4014175d1c9a7d6592a58255421b3b9f3a99",
@@ -71,7 +83,8 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
             ROOT + "api/casting/eval/vm/CastingVM", Set.of("queueExecuteAndWrapIotas", "executeInner", "performSideEffects"),
             ROOT + "api/casting/eval/vm/FrameEvaluate", Set.of("evaluate"),
             ROOT + "api/casting/eval/CastingEnvironment", Set.of("postExecution"),
-            ROOT + "common/casting/PatternRegistryManifest", Set.of("processRegistry"),
+            ADD_MOTION, Set.of("execute"),
+            ROOT + "common/casting/PatternRegistryManifest", Set.of("processRegistry", "matchPatternToSpecialHandler"),
             HEX_DIR, Set.of("rotatedBy", "angleFrom"));
     private final Set<String> pristine = new HashSet<>();
 
@@ -83,6 +96,7 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
                 JitCompatibility.verifierInstalled();
             } else JitCompatibility.disable("final transformer verifier unavailable");
             verifyFastActionTargets();
+            verifyNumberLiteralTargets();
             verifyFastStackValidationTarget();
             verifyTreeListTarget();
             verifySpecialHandlerMathTargets();
@@ -107,6 +121,23 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
             JitCompatibility.fastActionTargetVerified();
         } catch (Exception | LinkageError error) {
             JitCompatibility.disableFastAction("cannot verify upstream Add Motion action classes");
+        }
+    }
+
+    private void verifyNumberLiteralTargets() {
+        try {
+            for (var entry : NUMBER_LITERAL_HASHES.entrySet()) {
+                try (InputStream stream = getClass().getClassLoader().getResourceAsStream(entry.getKey() + ".class")) {
+                    if (stream == null || !sha(stream.readAllBytes()).equals(entry.getValue())) {
+                        JitCompatibility.disableNumberLiteral("upstream bytecode mismatch: "
+                                + entry.getKey().replace('/', '.'));
+                        return;
+                    }
+                }
+            }
+            JitCompatibility.numberLiteralTargetVerified();
+        } catch (Exception | LinkageError error) {
+            JitCompatibility.disableNumberLiteral("cannot verify built-in number-literal action");
         }
     }
 
@@ -182,6 +213,12 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
             JitCompatibility.disableFrameTailCache("upstream TreeList nested-class bytecode mismatch: " + target);
             return false;
         }
+        if (ADD_MOTION.equals(internal)) {
+            String expected = FAST_ACTION_HASHES.get(ADD_MOTION);
+            if (expected != null && matchesHash(internal, expected)) return true;
+            JitCompatibility.disableFastAction("upstream Add Motion bytecode mismatch");
+            return false;
+        }
         if (NBT_COMPOUND.equals(internal)) {
             String expected = FAST_ACTION_HASHES.get(NBT_COMPOUND);
             if (matchesHash(internal, expected)) return true;
@@ -227,8 +264,9 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
                     String reason = "transformed execution method: " + target + "." + method.name
                             + " at fingerprint byte " + mismatch + " (original=" + excerpt(expected, mismatch)
                             + ", transformed=" + excerpt(actual, mismatch) + ")";
-                    if (HEX_DIR.equals(node.name)) JitCompatibility.disableSpecialHandlerMath(reason);
-                    else JitCompatibility.disable(reason);
+            if (HEX_DIR.equals(node.name)) JitCompatibility.disableSpecialHandlerMath(reason);
+            else if (ADD_MOTION.equals(node.name)) JitCompatibility.disableFastAction(reason);
+            else JitCompatibility.disable(reason);
                 }
             }
         } catch (Exception error) { JitCompatibility.disable("cannot compare transformed class: " + target); }
@@ -317,6 +355,37 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
         @Override public void preApply(ITargetClassContext context) {}
         @Override public void postApply(ITargetClassContext context) {
             ClassNode node = context.getClassNode();
+            if (PARTICLE_SIDE_EFFECT.equals(node.name)) {
+                if (hasForeignMixin(node, Set.of("performEffect")))
+                    JitCompatibility.disableParticleCoalescing(
+                            "foreign Mixin changed OperatorSideEffect.Particles.performEffect");
+                return;
+            }
+            if (VEC3.equals(node.name)) {
+                if (hasForeignMixin(node, Set.of("normalize")))
+                    JitCompatibility.disableFastAction("foreign Mixin changed Vec3.normalize");
+                return;
+            }
+            if (HEX_ANGLE.equals(node.name)) {
+                if (hasForeignMixin(node, Set.of("values")))
+                    JitCompatibility.disableSpecialHandlerMath("foreign Mixin changed HexAngle.values");
+                return;
+            }
+            if (NUMBER_LITERAL.equals(node.name)) {
+                if (hasForeignMixin(node, Set.of("act", "getX")))
+                    JitCompatibility.disableNumberLiteral("foreign Mixin changed SpecialHandlerNumberLiteral.act/getX");
+                return;
+            }
+            if (NUMBER_LITERAL_INNER.equals(node.name)) {
+                if (hasForeignMixin(node, Set.of("execute", "getArgc")))
+                    JitCompatibility.disableNumberLiteral("foreign Mixin changed number-literal InnerAction");
+                return;
+            }
+            if (CONST_MEDIA_ACTION.equals(node.name)) {
+                if (hasForeignMixin(node, Set.of("operate", "executeWithOpCount", "getMediaCost")))
+                    JitCompatibility.disableNumberLiteral("foreign Mixin changed ConstMediaAction semantics");
+                return;
+            }
             if (NBT_COMPOUND.equals(node.name)) {
                 if (hasForeignMixin(node, Set.of("copy")))
                     JitCompatibility.disableFastAction("foreign Mixin changed CompoundTag.copy");
@@ -347,17 +416,17 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
                 return;
             }
             if (TREE_LIST_HASHES.containsKey(node.name)) {
-                if (hasForeignMixin(node, Set.of("get")))
-                    JitCompatibility.disableStackValidation("foreign Mixin changed a TreeList get implementation");
-                if (hasForeignMixin(node, Set.of("init")))
-                    JitCompatibility.disableFastAction("foreign Mixin changed a TreeList init implementation");
-                if (hasForeignMixin(node, Set.of("tail")))
-                    JitCompatibility.disableFrameTailCache("foreign Mixin changed a TreeList tail implementation");
+                if (hasAnyForeignMixin(node)) {
+                    String reason = "foreign Mixin changed a TreeList implementation: " + node.name.replace('/', '.');
+                    JitCompatibility.disableStackValidation(reason);
+                    JitCompatibility.disableFastAction(reason);
+                    JitCompatibility.disableFrameTailCache(reason);
+                }
                 return;
             }
             if (HEX_DIR.equals(node.name)) {
-                if (hasForeignMixin(node, Set.of("rotatedBy", "angleFrom")))
-                    JitCompatibility.disableSpecialHandlerMath("foreign Mixin changed HexDir.rotatedBy/angleFrom");
+                if (hasForeignMixin(node, Set.of("rotatedBy", "angleFrom", "values")))
+                    JitCompatibility.disableSpecialHandlerMath("foreign Mixin changed HexDir rotation or values");
                 else JitCompatibility.specialHandlerMathTargetVerified();
                 return;
             }
@@ -370,9 +439,14 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
             if (CASTING_VM.equals(node.name)
                     && hasForeignMixin(node, Set.of("queueExecuteAndWrapIotas", "executeInner", "performSideEffects")))
                 JitCompatibility.disableStackValidation("foreign Mixin changed CastingVM stack validation call sites");
+            if ((ROOT + "common/casting/PatternRegistryManifest").equals(node.name)) {
+                if (hasForeignMixin(node, Set.of("matchPattern", "matchPatternToSpecialHandler")))
+                    JitCompatibility.disableSpecialHandlerLookup("foreign Mixin changed PatternRegistryManifest pattern lookup");
+                else JitCompatibility.specialHandlerLookupTargetVerified();
+            }
             if (SPELL_ACTION.equals(node.name)) {
-                if (hasForeignMixin(node, Set.of("operate")))
-                    JitCompatibility.disableFastAction("foreign Mixin changed SpellAction.operate");
+                if (hasForeignMixin(node, Set.of("operate", "executeWithUserdata")))
+                    JitCompatibility.disableFastAction("foreign Mixin changed SpellAction.operate/executeWithUserdata");
                 return;
             }
             if (ADD_MOTION.equals(node.name)) {
@@ -395,6 +469,8 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
             }
             for (MethodNode method : node.methods) {
                 if (!EXECUTION_PATHS.getOrDefault(node.name, Set.of()).contains(method.name)) continue;
+                if ((ROOT + "common/casting/PatternRegistryManifest").equals(node.name)
+                        && method.name.equals("matchPatternToSpecialHandler")) continue;
                 if (foreign(method.visibleAnnotations) || foreign(method.invisibleAnnotations)) {
                     JitCompatibility.disable("foreign execution Mixin: " + node.name + "." + method.name);
                     return;
@@ -418,6 +494,15 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
             for (MethodNode method : node.methods) {
                 if (methodNames.contains(method.name)
                         && (foreign(method.visibleAnnotations) || foreign(method.invisibleAnnotations))) return true;
+            }
+            return false;
+        }
+        private boolean hasAnyForeignMixin(ClassNode node) {
+            for (MethodNode method : node.methods) {
+                if (foreign(method.visibleAnnotations) || foreign(method.invisibleAnnotations)) return true;
+            }
+            for (FieldNode field : node.fields) {
+                if (foreign(field.visibleAnnotations) || foreign(field.invisibleAnnotations)) return true;
             }
             return false;
         }

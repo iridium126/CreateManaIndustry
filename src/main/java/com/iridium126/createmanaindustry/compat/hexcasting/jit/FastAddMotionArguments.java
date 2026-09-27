@@ -1,12 +1,15 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
+import at.petrak.hexcasting.api.casting.ParticleSpray;
 import at.petrak.hexcasting.api.casting.castables.Action;
 import at.petrak.hexcasting.api.casting.castables.SpellAction;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
-import at.petrak.hexcasting.api.casting.eval.OperationResult;
+import at.petrak.hexcasting.api.casting.eval.CastResult;
+import at.petrak.hexcasting.api.casting.eval.ResolvedPatternType;
 import at.petrak.hexcasting.api.casting.eval.sideeffects.OperatorSideEffect;
 import at.petrak.hexcasting.api.casting.eval.vm.CastingImage;
 import at.petrak.hexcasting.api.casting.eval.vm.SpellContinuation;
+import at.petrak.hexcasting.api.casting.iota.PatternIota;
 import at.petrak.hexcasting.api.casting.iota.Iota;
 import at.petrak.hexcasting.api.casting.mishaps.MishapNotEnoughArgs;
 import at.petrak.hexcasting.api.casting.mishaps.MishapNotEnoughMedia;
@@ -17,8 +20,9 @@ import java.util.List;
 
 /**
  * The one deliberately narrow action specialization: use a compact fixed-size list for the
- * two arguments consumed by the stock Add Motion SpellAction. All action work and VM result
- * construction still use the upstream implementation and types.
+ * two arguments consumed by the stock Add Motion SpellAction. It preserves the upstream action
+ * work while returning the VM's CastResult directly, avoiding an immediately-unwrapped
+ * intermediate OperationResult.
  */
 public final class FastAddMotionArguments {
     private static final SpellAction STOCK_ADD_MOTION = (SpellAction) HexActions.ADD_MOTION.value().action();
@@ -28,8 +32,8 @@ public final class FastAddMotionArguments {
         return action == STOCK_ADD_MOTION && JitCompatibility.fastAddMotionReady();
     }
 
-    public static OperationResult operate(CastingEnvironment env, CastingImage image,
-                                          SpellContinuation continuation) {
+    public static CastResult operate(CastingEnvironment env, CastingImage image,
+                                     SpellContinuation continuation, PatternIota cast) {
         SpellAction spell = STOCK_ADD_MOTION;
         var stack = image.getStack();
         int argc = spell.getArgc();
@@ -52,7 +56,9 @@ public final class FastAddMotionArguments {
         var userData = FastCompoundTagCopy.copy(image.getUserData());
         SpellAction.Result result = spell.executeWithUserdata(args, env, userData);
 
-        List<OperatorSideEffect> sideEffects = new ArrayList<>(result.getParticles().size() + 2);
+        List<ParticleSpray> particles = result.getParticles();
+        int particleCount = particles.size();
+        List<OperatorSideEffect> sideEffects = new ArrayList<>(particleCount + 2);
         if (env.extractMedia(result.getCost(), true) > 0) {
             throw new MishapNotEnoughMedia(result.getCost());
         }
@@ -61,13 +67,15 @@ public final class FastAddMotionArguments {
         }
         sideEffects.add(new OperatorSideEffect.AttemptSpell(result.getEffect(),
                 spell.hasCastingSound(env), spell.awardsCastingStat(env)));
-        for (var spray : result.getParticles()) {
-            sideEffects.add(new OperatorSideEffect.Particles(spray));
+        // Stock Add Motion returns a singleton Kotlin list. Indexed access preserves the exact
+        // order while avoiding an iterator allocation on every hot-loop invocation.
+        for (int index = 0; index < particleCount; index++) {
+            sideEffects.add(new OperatorSideEffect.Particles(particles.get(index)));
         }
 
         CastingImage image2 = image.copy(stackWithoutArgs, image.getParenCount(), image.getParenthesized(),
                 image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed() + result.getOpCount(), userData);
         var sound = spell.hasCastingSound(env) ? HexEvalSounds.SPELL.get() : HexEvalSounds.MUTE.get();
-        return new OperationResult(image2, sideEffects, continuation, sound);
+        return new CastResult(cast, continuation, image2, sideEffects, ResolvedPatternType.EVALUATED, sound);
     }
 }
