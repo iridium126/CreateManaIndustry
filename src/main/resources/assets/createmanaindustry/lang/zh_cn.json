@@ -553,7 +553,7 @@
   "createmanaindustry.ponder.trickster_display.text_3": "把链接放到容器上，选择物品数量作为来源，再选择目标参数槽。",
   "createmanaindustry.ponder.trickster_display.text_4": "第一个参数现在收到 32，法术可以读取这个参数，根据库存作出判断。",
   "createmanaindustry.ponder.trickster_display.text_5": "库存变化后，参数会随之更新。使用模块化法术组构台时，还要选对执行器。",
-  "createmanaindustry.ponder.tag.processing": "魔法工坊",
+  "createmanaindustry.ponder.tag.processing": "魔法工作站",
   "createmanaindustry.ponder.tag.processing.description": "用机械动力机器完成加热、镀层和材料加工",
   "createmanaindustry.ponder.tag.mist": "雾场入门",
   "createmanaindustry.ponder.tag.mist.description": "制造、回收雾，并用雾驱动机器",

@@ -14,7 +14,7 @@ import re
 import struct
 
 ROOT = Path(__file__).resolve().parents[2]
-JAVA = ROOT / 'src/main/java/com/iridium126/createmanaindustry/ponder'
+JAVA = ROOT / 'src/main/java/com/iridium126/createmanaindustry/client/ponder'
 ASSETS = ROOT / 'src/main/resources/assets/createmanaindustry'
 PREFIX = 'createmanaindustry.ponder.'
 STRING = r'"((?:[^"\\]|\\.)*)"'
@@ -22,9 +22,44 @@ TITLE = re.compile(r'new Workshop\(builder, util, ' + STRING + r', ' + STRING + 
 TEXT = re.compile(r'w\.text\([^;]*?' + STRING + r',\s*' + STRING + r'\);', re.S)
 REG = re.compile(r'add\(helper, "([a-z_]+)", (\w+)::(\w+), (\w+), ([^;]+)\);')
 TAGS = {
-    'processing': ('The Magic Workshop', '魔法工坊', 'Heat, coat and process materials with Create machinery', '用机械动力机器完成加热、镀层和材料加工'),
+    'processing': ('The Magic Workshop', '魔法工作站', 'Heat, coat and process materials with Create machinery', '用机械动力机器完成加热、镀层和材料加工'),
     'mist': ('Working with Mist', '雾场入门', 'Make mist, collect it and use it to power machines', '制造、回收雾，并用雾驱动机器'),
     'magic_automation': ('Magic Automation', '魔法自动化', 'Charge, assemble and connect magical items', '为魔法物品充能、组装，并接入自动化系统'),
+}
+
+# Decorative blocks transcribed from the supplied ponder.nbt. Its decoration
+# line is at z=0; rotate it 180 degrees around Y to place it along the existing
+# workshop backdrop at z=8. Air is omitted to preserve the staged build area;
+# the generated floor uses the reference structure's layered calcite.
+BACKGROUND_DECOR = [
+    ((0, 1, 0), 'stripped_cherry_log', {'axis': 'y'}),
+    ((1, 1, 0), 'stripped_cherry_log', {'axis': 'y'}),
+    ((2, 1, 0), 'stripped_cherry_log', {'axis': 'y'}),
+    ((3, 1, 0), 'stripped_cherry_log', {'axis': 'y'}),
+    ((4, 1, 0), 'stripped_cherry_log', {'axis': 'y'}),
+    ((5, 1, 0), 'white_stained_glass_pane', {
+        'east': 'true', 'waterlogged': 'false', 'south': 'false',
+        'north': 'false', 'west': 'true',
+    }),
+    ((6, 1, 0), 'cherry_stairs', {
+        'half': 'top', 'waterlogged': 'false', 'shape': 'straight', 'facing': 'west',
+    }),
+    ((7, 1, 0), 'cherry_slab', {'waterlogged': 'false', 'type': 'top'}),
+    ((8, 1, 0), 'cherry_stairs', {
+        'half': 'top', 'waterlogged': 'false', 'shape': 'straight', 'facing': 'east',
+    }),
+    ((0, 2, 0), 'end_rod', {'facing': 'up'}),
+    ((1, 2, 0), 'turtle_egg', {'eggs': '1', 'hatch': '0'}),
+    ((2, 2, 0), 'potted_oxeye_daisy', {}),
+    ((3, 2, 0), 'potted_flowering_azalea_bush', {}),
+    ((4, 2, 0), 'end_rod', {'facing': 'up'}),
+    ((6, 2, 0), 'large_amethyst_bud', {'waterlogged': 'false', 'facing': 'up'}),
+    ((8, 2, 0), 'pink_candle', {
+        'waterlogged': 'false', 'lit': 'true', 'candles': '3',
+    }),
+]
+HORIZONTAL_FACING_180 = {
+    'north': 'south', 'south': 'north', 'east': 'west', 'west': 'east',
 }
 
 
@@ -81,30 +116,26 @@ def stage(name):
         key = (block, tuple(sorted(properties.items())))
         if key not in indices:
             indices[key] = len(palette)
-            entry = {'Name': (8, 'minecraft:' + block)}
+            block_id = block if ':' in block else 'minecraft:' + block
+            entry = {'Name': (8, block_id)}
             if properties:
                 entry['Properties'] = (10, {k: (8, str(v)) for k, v in properties.items()})
             palette.append(entry)
         blocks.append({'pos': (9, (3, [x, y, z])), 'state': (3, indices[key])})
-    accent = ('amethyst_block' if name.startswith(('allay', 'hex', 'amethyst')) else
-              'prismarine_bricks' if name.startswith(('mana', 'prismarine', 'atomizer', 'trickster', 'kinetics')) else 'cut_copper')
     for x in range(9):
         for z in range(9):
-            border = x in (0, 8) or z in (0, 8)
-            material = 'polished_deepslate' if border else 'spruce_planks'
-            if z == 6 and x in (2, 4, 6):
-                material = accent
-            put(x, 0, z, material)
-    # Keep the entire front and the machine/pipe routes clear. The rear shelf is
-    # intentionally low so it never hides the presses, spouts or their drives.
-    put(0, 1, 8, 'polished_deepslate')
-    put(0, 2, 8, 'amethyst_cluster', facing='up', waterlogged='false')
-    put(2, 1, 8, 'spruce_slab', type='bottom', waterlogged='false')
-    put(3, 1, 8, 'bookshelf')
-    put(6, 1, 8, 'barrel', facing='up', open='false')
-    put(6, 2, 8, 'lantern', hanging='false', waterlogged='false')
-    put(8, 1, 8, accent)
-    put(8, 2, 8, 'small_amethyst_bud', facing='up', waterlogged='false')
+            put(x, 0, z, 'create:layered_calcite')
+    # Rotate the supplied decoration line from the front edge to the current
+    # back edge. This mirrors x as well as z, and turns directional states.
+    for (x, y, z), block, properties in BACKGROUND_DECOR:
+        rotated = {key: HORIZONTAL_FACING_180.get(value, value)
+                   if key == 'facing' else value
+                   for key, value in properties.items()}
+        put(8 - x, y, 8 - z, block, **rotated)
+    # Keep the reference states intact; these invisible Ponder-only light
+    # blocks compensate for dim rendering of the potted flower and amethyst bud.
+    for x in (2, 6):
+        put(x, 3, 8, 'light', level='15', waterlogged='false')
     # Ponder derives mutable-world bounds from placed blocks, not template.size.
     # An explicit air corner reserves headroom for machines built by instructions.
     put(8, 6, 8, 'air')
