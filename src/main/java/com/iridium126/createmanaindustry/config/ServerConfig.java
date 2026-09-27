@@ -41,7 +41,7 @@ public final class ServerConfig {
     public static volatile long hexJitByteBudget = 16L << 20;
     public static volatile boolean hexJitCompileActions;
     public static volatile boolean hexJitSkipObservers;
-    public static volatile boolean hexJitCoalesceDecorations;
+    public static volatile boolean hexJitCoalesceDecorations = true;
     public static volatile boolean hexJitBatchAddMotion;
     public static volatile boolean hexJitFastAddMotionArguments;
     public static volatile boolean hexJitMemoAddMotionNormalization;
@@ -268,7 +268,7 @@ public final class ServerConfig {
                 .define("skipDeclaredObservers", false);
         HEX_JIT_COALESCE_DECORATIONS = BUILDER
                 .comment("Within one JIT cast, emit only one copy of each identical Hexcasting particle spray and pigment.")
-                .define("coalesceDecorations", false);
+                .define("coalesceDecorations", true);
         HEX_JIT_BATCH_ADD_MOTION = BUILDER
                 .comment("Batch repeated Hexcasting Add Motion vector writes while preserving ordered double additions.")
                 .define("batchAddMotion", false);

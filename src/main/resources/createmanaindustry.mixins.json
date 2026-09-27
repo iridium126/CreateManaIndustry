@@ -35,6 +35,7 @@
     "bnb.PlaceCogwheelChainPacketMixin",
     "bnb.KineticBlockEntityChainStressMixin",
     "vanilla.BaseSpawnerAccessor",
+    "vanilla.EntityCollisionSweepMixin",
     "vanilla.EntityMoltenFluidMixin",
     "vanilla.LivingEntityMoltenFluidMistMixin",
     "vanilla.LivingEntityAccessor",
