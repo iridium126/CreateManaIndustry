@@ -118,6 +118,9 @@ public class CreateManaIndustry {
         if (HEX_ACTIVE) {
             CMIHexActions.register(modEventBus);
             NeoForge.EVENT_BUS.addListener(CMISlatePatternRecipes::onServerStarted);
+            if (ModList.get().isLoaded("hexparse")) {
+                com.iridium126.createmanaindustry.compat.hexparse.HexParseCompat.register();
+            }
         }
         if (HEX_ACTIVE && ModList.get().isLoaded("yes_steve_model")) {
             com.iridium126.createmanaindustry.compat.hexcasting.ysm.CMIYsmIotaTypes.register(modEventBus);

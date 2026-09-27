@@ -227,14 +227,11 @@ public final class YsmResourceArchive {
     /** Called by an approved client export job, off the render thread. Never overwrites a directory. */
     public Path export(Path gameDirectory) throws IOException {
         Path game = gameDirectory.toAbsolutePath().normalize().toRealPath();
-        Path root = game;
-        for (String part : List.of("exports", "createmanaindustry", "ysm")) {
-            root = root.resolve(part);
-            if (Files.exists(root, LinkOption.NOFOLLOW_LINKS)) {
-                if (Files.isSymbolicLink(root) || !Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS))
-                    throw new IOException("Export directory is not a regular directory");
-            } else Files.createDirectory(root);
-        }
+        Path root = game.resolve("exports");
+        if (Files.exists(root, LinkOption.NOFOLLOW_LINKS)) {
+            if (Files.isSymbolicLink(root) || !Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS))
+                throw new IOException("Export directory is not a regular directory");
+        } else Files.createDirectory(root);
         String name = "model_" + digest.substring(0, 12) + "_" + UUID.randomUUID().toString().replace("-", "");
         Path temporary = Files.createTempDirectory(root, ".pending-");
         boolean published = false;

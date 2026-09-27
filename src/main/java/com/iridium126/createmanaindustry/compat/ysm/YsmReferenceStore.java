@@ -6,6 +6,7 @@ import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometryIO;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmModelSnapshot;
+import com.iridium126.createmanaindustry.compat.ysm.model.YsmPortableGeometryCodec;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmPlaintextModel;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
 import java.io.*;
@@ -62,7 +63,7 @@ public final class YsmReferenceStore implements AutoCloseable {
 
     YsmReferenceStore(Path worldRoot, YsmSnapshotCache sourceSnapshots) {
         this.sourceSnapshots = Objects.requireNonNull(sourceSnapshots);
-        root = worldRoot.toAbsolutePath().normalize().resolve("data").resolve("createmanaindustry").resolve("ysm");
+        root = worldRoot.toAbsolutePath().normalize().resolve("data").resolve("createmanaindustry").resolve("model");
         archives = root.resolve("archives");
         objects = root.resolve("objects");
     }
@@ -162,6 +163,78 @@ public final class YsmReferenceStore implements AutoCloseable {
         } catch (IOException | IllegalArgumentException failure) {
             throw invalidObject("cube", key, failure);
         }
+    }
+
+    /** Exports geometry values and their complete source archive, if the reference has one. */
+    public synchronized YsmPortableGeometryCodec.CubeData exportPortableCube(String key) {
+        ReferenceTarget target = resolveReference(key, true);
+        return new YsmPortableGeometryCodec.CubeData(readCube(key),
+                readPortableSource(target.sourceDigest(), target.sourcePart(), target.sourceGeometryIndex()));
+    }
+
+    /** Exports a fully materialized group tree and its complete source archive, if present. */
+    public synchronized YsmPortableGeometryCodec.GroupData exportPortableGroup(String key) {
+        ReferenceTarget target = resolveReference(key, false);
+        Group group = materializeGroups(List.of(key)).getFirst();
+        String digest = target.sourceDigest();
+        String part = target.sourcePart();
+        int geometryIndex = target.sourceGeometryIndex();
+        if (digest == null && group.root() != null) {
+            digest = group.root().snapshot();
+            part = group.root().part();
+            geometryIndex = group.root().geometryIndex();
+        }
+        return new YsmPortableGeometryCodec.GroupData(group, readPortableSource(digest, part, geometryIndex));
+    }
+
+    /** Imports a portable cube into this world's store and returns a save-local reference. */
+    public synchronized String importPortableCube(YsmPortableGeometryCodec.CubeData data) {
+        Objects.requireNonNull(data);
+        String digest = importPortableSource(data.source());
+        String key = writeCube(data.geometry());
+        if (data.source() == null) return key;
+        return withPreviewSource(key, true, digest, data.source().part(), data.source().geometryIndex());
+    }
+
+    /** Imports a portable group tree and source archive into this world's store. */
+    public synchronized String importPortableGroup(YsmPortableGeometryCodec.GroupData data) {
+        Objects.requireNonNull(data);
+        if (data.geometry().root() != null && data.source() == null)
+            throw new IllegalArgumentException("A YSM file root requires its source resource archive");
+        String digest = importPortableSource(data.source());
+        String key = writeTree(data.geometry());
+        if (data.source() == null) return key;
+        return withPreviewSource(key, false, digest, data.source().part(), data.source().geometryIndex());
+    }
+
+    private YsmPortableGeometryCodec.Source readPortableSource(String digest, String part, int geometryIndex) {
+        if (digest == null) return null;
+        try {
+            YsmResourceArchive archive = readArchive(digest);
+            YsmModelSnapshot snapshot = YsmModelSnapshot.fromArchive(archive);
+            if (!snapshot.digest().equals(digest)) throw new IOException("YSM source digest mismatch");
+            boolean present = snapshot.roots().stream().map(Group::root).filter(Objects::nonNull)
+                    .anyMatch(root -> root.part().equals(part) && root.geometryIndex() == geometryIndex);
+            if (!present) throw new IOException("YSM source geometry is missing from its resource archive");
+            return new YsmPortableGeometryCodec.Source(archive, part, geometryIndex);
+        } catch (IOException | IllegalArgumentException failure) {
+            throw new IllegalStateException("Unable to export complete YSM source resources: " + failure.getMessage(), failure);
+        }
+    }
+
+    private String importPortableSource(YsmPortableGeometryCodec.Source source) {
+        if (source == null) return null;
+        YsmModelSnapshot snapshot = YsmModelSnapshot.fromArchive(source.archive());
+        boolean present = snapshot.roots().stream().map(Group::root).filter(Objects::nonNull)
+                .anyMatch(root -> root.part().equals(source.part()) && root.geometryIndex() == source.geometryIndex());
+        if (!present) throw new IllegalArgumentException("YSM source geometry is missing from its resource archive");
+        try {
+            writeArchive(snapshot.archive());
+        } catch (IOException failure) {
+            throw new IllegalStateException("Unable to import YSM source resources: " + failure.getMessage(), failure);
+        }
+        sourceSnapshots.put(snapshot);
+        return snapshot.digest();
     }
 
     public GroupNode readGroup(String key) {

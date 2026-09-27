@@ -127,6 +127,13 @@ config="${mod_id}.hexjit.mixins.json"
     side="BOTH"
 
 [[dependencies.${mod_id}]]
+    modId="hexparse"
+    type="optional"
+    versionRange="[1.21.1-1.11.2.pre53,)"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
     modId="veil"
     type="optional"
     versionRange="[4.1.4,)"

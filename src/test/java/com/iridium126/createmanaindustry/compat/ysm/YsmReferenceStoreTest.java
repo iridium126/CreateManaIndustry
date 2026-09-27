@@ -77,7 +77,7 @@ class YsmReferenceStoreTest {
                 assertThrows(IllegalArgumentException.class, () -> other.preview(oldCube, true));
             } finally { deleteTree(otherWorld); }
 
-            Path object = world.resolve("data/createmanaindustry/ysm/objects")
+            Path object = world.resolve("data/createmanaindustry/model/objects")
                     .resolve(newCube.substring(0, 2)).resolve(newCube + ".bin");
             byte[] corrupt = Files.readAllBytes(object);
             corrupt[corrupt.length - 1] ^= 0x01;
@@ -86,7 +86,7 @@ class YsmReferenceStoreTest {
                 assertThrows(IllegalArgumentException.class, () -> reopened.readCube(newCube));
             }
 
-            Path archive = world.resolve("data/createmanaindustry/ysm/archives")
+            Path archive = world.resolve("data/createmanaindustry/model/archives")
                     .resolve(snapshot.digest().substring(0, 2)).resolve(snapshot.digest() + ".bin");
             byte[] corruptArchive = Files.readAllBytes(archive);
             corruptArchive[corruptArchive.length - 1] ^= 0x01;

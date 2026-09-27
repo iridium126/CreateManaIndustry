@@ -27,7 +27,7 @@ public final class CMIYsmActions {
                 HexPattern.fromAngleString("deeeeeqawqwaw", HexDir.EAST),
                 new OpGeometry(true)));
         ACTIONS.register("ysm_model_read", () -> new ActionRegistryEntry(
-                HexPattern.fromAngleString("wqqqdqqqaedewqqqdqqqdqqqaedewqqqwwqwawqqawd", HexDir.SOUTH_WEST), new OpReadYsmModel()));
+                HexPattern.fromAngleString("wqqqdqqqaedewqqqdqqqdqqqaedewqqqwwqwawqqawd", HexDir.SOUTH_EAST), new OpReadYsmModel()));
         ACTIONS.register("ysm_model_apply", () -> new ActionRegistryEntry(
                 HexPattern.fromAngleString("wqqqdqqqaedewqqqdqqqaedewqqqdqqqaedwqqqqq", HexDir.SOUTH_WEST), new OpApplyYsmModel()));
         ACTIONS.register("ysm_model_export", () -> new ActionRegistryEntry(
