@@ -2,9 +2,12 @@ package com.iridium126.createmanaindustry.compat.ysm;
 
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmCompiledExporter;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmModelSnapshot;
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -27,6 +30,8 @@ public final class YsmServerRuntime implements AutoCloseable {
     private final YsmPreparedCache prepared = new YsmPreparedCache();
     private final com.iridium126.createmanaindustry.compat.ysm.net.YsmServerArchives transfers;
     private final com.iridium126.createmanaindustry.compat.ysm.net.YsmServerPreviews previews;
+    private final ExecutorService mappingWorker =
+        Executors.newSingleThreadExecutor(CMIThreadFactory.daemonFactory("ysm-runtime-mapping"));
     private final CompletableFuture<YsmRuntimeSymbols.Snapshot> mapping;
     private YsmOverrideManager overrides;
     private String failure;
@@ -42,7 +47,7 @@ public final class YsmServerRuntime implements AutoCloseable {
         mapping = CompletableFuture.supplyAsync(() -> {
             try { return YsmRuntimeSymbols.inspect(path, version); }
             catch (Exception exception) { throw new CompletionException(exception); }
-        });
+        }, mappingWorker);
     }
     public static void register() {
         NeoForge.EVENT_BUS.addListener((ServerStartedEvent event) -> active = new YsmServerRuntime(event.getServer()));
@@ -150,7 +155,13 @@ public final class YsmServerRuntime implements AutoCloseable {
     }
     @Override public void close() {
         if (overrides != null) overrides.close();
-        mapping.cancel(false); prepared.close(); snapshots.close(); references.close(); transfers.close(); previews.close();
+        previews.close();
+        transfers.close();
+        mapping.cancel(false);
+        mappingWorker.shutdownNow();
+        prepared.close();
+        references.close();
+        snapshots.close();
     }
     private YsmServerRuntime() { throw new AssertionError(); }
 }

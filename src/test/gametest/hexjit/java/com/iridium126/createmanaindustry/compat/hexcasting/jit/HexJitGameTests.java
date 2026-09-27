@@ -21,6 +21,7 @@ import at.petrak.hexcasting.common.casting.PatternRegistryManifest;
 import at.petrak.hexcasting.xplat.IXplatAbstractions;
 import com.iridium126.createmanaindustry.compat.hexcasting.HexCompat;
 import com.iridium126.createmanaindustry.config.ServerConfig;
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
 import java.lang.management.ManagementFactory;
 import java.util.*;
 import java.util.function.Predicate;
@@ -46,6 +47,7 @@ import net.neoforged.neoforge.gametest.*;
 @PrefixGameTestTemplate(false)
 public final class HexJitGameTests {
     private static volatile Object blackhole;
+    private static final CMIThreadFactory TEST_THREADS = CMIThreadFactory.daemonFactory("hexjit-test-isolation");
     private static final String FULL_FEATURE_BENCH_CASE = "AUTO_FULL_FEATURE_SET";
     private static boolean hasFullObserverOptimization(String name) {
         return name.equals(FULL_FEATURE_BENCH_CASE) || name.startsWith("AUTO_FULL_FEATURES_");
@@ -828,7 +830,7 @@ public final class HexJitGameTests {
         helper.assertTrue(outer.cached(input) == normalized,
                 "Add Motion normalization cache missed an identical input");
         AtomicReference<AddMotionNormalizationCache.Cache> offThreadCache = new AtomicReference<>();
-        Thread cacheReader = new Thread(() -> offThreadCache.set(AddMotionNormalizationCache.activeCache()));
+        Thread cacheReader = TEST_THREADS.newThread(() -> offThreadCache.set(AddMotionNormalizationCache.activeCache()));
         cacheReader.start();
         cacheReader.join();
         helper.assertTrue(offThreadCache.get() == null,
@@ -843,7 +845,7 @@ public final class HexJitGameTests {
 
         try (ExecutionScope scope = ExecutionScope.enter(false)) {
             AtomicReference<ExecutionScope> offThreadScope = new AtomicReference<>();
-            Thread scopeReader = new Thread(() -> offThreadScope.set(ExecutionScope.current()));
+            Thread scopeReader = TEST_THREADS.newThread(() -> offThreadScope.set(ExecutionScope.current()));
             scopeReader.start();
             scopeReader.join();
             helper.assertTrue(ExecutionScope.current() == scope && offThreadScope.get() == null,

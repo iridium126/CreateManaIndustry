@@ -29,6 +29,7 @@ import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrBlockUpda
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacket;
 import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge;
 import com.iridium126.createmanaindustry.dimension.light.AllvrLightEngine;
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
 
 /**
  * Client-side registry of streamed cubes for the allay dimension — the cube
@@ -66,11 +67,17 @@ public final class AllvrClientCubeCache {
     private static final ThreadPoolExecutor CUBE_DECODE_EXECUTOR = new ThreadPoolExecutor(
         CUBE_DECODE_WORKERS, CUBE_DECODE_WORKERS,
         0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(256),
-        runnable -> {
-            Thread thread = new Thread(runnable, "allvr-client-cube-decode");
-            thread.setDaemon(true);
-            return thread;
-        }, new ThreadPoolExecutor.CallerRunsPolicy());
+        CMIThreadFactory.daemonFactory("allvr-client-cube-decode"), (task, executor) -> {
+            if (executor.isShutdown()) throw new java.util.concurrent.RejectedExecutionException("Cube decoder is shut down");
+            try {
+                // Preserve every cube packet without decoding on the submitting
+                // (client game) thread when the bounded worker queue is full.
+                executor.getQueue().put(task);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new java.util.concurrent.RejectedExecutionException("Interrupted while queueing cube decode", interrupted);
+            }
+        });
     private static final AtomicLong NEXT_PACKET_SEQUENCE = new AtomicLong();
     /** Keep packet publication within the normal client tick budget. A burst
      * of streamed air cubes must not make the render thread apply thousands

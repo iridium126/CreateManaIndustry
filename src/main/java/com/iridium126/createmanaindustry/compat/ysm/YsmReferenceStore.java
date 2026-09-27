@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.compat.ysm;
 
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometryIO;
@@ -49,11 +51,7 @@ public final class YsmReferenceStore implements AutoCloseable {
     private final YsmSnapshotCache sourceSnapshots;
     private byte[] namespace;
     private final ThreadPoolExecutor worker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(16), task -> {
-                var thread = new Thread(task, "CMI YSM reference store");
-                thread.setDaemon(true);
-                return thread;
-            });
+            new ArrayBlockingQueue<>(16), CMIThreadFactory.daemonFactory("ysm-reference-store"));
     private final LinkedHashMap<String, CompletableFuture<List<String>>> writes = new LinkedHashMap<>(16, .75f, true);
     private final Map<String, CompletableFuture<YsmModelSnapshot>> loads = new HashMap<>();
     private boolean closed;
@@ -730,12 +728,33 @@ public final class YsmReferenceStore implements AutoCloseable {
     @FunctionalInterface private interface FileWriter { void write(OutputStream output) throws IOException; }
 
     private void requireOpen() { if (closed) throw new IllegalStateException("YSM reference store is closed"); }
-    @Override public synchronized void close() {
-        closed = true;
-        writes.values().forEach(future -> future.cancel(false));
-        loads.values().forEach(future -> future.cancel(false));
-        writes.clear(); loads.clear(); sourceSnapshots.clear();
-        worker.shutdownNow();
+    @Override public void close() {
+        synchronized (this) {
+            if (closed) return;
+            closed = true;
+        }
+        worker.shutdown();
+        boolean interrupted = false;
+        try {
+            if (!worker.awaitTermination(30, TimeUnit.SECONDS)) {
+                com.mojang.logging.LogUtils.getLogger().warn(
+                    "YSM reference writes did not drain before shutdown; interrupting remaining tasks");
+                worker.shutdownNow();
+                worker.awaitTermination(5, TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException interruption) {
+            interrupted = true;
+            worker.shutdownNow();
+        } finally {
+            synchronized (this) {
+                writes.values().forEach(future -> future.cancel(false));
+                loads.values().forEach(future -> future.cancel(false));
+                writes.clear();
+                loads.clear();
+                sourceSnapshots.clear();
+            }
+            if (interrupted) Thread.currentThread().interrupt();
+        }
     }
 
     private enum ListKind {

@@ -1,8 +1,11 @@
 package com.iridium126.createmanaindustry.compat.ysm.net;
 
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -10,6 +13,8 @@ import net.neoforged.neoforge.network.PacketDistributor;
 /** Rate-limited CMI archive transport. The native YSM sync still owns model rendering. */
 public final class YsmServerArchives implements AutoCloseable {
     private final MinecraftServer server;
+    private final ExecutorService encoder =
+            Executors.newSingleThreadExecutor(CMIThreadFactory.daemonFactory("ysm-archive-encoder"));
     private static final org.slf4j.Logger LOGGER = com.mojang.logging.LogUtils.getLogger();
     private final ArrayDeque<Job> jobs = new ArrayDeque<>();
     private final Map<UUID, UUID> transmitting = new HashMap<>();
@@ -56,7 +61,8 @@ public final class YsmServerArchives implements AutoCloseable {
     }
     private boolean schedule(UUID recipient, UUID target, long revision, int purpose, String model, YsmResourceArchive archive) {
         if (jobs.size() >= 16) return false;
-        var bytes = encoded.computeIfAbsent(archive.digest(), ignored -> CompletableFuture.supplyAsync(archive::encode));
+        var bytes = encoded.computeIfAbsent(archive.digest(),
+                ignored -> CompletableFuture.supplyAsync(archive::encode, encoder));
         while (encoded.size() > 2) encoded.remove(encoded.keySet().iterator().next());
         jobs.addLast(new Job(recipient, target, revision, purpose, model, archive, UUID.randomUUID(),
                 bytes, 0, false));
@@ -95,5 +101,8 @@ public final class YsmServerArchives implements AutoCloseable {
         }
     }
     public void forget(UUID recipient) { jobs.removeIf(job -> job.recipient.equals(recipient)); transmitting.remove(recipient); }
-    @Override public void close() { jobs.clear(); transmitting.clear(); encoded.clear(); }
+    @Override public void close() {
+        jobs.clear(); transmitting.clear(); encoded.clear();
+        encoder.shutdownNow();
+    }
 }

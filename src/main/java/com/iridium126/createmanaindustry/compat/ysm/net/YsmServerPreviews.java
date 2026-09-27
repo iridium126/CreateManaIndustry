@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.compat.ysm.net;
 
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+
 import com.iridium126.createmanaindustry.compat.ysm.YsmReferenceStore;
 import com.iridium126.createmanaindustry.compat.ysm.render.YsmGeometryThumbnail;
 import java.util.*;
@@ -104,10 +106,7 @@ public final class YsmServerPreviews implements AutoCloseable {
 
     static ThreadPoolExecutor createWorkers() {
         return new ThreadPoolExecutor(2, 2, 0, TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(32), task -> {
-                    Thread thread = new Thread(task, "CMI YSM preview renderer");
-                    thread.setDaemon(true);
-                    return thread;
-                }, new ThreadPoolExecutor.AbortPolicy());
+                new ArrayBlockingQueue<>(32), CMIThreadFactory.daemonFactory("ysm-preview-renderer"),
+                new ThreadPoolExecutor.AbortPolicy());
     }
 }

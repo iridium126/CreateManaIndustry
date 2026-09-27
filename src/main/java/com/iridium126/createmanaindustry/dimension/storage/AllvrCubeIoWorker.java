@@ -24,6 +24,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.nbt.CompoundTag;
 
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
 
 /**
  * The cube I/O worker (plan §7.1/§8, the {@code AsyncBatchingCubeIO}
@@ -121,22 +122,13 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
     public AllvrCubeIoWorker(AllvrCubeStorage storage, AllvrStorageDiagnostics diagnostics) {
         this.storage = storage;
         this.diagnostics = diagnostics;
-        AtomicInteger index = new AtomicInteger();
-        this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "CMI-AllvrCubeIo-" + index.incrementAndGet());
-            t.setDaemon(true);
-            return t;
-        });
+        this.executor = Executors.newSingleThreadScheduledExecutor(
+            CMIThreadFactory.daemonFactory("allvr-cube-io"));
         int workers = storage.supportsConcurrentReads() ? READ_WORKERS : 1;
-        AtomicInteger readIndex = new AtomicInteger();
         this.readExecutor = new ThreadPoolExecutor(
             workers, workers, 0L, TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(MAX_PENDING_READS),
-            r -> {
-                Thread t = new Thread(r, "CMI-AllvrCubeRead-" + readIndex.incrementAndGet());
-                t.setDaemon(true);
-                return t;
-            }, new ThreadPoolExecutor.AbortPolicy());
+            CMIThreadFactory.daemonFactory("allvr-cube-read"), new ThreadPoolExecutor.AbortPolicy());
     }
 
     // ------------------------------------------------------------------

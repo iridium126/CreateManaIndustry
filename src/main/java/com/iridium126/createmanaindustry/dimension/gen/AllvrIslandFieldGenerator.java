@@ -17,6 +17,8 @@ import net.minecraft.world.level.ChunkPos;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 
 /** Datapack terrain in local island coordinates used by cube generation. */
 public final class AllvrIslandFieldGenerator {
@@ -71,7 +73,7 @@ public final class AllvrIslandFieldGenerator {
         collectSourceColumns(islands, x0, z0, (sourceChunkX, sourceChunkZ) ->
             sourceColumns.computeIfAbsent(ChunkPos.asLong(sourceChunkX, sourceChunkZ),
                 ignored -> terrain.column(sourceChunkX, sourceChunkZ)));
-        fillCube(cube, islands, sourceColumns);
+        fillCube(cube, islands, sourceColumns, () -> false);
         epicRedwood.generate(cube);
     }
 
@@ -83,32 +85,48 @@ public final class AllvrIslandFieldGenerator {
      * worker thread waiting on nested {@code fillFromNoise().join()} calls.
      */
     public CompletableFuture<Void> generateAsync(AllvrCube cube) {
+        return generateAsync(cube, () -> false);
+    }
+
+    public CompletableFuture<Void> generateAsync(AllvrCube cube, BooleanSupplier cancelled) {
         // Even dependency discovery builds source chunks and samples biomes.
         // Never do that on the ticket thread, including when caches are warm.
-        return CompletableFuture.supplyAsync(() -> prepareAsync(cube), net.minecraft.Util.backgroundExecutor())
+        return CompletableFuture.supplyAsync(() -> prepareAsync(cube, cancelled), net.minecraft.Util.backgroundExecutor())
             .thenCompose(future -> future);
     }
 
-    private CompletableFuture<Void> prepareAsync(AllvrCube cube) {
+    private CompletableFuture<Void> prepareAsync(AllvrCube cube, BooleanSupplier cancelled) {
+        checkCancelled(cancelled);
         int x0 = cube.getPos().minBlockX(), y0 = cube.getPos().minBlockY(), z0 = cube.getPos().minBlockZ();
         if (generateLowerBand(cube)) return CompletableFuture.completedFuture(null);
         Island[] islands = islandsForBox(x0, y0, z0, x0 + 32, y0 + 32, z0 + 32);
         if (islands.length == 0) {
             return epicRedwood.intersectsCell(x0, y0, z0)
-                ? CompletableFuture.runAsync(() -> epicRedwood.generate(cube), net.minecraft.Util.backgroundExecutor())
+                ? CompletableFuture.runAsync(() -> {
+                    checkCancelled(cancelled);
+                    epicRedwood.generate(cube, cancelled);
+                }, net.minecraft.Util.backgroundExecutor())
                 : CompletableFuture.completedFuture(null);
         }
         Map<Long, CompletableFuture<AllvrTerrainSource.Column>> sourceFutures = new HashMap<>();
-        collectSourceColumns(islands, x0, z0, (sourceChunkX, sourceChunkZ) ->
+        collectSourceColumns(islands, x0, z0, (sourceChunkX, sourceChunkZ) -> {
+            checkCancelled(cancelled);
             sourceFutures.computeIfAbsent(ChunkPos.asLong(sourceChunkX, sourceChunkZ),
-                ignored -> terrain.columnAsync(sourceChunkX, sourceChunkZ)));
+                ignored -> terrain.columnAsync(sourceChunkX, sourceChunkZ));
+        });
         CompletableFuture<?>[] dependencies = sourceFutures.values().toArray(CompletableFuture<?>[]::new);
         return CompletableFuture.allOf(dependencies).thenRunAsync(() -> {
+            checkCancelled(cancelled);
             Map<Long, AllvrTerrainSource.Column> sourceColumns = new HashMap<>(sourceFutures.size());
             sourceFutures.forEach((key, future) -> sourceColumns.put(key, future.join()));
-            fillCube(cube, islands, sourceColumns);
-            epicRedwood.generate(cube);
+            fillCube(cube, islands, sourceColumns, cancelled);
+            checkCancelled(cancelled);
+            epicRedwood.generate(cube, cancelled);
         }, net.minecraft.Util.backgroundExecutor());
+    }
+
+    private static void checkCancelled(BooleanSupplier cancelled) {
+        if (cancelled.getAsBoolean()) throw new CancellationException("Allvr cube generation was abandoned");
     }
 
     private boolean generateLowerBand(AllvrCube cube) {
@@ -146,9 +164,11 @@ public final class AllvrIslandFieldGenerator {
         }
     }
 
-    private void fillCube(AllvrCube cube, Island[] islands, Map<Long, AllvrTerrainSource.Column> sourceColumns) {
+    private void fillCube(AllvrCube cube, Island[] islands, Map<Long, AllvrTerrainSource.Column> sourceColumns,
+                          BooleanSupplier cancelled) {
         int x0 = cube.getPos().minBlockX(), y0 = cube.getPos().minBlockY(), z0 = cube.getPos().minBlockZ();
         for (int sy = 0; sy < 2; sy++) for (int sz = 0; sz < 2; sz++) for (int sx = 0; sx < 2; sx++) {
+            checkCancelled(cancelled);
             int sectionX = x0 + sx * 16, sectionY = y0 + sy * 16, sectionZ = z0 + sz * 16;
             boolean intersects = false;
             for (Island island : islands) {
@@ -164,37 +184,42 @@ public final class AllvrIslandFieldGenerator {
         }
         BlockPos.MutableBlockPos world = new BlockPos.MutableBlockPos();
         BlockPos.MutableBlockPos source = new BlockPos.MutableBlockPos();
-        for (Island island : islands) for (int z = z0; z < z0 + 32; z++) for (int x = x0; x < x0 + 32; x++) {
-            double bottom = island.bottom(x, z);
-            if (bottom >= y0 + 32) continue;
-            int sx = x + island.sourceOffsetX(), sz = z + island.sourceOffsetZ();
-            long sourceKey = net.minecraft.world.level.ChunkPos.asLong(sx >> 4, sz >> 4);
-            var column = sourceColumns.get(sourceKey);
-            if (column == null) continue;
-            int from = Math.max(y0, Math.max(island.minY(), (int) Math.ceil(bottom)));
-            int to = Math.min(y0 + 32, island.maxY());
-            int shellTop = island.shellTop(x, z, bottom);
-            for (int y = from; y < to; y++) {
-                int sourceY = y - island.offsetY();
-                // Seal underside caves and aquifers too, so the calcite skin is continuous.
-                BlockState state = y < shellTop ? Blocks.CALCITE.defaultBlockState()
-                    : column.block(sx, sourceY, sz);
-                if (y >= shellTop && y < bottom + 3 && !state.isAir()
-                    && state.getFluidState().isEmpty()) state = Blocks.CALCITE.defaultBlockState();
-                if (state.isAir()) continue;
-                var section = cube.getSections()[AllvrCube.sliceIndex((x - x0) >> 4, (y - y0) >> 4, (z - z0) >> 4)];
-                section.setBlockState(x & 15, y & 15, z & 15, state, false);
-                if (state.hasBlockEntity()) {
-                    world.set(x, y, z);
-                    CompoundTag nbt = column.blockEntities().get(source.set(sx, sourceY, sz));
-                    BlockEntity entity = null;
-                    if (nbt != null && !"DUMMY".equals(nbt.getString("id"))) {
-                        nbt = nbt.copy();
-                        nbt.putInt("x", x); nbt.putInt("y", y); nbt.putInt("z", z);
-                        entity = BlockEntity.loadStatic(world.immutable(), state, nbt, level.registryAccess());
+        for (Island island : islands) {
+            for (int z = z0; z < z0 + 32; z++) {
+                checkCancelled(cancelled);
+                for (int x = x0; x < x0 + 32; x++) {
+                    double bottom = island.bottom(x, z);
+                    if (bottom >= y0 + 32) continue;
+                    int sx = x + island.sourceOffsetX(), sz = z + island.sourceOffsetZ();
+                    long sourceKey = net.minecraft.world.level.ChunkPos.asLong(sx >> 4, sz >> 4);
+                    var column = sourceColumns.get(sourceKey);
+                    if (column == null) continue;
+                    int from = Math.max(y0, Math.max(island.minY(), (int) Math.ceil(bottom)));
+                    int to = Math.min(y0 + 32, island.maxY());
+                    int shellTop = island.shellTop(x, z, bottom);
+                    for (int y = from; y < to; y++) {
+                        int sourceY = y - island.offsetY();
+                        // Seal underside caves and aquifers too, so the calcite skin is continuous.
+                        BlockState state = y < shellTop ? Blocks.CALCITE.defaultBlockState()
+                            : column.block(sx, sourceY, sz);
+                        if (y >= shellTop && y < bottom + 3 && !state.isAir()
+                            && state.getFluidState().isEmpty()) state = Blocks.CALCITE.defaultBlockState();
+                        if (state.isAir()) continue;
+                        var section = cube.getSections()[AllvrCube.sliceIndex((x - x0) >> 4, (y - y0) >> 4, (z - z0) >> 4)];
+                        section.setBlockState(x & 15, y & 15, z & 15, state, false);
+                        if (state.hasBlockEntity()) {
+                            world.set(x, y, z);
+                            CompoundTag nbt = column.blockEntities().get(source.set(sx, sourceY, sz));
+                            BlockEntity entity = null;
+                            if (nbt != null && !"DUMMY".equals(nbt.getString("id"))) {
+                                nbt = nbt.copy();
+                                nbt.putInt("x", x); nbt.putInt("y", y); nbt.putInt("z", z);
+                                entity = BlockEntity.loadStatic(world.immutable(), state, nbt, level.registryAccess());
+                            }
+                            if (entity != null) cube.installBlockEntity(entity);
+                            else cube.updateBlockEntity(level, world.immutable(), state);
+                        }
                     }
-                    if (entity != null) cube.installBlockEntity(entity);
-                    else cube.updateBlockEntity(level, world.immutable(), state);
                 }
             }
         }

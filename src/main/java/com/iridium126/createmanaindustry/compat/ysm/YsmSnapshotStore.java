@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.compat.ysm;
 
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmModelSnapshot;
 import java.nio.file.Path;
 import java.util.*;
@@ -11,7 +13,7 @@ public final class YsmSnapshotStore implements AutoCloseable {
     public record Result(Status status, YsmModelSnapshot snapshot, String reason) {}
     private final YsmSnapshotCache snapshots;
     private final ThreadPoolExecutor worker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(16), action -> { var thread = new Thread(action, "CMI YSM resource loader"); thread.setDaemon(true); return thread; });
+            new ArrayBlockingQueue<>(16), CMIThreadFactory.daemonFactory("ysm-resource-loader"));
     private final Map<String, CompletableFuture<String>> requests = new HashMap<>();
     private boolean closed;
 

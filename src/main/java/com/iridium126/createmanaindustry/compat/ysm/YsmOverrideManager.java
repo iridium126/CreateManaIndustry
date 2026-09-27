@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.compat.ysm;
 
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
 import com.iridium126.createmanaindustry.compat.ysm.net.YsmServerArchives;
 import java.io.IOException;
@@ -28,7 +30,7 @@ public final class YsmOverrideManager implements AutoCloseable {
     private final YsmRuntimeSymbols.Snapshot symbols;
     private final YsmServerArchives transfers;
     private final ThreadPoolExecutor files = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(4), action -> { var thread = new Thread(action, "CMI YSM model staging"); thread.setDaemon(true); return thread; });
+            new ArrayBlockingQueue<>(4), CMIThreadFactory.daemonFactory("ysm-model-staging"));
     private final Map<UUID, Long> revisions = new HashMap<>();
     private final Map<UUID, ActiveOverride> overrides = new HashMap<>();
     private final Map<UUID, Long> pendingReassert = new HashMap<>();

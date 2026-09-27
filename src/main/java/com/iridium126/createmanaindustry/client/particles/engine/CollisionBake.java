@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -354,11 +355,8 @@ public final class CollisionBake {
             }
         }
         if (this.worker == null) {
-            this.worker = Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "CMI-collision-bake");
-                t.setDaemon(true);
-                return t;
-            });
+            this.worker = Executors.newSingleThreadExecutor(
+                    CMIThreadFactory.daemonFactory("particles-collision-bake"));
         }
         BuildTask task = new BuildTask(level, s, chunks,
                 level.getMinBuildHeight(), level.getMaxBuildHeight());

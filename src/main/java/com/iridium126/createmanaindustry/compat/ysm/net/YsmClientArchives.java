@@ -2,10 +2,13 @@ package com.iridium126.createmanaindustry.compat.ysm.net;
 
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
 import com.iridium126.createmanaindustry.compat.ysm.YsmChatMessages;
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
@@ -18,6 +21,8 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 @EventBusSubscriber(modid = "createmanaindustry", value = Dist.CLIENT)
 public final class YsmClientArchives {
     private static final int MAX_TRANSFERS = 2;
+    private static final ExecutorService WORKER =
+            Executors.newSingleThreadExecutor(CMIThreadFactory.daemonFactory("ysm-client-archive"));
     private static final long TRANSFER_IDLE_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(60);
     private static final LinkedHashMap<String, YsmResourceArchive> CACHE = new LinkedHashMap<>(4, .75f, true);
     private static final Map<UUID, Long> REVISIONS = new HashMap<>();
@@ -46,7 +51,7 @@ public final class YsmClientArchives {
                 INCOMING.remove(packet.transfer());
                 var header = incoming.header(); byte[] content = incoming.bytes.toByteArray();
                 long startedInSession = session;
-                CompletableFuture.supplyAsync(() -> YsmResourceArchive.decode(content)).whenComplete((archive, failure) ->
+                CompletableFuture.supplyAsync(() -> YsmResourceArchive.decode(content), WORKER).whenComplete((archive, failure) ->
                     Minecraft.getInstance().execute(() -> {
                         if (startedInSession != session) return;
                         if (failure != null || !archive.digest().equals(header.digest())) {
@@ -83,7 +88,7 @@ public final class YsmClientArchives {
         CompletableFuture.supplyAsync(() -> {
             try { return new ExportResult(archive.export(gameDirectory).toString(), null); }
             catch (Exception failure) { return new ExportResult(null, failure.getMessage()); }
-        }).thenAccept(result -> Minecraft.getInstance().execute(() -> {
+        }, WORKER).thenAccept(result -> Minecraft.getInstance().execute(() -> {
             if (startedInSession == session) message(result.error() == null
                     ? YsmChatMessages.exportSucceeded(result.path()) : YsmChatMessages.exportFailed(result.error()));
         }));

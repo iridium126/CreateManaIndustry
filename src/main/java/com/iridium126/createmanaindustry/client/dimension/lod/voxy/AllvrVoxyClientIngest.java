@@ -23,6 +23,7 @@ import com.iridium126.createmanaindustry.config.ClientConfig;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
 
 /**
  * Client-only Allay bridge into Voxy's normal ingest service.
@@ -37,11 +38,8 @@ public final class AllvrVoxyClientIngest {
 
     private static final int SECTION_BUDGET_PER_TICK = 16;
     private static final int PREWARM_DISTANCE_BLOCKS = 1024;
-    private static final ExecutorService PREWARM_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "allvr-voxy-slab-prewarm");
-        t.setDaemon(true);
-        return t;
-    });
+    private static final ExecutorService PREWARM_EXECUTOR =
+        Executors.newSingleThreadExecutor(CMIThreadFactory.daemonFactory("allvr-voxy-slab-prewarm"));
     private static final AtomicLong LEVEL_EPOCH = new AtomicLong();
 
     private static volatile ClientLevel level;

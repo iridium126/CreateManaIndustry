@@ -8,6 +8,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.RejectedExecutionException;
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
 
 /** Bounded, server-thread-owned cache. No game objects may be used as keys or compiler inputs. */
 public final class CompilationCache implements AutoCloseable {
@@ -27,11 +28,8 @@ public final class CompilationCache implements AutoCloseable {
         this.maxEntries = maxEntries;
         this.maxBytes = maxBytes;
         worker = new ThreadPoolExecutor(1, 1, 10, TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(maxEntries), task -> {
-                    Thread thread = new Thread(task, "CMI Hex JIT compiler");
-                    thread.setDaemon(true);
-                    return thread;
-                }, new ThreadPoolExecutor.AbortPolicy());
+                new ArrayBlockingQueue<>(maxEntries), CMIThreadFactory.daemonFactory("hexjit-compiler"),
+                new ThreadPoolExecutor.AbortPolicy());
         worker.allowCoreThreadTimeOut(true);
     }
 

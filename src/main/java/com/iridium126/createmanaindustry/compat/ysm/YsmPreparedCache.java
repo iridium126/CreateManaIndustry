@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.compat.ysm;
 
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
+
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.Group;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmModelSnapshot;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
@@ -12,7 +14,7 @@ public final class YsmPreparedCache implements AutoCloseable {
     public record Result(State state, YsmResourceArchive archive, String reason) {}
     private record Key(String source, List<Group> roots) { Key { roots = List.copyOf(roots); } }
     private final ThreadPoolExecutor worker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(4), action -> { var thread = new Thread(action, "CMI YSM edit preparation"); thread.setDaemon(true); return thread; });
+            new ArrayBlockingQueue<>(4), CMIThreadFactory.daemonFactory("ysm-edit-preparation"));
     private final LinkedHashMap<Key, CompletableFuture<YsmResourceArchive>> entries = new LinkedHashMap<>(8, .75f, true);
     private boolean closed;
 

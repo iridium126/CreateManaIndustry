@@ -6,6 +6,8 @@ import com.iridium126.createmanaindustry.dimension.gen.markov.EpicRedwoodModel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 
 /** Writes EpicRedwood blocks only while a new chunk or cube is being generated. */
 public final class EpicRedwoodGenerator {
@@ -47,7 +49,7 @@ public final class EpicRedwoodGenerator {
         int z = chunk.getPos().getMinBlockZ();
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (int y = chunk.getMinBuildHeight(); y < chunk.getMaxBuildHeight(); y += 16) {
-            writeSection(x, y, z, (px, py, pz, state) -> {
+            writeSection(x, y, z, () -> false, (px, py, pz, state) -> {
                 pos.set(px, py, pz);
                 chunk.removeBlockEntity(pos);
                 chunk.setBlockState(pos, state, false);
@@ -56,28 +58,42 @@ public final class EpicRedwoodGenerator {
     }
 
     public void generate(AllvrCube cube) {
+        generate(cube, () -> false);
+    }
+
+    public void generate(AllvrCube cube, BooleanSupplier cancelled) {
         int x = cube.getPos().minBlockX();
         int y = cube.getPos().minBlockY();
         int z = cube.getPos().minBlockZ();
         if (!intersectsCell(x, y, z)) return;
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (int sy = 0; sy < 2; sy++) for (int sz = 0; sz < 2; sz++) for (int sx = 0; sx < 2; sx++) {
+            checkCancelled(cancelled);
             var target = cube.getSections()[AllvrCube.sliceIndex(sx, sy, sz)];
-            writeSection(x + sx * 16, y + sy * 16, z + sz * 16, (px, py, pz, state) -> {
+            writeSection(x + sx * 16, y + sy * 16, z + sz * 16, cancelled, (px, py, pz, state) -> {
                 BlockState old = target.setBlockState(px & 15, py & 15, pz & 15, state, false);
                 if (old.hasBlockEntity()) cube.removeBlockEntity(pos.set(px, py, pz));
             });
         }
     }
 
-    private void writeSection(int x0, int y0, int z0, Writer writer) {
+    private static void checkCancelled(BooleanSupplier cancelled) {
+        if (cancelled.getAsBoolean()) throw new CancellationException("Epic redwood cube generation was abandoned");
+    }
+
+    private void writeSection(int x0, int y0, int z0, BooleanSupplier cancelled, Writer writer) {
         if (!intersects(x0, y0, z0, 16)) return;
         var volume = epicRedwood.volume();
         if (!volume.intersects(x0 - MIN_XZ, z0 - MIN_XZ, y0 - BASE_Y, 16)) return;
-        for (int y = y0; y < y0 + 16; y++) for (int z = z0; z < z0 + 16; z++) for (int x = x0; x < x0 + 16; x++) {
-            BlockState state = palette.state(volume.get(x - MIN_XZ, z - MIN_XZ, y - BASE_Y),
-                BlockStateVariants.coordinateSeed(seed, x, y, z));
-            if (state != null) writer.set(x, y, z, state);
+        for (int y = y0; y < y0 + 16; y++) {
+            for (int z = z0; z < z0 + 16; z++) {
+                checkCancelled(cancelled);
+                for (int x = x0; x < x0 + 16; x++) {
+                    BlockState state = palette.state(volume.get(x - MIN_XZ, z - MIN_XZ, y - BASE_Y),
+                        BlockStateVariants.coordinateSeed(seed, x, y, z));
+                    if (state != null) writer.set(x, y, z, state);
+                }
+            }
         }
     }
 

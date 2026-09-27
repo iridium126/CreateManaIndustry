@@ -94,7 +94,7 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
      * after the chunk becomes visible.
      */
     public static void handle(ClientboundAllvrCubePacket packet, IPayloadContext ctx) {
-        AllvrClientCubeCache.queueCube(packet);
+        ctx.enqueueWork(() -> AllvrClientCubeCache.queueCube(packet));
     }
 
     /** Client-side decode into a fresh unpublished {@link AllvrCube}.

@@ -44,6 +44,7 @@ import net.minecraft.world.ticks.TickPriority;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
 import com.iridium126.createmanaindustry.dimension.gen.AllvrIslandFieldGenerator;
+import com.iridium126.createmanaindustry.util.concurrent.CMIThreadFactory;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrBlockUpdatePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrForgetCubePacket;
@@ -174,11 +175,7 @@ public final class AllvrCubeMap {
     private final ThreadPoolExecutor persistenceDecodeExecutor = new ThreadPoolExecutor(
         PERSISTENCE_DECODE_WORKERS, PERSISTENCE_DECODE_WORKERS,
         0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(MAX_PENDING_PERSISTED_LOADS * 2),
-        r -> {
-            Thread thread = new Thread(r, "allvr-persist-decode");
-            thread.setDaemon(true);
-            return thread;
-        }, new ThreadPoolExecutor.AbortPolicy());
+        CMIThreadFactory.daemonFactory("allvr-persist-decode"), new ThreadPoolExecutor.AbortPolicy());
     private final ConcurrentHashMap<Long, CompletableFuture<AllvrCube>> pendingGenerations = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<GeneratedCube> completedGenerations = new ConcurrentLinkedQueue<>();
     /** Persisted cube reads use the vanilla ChunkMap-style async handoff. */
@@ -711,9 +708,13 @@ public final class AllvrCubeMap {
             // A completion can already be in the queue when the player moves
             // away.  ChunkMap drops that result when its holder/ticket is no
             // longer current; do the same before touching the live map.
-            if (pendingGenerations.get(completed.key()) != completed.request()
-                || !isNeededByAnyPlayer(AllvrCubePos.fromLong(completed.key()), level.players())) {
-                pendingGenerations.remove(completed.key(), completed.request());
+            if (pendingGenerations.get(completed.key()) != completed.request()) {
+                continue;
+            }
+            if (!isNeededByAnyPlayer(AllvrCubePos.fromLong(completed.key()), level.players())) {
+                if (pendingGenerations.remove(completed.key(), completed.request())) {
+                    completed.request().cancel(true);
+                }
                 continue;
             }
             if (completed.failure() != null) {
@@ -770,7 +771,7 @@ public final class AllvrCubeMap {
             // generateAsync() is backed by the same vanilla noise/worldgen
             // executor used by NoiseBasedChunkGenerator.  Only the future
             // completion is handed back to this main-thread-owned map.
-            generator.generateAsync(cube).whenComplete((ignored, failure) -> {
+            generator.generateAsync(cube, future::isCancelled).whenComplete((ignored, failure) -> {
                 if (future.isCancelled()) {
                     return;
                 }
@@ -1459,6 +1460,9 @@ public final class AllvrCubeMap {
             return true;
         }
         this.closed = true;
+        for (CompletableFuture<AllvrCube> generation : pendingGenerations.values()) {
+            generation.cancel(true);
+        }
         boolean ok = true;
         if (this.level.noSave) {
             CreateManaIndustry.LOGGER.info("[Allvr] level has noSave set — skipping final allvr save");
