@@ -9,6 +9,7 @@ allprojects {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/HexPatternGpuValidation.java'
+            if (project.hasProperty('particleBenchmark')) args '--benchmark'
             workingDir = project.projectDir
         }
     }

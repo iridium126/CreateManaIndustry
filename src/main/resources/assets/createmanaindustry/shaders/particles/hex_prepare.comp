@@ -2,8 +2,8 @@ layout(local_size_x = 64) in;
 layout(std430, binding = BIND_POOL_WRITE) readonly buffer HexPool { vec4 data[]; } pool;
 layout(std430, binding = BIND_SORT_READ) readonly buffer Sorted { uvec2 kv[]; } sorted;
 layout(std430, binding = BIND_INDIRECT) readonly buffer Indirect { uint cmd[INDIRECT_UINTS]; } indirect;
-layout(std430, binding = 27) writeonly buffer HexCommands { uvec4 cmd[]; } draws;
-layout(std430, binding = 28) buffer HexPoints { vec4 point[]; } outputPoints;
+layout(std430, binding = BIND_HEX_COMMAND) writeonly buffer HexCommands { uvec4 cmd[]; } draws;
+layout(std430, binding = BIND_HEX_POINT) buffer HexPoints { vec4 point[]; } outputPoints;
 #pragma cmi_include chunks/hex_pattern.glsl
 #pragma cmi_include chunks/hex_noise.glsl
 void main() {

@@ -47,7 +47,7 @@ public final class ParticleBuffers {
     public static final int EMIT_ENTRY_FLOATS = 12;
     /**
      * Emit-command ring depth. Deliberately aligned with {@link #COUNTER_RING}
-     * (4): unlike the counter ring this ring has NO fence guarding the reuse of
+     * (4): unlike the counter ring this ring uses ordered glBufferSubData writes when reusing
      * its oldest slot, so its margin against a CPU run-ahead overwriting a slot
      * the GPU is still reading must not be smaller than the counter ring's.
      */
@@ -80,10 +80,11 @@ public final class ParticleBuffers {
     public static final int INDIRECT_STRIDE = 20;
     /** Counting-sort passes over the 9-bit key (one, by design). */
     public static final int RADIX_PASSES = 1;
+    public static final int SORT_GROUP_THRESHOLD = 65536;
     /**
-     * Radix bin count. The sort key is 9 bits: bit {@link #SORT_TYPE_SHIFT}
+     * Radix bin count. The sort key is 10 bits: bit {@link #SORT_TYPE_SHIFT}
      * selects the translucent item type (0 = MODEL, 1 = ALPHA sprite) and the
-     * low byte carries the inverted log depth band. Binning over all 9 bits
+     * low byte carries the inverted log depth band; type 2 is HEX_PATTERN. Binning over all 9 bits
      * makes the scatter place each type in its own CONTIGUOUS partition --
      * MODEL items at [0, N_model), ALPHA items at [N_model, N_total) -- so
      * every translucent draw command gets an exact instanceCount and no
@@ -186,7 +187,7 @@ public final class ParticleBuffers {
      */
     public static final int CARRIERSINK_BB = 23;
     /** Entries per wave-contact readback (the touches in ONE frame; tiny). */
-    public static final int WAVECONTACT_CAP = 8;
+    public static final int WAVECONTACT_CAP = 4 * 4096;
     /** Floats per wave-contact entry: memberIdx, waveId, pos.xyz. */
     public static final int WAVECONTACT_ENTRY_FLOATS = 5;
     /**
@@ -223,8 +224,8 @@ public final class ParticleBuffers {
     public static final int DAMAGE_QUEUE_CAP = 64;
     /**
      * CPU-side layout of the damage queue upload: an std430 uvec4 header
-     * (x = entry count) followed by 24-byte entries of 6 floats each:
-     * (key, damage, kbVecX, kbVecZ, lightPacked, flags). {@code key} is the
+     * (x = entry count) followed by 32-byte entries of 8 words each:
+     * (key, damage, kbVecX, kbVecZ, lightPacked, flags, identityTokenBits, reserved). {@code key} is the
      * POOL INDEX for legacy local damage (non-storm MODEL debug particles,
      * client-authoritative) or the MEMBER INDEX for storm damage; flags bit 0
      * selects the interpretation and bit 1 carries the server-decided death
@@ -235,7 +236,7 @@ public final class ParticleBuffers {
      * same lighting.
      */
     public static final int DAMAGE_HEADER_BYTES = 16;
-    public static final int DAMAGE_ENTRY_BYTES = 24;
+    public static final int DAMAGE_ENTRY_BYTES = 32;
     /** Damage-entry flags: key is a storm MEMBER index (vs pool index). */
     public static final int DAMAGE_FLAG_MEMBER = 1;
     /** Damage-entry flags: server-authoritative death — force the corpse. */
@@ -313,7 +314,30 @@ public final class ParticleBuffers {
     private final int[] particleSSBOs = new int[2];
     private final int[] emitSSBOs = new int[EMIT_RING_SIZE];
     private final int[] counterSSBOs = new int[COUNTER_RING];
-    private final int[] sortSSBOs = new int[2];
+    private final int[] sortSSBOs = new int[4];
+    private final int[] indirectFrames = new int[2], additiveFrames = new int[2], opaqueFrames = new int[2];
+    private int renderIndex;
+    private boolean bindingScope;
+    private final int[] bound = new int[32];
+    private void bindBase(int target, int binding, int buffer) {
+        if (bindingScope && bound[binding] == buffer) return;
+        ParticleDiagnostics.INSTANCE.call();
+        GL30.glBindBufferBase(target, binding, buffer);
+        if (bindingScope) bound[binding] = buffer;
+    }
+    public void beginBindings() {
+        java.util.Arrays.fill(bound, -1);
+        bindingScope = true;
+    }
+    public static final int IDENTITY_BB = 31;
+    private int identitySSBO = -1;
+    public static final int DISPATCH_BB = 29;
+    public static final int WAVE_STAMP_BB = 30;
+    private int waveStampSSBO = -1;
+    private long identityEpoch;
+    public long identityEpoch() { return identityEpoch; }
+    public static final int DISPATCH_BYTES = 12;
+    private int dispatchSSBO = -1;
     private int emitterSSBO = -1;
     private int orderAddSSBO = -1;
     private int indirectSSBO = -1;
@@ -340,8 +364,7 @@ public final class ParticleBuffers {
     private int maxEmitters = 0;
     private boolean initialized = false;
 
-    private float[] emitterMirror;
-    private boolean emittersDirty = false;
+    private ParticleEmitterUploads emitterUploads;
 
     // Reusable scratch for tiny uploads. The largest writer is the initial
     // indirect payload (INDIRECT_COMMANDS x INDIRECT_STRIDE) — pitfall #22
@@ -353,18 +376,6 @@ public final class ParticleBuffers {
     private static final java.util.regex.Pattern GL_VERSION_PATTERN =
             java.util.regex.Pattern.compile("(\\d+)\\.(\\d+)");
 
-    // Dedicated read-back targets: glGetBufferSubData reads exactly
-    // buffer.remaining() bytes, so these must be sized to the value widths.
-    private final ByteBuffer readTmp = BufferUtils.createByteBuffer(4);
-    private final ByteBuffer readTmp8 = BufferUtils.createByteBuffer(8);
-    /** 16-byte hit readback: {key, hpBits, memberIdx, unused}. */
-    private final ByteBuffer readTmp16 = BufferUtils.createByteBuffer(16);
-    /** Authority snapshot readback: count header + capped entries. */
-    private final ByteBuffer readTmpStorm = BufferUtils.createByteBuffer(
-            4 + STORMPOS_CAP * STORMPOS_ENTRY_FLOATS * 4);
-    /** Wave-contact readback: count header + capped entries. */
-    private final ByteBuffer readTmpWave = BufferUtils.createByteBuffer(
-            4 + WAVECONTACT_CAP * WAVECONTACT_ENTRY_FLOATS * 4);
     /** Staging for per-frame player positions (MAX_STORM_PLAYERS vec4). */
     private final FloatBuffer playersTmp = BufferUtils.createFloatBuffer(MAX_STORM_PLAYERS * 4);
     /** Staging for one correction-slot write (2 vec4). */
@@ -375,7 +386,7 @@ public final class ParticleBuffers {
      * provide a usable SSBO capacity or the max-width it supports is tiny.
      */
     public boolean init(int maxParticles, int maxEmitters) {
-        // The pipeline needs OpenGL 4.3 (compute shaders + robust SSBOs). On an
+        // The pipeline needs OpenGL 4.5 (compute shaders + robust SSBOs). On an
         // older context the SSBO-size query below would just return 0/garbage —
         // fail with a clear message instead so the engine disables cleanly.
         String glVersion = GL11.glGetString(GL11.GL_VERSION);
@@ -384,15 +395,19 @@ public final class ParticleBuffers {
             if (m.find()) {
                 int major = Integer.parseInt(m.group(1));
                 int minor = Integer.parseInt(m.group(2));
-                if (major < 4 || (major == 4 && minor < 3)) {
+                if (major < 4 || (major == 4 && minor < 5)) {
                     CreateManaIndustry.LOGGER.warn(
-                            "[CMI particles] OpenGL {}.{} found, compute shaders need 4.3+; engine disabled", major, minor);
+                            "[CMI particles] OpenGL {}.{} found, compute shaders need 4.5+; engine disabled", major, minor);
                     return false;
                 }
             }
         }
         int maxSSBO = GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE);
-        int cap = Math.min(maxParticles, Math.max(0, maxSSBO / BYTES_PER_PARTICLE));
+        int maxGroups = GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0);
+        if (GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS) <= IDENTITY_BB)
+            return false;
+        int cap = (int) Math.min(Math.min((long) maxParticles, Math.max(0, maxSSBO / BYTES_PER_PARTICLE)),
+                (long) maxGroups * 64);
         if (cap < 1000) {
             CreateManaIndustry.LOGGER.warn(
                     "[CMI particles] SSBO max size {} B too small for a usable particle pool (started {}); engine disabled",
@@ -400,8 +415,13 @@ public final class ParticleBuffers {
             return false;
         }
         this.capacity = cap;
+        this.identitySSBO = createBuffer(4L + cap * 8L, null);
+        GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
+                GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_INT, (java.nio.IntBuffer) null);
+        this.waveStampSSBO = createBuffer((long) cap * 16, null);
         this.maxEmitters = maxEmitters;
-        this.emitterMirror = new float[maxEmitters * VEC4_PER_EMITTER * 4];
+        this.emitterUploads = new ParticleEmitterUploads(maxEmitters);
+        this.dispatchSSBO = createBuffer(3L * DISPATCH_BYTES, null);
 
         this.vao = GL30.glGenVertexArrays();
         for (int i = 0; i < 2; i++) {
@@ -411,7 +431,12 @@ public final class ParticleBuffers {
             this.emitSSBOs[i] = createBuffer((long) MAX_EMIT_COMMANDS * EMIT_ENTRY_FLOATS * 4, null);
         }
         this.emitterSSBO = createBuffer((long) maxEmitters * VEC4_PER_EMITTER * 4 * 4, null);
-        this.indirectSSBO = createBuffer((long) INDIRECT_COMMANDS * INDIRECT_STRIDE, null);
+        for (int i = 0; i < 2; i++) {
+            this.indirectFrames[i] = createBuffer((long) INDIRECT_COMMANDS * INDIRECT_STRIDE, null);
+            this.additiveFrames[i] = createBuffer(cap * 4L, null);
+            this.opaqueFrames[i] = createBuffer(cap * 4L, null);
+        }
+        selectRenderFrame(0);
         for (int i = 0; i < COUNTER_RING; i++) {
             this.counterSSBOs[i] = createBuffer(16, null);
         }
@@ -430,15 +455,15 @@ public final class ParticleBuffers {
         // N_total -- neither the carrier region nor the metadata slot is touched
         // by any of them. L0 shaders fetch the carrier region only through the
         // cmd3 carrier segment (whose instanceCount keygen clamps to CARRIER_CAP).
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < 4; i++) {
             this.sortSSBOs[i] = createBuffer((cap + (long) CARRIER_CAP + 1L) * 8L, null);
         }
         // Additive permutation (dense, uint per additive particle).
-        this.orderAddSSBO = createBuffer(cap * 4L, null);
+
         // OPAQUE cutout-billboard permutation (dense, uint per particle).
-        this.orderOpaqueSSBO = createBuffer(cap * 4L, null);
+
         this.histSSBO = createBuffer((long) RADIX_BINS * 4, null);
-        this.offsetSSBO = createBuffer((long) RADIX_BINS * 4, null);
+        this.offsetSSBO = createBuffer((long) (RADIX_BINS + 1) * 4, null);
         this.bakeMetaSSBO = createBuffer(CollisionBake.MAX_SLICES * 16L, null);
         // Boids spatial hash: heads table followed by the per-live-index next
         // chain array, sized by POOL CAPACITY so every storm member (up to the
@@ -481,8 +506,10 @@ public final class ParticleBuffers {
             this.tmp4.putInt(6).putInt(0).putInt(0).putInt(0).putInt(0);
         }
         this.tmp4.flip();
-        GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, this.indirectSSBO);
-        GL15.glBufferSubData(GL40.GL_DRAW_INDIRECT_BUFFER, 0, this.tmp4);
+        for (int id : this.indirectFrames) {
+            GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, id);
+            GL15.glBufferSubData(GL40.GL_DRAW_INDIRECT_BUFFER, 0, this.tmp4);
+        }
 
         // zero all counter slots
         this.tmp4.clear();
@@ -493,6 +520,7 @@ public final class ParticleBuffers {
             GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
         }
 
+        invalidateIdentities();
         this.initialized = true;
         return true;
     }
@@ -522,7 +550,7 @@ public final class ParticleBuffers {
      * mean "fresh data"). Callers choose generation, this class owns buffers.
      */
     public void bindNewestPool(int binding) {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.particleSSBOs[this.readIndex]);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.particleSSBOs[this.readIndex]);
     }
 
     public int capacity() {
@@ -562,24 +590,33 @@ public final class ParticleBuffers {
     }
 
     /** Call after a full frame: the freshly written buffer becomes the next read source. */
+    public void beginComputeFrame() { beginBindings(); selectRenderFrame(1 - this.readIndex); }
+    public void restoreCommittedFrame() { bindingScope = false; selectRenderFrame(this.readIndex); }
+    private void selectRenderFrame(int index) {
+        this.renderIndex = index;
+        this.indirectSSBO = this.indirectFrames[index];
+        this.orderAddSSBO = this.additiveFrames[index];
+        this.orderOpaqueSSBO = this.opaqueFrames[index];
+    }
+
     public void swap() {
         this.readIndex = 1 - this.readIndex;
     }
 
     public void bindParticleRead(int binding) {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.particleSSBOs[this.readIndex]);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.particleSSBOs[this.readIndex]);
     }
 
     public void bindParticleWrite(int binding) {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.particleSSBOs[1 - this.readIndex]);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.particleSSBOs[1 - this.readIndex]);
     }
 
     public void bindIndirect(int binding) {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.indirectSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.indirectSSBO);
     }
 
     public void bindCounter(int binding, int slot) {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.counterSSBOs[slot % COUNTER_RING]);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.counterSSBOs[slot % COUNTER_RING]);
     }
 
     /**
@@ -590,12 +627,12 @@ public final class ParticleBuffers {
      * its own partially-written counters as the read pool's live count.
      */
     public void bindPrevCounter(int binding, int slot) {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, binding,
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding,
                 this.counterSSBOs[slot % COUNTER_RING]);
     }
 
     public void bindEmitters(int binding) {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.emitterSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.emitterSSBO);
     }
 
     /** Advances the emit-command ring and returns the next buffer id. */
@@ -605,16 +642,16 @@ public final class ParticleBuffers {
     }
 
     public void bindEmitBuffer(int binding, int bufferId) {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, bufferId);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, bufferId);
     }
 
     public void bindSort(int binding, int sortBufferId) {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, sortBufferId);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, sortBufferId);
     }
 
     /** Physical GL buffer id of one of the two radix sort data buffers. */
     public int sortBuffer(int i) {
-        return this.sortSSBOs[i];
+        return this.sortSSBOs[this.renderIndex * 2 + i];
     }
 
     /** Read-side pool backing buffer id (for the merged program's TBO view). */
@@ -676,17 +713,17 @@ public final class ParticleBuffers {
 
     /** Binds the additive-permutation buffer at its fixed binding for keygen/draw. */
     public void bindOrderAdd() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, ORDERADD_BINDING, this.orderAddSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, ORDERADD_BINDING, this.orderAddSSBO);
     }
 
     /** Binds the OPAQUE cutout-billboard permutation at its fixed binding. */
     public void bindOrderOpaque() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, ORDEROPAQUE_BINDING, this.orderOpaqueSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, ORDEROPAQUE_BINDING, this.orderOpaqueSSBO);
     }
 
     /** Binds the static model geometry for the model draw pass (must be re-bound every frame — see {@link #unbindShaders()}). */
     public void bindModelGeo() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, MODELGEO_BINDING, this.modelGeoSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, MODELGEO_BINDING, this.modelGeoSSBO);
     }
 
     /**
@@ -714,7 +751,7 @@ public final class ParticleBuffers {
             buf.put(vertices).flip();
             this.modelGeoSSBO = createBuffer(4L * vertices.length, buf);
         }
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, MODELGEO_BINDING, this.modelGeoSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, MODELGEO_BINDING, this.modelGeoSSBO);
 
         this.modelIndexBuffer = GL15.glGenBuffers();
         GL30.glBindVertexArray(this.vao);
@@ -737,20 +774,22 @@ public final class ParticleBuffers {
         this.tmp4.putInt(indices.length - opaqueIndexCount).putInt(0)
                 .putInt(opaqueIndexCount).putInt(0).putInt(0);
         this.tmp4.flip();
-        GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, this.indirectSSBO);
-        GL15.glBufferSubData(GL40.GL_DRAW_INDIRECT_BUFFER, 2L * INDIRECT_STRIDE, this.tmp4);
+        for (int id : this.indirectFrames) {
+            GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, id);
+            GL15.glBufferSubData(GL40.GL_DRAW_INDIRECT_BUFFER, 2L * INDIRECT_STRIDE, this.tmp4);
+        }
     }
 
     public void bindHist() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, HIST_BINDING, this.histSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, HIST_BINDING, this.histSSBO);
     }
 
     public void bindOffsets() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, OFFSET_BINDING, this.offsetSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, OFFSET_BINDING, this.offsetSSBO);
     }
 
     public void bindBakeMeta() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, BAKEMETA_BINDING, this.bakeMetaSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, BAKEMETA_BINDING, this.bakeMetaSSBO);
     }
 
     /** Uploads the collision bake-meta array to its SSBO. */
@@ -765,33 +804,34 @@ public final class ParticleBuffers {
 
     /** Zeroes the radix histogram (2 KiB) before each pass. */
     public void clearHist() {
+        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.histSSBO);
         GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.zero2048);
     }
 
     /** Binds the boids spatial-hash buffer at its fixed binding. */
     public void bindGrid() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, GRID_BB, this.gridSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, GRID_BB, this.gridSSBO);
     }
 
     /** Binds the carrier-sink sort buffer (keygen's dual-write target) at its fixed binding. */
     public void bindCarrierSink() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, CARRIERSINK_BB, this.sortSSBOs[1]);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, CARRIERSINK_BB, sortBuffer(1));
     }
 
     /** Binds the CPU melee-damage queue at its fixed binding. */
     public void bindDamage() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, DAMAGE_BB, this.damageSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, DAMAGE_BB, this.damageSSBO);
     }
 
     /** Binds the crosshair hit-query result at its fixed binding. */
     public void bindHit() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, HIT_BB, this.hitSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, HIT_BB, this.hitSSBO);
     }
 
     /** Binds the storm player-position array at its fixed binding. */
     public void bindPlayers() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, PLAYERS_BB, this.playersSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, PLAYERS_BB, this.playersSSBO);
     }
 
     /**
@@ -812,7 +852,7 @@ public final class ParticleBuffers {
 
     /** Binds the storm correction-slot buffer at its fixed binding. */
     public void bindCorrections() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, CORRECTION_BB, this.correctionSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, CORRECTION_BB, this.correctionSSBO);
     }
 
     /**
@@ -833,11 +873,12 @@ public final class ParticleBuffers {
 
     /** Binds the authority readback staging buffer at its fixed binding. */
     public void bindStormPos() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, STORMPOS_BB, this.stormPosSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, STORMPOS_BB, this.stormPosSSBO);
     }
 
     /** Zeroes the readback entry count ahead of a dispatch (4-byte write). */
     public void clearStormPosCount() {
+        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         this.tmp4.clear();
         this.tmp4.putInt(0);
         this.tmp4.flip();
@@ -847,7 +888,7 @@ public final class ParticleBuffers {
 
     /** Binds the storm member identity map at its fixed binding. */
     public void bindMemberMap() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, MEMBERMAP_BB, this.memberMapSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, MEMBERMAP_BB, this.memberMapSSBO);
     }
 
     /**
@@ -857,7 +898,21 @@ public final class ParticleBuffers {
      * resolve a member-keyed combat origin onto whatever now occupies the old
      * slot.
      */
+    public void invalidateIdentities() {
+        this.identityEpoch++;
+        if (this.waveStampSSBO > 0) {
+            org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.waveStampSSBO);
+            GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
+                    GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_INT, (java.nio.IntBuffer) null);
+            clearWaveContactCount();
+        }
+        clearMemberMap();
+    }
+
+    /** Per-frame map maintenance must not invalidate asynchronous snapshots or event stamps. */
     public void clearMemberMap() {
+        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         if (this.memberMapSSBO <= 0 || this.capacity <= 0)
             return;
         try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
@@ -869,38 +924,16 @@ public final class ParticleBuffers {
         }
     }
 
-    /**
-     * Reads one completed readback snapshot (fence-covered — same stall
-     * discipline as {@link #readbackCounts(int)}): returns a float array of
-     * {@code min(count, STORMPOS_CAP)} entries at stride
-     * {@link #STORMPOS_ENTRY_FLOATS} ({@code memberIdx, pad, pos.xyz, vel.xyz})
-     * or {@code null} when the snapshot was empty.
-     */
-    public float[] readbackStormPos() {
-        this.readTmpStorm.clear();
-        this.readTmpStorm.limit(4);
-        GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.stormPosSSBO);
-        GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.readTmpStorm);
-        int count = this.readTmpStorm.getInt(0);
-        if (count <= 0)
-            return null;
-        int n = Math.min(count, STORMPOS_CAP);
-        this.readTmpStorm.clear();
-        this.readTmpStorm.limit(4 + n * STORMPOS_ENTRY_FLOATS * 4);
-        GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.readTmpStorm);
-        float[] out = new float[n * STORMPOS_ENTRY_FLOATS];
-        for (int i = 0; i < out.length; i++)
-            out[i] = this.readTmpStorm.getFloat(4 + i * 4);
-        return out;
-    }
 
     /** Binds the wave-contact staging buffer at its fixed binding. */
     public void bindWaveContact() {
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, WAVECONTACT_BB, this.waveContactSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, WAVE_STAMP_BB, this.waveStampSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, WAVECONTACT_BB, this.waveContactSSBO);
     }
 
-    /** Zeroes the wave-contact entry count ahead of a dispatch (4-byte write). */
+    /** Acknowledges wave events after a successful snapshot copy (4-byte write). */
     public void clearWaveContactCount() {
+        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         this.tmp4.clear();
         this.tmp4.putInt(0);
         this.tmp4.flip();
@@ -908,29 +941,6 @@ public final class ParticleBuffers {
         GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
     }
 
-    /**
-     * Reads one completed wave-contact snapshot (fence-covered — same stall
-     * discipline as {@link #readbackStormPos()}): entries of
-     * {@link #WAVECONTACT_ENTRY_FLOATS} floats
-     * ({@code memberIdx, waveId, pos.xyz}) or {@code null} when empty.
-     */
-    public float[] readbackWaveContact() {
-        this.readTmpWave.clear();
-        this.readTmpWave.limit(4);
-        GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.waveContactSSBO);
-        GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.readTmpWave);
-        int count = this.readTmpWave.getInt(0);
-        if (count <= 0)
-            return null;
-        int n = Math.min(count, WAVECONTACT_CAP);
-        this.readTmpWave.clear();
-        this.readTmpWave.limit(4 + n * WAVECONTACT_ENTRY_FLOATS * 4);
-        GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.readTmpWave);
-        float[] out = new float[n * WAVECONTACT_ENTRY_FLOATS];
-        for (int i = 0; i < out.length; i++)
-            out[i] = this.readTmpWave.getFloat(4 + i * 4);
-        return out;
-    }
 
     /**
      * Zeroes the heads table ({@link #GRID_TABLE} ints) ahead of each
@@ -938,6 +948,7 @@ public final class ParticleBuffers {
      * every slot is written before it can be traversed.
      */
     public void clearGridHeads() {
+        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
             java.nio.IntBuffer zero = stack.mallocInt(1);
             zero.put(0).flip();
@@ -952,39 +963,7 @@ public final class ParticleBuffers {
         return this.gridSSBO;
     }
 
-    /**
-     * Reads one ring slot's counters in an 8-byte readback:
-     * {@code {writeSlot, spare}} = {@code {liveCount, translucentCensus}}. The
-     * census is UNculled (every live ALPHA/MODEL particle, off-screen included)
-     * — keygen counts it before the frustum test and {@code capture.comp}
-     * copies it into {@code spare} at the end of each frame.
-     * <p>
-     * <b>Call this only when the fence covering that frame's GL work has
-     * signalled</b> — {@code glGetBufferSubData} is otherwise a CPU-GPU
-     * pipeline stall, however "lagged" the slot is.
-     */
-    public int[] readbackCounts(int slot) {
-        this.readTmp8.clear();
-        GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.counterSSBOs[slot % COUNTER_RING]);
-        GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.readTmp8);
-        return new int[] { this.readTmp8.getInt(0), this.readTmp8.getInt(4) };
-    }
 
-    /**
-     * Reads the crosshair hit-query snapshot (fence-covered): uvec4
-     * {@code {key, hpBits, memberIdx, unused}} where key packs
-     * {@code (quantized ray distance << 22 | particle index)} or
-     * {@link #HIT_MISS}, hpBits holds the winner's HP as float bits and
-     * memberIdx the storm member identity ({@link #HIT_MISS} = non-storm
-     * MODEL particle — the legacy local damage path).
-     */
-    public int[] readbackHit() {
-        this.readTmp16.clear();
-        GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.hitSSBO);
-        GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.readTmp16);
-        return new int[] { this.readTmp16.getInt(0), this.readTmp16.getInt(4),
-                this.readTmp16.getInt(8), this.readTmp16.getInt(12) };
-    }
 
     /**
      * Uploads the damage-queue header (+ entries when {@code buf} carries any)
@@ -993,47 +972,29 @@ public final class ParticleBuffers {
      * offset 0, vec4 entries from offset 16).
      */
     public void uploadDamageQueue(ByteBuffer buf) {
+        ParticleDiagnostics.INSTANCE.upload(buf.remaining());
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.damageSSBO);
         GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, buf);
     }
 
     /** Replaces the given emit-command ring slot contents (data already flipped). */
     public void uploadEmits(int bufferId, FloatBuffer data) {
+        ParticleDiagnostics.INSTANCE.upload(data.remaining() * 4L);
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, bufferId);
         GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, data);
     }
 
     /** Records one emitter header; uploaded lazily on the next frame. */
-    public void setEmitterHeader(int id, float[] block) {
-        if (id < 0 || id >= this.maxEmitters)
-            return;
-        System.arraycopy(block, 0, this.emitterMirror, id * VEC4_PER_EMITTER * 4, VEC4_PER_EMITTER * 4);
-        this.emittersDirty = true;
-    }
+    public void setEmitterHeader(int id, float[] block) { this.emitterUploads.set(id, block); }
 
-    /** Re-writes one emitter header (e.g. a collision bake index changed). */
-    public void updateEmitterHeader(int id, float[] block) {
-        setEmitterHeader(id, block);
-    }
+    public void updateEmitterHeader(int id, float[] block) { setEmitterHeader(id, block); }
 
-    /**
-     * Uploads dirty emitter headers into the existing SSBO (a single re-upload of
-     * the mirror when anything changed; no delete/orphan churn).
-     */
-    public void uploadDirtyEmitters() {
-        if (!this.emittersDirty)
-            return;
-        this.emittersDirty = false;
-        try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
-            FloatBuffer buf = stack.mallocFloat(this.maxEmitters * VEC4_PER_EMITTER * 4);
-            buf.put(this.emitterMirror).flip();
-            GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.emitterSSBO);
-            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, buf);
-        }
-    }
+    /** Upload only changed, adjacent header ranges. */
+    public void uploadDirtyEmitters() { this.emitterUploads.upload(this.emitterSSBO); }
 
     /** Instantly drops every particle (all counter slots + instance counts zeroed). */
     public void clearParticles() {
+        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         this.tmp4.clear();
         this.tmp4.putInt(0).putInt(0);
         this.tmp4.flip();
@@ -1045,9 +1006,11 @@ public final class ParticleBuffers {
         this.tmp4.clear();
         this.tmp4.putInt(0);
         this.tmp4.flip();
-        GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, this.indirectSSBO);
-        for (int i = 0; i < INDIRECT_COMMANDS; i++) {
-            GL15.glBufferSubData(GL40.GL_DRAW_INDIRECT_BUFFER, i * INDIRECT_STRIDE + 4, this.tmp4);
+        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        for (int id : this.indirectFrames) {
+            GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, id);
+            for (int i = 0; i < INDIRECT_COMMANDS; i++)
+                GL15.glBufferSubData(GL40.GL_DRAW_INDIRECT_BUFFER, i * INDIRECT_STRIDE + 4, this.tmp4);
         }
 
         // clear the damage queue and mark the hit query as a miss
@@ -1069,9 +1032,46 @@ public final class ParticleBuffers {
      * of the world's rendering after our frame.
      */
     public void unbindShaders() {
-        for (int i = 0; i <= HexPatternBuffers.POINT_BIND; i++) {
-            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, i, 0);
-        }
+        this.bindingScope = false;
+        ParticleDiagnostics.INSTANCE.call();
+        org.lwjgl.opengl.GL44.nglBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER, 0,
+                IDENTITY_BB + 1, 0L);
+        GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER, 0);
+    }
+
+    void copySnapshot(int counterSlot, ParticleReadbacks.Slot slot) {
+        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER, slot.buffer);
+        copySnapshotPart(this.counterSSBOs[counterSlot], 0, 16);
+        copySnapshotPart(this.hitSSBO, 16, 16);
+        if (slot.positions) copySnapshotPart(this.stormPosSSBO, ParticleReadbacks.STORM_OFFSET,
+                4L + STORMPOS_CAP * STORMPOS_ENTRY_FLOATS * 4L);
+        if (slot.waves) copySnapshotPart(this.waveContactSSBO, ParticleReadbacks.WAVE_OFFSET,
+                4L + WAVECONTACT_CAP * WAVECONTACT_ENTRY_FLOATS * 4L);
+        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER, 0);
+        GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER, 0);
+    }
+
+    private static void copySnapshotPart(int source, long offset, long bytes) {
+        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER, source);
+        GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER, GL31.GL_COPY_WRITE_BUFFER, 0, offset, bytes);
+    }
+
+    public void bindIdentities(int program) {
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, IDENTITY_BB, this.identitySSBO);
+        CMIParticleEngine.setUIntUniform(program, "uIdentityReadBase", this.readIndex * this.capacity);
+        CMIParticleEngine.setUIntUniform(program, "uIdentityWriteBase", (1 - this.readIndex) * this.capacity);
+    }
+
+    public void bindDispatch() {
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, DISPATCH_BB, this.dispatchSSBO);
+        GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER, this.dispatchSSBO);
+    }
+
+    /** 0: committed pool, 1: current pool, 2: visible translucent items. */
+    public void dispatch(int command) {
+        ParticleDiagnostics.INSTANCE.call();
+        GL43.glDispatchComputeIndirect((long) command * DISPATCH_BYTES);
     }
 
     public void bindDrawIndirect() {
@@ -1136,20 +1136,19 @@ public final class ParticleBuffers {
         for (int id : this.emitSSBOs)
             if (id > 0)
                 GL15.glDeleteBuffers(id);
+        if (this.identitySSBO > 0) { GL15.glDeleteBuffers(this.identitySSBO); this.identitySSBO = -1; }
+        if (this.waveStampSSBO > 0) { GL15.glDeleteBuffers(this.waveStampSSBO); this.waveStampSSBO = -1; }
+        if (this.dispatchSSBO > 0) { GL15.glDeleteBuffers(this.dispatchSSBO); this.dispatchSSBO = -1; }
         if (this.emitterSSBO > 0)
             GL15.glDeleteBuffers(this.emitterSSBO);
-        if (this.indirectSSBO > 0)
-            GL15.glDeleteBuffers(this.indirectSSBO);
+        for (int[] frames : new int[][] {this.indirectFrames, this.additiveFrames, this.opaqueFrames})
+            for (int id : frames) if (id > 0) GL15.glDeleteBuffers(id);
         for (int id : this.counterSSBOs)
             if (id > 0)
                 GL15.glDeleteBuffers(id);
         for (int id : this.sortSSBOs)
             if (id > 0)
                 GL15.glDeleteBuffers(id);
-        if (this.orderAddSSBO > 0)
-            GL15.glDeleteBuffers(this.orderAddSSBO);
-        if (this.orderOpaqueSSBO > 0)
-            GL15.glDeleteBuffers(this.orderOpaqueSSBO);
         if (this.modelGeoSSBO > 0)
             GL15.glDeleteBuffers(this.modelGeoSSBO);
         if (this.histSSBO > 0)
@@ -1177,6 +1176,21 @@ public final class ParticleBuffers {
         for (int[] t : this.mergedTbos)
             if (t[0] > 0)
                 GL11.glDeleteTextures(t[0]);
+        java.util.Arrays.fill(this.particleSSBOs, 0);
+        java.util.Arrays.fill(this.emitSSBOs, 0);
+        java.util.Arrays.fill(this.counterSSBOs, 0);
+        java.util.Arrays.fill(this.sortSSBOs, 0);
+        java.util.Arrays.fill(this.indirectFrames, 0);
+        java.util.Arrays.fill(this.additiveFrames, 0);
+        java.util.Arrays.fill(this.opaqueFrames, 0);
+        for (int[] t : this.mergedTbos) java.util.Arrays.fill(t, -1);
+        this.emitterSSBO = this.indirectSSBO = this.orderAddSSBO = this.orderOpaqueSSBO = -1;
+        this.modelGeoSSBO = this.histSSBO = this.offsetSSBO = this.bakeMetaSSBO = -1;
+        this.gridSSBO = this.damageSSBO = this.hitSSBO = this.playersSSBO = this.correctionSSBO = -1;
+        this.stormPosSSBO = this.memberMapSSBO = this.waveContactSSBO = this.modelIndexBuffer = this.vao = -1;
+        this.capacity = this.maxEmitters = this.readIndex = this.ringIndex = this.renderIndex = 0;
+        this.emitterUploads = null;
+        this.bindingScope = false;
         this.initialized = false;
     }
 }

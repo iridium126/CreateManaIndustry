@@ -1,3 +1,4 @@
+#pragma cmi_types spawn
 // Requires emitters, writeBuf, hash1 and randomDir. Caller reserves a valid slot.
 void cmiSpawnClassic(uint eid, float seed, vec3 origin, float lightPacked, uint slot) {
     vec3 pos;
@@ -108,9 +109,12 @@ void cmiSpawnClassic(uint eid, float seed, vec3 origin, float lightPacked, uint 
 #endif
 
 
+    if (isModel) cmiNewIdentity(slot);
     uint wb = slot * 4u;
     writeBuf.data[wb + 0u] = vec4(pos, baseSize);
     writeBuf.data[wb + 1u] = vec4(vel, billboardRoll);
     writeBuf.data[wb + 2u] = vec4(1.0, 1.0, 1.0, spawnLight);
     writeBuf.data[wb + 3u] = vec4(0.0, maxLife, seed, uintBitsToFloat(eid));
+    cmiType_spawn(uint(emitters.u[hb].x), hb, writeBuf.data[wb], writeBuf.data[wb+1u],
+                  writeBuf.data[wb+2u], writeBuf.data[wb+3u]);
 }

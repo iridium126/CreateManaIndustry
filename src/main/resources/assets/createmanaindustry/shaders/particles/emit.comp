@@ -59,6 +59,7 @@ uniform float uStormConvPhase; // shared conveyor phase scalar (per-member scale
 uniform float uStormConvRate;  // d(convPhase)/dt — drives the target-velocity conveyor term
 
 // the analytic spawn needs the storm chunk only (cmiTyphoonHome) — no pose math
+#pragma cmi_include chunks/particle_identity.glsl
 #pragma cmi_include chunks/allay_storm.glsl
 
 float hash1(float p) {

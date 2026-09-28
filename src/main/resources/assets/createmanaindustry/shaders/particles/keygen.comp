@@ -59,11 +59,12 @@ layout(std430, binding = BIND_CARRIERSINK) buffer CarrierSink { uvec2 kv[]; } ca
 layout(std430, binding = BIND_ORDER_ADD) buffer OrderAddW { uint order[]; } orderAdd;
 layout(std430, binding = BIND_ORDER_OPAQUE) buffer OrderOpaqueW { uint order[]; } orderOpaque;
 
-uniform uint uUpper;      // CPU-side safe upper bound (aliveRead + spawns + margin)
+uniform uint uUpper;      // physical capacity; dispatch size comes from the GPU live count
 uniform uint uCarrierBase; // fixed sort-buffer base of the held-item carrier region
 uniform float uWaveTier[4]; // held-sword material id per wave slot (carrier sweep)
 uniform vec3 uCamPos;
 uniform mat4 uView;
+uniform float uDepthLogRange; // log2(power-of-two far bound), calculated once on CPU
 uniform float uMaxDepth;  // power-of-two far bound >= fade end (Java sortFarBlocks())
 uniform vec4 uFrustum[6]; // normalized planes, distances vs camera-relative points
 
@@ -84,7 +85,7 @@ uint depthKey(vec3 worldPos) {
     // view-space depth: negative z is in front of the camera
     vec4 vs = uView * vec4(worldPos - uCamPos, 1.0);
     float depth = clamp(-vs.z, BAND_NEAR, uMaxDepth);
-    float t = log2(depth / BAND_NEAR) / log2(max(uMaxDepth, 2.0) / BAND_NEAR);
+    float t = log2(depth / BAND_NEAR) / uDepthLogRange;
     uint band = min(DEPTH_BANDS - 1u, uint(t * float(DEPTH_BANDS)));
     return (DEPTH_BANDS - 1u) - band; // far -> small key -> drawn first
 }
@@ -186,8 +187,6 @@ void main() {
                 uvec2 entry = uvec2(dkey, (g << 2) | 0u);
                 sortOut.kv[uCarrierBase + cpos] = entry;
                 carrierSink.kv[uCarrierBase + cpos] = entry;
-            } else {
-                atomicAdd(indirect.cmd[IDX_CNT_CARRIER], -1u);
             }
         }
     }

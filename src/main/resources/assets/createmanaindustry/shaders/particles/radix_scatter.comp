@@ -1,25 +1,65 @@
-// Counting-sort scatter pass over all translucent items (single pass; bound
-// by the summed per-type totals). Because RADIX_BINS spans the key's type bit
-// plus depth band, bins are ordered MODEL-bands then ALPHA-bands: the scatter
-// writes each type into its own contiguous partition (MODEL at [0, N_model),
-// ALPHA at [N_model, N_total)), far->near within each. Within-band arrival
-// order is arbitrary and harmless -- cross-type compositing is fixed by the
-// type-batched draw sequence.
 layout(local_size_x = 64) in;
-
-layout(std430, binding = BIND_INDIRECT) buffer IndirectBuf { uint cmd[INDIRECT_UINTS]; } indirect;
-layout(std430, binding = BIND_SORT_READ) readonly buffer SortRead { uvec2 kv[]; } sortIn;
-layout(std430, binding = BIND_SORT_WRITE) buffer SortWrite { uvec2 kv[]; } sortOut;
-layout(std430, binding = BIND_OFFSETS) buffer OffsBuf { uint o[RADIX_BINS]; } offs;
-
+layout(std430, binding = BIND_INDIRECT) readonly buffer Commands { uint cmd[INDIRECT_UINTS]; } indirect;
+layout(std430, binding = BIND_SORT_READ) readonly buffer InputItems { uvec2 kv[]; } sortIn;
+layout(std430, binding = BIND_SORT_WRITE) writeonly buffer OutputItems { uvec2 kv[]; } sortOut;
+layout(std430, binding = BIND_OFFSETS) buffer Offsets { uint o[RADIX_BINS]; uint uniformBucket; } offs;
 uniform uint uShift;
-
+shared uint counts[RADIX_BINS];
+shared uint mixed;
+shared uint uniformBase;
+shared uint bases[RADIX_BINS];
+shared uint ranks[1024];
 void main() {
-    uint g = gl_GlobalInvocationID.x;
-    if (g >= indirect.cmd[IDX_CNT_GHOST] + indirect.cmd[IDX_CNT_ALPHA] + indirect.cmd[IDX_CNT_PATTERN])
+    uint lane = gl_LocalInvocationID.x;
+    uint count = indirect.cmd[IDX_CNT_GHOST] + indirect.cmd[IDX_CNT_ALPHA] + indirect.cmd[IDX_CNT_PATTERN];
+    uint start = gl_WorkGroupID.x * 1024u;
+    if (count < SORT_GROUP_THRESHOLD) {
+        uint g = gl_GlobalInvocationID.x;
+        if (g < count) {
+            uvec2 item = sortIn.kv[g];
+            uint bin = (item.x >> uShift) & (RADIX_BINS - 1u);
+            sortOut.kv[atomicAdd(offs.o[bin], 1u)] = item;
+        }
+        return; // uniform count branch: no workgroup enters later barriers
+    }
+    uint tileStart = gl_WorkGroupID.x * 1024u;
+    if (offs.uniformBucket != 0u) {
+        for (uint i = lane; i < 1024u && tileStart + i < count; i += 64u)
+            sortOut.kv[tileStart + i] = sortIn.kv[tileStart + i];
         return;
-    uvec2 kv = sortIn.kv[g];
-    uint bin = (kv.x >> uShift) & (RADIX_BINS - 1u);
-    uint dst = atomicAdd(offs.o[bin], 1u);
-    sortOut.kv[dst] = kv;
+    }
+    if (tileStart >= count) return; // uniform across the entire workgroup
+    uint firstBin = (sortIn.kv[tileStart].x >> uShift) & (RADIX_BINS - 1u);
+    if (lane == 0u) mixed = 0u;
+    barrier();
+    bool different = false;
+    for (uint i = lane; i < 1024u && tileStart + i < count; i += 64u)
+        different = different || (((sortIn.kv[tileStart+i].x >> uShift) & (RADIX_BINS-1u)) != firstBin);
+    if (different) atomicOr(mixed, 1u);
+    barrier();
+    if (mixed == 0u) {
+        if (lane == 0u) uniformBase = atomicAdd(offs.o[firstBin], min(1024u, count - tileStart));
+        barrier();
+        for (uint i = lane; i < 1024u && tileStart + i < count; i += 64u)
+            sortOut.kv[uniformBase+i] = sortIn.kv[tileStart+i];
+        return;
+    }
+    for (uint bin = lane; bin < RADIX_BINS; bin += 64u) counts[bin] = 0u;
+    barrier();
+    for (uint i = lane; i < 1024u; i += 64u) {
+        uint g = start + i;
+        if (g < count) ranks[i] = atomicAdd(counts[(sortIn.kv[g].x >> uShift) & (RADIX_BINS - 1u)], 1u);
+    }
+    barrier();
+    for (uint bin = lane; bin < RADIX_BINS; bin += 64u)
+        if (counts[bin] != 0u) bases[bin] = atomicAdd(offs.o[bin], counts[bin]);
+    barrier();
+    for (uint i = lane; i < 1024u; i += 64u) {
+        uint g = start + i;
+        if (g < count) {
+            uvec2 item = sortIn.kv[g];
+            uint bin = (item.x >> uShift) & (RADIX_BINS - 1u);
+            sortOut.kv[bases[bin] + ranks[i]] = item;
+        }
+    }
 }

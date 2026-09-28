@@ -37,6 +37,7 @@ import org.lwjgl.opengl.GL43;
  * reload listener flips so F3+T recompiles shaders.
  */
 public final class ParticlePrograms {
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger(ParticlePrograms.class);
 
     private static final String GLSL_DIR = "shaders/particles/";
     private static final String VERSION = "#version 450 core\n";
@@ -55,6 +56,9 @@ public final class ParticlePrograms {
         StringBuilder sb = new StringBuilder(768);
         sb.append("// ==== CMI particle engine common constants ====\n");
         sb.append("// ==== GENERATED from ParticleBuffers by ParticlePrograms -- edit THERE, not here ====\n");
+        sb.append("#define BIND_IDENTITY ").append(ParticleBuffers.IDENTITY_BB).append('\n');
+        sb.append("#define BIND_WAVE_STAMP ").append(ParticleBuffers.WAVE_STAMP_BB).append('\n');
+        sb.append("#define BIND_DISPATCH ").append(ParticleBuffers.DISPATCH_BB).append('\n');
         sb.append("#define BIND_POOL_READ ").append(ParticleBuffers.PARTICLE_BB_READ).append('\n');
         sb.append("#define BIND_POOL_WRITE ").append(ParticleBuffers.PARTICLE_BB_WRITE).append('\n');
         sb.append("#define BIND_INDIRECT ").append(ParticleBuffers.INDIRECT_BB).append('\n');
@@ -87,10 +91,11 @@ public final class ParticlePrograms {
         sb.append("#define IDX_CNT_ALPHA ").append(ParticleBuffers.IDX_CNT_ALPHA).append('\n');
         sb.append("#define VEC4_PER_PARTICLE ").append(ParticleBuffers.VEC4_PER_PARTICLE).append("u\n");
         sb.append("#define VEC4_PER_EMITTER ").append(ParticleBuffers.VEC4_PER_EMITTER).append("u\n");
+        sb.append("#define SORT_GROUP_THRESHOLD ").append(ParticleBuffers.SORT_GROUP_THRESHOLD).append("u\n");
         sb.append("#define RADIX_BINS ").append(ParticleBuffers.RADIX_BINS).append("u\n");
         sb.append("#define DEPTH_BANDS ").append(ParticleBuffers.DEPTH_BANDS).append("u\n");
         sb.append("#define BAND_NEAR ").append(ParticleBuffers.BAND_NEAR).append('\n');
-        // bit position of the type bit inside the 9-bit sort key (8 = low byte is the depth band)
+        // bit position of the material bits inside the 10-bit sort key (8 = low byte is the depth band)
         sb.append("#define SORT_KEY_TYPE_SHIFT ").append(ParticleBuffers.SORT_TYPE_SHIFT).append("u\n");
         sb.append("#define MODEL_VERTEX_FLOATS ").append(AllayModelGeometry.VERTEX_FLOATS).append('\n');
         // HP / melee-hit system
@@ -124,9 +129,22 @@ public final class ParticlePrograms {
         // see HeldItemGeometry (the pack merged source declares it as a const
         // instead — #defines do not survive the AST transplant)
         sb.append("#define CMI_HELD_DISPLAY ").append(HeldItemGeometry.displayMatrixGLSL()).append('\n');
+        sb.append("#define BIND_HEX_INPUT ").append(HexPatternBuffers.INPUT_BIND).append('\n');
+        sb.append("#define BIND_HEX_LIVE ").append(HexPatternBuffers.LIVE_BIND).append('\n');
+        sb.append("#define BIND_HEX_RESOURCE ").append(HexPatternBuffers.RESOURCE_BIND).append('\n');
+        sb.append("#define BIND_HEX_COMMAND ").append(HexPatternBuffers.COMMAND_BIND).append('\n');
+        sb.append("#define BIND_HEX_POINT ").append(HexPatternBuffers.POINT_BIND).append('\n');
+        sb.append("#define CMI_HEX_META_ROWS ").append(HexPatternBuffers.META_ROWS).append("u\n");
+        sb.append("#define CMI_HEX_ANCHORS ").append(HexPatternBuffers.ANCHOR_BASE).append("u\n");
+        sb.append("#define CMI_HEX_VERTEX_STRIDE ").append(HexPatternBuffers.VERTEX_STRIDE).append("u\n");
+        sb.append("#define DAMAGE_ENTRY_WORDS ").append(ParticleBuffers.DAMAGE_ENTRY_BYTES / 4).append("u\n");
+        for (var material : com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.Material.values())
+            sb.append("#define CMI_MATERIAL_").append(material.name()).append(' ').append(material.index()).append("u\n");
         return sb.toString();
     }
 
+    private int prepareDispatch;
+    public int prepareDispatch() { return prepareDispatch; }
     private int reset;
     private int update;
     private int emit;
@@ -146,8 +164,6 @@ public final class ParticlePrograms {
     private int modelRender;     // instanced allay models via one merged multi-draw
 
     private volatile boolean dirty = true;
-    /** Throttle for the per-frame retry's failure log (epoch millis, 0 = never). */
-    private long lastFailLogMillis;
 
     /** Marks the programs stale; {@link #rebuild()} is safe to call any time. */
     public void requestRebuild() {
@@ -159,59 +175,76 @@ public final class ParticlePrograms {
     }
 
     /** Compiles/links all programs from the mod's bundled GLSL. Render-thread only. */
-    public void rebuild() {
+    public boolean rebuild() {
+        return rebuildWithCompiler(ParticlePrograms::compileCompute, ParticlePrograms::link);
+    }
+
+    /** Package-private injection seam for real-driver reload failure tests. */
+    boolean rebuildWithCompiler(java.util.function.ToIntFunction<String> compute,
+                             java.util.function.BiFunction<String, String, Integer> graphics) {
         this.dirty = false;
-        this.delete();
-        this.reset = compileCompute(GLSL_DIR + "reset.comp");
-        this.update = compileCompute(GLSL_DIR + "update.comp");
-        this.emit = compileCompute(GLSL_DIR + "emit.comp");
-        this.blockEmit = compileCompute(GLSL_DIR + "block_emit.comp");
-        this.keygen = compileCompute(GLSL_DIR + "keygen.comp");
-        this.radixHist = compileCompute(GLSL_DIR + "radix_hist.comp");
-        this.radixScan = compileCompute(GLSL_DIR + "radix_scan.comp");
-        this.radixScatter = compileCompute(GLSL_DIR + "radix_scatter.comp");
-        this.capture = compileCompute(GLSL_DIR + "capture.comp");
-        this.grid = compileCompute(GLSL_DIR + "gridbuild.comp");
-        this.hit = compileCompute(GLSL_DIR + "hit.comp");
-        this.stormPos = compileCompute(GLSL_DIR + "stormpos.comp");
-        this.waveContact = compileCompute(GLSL_DIR + "wavecontact.comp");
-        this.render = link(GLSL_DIR + "additive.vsh", GLSL_DIR + "additive.fsh");
-        this.texturedRender = link(GLSL_DIR + "textured.vsh", GLSL_DIR + "textured.fsh");
-        this.modelRender = link(GLSL_DIR + "model.vsh", GLSL_DIR + "model.fsh");
-        this.hexReconcile = compileCompute(GLSL_DIR + "hex_reconcile.comp");
-        this.hexPrepare = compileCompute(GLSL_DIR + "hex_prepare.comp");
-        this.hexRender = link(GLSL_DIR + "hex_pattern.vsh", GLSL_DIR + "hex_pattern.fsh");
-        if (!this.ready()) {
-            // Restore the dirty flag: a transient failure (e.g. first-frame
-            // resources not yet ready) must retry next frame, not latch the
-            // engine dark until a manual F3+T. The log is throttled because
-            // the retry is per-frame — same 5 s idiom as the engine's own
-            // error reporting.
-            this.dirty = true;
-            long now = System.currentTimeMillis();
-            if (now - this.lastFailLogMillis > 5000) {
-                this.lastFailLogMillis = now;
-                CreateManaIndustry.LOGGER.error("[CMI particles] program rebuild FAILED "
-                        + "(will retry): "
-                        + "reset={} update={} emit={} keygen={} hist={} scan={} scatter={} capture={} grid={} hit={} "
-                        + "stormpos={} wavecontact={} render={} textured={} model={}",
-                        this.reset, this.update, this.emit, this.keygen,
-                        this.radixHist, this.radixScan, this.radixScatter, this.capture, this.grid, this.hit,
-                        this.stormPos, this.waveContact, this.render, this.texturedRender, this.modelRender);
+        ParticlePrograms candidate = new ParticlePrograms();
+        try {
+            candidate.prepareDispatch = compute.applyAsInt(GLSL_DIR + "prepare_dispatch.comp");
+            candidate.reset = compute.applyAsInt(GLSL_DIR + "reset.comp");
+            candidate.update = compute.applyAsInt(GLSL_DIR + "update.comp");
+            candidate.emit = compute.applyAsInt(GLSL_DIR + "emit.comp");
+            candidate.blockEmit = compute.applyAsInt(GLSL_DIR + "block_emit.comp");
+            candidate.keygen = compute.applyAsInt(GLSL_DIR + "keygen.comp");
+            candidate.radixHist = compute.applyAsInt(GLSL_DIR + "radix_hist.comp");
+            candidate.radixScan = compute.applyAsInt(GLSL_DIR + "radix_scan.comp");
+            candidate.radixScatter = compute.applyAsInt(GLSL_DIR + "radix_scatter.comp");
+            candidate.capture = compute.applyAsInt(GLSL_DIR + "capture.comp");
+            candidate.grid = compute.applyAsInt(GLSL_DIR + "gridbuild.comp");
+            candidate.hit = compute.applyAsInt(GLSL_DIR + "hit.comp");
+            candidate.stormPos = compute.applyAsInt(GLSL_DIR + "stormpos.comp");
+            candidate.waveContact = compute.applyAsInt(GLSL_DIR + "wavecontact.comp");
+            candidate.render = graphics.apply(GLSL_DIR + "additive.vsh", GLSL_DIR + "additive.fsh");
+            candidate.texturedRender = graphics.apply(GLSL_DIR + "textured.vsh", GLSL_DIR + "textured.fsh");
+            candidate.modelRender = graphics.apply(GLSL_DIR + "model.vsh", GLSL_DIR + "model.fsh");
+            candidate.hexReconcile = compute.applyAsInt(GLSL_DIR + "hex_reconcile.comp");
+            candidate.hexPrepare = compute.applyAsInt(GLSL_DIR + "hex_prepare.comp");
+            candidate.hexRender = graphics.apply(GLSL_DIR + "hex_pattern.vsh", GLSL_DIR + "hex_pattern.fsh");
+            if (!candidate.ready() || !candidate.hexReady()) {
+                LOGGER.error("[CMI particles] shader reload failed; retaining previous program set");
+                return false;
             }
-        } else {
-            CreateManaIndustry.LOGGER
-                    .info("[CMI particles] programs compiled: reset={} update={} emit={} keygen={} "
-                            + "hist={} scan={} scatter={} capture={} grid={} hit={} stormpos={} wavecontact={} "
-                            + "render={} textured={} model={}",
-                            this.reset, this.update, this.emit, this.keygen,
-                            this.radixHist, this.radixScan, this.radixScatter, this.capture, this.grid, this.hit,
-                            this.stormPos, this.waveContact, this.render, this.texturedRender, this.modelRender);
+            this.delete();
+            this.prepareDispatch = candidate.prepareDispatch; candidate.prepareDispatch = 0;
+            this.reset = candidate.reset; candidate.reset = 0;
+            this.update = candidate.update; candidate.update = 0;
+            this.emit = candidate.emit; candidate.emit = 0;
+            this.blockEmit = candidate.blockEmit; candidate.blockEmit = 0;
+            this.keygen = candidate.keygen; candidate.keygen = 0;
+            this.radixHist = candidate.radixHist; candidate.radixHist = 0;
+            this.radixScan = candidate.radixScan; candidate.radixScan = 0;
+            this.radixScatter = candidate.radixScatter; candidate.radixScatter = 0;
+            this.capture = candidate.capture; candidate.capture = 0;
+            this.grid = candidate.grid; candidate.grid = 0;
+            this.hit = candidate.hit; candidate.hit = 0;
+            this.stormPos = candidate.stormPos; candidate.stormPos = 0;
+            this.waveContact = candidate.waveContact; candidate.waveContact = 0;
+            this.render = candidate.render; candidate.render = 0;
+            this.texturedRender = candidate.texturedRender; candidate.texturedRender = 0;
+            this.modelRender = candidate.modelRender; candidate.modelRender = 0;
+            this.hexReconcile = candidate.hexReconcile; candidate.hexReconcile = 0;
+            this.hexPrepare = candidate.hexPrepare; candidate.hexPrepare = 0;
+            this.hexRender = candidate.hexRender; candidate.hexRender = 0;
+            return true;
+        } finally {
+            candidate.delete();
+        }
+    }
+
+    public void configureStatic(int capacity) {
+        for (int p : new int[] {prepareDispatch, update, emit, blockEmit, hexReconcile}) {
+            int location = GL20.glGetUniformLocation(p, "uCapacity");
+            if (location >= 0) org.lwjgl.opengl.GL41.glProgramUniform1ui(p, location, capacity);
         }
     }
 
     public boolean ready() {
-        return this.blockEmit != 0 && this.reset != 0 && this.update != 0 && this.emit != 0 && this.render != 0
+        return this.prepareDispatch != 0 && this.blockEmit != 0 && this.reset != 0 && this.update != 0 && this.emit != 0 && this.render != 0
                 && this.texturedRender != 0 && this.modelRender != 0
                 && this.keygen != 0 && this.radixHist != 0 && this.radixScan != 0
                 && this.radixScatter != 0 && this.capture != 0 && this.grid != 0
@@ -302,7 +335,7 @@ public final class ParticlePrograms {
         GL20.glLinkProgram(prog);
         GL20.glDeleteShader(shader);
         if (GL20.glGetProgrami(prog, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-            CreateManaIndustry.LOGGER.error("[CMI particles] compute link failed ({}): {}", path,
+            LOGGER.error("[CMI particles] compute link failed ({}): {}", path,
                     GL20.glGetProgramInfoLog(prog));
             GL20.glDeleteProgram(prog);
             return 0;
@@ -331,7 +364,7 @@ public final class ParticlePrograms {
         GL20.glDeleteShader(vsh);
         GL20.glDeleteShader(fsh);
         if (GL20.glGetProgrami(prog, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-            CreateManaIndustry.LOGGER.error("[CMI particles] render link failed ({}): {}", vshPath,
+            LOGGER.error("[CMI particles] render link failed ({}): {}", vshPath,
                     GL20.glGetProgramInfoLog(prog));
             GL20.glDeleteProgram(prog);
             return 0;
@@ -342,13 +375,13 @@ public final class ParticlePrograms {
     private static int compileStage(String source, int type) {
         int shader = GL20.glCreateShader(type);
         if (shader == 0) {
-            CreateManaIndustry.LOGGER.error("[CMI particles] glCreateShader({}) returned 0", type);
+            LOGGER.error("[CMI particles] glCreateShader({}) returned 0", type);
             return 0;
         }
         GL20.glShaderSource(shader, source);
         GL20.glCompileShader(shader);
         if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-            CreateManaIndustry.LOGGER.error("[CMI particles] shader compile failed (type {}): {}", type,
+            LOGGER.error("[CMI particles] shader compile failed (type {}): {}", type,
                     GL20.glGetShaderInfoLog(shader));
             GL20.glDeleteShader(shader);
             return 0;
@@ -421,16 +454,24 @@ public final class ParticlePrograms {
                 sb.append(buf, 0, n);
             raw = sb.toString();
         } catch (IOException e) {
-            CreateManaIndustry.LOGGER.error("[CMI particles] cannot read shader {}", id, e);
+            LOGGER.error("[CMI particles] cannot read shader {}", id, e);
             return null;
         }
-        if (depth >= 4 || !INCLUDE_PATTERN.matcher(raw).find())
+        for (String phase : new String[] {"spawn", "update"})
+            if (raw.contains("#pragma cmi_types " + phase)) raw = raw.replace("#pragma cmi_types " + phase,
+                    com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.shaderHooks(phase));
+        if (depth >= 12 && INCLUDE_PATTERN.matcher(raw).find()) {
+            LOGGER.error("[CMI particles] include depth exceeded: {}", path);
+            return null;
+        }
+        if (!INCLUDE_PATTERN.matcher(raw).find())
             return raw;
         java.util.regex.Matcher m = INCLUDE_PATTERN.matcher(raw);
         StringBuffer out = new StringBuffer(raw.length());
         while (m.find()) {
             String included = loadResolved(GLSL_DIR + m.group(1), depth + 1);
-            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(included != null ? included : ""));
+            if (included == null) return null;
+            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(included));
         }
         m.appendTail(out);
         return out.toString();
@@ -439,14 +480,14 @@ public final class ParticlePrograms {
     /** Deletes all program ids. Render-thread only. */
     public void delete() {
         for (int p : new int[] {
-                this.reset, this.update, this.emit, this.blockEmit, this.keygen,
+                this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
                 this.grid, this.hit, this.stormPos, this.waveContact,
                 this.render, this.texturedRender, this.modelRender, this.hexReconcile, this.hexPrepare, this.hexRender }) {
             if (p != 0)
                 GL20.glDeleteProgram(p);
         }
-        this.reset = this.update = this.emit = this.blockEmit = this.keygen = 0;
+        this.prepareDispatch = this.reset = this.update = this.emit = this.blockEmit = this.keygen = 0;
         this.radixHist = this.radixScan = this.radixScatter = this.capture = 0;
         this.grid = this.hit = this.stormPos = this.waveContact = 0;
         this.render = this.texturedRender = this.modelRender = 0;

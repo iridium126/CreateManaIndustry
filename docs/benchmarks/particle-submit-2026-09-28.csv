@@ -1,0 +1,13 @@
+operation,variant,trial,cpu_ms,bytes_per_frame,calls_per_frame
+header,0,0,0.0025618,40960,2
+header,0,1,0.00264202,40960,2
+header,0,2,0.00258538,40960,2
+header,1,0,6.091E-4,320,2
+header,1,1,3.3644E-4,320,2
+header,1,2,3.036E-4,320,2
+unbind,0,0,4.9162E-4,0,29
+unbind,0,1,8.5452E-4,0,29
+unbind,0,2,8.93E-4,0,29
+unbind,1,0,3.984E-5,0,1
+unbind,1,1,4.056E-5,0,1
+unbind,1,2,6.904E-5,0,1

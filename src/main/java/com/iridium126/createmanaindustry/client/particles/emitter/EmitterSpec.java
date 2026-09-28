@@ -18,7 +18,7 @@ import net.minecraft.world.phys.Vec3;
  * material/collide/flutter/spin flags ride on the once-reserved vec4 #7 and a
  * fresh 16..19 block holds the collision bake index and sprite count):
  * <pre>
- *   0:  (0,0,0)                         size
+ *   0:  (internalTypeId,0,0)           size
  *   1:  shape, speedMin, speedMax,      radius
  *   2:  gravity.xyz                     drag
  *   3:  acceleration.xyz                windStrength
@@ -225,6 +225,7 @@ public final class EmitterSpec {
     public final double glow;
     /** Blend mode (ADDITIVE | ALPHA). */
     public final Material material;
+    public final ParticleTypes.Type type;
     /** Collision behaviour for ALPHA particles. */
     public final CollideMode collideMode;
     /**
@@ -285,6 +286,9 @@ public final class EmitterSpec {
                 : b.colors.clone();
         this.glow = b.glow;
         this.material = Objects.requireNonNull(b.material, "material");
+        this.type = b.type == null ? ParticleTypes.standard(this.material) : b.type;
+        ParticleTypes.requireRegistered(this.type);
+        if (this.type.material() != this.material) throw new IllegalArgumentException("Particle type/material mismatch");
         this.collideMode = Objects.requireNonNull(b.collideMode, "collideMode");
         this.flutter = b.flutter;
         this.spin = b.spin;
@@ -302,6 +306,7 @@ public final class EmitterSpec {
 
     private float[] pack() {
         float[] f = new float[VEC4_PER_EMITTER * 4];
+        f[0] = this.type.id(); // reserved header word: behavior id; render ABI is unchanged
         f[0 * 4 + 3] = (float) size;
         f[1 * 4 + 0] = shape.index();
         f[1 * 4 + 1] = (float) speedMin;
@@ -418,6 +423,8 @@ public final class EmitterSpec {
         private double coneTanHalf = 0.577f; // ~30 degrees
         private float[] colors = new float[] { 1f, 1f, 1f, 1f };
         private double glow = 1;
+        private ParticleTypes.Type type;
+        public Builder type(ParticleTypes.Type value) { this.type = value; this.material = value.material(); return this; }
         private Material material = Material.ADDITIVE;
         private CollideMode collideMode = CollideMode.NONE;
         private double flutter = 0;

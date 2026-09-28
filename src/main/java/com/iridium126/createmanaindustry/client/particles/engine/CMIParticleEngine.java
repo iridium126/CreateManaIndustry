@@ -158,6 +158,8 @@ public final class CMIParticleEngine {
 
 
     /** One-shot burst request posted from a client thread. */
+    private final List<Burst> frameBursts = new ArrayList<>();
+
     private static final class Burst {
         final EmitterSpec spec;
         final Vec3 origin;
@@ -393,27 +395,13 @@ public final class CMIParticleEngine {
      * — the census counts ALPHA and MODEL particles (both feed the combined
      * translucent sort).
      */
-    private int aliveKnown = 0;
-    private int translucentKnown = 0;
-    /**
-     * Spawns requested since that snapshot (CPU-exact). They keep every
-     * dispatch bound conservative between fence polls — deaths only ever
-     * shrink the live pool, so {@code snapshot + delta} is always an upper
-     * bound on the real count.
-     */
-    private int spawnDelta = 0;
-    private int translucentSpawnDelta = 0;
-    /**
-     * Latch for the sorted-path decision: set when translucent particles
-     * (ALPHA or MODEL) spawn, cleared only by a FRESH census reading zero —
-     * fence lag can never cause a frame where live translucent items skip
-     * the sorted draw.
-     */
-    private boolean translucentLatched = false;
-    /** Fence over the newest un-read frame's GPU work; 0 = none pending. */
-    private long pendingFence = 0;
-    /** Counter ring slot {@link #pendingFence} covers. */
-    private int pendingSlot = 0;
+    private final ParticleReadbacks readbacks = new ParticleReadbacks();
+    private long committedGeneration;
+    private long lastCreationGeneration;
+    private boolean poolMayBeAlive;
+    private boolean frameIdle;
+    private final DrawPipeline drawPipeline = new DrawPipeline();
+
     /**
      * Counter ring slot of the last frame whose output pool was committed by a
      * swap — the ONLY slot update.comp may trust as the read buffer's exact
@@ -476,6 +464,7 @@ public final class CMIParticleEngine {
     private boolean frameArmed = false;
     /** beginFrame submission clock; endFrame falls back to it before timer samples flow. */
     private long frameStartNanos = 0;
+    private long computeSubmitNanos;
     /**
      * Per-frame handoff values computed by runCompute, consumed by runDraws —
      * the draws repeat the compute section's own guard so a frame where nothing
@@ -749,11 +738,13 @@ public final class CMIParticleEngine {
             this.hexPatterns = null;
             this.hexSlots = this.hexCount = 0;
             this.blockEmitters.free();
+            this.readbacks.close();
             this.gpu.free();
         } catch (RuntimeException | LinkageError e) {
             CreateManaIndustry.LOGGER.warn("[CMI particles] GPU free failed", e);
         }
         this.programs.delete();
+        ParticleDiagnostics.INSTANCE.close();
         this.computeTimer.free();
         this.drawTimer.free();
         try {
@@ -886,8 +877,11 @@ public final class CMIParticleEngine {
             }
         }
         if (this.programs.needsRebuild()) {
-            this.programs.rebuild();
-            this.uniformLocations.clear(); // every program id was recreated
+            if (this.programs.rebuild()) {
+                invalidateParticleIdentities();
+                this.uniformLocations.clear(); // every program id was recreated
+                this.programs.configureStatic(this.gpu.capacity());
+            }
         }
         if (!this.programs.ready())
             return; // shaders not compiled yet (or compile failed) — retry on reload
@@ -895,6 +889,7 @@ public final class CMIParticleEngine {
 
         this.frameAttempted = true;
         this.frameStartNanos = System.nanoTime();
+        ParticleDiagnostics.INSTANCE.begin();
         try {
             runCompute(camera, view, projectionMatrix, deltaTracker);
         } catch (RuntimeException | LinkageError e) {
@@ -903,6 +898,10 @@ public final class CMIParticleEngine {
                 this.lastErrorTime = now;
                 CreateManaIndustry.LOGGER.error("[CMI particles] compute phase failed", e);
             }
+        } finally {
+            this.computeSubmitNanos = System.nanoTime() - this.frameStartNanos;
+            ParticleDiagnostics.INSTANCE.mark("world");
+            ParticleDiagnostics.INSTANCE.pauseCpu();
         }
     }
 
@@ -915,11 +914,14 @@ public final class CMIParticleEngine {
     public void endFrame(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix) {
         if (this.disabled || !ClientConfig.particleEnabled || !this.initialized || !this.frameAttempted)
             return;
+        long drawStartNanos = System.nanoTime();
+        ParticleDiagnostics.INSTANCE.resumeCpu();
+        ParticleDiagnostics.INSTANCE.mark("draw");
         try {
             // An aborted compute phase leaves frameArmed clear; the last fully
             // committed generation simply persists one more frame undrawn.
             if (this.frameArmed)
-                runDraws(camera, view, projectionMatrix);
+                this.drawPipeline.runDraws(camera, view, projectionMatrix);
         } finally {
             // Prefer the lagged GPU-side cost of BOTH phases (each ring reads a
             // 3-frame-old completed sample, summed); fall back to CPU submit
@@ -927,16 +929,17 @@ public final class CMIParticleEngine {
             // GPU work (shader-pack MODEL draw) is measured by its own timer
             // ring and folded in so the throttle sees the full per-frame cost.
             double baseMs;
-            if (this.computeTimer.sampled || this.drawTimer.sampled)
+            if (!this.frameIdle && (this.computeTimer.sampled || this.drawTimer.sampled))
                 baseMs = this.computeTimer.lastMs + this.drawTimer.lastMs;
             else
-                baseMs = (System.nanoTime() - this.frameStartNanos) / 1_000_000.0;
+                baseMs = (this.computeSubmitNanos + System.nanoTime() - drawStartNanos) / 1_000_000.0;
             synchronized (this) {
                 baseMs += this.externalHookGpuMs;
                 this.externalHookGpuMs = 0;
             }
             this.profiler.record(baseMs, ClientConfig.particleAutoThrottle);
             this.scale = this.profiler.emissionScale();
+            ParticleDiagnostics.INSTANCE.end();
             this.frameAttempted = false;
             this.frameArmed = false;
         }
@@ -954,13 +957,16 @@ public final class CMIParticleEngine {
         this.profiler.reset();
     }
 
-    /** Resets the CPU-side counter snapshot bookkeeping (pool is/becomes empty). */
+    /** Internal lifecycle boundary: discard snapshots only when identities actually change. */
+    public void invalidateParticleIdentities() {
+        this.readbacks.clear();
+        this.storm.dropPositionSnapshot();
+        this.storm.dropWaveContact();
+        this.storm.dropHitSnapshots();
+        this.gpu.invalidateIdentities();
+    }
+
     private void resetPoolState() {
-        this.aliveKnown = 0;
-        this.translucentKnown = 0;
-        this.spawnDelta = 0;
-        this.translucentSpawnDelta = 0;
-        this.translucentLatched = false;
         this.liveDisplay = 0;
         this.storm.dropHitSnapshots();
         this.dmgCount = 0;
@@ -972,15 +978,18 @@ public final class CMIParticleEngine {
         // member-keyed bursts must never resolve a stale identity -> slot
         // entry (close() frees the GPU first, hence the guard)
         if (this.initialized)
-            this.gpu.clearMemberMap();
-        if (this.pendingFence != 0) {
-            GL32.glDeleteSync(this.pendingFence);
-            this.pendingFence = 0;
-        }
+            invalidateParticleIdentities();
+        this.readbacks.clear();
+        this.lastFinalPermId = -1;
+        this.lastFinalPermFrameSim = 0;
+        this.committedGeneration = 0;
+        this.lastCreationGeneration = 0;
+        this.poolMayBeAlive = false;
     }
 
     private void runCompute(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix, DeltaTracker deltaTracker) {
         this.frameSeed++;
+        this.frameIdle = false;
 
         // Draw-phase handoff resets: stale values from an aborted frame never
         // reach runDraws — the frameArmed gate is set only at this phase's
@@ -991,7 +1000,7 @@ public final class CMIParticleEngine {
         this.frameSorted = false;
         this.frameFinalPerm = -1;
 
-        int slot = this.simFrame % ParticleBuffers.COUNTER_RING;
+        int slot = (this.lastGoodSlot + 1) % ParticleBuffers.COUNTER_RING;
         this.simFrame++;
 
         // 0. Refresh stale collision bakes + make CPU-side uploads visible.
@@ -1006,7 +1015,8 @@ public final class CMIParticleEngine {
         }
 
         // 1. Drain requests from client thread.
-        List<Burst> bursts = new ArrayList<>();
+        List<Burst> bursts = this.frameBursts;
+        bursts.clear();
         boolean doClear = false;
         Object item;
         while ((item = this.pending.poll()) != null) {
@@ -1269,13 +1279,13 @@ public final class CMIParticleEngine {
                 this.hexPatterns = new HexPatternRuntime(this.hexPatternBuffers);
         }
         if (this.hexPatterns != null) {
-            int patternBudget = Math.max(this.hexCount, cap - this.aliveKnown - this.spawnDelta - SAFETY_MARGIN);
+            int patternBudget = cap;
             this.hexEmitter = ensureEmitter(this.hexPatternSpec);
             this.hexSlots = this.hexPatterns.prepare(deltaTracker, camera, patternBudget,
                     ClientConfig.hexPatternRedirect && this.programs.hexReady() && this.hexEmitter >= 0);
             this.hexCount = this.hexPatterns.count();
         }
-        int free = Math.max(0, cap - this.aliveKnown - this.spawnDelta - SAFETY_MARGIN - this.hexCount);
+        int free = Math.max(0, cap - this.hexCount);
         if (totalSpawn > free) {
             double k = free <= 0 ? 0 : (double) free / totalSpawn;
             totalSpawn = 0;
@@ -1303,32 +1313,13 @@ public final class CMIParticleEngine {
             entryCount = w;
         }
 
-        // Translucent spawns (ALPHA sprites + MODEL parts, CPU-exact even when
-        // the snapshot is stale) latch the sorted path until a fresh census
-        // reads zero.
-        int hexSpawnEstimate = this.hexPatterns == null ? 0 : this.hexPatterns.spawnEstimate();
-        int translucentSpawnTotal = this.hexCount;
-        for (int i = 0; i < entryCount; i++)
-            if (this.emitTranslucent[i])
-                translucentSpawnTotal += this.emitCounts[i];
-        if (translucentSpawnTotal > 0)
-            this.translucentLatched = true;
-
-        // Account for this frame's spawns BEFORE any GPU work is enqueued: GL
-        // commands already issued keep executing even when a Java exception
-        // later unwinds the frame, so the deltas must include them up front to
-        // keep the snapshot+delta dispatch bound sound on the aborted-frame
-        // path. Purely a hoist — every consumer below (updateBound,
-        // aliveEstimate, translucentUpper) already saw these spawns included.
+        // CPU limits submission work only; GPU allocation and dispatch determine the exact live set.
         int blockSpawnBound = this.blockEmitters.spawnBound(dt, Math.max(0.0, Math.min(1.0, this.scale)), cap);
-        // GPU visibility makes this an upper bound. Saturation avoids overflow
-        // if the asynchronous counter snapshot is delayed for many frames.
-        this.spawnDelta = (int) Math.min(cap, (long) this.spawnDelta + totalSpawn + blockSpawnBound + hexSpawnEstimate);
-        this.translucentSpawnDelta += translucentSpawnTotal - this.hexCount + hexSpawnEstimate;
         // Handoff for runDraws' empty-guard: final count after free-pool capping.
         this.frameEntryCount = entryCount + (blockSpawnBound > 0 ? 1 : 0);
 
         // 4. Upload emit commands into the next ring slot + emitters.
+        extractFrustum(projectionMatrix, view);
         int ringId = this.gpu.nextEmitBuffer();
         this.gpu.uploadDirtyEmitters();
         if (entryCount > 0) {
@@ -1382,28 +1373,16 @@ public final class CMIParticleEngine {
             this.dmgTmp.limit(bytes).position(0);
             this.gpu.uploadDamageQueue(this.dmgTmp);
             this.dmgTmp.limit(this.dmgTmp.capacity());
-            this.dmgClearNext = this.dmgPending;
-            this.dmgPending = false;
-            this.dmgCount = 0;
         }
 
-        // Dual mode: the combined translucent sort + the two sorted draws run
-        // only while translucent particles may exist (ALPHA or MODEL — latched
-        // on spawn, released only by a fresh census reading zero). keygen
-        // itself runs in both paths — it is the fast path's frustum-cull pass
-        // and owns the draw counts in both.
-        boolean sorted = this.translucentLatched;
-        this.frameSorted = sorted; // draw-phase handoff (see runDraws)
-
-        // 5. Compute passes: reset -> [grid] -> update -> emit -> keygen
-        //    (+ sort) -> capture. The elapsed-time query brackets ALL GPU work
-        //    of THIS phase only; the draw phase runs its own ring (drawTimer)
-        //    and endFrame sums both as the throttle input.
-        // Upper bound on the read buffer's live count (snapshot + spawns since
-        // — deaths only shrink it); update threads beyond the GPU-exact count
-        // (read from the LAST COMMITTED frame's counter slot, binding 14 — see
-        // lastGoodSlot) exit immediately.
-        int updateBound = Math.min(cap, this.aliveKnown + this.spawnDelta + 64);
+        // Every material submits indirect draws. Empty GPU counts perform no particle work.
+        boolean createsParticles = totalSpawn > 0 || this.hexCount > 0 || blockSpawnBound > 0;
+        if (!this.poolMayBeAlive && !createsParticles) {
+            this.frameIdle = true;
+            return;
+        }
+        boolean sorted = true;
+        this.frameSorted = true;
         this.computeTimer.ensureCreated();
         // From the timer-query begin to the phase-tail bookkeeping everything
         // runs under try/finally: a mid-phase failure ends the partial bracket,
@@ -1413,6 +1392,13 @@ public final class CMIParticleEngine {
         try {
             if (this.computeTimer.begin())
                 queryActive = true;
+            ParticleDiagnostics.INSTANCE.mark("reset_grid");
+            this.gpu.beginComputeFrame();
+            this.gpu.bindDispatch();
+            this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING, this.lastGoodSlot);
+            this.gpu.bindCounter(3, slot);
+            this.gpu.bindIndirect(2);
+            ParticleDispatch.prepare(this.programs, 0);
             GL20.glUseProgram(this.programs.reset());
             this.gpu.bindIndirect(2);
             this.gpu.bindCounter(3, slot);
@@ -1441,13 +1427,15 @@ public final class CMIParticleEngine {
                 this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING, this.lastGoodSlot);
                 this.gpu.bindEmitters(5);
                 this.gpu.bindGrid();
-                GL43.glDispatchCompute(Math.max(1, (updateBound + 63) / 64), 1, 1);
+                this.gpu.dispatch(0);
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             }
 
             if (this.hexPatterns != null)
                 this.hexPatternBuffers.begin();
+            ParticleDiagnostics.INSTANCE.mark("update");
             GL20.glUseProgram(this.programs.update());
+            this.gpu.bindIdentities(this.programs.update());
             this.gpu.bindParticleRead(0);
             this.gpu.bindParticleWrite(1);
             this.gpu.bindGrid();
@@ -1469,13 +1457,13 @@ public final class CMIParticleEngine {
             } else {
                 setIntUniform(this.programs.update(), "uCollisionOn", 0);
             }
-            setUIntUniform(this.programs.update(), "uCapacity", cap);
+
             setFloatUniform(this.programs.update(), "uDt", dt);
             setFloatUniform(this.programs.update(), "uTimeSec", this.timeSec());
             // all synced players feed the repulsion (vanilla entity sync — no
             // extra packets); nearest 16 by distance to the storm anchor
-            int playerCount = this.storm.collectSyncedPlayers();
-            this.gpu.uploadPlayers(this.storm.playerScratch(), playerCount);
+            int playerCount = this.storm.needsGridPass() ? this.storm.collectSyncedPlayers() : 0;
+            if (playerCount > 0) this.gpu.uploadPlayers(this.storm.playerScratch(), playerCount);
             setIntUniform(this.programs.update(), "uPlayerCount", playerCount);
             setUIntUniform(this.programs.update(), "uKillEmit", this.storm.killEmitId());
             // typhoon growth-law phases (see AllayStormRuntime's field doc):
@@ -1490,23 +1478,25 @@ public final class CMIParticleEngine {
             setVec4ArrayUniform(this.programs.update(), "uWave", this.storm.waveUniform());
             setVec4ArrayUniform(this.programs.update(), "uWaveTarget", this.storm.waveTargetUniform());
             setVec4ArrayUniform(this.programs.update(), "uWavePath", this.storm.wavePathUniform());
-            GL43.glDispatchCompute(Math.max(1, (updateBound + 63) / 64), 1, 1);
+            this.gpu.dispatch(0);
             GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
             // uKillEmit is retired at the SUCCESS TAIL (after the pool swap), not
             // here: an aborted frame discards its output pool, so a stop whose
             // kill was consumed by this dispatch must refire next frame or the
             // untouched storm members would survive on a never-rebuilt grid.
 
+            ParticleDiagnostics.INSTANCE.mark("emit");
             if (this.hexCount > 0 && this.programs.hexReady()) {
                 int hp = this.programs.hexReconcile();
                 GL20.glUseProgram(hp);
-                setUIntUniform(hp, "uCapacity", cap);
+
                 setUIntUniform(hp, "uEmitter", this.hexEmitter);
                 GL43.glDispatchCompute((this.hexSlots + 63) / 64, 1, 1);
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             }
             if (entryCount > 0) {
                 GL20.glUseProgram(this.programs.emit());
+            this.gpu.bindIdentities(this.programs.emit());
                 this.gpu.bindParticleWrite(1);
                 // combat spawn styles resolve their originRef against the
                 // committed read pool (the target allay's live position)
@@ -1517,7 +1507,7 @@ public final class CMIParticleEngine {
                 this.gpu.bindMemberMap(); // combat styles resolve member-keyed origins through it
                 setUIntUniform(this.programs.emit(), "uTotalSpawn", totalSpawn);
                 setUIntUniform(this.programs.emit(), "uEmitCount", entryCount);
-                setUIntUniform(this.programs.emit(), "uCapacity", cap);
+
                 // storm style 3 (analytic spawn): instance seed + the
                 // growth-law phases (the spawn state IS the servo's
                 // equilibrium at the current phase — see AllayStormRuntime)
@@ -1533,12 +1523,13 @@ public final class CMIParticleEngine {
             if (blockSpawnBound > 0) {
                 int be = this.programs.blockEmit();
                 GL20.glUseProgram(be);
+                this.gpu.bindIdentities(be);
                 this.gpu.bindParticleWrite(1);
                 this.gpu.bindCounter(3, slot);
                 this.gpu.bindEmitters(5);
                 this.blockEmitters.uploadAndBind();
                 setUIntUniform(be, "uEmitterCount", this.blockEmitters.dispatchSize());
-                setUIntUniform(be, "uCapacity", cap);
+
                 setFloatUniform(be, "uDtScale", dt * (float) Math.max(0.0, Math.min(1.0, this.scale)));
                 setFloatUniform(be, "uSeed", (float) (this.frameSeed & 0xffff));
                 setUIntUniform(be, "uEmitterOffset", (int) (Integer.toUnsignedLong(this.frameSeed * 16777619)
@@ -1547,7 +1538,6 @@ public final class CMIParticleEngine {
                 setFloatUniform(be, "uCamPos", (float) blockCamera.x, (float) blockCamera.y, (float) blockCamera.z);
                 float range = (float) renderDistanceBlocks();
                 setFloatUniform(be, "uRangeSquared", range * range);
-                extractFrustum(projectionMatrix, view);
                 GL20.glUniform4fv(loc(be, "uFrustum"), this.frustumPlanes);
                 GL43.glDispatchCompute((this.blockEmitters.dispatchSize() + 3) / 4, 1, 1);
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
@@ -1557,12 +1547,12 @@ public final class CMIParticleEngine {
             //    BOTH paths (it is the fast path's cull pass); it owns the draw
             //    counts, so update/emit never touch the indirect buffer.
             int finalPerm = -1;
-            // spawnDelta now includes this frame's spawns; aliveEstimate is an
-            // upper bound on the freshly written pool's live count
-            int aliveEstimate = this.aliveKnown + this.spawnDelta;
+            ParticleDiagnostics.INSTANCE.mark("keygen");
+            ParticleDispatch.prepare(this.programs, 1);
+            int aliveEstimate = cap; // Draw counts and dispatch bounds live on the GPU.
             this.frameAliveEstimate = aliveEstimate; // draw-phase handoff
             if (aliveEstimate > 0 || entryCount > 0) {
-                int sortUpper = Math.min(cap, Math.max(0, aliveEstimate + 64));
+                int sortUpper = cap;
 
                 // keygen: additive -> orderAdd[8], opaque sprites -> orderOpaque[15],
                 // MODEL items -> sortData[7] lower partition (type bit 0),
@@ -1592,24 +1582,20 @@ public final class CMIParticleEngine {
                 Vec3 camPos = camera.getPosition();
                 setFloatUniform(kg, "uCamPos", (float) camPos.x, (float) camPos.y, (float) camPos.z);
                 setFloatUniform(kg, "uMaxDepth", sortFarBlocks());
+                setFloatUniform(kg, "uDepthLogRange", Math.getExponent(sortFarBlocks()));
                 setMat4Uniform(kg, "uView", view);
-                extractFrustum(projectionMatrix, view);
                 int frustumLoc = loc(kg, "uFrustum");
                 if (frustumLoc >= 0)
                     GL20.glUniform4fv(frustumLoc, this.frustumPlanes);
-                GL43.glDispatchCompute(Math.max(1, (sortUpper + 63) / 64), 1, 1);
+                this.gpu.dispatch(1);
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT
                         | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT
                         | GL42.GL_COMMAND_BARRIER_BIT);
 
+            ParticleDiagnostics.INSTANCE.mark("sort");
+                ParticleDispatch.prepare(this.programs, 2);
                 if (sorted) {
-                    // single counting-sort pass over ALL translucent items
-                    // (MODEL parts + ALPHA sprites, one item per particle); the
-                    // 9-bit key partitions the output by type as well as depth.
-                    // Dispatch sized by the (possibly stale) census plus
-                    // translucent spawns since — always an upper bound
-                    int translucentUpper = Math.min(cap,
-                            Math.max(0, this.translucentKnown + this.translucentSpawnDelta + 64));
+                    // Actual visible item count and threshold selection are GPU-owned.
                     int readId = this.gpu.sortBuffer(0);
                     int writeId = this.gpu.sortBuffer(1);
                     for (int pass = 0; pass < ParticleBuffers.RADIX_PASSES; pass++) {
@@ -1623,7 +1609,7 @@ public final class CMIParticleEngine {
                         this.gpu.bindSort(ParticleBuffers.SORTREAD_BINDING, readId);
                         this.gpu.bindHist();
                         setUIntUniform(this.programs.radixHist(), "uShift", shift);
-                        GL43.glDispatchCompute(Math.max(1, (translucentUpper + 63) / 64), 1, 1);
+                        this.gpu.dispatch(2);
                         GL42.glMemoryBarrier(GL42.GL_ATOMIC_COUNTER_BARRIER_BIT | GL43.GL_SHADER_STORAGE_BARRIER_BIT);
 
                         GL20.glUseProgram(this.programs.radixScan());
@@ -1638,7 +1624,7 @@ public final class CMIParticleEngine {
                         this.gpu.bindSort(ParticleBuffers.SORTWRITE_BINDING, writeId);
                         this.gpu.bindOffsets();
                         setUIntUniform(this.programs.radixScatter(), "uShift", shift);
-                        GL43.glDispatchCompute(Math.max(1, (translucentUpper + 63) / 64), 1, 1);
+                        this.gpu.dispatch(2);
                         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
 
                         int t = readId;
@@ -1666,6 +1652,7 @@ public final class CMIParticleEngine {
             // tiny dispatch over the freshly written pool; the 8-byte result
             // (nearest allay under the crosshair + its HP) rides this frame's
             // fence back to the CPU, so a click never stalls the pipeline.
+            ParticleDiagnostics.INSTANCE.mark("queries");
             dispatchHitQuery(camera, slot, cap);
 
             // 6c. Authority-client readback: storm members within melee reach
@@ -1673,7 +1660,7 @@ public final class CMIParticleEngine {
             // snapshot rides the same fence back and is sent at the next poll.
             // The dispatch bound comes from THIS engine's pool census — pool
             // bookkeeping stays on the skeleton side of the seam.
-            int stormUpper = Math.min(cap, Math.max(0, this.aliveKnown + this.spawnDelta + 64));
+            int stormUpper = cap;
             this.storm.dispatchStormPosReadback(slot, cap, stormUpper);
             // 6d. Wave-contact detection: only while a wave targets the LOCAL
             // player; the staging buffer rides the same frame fence back.
@@ -1698,7 +1685,9 @@ public final class CMIParticleEngine {
             //    phase: next frame POLLS the fence and only reads the counters
             //    once the GPU has finished writing them (a raw readback is a
             //    pipeline stall, however lagged the slot).
+            ParticleDiagnostics.INSTANCE.mark("capture");
             GL20.glUseProgram(this.programs.capture());
+            this.gpu.bindIdentities(this.programs.capture());
             this.gpu.bindCounter(3, slot);
             // capture also publishes the hit-query winner's HP beside its key,
             // so it reads the same fresh pool plus the hit result buffer
@@ -1718,7 +1707,8 @@ public final class CMIParticleEngine {
                     finalPerm >= 0 ? finalPerm : this.gpu.sortBuffer(0));
             setIntUniform(this.programs.capture(), "uMetaSlot", this.gpu.metaSlotIndex());
             GL43.glDispatchCompute(1, 1, 1);
-            GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+            GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_COMMAND_BARRIER_BIT
+                    | GL42.GL_TEXTURE_FETCH_BARRIER_BIT | GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
             if (queryActive) {
                 this.computeTimer.endBracket();
                 queryActive = false;
@@ -1732,10 +1722,7 @@ public final class CMIParticleEngine {
                 // endFrame sums both as the throttle input.
                 this.computeTimer.rotateAndPoll();
             }
-            if (this.pendingFence != 0)
-                GL32.glDeleteSync(this.pendingFence);
-            this.pendingFence = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-            this.pendingSlot = slot;
+
 
             // 8. Swap the ping-pong pool — success only: an aborted phase keeps
             // the last fully-written pool as the next read source, and
@@ -1767,7 +1754,30 @@ public final class CMIParticleEngine {
             // promoted, kill retired. Only NOW may the draw phase submit — any
             // failure above leaves frameArmed clear so runDraws is skipped and
             // the last fully-committed generation persists one more frame.
+            this.dmgClearNext = this.dmgPending;
+            this.dmgPending = false;
+            this.dmgCount = 0;
             this.frameArmed = true;
+            this.committedGeneration++;
+            if (createsParticles) {
+                this.lastCreationGeneration = this.committedGeneration;
+                this.poolMayBeAlive = true;
+            }
+            ParticleReadbacks.Slot snapshot = this.readbacks.freeSlot();
+            if (snapshot != null) {
+                snapshot.generation = this.committedGeneration;
+                snapshot.epoch = this.gpu.identityEpoch();
+                snapshot.positions = this.storm.positionSnapshotPending();
+                snapshot.waves = this.storm.waveSnapshotPending();
+                snapshot.gameTime = this.storm.positionSnapshotTime();
+                this.gpu.copySnapshot(slot, snapshot);
+                snapshot.fence = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+                if (snapshot.positions) this.storm.dropPositionSnapshot();
+                if (snapshot.waves) {
+                    this.gpu.clearWaveContactCount();
+                    this.storm.dropWaveContact();
+                }
+            }
         } finally {
             if (queryActive) {
                 // Mid-phase failure: end the partial bracket so the query object
@@ -1780,6 +1790,7 @@ public final class CMIParticleEngine {
                     // context is going away; nothing further to do
                 }
             }
+            this.gpu.restoreCommittedFrame();
             // Restore the exact post-phase state the success path leaves behind.
             // Blend/depth state is deliberately NOT touched here — the compute
             // phase issues no draws and cannot modify it; runDraws owns those
@@ -1827,295 +1838,300 @@ public final class CMIParticleEngine {
      * earlier this frame; its latch makes us skip our own drawModels so the
      * model geometry is submitted exactly once per frame regardless of path.
      */
-    private void runDraws(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix) {
-        boolean queryActive = false;
-        this.drawTimer.ensureCreated();
-        try {
-            if (this.drawTimer.begin())
-                queryActive = true;
+    /** Draw-only component; compute, uploads and readback cannot submit a material pass. */
+    private final class DrawPipeline {
+        private void runDraws(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix) {
+            CMIParticleEngine.this.gpu.beginBindings();
+            boolean queryActive = false;
+            CMIParticleEngine.this.drawTimer.ensureCreated();
+            try {
+                if (CMIParticleEngine.this.drawTimer.begin())
+                    queryActive = true;
 
-            // Repeat of the compute section's empty-guard from the handoff
-            // values: nothing alive and nothing spawned skips vertex work while
-            // keeping bindings correct for a valid buffer anyway.
-            if (this.frameAliveEstimate > 0 || this.frameEntryCount > 0) {
-                // Bind the FINAL sorted permutation up front: both translucent
-                // draws (model ghost segment here, ALPHA sprites below) read their
-                // own contiguous partition of it. On the fast path nothing reads
-                // it, but the programs statically declare the sort SSBO, so keep a
-                // valid buffer bound regardless.
-                this.gpu.bindSort(ParticleBuffers.SORTWRITE_BINDING,
-                        this.frameSorted ? this.frameFinalPerm : this.gpu.sortBuffer(0));
-                this.gpu.bindOrderOpaque();
-                drawPass(1, view, projectionMatrix, camera);
-                if (this.hookModelsDrawn) {
-                    // The pack entity merge hook drew the MODEL segments earlier
-                    // this frame against the freshly promoted permutation;
-                    // skipping ours prevents a double-draw (render arbitration).
-                } else {
-                    drawModels(view, projectionMatrix, camera);
+                // Repeat of the compute section's empty-guard from the handoff
+                // values: nothing alive and nothing spawned skips vertex work while
+                // keeping bindings correct for a valid buffer anyway.
+                if (CMIParticleEngine.this.frameAliveEstimate > 0 || CMIParticleEngine.this.frameEntryCount > 0) {
+                    // Bind the FINAL sorted permutation up front: both translucent
+                    // draws (model ghost segment here, ALPHA sprites below) read their
+                    // own contiguous partition of it. On the fast path nothing reads
+                    // it, but the programs statically declare the sort SSBO, so keep a
+                    // valid buffer bound regardless.
+                    CMIParticleEngine.this.gpu.bindSort(ParticleBuffers.SORTWRITE_BINDING,
+                            CMIParticleEngine.this.frameSorted ? CMIParticleEngine.this.frameFinalPerm : CMIParticleEngine.this.gpu.sortBuffer(0));
+                    CMIParticleEngine.this.gpu.bindOrderOpaque();
+                    drawPass(1, view, projectionMatrix, camera);
+                    if (CMIParticleEngine.this.hookModelsDrawn) {
+                        // The pack entity merge hook drew the MODEL segments earlier
+                        // this frame against the freshly promoted permutation;
+                        // skipping ours prevents a double-draw (render arbitration).
+                    } else {
+                        drawModels(view, projectionMatrix, camera);
+                    }
+                    if (CMIParticleEngine.this.frameSorted) {
+                        drawPass(2, view, projectionMatrix, camera);
+                        drawHexPatterns(view, projectionMatrix, camera);
+                    }
+                    CMIParticleEngine.this.gpu.bindOrderAdd();
+                    drawPass(0, view, projectionMatrix, camera);
                 }
-                if (this.frameSorted) {
-                    drawPass(2, view, projectionMatrix, camera);
-                    drawHexPatterns(view, projectionMatrix, camera);
+
+                // Clear the merge-hook arbitration latch at the DRAW TAIL: the hook
+                // fires mid-renderLevel — between our two phases within one frame —
+                // and will set it again before endFrame's skip-check below runs.
+                CMIParticleEngine.this.hookModelsDrawn = false;
+
+                if (queryActive) {
+                    // Skipped with the bracket when a foreign query owned the
+                    // target: this slot was not issued, so the previous sample
+                    // stands (same discipline as the compute tail).
+                    CMIParticleEngine.this.drawTimer.endBracket();
+                    queryActive = false;
+                    CMIParticleEngine.this.drawTimer.rotateAndPoll();
                 }
-                this.gpu.bindOrderAdd();
-                drawPass(0, view, projectionMatrix, camera);
-            }
-
-            // Clear the merge-hook arbitration latch at the DRAW TAIL: the hook
-            // fires mid-renderLevel — between our two phases within one frame —
-            // and will set it again before endFrame's skip-check below runs.
-            this.hookModelsDrawn = false;
-
-            if (queryActive) {
-                // Skipped with the bracket when a foreign query owned the
-                // target: this slot was not issued, so the previous sample
-                // stands (same discipline as the compute tail).
-                this.drawTimer.endBracket();
-                queryActive = false;
-                this.drawTimer.rotateAndPoll();
-            }
-        } finally {
-            if (queryActive) {
-                // Same partial-bracket discipline as the compute phase.
+            } finally {
+                if (queryActive) {
+                    // Same partial-bracket discipline as the compute phase.
+                    try {
+                        CMIParticleEngine.this.drawTimer.endBracket();
+                    } catch (RuntimeException | LinkageError ignoredCleanup) {
+                        // context is going away; nothing further to do
+                    }
+                }
                 try {
-                    this.drawTimer.endBracket();
+                    GL20.glUseProgram(0);
+                    GL30.glBindVertexArray(0);
                 } catch (RuntimeException | LinkageError ignoredCleanup) {
-                    // context is going away; nothing further to do
+                    // see above
+                }
+                try {
+                    // SSBO bases 0-15 (permutations, sort data, counters, model geo…)
+                    CMIParticleEngine.this.gpu.unbindShaders();
+                } catch (RuntimeException | LinkageError ignoredCleanup) {
+                    // see above
+                }
+                try {
+                    GL13.glActiveTexture(GL13.GL_TEXTURE0);
+                    GL11.glBindTexture(GL12.GL_TEXTURE_3D, 0);
+                    GL13.glActiveTexture(GL13.GL_TEXTURE1);
+                    GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+                    GL13.glActiveTexture(GL13.GL_TEXTURE2);
+                    GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+                    GL13.glActiveTexture(GL13.GL_TEXTURE0);
+                } catch (RuntimeException | LinkageError ignoredCleanup) {
+                    // see above
+                }
+                try {
+                    RenderSystem.depthMask(true);
+                    RenderSystem.defaultBlendFunc();
+                    RenderSystem.disableBlend();
+                } catch (RuntimeException | LinkageError ignoredCleanup) {
+                    // see above
                 }
             }
-            try {
-                GL20.glUseProgram(0);
-                GL30.glBindVertexArray(0);
-            } catch (RuntimeException | LinkageError ignoredCleanup) {
-                // see above
-            }
-            try {
-                // SSBO bases 0-15 (permutations, sort data, counters, model geo…)
-                this.gpu.unbindShaders();
-            } catch (RuntimeException | LinkageError ignoredCleanup) {
-                // see above
-            }
-            try {
-                GL13.glActiveTexture(GL13.GL_TEXTURE0);
-                GL11.glBindTexture(GL12.GL_TEXTURE_3D, 0);
-                GL13.glActiveTexture(GL13.GL_TEXTURE1);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-                GL13.glActiveTexture(GL13.GL_TEXTURE2);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-                GL13.glActiveTexture(GL13.GL_TEXTURE0);
-            } catch (RuntimeException | LinkageError ignoredCleanup) {
-                // see above
-            }
-            try {
-                RenderSystem.depthMask(true);
-                RenderSystem.defaultBlendFunc();
-                RenderSystem.disableBlend();
-            } catch (RuntimeException | LinkageError ignoredCleanup) {
-                // see above
-            }
         }
-    }
 
-    /**
-     * Draws BOTH MODEL segments through ONE glMultiDrawElementsIndirect: the
-     * opaque segment (cutout + depth writes) then the translucent cloak+wings
-     * segment. Both commands cover the exact MODEL partition of the sorted
-     * array (instanceCount = N_model, plain sortedKv[gl_InstanceID] fetch)
-     * and differ only in their element-buffer index range, so no per-draw
-     * uniform or attribute is needed (a baseInstance/divisor-1 selector was
-     * tried here and REJECTED: instanced attribute fetch walks baseInstance +
-     * instanceID, so with more than one model particle later instances read
-     * wrong/OOB entries — adjacent baseInstances' fetch ranges overlap, which
-     * no buffer content can disambiguate). The translucent segment blends
-     * WITH depth writes:
-     * within one allay the depth writes resolve part order geometrically while
-     * giving the double-wound shell a single blend per pixel from BOTH sides;
-     * across draws, ghost surfaces occlude later translucent passes (sprites
-     * behind a cloak are hidden rather than seen through it) — the documented
-     * tradeoff. Winding follows vanilla {@code ModelPart.Cube} order; if a
-     * future geometry bake flips it, swap {@code glFrontFace} — do not reorder
-     * the data.
-     */
-    private void drawHexPatterns(Matrix4fc view, Matrix4fc projection, Camera camera) {
-        if (hexCount == 0 || !programs.hexReady()) return;
-        int program = programs.hexRender();
-        GL20.glUseProgram(program);
-        gpu.bindNewestPool(ParticleBuffers.PARTICLE_BB_WRITE);
-        hexPatternBuffers.bind();
-        gpu.bindVao();
-        setMat4Uniform(program, "ModelViewMat", view);
-        setMat4Uniform(program, "ProjMat", projection);
-        Vec3 position = camera.getPosition();
-        setFloatUniform(program, "uCamPos", (float) position.x, (float) position.y, (float) position.z);
-        RenderSystem.enableDepthTest();
-        RenderSystem.disableCull();
-        RenderSystem.enableBlend();
-        RenderSystem.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        RenderSystem.depthMask(true);
-        hexPatternBuffers.draw(hexCount);
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
-    }
-
-    private void drawModels(Matrix4fc view, Matrix4fc projectionMatrix, Camera camera) {
-        int prog = this.programs.modelRender();
-        if (prog == 0)
-            return;
-        GL20.glUseProgram(prog);
-        // Draw the NEWEST committed generation. Two mistakes have lived on this
-        // line across the frame split — learn them both: (1) generation — after
-        // the AFTER_SKY swap the fresh data lives on the read side, binding the
-        // stale write side flickered the swarm; (2) binding POINT — the render
-        // vsh block declares PARTICLE_BB_WRITE (misleadingly named "fresh
-        // data"), so the buffer must attach AT THAT point even though its side
-        // is the post-swap read one; attaching it at binding 0 left the
-        // declared slot empty and made every L0 allay invisible. The pack path
-        // was immune to both: its TBO view always pinned particleReadBufferId().
-        this.gpu.bindNewestPool(ParticleBuffers.PARTICLE_BB_WRITE);
-        this.gpu.bindEmitters(5);
-        this.gpu.bindModelGeo(); // unbindShaders() clears binding 12 every frame
-        this.gpu.bindVao();
-
-        setMat4Uniform(prog, "ModelViewMat", view);
-        setMat4Uniform(prog, "ProjMat", projectionMatrix);
-        Vec3 pos = camera.getPosition();
-        setFloatUniform(prog, "uCamPos", (float) pos.x, (float) pos.y, (float) pos.z);
-        setFloatUniform(prog, "uFadeDist", (float) ClientConfig.particleFadeDistance);
-        setFloatUniform(prog, "uTimeSec", this.timeSec());
-        // fixed base of the held-item carrier region inside the sort buffer
-        setUIntUniform(prog, "uCarrierBase", this.gpu.carrierBase());
-        uploadStormItemUniforms(prog);
-        this.allayAtlas.bind(1);
-        setIntUniform(prog, "uSprite", 1);
-
-        RenderSystem.enableDepthTest();
-        GL11.glEnable(GL11.GL_CULL_FACE); // double-wound faces stay visible from both sides
-        // blend enabled for both segments (the opaque fsh outputs alpha 1.0,
-        // so blending is a no-op there); BOTH write depth — opaque by
-        // definition, translucent so ghosts occlude later translucent draws
-        RenderSystem.enableBlend();
-        RenderSystem.blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
-                GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        RenderSystem.depthMask(true);
-
-        this.gpu.bindDrawIndirect();
-        this.gpu.drawModelSegments();
-
-        RenderSystem.depthMask(true);
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
-        GL20.glUseProgram(0);
-        GL30.glBindVertexArray(0);
-    }
-
-    /**
-     * Held-item uniforms for a MODEL vertex program (self-drawn or merged):
-     * the wave staging (carrier predicate + tier — the same arrays update.comp
-     * steers with) and the per-tier atlas UV rects. Cheap on stormless frames
-     * (zeroed staging); the UV table is a constant of the atlas layout.
-     */
-    private void uploadStormItemUniforms(int prog) {
-        setVec4ArrayUniform(prog, "uWave", this.storm.waveUniform());
-        setVec4ArrayUniform(prog, "uWaveTarget", this.storm.waveTargetUniform());
-        setFloatArrayUniform(prog, "uWaveTier", this.storm.waveTierUniform());
-        setVec4ArrayUniform(prog, "uHeldItemUV", HeldItemGeometry.uvTable());
-    }
-
-    /**
-     * Draws one billboard bucket: 0 = additive (soft circle, unsorted, drawn
-     * LAST), 1 = OPAQUE cutout sprite (depth write, unsorted), 2 = ALPHA
-     * blended sprite (walks the sprite partition of the type-partitioned
-     * sort array, offset by the exact model count from cmd[IDX_CNT_MODELOP];
-     * no depth write). Bucket 1 runs before every blended pass so its depth
-     * writes feed early-Z; buckets 0/2 never write depth.
-     */
-    private void drawPass(int mode,
-            Matrix4fc view, Matrix4fc projectionMatrix, Camera camera) {
-        boolean textured = mode != 0;
-        int prog = textured ? this.programs.texturedRender() : this.programs.render();
-        if (prog == 0)
-            return;
-        GL20.glUseProgram(prog);
-        // Newest committed generation at the binding POINT the vsh declares
-        // (PARTICLE_BB_WRITE); generation and point selection rationale lives
-        // on the drawModels twin of this line.
-        this.gpu.bindNewestPool(ParticleBuffers.PARTICLE_BB_WRITE);
-        this.gpu.bindEmitters(5);
-        this.gpu.bindVao();
-
-        setMat4Uniform(prog, "ModelViewMat", view);
-        setMat4Uniform(prog, "ProjMat", projectionMatrix);
-
-        Vec3 pos = camera.getPosition();
-        Vector3f up = camera.getUpVector();
-        Vector3f left = camera.getLeftVector();
-        setFloatUniform(prog, "uCamPos", (float) pos.x, (float) pos.y, (float) pos.z);
-        setFloatUniform(prog, "uCamRight", -left.x, -left.y, -left.z);
-        setFloatUniform(prog, "uCamUp", up.x, up.y, up.z);
-
-        if (textured) {
-            this.spriteAtlas.bind(1);
-            setIntUniform(prog, "uSprite", 1);
-            setFloatUniform(prog, "uAtlasCols", this.spriteAtlas.cols());
-            setFloatUniform(prog, "uAtlasRows", this.spriteAtlas.rows());
-            setIntUniform(prog, "uMode", mode == 1 ? 1 : 0);
-            // unit 2: the real vanilla lightmap — combat OPAQUE particles turn
-            // their spawn-time packed light into a lightmap sample (header
-            // lightMode); LightTexture keeps its registered path private, hence
-            // the accesstransformer entry
-            LightTexture light = Minecraft.getInstance().gameRenderer.lightTexture();
-            if (light != null) {
-                AbstractTexture lightTex = Minecraft.getInstance().getTextureManager()
-                        .getTexture(light.lightTextureLocation);
-                GL13.glActiveTexture(GL13.GL_TEXTURE2);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, lightTex.getId());
-                GL13.glActiveTexture(GL13.GL_TEXTURE0);
-            }
-            setIntUniform(prog, "uLightmap", 2);
-        } else {
-            setFloatUniform(prog, "uGlow", 1.0f);
-        }
-        setFloatUniform(prog, "uFadeDist", (float) ClientConfig.particleFadeDistance);
-
-        RenderSystem.enableDepthTest();
-        if (mode == 1) {
-            // OPAQUE cutout: no blending, depth writes — order-independent
-            RenderSystem.disableBlend();
-            RenderSystem.depthMask(true);
-        } else {
+        /**
+         * Draws BOTH MODEL segments through ONE glMultiDrawElementsIndirect: the
+         * opaque segment (cutout + depth writes) then the translucent cloak+wings
+         * segment. Both commands cover the exact MODEL partition of the sorted
+         * array (instanceCount = N_model, plain sortedKv[gl_InstanceID] fetch)
+         * and differ only in their element-buffer index range, so no per-draw
+         * uniform or attribute is needed (a baseInstance/divisor-1 selector was
+         * tried here and REJECTED: instanced attribute fetch walks baseInstance +
+         * instanceID, so with more than one model particle later instances read
+         * wrong/OOB entries — adjacent baseInstances' fetch ranges overlap, which
+         * no buffer content can disambiguate). The translucent segment blends
+         * WITH depth writes:
+         * within one allay the depth writes resolve part order geometrically while
+         * giving the double-wound shell a single blend per pixel from BOTH sides;
+         * across draws, ghost surfaces occlude later translucent passes (sprites
+         * behind a cloak are hidden rather than seen through it) — the documented
+         * tradeoff. Winding follows vanilla {@code ModelPart.Cube} order; if a
+         * future geometry bake flips it, swap {@code glFrontFace} — do not reorder
+         * the data.
+         */
+        private void drawHexPatterns(Matrix4fc view, Matrix4fc projection, Camera camera) {
+            if (hexCount == 0 || !programs.hexReady()) return;
+            int program = programs.hexRender();
+            GL20.glUseProgram(program);
+            gpu.bindNewestPool(ParticleBuffers.PARTICLE_BB_WRITE);
+            hexPatternBuffers.bind();
+            gpu.bindVao();
+            setMat4Uniform(program, "ModelViewMat", view);
+            setMat4Uniform(program, "ProjMat", projection);
+            Vec3 position = camera.getPosition();
+            setFloatUniform(program, "uCamPos", (float) position.x, (float) position.y, (float) position.z);
+            RenderSystem.enableDepthTest();
+            RenderSystem.disableCull();
             RenderSystem.enableBlend();
-            if (mode == 2)
-                RenderSystem.blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
-                        GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            else
-                RenderSystem.blendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE);
-            RenderSystem.depthMask(false);
+            RenderSystem.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            RenderSystem.depthMask(true);
+            hexPatternBuffers.draw(hexCount);
+            RenderSystem.enableCull();
+            RenderSystem.disableBlend();
         }
 
-        // textured.vsh declares the indirect SSBO unconditionally (mode 0 reads
-        // the ALPHA partition start from cmd[IDX_CNT_MODELOP]), while the
-        // compute phase's finally unbinds every SSBO base -- keep the declared
-        // binding valid in BOTH modes.
-        this.gpu.bindIndirect(ParticleBuffers.INDIRECT_BB);
-        this.gpu.bindDrawIndirect();
-        if (mode == 0)
-            this.gpu.drawIndirect(0);
-        else if (mode == 1)
-            this.gpu.drawIndirect(1);
-        else
-            this.gpu.drawIndirect(5);
+        private void drawModels(Matrix4fc view, Matrix4fc projectionMatrix, Camera camera) {
+            int prog = CMIParticleEngine.this.programs.modelRender();
+            if (prog == 0)
+                return;
+            GL20.glUseProgram(prog);
+            // Draw the NEWEST committed generation. Two mistakes have lived on this
+            // line across the frame split — learn them both: (1) generation — after
+            // the AFTER_SKY swap the fresh data lives on the read side, binding the
+            // stale write side flickered the swarm; (2) binding POINT — the render
+            // vsh block declares PARTICLE_BB_WRITE (misleadingly named "fresh
+            // data"), so the buffer must attach AT THAT point even though its side
+            // is the post-swap read one; attaching it at binding 0 left the
+            // declared slot empty and made every L0 allay invisible. The pack path
+            // was immune to both: its TBO view always pinned particleReadBufferId().
+            CMIParticleEngine.this.gpu.bindNewestPool(ParticleBuffers.PARTICLE_BB_WRITE);
+            CMIParticleEngine.this.gpu.bindEmitters(5);
+            CMIParticleEngine.this.gpu.bindModelGeo(); // unbindShaders() clears binding 12 every frame
+            CMIParticleEngine.this.gpu.bindVao();
 
-        RenderSystem.depthMask(true);
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
-        GL20.glUseProgram(0);
-        GL30.glBindVertexArray(0);
+            setMat4Uniform(prog, "ModelViewMat", view);
+            setMat4Uniform(prog, "ProjMat", projectionMatrix);
+            Vec3 pos = camera.getPosition();
+            setFloatUniform(prog, "uCamPos", (float) pos.x, (float) pos.y, (float) pos.z);
+            setFloatUniform(prog, "uFadeDist", (float) ClientConfig.particleFadeDistance);
+            setFloatUniform(prog, "uTimeSec", CMIParticleEngine.this.timeSec());
+            // fixed base of the held-item carrier region inside the sort buffer
+            setUIntUniform(prog, "uCarrierBase", CMIParticleEngine.this.gpu.carrierBase());
+            uploadStormItemUniforms(prog);
+            CMIParticleEngine.this.allayAtlas.bind(1);
+            setIntUniform(prog, "uSprite", 1);
+
+            RenderSystem.enableDepthTest();
+            GL11.glEnable(GL11.GL_CULL_FACE); // double-wound faces stay visible from both sides
+            // blend enabled for both segments (the opaque fsh outputs alpha 1.0,
+            // so blending is a no-op there); BOTH write depth — opaque by
+            // definition, translucent so ghosts occlude later translucent draws
+            RenderSystem.enableBlend();
+            RenderSystem.blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
+                    GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            RenderSystem.depthMask(true);
+
+            CMIParticleEngine.this.gpu.bindDrawIndirect();
+            CMIParticleEngine.this.gpu.drawModelSegments();
+
+            RenderSystem.depthMask(true);
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.disableBlend();
+            GL20.glUseProgram(0);
+            GL30.glBindVertexArray(0);
+        }
+
+        /**
+         * Held-item uniforms for a MODEL vertex program (self-drawn or merged):
+         * the wave staging (carrier predicate + tier — the same arrays update.comp
+         * steers with) and the per-tier atlas UV rects. Cheap on stormless frames
+         * (zeroed staging); the UV table is a constant of the atlas layout.
+         */
+        private void uploadStormItemUniforms(int prog) {
+            setVec4ArrayUniform(prog, "uWave", CMIParticleEngine.this.storm.waveUniform());
+            setVec4ArrayUniform(prog, "uWaveTarget", CMIParticleEngine.this.storm.waveTargetUniform());
+            setFloatArrayUniform(prog, "uWaveTier", CMIParticleEngine.this.storm.waveTierUniform());
+            setVec4ArrayUniform(prog, "uHeldItemUV", HeldItemGeometry.uvTable());
+        }
+
+        /**
+         * Draws one billboard bucket: 0 = additive (soft circle, unsorted, drawn
+         * LAST), 1 = OPAQUE cutout sprite (depth write, unsorted), 2 = ALPHA
+         * blended sprite (walks the sprite partition of the type-partitioned
+         * sort array, offset by the exact model count from cmd[IDX_CNT_MODELOP];
+         * no depth write). Bucket 1 runs before every blended pass so its depth
+         * writes feed early-Z; buckets 0/2 never write depth.
+         */
+        private void drawPass(int mode,
+                Matrix4fc view, Matrix4fc projectionMatrix, Camera camera) {
+            boolean textured = mode != 0;
+            int prog = textured ? CMIParticleEngine.this.programs.texturedRender() : CMIParticleEngine.this.programs.render();
+            if (prog == 0)
+                return;
+            GL20.glUseProgram(prog);
+            // Newest committed generation at the binding POINT the vsh declares
+            // (PARTICLE_BB_WRITE); generation and point selection rationale lives
+            // on the drawModels twin of this line.
+            CMIParticleEngine.this.gpu.bindNewestPool(ParticleBuffers.PARTICLE_BB_WRITE);
+            CMIParticleEngine.this.gpu.bindEmitters(5);
+            CMIParticleEngine.this.gpu.bindVao();
+
+            setMat4Uniform(prog, "ModelViewMat", view);
+            setMat4Uniform(prog, "ProjMat", projectionMatrix);
+
+            Vec3 pos = camera.getPosition();
+            Vector3f up = camera.getUpVector();
+            Vector3f left = camera.getLeftVector();
+            setFloatUniform(prog, "uCamPos", (float) pos.x, (float) pos.y, (float) pos.z);
+            setFloatUniform(prog, "uCamRight", -left.x, -left.y, -left.z);
+            setFloatUniform(prog, "uCamUp", up.x, up.y, up.z);
+
+            if (textured) {
+                CMIParticleEngine.this.spriteAtlas.bind(1);
+                setIntUniform(prog, "uSprite", 1);
+                setFloatUniform(prog, "uAtlasCols", CMIParticleEngine.this.spriteAtlas.cols());
+                setFloatUniform(prog, "uAtlasRows", CMIParticleEngine.this.spriteAtlas.rows());
+                setIntUniform(prog, "uMode", mode == 1 ? 1 : 0);
+                // unit 2: the real vanilla lightmap — combat OPAQUE particles turn
+                // their spawn-time packed light into a lightmap sample (header
+                // lightMode); LightTexture keeps its registered path private, hence
+                // the accesstransformer entry
+                LightTexture light = Minecraft.getInstance().gameRenderer.lightTexture();
+                if (light != null) {
+                    AbstractTexture lightTex = Minecraft.getInstance().getTextureManager()
+                            .getTexture(light.lightTextureLocation);
+                    GL13.glActiveTexture(GL13.GL_TEXTURE2);
+                    GL11.glBindTexture(GL11.GL_TEXTURE_2D, lightTex.getId());
+                    GL13.glActiveTexture(GL13.GL_TEXTURE0);
+                }
+                setIntUniform(prog, "uLightmap", 2);
+            } else {
+                setFloatUniform(prog, "uGlow", 1.0f);
+            }
+            setFloatUniform(prog, "uFadeDist", (float) ClientConfig.particleFadeDistance);
+
+            RenderSystem.enableDepthTest();
+            if (mode == 1) {
+                // OPAQUE cutout: no blending, depth writes — order-independent
+                RenderSystem.disableBlend();
+                RenderSystem.depthMask(true);
+            } else {
+                RenderSystem.enableBlend();
+                if (mode == 2)
+                    RenderSystem.blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
+                            GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+                else
+                    RenderSystem.blendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE);
+                RenderSystem.depthMask(false);
+            }
+
+            // textured.vsh declares the indirect SSBO unconditionally (mode 0 reads
+            // the ALPHA partition start from cmd[IDX_CNT_MODELOP]), while the
+            // compute phase's finally unbinds every SSBO base -- keep the declared
+            // binding valid in BOTH modes.
+            CMIParticleEngine.this.gpu.bindIndirect(ParticleBuffers.INDIRECT_BB);
+            CMIParticleEngine.this.gpu.bindDrawIndirect();
+            if (mode == 0)
+                CMIParticleEngine.this.gpu.drawIndirect(0);
+            else if (mode == 1)
+                CMIParticleEngine.this.gpu.drawIndirect(1);
+            else
+                CMIParticleEngine.this.gpu.drawIndirect(5);
+
+            RenderSystem.depthMask(true);
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.disableBlend();
+            GL20.glUseProgram(0);
+            GL30.glBindVertexArray(0);
+        }
+
+        // ------------------------------------------------------------------
+        // Private helpers
+        // ------------------------------------------------------------------
+
     }
-
-    // ------------------------------------------------------------------
-    // Private helpers
-    // ------------------------------------------------------------------
 
     /**
      * 6b. Continuous crosshair hit query: one tiny dispatch over the freshly
@@ -2126,7 +2142,7 @@ public final class CMIParticleEngine {
      * census means nothing to hit and the frame costs nothing.
      */
     private void dispatchHitQuery(Camera camera, int slot, int cap) {
-        int upper = Math.min(cap, Math.max(0, this.translucentKnown + this.translucentSpawnDelta + 64));
+        int upper = cap;
         if (upper <= 0)
             return;
         LocalPlayer player = Minecraft.getInstance().player;
@@ -2145,7 +2161,7 @@ public final class CMIParticleEngine {
         setFloatUniform(hg, "uEye", (float) eye.x, (float) eye.y, (float) eye.z);
         setFloatUniform(hg, "uLook", (float) look.x, (float) look.y, (float) look.z);
         setFloatUniform(hg, "uReach", (float) player.entityInteractionRange());
-        GL43.glDispatchCompute(Math.max(1, (upper + 63) / 64), 1, 1);
+        this.gpu.dispatch(1);
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
 
@@ -2566,6 +2582,8 @@ public final class CMIParticleEngine {
         this.dmgTmp.putFloat(off + 12, kbVecZ);
         this.dmgTmp.putFloat(off + 16, light);
         this.dmgTmp.putFloat(off + 20, flags);
+        this.dmgTmp.putInt(off + 24, this.storm.hitToken());
+        this.dmgTmp.putInt(off + 28, 0);
         this.dmgCount++;
         this.dmgPending = true;
     }
@@ -2575,62 +2593,29 @@ public final class CMIParticleEngine {
         return Math.max(0.001f, Math.min(0.25f, ticks * 0.05f));
     }
 
-    /**
-     * Fence-polled counter snapshot. The pending fence covers the newest frame
-     * whose counters we have not read; polling with a zero timeout never
-     * stalls. When the GPU has finished that frame, {@code {writeSlot, spare}}
-     * = {@code {exact live count, unculled translucent census}} becomes the fresh
-     * snapshot and the CPU-side spawn deltas reset. Otherwise the stale
-     * snapshot stands and the deltas keep every dispatch bound conservative
-     * (deaths only ever shrink the live pool, so snapshot + delta is always a
-     * safe upper bound).
-     */
+    /** Consume completed staging slots in generation order; counts are diagnostic only. */
     private void pollCounterSnapshot(int cap) {
-        if (this.pendingFence == 0)
-            return;
-        int wait = GL32.glClientWaitSync(this.pendingFence, 0, 0L);
-        if (wait == GL32.GL_TIMEOUT_EXPIRED)
-            return; // GPU still behind — poll again next frame, zero stalls
-        if (wait == GL32.GL_WAIT_FAILED) {
-            long now = System.currentTimeMillis();
-            if (now - this.lastErrorTime > 5000) {
-                this.lastErrorTime = now;
-                CreateManaIndustry.LOGGER.warn("[CMI particles] counter fence wait failed; keeping stale snapshot");
+        ParticleReadbacks.Slot snapshot;
+        while ((snapshot = this.readbacks.completed()) != null) {
+            try {
+                if (snapshot.epoch != this.gpu.identityEpoch()) continue;
+                ParticleDiagnostics.INSTANCE.readback(this.committedGeneration - snapshot.generation);
+                ByteBuffer data = snapshot.data;
+                this.liveDisplay = Math.max(0, Math.min(cap, data.getInt(0)));
+                // Only an empty snapshot covering every subsequent creation proves idle.
+                this.poolMayBeAlive = this.liveDisplay > 0 || snapshot.generation < this.lastCreationGeneration;
+                int member = data.getInt(24);
+                // Local MODEL damage uses the stable token; pool indices are never reused as identity.
+                this.storm.onHitReadback(data.getInt(16), data.getInt(20), member, data.getInt(28));
+                if (snapshot.positions) this.storm.acceptPositionSnapshot(snapshot.gameTime,
+                        ParticleReadbacks.entries(data, ParticleReadbacks.STORM_OFFSET,
+                                ParticleBuffers.STORMPOS_CAP, ParticleBuffers.STORMPOS_ENTRY_FLOATS));
+                if (snapshot.waves) this.storm.acceptWaveSnapshot(ParticleReadbacks.entries(data,
+                        ParticleReadbacks.WAVE_OFFSET, ParticleBuffers.WAVECONTACT_CAP, ParticleBuffers.WAVECONTACT_ENTRY_FLOATS));
+            } finally {
+                this.readbacks.release(snapshot);
             }
-            this.storm.dropPositionSnapshot(); // a fresh snapshot is scheduled anyway
-            this.storm.dropWaveContact();
-        } else {
-            int[] counts = this.gpu.readbackCounts(this.pendingSlot);
-            int alive = counts[0];
-            int translucent = counts[1];
-            // Saturate against cap, never zero: the GPU-side slot guards keep
-            // the true live count <= cap, so cap itself stays a sound dispatch
-            // bound, while a 0 would collapse the next update dispatch and
-            // mass-drop every particle beyond it at compaction.
-            if (alive < 0)
-                alive = 0;
-            else if (alive > cap)
-                alive = cap;
-            if (translucent < 0)
-                translucent = 0;
-            else if (translucent > cap)
-                translucent = cap;
-            this.aliveKnown = alive;
-            this.translucentKnown = translucent;
-            this.spawnDelta = 0;
-            this.translucentSpawnDelta = 0;
-            this.translucentLatched = translucent > 0;
-            this.liveDisplay = alive;
-            // the same fence covers the hit query, so its snapshot is fresh now
-            int[] hit = this.gpu.readbackHit();
-            this.storm.onHitReadback(hit[0], hit[1], hit[2]);
-            // ...and the authority position readback dispatched last compute phase
-            this.storm.pollPositionSnapshot();
-            // ...and the wave-contact readback (local-player-targeted waves)
-            this.storm.pollWaveContact();
         }
-        GL32.glDeleteSync(this.pendingFence);
-        this.pendingFence = 0;
     }
 
     /**
@@ -2806,9 +2791,9 @@ public final class CMIParticleEngine {
      * bake slice per particle, so one spec can serve many spawn sites.
      */
     private void ensureEmitterRuntime(int id, EmitterSpec spec, Vec3 origin) {
-        if (spec.material == EmitterSpec.Material.ALPHA || spec.material == EmitterSpec.Material.OPAQUE) {
+        if (spec.type.features().contains(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Feature.SPRITE_ATLAS)) {
             this.spriteAtlas.ensureLoaded();
-        } else if (spec.material == EmitterSpec.Material.MODEL) {
+        } else if (spec.type.features().contains(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Feature.MODEL_ATLAS)) {
             this.allayAtlas.ensureLoaded();
         }
         if (spec.collideMode != EmitterSpec.CollideMode.NONE && origin != null)
@@ -2817,7 +2802,8 @@ public final class CMIParticleEngine {
 
     /** Whether a spec's particles feed the combined translucent sort (ALPHA or MODEL). */
     public static boolean isTranslucent(EmitterSpec spec) {
-        return spec.material == EmitterSpec.Material.ALPHA || spec.material == EmitterSpec.Material.MODEL;
+        return spec.material == EmitterSpec.Material.ALPHA || spec.material == EmitterSpec.Material.MODEL
+                || spec.material == EmitterSpec.Material.HEX_PATTERN;
     }
 
     // ------------------------------------------------------------------

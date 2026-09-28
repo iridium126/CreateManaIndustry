@@ -27,7 +27,7 @@ layout(std430, binding = BIND_GRID) buffer GridBuf {
 
 void main() {
     uint idx = gl_GlobalInvocationID.x;
-    if (idx >= prevCounter.live)
+    if (idx >= min(prevCounter.live, uint(readBuf.data.length()) / VEC4_PER_PARTICLE))
         return;
 
     uint base = idx * 4u;

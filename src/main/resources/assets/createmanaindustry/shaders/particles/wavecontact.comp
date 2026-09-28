@@ -19,6 +19,8 @@ layout(std430, binding = BIND_EMITTER) readonly buffer EmitterBuf { vec4 u[]; } 
 // Entry stride 5: {memberIdx, waveId, pos.xyz} (world space; Java reframes).
 layout(std430, binding = BIND_WAVECONTACT) buffer WaveContactBuf { uint count; float entries[]; } result;
 
+layout(std430, binding = BIND_WAVE_STAMP) buffer WaveStamps { uint wave[]; } stamps;
+
 uniform vec3 uLocalPlayerPos; // local player aim point (feet + 0.5), world space
 // uTimeSec / uWave / uWaveTarget are declared by chunks/allay_storm.glsl
 // (included below) next to the membership function that reads them
@@ -30,7 +32,7 @@ const float CONTACT_R = 1.6;
 
 void main() {
     uint idx = gl_GlobalInvocationID.x;
-    if (idx >= counter.writeSlot)
+    if (idx >= min(counter.writeSlot, uint(pool.data.length()) / VEC4_PER_PARTICLE))
         return;
 
     uint base = idx * 4u;
@@ -45,12 +47,8 @@ void main() {
     // size multiplier exactly at member 0
     if (emitters.u[hb + 18u].x < 0.5)
         return; // not a storm member
-    // pass-completed latch (p0.w bit 18): a diver that already landed its
-    // contact never re-reports — the server dedupes anyway, this just keeps
-    // the staging buffer and the wire quiet
-    if ((uint(p0.w + 0.5) & MEMBER_LATCH_BIT) != 0u)
-        return;
-
+    // update may latch pursuit completion in this very frame. Reporting is
+    // independently deduplicated by (member, wave), including latched members.
     for (uint k = 0u; k < 4u; k++) {
         vec4 wt = uWaveTarget[k];
         if (wt.w < 0.5)
@@ -63,9 +61,13 @@ void main() {
         vec3 d = p0.xyz - uLocalPlayerPos;
         if (dot(d, d) > CONTACT_R * CONTACT_R)
             continue;
+        uint member = (uint(p0.w + 0.5) & MEMBER_IDX_MASK) - 1u;
+        uint stampIndex = member * 4u + k;
+        if (stampIndex >= uint(stamps.wave.length()) || stamps.wave[stampIndex] == uint(wt.w)) continue;
         uint slot = atomicAdd(result.count, 1u);
         if (slot >= WAVECONTACT_CAP)
             return;
+        stamps.wave[stampIndex] = uint(wt.w);
         uint o = slot * 5u;
         result.entries[o + 0u] = float(uint(p0.w + 0.5) & MEMBER_IDX_MASK) - 1.0; // memberIdx
         result.entries[o + 1u] = wt.w;       // waveId (float-exact counter value)

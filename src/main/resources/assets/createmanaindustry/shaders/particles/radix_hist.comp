@@ -1,22 +1,44 @@
-// Counting-sort histogram pass over ALL translucent items (MODEL parts +
-// ALPHA sprites). The 9-bit key carries the type in bit SORT_KEY_TYPE_SHIFT
-// and the depth band in the low byte; RADIX_BINS == 512 covers type x band,
-// so the scan/scatter place each type in its own contiguous partition.
-// Element count = exact per-type counts summed (cmd[GHOST] + cmd[ALPHA];
-// the carrier region lives behind the radix output and is never touched).
+// One 64-lane group aggregates 1024 items. All lanes reach every barrier.
 layout(local_size_x = 64) in;
-
-layout(std430, binding = BIND_INDIRECT) buffer IndirectBuf { uint cmd[INDIRECT_UINTS]; } indirect;
-layout(std430, binding = BIND_SORT_READ) readonly buffer SortRead { uvec2 kv[]; } sortIn;
-layout(std430, binding = BIND_HIST) buffer HistBuf { uint h[RADIX_BINS]; } hist;
-
+layout(std430, binding = BIND_INDIRECT) readonly buffer Commands { uint cmd[INDIRECT_UINTS]; } indirect;
+layout(std430, binding = BIND_SORT_READ) readonly buffer InputItems { uvec2 kv[]; } sortIn;
+layout(std430, binding = BIND_HIST) buffer Histogram { uint h[RADIX_BINS]; } hist;
 uniform uint uShift;
-
+shared uint counts[RADIX_BINS];
+shared uint mixed;
+shared uint uniformBase;
 void main() {
-    uint g = gl_GlobalInvocationID.x;
-    if (g >= indirect.cmd[IDX_CNT_GHOST] + indirect.cmd[IDX_CNT_ALPHA] + indirect.cmd[IDX_CNT_PATTERN])
+    uint lane = gl_LocalInvocationID.x;
+    uint count = indirect.cmd[IDX_CNT_GHOST] + indirect.cmd[IDX_CNT_ALPHA] + indirect.cmd[IDX_CNT_PATTERN];
+    if (count < SORT_GROUP_THRESHOLD) {
+        uint g = gl_GlobalInvocationID.x;
+        if (g < count) {
+            atomicAdd(hist.h[(sortIn.kv[g].x >> uShift) & (RADIX_BINS - 1u)], 1u);
+        }
+        return; // uniform count branch: no workgroup enters later barriers
+    }
+    uint tileStart = gl_WorkGroupID.x * 1024u;
+    if (tileStart >= count) return; // uniform across the entire workgroup
+    uint firstBin = (sortIn.kv[tileStart].x >> uShift) & (RADIX_BINS - 1u);
+    if (lane == 0u) mixed = 0u;
+    barrier();
+    bool different = false;
+    for (uint i = lane; i < 1024u && tileStart + i < count; i += 64u)
+        different = different || (((sortIn.kv[tileStart+i].x >> uShift) & (RADIX_BINS-1u)) != firstBin);
+    if (different) atomicOr(mixed, 1u);
+    barrier();
+    if (mixed == 0u) {
+        if (lane == 0u) atomicAdd(hist.h[firstBin], min(1024u, count - tileStart));
         return;
-    uint k = sortIn.kv[g].x;
-    uint bin = (k >> uShift) & (RADIX_BINS - 1u);
-    atomicAdd(hist.h[bin], 1u);
+    }
+    for (uint bin = lane; bin < RADIX_BINS; bin += 64u) counts[bin] = 0u;
+    barrier();
+    uint start = gl_WorkGroupID.x * 1024u;
+    for (uint i = lane; i < 1024u; i += 64u) {
+        uint g = start + i;
+        if (g < count) atomicAdd(counts[(sortIn.kv[g].x >> uShift) & (RADIX_BINS - 1u)], 1u);
+    }
+    barrier();
+    for (uint bin = lane; bin < RADIX_BINS; bin += 64u)
+        if (counts[bin] != 0u) atomicAdd(hist.h[bin], counts[bin]);
 }

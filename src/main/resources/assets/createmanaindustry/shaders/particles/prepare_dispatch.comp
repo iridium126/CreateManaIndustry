@@ -1,0 +1,24 @@
+// Publication boundary: allocation cursors become bounded live counts here.
+layout(local_size_x = 1) in;
+layout(std430, binding = BIND_PREV_COUNTER) readonly buffer Previous { uint live; } previous;
+layout(std430, binding = BIND_COUNTER) buffer Current { uint requested; uint spare; uint census; uint items; } current;
+layout(std430, binding = BIND_INDIRECT) buffer Draw { uint cmd[INDIRECT_UINTS]; } draw;
+layout(std430, binding = BIND_DISPATCH) writeonly buffer Dispatch { uint args[9]; } dispatchOut;
+uniform uint uCapacity;
+uniform uint uPhase;
+void main() {
+    uint n;
+    if (uPhase == 0u) n = min(previous.live, uCapacity);
+    else if (uPhase == 1u) {
+        current.requested = min(current.requested, uCapacity);
+        n = current.requested;
+    } else {
+        n = min(current.items, uCapacity);
+        draw.cmd[IDX_CNT_CARRIER] = min(draw.cmd[IDX_CNT_CARRIER], CARRIER_CAP);
+    }
+    uint base = uPhase * 3u;
+    uint blockSize = uPhase == 2u && n >= SORT_GROUP_THRESHOLD ? 1024u : 64u;
+    dispatchOut.args[base] = (n + blockSize - 1u) / blockSize;
+    dispatchOut.args[base + 1u] = 1u;
+    dispatchOut.args[base + 2u] = 1u;
+}

@@ -1,5 +1,5 @@
 layout(std430, binding = BIND_POOL_WRITE) readonly buffer HexPool { vec4 data[]; } pool;
-layout(std430, binding = 28) readonly buffer HexPoints { vec4 point[]; } points;
+layout(std430, binding = BIND_HEX_POINT) readonly buffer HexPoints { vec4 point[]; } points;
 #pragma cmi_include chunks/hex_pattern.glsl
 uniform mat4 ModelViewMat;
 uniform mat4 ProjMat;

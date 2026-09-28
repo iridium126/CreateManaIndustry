@@ -1,5 +1,5 @@
 #pragma cmi_include chunks/hex_pattern_state.glsl
-layout(std430, binding = 26) readonly buffer HexResources { vec4 v[]; } hexResource;
+layout(std430, binding = BIND_HEX_RESOURCE) readonly buffer HexResources { vec4 v[]; } hexResource;
 #pragma cmi_include chunks/hex_color.glsl
 vec3 hexMorph(uint offset, uint count, float time, vec3 position) {
     precise float inputPhase = time + float(dot(dvec3(0.1lf), dvec3(position)));

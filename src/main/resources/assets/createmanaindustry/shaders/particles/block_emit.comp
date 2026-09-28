@@ -35,6 +35,7 @@ vec3 randomDir(float s) {
 
 
 #define CMI_BLOCK_EMISSION
+#pragma cmi_include chunks/particle_identity.glsl
 #pragma cmi_include chunks/classic_spawn.glsl
 
 void main() {

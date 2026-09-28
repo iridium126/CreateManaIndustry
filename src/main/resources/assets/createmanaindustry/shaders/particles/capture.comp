@@ -25,6 +25,7 @@ layout(std430, binding = BIND_HIT) buffer HitBuf { uvec4 pair; } hitOut;
 
 uniform int uMetaSlot; // == particle capacity: the reserved tail slot index
 
+#pragma cmi_include chunks/particle_identity.glsl
 void main() {
     counter.spare = counter.translucentCensus;
     sortOut.kv[uMetaSlot] = uvec2(indirect.cmd[IDX_CNT_MODELOP], 0u);
@@ -49,5 +50,6 @@ void main() {
                 // mask the identity packing: bits 0..17 memberIdx+1, bit 18 the wave latch
                 ? (uint(wp0.w + 0.5) & MEMBER_IDX_MASK) - 1u
                 : 0xFFFFFFFFu;
+        hitOut.pair.w = hitOut.pair.z == 0xFFFFFFFFu ? identities.token[uIdentityWriteBase + idx] : 0u;
     }
 }

@@ -14,19 +14,24 @@
 | `ALPHA` | 半透明精灵 | 深度排序后绘制 |
 | `ADDITIVE` | 光效、Hexcasting | 加法混合，最后绘制 |
 | `MODEL` | Allay、带动画模型 | 与透明粒子共同排序 |
+| `HEX_PATTERN` | 持续法术图案 | 独立几何，与透明材质分区排序 |
 
 视觉对齐要求：新增原版替代路径必须先记录原版的生命周期、速度、颜色、尺寸、光照、混合和碰撞语义，再放入对应材质；不要为了复用而改变这些语义。
 
 ## 2. 一帧的数据流
 
 ```text
-CPU 发射队列
-  -> emit.comp：写入双缓冲粒子池
-  -> update.comp：积分、寿命、碰撞、死亡链
-  -> keygen.comp：视锥剔除并生成 ADDITIVE/透明索引
-  -> radix_*：透明粒子按深度排序
-  -> capture.comp：统计后续 dispatch 上界
-  -> AFTER_LEVEL：OPAQUE / MODEL / ALPHA / ADDITIVE 间接绘制
+CPU 脏 header / 发射队列 / 公共帧参数
+  -> prepare_dispatch：上一提交代有效数 -> 更新工作组
+  -> reset / update：积分、碰撞、死亡链，写入下一代池
+  -> emit / block_emit / hex_reconcile：追加新粒子
+  -> prepare_dispatch：钳制申请计数 -> 剔除工作组
+  -> keygen：可见材质索引与透明 key
+  -> prepare_dispatch：实际可见透明数 -> 排序工作组
+  -> radix_hist / scan / scatter：材质分区及 256 深度带
+  -> capture：完成计数与 indirect draw
+  -> 提交 generation，并在空闲 staging 槽复制快照
+  -> AFTER_LEVEL：OPAQUE / MODEL / ALPHA / HEX_PATTERN / ADDITIVE 绘制
 ```
 
 `beginFrame` 在 `AFTER_SKY` 执行 compute 并提交 generation；shaderpack 合并路径在同一 `renderLevel` 使用该 generation；`endFrame` 在 `AFTER_LEVEL` 绘制。Iris 阴影轨道读取前一 generation，这是有意的时序约束。
@@ -95,6 +100,9 @@ Allay Storm 的成员使用 `MODEL` 粒子表示，身份、生命值、姿态�
 /cmip spray <amethyst|uuid|rainbow> [count]
 /cmip bench <count>
 /cmip stats
+/cmip profile on
+/cmip profile
+/cmip profile off
 /cmip budget <ms>
 /cmip shaderpack status
 /cmip clear
@@ -102,7 +110,7 @@ Allay Storm 的成员使用 `MODEL` 粒子表示，身份、生命值、姿态�
 
 ## 7. 验证清单
 
-- 无 shaderpack：四种材质均能出现，`/cmip stats` 无持续 GL 错误。
+- 无 shaderpack：五种材质均能出现，`/cmip stats` 无持续 GL 错误。
 - Iris/shaderpack：MODEL 的位置、姿态、深度和阴影轨道正确；失败时可回退。
 - Hexcasting：直接 `conjure_particle`、网络 `ParticleSpray`、两个 `addParticle` overload 都验证；关闭键后原版仍出现。
 - Storm：多客户端进入/离开、dimension change、死亡广播、波次接触和断线清理。
@@ -114,3 +122,43 @@ Allay Storm 的成员使用 `MODEL` 粒子表示，身份、生命值、姿态�
 - Mixin：`mixin/hexcasting/HexConjureParticleRedirectMixin`、`HexSprayRedirectMixin`。
 - GLSL：`shaders/particles/{emit,update,keygen,radix_*,capture}.comp`、`{textured,additive,model}.{vsh,fsh}`。
 - 配置：`config/ClientConfig.java`。
+
+## 9. 内部类型扩展
+
+`ParticleTypes` 将稳定类型 ID 与绘制材质分开。必须在首次 shader 编译前注册，之后目录冻结；这是项目内部接口，不承诺第三方兼容性，也不新增资源包 JSON 协议。原 `EmitterSpec` 发射入口保持可用，未指定类型时选用材质对应的内建类型。
+
+例如复用 ADDITIVE 的上升火花：
+
+```java
+static final ParticleTypes.Type RISING_SPARK = ParticleTypes.register(
+    new ParticleTypes.Type(1000, "rising_spark", EmitterSpec.Material.ADDITIVE,
+        "chunks/examples/rising_spark_spawn.glsl",
+        "chunks/examples/rising_spark_update.glsl", Set.of()));
+
+EmitterSpec spec = EmitterSpec.builder().type(RISING_SPARK).build();
+```
+
+示例模块已包含在 shader 目录，生产环境不会自动注册；真实 GPU 测试会注册并执行它。模块定义 `cmi_rising_spark_spawn` / `cmi_rising_spark_update`，签名如下：
+
+```glsl
+void cmi_rising_spark_update(uint header,
+    inout vec4 p0, inout vec4 p1, inout vec4 p2, inout vec4 p3) {
+    p1.y += uDt;
+}
+```
+
+标准生成先初始化随机数、生命值和身份，然后执行 spawn hook；update hook 在基础更新后执行，所以上述速度变化影响下一步位置积分。不要覆盖 emitter ID、身份、类型或寿命字段的既有约定。新功能依赖在 Type.features 中声明；当前 features 是描述元数据，不会自动生成世界资源或跳过现有通用功能。
+
+编译器展开 `#pragma cmi_types spawn/update`，沿用 `#pragma cmi_include`，生成 GLSL 类型分派。没有逐粒子的 Java 回调。内建基础运动、碰撞查询/扫掠、Storm 运动/导航、Hex 更新、伤害与死亡链各有独立 chunk；修改公式需要参考测试，不能仅以编译成功判断兼容。
+
+## 10. 布局、同步与职责
+
+粒子仍为 4 vec4 / 64 B；header 仍为 20 vec4 / 320 B，首 vec4.x 的原保留位承载类型 ID。`ParticlePrograms` 从 Java 常量生成绑定点、间接命令及 Hex 布局 prelude；布局测试检查尺寸和类型映射。局部 MODEL 身份放在独立 sidecar，不修改 shaderpack 读取的粒子结构；内部伤害队列记录扩为 32 B，不改变网络包。
+
+`ParticleDispatch` 准备有界间接工作组；`ParticleEmitterUploads` 合并 header 脏区；`ParticleReadbacks` 管理四个独立 staging 槽；`ParticleDiagnostics` 负责可关闭计时；引擎的 `DrawPipeline` 负责绘制状态恢复。绑定缓存仅在引擎 pass 内有效，在 Minecraft/Iris 边界失效。碰撞烘焙继续使用既有后台执行方式，不将世界访问迁移到其他线程。
+
+计数是阶段内的申请总数，容量钳制后才作为有效数进入读取和 indirect dispatch。CPU census 仅供显示及保守空闲判断，不决定 GPU 遍历范围。SSBO 写后使用 STORAGE barrier；间接命令加 COMMAND，TBO 读取加 TEXTURE_FETCH；复制、清除与 staging 使用 BUFFER_UPDATE。fence 覆盖快照复制，只以零超时轮询；槽满不覆盖、不等待。
+
+清空、换维度和成功重建使身份 epoch 失效。编译失败保留原程序及其待消费结果；成功编译整组程序后才替换。粒子池、排序排列和绘制命令按 generation 配对，阴影仍读取前一提交代。波次队列仅在成功复制后确认清除，位置快照不会在等待期间覆盖。
+
+测试说明见 [scripts/particles/README.md](../scripts/particles/README.md)。性能数据、显存成本和未验收事项见 [测量记录](particle-engine-performance.md)。

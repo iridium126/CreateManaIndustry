@@ -14,7 +14,7 @@ void main() {
         return;
     }
     uint index = atomicAdd(counter.writeSlot, 1u);
-    if (index >= uCapacity) { atomicAdd(counter.writeSlot, -1u); return; }
+    if (index >= uCapacity) { return; }
     vec3 anchor = hexInput.v[HEX_ANCHORS + floatBitsToUint(hexInput.v[b].w)].xyz;
     pool.data[index * 4u] = vec4(anchor, hexInput.v[b + 1u].w);
     pool.data[index * 4u + 1u] = vec4(0);

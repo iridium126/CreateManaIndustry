@@ -457,7 +457,7 @@ public final class AllayStormRuntime {
                 // identity -> slot entries must never serve member-keyed
                 // combat origins
                 if (engine.initialized())
-                    engine.gpu().clearMemberMap();
+                    engine.invalidateParticleIdentities();
                 this.stormDead.clear();
                 if (deadBitmap != null) {
                     byte[] bm = deadBitmap;
@@ -522,7 +522,7 @@ public final class AllayStormRuntime {
                 if (this.stormActive && this.stormEmitId >= 0)
                     this.stormKillEmitId = this.stormEmitId;
                 if (engine.initialized())
-                    engine.gpu().clearMemberMap();
+                    engine.invalidateParticleIdentities();
                 this.stormActive = false;
                 this.stormAuthority = false;
                 this.pendingStormSpawns = 0;
@@ -707,8 +707,9 @@ public final class AllayStormRuntime {
      * before emit reads it again.
      */
     public void retireKill() {
+        boolean hadMembers = this.stormActive || this.stormKillEmitId >= 0;
         this.stormKillEmitId = -1;
-        this.engine.gpu().clearMemberMap();
+        if (hadMembers) this.engine.gpu().clearMemberMap();
     }
 
     // ---- crosshair hit-query snapshot plumbing -------------------------------
@@ -718,7 +719,10 @@ public final class AllayStormRuntime {
      * {@code pollCounterSnapshot}): packed key, winner HP bits, storm member
      * identity ({@code HIT_MISS} = non-storm MODEL winner).
      */
-    public void onHitReadback(int key, int hpBits, int memberIdx) {
+    private int hitToken;
+    public int hitToken() { return this.hitToken; }
+    public void onHitReadback(int key, int hpBits, int memberIdx, int token) {
+        this.hitToken = token;
         this.hitKeySnapshot = key;
         this.crosshairHitKey = key;
         this.hitHpBits = hpBits;
@@ -839,7 +843,7 @@ public final class AllayStormRuntime {
      * 6c. Authority-only: dispatches {@code stormpos.comp} over the freshly
      * written pool at the configured snapshot rate, compacting storm members
      * within melee reach of any synced player into the staging buffer. The
-     * readback happens at the next fence poll ({@link #pollPositionSnapshot})
+     * readback happens at the next fence poll ({@link #acceptPositionSnapshot})
      * and ships as a {@link ServerboundStormPositionsPacket}. Skipped on
      * non-authority clients and while no storm runs; costs the distance tests
      * alone in steady state. {@code upper} is the engine's dispatch bound
@@ -847,7 +851,7 @@ public final class AllayStormRuntime {
      * bookkeeping stays on the engine side of the seam.
      */
     public void dispatchStormPosReadback(int slot, int cap, int upper) {
-        if (!this.stormActive || !this.stormAuthority || this.stormCorrectionHz <= 0)
+        if (this.stormPosPending || !this.stormActive || !this.stormAuthority || this.stormCorrectionHz <= 0)
             return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null)
@@ -872,7 +876,7 @@ public final class AllayStormRuntime {
         Vec3 a = this.center;
         CMIParticleEngine.setFloatUniform(sp, "uAnchor", (float) a.x, (float) a.y, (float) a.z);
         CMIParticleEngine.setIntUniform(sp, "uPlayerCount", this.lastPlayerCount);
-        org.lwjgl.opengl.GL43.glDispatchCompute(Math.max(1, (upper + 63) / 64), 1, 1);
+        engine.gpu().dispatch(1);
         org.lwjgl.opengl.GL42.glMemoryBarrier(
                 org.lwjgl.opengl.GL43.GL_SHADER_STORAGE_BARRIER_BIT | org.lwjgl.opengl.GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
         this.stormPosPending = true;
@@ -883,14 +887,13 @@ public final class AllayStormRuntime {
      * Consumes a pending storm position readback at the fence poll (success
      * path): reads the staging buffer and ships it to the server.
      */
-    public void pollPositionSnapshot() {
-        if (!this.stormPosPending)
-            return;
-        this.stormPosPending = false;
-        float[] entries = engine.gpu().readbackStormPos();
+    public boolean positionSnapshotPending() { return this.stormPosPending; }
+    public long positionSnapshotTime() { return this.stormPosGameTime; }
+    public boolean waveSnapshotPending() { return this.waveContactPending; }
+
+    public void acceptPositionSnapshot(long gameTime, float[] entries) {
         if (entries != null && entries.length >= 8)
-            PacketDistributor.sendToServer(
-                    new ServerboundStormPositionsPacket(this.stormPosGameTime, entries));
+            PacketDistributor.sendToServer(new ServerboundStormPositionsPacket(gameTime, entries));
     }
 
     /** Drops a pending readback (fence WAIT_FAILED; a fresh one is scheduled anyway). */
@@ -1254,10 +1257,10 @@ public final class AllayStormRuntime {
      * Wave-contact detection dispatch (render thread, after the stormpos
      * readback — the same freshly written pool + counter slot): runs ONLY when
      * a live wave targets the local player; the tiny staging buffer rides the
-     * frame fence back and {@link #pollWaveContact} ships the reports.
+     * frame fence back and {@link #acceptWaveSnapshot} ships the reports.
      */
     public void dispatchWaveContactReadback(int slot, int upper) {
-        if (this.waveContactPending || !this.stormActive || !anyWaveTargetingLocalPlayer())
+        if (!this.stormActive || !anyWaveTargetingLocalPlayer())
             return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null)
@@ -1265,7 +1268,6 @@ public final class AllayStormRuntime {
         int wc = engine.programs().waveContact();
         if (wc == 0)
             return;
-        engine.gpu().clearWaveContactCount();
         org.lwjgl.opengl.GL20.glUseProgram(wc);
         engine.gpu().bindParticleWrite(ParticleBuffers.PARTICLE_BB_WRITE);
         engine.gpu().bindCounter(3, slot);
@@ -1277,7 +1279,7 @@ public final class AllayStormRuntime {
         CMIParticleEngine.setFloatUniform(wc, "uTimeSec", this.timeSec);
         CMIParticleEngine.setVec4ArrayUniform(wc, "uWave", this.waveUniform);
         CMIParticleEngine.setVec4ArrayUniform(wc, "uWaveTarget", this.waveTargetUniform);
-        org.lwjgl.opengl.GL43.glDispatchCompute(Math.max(1, (upper + 63) / 64), 1, 1);
+        engine.gpu().dispatch(1);
         org.lwjgl.opengl.GL42.glMemoryBarrier(
                 org.lwjgl.opengl.GL43.GL_SHADER_STORAGE_BARRIER_BIT
                         | org.lwjgl.opengl.GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
@@ -1291,11 +1293,7 @@ public final class AllayStormRuntime {
      * same frame the melee hit reports use (the server's +8 reach margin
      * absorbs the sub-2-block anchor skew).
      */
-    public void pollWaveContact() {
-        if (!this.waveContactPending)
-            return;
-        this.waveContactPending = false;
-        float[] entries = engine.gpu().readbackWaveContact();
+    public void acceptWaveSnapshot(float[] entries) {
         if (entries == null)
             return;
         Vec3 c = this.center;

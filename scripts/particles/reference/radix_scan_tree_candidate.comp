@@ -1,0 +1,26 @@
+// Blelloch exclusive scan: O(bins) additions, 256 lanes, no subgroup requirement.
+layout(local_size_x = 256) in;
+layout(std430, binding = BIND_HIST) readonly buffer Histogram { uint h[RADIX_BINS]; } hist;
+layout(std430, binding = BIND_OFFSETS) writeonly buffer Offsets { uint o[RADIX_BINS]; } offs;
+shared uint s[RADIX_BINS];
+void main() {
+    uint lane = gl_LocalInvocationID.x;
+    for (uint i = lane; i < RADIX_BINS; i += 256u) s[i] = hist.h[i];
+    barrier();
+    for (uint stride = 1u; stride < RADIX_BINS; stride <<= 1u) {
+        for (uint i = (lane + 1u) * stride * 2u - 1u; i < RADIX_BINS; i += 256u * stride * 2u)
+            s[i] += s[i - stride];
+        barrier();
+    }
+    if (lane == 0u) s[RADIX_BINS - 1u] = 0u;
+    barrier();
+    for (uint stride = RADIX_BINS >> 1u; stride > 0u; stride >>= 1u) {
+        for (uint i = (lane + 1u) * stride * 2u - 1u; i < RADIX_BINS; i += 256u * stride * 2u) {
+            uint left = s[i - stride];
+            s[i - stride] = s[i];
+            s[i] += left;
+        }
+        barrier();
+    }
+    for (uint i = lane; i < RADIX_BINS; i += 256u) offs.o[i] = s[i];
+}

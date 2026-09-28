@@ -22,6 +22,8 @@ public class HexPatternGpuValidation {
     }
     static String source(String name) throws Exception {
         String text = Files.readString(ROOT.resolve(name));
+        text = text.replace("#pragma cmi_types spawn", com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.shaderHooks("spawn"))
+                .replace("#pragma cmi_types update", com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.shaderHooks("update"));
         Matcher m = Pattern.compile("(?m)^\\s*#pragma cmi_include (\\S+)\\s*$").matcher(text);
         StringBuffer output = new StringBuffer();
         while (m.find()) m.appendReplacement(output, Matcher.quoteReplacement(source(m.group(1))));
@@ -157,11 +159,323 @@ public class HexPatternGpuValidation {
         ByteBuffer indirect=bytes(7*20);indirect.putInt(21*4,2).putInt(26*4,2).putInt(31*4,2);buffer(2,indirect);
         ByteBuffer unsorted=bytes(6*8);int[] keys={530,50,280,512,10,260};
         for(int i=0;i<6;i++)unsorted.putInt(i*8,keys[i]).putInt(i*8+4,i);
-        buffer(6,unsorted);int sortResult=buffer(7,bytes(48));buffer(9,bytes(1024*4));buffer(10,bytes(1024*4));
+        buffer(6,unsorted);int sortResult=buffer(7,bytes(48));buffer(9,bytes(1024*4));buffer(10,bytes(1024*4+4));
         dispatch(compute("radix_hist.comp"),1);dispatch(compute("radix_scan.comp"),1);dispatch(compute("radix_scatter.comp"),1);
         ByteBuffer sorted=bytes(48);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,sortResult);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,sorted);
         Arrays.sort(keys);for(int i=0;i<6;i++)check(keys[i]==sorted.getInt(i*8),"three-way depth partition corrupt");
         System.out.println("Pool reconciliation, generation rejection, compaction, anchors and three-way sort passed");
+    }
+
+    static void read(int id, ByteBuffer data) {
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);
+        data.clear(); GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,data);
+    }
+    static void uint(int program,String name,int value) {
+        GL20.glUseProgram(program);GL30.glUniform1ui(GL20.glGetUniformLocation(program,name),value);
+    }
+    static void dispatchBounds() throws Exception {
+        int program=compute("prepare_dispatch.comp");
+        ByteBuffer previous=bytes(16), current=bytes(16), commands=bytes(140), args=bytes(36);
+        int prev=buffer(14,previous), cur=buffer(3,current), cmd=buffer(2,commands), out=buffer(29,args);
+        uint(program,"uCapacity",129);
+        for(int n:new int[]{0,1,63,64,65,128,129,130,1000000}) {
+            previous.putInt(0,n); current.putInt(0,n).putInt(12,n); commands.putInt(16*4,20000);
+            upload(prev,previous); upload(cur,current);upload(cmd,commands);
+            for(int phase=0;phase<3;phase++) {
+                uint(program,"uPhase",phase);dispatch(program,1);read(out,args);
+                int expected=(Math.min(n,129)+63)/64;
+                check(args.getInt(phase*12)==expected,"GPU dispatch bound "+phase+" / "+n);
+                check(args.getInt(phase*12+4)==1 && args.getInt(phase*12+8)==1,"dispatch dimensions");
+            }
+            read(cur,current);check(current.getInt(0)==Math.min(n,129),"published live count");
+            read(cmd,commands);check(commands.getInt(16*4)==16384,"carrier count clamp");
+        }
+        for(int id:new int[]{prev,cur,cmd,out})GL15.glDeleteBuffers(id);
+        GL20.glDeleteProgram(program);
+        System.out.println("GPU dispatch bounds: empty, tails, saturation and carrier capacity passed");
+    }
+    static void capacity() throws Exception {
+        int cap=65;
+        ByteBuffer pool=bytes((cap+1)*64), counts=bytes(16), command=bytes(48), header=bytes(320);
+        for(int i=cap*64;i<pool.capacity();i+=4)pool.putInt(i,0x5a5a5a5a);
+        header.putFloat(4*3,1).putFloat(5*16,10).putFloat(5*16+4,10);
+        header.putFloat(5*16+8,1).putFloat(5*16+12,1).putFloat(6*16+8,1);
+        header.putFloat(8*16,1).putFloat(8*16+4,1).putFloat(8*16+8,1).putFloat(8*16+12,1);
+        command.putFloat(12,129).putFloat(20,1);
+        int out=buffer(1,pool), counter=buffer(3,counts), emitCommand=buffer(4,command), emitter=buffer(5,header);
+        int emit=compute("emit.comp");uint(emit,"uCapacity",cap);uint(emit,"uTotalSpawn",129);uint(emit,"uEmitCount",1);
+        dispatch(emit,3);read(out,pool);read(counter,counts);
+        check(counts.getInt(0)==129,"allocation attempts remain monotonic on overflow");
+        for(int i=cap*64;i<pool.capacity();i+=4)check(pool.getInt(i)==0x5a5a5a5a,"emit wrote beyond capacity");
+        for(int i=0;i<cap;i++) check(pool.getFloat(i*64+52)>0,"dense initialized output");
+        int input=buffer(0,pool);ByteBuffer previous=bytes(16);previous.putInt(0,1000000);int prev=buffer(14,previous);
+        counts.putInt(0,0);upload(counter,counts);
+        int update=compute("update.comp");uint(update,"uCapacity",cap);uint(update,"uKillEmit",-1);
+        GL20.glUniform1f(GL20.glGetUniformLocation(update,"uDt"),0.05f);
+        dispatch(update,3);read(counter,counts);check(counts.getInt(0)==cap,"update bounded overflowing previous census");
+        read(out,pool);for(int i=cap*64;i<pool.capacity();i+=4)check(pool.getInt(i)==0x5a5a5a5a,"update wrote beyond capacity");
+        // Same material, custom behavior: no engine or sorting changes required.
+        counts.putInt(0,0);upload(counter,counts);header.putFloat(0,1000);upload(emitter,header);
+        uint(emit,"uTotalSpawn",1);dispatch(emit,1);read(out,pool);
+        check(pool.getFloat(20)==2.0f,"registered spawn module not applied");
+        upload(input,pool);previous.putInt(0,1);upload(prev,previous);counts.putInt(0,0);upload(counter,counts);
+        dispatch(update,1);read(out,pool);
+        check(Math.abs(pool.getFloat(20)-2.05f)<0.00001f,"registered update module not applied");
+        for(int id:new int[]{out,counter,emitCommand,emitter,input,prev})GL15.glDeleteBuffers(id);
+        GL20.glDeleteProgram(emit);GL20.glDeleteProgram(update);
+        System.out.println("Real emit/update capacity and sentinel tests passed");
+    }
+
+
+    static void deathChainAndRebirth() throws Exception {
+        int cap=65;
+        ByteBuffer pool=bytes((cap+1)*64), headers=bytes(640), counts=bytes(16), previous=bytes(16);
+        headers.putFloat(7*16,2).putFloat(5*16+12,1).putFloat(16*16,1);
+        headers.putFloat(320+7*16,1);
+        for(int i=0;i<8;i++)pool.putFloat(i*64+12,1).putFloat(i*64+28,17).putFloat(i*64+52,-1.1f).putFloat(i*64+56,i+1);
+        for(int i=cap*64;i<pool.capacity();i+=4)pool.putInt(i,0x5a5a5a5a);
+        previous.putInt(0,8);
+        int input=buffer(0,pool), output=buffer(1,pool), emitter=buffer(5,headers), counter=buffer(3,counts), prev=buffer(14,previous);
+        buffer(16,bytes(16+64*32));buffer(31,bytes(4+cap*8));
+        int update=compute("update.comp"), prepare=compute("prepare_dispatch.comp"), keygen=compute("keygen.comp");
+        uint(update,"uCapacity",cap);uint(update,"uKillEmit",-1);dispatch(update,1);read(counter,counts);
+        check(counts.getInt(0)>=cap,"death chain failed to fill pool");read(output,pool);
+        for(int i=cap*64;i<pool.capacity();i+=4)check(pool.getInt(i)==0x5a5a5a5a,"death chain exceeded capacity");
+        ByteBuffer commands=bytes(140), args=bytes(36);int indirect=buffer(2,commands), dispatchBuffer=buffer(29,args);
+        uint(prepare,"uCapacity",cap);uint(prepare,"uPhase",1);dispatch(prepare,1);read(counter,counts);read(dispatchBuffer,args);
+        check(counts.getInt(0)==cap && args.getInt(12)==2,"GPU death chain omitted from next dispatch");
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,output);
+        int sorted=buffer(7,bytes((cap+16385)*8));buffer(23,bytes((cap+16385)*8));buffer(8,bytes(cap*4));buffer(15,bytes(cap*4));
+        uint(keygen,"uUpper",cap);uint(keygen,"uCarrierBase",cap);GL20.glUniform1f(GL20.glGetUniformLocation(keygen,"uMaxDepth"),128);
+        GL20.glUniform1f(GL20.glGetUniformLocation(keygen,"uDepthLogRange"),7);
+        GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,dispatchBuffer);
+        GL20.glUseProgram(keygen);GL43.glDispatchComputeIndirect(12);
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        read(indirect,commands);check(commands.getInt(26*4)==cap,"death-chain last particle was not culled/sorted");
+        // Expire every poof, then create a new generation; no stale counters survive.
+        for(int i=0;i<cap;i++)pool.putFloat(i*64+48,100);
+        upload(input,pool);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,input);
+        previous.putInt(0,cap);upload(prev,previous);counts.putInt(0,0);upload(counter,counts);
+        dispatch(update,2);read(counter,counts);check(counts.getInt(0)==0,"all-dead frame not empty");
+        pool.putFloat(48,0);pool.putFloat(52,10);upload(input,pool);previous.putInt(0,1);upload(prev,previous);
+        dispatch(update,1);read(counter,counts);check(counts.getInt(0)==1,"rebirth after empty generation failed");
+        for(int id:new int[]{input,output,emitter,counter,prev,indirect,dispatchBuffer,sorted})GL15.glDeleteBuffers(id);
+        for(int program:new int[]{update,prepare,keygen})GL20.glDeleteProgram(program);
+        System.out.println("Death-chain saturation, indirect coverage, all-dead and rebirth passed");
+    }
+    static void stableDamage() throws Exception {
+        ByteBuffer data=bytes(3*64), header=bytes(320), counts=bytes(16), previous=bytes(16), ids=bytes(4+6*4), damage=bytes(16+32);
+        header.putFloat(7*16,2); previous.putInt(0,2);
+        for(int i=0;i<2;i++)data.putFloat(i*64+12,1).putFloat(i*64+52,20).putFloat(i*64+56,i+1);
+        ids.putInt(4,111).putInt(8,222);
+        damage.putInt(0,1).putFloat(16,0).putFloat(20,5).putInt(40,222);
+        int input=buffer(0,data), output=buffer(1,bytes(3*64)), emitter=buffer(5,header), counter=buffer(3,counts), prev=buffer(14,previous), identities=buffer(31,ids), damageBuffer=buffer(16,damage);
+        int program=compute("update.comp");uint(program,"uCapacity",3);uint(program,"uKillEmit",-1);uint(program,"uIdentityReadBase",0);uint(program,"uIdentityWriteBase",3);
+        dispatch(program,1);read(output,data);read(identities,ids);
+        boolean first=false,second=false;
+        for(int i=0;i<2;i++) {
+            int token=ids.getInt(4+(3+i)*4);
+            if(token==111) { check(data.getFloat(i*64+52)==20,"stale pool index damaged wrong particle");first=true; }
+            if(token==222) { check(data.getFloat(i*64+52)==15,"stable identity damage lost");second=true; }
+        }
+        check(first&&second,"identity did not survive compaction");
+        for(int id:new int[]{input,output,emitter,counter,prev,identities,damageBuffer})GL15.glDeleteBuffers(id);
+        GL20.glDeleteProgram(program);
+        System.out.println("Delayed local MODEL damage follows stable identity, not stale pool index");
+    }
+    static Object invoke(Object target,String name,Class<?>[] types,Object... args) throws Exception {
+        Method method=target.getClass().getDeclaredMethod(name,types);method.setAccessible(true);return method.invoke(target,args);
+    }
+    static void setField(Object target,String name,Object value) throws Exception {
+        Field field=target.getClass().getDeclaredField(name);field.setAccessible(true);field.set(target,value);
+    }
+    static Object field(Object target,String name) throws Exception {
+        Field field=target.getClass().getDeclaredField(name);field.setAccessible(true);return field.get(target);
+    }
+    static void ringAndRollback() throws Exception {
+        var gpu=new com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers();
+        check(gpu.init(1000,8),"buffer init");
+        long epoch=gpu.identityEpoch();gpu.clearMemberMap();check(gpu.identityEpoch()==epoch,"per-frame map clear invalidated readbacks");
+        gpu.invalidateIdentities();check(gpu.identityEpoch()>epoch,"reset did not invalidate identities");
+        int committed=gpu.sortBuffer(0);
+        gpu.beginComputeFrame();int scratch=gpu.sortBuffer(0);check(scratch!=committed,"compute overwrote committed sort storage");
+        gpu.restoreCommittedFrame();check(gpu.sortBuffer(0)==committed,"abort published scratch render buffers");
+        gpu.beginComputeFrame();gpu.swap();gpu.restoreCommittedFrame();check(gpu.sortBuffer(0)==scratch,"commit did not promote render storage");
+        Class<?> ringClass=Class.forName("com.iridium126.createmanaindustry.client.particles.engine.ParticleReadbacks");
+        Constructor<?> ctor=ringClass.getDeclaredConstructor();ctor.setAccessible(true);Object ring=ctor.newInstance();
+        Object[] slots=new Object[4];
+        for(int i=0;i<4;i++) {
+            slots[i]=invoke(ring,"freeSlot",new Class<?>[]{});
+            setField(slots[i],"generation",(long)i);
+            gpu.bindCounter(3,0);int buffer=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,3);
+            ByteBuffer count=bytes(16);count.putInt(0,i+100);upload(buffer,count);
+            invoke(gpu,"copySnapshot",new Class<?>[]{int.class,slots[i].getClass()},0,slots[i]);
+            setField(slots[i],"fence",GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0));
+        }
+        for(int frame=0;frame<8;frame++)check(invoke(ring,"freeSlot",new Class<?>[]{})==null,"overwrote an unconsumed readback slot");
+        // Finishing is test-only: production always polls with a zero timeout.
+        GL11.glFinish();
+        for(int i=0;i<4;i++) {
+            Object slot=invoke(ring,"completed",new Class<?>[]{});
+            check(slot==slots[i],"readback completion order");
+            check(((ByteBuffer)field(slot,"data")).getInt(0)==i+100,"snapshot changed after source reuse");
+            invoke(ring,"release",new Class<?>[]{slot.getClass()},slot);
+        }
+        check(invoke(ring,"freeSlot",new Class<?>[]{})!=null,"released slots not reused");
+        invoke(ring,"clear",new Class<?>[]{});check(invoke(ring,"completed",new Class<?>[]{})==null,"reset kept stale snapshot");
+        invoke(ring,"close",new Class<?>[]{});
+        float[] h=new float[80];h[3]=1;gpu.setEmitterHeader(2,h);gpu.setEmitterHeader(3,h);gpu.uploadDirtyEmitters();
+        gpu.setEmitterHeader(2,h);check(((BitSet)field(field(gpu,"emitterUploads"),"dirty")).isEmpty(),"unchanged header re-uploaded");
+        gpu.unbindShaders();gpu.free();gpu.free();
+        check(GL11.glGetError()==GL11.GL_NO_ERROR,"buffer lifecycle GL error");
+        System.out.println("Four-slot backpressure, immutable snapshots, reset and render-generation rollback passed");
+    }
+
+    static void waveRetention() throws Exception {
+        int cap=65;
+        ByteBuffer particles=bytes(cap*64), header=bytes(320), counts=bytes(16), events=bytes(4+16384*20), stamps=bytes(cap*16);
+        header.putFloat(18*16,2);counts.putInt(0,1);
+        for(int i=0;i<cap;i++)particles.putFloat(i*64+12,(1<<18)+i+1).putFloat(i*64+52,20);
+        int pool=buffer(1,particles), emitter=buffer(5,header), counter=buffer(3,counts), queue=buffer(22,events), stamp=buffer(30,stamps);
+        int program=compute("wavecontact.comp");GL20.glUseProgram(program);
+        GL20.glUniform4fv(GL20.glGetUniformLocation(program,"uWave"),new float[]{1,1,0,100,0,0,0,0,0,0,0,0,0,0,0,0});
+        GL20.glUniform4fv(GL20.glGetUniformLocation(program,"uWaveTarget"),new float[]{0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0});
+        for(int frame=0;frame<8;frame++) { counts.putInt(0,frame+1);upload(counter,counts);dispatch(program,1); }
+        read(queue,events);check(events.getInt(0)==8,"contacts lost while snapshots unavailable or latch already set");
+        dispatch(program,1);read(queue,events);check(events.getInt(0)==8,"duplicate wave contacts");
+        // Snapshot copied/acknowledged: clear only the queue, preserve per-wave deduplication.
+        upload(queue,bytes(events.capacity()));dispatch(program,1);read(queue,events);
+        check(events.getInt(0)==0,"acknowledged wave reported twice");
+        counts.putInt(0,9);upload(counter,counts);dispatch(program,1);read(queue,events);
+        check(events.getInt(0)==1,"new contact blocked by older acknowledgement");
+        // An acknowledged earlier slot must not hide an overlapping later wave.
+        GL20.glUniform4fv(GL20.glGetUniformLocation(program,"uWave"),new float[]{1,1,0,100,1,1,0,100,0,0,0,0,0,0,0,0});
+        GL20.glUniform4fv(GL20.glGetUniformLocation(program,"uWaveTarget"),new float[]{0,0,0,1,0,0,0,2,0,0,0,0,0,0,0,0});
+        dispatch(program,1);read(queue,events);
+        check(events.getInt(0)==10,"earlier wave stamp hid overlapping wave");
+        dispatch(program,1);read(queue,events);check(events.getInt(0)==10,"overlapping wave duplicated");
+        for(int id:new int[]{pool,emitter,counter,queue,stamp})GL15.glDeleteBuffers(id);
+        GL20.glDeleteProgram(program);System.out.println("Wave contacts persist across eight delayed frames and are reported once");
+    }
+
+    static void atomicReload() throws Exception {
+        var programs=new com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms();
+        java.util.function.ToIntFunction<String> good=name -> link(stageText(name,GL43.GL_COMPUTE_SHADER,"layout(local_size_x=1) in; void main(){}"));
+        java.util.function.BiFunction<String,String,Integer> graphics=(a,b)->good.applyAsInt(a);
+        Class<?>[] signature={java.util.function.ToIntFunction.class,java.util.function.BiFunction.class};
+        invoke(programs,"rebuildWithCompiler",signature,good,graphics);
+        int old=programs.update();check(programs.ready()&&GL20.glIsProgram(old),"initial shader set");
+        List<Integer> candidate=new ArrayList<>();
+        java.util.function.ToIntFunction<String> failed=name -> {
+            if(name.endsWith("emit.comp"))return 0;
+            int id=good.applyAsInt(name);candidate.add(id);return id;
+        };
+        invoke(programs,"rebuildWithCompiler",signature,failed,graphics);
+        check(programs.update()==old&&GL20.glIsProgram(old),"failed reload destroyed working set");
+        for(int id:candidate)check(!GL20.glIsProgram(id),"failed candidate leaked program");
+        invoke(programs,"rebuildWithCompiler",signature,good,graphics);
+        check(programs.ready()&&programs.update()!=old&&!GL20.glIsProgram(old),"successful reload not atomic");
+        programs.delete();programs.delete();
+        check(GL11.glGetError()==GL11.GL_NO_ERROR,"reload lifecycle GL error");
+        System.out.println("Atomic reload keeps old programs on failure and frees rejected candidates");
+    }
+    static void sortRun(int[] programs,int groups,int histogram) {
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,histogram);
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);
+        for(int pass=0;pass<3;pass++) {
+            GL20.glUseProgram(programs[pass]);GL43.glDispatchCompute(pass==1?1:groups,1,1);
+            GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        }
+    }
+
+    static void submissionBenchmark() throws Exception {
+        var gpu=new com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers();
+        check(gpu.init(1000,128),"submission benchmark init");
+        float[] header=new float[80], mirror=new float[128*80];
+        int legacy=buffer(5,bytes(mirror.length*4));
+        StringBuilder report=new StringBuilder("operation,variant,trial,cpu_ms,bytes_per_frame,calls_per_frame\n");
+        for(int variant=0;variant<2;variant++) {
+            for(int trial=-1;trial<3;trial++) {
+                GL11.glFinish();long start=System.nanoTime();
+                for(int frame=0;frame<5000;frame++) {
+                    header[3]=frame;
+                    if(variant==0) {
+                        System.arraycopy(header,0,mirror,0,80);
+                        try(var stack=org.lwjgl.system.MemoryStack.stackPush()) {
+                            FloatBuffer staging=stack.mallocFloat(mirror.length);staging.put(mirror).flip();
+                            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,legacy);
+                            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,staging);
+                        }
+                    } else { gpu.setEmitterHeader(0,header);gpu.uploadDirtyEmitters(); }
+                }
+                double time=(System.nanoTime()-start)/5000e6;
+                if(trial>=0) report.append("header,").append(variant).append(',').append(trial).append(',').append(time)
+                        .append(',').append(variant==0?40960:320).append(",2\n");
+            }
+        }
+        for(int variant=0;variant<2;variant++) for(int trial=-1;trial<3;trial++) {
+            GL11.glFinish();long start=System.nanoTime();
+            for(int frame=0;frame<5000;frame++) {
+                if(variant==0) for(int binding=0;binding<29;binding++)GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,0);
+                else GL44.nglBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,32,0L);
+            }
+            double time=(System.nanoTime()-start)/5000e6;
+            if(trial>=0)report.append("unbind,").append(variant).append(',').append(trial).append(',').append(time)
+                    .append(",0,").append(variant==0?29:1).append('\n');
+        }
+        Files.writeString(Path.of("build/particle-submit-benchmark.csv"),report);
+        System.out.print(report);GL15.glDeleteBuffers(legacy);gpu.free();
+    }
+    static void sorting(boolean benchmark) throws Exception {
+        int[][] programs=new int[2][3];
+        String[] names={"radix_hist.comp","radix_scan.comp","radix_scatter.comp"};
+        for(int i=0;i<3;i++) {
+            programs[0][i]=link(stageText(names[i],GL43.GL_COMPUTE_SHADER,Files.readString(Path.of("scripts/particles/reference/"+names[i]))));
+            programs[1][i]=compute(names[i]);
+        }
+        StringBuilder report=new StringBuilder("count,distribution,variant,trial,gpu_ms,cpu_submit_ms\n");
+        int[] sizes=benchmark?new int[]{0,10000,100000,1000000,2000000}:new int[]{0,1,63,64,65,1023,1024,1025,4097};
+        for(int n:sizes) for(int distribution=0;distribution<2;distribution++) {
+            ByteBuffer commands=bytes(140);commands.putInt(21*4,n);
+            ByteBuffer input=bytes(Math.max(1,n)*8), result=bytes((n+1)*8);
+            Random random=new Random(28);
+            for(int i=0;i<n;i++) input.putInt(i*8,distribution==0?random.nextInt(768):42).putInt(i*8+4,i);
+            result.putInt(n*8,0x5a5a5a5a);
+            int cmd=buffer(2,commands), src=buffer(6,input), dst=buffer(7,result), hist=buffer(9,bytes(4096)), offs=buffer(10,bytes(4100));
+            for(int variant=0;variant<2;variant++) {
+                int block=variant==0 || n<65536?64:1024;
+                int groups=(n+block-1)/block;
+                sortRun(programs[variant],groups,hist);
+                GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);read(dst,result);
+                BitSet seen=new BitSet(n);int last=-1;
+                for(int i=0;i<n;i++) {
+                    int key=result.getInt(i*8), id=result.getInt(i*8+4);
+                    check(key>=last,"sort key order");last=key;
+                    check(id>=0 && id<n && !seen.get(id),"sort duplicate or invalid payload");seen.set(id);
+                    check(key==input.getInt(id*8),"key payload mismatch");
+                }
+                check(seen.cardinality()==n && result.getInt(n*8)==0x5a5a5a5a,"sort cardinality and sentinel");
+                if(benchmark) {
+                    for(int warm=0;warm<20;warm++)sortRun(programs[variant],groups,hist);
+                    GL11.glFinish();
+                    int query=GL15.glGenQueries();
+                    for(int trial=0;trial<3;trial++) {
+                        GL15.glBeginQuery(GL33.GL_TIME_ELAPSED,query);long start=System.nanoTime();
+                        for(int repeat=0;repeat<30;repeat++)sortRun(programs[variant],groups,hist);
+                        double cpu=(System.nanoTime()-start)/30e6;GL15.glEndQuery(GL33.GL_TIME_ELAPSED);
+                        double gpu=GL33.glGetQueryObjectui64(query,GL15.GL_QUERY_RESULT)/30e6;
+                        String line=n+","+distribution+","+variant+","+trial+","+gpu+","+cpu;
+                        report.append(line).append('\n');System.out.println(line);
+                    }
+                    GL15.glDeleteQueries(query);
+                }
+            }
+            for(int id:new int[]{cmd,src,dst,hist,offs})GL15.glDeleteBuffers(id);
+        }
+        for(int[] set:programs)for(int id:set)GL20.glDeleteProgram(id);
+        if(benchmark)Files.writeString(Path.of("build/particle-sort-benchmark.csv"),report);
+        System.out.println("Baseline and grouped sort order, payload, tail and capacity tests passed");
     }
     @SuppressWarnings("unchecked")
     static void geometry() throws Exception {
@@ -211,6 +525,12 @@ public class HexPatternGpuValidation {
         System.out.println("GPU zappy points match Hex RenderLib across seeds, times and overlapping paths");
     }
     public static void main(String[] args) throws Exception {
+        var example=com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.register(
+                new com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Type(1000,"rising_spark",
+                        com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.Material.ADDITIVE,
+                        "chunks/examples/rising_spark_spawn.glsl","chunks/examples/rising_spark_update.glsl",Set.of()));
+        var exampleSpec=com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.builder().type(example).build();
+        check(exampleSpec.packed().length==80 && exampleSpec.packed()[0]==1000,"type registration/ABI");
         GLFWErrorCallback.createPrint(System.err).set();
         check(GLFW.glfwInit(),"GLFW initialization failed");
         GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);
@@ -221,16 +541,27 @@ public class HexPatternGpuValidation {
         check(window!=0,"OpenGL 4.5 context unavailable");
         GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
         System.out.println("Driver: "+GL11.glGetString(GL11.GL_RENDERER));
+        System.out.println("OpenGL: "+GL11.glGetString(GL11.GL_VERSION));
         Class<?> programs=Class.forName("com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms");
         Field field=programs.getDeclaredField("PRELUDE");field.setAccessible(true);prelude=(String)field.get(null);
-        for(String shader:List.of("update.comp","emit.comp","keygen.comp","reset.comp","radix_hist.comp","radix_scan.comp","radix_scatter.comp","hex_reconcile.comp","hex_prepare.comp")) {
+        for(String shader:List.of("prepare_dispatch.comp","gridbuild.comp","hit.comp","stormpos.comp","wavecontact.comp","block_emit.comp","capture.comp","update.comp","emit.comp","keygen.comp","reset.comp","radix_hist.comp","radix_scan.comp","radix_scatter.comp","hex_reconcile.comp","hex_prepare.comp")) {
             GL20.glDeleteProgram(compute(shader));System.out.println("Compiled "+shader);
         }
         for(String shader:List.of("hex_pattern","additive","model","textured"))
             GL20.glDeleteProgram(link(stage(shader+".vsh",GL20.GL_VERTEX_SHADER),stage(shader+".fsh",GL20.GL_FRAGMENT_SHADER)));
+        buffer(31,bytes(4+2*4096*4));
         colors();
         poolAndSort();
         geometry();
+        dispatchBounds();
+        capacity();
+        deathChainAndRebirth();
+        stableDamage();
+        ringAndRollback();
+        waveRetention();
+        atomicReload();
+        sorting(Arrays.asList(args).contains("--benchmark"));
+        if(Arrays.asList(args).contains("--benchmark"))submissionBenchmark();
         System.out.println("PASS: "+checks+" assertions");
         GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();
     }
