@@ -525,9 +525,18 @@ public class HexPatternGpuValidation {
         System.out.println("GPU zappy points match Hex RenderLib across seeds, times and overlapping paths");
     }
     public static void main(String[] args) throws Exception {
+        var materialTypes = com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Material.values();
+        for (var material : materialTypes) {
+            var standard = com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.standard(material);
+            var spec = com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.builder().type(standard).build();
+            check(spec.type == standard, "standard type mapping for " + material);
+            check(spec.packed().length == 80, "emitter header vec4 count for " + material);
+            check(spec.packed()[0] == standard.id(), "emitter type id header for " + material);
+            check(spec.packed()[7 * 4] == material.index(), "emitter material header for " + material);
+        }
         var example=com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.register(
                 new com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Type(1000,"rising_spark",
-                        com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.Material.ADDITIVE,
+                        com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Material.ADDITIVE,
                         "chunks/examples/rising_spark_spawn.glsl","chunks/examples/rising_spark_update.glsl",Set.of()));
         var exampleSpec=com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.builder().type(example).build();
         check(exampleSpec.packed().length==80 && exampleSpec.packed()[0]==1000,"type registration/ABI");

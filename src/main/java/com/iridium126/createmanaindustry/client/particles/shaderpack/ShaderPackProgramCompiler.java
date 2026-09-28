@@ -177,7 +177,7 @@ public final class ShaderPackProgramCompiler {
      * Builds (or rebuilds, after a pipeline change) the merged program.
      * Returns false on any failure -- the early hook then stands down and the
      * late-window self-drawn fallback takes over; this class records the reason
-     * for /cmip shaderpack status.
+     * for /cmi particle shaderpack status.
      */
     public boolean ensureCompiled() {
         WorldRenderingPipeline pipeline = Iris.getPipelineManager().getPipelineNullable();
@@ -375,7 +375,7 @@ public final class ShaderPackProgramCompiler {
      * The real payload (failing stage filename + full driver/transformer log)
      * lives deeper, so walk the chain, prefer the true exception, and splice
      * every level's message into one bounded string for the log and
-     * {@code /cmip shaderpack status}.
+     * {@code /cmi particle shaderpack status}.
      */
     private static String describeCompileFailure(Throwable e) {
         Throwable primary = e;

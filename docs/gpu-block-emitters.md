@@ -31,7 +31,7 @@ var source = new BlockParticleEmitters.Source(
         EmitterSpec.builder()
                 .shape(EmitterShape.BOX).size(0.4)
                 .speed(0.05, 0.1).life(1.0, 2.0)
-                .material(EmitterSpec.Material.ADDITIVE)
+                .type(ParticleTypes.standard(ParticleTypes.Material.ADDITIVE))
                 .collide(EmitterSpec.CollideMode.NONE)
                 .build(),
         0.5f, 0.5f, 0.5f, 20f, 3f);

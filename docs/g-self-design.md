@@ -38,7 +38,7 @@ Iris 的 shadow track 早于 `AFTER_SKY`，因此 shadow 读取上一 generation
 
 ## 5. 配置与诊断
 
-`particles.shaderPackIntegration=false` 时禁用合并；`/cmip shaderpack status` 应显示 config、path、depth、shadow 和 permutation 状态及最近一次 fallback 原因。配置关闭只影响 MODEL 的 shaderpack 接入，不影响项目自有粒子 draw。
+`particles.shaderPackIntegration=false` 时禁用合并；`/cmi particle shaderpack status` 应显示 config、path、depth、shadow 和 permutation 状态及最近一次 fallback 原因。配置关闭只影响 MODEL 的 shaderpack 接入，不影响项目自有粒子 draw。
 
 ## 6. 验证矩阵
 

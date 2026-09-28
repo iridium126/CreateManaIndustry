@@ -40,43 +40,7 @@ import net.minecraft.world.phys.Vec3;
  */
 public final class EmitterSpec {
 
-    /** Blend / material mode of the emitter. */
-    public enum Material {
-        /** Existing untextured soft-circle, additive blending — order independent. */
-        ADDITIVE(0),
-        /** Textured sprite, normal alpha blending — sorted together with MODEL translucent parts. */
-        ALPHA(1),
-        /**
-         * Instanced 3D model (Allay), fullbright cutout with depth writes —
-         * animation/pose computed in the vertex shader from the header.
-         */
-        MODEL(2),
-        /**
-         * Textured sprite, hard cutout (discard &lt; 0.5) with depth writes and
-         * no blending — renders like the MODEL opaque segment, needs no
-         * sorting. For sprites whose texels are (near) pure 0/255 alpha,
-         * e.g. the vanilla cherry petals.
-         */
-        OPAQUE(3),
-        /** Variable path geometry attached to a Hexcasting holder. */
-        HEX_PATTERN(4);
-
-        final int index;
-
-        Material(int index) {
-            this.index = index;
-        }
-
-        public int index() {
-            return index;
-        }
-
-        public static Material byIndex(int i) {
-            return i == 4 ? HEX_PATTERN : i == 1 ? ALPHA : (i == 2 ? MODEL : (i == 3 ? OPAQUE : ADDITIVE));
-        }
-    }
-
-    /** Procedural pose set for {@link Material#MODEL} emitters (header 17.x). */
+    /** Procedural pose set for {@link ParticleTypes.Material#MODEL} emitters (header 17.x). */
     public enum Animation {
         /** Vanilla hover: wing flap, bobbing, arm sway (limbSwingAmount from speed). */
         FLY(0),
@@ -116,7 +80,7 @@ public final class EmitterSpec {
         }
     }
 
-    /** How a {@link Material#ALPHA} particle interacts with the collision volume. */
+    /** How an alpha particle interacts with the collision volume. */
     public enum CollideMode {
         /** No collision (additive / atmospheric particles). */
         NONE(0),
@@ -223,8 +187,7 @@ public final class EmitterSpec {
     public final float[] colors;
     /** Global additive glow multiplier for this emitter. */
     public final double glow;
-    /** Blend mode (ADDITIVE | ALPHA). */
-    public final Material material;
+    /** Behavior type; its material selects the draw path. */
     public final ParticleTypes.Type type;
     /** Collision behaviour for ALPHA particles. */
     public final CollideMode collideMode;
@@ -237,10 +200,10 @@ public final class EmitterSpec {
     public final boolean spin;
     /** Number of sprite frames in the atlas (1 = single frame / unsprited). */
     public final int spriteCount;
-    /** Procedural animation for {@link Material#MODEL} emitters. */
+    /** Procedural animation for {@link ParticleTypes.Material#MODEL} emitters. */
     public final Animation animation;
     /**
-     * Held item for {@link Material#MODEL} emitters (header 17.z): rendered at
+     * Held item for {@link ParticleTypes.Material#MODEL} emitters (header 17.z): rendered at
      * the vanilla hand anchor when the pose carries it (HOLD animation, or a
      * dive-wave claim overriding the id at render time). {@link HeldItem#NONE}
      * renders nothing; storm specs stay NONE — the wave tier rides the wave
@@ -285,10 +248,8 @@ public final class EmitterSpec {
                 ? new float[] { 1f, 1f, 1f, 1f }
                 : b.colors.clone();
         this.glow = b.glow;
-        this.material = Objects.requireNonNull(b.material, "material");
-        this.type = b.type == null ? ParticleTypes.standard(this.material) : b.type;
+        this.type = b.type == null ? ParticleTypes.standard(ParticleTypes.Material.ADDITIVE) : b.type;
         ParticleTypes.requireRegistered(this.type);
-        if (this.type.material() != this.material) throw new IllegalArgumentException("Particle type/material mismatch");
         this.collideMode = Objects.requireNonNull(b.collideMode, "collideMode");
         this.flutter = b.flutter;
         this.spin = b.spin;
@@ -338,7 +299,7 @@ public final class EmitterSpec {
         f[6 * 4 + 2] = count;
         f[6 * 4 + 3] = (float) glow;
         // 7: material, collideMode, flutter, spin
-        f[7 * 4 + 0] = material.index();
+        f[7 * 4 + 0] = type.material().index();
         f[7 * 4 + 1] = collideMode.index();
         f[7 * 4 + 2] = (float) flutter;
         f[7 * 4 + 3] = spin ? 1f : 0f;
@@ -358,8 +319,8 @@ public final class EmitterSpec {
         // 17: animation (MODEL only), shader colour mode (additive), spawnStyle
         // (storm writes post-pack), heldItem (MODEL) / lightMode (textured)
         // — material split, 0
-        f[17 * 4 + 0] = material == Material.MODEL ? animation.index() : shaderColorMode;
-        f[17 * 4 + 2] = material == Material.MODEL ? heldItem.index() : (lightmap ? 1f : 0f);
+        f[17 * 4 + 0] = type.material() == ParticleTypes.Material.MODEL ? animation.index() : shaderColorMode;
+        f[17 * 4 + 2] = type.material() == ParticleTypes.Material.MODEL ? heldItem.index() : (lightmap ? 1f : 0f);
         // 18 stays zero; 19 carries the PLANE basis normal.
         f[19 * 4 + 0] = (float) planeNormal.x;
         f[19 * 4 + 1] = (float) planeNormal.y;
@@ -399,7 +360,7 @@ public final class EmitterSpec {
     @Override
     public String toString() {
         return "EmitterSpec{" + shape + ", size=" + size + ", life=" + lifeMin + ".." + lifeMax
-                + ", mat=" + material + ", collide=" + collideMode + '}';
+                + ", type=" + type.name() + ", collide=" + collideMode + '}';
     }
 
     public static final class Builder {
@@ -424,8 +385,7 @@ public final class EmitterSpec {
         private float[] colors = new float[] { 1f, 1f, 1f, 1f };
         private double glow = 1;
         private ParticleTypes.Type type;
-        public Builder type(ParticleTypes.Type value) { this.type = value; this.material = value.material(); return this; }
-        private Material material = Material.ADDITIVE;
+        public Builder type(ParticleTypes.Type value) { this.type = Objects.requireNonNull(value, "type"); return this; }
         private CollideMode collideMode = CollideMode.NONE;
         private double flutter = 0;
         private boolean spin = false;
@@ -479,7 +439,6 @@ public final class EmitterSpec {
             return this;
         }
 
-        public Builder material(Material v) { this.material = v; return this; }
         public Builder collide(CollideMode v) { this.collideMode = v; return this; }
         /** Vanilla-style flutter amplitude (blocks at full life); 0 disables. */
         public Builder flutter(double v) { this.flutter = v; return this; }

@@ -131,7 +131,7 @@
 ## 开发文档
 
 完整开发文档索引（GPU 粒子、ALLVR、Allay Storm、shaderpack 集成、持久化与未关闭评审项）见
-[docs/README.md](./docs/README.md)。GPU 粒子引擎（`/cmip` 调试命令与自托管着色器）见
+[docs/README.md](./docs/README.md)。GPU 粒子引擎（`/cmi particle` 调试命令与自托管着色器）见
 [docs/particle-engine-dev.md](./docs/particle-engine-dev.md)。
 
 ## 许可

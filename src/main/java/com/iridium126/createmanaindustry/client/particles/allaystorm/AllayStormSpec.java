@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.allaystorm;
 
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
+import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterShape;
 
 import net.minecraft.world.phys.Vec3;
@@ -52,7 +53,7 @@ public final class AllayStormSpec {
             .sizeOverLife(0.30, 0.30, 1.0)
             .gravity(0, 0, 0)
             .drag(0.6)
-            .material(EmitterSpec.Material.MODEL)
+            .type(ParticleTypes.standard(ParticleTypes.Material.MODEL))
             .animation(EmitterSpec.Animation.FLY)
             .collide(EmitterSpec.CollideMode.REST)
             .glow(1.0)

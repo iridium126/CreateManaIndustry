@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.emitter;
 
 /**
- * Built-in emitter blueprints exposed to {@code /cmip spawn|stream|bench} and
+ * Built-in emitter blueprints exposed to {@code /cmi particle emit} and
  * reusable by gameplay code later. The values are tuned for additive blending
  * (moderate peak brightness so overlapping particles do not wash out).
  */
@@ -108,7 +108,7 @@ public final class EmitterPresets {
             .sizeOverLife(0.075, 0.075, 1.0)
             .gravity(0, -0.3, 0)
             .drag(0)
-            .material(EmitterSpec.Material.OPAQUE)
+            .type(ParticleTypes.standard(ParticleTypes.Material.OPAQUE))
             .collide(EmitterSpec.CollideMode.DIE_ON_GROUND)
             .flutter(2.0)
             .spin(true)
@@ -137,7 +137,7 @@ public final class EmitterPresets {
      * points (20.0) in the maxLife slot and are immortal: the header lifetime
      * is unused, death happens only when a player's melee attack drains the
      * HP (the corpse then plays the vanilla death animation for one second).
-     * The three presets differ only in animation/motion; {@code /cmip anim
+     * The three presets differ only in animation/motion; {@code /cmi particle anim
      * <preset> <anim>} switches the animation of live particles at runtime.
      */
     public static final EmitterSpec ALLAY_FLY = EmitterSpec.builder()
@@ -147,7 +147,7 @@ public final class EmitterPresets {
             .sizeOverLife(0.30, 0.30, 1.0)
             .gravity(0, 0.35, 0)       // gentle rise
             .drag(1.2)
-            .material(EmitterSpec.Material.MODEL)
+            .type(ParticleTypes.standard(ParticleTypes.Material.MODEL))
             .animation(EmitterSpec.Animation.FLY)
             .glow(1.0)
             .color(1f, 1f, 1f, 1f)
@@ -165,7 +165,7 @@ public final class EmitterPresets {
             .sizeOverLife(0.30, 0.30, 1.0)
             .gravity(0, 0.05, 0)
             .drag(2.0)
-            .material(EmitterSpec.Material.MODEL)
+            .type(ParticleTypes.standard(ParticleTypes.Material.MODEL))
             .animation(EmitterSpec.Animation.DANCE)
             .glow(1.0)
             .color(1f, 1f, 1f, 1f)
@@ -184,7 +184,7 @@ public final class EmitterPresets {
             .sizeOverLife(0.30, 0.30, 1.0)
             .gravity(0, 0.25, 0)
             .drag(1.0)
-            .material(EmitterSpec.Material.MODEL)
+            .type(ParticleTypes.standard(ParticleTypes.Material.MODEL))
             .animation(EmitterSpec.Animation.HOLD)
             .heldItem(EmitterSpec.HeldItem.DIAMOND_SWORD)
             .glow(1.0)
@@ -214,7 +214,7 @@ public final class EmitterPresets {
                 "allay_fly", "allay_dance", "allay_hold" };
     }
 
-    /** Animation names for the /cmip anim argument suggestions. */
+    /** Animation names for the /cmi particle anim argument suggestions. */
     public static String[] animationNames() {
         return new String[] { "fly", "dance", "hold" };
     }

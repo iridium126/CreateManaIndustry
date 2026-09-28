@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.allaystorm.AllayStormRuntime;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
+import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.mixin.vanilla.MinecraftInvoker;
 
@@ -149,7 +150,7 @@ public final class CMIParticleEngine {
     private HexPatternRuntime hexPatterns;
     private int hexSlots, hexCount, hexEmitter = -1;
     private final EmitterSpec hexPatternSpec = EmitterSpec.builder()
-            .material(EmitterSpec.Material.HEX_PATTERN).life(1, 1).sizeOverLife(1, 1, 1).build();
+            .type(ParticleTypes.standard(ParticleTypes.Material.HEX_PATTERN)).life(1, 1).sizeOverLife(1, 1, 1).build();
 
     public boolean redirectsHexPatterns(net.minecraft.world.entity.player.Player player) {
         return ClientConfig.particleEnabled && ClientConfig.hexPatternRedirect && frameArmed
@@ -164,13 +165,11 @@ public final class CMIParticleEngine {
         final EmitterSpec spec;
         final Vec3 origin;
         final int count;
-        final boolean unthrottled;
 
-        Burst(EmitterSpec spec, Vec3 origin, int count, boolean unthrottled) {
+        Burst(EmitterSpec spec, Vec3 origin, int count) {
             this.spec = spec;
             this.origin = origin;
             this.count = count;
-            this.unthrottled = unthrottled;
         }
     }
 
@@ -436,14 +435,14 @@ public final class CMIParticleEngine {
     private boolean hookModelsDrawn = false;
     /** Accumulated GPU ms measured inside the shader-pack hook (timer ring). */
     private double externalHookGpuMs = 0;
-    // Observable status for /cmip shaderpack status -- written by the merge
+    // Observable status for /cmi particle shaderpack status -- written by the merge
     // hook, read by the command, both on the render thread.
     public volatile String shaderPackPathStatus = "self-drawn";
     public volatile String shaderPackDepthStatus = "n/a";
-    /** S-track state for /cmip shaderpack status: n/a / active / no shadow track / ... */
+    /** S-track state for /cmi particle shaderpack status: n/a / active / no shadow track / ... */
     public volatile String shaderPackShadowStatus = "n/a";
     /**
-     * Diagnostics for /cmip shaderpack status: how many frames old the sort
+     * Diagnostics for /cmi particle shaderpack status: how many frames old the sort
      * permutation a pack hook last consumed was. 0 = the merged programs drew
      * THIS frame's cull/sort result; >= 1 = stale generation (shadow track by
      * design — Iris renders shadows before renderSky, ahead of every
@@ -584,14 +583,7 @@ public final class CMIParticleEngine {
     public void spawn(EmitterSpec spec, Vec3 origin, int count) {
         if (count <= 0)
             return;
-        this.pending.add(new Burst(spec, origin, count, false));
-    }
-
-    /** Fires {@code count} particles ignoring the adaptive throttle (benchmark). */
-    public void spawnUnthrottled(EmitterSpec spec, Vec3 origin, int count) {
-        if (count <= 0)
-            return;
-        this.pending.add(new Burst(spec, origin, count, true));
+        this.pending.add(new Burst(spec, origin, count));
     }
 
     /**
@@ -777,7 +769,7 @@ public final class CMIParticleEngine {
 
     /**
      * Frames elapsed since the newest committed sort permutation was generated
-     * (diagnostic surface for {@code /cmip shaderpack status}; -1 before the
+     * (diagnostic surface for {@code /cmi particle shaderpack status}; -1 before the
      * first sorted frame commits). Split-frame expectation: 0 for every
      * gbuffer-phase consumer, >= 1 only on the shadow track by design.
      */
@@ -1096,7 +1088,7 @@ public final class CMIParticleEngine {
             if (id < 0)
                 continue;
             ensureEmitterRuntime(id, b.spec, b.origin);
-            int n = b.unthrottled ? b.count : Math.max(1, Math.round(b.count * this.scale));
+            int n = Math.max(1, Math.round(b.count * this.scale));
             if (n <= 0 || entryCount >= ParticleBuffers.MAX_EMIT_COMMANDS)
                 continue;
             this.emitIds[entryCount] = id;
@@ -2671,7 +2663,7 @@ public final class CMIParticleEngine {
         // (deathEmitId, header 16.x) so update.comp can spawn the vanilla death
         // poof at the corpse's GPU-only expiry position. The poof spec itself is
         // OPAQUE, so this recursion terminates after one level.
-        if (spec.material == EmitterSpec.Material.MODEL) {
+        if (spec.type.material() == ParticleTypes.Material.MODEL) {
             float[] h = spec.packed().clone();
             h[CombatSpecs.HDR_DEATH_EMIT] = ensurePoofEmitter();
             this.gpu.setEmitterHeader(id, h);
@@ -2773,7 +2765,7 @@ public final class CMIParticleEngine {
     }
 
     private void applyAnimation(EmitterSpec spec, EmitterSpec.Animation animation) {
-        if (spec.material != EmitterSpec.Material.MODEL)
+        if (spec.type.material() != ParticleTypes.Material.MODEL)
             return;
         for (var e : this.emitterIds.entrySet()) {
             if (e.getKey().equals(spec)) {
@@ -2802,8 +2794,8 @@ public final class CMIParticleEngine {
 
     /** Whether a spec's particles feed the combined translucent sort (ALPHA or MODEL). */
     public static boolean isTranslucent(EmitterSpec spec) {
-        return spec.material == EmitterSpec.Material.ALPHA || spec.material == EmitterSpec.Material.MODEL
-                || spec.material == EmitterSpec.Material.HEX_PATTERN;
+        return spec.type.material() == ParticleTypes.Material.ALPHA || spec.type.material() == ParticleTypes.Material.MODEL
+                || spec.type.material() == ParticleTypes.Material.HEX_PATTERN;
     }
 
     // ------------------------------------------------------------------

@@ -75,7 +75,7 @@ Allay Storm 的成员使用 `MODEL` 粒子表示，身份、生命值、姿态�
 - `CMIPackEntityMergeHook`：在 shaderpack entity 路径消费当前 generation。
 - `MixinIrisShadowRenderer`、`MixinProgramSamplers`：阴影轨道和 sampler 绑定。
 
-任何合并失败都必须回退到本项目 MODEL shader，并在 `/cmip shaderpack status` 暴露状态。
+任何合并失败都必须回退到本项目 MODEL shader，并在 `/cmi particle shaderpack status` 暴露状态。
 
 ## 6. 配置与调试
 
@@ -85,36 +85,44 @@ Allay Storm 的成员使用 `MODEL` 粒子表示，身份、生命值、姿态�
 | --- | ---: | --- |
 | `particles.enabled` | `true` | 总开关 |
 | `particles.maxParticles` | `2000000` | GPU 粒子容量 |
-| `particles.frameBudgetMs` | `16.6` | 自动节流预算 |
+| `particles.frameBudgetMs` | `15.0` | 自动节流预算 |
 | `particles.autoThrottle` | `true` | 超预算时降低发射 |
 | `particles.fadeDistance` | `96` | 距离淡出起点 |
 | `particles.shaderPackIntegration` | `true` | MODEL shaderpack 接入 |
 | `particles.hexParticleRedirect` | `true` | Hexcasting 两类入口重定向 |
 
-客户端调试命令：
+客户端粒子命令：
 
 ```text
-/cmip spawn <preset> [count]
-/cmip stream <preset> <rate> [seconds]
-/cmip anim <preset> <fly|dance|hold>
-/cmip spray <amethyst|uuid|rainbow> [count]
-/cmip bench <count>
-/cmip stats
-/cmip profile on
-/cmip profile
-/cmip profile off
-/cmip budget <ms>
-/cmip shaderpack status
-/cmip clear
+/cmi particle emit <preset|amethyst|uuid|rainbow> <amount> [<seconds>|forever]
+/cmi particle anim <preset> <fly|dance|hold>
+/cmi particle stats
+/cmi particle profile on
+/cmi particle profile
+/cmi particle profile off
+/cmi particle budget <ms>
+/cmi particle shaderpack status
+/cmi particle clear
+```
+
+`emit` 不带时长时，preset 的 `amount` 是单次粒子数，pigment 的 `amount` 是 Hex 喷发数；带时长时，preset 的 `amount` 是每秒速率，秒数范围为 `0.1..3600`，`forever` 表示持续到清除。Pigment 不支持持续发射。preset 单次数量上限为 4,000,000，流速上限为 1,000,000/s；pigment 喷发上限为 2,000。Hex pigment 仅在 Hexcasting 已加载时提供。
+
+服务端管理命令（权限 2）：
+
+```text
+/cmi particle allaystorm [count]
+/cmi particle allaystorm stop
+/cmi hexjit status
+/cmi hexjit clear
 ```
 
 ## 7. 验证清单
 
-- 无 shaderpack：五种材质均能出现，`/cmip stats` 无持续 GL 错误。
+- 无 shaderpack：五种材质均能出现，`/cmi particle stats` 无持续 GL 错误。
 - Iris/shaderpack：MODEL 的位置、姿态、深度和阴影轨道正确；失败时可回退。
 - Hexcasting：直接 `conjure_particle`、网络 `ParticleSpray`、两个 `addParticle` overload 都验证；关闭键后原版仍出现。
 - Storm：多客户端进入/离开、dimension change、死亡广播、波次接触和断线清理。
-- 性能：分别测试零透明、透明排序、大量 additive 和 `bench`，确认 budget 不导致粒子池越界或误清空。
+- 性能：分别测试零透明、透明排序和大量 additive，确认 budget 不导致粒子池越界或误清空。
 
 ## 8. 主要入口
 
@@ -125,13 +133,13 @@ Allay Storm 的成员使用 `MODEL` 粒子表示，身份、生命值、姿态�
 
 ## 9. 内部类型扩展
 
-`ParticleTypes` 将稳定类型 ID 与绘制材质分开。必须在首次 shader 编译前注册，之后目录冻结；这是项目内部接口，不承诺第三方兼容性，也不新增资源包 JSON 协议。原 `EmitterSpec` 发射入口保持可用，未指定类型时选用材质对应的内建类型。
+`ParticleTypes` 将稳定类型 ID 与绘制材质分开。必须在首次 shader 编译前注册，之后目录冻结；这是项目内部接口，不承诺第三方兼容性，也不新增资源包 JSON 协议。`EmitterSpec` 保存类型作为唯一来源，默认使用 ADDITIVE；其他材质通过 `.type(ParticleTypes.standard(...))` 选择内建类型。
 
 例如复用 ADDITIVE 的上升火花：
 
 ```java
 static final ParticleTypes.Type RISING_SPARK = ParticleTypes.register(
-    new ParticleTypes.Type(1000, "rising_spark", EmitterSpec.Material.ADDITIVE,
+    new ParticleTypes.Type(1000, "rising_spark", ParticleTypes.Material.ADDITIVE,
         "chunks/examples/rising_spark_spawn.glsl",
         "chunks/examples/rising_spark_update.glsl", Set.of()));
 

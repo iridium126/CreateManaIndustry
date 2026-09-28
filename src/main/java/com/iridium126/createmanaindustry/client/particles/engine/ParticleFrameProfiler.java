@@ -15,7 +15,7 @@ public final class ParticleFrameProfiler {
     private static final float MIN_SCALE = 0.05f;
 
     // budget()/setBudget() cross threads (command vs render); emaMs() is read by
-    // /cmip stats on the client thread while record() runs on the render thread.
+    // /cmi particle stats on the client thread while record() runs on the render thread.
     private volatile double emaMs;
     private volatile float userBudgetMs = 5.0f;
     private float emissionScale = 1.0f;

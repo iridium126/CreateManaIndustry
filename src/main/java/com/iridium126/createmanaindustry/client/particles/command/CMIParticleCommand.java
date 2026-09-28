@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.client.particles.command;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterPresets;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
+import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
 import com.iridium126.createmanaindustry.client.particles.engine.HexSpecs;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
@@ -11,6 +12,7 @@ import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.minecraft.commands.CommandSourceStack;
@@ -24,27 +26,21 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 
 /**
- * Debug / benchmark interface for the GPU particle engine.
+ * Client commands for the GPU particle engine.
  * <p>
  * Registered only on the client (client-side commands); every command body
  * first verifies the engine is available (GL capable + programs compiled).
- * The hex-spray command gates on {@code CreateManaIndustry.HEX_ACTIVE}
+ * Hex particle sources gate on {@code CreateManaIndustry.HEX_ACTIVE}
  * instead: hexcasting is an optional dependency and {@code HexSpecs} links
  * its API types, so both the handler and the pigment tab-completion must
  * stay behind that flag or they throw {@code NoClassDefFoundError} with the
  * mod absent.
  *
  * <pre>
- *   /cmip spawn &lt;preset&gt; [count]        burst at the player's feet
- *   /cmip stream &lt;preset&gt; &lt;rate&gt; [sec]  streaming (sec &lt;= 0 = until /cmip clear)
- *   /cmip anim &lt;preset&gt; &lt;animation&gt;     live-switch MODEL animation (fly/dance/hold)
- *   /cmip spray &lt;pigment&gt; [count]       Hexcasting conjure spray at the player
- *                                       (amethyst / uuid / rainbow)
- *   /cmip allaystorm [count ≤4096] [radius]  MOVED to the server command (storm.StormCommand)
- *   /cmip bench &lt;count&gt;                 unthrottled stress test
- *   /cmip clear                          drop all particles and streams
- *   /cmip stats                          live count / budget / frame cost
- *   /cmip budget &lt;ms&gt;                   override the throttle budget
+ *   /cmi particle emit &lt;source&gt; &lt;amount&gt; [seconds|forever]
+ *   /cmi particle anim &lt;preset&gt; &lt;animation&gt;
+ *   /cmi particle clear|stats|profile|budget|shaderpack status
+ *   /cmi particle allaystorm ... (server command)
  * </pre>
  */
 @EventBusSubscriber(modid = CreateManaIndustry.MODID, value = Dist.CLIENT)
@@ -60,50 +56,45 @@ public final class CMIParticleCommand {
             SharedSuggestionProvider.suggest(EmitterPresets.animationNames(), builder);
 
     // Behind HEX_ACTIVE as well: resolving HexSpecs.Pigment loads HexSpecs,
-    // which links hexcasting API types — tab-completing "/cmip spray <tab>"
+    // which links hexcasting API types — tab-completing particle sources
     // with the mod absent must not throw before the handler's guard runs.
-    private static final SuggestionProvider<CommandSourceStack> PIGMENTS = (ctx, builder) ->
-            CreateManaIndustry.HEX_ACTIVE
-                    ? SharedSuggestionProvider.suggest(java.util.Arrays.stream(HexSpecs.Pigment.values())
-                            .map(p -> p.name().toLowerCase(java.util.Locale.ROOT)).toList(), builder)
-                    : builder.buildFuture();
+    private static final SuggestionProvider<CommandSourceStack> SOURCES = (ctx, builder) -> {
+        java.util.List<String> sources = new java.util.ArrayList<>(java.util.List.of(EmitterPresets.names()));
+        if (CreateManaIndustry.HEX_ACTIVE) {
+            for (HexSpecs.Pigment pigment : HexSpecs.Pigment.values()) {
+                String name = pigment.name().toLowerCase(java.util.Locale.ROOT);
+                if (sources.contains(name))
+                    throw new IllegalStateException("Particle preset conflicts with Hex pigment source: " + name);
+                sources.add(name);
+            }
+        }
+        return SharedSuggestionProvider.suggest(sources, builder);
+    };
 
     @SubscribeEvent
     public static void register(RegisterClientCommandsEvent event) {
-        event.getDispatcher().register(
-                Commands.literal("cmip")
-                        .then(Commands.literal("spawn")
-                                .then(Commands.argument("preset", StringArgumentType.word())
-                                        .suggests(PRESETS)
-                                        .executes(ctx -> spawn(ctx, 1000))
-                                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 4_000_000))
-                                                .executes(ctx -> spawn(ctx,
-                                                        IntegerArgumentType.getInteger(ctx, "count"))))))
-                        .then(Commands.literal("stream")
-                                .then(Commands.argument("preset", StringArgumentType.word())
-                                        .suggests(PRESETS)
-                                        .then(Commands.argument("rate", IntegerArgumentType.integer(1, 1_000_000))
-                                                .executes(ctx -> stream(ctx, -1f))
-                                                .then(Commands.argument("seconds",
-                                                                FloatArgumentType.floatArg(0.1f, 3600f))
-                                                        .executes(ctx -> stream(ctx,
-                                                                FloatArgumentType.getFloat(ctx, "seconds")))))))
+        event.getDispatcher().register(commandTree());
+    }
+
+    static LiteralArgumentBuilder<CommandSourceStack> commandTree() {
+        return Commands.literal("cmi")
+                        .then(Commands.literal("particle")
+                        .then(Commands.literal("emit")
+                                .then(Commands.argument("source", StringArgumentType.word())
+                                        .suggests(SOURCES)
+                                        .then(Commands.argument("amount", IntegerArgumentType.integer(1, 4_000_000))
+                                                .executes(ctx -> emit(ctx, false, 0f))
+                                                .then(Commands.argument("seconds", FloatArgumentType.floatArg(0.1f, 3600f))
+                                                        .executes(ctx -> emit(ctx, true,
+                                                                FloatArgumentType.getFloat(ctx, "seconds"))))
+                                                .then(Commands.literal("forever")
+                                                        .executes(ctx -> emit(ctx, true, -1f))))))
                         .then(Commands.literal("anim")
                                 .then(Commands.argument("preset", StringArgumentType.word())
                                         .suggests(PRESETS)
                                         .then(Commands.argument("animation", StringArgumentType.word())
                                                 .suggests(ANIMATIONS)
                                                 .executes(CMIParticleCommand::anim))))
-                        .then(Commands.literal("spray")
-                                .then(Commands.argument("pigment", StringArgumentType.word())
-                                        .suggests(PIGMENTS)
-                                        .executes(ctx -> spray(ctx, 30))
-                                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 2000))
-                                                .executes(ctx -> spray(ctx,
-                                                        IntegerArgumentType.getInteger(ctx, "count"))))))
-                        .then(Commands.literal("bench")
-                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 8_000_000))
-                                        .executes(CMIParticleCommand::bench)))
                         .then(Commands.literal("clear")
                                 .executes(CMIParticleCommand::clear))
                         .then(Commands.literal("profile")
@@ -115,9 +106,6 @@ public final class CMIParticleCommand {
                         .then(Commands.literal("budget")
                                 .then(Commands.argument("ms", FloatArgumentType.floatArg(1f, 50f))
                                         .executes(CMIParticleCommand::budget)))
-                        // allaystorm moved to the SERVER command (storm.StormCommand):
-                        // the storm is server-authoritative — persisted in the level
-                        // attachment and synced to every client.
                         .then(Commands.literal("shaderpack")
                                 .then(Commands.literal("status")
                                         .executes(CMIParticleCommand::shaderPackStatus))));
@@ -127,44 +115,85 @@ public final class CMIParticleCommand {
     // Handlers
     // ------------------------------------------------------------------
 
-    private static int spawn(CommandContext<CommandSourceStack> ctx, int count) {
-        EmitterSpec spec = EmitterPresets.byName(StringArgumentType.getString(ctx, "preset"));
-        if (spec == null) {
-            tell(ctx, "Unknown preset. Try: " + String.join(", ", EmitterPresets.names()));
+    private static int emit(CommandContext<CommandSourceStack> ctx, boolean streaming, float seconds) {
+        String source = StringArgumentType.getString(ctx, "source");
+        int amount = IntegerArgumentType.getInteger(ctx, "amount");
+        String timeError = durationValidationError(streaming, seconds);
+        if (timeError != null) {
+            tell(ctx, timeError);
             return 0;
         }
-        if (!engine(ctx)) {
-            tell(ctx, "Particle engine unavailable.");
+        EmitterSpec spec = EmitterPresets.byName(source);
+        boolean isPigment = false;
+        if (CreateManaIndustry.HEX_ACTIVE) {
+            try {
+                HexSpecs.Pigment.valueOf(source.toUpperCase(java.util.Locale.ROOT));
+                isPigment = true;
+            } catch (IllegalArgumentException ignored) {
+                // Not a Hex pigment; it may still be an emitter preset.
+            }
+        }
+        if (spec != null && isPigment) {
+            tell(ctx, "Ambiguous particle source; preset and pigment names must be distinct.");
             return 0;
         }
-        Vec3 pos = ctx.getSource().getPosition().add(0, 0.2, 0);
-        CMIParticleEngine.INSTANCE.spawn(spec, pos, count);
-        tell(ctx, "Spawning " + count + " × " + StringArgumentType.getString(ctx, "preset") + " (throttled).");
-        return Command.SINGLE_SUCCESS;
+        if (spec != null) {
+            String error = amountValidationError(false, streaming, amount);
+            if (error != null) {
+                tell(ctx, error);
+                return 0;
+            }
+            if (!engine(ctx)) return 0;
+            Vec3 pos = ctx.getSource().getPosition().add(0, 0.2, 0);
+            if (streaming) {
+                CMIParticleEngine.INSTANCE.stream(spec, pos, amount, seconds);
+                tell(ctx, "Streaming " + amount + "/s × " + source + " for "
+                        + (seconds <= 0 ? "forever" : seconds + "s") + ".");
+            } else {
+                CMIParticleEngine.INSTANCE.spawn(spec, pos, amount);
+                tell(ctx, "Spawning " + amount + " × " + source + " (throttled).");
+            }
+            return Command.SINGLE_SUCCESS;
+        }
+        if (isPigment) {
+            String error = amountValidationError(true, streaming, amount);
+            if (error != null) {
+                tell(ctx, error);
+                return 0;
+            }
+            return spray(ctx, source, amount);
+        }
+        if (!CreateManaIndustry.HEX_ACTIVE)
+            tell(ctx, "Unknown particle preset, or Hexcasting is not loaded for pigment sources.");
+        else
+            tell(ctx, "Unknown particle source. Try: " + String.join(", ", EmitterPresets.names())
+                    + ", amethyst, uuid, rainbow");
+        return 0;
     }
 
-    private static int stream(CommandContext<CommandSourceStack> ctx, float seconds) {
-        EmitterSpec spec = EmitterPresets.byName(StringArgumentType.getString(ctx, "preset"));
-        if (spec == null) {
-            tell(ctx, "Unknown preset. Try: " + String.join(", ", EmitterPresets.names()));
-            return 0;
+    static String amountValidationError(boolean pigment, boolean streaming, int amount) {
+        if (amount < 1) return "Amount must be at least 1.";
+        if (pigment && streaming) return "Hex pigment sources cannot be streamed; omit the duration.";
+        int maximum = pigment ? 2_000 : streaming ? 1_000_000 : 4_000_000;
+        if (amount > maximum) {
+            if (pigment) return "Hex spray count must be between 1 and 2000.";
+            if (streaming) return "Stream rate must be between 1 and 1000000 particles per second.";
+            return "Particle count must be between 1 and 4000000.";
         }
-        if (!engine(ctx)) {
-            tell(ctx, "Particle engine unavailable.");
-            return 0;
-        }
-        int rate = IntegerArgumentType.getInteger(ctx, "rate");
-        Vec3 pos = ctx.getSource().getPosition().add(0, 0.2, 0);
-        CMIParticleEngine.INSTANCE.stream(spec, pos, rate, seconds);
-        String secs = seconds <= 0 ? "forever" : seconds + "s";
-        tell(ctx, "Streaming " + rate + "/s × " + StringArgumentType.getString(ctx, "preset") + " for " + secs + ".");
-        return Command.SINGLE_SUCCESS;
+        return null;
+    }
+
+    static String durationValidationError(boolean streaming, float seconds) {
+        if (!streaming || seconds == -1f) return null;
+        if (!Float.isFinite(seconds) || seconds < 0.1f || seconds > 3600f)
+            return "Stream duration must be 0.1 to 3600 seconds, or forever.";
+        return null;
     }
 
     private static int anim(CommandContext<CommandSourceStack> ctx) {
         String presetName = StringArgumentType.getString(ctx, "preset");
         EmitterSpec spec = EmitterPresets.byName(presetName);
-        if (spec == null || spec.material != EmitterSpec.Material.MODEL) {
+        if (spec == null || spec.type.material() != ParticleTypes.Material.MODEL) {
             tell(ctx, "Unknown MODEL preset. Try: allay_fly, allay_dance, allay_hold");
             return 0;
         }
@@ -190,24 +219,14 @@ public final class CMIParticleCommand {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static int spray(CommandContext<CommandSourceStack> ctx, int count) {
+    private static int spray(CommandContext<CommandSourceStack> ctx, String name, int count) {
         // Hexcasting is optional: HexSpecs (and the ColorProvider below) link
         // its API types, so the whole handler must return before touching them.
         if (!CreateManaIndustry.HEX_ACTIVE) {
             tell(ctx, "Conjure sprays require Hexcasting, which is not loaded.");
             return 0;
         }
-        String name = StringArgumentType.getString(ctx, "pigment");
-        HexSpecs.Pigment pigment;
-        try {
-            pigment = HexSpecs.Pigment.valueOf(name.toUpperCase(java.util.Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            pigment = null;
-        }
-        if (pigment == null) {
-            tell(ctx, "Unknown pigment. Try: amethyst, uuid, rainbow");
-            return 0;
-        }
+        HexSpecs.Pigment pigment = HexSpecs.Pigment.valueOf(name.toUpperCase(java.util.Locale.ROOT));
         if (!engine(ctx)) {
             return 0;
         }
@@ -225,19 +244,7 @@ public final class CMIParticleCommand {
         Vec3 pos = player.position();
         CMIParticleEngine.INSTANCE.spawnHexSpray(pos, new Vec3(0.0, 1.5, 0.0),
                 0.4, Math.PI / 3, count, HexSpecs.sampleWheel(provider));
-        tell(ctx, "Hex spray: " + count + " conjure motes, pigment " + name + ".");
-        return Command.SINGLE_SUCCESS;
-    }
-
-    private static int bench(CommandContext<CommandSourceStack> ctx) {
-        int count = IntegerArgumentType.getInteger(ctx, "count");
-        if (!engine(ctx)) {
-            tell(ctx, "Particle engine unavailable.");
-            return 0;
-        }
-        Vec3 pos = ctx.getSource().getPosition().add(0, 0.2, 0);
-        CMIParticleEngine.INSTANCE.spawnUnthrottled(EmitterPresets.MANA_BURST, pos, count);
-        tell(ctx, "Bench: " + count + " unthrottled particles. Watch the frame cost with /cmip stats.");
+        tell(ctx, "Hex spray: " + count + " conjure motes, pigment " + pigment.name().toLowerCase(java.util.Locale.ROOT) + ".");
         return Command.SINGLE_SUCCESS;
     }
 

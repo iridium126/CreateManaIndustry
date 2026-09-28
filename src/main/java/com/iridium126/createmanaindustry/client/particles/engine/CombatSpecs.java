@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
+import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 
 /**
  * Engine-private emitter specs for the vanilla combat particle set — crit
@@ -136,7 +137,7 @@ final class CombatSpecs {
             .sizeOverLife(POOF_SIZE, POOF_SIZE, 1.0)
             .gravity(0, POOF_GRAVITY, 0)
             .drag(POOF_DRAG)
-            .material(EmitterSpec.Material.OPAQUE)
+            .type(ParticleTypes.standard(ParticleTypes.Material.OPAQUE))
             .spriteCount(8)
             .glow(1.0)
             .color(1f, 1f, 1f, 1f)
@@ -150,7 +151,7 @@ final class CombatSpecs {
                 .sizeOverLife(CRIT_SIZE, CRIT_SIZE, 1.0)
                 .gravity(0, CRIT_GRAVITY, 0)
                 .drag(CRIT_DRAG)
-                .material(EmitterSpec.Material.OPAQUE)
+                .type(ParticleTypes.standard(ParticleTypes.Material.OPAQUE))
                 .spriteCount(1)
                 .glow(1.0)
                 .color(1f, 1f, 1f, colorKeyAlpha)

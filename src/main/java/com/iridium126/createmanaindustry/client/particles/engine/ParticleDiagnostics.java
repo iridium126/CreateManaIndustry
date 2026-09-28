@@ -76,7 +76,7 @@ public final class ParticleDiagnostics {
         lastUploads=uploads;lastCalls=calls;lastReadbackLag=readbackLag;
     }
     public String report() {
-        if(samples==0)return "Particle profiling: " + (enabled?"collecting":"off") + "; /cmip profile on";
+        if(samples==0)return "Particle profiling: " + (enabled?"collecting":"off") + "; /cmi particle profile on";
         double[] sorted=Arrays.copyOf(cpu,samples);Arrays.sort(sorted);
         double meanAllocation=Arrays.stream(allocations,0,samples).average().orElse(0);
         return String.format(Locale.ROOT,"CPU submit p50=%.3f ms p95=%.3f ms; allocation=%.0f B/frame; tracked uploads=%d B; tracked GL calls=%d; readback lag=%d generations; GPU latest=%s",

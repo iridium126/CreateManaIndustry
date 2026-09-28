@@ -5,6 +5,7 @@ import java.util.Map;
 
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterShape;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
+import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 
 import net.minecraft.core.Direction;
 
@@ -58,7 +59,7 @@ public final class GlowingVineSpecs {
                 // the changing velocity direction.
                 .shaderColorMode(6)
                 .planeNormal(face.getStepX(), face.getStepY(), face.getStepZ())
-                .material(EmitterSpec.Material.ADDITIVE)
+                .type(ParticleTypes.standard(ParticleTypes.Material.ADDITIVE))
                 .collide(EmitterSpec.CollideMode.NONE)
                 .glow(1.0)
                 .build();

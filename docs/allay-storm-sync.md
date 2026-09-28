@@ -18,12 +18,12 @@
 ## 2. 生命周期
 
 ```text
-/cmip allaystorm [count]
+/cmi particle allaystorm [count]
   -> ServerLevel attachment 创建/更新
   -> ClientboundStormStatePacket（定义、dead、HP）
   -> 客户端建立 GPU MODEL 粒子
   -> growth / wave / damage / correction
-/cmip allaystorm stop
+/cmi particle allaystorm stop
   -> Server 停止并广播清理
 ```
 
@@ -63,8 +63,8 @@ storm 作为每个 `ServerLevel` 的 attachment 保存。持久化字段包括 a
 命令（权限 2）：
 
 ```text
-/cmip allaystorm [count]
-/cmip allaystorm stop
+/cmi particle allaystorm [count]
+/cmi particle allaystorm stop
 ```
 
 硬上限为 131072 个成员；count 是初始数量，storm 可按 growth rate 增长至 ceiling。

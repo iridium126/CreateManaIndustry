@@ -138,7 +138,7 @@ public final class ParticlePrograms {
         sb.append("#define CMI_HEX_ANCHORS ").append(HexPatternBuffers.ANCHOR_BASE).append("u\n");
         sb.append("#define CMI_HEX_VERTEX_STRIDE ").append(HexPatternBuffers.VERTEX_STRIDE).append("u\n");
         sb.append("#define DAMAGE_ENTRY_WORDS ").append(ParticleBuffers.DAMAGE_ENTRY_BYTES / 4).append("u\n");
-        for (var material : com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.Material.values())
+        for (var material : com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Material.values())
             sb.append("#define CMI_MATERIAL_").append(material.name()).append(' ').append(material.index()).append("u\n");
         return sb.toString();
     }

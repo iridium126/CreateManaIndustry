@@ -54,4 +54,4 @@ CPU 微基准预热 5000 次，三组各 5000 次：128 个 header 中一个改�
 
 游戏内尚未执行：无 shaderpack 与 Iris、阴影、手持物、多人 Storm、视角切换、F3+T、换维度，以及所有运动/碰撞/姿态的视觉对照。完整场景基线尚缺：空场景、纯 additive、透明密集、Storm、Hex、混合，分别 1 万/10 万/100 万/有效容量边界；固定种子、相机和画质，关闭 autoThrottle，预热后重复三次。
 
-`/cmip profile on` 开启统计，`/cmip profile` 查看 CPU 提交 p50/p95、分配量、已插桩上传字节/GL 调用、GPU pass 时间和读回代差；`/cmip profile off` 关闭。GL 调用/字节仅计已插桩路径，GPU 显示最近完成样本，尚不是完整场景自动导出器；这些限制须在整帧验收报告中保留。
+`/cmi particle profile on` 开启统计，`/cmi particle profile` 查看 CPU 提交 p50/p95、分配量、已插桩上传字节/GL 调用、GPU pass 时间和读回代差；`/cmi particle profile off` 关闭。GL 调用/字节仅计已插桩路径，GPU 显示最近完成样本，尚不是完整场景自动导出器；这些限制须在整帧验收报告中保留。

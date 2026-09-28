@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.function.BiConsumer;
 import com.iridium126.createmanaindustry.CMIBlocks;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
+import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 import com.iridium126.createmanaindustry.client.particles.engine.GlowingVineSpecs;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.Block;
@@ -15,7 +16,7 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class BlockParticleEmitters {
     public record Source(EmitterSpec spec, float x, float y, float z, float rate, float cullRadius) {
         public Source {
-            if (spec == null || spec.material != EmitterSpec.Material.ADDITIVE
+            if (spec == null || spec.type.material() != ParticleTypes.Material.ADDITIVE
                     || spec.collideMode != EmitterSpec.CollideMode.NONE || spec.lightmap)
                 throw new IllegalArgumentException("Block emitters require additive, non-colliding, fullbright specs");
             if (!Float.isFinite(rate) || rate <= 0 || rate > 1024

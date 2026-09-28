@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.content.allaystorm;
 
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import net.minecraft.commands.CommandSourceStack;
@@ -19,8 +20,8 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
  * swarm. Re-running moves the chased anchor (identity and HP are preserved —
  * the count argument only sizes a NEW storm); {@code stop} ends it everywhere.
  * <pre>
- *   /cmip allaystorm [count ≤131072]   (default 2048)
- *   /cmip allaystorm stop
+ *   /cmi particle allaystorm [count ≤131072]   (default 2048)
+ *   /cmi particle allaystorm stop
  * </pre>
  * The storm radius derives from the population
  * ({@link AllayStormData#vortexRadius}) and the angular velocity follows
@@ -35,16 +36,17 @@ public final class AllayStormCommand {
 
     @SubscribeEvent
     public static void register(RegisterCommandsEvent event) {
-        event.getDispatcher().register(
-                Commands.literal("cmip")
-                        .then(Commands.literal("allaystorm")
-                                .requires(src -> src.hasPermission(2))
-                                .executes(ctx -> allayStorm(ctx, 2048))
-                                .then(Commands.literal("stop")
-                                        .executes(AllayStormCommand::allayStormStop))
-                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 131072))
-                                        .executes(ctx -> allayStorm(ctx,
-                                                IntegerArgumentType.getInteger(ctx, "count"))))));
+        event.getDispatcher().register(commandTree());
+    }
+
+    static LiteralArgumentBuilder<CommandSourceStack> commandTree() {
+        var storm = Commands.literal("allaystorm")
+                .requires(src -> src.hasPermission(2))
+                .executes(ctx -> allayStorm(ctx, 2048))
+                .then(Commands.literal("stop").executes(AllayStormCommand::allayStormStop))
+                .then(Commands.argument("count", IntegerArgumentType.integer(1, 131072))
+                        .executes(ctx -> allayStorm(ctx, IntegerArgumentType.getInteger(ctx, "count"))));
+        return Commands.literal("cmi").then(Commands.literal("particle").then(storm));
     }
 
     private static int allayStorm(CommandContext<CommandSourceStack> ctx, int count) {
@@ -60,7 +62,7 @@ public final class AllayStormCommand {
                 + String.format("§r, ω §e±%.3f§r rad/s (auto)", AllayStormData.vortexOmega(radius, 0))
                 + "§r, initial spawn §e" + count + "§r, growing to §e"
                 + ServerConfig.stormMaxCount + "§r at §e" + String.format("%.1f", ServerConfig.stormGrowthPerSecond)
-                + "/s§r — persisted & synced (stop: /cmip allaystorm stop)";
+                + "/s§r — persisted & synced (stop: /cmi particle allaystorm stop)";
         src.sendSuccess(() -> Component.literal(finalText), false);
         return Command.SINGLE_SUCCESS;
     }

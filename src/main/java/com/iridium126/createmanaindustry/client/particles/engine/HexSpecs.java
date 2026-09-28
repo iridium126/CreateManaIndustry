@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterShape;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
+import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 
 import at.petrak.hexcasting.api.addldata.ADPigment;
 import at.petrak.hexcasting.api.pigment.ColorProvider;
@@ -91,7 +92,7 @@ public final class HexSpecs {
             // some ConjureParticle instances deliberately have no gravity.
             .gravity(0, 0, 0)
             .drag(CONJURE_DRAG)
-            .material(EmitterSpec.Material.ADDITIVE)
+            .type(ParticleTypes.standard(ParticleTypes.Material.ADDITIVE))
             .collide(EmitterSpec.CollideMode.NONE)
             .colors(new float[] { 1f, 1f, 1f, 1f, 1f, 1f, 1f, 1f })
             .glow(1.0)
@@ -102,7 +103,7 @@ public final class HexSpecs {
         return DIRECT_SPEC;
     }
 
-    // /cmip spray pigment presets
+    // /cmi particle emit pigment sources
     public enum Pigment {
         /** Vanilla amethyst pigment: solid {@code #ab65eb}. */
         AMETHYST,
@@ -125,7 +126,7 @@ public final class HexSpecs {
                 .sizeOverLife(CONJURE_SIZE, CONJURE_SIZE, 1.0)
                 .gravity(0, CONJURE_GRAVITY, 0)
                 .drag(CONJURE_DRAG)
-                .material(EmitterSpec.Material.ADDITIVE)
+                .type(ParticleTypes.standard(ParticleTypes.Material.ADDITIVE))
                 .collide(EmitterSpec.CollideMode.NONE) // ConjureParticle hasPhysics = false
                 .colors(wheelRGBA)
                 .glow(1.0)
@@ -181,7 +182,7 @@ public final class HexSpecs {
         return wheel;
     }
 
-    /** The {@code /cmip spray} pigment providers (vanilla-faithful where one exists). */
+    /** The {@code /cmi particle emit} pigment providers (vanilla-faithful where one exists). */
     public static ColorProvider pigment(Pigment p, UUID owner) {
         return switch (p) {
             case AMETHYST -> new ColorProvider() {

@@ -4,6 +4,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import net.neoforged.bus.api.IEventBus;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.network.chat.Component;
 import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -40,12 +42,16 @@ public final class HexJitRuntime {
         NeoForge.EVENT_BUS.addListener((OnDatapackSyncEvent event) -> {
             invalidate("datapack sync or reload");
         });
-        NeoForge.EVENT_BUS.addListener((RegisterCommandsEvent event) -> event.getDispatcher().register(
-                Commands.literal("cmi_hexjit").requires(source -> source.hasPermission(2))
+        NeoForge.EVENT_BUS.addListener((RegisterCommandsEvent event) -> event.getDispatcher().register(commandTree()));
+    }
+
+    static LiteralArgumentBuilder<CommandSourceStack> commandTree() {
+        return Commands.literal("cmi")
+                .then(Commands.literal("hexjit").requires(source -> source.hasPermission(2))
                         .then(Commands.literal("status").executes(context -> {
                             context.getSource().sendSuccess(() -> Component.literal(status()), false); return 1;
                         }))
-                        .then(Commands.literal("clear").executes(context -> { invalidate("command"); return 1; }))));
+                        .then(Commands.literal("clear").executes(context -> { invalidate("command"); return 1; })));
     }
 
     public static boolean enabled() {

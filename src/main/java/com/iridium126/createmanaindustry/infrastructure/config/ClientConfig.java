@@ -61,7 +61,7 @@ public final class ClientConfig {
                 .defineInRange("maxParticles", 2_000_000, 1_000, 4_000_000);
         PARTICLE_BUDGET_MS = BUILDER
                 .comment("Frame-time budget (ms) for particles.")
-                .defineInRange("frameBudgetMs", 16.6, 1.0, 50.0);
+                .defineInRange("frameBudgetMs", 15.0, 1.0, 50.0);
         PARTICLE_AUTO_THROTTLE = BUILDER
                 .comment("Auto throttle emission when budget exceeded.")
                 .define("autoThrottle", true);
@@ -91,7 +91,7 @@ public final class ClientConfig {
     public static double fuelRodBloomRingStrength = 1.0;
     public static boolean particleEnabled = true;
     public static int particleMaxCount = 2_000_000;
-    public static double particleBudgetMs = 16.6;
+    public static double particleBudgetMs = 15.0;
     public static boolean particleAutoThrottle = true;
     public static int particleFadeDistance = 96;
     public static boolean shaderPackIntegration = true;
