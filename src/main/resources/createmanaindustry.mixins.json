@@ -54,6 +54,7 @@
     "allvr.AllvrEntityMixin"
   ],
   "client": [
+    "packages.ContraptionCollisionMixin",
     "particles.GlowingVineLevelMixin",
     "particles.GlowingVineClientLevelMixin",
     "allvr.AllvrMinecraftLevelMixin",

@@ -25,6 +25,10 @@ public final class PackageCollisionRuntime {
     private final PackageCollisionCache cache;
     private final PackageWorldCollisionSource source;
     private PackageCollisionGpu gpu;
+    private final PackageMovingCollisionCache movingCache;
+    private PackageMovingCollisionSources movingSources;
+    private PackageMovingCollisionGpu movingGpu;
+    private boolean movingAvailable,captureMovingFirst=true,uploadMovingFirst=true;
     private boolean gpuRequested;
     private String gpuError="";
 
@@ -41,6 +45,7 @@ public final class PackageCollisionRuntime {
             @Override public void cleared(){if(gpu!=null)gpu.clear();}
         });
         source=new PackageWorldCollisionSource(level);
+        movingCache=new PackageMovingCollisionCache(workers,PackageMovingCollisionGpu.MAX_STRUCTURES);
     }
     private static void owner() {
         if(!Minecraft.getInstance().isSameThread())throw new IllegalStateException("Package collision preparation off client thread");
@@ -68,7 +73,7 @@ public final class PackageCollisionRuntime {
     public PackageCollisionCache.Snapshot snapshot(PackageCollisionCache.Section section){owner();return cache.snapshot(section);}
     /** Sweeps need the extra one-cell guard for neighbouring overhanging shapes. */
     public boolean gpuCovered(AABB sweptBounds) {
-        owner();if(gpu==null || !gpuError.isEmpty())return false;
+        owner();if(gpu==null || !gpuError.isEmpty() || !movingAvailable || !movingCache.posesReady() || movingGpu==null || !movingGpu.covered(movingCache.entries()))return false;
         int[] bounds=sections(sweptBounds.inflate(1));if(bounds==null)return false;
         for(int x=bounds[0];x<=bounds[3];x++)for(int y=bounds[1];y<=bounds[4];y++)for(int z=bounds[2];z<=bounds[5];z++) {
             var section=new PackageCollisionCache.Section(x,y,z);var snapshot=cache.snapshot(section);
@@ -81,6 +86,18 @@ public final class PackageCollisionRuntime {
         owner();if(gpu==null || !gpuError.isEmpty())throw new IllegalStateException("Package world GPU atlas unavailable");
         return gpu.view(originSectionX,originSectionY,originSectionZ);
     }
+    /** Captured poses only: obtaining a scene never queries a mutable world. */
+    public MovingScene movingView(int originSectionX,int originSectionY,int originSectionZ) {
+        owner();if(movingGpu==null||!gpuError.isEmpty())throw new IllegalStateException("Moving atlas unavailable");
+        var views=movingAvailable?movingGpu.views(movingCache.entries(),movingCache.posesReady(),originSectionX*16.,originSectionY*16.,originSectionZ*16.):movingGpu.unavailableViews();
+        return new MovingScene(movingGpu,views);
+    }
+    public static final class MovingScene implements AutoCloseable {
+        private final PackageMovingCollisionGpu gpu;private final java.util.List<PackageMovingCollisionGpu.View> views;private boolean closed;
+        private MovingScene(PackageMovingCollisionGpu gpu,java.util.List<PackageMovingCollisionGpu.View> views){this.gpu=gpu;this.views=views;}
+        public java.util.List<PackageMovingCollisionGpu.View> views(){if(closed)throw new IllegalStateException("Moving scene closed");return views;}
+        @Override public void close(){if(!closed){gpu.endViews(views);closed=true;}}
+    }
     /** Lazy uploads at the engine frame boundary, never from block events or collision workers. */
     public static boolean pumpGpu() {
         if(current==null || !current.gpuRequested)return false;owner();
@@ -90,10 +107,18 @@ public final class PackageCollisionRuntime {
                 current.gpu=new PackageCollisionGpu(PackageCollisionGpu.DEFAULT_SECTIONS,PackageCollisionGpu.DEFAULT_SHAPES);
                 current.cache.forEachReady(current.gpu::offer);
             }
-            current.gpu.pump(PackageCollisionGpu.DEFAULT_UPLOAD_BYTES,PackageCollisionGpu.DEFAULT_UPLOAD_NANOS);
+            if(current.movingGpu==null)current.movingGpu=new PackageMovingCollisionGpu();
+            current.movingGpu.sync(current.movingCache.entries());
+            // Shared copy budget; alternate priority to avoid starving either atlas.
+            long started=System.nanoTime(),beforeMoving=current.movingGpu.uploadedBytes(),beforeWorld=current.gpu.uploadedBytes();
+            int bytes=PackageCollisionGpu.DEFAULT_UPLOAD_BYTES;long nanos=PackageCollisionGpu.DEFAULT_UPLOAD_NANOS;
+            if(current.uploadMovingFirst){current.movingGpu.pump(bytes,nanos);bytes-=Math.toIntExact(current.movingGpu.uploadedBytes()-beforeMoving);current.gpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));}
+            else{current.gpu.pump(bytes,nanos);bytes-=Math.toIntExact(current.gpu.uploadedBytes()-beforeWorld);current.movingGpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));}
+            current.uploadMovingFirst=!current.uploadMovingFirst;
         }catch(RuntimeException failure) {
             current.gpuError=failure.getClass().getSimpleName()+": "+failure.getMessage();current.gpuRequested=false;
             if(current.gpu!=null){current.gpu.close();current.gpu=null;}
+            if(current.movingGpu!=null){current.movingGpu.close();current.movingGpu=null;}
             CreateManaIndustry.LOGGER.error("[CMI packages] collision GPU upload failed; coverage revoked",failure);
         }
         return true;
@@ -111,8 +136,9 @@ public final class PackageCollisionRuntime {
         return count>MAX_REQUEST_SECTIONS?null:result;
     }
     public static void blockChanged(ClientLevel level,BlockPos position) {
-        if(current!=null && current.level==level)current.cache.invalidateBlock(position.getX(),position.getY(),position.getZ());
+        if(current!=null && current.level==level){current.cache.invalidateBlock(position.getX(),position.getY(),position.getZ());if(current.movingSources!=null)current.movingSources.blockChanged(position);}
     }
+    public static void contraptionChanged(com.simibubi.create.content.contraptions.Contraption contraption){if(current!=null&&current.movingSources!=null){owner();current.movingSources.contraptionChanged(contraption);}}
     public static String report() {
         owner();if(current==null)return "Package collisions: inactive";
         String gpuStatus=current.gpu==null?"GPU "+(!current.gpuError.isEmpty()?current.gpuError:current.gpuRequested?"queued":"inactive"):
@@ -121,7 +147,11 @@ public final class PackageCollisionRuntime {
                 +String.format(java.util.Locale.ROOT,"%.3f",current.cache.lastCaptureNanos()/1_000_000.0)
                 +" ms, p50/p95 "+String.format(java.util.Locale.ROOT,"%.3f/%.3f",current.cache.capturePercentile(.5)/1_000_000.0,current.cache.capturePercentile(.95)/1_000_000.0)
                 +" ms (0.250 ms soft budget), overruns "+current.cache.overrunCount()
-                +"; worker bake p50/p95 "+String.format(java.util.Locale.ROOT,"%.3f/%.3f",current.cache.bakePercentile(.5)/1e6,current.cache.bakePercentile(.95)/1e6)+" ms; "+gpuStatus;
+                +"; worker bake p50/p95 "+String.format(java.util.Locale.ROOT,"%.3f/%.3f",current.cache.bakePercentile(.5)/1e6,current.cache.bakePercentile(.95)/1e6)+" ms; "+gpuStatus
+                +"; moving="+current.movingCache.entries().size()+", poses="+(current.movingAvailable&&current.movingCache.posesReady())
+                +", capture="+String.format(java.util.Locale.ROOT,"%.3f",current.movingCache.lastCaptureNanos()/1e6)+" ms, overruns="+current.movingCache.overruns()
+                +(current.movingGpu==null?"":", uploads="+current.movingGpu.uploadedBytes()+" B, skipped="+current.movingGpu.skippedViews())
+                +(current.movingSources==null?"":" "+current.movingSources.error());
     }
     private static String gpuReport(PackageCollisionGpu.Stats stats) {
         return String.format(java.util.Locale.ROOT,"GPU %d/%d ready, pending=%d retired=%d, uploads=%d B; upload p50/p95=%.3f/%.3f ms, overruns=%d; shape/capacity rejects=%d/%d, skipped views=%d",
@@ -130,6 +160,7 @@ public final class PackageCollisionRuntime {
     public static void closeCurrent() {
         owner();if(current==null)return;
         if(current.gpu!=null){current.gpu.close();current.gpu=null;}
+        if(current.movingGpu!=null){current.movingGpu.close();current.movingGpu=null;}current.movingCache.clear();
         current.cache.clear();
         // Let already queued immutable packing tasks finish, so their global worker accounting
         // is released. Shutdown never waits; no task has a level reference.
@@ -138,13 +169,23 @@ public final class PackageCollisionRuntime {
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
         if(current==null)return;
         if(Minecraft.getInstance().level!=current.level){closeCurrent();return;}
-        current.cache.tick(current.source,PackageCollisionCache.DEFAULT_BUDGET_NANOS);
+        if(!current.gpuRequested)return;
+        if(current.movingSources==null){current.movingSources=new PackageMovingCollisionSources(current.level);current.movingSources.onInvalidated(current.movingCache::invalidate);}
+        long started=System.nanoTime(),budget=PackageCollisionCache.DEFAULT_BUDGET_NANOS;
+        try{var found=current.movingSources.discover();current.movingAvailable=current.movingSources.error().isEmpty();
+            var live=new java.util.HashSet<PackageMovingGeometry.Key>();for(var candidate:found){live.add(candidate.key());current.movingAvailable&=current.movingCache.offer(candidate);}
+            var removed=new java.util.ArrayList<PackageMovingGeometry.Key>();for(var entry:current.movingCache.entries())if(!live.contains(entry.source.key()))removed.add(entry.source.key());for(var key:removed)current.movingCache.remove(key);
+        }catch(RuntimeException unavailable){current.movingAvailable=false;}
+        if(current.captureMovingFirst){current.movingCache.tick(Math.max(0,budget-(System.nanoTime()-started)));current.cache.tick(current.source,Math.max(0,budget-(System.nanoTime()-started)));}
+        else{current.cache.tick(current.source,Math.max(0,budget-(System.nanoTime()-started)));current.movingCache.tick(Math.max(0,budget-(System.nanoTime()-started)));}
+        current.captureMovingFirst=!current.captureMovingFirst;
     }
     @SubscribeEvent public static void chunkLoaded(ChunkEvent.Load event){chunkChanged(event);}
     @SubscribeEvent public static void chunkUnloaded(ChunkEvent.Unload event){chunkChanged(event);}
     private static void chunkChanged(ChunkEvent event) {
         if(current!=null && event.getLevel()==current.level) {
             var position=event.getChunk().getPos();current.cache.invalidateChunk(position.x,position.z);
+            if(current.movingSources!=null)current.movingSources.chunkChanged(position.x,position.z);
         }
     }
     @SubscribeEvent public static void unloaded(LevelEvent.Unload event) {

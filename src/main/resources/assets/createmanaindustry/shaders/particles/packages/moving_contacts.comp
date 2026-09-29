@@ -1,0 +1,101 @@
+#pragma cmi_include packages/state.glsl
+#pragma cmi_include packages/world_collision.glsl
+#pragma cmi_include packages/moving.glsl
+#pragma cmi_include packages/moving_support.glsl
+layout(std430,binding=12) readonly buffer MovingHistory {vec4 movingHistory[];};
+layout(local_size_x=64) in;
+uniform bool uMovingSweep;
+uniform bool uMovingFriction;
+void main() {
+    uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;Body b=src[i];
+    if(b.positionMass.w==0.||b.previousSleep.w<0.){dst[i]=b;return;}
+    if(!uMovingReady){b.positionMass.xyz=movingHistory[2u*i].xyz;b.previousSleep.w=-1.;dst[i]=b;return;}
+    vec4 support=movingSupport[i];uint tag=floatBitsToUint(support.w);
+    bool carried=(tag&MOVING_CARRIED)!=0u&&(tag&MOVING_ID_MASK)==movingIdentity();
+    if((tag&MOVING_CARRIED)!=0u&&(tag&MOVING_CONVERTED)==0u){b.velocityGround.xyz+=support.xyz;tag|=MOVING_CONVERTED;support.w=uintBitsToFloat(tag);movingSupport[i]=support;}
+    vec3 initial=movingHistory[2u*i].xyz,extent=b.extentYaw.xyz;
+    if(!movingGeometryReady()){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
+    vec3 queryLo=min(initial,b.positionMass.xyz)-extent,queryHi=max(initial,b.positionMass.xyz)+extent;
+    if(!movingCoarse(queryLo,queryHi)){dst[i]=b;return;}
+    vec3 localA=localPoint(initial,true),localB=localPoint(b.positionMass.xyz,false);
+    mat3 ra=rawRotation(true),rb=rawRotation(false);vec3 sa=movingScale(true),sb=movingScale(false);ra[0]/=sa.x;ra[1]/=sa.y;ra[2]/=sa.z;rb[0]/=sb.x;rb[1]/=sb.y;rb[2]/=sb.z;
+    vec3 ea=vec3(dot(abs(ra[0]),extent),dot(abs(ra[1]),extent),dot(abs(ra[2]),extent))/sa;
+    vec3 eb=vec3(dot(abs(rb[0]),extent),dot(abs(rb[1]),extent),dot(abs(rb[2]),extent))/sb;
+    // For rotation, traverse the complete local BVH under a strict work budget;
+    // endpoint local queries alone cannot prove swept coverage.
+    bool rotating=uintBitsToFloat(movingPose[14].x)>1e-6;
+    vec3 lo=min(localA-ea,localB-eb)-vec3(.001),hi=max(localA+ea,localB+eb)+vec3(.001);
+    uint node=0u,visits=0u;bool grounded=false;vec3 velocity=b.velocityGround.xyz;
+    while(node<movingNodeCount()) {
+        if(++visits>1024u){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
+        MovingNode box=movingNodes[node];uint escape=floatBitsToUint(box.lo.w);
+        if(escape<=node||escape>movingNodeCount()){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
+        if(!rotating&&(any(greaterThan(lo,box.hi.xyz))||any(lessThan(hi,box.lo.xyz)))){node=escape;continue;}
+        if(floatBitsToUint(box.hi.w)==0u){node++;continue;}
+        vec3 normal;float gap=movingGap(b.positionMass.xyz,extent,box,1.,normal);
+        // Preserve the entry face at adjacent platform edges. A body that was
+        // resting above the top must not be expelled sideways because gravity
+        // made its tiny edge overlap smaller than its vertical penetration.
+        if(gap<0.&&!rotating) {
+            vec3 entryNormal;float entryGap=movingGap(initial,extent,box,0.,entryNormal);
+            if(entryGap>=-1e-4&&entryNormal.y>.5) {
+                mat3 r=movingRotation(1.);vec3 centre=(box.lo.xyz+box.hi.xyz)*.5,boxExtent=(box.hi.xyz-box.lo.xyz)*.5*sb;
+                vec3 delta=b.positionMass.xyz-(movingTranslation(false)+r*(centre*sb));
+                float faceGap=-1e30;vec3 faceNormal=entryNormal;satAxis(entryNormal,delta,extent,r,boxExtent,faceGap,faceNormal);
+                if(faceGap<=0.){gap=faceGap;normal=faceNormal;}
+            }
+        }
+        if(uMovingSweep&&!carried&&gap>0.) {
+            vec3 motion=b.positionMass.xyz-initial,centre=(box.lo.xyz+box.hi.xyz)*.5,boxHalf=(box.hi.xyz-box.lo.xyz)*.5;
+            float speed=length(motion-(movingTranslation(false)-movingTranslation(true)))
+                +uintBitsToFloat(movingPose[14].x)*length((abs(centre)+boxHalf)*max(sa,sb))
+                +length((sb-sa)*(abs(centre)+boxHalf));
+            float t=0.;bool done=false,hit=false;
+            if(!rotating&&all(lessThan(abs(sa-sb),vec3(1e-6)))){hit=movingLinearSweep(initial,motion,extent,box,t,normal);done=true;}
+            else for(int advance=0;advance<32;advance++) {
+                gap=movingGap(initial+motion*t,extent,box,t,normal);
+                if(gap<=1e-4){hit=true;done=true;break;}
+                if(speed<1e-8||t+gap/speed>=1.){done=true;break;}
+                float next=t+gap/speed*.9;
+                if(next<=t)break;t=next;
+            }
+            if(!done){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
+            if(hit) {
+                if(box.material.y!=0u){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
+                // Follow the impacted surface for the remaining frame, then retain
+                // tangent relative motion. Final SAT removes residual overlap.
+                vec3 hitPoint=initial+motion*t;mat3 r=movingRotation(t);vec3 scale=mix(sa,sb,t);
+                vec3 local=transpose(r)*(hitPoint-mix(movingTranslation(true),movingTranslation(false),t))/scale;
+                vec3 surfaceMotion=projectPoint(local,false)-hitPoint;
+                vec3 remaining=motion*(1.-t)-surfaceMotion;
+                remaining-=normal*min(0.,dot(remaining,normal));
+                b.positionMass.xyz=hitPoint+surfaceMotion+remaining;
+                vec3 surfaceVelocity=movingVelocity(b.positionMass.xyz-vec3(0,extent.y,0));
+                velocity-=normal*min(0.,dot(velocity-surfaceVelocity,normal));
+                gap=movingGap(b.positionMass.xyz,extent,box,1.,normal);
+            }
+        }
+        if(gap<=1e-4) {
+            if(box.material.y!=0u){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
+            b.positionMass.xyz+=normal*max(0.,-gap);
+            vec3 surfaceVelocity=movingVelocity(b.positionMass.xyz-vec3(0,extent.y,0));
+            velocity-=normal*min(0.,dot(velocity-surfaceVelocity,normal));
+            if(normal.y>.5) {
+                grounded=true;float friction=uintBitsToFloat(box.material.x);
+                uint liveTag=floatBitsToUint(movingSupport[i].w);
+                if(uMovingFriction&&(liveTag&MOVING_FRICTION_DONE)==0u){velocity.xz=surfaceVelocity.xz+(velocity.xz-surfaceVelocity.xz)*friction;liveTag|=MOVING_FRICTION_DONE;}
+                movingSupport[i]=vec4(surfaceVelocity,uintBitsToFloat(movingIdentity()|(liveTag&MOVING_FRICTION_DONE)));
+            }
+        }
+        node++;
+    }
+    if(!grounded&&(tag&MOVING_ID_MASK)==movingIdentity())movingSupport[i]=vec4(0);
+    vec3 correction;float material=-1.;bool worldGround=b.velocityGround.w>.5;
+    if(!solveWorld(b,correction,velocity,worldGround,material)){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
+    // Opposing static-world corrections can crush a body between platforms and
+    // terrain. Never publish an unresolved intersection as successful physics.
+    if(length(correction)>1e-4&&grounded){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
+    b.positionMass.xyz+=correction;
+    if(!coveredWorld(b)){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
+    b.velocityGround=vec4(velocity,grounded||worldGround?1.:0.);dst[i]=b;
+}

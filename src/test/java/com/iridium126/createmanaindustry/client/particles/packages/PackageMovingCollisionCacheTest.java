@@ -1,0 +1,105 @@
+package com.iridium126.createmanaindustry.client.particles.packages;
+
+import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
+
+class PackageMovingCollisionCacheTest {
+    static final PackageMovingGeometry.Pose IDENTITY=new PackageMovingGeometry.Pose(1,0,0,0,1,0,0,0,1,0,0,0);
+    static class Source implements PackageMovingCollisionCache.Source {
+        final Thread owner=Thread.currentThread();final PackageMovingGeometry.Key key=new PackageMovingGeometry.Key(0,UUID.randomUUID());
+        long revision=1;int length=40;boolean missing,poseMissing,throwCursor;final AtomicLong clock;
+        Source(AtomicLong clock){this.clock=clock;}
+        void owner(){assertSame(owner,Thread.currentThread());}
+        public PackageMovingGeometry.Key key(){return key;}
+        public long revision(){owner();return revision;}
+        public boolean alive(){owner();return true;}
+        public PackageMovingGeometry.Bounds bounds(){owner();return new PackageMovingGeometry.Bounds(0,0,0,length,1,1);}
+        public PackageMovingGeometry.Pose pose(boolean previous){owner();if(poseMissing)throw new IllegalStateException();return IDENTITY;}
+        public PackageMovingCollisionCache.Cursor open(){owner();return new PackageMovingCollisionCache.Cursor(){
+            int next;
+            public boolean hasNext(){owner();if(throwCursor)throw new ConcurrentModificationException();return next<length;}
+            public List<PackageMovingGeometry.Box> next(){owner();if(missing)return null;clock.addAndGet(100);int x=next++;return List.of(new PackageMovingGeometry.Box(x,0,0,x+1,1,1,.6f,0));}
+        };}
+    }
+    @Test void budgetSplitsOwnerCaptureAndWorkerTouchesOnlyPrimitives() throws Exception {
+        var tasks=new ArrayDeque<Runnable>();var clock=new AtomicLong();var source=new Source(clock);
+        var cache=new PackageMovingCollisionCache(tasks::add,1,clock::get);cache.offer(source);
+        cache.tick(250);assertEquals(300,cache.lastCaptureNanos());assertEquals(1,cache.overruns());
+        assertNull(cache.entries().iterator().next().snapshot());assertTrue(tasks.isEmpty());
+        for(int i=0;i<10;i++)cache.tick(10000);
+        assertEquals(1,tasks.size());var worker=new Thread(tasks.remove());worker.start();worker.join();
+        cache.tick(10000);var result=cache.entries().iterator().next().snapshot();assertNotNull(result);
+        assertEquals(1,result.count());assertEquals(40,result.nodes().getFloat(16));assertTrue(result.nodes().isReadOnly());
+    }
+    @Test void staleTasksAndClearedEntriesCannotBecomeCurrent() {
+        var tasks=new ArrayDeque<Runnable>();var source=new Source(new AtomicLong());source.length=1;
+        var cache=new PackageMovingCollisionCache(tasks::add,1,()->0L);cache.offer(source);cache.tick(1);
+        var old=cache.entries().iterator().next();long before=old.revision();cache.clear();
+        assertEquals(0,old.poseFrame);assertTrue(old.revision()>before);
+        cache.offer(source);tasks.remove().run();cache.tick(1);assertNull(cache.entries().iterator().next().snapshot());
+        assertEquals(2,cache.entries().iterator().next().identity);tasks.remove().run();cache.tick(1);assertNotNull(cache.entries().iterator().next().snapshot());
+        cache.remove(source.key());assertFalse(cache.entries().iterator().hasNext());
+    }
+    @Test void unavailableChunksAndPosesAreNeverAirAndCanRecover() {
+        var source=new Source(new AtomicLong());source.length=1;source.missing=true;
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);cache.offer(source);cache.tick(1);cache.tick(1);
+        assertNull(cache.entries().iterator().next().snapshot());
+        source.missing=false;cache.tick(1);cache.tick(1);assertNotNull(cache.entries().iterator().next().snapshot());
+        source.poseMissing=true;cache.tick(1);assertFalse(cache.posesReady());
+        source.poseMissing=false;cache.tick(1);assertTrue(cache.posesReady());assertNotNull(cache.entries().iterator().next().snapshot());
+        cache.tick(0);assertFalse(cache.posesReady());
+    }
+    @Test void iteratorChangesAreRetriedWithoutPublishingPartialGeometry() {
+        var source=new Source(new AtomicLong());source.length=1;source.throwCursor=true;
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);cache.offer(source);cache.tick(1);
+        assertNull(cache.entries().iterator().next().snapshot());source.throwCursor=false;
+        cache.tick(1);cache.tick(1);assertNotNull(cache.entries().iterator().next().snapshot());
+        source.revision++;cache.tick(1);assertNull(cache.entries().iterator().next().snapshot());
+        cache.tick(1);assertNotNull(cache.entries().iterator().next().snapshot());
+    }
+    @Test void globalWorkerBudgetSurvivesWorldClear() {
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageMovingCollisionCache(tasks::add,8,()->0L);
+        for(int i=0;i<8;i++){var source=new Source(new AtomicLong());source.length=1;assertTrue(cache.offer(source));}
+        cache.tick(1);assertEquals(4,tasks.size());cache.clear();
+        var source=new Source(new AtomicLong());source.length=1;cache.offer(source);cache.tick(1);assertEquals(4,tasks.size());
+        while(!tasks.isEmpty())tasks.remove().run();
+        cache.tick(1);assertEquals(1,tasks.size());tasks.remove().run();cache.tick(1);assertNotNull(cache.entries().iterator().next().snapshot());
+    }
+    @Test void geometryRetainsHolesMaterialsAndCapacityFailure() {
+        var boxes=new ArrayList<PackageMovingGeometry.Box>();boxes.add(new PackageMovingGeometry.Box(0,0,0,1,1,1,.6f,0));
+        boxes.add(new PackageMovingGeometry.Box(1,0,0,2,1,1,.7f,0));assertEquals(3,PackageMovingGeometry.bake(1,boxes).count());
+        boxes.set(1,new PackageMovingGeometry.Box(2,0,0,3,1,1,.6f,0));assertEquals(3,PackageMovingGeometry.bake(1,boxes).count());
+        boxes.clear();for(int i=0;i<4097;i++)boxes.add(new PackageMovingGeometry.Box(i*2,0,0,i*2+1,1,1,.6f,0));
+        assertThrows(IllegalArgumentException.class,()->PackageMovingGeometry.bake(1,boxes));
+    }
+    @Test void optionalAbiFailuresRevokeCoverageAtEveryCaptureStage() {
+        for(int stage=0;stage<5;stage++) {
+            final int selected=stage;
+            boolean[] broken={true};
+            var source=new Source(new AtomicLong()) {
+                void fail(int at){if(broken[0]&&selected==at)throw new NoSuchMethodError("Injected optional ABI change");}
+                @Override public long revision(){fail(0);return super.revision();}
+                @Override public PackageMovingGeometry.Pose pose(boolean previous){fail(1);return super.pose(previous);}
+                @Override public PackageMovingCollisionCache.Cursor open(){
+                    fail(2);var delegate=super.open();
+                    return new PackageMovingCollisionCache.Cursor(){
+                        public boolean hasNext(){fail(3);return delegate.hasNext();}
+                        public List<PackageMovingGeometry.Box> next(){fail(4);return delegate.next();}
+                    };
+                }
+            };
+            source.length=1;
+            var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);cache.offer(source);
+            assertDoesNotThrow(()->cache.tick(1));
+            var entry=cache.entries().iterator().next();
+            assertNull(entry.snapshot(),"ABI stage "+stage);
+            if(stage<2)assertFalse(cache.posesReady());
+            broken[0]=false;source.revision++;
+            cache.tick(1);cache.tick(1);
+            assertNotNull(entry.snapshot(),"Recovery stage "+stage);
+            assertTrue(cache.posesReady());
+        }
+    }
+}

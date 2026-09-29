@@ -22,6 +22,8 @@ allprojects {
             if (project.hasProperty('packageStackBenchmark')) args '--stack-benchmark'
             if (project.hasProperty('packageStackStress')) args '--stack-stress'
             if (project.hasProperty('packageRangeBenchmark')) args '--range-benchmark'
+            if (project.hasProperty('packageMovingOnly')) args '--moving-only'
+            if (project.hasProperty('packageMovingBenchmark')) args '--moving-benchmark'
             workingDir = project.projectDir
         }
     }

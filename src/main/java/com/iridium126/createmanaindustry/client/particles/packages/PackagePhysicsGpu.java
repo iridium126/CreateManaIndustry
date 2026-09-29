@@ -16,10 +16,11 @@ public final class PackagePhysicsGpu implements AutoCloseable {
             "world_support","support_prepare","support_jump","support_apply","solve_support",
             "range_insert","range_scan","range_add","range_scatter","range_guard",
             "predict_range","predict_world_range","solve_range","solve_world_range","solve_support_range","world_support_range","range_budget",
-            "grid_counted","linked_guard","predict_counted","predict_world_counted","solve_counted","solve_world_counted","solve_support_counted"};
+            "grid_counted","linked_guard","predict_counted","predict_world_counted","solve_counted","solve_world_counted","solve_support_counted",
+            "moving_prepare","moving_carry","moving_contacts","solve_moving","solve_moving_range","solve_moving_counted"};
     private static final String[] UNIFORMS={"uCount","uTableMask","uCellSize","uDt","uGravity","uDrag","uFriction","uChain",
             "uWorldReady","uWorldOriginSection","uWorldTableMask","uWorldSlotWords","uWorldShapeCapacity","uStaticBodies",
-            "uRangeGrid","uCandidateBudget","uIndexLength","uScanTable"};
+            "uRangeGrid","uCandidateBudget","uIndexLength","uScanTable","uMovingReady","uMovingSweep","uMovingFriction"};
     private final int[] programs=new int[NAMES.length], states=new int[2];
     private final int[][] locations=new int[NAMES.length][UNIFORMS.length];
     private int heads, links, chains, history, count, current;
@@ -30,6 +31,8 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     private boolean rangeGrid;
     private boolean boundedGrid;
     private int countedHeads;
+    private int movingSupport;
+    private final java.util.IdentityHashMap<PackageMovingCollisionCache.Entry,long[]> movingFrames=new java.util.IdentityHashMap<>();
     public enum IndexMode { LINKED, EXACT_RANGES, BOUNDED_LINKED }
     /** Conservative total candidates across all queried cells; exceeding it requests local handback. */
     public static final int CANDIDATE_BUDGET=512;
@@ -51,7 +54,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
             for(int i=0;i<programs.length;i++) {
                 programs[i]=compile(sources.apply("packages/"+NAMES[i]+".comp"));
                 for(int j=0;j<UNIFORMS.length;j++)locations[i][j]=GL20.glGetUniformLocation(programs[i],UNIFORMS[j]);
-                GL41.glProgramUniform1ui(programs[i],locations[i][1],(i>=12 && i<=23?rangeTableSize:tableSize)-1);
+                GL41.glProgramUniform1ui(programs[i],locations[i][1],((i>=12 && i<=23)||i==35?rangeTableSize:tableSize)-1);
                 GL41.glProgramUniform1f(programs[i],locations[i][2],cellSize);
                 GL41.glProgramUniform1ui(programs[i],locations[i][15],CANDIDATE_BUDGET);
             }
@@ -106,6 +109,8 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,states[current]);
         GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,bodies);this.count=count;staticBodies=hasStatic;
+        clearMovingSupport();
+        movingFrames.clear();
         captureHistory(0);
     }
     public void uploadChains(ByteBuffer data) {
@@ -142,30 +147,75 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         if(iterations<1 || iterations>64)throw new IllegalArgumentException("Contact iterations");
         step(dt,java.util.Objects.requireNonNull(world),supportProjection,iterations,java.util.Objects.requireNonNull(indexMode));
     }
+    /** Experimental kinematic scene. One previous/current pose pair spans exactly one 20 Hz step.
+     * Caller closes the scene after submission. No public resource-ready gate uses this path yet. */
+    public void stepWorldMoving(PackageCollisionGpu.View world,int iterations,IndexMode mode,
+                                java.util.List<PackageMovingCollisionGpu.View> moving) {
+        if(iterations<1||iterations>64)throw new IllegalArgumentException("Contact iterations");
+        step(.05f,java.util.Objects.requireNonNull(world),true,iterations,java.util.Objects.requireNonNull(mode),java.util.List.copyOf(moving));
+    }
     private void step(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations) {
         step(dt,world,supportProjection,iterations,IndexMode.LINKED);
     }
     private void step(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations,IndexMode indexMode) {
+        step(dt,world,supportProjection,iterations,indexMode,java.util.List.of());
+    }
+    private void step(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations,IndexMode indexMode,
+                      java.util.List<PackageMovingCollisionGpu.View> moving) {
         ensureStep(dt);if(count==0)return;
         // Allocate the optional workspace before touching the submitted generation.
         if(supportProjection)ensureSupportBuffers();
+        if(!moving.isEmpty()&&movingSupport==0){movingSupport=buffer((long)capacity*16);clearMovingSupport();}
+        movingFrames.keySet().removeIf(entry->entry.poseFrame==0);
+        for(var view:moving)view.claimStep(this);
+        if(moving.isEmpty())clearMovingSupport();
         prepareIndex(indexMode);
         int predict=rangeGrid?(world==null?17:18):(boundedGrid?(world==null?26:27):(world==null?0:5));
         int solve=rangeGrid?(world==null?19:(supportProjection?21:20)):
                 (boundedGrid?(world==null?28:(supportProjection?30:29)):(world==null?2:(supportProjection?11:6)));
+        if(!moving.isEmpty())solve=rangeGrid?35:(boundedGrid?36:34);
         captureHistory(0);
+        for(var view:moving) {
+            bind(31);view.bind(locations[31][18]);GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+            bind(32);view.bind(locations[32][18]);world.bind(locations[32],8,true);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,11,movingSupport);dispatch();current^=1;
+        }
         if(world==null || staticBodies)buildGrid();
         bind(predict);f(predict,3,dt);f(predict,4,32f);
         f(predict,5,(float)Math.pow(.98,dt*20));
         if(world!=null){world.bind(locations[predict],8,true);GL20.glUniform1i(locations[predict][13],staticBodies?1:0);}
         dispatch();current^=1;
+        movingContacts(world,moving,true,false);
         for(int iteration=0;iteration<iterations;iteration++) {
             buildGrid(!boundedGrid);
             bind(solve);f(solve,6,(float)Math.pow(.6,dt*20/iterations));
             if(world!=null && iteration==0){world.bind(locations[solve],8,false);f(solve,3,dt);}
+            if(!moving.isEmpty())GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,11,movingSupport);
             dispatch();current^=1;
         }
+        // Dynamic Jacobi contacts can press a root back into the platform. The
+        // support forest must start from the corrected kinematic root height.
+        movingContacts(world,moving,false,false);
         if(supportProjection)projectSupports(world,dt);
+        movingContacts(world,moving,false,true);
+    }
+    private void movingContacts(PackageCollisionGpu.View world,java.util.List<PackageMovingCollisionGpu.View> moving,boolean sweep,boolean friction) {
+        for(var view:moving) {
+            bind(33);view.bind(locations[33][18]);world.bind(locations[33],8,true);GL20.glUniform1i(locations[33][19],sweep?1:0);
+            GL20.glUniform1i(locations[33][20],friction?1:0);
+            try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,11,stack.ints(movingSupport,history));}
+            dispatch();current^=1;
+        }
+    }
+    private void clearMovingSupport() {
+        if(movingSupport==0)return;GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,movingSupport);
+        try(var stack=MemoryStack.stackPush()){GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
+    }
+    void claimMovingFrame(PackageMovingCollisionCache.Entry entry,long frame) {
+        long[] previous=movingFrames.get(entry);
+        if(previous!=null&&frame<=previous[0])throw new IllegalStateException("Moving tick pose already simulated");
+        if(previous==null)movingFrames.put(entry,new long[]{frame});else previous[0]=frame;
     }
     private void ensureRangeBuffers() {
         if(rangeHeads!=0)return;
@@ -321,5 +371,6 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         for(int buffer:supports)if(buffer!=0)GL15.glDeleteBuffers(buffer);if(supportControl!=0)GL15.glDeleteBuffers(supportControl);
         deleteRangeBuffers();
         if(countedHeads!=0)GL15.glDeleteBuffers(countedHeads);
+        if(movingSupport!=0)GL15.glDeleteBuffers(movingSupport);
     }
 }

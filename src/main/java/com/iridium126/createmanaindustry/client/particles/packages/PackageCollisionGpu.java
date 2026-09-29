@@ -198,6 +198,8 @@ public final class PackageCollisionGpu implements AutoCloseable {
             }
         }
     }
+    /** Cheap shared-budget accounting; percentile sorting belongs only in diagnostics. */
+    public long uploadedBytes(){open();return uploadedBytes;}
     public Stats stats() {
         open();int ready=0;for(Entry entry:entries.values())if(entry.visible>=0)ready++;
         long[] sorted=Arrays.copyOf(timings,timingCount);Arrays.sort(sorted);

@@ -191,6 +191,8 @@ configurations {
     // implementation is nested under META-INF/jarjar.
     sodiumDistribution
     compileOnly.extendsFrom sodiumDistribution
+    // Modrinth's POM does not expose Sable's nested companion API.
+    sableDistribution
 }
 
 // Sodium's named implementation jar is cached outside build/ so a normal
@@ -198,6 +200,32 @@ configurations {
 // resolved outer distribution remains a task input, so changing its version
 // or contents invalidates and refreshes this cache automatically.
 def sodiumCoreJar = project.file(".gradle/sodium/sodium-core.jar")
+def sableCompanionJar = project.file(".gradle/sable/sable-companion.jar")
+def extractSableCompanion = tasks.register("extractSableCompanion") {
+    group = "sable"
+    description = "Caches the companion API from the selected Sable distribution"
+    inputs.files(configurations.sableDistribution)
+    outputs.file(sableCompanionJar)
+    doLast {
+        def outer = new java.util.zip.ZipFile(configurations.sableDistribution.singleFile)
+        try {
+            def matches = outer.entries().findAll { entry ->
+                !entry.directory && entry.name.startsWith("META-INF/jarjar/sable-companion-common-")
+                        && entry.name.endsWith(".jar")
+            }
+            if (matches.size() != 1) {
+                throw new GradleException("Expected one companion API in the selected Sable distribution")
+            }
+            sableCompanionJar.parentFile.mkdirs()
+            outer.getInputStream(matches[0]).withCloseable { input ->
+                sableCompanionJar.withOutputStream { output -> input.transferTo(output) }
+            }
+        } finally {
+            outer.close()
+        }
+    }
+}
+def sableCompanionFiles = files(sableCompanionJar).builtBy(extractSableCompanion)
 
 // Build Voxy from the upstream multiversion branch and keep the resulting jar
 // outside build/ so a normal `clean` does not throw away this relatively
@@ -416,6 +444,12 @@ dependencies {
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
 
     implementation "curse.maven:create-328085:7963363"
+    // Typed optional Sable adapter; Sable remains installed by the user.
+    compileOnly "maven.modrinth:T9PomCSv:U678xqle"
+    sableDistribution "maven.modrinth:T9PomCSv:U678xqle"
+    compileOnly sableCompanionFiles
+    // Reference-pose tests use the real math API, without installing Sable.
+    testRuntimeOnly sableCompanionFiles
     compileOnly "dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:${flywheel_version}"
     compileOnly "com.tterrag.registrate:Registrate:${registrate_version}"
     compileOnly "net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}"
@@ -602,3 +636,16 @@ tasks.named('test', Test) {
         exceptionFormat 'full'
     }
 }
+
+// Exercise the optional branch with neither Sable nor its companion on the JVM
+// classpath; the regular reference tests deliberately include the companion.
+def validatePackageSableAbsent = tasks.register('validatePackageSableAbsent', JavaExec) {
+    group = 'verification'
+    dependsOn(tasks.named('testClasses'))
+    classpath = sourceSets.test.output + sourceSets.main.output + configurations.testRuntimeClasspath.filter {
+        it != sableCompanionJar
+    }
+    mainClass = 'com.iridium126.createmanaindustry.client.particles.packages.PackageSableAbsentProbe'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+}
+tasks.named('check') { dependsOn(validatePackageSableAbsent) }

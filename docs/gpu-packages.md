@@ -1,8 +1,9 @@
 # Create GPU 包裹：实现进度与内部契约
 
+
 ## 当前状态（2026-09-29）
 
-**通用槽位、模型绘制、权威协议和世界碰撞准备已实现，真实 Create 包裹尚未启用 GPU 接管。** 服务端已有稳定身份、最终基线握手、受确认 lease 控制的 travel 暂停和玩法回退钩子；客户端目前不声明生产资源就绪，收到接管请求会明确拒绝。因此实际包裹仍由 Create 模拟和渲染。普通 Renderer、Flywheel visual 与锁链物流 tick 尚未抑制，没有声称达到 131072 活动包裹整帧 60 FPS。
+**通用槽位、模型绘制、权威协议、世界碰撞准备及动态结构实验管线已实现，真实 Create 包裹尚未启用 GPU 接管。** 服务端已有稳定身份、最终基线握手、受确认 lease 控制的 travel 暂停和玩法回退钩子；客户端目前不声明生产资源就绪，收到接管请求会明确拒绝。因此实际包裹仍由 Create 模拟和渲染。普通 Renderer、Flywheel visual 与锁链物流 tick 尚未抑制，没有声称达到 131072 活动包裹整帧 60 FPS。
 
 已实现：
 
@@ -139,7 +140,7 @@ GPU 参数 `uOriginOffset` 为物理局部原点减网络区域原点。自由�
 
 采集与 GPU 上传各使用独立软预算，不能相互等待。生产上传只做 CPU 到持久映射空闲区的拷贝，提交前使用 client-mapped/SSBO barrier；GPU 读取完成以零超时 fence 判断。coherent 写入可见性与已在读取的存储复用是两个契约，不能仅靠 barrier 安全覆盖旧数据，参见 [Khronos glBufferStorage](https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferStorage.xhtml) 与 [glMemoryBarrier](https://wikis.khronos.org/opengl/GLAPI/glMemoryBarrier)。
 
-`PackageCollisionRuntime.gpuCovered(sweptBounds)` 证明 guard 涉及的 section 当前版本已完整上传；它不证明模型、玩法回调或特殊形状接管资格。`covered` 仅证明 CPU 快照就绪。后续接管适配器应先请求速度预取范围、确认 GPU 覆盖与完整资源，再在引擎 GL 边界内调用：
+`PackageCollisionRuntime.gpuCovered(sweptBounds)` 证明 guard 涉及的 section 当前版本已完整上传，已发现动态结构的几何/本 tick 姿态也已确认；它不证明模型、玩法回调或特殊形状接管资格。`covered` 仅证明 CPU 快照就绪。后续接管适配器应先请求速度预取范围、确认 GPU 覆盖与完整资源，再在引擎 GL 边界内调用：
 
 ```java
 // Body 坐标以 originSection * 16 为原点，与 Pool 导入/增量编码的原点一致。
@@ -237,3 +238,25 @@ CPU 拼接 ACK 的回退版本已移除；GPU 常驻 ACK journal 收益没有稳
 6. 游戏内视觉对照录像、玩法/多人回归，以及包含真实绘制和网络的 131072 活动包裹完整性能验收。
 
 生产客户端资源门禁完成前，不得启用 Create 模拟/渲染抑制，也不得把本阶段内核测量当作方案验收结果。当前受 lease 控制的 travel 钩子只为已验证资源的后续客户端准备，不会被预览或未准备的客户端触发。
+
+## Create 动态结构与 Sable 子世界（实验入口）
+
+新增 `PackageMovingCollisionSources`、`PackageMovingCollisionCache` 和 `PackageMovingCollisionGpu`。Create 从 loadedContraptions 索引获取结构，沿用 `toGlobalVector(local,0,true)` / `toGlobalVector(local,1,false)`；Sable 从 ClientSubLevelContainer 获取 sub level、inclusive plot bounds、已加载非空 section 及 logicalPose/lastPose。位于 plot 内的 Create 结构再组合 sub level 的前后变换。局部几何先减整数中心、姿态平移再以 double 减模拟区域原点，GPU 使用区域内 float。正交正缩放支持非均匀缩放；剪切、镜像或退化变换不可用。
+
+Sable 使用 `compileOnly "maven.modrinth:T9PomCSv:U678xqle"`（实际发布版 2.0.5），不使用反射。发布 POM 没有 companion 传递依赖，`extractSableCompanion` 从同一发布 JAR 解包内嵌 companion 1.6.0 至 `.gradle/sable`，仅供编译和数学参考测试；Sable 与 companion 均不打入 CMI JAR，也不加入游戏运行依赖。`ModList` 检查通过后才实例化独立的 `PackageSableCollisionSources`，普通 Create 入口没有外部 Sable 类型引用。`validatePackageSableAbsent` 在独立 JVM 中排除两者并执行缺席分支，纳入 `check`。
+
+API 不兼容、枚举超出 64 个结构、姿态捕获未完成均撤销覆盖。直接 API 的 `LinkageError` 在发现、版本/姿态读取及游标捕获阶段均使结果不可用，不能发布部分碰撞快照。Sable 普通块及 BlockSubLevelCollisionShape 的自定义静态形状在所属线程捕获；BlockSubLevelDynamicCollider、回调/脆弱块、流体、火、移动活塞、细雪、脚手架交还 Create。没有后台世界访问，也没有在 worker 中调用 Sable/Create 对象。
+
+Sable 姿态直接按 companion 的 `transformNormal` / `transformPosition` 捕获，复用数值暂存，保留 rotationPoint 和非均匀缩放语义；避免用世界坐标相减求基向量及生成四组临时 Vec3。固定种子 300 组姿态、每组 16 点在绝对坐标 ±3000 万格与实际 companion API 比较，double 误差容差 3e-8 格。尚未测量这项 CPU 调整在实际游戏中的收益。
+
+主线程每个结构最多捕获 16 个位置后轮转；静态 section 与动态结构共享 250µs 软预算并交替优先。两个 worker 接收纯数值列表，最多四个待完成动态烘焙。精确合并同材质相邻 AABB 后构建 stackless BVH，保留空洞与异材质；最大 65536 个采集盒、4096 个合并叶子。超限拒绝整个几何，不截断。Create `invalidateColliders` 的客户端 mixin、plot 方块/区块变化、源移除和换世界使旧版本失效；已打开视图也核对缓存 revision/frame。缺失区块或邻区上下文暂停捕获，未知几何从不视为空气。
+
+GPU 几何按变化分片上传，与静态 atlas 共享 256KiB/250µs 软复制预算。每个结构拥有四个 256B 持久映射姿态 bank，包含前后正交仿射变换、局部 bounds、身份和节点数；准备 kernel 计算四元数与保守旋转覆盖。bank 只在 fence 完成后复用，旧 BVH 保留至所有引用完成。槽满、未上传、失效或不完整的数据请求交还，无等待。
+
+`PackagePhysicsGpu.stepWorldMoving(world, iterations, indexMode, scene.views())` 是内部实验入口，强制一个前后姿态对对应一次 20Hz 更新。同一 solver 不能重复消费同一来源 frame，body 重新上传时清除承载 sidecar 和时钟映射。调用者在引擎拥有的 GL 边界中获取 `PackageCollisionRuntime.movingView(...)`，在提交后关闭 scene；调用 `movingView` 不访问可变世界。所有 pass 属于调用者的模拟 generation；负 sleep 标记不能作为有效增量提交。
+
+GPU 对包裹执行承载变换、相对表面速度摩擦、15 轴 AABB/OBB SAT。平台根摩擦在最终场景阶段每步只应用一次，保留原材质参数，不因平台接缝/接触迭代重复阻尼。恒定朝向/缩放使用解析扫掠 SAT 区间，旋转/变缩放使用有界保守推进；未知、工作预算耗尽与静态世界挤压请求交还。Jacobi 后先约束平台根高度，再传播支撑，最终重新约束结构。使用自有 16B/body 承载缓冲，不增加通用槽位、不改 64B 粒子及 20 vec4 header ABI。侧缓冲标识不是网络身份。
+
+参考源码位于 `.refs/Create/.../AbstractContraptionEntity.java` / `Contraption.java` 和 `.refs/sable/.../SubLevel.java` / `LevelPlot.java` / `ContraptionColliderMixin.java`。Sable 指定发布 JAR 已通过直接 API 编译及 companion 数学对照；实际游戏注入、复杂旋转碰撞、反作用力、真实物流接管和视觉行为仍未验收，生产资源就绪门禁继续关闭。测量与已知限制见 [动态结构报告](benchmarks/package-moving-2026-09-29.md)，本次依赖迁移与验证见 [Sable API 报告](benchmarks/package-sable-api-2026-09-29.md)。
+
+快速动态验证：`validatePackageGpu -PpackageMovingOnly`；基准加 `-PpackageMovingBenchmark`，均使用 `scripts/particles/validation.init.gradle`。默认完整 GPU 套件也包含动态正确性测试。

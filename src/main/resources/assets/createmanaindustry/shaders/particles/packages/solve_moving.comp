@@ -1,0 +1,4 @@
+#define CMI_WORLD
+#define CMI_RELATIVE_CONTACTS
+#define CMI_MOVING_CONTACTS
+#pragma cmi_include packages/solve.comp

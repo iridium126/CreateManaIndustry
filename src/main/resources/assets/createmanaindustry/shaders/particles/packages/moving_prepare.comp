@@ -1,0 +1,30 @@
+#define CMI_MOVING_PREPARE
+#pragma cmi_include packages/moving.glsl
+layout(local_size_x=1) in;
+void main() {
+    if(!uMovingReady)return;
+    mat3 a=rawRotation(true),b=rawRotation(false);vec3 sa=movingScale(true),sb=movingScale(false);
+    a[0]/=sa.x;a[1]/=sa.y;a[2]/=sa.z;b[0]/=sb.x;b[1]/=sb.y;b[2]/=sb.z;
+    vec4 qa=quaternion(a),qb=quaternion(b);if(dot(qa,qb)<0.)qb=-qb;
+    movingPose[10]=floatBitsToUint(qa);movingPose[11]=floatBitsToUint(qb);
+    float angle=2.*acos(clamp(dot(qa,qb),0.,1.));
+    // The nlerp small-angle branch has a slightly larger derivative than its arc.
+    float boundAngle=max(angle,2.*length(qa-qb)*1.001);
+    movingPose[14]=floatBitsToUint(vec4(boundAngle,0,0,0));
+    vec3 lo=mv(8u)-vec3(1),hi=mv(9u)+vec3(1);
+    if(movingGeometryReady()&&movingNodeCount()>0u){lo=movingNodes[0].lo.xyz;hi=movingNodes[0].hi.xyz;}
+    float radius=length(max(abs(lo),abs(hi))*max(sa,sb));
+    // A sphere around the captured geometry origin covers the complete rotation,
+    // including angles whose intermediate pose lies outside endpoint AABBs.
+    vec3 globalLo=min(movingTranslation(true),movingTranslation(false))-vec3(radius);
+    vec3 globalHi=max(movingTranslation(true),movingTranslation(false))+vec3(radius);
+    if(boundAngle<1e-6) {
+        vec3 centre=(lo+hi)*.5,extent=(hi-lo)*.5;
+        mat3 r=rawRotation(true),s=rawRotation(false);
+        vec3 ea=abs(r[0])*extent.x+abs(r[1])*extent.y+abs(r[2])*extent.z;
+        vec3 eb=abs(s[0])*extent.x+abs(s[1])*extent.y+abs(s[2])*extent.z;
+        vec3 ca=r*centre+movingTranslation(true),cb=s*centre+movingTranslation(false);
+        globalLo=min(ca-ea,cb-eb);globalHi=max(ca+ea,cb+eb);
+    }
+    movingPose[12]=floatBitsToUint(vec4(globalLo,0));movingPose[13]=floatBitsToUint(vec4(globalHi,0));
+}
