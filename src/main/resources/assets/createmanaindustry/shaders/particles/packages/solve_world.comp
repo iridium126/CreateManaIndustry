@@ -1,0 +1,2 @@
+#define CMI_WORLD 1
+#pragma cmi_include packages/solve.comp

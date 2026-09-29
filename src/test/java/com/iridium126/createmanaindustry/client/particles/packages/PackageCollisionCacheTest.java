@@ -87,4 +87,59 @@ class PackageCollisionCacheTest {
         assertEquals(4,tasks.size());assertNull(cache.snapshot(SECTION));
         while(!tasks.isEmpty())tasks.remove().run();finish(cache,tasks);
     }
+    @Test void repeatedShapesKeepPerCellMaterialAndCpuCoordinates() {
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);
+        var boxes=List.of(new PackageCollisionCache.Box(0,0,0,1,1,1));
+        cache.request(SECTION);cache.tick((s,i)->new PackageCollisionCache.Cell(boxes,i==4095?.98f:.6f,i==4095?1:0),1);
+        tasks.remove().run();cache.tick((s,i)->AIR,1);
+        var snapshot=cache.snapshot(SECTION);
+        assertEquals(4096,snapshot.shapeEnd(4095));assertEquals(15,snapshot.coordinate(4095,0));
+        assertEquals(1,snapshot.gpuShapeCount());assertEquals(32,snapshot.gpuBoxes().remaining());
+        assertFalse(snapshot.gpuEmpty());
+        var cells=snapshot.gpuCells();assertEquals(65536,cells.remaining());
+        assertEquals(0,cells.getInt(4095*16));assertEquals(1,cells.getInt(4095*16+4));
+        assertEquals(.98f,cells.getFloat(4095*16+8));assertEquals(1,cells.getInt(4095*16+12));
+        assertEquals(0,snapshot.gpuBoxes().getFloat(0));assertEquals(1,snapshot.gpuBoxes().getFloat(16));
+        assertThrows(java.nio.ReadOnlyBufferException.class,()->cells.putInt(0,9));
+        cells.position(24);assertEquals(0,snapshot.gpuCells().position());
+    }
+    @Test void overhangingAndOversizedDictionariesStayAvailableOnlyToCpu() {
+        for(boolean large:new boolean[]{false,true}) {
+            var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);
+            var shapes=new java.util.ArrayList<PackageCollisionCache.Box>();
+            for(int i=0;i<(large?PackageCollisionCache.MAX_GPU_SHAPES+1:1);i++)
+                shapes.add(new PackageCollisionCache.Box(large?i/20000f:-1.01f,0,0,1,1,1));
+            var cell=new PackageCollisionCache.Cell(shapes,.6f,0);
+            cache.request(SECTION);cache.tick((s,i)->i==0?cell:AIR,1);tasks.remove().run();cache.tick((s,i)->AIR,1);
+            var snapshot=cache.snapshot(SECTION);assertNotNull(snapshot);assertEquals(shapes.size(),snapshot.shapeEnd(0));
+            assertEquals(-1,snapshot.gpuShapeCount());assertEquals(0,snapshot.gpuBoxes().remaining());
+        }
+    }
+    @Test void callbacksPublishOnlyCurrentDataOnOwnerThread() throws InterruptedException {
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);
+        Thread owner=Thread.currentThread();var events=new java.util.ArrayList<String>();
+        cache.listener(new PackageCollisionCache.Listener() {
+            public void invalidated(PackageCollisionCache.Section section,long revision){assertSame(owner,Thread.currentThread());events.add("invalidated");}
+            public void published(PackageCollisionCache.Section section,PackageCollisionCache.Snapshot snapshot){assertSame(owner,Thread.currentThread());events.add("published");}
+            public void removed(PackageCollisionCache.Section section){assertSame(owner,Thread.currentThread());events.add("removed");}
+            public void cleared(){assertSame(owner,Thread.currentThread());events.add("cleared");}
+        });
+        cache.request(SECTION);cache.tick((s,i)->{assertSame(owner,Thread.currentThread());return AIR;},1);
+        cache.invalidate(SECTION);
+        Thread worker=new Thread(tasks.remove());worker.start();worker.join();
+        assertEquals(List.of("invalidated","invalidated"),events);
+        cache.tick((s,i)->AIR,1);worker=new Thread(tasks.remove());worker.start();worker.join();cache.tick((s,i)->AIR,1);
+        assertEquals(List.of("invalidated","invalidated","published"),events);
+        cache.forEachReady((s,snapshot)->assertSame(cache.snapshot(s),snapshot));
+        assertTrue(cache.snapshot(SECTION).gpuEmpty());
+        cache.evict(SECTION);cache.clear();assertEquals(List.of("invalidated","invalidated","published","removed","cleared"),events);
+    }
+    @Test void emptyHazardSectionsCannotBypassCellChecks() {
+        for(int flags:new int[]{1,2,4,8,16}) {
+            var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);
+            cache.request(SECTION);cache.tick((s,i)->i==3000?new PackageCollisionCache.Cell(List.of(),.6f,flags):AIR,1);
+            tasks.remove().run();cache.tick((s,i)->AIR,1);
+            assertEquals(0,cache.snapshot(SECTION).gpuShapeCount());assertFalse(cache.snapshot(SECTION).gpuEmpty());
+        }
+    }
 }

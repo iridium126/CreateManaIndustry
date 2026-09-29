@@ -1,0 +1,2 @@
+#define CMI_BOUNDED_LINKED
+#pragma cmi_include packages/solve_support.comp

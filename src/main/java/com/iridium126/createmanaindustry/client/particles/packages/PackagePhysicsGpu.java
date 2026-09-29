@@ -12,29 +12,48 @@ import org.lwjgl.system.MemoryStack;
  */
 public final class PackagePhysicsGpu implements AutoCloseable {
     public static final int BODY_BYTES=64, CHAIN_BYTES=64, ITERATIONS=4;
-    private static final String[] NAMES={"predict","grid","solve","chain","history"};
-    private final int[] programs=new int[5], states=new int[2];
-    private final int[][] locations=new int[5][8];
-    private static final String[] UNIFORMS={"uCount","uTableMask","uCellSize","uDt","uGravity","uDrag","uFriction","uChain"};
+    private static final String[] NAMES={"predict","grid","solve","chain","history","predict_world","solve_world",
+            "world_support","support_prepare","support_jump","support_apply","solve_support",
+            "range_insert","range_scan","range_add","range_scatter","range_guard",
+            "predict_range","predict_world_range","solve_range","solve_world_range","solve_support_range","world_support_range","range_budget",
+            "grid_counted","linked_guard","predict_counted","predict_world_counted","solve_counted","solve_world_counted","solve_support_counted"};
+    private static final String[] UNIFORMS={"uCount","uTableMask","uCellSize","uDt","uGravity","uDrag","uFriction","uChain",
+            "uWorldReady","uWorldOriginSection","uWorldTableMask","uWorldSlotWords","uWorldShapeCapacity","uStaticBodies",
+            "uRangeGrid","uCandidateBudget","uIndexLength","uScanTable"};
+    private final int[] programs=new int[NAMES.length], states=new int[2];
+    private final int[][] locations=new int[NAMES.length][UNIFORMS.length];
     private int heads, links, chains, history, count, current;
-    private final int capacity, tableSize;
+    private final int[] supports=new int[2];
+    private int supportControl;
+    private int rangeHeads,rangeBodies,bodySlots;
+    private int[] rangeLengths,rangeSums,rangeOffsets;
+    private boolean rangeGrid;
+    private boolean boundedGrid;
+    private int countedHeads;
+    public enum IndexMode { LINKED, EXACT_RANGES, BOUNDED_LINKED }
+    /** Conservative total candidates across all queried cells; exceeding it requests local handback. */
+    public static final int CANDIDATE_BUDGET=512;
+    private final int capacity, tableSize,rangeTableSize;
     private final float cellSize;
     private boolean closed;
+    private boolean staticBodies;
 
     public PackagePhysicsGpu(int capacity, float cellSize, Function<String,String> sources) {
         if(capacity<=0 || capacity>1_048_576 || !(cellSize>0) || !Float.isFinite(cellSize))
             throw new IllegalArgumentException("Invalid package physics capacity/cell size");
         this.capacity=capacity;this.cellSize=cellSize;
         tableSize=Integer.highestOneBit(Math.max(64,capacity-1))<<1;
-        if((capacity+63)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)
+        rangeTableSize=tableSize*2;
+        if((rangeTableSize+63)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)
                 || (long)capacity*BODY_BYTES>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))
             throw new IllegalArgumentException("Package buffers exceed device limits");
         try {
             for(int i=0;i<programs.length;i++) {
                 programs[i]=compile(sources.apply("packages/"+NAMES[i]+".comp"));
                 for(int j=0;j<UNIFORMS.length;j++)locations[i][j]=GL20.glGetUniformLocation(programs[i],UNIFORMS[j]);
-                GL41.glProgramUniform1ui(programs[i],locations[i][1],tableSize-1);
+                GL41.glProgramUniform1ui(programs[i],locations[i][1],(i>=12 && i<=23?rangeTableSize:tableSize)-1);
                 GL41.glProgramUniform1f(programs[i],locations[i][2],cellSize);
+                GL41.glProgramUniform1ui(programs[i],locations[i][15],CANDIDATE_BUDGET);
             }
             states[0]=buffer((long)capacity*BODY_BYTES);states[1]=buffer((long)capacity*BODY_BYTES);
             heads=buffer((long)tableSize*4);links=buffer((long)capacity*4);chains=buffer((long)capacity*CHAIN_BYTES);
@@ -42,8 +61,14 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         } catch(RuntimeException failure) { close();throw failure; }
     }
     private static int buffer(long bytes) {
-        int id=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);
-        GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_DRAW);return id;
+        int id=GL15.glGenBuffers();if(id==0)throw new IllegalStateException("Package buffer allocation failed");
+        try {
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);
+            GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_DRAW);
+            if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)
+                throw new IllegalStateException("Package buffer storage allocation failed: "+bytes);
+            return id;
+        } catch(RuntimeException failure){GL15.glDeleteBuffers(id);throw failure;}
     }
     private static int compile(String source) {
         if(source==null || source.isBlank())throw new IllegalArgumentException("Missing package shader");
@@ -64,6 +89,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         if(count<0 || count>capacity || bodies.remaining()!=count*BODY_BYTES || !bodies.isDirect())
             throw new IllegalArgumentException("Invalid package body upload");
         ByteBuffer view=bodies.duplicate().order(java.nio.ByteOrder.nativeOrder());
+        boolean hasStatic=false;
         for(int i=0;i<count;i++) {
             int p=view.position()+i*BODY_BYTES;
             for(int j=0;j<16;j++)if(!Float.isFinite(view.getFloat(p+j*4)))
@@ -75,10 +101,11 @@ public final class PackagePhysicsGpu implements AutoCloseable {
                     throw new IllegalArgumentException("Body requires a local region origin");
             }
             if(view.getFloat(p+12)<0)throw new IllegalArgumentException("Negative inverse mass");
+            hasStatic|=view.getFloat(p+12)==0;
         }
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,states[current]);
-        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,bodies);this.count=count;
+        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,bodies);this.count=count;staticBodies=hasStatic;
         captureHistory(0);
     }
     public void uploadChains(ByteBuffer data) {
@@ -98,19 +125,140 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     }
     /** Swept static collision plus Jacobi dynamic contacts. A negative sleep field requests CPU fallback. */
     public void step(float dt) {
+        step(dt,null,false,ITERATIONS);
+    }
+    /** World view spans all caller substeps; missing coverage marks local handback without moving that body. */
+    public void stepWorld(float dt,PackageCollisionGpu.View world){stepWorld(dt,world,false,ITERATIONS);}
+    /** Internal experiment, disabled by default until contact quality/performance qualification. */
+    public void stepWorld(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations) {
+        if(iterations<1 || iterations>64)throw new IllegalArgumentException("Contact iterations");
+        step(dt,java.util.Objects.requireNonNull(world),supportProjection,iterations);
+    }
+    /** Exact-cell ranges and bounded queries are experimental, never selected by production callers. */
+    public void stepWorld(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations,boolean rangedIndex) {
+        stepWorld(dt,world,supportProjection,iterations,rangedIndex?IndexMode.EXACT_RANGES:IndexMode.LINKED);
+    }
+    public void stepWorld(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations,IndexMode indexMode) {
+        if(iterations<1 || iterations>64)throw new IllegalArgumentException("Contact iterations");
+        step(dt,java.util.Objects.requireNonNull(world),supportProjection,iterations,java.util.Objects.requireNonNull(indexMode));
+    }
+    private void step(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations) {
+        step(dt,world,supportProjection,iterations,IndexMode.LINKED);
+    }
+    private void step(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations,IndexMode indexMode) {
         ensureStep(dt);if(count==0)return;
+        // Allocate the optional workspace before touching the submitted generation.
+        if(supportProjection)ensureSupportBuffers();
+        prepareIndex(indexMode);
+        int predict=rangeGrid?(world==null?17:18):(boundedGrid?(world==null?26:27):(world==null?0:5));
+        int solve=rangeGrid?(world==null?19:(supportProjection?21:20)):
+                (boundedGrid?(world==null?28:(supportProjection?30:29)):(world==null?2:(supportProjection?11:6)));
         captureHistory(0);
-        clearHeads();bind(1);dispatch();
-        bind(0);f(0,3,dt);f(0,4,32f);
-        f(0,5,(float)Math.pow(.98,dt*20));dispatch();current^=1;
-        for(int iteration=0;iteration<ITERATIONS;iteration++) {
-            clearHeads();bind(1);dispatch();
-            bind(2);f(2,6,(float)Math.pow(.6,dt*20/ITERATIONS));
+        if(world==null || staticBodies)buildGrid();
+        bind(predict);f(predict,3,dt);f(predict,4,32f);
+        f(predict,5,(float)Math.pow(.98,dt*20));
+        if(world!=null){world.bind(locations[predict],8,true);GL20.glUniform1i(locations[predict][13],staticBodies?1:0);}
+        dispatch();current^=1;
+        for(int iteration=0;iteration<iterations;iteration++) {
+            buildGrid(!boundedGrid);
+            bind(solve);f(solve,6,(float)Math.pow(.6,dt*20/iterations));
+            if(world!=null && iteration==0){world.bind(locations[solve],8,false);f(solve,3,dt);}
             dispatch();current^=1;
         }
+        if(supportProjection)projectSupports(world,dt);
+    }
+    private void ensureRangeBuffers() {
+        if(rangeHeads!=0)return;
+        java.util.ArrayList<Integer> lengths=new java.util.ArrayList<>();
+        for(int length=(rangeTableSize+127)/128;;length=(length+127)/128) {
+            lengths.add(length);if(length==1)break;
+        }
+        rangeLengths=lengths.stream().mapToInt(Integer::intValue).toArray();
+        rangeSums=new int[rangeLengths.length];rangeOffsets=new int[rangeLengths.length-1];
+        try {
+            rangeHeads=buffer((long)rangeTableSize*16);rangeBodies=buffer((long)capacity*4);bodySlots=buffer((long)capacity*4);
+            for(int i=0;i<rangeSums.length;i++)rangeSums[i]=buffer((long)rangeLengths[i]*4);
+            for(int i=0;i<rangeOffsets.length;i++)rangeOffsets[i]=buffer((long)rangeLengths[i]*4);
+        } catch(RuntimeException failure){deleteRangeBuffers();throw failure;}
+    }
+    private void deleteRangeBuffers() {
+        if(rangeHeads!=0)GL15.glDeleteBuffers(rangeHeads);if(rangeBodies!=0)GL15.glDeleteBuffers(rangeBodies);
+        if(bodySlots!=0)GL15.glDeleteBuffers(bodySlots);rangeHeads=rangeBodies=bodySlots=0;
+        if(rangeSums!=null)for(int b:rangeSums)if(b!=0)GL15.glDeleteBuffers(b);
+        if(rangeOffsets!=null)for(int b:rangeOffsets)if(b!=0)GL15.glDeleteBuffers(b);
+        rangeSums=rangeOffsets=rangeLengths=null;
+    }
+    private void buildGrid() {
+        buildGrid(true);
+    }
+    private void buildGrid(boolean guard) {
+        if(boundedGrid) {
+            GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,countedHeads);
+            try(var stack=MemoryStack.stackPush()) {
+                GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,(long)tableSize*4,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(-1));
+                GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)tableSize*4,(long)tableSize*4,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
+            }
+            bind(24);dispatch();if(guard){bind(25);dispatch();current^=1;}return;
+        }
+        if(!rangeGrid){clearHeads();bind(1);dispatch();return;}
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,rangeHeads);
+        try(var stack=MemoryStack.stackPush()){GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,
+                GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
+        bind(12);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,bodySlots);dispatch();
+        scanRanges(rangeTableSize,true,bodySlots,bodySlots,rangeSums[0]);
+        for(int i=0;i<rangeOffsets.length;i++)
+            scanRanges(rangeLengths[i],false,rangeSums[i],rangeOffsets[i],rangeSums[i+1]);
+        for(int i=rangeOffsets.length-2;i>=0;i--)addRangeOffsets(rangeLengths[i],false,rangeOffsets[i],rangeOffsets[i+1]);
+        if(rangeOffsets.length>0)addRangeOffsets(rangeTableSize,true,bodySlots,rangeOffsets[0]);
+        bind(15);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,bodySlots);dispatch();
+        bind(23);GL43.glDispatchCompute((rangeTableSize+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        bind(16);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,bodySlots);dispatch();current^=1;
+    }
+    private void scanRanges(int length,boolean table,int input,int output,int sums) {
+        bind(13);GL30.glUniform1ui(locations[13][16],length);GL20.glUniform1i(locations[13][17],table?1:0);
+        try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,6,stack.ints(input,output,sums));}
+        GL43.glDispatchCompute((length+127)/128,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+    }
+    private void addRangeOffsets(int length,boolean table,int output,int parent) {
+        bind(14);GL30.glUniform1ui(locations[14][16],length);GL20.glUniform1i(locations[14][17],table?1:0);
+        try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,6,stack.ints(output,parent));}
+        GL43.glDispatchCompute((length+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+    }
+    private void ensureSupportBuffers() {
+        if(supportControl==0) {
+            try {
+                supports[0]=buffer((long)capacity*16);supports[1]=buffer((long)capacity*16);supportControl=buffer(32);
+            } catch(RuntimeException failure) {
+                for(int i=0;i<supports.length;i++){if(supports[i]!=0)GL15.glDeleteBuffers(supports[i]);supports[i]=0;}
+                if(supportControl!=0)GL15.glDeleteBuffers(supportControl);supportControl=0;
+                throw failure;
+            }
+        }
+    }
+    private void projectSupports(PackageCollisionGpu.View world,float dt) {
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,supportControl);
+        try(var stack=MemoryStack.stackPush()){GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
+        buildGrid();
+        bind(rangeGrid?22:7);
+        try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,6,stack.ints(supports[1],supports[0],supportControl));}
+        dispatch();bind(8);GL43.glDispatchCompute(1,1,1);
+        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT);
+        GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,supportControl);
+        int input=0;
+        for(int span=1;span<count;span<<=1) {
+            GL20.glUseProgram(programs[9]);GL30.glUniform1ui(locations[9][0],count);
+            try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,6,stack.ints(supports[input],supports[input^1]));}
+            GL43.glDispatchComputeIndirect(16);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);input^=1;
+        }
+        bind(10);world.bind(locations[10],8,false);f(10,3,dt);
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,supports[input]);
+        GL43.glDispatchComputeIndirect(16);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
     public void stepChains(float dt) {
         ensureStep(dt);if(count==0)return;
+        prepareIndex(IndexMode.LINKED);
         captureHistory(1);
         bind(3);f(3,3,dt);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,4,chains);
         dispatch();current^=1;
@@ -126,9 +274,15 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     private void bind(int index) {
         GL20.glUseProgram(programs[index]);
         try(MemoryStack stack=MemoryStack.stackPush()) {
-            GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(states[current],states[current^1],heads,links));
+            GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(states[current],states[current^1],
+                    rangeGrid?rangeHeads:(boundedGrid?countedHeads:heads),rangeGrid?rangeBodies:links));
         }
         GL30.glUniform1ui(locations[index][0],count);
+    }
+    private void prepareIndex(IndexMode mode) {
+        if(mode==IndexMode.EXACT_RANGES)ensureRangeBuffers();
+        if(mode==IndexMode.BOUNDED_LINKED && countedHeads==0)countedHeads=buffer((long)tableSize*8);
+        rangeGrid=mode==IndexMode.EXACT_RANGES;boundedGrid=mode==IndexMode.BOUNDED_LINKED;
     }
     private void f(int index,int uniform,float value){GL20.glUniform1f(locations[index][uniform],value);}
     private void clearHeads() {
@@ -142,6 +296,21 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     public int stateBuffer(){ensureOpen();return states[current];}
     public int chainBuffer(){ensureOpen();return chains;}
     public int historyBuffer(){ensureOpen();return history;}
+    /** Diagnostic GPU-only counters: edges, corrected bodies, rejected bodies, input count. */
+    public int supportStatsBuffer(){ensureOpen();return supportControl;}
+    /** Validation only: exact-cell table (representative+1,count,start,count/overflow), grouped body indices. */
+    public int rangeTableBuffer(){ensureOpen();return rangeHeads;}
+    public int rangeBodyBuffer(){ensureOpen();return rangeBodies;}
+    public int rangeTableSize(){return rangeTableSize;}
+    /** Internal diagnostic/experiment entry. Does not advance time or rearrange body state. */
+    public void rebuildRangeIndex(){rebuildIndex(IndexMode.EXACT_RANGES);}
+    public void rebuildIndex(IndexMode mode){ensureOpen();prepareIndex(java.util.Objects.requireNonNull(mode));buildGrid();}
+    public long indexWorkspaceBytes(IndexMode mode){return mode==IndexMode.EXACT_RANGES?rangeWorkspaceBytes():(mode==IndexMode.BOUNDED_LINKED?(long)tableSize*8:0);}
+    public long rangeWorkspaceBytes(){
+        long scanWords=0;
+        for(int length=(rangeTableSize+127)/128;;length=(length+127)/128){scanWords+=length;if(length==1)break;}
+        return (long)rangeTableSize*16+(long)capacity*8+scanWords*8-4;
+    }
     public int count(){return count;}
     @Override public void close() {
         if(closed)return;closed=true;
@@ -149,5 +318,8 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         for(int b:states)if(b!=0)GL15.glDeleteBuffers(b);
         if(heads!=0)GL15.glDeleteBuffers(heads);if(links!=0)GL15.glDeleteBuffers(links);if(chains!=0)GL15.glDeleteBuffers(chains);
         if(history!=0)GL15.glDeleteBuffers(history);
+        for(int buffer:supports)if(buffer!=0)GL15.glDeleteBuffers(buffer);if(supportControl!=0)GL15.glDeleteBuffers(supportControl);
+        deleteRangeBuffers();
+        if(countedHeads!=0)GL15.glDeleteBuffers(countedHeads);
     }
 }

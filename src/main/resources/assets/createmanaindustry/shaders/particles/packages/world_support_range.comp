@@ -1,0 +1,2 @@
+#define CMI_EXACT_RANGES
+#pragma cmi_include packages/world_support.comp

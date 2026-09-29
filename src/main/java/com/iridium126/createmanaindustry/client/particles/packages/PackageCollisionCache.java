@@ -17,6 +17,13 @@ import java.util.function.LongSupplier;
 public final class PackageCollisionCache {
     public static final long DEFAULT_BUDGET_NANOS = 250_000;
     public static final int BLOCKS = 4096;
+    public static final int UNSUPPORTED=8,MAX_GPU_SHAPES=16384;
+    public interface Listener {
+        default void invalidated(Section section,long revision) {}
+        default void published(Section section,Snapshot snapshot) {}
+        default void removed(Section section) {}
+        default void cleared() {}
+    }
     public record Section(int x, int y, int z) {}
     public record Box(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
         public Box {
@@ -38,17 +45,31 @@ public final class PackageCollisionCache {
     }
     public static final class Snapshot {
         private final long revision;
+        private final long bakeNanos;
         private final int[] offsets, flags;
         private final float[] boxes, friction;
-        private Snapshot(long revision, int[] offsets, int[] flags, float[] boxes, float[] friction) {
+        private final java.nio.ByteBuffer gpuCells,gpuBoxes;
+        private final int gpuShapeCount;
+        private final boolean gpuEmpty;
+        private Snapshot(long revision, int[] offsets, int[] flags, float[] boxes, float[] friction,
+                         java.nio.ByteBuffer gpuCells,java.nio.ByteBuffer gpuBoxes,int gpuShapeCount,boolean gpuEmpty,long bakeNanos) {
             this.revision=revision; this.offsets=offsets; this.flags=flags; this.boxes=boxes; this.friction=friction;
+            this.gpuCells=gpuCells;this.gpuBoxes=gpuBoxes;this.gpuShapeCount=gpuShapeCount;
+            this.gpuEmpty=gpuEmpty;
+            this.bakeNanos=bakeNanos;
         }
         public long revision() { return revision; }
+        public long bakeNanos(){return bakeNanos;}
         public int shapeStart(int cell) { return offsets[cell]; }
         public int shapeEnd(int cell) { return offsets[cell+1]; }
         public float coordinate(int box, int component) { return boxes[box*6+component]; }
         public float friction(int cell) { return friction[cell]; }
         public int flags(int cell) { return flags[cell]; }
+        public int gpuShapeCount(){return gpuShapeCount;}
+        /** Only a fully captured, flag-free empty section can use the GPU coarse fast path. */
+        public boolean gpuEmpty(){return gpuEmpty;}
+        public java.nio.ByteBuffer gpuCells(){return gpuCells.asReadOnlyBuffer().order(java.nio.ByteOrder.nativeOrder());}
+        public java.nio.ByteBuffer gpuBoxes(){return gpuBoxes.asReadOnlyBuffer().order(java.nio.ByteOrder.nativeOrder());}
     }
     private static final class Work {
         long revision;
@@ -69,7 +90,10 @@ public final class PackageCollisionCache {
     private final java.util.concurrent.atomic.AtomicInteger workers=new java.util.concurrent.atomic.AtomicInteger();
     private long revision, lastCaptureNanos, overrunCount;
     private final long[] captureTimes=new long[128];
+    private final long[] bakeTimes=new long[128];
     private int captureSamples,captureCursor;
+    private int bakeSamples,bakeCursor;
+    private Listener listener=new Listener(){};
 
     public PackageCollisionCache(Executor executor, int maxSections) { this(executor,maxSections,System::nanoTime); }
     public PackageCollisionCache(Executor executor, int maxSections, LongSupplier clock) {
@@ -79,6 +103,10 @@ public final class PackageCollisionCache {
     }
     private void owner() {
         if (Thread.currentThread()!=owner) throw new IllegalStateException("Collision cache accessed off owner thread");
+    }
+    public void listener(Listener listener){owner();this.listener=java.util.Objects.requireNonNull(listener);}
+    public void forEachReady(java.util.function.BiConsumer<Section,Snapshot> consumer) {
+        owner();sections.forEach((section,work)->{if(work.published!=null)consumer.accept(section,work.published);});
     }
     public boolean request(Section section) {
         owner();
@@ -95,6 +123,7 @@ public final class PackageCollisionCache {
         // must still finish, but can never publish into the replacement revision.
         if(work.revision!=0 && work.cursor==0 && work.cells==null && work.published==null && work.future==null && work.queued)return;
         work.revision=++revision; work.cursor=0; work.cells=null; work.published=null;
+        listener.invalidated(section,work.revision);
         // Keep an obsolete worker in flight until it completes: repeated edits cannot flood the executor.
         enqueue(section,work);
     }
@@ -119,8 +148,9 @@ public final class PackageCollisionCache {
         owner();if(sections.remove(section)==null)return;pending.remove(section);
         long key=column(section.x,section.z);Set<Section> set=columns.get(key);
         set.remove(section);if(set.isEmpty())columns.remove(key);
+        listener.removed(section);
     }
-    public void clear() { owner(); sections.clear(); pending.clear(); columns.clear(); ++revision; }
+    public void clear() { owner(); sections.clear(); pending.clear(); columns.clear(); ++revision;listener.cleared(); }
     public Snapshot snapshot(Section section) { owner(); Work w=sections.get(section); return w==null?null:w.published; }
     public int size(){owner();return sections.size();}
     public int readyCount(){owner();int count=0;for(Work work:sections.values())if(work.published!=null)count++;return count;}
@@ -139,7 +169,10 @@ public final class PackageCollisionCache {
                 if(w.future.isDone()) {
                     if(!w.future.isCompletedExceptionally() && !w.future.isCancelled()) {
                         Snapshot result=w.future.getNow(null);
-                        if(result!=null && result.revision==w.revision)w.published=result;
+                        if(result!=null && result.revision==w.revision){
+                            w.published=result;bakeTimes[bakeCursor]=result.bakeNanos;bakeCursor=(bakeCursor+1)%bakeTimes.length;
+                            bakeSamples=Math.min(bakeSamples+1,bakeTimes.length);listener.published(section,result);
+                        }
                     }
                     w.future=null;
                 }
@@ -161,10 +194,11 @@ public final class PackageCollisionCache {
             if(w.cursor==BLOCKS) {
                 if(workers.get()<4) {
                     Cell[] captured=w.cells; long version=w.revision;
+                    var accounting=workers;
                     workers.incrementAndGet();
                     try {
                         w.future=CompletableFuture.supplyAsync(() -> {
-                            try { return pack(version,captured); } finally { workers.decrementAndGet(); }
+                            try { return pack(version,captured); } finally { accounting.decrementAndGet(); }
                         },executor);
                         w.cells=null; w.cursor=0;
                     } catch(java.util.concurrent.RejectedExecutionException rejected) { workers.decrementAndGet(); }
@@ -181,9 +215,10 @@ public final class PackageCollisionCache {
     }
     private void enqueue(Section s,Work w) { if(!w.queued){pending.put(s,w);w.queued=true;} }
     private static Snapshot pack(long revision,Cell[] cells) {
+        long begin=System.nanoTime();
         int[] offsets=new int[BLOCKS+1],flags=new int[BLOCKS]; float[] friction=new float[BLOCKS];
-        int count=0;
-        for(int i=0;i<BLOCKS;i++){offsets[i]=count;count=Math.addExact(count,cells[i].shapes.size());}
+        int count=0,combinedFlags=0;
+        for(int i=0;i<BLOCKS;i++){offsets[i]=count;count=Math.addExact(count,cells[i].shapes.size());combinedFlags|=cells[i].flags;}
         offsets[BLOCKS]=count; float[] boxes=new float[Math.multiplyExact(count,6)]; int p=0;
         for(int i=0;i<BLOCKS;i++) {
             Cell c=cells[i]; friction[i]=c.friction;flags[i]=c.flags;
@@ -193,15 +228,46 @@ public final class PackageCollisionCache {
                 boxes[p++]=x+b.maxX;boxes[p++]=y+b.maxY;boxes[p++]=z+b.maxZ;
             }
         }
-        return new Snapshot(revision,offsets,flags,boxes,friction);
+        // Identical local shape lists share geometry. Translation happens in the shader;
+        // friction/flags remain per cell. Only immutable primitive buffers leave this worker.
+        record Range(int first,int count) {}
+        var dictionary=new HashMap<java.util.List<Box>,Range>();
+        var unique=new java.util.ArrayList<Box>();
+        var gpuCells=java.nio.ByteBuffer.allocateDirect(BLOCKS*16).order(java.nio.ByteOrder.nativeOrder());
+        boolean oversized=false;
+        for(int i=0;i<BLOCKS;i++) {
+            Cell cell=cells[i];int cellFlags=cell.flags;
+            for(Box box:cell.shapes)if(box.minX< -1 || box.minY< -1 || box.minZ< -1
+                    || box.maxX>2 || box.maxY>2 || box.maxZ>2){oversized=true;break;}
+            if(oversized)break;
+            Range range=null;
+            if((cellFlags&UNSUPPORTED)==0) {
+                range=dictionary.get(cell.shapes);
+                if(range==null) {
+                    if(unique.size()+cell.shapes.size()>MAX_GPU_SHAPES){oversized=true;break;}
+                    range=new Range(unique.size(),cell.shapes.size());dictionary.put(cell.shapes,range);unique.addAll(cell.shapes);
+                }
+            }
+            gpuCells.putInt(range==null?0:range.first).putInt(range==null?0:range.count).putFloat(cell.friction).putInt(cellFlags);
+        }
+        gpuCells.flip();
+        var gpuBoxes=java.nio.ByteBuffer.allocateDirect(oversized?0:unique.size()*32).order(java.nio.ByteOrder.nativeOrder());
+        if(!oversized)for(Box box:unique)gpuBoxes.putFloat(box.minX).putFloat(box.minY).putFloat(box.minZ).putFloat(0)
+                .putFloat(box.maxX).putFloat(box.maxY).putFloat(box.maxZ).putFloat(0);
+        gpuBoxes.flip();
+        return new Snapshot(revision,offsets,flags,boxes,friction,gpuCells,gpuBoxes,oversized?-1:unique.size(),count==0 && combinedFlags==0,System.nanoTime()-begin);
     }
     public long lastCaptureNanos(){return lastCaptureNanos;}
     public long overrunCount(){return overrunCount;}
     /** Diagnostic query only; the capture tick does not allocate or sort timing samples. */
     public long capturePercentile(double percentile) {
+        return percentile(captureTimes,captureSamples,percentile);
+    }
+    public long bakePercentile(double percentile){return percentile(bakeTimes,bakeSamples,percentile);}
+    private long percentile(long[] values,int count,double percentile) {
         owner();if(!(percentile>0 && percentile<=1))throw new IllegalArgumentException("Capture percentile");
-        if(captureSamples==0)return 0;
-        var sorted=java.util.Arrays.copyOf(captureTimes,captureSamples);java.util.Arrays.sort(sorted);
-        return sorted[(int)Math.ceil(percentile*captureSamples)-1];
+        if(count==0)return 0;
+        var sorted=java.util.Arrays.copyOf(values,count);java.util.Arrays.sort(sorted);
+        return sorted[(int)Math.ceil(percentile*count)-1];
     }
 }

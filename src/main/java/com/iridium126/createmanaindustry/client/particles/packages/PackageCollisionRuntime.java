@@ -24,6 +24,9 @@ public final class PackageCollisionRuntime {
     private final ExecutorService workers;
     private final PackageCollisionCache cache;
     private final PackageWorldCollisionSource source;
+    private PackageCollisionGpu gpu;
+    private boolean gpuRequested;
+    private String gpuError="";
 
     private PackageCollisionRuntime(ClientLevel level) {
         this.level=level;
@@ -31,6 +34,12 @@ public final class PackageCollisionRuntime {
             Thread thread=new Thread(task,"CMI package collision bake");thread.setDaemon(true);return thread;
         });
         cache=new PackageCollisionCache(workers,MAX_SECTIONS);
+        cache.listener(new PackageCollisionCache.Listener() {
+            @Override public void invalidated(PackageCollisionCache.Section section,long revision){if(gpu!=null)gpu.invalidate(section,revision);}
+            @Override public void published(PackageCollisionCache.Section section,PackageCollisionCache.Snapshot snapshot){if(gpu!=null)gpu.offer(section,snapshot);}
+            @Override public void removed(PackageCollisionCache.Section section){if(gpu!=null)gpu.forget(section);}
+            @Override public void cleared(){if(gpu!=null)gpu.clear();}
+        });
         source=new PackageWorldCollisionSource(level);
     }
     private static void owner() {
@@ -42,7 +51,8 @@ public final class PackageCollisionRuntime {
     }
     /** Only queue section identities. The bounded tick performs every actual world query. */
     public boolean request(AABB sweptBounds) {
-        owner();int[] bounds=sections(sweptBounds);if(bounds==null)return false;
+        owner();int[] bounds=sections(sweptBounds.inflate(1));if(bounds==null)return false;
+        gpuRequested=true;gpuError="";
         boolean accepted=true;
         for(int x=bounds[0];x<=bounds[3];x++)for(int y=bounds[1];y<=bounds[4];y++)for(int z=bounds[2];z<=bounds[5];z++)
             accepted&=cache.request(new PackageCollisionCache.Section(x,y,z));
@@ -56,6 +66,38 @@ public final class PackageCollisionRuntime {
         return true;
     }
     public PackageCollisionCache.Snapshot snapshot(PackageCollisionCache.Section section){owner();return cache.snapshot(section);}
+    /** Sweeps need the extra one-cell guard for neighbouring overhanging shapes. */
+    public boolean gpuCovered(AABB sweptBounds) {
+        owner();if(gpu==null || !gpuError.isEmpty())return false;
+        int[] bounds=sections(sweptBounds.inflate(1));if(bounds==null)return false;
+        for(int x=bounds[0];x<=bounds[3];x++)for(int y=bounds[1];y<=bounds[4];y++)for(int z=bounds[2];z<=bounds[5];z++) {
+            var section=new PackageCollisionCache.Section(x,y,z);var snapshot=cache.snapshot(section);
+            if(snapshot==null || !gpu.covered(section,snapshot.revision()))return false;
+        }
+        return true;
+    }
+    /** Only call inside an owned GL boundary; creating a view never enables package takeover. */
+    public PackageCollisionGpu.View view(int originSectionX,int originSectionY,int originSectionZ) {
+        owner();if(gpu==null || !gpuError.isEmpty())throw new IllegalStateException("Package world GPU atlas unavailable");
+        return gpu.view(originSectionX,originSectionY,originSectionZ);
+    }
+    /** Lazy uploads at the engine frame boundary, never from block events or collision workers. */
+    public static boolean pumpGpu() {
+        if(current==null || !current.gpuRequested)return false;owner();
+        if(Minecraft.getInstance().level!=current.level){closeCurrent();return true;}
+        try {
+            if(current.gpu==null) {
+                current.gpu=new PackageCollisionGpu(PackageCollisionGpu.DEFAULT_SECTIONS,PackageCollisionGpu.DEFAULT_SHAPES);
+                current.cache.forEachReady(current.gpu::offer);
+            }
+            current.gpu.pump(PackageCollisionGpu.DEFAULT_UPLOAD_BYTES,PackageCollisionGpu.DEFAULT_UPLOAD_NANOS);
+        }catch(RuntimeException failure) {
+            current.gpuError=failure.getClass().getSimpleName()+": "+failure.getMessage();current.gpuRequested=false;
+            if(current.gpu!=null){current.gpu.close();current.gpu=null;}
+            CreateManaIndustry.LOGGER.error("[CMI packages] collision GPU upload failed; coverage revoked",failure);
+        }
+        return true;
+    }
     private static int[] sections(AABB bounds) {
         double[] coordinates={bounds.minX,bounds.minY,bounds.minZ,bounds.maxX,bounds.maxY,bounds.maxZ};
         int[] result=new int[6];long count=1;
@@ -73,13 +115,21 @@ public final class PackageCollisionRuntime {
     }
     public static String report() {
         owner();if(current==null)return "Package collisions: inactive";
-        return "Package collisions: "+current.cache.readyCount()+"/"+current.cache.size()+" sections ready, capture "
+        String gpuStatus=current.gpu==null?"GPU "+(!current.gpuError.isEmpty()?current.gpuError:current.gpuRequested?"queued":"inactive"):
+                gpuReport(current.gpu.stats());
+        return "Package collisions: "+current.cache.readyCount()+"/"+current.cache.size()+" CPU sections ready, capture "
                 +String.format(java.util.Locale.ROOT,"%.3f",current.cache.lastCaptureNanos()/1_000_000.0)
                 +" ms, p50/p95 "+String.format(java.util.Locale.ROOT,"%.3f/%.3f",current.cache.capturePercentile(.5)/1_000_000.0,current.cache.capturePercentile(.95)/1_000_000.0)
-                +" ms (0.250 ms soft budget), overruns "+current.cache.overrunCount();
+                +" ms (0.250 ms soft budget), overruns "+current.cache.overrunCount()
+                +"; worker bake p50/p95 "+String.format(java.util.Locale.ROOT,"%.3f/%.3f",current.cache.bakePercentile(.5)/1e6,current.cache.bakePercentile(.95)/1e6)+" ms; "+gpuStatus;
+    }
+    private static String gpuReport(PackageCollisionGpu.Stats stats) {
+        return String.format(java.util.Locale.ROOT,"GPU %d/%d ready, pending=%d retired=%d, uploads=%d B; upload p50/p95=%.3f/%.3f ms, overruns=%d; shape/capacity rejects=%d/%d, skipped views=%d",
+                stats.ready(),stats.residents(),stats.pending(),stats.retired(),stats.uploadedBytes(),stats.p50Nanos()/1e6,stats.p95Nanos()/1e6,stats.overruns(),stats.shapeRejections(),stats.capacityRejections(),stats.skippedViews());
     }
     public static void closeCurrent() {
         owner();if(current==null)return;
+        if(current.gpu!=null){current.gpu.close();current.gpu=null;}
         current.cache.clear();
         // Let already queued immutable packing tasks finish, so their global worker accounting
         // is released. Shutdown never waits; no task has a level reference.

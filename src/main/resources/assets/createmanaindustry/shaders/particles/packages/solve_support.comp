@@ -1,0 +1,3 @@
+#define CMI_WORLD 1
+#define CMI_RELATIVE_CONTACTS 1
+#pragma cmi_include packages/solve.comp

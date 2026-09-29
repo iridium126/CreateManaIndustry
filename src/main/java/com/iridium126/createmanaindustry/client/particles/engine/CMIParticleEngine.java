@@ -1124,6 +1124,7 @@ public final class CMIParticleEngine {
             else this.packagePartialTick=this.packagePreview.prepare(Minecraft.getInstance().isPaused());
             ParticleDiagnostics.INSTANCE.mark("upload_after_packages");
         }
+        if(com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime.pumpGpu())this.gpu.beginBindings();
         if(com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.pump())this.gpu.beginBindings();
         // Shared clock: (gameTime mod 2^21)/20 — identical on every client (see
         // AllayStormRuntime's clock doc); drives the vortex phases and the

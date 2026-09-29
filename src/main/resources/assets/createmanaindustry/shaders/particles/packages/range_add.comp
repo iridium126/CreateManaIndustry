@@ -1,0 +1,11 @@
+#pragma cmi_include packages/state.glsl
+layout(local_size_x=64) in;
+layout(std430,binding=6) buffer ScanOffsets { uint scanOffsets[]; };
+layout(std430,binding=7) readonly buffer ParentOffsets { uint parentOffsets[]; };
+uniform uint uIndexLength;
+uniform bool uScanTable;
+void main() {
+    uint i=gl_GlobalInvocationID.x;if(i>=uIndexLength)return;
+    uint offset=parentOffsets[i/128u];
+    if(uScanTable)heads[i*4u+2u]+=offset;else scanOffsets[i]+=offset;
+}

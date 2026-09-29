@@ -1,4 +1,7 @@
 #pragma cmi_include packages/state.glsl
+#ifdef CMI_WORLD
+#pragma cmi_include packages/world_collision.glsl
+#endif
 layout(local_size_x=64) in;
 uniform float uFriction;
 void main() {
@@ -7,16 +10,24 @@ void main() {
     Body b=src[i];
     if(b.positionMass.w==0.0 || b.previousSleep.w<0.0) { dst[i]=b;return; }
     ivec3 cell=cellOf(b.positionMass.xyz);
+#ifdef CMI_BOUNDED_LINKED
+    // Fuse admission into the existing per-body pass. All reads still come
+    // from one immutable iteration; an over-budget body does no pair visits.
+    if(!gridBudget(cell-1,cell+1)){b.previousSleep.w=-1.0;dst[i]=b;return;}
+#endif
     vec3 correction=vec3(0.0), velocity=b.velocityGround.xyz;
+#ifdef CMI_RELATIVE_CONTACTS
+    vec3 positive=vec3(0),negative=vec3(0),velocityCorrection=vec3(0);
+#endif
     float contacts=0.0;
     bool grounded=b.velocityGround.w>0.5;
     // Admission requires each half extent <= half the cell width. All 27 cells are necessary.
     for(int z=-1;z<=1;z++)for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++) {
         ivec3 neighbor=cell+ivec3(x,y,z);
-        uint j=heads[hashCell(neighbor)];
+        uint cursor,end;cellCursor(neighbor,cursor,end);
         // No fixed neighbour cap: hash collisions and dense piles must never silently lose contacts.
-        while(j!=END) {
-            uint next=links[j];
+        while(cursor!=end) {
+            uint j=cursorBody(cursor),next=cursorNext(cursor,j);
             if(j!=i && all(equal(cellOf(src[j].positionMass.xyz),neighbor))) {
                 Body other=src[j];
                 vec3 delta=b.positionMass.xyz-other.positionMass.xyz;
@@ -25,18 +36,52 @@ void main() {
                     int axis=overlap.y<=overlap.x && overlap.y<=overlap.z ? 1 : (overlap.x<=overlap.z?0:2);
                     float direction=delta[axis]==0.0 ? (i<j?-1.0:1.0) : sign(delta[axis]);
                     float weight=b.positionMass.w/(b.positionMass.w+other.positionMass.w);
+#ifdef CMI_RELATIVE_CONTACTS
+                    float shift=direction*overlap[axis]*weight;
+                    if(direction>0)positive[axis]=max(positive[axis],shift);else negative[axis]=min(negative[axis],shift);
+#else
                     correction[axis]+=direction*overlap[axis]*weight;
+#endif
                     contacts+=1.0;
+#ifdef CMI_RELATIVE_CONTACTS
+                    // A falling stack shares velocity. Clipping against world zero would
+                    // freeze upper bodies on roundoff contacts after their support is removed.
+                    float relative=b.velocityGround[axis]-other.velocityGround[axis];
+                    if(relative*direction<0.0)velocityCorrection[axis]-=weight*relative;
+#else
                     if(velocity[axis]*direction<0.0)velocity[axis]=0.0;
+#endif
                     if(axis==1 && direction>0.0)grounded=true;
                 }
             }
-            j=next;
+            cursor=next;
         }
     }
+    float material=-1.0;
     // Jacobi reads only the previous iteration. No float atomics and no cross-group synchronization.
+#ifdef CMI_RELATIVE_CONTACTS
+    // Constraints along independent axes must not dilute one another. All neighbours
+    // contribute to bounds; multiple bodies pressing from opposite sides still balance.
+    b.positionMass.xyz+=positive+negative;
+    velocity+=velocityCorrection/max(1.0,contacts);
+#else
     b.positionMass.xyz+=correction/max(1.0,contacts);
+#endif
+#ifdef CMI_WORLD
+    vec3 worldCorrection;
+    if(!solveWorld(b,worldCorrection,velocity,grounded,material)) {
+        b.positionMass.xyz=b.previousSleep.xyz;b.previousSleep.w=-1.0;dst[i]=b;return;
+    }
+    b.positionMass.xyz+=worldCorrection;
+    if(any(notEqual(worldCorrection,vec3(0))) && !coveredWorld(b)) {
+        b.positionMass.xyz=b.previousSleep.xyz;b.previousSleep.w=-1.0;dst[i]=b;return;
+    }
+#endif
     b.velocityGround=vec4(velocity,grounded?1.0:0.0);
+#ifdef CMI_WORLD
+    if(grounded)b.velocityGround.xz*=material<0.0?uFriction:pow(material,uDt*5.0);
+#else
     if(grounded)b.velocityGround.xz*=uFriction;
+#endif
     dst[i]=b;
 }

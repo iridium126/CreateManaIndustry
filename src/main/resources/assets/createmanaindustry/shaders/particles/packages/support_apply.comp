@@ -1,0 +1,31 @@
+#define CMI_BODY_INPLACE 1
+#pragma cmi_include packages/state.glsl
+#pragma cmi_include packages/world_collision.glsl
+#pragma cmi_include packages/support.glsl
+layout(local_size_x=64) in;
+shared uvec2 counts[64];
+void main() {
+    uint i=gl_GlobalInvocationID.x,lane=gl_LocalInvocationID.x;uvec2 count=uvec2(0);
+    if(i<uCount) {
+        Body b=src[i];uvec4 constraint=supportIn[i];float height=uintBitsToFloat(constraint.z);
+        if(b.positionMass.w>0 && b.previousSleep.w>=0) {
+            bool bad=constraint.x!=END || isnan(height) || isinf(height);
+            if(!bad && height>b.positionMass.y) {
+                b.positionMass.y=height;
+                vec3 worldCorrection,velocity=b.velocityGround.xyz;bool grounded=b.velocityGround.w>.5;float friction;
+                bad=!solveWorld(b,worldCorrection,velocity,grounded,friction);
+                // A ceiling contradicting the support constraint needs local handback.
+                if(!bad)bad=worldCorrection.y< -1e-4;
+                if(!bad) {
+                    b.positionMass.xyz+=worldCorrection;bad=!coveredWorld(b);
+                    if(!bad){velocity.y=max(velocity.y,uintBitsToFloat(constraint.w));b.velocityGround=vec4(velocity,grounded?1:0);count.x=1u;}
+                }
+            }
+            if(bad){b.positionMass.xyz=b.previousSleep.xyz;b.previousSleep.w=-1;count.y=1u;}
+            src[i]=b;
+        }
+    }
+    counts[lane]=count;barrier();
+    for(uint stride=32u;stride>0u;stride>>=1u){if(lane<stride)counts[lane]+=counts[lane+stride];barrier();}
+    if(lane==0u){if(counts[0].x>0u)atomicAdd(supportStats.y,counts[0].x);if(counts[0].y>0u)atomicAdd(supportStats.z,counts[0].y);}
+}

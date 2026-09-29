@@ -1,0 +1,35 @@
+#pragma cmi_include packages/state.glsl
+layout(local_size_x=64) in;
+layout(std430,binding=6) readonly buffer ScanInput { uint scanInput[]; };
+layout(std430,binding=7) writeonly buffer ScanOutput { uint scanOutput[]; };
+layout(std430,binding=8) writeonly buffer ScanSums { uint scanSums[]; };
+uniform uint uIndexLength;
+uniform bool uScanTable;
+shared uint values[128];
+void main() {
+    uint lane=gl_LocalInvocationID.x,base=gl_WorkGroupID.x*128u;
+    for(uint k=lane;k<128u;k+=64u) {
+        uint i=base+k;
+        values[k]=i>=uIndexLength?0u:(uScanTable?heads[i*4u+1u]:scanInput[i]);
+    }
+    barrier();
+    // Work-efficient Blelloch scan; all lanes, including a partial tail, join barriers.
+    for(uint stride=1u;stride<128u;stride<<=1u) {
+        uint at=(lane+1u)*stride*2u-1u;
+        if(at<128u)values[at]+=values[at-stride];
+        barrier();
+    }
+    if(lane==0u){scanSums[gl_WorkGroupID.x]=values[127];values[127]=0u;}
+    barrier();
+    for(uint stride=64u;stride>0u;stride>>=1u) {
+        uint at=(lane+1u)*stride*2u-1u;
+        if(at<128u){uint left=values[at-stride];values[at-stride]=values[at];values[at]+=left;}
+        barrier();
+    }
+    for(uint k=lane;k<128u;k+=64u) {
+        uint i=base+k;
+        if(i<uIndexLength) {
+            if(uScanTable)heads[i*4u+2u]=values[k];else scanOutput[i]=values[k];
+        }
+    }
+}

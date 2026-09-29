@@ -1,0 +1,11 @@
+#define CMI_EXACT_RANGES
+#pragma cmi_include packages/state.glsl
+layout(local_size_x=64) in;
+void main() {
+    uint slot=gl_GlobalInvocationID.x;if(slot>uTableMask)return;
+    uint representative=heads[slot*4u];if(representative==0u)return;
+    ivec3 cell=cellOf(src[representative-1u].positionMass.xyz);
+    // Count once per exact cell, not per body. No positions change in this pass.
+    // Scatter has finished; its cursor now records count or local handback.
+    if(!gridBudget(cell-1,cell+1))heads[slot*4u+3u]=GRID_OVERFLOW;
+}

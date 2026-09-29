@@ -1,0 +1,4 @@
+#pragma cmi_include packages/support.glsl
+layout(local_size_x=1) in;
+uniform uint uCount;
+void main(){supportStats.w=uCount;supportCommand=uvec4(supportStats.x==0u?0u:(uCount+63u)/64u,1u,1u,0u);}

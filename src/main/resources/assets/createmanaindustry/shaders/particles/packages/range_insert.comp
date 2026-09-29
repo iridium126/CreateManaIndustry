@@ -1,0 +1,16 @@
+#pragma cmi_include packages/state.glsl
+layout(local_size_x=64) in;
+// Binding 6 is temporary body->slot storage, not an identity remap.
+layout(std430,binding=6) writeonly buffer BodySlots { uint bodySlots[]; };
+void main() {
+    uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
+    ivec3 cell=cellOf(src[i].positionMass.xyz);uint hash=hashCell(cell),result=GRID_OVERFLOW;
+    for(uint probe=0u;probe<32u;probe++) {
+        uint slot=(hash+probe)&uTableMask;
+        uint representative=atomicCompSwap(heads[slot*4u],0u,i+1u);
+        if(representative==0u || all(equal(cellOf(src[representative-1u].positionMass.xyz),cell))) {
+            atomicAdd(heads[slot*4u+1u],1u);result=slot;break;
+        }
+    }
+    bodySlots[i]=result;
+}

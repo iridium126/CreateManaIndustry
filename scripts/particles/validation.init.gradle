@@ -18,6 +18,10 @@ allprojects {
             mainClass = 'scripts/particles/PackageGpuValidation.java'
             if (project.hasProperty('packageBenchmark')) args '--benchmark'
             if (project.hasProperty('packageDeltaPipelineBenchmark')) args '--delta-pipeline-benchmark'
+            if (project.hasProperty('packageWorldBenchmark')) args '--world-benchmark'
+            if (project.hasProperty('packageStackBenchmark')) args '--stack-benchmark'
+            if (project.hasProperty('packageStackStress')) args '--stack-stress'
+            if (project.hasProperty('packageRangeBenchmark')) args '--range-benchmark'
             workingDir = project.projectDir
         }
     }

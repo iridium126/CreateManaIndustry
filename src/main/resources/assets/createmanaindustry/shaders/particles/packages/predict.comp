@@ -1,28 +1,19 @@
 #pragma cmi_include packages/state.glsl
-layout(local_size_x=64) in;
+#ifdef CMI_WORLD
+#pragma cmi_include packages/world_collision.glsl
+uniform bool uStaticBodies;
+#else
+#pragma cmi_include packages/sweep.glsl
 uniform float uDt;
+#endif
+layout(local_size_x=64) in;
 uniform float uGravity;
 uniform float uDrag;
-// Swept centre against a Minkowski-expanded static AABB. Initial overlap is handled by Jacobi.
-bool sweepBox(vec3 p,vec3 motion,vec3 lo,vec3 hi,out float time,out vec3 normal) {
-    float enter=-1e30,leave=1e30;normal=vec3(0);
-    for(int axis=0;axis<3;axis++) {
-        if(abs(motion[axis])<1e-10) {
-            if(p[axis]<lo[axis] || p[axis]>hi[axis])return false;
-        } else {
-            float a=(lo[axis]-p[axis])/motion[axis],b=(hi[axis]-p[axis])/motion[axis];
-            float near=min(a,b),far=max(a,b);
-            if(near>enter) { enter=near;normal=vec3(0);normal[axis]=-sign(motion[axis]); }
-            leave=min(leave,far);
-        }
-    }
-    time=enter;
-    return enter>=0.0 && enter<=1.0 && enter<=leave && leave>=0.0;
-}
 void main() {
     uint i=gl_GlobalInvocationID.x;
     if(i>=uCount)return;
     Body b=src[i];
+    if(b.previousSleep.w<0.0){dst[i]=b;return;}
     b.previousSleep.xyz=b.positionMass.xyz;
     if(b.positionMass.w>0.0) {
         b.velocityGround.y-=uGravity*uDt;
@@ -39,18 +30,27 @@ void main() {
                 b=src[i];b.previousSleep.w=-1.0;dst[i]=b;return;
             }
             float closest=1.0;vec3 hitNormal=vec3(0);
+#ifdef CMI_WORLD
+            if(!sweepWorld(b,p,motion,closest,hitNormal)){b=src[i];b.previousSleep.w=-1.0;dst[i]=b;return;}
+            if(uStaticBodies) {
+#endif
+            if(!gridBudget(lo,hi)){b=src[i];b.previousSleep.w=-1.0;dst[i]=b;return;}
             for(int z=lo.z;z<=hi.z;z++)for(int y=lo.y;y<=hi.y;y++)for(int x=lo.x;x<=hi.x;x++) {
-                ivec3 cell=ivec3(x,y,z);uint j=heads[hashCell(cell)];
-                while(j!=END) {
+                ivec3 cell=ivec3(x,y,z);uint cursor,end;cellCursor(cell,cursor,end);
+                while(cursor!=end) {
+                    uint j=cursorBody(cursor);
                     Body other=src[j];
                     if(other.positionMass.w==0.0 && all(equal(cellOf(other.positionMass.xyz),cell))) {
                         vec3 extent=b.extentYaw.xyz+other.extentYaw.xyz;float t;vec3 n;
                         if(sweepBox(p,motion,other.positionMass.xyz-extent,other.positionMass.xyz+extent,t,n)
                                 && t<=closest) { closest=t;hitNormal=n; }
                     }
-                    j=links[j];
+                    cursor=cursorNext(cursor,j);
                 }
             }
+#ifdef CMI_WORLD
+            }
+#endif
             b.positionMass.xyz+=motion*closest;
             if(all(equal(hitNormal,vec3(0))))break;
             motion*=1.0-closest;
