@@ -20,14 +20,14 @@ public final class ParticleDiagnostics {
     private final com.sun.management.ThreadMXBean memory = ManagementFactory.getThreadMXBean() instanceof com.sun.management.ThreadMXBean m ? m : null;
     private int cursor, samples;
     private Frame current;
-    private long start, allocatedStart, cpuNanos, allocatedBytes, uploads, calls, readbackLag;
-    private long lastUploads, lastCalls, lastReadbackLag;
+    private long start, allocatedStart, cpuNanos, allocatedBytes, uploads, calls, draws, readbackLag;
+    private long lastUploads, lastCalls, lastDraws, lastReadbackLag;
     private volatile boolean enabled;
     public void enabled(boolean enabled) { this.enabled = enabled; }
     public boolean enabled() { return enabled; }
     public void begin() {
         if (!enabled) return;
-        cpuNanos = allocatedBytes = uploads = calls = readbackLag = 0;
+        cpuNanos = allocatedBytes = uploads = calls = draws = readbackLag = 0;
         for (Frame f : frames) if (f.pending && GL15.glGetQueryObjecti(f.queries[f.count-1], GL15.GL_QUERY_RESULT_AVAILABLE) != 0) {
             long previous = GL33.glGetQueryObjectui64(f.queries[0], GL15.GL_QUERY_RESULT);
             for (int i=1; i<f.count; i++) {
@@ -65,6 +65,8 @@ public final class ParticleDiagnostics {
     }
     public void upload(long bytes) { if(enabled) uploads+=bytes; }
     public void call() { if(enabled) calls++; }
+    /** Counts API submissions; one multi-draw call counts once, irrespective of its sub-draws. */
+    public void drawCall() { if(enabled) {calls++;draws++;} }
     public void readback(long lag) { if(enabled) readbackLag=Math.max(readbackLag,lag); }
     public void end() {
         if (!enabled) return;
@@ -73,14 +75,14 @@ public final class ParticleDiagnostics {
         current=null;
         cpu[cursor]=cpuNanos/1e6; allocations[cursor]=allocatedBytes;
         cursor=(cursor+1)%SAMPLES;samples=Math.min(SAMPLES,samples+1);
-        lastUploads=uploads;lastCalls=calls;lastReadbackLag=readbackLag;
+        lastUploads=uploads;lastCalls=calls;lastDraws=draws;lastReadbackLag=readbackLag;
     }
     public String report() {
         if(samples==0)return "Particle profiling: " + (enabled?"collecting":"off") + "; /cmi particle profile on";
         double[] sorted=Arrays.copyOf(cpu,samples);Arrays.sort(sorted);
         double meanAllocation=Arrays.stream(allocations,0,samples).average().orElse(0);
-        return String.format(Locale.ROOT,"CPU submit p50=%.3f ms p95=%.3f ms; allocation=%.0f B/frame; tracked uploads=%d B; tracked GL calls=%d; readback lag=%d generations; GPU latest=%s",
-                sorted[samples/2],sorted[Math.min(samples-1,(int)(samples*.95))],meanAllocation,lastUploads,lastCalls,lastReadbackLag,gpu);
+        return String.format(Locale.ROOT,"CPU submit p50=%.3f ms p95=%.3f ms; allocation=%.0f B/frame; tracked uploads=%d B; tracked GL calls=%d (draw submissions=%d); readback lag=%d generations; GPU latest=%s",
+                sorted[samples/2],sorted[Math.min(samples-1,(int)(samples*.95))],meanAllocation,lastUploads,lastCalls,lastDraws,lastReadbackLag,gpu);
     }
     public void close() {
         for(Frame f:frames) {

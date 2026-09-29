@@ -6,7 +6,7 @@ import java.util.*;
 public final class ParticleTypes {
     /** GPU draw material and its stable header/shader value. */
     public enum Material {
-        ADDITIVE(0), ALPHA(1), MODEL(2), OPAQUE(3), HEX_PATTERN(4);
+        ADDITIVE(0), ALPHA(1), MODEL(2), OPAQUE(3), HEX_PATTERN(4), PACKAGE(5);
 
         private final int index;
         Material(int index) { this.index = index; }
@@ -17,7 +17,7 @@ public final class ParticleTypes {
         }
     }
 
-    public enum Feature { SPRITE_ATLAS, MODEL_ATLAS, COLLISION, STORM, HEX }
+    public enum Feature { SPRITE_ATLAS, MODEL_ATLAS, COLLISION, STORM, HEX, PACKAGE }
     public record Type(int id, String name, Material material,
                        String spawnModule, String updateModule, Set<Feature> features) {
         public Type {
@@ -39,6 +39,7 @@ public final class ParticleTypes {
         registerStandard(new Type(3, "model", Material.MODEL, null, null, Set.of(Feature.MODEL_ATLAS)));
         registerStandard(new Type(4, "opaque", Material.OPAQUE, null, null, Set.of(Feature.SPRITE_ATLAS)));
         registerStandard(new Type(5, "hex_pattern", Material.HEX_PATTERN, null, null, Set.of(Feature.HEX)));
+        registerStandard(new Type(6, "package", Material.PACKAGE, null, null, Set.of(Feature.PACKAGE,Feature.COLLISION)));
     }
     private ParticleTypes() {}
     private static void registerStandard(Type type) {

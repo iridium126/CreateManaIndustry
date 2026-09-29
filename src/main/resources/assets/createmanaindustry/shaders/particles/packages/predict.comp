@@ -1,0 +1,64 @@
+#pragma cmi_include packages/state.glsl
+layout(local_size_x=64) in;
+uniform float uDt;
+uniform float uGravity;
+uniform float uDrag;
+// Swept centre against a Minkowski-expanded static AABB. Initial overlap is handled by Jacobi.
+bool sweepBox(vec3 p,vec3 motion,vec3 lo,vec3 hi,out float time,out vec3 normal) {
+    float enter=-1e30,leave=1e30;normal=vec3(0);
+    for(int axis=0;axis<3;axis++) {
+        if(abs(motion[axis])<1e-10) {
+            if(p[axis]<lo[axis] || p[axis]>hi[axis])return false;
+        } else {
+            float a=(lo[axis]-p[axis])/motion[axis],b=(hi[axis]-p[axis])/motion[axis];
+            float near=min(a,b),far=max(a,b);
+            if(near>enter) { enter=near;normal=vec3(0);normal[axis]=-sign(motion[axis]); }
+            leave=min(leave,far);
+        }
+    }
+    time=enter;
+    return enter>=0.0 && enter<=1.0 && enter<=leave && leave>=0.0;
+}
+void main() {
+    uint i=gl_GlobalInvocationID.x;
+    if(i>=uCount)return;
+    Body b=src[i];
+    b.previousSleep.xyz=b.positionMass.xyz;
+    if(b.positionMass.w>0.0) {
+        b.velocityGround.y-=uGravity*uDt;
+        b.velocityGround.xyz*=uDrag;
+        b.velocityGround.w=0.0;
+        vec3 motion=b.velocityGround.xyz*uDt;
+        for(int slide=0;slide<3;slide++) {
+            vec3 p=b.positionMass.xyz;
+            ivec3 lo=cellOf(min(p,p+motion)-b.extentYaw.xyz-vec3(uCellSize*.5));
+            ivec3 hi=cellOf(max(p,p+motion)+b.extentYaw.xyz+vec3(uCellSize*.5));
+            ivec3 size=hi-lo+1;
+            // Explicit unsupported marker, never truncate a sweep and let a body tunnel.
+            if(any(greaterThan(size,ivec3(32))) || size.x*size.y*size.z>1024) {
+                b=src[i];b.previousSleep.w=-1.0;dst[i]=b;return;
+            }
+            float closest=1.0;vec3 hitNormal=vec3(0);
+            for(int z=lo.z;z<=hi.z;z++)for(int y=lo.y;y<=hi.y;y++)for(int x=lo.x;x<=hi.x;x++) {
+                ivec3 cell=ivec3(x,y,z);uint j=heads[hashCell(cell)];
+                while(j!=END) {
+                    Body other=src[j];
+                    if(other.positionMass.w==0.0 && all(equal(cellOf(other.positionMass.xyz),cell))) {
+                        vec3 extent=b.extentYaw.xyz+other.extentYaw.xyz;float t;vec3 n;
+                        if(sweepBox(p,motion,other.positionMass.xyz-extent,other.positionMass.xyz+extent,t,n)
+                                && t<=closest) { closest=t;hitNormal=n; }
+                    }
+                    j=links[j];
+                }
+            }
+            b.positionMass.xyz+=motion*closest;
+            if(all(equal(hitNormal,vec3(0))))break;
+            motion*=1.0-closest;
+            motion-=hitNormal*min(0.0,dot(motion,hitNormal));
+            b.velocityGround.xyz-=hitNormal*min(0.0,dot(b.velocityGround.xyz,hitNormal));
+            if(hitNormal.y>0.0)b.velocityGround.w=1.0;
+            if(dot(motion,motion)<1e-12)break;
+        }
+    }
+    dst[i]=b;
+}

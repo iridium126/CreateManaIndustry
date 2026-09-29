@@ -1,0 +1,22 @@
+#pragma cmi_include packages/state.glsl
+struct Chain { vec4 startRadius; vec4 endLength; vec4 progress; vec4 targetYaw; };
+layout(std430,binding=4) buffer Chains { Chain chains[]; };
+layout(std430,binding=5) buffer History { vec4 history[]; };
+layout(local_size_x=64) in;
+uniform int uChain;
+void main() {
+    uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
+    if(uChain==2) {
+        Chain c=chains[i];vec3 target;
+        if(c.progress.z>.5) {
+            float angle=radians(c.progress.x);
+            target=c.startRadius.xyz+vec3(sin(angle),0,cos(angle))*c.startRadius.w;
+        } else {
+            vec3 d=c.endLength.xyz-c.startRadius.xyz;float len=length(d);
+            target=c.startRadius.xyz+(len>0?d/len:vec3(0))*clamp(c.progress.x,0.0,c.endLength.w);
+        }
+        c.targetYaw=vec4(target-vec3(0,9.0/16.0,0),src[i].extentYaw.w);chains[i]=c;
+    }
+    history[2u*i]=vec4(src[i].positionMass.xyz,src[i].extentYaw.w);
+    history[2u*i+1u]=uChain!=0?chains[i].targetYaw:vec4(src[i].positionMass.xyz,0);
+}

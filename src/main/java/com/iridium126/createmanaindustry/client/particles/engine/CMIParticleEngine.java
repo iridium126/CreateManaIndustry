@@ -16,6 +16,8 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.allaystorm.AllayStormRuntime;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
 import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
+import com.iridium126.createmanaindustry.client.particles.packages.PackagePoolGpu;
+import com.iridium126.createmanaindustry.client.particles.packages.PackagePreviewRuntime;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.mixin.vanilla.MinecraftInvoker;
 
@@ -148,6 +150,35 @@ public final class CMIParticleEngine {
     private static final int TIMER_RING = 4;
     private final HexPatternBuffers hexPatternBuffers = new HexPatternBuffers();
     private HexPatternRuntime hexPatterns;
+    private PackagePoolGpu packageParticles;
+    private final PackagePreviewRuntime packagePreview=new PackagePreviewRuntime();
+    private record PackagePreviewRequest(int count,Vec3 origin,Vec3 forward) {}
+    private volatile String packagePreviewStatus="off";
+    private volatile boolean packageShadersDirty;
+    private int packageEmitter=-1;
+    private float packagePartialTick=1;
+    private final EmitterSpec packageSpec=EmitterSpec.builder()
+            .type(ParticleTypes.standard(ParticleTypes.Material.PACKAGE)).life(1,1).build();
+
+    /** Render-thread internal integration seam. The Create adapter must gate ownership on GPU admission. */
+    public PackagePoolGpu packageParticles() {
+        RenderSystem.assertOnRenderThread();
+        if(!available())return null;
+        if(packageParticles==null)
+            packageParticles=new PackagePoolGpu(gpu.capacity(),4096,
+                    ParticlePrograms::loadParticlePlain);
+        return packageParticles;
+    }
+    public void packageInterpolation(float partialTick) { packagePartialTick=partialTick; }
+    public void previewPackages(int count,Vec3 origin) {
+        previewPackages(count,origin,new Vec3(0,0,1));
+    }
+    public void previewPackages(int count,Vec3 origin,Vec3 forward) {
+        if(count<0 || count>Math.min(131072,capacity()))throw new IllegalArgumentException("Package preview exceeds pool capacity");
+        packagePreviewStatus=count==0?"stopping":"queued "+count;
+        pending.add(new PackagePreviewRequest(count,origin,forward));
+    }
+    public String packagePreviewStatus() { return packagePreviewStatus; }
     private int hexSlots, hexCount, hexEmitter = -1;
     private final EmitterSpec hexPatternSpec = EmitterSpec.builder()
             .type(ParticleTypes.standard(ParticleTypes.Material.HEX_PATTERN)).life(1, 1).sizeOverLife(1, 1, 1).build();
@@ -720,12 +751,17 @@ public final class CMIParticleEngine {
     /** Called on resource reload so shaders recompile next frame. */
     public void requestProgramRebuild() {
         this.programs.requestRebuild();
+        this.packageShadersDirty=true;
+        this.pending.add(new PackagePreviewRequest(0,Vec3.ZERO,new Vec3(0,0,1)));
         if (this.hexPatterns != null) this.hexPatterns.reset();
     }
 
     /** Frees all GPU resources on client shutdown. Safe when never initialised. */
     public void close() {
         try {
+            this.packagePreview.close();
+            if(this.packageParticles!=null)this.packageParticles.close();
+            this.packageParticles=null;
             this.hexPatternBuffers.free();
             this.hexPatterns = null;
             this.hexSlots = this.hexCount = 0;
@@ -877,6 +913,14 @@ public final class CMIParticleEngine {
         }
         if (!this.programs.ready())
             return; // shaders not compiled yet (or compile failed) — retry on reload
+        if(this.packageShadersDirty) {
+            this.packageShadersDirty=false;
+            if(this.packageParticles!=null)try {
+                this.packageParticles.rebuild(ParticlePrograms::loadParticlePlain);
+            }catch(RuntimeException failure) {
+                CreateManaIndustry.LOGGER.warn("[CMI packages] shader reload failed; retaining previous programs",failure);
+            }
+        }
         this.profiler.setBudget((float) ClientConfig.particleBudgetMs);
 
         this.frameAttempted = true;
@@ -959,6 +1003,9 @@ public final class CMIParticleEngine {
     }
 
     private void resetPoolState() {
+        this.packagePreview.close();
+        this.packagePreviewStatus="off";
+        if(this.packageParticles!=null)this.packageParticles.reset();
         this.liveDisplay = 0;
         this.storm.dropHitSnapshots();
         this.dmgCount = 0;
@@ -1010,6 +1057,7 @@ public final class CMIParticleEngine {
         List<Burst> bursts = this.frameBursts;
         bursts.clear();
         boolean doClear = false;
+        PackagePreviewRequest previewRequest=null;
         Object item;
         while ((item = this.pending.poll()) != null) {
             if (item instanceof Burst b) {
@@ -1027,6 +1075,8 @@ public final class CMIParticleEngine {
                 applyAnimation(ar.spec(), ar.animation());
             } else if (item instanceof Boolean) {
                 doClear = true;
+            } else if(item instanceof PackagePreviewRequest preview) {
+                previewRequest=preview;
             }
         }
         if (doClear) {
@@ -1049,6 +1099,28 @@ public final class CMIParticleEngine {
             this.storm.dropHitKeys();
 
         float dt = clampDelta(deltaTracker);
+        if(previewRequest!=null && !doClear) {
+            if(previewRequest.count()==0) {
+                this.packagePreview.close();this.packagePreviewStatus="off";
+            } else try {
+                this.packagePreview.start(packageParticles(),previewRequest.count(),previewRequest.origin(),previewRequest.forward(),
+                        ParticlePrograms::loadParticlePlain);
+                this.packagePreviewStatus="active; requested="+previewRequest.count();
+            } catch(RuntimeException | LinkageError failure) {
+                this.packagePreviewStatus="initialization failed: "+failure.getClass().getSimpleName();
+                CreateManaIndustry.LOGGER.error("[CMI packages] preview initialization failed",failure);
+                Minecraft.getInstance().gui.getChat().addMessage(net.minecraft.network.chat.Component.literal(
+                        "[CMI packages] Package preview initialization failed; see latest.log and /cmi particle stats."));
+            }
+        }
+        if(this.packagePreview.active()) {
+            ParticleDiagnostics.INSTANCE.mark("package_physics");
+            if(dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()) {
+                this.packagePreview.close();this.packagePreviewStatus="stopped: shaderpack enabled";
+            }
+            else this.packagePartialTick=this.packagePreview.prepare(Minecraft.getInstance().isPaused());
+            ParticleDiagnostics.INSTANCE.mark("upload_after_packages");
+        }
         // Shared clock: (gameTime mod 2^21)/20 — identical on every client (see
         // AllayStormRuntime's clock doc); drives the vortex phases and the
         // correction timestamps without any clock sync.
@@ -1277,6 +1349,8 @@ public final class CMIParticleEngine {
                     ClientConfig.hexPatternRedirect && this.programs.hexReady() && this.hexEmitter >= 0);
             this.hexCount = this.hexPatterns.count();
         }
+        if(this.packageParticles!=null && this.packageParticles.hasInput())
+            this.packageEmitter=ensureEmitter(this.packageSpec);
         int free = Math.max(0, cap - this.hexCount);
         if (totalSpawn > free) {
             double k = free <= 0 ? 0 : (double) free / totalSpawn;
@@ -1368,7 +1442,8 @@ public final class CMIParticleEngine {
         }
 
         // Every material submits indirect draws. Empty GPU counts perform no particle work.
-        boolean createsParticles = totalSpawn > 0 || this.hexCount > 0 || blockSpawnBound > 0;
+        boolean createsParticles = totalSpawn > 0 || this.hexCount > 0 || blockSpawnBound > 0
+                || (this.packageParticles!=null && this.packageParticles.hasInput() && this.packageEmitter>=0);
         if (!this.poolMayBeAlive && !createsParticles) {
             this.frameIdle = true;
             return;
@@ -1376,6 +1451,7 @@ public final class CMIParticleEngine {
         boolean sorted = true;
         this.frameSorted = true;
         this.computeTimer.ensureCreated();
+        boolean packageStaged=false;
         // From the timer-query begin to the phase-tail bookkeeping everything
         // runs under try/finally: a mid-phase failure ends the partial bracket,
         // restores program/VAO/SSBO/texture state, and skips the pool
@@ -1533,6 +1609,18 @@ public final class CMIParticleEngine {
                 GL20.glUniform4fv(loc(be, "uFrustum"), this.frustumPlanes);
                 GL43.glDispatchCompute((this.blockEmitters.dispatchSize() + 3) / 4, 1, 1);
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+            }
+
+            if(this.packageParticles!=null && this.packageParticles.needsStage()) {
+                ParticleDiagnostics.INSTANCE.mark("package_import_group");
+                Vec3 packageCamera=camera.getPosition();
+                this.packageParticles.stage(this.gpu.particleWriteBufferId(),this.gpu.counterBufferId(slot),
+                        this.packageEmitter,this.frustumPlanes,(float)packageCamera.x,(float)packageCamera.y,(float)packageCamera.z);
+                packageStaged=true;
+                // Package passes reuse bindings 0..9. Invalidate the owner's cached bindings.
+                this.gpu.beginBindings();
+                this.gpu.bindDispatch();this.gpu.bindCounter(ParticleBuffers.COUNTER_BB,slot);
+                this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,this.lastGoodSlot);
             }
 
             // 6. keygen: GPU frustum cull + partition of both permutations. Runs in
@@ -1720,6 +1808,7 @@ public final class CMIParticleEngine {
             // the last fully-written pool as the next read source, and
             // the finally below restores the post-phase GL state instead.
             this.gpu.swap();
+            if(packageStaged)this.packageParticles.commit();
             // The swap committed this frame's output as the next read source —
             // only NOW does this frame's counter slot become the authoritative
             // live count for update.comp (see lastGoodSlot). Assigned after the
@@ -1783,6 +1872,7 @@ public final class CMIParticleEngine {
                 }
             }
             this.gpu.restoreCommittedFrame();
+            if(this.packageParticles!=null)this.packageParticles.abort();
             // Restore the exact post-phase state the success path leaves behind.
             // Blend/depth state is deliberately NOT touched here — the compute
             // phase issues no draws and cannot modify it; runDraws owns those
@@ -1852,7 +1942,11 @@ public final class CMIParticleEngine {
                     CMIParticleEngine.this.gpu.bindSort(ParticleBuffers.SORTWRITE_BINDING,
                             CMIParticleEngine.this.frameSorted ? CMIParticleEngine.this.frameFinalPerm : CMIParticleEngine.this.gpu.sortBuffer(0));
                     CMIParticleEngine.this.gpu.bindOrderOpaque();
+                    ParticleDiagnostics.INSTANCE.mark("draw_opaque");
                     drawPass(1, view, projectionMatrix, camera);
+                    ParticleDiagnostics.INSTANCE.mark("draw_packages");
+                    drawPackages(view,projectionMatrix,camera);
+                    ParticleDiagnostics.INSTANCE.mark("draw_models");
                     if (CMIParticleEngine.this.hookModelsDrawn) {
                         // The pack entity merge hook drew the MODEL segments earlier
                         // this frame against the freshly promoted permutation;
@@ -1861,11 +1955,15 @@ public final class CMIParticleEngine {
                         drawModels(view, projectionMatrix, camera);
                     }
                     if (CMIParticleEngine.this.frameSorted) {
+                        ParticleDiagnostics.INSTANCE.mark("draw_alpha");
                         drawPass(2, view, projectionMatrix, camera);
+                        ParticleDiagnostics.INSTANCE.mark("draw_hex");
                         drawHexPatterns(view, projectionMatrix, camera);
                     }
                     CMIParticleEngine.this.gpu.bindOrderAdd();
+                    ParticleDiagnostics.INSTANCE.mark("draw_additive");
                     drawPass(0, view, projectionMatrix, camera);
+                    ParticleDiagnostics.INSTANCE.mark("draw_cleanup");
                 }
 
                 // Clear the merge-hook arbitration latch at the DRAW TAIL: the hook
@@ -1923,26 +2021,29 @@ public final class CMIParticleEngine {
             }
         }
 
-        /**
-         * Draws BOTH MODEL segments through ONE glMultiDrawElementsIndirect: the
-         * opaque segment (cutout + depth writes) then the translucent cloak+wings
-         * segment. Both commands cover the exact MODEL partition of the sorted
-         * array (instanceCount = N_model, plain sortedKv[gl_InstanceID] fetch)
-         * and differ only in their element-buffer index range, so no per-draw
-         * uniform or attribute is needed (a baseInstance/divisor-1 selector was
-         * tried here and REJECTED: instanced attribute fetch walks baseInstance +
-         * instanceID, so with more than one model particle later instances read
-         * wrong/OOB entries — adjacent baseInstances' fetch ranges overlap, which
-         * no buffer content can disambiguate). The translucent segment blends
-         * WITH depth writes:
-         * within one allay the depth writes resolve part order geometrically while
-         * giving the double-wound shell a single blend per pixel from BOTH sides;
-         * across draws, ghost surfaces occlude later translucent passes (sprites
-         * behind a cloak are hidden rather than seen through it) — the documented
-         * tradeoff. Winding follows vanilla {@code ModelPart.Cube} order; if a
-         * future geometry bake flips it, swap {@code glFrontFace} — do not reorder
-         * the data.
-         */
+        /** All package box/rig mesh groups share one indirect multi-draw submission. */
+        private void drawPackages(Matrix4fc view,Matrix4fc projection,Camera camera) {
+            if(packageParticles==null || packageParticles.admissionCount()==0)return;
+            Vec3 position=camera.getPosition();
+            RenderSystem.enableDepthTest();RenderSystem.depthMask(true);RenderSystem.disableBlend();
+            RenderSystem.enableCull();
+            GL13.glActiveTexture(GL13.GL_TEXTURE1);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D,Minecraft.getInstance().getTextureManager()
+                    .getTexture(net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS).getId());
+            LightTexture light=Minecraft.getInstance().gameRenderer.lightTexture();
+            GL13.glActiveTexture(GL13.GL_TEXTURE2);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D,Minecraft.getInstance().getTextureManager()
+                    .getTexture(light.lightTextureLocation).getId());
+            var level=Minecraft.getInstance().level;
+            var directions=net.createmod.ponder.mixin.client.accessor.RenderSystemAccessor.catnip$getShaderLightDirections();
+            packageParticles.lighting(dev.engine_room.flywheel.api.visualization.VisualizationManager.supportsVisualization(level),
+                    level.effects().constantAmbientLight(),directions[0],directions[1]);
+            packageParticles.draw(gpu.particleReadBufferId(),view,projection,(float)position.x,(float)position.y,
+                    (float)position.z,packagePartialTick);
+            GL13.glActiveTexture(GL13.GL_TEXTURE0);
+            gpu.beginBindings();
+        }
+
         private void drawHexPatterns(Matrix4fc view, Matrix4fc projection, Camera camera) {
             if (hexCount == 0 || !programs.hexReady()) return;
             int program = programs.hexRender();
@@ -1964,6 +2065,13 @@ public final class CMIParticleEngine {
             RenderSystem.disableBlend();
         }
 
+        /**
+         * Body, held-item carriers and translucent cloak/wings share one element multi-draw.
+         * Disjoint index ranges select vertex partId; each command reads its own permutation
+         * partition. All segments blend and write depth, preserving the existing ghost
+         * occlusion semantics. Indexed MODEL geometry and package vertex attributes currently
+         * use different programs/VAOs, so they require separate submissions.
+         */
         private void drawModels(Matrix4fc view, Matrix4fc projectionMatrix, Camera camera) {
             int prog = CMIParticleEngine.this.programs.modelRender();
             if (prog == 0)

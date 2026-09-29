@@ -2,7 +2,6 @@ import java.nio.*;
 import java.nio.file.*;
 import java.lang.reflect.*;
 import java.util.*;
-import java.util.regex.*;
 import org.lwjgl.*;
 import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.*;
@@ -12,7 +11,6 @@ import net.minecraft.world.phys.Vec3;
 
 /** Real-driver checks. Run with the project's runtime classpath and LWJGL natives. */
 public class HexPatternGpuValidation {
-    static final Path ROOT = Path.of("src/main/resources/assets/createmanaindustry/shaders/particles");
     static String prelude;
     static int checks;
     static ByteBuffer bytes(int size) { return BufferUtils.createByteBuffer(size); }
@@ -21,14 +19,15 @@ public class HexPatternGpuValidation {
         if (!condition) throw new AssertionError(message);
     }
     static String source(String name) throws Exception {
-        String text = Files.readString(ROOT.resolve(name));
-        text = text.replace("#pragma cmi_types spawn", com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.shaderHooks("spawn"))
-                .replace("#pragma cmi_types update", com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.shaderHooks("update"));
-        Matcher m = Pattern.compile("(?m)^\\s*#pragma cmi_include (\\S+)\\s*$").matcher(text);
-        StringBuffer output = new StringBuffer();
-        while (m.find()) m.appendReplacement(output, Matcher.quoteReplacement(source(m.group(1))));
-        m.appendTail(output);
-        return output.toString();
+        return com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{
+            try(var stream=com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.class.getClassLoader()
+                    .getResourceAsStream("assets/createmanaindustry/"+path)) {
+                if(stream==null)throw new IllegalArgumentException("Missing runtime resource: "+path);
+                return new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8)
+                        .replace("#pragma cmi_types spawn", com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.shaderHooks("spawn"))
+                        .replace("#pragma cmi_types update", com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.shaderHooks("update"));
+            }catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}
+        });
     }
     static int stage(String name, int type) throws Exception { return stageText(name, type, source(name)); }
     static int stageText(String name, int type, String body) {

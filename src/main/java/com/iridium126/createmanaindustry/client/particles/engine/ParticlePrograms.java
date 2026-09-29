@@ -395,7 +395,13 @@ public final class ParticlePrograms {
      * merged MODEL vertex source from the same chunk files this class compiles.
      */
     public static String loadPlain(String path) {
-        String s = loadResolved(path, 0);
+        String s = load(path);
+        return s == null ? "" : s;
+    }
+
+    /** Include-resolved source named relative to shaders/particles/, without #version or PRELUDE. */
+    public static String loadParticlePlain(String name) {
+        String s = ParticleShaderSource.loadParticle(name, ParticlePrograms::readSource);
         return s == null ? "" : s;
     }
 
@@ -426,10 +432,6 @@ public final class ParticlePrograms {
         return HeldItemGeometry.uvTable();
     }
 
-    /** Matches {@code #pragma cmi_include chunks/name.glsl} lines in shader sources. */
-    private static final java.util.regex.Pattern INCLUDE_PATTERN =
-            java.util.regex.Pattern.compile("^\\s*#pragma\\s+cmi_include\\s+(\\S+)\\s*$", java.util.regex.Pattern.MULTILINE);
-
     /**
      * Loads a bundled shader file as text, or null on failure. Lines of the form
      * {@code #pragma cmi_include chunks/name.glsl} (path relative to
@@ -439,10 +441,10 @@ public final class ParticlePrograms {
      * shader-pack merged programs (see ParticleVertexInjector).
      */
     private static String load(String path) {
-        return loadResolved(path, 0);
+        return ParticleShaderSource.loadResource(path, ParticlePrograms::readSource);
     }
 
-    private static String loadResolved(String path, int depth) {
+    private static String readSource(String path) {
         ResourceManager rm = Minecraft.getInstance().getResourceManager();
         ResourceLocation id = CreateManaIndustry.modLoc(path);
         String raw;
@@ -460,21 +462,7 @@ public final class ParticlePrograms {
         for (String phase : new String[] {"spawn", "update"})
             if (raw.contains("#pragma cmi_types " + phase)) raw = raw.replace("#pragma cmi_types " + phase,
                     com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.shaderHooks(phase));
-        if (depth >= 12 && INCLUDE_PATTERN.matcher(raw).find()) {
-            LOGGER.error("[CMI particles] include depth exceeded: {}", path);
-            return null;
-        }
-        if (!INCLUDE_PATTERN.matcher(raw).find())
-            return raw;
-        java.util.regex.Matcher m = INCLUDE_PATTERN.matcher(raw);
-        StringBuffer out = new StringBuffer(raw.length());
-        while (m.find()) {
-            String included = loadResolved(GLSL_DIR + m.group(1), depth + 1);
-            if (included == null) return null;
-            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(included));
-        }
-        m.appendTail(out);
-        return out.toString();
+        return raw;
     }
 
     /** Deletes all program ids. Render-thread only. */

@@ -101,6 +101,7 @@ void main() {
 
     uint eid = floatBitsToUint(p3.w);
     uint hb = eid * VEC4_PER_EMITTER;
+    if (uint(emitters.u[hb + 7u].x + .5) == CMI_MATERIAL_PACKAGE) return;
 
     // conservative bound of the billboard's half-extent (size interpolates
     // between the keyframes; p0.w is the per-particle multiplier). MODEL

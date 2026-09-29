@@ -1,0 +1,10 @@
+#pragma cmi_include packages/draw_state.glsl
+layout(local_size_x=1) in;
+void main() {
+    uint prefix=0u;
+    for(uint m=0u;m<uMeshCount;m++) {
+        uint n=commands[m].y;
+        commands[m]=uvec4(meshes[m].y,n,meshes[m].x,prefix);
+        cursors[m]=prefix;prefix+=n;
+    }
+}

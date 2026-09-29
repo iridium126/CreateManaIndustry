@@ -1,0 +1,42 @@
+#pragma cmi_include packages/state.glsl
+layout(local_size_x=64) in;
+uniform float uFriction;
+void main() {
+    uint i=gl_GlobalInvocationID.x;
+    if(i>=uCount)return;
+    Body b=src[i];
+    if(b.positionMass.w==0.0 || b.previousSleep.w<0.0) { dst[i]=b;return; }
+    ivec3 cell=cellOf(b.positionMass.xyz);
+    vec3 correction=vec3(0.0), velocity=b.velocityGround.xyz;
+    float contacts=0.0;
+    bool grounded=b.velocityGround.w>0.5;
+    // Admission requires each half extent <= half the cell width. All 27 cells are necessary.
+    for(int z=-1;z<=1;z++)for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++) {
+        ivec3 neighbor=cell+ivec3(x,y,z);
+        uint j=heads[hashCell(neighbor)];
+        // No fixed neighbour cap: hash collisions and dense piles must never silently lose contacts.
+        while(j!=END) {
+            uint next=links[j];
+            if(j!=i && all(equal(cellOf(src[j].positionMass.xyz),neighbor))) {
+                Body other=src[j];
+                vec3 delta=b.positionMass.xyz-other.positionMass.xyz;
+                vec3 overlap=b.extentYaw.xyz+other.extentYaw.xyz-abs(delta);
+                if(all(greaterThan(overlap,vec3(0.0)))) {
+                    int axis=overlap.y<=overlap.x && overlap.y<=overlap.z ? 1 : (overlap.x<=overlap.z?0:2);
+                    float direction=delta[axis]==0.0 ? (i<j?-1.0:1.0) : sign(delta[axis]);
+                    float weight=b.positionMass.w/(b.positionMass.w+other.positionMass.w);
+                    correction[axis]+=direction*overlap[axis]*weight;
+                    contacts+=1.0;
+                    if(velocity[axis]*direction<0.0)velocity[axis]=0.0;
+                    if(axis==1 && direction>0.0)grounded=true;
+                }
+            }
+            j=next;
+        }
+    }
+    // Jacobi reads only the previous iteration. No float atomics and no cross-group synchronization.
+    b.positionMass.xyz+=correction/max(1.0,contacts);
+    b.velocityGround=vec4(velocity,grounded?1.0:0.0);
+    if(grounded)b.velocityGround.xz*=uFriction;
+    dst[i]=b;
+}

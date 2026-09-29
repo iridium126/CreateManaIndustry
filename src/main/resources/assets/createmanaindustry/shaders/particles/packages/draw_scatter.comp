@@ -1,0 +1,11 @@
+#pragma cmi_include packages/draw_state.glsl
+layout(local_size_x=64) in;
+void main() {
+    uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
+    uint s=admitted[2u*i+1u].x;if(s==0u)return;--s;
+    if(!visible(s))return;
+    uint box=mesh(s,false),rig=mesh(s,true);
+    if(box<uMeshCount)instances[atomicAdd(cursors[box],1u)]=uvec2(s,i<<1u);
+    if(rig<uMeshCount && (admitted[2u*i+1u].y&1u)!=0u)
+        instances[atomicAdd(cursors[rig],1u)]=uvec2(s,(i<<1u)|1u);
+}

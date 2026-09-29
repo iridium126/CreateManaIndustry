@@ -71,6 +71,7 @@ final class HexPatternBuffers {
 
     void draw(int count) {
         GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, commands);
+        ParticleDiagnostics.INSTANCE.drawCall();
         GL43.glMultiDrawArraysIndirect(GL11.GL_TRIANGLES, 0L, count, 16);
     }
 

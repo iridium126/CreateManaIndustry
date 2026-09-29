@@ -180,6 +180,10 @@ void main() {
     if (eid == uKillEmit)
         return; // storm stopped: drop out of the compacted output immediately
     uint hb = eid * VEC4_PER_EMITTER;
+    // Package poses are imported after ordinary emission from dedicated GPU physics.
+    // Replacing the previous frame's records avoids lifetime/death-chain integration
+    // and makes common-pool compaction independent of persistent package identities.
+    if (uint(emitters.u[hb + 7u].x + .5) == CMI_MATERIAL_PACKAGE) return;
 #pragma cmi_include chunks/hex_update.glsl
 
     // Header rows 18 and 7 are each read ONCE here. Row 18's storm gate is

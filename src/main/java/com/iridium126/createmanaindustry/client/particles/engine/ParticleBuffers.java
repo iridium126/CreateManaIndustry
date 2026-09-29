@@ -659,6 +659,10 @@ public final class ParticleBuffers {
         return this.particleSSBOs[this.readIndex];
     }
 
+    /** Internal package pass uses the current submission's resources, before swap. */
+    int particleWriteBufferId() { return this.particleSSBOs[1-this.readIndex]; }
+    int counterBufferId(int slot) { return this.counterSSBOs[slot % COUNTER_RING]; }
+
     // ---- merged-program TBO views (shader-pack path) --------------------
     // The pack-merged programs declare plain samplerBuffer uniforms instead of
     // SSBO interface blocks: ordinary global declarations survive every stage
@@ -1080,6 +1084,7 @@ public final class ParticleBuffers {
 
     /** Draws draw-command {@code cmd} (offset in the indirect buffer). */
     public void drawIndirect(int cmd) {
+        ParticleDiagnostics.INSTANCE.drawCall();
         GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES, cmd * (long) INDIRECT_STRIDE);
     }
 
@@ -1092,24 +1097,28 @@ public final class ParticleBuffers {
      * so the same call also serves the fast path (no carriers, empty ghost).
      */
     public void drawModelSegments() {
+        ParticleDiagnostics.INSTANCE.drawCall();
         GL43.glMultiDrawElementsIndirect(GL11.GL_TRIANGLES, GL11.GL_UNSIGNED_INT,
                 2L * INDIRECT_STRIDE, 3, INDIRECT_STRIDE);
     }
 
     /** Draws ONLY the CUTOUT MODEL body segment (command 2) -- shader-pack early path. */
     public void drawModelCutout() {
+        ParticleDiagnostics.INSTANCE.drawCall();
         GL43.glMultiDrawElementsIndirect(GL11.GL_TRIANGLES, GL11.GL_UNSIGNED_INT,
                 2L * INDIRECT_STRIDE, 1, INDIRECT_STRIDE);
     }
 
     /** Draws ONLY the held-item CARRIER segment (command 3) -- shader-pack early path. */
     public void drawModelCarrier() {
+        ParticleDiagnostics.INSTANCE.drawCall();
         GL43.glMultiDrawElementsIndirect(GL11.GL_TRIANGLES, GL11.GL_UNSIGNED_INT,
                 3L * INDIRECT_STRIDE, 1, INDIRECT_STRIDE);
     }
 
     /** Draws ONLY the GHOST MODEL segment (command 4) -- shader-pack early path. */
     public void drawModelGhost() {
+        ParticleDiagnostics.INSTANCE.drawCall();
         GL43.glMultiDrawElementsIndirect(GL11.GL_TRIANGLES, GL11.GL_UNSIGNED_INT,
                 4L * INDIRECT_STRIDE, 1, INDIRECT_STRIDE);
     }

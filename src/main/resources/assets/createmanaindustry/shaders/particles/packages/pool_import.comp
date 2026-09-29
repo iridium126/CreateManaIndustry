@@ -1,0 +1,37 @@
+layout(local_size_x=64) in;
+struct Body { vec4 positionMass; vec4 velocityGround; vec4 extentYaw; vec4 previousSleep; };
+struct Meta { uvec4 identity; uvec4 selection; vec4 previousTargetYaw; vec4 style; vec4 nudge; };
+struct Chain { vec4 startRadius; vec4 endLength; vec4 progress; vec4 targetYaw; };
+layout(std430,binding=0) readonly buffer Bodies { Body bodies[]; };
+layout(std430,binding=1) buffer Pool { vec4 pool[]; };
+layout(std430,binding=2) readonly buffer Metadata { Meta meta[]; };
+layout(std430,binding=4) readonly buffer Chains { Chain chains[]; };
+layout(std430,binding=5) buffer Admission { uvec4 admitted[]; };
+layout(std430,binding=6) readonly buffer Reservation { uint base; uint accepted; uint requested; uint reserved; };
+uniform uint uEmitter;
+uniform vec3 uOrigin;
+layout(std430,binding=7) readonly buffer Selection { uint validCount; uint pad0; uint pad1; uint pad2; uint selected[]; };
+layout(std430,binding=8) buffer Attachment { vec4 attachment[]; };
+layout(std430,binding=9) readonly buffer History { vec4 history[]; };
+void main() {
+    uint g=gl_GlobalInvocationID.x;if(g>=accepted)return;
+    uint i=selected[g];
+    Meta m=meta[i];
+    // Two uvec4 per candidate: full stable identity plus slot+1/flags. Zero is rejected.
+    Body b=bodies[m.selection.x];
+    bool chain=(m.selection.w&1u)!=0u;
+    vec3 position=b.positionMass.xyz, previous=history[2u*m.selection.x].xyz;
+    vec3 target=chain?chains[m.selection.x].targetYaw.xyz:position;
+    if(!chain) { position.y-=b.extentYaw.y; previous.y-=b.extentYaw.y; }
+    uint slot=base+g, p=4u*slot;
+    pool[p]=vec4(position+uOrigin,uintBitsToFloat(m.selection.y));
+    pool[p+1u]=vec4(previous+uOrigin,uintBitsToFloat(m.selection.z));
+    // Light occupies vanilla bits 0..23; package flags occupy the remaining byte.
+    uint light=floatBitsToUint(m.style.w)&0x00ffffffu;
+    pool[p+2u]=vec4(target+uOrigin,uintBitsToFloat(light|(m.selection.w<<24u)));
+    pool[p+3u]=vec4(b.extentYaw.w,history[2u*m.selection.x].w,
+                        m.style.z,uintBitsToFloat(uEmitter));
+    admitted[2u*i+1u]=uvec4(slot+1u,m.selection.w,0,0);
+    attachment[2u*i]=vec4(history[2u*m.selection.x+1u].xyz+uOrigin,0);
+    attachment[2u*i+1u]=m.nudge;
+}

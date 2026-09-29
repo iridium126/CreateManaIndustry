@@ -97,6 +97,24 @@ public final class CMIParticleCommand {
                                                 .executes(CMIParticleCommand::anim))))
                         .then(Commands.literal("clear")
                                 .executes(CMIParticleCommand::clear))
+                        .then(Commands.literal("packagepreview")
+                                .then(Commands.argument("amount",IntegerArgumentType.integer(0,131072)).executes(ctx->{
+                                    if(!engine(ctx))return 0;
+                                    int n=IntegerArgumentType.getInteger(ctx,"amount");
+                                    if(n>0 && dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()) {
+                                        tell(ctx,"Package preview currently requires shaders to be disabled.");return 0;
+                                    }
+                                    if(n>CMIParticleEngine.INSTANCE.capacity()){tell(ctx,"Preview exceeds the shared particle pool capacity.");return 0;}
+                                    var camera=net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera();
+                                    var look=camera.getLookVector();
+                                    Vec3 forward=new Vec3(look.x,0,look.z);
+                                    if(forward.lengthSqr()<1e-8)forward=new Vec3(0,0,1);
+                                    forward=forward.normalize();
+                                    Vec3 origin=camera.getPosition().add(forward.scale(6)).add(0,1,0);
+                                    CMIParticleEngine.INSTANCE.previewPackages(n,origin,forward);
+                                    tell(ctx,n==0?"Package preview stop queued.":"Queued "+n+" synthetic chain packages ahead of the camera; Create gameplay takeover is not enabled.");
+                                    return 1;
+                                })))
                         .then(Commands.literal("profile")
                                 .executes(ctx -> { tell(ctx, com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.report()); return 1; })
                                 .then(Commands.literal("on").executes(ctx -> { com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled(true); tell(ctx,"Particle profiling enabled"); return 1; }))
@@ -268,6 +286,7 @@ public final class CMIParticleCommand {
                 + "  streams=" + e.streamCount()
                 + "  emission=" + Math.round(e.emissionScale() * 100) + "%"
                 + "  gpu=" + String.format("%.2f", e.emaMs()) + "ms (budget " + e.budgetMs() + "ms)");
+        tell(ctx,"Package preview: "+e.packagePreviewStatus()+"; live includes admitted package slots (asynchronous GPU snapshot).");
         return Command.SINGLE_SUCCESS;
     }
 
