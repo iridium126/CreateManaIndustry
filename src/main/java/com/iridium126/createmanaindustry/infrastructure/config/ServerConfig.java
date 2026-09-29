@@ -54,6 +54,8 @@ public final class ServerConfig {
     public static volatile boolean hexJitCacheNormalPatternLookup = true;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
+    private static final ModConfigSpec.BooleanValue PACKAGE_GPU_AUTHORITY;
+    public static volatile boolean packageGpuAuthority;
 
     // ---- fluid -------------------------------------------------------------
 
@@ -128,6 +130,10 @@ public final class ServerConfig {
     private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_NORMAL_PATTERN_LOOKUP;
 
     static {
+        BUILDER.push("gpuPackages");
+        PACKAGE_GPU_AUTHORITY=BUILDER.comment("Development ownership transport. Remains inactive until a client has verified complete GPU collision/render resources.")
+                .define("authorityEnabled",false);
+        BUILDER.pop();
         BUILDER.comment("Fluid conversion ratios — how much mana/media/source one bucket holds.").push("fluid");
         MANA_PER_BUCKET = BUILDER
                 .comment("The amount of mana contained in one bucket (1000mB) of Liquid Mana.")
@@ -442,6 +448,7 @@ public final class ServerConfig {
             fuelRodMaxRadius = FUEL_ROD_MAX_RADIUS.get();
             fuelRodStrictStacking = FUEL_ROD_STRICT_STACKING.get();
             stormCorrectionHz = STORM_CORRECTION_HZ.get();
+            packageGpuAuthority=PACKAGE_GPU_AUTHORITY.get();
             stormMaxCount = STORM_MAX_COUNT.get();
             stormGrowthPerSecond = STORM_GROWTH_PER_SECOND.get();
             stormWaveInterval = STORM_WAVE_INTERVAL.get();

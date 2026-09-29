@@ -4,6 +4,9 @@
   "plugin": "com.iridium126.createmanaindustry.mixin.CMIMixinPlugin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "packages.ChainPackageIdentityMixin",
+    "packages.ChainIdentityLifecycleMixin",
+    "packages.PackageEntityAuthorityMixin",
     "kinetics.KineticBlockEntityMixin",
     "kinetics.KineticBlockEntityAccessor",
     "kinetics.DirectionalShaftHalvesBlockEntityMixin",

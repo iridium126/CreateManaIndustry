@@ -56,4 +56,13 @@ class PackageProtocolTest {
         assertThrows(IllegalArgumentException.class,()->PackageDeltaCodec.quantize(pose(1e12),0,0,0,0));
         assertThrows(IllegalArgumentException.class,()->new PackageLease.Pose(Double.NaN,0,0,0,0,0,0));
     }
+    @Test void releaseWireHasNoPoseAndCannotCombineWithStateBits() {
+        var zero=new PackageDeltaCodec.Quantized(0,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        var release=new PackageDeltaCodec.Entry(0,PackageDeltaCodec.RELEASE,zero);
+        var bytes=ByteBuffer.allocate(3);PackageDeltaCodec.encode(bytes,List.of(release));bytes.flip();
+        assertEquals(List.of(release),PackageDeltaCodec.decode(bytes));assertFalse(bytes.hasRemaining());
+        assertThrows(IllegalArgumentException.class,()->new PackageDeltaCodec.Entry(0,17,zero));
+        assertThrows(IllegalArgumentException.class,()->PackageDeltaCodec.decode(ByteBuffer.wrap(new byte[]{1,0,17})));
+        assertThrows(IllegalArgumentException.class,()->PackageDeltaCodec.merge(zero,release));
+    }
 }

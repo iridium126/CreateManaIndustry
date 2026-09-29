@@ -7,17 +7,19 @@ import java.util.ArrayList;
 /** Bounded region-local wire records. Epoch/generation belong to the enclosing region baseline. */
 public final class PackageDeltaCodec {
     public static final int POSITION = 1, VELOCITY = 2, YAW = 4, FLAGS = 8;
+    public static final int RELEASE = 16;
     public static final int MAX_ENTRIES = 2048;
     public static final double POSITION_SCALE = 4096;
     public static final float VELOCITY_SCALE = 1024;
     public record Quantized(int x, int y, int z, short vx, short vy, short vz, short yaw, int flags) {}
     public record Entry(int id, int mask, Quantized value) {
         public Entry {
-            if (id < 0 || mask <= 0 || (mask & ~15) != 0 || value == null)
+            if (id < 0 || !validMask(mask) || value == null)
                 throw new IllegalArgumentException("Invalid delta");
         }
     }
     private PackageDeltaCodec() {}
+    public static boolean validMask(int mask){return mask==RELEASE || mask>0 && (mask&~15)==0;}
     public static Quantized quantize(PackageLease.Pose p, double ox, double oy, double oz, int flags) {
         return new Quantized(position(p.x() - ox), position(p.y() - oy), position(p.z() - oz),
                 velocity(p.vx()), velocity(p.vy()), velocity(p.vz()),
@@ -42,6 +44,7 @@ public final class PackageDeltaCodec {
                 | (before.yaw != after.yaw ? YAW : 0) | (before.flags != after.flags ? FLAGS : 0);
     }
     public static Quantized merge(Quantized base, Entry e) {
+        if(e.mask==RELEASE)throw new IllegalArgumentException("Ownership release has no pose delta");
         if (base == null && e.mask != 15) throw new IllegalArgumentException("Delta without baseline");
         Quantized v = e.value;
         if (base == null) return v;
@@ -78,7 +81,7 @@ public final class PackageDeltaCodec {
             if (difference < 0 || id > Integer.MAX_VALUE) throw new IllegalArgumentException("Delta ID overflow");
             previous = id;
             int mask = Byte.toUnsignedInt(in.get());
-            if (mask == 0 || (mask & ~15) != 0) throw new IllegalArgumentException("Delta mask");
+            if (!validMask(mask)) throw new IllegalArgumentException("Delta mask");
             int x=0,y=0,z=0; short vx=0,vy=0,vz=0,yaw=0;
             if ((mask & POSITION) != 0) { x=getSigned(in); y=getSigned(in); z=getSigned(in); }
             if ((mask & VELOCITY) != 0) { vx=getShort(in); vy=getShort(in); vz=getShort(in); }

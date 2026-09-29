@@ -2,16 +2,22 @@
 
 ## 当前状态（2026-09-29）
 
-**通用槽位与模型绘制已接入实际粒子引擎，可用显式开发预览检查。真实 Create 包裹尚未接管。** 尚未修改 Create 的实体 tick、锁链 tick、普通 Renderer 或 Flywheel visual；因此真实包裹仍完全由 Create 处理。没有声称达到 131072 包裹整帧 60 FPS。
+**通用槽位、模型绘制、权威协议和世界碰撞准备已实现，真实 Create 包裹尚未启用 GPU 接管。** 服务端已有稳定身份、最终基线握手、受确认 lease 控制的 travel 暂停和玩法回退钩子；客户端目前不声明生产资源就绪，收到接管请求会明确拒绝。因此实际包裹仍由 Create 模拟和渲染。普通 Renderer、Flywheel visual 与锁链物流 tick 尚未抑制，没有声称达到 131072 活动包裹整帧 60 FPS。
 
 已实现：
 
 - `PackageLease`：稳定身份、权威 epoch、接管基线修订号、两 tick 超时、过期提交拒绝、连续事务序号及回退检查点。休眠心跳无需重复发送位置。此类只负责协议状态，不执行库存事务。
-- `PackageDeltaCodec`：有界批次、排序 ID 差分、字段掩码、位置/速度/偏航量化、变长整数编码、缺失基线与非法值检查。未注册为 Minecraft 网络 payload。
+- `PackageDeltaCodec`：有界批次、排序 ID 差分、独立字段掩码、位置/速度/偏航量化、变长整数编码、缺失基线与非法值检查。
+- `PackageAuthorityRegion` / `PackageAuthorityManager`：服务端区域选举、身份映射、两阶段最终基线握手、整批先校验后提交、每 tick 累计位移限制、回退检查点和 O(1) 区域心跳。运动包裹不能用心跳掩盖超过两 tick 的状态积压。
+- `PackageIdentityData` 和 Create mixin：持久化的服务器全局 ID/epoch 分配器；自由实体使用 NeoForge persistent data，链上包裹保留原存档并追加完整身份。实际 jar 6.0.10 已核对方法描述符；尚未进行启动后的 mixin 注入与真实保存/加载验收。
+- `gpu-packages-2` 可选 payload：接管 offer、资源 prepared、最终基线 ACK、活动/回退通知、区域心跳、增量及提交 ACK。新增增量 RELEASE 掩码；客户端正文上限 24576 字节，codec 单批最多 2048 条，GPU journal 每包至多 512 条。内容和地址不进入位置协议；服务端没有接受客户端库存操作。
 - `PackageCollisionCache`：主线程分批捕获、250µs 默认软预算、分区修订号、不可变后台输入、最多四个后台任务、非阻塞完成轮询及陈旧结果丢弃。
-- `PackageWorldCollisionSource`：从已加载世界提取实际 AABB、摩擦、水/岩浆/火标记；不向后台传递世界或区块对象。移动活塞、细雪、脚手架目前返回不可用，禁止将其解释为空气。尚未连接区块/方块失效事件。
+- `PackageWorldCollisionSource`：从已加载世界提取实际 AABB、摩擦、水/岩浆/火标记；不向后台传递世界或区块对象。移动活塞、细雪、脚手架及缺失邻块上下文返回不可用，禁止解释为空气。
+- `PackageCollisionRuntime`：惰性创建，两条 daemon worker；客户端 tick 按 250µs 软预算捕获。方块修改立即撤销涉及的相邻 section，区块加载/卸载撤销九个关联 chunk 列的已请求高度，换世界直接失效。请求只加入 section 身份，不能同步扫描全区域。待办队列与删除为常数时间；重复编辑在尚未重新捕获时合并。
 - `PackagePhysicsGpu`：GPU 空间哈希、静态 AABB 扫掠、四轮并行 Jacobi 接触、锁链进度及摆动；缓存 uniform 位置并使用批量绑定。
-- `PackageReadbackRing`：四个独立 staging buffer 和 fence；满槽拒绝提交，不阻塞等待；按序消费并检查 epoch，清空时用新存储替换仍在执行的旧拷贝。
+- `PackageReadbackRing`：四个独立 staging buffer 和 fence；满槽拒绝提交，不阻塞等待；按序消费并检查 epoch，清空时用新存储替换仍在执行的旧拷贝。支持指定源偏移/有效长度的 ≤1MiB 分片；传输 journal 满时保留已完成槽和 CPU 拷贝，后续帧不重复下载正文。
+- `PackageDeltaGpu`：自由包裹的 GPU 量化、脏字段比较、共享内存工作组压缩及有界输出。四个不可变输出 bank；读回不推进基线，只有完整身份、候选、服务器局部索引及 stamp 都匹配的 ACK 才确认。溢出候选保持脏状态，取消发送不会丢弃回退事件。支持不重置已有 flight 的身份追加及服务端终止身份通知。
+- `PackageDeltaChannel` / `PackageDeltaJournal`：先读 16 字节计数，再以四槽 ≤1MiB 分片复制有效正文；有界后台排序、编码和不可变 payload 构造，全客户端最多四个未完成编码任务。网络队列拒绝时保留记录，ACK 后才更新 GPU 基线并复用 journal。实际 ACK 入口与主帧调度已接线；生产资源门禁、观察客户端和链路参数同步仍待完成。
 - Java 单元测试、真实 OpenGL 验证及可选计算内核基准。
 - `PACKAGE` 内部类型（稳定类型 ID 6、材质 ID 5）：普通更新跳过寿命、死亡链与运动，后续 GPU 导入物理状态；普通 keygen 排除包裹，交给专用模型分组。
 - `PackagePoolGpu`：GPU 有效候选筛选、按实际通用池余量预留槽位、稳定身份 admission 表、模型计数/前缀/实例分组、箱体与吊具的间接绘制。每个包裹只占一个通用槽位。绘制、身份与插值附加数据双缓冲，和粒子池一起成功提交；失败保留上次完整提交。
@@ -28,9 +34,14 @@
 /cmi particle packagepreview 65536
 /cmi particle packagepreview 131072
 /cmi particle packagepreview 0
+/cmi particle packagecollision capture
+/cmi particle packagecollision
+/cmi particle packagecollision clear
 ```
 
 数量受当前通用粒子池容量限制。预览是固定种子、固定模型选择的合成圆轨道阵列；没有 Create 物流对象、库存、拾取或网络，不用于完整玩法验收，也不能以只有少量可见包裹的阵列代替同屏活动负载。第一次建立预览包含模型烘焙和批量初始化，必须预热后再测量。
+
+`packagecollision capture` 排队捕获玩家周围约一 section 半径的真实世界形状，后续 tick 执行预算化采集。无参数显示就绪 section、最近采集耗时、最近 128 次捕获的 p50/p95 和软预算超限次数；`clear` 撤销覆盖并关闭 worker。此入口用于检查方块/区块失效和主线程预算，不移动真实包裹，也不代表数据已上传 GPU。缓存最多 1024 个 section；缺失/不支持的数据保持未就绪。
 
 阵列从相机前方开始，并沿执行命令时的水平视线展开。`stats` 的 `live` 包含成功导入的包裹槽位，但来自异步 GPU 快照，可短暂滞后；持续为 0 并且没有包裹可见不属于正常启动。`stats` 另显示 queued / active / 初始化失败 / shaderpack 停止状态，初始化失败会通知聊天并保留日志。
 
@@ -70,17 +81,31 @@ OPAQUE 与包裹可考虑统一不透明 pass；ALPHA 与 Hex 使用相近混合
 
 服务端身份使用 `(long id, long generation)`，lease 的 epoch 为 long。网络增量中的 int ID 是**区域基线局部索引**，不是粒子池索引；后续 payload 必须携带区域、完整 epoch、基线修订号及序号，并用基线映射回稳定身份。
 
-`ready` 只接受当前基线修订及匹配的当前位置，不能用旧 GPU 基线接管已经移动的 Create 对象。实际接管适配器仍需实现最终检查点上传和交接时序；禁止仅收到一次 ready 消息就取消实体 tick。
+配置 `gpuPackages.authorityEnabled` 默认 false，即使开发者启用，当前客户端也不会发送 FREE_READY / CHAIN_READY。服务端 discovery 限制 64 次/250µs 每 tick，选举只按区域进行；目前开关需在包裹加载前配置，不会扫描已加载世界补注册。
+
+初始 offer 期间 Create 继续运动。资源准备完成的 PREPARED 请求使服务端捕获**当前**位置、速度、yaw 和 ground state，并仅暂停 travel；客户端必须上传最终检查点，再回 ACK 当前修订。最终基线窗口独立两 tick 超时，不能通过区域心跳延期。存活/伤害/库存回调仍执行原 Create 逻辑；机器插入、交互、伤害、外部推挤、内容变更和保存前先回退。客户端只能提交姿态，不能提交物品操作。当前保留普通实体生命周期和 vanilla 位置同步，不能据此承诺服务端或网络目标已达成。
 
 量化候选值为位置 1/4096 方块、速度 1/1024 方块/秒、偏航 360/65536 度。这些尚未通过游戏内视觉对照，不能视为最终默认协议。超出局部坐标或速度范围时编码器拒绝，后续网络层必须使用全状态逃逸记录或回退，不允许饱和截断。
 
-编码批次最多 2048 个记录。增量基线只能在确认后更新。读回成功不等于服务端已提交，更不等于库存事务已提交。事务序号门禁不能代替库存操作的原子提交与错误恢复。
+codec 编码批次最多 2048 个记录；GPU journal 使用 512 条/包，每包最坏正文 17410 字节。后台直接编码原始整数记录，复用排序和输出空间，不逐包裹创建 `Entry` / `Quantized` Java 对象。不可变网络包的复制也在 worker 完成，渲染线程只将已准备的包交给可靠有序传输。增量基线只能在确认后更新。读回成功不等于服务端已提交，更不等于库存事务已提交。事务序号门禁不能代替库存操作的原子提交与错误恢复。
+
+RELEASE 使用单独的掩码 16，不携带量化位置，也不能与姿态字段混合。服务端验证整包后按最后提交检查点交还 Create；同包中的其他对象正常提交。拾取与在途增量发生竞争时，已退休且从未复用的区域基线索引视为无操作并确认，未曾发出的索引仍拒绝。终止通知检查完整身份和 epoch，只调用一次客户端生命周期回调；旧 generation 或迟到 ACK 不能停用新对象。
+
+`PackageDeltaGpu` 输入为每候选 32 字节身份/选择表与 32 字节确认整数基线；输出每条 64 字节，包含完整身份、候选索引、服务器局部 ID、掩码、回退标记和量化状态。工作组只做一次全局区间预留，所有尾部线程参与共享扫描屏障。输出不保证按网络 ID 排序，由 worker 按每包 ID 排序并编码。零变化仅需要读 16 字节计数 header；131072 条变化的有效记录为 8MiB，需要分片而非扩大单槽同步读取。每个 immutable bank 在全部正文已复制入有界 journal 前禁止释放；满 bank 跳过检测，模拟继续运行。
+
+journal 最多 `max(4, ceil(capacity/512))` 个网络槽（131072 候选时 256 槽），每槽保留精确 ACK 所需的原始记录；源 body 后续变化不能修改该快照。已发送但未确认的槽不覆盖，后续连续变化继续留在 GPU 当前状态，确认后再与旧基线比较。未完成 future 只检查状态，不等待；重载/清空/换世界统一关闭 epoch，旧 worker 仅完成自己的不可变数据，不发布网络包。准备超时在发布前和每个网络包前检查，超过 100ms 触发回退；已进入可靠传输的 ACK RTT 单独统计，不冒充本地准备耗时。
+
+内部接管适配器必须先核对碰撞 GPU 覆盖、通用槽位 admission、最终基线和完整模型，再调用 `PackageAuthorityClient.open(...)` 并追加初始化 metadata/baseline。该接口转移 detector 的所有权；稳定候选和区域局部索引在 epoch 内不得复用。仅在物理状态完整提交后调用 `capture(...)`；失败帧不能捕获中间状态。已注册通道的 `pump()` 在引擎拥有的 GL 状态边界内执行，ACK/终止 payload 只填有界 mailbox。`Transport.prepare` 只能构造不可变数据，禁止网络、GL 和可变世界访问；库存及机器交接继续归服务端。
+
+`/cmi particle profile on/off` 同时控制通道计时。`profile` 显示捕获/泵送 CPU p50/p95、每包准备时间和 ACK RTT，使用最近 128 个样本；正文/读回字节和 packet/dispatch 为 epoch 累计。分位数只在查询时排序。没有生产接管时显示 active regions=0，预览不创建网络通道。
+
+GPU 参数 `uOriginOffset` 为物理局部原点减网络区域原点。自由包裹中心转换为 feet；位置限定在本区域 64³ 范围，速度超出 short 量化或 solver 输出回退时发出 RELEASE 候选，不饱和截断。锁链参数化同步需要独立适配器，不能用此自由运动协议发送链上每帧位置。候选索引在同 epoch 内不得复用。重建全部 delta 程序验证后才替换；失败继续旧程序集。
 
 ### 碰撞快照
 
 每个 section 有 4096 个 cell，顺序为 `x | z << 4 | y << 8`。快照中的形状坐标相对 section 原点。捕获每次最多处理 32 个 cell，并按剩余时间轮转；后台只打包不可变的 cell 和 AABB。
 
-预算在每次原始查询之前检查。Java 无法中断某个模组提供的耗时 `getCollisionShape`，所以这是软预算；`lastCaptureNanos` 和 `overrunCount` 如实记录超限。后续接入时必须在区块、方块及影响邻居形状的上下文变化时撤销覆盖，不能仅依靠定时刷新。
+预算在每次原始查询之前检查。Java 无法中断某个模组提供的耗时 `getCollisionShape`，所以这是软预算；`lastCaptureNanos` 和 `overrunCount` 如实记录超限。方块/区块失效已接入；实体相关、方块实体状态改变而不修改 block state、以及超出相邻方块范围的第三方形状上下文仍需单独适配。已有捕获快照不代表 GPU coverage；生产接管需验证上传修订号和实际扫掠范围。
 
 未知/动态实体上下文的碰撞形状仍需要资格检查。当前 adapter 的空碰撞上下文不能被当作所有第三方方块的完整兼容实现。
 
@@ -108,12 +133,15 @@ OPAQUE 与包裹可考虑统一不透明 pass；ALPHA 与 Hex 使用相近混合
 ## 验证命令
 
 ```powershell
-.\gradlew.bat test --tests '*PackageProtocolTest' --tests '*PackageCollisionCacheTest' --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
+.\gradlew.bat test --tests '*Package*Test' --tests '*CMIParticleCommandTreeTest' --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
 .\gradlew.bat validatePackageGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
 .\gradlew.bat validatePackageGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle -PpackageBenchmark
+.\gradlew.bat validatePackageGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle -PpackageDeltaPipelineBenchmark
 ```
 
-基准输出 `build/package-gpu-kernels.csv`。当前 7 项 Java 测试、19550 项真实 GPU 断言通过；已有 Hex 全套回归通过 135498 项断言。包裹测试覆盖空输入、64 线程尾部边界、静态支撑、重合包裹分离、高速静态碰撞、过大扫掠回退、锁链批次、四槽耗尽、代次失效、满容量 admission、完整 long 身份、缓冲哨兵、模型分区、实例唯一性及失败帧回滚。新增运行时路径/include 检查及 65536 个链上候选的完整导入、65536 个唯一槽位、131072 个箱体/吊具实例命令验证。该大批次检查不代表实际 Create 模型游戏内同屏验收。
+基准输出 `build/package-gpu-kernels.csv`；分片管线另输出 `build/package-delta-pipeline.csv` 和逐次样本文件。当前 **45 项包裹 Java 测试及 5 项命令测试、811146 项真实包裹 GPU 断言**通过（带管线基准为 814845 项）；Hex 全套回归通过 **135498 项断言**。Java 覆盖完整 payload 编解码、非法长度、保存计数水位、4096 个静止对象的 O(1) 心跳、最终基线超时、整批拒绝/回滚、身份/epoch、独立字段、每 tick 累计位移、负坐标/高 Y、碰撞邻居失效及旧 worker 丢弃。另覆盖有界 journal 延迟超过四帧、整分片编码/包构造失败、传输拒绝、准备超时、退休索引竞争及幂等 RELEASE。物品/地址守恒目前在纯协议 mock 中检查，不等同真实游戏库存验收。
+
+GPU 测试保留空输入、64 线程尾部边界、静态支撑、重合包裹分离、高速静态碰撞、过大扫掠回退、锁链批次、四槽耗尽、代次失效、满容量 admission、完整 long 身份、缓冲哨兵、模型分区、实例唯一性及失败帧回滚。另覆盖 131072 个脏候选的完整身份、精确整数基线/掩码、位置未变而速度变化、输出溢出重试、取消后再发、ACK 子批次、错误 stamp/旧 generation、回退事件保留、空载 bank 及程序替换失败。量化检查包括正负 yaw 半整数、大 yaw、位置 ties-to-even、区域边界进位及向量速度上限；GLSL yaw 的常量除法和乘加均保持 Java double 语义。运行时路径/include 检查、65536 个链上候选完整导入、65536 个唯一槽位、131072 个箱体/吊具实例命令仍通过。这些大批次检查不代表真实 Create 同屏玩法或帧率验收。
 
 增加真实 indirect draw 像素检查（包括 baseInstance）、失败/成功 shader 重建，以及 GPU vertex transform-feedback 对照 Create 参考矩阵。光照额外覆盖 Create SBB 双方向 diffuse 和 Flywheel chunk diffuse（含恒定环境光、未着色面），RGB 容差为 2e-5。姿态 xyz 容差 `2e-5` 方块；80 步 20Hz 链上递推对照的位置/偏航容差 `1e-4` 方块/度。测试里的阻塞 GPU 读取和计时结果等待仅用于验证；生产读回类只使用零超时 fence 轮询。上述数值验证不能替代游戏内视觉录像和光照/阴影验收。
 
@@ -139,13 +167,31 @@ RTX 4070 Laptop，OpenGL 4.5，NVIDIA 581.15；20 次预热，三组各 30 步�
 
 这次增加的是正确插值所需的工作，不是提速结果。131072 自由运动的三次结果为 2.1005 / 1.9994 / 1.7893 ms，波动明显，不能用该组均值/中位数宣布性能回退或收益。新测量仍不包含模型绘制、世界碰撞和网络；原始结果见 `benchmarks/package-kernels-history-2026-09-29.csv`。
 
+### 新增增量检测成本
+
+同机 20 次预热，三组各 60 次 GPU timer 样本。下表取三组各分位数的中位数；`dirty_capture_cancel` 每次输出全部变化，再取消 flight 使下一次仍是满载变化。`unchanged_capture` 已先确认所有基线，后续仅输出零计数。没有读取 8MiB 正文、网络编码/传输、Create 实体或绘制，不能用于网络带宽或整帧验收。
+
+| 候选数量 | 全量变化检测与取消 GPU p50/p95 | 无变化检测 GPU p50/p95 |
+|---:|---:|---:|
+| 10000 | 0.0184 / 0.0819 ms | 0.0164 / 0.0205 ms |
+| 65536 | 0.0358 / 0.0440 ms | 0.0215 / 0.0246 ms |
+| 131072 | 0.0532 / 0.0614 ms | 0.0287 / 0.0348 ms |
+
+131072 全量变化的三组 GPU p95 均为 0.06144 ms，计时分辨率和短组件耗时限制了该数字的精度。原始报告包含独立组件 CPU 提交 p50/p95，见 `benchmarks/package-deltas-2026-09-29.csv`；这些很短的 Java/OpenGL 异步提交时间不含整个渲染线程、读回及 Minecraft 调度。此表是新组件成本基线，没有旧版同场景对照，不能据此宣布整体优化完成。带基准的验证共 807491 项断言（额外三项检查确认基线计数）。
+
+### 分片读回与后台编码测量
+
+已增加 GPU 检测 → header → 有效正文分片 → 后台编码/不可变 packet → loopback ACK 的真实组件基准。默认采用后台构造网络包：131072 条变化时，渲染线程每轮完整捕获的分配量由约 2.8MiB 降至 60–70KiB；CPU 总量 p50/p95 三组中位数为 2.4241/2.7241ms。这是多次 capture/pump 提交的累计成本，不是整帧或服务端 tick，且没有实际网络/绘制。
+
+CPU 拼接 ACK 的回退版本已移除；GPU 常驻 ACK journal 收益没有稳定复现，仅保留内部显式验证开关，默认关闭。详细方法、三路径比较、波动、正文量、未采用实验及原始样本见 [分片管线测量报告](benchmarks/package-delta-pipeline-2026-09-29.md)。真实 131072 活动包裹和低带宽验收仍未完成。
+
 ## 剩余交付工作
 
-1. 完成实际 Create 6.0.10 玩法行为核对，接管/回退适配器、区域权威选举、最终基线握手及服务端物品事务。
+1. 完成实际 Create 6.0.10 启动/mixin 和玩法核对；将已有服务端选举/握手/回退接到客户端最终检查点与链路交接，补齐幂等物品事务。
 2. 将已实现的通用槽位/完整身份 admission 接到真实对象生命周期、确认读回和容量回退，整理变更上传；避免生产批量初始化集中阻塞。
 3. 将已实现的模型缓存与绘制连接到真实包裹，确认后抑制原 Renderer/Flywheel，完成 Iris/阴影接入及整个资源集合的事务替换。
-4. 碰撞快照的事件失效、预取、上传、覆盖及第三方动态形状资格检查；休眠、活动调度和动态连续碰撞。
-5. GPU 脏状态压缩、网络 payload 注册、确认基线、区域订阅及连续事件的持久保留。
+4. 碰撞快照的速度预取、分批上传、实际 GPU 覆盖及第三方动态形状资格检查；休眠、活动调度和动态连续碰撞。方块/区块事件失效已实现。
+5. 将已验证的 GPU 压缩、非阻塞分片/journal 和最终确认接到实际物理提交；补齐观察客户端订阅、链路参数化同步和跨区域唯一接触所有者，停止重复 vanilla 同步。
 6. 游戏内视觉对照录像、玩法/多人回归，以及包含真实绘制和网络的 131072 活动包裹完整性能验收。
 
-上述事项完成前，不得抑制 Create 原有模拟或渲染，也不得把本阶段内核测量当作方案验收结果。
+生产客户端资源门禁完成前，不得启用 Create 模拟/渲染抑制，也不得把本阶段内核测量当作方案验收结果。当前受 lease 控制的 travel 钩子只为已验证资源的后续客户端准备，不会被预览或未准备的客户端触发。

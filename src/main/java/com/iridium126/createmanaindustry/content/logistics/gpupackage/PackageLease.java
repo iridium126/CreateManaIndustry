@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.content.logistics.gpupackage;
 
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.LongSupplier;
 
 /** Server-thread ownership fence. Pool indices never cross this boundary. */
 public final class PackageLease {
@@ -25,10 +26,16 @@ public final class PackageLease {
     private UUID authority;
     private long epoch, baselineRevision, lastSequence = -1, lastTransaction = -1, lastReceiptTick;
     private Pose committed;
+    private boolean frozen;
+    private final LongSupplier regionReceipt;
 
     public PackageLease(Identity identity, Pose initial) {
+        this(identity,initial,null);
+    }
+    public PackageLease(Identity identity, Pose initial, LongSupplier regionReceipt) {
         this.identity = Objects.requireNonNull(identity);
         committed = Objects.requireNonNull(initial);
+        this.regionReceipt=regionReceipt;
     }
 
     /** Begin only after server eligibility checks; Create keeps simulating until ready. */
@@ -40,6 +47,7 @@ public final class PackageLease {
         baselineRevision = Math.incrementExact(baselineRevision);
         lastSequence = lastTransaction = -1;
         lastReceiptTick = tick;
+        frozen=false;
         state = State.ACQUIRING;
         return epoch;
     }
@@ -51,12 +59,25 @@ public final class PackageLease {
                 || candidateBaseline != baselineRevision || !current.equals(committed)) return false;
         lastReceiptTick = tick;
         state = State.GPU_OWNED;
+        frozen=false;
         return true;
+    }
+
+    /** Resources are prepared; capture the CURRENT Create checkpoint, then wait for its exact ACK.
+     * The adapter pauses only physics during this bounded final-baseline window. */
+    public long freezeBaseline(UUID client,long candidateEpoch,long candidateBaseline,long tick,Pose current) {
+        if(state!=State.ACQUIRING || frozen || !matches(client,candidateEpoch) || expired(tick)
+                || candidateBaseline!=baselineRevision)return -1;
+        committed=Objects.requireNonNull(current);
+        baselineRevision=Math.incrementExact(baselineRevision);
+        lastReceiptTick=tick;frozen=true;
+        return baselineRevision;
     }
 
     /** While Create is still moving the object, replace the offered baseline and require a fresh ACK. */
     public long refreshAcquisition(Pose current) {
         if (state != State.ACQUIRING) throw new IllegalStateException("No acquisition in progress");
+        if(frozen)throw new IllegalStateException("Final acquisition baseline is frozen");
         if (!Objects.requireNonNull(current).equals(committed)) {
             committed=current;
             baselineRevision=Math.incrementExact(baselineRevision);
@@ -67,16 +88,19 @@ public final class PackageLease {
     /** Receipt time is server-owned. Client timestamps cannot extend a stale lease. */
     public boolean commit(UUID client, long candidateEpoch, long sequence, long tick, Pose pose,
                           double maxDisplacement) {
+        if(!canCommit(client,candidateEpoch,sequence,tick,pose,maxDisplacement))return false;
+        committed = pose;
+        lastSequence = sequence;
+        lastReceiptTick = tick;
+        return true;
+    }
+    public boolean canCommit(UUID client,long candidateEpoch,long sequence,long tick,Pose pose,double maxDisplacement) {
         Objects.requireNonNull(pose);
         if (state != State.GPU_OWNED || !matches(client, candidateEpoch) || expired(tick)
                 || sequence <= lastSequence || sequence < 0 || !(maxDisplacement >= 0)
                 || !Double.isFinite(maxDisplacement)) return false;
         double dx = pose.x - committed.x, dy = pose.y - committed.y, dz = pose.z - committed.z;
-        if (Math.hypot(Math.hypot(dx, dy), dz) > maxDisplacement) return false;
-        committed = pose;
-        lastSequence = sequence;
-        lastReceiptTick = tick;
-        return true;
+        return Math.hypot(Math.hypot(dx, dy), dz) <= maxDisplacement;
     }
 
     /** Region heartbeat keeps sleeping packages leased without repeated coordinate packets. */
@@ -100,7 +124,14 @@ public final class PackageLease {
         epoch = Math.incrementExact(epoch);
         authority = null;
         state = State.RELEASING;
+        frozen=false;
         return committed;
+    }
+
+    /** Cancelling an acquisition must not rewind the Create simulation that still owned it. */
+    public Pose release(Pose currentCreatePose) {
+        if(state==State.ACQUIRING)committed=Objects.requireNonNull(currentCreatePose);
+        return release();
     }
 
     public void restored() {
@@ -108,7 +139,12 @@ public final class PackageLease {
         state = State.CREATE_OWNED;
     }
 
-    public boolean expired(long tick) { return tick < lastReceiptTick || tick - lastReceiptTick > TIMEOUT_TICKS; }
+    public boolean expired(long tick) {
+        long receipt=lastReceiptTick;
+        // Shared server-owned receipt is O(1) per region. It cannot extend acquisition deadlines.
+        if(state==State.GPU_OWNED && regionReceipt!=null)receipt=Math.max(receipt,regionReceipt.getAsLong());
+        return tick<receipt || tick-receipt>TIMEOUT_TICKS;
+    }
     private boolean matches(UUID client, long candidateEpoch) {
         return candidateEpoch == epoch && authority != null && authority.equals(client);
     }
@@ -117,4 +153,6 @@ public final class PackageLease {
     public long epoch() { return epoch; }
     public long baselineRevision() { return baselineRevision; }
     public Pose committed() { return committed; }
+    public boolean physicsPaused() {return state==State.GPU_OWNED || state==State.ACQUIRING && frozen;}
+    public UUID authority() {return authority;}
 }

@@ -115,8 +115,21 @@ public final class CMIParticleCommand {
                                     tell(ctx,n==0?"Package preview stop queued.":"Queued "+n+" synthetic chain packages ahead of the camera; Create gameplay takeover is not enabled.");
                                     return 1;
                                 })))
+                        .then(Commands.literal("packagecollision")
+                                .executes(ctx->{tell(ctx,com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime.report());return 1;})
+                                .then(Commands.literal("capture").executes(ctx->{
+                                    var mc=net.minecraft.client.Minecraft.getInstance();
+                                    if(mc.level==null || mc.player==null)return 0;
+                                    var runtime=com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime.forLevel(mc.level);
+                                    boolean queued=runtime.request(mc.player.getBoundingBox().inflate(16));
+                                    tell(ctx,queued?"Queued nearby collision sections; capture runs within the 0.25 ms/tick soft budget.":"Collision cache capacity unavailable; Create retains ownership.");return queued?1:0;
+                                }))
+                                .then(Commands.literal("clear").executes(ctx->{
+                                    com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime.closeCurrent();
+                                    tell(ctx,"Package collision coverage revoked.");return 1;
+                                })))
                         .then(Commands.literal("profile")
-                                .executes(ctx -> { tell(ctx, com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.report()); return 1; })
+                                .executes(ctx -> { tell(ctx, com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.report());tell(ctx,com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.report());return 1; })
                                 .then(Commands.literal("on").executes(ctx -> { com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled(true); tell(ctx,"Particle profiling enabled"); return 1; }))
                                 .then(Commands.literal("off").executes(ctx -> { com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled(false); tell(ctx,"Particle profiling disabled"); return 1; })))
                         .then(Commands.literal("stats")

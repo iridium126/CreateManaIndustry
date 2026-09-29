@@ -19,7 +19,9 @@ public abstract class GlowingVineLevelMixin {
     private void cmi$trackGlowingVine(BlockPos pos, BlockState state, int flags, int recursionLeft,
             CallbackInfoReturnable<Boolean> cir) {
         Level level = (Level) (Object) this;
-        if (cir.getReturnValueZ() && level instanceof ClientLevel clientLevel)
+        if (cir.getReturnValueZ() && level instanceof ClientLevel clientLevel) {
             BlockParticleEmitterClient.onBlockChanged(clientLevel, pos);
+            com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime.blockChanged(clientLevel,pos);
+        }
     }
 }

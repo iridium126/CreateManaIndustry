@@ -56,6 +56,8 @@ public class CreateManaIndustryClient {
         // Common payload handlers expose typed installation points instead of
         // linking client-only implementations into classes loaded on servers.
         ClientboundStormStatePacket.installClientHandler(AllayStormClientHandler::onState);
+        com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackagePacket.installClientHandler(
+                com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient::receive);
         ClientboundStormDamagePacket.installClientHandler(AllayStormClientHandler::onDamage);
         ClientboundStormPositionsPacket.installClientHandler(AllayStormClientHandler::onPositions);
         ClientboundStormCenterPacket.installClientHandler(AllayStormClientHandler::onCenter);

@@ -17,6 +17,7 @@ allprojects {
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/PackageGpuValidation.java'
             if (project.hasProperty('packageBenchmark')) args '--benchmark'
+            if (project.hasProperty('packageDeltaPipelineBenchmark')) args '--delta-pipeline-benchmark'
             workingDir = project.projectDir
         }
     }

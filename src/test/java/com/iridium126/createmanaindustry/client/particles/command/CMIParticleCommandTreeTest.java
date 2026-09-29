@@ -42,6 +42,13 @@ class CMIParticleCommandTreeTest {
         assertNull(particle.getChild("spray"));
         assertNull(particle.getChild("bench"));
     }
+    @Test void packagePreviewAndCollisionPreparationCommandsParse() {
+        var dispatcher=dispatcher();
+        accepts(dispatcher,"cmi particle packagepreview 0");accepts(dispatcher,"cmi particle packagepreview 131072");
+        rejects(dispatcher,"cmi particle packagepreview 131073");
+        accepts(dispatcher,"cmi particle packagecollision");accepts(dispatcher,"cmi particle packagecollision capture");
+        accepts(dispatcher,"cmi particle packagecollision clear");rejects(dispatcher,"cmi particle packagecollision capture 131072");
+    }
 
     @Test void amountLimitsDependOnEmissionSourceAndDuration() {
         assertNull(CMIParticleCommand.amountValidationError(false, false, 1));

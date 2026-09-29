@@ -182,8 +182,17 @@ public class CreateManaIndustry {
                 ClientboundMistSyncPacket.TYPE,
                 ClientboundMistSyncPacket.STREAM_CODEC,
                 ClientboundMistSyncPacket::handle);
-        // Allay Storm sync: server -> client lifecycle/damage/corrections,
-        // client -> server hit reports + authority position snapshots.
+        // Optional development transport: old/unprepared clients continue using Create.
+        PayloadRegistrar packageRegistrar=event.registrar("gpu-packages-2").optional();
+        packageRegistrar.playToServer(
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket.TYPE,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket::handle);
+        packageRegistrar.playToClient(
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackagePacket.TYPE,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackagePacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackagePacket::handle);
+        // Allay Storm lifecycle/corrections, hits and authority position snapshots.
         registrar.playToClient(
                 ClientboundStormStatePacket.TYPE,
                 ClientboundStormStatePacket.STREAM_CODEC,

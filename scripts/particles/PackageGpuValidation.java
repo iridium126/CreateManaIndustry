@@ -9,6 +9,13 @@ import org.joml.Vector3f;
 import com.iridium126.createmanaindustry.client.particles.packages.PackagePhysicsGpu;
 import com.iridium126.createmanaindustry.client.particles.packages.PackageReadbackRing;
 import com.iridium126.createmanaindustry.client.particles.packages.PackagePoolGpu;
+import com.iridium126.createmanaindustry.client.particles.packages.PackageDeltaGpu;
+import com.iridium126.createmanaindustry.client.particles.packages.PackageDeltaChannel;
+import com.iridium126.createmanaindustry.client.particles.packages.PackageDeltaJournal;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageDeltaCodec;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageLease;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageAuthorityRegion;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource;
 
 /** Driver validation of package kernels; does not enable gameplay takeover. */
@@ -152,16 +159,312 @@ public class PackageGpuValidation {
             check(ring.submit(source,1,4),"ring failed reuse");ring.invalidate();
             check(ring.submit(source,2,0),"new epoch sequence rejected");GL11.glFinish();
             check(ring.poll(2,s->check(s.epoch()==2,"stale epoch leaked"))==1,"reset snapshot missing");
+            data.putInt(4,10).putInt(8,11);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,source);
+            GL15.glBufferSubData(GL31.GL_COPY_READ_BUFFER,0,data);
+            check(ring.submit(source,4,8,2,1),"fragment snapshot rejected");GL11.glFinish();
+            for(int i=0;i<8;i++) {
+                check(ring.pollAvailable(2,s->{check(s.bytes().remaining()==8,"fragment copied unused bytes");return false;})==0,"full journal silently consumed snapshot");
+                check(ring.pending()==1,"completed refused snapshot was overwritten");
+            }
+            check(ring.poll(2,s->{check(s.bytes().getInt(0)==10 && s.bytes().getInt(4)==11,"fragment offset contents");})==1,"deferred snapshot did not resume");
+            data.putInt(4,12).putInt(8,13);putBuffer(source,data);
+            check(ring.submit(source,4,8,2,2),"cached scratch blocked new snapshot");GL11.glFinish();
+            check(ring.poll(2,s->check(s.bytes().getInt(0)==12 && s.bytes().getInt(4)==13,"new snapshot reused old scratch"))==1,"cached slot failed to retire");
         }finally{GL15.glDeleteBuffers(source);}
     }
     static int buffer(ByteBuffer bytes) {
         int id=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);
         GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_DRAW);return id;
     }
+    static void deltaMeta(ByteBuffer m,int i,long generation) {
+        int p=i*32;m.putLong(p,0x1234567800000001L+i).putLong(p+8,generation);
+        m.putInt(p+16,i).putInt(p+20,i*2+7).putInt(p+24,1);
+    }
+    static PackageDeltaCodec.Quantized quantizedBody(ByteBuffer b,int i) {
+        int p=i*64;return PackageDeltaCodec.quantize(new PackageLease.Pose(b.getFloat(p),
+                (float)(b.getFloat(p+4)-b.getFloat(p+36)),b.getFloat(p+8),b.getFloat(p+16),b.getFloat(p+20),b.getFloat(p+24),b.getFloat(p+44)),
+                0,0,0,b.getFloat(p+28)>.5?1:0);
+    }
+    static ByteBuffer captureRecords(PackageDeltaGpu.Capture capture) {
+        ByteBuffer header=readBuffer(capture.headerBuffer(),16);int accepted=header.getInt(4);
+        check(accepted>=0 && accepted<=capture.capacity(),"unclamped delta capture count");
+        return readBuffer(capture.recordBuffer(),accepted*64);
+    }
+    static void acknowledge(PackageDeltaGpu gpu,PackageDeltaGpu.Capture capture,ByteBuffer records) {
+        for(int p=0;p<records.limit();p+=2048*64) {
+            var chunk=records.duplicate().order(ByteOrder.nativeOrder());chunk.position(p).limit(Math.min(records.limit(),p+2048*64));
+            gpu.acknowledge(capture.stamp(),chunk);
+        }
+    }
+    static void deltas() {
+        var empty=new PackageDeltaCodec.Quantized(0,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        for(int n:new int[]{0,1,63,64,65,131072}) {
+            ByteBuffer b=bodies(Math.max(1,n)),meta=BufferUtils.createByteBuffer(n*32),baseline=BufferUtils.createByteBuffer(n*32);
+            for(int i=0;i<n;i++) {
+                body(b,i,(i%128)*.25f+.125f,(i/128%128)*.25f+.625f,(i/16384)*3+.125f,1);
+                int p=i*64;b.putFloat(p+16,i%2==0?.125f:-.5f).putFloat(p+20,(i%3-1)*.25f)
+                        .putFloat(p+44,(i%721)-360+(i%4)*.0625f).putFloat(p+28,i%2);
+                deltaMeta(meta,i,0x2345678900000001L);
+            }
+            int state=buffer(b);
+            try(var gpu=new PackageDeltaGpu(Math.max(1,n),PackageGpuValidation::source)) {
+                gpu.upload(meta,baseline,n);var first=gpu.capture(state,n,0,0,0,Math.max(1,n));
+                ByteBuffer out=captureRecords(first);check(out.remaining()==n*64,"full-capacity dirty set missing");
+                BitSet seen=new BitSet(n);
+                for(int p=0;p<out.limit();p+=64) {
+                    int candidate=out.getInt(p+16);check(candidate>=0 && candidate<n && !seen.get(candidate),"duplicate/invalid dirty identity");seen.set(candidate);
+                    check(out.getLong(p)==0x1234567800000001L+candidate && out.getLong(p+8)==0x2345678900000001L,"truncated delta identity");
+                    check(out.getInt(p+20)==candidate*2+7,"pool index used as wire identity");
+                    var expected=quantizedBody(b,candidate);
+                    check(out.getInt(p+24)==PackageDeltaCodec.changes(empty,expected) && out.getInt(p+28)==0,"independent field mask/release status");
+                    check(out.getInt(p+32)==expected.x() && out.getInt(p+36)==expected.y() && out.getInt(p+40)==expected.z()
+                            && out.getInt(p+44)==expected.flags(),"position/flags quantization parity");
+                    check(out.getInt(p+48)==expected.vx() && out.getInt(p+52)==expected.vy() && out.getInt(p+56)==expected.vz()
+                            && out.getInt(p+60)==expected.yaw(),"velocity/negative yaw quantization parity");
+                }
+                var blocked=new PackageDeltaGpu.Capture[3];
+                for(int i=0;i<3;i++){blocked[i]=gpu.capture(state,n,0,0,0,Math.max(1,n));check(captureRecords(blocked[i]).remaining()==0,"readback implicitly acknowledged delta");}
+                check(gpu.capture(state,n,0,0,0,Math.max(1,n))==null,"immutable capture bank overwritten");
+                for(var capture:blocked)gpu.finish(capture);
+                if(n>0) {
+                    gpu.acknowledge(first.stamp()+100,out.duplicate().limit(Math.min(out.limit(),2048*64)));
+                    // A wrong-stamp ACK must leave the pending records suppressed, rather than ACKing them.
+                    var ignored=gpu.capture(state,n,0,0,0,n);check(captureRecords(ignored).remaining()==0,"wrong ACK stamp released flights");gpu.finish(ignored);
+                }
+                gpu.cancel(first);var retry=gpu.capture(state,n,0,0,0,Math.max(1,n));
+                ByteBuffer again=captureRecords(retry);check(again.remaining()==n*64,"cancel lost dirty state");
+                acknowledge(gpu,retry,again);gpu.finish(retry);
+                var clean=gpu.capture(state,n,0,0,0,Math.max(1,n));check(captureRecords(clean).remaining()==0,"stationary acknowledged state was resent");gpu.finish(clean);
+            }finally{GL15.glDeleteBuffers(state);}
+        }
+    }
+    static void deltaOverflowAndIdentity() {
+        int n=65;ByteBuffer b=bodies(n),meta=BufferUtils.createByteBuffer(n*32),baseline=BufferUtils.createByteBuffer(n*32);
+        for(int i=0;i<n;i++){body(b,i,2,3,4,1);deltaMeta(meta,i,1);}
+        int state=buffer(b);
+        try(var gpu=new PackageDeltaGpu(n,PackageGpuValidation::source)) {
+            gpu.upload(meta,baseline,n);var limited=gpu.capture(state,n,0,0,0,31);
+            ByteBuffer header=readBuffer(limited.headerBuffer(),16);
+            check(header.getInt(0)==65 && header.getInt(4)==31 && header.getInt(8)==34,"overflow counts not independently clamped");
+            ByteBuffer first=captureRecords(limited);var second=gpu.capture(state,n,0,0,0,n);ByteBuffer rest=captureRecords(second);
+            check(rest.remaining()==34*64,"overflowed candidates silently dropped");
+            BitSet seen=new BitSet();for(var records:List.of(first,rest))for(int p=0;p<records.limit();p+=64) {
+                int i=records.getInt(p+16);check(!seen.get(i),"overflow retry duplicates in-flight identity");seen.set(i);
+            }
+            check(seen.cardinality()==65,"overflow retry lost identities");
+            acknowledge(gpu,limited,first);acknowledge(gpu,second,rest);gpu.finish(limited);gpu.finish(second);
+            // Only velocity changes, even if the feet position is identical.
+            b.putFloat(16,.25f);putBuffer(state,b);var changed=gpu.capture(state,n,0,0,0,n);ByteBuffer old=captureRecords(changed);
+            check(old.remaining()==64 && old.getInt(24)==2,"velocity-only change was omitted");gpu.finish(changed);
+            deltaMeta(meta,0,2);gpu.upload(meta,baseline,n);var replacement=gpu.capture(state,n,0,0,0,n);
+            ByteBuffer current=captureRecords(replacement);gpu.acknowledge(replacement.stamp(),old);
+            var pending=gpu.capture(state,n,0,0,0,n);check(captureRecords(pending).remaining()==0,"old generation modified replacement flight");gpu.finish(pending);
+            gpu.acknowledge(changed.stamp(),old);acknowledge(gpu,replacement,current);gpu.finish(replacement);
+            var clean=gpu.capture(state,n,0,0,0,n);check(captureRecords(clean).remaining()==0,"valid generation ACK did not commit");gpu.finish(clean);
+            // Refused shader rebuild preserves the entire previous program set.
+            boolean failed=false;try{gpu.rebuild(name->name.endsWith("delta_finalize.comp")?"invalid shader":source(name));}catch(RuntimeException expected){failed=true;}
+            check(failed,"invalid delta rebuild accepted");
+            b.putFloat(60,-1);putBuffer(state,b);var release=gpu.capture(state,n,0,0,0,n);var event=captureRecords(release);
+            check(event.remaining()==64 && event.getInt(28)==1,"solver fallback did not emit ownership release");
+            gpu.cancel(release);release=gpu.capture(state,n,0,0,0,n);event=captureRecords(release);
+            check(event.remaining()==64 && event.getInt(28)==1,"unacknowledged release event was lost");
+            acknowledge(gpu,release,event);gpu.finish(release);
+            var retired=gpu.capture(state,n,0,0,0,n);check(captureRecords(retired).remaining()==0,"acknowledged release candidate remained active");gpu.finish(retired);
+        }finally{GL15.glDeleteBuffers(state);}
+    }
+    static void deltaYawTies() {
+        int n=129;ByteBuffer b=bodies(n),meta=BufferUtils.createByteBuffer(n*32),baseline=BufferUtils.createByteBuffer(n*32);
+        for(int i=0;i<n;i++) {
+            body(b,i,1,2,3,1);deltaMeta(meta,i,1);
+            b.putFloat(i*64+44,(float)((i-64+.5)*(360.0/65536)));
+        }
+        int state=buffer(b);
+        try(var gpu=new PackageDeltaGpu(n,PackageGpuValidation::source)) {
+            gpu.upload(meta,baseline,n);var capture=gpu.capture(state,n,0,0,0,n);var out=captureRecords(capture);
+            check(out.remaining()==n*64,"yaw tie candidate missing");
+            for(int p=0;p<out.limit();p+=64) {
+                int i=out.getInt(p+16),expected=quantizedBody(b,i).yaw();
+                check(out.getInt(p+60)==expected,"Java yaw tie "+i+": GPU "+out.getInt(p+60)+", expected "+expected);
+            }
+            gpu.cancel(capture);
+        }finally{GL15.glDeleteBuffers(state);}
+    }
+    static void deltaQuantizationLimits() {
+        int n=8;ByteBuffer b=bodies(n),meta=BufferUtils.createByteBuffer(n*32),baseline=BufferUtils.createByteBuffer(n*32);
+        for(int i=0;i<n;i++){body(b,i,1,2,3,1);deltaMeta(meta,i,1);}
+        b.putFloat(0,Math.nextDown(64f)); // rounds to the adjacent region, must release
+        b.putFloat(64+16,25).putFloat(64+20,25); // each component fits short, speed does not
+        b.putFloat(128+16,32); // short overflow, never saturated
+        b.putFloat(192+44,-999999.9375f);
+        b.putFloat(256+44,999999.9375f);
+        b.putFloat(320+16,-.5f/1024).putFloat(320+20,.5f/1024); // Java's signed round ties
+        b.putFloat(384,1+.5f/4096).putFloat(384+8,1+1.5f/4096); // ties-to-even positions
+        meta.putInt(7*32+16,n); // invalid body index must not be dereferenced
+        int state=buffer(b);
+        try(var gpu=new PackageDeltaGpu(n,PackageGpuValidation::source)) {
+            gpu.upload(meta,baseline,n);var capture=gpu.capture(state,n,0,0,0,n);var out=captureRecords(capture);
+            check(out.remaining()==n*64,"quantization boundary record missing");
+            for(int p=0;p<out.limit();p+=64) {
+                int i=out.getInt(p+16);boolean release=i<3 || i==7;
+                check(out.getInt(p+28)==(release?1:0),"out-of-range candidate did not hand back individually");
+                if(!release) {
+                    var q=quantizedBody(b,i);
+                    check(out.getInt(p+32)==q.x() && out.getInt(p+40)==q.z(),"position ties-to-even mismatch");
+                    check(out.getInt(p+48)==q.vx() && out.getInt(p+52)==q.vy() && out.getInt(p+60)==q.yaw(),"signed velocity/large yaw rounding mismatch");
+                }
+            }
+            gpu.cancel(capture);
+        }finally{GL15.glDeleteBuffers(state);}
+    }
     static ByteBuffer readBuffer(int id,int bytes) {
         ByteBuffer result=BufferUtils.createByteBuffer(bytes);
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,result);return result;
+    }
+    static final class ChannelTransport implements PackageDeltaChannel.Transport {
+        PackageDeltaChannel channel;
+        final BitSet seen=new BitSet();
+        final List<Long> waiting=new ArrayList<>();
+        final PackageAuthorityRegion server;
+        int records,failures,releases,notices;
+        boolean accepted=true,automaticAck=true;
+        long last=-1;
+        ChannelTransport(PackageAuthorityRegion server){this.server=server;}
+        public boolean send(long epoch,long revision,long sequence,ByteBuffer bytes) {
+            if(!accepted)return false;
+            check(epoch==77 && revision==3,"channel lost namespace");check(sequence>last,"wire packet order regressed");last=sequence;
+            check(bytes.remaining()<=24576,"wire packet exceeded negotiated limit");
+            var changes=PackageDeltaCodec.decode(bytes);check(!bytes.hasRemaining(),"wire body trailing bytes");
+            if(server!=null)check(server.delta(new UUID(7,9),epoch,revision,sequence,0,changes,4)==PackageAuthorityRegion.Result.ACCEPTED,"actual server rejected channel delta");
+            for(var change:changes){seen.set(change.id());records++;if(change.mask()==16)releases++;}
+            if(automaticAck)check(channel.acknowledge(epoch,revision,sequence),"loopback ACK rejected");else waiting.add(sequence);
+            return true;
+        }
+        public void failed(String reason){failures++;}
+        public void released(int localId,long id,long generation){notices++;}
+    }
+    static final class ChannelTarget implements PackageAuthorityRegion.Target {
+        final PackageLease.Identity identity;
+        PackageAuthorityRegion.Snapshot state;
+        int releases;
+        ChannelTarget(int i){identity=new PackageLease.Identity(0x1234567800000001L+i,1);state=new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(1,2.5,4,0,0,0,0),1);}
+        public PackageLease.Identity identity(){return identity;}
+        public PackageAuthorityRegion.Snapshot snapshot(){return state;}
+        public boolean eligible(){return true;}
+        public void apply(PackageAuthorityRegion.Snapshot next){state=next;}
+        public void released(PackageAuthorityRegion.Baseline baseline){releases++;}
+    }
+    static void channelRoundTrip() {
+        for(int n:new int[]{65,131072}) {
+            var tasks=new ArrayDeque<Runnable>();var clock=new java.util.concurrent.atomic.AtomicLong();
+            ByteBuffer b=bodies(n),meta=BufferUtils.createByteBuffer(n*32),baseline=BufferUtils.createByteBuffer(n*32);
+            PackageAuthorityRegion server=n==65?new PackageAuthorityRegion(new PackageRegion(0,0,0),new UUID(7,9),77,3,0):null;
+            ChannelTarget[] targets=n==65?new ChannelTarget[n]:null;
+            for(int i=0;i<n;i++) {
+                body(b,i,2,3,4,1);deltaMeta(meta,i,1);meta.putInt(i*32+20,i);
+                if(server!=null) {
+                    var target=new ChannelTarget(i);targets[i]=target;var offered=server.offer(target,0);
+                    var prepared=server.prepared(new UUID(7,9),77,offered.index(),target.identity,offered.leaseEpoch(),offered.revision(),0);
+                    check(server.finalReady(new UUID(7,9),77,prepared.index(),target.identity,prepared.leaseEpoch(),prepared.revision(),0),"channel server baseline ready");
+                }
+            }
+            var transport=new ChannelTransport(server);int state=buffer(b);
+            var gpu=new PackageDeltaGpu(n,PackageGpuValidation::source);
+            try(var channel=new PackageDeltaChannel(gpu,n,77,3,new PackageDeltaJournal.Encoder(tasks::add,4),transport,clock::get,true)) {
+                transport.channel=channel;channel.append(meta,baseline,n);check(channel.capture(state,n,0,0,0),"channel initial capture");
+                for(int frame=0;frame<12;frame++) {
+                    GL11.glFinish();channel.pump(256);
+                    check(!channel.closed(),"deferred worker blocked/closed within processing budget");
+                    check(tasks.size()<=4,"encoder work exceeded global budget");
+                }
+                check(transport.records==0,"unfinished encoder published records");
+                // Work can finish out of order; transport still must publish increasing sequences.
+                for(int frame=0;frame<20 && channel.stats().ackedPackets()<(n+511)/512;frame++) {
+                    while(!tasks.isEmpty())tasks.removeLast().run();GL11.glFinish();channel.pump(256);
+                }
+                check(!channel.closed() && transport.records==n && transport.seen.cardinality()==n,"fragmented full-capacity journal lost records");
+                check(channel.stats().payloadBytes()==(long)n*64,"readback copied unused capacity");
+                check(channel.stats().ackedPackets()==(n+511)/512,"ACK journal did not retire full capture");
+                if(n==131072)check(channel.stats().ackDispatches()<=16,"ACK coalescing regressed to per-packet GL dispatch");
+                var clean=gpu.capture(state,n,0,0,0,n);check(captureRecords(clean).remaining()==0,"server ACK did not advance GPU baseline");gpu.finish(clean);
+                check(!channel.acknowledge(76,3,0) && !channel.acknowledge(77,4,0) && !channel.acknowledge(77,3,99999),"wrong namespace/unknown ACK accepted");
+                if(server!=null) {
+                    for(var target:targets)check(target.state.pose().x()==2,"end-to-end server pose mismatch");
+                    transport.automaticAck=false;transport.seen.clear();
+                    b.putFloat(60,-1);b.putFloat(64+16,.25f);putBuffer(state,b);
+                    check(channel.capture(state,n,0,0,0),"mixed release capture");
+                    for(int frame=0;frame<8 && transport.waiting.isEmpty();frame++){GL11.glFinish();channel.pump(8);while(!tasks.isEmpty())tasks.remove().run();}
+                    check(transport.releases==1 && targets[0].releases==1,"GPU release did not commit exactly once");
+                    check(targets[1].state.pose().vx()==.25,"velocity-only state lost beside release");
+                    check(channel.released(77,new PackageAuthorityRegion.Baseline(0,targets[0].identity,1,2,targets[0].state)),"server ownership notice rejected");
+                    long sequence=transport.waiting.getFirst();check(channel.acknowledge(77,3,sequence),"delayed valid ACK rejected");channel.pump(8);
+                    var noDuplicate=gpu.capture(state,n,0,0,0,n);check(captureRecords(noDuplicate).remaining()==0,"release/pose ACK repeated dirty state");gpu.finish(noDuplicate);
+                    check(transport.notices==1,"authority release callback lost");
+                    channel.released(77,new PackageAuthorityRegion.Baseline(0,targets[0].identity,1,2,targets[0].state));channel.pump(8);
+                    check(transport.notices==1,"duplicate terminal notification repeated lifecycle callback");
+                }
+            }finally{GL15.glDeleteBuffers(state);}
+            check(transport.failures==0,"healthy channel called fallback");
+        }
+    }
+    static void channelLifecycle() {
+        ByteBuffer b=bodies(2),meta=BufferUtils.createByteBuffer(64),baseline=BufferUtils.createByteBuffer(64);
+        for(int i=0;i<2;i++){body(b,i,2,3,4,1);deltaMeta(meta,i,1);}
+        int state=buffer(b);var tasks=new ArrayDeque<Runnable>();var clock=new java.util.concurrent.atomic.AtomicLong();
+        var transport=new ChannelTransport(null);var gpu=new PackageDeltaGpu(2,PackageGpuValidation::source);
+        try(var channel=new PackageDeltaChannel(gpu,2,77,3,new PackageDeltaJournal.Encoder(tasks::add,4),transport,clock::get)) {
+            transport.channel=channel;
+            var first=meta.duplicate().position(0).limit(32);var firstBase=baseline.duplicate().position(0).limit(32);
+            channel.append(first,firstBase,1);check(channel.capture(state,2,0,0,0),"first append capture");GL11.glFinish();channel.pump(4);
+            var next=meta.duplicate().position(32).limit(64);var nextBase=baseline.duplicate().position(32).limit(64);
+            channel.append(next,nextBase,1);check(channel.capture(state,2,0,0,0),"append reset existing flights");
+            for(int frame=0;frame<8 && channel.stats().ackedPackets()<2;frame++){GL11.glFinish();channel.pump(4);while(!tasks.isEmpty())tasks.remove().run();}
+            check(transport.records==2 && channel.stats().ackedPackets()==2,"append during immutable readback lost or duplicated candidate");
+            b.putFloat(0,3);putBuffer(state,b);channel.capture(state,2,0,0,0);
+            clock.set(PackageDeltaChannel.PREPARATION_TIMEOUT_NANOS+1);GL11.glFinish();channel.pump(4);
+            check(channel.closed() && transport.failures==1,"processing timeout did not restore Create");
+            check(!channel.acknowledge(77,3,0),"old epoch ACK survived closed channel");
+            while(!tasks.isEmpty())tasks.remove().run();channel.pump(4);check(transport.failures==1,"fallback callback repeated");
+        }finally{GL15.glDeleteBuffers(state);}
+    }
+    static void channelImmutableAndPartialTransport() {
+        for(boolean batched:new boolean[]{false,true}) {
+            int n=1025;ByteBuffer b=bodies(n),meta=BufferUtils.createByteBuffer(n*32),baseline=BufferUtils.createByteBuffer(n*32);
+            for(int i=0;i<n;i++){body(b,i,2,3,4,1);deltaMeta(meta,i,1);meta.putInt(i*32+20,i);}
+            int state=buffer(b);var tasks=new ArrayDeque<Runnable>();var time=new java.util.concurrent.atomic.AtomicLong();
+            var transport=new ChannelTransport(null);transport.accepted=false;
+            var gpu=new PackageDeltaGpu(n,PackageGpuValidation::source);
+            try(var channel=new PackageDeltaChannel(gpu,n,77,3,new PackageDeltaJournal.Encoder(tasks::add,4),transport,time::get,batched)) {
+                transport.channel=channel;channel.append(meta,baseline,n);channel.capture(state,n,0,0,0);
+                for(int frame=0;frame<5;frame++){GL11.glFinish();channel.pump(8);while(!tasks.isEmpty())tasks.remove().run();}
+                check(transport.records==0 && !channel.acknowledge(77,3,0),"unpublished transport packet accepted ACK");
+                // The actual bodies move while their old immutable records wait for transport.
+                for(int i=0;i<n;i++)b.putFloat(i*64,3);putBuffer(state,b);
+                check(channel.capture(state,n,0,0,0),"in-flight detector prevented simulation");
+                for(int frame=0;frame<5;frame++){GL11.glFinish();channel.pump(8);}
+                check(transport.records==0 && !channel.closed(),"backpressure lost or published queued records");
+                transport.accepted=true;
+                for(int frame=0;frame<5 && channel.stats().ackedPackets()<3;frame++){GL11.glFinish();channel.pump(8);}
+                check(channel.stats().ackedPackets()==3 && transport.records==n,"transport retry lost/duplicated capture");
+                check(channel.stats().ackDispatches()==(batched?1:3),"ACK batching command count");
+                var newer=gpu.capture(state,n,0,0,0,n);var records=captureRecords(newer);
+                check(records.remaining()==n*64,"old capture ACK acknowledged newer unsubmitted bodies");
+                for(int p=0;p<records.limit();p+=64)check(records.getInt(p+32)==12288,"newer dirty state was overwritten by readback");
+                gpu.cancel(newer);
+                var stale=new PackageAuthorityRegion.Baseline(0,new PackageLease.Identity(0x1234567800000001L,2),1,2,
+                        new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(2,2.5,4,0,0,0,0),0));
+                channel.released(77,stale);channel.pump(8);
+                check(transport.notices==0,"stale lifecycle generation released live package");
+                var afterNotice=gpu.capture(state,n,0,0,0,n);check(captureRecords(afterNotice).remaining()==n*64,"stale terminal notice disabled live identity");gpu.cancel(afterNotice);
+                check(channel.capture(state,n,0,0,0),"wrapped journal capture");
+                for(int frame=0;frame<8 && channel.stats().ackedPackets()<6;frame++){GL11.glFinish();channel.pump(8);while(!tasks.isEmpty())tasks.remove().run();}
+                check(channel.stats().ackedPackets()==6 && transport.records==2*n,"wrapped journal lost/duplicated records");
+                var wrapped=gpu.capture(state,n,0,0,0,n);check(captureRecords(wrapped).remaining()==0,"GPU journal wrapped ACK range corrupted baseline");gpu.finish(wrapped);
+                channel.capture(state,n,0,0,0);channel.close(); // No fence wait; invalidate unread source banks.
+                check(!channel.acknowledge(77,3,0) && !channel.released(77,stale),"closed epoch accepted terminal mailbox data");
+            }finally{GL15.glDeleteBuffers(state);}
+            check(transport.failures==0,"partial transport triggered unwarranted fallback");
+        }
     }
     static void putBuffer(int id,ByteBuffer bytes) {
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
@@ -431,6 +734,128 @@ public class PackageGpuValidation {
         Files.write(Path.of("build/package-gpu-kernels.csv"),rows);
         for(String row:rows)System.out.println(row);
     }
+    static double percentile(double[] values,double fraction) {
+        var sorted=values.clone();Arrays.sort(sorted);return sorted[Math.max(0,(int)Math.ceil(fraction*sorted.length)-1)];
+    }
+    static void deltaBenchmark() throws Exception {
+        var rows=new ArrayList<String>();rows.add("count,scenario,run,gpu_p50_ms,gpu_p95_ms,cpu_submit_p50_ms,cpu_submit_p95_ms");
+        for(int n:new int[]{10000,65536,131072}) {
+            ByteBuffer b=bodies(n),meta=BufferUtils.createByteBuffer(n*32),baseline=BufferUtils.createByteBuffer(n*32);
+            for(int i=0;i<n;i++){body(b,i,2,3,4,1);deltaMeta(meta,i,1);}int state=buffer(b);
+            try(var gpu=new PackageDeltaGpu(n,PackageGpuValidation::source)) {
+                for(String scenario:List.of("dirty_capture_cancel","unchanged_capture")) {
+                    gpu.upload(meta,baseline,n);
+                    if(scenario.equals("unchanged_capture")) {
+                        var initial=gpu.capture(state,n,0,0,0,n);acknowledge(gpu,initial,captureRecords(initial));gpu.finish(initial);
+                    }
+                    Runnable frame=()->{var capture=gpu.capture(state,n,0,0,0,n);if(scenario.equals("dirty_capture_cancel"))gpu.cancel(capture);else gpu.finish(capture);};
+                    for(int warm=0;warm<20;warm++)frame.run();GL11.glFinish();
+                    for(int run=1;run<=3;run++) {
+                        int[] queries=new int[60];double[] cpu=new double[60],times=new double[60];
+                        for(int i=0;i<queries.length;i++) {
+                            queries[i]=GL15.glGenQueries();GL15.glBeginQuery(GL33.GL_TIME_ELAPSED,queries[i]);
+                            long begin=System.nanoTime();frame.run();cpu[i]=(System.nanoTime()-begin)/1e6;
+                            GL15.glEndQuery(GL33.GL_TIME_ELAPSED);
+                        }
+                        for(int i=0;i<queries.length;i++){times[i]=GL33.glGetQueryObjectui64(queries[i],GL15.GL_QUERY_RESULT)/1e6;GL15.glDeleteQueries(queries[i]);}
+                        rows.add(n+","+scenario+","+run+","+percentile(times,.5)+","+percentile(times,.95)+","+percentile(cpu,.5)+","+percentile(cpu,.95));
+                    }
+                }
+            }finally{GL15.glDeleteBuffers(state);}
+        }
+        Files.write(Path.of("build/package-gpu-deltas.csv"),rows);for(String row:rows)System.out.println(row);
+    }
+    static volatile com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket benchmarkPacket;
+    static final class PipelineTransport implements PackageDeltaChannel.Transport {
+        static final PackageRegion REGION=new PackageRegion(0,0,0);
+        PackageDeltaChannel channel;
+        String failure;
+        final boolean workerPackets;
+        PipelineTransport(boolean workerPackets){this.workerPackets=workerPackets;}
+        static Object packet(long epoch,long revision,long sequence,ByteBuffer bytes) {
+            // Match production's immutable packet copy. No Netty, network, server entity update or render.
+            byte[] body=new byte[bytes.remaining()];bytes.get(body);
+            return new com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket(5,0,
+                    REGION,epoch,0,null,0,revision,sequence,body);
+        }
+        public Object prepare(long epoch,long revision,long sequence,ByteBuffer bytes){return workerPackets?packet(epoch,revision,sequence,bytes):null;}
+        public boolean send(long epoch,long revision,long sequence,ByteBuffer bytes){return sendPrepared(epoch,revision,sequence,packet(epoch,revision,sequence,bytes),bytes);}
+        public boolean sendPrepared(long epoch,long revision,long sequence,Object prepared,ByteBuffer bytes) {
+            if(prepared==null)prepared=packet(epoch,revision,sequence,bytes);
+            benchmarkPacket=(com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket)prepared;
+            if(!channel.acknowledge(epoch,revision,sequence))throw new AssertionError("Benchmark loopback ACK rejected");return true;
+        }
+        public void failed(String reason){failure=reason;}
+    }
+    static void pipelineBenchmark() throws Exception {
+        long setup=System.nanoTime();
+        benchmarkPacket=com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket.capabilities(0);
+        System.out.println("Pipeline packet class setup (excluded from warmed samples): "+(System.nanoTime()-setup)/1e6+" ms");
+        var summaries=new ArrayList<String>();var samples=new ArrayList<String>();
+        summaries.add("count,scenario,run,samples,cpu_total_p50_ms,cpu_total_p95_ms,cpu_peak_call_p50_ms,cpu_peak_call_p95_ms,latency_p50_ms,latency_p95_ms,encoder_work_mean_ms,render_alloc_mean_kib,readback_mean_bytes,wire_body_mean_bytes,packets_mean,ack_dispatch_mean");
+        samples.add("count,scenario,run,sample,cpu_total_ms,cpu_peak_call_ms,latency_ms,encoder_work_ms,render_alloc_bytes,readback_bytes,wire_body_bytes,packets,ack_dispatches");
+        var threadBean=(com.sun.management.ThreadMXBean)java.lang.management.ManagementFactory.getThreadMXBean();
+        boolean allocations=threadBean.isThreadAllocatedMemorySupported();if(allocations)threadBean.setThreadAllocatedMemoryEnabled(true);
+        long thread=Thread.currentThread().threadId();
+        try(var executor=java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var workerNanos=new java.util.concurrent.atomic.AtomicLong();
+            var encoder=new PackageDeltaJournal.Encoder(task->executor.execute(()->{
+                long start=System.nanoTime();try{task.run();}finally{workerNanos.addAndGet(System.nanoTime()-start);}
+            }),4);
+            for(int n:new int[]{10000,65536,131072}) {
+                ByteBuffer b=bodies(n),meta=BufferUtils.createByteBuffer(n*32),baseline=BufferUtils.createByteBuffer(n*32);
+                for(int i=0;i<n;i++) {
+                    body(b,i,.5f+(i%128)*.25f,1+(i/128%64)*.5f,.5f+(i/8192)*2,1);
+                    b.putFloat(i*64+16,.25f);deltaMeta(meta,i,1);meta.putInt(i*32+20,i);
+                }
+                int state=buffer(b);
+                try {
+                    // Alternate order by repetition to reduce fixed warmup/temperature order bias.
+                    for(int run=1;run<=3;run++)for(int mode:run%2==0?new int[]{2,1,0}:new int[]{0,1,2}) {
+                        boolean batched=mode==2;
+                        String scenario=mode==0?"direct_render_packet":mode==1?"direct_worker_packet":"gpu_journal_worker_packet";
+                        var transport=new PipelineTransport(mode!=0);
+                        var detector=new PackageDeltaGpu(n,PackageGpuValidation::source);
+                        try(var channel=new PackageDeltaChannel(detector,n,77,3,encoder,transport,System::nanoTime,batched)) {
+                            transport.channel=channel;channel.append(meta,baseline,n);int packets=(n+511)/512;
+                            double[] cpu=new double[30],peak=new double[30],latency=new double[30];
+                            double workerTotal=0,allocatedTotal=0,readbackTotal=0,wireTotal=0,packetTotal=0,dispatchTotal=0;
+                            for(int sample=-15;sample<30;sample++) {
+                                for(int i=0;i<n;i++)b.putFloat(i*64,.5f+(i%128)*.25f+((sample&1)==0?.03125f:0));
+                                putBuffer(state,b); // Synthetic motion upload excluded; production solver writes on GPU.
+                                var before=channel.stats();long workerStart=workerNanos.get();
+                                long allocated=allocations?threadBean.getThreadAllocatedBytes(thread):0;
+                                long start=System.nanoTime(),call=start;
+                                check(channel.capture(state,n,0,0,0),"benchmark capture skipped");
+                                long elapsed=System.nanoTime()-call,total=elapsed,maximum=elapsed;
+                                int pumps=0;
+                                while(channel.stats().ackedPackets()<before.ackedPackets()+packets && !channel.closed()) {
+                                    call=System.nanoTime();channel.pump(256);elapsed=System.nanoTime()-call;total+=elapsed;maximum=Math.max(maximum,elapsed);
+                                    if(++pumps>2000)throw new AssertionError("Benchmark did not drain");
+                                    if(channel.stats().ackedPackets()<before.ackedPackets()+packets)Thread.sleep(1); // Harness polling cadence, outside CPU totals.
+                                }
+                                long end=System.nanoTime();var after=channel.stats();
+                                check(!channel.closed(),"pipeline benchmark fallback count="+n+", run="+run+", sample="+sample+", elapsed_ms="+(end-start)/1e6+": "+transport.failure);
+                                check(after.payloadBytes()-before.payloadBytes()==(long)n*64,"pipeline benchmark lost dirty bodies");
+                                long allocationBytes=allocations?threadBean.getThreadAllocatedBytes(thread)-allocated:-1;
+                                long worker=workerNanos.get()-workerStart,readback=after.payloadBytes()-before.payloadBytes(),wire=after.wireBytes()-before.wireBytes();
+                                long sent=after.sentPackets()-before.sentPackets(),dispatches=after.ackDispatches()-before.ackDispatches();
+                                if(sample>=0) {
+                                    cpu[sample]=total/1e6;peak[sample]=maximum/1e6;latency[sample]=(end-start)/1e6;
+                                    workerTotal+=worker/1e6;allocatedTotal+=allocationBytes/1024.0;readbackTotal+=readback;wireTotal+=wire;packetTotal+=sent;dispatchTotal+=dispatches;
+                                    samples.add(n+","+scenario+","+run+","+sample+","+cpu[sample]+","+peak[sample]+","+latency[sample]+","+worker/1e6+","+allocationBytes+","+readback+","+wire+","+sent+","+dispatches);
+                                }
+                            }
+                            var clean=detector.capture(state,n,0,0,0,n);check(captureRecords(clean).remaining()==0,"pipeline benchmark baseline mismatch");detector.finish(clean);
+                            String summary=n+","+scenario+","+run+",30,"+percentile(cpu,.5)+","+percentile(cpu,.95)+","+percentile(peak,.5)+","+percentile(peak,.95)+","+percentile(latency,.5)+","+percentile(latency,.95)+","+workerTotal/30+","+allocatedTotal/30+","+readbackTotal/30+","+wireTotal/30+","+packetTotal/30+","+dispatchTotal/30;
+                            summaries.add(summary);System.out.println(summary);
+                        }
+                    }
+                }finally{GL15.glDeleteBuffers(state);}
+            }
+        }
+        Files.write(Path.of("build/package-delta-pipeline.csv"),summaries);Files.write(Path.of("build/package-delta-pipeline-samples.csv"),samples);
+    }
     public static void main(String[] args)throws Exception {
         GLFWErrorCallback callback=GLFWErrorCallback.createPrint(System.err);callback.set();
         check(GLFW.glfwInit(),"GLFW init");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);
@@ -439,7 +864,8 @@ public class PackageGpuValidation {
         try {
             GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
             System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));
-            sourceContract();boundaries();contact();sweep();chain();chainReference();readbacks();pool();render();previewLoad();poseParity();if(Arrays.asList(args).contains("--benchmark"))benchmark();
+            sourceContract();boundaries();contact();sweep();chain();chainReference();readbacks();pool();render();previewLoad();poseParity();deltas();deltaOverflowAndIdentity();deltaQuantizationLimits();deltaYawTies();channelRoundTrip();channelLifecycle();channelImmutableAndPartialTransport();if(Arrays.asList(args).contains("--benchmark")){benchmark();deltaBenchmark();}
+            if(Arrays.asList(args).contains("--delta-pipeline-benchmark"))pipelineBenchmark();
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"GL error");System.out.println("Package GPU: "+checks+" assertions passed");
         }finally {GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();callback.free();}
     }

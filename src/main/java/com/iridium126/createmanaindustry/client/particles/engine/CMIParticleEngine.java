@@ -750,6 +750,7 @@ public final class CMIParticleEngine {
 
     /** Called on resource reload so shaders recompile next frame. */
     public void requestProgramRebuild() {
+        com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Package resources reloaded",true);
         this.programs.requestRebuild();
         this.packageShadersDirty=true;
         this.pending.add(new PackagePreviewRequest(0,Vec3.ZERO,new Vec3(0,0,1)));
@@ -758,6 +759,7 @@ public final class CMIParticleEngine {
 
     /** Frees all GPU resources on client shutdown. Safe when never initialised. */
     public void close() {
+        com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle engine closed",false);
         try {
             this.packagePreview.close();
             if(this.packageParticles!=null)this.packageParticles.close();
@@ -1003,6 +1005,7 @@ public final class CMIParticleEngine {
     }
 
     private void resetPoolState() {
+        com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle identities reset",true);
         this.packagePreview.close();
         this.packagePreviewStatus="off";
         if(this.packageParticles!=null)this.packageParticles.reset();
@@ -1121,6 +1124,7 @@ public final class CMIParticleEngine {
             else this.packagePartialTick=this.packagePreview.prepare(Minecraft.getInstance().isPaused());
             ParticleDiagnostics.INSTANCE.mark("upload_after_packages");
         }
+        if(com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.pump())this.gpu.beginBindings();
         // Shared clock: (gameTime mod 2^21)/20 — identical on every client (see
         // AllayStormRuntime's clock doc); drives the vortex phases and the
         // correction timestamps without any clock sync.

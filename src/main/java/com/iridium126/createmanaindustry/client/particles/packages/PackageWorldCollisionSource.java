@@ -18,6 +18,10 @@ public final class PackageWorldCollisionSource implements PackageCollisionCache.
         if(Thread.currentThread()!=owner)throw new IllegalStateException("World capture off owner thread");
         position.set((section.x()<<4)+(index&15),(section.y()<<4)+(index>>>8),(section.z()<<4)+((index>>>4)&15));
         if(!level.hasChunkAt(position))return null;
+        // Shapes at a chunk edge can query the neighbour. An unloaded neighbour is
+        // unavailable context, rather than the air returned by getBlockState there.
+        if(index==0)for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++)
+            if(!level.hasChunkAt(position.offset(dx*16,0,dz*16)))return null;
         var state=level.getBlockState(position);
         // Moving piston shapes and entity-dependent collision need their own admission adapter.
         if(state.is(Blocks.MOVING_PISTON) || state.is(Blocks.POWDER_SNOW) || state.is(Blocks.SCAFFOLDING))return null;

@@ -1,8 +1,10 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
-import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.function.LongSupplier;
@@ -58,12 +60,16 @@ public final class PackageCollisionCache {
     }
     private final Thread owner = Thread.currentThread();
     private final Map<Section, Work> sections = new HashMap<>();
-    private final ArrayDeque<Section> pending = new ArrayDeque<>();
+    // Constant-time invalidation/eviction even during a large block update burst.
+    private final LinkedHashMap<Section,Work> pending = new LinkedHashMap<>();
+    private final Map<Long,Set<Section>> columns = new HashMap<>();
     private final Executor executor;
     private final LongSupplier clock;
     private final int maxSections;
     private final java.util.concurrent.atomic.AtomicInteger workers=new java.util.concurrent.atomic.AtomicInteger();
     private long revision, lastCaptureNanos, overrunCount;
+    private final long[] captureTimes=new long[128];
+    private int captureSamples,captureCursor;
 
     public PackageCollisionCache(Executor executor, int maxSections) { this(executor,maxSections,System::nanoTime); }
     public PackageCollisionCache(Executor executor, int maxSections, LongSupplier clock) {
@@ -78,18 +84,47 @@ public final class PackageCollisionCache {
         owner();
         if (sections.containsKey(section)) return true;
         if (sections.size()>=maxSections) return false;
-        Work work=new Work(); sections.put(section,work); invalidate(section); return true;
+        Work work=new Work(); sections.put(section,work);
+        columns.computeIfAbsent(column(section.x,section.z),k->new HashSet<>()).add(section);
+        invalidate(section); return true;
     }
     /** Invalidation revokes coverage immediately, including an in-flight capture. */
     public void invalidate(Section section) {
         owner(); Work work=sections.get(section); if(work==null)return;
+        // Multiple edits before any new capture share one invalidation. An obsolete worker
+        // must still finish, but can never publish into the replacement revision.
+        if(work.revision!=0 && work.cursor==0 && work.cells==null && work.published==null && work.future==null && work.queued)return;
         work.revision=++revision; work.cursor=0; work.cells=null; work.published=null;
         // Keep an obsolete worker in flight until it completes: repeated edits cannot flood the executor.
-        if(!work.queued) { pending.addLast(section); work.queued=true; }
+        enqueue(section,work);
     }
-    public void evict(Section section) { owner(); sections.remove(section); pending.remove(section); }
-    public void clear() { owner(); sections.clear(); pending.clear(); ++revision; }
+    /** Revoke both sides of section boundaries for neighbour-dependent vanilla shapes. */
+    public void invalidateBlock(int x,int y,int z) {
+        owner();
+        int sx=x>>4,sy=y>>4,sz=z>>4;
+        int x0=sx-((x&15)==0?1:0),x1=sx+((x&15)==15?1:0);
+        int y0=sy-((y&15)==0?1:0),y1=sy+((y&15)==15?1:0);
+        int z0=sz-((z&15)==0?1:0),z1=sz+((z&15)==15?1:0);
+        for(int cx=x0;cx<=x1;cx++)for(int cy=y0;cy<=y1;cy++)for(int cz=z0;cz<=z1;cz++)invalidate(new Section(cx,cy,cz));
+    }
+    /** Packet replacement/unload changes context in the eight adjacent chunk columns too. */
+    public void invalidateChunk(int x,int z) {
+        owner();
+        for(int cx=x-1;cx<=x+1;cx++)for(int cz=z-1;cz<=z+1;cz++) {
+            Set<Section> affected=columns.get(column(cx,cz));
+            if(affected!=null)for(Section section:affected)invalidate(section);
+        }
+    }
+    public void evict(Section section) {
+        owner();if(sections.remove(section)==null)return;pending.remove(section);
+        long key=column(section.x,section.z);Set<Section> set=columns.get(key);
+        set.remove(section);if(set.isEmpty())columns.remove(key);
+    }
+    public void clear() { owner(); sections.clear(); pending.clear(); columns.clear(); ++revision; }
     public Snapshot snapshot(Section section) { owner(); Work w=sections.get(section); return w==null?null:w.published; }
+    public int size(){owner();return sections.size();}
+    public int readyCount(){owner();int count=0;for(Work work:sections.values())if(work.published!=null)count++;return count;}
+    private static long column(int x,int z){return ((long)x<<32)|(z&0xffffffffL);}
 
     /** Poll and capture share the same budget; never joins an unfinished worker. */
     public void tick(Source source, long budgetNanos) {
@@ -97,8 +132,8 @@ public final class PackageCollisionCache {
         long start=clock.getAsLong();
         int attempts=pending.size();
         while(attempts-- > 0 && !pending.isEmpty() && clock.getAsLong()-start<budgetNanos) {
-            Section section=pending.removeFirst(); Work w=sections.get(section);
-            if(w==null)continue;
+            var iterator=pending.entrySet().iterator();var queued=iterator.next();iterator.remove();
+            Section section=queued.getKey();Work w=queued.getValue();
             w.queued=false;
             if(w.future!=null) {
                 if(w.future.isDone()) {
@@ -140,9 +175,11 @@ public final class PackageCollisionCache {
             if(progressed)attempts++;
         }
         lastCaptureNanos=clock.getAsLong()-start;
+        captureTimes[captureCursor]=lastCaptureNanos;captureCursor=(captureCursor+1)%captureTimes.length;
+        captureSamples=Math.min(captureSamples+1,captureTimes.length);
         if(lastCaptureNanos>budgetNanos)overrunCount++;
     }
-    private void enqueue(Section s,Work w) { if(!w.queued){pending.addLast(s);w.queued=true;} }
+    private void enqueue(Section s,Work w) { if(!w.queued){pending.put(s,w);w.queued=true;} }
     private static Snapshot pack(long revision,Cell[] cells) {
         int[] offsets=new int[BLOCKS+1],flags=new int[BLOCKS]; float[] friction=new float[BLOCKS];
         int count=0;
@@ -160,4 +197,11 @@ public final class PackageCollisionCache {
     }
     public long lastCaptureNanos(){return lastCaptureNanos;}
     public long overrunCount(){return overrunCount;}
+    /** Diagnostic query only; the capture tick does not allocate or sort timing samples. */
+    public long capturePercentile(double percentile) {
+        owner();if(!(percentile>0 && percentile<=1))throw new IllegalArgumentException("Capture percentile");
+        if(captureSamples==0)return 0;
+        var sorted=java.util.Arrays.copyOf(captureTimes,captureSamples);java.util.Arrays.sort(sorted);
+        return sorted[(int)Math.ceil(percentile*captureSamples)-1];
+    }
 }

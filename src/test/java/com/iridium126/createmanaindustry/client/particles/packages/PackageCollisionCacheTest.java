@@ -45,4 +45,46 @@ class PackageCollisionCacheTest {
         assertEquals(15,snapshot.coordinate(0,0));assertEquals(15.5f,snapshot.coordinate(0,4));
         assertEquals(2,snapshot.flags(4095));
     }
+    private static void finish(PackageCollisionCache cache,ArrayDeque<Runnable> tasks) {
+        // Worker scheduling remains bounded at four, including evicted work.
+        for(int i=0;i<20 && cache.readyCount()!=cache.size();i++) {
+            cache.tick((s,n)->AIR,1);
+            assertTrue(tasks.size()<=4);
+            while(!tasks.isEmpty())tasks.remove().run();
+        }
+        cache.tick((s,n)->AIR,1);assertEquals(cache.size(),cache.readyCount());
+    }
+    @Test void boundaryEditsInvalidateNeighbourContextAcrossNegativeSections() {
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,9,()->0L);
+        for(int x=-1;x<=0;x++)for(int y=-1;y<=0;y++)for(int z=-1;z<=0;z++)cache.request(new PackageCollisionCache.Section(x,y,z));
+        var distant=new PackageCollisionCache.Section(8,0,8);cache.request(distant);finish(cache,tasks);
+        for(int i=0;i<1000;i++)cache.invalidateBlock(-1,-1,-1);
+        assertEquals(1,cache.readyCount());assertNotNull(cache.snapshot(distant));
+        finish(cache,tasks);assertEquals(9,cache.readyCount());
+        cache.invalidateBlock(-8,-8,-8);assertEquals(8,cache.readyCount());
+    }
+    @Test void chunkReplacementRevokesAdjacentColumnsAtAllRequestedHeights() {
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,5,()->0L);
+        var affected=List.of(new PackageCollisionCache.Section(0,0,0),new PackageCollisionCache.Section(0,2000,0),
+                new PackageCollisionCache.Section(-1,-2000,1),new PackageCollisionCache.Section(1,4,-1));
+        affected.forEach(cache::request);var distant=new PackageCollisionCache.Section(2,0,0);cache.request(distant);finish(cache,tasks);
+        cache.invalidateChunk(0,0);for(var section:affected)assertNull(cache.snapshot(section));assertNotNull(cache.snapshot(distant));
+        for(var section:affected)cache.evict(section);
+        assertEquals(1,cache.size());cache.invalidateChunk(0,0);assertNotNull(cache.snapshot(distant));
+        cache.clear();assertEquals(0,cache.size());assertEquals(0,cache.readyCount());
+    }
+    @Test void clearAndReRequestCannotPublishOldWorldWorker() {
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);
+        cache.request(SECTION);cache.tick((s,n)->AIR,1);assertEquals(1,tasks.size());
+        cache.clear();cache.request(SECTION);tasks.remove().run();cache.tick((s,n)->null,1);
+        assertNull(cache.snapshot(SECTION));assertEquals(0,cache.readyCount());
+        finish(cache,tasks);assertNotNull(cache.snapshot(SECTION));
+    }
+    @Test void evictionDoesNotFreeAnUnfinishedWorkerBudget() {
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,4,()->0L);
+        for(int i=0;i<4;i++)cache.request(new PackageCollisionCache.Section(i,0,0));cache.tick((s,n)->AIR,1);
+        assertEquals(4,tasks.size());cache.clear();cache.request(SECTION);cache.tick((s,n)->AIR,1);
+        assertEquals(4,tasks.size());assertNull(cache.snapshot(SECTION));
+        while(!tasks.isEmpty())tasks.remove().run();finish(cache,tasks);
+    }
 }
