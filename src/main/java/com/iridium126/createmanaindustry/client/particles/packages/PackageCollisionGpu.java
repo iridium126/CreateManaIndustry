@@ -26,20 +26,21 @@ public final class PackageCollisionGpu implements AutoCloseable {
         long version=Long.MIN_VALUE;boolean coarse;
         final BitSet references=new BitSet();
     }
-    public record Stats(int residents,int ready,int pending,int retired,long uploadedBytes,long capacityRejections,
+    public record Stats(int residents,int ready,int pending,int retired,long uploadedBytes,long capacityRejections,long evictions,
                         long shapeRejections,long skippedViews,long lastUploadNanos,long overruns,long p50Nanos,long p95Nanos) {}
     private final Thread owner=Thread.currentThread();
     private final int capacity,shapeCapacity,tableSize,slotBytes;
     private final LongSupplier clock;
-    private final Map<PackageCollisionCache.Section,Entry> entries=new LinkedHashMap<>();
+    private final LinkedHashMap<PackageCollisionCache.Section,Entry> entries=new LinkedHashMap<>(16,.75f,true);
     private final LinkedHashMap<PackageCollisionCache.Section,Entry> pending=new LinkedHashMap<>();
+    private final Set<PackageCollisionCache.Section> packageUsage=new HashSet<>();
     private final Bank[] banks=new Bank[BANKS];
     private final ArrayDeque<Integer> free=new ArrayDeque<>();
     private final BitSet retired=new BitSet();
     private final long[] timings=new long[128];
     private int timingCursor,timingCount,data;
     private ByteBuffer mappedData;
-    private long serial,uploadedBytes,capacityRejections,shapeRejections,skippedViews,lastUploadNanos,overruns;
+    private long serial,usageGeneration=Long.MIN_VALUE,uploadedBytes,capacityRejections,evictions,shapeRejections,skippedViews,lastUploadNanos,overruns;
     private boolean closed,viewOpen,failed;
 
     public PackageCollisionGpu(int capacity,int shapes){this(capacity,shapes,System::nanoTime);}
@@ -85,21 +86,52 @@ public final class PackageCollisionGpu implements AutoCloseable {
         Entry entry=entries.get(section);
         if(entry!=null && snapshot.revision()<entry.revision)return false;
         if(entry!=null && entry.snapshot==snapshot)return true;
+        if(snapshot.revision()<=0 || snapshot.gpuShapeCount()<0 || snapshot.gpuShapeCount()>shapeCapacity) {
+            shapeRejections++;if(entry!=null){revoke(entry);entry.revision=snapshot.revision();entry.snapshot=null;serial++;}return false;
+        }
+        ByteBuffer cells=snapshot.gpuCells(),boxes=snapshot.gpuBoxes();
+        if(cells.remaining()!=CELL_BYTES || boxes.remaining()!=snapshot.gpuShapeCount()*32) {
+            shapeRejections++;if(entry!=null){revoke(entry);entry.revision=snapshot.revision();entry.snapshot=null;serial++;}return false;
+        }
         if(entry==null) {
-            if(entries.size()==capacity){capacityRejections++;return false;}
+            if(entries.size()>=capacity && !evictLeastRecent()){capacityRejections++;return false;}
             entry=new Entry(section);entries.put(section,entry);
         }
         revoke(entry);entry.revision=snapshot.revision();entry.snapshot=null;serial++;
-        if(snapshot.revision()<=0 || snapshot.gpuShapeCount()<0 || snapshot.gpuShapeCount()>shapeCapacity) {
-            shapeRejections++;return false;
-        }
-        ByteBuffer cells=snapshot.gpuCells(),boxes=snapshot.gpuBoxes();
-        if(cells.remaining()!=CELL_BYTES || boxes.remaining()!=snapshot.gpuShapeCount()*32){shapeRejections++;return false;}
         entry.cells=cells;entry.boxes=boxes;
         entry.snapshot=snapshot;pending.put(section,entry);return true;
     }
-    public void forget(PackageCollisionCache.Section section){open();Entry entry=entries.remove(section);if(entry!=null){revoke(entry);serial++;}}
-    public void clear(){open();for(Entry entry:entries.values())revoke(entry);entries.clear();serial++;}
+    /** Drop the oldest CPU mapping; its GPU slots remain retired until every table fence releases them. */
+    private boolean evictLeastRecent() {
+        var iterator=entries.entrySet().iterator();
+        while(iterator.hasNext()) {
+            var candidate=iterator.next();if(packageUsage.contains(candidate.getKey()))continue;
+            Entry entry=candidate.getValue();iterator.remove();packageUsage.remove(entry.section);revoke(entry);serial++;evictions++;return true;
+        }
+        return false;
+    }
+    public void forget(PackageCollisionCache.Section section){open();Entry entry=entries.remove(section);packageUsage.remove(section);if(entry!=null){revoke(entry);serial++;}}
+    public void clear(){open();for(Entry entry:entries.values())revoke(entry);entries.clear();packageUsage.clear();usageGeneration=Long.MIN_VALUE;serial++;}
+    public void clearPackageUsage(){open();packageUsage.clear();usageGeneration=Long.MIN_VALUE;}
+    /** Begin an exact usage set only when the completed scan references the current table version. */
+    public boolean beginPackageUsage(long tableVersion) {
+        open();if(tableVersion!=serial)return false;
+        for(Bank bank:banks)if(bank.version==tableVersion){packageUsage.clear();usageGeneration=tableVersion;return true;}
+        return false;
+    }
+    /** Resolve a GPU table row to its current section and protect that active swept region from eviction. */
+    public PackageCollisionCache.Section touchPackageUsage(long tableVersion,int row) {
+        open();if(tableVersion!=serial || usageGeneration!=tableVersion || row<0 || row>=tableSize)return null;
+        for(Bank bank:banks)if(bank.version==tableVersion) {
+            int p=row*HEAD_BYTES,slot=bank.mapped.getInt(p+12);
+            if(slot<0 || bank.mapped.getInt(p+24)!=1)return null;
+            var section=new PackageCollisionCache.Section(bank.mapped.getInt(p),bank.mapped.getInt(p+4),bank.mapped.getInt(p+8));
+            Entry entry=entries.get(section);
+            if(entry==null || entry.visible!=slot || entry.revision!=bank.mapped.getLong(p+16))return null;
+            packageUsage.add(section);return section;
+        }
+        return null;
+    }
     /** A CPU snapshot alone is never proof of GPU coverage. */
     public boolean covered(PackageCollisionCache.Section section,long revision) {
         open();Entry entry=entries.get(section);return entry!=null && entry.visible>=0 && entry.revision==revision;
@@ -175,6 +207,9 @@ public final class PackageCollisionGpu implements AutoCloseable {
         private final int x,y,z;
         private boolean ended;
         private View(Bank bank,long version,int x,int y,int z){this.bank=bank;this.version=version;this.x=x;this.y=y;this.z=z;}
+        public long version(){open();if(ended)throw new IllegalStateException("World view ended");return version;}
+        /** True only while this view still names the current uploaded table generation. */
+        public boolean ready(){open();if(ended)throw new IllegalStateException("World view ended");return bank!=null&&version==serial;}
         public boolean bind(int[] locations,int first,boolean bindBuffers) {
             open();if(ended)throw new IllegalStateException("World view ended");
             GL42.glMemoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
@@ -203,7 +238,7 @@ public final class PackageCollisionGpu implements AutoCloseable {
     public Stats stats() {
         open();int ready=0;for(Entry entry:entries.values())if(entry.visible>=0)ready++;
         long[] sorted=Arrays.copyOf(timings,timingCount);Arrays.sort(sorted);
-        return new Stats(entries.size(),ready,pending.size(),retired.cardinality(),uploadedBytes,capacityRejections,shapeRejections,skippedViews,lastUploadNanos,overruns,
+        return new Stats(entries.size(),ready,pending.size(),retired.cardinality(),uploadedBytes,capacityRejections,evictions,shapeRejections,skippedViews,lastUploadNanos,overruns,
                 timingCount==0?0:sorted[(timingCount-1)/2],timingCount==0?0:sorted[(int)Math.ceil(timingCount*.95)-1]);
     }
     @Override public void close() {

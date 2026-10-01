@@ -36,7 +36,7 @@ class PackageChainCheckpointTest {
     @Test void preparedVisibleAndWrongReversalStatesCannotBecomeRetiredCheckpoints() {
         for(float state:new float[]{PackagePhysicsGpu.PREPARED,0,-1,Float.NaN})
             assertThrows(IllegalArgumentException.class,()->restore(pose(ID.id(),ID.generation(),7,state,42,2)));
-        for(int flags:new int[]{0,1,3,5,15})
+        for(int flags:new int[]{0,1,3,5,23})
             assertThrows(IllegalArgumentException.class,()->restore(pose(ID.id(),ID.generation(),flags,-3,42,2)));
     }
     @Test void rejectsInvalidProgressOrHistoryBeforeNativeMutation() {

@@ -168,6 +168,8 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
     public int chainBodyIndex(int local) {open();if(local<0 || local>=chain.count())throw new IndexOutOfBoundsException();return freeCapacity+local;}
     public int bodyCount(){open();return observerCount()>0?freeCapacity+chainCapacity+observerCount():chain.count()>0?freeCapacity+chain.count():free.count();}
     public int freeCount(){open();return free.count();}
+    /** Current render-thread solver state for the asynchronous collision prefetch pass. */
+    public int freeStateBuffer(){open();return free.stateBuffer();}
     public int freeCapacity(){open();return freeCapacity;}
     public int chainCapacity(){open();return chainCapacity;}
     public int chainCount(){open();return chain.count();}

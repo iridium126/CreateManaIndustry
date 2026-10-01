@@ -33,6 +33,33 @@ class PackageCollisionCacheTest {
         assertEquals(1,tasks.size());cache.evict(SECTION);tasks.remove().run();cache.tick((s,i)->AIR,1);
         assertNull(cache.snapshot(SECTION));
     }
+    @Test void demandEvictsLeastRecentlyUsedAndStaleWorkerCannotPublishIntoReplacement() {
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,2,()->0L);
+        var a=new PackageCollisionCache.Section(0,0,0);var b=new PackageCollisionCache.Section(1,0,0);
+        var c=new PackageCollisionCache.Section(2,0,0);var removed=new java.util.ArrayList<PackageCollisionCache.Section>();
+        cache.listener(new PackageCollisionCache.Listener(){@Override public void removed(PackageCollisionCache.Section section){removed.add(section);}});
+        assertTrue(cache.requestDemand(a));assertTrue(cache.requestDemand(b));
+        assertTrue(cache.requestDemand(a)); // A becomes more recent than B.
+        assertTrue(cache.requestDemand(c));assertEquals(List.of(b),removed);assertEquals(2,cache.size());
+        assertFalse(cache.request(b),"ordinary requests keep their explicit no-eviction contract");
+        assertTrue(cache.requestDemand(b));assertEquals(List.of(b,a),removed);
+        assertEquals(2,cache.size());assertEquals(2,cache.capacityEvictions());
+
+        var one=new PackageCollisionCache(tasks::add,1,()->0L);var old=new PackageCollisionCache.Section(10,0,0);
+        assertTrue(one.requestDemand(old));one.tick((s,i)->AIR,1);assertEquals(1,tasks.size());
+        var replacement=new PackageCollisionCache.Section(11,0,0);assertTrue(one.requestDemand(replacement));
+        tasks.remove().run();assertNull(one.snapshot(old),"an evicted worker result must never republish stale world data");
+        assertNull(one.snapshot(replacement));assertEquals(1,one.capacityEvictions());
+
+        var protectedCache=new PackageCollisionCache(tasks::add,2,()->0L);
+        assertTrue(protectedCache.requestDemand(a));assertTrue(protectedCache.requestDemand(b));
+        protectedCache.protectPackageUsage(a);protectedCache.protectPackageUsage(b);
+        assertFalse(protectedCache.requestDemand(c),"a full live package set must reject new capture rather than evict active collision data");
+        assertEquals(2,protectedCache.size());assertEquals(0,protectedCache.capacityEvictions());
+        assertEquals(1,protectedCache.capacityRejections());
+        protectedCache.clearPackageUsage();assertTrue(protectedCache.requestDemand(c));
+        assertEquals(1,protectedCache.capacityEvictions());
+    }
     @Test void shapesAreCopiedAndTranslatedOffThreadWithoutWorldAccess() {
         var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);
         var mutable=new java.util.ArrayList<PackageCollisionCache.Box>();

@@ -8,7 +8,7 @@ import org.lwjgl.system.MemoryStack;
 /**
  * Render-thread package solver. Buffers are sidecar state, not another particle pool.
  * Caller owns GL state boundaries and the common particle-slot mapping. There are no readbacks here.
- * Production takeover must not be enabled until coverage, swept contacts and lifecycle adapters exist.
+ * Runtime ownership, world coverage, native recovery and lifecycle admission are gated by PackageWorldRuntime.
  */
 public final class PackagePhysicsGpu implements AutoCloseable {
     public static final int BODY_BYTES=64, CHAIN_BYTES=64, ITERATIONS=4;
@@ -19,7 +19,8 @@ public final class PackagePhysicsGpu implements AutoCloseable {
             "range_insert","range_scan","range_add","range_scatter","range_guard",
             "predict_range","predict_world_range","solve_range","solve_world_range","solve_support_range","world_support_range","range_budget",
             "grid_counted","linked_guard","predict_counted","predict_world_counted","solve_counted","solve_world_counted","solve_support_counted",
-            "moving_prepare","moving_carry","moving_contacts","solve_moving","solve_moving_range","solve_moving_counted","chain_tracked","forces","forces_framed"};
+            "moving_prepare","moving_carry","moving_contacts","solve_moving","solve_moving_range","solve_moving_counted","chain_tracked","forces","forces_framed",
+            "velocity_capture","dynamic_sweep","dynamic_sweep_range"};
     private static final String[] UNIFORMS={"uCount","uTableMask","uCellSize","uDt","uGravity","uDrag","uFriction","uChain",
             "uWorldReady","uWorldOriginSection","uWorldTableMask","uWorldSlotWords","uWorldShapeCapacity","uStaticBodies",
             "uRangeGrid","uCandidateBudget","uIndexLength","uScanTable","uMovingReady","uMovingSweep","uMovingFriction","uFirst","uLength","uTrackCount","uForceNodes","uForceSources"};
@@ -34,10 +35,12 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     private boolean boundedGrid;
     private int countedHeads;
     private int movingSupport;
+    private int stepVelocity;
     private final java.util.IdentityHashMap<PackageMovingCollisionCache.Entry,long[]> movingFrames=new java.util.IdentityHashMap<>();
     public enum IndexMode { LINKED, EXACT_RANGES, BOUNDED_LINKED }
     /** Conservative total candidates across all queried cells; exceeding it requests local handback. */
     public static final int CANDIDATE_BUDGET=512;
+    private static final int DYNAMIC_SWEEP_BUDGET=8192;
     private final int capacity, tableSize,rangeTableSize;
     private final byte[] staticMask;
     private final boolean[] preparedMask;
@@ -65,9 +68,11 @@ public final class PackagePhysicsGpu implements AutoCloseable {
                 GL41.glProgramUniform1f(programs[i],locations[i][2],cellSize);
                 GL41.glProgramUniform1ui(programs[i],locations[i][15],CANDIDATE_BUDGET);
             }
+            GL41.glProgramUniform1ui(programs[41],locations[41][15],DYNAMIC_SWEEP_BUDGET);
+            GL41.glProgramUniform1ui(programs[42],locations[42][15],DYNAMIC_SWEEP_BUDGET);
             states[0]=buffer((long)capacity*BODY_BYTES);states[1]=buffer((long)capacity*BODY_BYTES);
             heads=buffer((long)tableSize*4);links=buffer((long)capacity*4);chains=buffer((long)capacity*CHAIN_BYTES);
-            history=buffer((long)capacity*32);
+            history=buffer((long)capacity*32);stepVelocity=buffer((long)capacity*16);
         } catch(RuntimeException failure) { close();throw failure; }
     }
     private static int buffer(long bytes) {
@@ -232,7 +237,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     }
     /** World view spans all caller substeps; missing coverage marks local handback without moving that body. */
     public void stepWorld(float dt,PackageCollisionGpu.View world){stepWorld(dt,world,false,ITERATIONS);}
-    /** Internal experiment, disabled by default until contact quality/performance qualification. */
+    /** Explicit support-projection path. The legacy overload remains Jacobi-only. */
     public void stepWorld(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations) {
         if(iterations<1 || iterations>64)throw new IllegalArgumentException("Contact iterations");
         step(dt,java.util.Objects.requireNonNull(world),supportProjection,iterations);
@@ -245,8 +250,8 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         if(iterations<1 || iterations>64)throw new IllegalArgumentException("Contact iterations");
         step(dt,java.util.Objects.requireNonNull(world),supportProjection,iterations,java.util.Objects.requireNonNull(indexMode));
     }
-    /** Experimental kinematic scene. One previous/current pose pair spans exactly one 20 Hz step.
-     * Caller closes the scene after submission. No public resource-ready gate uses this path yet. */
+    /** Kinematic scene path. One previous/current pose pair spans exactly one 20 Hz step.
+     * Caller closes the scene after submission; package runtime admission owns readiness gating. */
     public void stepWorldMoving(PackageCollisionGpu.View world,int iterations,IndexMode mode,
                                 java.util.List<PackageMovingCollisionGpu.View> moving) {
         if(iterations<1||iterations>64)throw new IllegalArgumentException("Contact iterations");
@@ -272,7 +277,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         int solve=rangeGrid?(world==null?19:(supportProjection?21:20)):
                 (boundedGrid?(world==null?28:(supportProjection?30:29)):(world==null?2:(supportProjection?11:6)));
         if(!moving.isEmpty())solve=rangeGrid?35:(boundedGrid?36:34);
-        captureHistory(3);
+        captureStepVelocity();captureHistory(3);
         for(var view:moving) {
             bind(31);view.bind(locations[31][18]);GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             bind(32);view.bind(locations[32][18]);world.bind(locations[32],8,true);
@@ -283,6 +288,9 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         f(predict,5,(float)Math.pow(.98,dt*20));
         if(world!=null){world.bind(locations[predict],8,true);GL20.glUniform1i(locations[predict][13],staticBodies?1:0);}
         dispatch();current^=1;
+        // The solver grid is built from this predicted endpoint generation. The CCD
+        // query walks a bounded swept neighborhood and filters exact endpoint cells.
+        buildGrid(false);dynamicSweep();
         movingContacts(world,moving,true,false);
         for(int iteration=0;iteration<iterations;iteration++) {
             buildGrid(!boundedGrid);
@@ -309,6 +317,14 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         if(movingSupport==0)return;GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,movingSupport);
         try(var stack=MemoryStack.stackPush()){GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
+    }
+    private void captureStepVelocity() {
+        bind(40);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,stepVelocity);dispatch();
+    }
+    private void dynamicSweep() {
+        int program=rangeGrid?42:41;bind(program);
+        if(rangeGrid)GL30.glUniform1ui(locations[program][1],rangeTableSize-1);
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,stepVelocity);dispatch();current^=1;
     }
     void claimMovingFrame(PackageMovingCollisionCache.Entry entry,long frame) {
         long[] previous=movingFrames.get(entry);
@@ -483,7 +499,8 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         if(history!=0)GL15.glDeleteBuffers(history);
         for(int buffer:supports)if(buffer!=0)GL15.glDeleteBuffers(buffer);if(supportControl!=0)GL15.glDeleteBuffers(supportControl);
         deleteRangeBuffers();
-        if(countedHeads!=0)GL15.glDeleteBuffers(countedHeads);
-        if(movingSupport!=0)GL15.glDeleteBuffers(movingSupport);
+         if(countedHeads!=0)GL15.glDeleteBuffers(countedHeads);
+         if(movingSupport!=0)GL15.glDeleteBuffers(movingSupport);
+         if(stepVelocity!=0)GL15.glDeleteBuffers(stepVelocity);
     }
 }

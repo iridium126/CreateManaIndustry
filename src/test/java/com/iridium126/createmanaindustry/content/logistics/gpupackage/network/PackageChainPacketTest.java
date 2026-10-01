@@ -20,10 +20,12 @@ class PackageChainPacketTest {
     @Test void sharedTrackRoundTripPreservesLongRevisionNodesAndReverseDirection() {
         var geometry=PackageChainTrack.loop(new BlockPos(-123,2048,456),-180,0,3,BASE.trackRevision());
         var nodes=List.of(new ClientboundChainPackagePacket.Node(2,1),new ClientboundChainPackagePacket.Node(5,2),new ClientboundChainPackagePacket.Node(359,1));
-        var track=new ClientboundChainPackagePacket.Track(BASE.track(),new BlockPos(-123,2048,456),null,geometry,nodes);
+        var parent=UUID.randomUUID();var track=new ClientboundChainPackagePacket.Track(BASE.track(),new BlockPos(-123,2048,456),null,geometry,nodes,parent);
         var packet=new ClientboundChainPackagePacket(ClientboundChainPackagePacket.TRACK,DIM,EPOCH,track,null,null,0,0,0);var bytes=buffer();
-        try{ClientboundChainPackagePacket.STREAM_CODEC.encode(bytes,packet);assertEquals(packet,ClientboundChainPackagePacket.STREAM_CODEC.decode(bytes));assertEquals(0,bytes.readableBytes());}
+        try{ClientboundChainPackagePacket.STREAM_CODEC.encode(bytes,packet);var decoded=ClientboundChainPackagePacket.STREAM_CODEC.decode(bytes);
+            assertEquals(packet,decoded);assertEquals(parent,decoded.track().parent());assertEquals(0,bytes.readableBytes());}
         finally{bytes.release();}
+        assertNull(new ClientboundChainPackagePacket.Track(BASE.track(),new BlockPos(-123,2048,456),null,geometry,nodes).parent());
     }
     @Test void allOwnershipBaselinesRoundTripWithExactIdentityAndProgressBits() {
         for(int action=ClientboundChainPackagePacket.OFFER;action<=ClientboundChainPackagePacket.RELEASED;action++) {

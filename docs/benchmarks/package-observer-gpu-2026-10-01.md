@@ -57,4 +57,4 @@ CPU prepare 单独测量修改复用命令缓冲的整数位置、序号及 rece
 .\gradlew.bat validatePackageObserverGpu -PpackageObserverBenchmark --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
 ```
 
-wire→GPU controller 和服务器确认时钟已通过组件验证，实际世界订阅、成功 generation 的可见 admission、原模拟时间、网络延迟测量及安全所有权切换仍待完成。新的硬门槛要求总带宽不超过 Create 原生；当前 20Hz 自定义流的[实际 payload 对照](package-network-payloads-2026-10-01.md)偏大，客户端和服务端就绪门禁保持关闭。锁链观察者使用轨道/时间参数，并处理 Sable 父结构变换。当前 0.05s 校正和 0.1s 预测参数仍需用户做视觉对照，不能以这些微基准代替该验收。
+wire→GPU controller 和服务器确认时钟已通过组件验证，实际世界订阅、成功 generation 的可见 admission、原模拟时间、网络延迟测量及安全所有权切换仍待完成。用户已将带宽优化与比例验收移至后续版本，本轮沿用当前同步方案；此前 20Hz 自定义流的[实际 payload 对照](package-network-payloads-2026-10-01.md)仅作历史参考，不再作为运行时就绪条件。锁链观察者使用轨道/时间参数，并处理 Sable 父结构变换。当前 0.05s 校正和 0.1s 预测参数仍需用户做视觉对照，不能以这些微基准代替该验收。

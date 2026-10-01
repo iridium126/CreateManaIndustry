@@ -28,7 +28,13 @@ class PackageFreeInputHookContractTest {
             var clients=new HashSet<String>();var shared=new HashSet<String>();
             json.getAsJsonArray("client").forEach(v->clients.add(v.getAsString()));json.getAsJsonArray("mixins").forEach(v->shared.add(v.getAsString()));
             for(String hook:List.of("packages.PackageFreeGpuInputMixin","packages.PackageFreeGpuPickFilterMixin")){assertTrue(clients.contains(hook));assertFalse(shared.contains(hook));}
+            assertTrue(clients.contains("vanilla.GameRendererPickMixin"));assertFalse(shared.contains("vanilla.GameRendererPickMixin"));
         }
+        var pickHook=PackageNativePacketHookContractTest.type("com/iridium126/createmanaindustry/mixin/vanilla/GameRendererPickMixin");
+        assertTrue(pickHook.methods.stream().flatMap(m->java.util.stream.StreamSupport.stream(m.instructions.spliterator(),false))
+                .filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast)
+                .anyMatch(call->call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageWorldRuntime")
+                        &&call.name.equals("injectFreeCrosshairPick")));
         var mode=PackageNativePacketHookContractTest.type("net/minecraft/client/multiplayer/MultiPlayerGameMode");
         for(String name:List.of("interact","interactAt","attack")) {
             var method=mode.methods.stream().filter(m->m.name.equals(name)).findFirst().orElseThrow();boolean sends=false;

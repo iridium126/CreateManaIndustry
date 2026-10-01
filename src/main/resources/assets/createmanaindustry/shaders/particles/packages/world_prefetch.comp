@@ -1,0 +1,104 @@
+struct Body {
+    vec4 positionMass;
+    vec4 velocityGround;
+    vec4 extentYaw;
+    vec4 previousSleep;
+};
+layout(local_size_x=64) in;
+struct WorldSection { ivec4 keySlot; uvec4 revisionActive; };
+layout(std430,binding=0) readonly buffer Bodies { Body bodies[]; };
+layout(std430,binding=4) readonly buffer WorldSections { WorldSection worldSections[]; };
+layout(std430,binding=13) buffer PrefetchRequests { uint requestCount; uint overflow; uint pad0,pad1; ivec4 requests[]; };
+layout(std430,binding=14) buffer PackageUsageRows { uint packageUsageWords[]; };
+uniform uint uCount,uWorldTableMask,uRequestCapacity,uTouchWordCount;
+uniform bool uWorldReady;
+uniform ivec3 uWorldOriginSection;
+uniform float uLookahead,uSafetyLookahead;
+shared ivec4 groupSections[64];
+
+void markUnsafe(uint bodyIndex) {
+    uint word=uTouchWordCount+(bodyIndex>>5u);
+    atomicOr(packageUsageWords[word],1u<<(bodyIndex&31u));
+}
+
+int worldRow(ivec3 key) {
+    uvec3 c=uvec3(key);uint row=((c.x*73856093u)^(c.y*19349663u)^(c.z*83492791u))&uWorldTableMask;
+    for(uint probe=0u;probe<=uWorldTableMask;probe++) {
+        WorldSection section=worldSections[row];
+        if(section.keySlot.w<0)return -1;
+        if(all(equal(section.keySlot.xyz,key)))return section.keySlot.w>=0 && section.revisionActive.z==1u?int(row):-1;
+        row=(row+1u)&uWorldTableMask;
+    }
+    return -1;
+}
+void main() {
+    uint i=gl_GlobalInvocationID.x,lane=gl_LocalInvocationID.x;
+    ivec4 needed=ivec4(0);
+    bool unsafeBody=false;
+    if(i<uCount) {
+        Body body=bodies[i];
+        bool live=body.positionMass.w>0.0 && body.previousSleep.w!=-2.0 && body.previousSleep.w!=-3.0;
+        if(live && body.previousSleep.w<0.0)unsafeBody=true;
+        else if(live) {
+            bool finiteBody=all(lessThan(abs(body.positionMass.xyz),vec3(1000000.0)))
+                    && all(lessThan(abs(body.velocityGround.xyz),vec3(1000000.0)))
+                    && all(greaterThanEqual(body.extentYaw.xyz,vec3(0.0)))
+                    && all(lessThan(body.extentYaw.xyz,vec3(16.0)));
+            if(!finiteBody || !uWorldReady)unsafeBody=true;
+            else {
+            vec3 current=body.positionMass.xyz;
+            vec3 future=current+body.velocityGround.xyz*uLookahead+vec3(0.0,-16.0*uLookahead*uLookahead,0.0);
+            vec3 lo=min(current,future)-body.extentYaw.xyz-vec3(1.0);
+            vec3 hi=max(current,future)+body.extentYaw.xyz+vec3(1.0);
+            ivec3 first=(ivec3(floor(lo))>>4)+uWorldOriginSection;
+            ivec3 last=(ivec3(floor(hi))>>4)+uWorldOriginSection;
+            ivec3 span=last-first+1;
+            bool signedBlockRange=all(greaterThanEqual(first,ivec3(-134217728)))
+                    && all(lessThanEqual(last,ivec3(134217727)));
+            vec3 safetyFuture=current+body.velocityGround.xyz*uSafetyLookahead
+                    +vec3(0.0,-16.0*uSafetyLookahead*uSafetyLookahead,0.0);
+            vec3 safetyLo=min(current,safetyFuture)-body.extentYaw.xyz-vec3(1.0);
+            vec3 safetyHi=max(current,safetyFuture)+body.extentYaw.xyz+vec3(1.0);
+            ivec3 safetyFirst=(ivec3(floor(safetyLo))>>4)+uWorldOriginSection;
+            ivec3 safetyLast=(ivec3(floor(safetyHi))>>4)+uWorldOriginSection;
+            ivec3 safetySpan=safetyLast-safetyFirst+1;
+            bool safetyValid=all(greaterThanEqual(safetyFirst,ivec3(-134217728)))
+                    && all(lessThanEqual(safetyLast,ivec3(134217727)))
+                    && all(greaterThan(safetySpan,ivec3(0)))
+                    && all(lessThanEqual(safetySpan,ivec3(8))) && safetySpan.x*safetySpan.y*safetySpan.z<=64;
+            if(!safetyValid)unsafeBody=true;
+            bool prefetchValid=signedBlockRange && all(greaterThan(span,ivec3(0)))
+                    && all(lessThanEqual(span,ivec3(8))) && span.x*span.y*span.z<=64;
+            if(prefetchValid)
+                for(int z=first.z;z<=last.z;z++)
+                    for(int y=first.y;y<=last.y;y++)
+                        for(int x=first.x;x<=last.x;x++) {
+                            ivec3 key=ivec3(x,y,z);
+                            int row=worldRow(key);
+                            bool safetyCell=safetyValid && all(greaterThanEqual(key,safetyFirst)) && all(lessThanEqual(key,safetyLast));
+                            if(row<0) {if(needed.w==0)needed=ivec4(key,1);if(safetyCell)unsafeBody=true;}
+                            else if(uint(row>>5)<uTouchWordCount)
+                                atomicOr(packageUsageWords[row>>5],1u<<uint(row&31));
+                        }
+            else if(safetyValid)
+                for(int z=safetyFirst.z;z<=safetyLast.z;z++)
+                    for(int y=safetyFirst.y;y<=safetyLast.y;y++)
+                        for(int x=safetyFirst.x;x<=safetyLast.x;x++) {
+                            ivec3 key=ivec3(x,y,z);int row=worldRow(key);
+                            if(row<0) {if(needed.w==0)needed=ivec4(key,1);unsafeBody=true;}
+                            else if(uint(row>>5)<uTouchWordCount)
+                                atomicOr(packageUsageWords[row>>5],1u<<uint(row&31));
+                        }
+            }
+        }
+    }
+    if(unsafeBody)markUnsafe(i);
+    groupSections[lane]=needed;
+    barrier();
+    if(needed.w==0)return;
+    for(uint before=0u;before<lane;before++)
+        if(groupSections[before].w==1 && all(equal(groupSections[before].xyz,needed.xyz)))return;
+    uint slot=atomicAdd(requestCount,1u);
+    if(slot<uRequestCapacity)requests[slot]=needed;
+    else {atomicAdd(overflow,1u);markUnsafe(i);}
+}

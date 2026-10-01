@@ -16,7 +16,7 @@ public final class PackageAdmissionTracker implements AutoCloseable {
     public static final int RECORD_BYTES=32;
     public record Expected(long id,long generation,int flags) {
         public Expected {
-            if(id<=0 || generation<=0 || (flags&~(PackagePoolGpu.CHAIN|PackagePoolGpu.FLIPPED|PackagePoolGpu.HIDDEN|PackagePoolGpu.FRAMED))!=0
+            if(id<=0 || generation<=0 || (flags&~(PackagePoolGpu.CHAIN|PackagePoolGpu.FLIPPED|PackagePoolGpu.HIDDEN|PackagePoolGpu.FRAMED|PackagePoolGpu.HANDBACKABLE))!=0
                     || (flags&PackagePoolGpu.FRAMED)!=0&&(flags&PackagePoolGpu.CHAIN)==0)
                 throw new IllegalArgumentException("Invalid expected package admission");
         }

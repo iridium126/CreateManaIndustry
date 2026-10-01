@@ -1,0 +1,88 @@
+layout(std430,binding=6) readonly buffer StepVelocity { vec4 stepVelocity[]; };
+layout(local_size_x=64) in;
+
+void handback(Body b,uint i) {
+    b.positionMass.xyz=b.previousSleep.xyz;
+    b.velocityGround=stepVelocity[i];
+    b.previousSleep.w=-1.0;
+    dst[i]=b;
+}
+
+void main() {
+    uint i=gl_GlobalInvocationID.x;
+    if(i>=uCount)return;
+    Body b=src[i];
+    if(b.positionMass.w<=0.0 || b.previousSleep.w<0.0) { dst[i]=b;return; }
+
+    vec3 start=b.previousSleep.xyz;
+    vec3 motion=b.positionMass.xyz-start;
+    // If each body's movement is below its own half-extent, even two
+    // approaching bodies cannot cross the full pair extent in one step. Leave
+    // those common slow contacts to the cheaper discrete Jacobi pass.
+    if(all(lessThanEqual(abs(motion),max(b.extentYaw.xyz,vec3(1e-5))))) { dst[i]=b;return; }
+
+    // Package dimensions are admitted at <= half a grid cell. Other package
+    // displacement is bounded to one cell per 20 Hz step; faster bodies request
+    // native handback rather than expanding an unbounded GPU query. A long move
+    // already clipped by the static-world sweep may still use its now-bounded path.
+    bool longMove=any(greaterThan(abs(motion),vec3(uCellSize)));
+    float incomingSpeed=length(stepVelocity[i].xyz),currentSpeed=length(b.velocityGround.xyz);
+    bool staticallyClipped=longMove && currentSpeed<incomingSpeed*.5
+            && length(b.velocityGround.xyz-stepVelocity[i].xyz)>max(2.0,incomingSpeed*.5);
+    if(longMove&&!staticallyClipped) { handback(b,i);return; }
+    vec3 padding=b.extentYaw.xyz+vec3(uCellSize*1.5+1e-4);
+    ivec3 lo=cellOf(min(start,b.positionMass.xyz)-padding);
+    ivec3 hi=cellOf(max(start,b.positionMass.xyz)+padding);
+    ivec3 size=hi-lo+1;
+    if(any(lessThanEqual(size,ivec3(0))) || any(greaterThan(size,ivec3(32))) || size.x*size.y*size.z>1024) {
+        handback(b,i);return;
+    }
+
+    uint visits=0u;
+    float earliest=1.0;
+    vec3 hitNormal=vec3(0);
+    vec3 hitVelocity=vec3(0),hitMotion=vec3(0);
+    float hitInverseMass=0.0;
+    bool hit=false;
+    for(int z=lo.z;z<=hi.z;z++)for(int y=lo.y;y<=hi.y;y++)for(int x=lo.x;x<=hi.x;x++) {
+        ivec3 cell=ivec3(x,y,z);
+        uint cursor,end;cellCursor(cell,cursor,end);
+        while(cursor!=end) {
+            uint j=cursorBody(cursor),next=cursorNext(cursor,j);
+            if(++visits>uCandidateBudget) { handback(b,i);return; }
+            if(j!=i && all(equal(cellOf(src[j].positionMass.xyz),cell))) {
+                Body other=src[j];
+                if(other.positionMass.w>0.0 && other.previousSleep.w>=0.0) {
+                    vec3 otherMotion=other.positionMass.xyz-other.previousSleep.xyz;
+                    if(all(lessThanEqual(abs(otherMotion),vec3(uCellSize)))) {
+                        vec3 relativeStart=start-other.previousSleep.xyz;
+                        vec3 relativeMotion=motion-otherMotion;
+                        vec3 extent=b.extentYaw.xyz+other.extentYaw.xyz;
+                        float time;vec3 normal;
+                        if(sweepBox(relativeStart,relativeMotion,-extent,extent,time,normal) && time<earliest) {
+                            earliest=time;hitNormal=normal;hitVelocity=other.velocityGround.xyz;hitMotion=otherMotion;
+                            hitInverseMass=other.positionMass.w;hit=true;
+                        }
+                    }
+                }
+            }
+            cursor=next;
+        }
+    }
+    if(!hit) { dst[i]=b;return; }
+
+    vec3 hitPosition=start+motion*earliest;
+    float inverseMass=max(b.positionMass.w,0.0);
+    float totalInverseMass=inverseMass+hitInverseMass;
+    float weight=totalInverseMass>0.0?inverseMass/totalInverseMass:0.0;
+    vec3 relativeVelocity=b.velocityGround.xyz-hitVelocity;
+    float normalVelocity=dot(relativeVelocity,hitNormal);
+    if(normalVelocity<0.0 && totalInverseMass>0.0)
+        b.velocityGround.xyz+=hitNormal*(-normalVelocity*weight);
+    vec3 remainingRelative=(motion-hitMotion)*(1.0-earliest);
+    float inward=dot(remainingRelative,hitNormal);
+    b.positionMass.xyz=hitPosition+motion*(1.0-earliest);
+    if(inward<0.0)b.positionMass.xyz+=hitNormal*(-inward*weight);
+    if(hitNormal.y>.5)b.velocityGround.w=1.0;
+    dst[i]=b;
+}

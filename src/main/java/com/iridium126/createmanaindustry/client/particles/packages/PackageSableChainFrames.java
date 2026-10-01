@@ -21,9 +21,9 @@ final class PackageSableChainFrames implements PackageChainFrameScene.Bridge {
             @Override public UUID id(){return id;}
             @Override public boolean valid(){return !parent.isRemoved()&&id.equals(parent.getUniqueId())&&Sable.HELPER.getContaining(level,conveyor)==parent;}
             @Override public PackageChainGpuFrame capture(Vec3 origin) {
-                if(!valid())return null;
                 // Copy the render pose before asking for logical; SDK poses are mutable and
-                // parent.renderPose() follows Sable's own Minecraft partial-tick cache.
+                // parent.renderPose() follows Sable's own Minecraft partial-tick cache. The
+                // scene already validated membership this frame; avoid a second world lookup.
                 return new PackageChainGpuFrame(frame(id,origin,parent.renderPose()),frame(id,origin,parent.logicalPose()));
             }
         };

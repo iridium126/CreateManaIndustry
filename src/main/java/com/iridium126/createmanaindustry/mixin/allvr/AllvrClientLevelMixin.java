@@ -7,6 +7,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
+import com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
 
@@ -94,7 +95,10 @@ public abstract class AllvrClientLevelMixin {
                                       CallbackInfoReturnable<Boolean> cir) {
         Level self = (Level) (Object) this;
         if (!AllvrDimensionLimits.isVanillaY(pos.getY()) && allvr$isAllayClient(self)) {
-            cir.setReturnValue(AllvrClientCubeCache.setBlock(pos, state, flags, recursionLeft));
+            boolean changed = AllvrClientCubeCache.setBlock(pos, state, flags, recursionLeft);
+            cir.setReturnValue(changed);
+            if (changed && self instanceof net.minecraft.client.multiplayer.ClientLevel clientLevel)
+                PackageCollisionRuntime.blockChanged(clientLevel, pos);
         }
     }
 }

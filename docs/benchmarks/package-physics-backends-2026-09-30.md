@@ -1,8 +1,10 @@
 # 包裹接触后端对照（2026-09-30）
 
+**后续状态（2026-10-01）：** 当前 `PackageWorldRuntime` 通过 `stepFreeMoving` 使用 support4 compute；131072 错位持续推力场景三轮质量检查通过，GPU p95 为 5.565–5.603ms，见[当前世界堆叠基准](package-world-stack-2026-10-01.md)。本页 PhysX 与 compute 数字来自不同的计时路径，不能直接当作精确倍率；PhysX 在该规模仍有接触质量失败，且其 4/16 轮完成步远慢于 compute kernel，**没有显示足以接入生产的性能或精度优势**。因此 NVIDIA PhysX 不进入本版运行时，也不增加以 PhysX 能力选举 authority 的协议；所有支持环境沿用 OpenGL compute，未有 PhysX 的环境自然走同一 compute 管线。若后续版本的同口径基准证明 PhysX 有优势，再引入能力协商与后端选择。
+
 同机为 RTX 4070 Laptop GPU（8 GiB），NVIDIA 581.15/OpenGL 4.5，CUDA driver API 13000，Windows x64。通过 `scripts/particles/build-physx.ps1` 在项目缓存中获取官方 ovphysx 0.6.3、匹配的 OVStage 0.2.0.377349；PhysX SDK 为 5.11.0。仅独立基准链接 native SDK，模组运行时依赖没有增加。初次尝试将 `.refs/PhysX` 的独立 host 源码链接官方 GPU DLL，首次模拟发生 native 访问异常；这两个二进制不再混用。
 
-夹具为 64×64 平面错层的单位 AABB，地面顶面 y=1，初始速度 (0,-1,0)，重力 32，水平逐层脉冲 `(.08 cos(t*.15+layer*.12), 0, .06 sin(...))`，禁用箱体角运动。compute 使用**仍属实验性的**支撑传播 `supportProjection=true`、四轮 Jacobi 和 linked 网格；不能把它的质量结果归给目前默认关闭该功能的入口。50 步预热、40 步测量、每组独立重复三次；下表是三次各自 p95 的中位数，单位 ms。质量从预热结束及每 8 个测量步的状态检查取峰值/最低活跃数；判据为最大箱间 AABB 穿透 <0.002 方块、地面穿透 <0.0001 方块、运动箱体 >99%、无非有限值及无回退。接触/patch 溢出使该轮直接失败，不会把缺失接触算成加速。
+夹具为 64×64 平面错层的单位 AABB，地面顶面 y=1，初始速度 (0,-1,0)，重力 32，水平逐层脉冲 `(.08 cos(t*.15+layer*.12), 0, .06 sin(...))`，禁用箱体角运动。compute 候选使用支撑传播 `supportProjection=true`、四轮 Jacobi 和 linked 网格。该路径在 9 月 30 日测试时属于实验配置；10 月 1 日已接入 `PackageWorldRuntime` 的 `stepFreeMoving`，后续状态和不同场景的测量见本页开头链接，不能将两份数据当作同一场景或同一计时口径。50 步预热、40 步测量、每组独立重复三次；下表是三次各自 p95 的中位数，单位 ms。质量从预热结束及每 8 个测量步的状态检查取峰值/最低活跃数；判据为最大箱间 AABB 穿透 <0.002 方块、地面穿透 <0.0001 方块、运动箱体 >99%、无非有限值及无回退。接触/patch 溢出使该轮直接失败，不会把缺失接触算成加速。
 
 | 数量 | 频率 | compute linked：GPU p95 | PhysX GPU TGS 4轮：完成步 p95 | PhysX CPU TGS 4轮：完成步 p95 | 质量 |
 |---:|---:|---:|---:|---:|---|
@@ -15,7 +17,7 @@
 
 compute 列是 OpenGL GPU timer 的物理 pass 时间，完成步 p95 另列在原始 CSV；PhysX 列是独立工作线程从施加脉冲到 `fetchResults(true)` 完成的墙钟时间，不是 CUDA kernel 独占时间。它们足以判断这些候选配置未显示可复现的总成本优势，不能代替 GPU 内部分阶段计时。独立测试的完成等待和全量状态读回仅用于测量/质量检查，不允许搬到客户端主线程或渲染线程。当前 shader 接触筛查通过也不等于与 Create 的视觉对齐；游戏内录像与客户端行为验证由用户执行。
 
-PhysX GPU 在 131072 活动箱体下未达到性能或质量门槛，不接入生产，亦不因 NVIDIA 品牌优先成为权威客户端。支撑传播 compute 实验是下一阶段的候选；它尚未通过真实 Create 视觉及完整游戏负载验证，不能据本报告直接打开默认开关。生产接管尚未开启，真实包裹仍由 Create 管理；非 NVIDIA 环境也不依赖 PhysX。Iris/阴影、普通/Flywheel 绘制停用、观察客户端、链路增量同步及整帧/服务端 tick/带宽测量仍未完成。
+**本节记录 2026-09-30 基准完成时的项目状态。** PhysX GPU 在 131072 活动箱体下未达到性能或质量门槛，不接入生产，亦不因 NVIDIA 品牌优先成为权威客户端。支撑传播 compute 随后接入 `PackageWorldRuntime.stepFreeMoving`，但仅凭该微基准仍不能证明 Create 视觉或完整游戏负载通过。默认配置及生产资源验收门禁仍关闭；真实包裹只会在双方显式实验配置且逐包裹 admission 条件满足时转入 GPU，否则继续由 Create 管理。Iris/阴影画面、普通/Flywheel 绘制停用、观察客户端、链路增量同步及整帧/服务端 tick 测量仍待游戏验证；总带宽比例验收已按最新范围移至后续版本。
 
 可复现命令：
 

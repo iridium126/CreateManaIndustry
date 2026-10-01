@@ -14,7 +14,7 @@ GPU 仍按绝对量化状态比较脏字段，**零预测残差的移动包裹�
 
 捕获锁定基线与历史。只有匹配身份、局部索引、candidate、flight stamp 的真实服务端 ACK 才从固定快照还原位置并推进历史；body 继续移动、取消、读回完成、旧/重复 ACK 和终止通知不推进历史。服务端拒绝/回滚的前缀也不推进。退休索引不能重用；新成员历史为零。服务端观察日志始终发布还原后的绝对字段。
 
-内部使用 `new PackageDeltaGpu(capacity, sources, true, true)`，transport 必须同时声明 batchEncoded/relativePositions/predictedPositions；模式不一致在 channel 构造时拒绝。生产 authority transport 已支持选择 action 8，世界默认构造器未切换；不能通过实验配置绕过 `PackageNetworkBudget`。
+内部使用 `new PackageDeltaGpu(capacity, sources, true, true)`，transport 必须同时声明 batchEncoded/relativePositions/predictedPositions；模式不一致在 channel 构造时拒绝。生产 authority transport 支持选择 action 8，但世界默认继续采用 relative 模式。此实验不作为当前方案；带宽门禁已按后续范围调整撤除，网络表现仅作后续优化参考。
 
 ## 字节对照
 

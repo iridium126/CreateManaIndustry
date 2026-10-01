@@ -30,6 +30,10 @@ public final class PackageAuthorityClient {
         }),4);
     }
     private PackageAuthorityClient() {}
+    static int readyFlags(boolean freeReady,boolean chainProtocol) {
+        if(!freeReady)return 0;
+        return ServerboundPackagePacket.FREE_READY|(chainProtocol?ServerboundPackagePacket.CHAIN_READY:0);
+    }
     static PackageDeltaJournal.Encoder encoder(){return Encoding.SHARED;}
     public static void capabilities(int flags) {
         var connection=Minecraft.getInstance().getConnection();
@@ -38,6 +42,11 @@ public final class PackageAuthorityClient {
     }
     public static int activePackages() {
         int count=0;for(var acquisition:activeAcquisitions)count+=acquisition.activeCount();return count;
+    }
+    /** Resolve an asynchronous world-coverage failure through the stable acquisition body map. */
+    public static boolean requestReleaseBody(int bodyIndex) {
+        for(var acquisition:activeAcquisitions)if(acquisition.requestReleaseBody(bodyIndex))return true;
+        return false;
     }
     public static ClientboundPackagePacket freePickOffer(PackagePoseQueryGpu.Result result) {
         for(var acquisition:activeAcquisitions){var offer=acquisition.activeOffer(result);if(offer!=null)return offer;}return null;
@@ -250,8 +259,7 @@ public final class PackageAuthorityClient {
         var channel=channels.get(packet.region());
         if(channel!=null)channel.acknowledge(packet.epoch(),packet.revision(),packet.ranges());
     }
-    /** Queue all GL work at the engine boundary. CHAIN_READY remains gated on the outstanding
-     * interactive selection, moving-light and GPU checkpoint prerequisites. */
+    /** Queue all GL work at the engine boundary; package ownership changes only after committed admission. */
     public static void receiveChain(ClientboundChainPackagePacket packet) {
         var level=Minecraft.getInstance().level;
         if(level==null || !level.dimension().location().equals(packet.dimension()))return;

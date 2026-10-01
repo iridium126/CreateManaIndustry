@@ -51,6 +51,8 @@ public final class PackageMovingCollisionSources {
         boolean discover(long deadlineNanos, int remainingVisits);
         Vec3 projectContaining(Entity entity, Vec3 point, boolean previous);
         boolean unsupported(BlockState state);
+        /** Null for ordinary blocks, otherwise copied unit-voxel geometry or a fail-closed box. */
+        List<PackageMovingGeometry.Box> dynamicBoxes(BlockState state,BlockPos pos,int ox,int oy,int oz,float friction);
     }
 
     public void onInvalidated(Consumer<PackageMovingGeometry.Key> listener) {
@@ -193,6 +195,9 @@ public final class PackageMovingCollisionSources {
                         pos.getX() - ox + 1, pos.getY() - oy + 1, pos.getZ() - oz + 1,
                         friction, PackageCollisionCache.UNSUPPORTED));
             } else {
+                List<PackageMovingGeometry.Box> dynamic=host.sable==null?null:
+                        host.sable.dynamicBoxes(state,pos,ox,oy,oz,friction);
+                if(dynamic!=null){result.addAll(dynamic);return result;}
                 collisionShape(state, world, pos).forAllBoxes((a, b, c, d, e, f) -> {
                     if (a < d && b < e && c < f) result.add(new PackageMovingGeometry.Box(
                             (float) (pos.getX() - ox + a), (float) (pos.getY() - oy + b), (float) (pos.getZ() - oz + c),

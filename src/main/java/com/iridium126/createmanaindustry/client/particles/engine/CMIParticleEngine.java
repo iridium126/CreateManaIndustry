@@ -1644,7 +1644,7 @@ public final class CMIParticleEngine {
                 this.packageParticles.stage(this.gpu.particleWriteBufferId(),this.gpu.counterBufferId(slot),
                         this.packageEmitter,this.frustumPlanes,(float)packageCamera.x,(float)packageCamera.y,(float)packageCamera.z);
                 packageStaged=true;
-                // Package passes reuse bindings 0..9. Invalidate the owner's cached bindings.
+                // Package passes reuse bindings 0..10. Invalidate the owner's cached bindings.
                 this.gpu.beginBindings();
                 this.gpu.bindDispatch();this.gpu.bindCounter(ParticleBuffers.COUNTER_BB,slot);
                 this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,this.lastGoodSlot);

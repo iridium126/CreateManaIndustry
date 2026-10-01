@@ -11,6 +11,7 @@ void main() {
     bool valid=parent<min(uParents,uint(parentRows.length()/6));
     for(uint row=0u;row<6u;row++) {
         vec4 r=valid?parentRows[6u*parent+row]:vec4(0);
-        r.w+=dot(r.xyz,origin.xyz);frameRows[outRow+row]=r;
+        r.w+=dot(r.xyz,origin.xyz);
+        frameRows[outRow+row]=r;
     }
 }

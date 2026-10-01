@@ -5,6 +5,7 @@ import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.api.block.BlockSubLevelCollisionShape;
 import dev.ryanhcode.sable.api.block.BlockSubLevelDynamicCollider;
 import dev.ryanhcode.sable.api.block.BlockWithSubLevelCollisionCallback;
+import dev.ryanhcode.sable.api.physics.collider.VoxelColliderData;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.companion.math.Pose3dc;
 import dev.ryanhcode.sable.sublevel.ClientSubLevel;
@@ -61,7 +62,18 @@ final class PackageSableCollisionSources implements PackageMovingCollisionSource
 
     @Override public boolean unsupported(BlockState state) {
         host.owner();
-        return state.getBlock() instanceof BlockSubLevelDynamicCollider || BlockWithSubLevelCollisionCallback.hasCallback(state);
+        return BlockWithSubLevelCollisionCallback.hasCallback(state);
+    }
+
+    @Override public List<PackageMovingGeometry.Box> dynamicBoxes(BlockState state,BlockPos pos,int ox,int oy,int oz,float friction) {
+        host.owner();
+        if(!(state.getBlock() instanceof BlockSubLevelDynamicCollider dynamic))return null;
+        return PackageMovingDynamicBoxes.capture(sink->dynamic.buildBoxes(new VoxelColliderData() {
+            @Override public void addBox(org.joml.Vector3dc min,org.joml.Vector3dc max) {
+                sink.add(min.x(),min.y(),min.z(),max.x(),max.y(),max.z());
+            }
+            @Override public void clearBoxes(){sink.clear();}
+        }),pos.getX(),pos.getY(),pos.getZ(),ox,oy,oz,friction);
     }
 
     private final class Source extends PackageMovingCollisionSources.Base {

@@ -29,6 +29,18 @@ class PackageForceSceneTest {
             if(sourceList.get(source-1).kind()==2){fanSeen=true;fanOrder.add(source);}else assertFalse(fanSeen,"entity tree must precede sequential fans");}
         assertEquals(List.of(1,3),fanOrder);
     }
+    @Test void forceInterestUsesWorldBoundsForStaticAndFramedSources(){
+        var first=new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion(0,0,0);
+        var second=new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion(2,0,0);
+        assertTrue(PackageForceScene.intersectsRegions(source(10),List.of(first),2));
+        assertTrue(PackageForceScene.intersectsRegions(source(66),List.of(first),2));
+        assertFalse(PackageForceScene.intersectsRegions(source(66.01),List.of(first),2));
+        var pose=new PackageMovingGeometry.Pose(1,0,0,0,1,0,0,0,1,128,0,0);
+        var framed=source(0).framed(new PackageForceScene.Frame(pose,0,0,0));
+        assertTrue(PackageForceScene.intersectsRegions(framed,List.of(second),2));
+        assertFalse(PackageForceScene.intersectsRegions(framed,List.of(first),2));
+        assertFalse(PackageForceScene.intersectsRegions(source(0),List.of(),2));
+    }
     @Test void rejectMalformedUnknownAndOverflowRatherThanTreatThemAsAir(){
         assertThrows(IllegalArgumentException.class,()->PackageForceScene.bake(0,Collections.nCopies(4097,source(0)),0,0,0));
         assertThrows(IllegalArgumentException.class,()->PackageForceScene.bake(0,List.of(source(0)),Double.NaN,0,0));

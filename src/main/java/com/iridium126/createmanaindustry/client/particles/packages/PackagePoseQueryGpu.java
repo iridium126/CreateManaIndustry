@@ -162,7 +162,7 @@ public final class PackagePoseQueryGpu implements AutoCloseable {
         long id=b.getLong(p),generation=b.getLong(p+8);
         if(id==0){for(int j=0;j<RESULT_BYTES;j+=4)if(b.getInt(p+j)!=0)throw new IllegalStateException("Malformed empty package query");return Result.NONE;}
         int candidate=b.getInt(p+16),body=b.getInt(p+20),flags=b.getInt(p+24),track=b.getInt(p+28);
-        if(id<0 || generation<=0 || candidate<0 || candidate>=input.count || body<0 || body>=input.bodyCount || (flags&~15)!=0 || (flags&8)!=0&&(flags&1)==0
+        if(id<0 || generation<=0 || candidate<0 || candidate>=input.count || body<0 || body>=input.bodyCount || (flags&~31)!=0 || (flags&8)!=0&&(flags&1)==0
                 || (flags&1)!=0 && (track<0 || track>=131072) || (flags&1)==0 && track!=-1)
             throw new IllegalStateException("Package query identity/index/flags");
         for(int j=32;j<RESULT_BYTES;j+=4)if(!Float.isFinite(b.getFloat(p+j)))throw new IllegalStateException("Non-finite package query pose");

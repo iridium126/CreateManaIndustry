@@ -4,9 +4,9 @@ import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Set;
 
-/** Internal acceptance accounting, outside the render/network hot paths. Counts measured bytes
- * only: never subtract a hypothetical suppressed native stream. A component benchmark cannot
- * certify the production admission gate, even when its measured ratio fits the 1.5x ceiling. */
+/** Historical comparison utility, outside the render/network hot paths. Further network
+ * optimization and ratio acceptance are deferred for this release; this utility is not called
+ * by runtime admission. It counts measured bytes only and never subtracts hypothetical traffic. */
 public final class PackageNetworkComparison {
     public static final double MAX_RATIO=1.5;
     public enum Direction { UP, DOWN }

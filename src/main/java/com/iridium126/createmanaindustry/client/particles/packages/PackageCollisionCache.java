@@ -80,15 +80,16 @@ public final class PackageCollisionCache {
         boolean queued;
     }
     private final Thread owner = Thread.currentThread();
-    private final Map<Section, Work> sections = new HashMap<>();
+    private final LinkedHashMap<Section, Work> sections = new LinkedHashMap<>(16,.75f,true);
     // Constant-time invalidation/eviction even during a large block update burst.
     private final LinkedHashMap<Section,Work> pending = new LinkedHashMap<>();
     private final Map<Long,Set<Section>> columns = new HashMap<>();
+    private final Set<Section> packageUsage=new HashSet<>();
     private final Executor executor;
     private final LongSupplier clock;
     private final int maxSections;
     private final java.util.concurrent.atomic.AtomicInteger workers=new java.util.concurrent.atomic.AtomicInteger();
-    private long revision, lastCaptureNanos, overrunCount;
+    private long revision, lastCaptureNanos, overrunCount,capacityEvictions,capacityRejections;
     private final long[] captureTimes=new long[128];
     private final long[] bakeTimes=new long[128];
     private int captureSamples,captureCursor;
@@ -109,9 +110,21 @@ public final class PackageCollisionCache {
         owner();sections.forEach((section,work)->{if(work.published!=null)consumer.accept(section,work.published);});
     }
     public boolean request(Section section) {
-        owner();
-        if (sections.containsKey(section)) return true;
-        if (sections.size()>=maxSections) return false;
+        owner();return request(section,false);
+    }
+    /** Demand from a package path may evict the least recently used immutable section. */
+    public boolean requestDemand(Section section) {
+        owner();return request(section,true);
+    }
+    private boolean request(Section section,boolean evictForDemand) {
+        Work existing=sections.get(section);if(existing!=null)return true;
+        if(sections.size()>=maxSections) {
+            if(!evictForDemand){capacityRejections++;return false;}
+            var iterator=sections.entrySet().iterator();Map.Entry<Section,Work> victim=null;
+            while(iterator.hasNext()) {var candidate=iterator.next();if(!packageUsage.contains(candidate.getKey())){victim=candidate;iterator.remove();break;}}
+            if(victim==null){capacityRejections++;return false;}
+            removeRetired(victim.getKey());capacityEvictions++;
+        }
         Work work=new Work(); sections.put(section,work);
         columns.computeIfAbsent(column(section.x,section.z),k->new HashSet<>()).add(section);
         invalidate(section); return true;
@@ -145,14 +158,21 @@ public final class PackageCollisionCache {
         }
     }
     public void evict(Section section) {
-        owner();if(sections.remove(section)==null)return;pending.remove(section);
+        owner();if(sections.remove(section)==null)return;removeRetired(section);
+    }
+    private void removeRetired(Section section) {
+        pending.remove(section);packageUsage.remove(section);
         long key=column(section.x,section.z);Set<Section> set=columns.get(key);
-        set.remove(section);if(set.isEmpty())columns.remove(key);
+        if(set!=null){set.remove(section);if(set.isEmpty())columns.remove(key);}
         listener.removed(section);
     }
-    public void clear() { owner(); sections.clear(); pending.clear(); columns.clear(); ++revision;listener.cleared(); }
+    public void clear() { owner(); sections.clear(); pending.clear(); columns.clear();packageUsage.clear(); ++revision;listener.cleared(); }
+    public void clearPackageUsage(){owner();packageUsage.clear();}
+    public void protectPackageUsage(Section section){owner();if(sections.containsKey(section))packageUsage.add(section);}
     public Snapshot snapshot(Section section) { owner(); Work w=sections.get(section); return w==null?null:w.published; }
     public int size(){owner();return sections.size();}
+    public long capacityEvictions(){owner();return capacityEvictions;}
+    public long capacityRejections(){owner();return capacityRejections;}
     public int readyCount(){owner();int count=0;for(Work work:sections.values())if(work.published!=null)count++;return count;}
     private static long column(int x,int z){return ((long)x<<32)|(z&0xffffffffL);}
 

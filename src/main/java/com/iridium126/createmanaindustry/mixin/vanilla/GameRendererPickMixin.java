@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.mixin.vanilla;
 
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
+import com.iridium126.createmanaindustry.client.particles.packages.PackageWorldRuntime;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
@@ -24,6 +25,8 @@ public abstract class GameRendererPickMixin {
 
     @Inject(method = "pick(F)V", at = @At("TAIL"))
     private void createmanaindustry$injectParticlePick(float partialTicks, CallbackInfo ci) {
-        CMIParticleEngine.INSTANCE.injectCrosshairPick(Minecraft.getInstance());
+        var mc=Minecraft.getInstance();
+        CMIParticleEngine.INSTANCE.injectCrosshairPick(mc);
+        PackageWorldRuntime.injectFreeCrosshairPick(mc);
     }
 }

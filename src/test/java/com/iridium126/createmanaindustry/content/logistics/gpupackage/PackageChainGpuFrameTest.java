@@ -3,6 +3,9 @@ package com.iridium126.createmanaindustry.content.logistics.gpupackage;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.UUID;
+import com.iridium126.createmanaindustry.client.particles.packages.PackageChainUpload;
+import com.iridium126.createmanaindustry.client.particles.packages.PackagePhysicsGpu;
+import com.iridium126.createmanaindustry.client.particles.packages.PackagePoseQueryGpu;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
@@ -50,5 +53,18 @@ class PackageChainGpuFrameTest {
         assertThrows(IllegalArgumentException.class,()->new PackageChainGpuFrame(f,frame(UUID.randomUUID(),Vec3.ZERO,Vec3.ZERO)));
         assertThrows(IllegalArgumentException.class,()->new PackageChainGpuFrame(f,frame(f.parent(),new Vec3(1,0,0),Vec3.ZERO)));
         assertThrows(NullPointerException.class,()->new PackageChainGpuFrame(f,null));
+    }
+    @Test void framedRetirementRestoresNativeCoordinatesAndIgnoresTheFreeDomainOrigin() {
+        var identity=new PackageLease.Identity(0x100000003L,0x200000005L);
+        var track=new com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainPackagePacket.Track(3,
+                net.minecraft.core.BlockPos.ZERO,null,new PackageChainTrack(Vec3.ZERO,Vec3.ZERO,.875f,0,90,true,true,0,0,0,9),java.util.List.of(),UUID.randomUUID());
+        var pose=new PackagePoseQueryGpu.Result(identity.id(),identity.generation(),7,18,15,3,
+                3,4,5,35,.125f,-.25f,.375f,PackagePhysicsGpu.RETIRED,10,11,12,43,40,42,90,1,
+                2,3,4,30,9,10,11,42);
+        var saved=PackageChainUpload.checkpoint(pose,identity,track,-30_000_000.25,32_000_000.5,-64.25);
+        assertEquals(3.5,saved.pendulum().x());assertEquals(4.5,saved.pendulum().y());
+        assertEquals(10.5,saved.hookX());assertEquals(12+1.0/16,saved.hookY());
+        assertEquals(2.5,saved.previous().x());assertEquals(9.5,saved.previous().targetX());
+        assertEquals(0.125f,saved.pendulum().vx());
     }
 }

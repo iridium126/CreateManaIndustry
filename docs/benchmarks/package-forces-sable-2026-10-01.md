@@ -22,7 +22,7 @@ owner 线程只读取源实体/风机与 sublevel 的逻辑姿态并复制不可
 
 [完整 CSV](package-forces-sable-2026-10-01.csv)保留 45 组测量；[上一版本 CSV](package-forces-2026-10-01.csv)仍保留。普通单气流与前次 0.0225–0.0236ms 范围一致；其他普通场景本次更低，但前后采集不是交错测量，不据此宣称可复现提速。CPU 数字只包括不可变数据上传与提交，worker 数字只包括烘焙，不包含实际世界采集、Create 回调、后续碰撞/绘制或网络。计时查询的同步等待只发生在 harness 的 CPU 计时结束之后，生产路径不等待。
 
-本次没有新增力源网络包。所有原生实体、风机及 Sable 姿态同步仍计入同场景总网络比较，硬上限为 Create 原生的 1.5 倍。完整连接双向采集、所有消息类别及实际 GPU 活动覆盖不足时只能判定证据不完整，生产接管门禁仍关闭。整帧 16.7ms、服务器 tick 50ms、视觉不可分辨及全计划验收均未完成。
+本次没有新增力源网络包。本报告时点曾按 Create 原生的 1.5 倍记录带宽验收；用户随后将总带宽优化和比例验收延期到后续版本，本轮沿用现有同步路径，不以该历史比较阻塞接管。整帧 16.7ms、服务器 tick 50ms、视觉不可分辨及全计划验收均未完成。
 
 ```powershell
 .\gradlew.bat test validatePackageGpu validatePackageSableAbsent build --offline --no-configuration-cache -I scripts/particles/validation.init.gradle

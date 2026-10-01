@@ -18,7 +18,7 @@ import org.lwjgl.system.MemoryStack;
  */
 public final class PackagePoolGpu implements AutoCloseable {
     public static final int META_BYTES=80, VERTEX_BYTES=48, MESH_BYTES=16;
-    public static final int NO_MESH=-1, CHAIN=1, FLIPPED=2, HIDDEN=4, FRAMED=8;
+    public static final int NO_MESH=-1, CHAIN=1, FLIPPED=2, HIDDEN=4, FRAMED=8, HANDBACKABLE=16;
     public static final int ATTACHMENT_BYTES=176;
     public enum DrawPass { GBUFFER, SHADOW }
     private static final class PassState {int commands,instances,pool;long publication=-1;}
@@ -181,6 +181,20 @@ public final class PackagePoolGpu implements AutoCloseable {
         }
         candidateFlags[candidate]=(byte)next;
     }
+    /** Mark only a visibly active free authority as eligible for frozen handback rendering. */
+    public void setHandbackable(int candidate,boolean handbackable) {
+        ensureOpen();
+        if(candidate<0 || candidate>=count || staged>=0)throw new IllegalArgumentException("Package handback transition outside committed generation");
+        int previous=Byte.toUnsignedInt(candidateFlags[candidate]);
+        int next=handbackable?previous|HANDBACKABLE:previous&~HANDBACKABLE;
+        if(next==previous)return;
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);
+        try(MemoryStack stack=MemoryStack.stackPush()) {
+            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)candidate*META_BYTES+28,stack.ints(next));
+        }
+        candidateFlags[candidate]=(byte)next;
+    }
     private static void validateMetadata(ByteBuffer data,int count,Set<Identity> identities,Set<Integer> bodies) {
         ByteBuffer v=data.duplicate().order(ByteOrder.nativeOrder());
         for(int i=0;i<count;i++) {
@@ -189,7 +203,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             int body=v.getInt(p+16);
             if(id<=0 || generation<=0 || body<0 || !identities.add(new Identity(id,generation)) || !bodies.add(body))
                 throw new IllegalArgumentException("Invalid/duplicate package identity or body");
-            int flags=v.getInt(p+28);if((flags&~(CHAIN|FLIPPED|HIDDEN|FRAMED))!=0 || (flags&FRAMED)!=0&&(flags&CHAIN)==0)throw new IllegalArgumentException("Package flags");
+            int flags=v.getInt(p+28);if((flags&~(CHAIN|FLIPPED|HIDDEN|FRAMED|HANDBACKABLE))!=0 || (flags&FRAMED)!=0&&(flags&CHAIN)==0)throw new IllegalArgumentException("Package flags");
             for(int j=0;j<12;j++)if(j!=7 && !Float.isFinite(v.getFloat(p+32+j*4)))
                 throw new IllegalArgumentException("Non-finite package metadata");
         }

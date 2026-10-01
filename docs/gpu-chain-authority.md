@@ -1,12 +1,12 @@
 # Create 锁链包裹权威边界
 
-这是项目内部实现契约，不是第三方稳定 API。服务端与客户端 chain acquisition、可见 admission、世界时钟及 Renderer/Flywheel 的接线已加入当前构建。GPU 射线拾取、精确身份拾取事务、正常退休姿态及客户端紧急关闭检查点已接线。光照提前预取和覆盖期限、移动 parent、观察客户端增量及 Iris/阴影仍未完成。因此当前客户端仅发送 FREE_READY，不发送 CHAIN_READY；没有就绪世界资源时收到 chain OFFER 会在冻结前明确 RELEASE。正常游戏锁链继续由 Create 管理，不能据此声明真实锁链 GPU 接管已可用。
+这是项目内部实现契约，不是第三方稳定 API。服务端与客户端 chain acquisition、可见 admission、世界时钟及 Renderer/Flywheel 的接线已加入当前构建。GPU 射线拾取、精确身份拾取事务、正常退休姿态、客户端紧急关闭检查点，以及 Sable render/logical 父姿态与原生 conveyor 原点接线已完成。客户端仅在通用 GPU 运行时初始化且四个锁链上下行/交互通道全部协商后发送 CHAIN_READY；收到 TRACK 后会先创建 epoch 专属查询、检查点和模拟资源，再处理后续 OFFER。资源初始化失败会撤销能力，未完成 admission 的包裹仍由 Create 管理。移动灯光现在按 logical 父姿态投影到世界坐标，在 light atlas 覆盖后才继续接管；实际游戏内光照、多人观察、Iris/阴影与玩法验收仍待测试。
 
-2026-10-01 坐标边界补充：`PackageChainSpace` 为每条链路复制不可变父结构仿射姿态，以 conveyor 中心为局部原点，避免巨大 Sable plot 坐标的浮点差分。直接 compileOnly `PackageSableChainSpace` 读取当前 logical pose；公共/服务端 adapter 无客户端类和反射，未安装 Sable 不加载适配器。服务端权威选举、跟踪范围使用当前世界区域；拾取保留原 loaded/权限/range 检查，将世界射线两端逆变换后与原生局部拾取盒求交，不能用扩大后的世界 AABB 代替。父结构 UUID 改变、删除、变换失效会废止旧 track/lease，正常平移/旋转不会重写本地路由、进度、物品和基线协议。
+2026-10-01 坐标边界补充：`PackageChainSpace` 为每条链路复制不可变父结构仿射姿态，以 conveyor 中心为局部原点，避免巨大 Sable plot 坐标的浮点差分。服务端 `PackageSableChainSpace` 读取 logical pose；客户端 `PackageSableChainFrames` 直接使用 compileOnly 的 render/logical API，不用反射。四槽 source/output ring 在同一粒子池 generation 导入 track 偏移后的帧；acquisition、查询和退休恢复统一使用原生 conveyor 原点。未安装 Sable 不加载适配器。服务端权威选举、跟踪范围使用当前世界区域；拾取保留原 loaded/权限/range 检查，将世界射线两端逆变换后与原生局部拾取盒求交，不能用扩大后的世界 AABB 代替。父结构 UUID 改变、删除、变换失效会废止旧 track/lease，正常平移/旋转不会重写本地路由、进度、物品和基线协议。
 
-该边界已与真实 Sable companion 的旋转点、任意旋转、正非均匀缩放和巨大 plot/world 坐标对照，明确容差 1e-6；immutable capture 不被后续 mutable pose 修改。静态正负分区边界精确比较；旋转拾取盒拒绝世界 AABB 角落的假命中。客户端 GPU 已增加父姿态表导入、普通/Iris 顶点、缩放剔除及 logical pose 拾取，详见[GPU 父姿态契约](gpu-package-chain-frames.md)。**世界运行时姿态采集/上传、acquisition 与退休原点、光照和父生命周期尚待接线，不能据此开启 CHAIN_READY 或声明移动锁链接管完成。** contraption 与 Sable 是不同结构来源；此次是 Sable 活跃 block entity 的坐标边界，不为 Create contraption 虚拟 BE 声明不存在的链轨道模拟。
+该边界已与真实 Sable companion 的旋转点、任意旋转、正非均匀缩放和巨大 plot/world 坐标对照，明确容差 1e-6；immutable capture 不被后续 mutable pose 修改。静态正负分区边界精确比较；旋转拾取盒拒绝世界 AABB 角落的假命中。客户端父姿态同代 GPU 导入、普通/Iris 顶点、缩放剔除及 logical pose 拾取见[GPU 父姿态契约](gpu-package-chain-frames.md)。**游戏内真实交接、库存和多人观察验证尚未完成；实验配置下已允许符合通道条件的客户端开始安全握手。** contraption 与 Sable 是不同结构来源；此次是 Sable 活跃 block entity 的坐标边界，不为 Create contraption 虚拟 BE 声明不存在的链轨道模拟。
 
-Java 布局与原点验证已增加到 81 套 391 项单元测试；无 Sable/companion 的独立 JVM 检查通过。公共坐标/manager 字节码检查无外部 Sable 或客户端类型，typed adapter 无反射。已加入 131072 全容量父姿态的真实 GPU 验证和 Iris transform feedback 对照；本轮没有性能对照，不据此认定提速、实际 Sable 游戏注入、交接和库存验证完成。
+Java 布局与原点验证已增加到 81 套 393 项单元测试；无 Sable/companion 的独立 JVM 检查通过。公共坐标/manager 字节码检查无外部 Sable 或客户端类型，typed adapter 无反射。已加入 131072 全容量父姿态的真实 GPU 验证和 Iris transform feedback 对照；本轮没有性能对照，不据此认定提速、实际 Sable 游戏注入、交接和库存验证完成。
 
 进一步带宽优化按用户最新要求延期，现有同步继续采用；历史带宽基准不是本次接管验收门槛。
 
@@ -70,11 +70,11 @@ Java 布局与原点验证已增加到 81 套 391 项单元测试；无 Sable/co
 
 真实 GPU 接线测试发现并修复了 history 初始化把 tracked 模式 2/3 当旧 start/radius 布局重算目标的错误：tracked 初始化保留 FINAL 精确 target，旧模式仍重算。验证覆盖第一次模拟前的吊点、失败 publication、查询早于可见确认、精确 ACTIVE 租约及退休后的旧命中拒绝。详见[拾取接线报告](benchmarks/package-chain-pickup-2026-09-30.md)。
 
-**就绪门禁仍关闭。** 紧急关闭姿态、光照提前预取与覆盖期限、观察客户端增量、Iris/阴影，以及移动 parent 下的链路坐标变换仍待完成；实际 Mixin、输入重放、库存与多人网络循环还未运行游戏验证。光照采样和缺区反馈已接线，支持保留最后确认亮度、哈希碰撞/超量/满 ring 重试；成本及范围见[覆盖反馈报告](benchmarks/package-light-feedback-2026-09-30.md)。查询正确性、原始样本和组件性能见[姿态查询报告](benchmarks/package-pose-query-2026-09-30.md)。
+**接管验收尚未完成。** 世界坐标灯光预取和 atlas 覆盖门槛已经接线，但光照、观察客户端增量和移动父结构下的拾取/交接仍需游戏验证；实际 Mixin、输入重放、库存与多人网络循环还未运行游戏验证。光照采样和缺区反馈支持保留最后确认亮度、哈希碰撞/超量/满 ring 重试；成本及范围见[覆盖反馈报告](benchmarks/package-light-feedback-2026-09-30.md)。查询正确性、原始样本和组件性能见[姿态查询报告](benchmarks/package-pose-query-2026-09-30.md)。
 
 ## 节点与库存事务
 
-`PackageChainEventCodec` 的 64 字节 GPU 记录和现有链路 channel 保持不变。独立 `gpu-chain-packages-1` payload 携带 session epoch、顺序号和最多 256 项、16386 字节正文。TRACK 和基线使用有符号三轴坐标，避免 vanilla BlockPos 打包格式截断高 Y；物品、内容和地址不进入协议。
+`PackageChainEventCodec` 的 64 字节 GPU 记录和现有链路 channel 保持不变。独立 `gpu-chain-packages-2` payload 携带 session epoch、顺序号和最多 256 项、16386 字节正文；TRACK 增加 parent UUID，以便客户端将本地轨道绑定到对应 Sable 姿态。TRACK 和基线使用有符号三轴坐标，避免 vanilla BlockPos 打包格式截断高 Y；物品、内容和地址不进入协议。
 
 `PackageChainAuthority` 完成整批解码及身份、candidate、track/revision、unsigned step、资格掩码和原生条件校验后，才允许玩法回调。真实适配器还校验单步运动范围和自上次确认基准可达到的距离。只有完全相同的最后一包可获得重复 ACK；相同序号但不同正文会被拒绝。退休索引保留完整身份，当前 epoch 内不复用；迟到记录不能操作新包裹。
 
@@ -86,7 +86,7 @@ Java 布局与原点验证已增加到 81 套 391 项单元测试；无 Sable/co
 
 普通预告不会停止运动，也不会更改物品。GPU 未确认的旧预告可合并进后来的实际候选；服务端只校验和通知新增预告位。每批事务在副作用前认领顺序号；原生回调异常会废止整个 session，不能重放已执行的副作用。此机制不把库存回滚当作恢复策略；真实游戏库存守恒仍需客户端/服务端玩法测试。
 
-原生 append 和 notifyUpdate 在已验证的事务批次内合并，每个触及的 conveyor 在物品移动完成后发布一次原生 BE 更新。失败后也发布已发生的原生状态；不会逐包裹发布中间快照。该优化仍使用 Create 原生 BE 复制，观察客户端专用增量还未接线，不能据此认定网络带宽目标达成。
+原生 append 和 notifyUpdate 在已验证的事务批次内合并，每个触及的 conveyor 在物品移动完成后发布一次原生 BE 更新。失败后也发布已发生的原生状态；不会逐包裹发布中间快照。锁链专用观察客户端仍未接线；当前沿用 Create 原生 BE 同步和未接管客户端的渲染行为。本次不设置带宽倍率验收门槛。
 
 ## 回退与生命周期
 
@@ -94,10 +94,10 @@ Java 布局与原点验证已增加到 81 套 391 项单元测试；无 Sable/co
 
 速度、方向、连接、端口过滤或路由结构变化使相关 track 的 lease 退回；按 track 索引直接定位所属对象，不扫描其他链路的全部包裹。当前策略重建描述并分配新 track index，没有无缝拓扑迁移或索引回收。最多 32 个节点的掩码、候选/track 容量及资源不足均保持 Create 所有权。整体 session 关闭只发送 epoch CLOSE，避免为每个对象重复发送终止包。
 
-服务端不接受客户端物品操作或地址修改。无准备好的 authority、协商失败、掉线、越出订阅、超时或异常都会保留/恢复 Create 管理。客户端资源关闭、GL 失败和资源重载先撤销其 session/原生成员，再销毁 ring/solver；门禁开启前仍须补齐服务端/观察端恢复及真实生命周期测试。
+服务端不接受客户端物品操作或地址修改。无准备好的 authority、协商失败、掉线、越出订阅、超时或异常都会保留/恢复 Create 管理。客户端资源关闭、GL 失败和资源重载先撤销其 session/原生成员，再销毁 ring/solver。实验配置允许已协商客户端开始接管；实际服务端/观察端恢复及生命周期仍待游戏验证。
 
 ## 验证范围
 
 新增协议/服务端状态测试覆盖完整 long 身份、高 Y、uint 掩码、正文长度、两阶段及重复控制、最终基线超时、4096 个活动对象无逐对象心跳读取、整批拒绝、精确重复 ACK、旧身份/退休索引、预告竞争、回调异常和按 track 失效。ASM 额外核对实际 Create 6.0.10 的原生导出、预告、append 和通知描述符。
 
-新增真实 GPU acquisition 测试覆盖完整握手、共享 free/chain 索引差异、实际模型部件计数、反转吊具、失败帧、重放/旧消息、隐藏 admission 在途释放、prepared 资格重写和满池拒绝。查询及紧急检查点另覆盖零负载、工作组边界、131072 候选、四槽耗尽、提交失败、退休交还、精确身份、前后姿态及换 epoch。它使用真实 GL 提交和模拟 transport，不运行实际 Minecraft 库存、Mixin 注入或网络循环。查询和检查点组件微基准均未测量整帧/服务器 tick/网络吞吐；之前的 GPU 内核和 CPU 容器微基准也不能证明 131072 活动包裹验收。Iris 主/阴影已经接线，见 [hook 报告](benchmarks/package-iris-hooks-2026-09-30.md)，仍需游戏内验收。接下来补齐光照提前覆盖、服务端/观察端增量，测量真实事件批次及带宽。历史记录见[客户端接线报告](benchmarks/package-chain-acquisition-2026-09-30.md)、[姿态查询报告](benchmarks/package-pose-query-2026-09-30.md)及[检查点报告](benchmarks/package-chain-checkpoint-2026-09-30.md)。
+新增真实 GPU acquisition 测试覆盖完整握手、共享 free/chain 索引差异、实际模型部件计数、反转吊具、失败帧、重放/旧消息、隐藏 admission 在途释放、prepared 资格重写和满池拒绝。查询及紧急检查点另覆盖零负载、工作组边界、131072 候选、四槽耗尽、提交失败、退休交还、精确身份、前后姿态及换 epoch。它使用真实 GL 提交和模拟 transport，不运行实际 Minecraft 库存、Mixin 注入或网络循环。查询和检查点组件微基准均未测量整帧/服务器 tick/网络吞吐；之前的 GPU 内核和 CPU 容器微基准也不能证明 131072 活动包裹验收。Iris 主/阴影已经接线，见 [hook 报告](benchmarks/package-iris-hooks-2026-09-30.md)，仍需游戏内验收。后续工作集中在观察客户端状态接线和实际游戏验证。同步继续采用当前实现；网络带宽优化及其倍率验收已按用户要求排除本次范围。历史记录见[客户端接线报告](benchmarks/package-chain-acquisition-2026-09-30.md)、[姿态查询报告](benchmarks/package-pose-query-2026-09-30.md)及[检查点报告](benchmarks/package-chain-checkpoint-2026-09-30.md)。

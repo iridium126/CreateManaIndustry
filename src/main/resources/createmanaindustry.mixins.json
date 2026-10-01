@@ -72,6 +72,8 @@
     "packages.NativeMotionPacketAccessor",
     "packages.NativePackagePacketMixin",
     "packages.NativePackageLifecycleMixin",
+    "packages.PackageCollisionChunkMixin",
+    "packages.sable.PackageSableCollisionPlotMixin",
     "particles.GlowingVineLevelMixin",
     "particles.GlowingVineClientLevelMixin",
     "particles.PackageLightChunkMixin",

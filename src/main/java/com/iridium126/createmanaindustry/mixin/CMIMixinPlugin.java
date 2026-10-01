@@ -54,6 +54,8 @@ public class CMIMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if (mixinClassName.contains(".packages.sable."))
+            return isSupportedVersion("sable", "2.0.5");
         if (mixinClassName.contains(".packages."))
             return isSupportedVersion("create", "6.0.10");
         // BnB cogwheel-chain mixins require Bits 'n' Bobs AND Trickster

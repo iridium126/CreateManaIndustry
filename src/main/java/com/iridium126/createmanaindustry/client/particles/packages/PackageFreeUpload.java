@@ -20,7 +20,7 @@ public final class PackageFreeUpload {
             com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageLease.Identity identity,
             float height,double ox,double oy,double oz) {
         if(p==null||identity==null||p.id()!=identity.id()||p.generation()!=identity.generation()||p.chain()
-                ||(p.flags()&~PackagePoolGpu.HIDDEN)!=0||!Float.isFinite(p.state())||p.state()<0&&!p.retired()
+                ||(p.flags()&~(PackagePoolGpu.HIDDEN|PackagePoolGpu.HANDBACKABLE))!=0||!Float.isFinite(p.state())||p.state()<0&&!p.retired()
                 ||!p.retired()&&(p.flags()&PackagePoolGpu.HIDDEN)!=0
                 ||!Float.isFinite(height)||height<=0||height>2||p.reversed()!=height*.5f||p.rate()!=0&&p.rate()!=1
                 ||!Double.isFinite(ox)||!Double.isFinite(oy)||!Double.isFinite(oz))

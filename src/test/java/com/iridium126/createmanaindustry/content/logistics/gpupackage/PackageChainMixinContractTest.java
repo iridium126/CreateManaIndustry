@@ -83,6 +83,47 @@ class PackageChainMixinContractTest {
         assertTrue(conveyor.fields.stream().anyMatch(f->f.name.equals("loopingPackages") && f.desc.equals("Ljava/util/List;") && (f.access&Opcodes.ACC_FINAL)==0));
         assertTrue(conveyor.fields.stream().anyMatch(f->f.name.equals("travellingPackages") && f.desc.equals("Ljava/util/Map;") && (f.access&Opcodes.ACC_FINAL)==0));
     }
+    @Test void nativeObserverSnapshotsSerializeTheFullCreateListsAfterMaterializingGpuOwnedPoses() throws IOException {
+        var conveyor=read(CONVEYOR);
+        var write=method(conveyor,"write","(Lnet/minecraft/nbt/CompoundTag;Lnet/minecraft/core/HolderLookup$Provider;Z)V");
+        for(String field:List.of("loopingPackages","travellingPackages")) {
+            boolean serialized=false;
+            for(var instruction:write.instructions)if(instruction instanceof FieldInsnNode f && f.getOpcode()==Opcodes.GETFIELD
+                    && f.owner.equals(CONVEYOR) && f.name.equals(field))serialized=true;
+            assertTrue(serialized,"Create BE updates must serialize the complete native "+field+" list");
+        }
+        boolean clientPackageCodec=false;
+        for(var method:conveyor.methods)for(var instruction:method.instructions)if(instruction instanceof MethodInsnNode call
+                && call.owner.equals("com/simibubi/create/content/kinetics/chainConveyor/ChainConveyorPackage")
+                && call.name.equals("writeToClient"))clientPackageCodec=true;
+        assertTrue(clientPackageCodec,"Observer updates must keep Create's native client package codec");
+
+        var mixin=read("com/iridium126/createmanaindustry/mixin/packages/ChainOwnershipContainersMixin");
+        var checkpoint=method(mixin,"cmi$checkpointForSave","(Lnet/minecraft/nbt/CompoundTag;Lnet/minecraft/core/HolderLookup$Provider;ZLorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V");
+        boolean materializes=false;
+        for(var instruction:checkpoint.instructions)if(instruction instanceof MethodInsnNode call
+                && call.name.equals("cmi$materializePackages"))materializes=true;
+        assertTrue(materializes,"The native write hook must materialize confirmed GPU poses before serialization");
+        var inject=checkpoint.visibleAnnotations==null?List.<AnnotationNode>of():checkpoint.visibleAnnotations;
+        var writeHook=inject.stream().filter(annotation->annotation.desc.equals("Lorg/spongepowered/asm/mixin/injection/Inject;"))
+                .anyMatch(annotation->annotationValueContains(annotation,"method","write") && annotationAt(annotation,"HEAD"));
+        assertTrue(writeHook,"The checkpoint hook must remain at HEAD of Create write");
+    }
+    private static boolean annotationValueContains(AnnotationNode annotation,String key,String expected) {
+        if(annotation.values==null)return false;
+        for(int i=0;i<annotation.values.size();i+=2)if(annotation.values.get(i).equals(key)) {
+            Object value=annotation.values.get(i+1);
+            return value instanceof List<?> list?list.contains(expected)
+                    :value instanceof String[] enumeration?enumeration.length==2 && expected.equals(enumeration[1]):expected.equals(value);
+        }
+        return false;
+    }
+    private static boolean annotationAt(AnnotationNode inject,String expected) {
+        if(inject.values==null)return false;
+        for(int i=0;i<inject.values.size();i+=2)if(inject.values.get(i).equals("at") && inject.values.get(i+1) instanceof List<?> entries)
+            for(Object entry:entries)if(entry instanceof AnnotationNode at && annotationValueContains(at,"value",expected))return true;
+        return false;
+    }
     @Test void interactionHookMatchesSpecializedMethodAndRemovalFlag() throws IOException {
         var packet=read("com/simibubi/create/content/kinetics/chainConveyor/ChainPackageInteractionPacket");
         method(packet,"applySettings","(Lnet/minecraft/server/level/ServerPlayer;L"+CONVEYOR+";)V");

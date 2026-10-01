@@ -60,6 +60,37 @@ class PackageNativeDownlinkHookContractTest {
         for(var m:shared.methods)for(var instruction:m.instructions)if(instruction instanceof MethodInsnNode c)
             assertFalse(c.owner.startsWith("net/minecraft/client/"),"Dedicated server must not link client symbols");
     }
+    @Test void serverVisibleReadyOwnsOneConnectionAndReleaseSendsNativePoseRecovery() throws Exception {
+        var manager=PackageNativePacketHookContractTest.type("com/iridium126/createmanaindustry/content/logistics/gpupackage/PackageAuthorityManager");
+        var control=manager.methods.stream().filter(m->m.name.equals("control")).findFirst().orElseThrow();
+        int visible=-1,accepted=-1,owner=-1,at=0;
+        for(var instruction:control.instructions) {
+            if(instruction instanceof IntInsnNode value&&value.getOpcode()==Opcodes.BIPUSH&&value.operand==9)visible=at;
+            if(instruction instanceof LdcInsnNode value&&Integer.valueOf(9).equals(value.cst))visible=at;
+            if(instruction instanceof MethodInsnNode c&&c.owner.endsWith("/PackageAuthorityRegion")&&c.name.equals("visibleReady"))accepted=at;
+            if(instruction instanceof FieldInsnNode f&&f.owner.endsWith("/PackageAuthorityManager$EntityTarget")
+                    &&f.name.equals("nativeOwner")&&f.getOpcode()==Opcodes.PUTFIELD)owner=at;
+            at++;
+        }
+        assertTrue(visible>=0&&accepted>visible&&owner>accepted,"only accepted VISIBLE_READY claims native motion ownership");
+
+        var target=PackageNativePacketHookContractTest.type("com/iridium126/createmanaindustry/content/logistics/gpupackage/PackageAuthorityManager$EntityTarget");
+        var released=target.methods.stream().filter(m->m.name.equals("released")
+                &&m.desc.equals("(Lcom/iridium126/createmanaindustry/content/logistics/gpupackage/PackageAuthorityRegion$Baseline;)V"))
+                .findFirst().orElseThrow();
+        int teleport=-1,motion=-1,nativeSends=0;at=0;
+        for(var instruction:released.instructions) {
+            if(instruction instanceof TypeInsnNode t&&t.getOpcode()==Opcodes.NEW) {
+                if(t.desc.equals("net/minecraft/network/protocol/game/ClientboundTeleportEntityPacket")&&teleport<0)teleport=at;
+                if(t.desc.equals("net/minecraft/network/protocol/game/ClientboundSetEntityMotionPacket")&&motion<0)motion=at;
+            }
+            if(instruction instanceof MethodInsnNode c&&c.owner.equals("net/minecraft/server/network/ServerPlayerConnection")
+                    &&c.name.equals("send")&&c.desc.equals("(Lnet/minecraft/network/protocol/Packet;)V"))nativeSends++;
+            at++;
+        }
+        assertTrue(teleport>=0&&motion>teleport,"absolute position must be prepared before its velocity recovery packet");
+        assertTrue(nativeSends>=2,"release must enqueue an absolute position and velocity to the prior owner");
+    }
     @Test void nativeRecoveryPrecedesGpuFallbackAndRenderClaimsSurviveUntilRecoveryCompletes() throws Exception {
         var transport=PackageNativePacketHookContractTest.type("com/iridium126/createmanaindustry/client/particles/packages/PackageAuthorityClient$1");
         var restore=transport.methods.stream().filter(m->m.name.equals("restore")).findFirst().orElseThrow();

@@ -1,17 +1,19 @@
 # 锁链包裹 GPU 父姿态内部契约
 
-当前实现了父姿态的 GPU 导入、普通/Iris 顶点、主视角/阴影剔除和逻辑姿态射线查询。世界运行时尚未提供实际 Sable render/logical pose 上传和 acquisition 坐标接线，`CHAIN_READY` 继续关闭。本契约不表示移动锁链已经接管，也不声明 131072 活动包裹的整帧性能通过。
+当前实现包括父姿态 GPU 展开、通用池同代导入、普通/Iris 顶点、主视角/阴影剔除、逻辑姿态射线查询，以及 Sable render/logical pose 的运行时采集。TRACK 携带稳定 parent UUID；acquisition 用 conveyor 原生坐标准备 body 和恢复检查点。开启实验配置且四个锁链通道协商成功时，客户端会发送 `CHAIN_READY` 并进入服务端握手；这不代表已通过游戏内行为或整帧性能验收。
 
 `PackageChainGpuFrame` 每条 track 使用 96 字节：前三个 vec4 是 render 仿射行，后三个是 logical 仿射行。两种姿态必须属于相同 parent UUID 和 conveyor 局部原点；轴为正的正交缩放，允许非均匀缩放。平移先在 double 中减去共享世界物理原点，再转换为 float。此差分避免把巨大 Sable plot 原点放入 GPU 局部运动；不改变通用池现有世界 float 坐标协议。
 
 ```java
-// render/logical 是已复制的不可变 PackageChainSpace.Frame。
-// staging 的当前窗口必须恰好是 96 字节，write 不改变调用方 position/limit。
-new PackageChainGpuFrame(render, logical).write(staging, worldOriginX, worldOriginY, worldOriginZ);
-pool.chainFrames(immutableFrameSsbo, trackCount);
+// 每个渲染提交代只采集一次不可变 render/logical 姿态；灯光请求和 GPU 上传共用快照。
+chainFrames.beginFrame(frameId);
+Vec3 worldLightPosition=chainFrames.worldPosition(trackIndex,nativeLocalPosition);
+chainFrames.prepare(pool); // 与后续 PackagePoolGpu.stage 属于同一粒子提交代
 ```
 
-调用方必须维护原生 track index 到 frame row 的一致映射，并保证源缓冲在 import 完成前不被覆写、缩小或删除。生产接线须使用独立非阻塞 bank/fence；当前内部接口没有自行上传或等待 fence。没有帧、声明数量超出实际 SSBO、非有限或奇异矩阵时拒绝该包裹 admission，不能当成静态世界姿态。GPU 验证发现此驱动中只询问数组长度、完全不读取内容的版本返回零长度；最终 selection 使用显式 vec4 行容量和实际矩阵校验，真实空表及短表仍受边界保护。
+Sable 子层的首次灯光探测使用 logical 父姿态将原生局部位置投影到世界，再请求周围 light section；只有快照已经进入 GPU light atlas 后，chain acquisition 才继续。普通静态 track 的 frame 是单位变换。父姿态在本次提交代内缓存，避免 acquisition 探测与渲染上传各读取一次。
+
+track index 与 GPU origin/frame row 共用追加式命名空间。四个 source/output bank 使用 persistent mapped 上传和 fence；pool import 完成后才封存 source bank。全槽未完成时不等待、不覆盖，当前世界运行时安全回退 Create。父对象在相同 UUID 下重建时按代表 conveyor 重新绑定；父缺失、矩阵无效、帧源耗尽或 generation 失败都不能把旧帧发布成新提交。没有帧、声明数量超出实际 SSBO、非有限或奇异矩阵时拒绝该包裹 admission，不能当成静态世界姿态。GPU 验证发现此驱动中只询问数组长度、完全不读取内容的版本返回零长度；最终 selection 使用显式 vec4 行容量和实际矩阵校验，真实空表及短表仍受边界保护。
 
 `FRAMED=8` 只允许与 `CHAIN=1` 同时设置。framed body、历史、target 和普通链路物理始终以本 track 的 conveyor 中心为原点，保留 Create 的进度、局部重力、摆动、反向、hook distance 及吊具姿态。pool import 在 GPU 上把前后 body 和 target 投影到 render 世界空间，箱体和吊具共用一个通用槽位；查询和检查点仍返回 native-local 状态。交还时须由精确 track 身份恢复原生原点，禁止加共享自由域世界原点。
 
@@ -36,8 +38,8 @@ pool.chainFrames(immutableFrameSsbo, trackCount);
 .\gradlew.bat validatePackageGpu validatePackageIrisGpu build --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
 ```
 
-真实 GPU 覆盖零负载、1/63/64/65 及 131072 全容量有效 framed 包裹、混合 free/static chain/framed、唯一身份/槽位、输出哨兵、世界前后/target、原生局部恢复值、独立 logical/render pose、旋转盒假命中、缩放剔除、短表/缺失/非有限/奇异矩阵及失败 generation。顶点与独立 CPU Create 姿态及逆转置/切线参考比较，绝对浮点容差为 `3e-5`；离散身份、计数、分组和哨兵精确比较。Iris 使用实际 transformer 和真实 OpenGL transform feedback；不运行游戏内 Mixin、光照覆盖、动态父结构拾取/交接、物品库存或多人网络循环。
+真实 GPU 覆盖零负载、1/63/64/65 及 131072 全容量有效 framed 包裹、混合 free/static chain/framed、唯一身份/槽位、输出哨兵、世界前后/target、原生局部恢复值、独立 logical/render pose、旋转盒假命中、缩放剔除、短表/缺失/非有限/奇异矩阵、失败 generation，以及四个 fence 全未完成时第五次提交被跳过且前四个输出仍保持独立。顶点与独立 CPU Create 姿态及逆转置/切线参考比较，绝对浮点容差为 `3e-5`；离散身份、计数、分组和哨兵精确比较。Sable bridge 使用实际 `compileOnly` 类型，不使用反射；独立 JVM 确认缺少 Sable 时 bridge 不会加载。Iris 使用实际 transformer 和真实 OpenGL transform feedback；不运行游戏内 Mixin、动态父结构拾取/交接、物品库存或多人网络循环。
 
-2026-10-01 在 RTX 4070 Laptop / OpenGL 4.5 / NVIDIA 581.15 上，最后完整构建通过：81 套 391 项单元测试、21,488,488 项包裹 GPU 断言、20,294 项 Iris GPU 断言，以及无 Sable/companion 的独立 JVM 检查。未进行本路径前后性能测量；GPU 数量边界和姿态正确性不能作为整帧 p95、服务端 tick、实际视觉或玩法验收结果。
+2026-10-01 在 RTX 4070 Laptop / OpenGL 4.5 / NVIDIA 581.15 上，完整 `test build` 通过；本次 package GPU 全量为 24,589,175 项断言，链帧专项为 4,080,346 项，light atlas 为 886,165 项，Iris transform feedback 为 20,294 项，且无 Sable/companion 的独立 JVM 检查通过。世界碰撞和堆叠 131072 kernel 测量记录于[GPU 基准报告](benchmarks/package-world-stack-2026-10-01.md)。这些是组件计时，不是之前/之后对比，也不包含完整粒子池导入、模型绘制、Minecraft 主线程及服务端 tick；不能作为整帧 p95、实际视觉或玩法验收结果。
 
-下一步补齐每 track 的 typed Sable 客户端姿态采集和非阻塞上传、OFFER/FINAL 的局部原点绑定、退休/紧急恢复、光照提前覆盖、父生命周期失效，以及观察客户端世界接线，再进行实际视觉和整帧测试。网络继续使用当前相对已确认基线增量、批量确认和原生观察者方案；进一步带宽优化及原生 1.5 倍限制已从本次目标中排除。
+下一步完成游戏内移动 Sable 父结构下的链上视觉、拾取、释放/回退和资源重载验证，并补齐光照覆盖、观察客户端世界接线及 131072 活动链包裹整帧测量。网络沿用当前同步方案；进一步带宽优化及带宽倍率验收已从本次目标中排除。

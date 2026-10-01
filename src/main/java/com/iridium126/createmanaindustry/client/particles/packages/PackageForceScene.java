@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.client.particles.packages;
 
 import java.nio.*;
 import java.util.*;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion;
 
 /** Immutable external sources only. Neither this worker BVH nor its GPU consumer scans packages. */
 public final class PackageForceScene {
@@ -42,6 +43,19 @@ public final class PackageForceScene {
     }
     private record Indexed(Source source,int index,PackageMovingGeometry.Bounds bounds) {}
     private record Node(double x0,double y0,double z0,double x1,double y1,double z1,int end,int source) {}
+    /** Coarse interest filter shared by tick-thread entity queries and force-source pruning. */
+    public static boolean intersectsRegions(Source source,Collection<PackageRegion> regions,double margin) {
+        if(source==null||regions==null||!Double.isFinite(margin)||margin<0)throw new IllegalArgumentException("Package force interest");
+        if(regions.isEmpty())return false;
+        var b=bounds(source);
+        for(var region:regions) {
+            double x=region.originX(),y=region.originY(),z=region.originZ();
+            if(b.x1()>=x-margin&&b.x0()<=x+PackageRegion.SIZE+margin
+                    &&b.y1()>=y-margin&&b.y0()<=y+PackageRegion.SIZE+margin
+                    &&b.z1()>=z-margin&&b.z0()<=z+PackageRegion.SIZE+margin)return true;
+        }
+        return false;
+    }
     public static Snapshot bake(long tick,List<Source> sources,double ox,double oy,double oz) {
         if(sources.size()>MAX_SOURCES||!Double.isFinite(ox+oy+oz))throw new IllegalArgumentException("Package force capacity/origin");
         var entities=new ArrayList<Indexed>();var fans=new ArrayList<Indexed>();
