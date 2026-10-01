@@ -68,6 +68,7 @@ public class CreateManaIndustry {
     public static boolean VEIL_ACTIVE = false;
     public static boolean ARS_ACTIVE = false;
     public static boolean IRISVEIL_ACTIVE = false;
+    public static boolean IRIS_ACTIVE = false;
 
     public static final CMIRegistrate REGISTRATE = CMIRegistrate.create(MODID);
 
@@ -93,6 +94,7 @@ public class CreateManaIndustry {
         VEIL_ACTIVE = ModList.get().isLoaded("veil");
         ARS_ACTIVE = ModList.get().isLoaded("ars_nouveau");
         IRISVEIL_ACTIVE = ModList.get().isLoaded("irisveil");
+        IRIS_ACTIVE = ModList.get().isLoaded("iris");
 
         REGISTRATE.registerEventListeners(modEventBus);
         com.iridium126.createmanaindustry.dimension.gen.markov.MarkovTreeFeature.register(modEventBus);
@@ -183,7 +185,7 @@ public class CreateManaIndustry {
                 ClientboundMistSyncPacket.STREAM_CODEC,
                 ClientboundMistSyncPacket::handle);
         // Optional development transport: old/unprepared clients continue using Create.
-        PayloadRegistrar packageRegistrar=event.registrar("gpu-packages-2").optional();
+        PayloadRegistrar packageRegistrar=event.registrar("gpu-packages-7").optional();
         packageRegistrar.playToServer(
                 com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket.TYPE,
                 com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket.STREAM_CODEC,
@@ -192,6 +194,37 @@ public class CreateManaIndustry {
                 com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackagePacket.TYPE,
                 com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackagePacket.STREAM_CODEC,
                 com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackagePacket::handle);
+        packageRegistrar.playToClient(
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageAckPacket.TYPE,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageAckPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageAckPacket::handle);
+        PayloadRegistrar observerRegistrar=event.registrar("gpu-package-observers-3").optional();
+        observerRegistrar.playToServer(
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackageObserverPacket.TYPE,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackageObserverPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackageObserverPacket::handle);
+        observerRegistrar.playToClient(
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageObserverPacket.TYPE,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageObserverPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageObserverPacket::handle);
+        PayloadRegistrar chainPackageRegistrar=event.registrar("gpu-chain-packages-2").optional();
+        chainPackageRegistrar.playToServer(
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundChainPackagePacket.TYPE,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundChainPackagePacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundChainPackagePacket::handle);
+        chainPackageRegistrar.playToClient(
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainPackagePacket.TYPE,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainPackagePacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainPackagePacket::handle);
+        PayloadRegistrar chainInteractionRegistrar=event.registrar("gpu-chain-pickup-1").optional();
+        chainInteractionRegistrar.playToServer(
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundChainInteractionPacket.TYPE,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundChainInteractionPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundChainInteractionPacket::handle);
+        chainInteractionRegistrar.playToClient(
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainInteractionPacket.TYPE,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainInteractionPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainInteractionPacket::handle);
         // Allay Storm lifecycle/corrections, hits and authority position snapshots.
         registrar.playToClient(
                 ClientboundStormStatePacket.TYPE,

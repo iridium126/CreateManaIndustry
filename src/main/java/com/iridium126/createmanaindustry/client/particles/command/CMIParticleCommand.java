@@ -101,8 +101,10 @@ public final class CMIParticleCommand {
                                 .then(Commands.argument("amount",IntegerArgumentType.integer(0,131072)).executes(ctx->{
                                     if(!engine(ctx))return 0;
                                     int n=IntegerArgumentType.getInteger(ctx,"amount");
-                                    if(n>0 && dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()) {
-                                        tell(ctx,"Package preview currently requires shaders to be disabled.");return 0;
+                                    if(n>0 && dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()
+                                            && (!com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE
+                                            || !com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.prepare())) {
+                                        tell(ctx,"Package shaderpack program unavailable: "+CMIParticleEngine.INSTANCE.packageShaderStatus());return 0;
                                     }
                                     if(n>CMIParticleEngine.INSTANCE.capacity()){tell(ctx,"Preview exceeds the shared particle pool capacity.");return 0;}
                                     var camera=net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera();
@@ -300,6 +302,7 @@ public final class CMIParticleCommand {
                 + "  emission=" + Math.round(e.emissionScale() * 100) + "%"
                 + "  gpu=" + String.format("%.2f", e.emaMs()) + "ms (budget " + e.budgetMs() + "ms)");
         tell(ctx,"Package preview: "+e.packagePreviewStatus()+"; live includes admitted package slots (asynchronous GPU snapshot).");
+        tell(ctx,"Package shaderpack: "+e.packageShaderStatus());
         return Command.SINGLE_SUCCESS;
     }
 

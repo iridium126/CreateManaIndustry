@@ -16,7 +16,18 @@ void main() {
         if(r.header.w!=1u)return;
         meta[candidate].selection.z&=~1u;
     } else if(uCancel==0u) {
-        if(r.header.w==0u)baseline[candidate]=r.value;
+        if(r.header.w==0u) {
+            ivec3 oldPosition=baseline[candidate].positionFlags.xyz;
+            if(uRelativePosition!=0u) {
+                r.value.positionFlags.xyz+=oldPosition;
+                if(uPredictedPosition!=0u)r.value.positionFlags.xyz+=displacement[candidate].xyz;
+            }
+            // Velocity/yaw/flags-only updates preserve the last POSITION displacement.
+            // Cancel, release and rejected/old identity ACKs never advance a predictor.
+            if(uPredictedPosition!=0u && (r.header.z&1u)!=0u)
+                displacement[candidate]=ivec4(r.value.positionFlags.xyz-oldPosition,0);
+            baseline[candidate]=r.value;
+        }
         else meta[candidate].selection.z&=~1u; // acknowledged ownership release
     }
     flight[candidate]=0u;

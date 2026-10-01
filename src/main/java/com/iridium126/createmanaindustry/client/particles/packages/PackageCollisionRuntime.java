@@ -14,21 +14,34 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.event.GameShuttingDownEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
+import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 
 /** Lazy, client-thread collision preparation. No world access, waits or uploads on workers. */
 @EventBusSubscriber(modid=CreateManaIndustry.MODID,value=Dist.CLIENT)
 public final class PackageCollisionRuntime {
     private static final int MAX_SECTIONS=1024,MAX_REQUEST_SECTIONS=64;
-    private static PackageCollisionRuntime current;
+    private static volatile PackageCollisionRuntime current;
     private final ClientLevel level;
     private final ExecutorService workers;
     private final PackageCollisionCache cache;
     private final PackageWorldCollisionSource source;
+    private final PackageLightCache lights;
+    private final PackageWorldLightSource lightSource;
+    private PackageLightGpu lightGpu;
+    private final java.util.Set<Long> lightColumns=java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Set<Long> dirtyLightColumns=java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private int lightPriority;
     private PackageCollisionGpu gpu;
     private final PackageMovingCollisionCache movingCache;
     private PackageMovingCollisionSources movingSources;
     private PackageMovingCollisionGpu movingGpu;
     private boolean movingAvailable,captureMovingFirst=true,uploadMovingFirst=true;
+    private final java.util.HashSet<PackageMovingGeometry.Key> movingSeen=new java.util.HashSet<>(PackageMovingCollisionGpu.MAX_STRUCTURES);
+    private final java.util.ArrayList<PackageMovingGeometry.Key> movingMissing=new java.util.ArrayList<>(PackageMovingCollisionGpu.MAX_STRUCTURES);
+    private final long[] discoverySamples=new long[128];
+    private int discoveryCursor,discoveryCount;
+    private long lastDiscoveryNanos,discoveryOverruns;
     private boolean gpuRequested;
     private String gpuError="";
 
@@ -45,6 +58,11 @@ public final class PackageCollisionRuntime {
             @Override public void cleared(){if(gpu!=null)gpu.clear();}
         });
         source=new PackageWorldCollisionSource(level);
+        lights=new PackageLightCache(MAX_SECTIONS);lightSource=new PackageWorldLightSource(level);
+        lights.listener(new PackageLightCache.Listener() {
+            @Override public void invalidated(PackageCollisionCache.Section section,long revision){if(lightGpu!=null)lightGpu.invalidate(section,revision);}
+            @Override public void published(PackageCollisionCache.Section section,PackageLightCache.Snapshot snapshot){if(lightGpu!=null)lightGpu.offer(section,snapshot);}
+        });
         movingCache=new PackageMovingCollisionCache(workers,PackageMovingCollisionGpu.MAX_STRUCTURES);
     }
     private static void owner() {
@@ -60,8 +78,25 @@ public final class PackageCollisionRuntime {
         gpuRequested=true;gpuError="";
         boolean accepted=true;
         for(int x=bounds[0];x<=bounds[3];x++)for(int y=bounds[1];y<=bounds[4];y++)for(int z=bounds[2];z<=bounds[5];z++)
-            accepted&=cache.request(new PackageCollisionCache.Section(x,y,z));
+        {
+            var section=new PackageCollisionCache.Section(x,y,z);accepted&=cache.request(section);accepted&=requestLightSection(section);
+        }
         return accepted;
+    }
+    public PackageLightGpu lightGpu(){owner();return lightGpu;}
+    /** Light-only requests do not require a collision shape bake (e.g. chain tracks). */
+    public boolean requestLight(AABB bounds) {
+        owner();int[] sections=sections(bounds);if(sections==null)return false;gpuRequested=true;boolean accepted=true;
+        for(int x=sections[0];x<=sections[3];x++)for(int y=sections[1];y<=sections[4];y++)for(int z=sections[2];z<=sections[5];z++) {
+            accepted&=requestLightSection(new PackageCollisionCache.Section(x,y,z));
+        }
+        return accepted;
+    }
+    public boolean requestLightSection(PackageCollisionCache.Section section) {
+        owner();if(!PackageLightRequests.coordinate(section.x()) || !PackageLightRequests.coordinate(section.y()) || !PackageLightRequests.coordinate(section.z()))return false;
+        if(!lights.request(section))return false;gpuRequested=true;
+        lightColumns.add(PackageLightCache.column(section.x(),section.z()));
+        return lightGpu==null || lightGpu.reserve(section,lights.revision(section));
     }
     /** Coverage includes all touched sections and revokes immediately on a world change. */
     public boolean covered(AABB sweptBounds) {
@@ -108,17 +143,22 @@ public final class PackageCollisionRuntime {
                 current.cache.forEachReady(current.gpu::offer);
             }
             if(current.movingGpu==null)current.movingGpu=new PackageMovingCollisionGpu();
+            if(current.lightGpu==null){current.lightGpu=new PackageLightGpu(MAX_SECTIONS);current.lights.forEachRequested(current.lightGpu::reserve);current.lights.snapshots().forEach(current.lightGpu::offer);}
             current.movingGpu.sync(current.movingCache.entries());
             // Shared copy budget; alternate priority to avoid starving either atlas.
             long started=System.nanoTime(),beforeMoving=current.movingGpu.uploadedBytes(),beforeWorld=current.gpu.uploadedBytes();
             int bytes=PackageCollisionGpu.DEFAULT_UPLOAD_BYTES;long nanos=PackageCollisionGpu.DEFAULT_UPLOAD_NANOS;
-            if(current.uploadMovingFirst){current.movingGpu.pump(bytes,nanos);bytes-=Math.toIntExact(current.movingGpu.uploadedBytes()-beforeMoving);current.gpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));}
-            else{current.gpu.pump(bytes,nanos);bytes-=Math.toIntExact(current.gpu.uploadedBytes()-beforeWorld);current.movingGpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));}
+            long beforeLight=current.lightGpu.uploadedBytes();
+            if(current.lightPriority==0){current.lightGpu.pump(bytes,nanos);bytes-=Math.toIntExact(current.lightGpu.uploadedBytes()-beforeLight);}
+            if(current.uploadMovingFirst){current.movingGpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));bytes-=Math.toIntExact(current.movingGpu.uploadedBytes()-beforeMoving);current.gpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));}
+            else{current.gpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));bytes-=Math.toIntExact(current.gpu.uploadedBytes()-beforeWorld);current.movingGpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));}
+            if(current.lightPriority!=0){int used=Math.toIntExact(current.gpu.uploadedBytes()-beforeWorld+current.movingGpu.uploadedBytes()-beforeMoving);current.lightGpu.pump(Math.max(0,PackageCollisionGpu.DEFAULT_UPLOAD_BYTES-used),Math.max(0,nanos-(System.nanoTime()-started)));}
             current.uploadMovingFirst=!current.uploadMovingFirst;
         }catch(RuntimeException failure) {
             current.gpuError=failure.getClass().getSimpleName()+": "+failure.getMessage();current.gpuRequested=false;
             if(current.gpu!=null){current.gpu.close();current.gpu=null;}
             if(current.movingGpu!=null){current.movingGpu.close();current.movingGpu=null;}
+            if(current.lightGpu!=null){current.lightGpu.close();current.lightGpu=null;}
             CreateManaIndustry.LOGGER.error("[CMI packages] collision GPU upload failed; coverage revoked",failure);
         }
         return true;
@@ -138,6 +178,12 @@ public final class PackageCollisionRuntime {
     public static void blockChanged(ClientLevel level,BlockPos position) {
         if(current!=null && current.level==level){current.cache.invalidateBlock(position.getX(),position.getY(),position.getZ());if(current.movingSources!=null)current.movingSources.blockChanged(position);}
     }
+    /** Light engine notifications can arrive off-thread; only coalesce requested numeric columns. */
+    public static void lightChanged(ClientLevel level,net.minecraft.core.SectionPos section) {
+        var runtime=current;if(runtime==null || runtime.level!=level)return;
+        long column=PackageLightCache.column(section.x(),section.z());
+        if(runtime.lightColumns.contains(column))runtime.dirtyLightColumns.add(column);
+    }
     public static void contraptionChanged(com.simibubi.create.content.contraptions.Contraption contraption){if(current!=null&&current.movingSources!=null){owner();current.movingSources.contraptionChanged(contraption);}}
     public static String report() {
         owner();if(current==null)return "Package collisions: inactive";
@@ -151,7 +197,25 @@ public final class PackageCollisionRuntime {
                 +"; moving="+current.movingCache.entries().size()+", poses="+(current.movingAvailable&&current.movingCache.posesReady())
                 +", capture="+String.format(java.util.Locale.ROOT,"%.3f",current.movingCache.lastCaptureNanos()/1e6)+" ms, overruns="+current.movingCache.overruns()
                 +(current.movingGpu==null?"":", uploads="+current.movingGpu.uploadedBytes()+" B, skipped="+current.movingGpu.skippedViews())
-                +(current.movingSources==null?"":" "+current.movingSources.error());
+                +String.format(java.util.Locale.ROOT,", discovery p50/p95=%.3f/%.3f ms, last=%.3f ms, overruns=%d",
+                        current.discoveryPercentile(.5)/1e6,current.discoveryPercentile(.95)/1e6,
+                        current.lastDiscoveryNanos/1e6,current.discoveryOverruns)
+                +(current.movingSources==null?"":" "+current.movingSources.error())
+                +"; light="+(current.lights.size()-current.lights.pending())+"/"+current.lights.size()
+                +String.format(java.util.Locale.ROOT,", capture=%.3f ms, p50/p95=%.3f/%.3f ms, overruns=%d, failures=%d",current.lights.lastNanos()/1e6,current.lights.capturePercentile(.5)/1e6,current.lights.capturePercentile(.95)/1e6,current.lights.overruns(),current.lights.sourceFailures())
+                +(current.lightGpu==null?"":", uploads="+current.lightGpu.uploadedBytes()+" B, skipped="+current.lightGpu.skipped());
+    }
+    private void recordDiscovery(long nanos,long budget) {
+        lastDiscoveryNanos=nanos;discoverySamples[discoveryCursor]=nanos;
+        discoveryCursor=(discoveryCursor+1)%discoverySamples.length;
+        discoveryCount=Math.min(discoveryCount+1,discoverySamples.length);
+        if(nanos>budget)discoveryOverruns++;
+    }
+    private long discoveryPercentile(double q) {
+        if(discoveryCount==0)return 0;
+        long[] sorted=java.util.Arrays.copyOf(discoverySamples,discoveryCount);
+        java.util.Arrays.sort(sorted);
+        return sorted[Math.max(0,(int)Math.ceil(discoveryCount*q)-1)];
     }
     private static String gpuReport(PackageCollisionGpu.Stats stats) {
         return String.format(java.util.Locale.ROOT,"GPU %d/%d ready, pending=%d retired=%d, uploads=%d B; upload p50/p95=%.3f/%.3f ms, overruns=%d; shape/capacity rejects=%d/%d, skipped views=%d",
@@ -161,6 +225,7 @@ public final class PackageCollisionRuntime {
         owner();if(current==null)return;
         if(current.gpu!=null){current.gpu.close();current.gpu=null;}
         if(current.movingGpu!=null){current.movingGpu.close();current.movingGpu=null;}current.movingCache.clear();
+        if(current.lightGpu!=null){current.lightGpu.close();current.lightGpu=null;}current.lights.clear();
         current.cache.clear();
         // Let already queued immutable packing tasks finish, so their global worker accounting
         // is released. Shutdown never waits; no task has a level reference.
@@ -172,24 +237,56 @@ public final class PackageCollisionRuntime {
         if(!current.gpuRequested)return;
         if(current.movingSources==null){current.movingSources=new PackageMovingCollisionSources(current.level);current.movingSources.onInvalidated(current.movingCache::invalidate);}
         long started=System.nanoTime(),budget=PackageCollisionCache.DEFAULT_BUDGET_NANOS;
-        try{var found=current.movingSources.discover();current.movingAvailable=current.movingSources.error().isEmpty();
-            var live=new java.util.HashSet<PackageMovingGeometry.Key>();for(var candidate:found){live.add(candidate.key());current.movingAvailable&=current.movingCache.offer(candidate);}
-            var removed=new java.util.ArrayList<PackageMovingGeometry.Key>();for(var entry:current.movingCache.entries())if(!live.contains(entry.source.key()))removed.add(entry.source.key());for(var key:removed)current.movingCache.remove(key);
-        }catch(RuntimeException unavailable){current.movingAvailable=false;}
+        // Rotate priority within the existing 0.25 ms total budget, including dirty notifications.
+        var dirty=current.dirtyLightColumns.iterator();
+        while(dirty.hasNext() && System.nanoTime()-started<budget) {
+            long column=dirty.next();current.dirtyLightColumns.remove(column);
+            current.lights.invalidateColumn((int)(column>>32),(int)column);
+        }
+        if(current.lightPriority==0)current.lights.tick(current.lightSource,Math.max(0,budget-(System.nanoTime()-started)));
+        try{var found=current.movingSources.discover(started+budget);current.movingAvailable=current.movingSources.error().isEmpty();
+            if(current.movingAvailable) {
+                current.movingSeen.clear();current.movingMissing.clear();
+                for(var candidate:found) {
+                    if(System.nanoTime()-started>=budget){current.movingAvailable=false;break;}
+                    current.movingSeen.add(candidate.key());current.movingAvailable&=current.movingCache.offer(candidate);
+                }
+                if(current.movingAvailable) {
+                    for(var entry:current.movingCache.entries()) {
+                        if(System.nanoTime()-started>=budget){current.movingAvailable=false;break;}
+                        if(!current.movingSeen.contains(entry.source.key()))current.movingMissing.add(entry.source.key());
+                    }
+                    if(current.movingAvailable)for(var key:current.movingMissing)current.movingCache.remove(key);
+                }
+            }
+        }catch(RuntimeException | LinkageError unavailable){current.movingAvailable=false;}
+        current.recordDiscovery(System.nanoTime()-started,budget);
         if(current.captureMovingFirst){current.movingCache.tick(Math.max(0,budget-(System.nanoTime()-started)));current.cache.tick(current.source,Math.max(0,budget-(System.nanoTime()-started)));}
         else{current.cache.tick(current.source,Math.max(0,budget-(System.nanoTime()-started)));current.movingCache.tick(Math.max(0,budget-(System.nanoTime()-started)));}
         current.captureMovingFirst=!current.captureMovingFirst;
+        if(current.lightPriority!=0)current.lights.tick(current.lightSource,Math.max(0,budget-(System.nanoTime()-started)));
+        current.lightPriority=(current.lightPriority+1)%3;
     }
     @SubscribeEvent public static void chunkLoaded(ChunkEvent.Load event){chunkChanged(event);}
     @SubscribeEvent public static void chunkUnloaded(ChunkEvent.Unload event){chunkChanged(event);}
+    @SubscribeEvent public static void movingEntityJoined(EntityJoinLevelEvent event){movingEntityChanged(event.getLevel(),event.getEntity());}
+    @SubscribeEvent public static void movingEntityLeft(EntityLeaveLevelEvent event){movingEntityChanged(event.getLevel(),event.getEntity());}
+    private static void movingEntityChanged(net.minecraft.world.level.Level level,net.minecraft.world.entity.Entity entity) {
+        if(current!=null && level==current.level && entity instanceof com.simibubi.create.content.contraptions.AbstractContraptionEntity)
+            current.movingAvailable=false;
+    }
     private static void chunkChanged(ChunkEvent event) {
         if(current!=null && event.getLevel()==current.level) {
             var position=event.getChunk().getPos();current.cache.invalidateChunk(position.x,position.z);
+            current.lights.invalidateColumn(position.x,position.z);
             if(current.movingSources!=null)current.movingSources.chunkChanged(position.x,position.z);
         }
     }
     @SubscribeEvent public static void unloaded(LevelEvent.Unload event) {
-        if(current!=null && event.getLevel()==current.level)closeCurrent();
+        if(current!=null && event.getLevel()==current.level) {
+            PackageAuthorityClient.closeAll("Package world unloaded",true);
+            closeCurrent();
+        }
     }
-    @SubscribeEvent public static void stopped(GameShuttingDownEvent event){closeCurrent();}
+    @SubscribeEvent public static void stopped(GameShuttingDownEvent event){PackageAuthorityClient.closeAll("Client shutdown",false);closeCurrent();}
 }

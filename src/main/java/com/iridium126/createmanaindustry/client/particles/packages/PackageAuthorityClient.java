@@ -12,23 +12,110 @@ public final class PackageAuthorityClient {
     private static final Map<PackageRegion,PackageDeltaChannel> channels=new HashMap<>();
     private static final Map<PackageRegion,PackageDeltaChannel.Transport> transports=new HashMap<>();
     private static PackageDeltaChannel[] activeChannels=new PackageDeltaChannel[0];
+    private static final Map<PackageRegion,PackageFreeAcquisitionGpu> acquisitions=new HashMap<>();
+    private static PackageFreeAcquisitionGpu[] activeAcquisitions=new PackageFreeAcquisitionGpu[0];
+    private static final java.util.function.BiPredicate<ClientboundPackagePacket,ClientboundPackagePacket> COVERAGE=PackageAuthorityClient::covered;
+    private static final PackageControlQueue controls=new PackageControlQueue();
+    private static final PackageControlQueue.Sender CONTROL_SENDER=message->{
+        var connection=Minecraft.getInstance().getConnection();if(connection==null||!connection.hasChannel(ServerboundPackagePacket.TYPE))return false;
+        var namespace=message.namespace();
+        PacketDistributor.sendToServer(message.single()==null?ServerboundPackagePacket.controls(namespace.region(),namespace.epoch(),namespace.revision(),message.body()):
+                ServerboundPackagePacket.control(message.action(),namespace.region(),namespace.epoch(),message.single()));return true;
+    };
     private static boolean closing;
+    private static int advertised;
     private static final class Encoding {
         static final PackageDeltaJournal.Encoder SHARED=new PackageDeltaJournal.Encoder(java.util.concurrent.Executors.newFixedThreadPool(2,task->{
             Thread thread=new Thread(task,"CMI package delta encoder");thread.setDaemon(true);return thread;
         }),4);
     }
     private PackageAuthorityClient() {}
+    static PackageDeltaJournal.Encoder encoder(){return Encoding.SHARED;}
+    public static void capabilities(int flags) {
+        var connection=Minecraft.getInstance().getConnection();
+        if(connection==null || !connection.hasChannel(ServerboundPackagePacket.TYPE))return;
+        PacketDistributor.sendToServer(ServerboundPackagePacket.capabilities(flags));advertised=flags;
+    }
+    public static int activePackages() {
+        int count=0;for(var acquisition:activeAcquisitions)count+=acquisition.activeCount();return count;
+    }
+    public static ClientboundPackagePacket freePickOffer(PackagePoseQueryGpu.Result result) {
+        for(var acquisition:activeAcquisitions){var offer=acquisition.activeOffer(result);if(offer!=null)return offer;}return null;
+    }
+    /** Internal world-runtime entry. It does not advertise capabilities; the resource owner must
+     * also provide physics publication, observer rendering, reload and failure cleanup. */
+    public static PackageFreeAcquisitionGpu openFreeAcquisition(PackageRegion region,long epoch,long revision,
+            double ox,double oy,double oz,PackageMixedPhysicsGpu physics,PackagePoolGpu pool,PackageDeltaGpu detector,
+            Map<net.minecraft.resources.ResourceLocation,PackageModelCache.Style> styles,
+            java.util.function.ToIntFunction<ClientboundPackagePacket> light,java.util.function.Consumer<String> failed) {
+        if(acquisitions.containsKey(region))throw new IllegalStateException("Package acquisition already attached");
+        java.util.Objects.requireNonNull(failed);
+        var controlNamespace=new PackageControlQueue.Namespace(region,epoch,revision);
+        var acquisition=new PackageFreeAcquisitionGpu(region,epoch,revision,ox,oy,oz,physics,pool,detector,styles,light,
+                new PackageFreeAcquisitionGpu.Transport() {
+                    @Override public void control(int action,ClientboundPackagePacket checkpoint) {
+                        controls.offer(controlNamespace,action,checkpoint.baseline(),System.nanoTime());
+                    }
+                    @Override public void activated(ClientboundPackagePacket offer,ClientboundPackagePacket active,int candidate,int slot) {
+                        var level=Minecraft.getInstance().level;
+                        var entity=level==null?null:level.getEntity(offer.entityId());
+                        if(entity instanceof com.simibubi.create.content.logistics.box.PackageEntity box
+                                && box.getUUID().equals(offer.entityUuid())) {
+                            PackageRenderOwnership.claimAfterAdmission(box,offer,active,slot);
+                            control(ServerboundPackagePacket.VISIBLE_READY,active);
+                        }else {
+                            var owner=acquisitions.get(region);if(owner!=null)owner.requestRelease(offer.baseline().index());
+                        }
+                    }
+                    @Override public void released(ClientboundPackagePacket offer,
+                            com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageAuthorityRegion.Baseline baseline) {
+                        PackageRenderOwnership.released(region,epoch,baseline);
+                        PackageNativeObserverClient.authorityReleased(offer);
+                    }
+                    @Override public void restore(ClientboundPackagePacket offer,PackagePoseQueryGpu.Result pose) {
+                        var level=Minecraft.getInstance().level;
+                        if(level==null||!level.dimension().location().equals(offer.dimension()))return;
+                        var entity=level.getEntity(offer.entityId());
+                        if(!(entity instanceof com.simibubi.create.content.logistics.box.PackageEntity box)||box.isRemoved()
+                                ||!box.getUUID().equals(offer.entityUuid())||box.getBbWidth()!=offer.width()||box.getBbHeight()!=offer.height())return;
+                        if(PackageRenderOwnership.restoreNativeRecovery(box,offer)||pose==null||!pose.present())return;
+                        var saved=PackageFreeUpload.retainedCheckpoint(pose,offer.baseline().identity(),offer.height(),ox,oy,oz);
+                        var now=saved.pose();var before=saved.previous();
+                        box.lerpTo(now.x(),now.y(),now.z(),now.yaw(),box.getXRot(),0);box.setPos(now.x(),now.y(),now.z());
+                        box.xo=before.x();box.yo=before.y();box.zo=before.z();box.yRotO=before.yaw();box.setYRot(now.yaw());
+                        box.setDeltaMovement(now.vx(),now.vy(),now.vz());box.setOnGround(saved.ground());
+                        // Do not rebase vanilla VecDeltaCodec: retained native packets still
+                        // use the server codec baseline, independently of visual recovery.
+                    }
+                });
+        try {
+            var channel=open(region,detector.capacity(),epoch,revision,detector,new PackageDeltaChannel.Transport() {
+                @Override public boolean send(long e,long r,long sequence,java.nio.ByteBuffer bytes){throw new IllegalStateException("Unwrapped package transport");}
+                @Override public void released(int localId,long id,long generation){acquisition.serverReleased(localId,id,generation);}
+                @Override public void failed(String reason){failed.accept(reason);}
+            });
+            acquisition.attachChannel(channel);
+            acquisitions.put(region,acquisition);activeAcquisitions=acquisitions.values().toArray(PackageFreeAcquisitionGpu[]::new);
+            return acquisition;
+        }catch(RuntimeException failure){acquisition.close();throw failure;}
+    }
     /** Internal adapter entry, only AFTER production resources/admission/final baseline are verified. */
     public static PackageDeltaChannel open(PackageRegion region,int capacity,long epoch,long revision,
                                           PackageDeltaGpu detector,PackageDeltaChannel.Transport lifecycle) {
         java.util.Objects.requireNonNull(region);java.util.Objects.requireNonNull(detector);java.util.Objects.requireNonNull(lifecycle);
         if(closing)throw new IllegalStateException("Package authority is restoring Create");
         var previous=channels.get(region);if(previous!=null && !previous.closed())throw new IllegalStateException("Region authority already open");
+        boolean relativePositions=detector.relativePositions();
+        boolean predictedPositions=detector.predictedPositions();
         var transport=new PackageDeltaChannel.Transport() {
+            @Override public boolean batchEncoded(){return true;}
+            @Override public boolean relativePositions(){return relativePositions;}
+            @Override public boolean predictedPositions(){return predictedPositions;}
             @Override public Object prepare(long e,long r,long sequence,java.nio.ByteBuffer bytes) {
                 byte[] body=new byte[bytes.remaining()];bytes.get(body);
-                return new ServerboundPackagePacket(ServerboundPackagePacket.DELTA,0,region,e,0,null,0,r,sequence,body);
+                return new ServerboundPackagePacket(predictedPositions?ServerboundPackagePacket.PREDICTED_DELTA:
+                        relativePositions?ServerboundPackagePacket.RELATIVE_DELTA:ServerboundPackagePacket.BATCH_DELTA,
+                        0,region,e,0,null,0,r,sequence,body);
             }
             @Override public boolean send(long e,long r,long sequence,java.nio.ByteBuffer bytes) {
                 throw new IllegalStateException("Package transport requires worker-prepared packets");
@@ -45,33 +132,82 @@ public final class PackageAuthorityClient {
     }
     /** Called inside the particle engine's GL state boundary, once per submitted main frame. */
     public static boolean pump() {
-        if(channels.isEmpty())return false;
+        if(channels.isEmpty() && acquisitions.isEmpty())return false;
+        try {
+            for(var acquisition:activeAcquisitions)acquisition.pump(64,COVERAGE);
+            var controlResult=controls.flush(System.nanoTime(),CONTROL_SENDER);
+            if(controlResult==PackageControlQueue.Result.TIMED_OUT)
+                throw new IllegalStateException("Package control preparation exceeded two ticks");
+            // Do not let a later delta overtake a queued release/activation transition.
+            if(controlResult==PackageControlQueue.Result.BLOCKED)return true;
+        }catch(RuntimeException failure) {
+            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] acquisition failed",failure);
+            closeAll("Package acquisition failed: "+failure.getMessage(),true);return true;
+        }
         // Rebuilt only when ownership changes; failure can close the map during this loop.
         for(var channel:activeChannels)if(!channel.closed()) {
             channel.profiling(com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled());channel.pump(256);
         }
         return true;
     }
+    private static boolean covered(ClientboundPackagePacket offer,ClientboundPackagePacket checkpoint) {
+        if(!PackageWorldRuntime.forceReady())return false;
+        var level=Minecraft.getInstance().level;
+        if(level==null || !level.dimension().location().equals(offer.dimension()))return false;
+        var entity=level.getEntity(offer.entityId());
+        if(!(entity instanceof com.simibubi.create.content.logistics.box.PackageEntity box)
+                || !box.getUUID().equals(offer.entityUuid()) || box.isRemoved())return false;
+        var p=checkpoint.baseline().snapshot().pose();double half=offer.width()*.5;
+        var bounds=new net.minecraft.world.phys.AABB(p.x()-half,p.y(),p.z()-half,p.x()+half,p.y()+offer.height(),p.z()+half);
+        return PackageCollisionRuntime.forLevel(level).gpuCovered(bounds.expandTowards(p.vx()*.15,p.vy()*.15,p.vz()*.15).inflate(2));
+    }
+    /** Success-only pool hook. Failure here restores ownership without throwing after the engine swap. */
+    public static void committed(long generation) {
+        try{for(var acquisition:activeAcquisitions) {
+            var channel=channels.get(acquisition.region());if(channel==null || channel.closed())continue;
+            acquisition.committed(generation);acquisition.captureCommitted(channel,generation);
+        }PackageWorldRuntime.committedChain(generation);}
+        catch(RuntimeException failure) {
+            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] admission capture failed",failure);
+            closeAll("Package admission capture failed: "+failure.getMessage(),true);
+        }
+    }
     public static String report() {
-        if(channels.isEmpty())return "Package transport: active regions=0; production resource readiness is disabled.";
+        if(channels.isEmpty())return "Package transport: active regions=0; world runtime="+PackageWorldRuntime.status()+"; capabilities="+advertised
+                +"; "+com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageNetworkBudget.status();
         var result=new StringBuilder("Package transport:");
         for(var entry:channels.entrySet()) {
             var channel=entry.getValue();var stats=channel.stats();var timing=channel.timings();
+            var acquisition=acquisitions.get(entry.getKey());
+            if(acquisition!=null)result.append(String.format(java.util.Locale.ROOT,"%nAcquisition %s: active=%d pending=%d",
+                    entry.getKey(),acquisition.activeCount(),acquisition.pendingCount()));
             result.append(String.format(java.util.Locale.ROOT,"%n%s epoch=%d; captures=%d skipped=%d; readback=%d B; wire bodies=%d B; packets sent/acked=%d/%d; ACK dispatches=%d; capture CPU p50/p95=%.3f/%.3f ms; pump CPU p50/p95=%.3f/%.3f ms; packet preparation p50/p95=%.3f/%.3f ms; ACK RTT p50/p95=%.3f/%.3f ms",
                     entry.getKey(),channel.epoch(),stats.captures(),stats.skippedCaptures(),stats.headerBytes()+stats.payloadBytes(),stats.wireBytes(),stats.sentPackets(),stats.ackedPackets(),stats.ackDispatches(),
                     timing.capture().p50Millis(),timing.capture().p95Millis(),timing.pump().p50Millis(),timing.pump().p95Millis(),timing.packetPreparation().p50Millis(),timing.packetPreparation().p95Millis(),timing.roundTrip().p50Millis(),timing.roundTrip().p95Millis()));
         }
-        return result.toString();
+        return result.append("\nControl batching: ").append(controls.stats()).append("\nWorld runtime: ").append(PackageWorldRuntime.status())
+                .append("\n").append(com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageNetworkBudget.status()).toString();
     }
     public static void closeAll(String reason,boolean notifyServer) {
-        if(channels.isEmpty() || closing)return;
+        if(closing)return;
+        PackageChainClientOwnership.INSTANCE.close();
+        boolean hadClaims=false;
         closing=true;
         try {
+            controls.clear();
             var active=java.util.List.copyOf(channels.values());var listeners=java.util.List.copyOf(transports.values());
+            var preparing=java.util.List.copyOf(acquisitions.values());acquisitions.clear();activeAcquisitions=new PackageFreeAcquisitionGpu[0];
+            for(var acquisition:preparing)acquisition.close();
+            hadClaims=PackageRenderOwnership.clear();
             channels.clear();transports.clear();activeChannels=new PackageDeltaChannel[0];for(var channel:active)channel.close();
             for(var listener:listeners)try{listener.failed(reason);}catch(RuntimeException failure){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] Create restore callback failed",failure);}
-            if(notifyServer && Minecraft.getInstance().getConnection()!=null)PacketDistributor.sendToServer(ServerboundPackagePacket.capabilities(0));
-        }finally{closing=false;}
+            if(notifyServer && (advertised!=0 || !active.isEmpty() || hadClaims))capabilities(0);
+        }finally {
+            controls.clear();
+            PackageRenderOwnership.clear();
+            advertised=0;
+            try{PackageWorldRuntime.revoked(reason);}finally{closing=false;}
+        }
     }
     public static void receive(ClientboundPackagePacket packet) {
         var level=Minecraft.getInstance().level;
@@ -81,6 +217,13 @@ public final class PackageAuthorityClient {
             if(channel!=null)channel.acknowledge(packet.epoch(),packet.regionRevision(),packet.sequence());return;
         }
         if(packet.action()==ClientboundPackagePacket.RELEASED) {
+            PackageRenderOwnership.serverReleased(packet.region(),packet.epoch(),packet.baseline());
+            var acquisition=acquisitions.get(packet.region());
+            if(acquisition==null) {
+                PackageRenderOwnership.released(packet.region(),packet.epoch(),packet.baseline());
+                PackageWorldRuntime.enqueue(packet);
+            }
+            else acquisition.receive(packet);
             if(channel!=null)channel.released(packet.epoch(),packet.baseline());return;
         }
         if(packet.action()==ClientboundPackagePacket.OFFER || packet.action()==ClientboundPackagePacket.FINAL_BASELINE
@@ -93,10 +236,27 @@ public final class PackageAuthorityClient {
                 // freeze an object whose confirmed collision coverage is incomplete.
                 PackageCollisionRuntime.forLevel(level).request(box.expandTowards(pose.vx()*.15,pose.vy()*.15,pose.vz()*.15).inflate(2));
             }
-            // Collision coverage, production model admission and observer
-            // rendering are not wired yet. Explicit refusal avoids a silent acquisition timeout.
+            var acquisition=acquisitions.get(packet.region());
+            if(acquisition!=null && acquisition.receive(packet))return;
+            if(PackageWorldRuntime.enqueue(packet))return;
+            // No ready world resource owner: refuse before Create is frozen.
             PacketDistributor.sendToServer(ServerboundPackagePacket.control(ServerboundPackagePacket.RELEASE,
                     packet.region(),packet.epoch(),packet.baseline()));
         }
+    }
+    public static void receiveAcks(ClientboundPackageAckPacket packet) {
+        var level=Minecraft.getInstance().level;
+        if(level==null || !level.dimension().location().equals(packet.dimension()))return;
+        var channel=channels.get(packet.region());
+        if(channel!=null)channel.acknowledge(packet.epoch(),packet.revision(),packet.ranges());
+    }
+    /** Queue all GL work at the engine boundary. CHAIN_READY remains gated on the outstanding
+     * interactive selection, moving-light and GPU checkpoint prerequisites. */
+    public static void receiveChain(ClientboundChainPackagePacket packet) {
+        var level=Minecraft.getInstance().level;
+        if(level==null || !level.dimension().location().equals(packet.dimension()))return;
+        if(PackageWorldRuntime.enqueueChain(packet))return;
+        if(packet.action()==ClientboundChainPackagePacket.OFFER && Minecraft.getInstance().getConnection()!=null)
+            PacketDistributor.sendToServer(ServerboundChainPackagePacket.control(ServerboundChainPackagePacket.RELEASE,packet.epoch(),packet.baseline(),0));
     }
 }

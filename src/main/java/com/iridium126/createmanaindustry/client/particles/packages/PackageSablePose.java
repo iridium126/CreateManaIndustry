@@ -7,7 +7,7 @@ import org.joml.Vector3d;
 final class PackageSablePose {
     private PackageSablePose() {}
 
-    static PackageMovingGeometry.Pose capture(Pose3dc pose, int ox, int oy, int oz, Vector3d scratch) {
+    static PackageMovingGeometry.Pose capture(Pose3dc pose, double ox, double oy, double oz, Vector3d scratch) {
         pose.transformNormal(scratch.set(1, 0, 0), scratch);
         double xx = scratch.x, xy = scratch.y, xz = scratch.z;
         pose.transformNormal(scratch.set(0, 1, 0), scratch);

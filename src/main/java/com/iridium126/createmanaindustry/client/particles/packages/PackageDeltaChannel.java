@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.function.LongSupplier;
 import org.lwjgl.opengl.*;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageAuthorityRegion;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageAckRanges;
 
 /**
  * Render-thread header-first readback and asynchronous wire journal for ONE authority epoch.
@@ -15,6 +16,10 @@ public final class PackageDeltaChannel implements AutoCloseable {
     public static final long PREPARATION_TIMEOUT_NANOS=100_000_000L;
     private static final int FRAGMENT_BYTES=1024*1024,MAX_NOTICES=2048;
     public interface Transport {
+        /** Negotiated v3 free-package path. Original codec remains the reference/harness default. */
+        default boolean batchEncoded(){return false;}
+        default boolean relativePositions(){return false;}
+        default boolean predictedPositions(){return false;}
         /** Copy borrowed bytes before returning true; preserve per-region message order. */
         boolean send(long epoch,long revision,long sequence,ByteBuffer bytes);
         /** Worker-only immutable envelope preparation. No world access, GL or network writes. */
@@ -81,11 +86,15 @@ public final class PackageDeltaChannel implements AutoCloseable {
         this.detector=java.util.Objects.requireNonNull(detector);this.capacity=capacity;this.epoch=epoch;this.revision=revision;
         this.transport=java.util.Objects.requireNonNull(transport);this.clock=java.util.Objects.requireNonNull(clock);
         java.util.Objects.requireNonNull(encoder);
+        if(detector.relativePositions()!=transport.relativePositions() || detector.predictedPositions()!=transport.predictedPositions()
+                || transport.relativePositions() && !transport.batchEncoded())
+            throw new IllegalArgumentException("Package GPU/wire position encoding mismatch");
         PackageDeltaJournal nextJournal=null;
         PackageReadbackRing headerRing=null;
         int nextGpuJournal=0;
         try{
-            nextJournal=new PackageDeltaJournal(capacity,encoder,(sequence,bytes)->transport.prepare(epoch,revision,sequence,bytes));
+            PackageDeltaJournal.Preparer prepare=(sequence,bytes)->transport.prepare(epoch,revision,sequence,bytes);
+            nextJournal=transport.batchEncoded()?PackageDeltaJournal.batchEncoded(capacity,encoder,prepare):new PackageDeltaJournal(capacity,encoder,prepare);
             ackMailbox=new long[nextJournal.slotCapacity()];ackScratch=new long[ackMailbox.length];Arrays.fill(ackMailbox,-1);
             batchSequences=new long[ackMailbox.length];
             if(coalesceAcks) {
@@ -125,6 +134,20 @@ public final class PackageDeltaChannel implements AutoCloseable {
     public synchronized boolean acknowledge(long candidateEpoch,long candidateRevision,long sequence) {
         if(closed || candidateEpoch!=epoch || candidateRevision!=revision || sequence<0 || !journal.sent(sequence))return false;
         int index=(int)(sequence%ackMailbox.length);ackMailbox[index]=Math.max(ackMailbox[index],sequence);return true;
+    }
+    /** One bounded mailbox transaction for exact server-accepted runs. Holes, guessed, unsent,
+     * recycled and old namespace sequences never become ACKs. No GL calls or pose work. */
+    public synchronized int acknowledge(long candidateEpoch,long candidateRevision,PackageAckRanges ranges) {
+        if(closed || candidateEpoch!=epoch || candidateRevision!=revision)return 0;
+        int accepted=0;
+        for(int run=0;run<ranges.runs();run++) {
+            long start=ranges.start(run);
+            for(int i=0;i<ranges.length(run);i++) {
+                long sequence=start+i;if(!journal.sent(sequence))continue;
+                int index=(int)(sequence%ackMailbox.length);ackMailbox[index]=Math.max(ackMailbox[index],sequence);accepted++;
+            }
+        }
+        return accepted;
     }
     public synchronized boolean released(long candidateEpoch,PackageAuthorityRegion.Baseline baseline) {
         if(closed || candidateEpoch!=epoch)return false;
@@ -225,6 +248,10 @@ public final class PackageDeltaChannel implements AutoCloseable {
     public boolean closed(){return closed;}
     public long epoch(){return epoch;}
     public long revision(){return revision;}
+    boolean uses(PackageDeltaGpu candidate){owner();return !closed && detector==candidate;}
+    /** Changes only after a submitted GPU ACK. A skipped/in-flight detection must be retried when
+     * that ACK frees its identity, even if physics is paused and its publication did not change. */
+    public long confirmationVersion(){owner();return ackDispatches;}
     public Stats stats(){owner();return new Stats(captures,skipped,headerBytes,payloadBytes,journal.wireBytes(),journal.sentPackets(),journal.ackedPackets(),ackDispatches,latestPreparation,latestRoundTrip);}
     public void profiling(boolean enabled){owner();if(enabled && !profiling){captureTimes.clear();pumpTimes.clear();preparationTimes.clear();roundTripTimes.clear();}profiling=enabled;}
     /** Sorting is diagnostic-only; never called from frame submission. */

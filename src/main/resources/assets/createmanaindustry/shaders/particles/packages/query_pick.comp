@@ -1,0 +1,67 @@
+#pragma cmi_include packages/query_state.glsl
+layout(std430,binding=4) buffer QueryGroups { uvec4 groups[]; };
+layout(local_size_x=64) in;
+uniform vec3 uFrom,uRay;
+uniform uint uPickType,uBodyLimit,uFramesAvailable;
+uniform float uPartial;
+#pragma cmi_include packages/chain_frames.glsl
+layout(std430,binding=7) readonly buffer QueryAttachment { vec4 attachment[]; };
+shared float bestDistance[64];
+shared uint bestCandidate[64];
+// Match Create's targetPos cube (.45 x/z, .70 y). Vanilla AABB.clip selects
+// entry faces only: a ray starting inside has no positive entry intersection.
+float entryRay(vec3 target,vec3 extent,vec3 from,vec3 ray) {
+    vec3 o=from-target;
+    float near=-1e30,far=1e30;
+    for(int axis=0;axis<3;axis++) {
+        float d=ray[axis];
+        if(abs(d)<=1e-7) { if(o[axis]<-extent[axis]-1e-7 || o[axis]>extent[axis]+1e-7)return 2.0; }
+        else {
+            float a=(-extent[axis]-o[axis])/d,b=(extent[axis]-o[axis])/d;
+            near=max(near,min(a,b));far=min(far,max(a,b));
+        }
+    }
+    return near>0.0 && near<1.0 && near<=far?near:2.0;
+}
+float entry(vec3 target,vec3 extent){return entryRay(target,extent,uFrom,uRay);}
+void main() {
+    uint lane=gl_LocalInvocationID.x,candidate=gl_GlobalInvocationID.x;
+    float distance=2.0;uint selected=QUERY_NONE;
+    if(candidate<uCount && queryVisible(candidate) && (admitted[2u*candidate+1u].y&1u)==uPickType) {
+        uint body=meta[candidate].selection.x;
+        if(body<uBodyLimit) {
+            if(uPickType==1u) {
+                QueryChain chain=chains[body];
+                if(chain.progress.z>=2.0 && chain.startRadius.w>=0.0 && chain.startRadius.w<131072.0 && chain.startRadius.w==floor(chain.startRadius.w)) {
+                    if((admitted[2u*candidate+1u].y&8u)!=0u) {
+                        uint capacity=uint(attachment.length()/11);
+                        if(uFramesAvailable!=0u && candidate<capacity) {
+                            uint a=2u*capacity+9u*candidate+3u;
+                            vec4 x=attachment[a],y=attachment[a+1u],z=attachment[a+2u];
+                            vec3 from=chainFrameInverse(uFrom,x,y,z),to=chainFrameInverse(uFrom+uRay,x,y,z);
+                            distance=entryRay(chain.targetYaw.xyz,vec3(.45,.70,.45),from,to-from);
+                        }
+                    }else distance=entry(chain.targetYaw.xyz,vec3(.45,.70,.45));
+                }
+            } else {
+                // Match ProjectileUtil's contains-start case and the PackageEntity AABB.
+                // Query the visible interpolated box; no per-package CPU slab calculations.
+                vec3 center=mix(history[2u*body].xyz,bodies[body].positionMass.xyz,uPartial);
+                vec3 extent=bodies[body].extentYaw.xyz,o=uFrom-center;
+                distance=all(greaterThan(o,-extent)) && all(lessThan(o,extent))?0.0:entry(center,extent);
+            }
+            if(distance<2.0)selected=candidate;
+        }
+    }
+    bestDistance[lane]=distance;bestCandidate[lane]=selected;barrier();
+    for(uint width=32u;width>0u;width>>=1u) {
+        if(lane<width) {
+            float other=bestDistance[lane+width];uint index=bestCandidate[lane+width];
+            if(other<bestDistance[lane] || other==bestDistance[lane] && index<bestCandidate[lane]) {
+                bestDistance[lane]=other;bestCandidate[lane]=index;
+            }
+        }
+        barrier();
+    }
+    if(lane==0u)groups[gl_WorkGroupID.x]=uvec4(floatBitsToUint(bestDistance[0]),bestCandidate[0],0,0);
+}

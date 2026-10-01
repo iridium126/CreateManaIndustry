@@ -2,6 +2,10 @@ package com.iridium126.createmanaindustry.client.particles.packages;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.function.Function;
 import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryStack;
@@ -12,27 +16,47 @@ import org.lwjgl.system.MemoryStack;
  * Internal component; production ownership still requires collision/admission/observer wiring.
  */
 public final class PackageDeltaGpu implements AutoCloseable {
-    public static final int META_BYTES=32,BASELINE_BYTES=32,RECORD_BYTES=64,BANKS=4,MAX_ACK_RECORDS=16384;
+    public static final int META_BYTES=32,BASELINE_BYTES=32,RECORD_BYTES=64,PREDICTOR_BYTES=16,BANKS=4,MAX_ACK_RECORDS=16384;
     public record Capture(int bank,int stamp,int headerBuffer,int recordBuffer,int capacity) {}
     private static final String[] NAMES={"delta_detect","delta_finalize","delta_ack"};
-    private static final String[] UNIFORMS={"uCount","uStamp","uCapacity","uBodyCount","uOriginOffset","uRecords","uCancel","uRecordOffset"};
+    private static final String[] UNIFORMS={"uCount","uStamp","uCapacity","uBodyCount","uOriginOffset","uRecords","uCancel","uRecordOffset","uRelativePosition","uPredictedPosition"};
     private final int[] programs=new int[3],headers=new int[BANKS],records=new int[BANKS];
     private final int[][] locations=new int[3][UNIFORMS.length];
     private final Capture[] captures=new Capture[BANKS];
     private final int capacity;
-    private int metadata,baselines,flights,ackRecords,count;
+    private final boolean relativePositions;
+    private final boolean predictedPositions;
+    // Candidates leave this set permanently on activation or matching terminal notice.
+    // This prevents a late ACTIVE from resurrecting a released acquisition.
+    private record Prepared(long id,long generation,int localId) {}
+    private final Map<Integer,Prepared> preparing=new HashMap<>();
+    private int metadata,baselines,flights,ackRecords,predictors,count;
+    private record Identity(long id,long generation) {}
+    private Set<Identity> identities=new HashSet<>();
+    private Set<Integer> bodyIndices=new HashSet<>();
     private long nextStamp=1;
     private boolean closed;
 
     public PackageDeltaGpu(int capacity,Function<String,String> sources) {
+        this(capacity,sources,false);
+    }
+    /** Immutable encoding mode for this epoch; exact ACK reconstructs the locked baseline. */
+    public PackageDeltaGpu(int capacity,Function<String,String> sources,boolean relativePositions) {
+        this(capacity,sources,relativePositions,false);
+    }
+    /** Predict wire POSITION using the last exactly acknowledged displacement. Requires relative
+     * batch encoding; publication timing/physics/quantization and raw record ABI are unchanged. */
+    public PackageDeltaGpu(int capacity,Function<String,String> sources,boolean relativePositions,boolean predictedPositions) {
         if(capacity<=0 || capacity>131072 || (capacity+63)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)
                 || (long)capacity*RECORD_BYTES>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))
             throw new IllegalArgumentException("Package delta capacity/device limits");
-        this.capacity=capacity;
+        if(predictedPositions && !relativePositions)throw new IllegalArgumentException("Predicted package positions require relative encoding");
+        this.capacity=capacity;this.relativePositions=relativePositions;this.predictedPositions=predictedPositions;
         try {
             rebuild(sources);
             metadata=buffer((long)capacity*META_BYTES);baselines=buffer((long)capacity*BASELINE_BYTES);
             flights=buffer((long)capacity*4);ackRecords=buffer((long)MAX_ACK_RECORDS*RECORD_BYTES);
+            if(predictedPositions){predictors=buffer((long)capacity*PREDICTOR_BYTES);clear(predictors);}
             for(int i=0;i<BANKS;i++){headers[i]=buffer(16);records[i]=buffer((long)capacity*RECORD_BYTES);}
             clear(flights);
         }catch(RuntimeException failure){close();throw failure;}
@@ -44,6 +68,8 @@ public final class PackageDeltaGpu implements AutoCloseable {
             for(int i=0;i<3;i++) {
                 replacements[i]=compile(sources.apply("packages/"+NAMES[i]+".comp"));
                 for(int j=0;j<UNIFORMS.length;j++)nextLocations[i][j]=GL20.glGetUniformLocation(replacements[i],UNIFORMS[j]);
+                GL41.glProgramUniform1ui(replacements[i],nextLocations[i][8],relativePositions?1:0);
+                GL41.glProgramUniform1ui(replacements[i],nextLocations[i][9],predictedPositions?1:0);
             }
         }catch(RuntimeException failure){for(int program:replacements)if(program!=0)GL20.glDeleteProgram(program);throw failure;}
         for(int i=0;i<3;i++){if(programs[i]!=0)GL20.glDeleteProgram(programs[i]);programs[i]=replacements[i];locations[i]=nextLocations[i];}
@@ -55,16 +81,22 @@ public final class PackageDeltaGpu implements AutoCloseable {
             throw new IllegalArgumentException("Package delta initialization layout");
         for(Capture capture:captures)if(capture!=null)throw new IllegalStateException("Release immutable captures before epoch initialization");
         var view=meta.duplicate().order(ByteOrder.nativeOrder());
-        validateMetadata(view,count);
+        Set<Identity> nextIdentities=new HashSet<>();Set<Integer> nextBodies=new HashSet<>();
+        validateMetadata(view,count,nextIdentities,nextBodies);
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,meta);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,baselines);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,baseline);
-        clear(flights);this.count=count;
+        clear(flights);if(predictors!=0)clear(predictors);this.count=count;
+        identities=nextIdentities;bodyIndices=nextBodies;
+        preparing.clear();trackPrepared(meta,0,count);
     }
-    private static void validateMetadata(ByteBuffer view,int count) {
+    private static void validateMetadata(ByteBuffer view,int count,Set<Identity> identities,Set<Integer> bodies) {
         for(int i=0;i<count;i++) {
             int p=view.position()+i*META_BYTES;
-            if(view.getLong(p)<=0 || view.getLong(p+8)<=0 || view.getInt(p+16)<0 || view.getInt(p+20)<0
+            long id=view.getLong(p),generation=view.getLong(p+8);
+            int body=view.getInt(p+16);
+            if(id<=0 || generation<=0 || body<0 || view.getInt(p+20)<0
+                    || !identities.add(new Identity(id,generation)) || !bodies.add(body)
                     || (view.getInt(p+24)&~1)!=0)throw new IllegalArgumentException("Package delta identity/index/flags");
         }
     }
@@ -73,14 +105,66 @@ public final class PackageDeltaGpu implements AutoCloseable {
         open();if(added<0 || added>capacity-count || !meta.isDirect() || !baseline.isDirect()
                 || meta.remaining()!=added*META_BYTES || baseline.remaining()!=added*BASELINE_BYTES)
             throw new IllegalArgumentException("Package delta append layout");
-        validateMetadata(meta.duplicate().order(ByteOrder.nativeOrder()),added);if(added==0)return;
+        Set<Identity> nextIdentities=new HashSet<>();Set<Integer> nextBodies=new HashSet<>();
+        validateMetadata(meta.duplicate().order(ByteOrder.nativeOrder()),added,nextIdentities,nextBodies);
+        for(Identity identity:nextIdentities)if(identities.contains(identity))
+            throw new IllegalArgumentException("Duplicate existing package delta identity");
+        for(int body:nextBodies)if(bodyIndices.contains(body))
+            throw new IllegalArgumentException("Duplicate existing package delta body");
+        if(added==0)return;
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)count*META_BYTES,meta);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,baselines);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)count*BASELINE_BYTES,baseline);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,flights);
         try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)count*4,(long)added*4,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
-        count+=added;
+        if(predictors!=0) {
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,predictors);
+            try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)count*PREDICTOR_BYTES,(long)added*PREDICTOR_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
+        }
+        trackPrepared(meta,count,added);
+        count+=added;identities.addAll(nextIdentities);bodyIndices.addAll(nextBodies);
     }
+    private void trackPrepared(ByteBuffer meta,int first,int length) {
+        ByteBuffer view=meta.duplicate().order(ByteOrder.nativeOrder());
+        for(int i=0;i<length;i++) {
+            int p=view.position()+i*META_BYTES;
+            if((view.getInt(p+24)&1)==0)
+                preparing.put(first+i,new Prepared(view.getLong(p),view.getLong(p+8),view.getInt(p+20)));
+        }
+    }
+    /** Final acquisition checkpoint only. Inactive candidates have no flights;
+     * unrelated immutable captures and acknowledged baselines remain untouched. */
+    public void rebasePrepared(int candidate,ByteBuffer baseline) {
+        prepared(candidate);
+        if(!baseline.isDirect() || baseline.remaining()!=BASELINE_BYTES)
+            throw new IllegalArgumentException("Package final baseline layout");
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,baselines);
+        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)candidate*BASELINE_BYTES,baseline);
+        if(predictors!=0) {
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,predictors);
+            try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)candidate*PREDICTOR_BYTES,PREDICTOR_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
+        }
+    }
+    /** Call only after the matching server ACTIVE and committed admission are confirmed. */
+    public void activate(int candidate) {
+        prepared(candidate);
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);
+        try(var stack=MemoryStack.stackPush()) {
+            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)candidate*META_BYTES+24,stack.ints(1));
+        }
+        preparing.remove(candidate);
+    }
+    private void prepared(int candidate) {
+        open();
+        if(candidate<0 || candidate>=count || !preparing.containsKey(candidate))
+            throw new IllegalArgumentException("Package candidate is not awaiting activation");
+    }
+    public int metadataCount(){open();return count;}
+    public int capacity(){open();return capacity;}
+    public boolean relativePositions(){open();return relativePositions;}
+    public boolean predictedPositions(){open();return predictedPositions;}
     /** Null means all output banks are still borrowed. Simulation continues; dirty state is retained. */
     public Capture capture(int bodyBuffer,int bodyCount,float ox,float oy,float oz,int outputCapacity) {
         open();if(bodyBuffer<=0 || bodyCount<0 || outputCapacity<0 || outputCapacity>capacity
@@ -101,7 +185,16 @@ public final class PackageDeltaGpu implements AutoCloseable {
         applyRecords(stamp,acknowledged,0);
     }
     /** Server-owned terminal identity notifications override an outstanding normal delta flight. */
-    public void serverReleased(ByteBuffer identities){applyRecords(0,identities,2);}
+    public void serverReleased(ByteBuffer identities){
+        applyRecords(0,identities,2);
+        ByteBuffer view=identities.duplicate().order(ByteOrder.nativeOrder());
+        for(int p=view.position();p<view.limit();p+=RECORD_BYTES) {
+            int candidate=view.getInt(p+16);Prepared expected=preparing.get(candidate);
+            if(expected!=null && view.getInt(p+28)==1 && view.getLong(p)==expected.id
+                    && view.getLong(p+8)==expected.generation && view.getInt(p+20)==expected.localId)
+                preparing.remove(candidate);
+        }
+    }
     private void applyRecords(int stamp,ByteBuffer acknowledged,int mode) {
         open();int bytes=acknowledged.remaining();
         if(stamp==0 && mode!=2 || !acknowledged.isDirect() || bytes%RECORD_BYTES!=0 || bytes/RECORD_BYTES>MAX_ACK_RECORDS)
@@ -133,7 +226,7 @@ public final class PackageDeltaGpu implements AutoCloseable {
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL20.glUseProgram(programs[program]);
         try(var stack=MemoryStack.stackPush()) {
-            GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(metadata,baselines,flights,capture.recordBuffer,capture.headerBuffer,bodyBuffer));
+            GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(metadata,baselines,flights,capture.recordBuffer,capture.headerBuffer,bodyBuffer,predictors));
         }
         ui(program,0,count);ui(program,1,capture.stamp);ui(program,2,capture.capacity);
     }
@@ -158,8 +251,9 @@ public final class PackageDeltaGpu implements AutoCloseable {
     private void open(){if(closed)throw new IllegalStateException("Package delta GPU closed");}
     @Override public void close() {
         if(closed)return;closed=true;
+        preparing.clear();
         for(int program:programs)if(program!=0)GL20.glDeleteProgram(program);
         for(int id:headers)if(id!=0)GL15.glDeleteBuffers(id);for(int id:records)if(id!=0)GL15.glDeleteBuffers(id);
-        for(int id:new int[]{metadata,baselines,flights,ackRecords})if(id!=0)GL15.glDeleteBuffers(id);
+        for(int id:new int[]{metadata,baselines,flights,ackRecords,predictors})if(id!=0)GL15.glDeleteBuffers(id);
     }
 }

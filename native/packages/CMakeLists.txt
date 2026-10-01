@@ -1,0 +1,17 @@
+cmake_minimum_required(VERSION 3.21)
+project(CmiPackagePhysics LANGUAGES CXX)
+if(NOT WIN32 OR NOT MSVC)
+    message(FATAL_ERROR "This standalone benchmark currently requires Windows x64 and MSVC")
+endif()
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+find_package(ovphysx 0.6.3 EXACT CONFIG REQUIRED)
+add_executable(CmiPackagePhysxBenchmark PackagePhysxBenchmark.cpp)
+target_include_directories(CmiPackagePhysxBenchmark PRIVATE "${ovphysx_PHYSX_INCLUDE_DIR}")
+target_compile_definitions(CmiPackagePhysxBenchmark PRIVATE NDEBUG)
+target_compile_options(CmiPackagePhysxBenchmark PRIVATE /Zi)
+target_link_options(CmiPackagePhysxBenchmark PRIVATE /DEBUG)
+target_link_libraries(CmiPackagePhysxBenchmark PRIVATE ovphysx::ovphysx ovstage::ovstage dbghelp)
+# Both host and device code, and their exact headers, come from this package.
+# Never link a separately built host SDK to the precompiled GPU runtime.

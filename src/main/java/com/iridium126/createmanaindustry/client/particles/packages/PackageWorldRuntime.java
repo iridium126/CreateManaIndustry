@@ -1,0 +1,375 @@
+package com.iridium126.createmanaindustry.client.particles.packages;
+
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackagePacket;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainPackagePacket;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundChainPackagePacket;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundChainInteractionPacket;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainInteractionPacket;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
+import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+
+/** Engine-owned world resources. Network dispatch queues transitions; GL mutations, physics and
+ * publication all run inside the engine boundary. Closing never waits for a worker or fence. */
+@EventBusSubscriber(modid=CreateManaIndustry.MODID,value=Dist.CLIENT)
+public final class PackageWorldRuntime {
+    private static final int MAX_REGIONS=8,MAX_QUEUED=1024,PACKETS_PER_FRAME=64;
+    private static PackageWorldRuntime current;
+    private final ArrayDeque<ClientboundPackagePacket> packets=new ArrayDeque<>();
+    private final ArrayDeque<ClientboundChainPackagePacket> chainPackets=new ArrayDeque<>();
+    private final Map<PackageRegion,PackageFreeAcquisitionGpu> regions=new HashMap<>();
+    private final PackageSimulationClock clock=new PackageSimulationClock();
+    private ClientLevel level;
+    private PackageMixedPhysicsGpu physics;
+    private PackageForceClient forceCapture;
+    private PackageForceGpu forceGpu;
+    private PackageNativeObserverClient nativeObservers;
+    private static final java.util.concurrent.atomic.AtomicLong nativeEpochs=new java.util.concurrent.atomic.AtomicLong(0x6000000000000000L);
+    private PackagePoolGpu pool;
+    private PackageChainTrackGpu chainTracks;
+    private PackageChainFrameScene chainFrames;
+    private PackageChainEventChannel chainChannel;
+    private PackageChainAcquisitionGpu chainAcquisition;
+    private PackagePoseQueryGpu chainQueries;
+    private PackageChainCheckpointGpu chainCheckpoints;
+    private PackageFreeCheckpointGpu freeCheckpoints;
+    private PackageFreeInteractionClient freeInteraction;
+    private long freeCheckpointVersion=-1;
+    private int freeCheckpointCount=-1;
+    private long checkpointVersion=-1;
+    private int checkpointCount=-1;
+    private PackageChainInteractionClient chainInteraction;
+    private final java.util.function.LongConsumer captureChainInput=generation->{if(chainInteraction!=null)chainInteraction.committed(generation);};
+    private final java.util.function.Consumer<PackageCollisionCache.Section> requestLight=section->{
+        if(!PackageCollisionRuntime.forLevel(level).requestLightSection(section))throw new IllegalStateException("Package light coverage capacity exhausted");
+    };
+    private Map<ResourceLocation,PackageModelCache.Style> styles=Map.of();
+    private double ox,oy,oz;
+    private long heartbeatTick=Long.MIN_VALUE,retryAfter;
+    private String failure,status="off";
+    private int statusRegions=-1,statusBodies=-1,statusActive=-1;
+    private float interpolation=1;
+
+    /** False means the caller must explicitly refuse the offered ownership. */
+    public static boolean enqueue(ClientboundPackagePacket packet) {
+        var runtime=current;
+        if(runtime==null || runtime.failure!=null || runtime.level!=Minecraft.getInstance().level)return false;
+        if(runtime.packets.size()>=MAX_QUEUED){runtime.failure="Package transition queue exhausted";return false;}
+        runtime.packets.addLast(packet);return true;
+    }
+    public static boolean enqueueChain(ClientboundChainPackagePacket packet) {
+        var runtime=current;
+        if(runtime==null || runtime.failure!=null || runtime.level!=Minecraft.getInstance().level
+                || runtime.physics.chainCapacity()==0)return false;
+        if(runtime.chainPackets.size()>=MAX_QUEUED){runtime.failure="Chain package transition queue exhausted";return false;}
+        runtime.chainPackets.addLast(packet);return true;
+    }
+    /** Engine success hook also runs when there are no free-package regions. */
+    public static void committedChain(long generation) {
+        var runtime=current;if(runtime==null || runtime.failure!=null)return;
+        if(runtime.nativeObservers!=null)runtime.nativeObservers.committed(generation);
+        if(runtime.freeInteraction!=null)runtime.freeInteraction.committed(generation,runtime.interpolation);
+        if(runtime.freeCheckpoints!=null && runtime.physics.freeCount()>0) {
+            if(!runtime.pool.sourceMatches(runtime.physics.bodyBuffer(),runtime.physics.chainBuffer(),runtime.physics.historyBuffer(),runtime.physics.bodyCount(),
+                    (float)runtime.ox,(float)runtime.oy,(float)runtime.oz))throw new IllegalStateException("Free checkpoint uses a different publication");
+            long version=runtime.physics.freePublicationVersion();int count=runtime.pool.admissionCount();
+            if((version!=runtime.freeCheckpointVersion||count!=runtime.freeCheckpointCount)
+                    && runtime.freeCheckpoints.captureAuthority(PackagePoseQueryGpu.Input.of(runtime.physics,runtime.pool),runtime.physics.freeCount(),generation)) {
+                runtime.freeCheckpointVersion=version;runtime.freeCheckpointCount=count;
+            }
+        }
+        if(runtime.chainAcquisition==null)return;
+        runtime.chainAcquisition.committed(generation,runtime.captureChainInput);
+        runtime.chainAcquisition.captureCommitted(generation);
+        long version=runtime.physics.chainPublicationVersion();int count=runtime.pool.admissionCount();
+        if((runtime.chainAcquisition.simulationCount()>0 || PackageChainClientOwnership.INSTANCE.ownedCount()>0)
+                && (version!=runtime.checkpointVersion || count!=runtime.checkpointCount)
+                && runtime.chainCheckpoints.capture(PackagePoseQueryGpu.Input.of(runtime.physics,runtime.pool),generation)) {
+            runtime.checkpointVersion=version;runtime.checkpointCount=count;
+        }
+    }
+    public static boolean chainUse(){var runtime=current;return runtime!=null && runtime.failure==null && runtime.chainInteraction!=null && runtime.chainInteraction.onUse();}
+    public static boolean freeInputReady(){var r=current;return r!=null&&r.failure==null&&r.freeInteraction!=null&&PackageAuthorityClient.activePackages()>0;}
+    public static boolean freeUse(){var r=current;return r!=null&&r.failure==null&&r.freeInteraction!=null&&r.freeInteraction.onInput(PackageFreePickQueue.Action.USE);}
+    public static boolean freeAttack(){var r=current;return r!=null&&r.failure==null&&r.freeInteraction!=null&&r.freeInteraction.onInput(PackageFreePickQueue.Action.ATTACK);}
+    public static boolean freeInputPending(){var r=current;return r!=null&&r.freeInteraction!=null&&r.freeInteraction.pending();}
+    public static boolean forceReady(){var r=current;return r!=null&&r.forceCapture!=null&&r.forceCapture.ready();}
+    public static void chainInteraction(ClientboundChainInteractionPacket packet){var runtime=current;if(runtime!=null && runtime.chainInteraction!=null)runtime.chainInteraction.acknowledge(packet);}
+    public static String status(){var runtime=current;return runtime==null?"off":runtime.status
+            +(runtime.chainInteraction==null?"":"; pickup ACK round trip="+runtime.chainInteraction.networkNanos()/1_000_000.0+"ms")
+            +(runtime.pool==null?"":"; light "+runtime.pool.lightFeedbackReport())
+            +(runtime.freeCheckpoints==null?"":"; free checkpoint bytes="+runtime.freeCheckpoints.readbackBytes()+", pending="+runtime.freeCheckpoints.pending()
+                    +", skipped="+runtime.freeCheckpoints.skipped()+", latency="+runtime.freeCheckpoints.lastLatencyNanos()/1_000_000.0+"ms")
+            +(runtime.chainCheckpoints==null?"":"; chain checkpoint bytes="+runtime.chainCheckpoints.readbackBytes()+", pending="+runtime.chainCheckpoints.pending()
+                    +", skipped="+runtime.chainCheckpoints.skipped()+", latency="+runtime.chainCheckpoints.lastLatencyNanos()/1_000_000.0+"ms")
+            +(runtime.forceGpu==null?"":"; force upload bytes="+runtime.forceGpu.uploadedBytes());}
+    public float interpolation(){return interpolation;}
+    /** The master switch can prevent the engine from submitting any more frames. Revoke its
+     * claims here too, so disabling rendering cannot leave invisible retained Create entities. */
+    @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
+        var runtime=current;if(runtime==null)return;
+        var mc=Minecraft.getInstance();
+        if(mc.level!=runtime.level || mc.getConnection()==null || !ClientConfig.particleEnabled
+                || !ClientConfig.packageGpuAuthority || (dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()
+                && (!CreateManaIndustry.IRIS_ACTIVE || !com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.usable())))
+            PackageAuthorityClient.closeAll("Package runtime disabled or world/render boundary changed",true);
+        if(current==runtime && runtime.chainInteraction!=null)runtime.chainInteraction.tick();
+        if(current==runtime && runtime.freeInteraction!=null)runtime.freeInteraction.tick();
+    }
+
+    /** Called after collision uploads, before package pool staging. Return value invalidates the
+     * particle engine's GL binding cache, including on shutdown or failed initialization. */
+    public boolean prepare(Supplier<PackagePoolGpu> poolFactory,Function<String,String> sources,boolean preview) {
+        RenderSystem.assertOnRenderThread();
+        var mc=Minecraft.getInstance();var connection=mc.getConnection();long now=System.nanoTime();
+        boolean enabled=ClientConfig.particleEnabled && ClientConfig.packageGpuAuthority && !preview && mc.level!=null && mc.player!=null
+                && connection!=null && connection.hasChannel(ServerboundPackagePacket.TYPE)
+                && (!dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()
+                || (CreateManaIndustry.IRIS_ACTIVE && com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.prepare()));
+        if(physics!=null && (!enabled || level!=mc.level || failure!=null)) {
+            PackageAuthorityClient.closeAll(failure==null?"Package runtime world/render boundary changed":failure,true);
+            return true;
+        }
+        if(!enabled || now<retryAfter)return false;
+        try {
+            if(physics==null)initialize(mc.level,poolFactory,sources);
+            if(!regions.isEmpty()||!packets.isEmpty()||PackageAuthorityClient.activePackages()>0){
+                if(forceCapture==null){forceCapture=new PackageForceClient(level);forceGpu=new PackageForceGpu();}
+                forceCapture.prepare(ox,oy,oz);
+            }
+            if(freeCheckpoints!=null) {
+                freeCheckpoints.poll();
+                if(freeCheckpoints.overdue(now))throw new IllegalStateException("Free emergency checkpoint exceeded two ticks");
+            }
+            if(freeInteraction!=null)freeInteraction.prepare();
+            if(chainCheckpoints!=null) {
+                chainCheckpoints.poll();
+                if(chainCheckpoints.overdue(now))throw new IllegalStateException("Chain emergency checkpoint exceeded two ticks");
+            }
+            pool.pollLightRequests(requestLight);
+            // Native observer events are queued after vanilla handlers; prepare baselines and
+            // retirement before authority acquisition can use the same shared reservation.
+            if(nativeObservers!=null)nativeObservers.prepare(System.nanoTime());
+            if(failure!=null)throw new IllegalStateException(failure);
+            if(!drain(sources))return true;
+            if(!drainChains(sources))return true;
+            if(chainAcquisition!=null) {
+                var nativeOwnership=PackageChainClientOwnership.INSTANCE;nativeOwnership.prepare();
+                chainAcquisition.pump(64,nativeOwnership::covered);nativeOwnership.publishRenderMembership();chainChannel.pump(256);
+                if(failure!=null)throw new IllegalStateException(failure);
+            }
+            PackageAuthorityClient.pump();
+            // A channel failure closes all resources synchronously. Do not step or publish them.
+            if(physics==null)return true;
+            int freeActive=PackageAuthorityClient.activePackages(),chainActive=chainAcquisition==null?0:chainAcquisition.simulationCount();
+            int active=freeActive+chainActive;
+            if(active==0)clock.reset();
+            var advance=clock.advance(now,level.getGameTime(),mc.isPaused());
+            if(active>0 && advance==PackageSimulationClock.Advance.OVERDUE)
+                throw new IllegalStateException("Package physical clock exceeded two ticks");
+            if(active>0 && advance==PackageSimulationClock.Advance.STEP) {
+                if(freeActive>0) {
+                    var collision=PackageCollisionRuntime.forLevel(level);
+                    try(var world=collision.view((int)(ox/16),(int)(oy/16),(int)(oz/16));
+                        var moving=collision.movingView((int)(ox/16),(int)(oy/16),(int)(oz/16));
+                        var forces=forceGpu.view(forceCapture.snapshot(),level.getGameTime())) {
+                        physics.applyFreeForces(forces,.05f);
+                        physics.stepFreeMoving(world,PackagePhysicsGpu.ITERATIONS,PackagePhysicsGpu.IndexMode.LINKED,moving.views());
+                    }
+                }
+                if(chainActive>0)physics.stepChains(.05f,chainTracks);
+            }
+            physics.publish();physics.source(pool,(float)ox,(float)oy,(float)oz);
+            if(chainFrames!=null)chainFrames.prepare(pool);
+            pool.lightSource(PackageCollisionRuntime.forLevel(level).lightGpu());
+            interpolation=clock.interpolation();
+            if(!mc.isPaused() && heartbeatTick!=level.getGameTime()) {
+                heartbeatTick=level.getGameTime();
+                for(var acquisition:regions.values())PacketDistributor.sendToServer(new ServerboundPackagePacket(
+                        ServerboundPackagePacket.HEARTBEAT,0,acquisition.region(),acquisition.epoch(),0,null,0,0,0,new byte[0]));
+                if(chainAcquisition!=null)PacketDistributor.sendToServer(new ServerboundChainPackagePacket(
+                        ServerboundChainPackagePacket.HEARTBEAT,chainAcquisition.epoch(),0,null,0,0,0,0,new byte[0]));
+            }
+            int nativeActive=nativeObservers==null?0:nativeObservers.active();
+            if(statusRegions!=regions.size() || statusBodies!=physics.freeCount()+physics.chainCount()+physics.observerCount() || statusActive!=active+nativeActive) {
+                statusRegions=regions.size();statusBodies=physics.freeCount()+physics.chainCount()+physics.observerCount();statusActive=active+nativeActive;
+                status="free ready; regions="+statusRegions+"; body indices="+statusBodies+"; active="+statusActive
+                        +"; chains="+(chainAcquisition==null?"interaction/checkpoint readiness pending":chainAcquisition.activeCount())+"; native observers="+nativeActive;
+            }
+            return true;
+        }catch(RuntimeException | LinkageError error) {
+            CreateManaIndustry.LOGGER.error("[CMI packages] world runtime failed; restoring Create",error);
+            failure="Package world runtime failed: "+error.getMessage();
+            PackageAuthorityClient.closeAll(failure,true);
+            // Initialization can fail before the runtime has been attached globally.
+            dispose(failure);return true;
+        }
+    }
+    private void initialize(ClientLevel nextLevel,Supplier<PackagePoolGpu> poolFactory,Function<String,String> sources) {
+        var baked=PackageModelCache.bake();
+        if(baked.styles().isEmpty())throw new IllegalStateException("No compatible Create package meshes");
+        pool=java.util.Objects.requireNonNull(poolFactory.get(),"Package pool unavailable");
+        if(pool.metadataCount()!=0)throw new IllegalStateException("Package pool belongs to another runtime");
+        // Chain state reserves no extra generic particle slots. Chain acquisition is attached separately.
+        int capacity=Math.min(131072,pool.capacity());
+        boolean chainProtocol=Minecraft.getInstance().getConnection().hasChannel(ServerboundChainPackagePacket.TYPE)
+                && Minecraft.getInstance().getConnection().hasChannel(ServerboundChainInteractionPacket.TYPE)
+                && Minecraft.getInstance().getConnection().hasChannel(ClientboundChainInteractionPacket.TYPE);
+        baked.upload(pool);styles=baked.styles();level=nextLevel;
+        var position=Minecraft.getInstance().player.position();
+        ox=Math.floor(position.x/16)*16;oy=Math.floor(position.y/16)*16;oz=Math.floor(position.z/16)*16;
+        physics=new PackageMixedPhysicsGpu(capacity,chainProtocol?capacity:0,capacity,2,sources,new PackageObserverGpu.NativeOrigin(ox,oy,oz));
+        nativeObservers=new PackageNativeObserverClient(level,physics,pool,styles,nativeEpochs.incrementAndGet(),reason->failure=reason);
+        physics.sampleObservers(0);
+        physics.publish();physics.source(pool,(float)ox,(float)oy,(float)oz);
+        clock.reset();heartbeatTick=Long.MIN_VALUE;failure=null;current=this;
+        // Per-object coverage/model/admission/final-baseline gates still run before PREPARED.
+        PackageAuthorityClient.capabilities(ServerboundPackagePacket.FREE_READY);
+    }
+    private boolean drain(Function<String,String> sources) {
+        for(int n=0;n<PACKETS_PER_FRAME && !packets.isEmpty();n++) {
+            var packet=packets.removeFirst();var acquisition=regions.get(packet.region());
+            if(nativeObservers!=null&&(packet.action()==ClientboundPackagePacket.OFFER||packet.action()==ClientboundPackagePacket.RELEASED))
+                nativeObservers.authority(packet);
+            if(acquisition!=null && (packet.epoch()!=acquisition.epoch() || packet.regionRevision()!=acquisition.revision())) {
+                if(packet.action()!=ClientboundPackagePacket.OFFER)continue;
+                // Migration/recycling needs a fresh namespace; discard every old flight before rebuilding.
+                PackageAuthorityClient.closeAll("Package authority namespace changed",true);return false;
+            }
+            if(acquisition==null && packet.action()==ClientboundPackagePacket.OFFER) {
+                if(regions.size()>=MAX_REGIONS) {refuse(packet);continue;}
+                if(freeCheckpoints==null)freeCheckpoints=new PackageFreeCheckpointGpu(Math.min(131072,pool.capacity()),nativeEpochs.incrementAndGet(),sources);
+                if(freeInteraction==null){freeInteraction=new PackageFreeInteractionClient(physics,pool,nativeEpochs.incrementAndGet(),ox,oy,oz,sources);freeInteraction.chainInteraction(chainInteraction);}
+                var detector=new PackageDeltaGpu(Math.min(131072,pool.capacity()),sources,true);
+                try {
+                    acquisition=PackageAuthorityClient.openFreeAcquisition(packet.region(),packet.epoch(),packet.regionRevision(),
+                            ox,oy,oz,physics,pool,detector,styles,this::light,reason->failure=reason);
+                    acquisition.emergencyCheckpoints(freeCheckpoints);
+                }catch(RuntimeException error){detector.close();throw error;}
+                regions.put(packet.region(),acquisition);
+            }
+            if(acquisition!=null)acquisition.receive(packet);else if(packet.baseline()!=null)refuse(packet);
+        }
+        return true;
+    }
+    private int light(ClientboundPackagePacket offer) {
+        var pose=offer.baseline().snapshot().pose();
+        var pos=BlockPos.containing(pose.x(),pose.y()+offer.height()*.85f,pose.z());
+        return net.minecraft.client.renderer.LightTexture.pack(level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK,pos),
+                level.getBrightness(net.minecraft.world.level.LightLayer.SKY,pos));
+    }
+    private boolean drainChains(Function<String,String> sources) {
+        for(int n=0;n<PACKETS_PER_FRAME && !chainPackets.isEmpty();n++) {
+            var packet=chainPackets.removeFirst();
+            if(chainAcquisition!=null && packet.epoch()!=chainAcquisition.epoch()) {
+                if(packet.action()!=ClientboundChainPackagePacket.TRACK)continue;
+                PackageAuthorityClient.closeAll("Chain authority namespace changed",true);return false;
+            }
+            if(packet.action()==ClientboundChainPackagePacket.CLOSE) {
+                if(chainAcquisition!=null){PackageAuthorityClient.closeAll("Chain authority closed by server",false);return false;}
+                continue;
+            }
+            if(chainAcquisition==null && packet.action()==ClientboundChainPackagePacket.TRACK)openChains(packet.epoch(),sources);
+            if(chainAcquisition==null){if(packet.action()==ClientboundChainPackagePacket.OFFER)refuseChain(packet);continue;}
+            if(packet.action()==ClientboundChainPackagePacket.TRACK)PackageChainClientOwnership.INSTANCE.track(packet.track());
+            if(packet.action()==ClientboundChainPackagePacket.RELEASED)PackageChainClientOwnership.INSTANCE.terminalNotice(packet);
+            chainAcquisition.receive(packet);
+        }
+        return true;
+    }
+    private void openChains(long epoch,Function<String,String> sources) {
+        int capacity=Math.min(131072,pool.capacity());
+        chainFrames=new PackageChainFrameScene(level,131072,ox,oy,oz,sources,net.neoforged.fml.ModList.get().isLoaded("sable"));
+        chainTracks=new PackageChainTrackGpu(capacity,131072,1_048_576,sources);
+        chainChannel=new PackageChainEventChannel(chainTracks,epoch,1,PackageAuthorityClient.encoder(),new PackageChainEventChannel.Transport() {
+            @Override public Object prepare(long e,long r,long sequence,java.nio.ByteBuffer bytes) {
+                var body=new byte[bytes.remaining()];bytes.get(body);
+                return new ServerboundChainPackagePacket(ServerboundChainPackagePacket.EVENTS,e,0,null,0,0,0,sequence,body);
+            }
+            @Override public boolean send(long e,long r,long sequence,java.nio.ByteBuffer bytes){throw new IllegalStateException("Chain transport requires worker preparation");}
+            @Override public boolean sendPrepared(long e,long r,long sequence,Object prepared,java.nio.ByteBuffer bytes) {
+                if(Minecraft.getInstance().getConnection()==null)return false;
+                PacketDistributor.sendToServer((ServerboundChainPackagePacket)prepared);return true;
+            }
+            @Override public void failed(String reason){failure=reason;}
+        });
+        var nativeOwnership=PackageChainClientOwnership.INSTANCE;
+        chainAcquisition=new PackageChainAcquisitionGpu(level.dimension().location(),epoch,ox,oy,oz,physics,pool,chainTracks,chainChannel,
+                styles,this::chainLight,
+                nativeOwnership::hook,nativeOwnership::pendulum,new PackageChainAcquisitionGpu.Transport() {
+            @Override public void control(int action,ClientboundChainPackagePacket checkpoint,int candidate) {
+                if(Minecraft.getInstance().getConnection()!=null)PacketDistributor.sendToServer(ServerboundChainPackagePacket.control(action,epoch,checkpoint.baseline(),candidate));
+            }
+            @Override public void activated(ClientboundChainPackagePacket offer,ClientboundChainPackagePacket active,ClientboundChainPackagePacket.Track track,int candidate,int slot) {
+                nativeOwnership.activated(offer,active,track,candidate);
+            }
+            @Override public void released(ClientboundChainPackagePacket offer,com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageChainAuthority.Baseline baseline) {
+                nativeOwnership.released(offer,baseline);
+            }
+            @Override public void released(ClientboundChainPackagePacket offer,com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageChainAuthority.Baseline baseline,PackagePoseQueryGpu.Result pose) {
+                nativeOwnership.released(offer,baseline,pose,ox,oy,oz);
+            }
+        });
+        chainAcquisition.nativeOrigins(chainFrames::origin);
+        chainQueries=new PackagePoseQueryGpu(capacity,epoch,sources);chainAcquisition.poseQueries(chainQueries);
+        chainCheckpoints=new PackageChainCheckpointGpu(capacity,epoch,sources);checkpointVersion=-1;checkpointCount=-1;
+        chainInteraction=new PackageChainInteractionClient(chainAcquisition,ox,oy,oz);
+        if(freeInteraction!=null)freeInteraction.chainInteraction(chainInteraction);
+        nativeOwnership.attach(chainAcquisition,chainCheckpoints,ox,oy,oz,reason->failure=reason);
+    }
+    private int chainLight(ClientboundChainPackagePacket packet) {
+        var pendulum=PackageChainClientOwnership.INSTANCE.pendulum(packet,packet);
+        var pose=packet.baseline().state().pose();
+        var pos=pendulum==null?BlockPos.containing(pose.x(),pose.y()-9./16,pose.z()):BlockPos.containing(pendulum.x(),pendulum.y(),pendulum.z());
+        // These requests are mutation-time only; active chain light sampling stays entirely GPU-side.
+        PackageCollisionRuntime.forLevel(level).requestLight(new net.minecraft.world.phys.AABB(pos).inflate(3));
+        return net.minecraft.client.renderer.LightTexture.pack(level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK,pos),
+                level.getBrightness(net.minecraft.world.level.LightLayer.SKY,pos));
+    }
+    private static void refuseChain(ClientboundChainPackagePacket packet) {
+        PacketDistributor.sendToServer(ServerboundChainPackagePacket.control(ServerboundChainPackagePacket.RELEASE,packet.epoch(),packet.baseline(),0));
+    }
+    private static void refuse(ClientboundPackagePacket packet) {
+        PacketDistributor.sendToServer(ServerboundPackagePacket.control(ServerboundPackagePacket.RELEASE,
+                packet.region(),packet.epoch(),packet.baseline()));
+    }
+    /** AuthorityClient closes admission and delta rings FIRST, then calls this from every exit path. */
+    public static void revoked(String reason){if(current!=null)current.dispose(reason);}
+    private void dispose(String reason) {
+        if(current==this)current=null;
+        if(forceCapture!=null)forceCapture.close();forceCapture=null;
+        if(forceGpu!=null)forceGpu.close();forceGpu=null;
+        if(nativeObservers!=null)nativeObservers.close();nativeObservers=null;
+        if(chainInteraction!=null)chainInteraction.close();chainInteraction=null;
+        if(freeInteraction!=null)freeInteraction.close();freeInteraction=null;
+        PackageChainClientOwnership.INSTANCE.close();
+        if(freeCheckpoints!=null)freeCheckpoints.close();freeCheckpoints=null;freeCheckpointVersion=-1;freeCheckpointCount=-1;
+        if(chainCheckpoints!=null)chainCheckpoints.close();chainCheckpoints=null;checkpointVersion=-1;checkpointCount=-1;
+        if(chainAcquisition!=null)chainAcquisition.close();chainAcquisition=null;
+        if(chainQueries!=null)chainQueries.close();chainQueries=null;
+        if(chainChannel!=null)chainChannel.close();else if(chainTracks!=null)chainTracks.close();chainChannel=null;chainTracks=null;
+        if(pool!=null)pool.chainFrames(0,0);
+        if(chainFrames!=null)chainFrames.close();chainFrames=null;
+        packets.clear();chainPackets.clear();regions.clear();clock.reset();styles=Map.of();level=null;interpolation=1;
+        if(pool!=null)pool.reset();pool=null;
+        if(physics!=null)physics.close();physics=null;
+        failure=null;status=reason;retryAfter=System.nanoTime()+5_000_000_000L;
+        statusRegions=statusBodies=statusActive=-1;
+    }
+}

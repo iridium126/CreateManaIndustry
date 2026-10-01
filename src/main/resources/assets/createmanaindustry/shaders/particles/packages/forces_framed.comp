@@ -1,0 +1,2 @@
+#define CMI_FRAMED_FORCES
+#pragma cmi_include packages/forces.comp

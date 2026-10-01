@@ -1,9 +1,10 @@
 // Package pass-local bindings; deliberately reuse slots rather than extending the global ABI.
+#pragma cmi_include packages/body_lifecycle.glsl
 struct Body {
     vec4 positionMass; // centre.xyz, inverse mass (zero = static collider)
     vec4 velocityGround; // blocks/second.xyz, support flag
     vec4 extentYaw; // half extents.xyz, yaw in degrees
-    vec4 previousSleep; // previous centre.xyz, reserved sleep counter
+    vec4 previousSleep; // previous centre.xyz; >=0 active, -1 handback, -2 prepared, -3 retired
 };
 #ifdef CMI_BODY_INPLACE
 // Apply kernels only read/write their own body; all inter-body constraints are immutable.

@@ -58,6 +58,18 @@ public class CreateManaIndustryClient {
         ClientboundStormStatePacket.installClientHandler(AllayStormClientHandler::onState);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackagePacket.installClientHandler(
                 com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient::receive);
+        com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageAckPacket.installClientHandler(
+                com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient::receiveAcks);
+        com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageObserverPacket.installClientHandler(
+                com.iridium126.createmanaindustry.client.particles.packages.PackageNativeObserverClient::receiveMembership);
+        com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainPackagePacket.installClientHandler(
+                com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient::receiveChain);
+        com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainInteractionPacket.installClientHandler(
+                com.iridium126.createmanaindustry.client.particles.packages.PackageWorldRuntime::chainInteraction);
+        com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageChainClientHooks.install(
+                com.iridium126.createmanaindustry.client.particles.packages.PackageChainClientOwnership.INSTANCE);
+        com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageForceHooks.install(
+                com.iridium126.createmanaindustry.client.particles.packages.PackageForceClient.HOOKS);
         ClientboundStormDamagePacket.installClientHandler(AllayStormClientHandler::onDamage);
         ClientboundStormPositionsPacket.installClientHandler(AllayStormClientHandler::onPositions);
         ClientboundStormCenterPacket.installClientHandler(AllayStormClientHandler::onCenter);

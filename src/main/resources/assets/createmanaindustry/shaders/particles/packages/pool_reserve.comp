@@ -1,11 +1,14 @@
 layout(local_size_x=1) in;
 layout(std430,binding=3) buffer Counter { uint live; uint spare; uint translucent; uint sorted; };
-layout(std430,binding=6) buffer Reservation { uint base; uint accepted; uint requested; uint reserved; };
+layout(std430,binding=6) buffer Reservation { uint base; uint accepted; uint activeAccepted; uint preparedAccepted; };
 uniform uint uCapacity, uCount;
-layout(std430,binding=7) readonly buffer Selection { uint validCount; uint pad0; uint pad1; uint pad2; uint selected[]; };
+layout(std430,binding=7) readonly buffer Selection { uint activeCount; uint preparedCount; uint pad1; uint pad2; uint selected[]; };
 void main() {
-    base=min(live,uCapacity);
-    accepted=min(validCount,uCapacity-base);
-    requested=uCount;
+    // Keep server-owned packages alive under ordinary emission pressure.
+    // A preparing Create-owned candidate may only use genuinely spare slots.
+    activeAccepted=min(activeCount,uCapacity);
+    base=min(live,uCapacity-activeAccepted);
+    preparedAccepted=min(preparedCount,uCapacity-activeAccepted-base);
+    accepted=activeAccepted+preparedAccepted;
     live=base+accepted;
 }

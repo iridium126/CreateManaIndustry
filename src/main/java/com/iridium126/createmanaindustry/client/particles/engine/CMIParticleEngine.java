@@ -152,6 +152,9 @@ public final class CMIParticleEngine {
     private HexPatternRuntime hexPatterns;
     private PackagePoolGpu packageParticles;
     private final PackagePreviewRuntime packagePreview=new PackagePreviewRuntime();
+    private final java.util.function.Supplier<PackagePoolGpu> packagePoolFactory=this::packageParticles;
+    private final com.iridium126.createmanaindustry.client.particles.packages.PackageWorldRuntime packageWorld=
+            new com.iridium126.createmanaindustry.client.particles.packages.PackageWorldRuntime();
     private record PackagePreviewRequest(int count,Vec3 origin,Vec3 forward) {}
     private volatile String packagePreviewStatus="off";
     private volatile boolean packageShadersDirty;
@@ -170,6 +173,12 @@ public final class CMIParticleEngine {
         return packageParticles;
     }
     public void packageInterpolation(float partialTick) { packagePartialTick=partialTick; }
+    public float packageInterpolation(){return packagePartialTick;}
+    public PackagePoolGpu packageParticlesForDraw(){return available()?packageParticles:null;}
+    public boolean packageMainFrameReady(){return frameArmed;}
+    private boolean hookPackagesDrawn;
+    public void markHookPackageDrawn(){hookPackagesDrawn=true;}
+    public String packageShaderStatus(){return CreateManaIndustry.IRIS_ACTIVE?com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.status():"Iris absent";}
     public void previewPackages(int count,Vec3 origin) {
         previewPackages(count,origin,new Vec3(0,0,1));
     }
@@ -750,6 +759,7 @@ public final class CMIParticleEngine {
 
     /** Called on resource reload so shaders recompile next frame. */
     public void requestProgramRebuild() {
+        if(CreateManaIndustry.IRIS_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.reload();
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Package resources reloaded",true);
         this.programs.requestRebuild();
         this.packageShadersDirty=true;
@@ -761,6 +771,7 @@ public final class CMIParticleEngine {
     public void close() {
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle engine closed",false);
         try {
+            if(CreateManaIndustry.IRIS_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.close();
             this.packagePreview.close();
             if(this.packageParticles!=null)this.packageParticles.close();
             this.packageParticles=null;
@@ -931,6 +942,7 @@ public final class CMIParticleEngine {
         try {
             runCompute(camera, view, projectionMatrix, deltaTracker);
         } catch (RuntimeException | LinkageError e) {
+            com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle frame failed",true);
             long now = System.currentTimeMillis();
             if (now - this.lastErrorTime > 5000) {
                 this.lastErrorTime = now;
@@ -1042,6 +1054,8 @@ public final class CMIParticleEngine {
         this.frameSorted = false;
         this.frameFinalPerm = -1;
 
+        this.hookPackagesDrawn=false;
+
         int slot = (this.lastGoodSlot + 1) % ParticleBuffers.COUNTER_RING;
         this.simFrame++;
 
@@ -1103,6 +1117,7 @@ public final class CMIParticleEngine {
 
         float dt = clampDelta(deltaTracker);
         if(previewRequest!=null && !doClear) {
+            com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Package preview owns the pool",true);
             if(previewRequest.count()==0) {
                 this.packagePreview.close();this.packagePreviewStatus="off";
             } else try {
@@ -1118,14 +1133,21 @@ public final class CMIParticleEngine {
         }
         if(this.packagePreview.active()) {
             ParticleDiagnostics.INSTANCE.mark("package_physics");
-            if(dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()) {
-                this.packagePreview.close();this.packagePreviewStatus="stopped: shaderpack enabled";
+            if(dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()
+                    && (!CreateManaIndustry.IRIS_ACTIVE || !com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.prepare())) {
+                this.packagePreview.close();this.packagePreviewStatus="stopped: package shaderpack program unavailable";
             }
             else this.packagePartialTick=this.packagePreview.prepare(Minecraft.getInstance().isPaused());
             ParticleDiagnostics.INSTANCE.mark("upload_after_packages");
         }
         if(com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime.pumpGpu())this.gpu.beginBindings();
-        if(com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.pump())this.gpu.beginBindings();
+        boolean profilePackageWorld=ClientConfig.packageGpuAuthority && !this.packagePreview.active();
+        if(profilePackageWorld)ParticleDiagnostics.INSTANCE.mark("package_physics");
+        if(this.packageWorld.prepare(this.packagePoolFactory,ParticlePrograms::loadParticlePlain,this.packagePreview.active())) {
+            if(!this.packagePreview.active())this.packagePartialTick=this.packageWorld.interpolation();
+            this.gpu.beginBindings();
+        }
+        if(profilePackageWorld)ParticleDiagnostics.INSTANCE.mark("upload_after_packages");
         // Shared clock: (gameTime mod 2^21)/20 — identical on every client (see
         // AllayStormRuntime's clock doc); drives the vortex phases and the
         // correction timestamps without any clock sync.
@@ -1813,7 +1835,11 @@ public final class CMIParticleEngine {
             // the last fully-written pool as the next read source, and
             // the finally below restores the post-phase GL state instead.
             this.gpu.swap();
-            if(packageStaged)this.packageParticles.commit();
+            if(packageStaged) {
+                this.packageParticles.commit();
+                com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.committed(Integer.toUnsignedLong(this.simFrame));
+                this.gpu.beginBindings();
+            }
             // The swap committed this frame's output as the next read source —
             // only NOW does this frame's counter slot become the authoritative
             // live count for update.comp (see lastGoodSlot). Assigned after the
@@ -1938,7 +1964,8 @@ public final class CMIParticleEngine {
                 // Repeat of the compute section's empty-guard from the handoff
                 // values: nothing alive and nothing spawned skips vertex work while
                 // keeping bindings correct for a valid buffer anyway.
-                if (CMIParticleEngine.this.frameAliveEstimate > 0 || CMIParticleEngine.this.frameEntryCount > 0) {
+                if (CMIParticleEngine.this.frameAliveEstimate > 0 || CMIParticleEngine.this.frameEntryCount > 0
+                        || (CMIParticleEngine.this.packageParticles!=null && CMIParticleEngine.this.packageParticles.admissionCount()>0)) {
                     // Bind the FINAL sorted permutation up front: both translucent
                     // draws (model ghost segment here, ALPHA sprites below) read their
                     // own contiguous partition of it. On the fast path nothing reads
@@ -1975,6 +2002,7 @@ public final class CMIParticleEngine {
                 // fires mid-renderLevel — between our two phases within one frame —
                 // and will set it again before endFrame's skip-check below runs.
                 CMIParticleEngine.this.hookModelsDrawn = false;
+                CMIParticleEngine.this.hookPackagesDrawn = false;
 
                 if (queryActive) {
                     // Skipped with the bracket when a foreign query owned the
@@ -2029,6 +2057,7 @@ public final class CMIParticleEngine {
         /** All package box/rig mesh groups share one indirect multi-draw submission. */
         private void drawPackages(Matrix4fc view,Matrix4fc projection,Camera camera) {
             if(packageParticles==null || packageParticles.admissionCount()==0)return;
+            if(hookPackagesDrawn || dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse())return;
             Vec3 position=camera.getPosition();
             RenderSystem.enableDepthTest();RenderSystem.depthMask(true);RenderSystem.disableBlend();
             RenderSystem.enableCull();

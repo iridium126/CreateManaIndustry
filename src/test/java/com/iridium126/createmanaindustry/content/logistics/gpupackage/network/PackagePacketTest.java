@@ -16,8 +16,25 @@ class PackagePacketTest {
             new PackageLease.Identity(0x1234567800000001L,0x2345678900000001L),0x3456789000000001L,9,
             new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(-12798,1280002,-62,1,-2,3,-89),1));
     private static RegistryFriendlyByteBuf buffer(){return new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY);}
+    @Test void v3BatchActionKeepsEnvelopeIdentityAndLosslessDecodedFields() {
+        var entries=java.util.List.of(new PackageDeltaCodec.Entry(65536,15,new PackageDeltaCodec.Quantized(Integer.MIN_VALUE,5,Integer.MAX_VALUE,
+                Short.MIN_VALUE,Short.MAX_VALUE,(short)3,(short)-99,3)),new PackageDeltaCodec.Entry(65537,16,
+                new PackageDeltaCodec.Quantized(0,0,0,(short)0,(short)0,(short)0,(short)0,0)));
+        var wire=java.nio.ByteBuffer.allocate(100);PackageBatchDeltaCodec.encode(wire,entries);
+        byte[] body=java.util.Arrays.copyOf(wire.array(),wire.position());
+        for(int action:new int[]{ServerboundPackagePacket.BATCH_DELTA,ServerboundPackagePacket.RELATIVE_DELTA,ServerboundPackagePacket.PREDICTED_DELTA}) {
+            var packet=new ServerboundPackagePacket(action,0,REGION,0x4567890100000001L,0,null,0,10,0x5678901200000001L,body);
+            var bytes=buffer();try {
+                ServerboundPackagePacket.STREAM_CODEC.encode(bytes,packet);var decoded=ServerboundPackagePacket.STREAM_CODEC.decode(bytes);
+                assertEquals(action,decoded.action());assertEquals(REGION,decoded.region());
+                assertEquals(packet.epoch(),decoded.epoch());assertEquals(packet.revision(),decoded.revision());assertEquals(packet.sequence(),decoded.sequence());
+                assertArrayEquals(body,decoded.changes());assertEquals(entries,PackageBatchDeltaCodec.decode(java.nio.ByteBuffer.wrap(decoded.changes())));
+                assertEquals(0,bytes.readableBytes());
+            }finally{bytes.release();}
+        }
+    }
     @Test void controlRoundTripRetainsFullIdentitiesEpochAndSignedRegion() {
-        for(int action:new int[]{ServerboundPackagePacket.PREPARED,ServerboundPackagePacket.FINAL_READY,ServerboundPackagePacket.RELEASE}) {
+        for(int action:new int[]{ServerboundPackagePacket.PREPARED,ServerboundPackagePacket.FINAL_READY,ServerboundPackagePacket.VISIBLE_READY,ServerboundPackagePacket.RELEASE}) {
             var packet=ServerboundPackagePacket.control(action,REGION,0x4567890100000001L,BASELINE);var bytes=buffer();
             try {
                 ServerboundPackagePacket.STREAM_CODEC.encode(bytes,packet);var decoded=ServerboundPackagePacket.STREAM_CODEC.decode(bytes);
@@ -27,6 +44,25 @@ class PackagePacketTest {
             }
             finally{bytes.release();}
         }
+    }
+    @Test void batchedControlsHaveAnExactBoundedEnvelopeAndCannotBecomePoseDeltas() {
+        var body=java.nio.ByteBuffer.allocate(PackageControlBatchCodec.MAX_BYTES);
+        PackageControlBatchCodec.encode(body,ServerboundPackagePacket.VISIBLE_READY,java.util.List.of(BASELINE));
+        byte[] encoded=java.util.Arrays.copyOf(body.array(),body.position());
+        var packet=ServerboundPackagePacket.controls(REGION,0x4567890100000001L,17,encoded);encoded[0]=100;
+        assertFalse(ServerboundPackagePacket.deltaAction(packet.action()));
+        var bytes=buffer();try {
+            ServerboundPackagePacket.STREAM_CODEC.encode(bytes,packet);var decoded=ServerboundPackagePacket.STREAM_CODEC.decode(bytes);
+            assertEquals(ServerboundPackagePacket.CONTROL_BATCH,decoded.action());assertEquals(REGION,decoded.region());
+            assertEquals(packet.epoch(),decoded.epoch());assertEquals(17,decoded.revision());assertEquals(0,decoded.sequence());assertEquals(0,bytes.readableBytes());
+            assertArrayEquals(packet.changes(),decoded.changes());
+            assertEquals(1,PackageControlBatchCodec.visitValidated(java.nio.ByteBuffer.wrap(decoded.changes()),(a,i,id,g,l,r)->{
+                assertEquals(ServerboundPackagePacket.VISIBLE_READY,a);assertEquals(BASELINE.index(),i);assertEquals(BASELINE.identity().id(),id);
+                assertEquals(BASELINE.identity().generation(),g);assertEquals(BASELINE.leaseEpoch(),l);assertEquals(BASELINE.revision(),r);
+            }));
+            assertThrows(IllegalArgumentException.class,()->ServerboundPackagePacket.controls(REGION,1,0,packet.changes()));
+            assertThrows(IllegalArgumentException.class,()->ServerboundPackagePacket.controls(REGION,1,1,new byte[PackageControlBatchCodec.MAX_BYTES+1]));
+        }finally{bytes.release();}
     }
     @Test void capabilitiesHeartbeatAndDeltaHaveBoundedBodies() {
         var bytes=buffer();

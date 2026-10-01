@@ -16,19 +16,24 @@ class PackageProtocolTest {
         assertFalse(lease.ready(owner,epoch,initialBaseline,11,pose(2)));
         long currentBaseline=lease.refreshAcquisition(pose(2));
         assertFalse(lease.ready(owner,epoch,initialBaseline,11,pose(2)));
-        assertTrue(lease.ready(owner,epoch,currentBaseline,11,pose(2)));
+        assertFalse(lease.ready(owner,epoch,currentBaseline,11,pose(2)));
+        long frozenBaseline=lease.freezeBaseline(owner,epoch,currentBaseline,11,pose(2));
+        assertTrue(lease.ready(owner,epoch,frozenBaseline,11,pose(2)));
         assertTrue(lease.commit(owner,epoch,0,12,pose(3),2));
         assertFalse(lease.commit(owner,epoch,0,12,pose(4),2));
         assertFalse(lease.commit(owner,epoch,1,15,pose(4),2));
         assertEquals(pose(3),lease.release());lease.restored();
         assertFalse(lease.commit(owner,epoch,2,15,pose(4),2));
         long next=lease.acquire(owner,pose(3),16);assertTrue(next>epoch);
-        assertTrue(lease.ready(owner,next,lease.baselineRevision(),16,pose(3)));
+        long nextFrozen=lease.freezeBaseline(owner,next,lease.baselineRevision(),16,pose(3));
+        assertTrue(lease.ready(owner,next,nextFrozen,16,pose(3)));
         assertFalse(lease.commit(owner,epoch,3,16,pose(4),2));
     }
     @Test void sleepingHeartbeatAndTransactionsAreIndependentOfPositionChanges() {
         var lease=new PackageLease(new PackageLease.Identity(1,1),pose(0));UUID owner=UUID.randomUUID();
-        long epoch=lease.acquire(owner,pose(0),0);assertTrue(lease.ready(owner,epoch,lease.baselineRevision(),0,pose(0)));
+        long epoch=lease.acquire(owner,pose(0),0);
+        long frozen=lease.freezeBaseline(owner,epoch,lease.baselineRevision(),0,pose(0));
+        assertTrue(lease.ready(owner,epoch,frozen,0,pose(0)));
         for(int tick=1;tick<100;tick++)assertTrue(lease.heartbeat(owner,epoch,tick));
         assertTrue(lease.claimTransaction(owner,epoch,0,99));
         assertFalse(lease.claimTransaction(owner,epoch,0,99));

@@ -50,6 +50,13 @@ void main() {
                     if(any(notEqual(old.velocityYaw.xyz,q.velocityYaw.xyz)))mask|=2u;
                     if(old.velocityYaw.w!=q.velocityYaw.w)mask|=4u;
                     if(old.positionFlags.w!=q.positionFlags.w)mask|=8u;
+                    // Region coordinates and their confirmed baseline are bounded to 64^3.
+                    // The flight pins this baseline until the matching ACK/cancellation;
+                    // residuals need no additional readback storage or CPU pose arithmetic.
+                    if(uRelativePosition!=0u) {
+                        q.positionFlags.xyz-=old.positionFlags.xyz;
+                        if(uPredictedPosition!=0u && mask!=0u)q.positionFlags.xyz-=displacement[i].xyz;
+                    }
                 }
             }
             dirty=status!=0u || mask!=0u;

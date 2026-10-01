@@ -1,0 +1,69 @@
+#define CMI_BODY_INPLACE
+#pragma cmi_include packages/state.glsl
+layout(local_size_x=64) in;
+layout(std430,binding=4) readonly buffer ForceScene { vec4 forceData[]; };
+uniform uint uForceNodes;
+#ifdef CMI_FRAMED_FORCES
+uniform uint uForceSources;
+#endif
+uniform float uDt;
+void main() {
+    uint i=gl_GlobalInvocationID.x;
+    if(i>=uCount)return;
+    Body b=src[i];
+    if(b.previousSleep.w<0.0||b.positionMass.w<=0.0)return;
+    vec3 low=b.positionMass.xyz-b.extentYaw.xyz,high=b.positionMass.xyz+b.extentYaw.xyz;
+    vec3 velocity=b.velocityGround.xyz;
+    for(uint node=0u;node<uForceNodes;) {
+        vec4 lo=forceData[node*2u],hi=forceData[node*2u+1u];
+        if(any(greaterThanEqual(lo.xyz,high))||any(lessThanEqual(hi.xyz,low))) {
+            node=floatBitsToUint(lo.w);continue;
+        }
+        uint source=floatBitsToUint(hi.w);node++;
+        if(source==0u)continue;
+        uint at=uForceNodes*2u+(source-1u)*4u;
+        vec4 bounds=forceData[at],limits=forceData[at+1u],centre=forceData[at+2u],flow=forceData[at+3u];
+#ifdef CMI_FRAMED_FORCES
+        uint kind=floatBitsToUint(bounds.w);
+        if((kind&3u)==1u) {
+#else
+        if(floatBitsToUint(bounds.w)==1u) {
+#endif
+            // Package.tick -> other.push(package), plus living other.tick -> package.push(other).
+            // The latter retains Create's feet-height condition. Units change ticks -> seconds.
+            float count=1.0+(bounds.y<=low.y?limits.w:0.0);
+            vec2 delta=b.positionMass.xz-centre.xz;
+            float distance=max(abs(delta.x),abs(delta.y));
+            if(distance>=0.01) {
+                float inverse=inversesqrt(distance);
+                velocity.xz+=delta*inverse*min(1.0,inverse)*count*(uDt*20.0);
+            }
+        } else {
+            // Fan BVH preserves tick order; entity BVH sorts spatially. A single traversal
+            // keeps opposite fans stable without re-scanning the tree per overlapping fan.
+            // AirCurrent uses the entity's feet and the fan block's centre, including suction.
+            vec3 feet=vec3(b.positionMass.x,low.y,b.positionMass.z);
+            vec3 offset=feet-centre.xyz;
+#ifdef CMI_FRAMED_FORCES
+            uint frame=kind>>2u;
+            if(frame>0u) {
+                uint transform=uForceNodes*2u+uForceSources*4u+(frame-1u)*4u;
+                vec3 boxCentre=forceData[transform].xyz;
+                vec4 rx=forceData[transform+1u],ry=forceData[transform+2u],rz=forceData[transform+3u];
+                vec3 relative=b.positionMass.xyz-boxCentre;
+                vec3 local=vec3(dot(rx.xyz,relative),dot(ry.xyz,relative),dot(rz.xyz,relative));
+                vec3 extent=vec3(dot(abs(rx.xyz),b.extentYaw.xyz),dot(abs(ry.xyz),b.extentYaw.xyz),dot(abs(rz.xyz),b.extentYaw.xyz));
+                // Sable's native airflow tests the inverse-projected AABB in plot coordinates.
+                if(any(greaterThanEqual(abs(local),vec3(rx.w,ry.w,rz.w)+extent)))continue;
+                offset=vec3(dot(rx.xyz,offset),dot(ry.xyz,offset),dot(rz.xyz,offset));
+            }
+#endif
+            float distance=length(offset);
+            // The native zero-distance case saturates through the same component clamp.
+            float acceleration=centre.w*flow.w/max(distance,1e-20);
+            vec3 difference=clamp(flow.xyz*acceleration-velocity/20.0,vec3(-5),vec3(5));
+            velocity+=difference*(2.5*uDt*20.0);
+        }
+    }
+    src[i].velocityGround.xyz=velocity;
+}

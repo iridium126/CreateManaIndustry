@@ -24,11 +24,142 @@ class PackageAuthorityRegionTest {
     private static PackageAuthorityRegion region(long tick){return new PackageAuthorityRegion(REGION,OWNER,10,1,tick);}
     private static PackageAuthorityRegion.Baseline acquire(PackageAuthorityRegion r,Target t,long tick) {
         var initial=r.offer(t,tick);assertNotNull(initial);
-        var last=r.prepared(OWNER,r.epoch(),initial.index(),t.id,initial.leaseEpoch(),initial.revision(),tick);assertNotNull(last);
-        assertTrue(r.finalReady(OWNER,r.epoch(),last.index(),t.id,last.leaseEpoch(),last.revision(),tick));return last;
+        var last=r.prepared(r.owner(),r.epoch(),initial.index(),t.id,initial.leaseEpoch(),initial.revision(),tick);assertNotNull(last);
+        assertTrue(r.finalReady(r.owner(),r.epoch(),last.index(),t.id,last.leaseEpoch(),last.revision(),tick));return last;
     }
     private static PackageDeltaCodec.Entry change(int index,int mask,PackageLease.Pose pose,int flags) {
         return new PackageDeltaCodec.Entry(index,mask,PackageDeltaCodec.quantize(pose,0,0,0,flags));
+    }
+    @Test void visibleReadyRequiresTheExactLiveFinalLeaseAndCannotReviveRetirement() {
+        var r=region(0);var t=new Target(199,5,1);var initial=r.offer(t,0);
+        assertFalse(r.visibleReady(OWNER,10,initial.index(),t.id,initial.leaseEpoch(),initial.revision(),0));
+        var last=r.prepared(OWNER,10,initial.index(),t.id,initial.leaseEpoch(),initial.revision(),0);
+        assertFalse(r.visibleReady(OWNER,10,last.index(),t.id,last.leaseEpoch(),last.revision(),0));
+        assertTrue(r.finalReady(OWNER,10,last.index(),t.id,last.leaseEpoch(),last.revision(),0));
+        assertFalse(r.visibleReady(new UUID(77,99),10,last.index(),t.id,last.leaseEpoch(),last.revision(),0));
+        assertFalse(r.visibleReady(OWNER,11,last.index(),t.id,last.leaseEpoch(),last.revision(),0));
+        assertFalse(r.visibleReady(OWNER,10,last.index()+1,t.id,last.leaseEpoch(),last.revision(),0));
+        assertFalse(r.visibleReady(OWNER,10,last.index(),new PackageLease.Identity(t.id.id(),2),last.leaseEpoch(),last.revision(),0));
+        assertFalse(r.visibleReady(OWNER,10,last.index(),t.id,last.leaseEpoch()+1,last.revision(),0));
+        assertFalse(r.visibleReady(OWNER,10,last.index(),t.id,last.leaseEpoch(),initial.revision(),0));
+        assertTrue(r.visibleReady(OWNER,10,last.index(),t.id,last.leaseEpoch(),last.revision(),0));
+        assertTrue(r.visibleReady(OWNER,10,last.index(),t.id,last.leaseEpoch(),last.revision(),1));
+        r.release(t.id);
+        assertFalse(r.visibleReady(OWNER,10,last.index(),t.id,last.leaseEpoch(),last.revision(),1));
+        var fresh=acquire(r,t,1);
+        assertFalse(r.visibleReady(OWNER,10,last.index(),t.id,last.leaseEpoch(),last.revision(),1));
+        assertTrue(r.visibleReady(OWNER,10,fresh.index(),t.id,fresh.leaseEpoch(),fresh.revision(),1));
+        t.eligible=false;
+        assertFalse(r.visibleReady(OWNER,10,fresh.index(),t.id,fresh.leaseEpoch(),fresh.revision(),1));
+        assertEquals(2,t.releases);
+    }
+    @Test void delayedVisibleReadyCannotRenewAnOverdueMovingBodyWithARegionHeartbeat() {
+        var r=region(0);var t=new Target(200,5,0);var baseline=acquire(r,t,0);
+        assertTrue(r.heartbeat(OWNER,10,2));
+        assertTrue(r.heartbeat(OWNER,10,4));
+        assertFalse(r.visibleReady(OWNER,10,baseline.index(),t.id,baseline.leaseEpoch(),baseline.revision(),4));
+        assertEquals(1,t.releases);assertNull(r.baseline(t.id));
+    }
+    @Test void pairSuppressionRequiresBothFullFinalHandshakesAndTheSameAuthority() {
+        var first=region(0);var same=new PackageAuthorityRegion(new PackageRegion(1,0,0),OWNER,11,1,0);
+        var foreign=new PackageAuthorityRegion(REGION,new UUID(77,99),12,1,0);
+        var a=new Target(101,5,1);var b=new Target(102,69,1);var c=new Target(103,6,1);
+        acquire(first,a,0);var offer=same.offer(b,0);
+        assertFalse(first.coSimulates(a.id,same,b.id,0));
+        var finalState=same.prepared(OWNER,same.epoch(),offer.index(),b.id,offer.leaseEpoch(),offer.revision(),0);
+        assertTrue(same.paused(b.id,0));assertFalse(first.coSimulates(a.id,same,b.id,0));
+        assertTrue(same.finalReady(OWNER,same.epoch(),finalState.index(),b.id,finalState.leaseEpoch(),finalState.revision(),0));
+        assertTrue(first.coSimulates(a.id,same,b.id,0));assertTrue(same.coSimulates(b.id,first,a.id,0));
+        acquire(foreign,c,0);assertFalse(first.coSimulates(a.id,foreign,c.id,0));
+        assertFalse(first.coSimulates(new PackageLease.Identity(101,2),same,b.id,0));
+        same.release(b.id);assertFalse(first.coSimulates(a.id,same,b.id,0));assertEquals(1,b.releases);assertEquals(0,a.releases);
+    }
+    @Test void expiredOrIneligibleContactIsRestoredBeforeNativeResponse() {
+        var first=region(0);var other=new PackageAuthorityRegion(REGION,OWNER,11,1,0);
+        var a=new Target(201,5,0);a.current=new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(5,5,5,1,0,0,0),0);
+        var b=new Target(202,6,1);acquire(first,a,0);acquire(other,b,0);
+        first.heartbeat(OWNER,first.epoch(),2);other.heartbeat(OWNER,other.epoch(),2);
+        assertFalse(first.coSimulates(a.id,other,b.id,3));assertEquals(1,a.releases);assertEquals(0,b.releases);
+        b.eligible=false;assertFalse(other.coSimulates(b.id,other,b.id,3));assertEquals(1,b.releases);
+        assertEquals(List.of("iron:64","address:A"),a.contents);assertEquals(List.of("iron:64","address:A"),b.contents);
+    }
+    @Test void predictedMotionPreservesExactPositionsIndependentFieldsAndAbsoluteObserverFeed() {
+        var r=region(0);var a=new Target(1,5,1);var b=new Target(2,20,1);acquire(r,a,0);acquire(r,b,0);
+        var cursor=r.observers().subscribe(39);while(r.observers().poll(cursor,64)!=null){}
+        var first=new PackageDeltaCodec.Quantized(2048,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        var zero=new PackageDeltaCodec.Quantized(0,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaPredicted(OWNER,10,1,0,1,
+                List.of(new PackageDeltaCodec.Entry(0,1,first),new PackageDeltaCodec.Entry(1,1,first)),4));
+        assertEquals(5.5,a.current.pose().x());assertEquals(20.5,b.current.pose().x());
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaPredicted(OWNER,10,1,1,2,
+                List.of(new PackageDeltaCodec.Entry(0,1,zero),new PackageDeltaCodec.Entry(1,1,zero)),4));
+        assertEquals(6,a.current.pose().x());assertEquals(21,b.current.pose().x());
+        // Position fields of this velocity-only record must be ignored, and must not reset
+        // the POSITION predictor before the next motion update.
+        var velocity=new PackageDeltaCodec.Quantized(Integer.MAX_VALUE,Integer.MIN_VALUE,19,(short)1024,(short)-512,(short)0,(short)0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaPredicted(OWNER,10,1,2,2,List.of(new PackageDeltaCodec.Entry(0,2,velocity)),4));
+        assertEquals(6,a.current.pose().x());assertEquals(1,a.current.pose().vx());
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaPredicted(OWNER,10,1,3,3,
+                List.of(new PackageDeltaCodec.Entry(0,1,zero),new PackageDeltaCodec.Entry(1,1,zero)),4));
+        assertEquals(6.5,a.current.pose().x());assertEquals(21.5,b.current.pose().x());assertEquals(-.5,a.current.pose().vy());
+        assertEquals(PackageAuthorityRegion.Result.STALE,r.deltaPredicted(OWNER,10,1,3,3,List.of(new PackageDeltaCodec.Entry(0,1,zero)),4));
+        var batch=r.observers().poll(cursor,64);assertNotNull(batch);
+        assertEquals(26624,batch.changes().getFirst().value().x());assertEquals(88064,batch.changes().getLast().value().x());
+        assertEquals(List.of("iron:64","address:A"),a.contents);
+    }
+    @Test void rejectedPredictedPrefixCannotAdvanceHistoryAndRetiredIndicesStayRetired() {
+        var r=region(0);var a=new Target(1,5,1);var b=new Target(2,20,1);acquire(r,a,0);acquire(r,b,0);
+        var half=new PackageDeltaCodec.Quantized(2048,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        var zero=new PackageDeltaCodec.Quantized(0,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaPredicted(OWNER,10,1,0,1,
+                List.of(new PackageDeltaCodec.Entry(0,1,half),new PackageDeltaCodec.Entry(1,1,half)),4));
+        var overflow=new PackageDeltaCodec.Quantized(Integer.MAX_VALUE,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        assertEquals(PackageAuthorityRegion.Result.INVALID,r.deltaPredicted(OWNER,10,1,1,2,
+                List.of(new PackageDeltaCodec.Entry(0,1,half),new PackageDeltaCodec.Entry(1,1,overflow)),4));
+        assertEquals(5.5,a.current.pose().x());assertEquals(20.5,b.current.pose().x());assertEquals(0,r.lastSequence());
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaPredicted(OWNER,10,1,1,2,
+                List.of(new PackageDeltaCodec.Entry(0,1,zero),new PackageDeltaCodec.Entry(1,1,zero)),4));
+        assertEquals(6,a.current.pose().x());assertEquals(21,b.current.pose().x());
+        r.release(a.id);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaPredicted(OWNER,10,1,2,3,
+                List.of(new PackageDeltaCodec.Entry(0,1,overflow),new PackageDeltaCodec.Entry(1,1,zero)),4));
+        assertEquals(6,a.current.pose().x());assertEquals(21.5,b.current.pose().x());assertEquals(1,a.releases);
+        var c=new Target(3,30,1);var next=acquire(r,c,3);assertEquals(2,next.index());
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaPredicted(OWNER,10,1,3,4,List.of(new PackageDeltaCodec.Entry(2,1,zero)),4));
+        assertEquals(30,c.current.pose().x()); // new lifecycle starts with zero displacement
+        var base=new PackageDeltaCodec.Quantized(Integer.MAX_VALUE,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        var cancel=new PackageDeltaCodec.Quantized(-10,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        assertEquals(Integer.MAX_VALUE,PackageDeltaCodec.mergePredictedPosition(base,new PackageDeltaCodec.Entry(0,1,cancel),10,0,0).x());
+        assertThrows(ArithmeticException.class,()->PackageDeltaCodec.mergePredictedPosition(base,new PackageDeltaCodec.Entry(0,1,zero),1,0,0));
+    }
+    @Test void relativeCommitsUseEachConfirmedBaselineAndObserverJournalRemainsAbsolute() {
+        var r=region(0);var a=new Target(1,5,1);var b=new Target(2,20,1);acquire(r,a,0);acquire(r,b,0);
+        var cursor=r.observers().subscribe(19);while(r.observers().poll(cursor,64)!=null){}
+        var residual=new PackageDeltaCodec.Quantized(2048,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        var changes=List.of(new PackageDeltaCodec.Entry(0,1,residual),new PackageDeltaCodec.Entry(1,1,residual));
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaRelative(OWNER,10,1,0,1,changes,4));
+        assertEquals(5.5,a.current.pose().x());assertEquals(20.5,b.current.pose().x());
+        var batch=r.observers().poll(cursor,64);assertNotNull(batch);assertEquals(2,batch.changes().size());
+        assertEquals(22528,batch.changes().get(0).value().x());assertEquals(83968,batch.changes().get(1).value().x());
+        assertEquals(PackageAuthorityRegion.Result.STALE,r.deltaRelative(OWNER,10,1,0,1,changes,4));
+        assertEquals(5.5,a.current.pose().x());assertNull(r.observers().poll(cursor,64));
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaRelative(OWNER,10,1,1,2,changes,4));
+        assertEquals(6,a.current.pose().x());assertEquals(21,b.current.pose().x());
+        var zero=new PackageDeltaCodec.Quantized(0,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaRelative(OWNER,10,1,2,2,List.of(new PackageDeltaCodec.Entry(0,2,zero)),4));
+        assertEquals(6,a.current.pose().x());assertEquals(List.of("iron:64","address:A"),a.contents);
+    }
+    @Test void invalidRelativeOverflowOrPrefixNeverCommitsAndLateRetirementCannotBlockLiveMembers() {
+        var r=region(0);var a=new Target(1,5,1);var b=new Target(2,20,1);acquire(r,a,0);acquire(r,b,0);
+        var small=new PackageDeltaCodec.Quantized(2048,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        var huge=new PackageDeltaCodec.Quantized(Integer.MAX_VALUE,0,0,(short)0,(short)0,(short)0,(short)0,0);
+        assertEquals(PackageAuthorityRegion.Result.INVALID,r.deltaRelative(OWNER,10,1,0,1,List.of(
+                new PackageDeltaCodec.Entry(0,1,small),new PackageDeltaCodec.Entry(1,1,huge)),4));
+        assertEquals(5,a.current.pose().x());assertEquals(20,b.current.pose().x());assertEquals(-1,r.lastSequence());
+        r.release(a.id);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaRelative(OWNER,10,1,0,1,List.of(
+                new PackageDeltaCodec.Entry(0,1,huge),new PackageDeltaCodec.Entry(1,1,small)),4));
+        assertEquals(20.5,b.current.pose().x());assertEquals(1,a.releases);
     }
     @Test void movingAcquisitionCapturesFinalCheckpointInsteadOfChasingOldAck() {
         var r=region(0);var t=new Target(1,5,PackageAuthorityRegion.GROUNDED);
@@ -46,6 +177,47 @@ class PackageAuthorityRegionTest {
         for(int tick=1;tick<=4;tick++)assertTrue(r.heartbeat(OWNER,10,tick));
         r.tick(4);assertFalse(r.paused(t.id,4));assertEquals(1,t.releases);
         assertFalse(r.finalReady(OWNER,10,last.index(),t.id,last.leaseEpoch(),last.revision(),4));
+    }
+    @Test void collisionWarmupKeepsCreateMovingButFinalHandoffStillExpiresInTwoTicks() {
+        var r=region(0);var t=new Target(1,5,PackageAuthorityRegion.GROUNDED);
+        var offered=r.offer(t,0);
+        t.current=new PackageAuthorityRegion.Snapshot(pose(7),PackageAuthorityRegion.GROUNDED);
+        r.tick(10);
+        assertFalse(r.paused(t.id,10));assertEquals(0,t.releases);
+        var finalBaseline=r.prepared(OWNER,10,offered.index(),t.id,offered.leaseEpoch(),offered.revision(),10);
+        assertNotNull(finalBaseline);assertEquals(pose(7),finalBaseline.snapshot().pose());
+        assertTrue(r.paused(t.id,10));
+        for(int tick=11;tick<=13;tick++)assertTrue(r.heartbeat(OWNER,10,tick));
+        r.tick(13);
+        assertFalse(r.paused(t.id,13));assertEquals(1,t.releases);
+        assertEquals(pose(7),t.current.pose());assertEquals(0,t.writes);
+    }
+    @Test void unansweredWarmupIsBoundedWithoutRewindingCreate() {
+        var r=region(0);var t=new Target(1,5,0);var offered=r.offer(t,0);
+        t.current=new PackageAuthorityRegion.Snapshot(pose(8),0);
+        r.tick(PackageLease.ACQUISITION_TIMEOUT_TICKS);
+        assertEquals(0,t.releases);assertFalse(r.expired(PackageLease.ACQUISITION_TIMEOUT_TICKS));
+        r.tick(PackageLease.ACQUISITION_TIMEOUT_TICKS+1);
+        assertEquals(1,t.releases);assertEquals(pose(8),t.current.pose());assertEquals(0,t.writes);
+        assertNull(r.prepared(OWNER,10,offered.index(),t.id,offered.leaseEpoch(),offered.revision(),
+                PackageLease.ACQUISITION_TIMEOUT_TICKS+1));
+    }
+    @Test void pendingWarmupCannotExtendAnExistingActiveAuthority() {
+        var r=region(0);var active=new Target(1,5,PackageAuthorityRegion.SLEEPING);
+        acquire(r,active,0);
+        var warming=new Target(2,6,0);assertNotNull(r.offer(warming,0));
+        r.tick(PackageLease.TIMEOUT_TICKS+1);
+        assertEquals(1,active.releases);assertEquals(1,warming.releases);
+        assertEquals(0,r.size());
+    }
+    @Test void cancelledFinalBaselineDoesNotShortenTheNextWarmup() {
+        var r=region(0);var first=new Target(1,5,0);var offer=r.offer(first,0);
+        var finalBaseline=r.prepared(OWNER,10,offer.index(),first.id,offer.leaseEpoch(),offer.revision(),1);
+        assertNotNull(finalBaseline);
+        assertTrue(r.release(OWNER,10,finalBaseline.index(),first.id,finalBaseline.leaseEpoch(),1));
+        var second=new Target(2,6,0);assertNotNull(r.offer(second,1));
+        r.tick(10);
+        assertEquals(0,second.releases);assertEquals(1,r.size());
     }
     @Test void cancelBeforeFreezeNeverRewindsCreatePosition() {
         var r=region(0);var t=new Target(1,5,0);var offer=r.offer(t,0);
@@ -149,5 +321,32 @@ class PackageAuthorityRegionTest {
         assertFalse(r.paused(t.id,1));assertEquals(1,t.releases);
         assertEquals(PackageAuthorityRegion.Result.STALE,r.delta(OWNER,10,1,0,1,List.of(change(base.index(),1,pose(6),1)),4));
         assertEquals(new PackageRegion(-1,33_554_432,0),PackageRegion.at(new PackageLease.Pose(-.001,2147483648.0,0,0,0,0,0)));
+    }
+    @Test void observersSeeOnlyActiveCommittedStatesAndNeverTheInvalidOrRolledBackPrefix() {
+        var r=region(0);var a=new Target(1,5,1);var offered=r.offer(a,0);
+        assertEquals(0,r.observers().size());
+        var prepared=r.prepared(OWNER,10,offered.index(),a.id,offered.leaseEpoch(),offered.revision(),0);
+        assertEquals(0,r.observers().size());
+        assertTrue(r.finalReady(OWNER,10,prepared.index(),a.id,prepared.leaseEpoch(),prepared.revision(),0));
+        var b=new Target(2,5,1);var bb=acquire(r,b,0);
+        var cursor=r.observers().subscribe(100);var replica=new PackageObserverReplica<PackageAuthorityRegion.Target>(8);
+        assertEquals(PackageObserverReplica.Result.ACCEPTED,replica.apply(r.observers().poll(cursor,8)));
+        int reads=a.reads+b.reads;
+        assertNull(r.observers().poll(cursor,8));assertEquals(reads,a.reads+b.reads);
+        var invalid=List.of(change(prepared.index(),1,pose(6),1),change(bb.index(),1,pose(65),1));
+        assertEquals(PackageAuthorityRegion.Result.INVALID,r.delta(OWNER,10,1,0,1,invalid,4));
+        assertNull(r.observers().poll(cursor,8));
+        var valid=List.of(change(prepared.index(),1,pose(6),1),change(bb.index(),1,pose(7),1));
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.delta(OWNER,10,1,0,1,valid,4));
+        var batch=r.observers().poll(cursor,8);assertEquals(2,batch.changes().size());
+        assertEquals(PackageObserverReplica.Result.ACCEPTED,replica.apply(batch));
+        assertEquals(6*4096,replica.member(prepared.index()).state().x());
+        b.fail=true;
+        assertEquals(PackageAuthorityRegion.Result.FAILED,r.delta(OWNER,10,1,1,2,
+                List.of(change(prepared.index(),1,pose(7),1),change(bb.index(),1,pose(8),1)),4));
+        batch=r.observers().poll(cursor,8);
+        assertTrue(batch.changes().stream().allMatch(e->e.mask()==PackageDeltaCodec.RELEASE));
+        assertEquals(PackageObserverReplica.Result.ACCEPTED,replica.apply(batch));assertEquals(0,replica.size());
+        assertEquals(List.of("iron:64","address:A"),a.contents);
     }
 }

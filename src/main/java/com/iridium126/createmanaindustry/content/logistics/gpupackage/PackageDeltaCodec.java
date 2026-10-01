@@ -54,6 +54,29 @@ public final class PackageDeltaCodec {
                 (e.mask & VELOCITY) != 0 ? v.vz : base.vz, (e.mask & YAW) != 0 ? v.yaw : base.yaw,
                 (e.mask & FLAGS) != 0 ? v.flags : base.flags);
     }
+    /** POSITION is an exact residual against this member's last confirmed baseline. Other
+     * fields remain absolute; release has no pose. Overflow is rejected, never truncated. */
+    public static Quantized mergeRelativePosition(Quantized base,Entry e) {
+        if(base==null)throw new IllegalArgumentException("Relative delta without baseline");
+        if(e.mask==RELEASE)throw new IllegalArgumentException("Ownership release has no pose delta");
+        Quantized v=e.value;
+        return new Quantized((e.mask&POSITION)!=0?Math.addExact(base.x,v.x):base.x,
+                (e.mask&POSITION)!=0?Math.addExact(base.y,v.y):base.y,(e.mask&POSITION)!=0?Math.addExact(base.z,v.z):base.z,
+                (e.mask&VELOCITY)!=0?v.vx:base.vx,(e.mask&VELOCITY)!=0?v.vy:base.vy,(e.mask&VELOCITY)!=0?v.vz:base.vz,
+                (e.mask&YAW)!=0?v.yaw:base.yaw,(e.mask&FLAGS)!=0?v.flags:base.flags);
+    }
+    /** Exact wire-only extrapolation of the last confirmed POSITION displacement. No time,
+     * velocity, simulation or approximate server pose inference. Check final integer range
+     * with long intermediates; unchanged fields and ownership release keep their semantics. */
+    public static Quantized mergePredictedPosition(Quantized base,Entry e,int dx,int dy,int dz) {
+        if(base==null || e.mask==RELEASE)throw new IllegalArgumentException("Predicted delta without pose baseline");
+        Quantized v=e.value;
+        return new Quantized((e.mask&POSITION)!=0?Math.toIntExact((long)base.x+dx+v.x):base.x,
+                (e.mask&POSITION)!=0?Math.toIntExact((long)base.y+dy+v.y):base.y,
+                (e.mask&POSITION)!=0?Math.toIntExact((long)base.z+dz+v.z):base.z,
+                (e.mask&VELOCITY)!=0?v.vx:base.vx,(e.mask&VELOCITY)!=0?v.vy:base.vy,(e.mask&VELOCITY)!=0?v.vz:base.vz,
+                (e.mask&YAW)!=0?v.yaw:base.yaw,(e.mask&FLAGS)!=0?v.flags:base.flags);
+    }
     public static void encode(ByteBuffer out, List<Entry> entries) {
         if (entries.size() > MAX_ENTRIES) throw new IllegalArgumentException("Delta batch too large");
         putVarInt(out, entries.size());
@@ -71,8 +94,13 @@ public final class PackageDeltaCodec {
         }
     }
     public static List<Entry> decode(ByteBuffer in) {
+        return decode(in,MAX_ENTRIES);
+    }
+    /** Downstream packets may impose a tighter allocation bound than the authority uplink. */
+    public static List<Entry> decode(ByteBuffer in,int maximumEntries) {
+        if(maximumEntries<0 || maximumEntries>MAX_ENTRIES)throw new IllegalArgumentException("Delta decode bound");
         int count = getVarInt(in);
-        if (count < 0 || count > MAX_ENTRIES) throw new IllegalArgumentException("Delta count");
+        if (count < 0 || count > maximumEntries) throw new IllegalArgumentException("Delta count");
         List<Entry> entries = new ArrayList<>(count);
         long previous = -1;
         for (int i = 0; i < count; i++) {

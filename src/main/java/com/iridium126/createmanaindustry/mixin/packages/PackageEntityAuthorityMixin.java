@@ -35,8 +35,15 @@ public abstract class PackageEntityAuthorityMixin {
     private void cmi$interaction(Player player,InteractionHand hand,CallbackInfoReturnable<InteractionResult> cir){cmi$release();}
     @Inject(method="hurt",at=@At("HEAD"))
     private void cmi$damage(DamageSource source,float amount,CallbackInfoReturnable<Boolean> cir){cmi$release();}
-    @Inject(method="push",at=@At("HEAD"))
-    private void cmi$externalPush(Entity other,CallbackInfo ci){cmi$release();}
+    @Inject(method="push",at=@At("HEAD"),cancellable=true)
+    private void cmi$externalPush(Entity other,CallbackInfo ci){
+        var self=(PackageEntity)(Object)this;
+        if(other instanceof PackageEntity box&&PackageAuthorityManager.samePhysicsOwner(self,box)){ci.cancel();return;}
+        if(!(other instanceof PackageEntity)&&PackageAuthorityManager.simulated(self))return;
+        // Native push changes both bodies. If the contact is outside a common GPU solver,
+        // materialize/release both exact leases before Create applies its original impulse.
+        cmi$release();if(other instanceof PackageEntity box)PackageAuthorityManager.release(box);
+    }
     @Inject(method="setBox",at=@At("HEAD"))
     private void cmi$contentsChanged(ItemStack box,CallbackInfo ci){cmi$release();}
     @Inject(method="addAdditionalSaveData",at=@At("HEAD"))

@@ -19,8 +19,11 @@ public final class PackageMovingCollisionSources {
     private final ClientLevel level;
     private final Thread owner = Thread.currentThread();
     private final Map<PackageMovingGeometry.Key, Base> sources = new LinkedHashMap<>();
+    /** Borrowed owner-thread view; callers must finish iteration before the next discovery. */
+    private final Collection<Base> view = Collections.unmodifiableCollection(sources.values());
     private final OptionalBridge sable;
     private final String abiError;
+    private static final int MAX_DISCOVERY_VISITS = PackageMovingCollisionGpu.MAX_STRUCTURES * 2;
     private String error;
     private Consumer<PackageMovingGeometry.Key> invalidated = key -> {};
 
@@ -44,7 +47,8 @@ public final class PackageMovingCollisionSources {
     }
 
     interface OptionalBridge {
-        void discover();
+        /** False means the scan was incomplete; no moving-scene coverage may be claimed. */
+        boolean discover(long deadlineNanos, int remainingVisits);
         Vec3 projectContaining(Entity entity, Vec3 point, boolean previous);
         boolean unsupported(BlockState state);
     }
@@ -56,12 +60,21 @@ public final class PackageMovingCollisionSources {
 
     public String error() { return error; }
 
-    public Collection<PackageMovingCollisionCache.Source> discover() {
+    public Collection<? extends PackageMovingCollisionCache.Source> discover(long deadlineNanos) {
         owner();
         error = abiError;
         try {
             sources.values().removeIf(source -> !source.alive());
+            if (!error.isEmpty() || System.nanoTime() - deadlineNanos >= 0) {
+                if (error.isEmpty()) error = "Moving structure discovery budget exceeded";
+                return view;
+            }
+            int visited = 0;
             for (var ref : ContraptionHandler.loadedContraptions.get(level).values()) {
+                if (++visited > MAX_DISCOVERY_VISITS || System.nanoTime() - deadlineNanos >= 0) {
+                    error = "Moving structure discovery budget exceeded";
+                    break;
+                }
                 var entity = ref.get();
                 if (entity == null || !entity.isAlive() || !entity.collisionEnabled() || entity.getContraption() == null) continue;
                 var key = new PackageMovingGeometry.Key(0, entity.getUUID());
@@ -70,12 +83,16 @@ public final class PackageMovingCollisionSources {
                     if (!install(key, new CreateSource(this, entity))) break;
                 }
             }
-            if (sable != null) sable.discover();
+            if (error.isEmpty() && sable != null && !sable.discover(deadlineNanos, MAX_DISCOVERY_VISITS - visited)
+                    && error.isEmpty())
+                error = "Moving sub level discovery budget exceeded";
+            if (error.isEmpty() && System.nanoTime() - deadlineNanos >= 0)
+                error = "Moving structure discovery budget exceeded";
         } catch (RuntimeException | LinkageError failure) {
             // Retaining a previous snapshot must never mean confirmed coverage.
             error = describe(failure);
         }
-        return Collections.unmodifiableCollection(new ArrayList<>(sources.values()));
+        return view;
     }
 
     private static String describe(Throwable failure) {

@@ -1,0 +1,16 @@
+// One parent capture serves every track on that structure. Per-track offset/affine
+// composition happens here rather than on the Java render thread or per package.
+layout(local_size_x=64) in;
+layout(std430,binding=0) readonly buffer Parents { vec4 parentRows[]; };
+layout(std430,binding=1) readonly buffer Origins { vec4 origins[]; };
+layout(std430,binding=2) writeonly buffer Frames { vec4 frameRows[]; };
+uniform uint uCount,uParents;
+void main() {
+    uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
+    vec4 origin=origins[i];uint parent=floatBitsToUint(origin.w),outRow=6u*i;
+    bool valid=parent<min(uParents,uint(parentRows.length()/6));
+    for(uint row=0u;row<6u;row++) {
+        vec4 r=valid?parentRows[6u*parent+row]:vec4(0);
+        r.w+=dot(r.xyz,origin.xyz);frameRows[outRow+row]=r;
+    }
+}

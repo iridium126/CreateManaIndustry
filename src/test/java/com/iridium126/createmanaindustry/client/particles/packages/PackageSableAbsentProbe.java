@@ -8,6 +8,9 @@ public final class PackageSableAbsentProbe {
             if (loader.getResource(path) != null) throw new AssertionError("Unexpected optional runtime dependency: " + path);
         }
         if (PackageMovingCollisionSources.optionalBridge(false, null) != null) throw new AssertionError("Absent Sable linked");
+        if (PackageForceClient.optionalBridge(false) != null) throw new AssertionError("Absent Sable force bridge linked");
+        if (com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageForceHooks.fanProbe(false,null) != null) throw new AssertionError("Absent shared Sable force probe linked");
+        if (com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageChainSpace.optionalBridge(false) != null) throw new AssertionError("Absent shared Sable chain bridge linked");
         System.out.println("Package Sable absent: direct bridge gate passed without Sable/companion");
     }
 }

@@ -23,6 +23,7 @@ public final class PackageAuthorityRegion {
         final Target target;
         final PackageLease lease;
         PackageDeltaCodec.Quantized acknowledged;
+        int displacementX,displacementY,displacementZ;
         int flags;
         long stateReceipt,motionTick=-1;
         double motionUsed;
@@ -34,8 +35,10 @@ public final class PackageAuthorityRegion {
     private final Map<Integer,Entry> entries=new LinkedHashMap<>();
     private final Map<PackageLease.Identity,Entry> identities=new HashMap<>();
     private final Set<Entry> pending=new LinkedHashSet<>();
+    private final PackageObserverFeed<Target> observers=new PackageObserverFeed<>();
     private long receipt,lastSequence=-1;
     private int nextIndex;
+    private int frozenPending;
     private boolean closed;
 
     public PackageAuthorityRegion(PackageRegion region,UUID owner,long epoch,long revision,long tick) {
@@ -61,7 +64,7 @@ public final class PackageAuthorityRegion {
         if(entry==null || !entry.target.eligible())return null;
         Snapshot current=entry.target.snapshot();
         if(!region.contains(current.pose()) || entry.lease.freezeBaseline(sender,leaseEpoch,offeredRevision,tick,current.pose())<0)return null;
-        entry.flags=current.flags();receipt=tick;return baseline(entry);
+        frozenPending++;entry.flags=current.flags();receipt=tick;return baseline(entry);
     }
     public boolean finalReady(UUID sender,long candidateEpoch,int index,PackageLease.Identity identity,
                               long leaseEpoch,long finalRevision,long tick) {
@@ -73,7 +76,17 @@ public final class PackageAuthorityRegion {
         var quantized=quantize(current);
         if(current.flags()!=entry.flags || !region.contains(current.pose())
                 || !entry.lease.ready(sender,leaseEpoch,finalRevision,tick,current.pose()))return false;
-        entry.acknowledged=quantized;entry.stateReceipt=tick;receipt=tick;pending.remove(entry);return true;
+        entry.acknowledged=quantized;entry.stateReceipt=tick;receipt=tick;pending.remove(entry);frozenPending--;
+        observers.activate(new PackageObserverFeed.Member<>(entry.index,entry.target.identity(),entry.lease.epoch(),
+                entry.lease.baselineRevision(),quantized,entry.target,tick));return true;
+    }
+    /** Visible publication is a later client confirmation, never inferred from FINAL_READY.
+     * The world adapter may suppress native motion only for this exact live GPU lease. */
+    public boolean visibleReady(UUID sender,long candidateEpoch,int index,PackageLease.Identity identity,
+                                long leaseEpoch,long finalRevision,long tick) {
+        Entry entry=find(sender,candidateEpoch,index,identity,tick);
+        return entry!=null&&entry.lease.epoch()==leaseEpoch&&entry.lease.baselineRevision()==finalRevision
+                &&simulated(identity,tick);
     }
     /** One heartbeat renews every stationary package without per-package iteration or position writes. */
     public boolean heartbeat(UUID sender,long candidateEpoch,long tick) {
@@ -82,11 +95,24 @@ public final class PackageAuthorityRegion {
     }
     public Result delta(UUID sender,long candidateEpoch,long candidateRevision,long sequence,long tick,
                         List<PackageDeltaCodec.Entry> changes,double maximumDisplacement) {
+        return delta(sender,candidateEpoch,candidateRevision,sequence,tick,changes,maximumDisplacement,0);
+    }
+    public Result deltaRelative(UUID sender,long candidateEpoch,long candidateRevision,long sequence,long tick,
+                        List<PackageDeltaCodec.Entry> changes,double maximumDisplacement) {
+        return delta(sender,candidateEpoch,candidateRevision,sequence,tick,changes,maximumDisplacement,1);
+    }
+    public Result deltaPredicted(UUID sender,long candidateEpoch,long candidateRevision,long sequence,long tick,
+                        List<PackageDeltaCodec.Entry> changes,double maximumDisplacement) {
+        return delta(sender,candidateEpoch,candidateRevision,sequence,tick,changes,maximumDisplacement,2);
+    }
+    private Result delta(UUID sender,long candidateEpoch,long candidateRevision,long sequence,long tick,
+                        List<PackageDeltaCodec.Entry> changes,double maximumDisplacement,int positionMode) {
         if(closed || !owner.equals(sender) || candidateEpoch!=epoch || candidateRevision!=revision
                 || expired(tick) || sequence<0 || sequence<=lastSequence)return Result.STALE;
         if(changes.isEmpty() || changes.size()>PackageDeltaCodec.MAX_ENTRIES)return Result.INVALID;
         Entry[] targets=new Entry[changes.size()];Snapshot[] next=new Snapshot[changes.size()],previous=new Snapshot[changes.size()];
         PackageDeltaCodec.Quantized[] quantized=new PackageDeltaCodec.Quantized[changes.size()];
+        List<PackageDeltaCodec.Entry> observerChanges=positionMode!=0?new ArrayList<>(changes.size()):changes;
         int lastIndex=-1;
         try {
             for(int i=0;i<changes.size();i++) {
@@ -99,17 +125,21 @@ public final class PackageAuthorityRegion {
                 if(entry.acknowledged==null)return Result.INVALID;
                 targets[i]=entry;previous[i]=entry.target.snapshot();
                 if(change.mask()==PackageDeltaCodec.RELEASE) {
+                    if(positionMode!=0)observerChanges.add(change);
                     next[i]=new Snapshot(entry.lease.committed(),entry.flags);continue;
                 }
                 if(!entry.target.eligible())return Result.INVALID;
-                var q=PackageDeltaCodec.merge(entry.acknowledged,change);Snapshot pose=decode(q,entry.lease.committed().yaw());
+                var q=positionMode==2?PackageDeltaCodec.mergePredictedPosition(entry.acknowledged,change,entry.displacementX,entry.displacementY,entry.displacementZ):
+                        positionMode==1?PackageDeltaCodec.mergeRelativePosition(entry.acknowledged,change):PackageDeltaCodec.merge(entry.acknowledged,change);
+                Snapshot pose=decode(q,entry.lease.committed().yaw());
                 double distance=distance(entry.lease.committed(),pose.pose());
                 if(!region.contains(pose.pose()) || speed(pose.pose())>32
                         || staleMotion(entry,tick) || (entry.motionTick==tick?entry.motionUsed:0)+distance>maximumDisplacement
                         || !entry.lease.canCommit(sender,entry.lease.epoch(),sequence,tick,pose.pose(),maximumDisplacement))return Result.INVALID;
                 next[i]=pose;quantized[i]=q;
+                if(positionMode!=0)observerChanges.add(new PackageDeltaCodec.Entry(change.id(),change.mask(),q));
             }
-        }catch(IllegalArgumentException invalid){return Result.INVALID;}
+        }catch(IllegalArgumentException | ArithmeticException invalid){return Result.INVALID;}
         int applied=0;
         try {
             for(;applied<targets.length;applied++)if(targets[applied]!=null && !previous[applied].equals(next[applied]))targets[applied].target.apply(next[applied]);
@@ -126,9 +156,17 @@ public final class PackageAuthorityRegion {
             double moved=distance(entry.lease.committed(),next[i].pose());
             if(!entry.lease.commit(sender,entry.lease.epoch(),sequence,tick,next[i].pose(),maximumDisplacement))
                 throw new IllegalStateException("Package commit validation changed on the server thread");
+            if((changes.get(i).mask()&PackageDeltaCodec.POSITION)!=0) {
+                entry.displacementX=quantized[i].x()-entry.acknowledged.x();
+                entry.displacementY=quantized[i].y()-entry.acknowledged.y();
+                entry.displacementZ=quantized[i].z()-entry.acknowledged.z();
+            }
             entry.acknowledged=quantized[i];entry.flags=next[i].flags();
             entry.stateReceipt=tick;entry.motionUsed=(entry.motionTick==tick?entry.motionUsed:0)+moved;entry.motionTick=tick;
         }
+        // Publish only after every adapter and lease commit succeeded. Rollback/invalid/stale
+        // batches never enter the observer journal; release callbacks already retire members.
+        observers.accepted(observerChanges,tick);
         lastSequence=sequence;receipt=tick;return Result.ACCEPTED;
     }
     public void tick(long tick) {
@@ -137,7 +175,10 @@ public final class PackageAuthorityRegion {
         // Only bounded acquisitions need individual deadlines; active leases share the region clock.
         for(Iterator<Entry> it=pending.iterator();it.hasNext();) {
             Entry entry=it.next();
-            if(!entry.target.eligible() || entry.lease.expired(tick)){it.remove();release(entry);}
+            if(!entry.target.eligible() || entry.lease.expired(tick)){
+                if(entry.lease.physicsPaused())frozenPending--;
+                it.remove();release(entry);
+            }
         }
     }
     public boolean paused(PackageLease.Identity identity,long tick) {
@@ -145,6 +186,15 @@ public final class PackageAuthorityRegion {
         if(entry==null)return false;
         if(expired(tick) || !entry.target.eligible() || entry.lease.expired(tick) || staleMotion(entry,tick)) {release(entry);return false;}
         return entry.lease.physicsPaused();
+    }
+    /** A frozen FINAL handshake is not a simulated contact body. Stale or newly ineligible
+     * leases are released before suppressing any native pair response. */
+    public boolean simulated(PackageLease.Identity identity,long tick) {
+        Entry entry=identities.get(identity);
+        return entry!=null&&entry.lease.state()==PackageLease.State.GPU_OWNED&&paused(identity,tick);
+    }
+    public boolean coSimulates(PackageLease.Identity identity,PackageAuthorityRegion other,PackageLease.Identity otherIdentity,long tick) {
+        return other!=null&&owner.equals(other.owner)&&simulated(identity,tick)&&other.simulated(otherIdentity,tick);
     }
     public void release(PackageLease.Identity identity){Entry entry=identities.get(identity);if(entry!=null)release(entry);}
     public boolean release(UUID sender,long candidateEpoch,int index,PackageLease.Identity identity,long leaseEpoch,long tick) {
@@ -156,7 +206,9 @@ public final class PackageAuthorityRegion {
     private void release(Entry entry) {
         Baseline previous=baseline(entry);
         if(!identities.remove(entry.target.identity(),entry))return;
-        entries.remove(entry.index);pending.remove(entry);
+        entries.remove(entry.index);
+        observers.retire(entry.index,entry.target.identity());
+        if(pending.remove(entry) && entry.lease.physicsPaused())frozenPending--;
         var state=entry.lease.state();
         var checkpoint=entry.lease.release(entry.target.snapshot().pose());
         if(state==PackageLease.State.GPU_OWNED) {
@@ -191,7 +243,11 @@ public final class PackageAuthorityRegion {
         boolean stationary=(entry.flags&(SLEEPING|GROUNDED))!=0 && speed(entry.lease.committed())<1e-5;
         return !stationary && (tick<entry.stateReceipt || tick-entry.stateReceipt>PackageLease.TIMEOUT_TICKS);
     }
-    public boolean expired(long tick){return tick<receipt || tick-receipt>PackageLease.TIMEOUT_TICKS;}
+    public boolean expired(long tick){
+        long allowed=!entries.isEmpty() && entries.size()==pending.size() && frozenPending==0
+                ?PackageLease.ACQUISITION_TIMEOUT_TICKS:PackageLease.TIMEOUT_TICKS;
+        return tick<receipt || tick-receipt>allowed;
+    }
     public void close(){if(closed)return;for(Entry entry:new ArrayList<>(entries.values()))release(entry);closed=true;}
     public PackageRegion region(){return region;}
     public UUID owner(){return owner;}
@@ -199,4 +255,6 @@ public final class PackageAuthorityRegion {
     public long revision(){return revision;}
     public long lastSequence(){return lastSequence;}
     public int size(){return entries.size();}
+    public int simulatedCount(){return entries.size()-pending.size();}
+    public PackageObserverFeed<Target> observers(){return observers;}
 }

@@ -16,30 +16,34 @@ import org.lwjgl.BufferUtils;
 /** Reload-time extraction from Create's actual baked models, including addon package styles. */
 public final class PackageModelCache {
     public record Style(int box,int rig) {}
-    public record Baked(Map<ResourceLocation,Style> styles,ByteBuffer vertices,ByteBuffer ranges,int meshCount) {
+    public record Baked(Map<ResourceLocation,Style> styles,ByteBuffer vertices,ByteBuffer ranges,int meshCount,ByteBuffer attributes) {
         public Baked {styles=Map.copyOf(styles);}
-        public void upload(PackagePoolGpu gpu) {gpu.uploadMeshes(vertices.duplicate(),ranges.duplicate(),meshCount);}
+        public void upload(PackagePoolGpu gpu) {gpu.uploadMeshes(vertices.duplicate(),ranges.duplicate(),meshCount,attributes.duplicate());}
     }
     private PackageModelCache() {}
 
     /** Unsupported/tinted custom models are omitted and must stay Create-owned. No world access occurs here. */
     public static Baked bake() {
         RenderSystem.assertOnRenderThread();
-        List<float[]> data=new ArrayList<>();List<int[]> spans=new ArrayList<>();
+        List<float[]> data=new ArrayList<>(),normals=new ArrayList<>();List<int[]> spans=new ArrayList<>();
         Map<ResourceLocation,Style> styles=new LinkedHashMap<>();
         List<ResourceLocation> keys=new ArrayList<>(AllPartialModels.PACKAGES.keySet());
         keys.sort(Comparator.comparing(ResourceLocation::toString));
         for(ResourceLocation key:keys) {
-            float[] box=mesh(AllPartialModels.PACKAGES.get(key)),rig=mesh(AllPartialModels.PACKAGE_RIGGING.get(key));
+            Mesh box=mesh(AllPartialModels.PACKAGES.get(key)),rig=mesh(AllPartialModels.PACKAGE_RIGGING.get(key));
             if(box==null)continue;
-            int b=append(data,spans,box),r=rig==null?PackagePoolGpu.NO_MESH:append(data,spans,rig);
+            int b=append(data,spans,box.vertices),r=rig==null?PackagePoolGpu.NO_MESH:append(data,spans,rig.vertices);
+            normals.add(box.normals);if(rig!=null)normals.add(rig.normals);
             styles.put(key,new Style(b,r));
         }
         int floats=data.stream().mapToInt(a->a.length).sum();
         ByteBuffer vertices=BufferUtils.createByteBuffer(floats*4),ranges=BufferUtils.createByteBuffer(spans.size()*16);
         for(float[] mesh:data)for(float v:mesh)vertices.putFloat(v);
         for(int[] span:spans)for(int v:span)ranges.putInt(v);
-        vertices.flip();ranges.flip();return new Baked(styles,vertices,ranges,spans.size());
+        ByteBuffer rawNormals=BufferUtils.createByteBuffer(floats);
+        for(float[] mesh:normals)for(float v:mesh)rawNormals.putFloat(v);
+        vertices.flip();ranges.flip();rawNormals.flip();
+        return new Baked(styles,vertices,ranges,spans.size(),PackageMeshAttributes.build(vertices,ranges,spans.size(),rawNormals));
     }
     private static int append(List<float[]> data,List<int[]> spans,float[] mesh) {
         int first=data.stream().mapToInt(a->a.length/12).sum();
@@ -51,7 +55,8 @@ public final class PackageModelCache {
         int index=spans.size();data.add(mesh);
         spans.add(new int[]{first,mesh.length/12,Float.floatToRawIntBits(radius),0});return index;
     }
-    private static float[] mesh(PartialModel partial) {
+    private record Mesh(float[] vertices,float[] normals) {}
+    private static Mesh mesh(PartialModel partial) {
         if(partial==null)return null;
         List<BakedQuad> quads=new ArrayList<>();RandomSource random=RandomSource.create(42);
         try {
@@ -62,7 +67,7 @@ public final class PackageModelCache {
             random.setSeed(42);quads.addAll(model.getQuads(Blocks.AIR.defaultBlockState(),null,random,ModelData.EMPTY,null));
         } catch(RuntimeException unsupported) {return null;}
         if(quads.isEmpty())return null;
-        float[] out=new float[quads.size()*6*12];int p=0;
+        float[] out=new float[quads.size()*6*12],normals=new float[quads.size()*6*3];int p=0,np=0;
         for(BakedQuad quad:quads) {
             int[] packed=quad.getVertices();if(quad.isTinted() || packed.length!=32)return null;
             for(int v:new int[]{0,1,2,2,3,0}) {
@@ -74,12 +79,14 @@ public final class PackageModelCache {
                     float n=normal==0?(j==0?quad.getDirection().getStepX():j==1?quad.getDirection().getStepY():quad.getDirection().getStepZ())
                             :(byte)(normal>>(j*8))/127f;
                     out[p++]=quad.isShade()?n:0;
+                    normals[np++]=n;
                 }
                 int color=packed[b+3];
                 for(int j=0;j<4;j++)out[p++]=((color>>(j*8))&255)/255f;
             }
         }
         for(float f:out)if(!Float.isFinite(f))return null;
-        return out;
+        for(float f:normals)if(!Float.isFinite(f))return null;
+        return new Mesh(out,normals);
     }
 }

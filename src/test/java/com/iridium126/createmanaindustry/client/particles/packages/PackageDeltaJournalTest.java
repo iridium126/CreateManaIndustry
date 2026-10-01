@@ -7,6 +7,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageDeltaCodec;
+import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageBatchDeltaCodec;
 import org.junit.jupiter.api.Test;
 
 class PackageDeltaJournalTest {
@@ -28,6 +29,25 @@ class PackageDeltaJournalTest {
         return data;
     }
     private static void workers(ArrayDeque<Runnable> tasks,PackageDeltaJournal journal){journal.prepare();while(!tasks.isEmpty())tasks.remove().run();journal.prepare();}
+    @Test void packedWorkerSortsPreservesExactGpuAckAndRetriesImmutableRelease() {
+        var tasks=new ArrayDeque<Runnable>();
+        try(var journal=PackageDeltaJournal.batchEncoded(65,new PackageDeltaJournal.Encoder(tasks::add,4),(s,b)->null)) {
+            journal.append(metadata(65),65);var input=records(0,65,false);
+            byte[] first=new byte[64],last=new byte[64];input.get(0,first).get(64*64,last);input.put(0,last).put(64*64,first);
+            assertTrue(journal.offer(9,input,1));workers(tasks,journal);
+            assertEquals(0,journal.sendReady((s,b)->false,2,4));
+            assertEquals(1,journal.sendReady((s,b)->{
+                var wire=PackageBatchDeltaCodec.decode(b);assertFalse(b.hasRemaining());assertEquals(65,wire.size());
+                assertEquals(7,wire.getFirst().id());assertEquals(Integer.MIN_VALUE,wire.getFirst().value().x());
+                assertEquals(Short.MAX_VALUE,wire.getLast().value().vy());return true;
+            },3,4));
+            var ack=journal.acknowledge(0);assertNotNull(ack);assertEquals(64,ack.records().getInt(16));
+            assertEquals(Integer.MIN_VALUE+64,ack.records().getInt(32));journal.confirm(0);
+            assertTrue(journal.offer(10,records(0,65,true),4));workers(tasks,journal);
+            assertEquals(1,journal.sendReady((s,b)->{for(var e:PackageBatchDeltaCodec.decode(b))assertEquals(16,e.mask());return true;},5,4));
+            assertNotNull(journal.acknowledge(1));journal.confirm(1);assertEquals(0,journal.pending());
+        }
+    }
     @Test void workerSortsAndEncodesWithoutChangingRetainedGpuAckRecords() {
         var tasks=new ArrayDeque<Runnable>();var journal=new PackageDeltaJournal(65,new PackageDeltaJournal.Encoder(tasks::add,4));journal.append(metadata(65),65);
         var input=records(0,65,false);byte[] first=new byte[64];input.get(0,first);byte[] last=new byte[64];input.get(64*64,last);input.put(0,last).put(64*64,first);

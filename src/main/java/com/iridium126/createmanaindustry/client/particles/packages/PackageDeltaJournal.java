@@ -34,11 +34,14 @@ public final class PackageDeltaJournal implements AutoCloseable {
         Object prepare(long sequence,ByteBuffer bytes);
     }
     public record Ack(int stamp,ByteBuffer records,long sentNanos,long queuedNanos) {}
+    @FunctionalInterface interface RecordCodec {
+        void encode(ByteBuffer raw,int count,ByteBuffer wire,long[] order,long[] identities,int[] localIds,int identityCount);
+    }
     private static final int EMPTY=0,QUEUED=1,READY=2,SENT=3,ACKED=4;
     private static final class Slot {
-        final ByteBuffer raw=ByteBuffer.allocateDirect(PackageDeltaRecords.BATCH*64).order(ByteOrder.nativeOrder());
-        final ByteBuffer wire=ByteBuffer.allocate(PackageDeltaRecords.MAX_WIRE_BYTES);
-        final long[] order=new long[PackageDeltaRecords.BATCH];
+        final ByteBuffer raw,wire;
+        final long[] order;
+        Slot(int batch,int bytes){raw=ByteBuffer.allocateDirect(batch*64).order(ByteOrder.nativeOrder());wire=ByteBuffer.allocate(bytes);order=new long[batch];}
         volatile long sequence=-1;
         long queuedNanos,sentNanos;
         int stamp,count;
@@ -55,6 +58,8 @@ public final class PackageDeltaJournal implements AutoCloseable {
     private final Slot[] slots;
     private final Encoder encoder;
     private final Preparer preparer;
+    private final RecordCodec codec;
+    private final int batch;
     private final long[] identities;
     private final int[] localIds,reserved;
     private final boolean[] releaseNotified;
@@ -68,10 +73,20 @@ public final class PackageDeltaJournal implements AutoCloseable {
         this(capacity,encoder,(sequence,bytes)->null);
     }
     public PackageDeltaJournal(int capacity,Encoder encoder,Preparer preparer) {
+        this(capacity,encoder,preparer,PackageDeltaRecords.BATCH,PackageDeltaRecords.MAX_WIRE_BYTES,PackageDeltaRecords::encode);
+    }
+    static PackageDeltaJournal batchEncoded(int capacity,Encoder encoder,Preparer preparer) {
+        return new PackageDeltaJournal(capacity,encoder,preparer,PackageDeltaRecords.BATCH,
+                PackageDeltaRecords.MAX_BATCH_WIRE_BYTES,PackageDeltaRecords::encodeBatch);
+    }
+    /** Shared bounded retention/worker scheduling; each internal event protocol owns its codec. */
+    PackageDeltaJournal(int capacity,Encoder encoder,Preparer preparer,int batch,int wireBytes,RecordCodec codec) {
         if(capacity<=0 || capacity>131072)throw new IllegalArgumentException("Journal capacity");
+        if(batch<1 || batch>512 || wireBytes<1 || wireBytes>24576)throw new IllegalArgumentException("Journal record bounds");
         this.encoder=java.util.Objects.requireNonNull(encoder);
         this.preparer=java.util.Objects.requireNonNull(preparer);
-        slots=new Slot[Math.max(4,(capacity+511)/512)];for(int i=0;i<slots.length;i++)slots[i]=new Slot();
+        this.batch=batch;this.codec=java.util.Objects.requireNonNull(codec);
+        slots=new Slot[Math.max(4,(capacity+batch-1)/batch)];for(int i=0;i<slots.length;i++)slots[i]=new Slot(batch,wireBytes);
         identities=new long[capacity*2];localIds=new int[capacity];reserved=new int[capacity];releaseNotified=new boolean[capacity];candidates.defaultReturnValue(-1);
     }
     private void open(){if(Thread.currentThread()!=owner)throw new IllegalStateException("Delta journal off owner thread");if(closed)throw new IllegalStateException("Delta journal closed");}
@@ -93,7 +108,7 @@ public final class PackageDeltaJournal implements AutoCloseable {
     }
     /** Atomically borrow a whole <=1MiB fragment. Full capacity retains its readback slot. */
     public boolean offer(int stamp,ByteBuffer fragment,long now) {
-        open();int bytes=fragment.remaining(),count=bytes/64,needed=(count+511)/512;
+        open();int bytes=fragment.remaining(),count=bytes/64,needed=(count+batch-1)/batch;
         if(stamp==0 || bytes<=0 || bytes%64!=0 || bytes>1024*1024)throw new IllegalArgumentException("Journal fragment");
         if(pending+needed>slots.length)return false;
         var input=fragment.duplicate().order(ByteOrder.nativeOrder());int start=input.position(),marked=0;
@@ -108,7 +123,7 @@ public final class PackageDeltaJournal implements AutoCloseable {
         long first=nextSequence;
         for(int i=0;i<needed;i++) {
             Slot slot=slot(nextSequence);if(slot.state!=EMPTY)throw new IllegalStateException("Journal sequence ring overwritten");
-            int n=Math.min(512,count-i*512),position=start+i*512*64;
+            int n=Math.min(batch,count-i*batch),position=start+i*batch*64;
             var source=input.duplicate();source.position(position).limit(position+n*64);
             slot.raw.clear().put(source).flip();slot.sequence=nextSequence++;slot.stamp=stamp;slot.count=n;slot.prepared=null;
             slot.queuedNanos=now;slot.state=QUEUED;pending++;
@@ -124,7 +139,7 @@ public final class PackageDeltaJournal implements AutoCloseable {
                 group.future=encoder.submit(()->{
                     for(int i=0;i<group.slots;i++) {
                         Slot slot=slot(group.first+i);
-                        PackageDeltaRecords.encode(slot.raw.asReadOnlyBuffer(),slot.count,slot.wire,slot.order,identities,localIds,group.identities);
+                        codec.encode(slot.raw.asReadOnlyBuffer(),slot.count,slot.wire,slot.order,identities,localIds,group.identities);
                         slot.prepared=preparer.prepare(slot.sequence,slot.wire.asReadOnlyBuffer());
                     }
                 });

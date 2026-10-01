@@ -34,6 +34,7 @@ public final class ClientConfig {
     private static ModConfigSpec.BooleanValue PARTICLE_SHADER_PACK_INTEGRATION;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_PATTERN_REDIRECT;
+    private static ModConfigSpec.BooleanValue PACKAGE_GPU_AUTHORITY;
 
     // ---- allay dimension (ALLVR) -------------------------------------------
 
@@ -75,6 +76,8 @@ public final class ClientConfig {
                 .comment("Redirect Hexcasting conjure particles and sprays to GPU engine.")
                 .define("hexParticleRedirect", true);
         PARTICLE_HEX_PATTERN_REDIRECT = BUILDER.comment("Render Hexcasting orbiting patterns with GPU particles.").define("hexPatternRedirect", true);
+        PACKAGE_GPU_AUTHORITY = BUILDER.comment("Experimental Create package authority opt-in. Requires matching server opt-in and complete GPU collision/render resources; visual validation is pending. Further bandwidth optimization is deferred.")
+                .define("packageGpuAuthority", false);
         BUILDER.pop();
 
         BUILDER.comment("Allay dimension (ALLVR) options.").push("allvr");
@@ -97,6 +100,7 @@ public final class ClientConfig {
     public static boolean shaderPackIntegration = true;
     public static boolean hexParticleRedirect = true;
     public static boolean hexPatternRedirect = true;
+    public static boolean packageGpuAuthority = false;
     public static boolean allvrLod = true;
 
     private ClientConfig() {}
@@ -116,6 +120,7 @@ public final class ClientConfig {
             shaderPackIntegration = PARTICLE_SHADER_PACK_INTEGRATION.get();
             hexParticleRedirect = PARTICLE_HEX_REDIRECT.get();
             hexPatternRedirect = PARTICLE_HEX_PATTERN_REDIRECT.get();
+            packageGpuAuthority = PACKAGE_GPU_AUTHORITY.get();
             allvrLod = ALLVR_LOD.get();
         }
     }

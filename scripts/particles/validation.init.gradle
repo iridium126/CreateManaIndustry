@@ -18,12 +18,145 @@ allprojects {
             mainClass = 'scripts/particles/PackageGpuValidation.java'
             if (project.hasProperty('packageBenchmark')) args '--benchmark'
             if (project.hasProperty('packageDeltaPipelineBenchmark')) args '--delta-pipeline-benchmark'
+            if (project.hasProperty('packageBatchPipelineBenchmark')) args '--delta-batch-pipeline-benchmark'
             if (project.hasProperty('packageWorldBenchmark')) args '--world-benchmark'
             if (project.hasProperty('packageStackBenchmark')) args '--stack-benchmark'
             if (project.hasProperty('packageStackStress')) args '--stack-stress'
             if (project.hasProperty('packageRangeBenchmark')) args '--range-benchmark'
             if (project.hasProperty('packageMovingOnly')) args '--moving-only'
+            if (project.hasProperty('packageChainOnly')) args '--chain-only'
+            if (project.hasProperty('packageChainFramesOnly')) args '--chain-frames-only'
+            if (project.hasProperty('packageQueryOnly')) args '--query-only'
+            if (project.hasProperty('packageForcesOnly')) args '--forces-only'
+            if (project.hasProperty('packageForcesBenchmark')) args '--forces-only', '--forces-benchmark'
+            if (project.hasProperty('packageQueryBenchmark')) args '--query-only', '--query-benchmark'
+            if (project.hasProperty('packageCheckpointOnly')) args '--checkpoint-only'
+            if (project.hasProperty('packageCheckpointBenchmark')) args '--checkpoint-only', '--checkpoint-benchmark'
+            if (project.hasProperty('packageDrawPassOnly')) args '--draw-pass-only'
+            if (project.hasProperty('packageShaderpackOnly')) args '--shaderpack-only'
+            if (project.hasProperty('packageDrawPassBenchmark')) args '--draw-pass-only', '--draw-pass-benchmark'
+            if (project.hasProperty('packageIrisBoundaryBenchmark')) args '--draw-pass-only', '--iris-boundary-benchmark'
             if (project.hasProperty('packageMovingBenchmark')) args '--moving-benchmark'
+            workingDir = project.projectDir
+        }
+        tasks.register('validatePackageLightGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageLightGpuValidation.java'
+            if (project.hasProperty('packageLightBenchmark')) args '--benchmark'
+            if (project.hasProperty('packageLightFeedbackBenchmark')) args '--feedback-benchmark'
+            if (project.hasProperty('packageLightFeedbackGlobal')) args '--feedback-global'
+            workingDir = project.projectDir
+        }
+        def packageIrisTransformer = layout.buildDirectory.file('package-iris-validation/glsl-transformer-3.0.0-pre3.jar')
+        tasks.register('extractPackageIrisTransformer', Copy) {
+            from({ zipTree(configurations.compileClasspath.files.find { it.name == 'irisshaders-455508-8242804.jar' }) })
+            include 'META-INF/jarjar/glsl-transformer-3.0.0-pre3.jar'
+            eachFile { path = name }
+            includeEmptyDirs = false
+            into layout.buildDirectory.dir('package-iris-validation')
+        }
+        tasks.register('validatePackageIrisGpu', JavaExec) {
+            dependsOn tasks.named('classes'), tasks.named('extractPackageIrisTransformer'), 'compilePackageIrisHarness'
+            // Only replace Iris's startup facade, never the native transformer.
+            // This task cannot stand in for an in-game shaderpack/mixin check.
+            classpath = files(layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter {
+                !it.name.startsWith('glsl-transformer-')
+            } + files(packageIrisTransformer)
+            mainClass = 'scripts/particles/PackageGpuValidation.java'
+            args '--shaderpack-only', '--iris-transform'
+            if (project.hasProperty('packageGlDebug')) args '--gl-debug'
+            workingDir = project.projectDir
+        }
+        tasks.register('compilePackageIrisHarness', JavaCompile) {
+            dependsOn tasks.named('classes')
+            source = fileTree('scripts/particles/iris-harness') { include '**/*.java' }
+            classpath = configurations.compileClasspath
+            destinationDirectory = layout.buildDirectory.dir('package-iris-validation/harness')
+            options.release = 21
+        }
+        tasks.register('benchmarkPackageCompute', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageGpuValidation.java'
+            args '--backend-only'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkPackageObservers', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageObserverBenchmark.java'
+            jvmArgs '-Xms512m', '-Xmx2g'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkPackageNetworkPayloads', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageNetworkPayloadBenchmark.java'
+            jvmArgs '-Xms512m', '-Xmx2g'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkPackageBatchNetwork', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageBatchNetworkBenchmark.java'
+            jvmArgs '-Xms512m', '-Xmx2g'
+            if (project.hasProperty('packageNetworkFraming')) args '--framing'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkPackageControls', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageControlBenchmark.java'
+            jvmArgs '-Xms512m', '-Xmx2g'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkPackageAckNetwork', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageAckNetworkBenchmark.java'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkPackagePredictionPipeline', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageGpuValidation.java'
+            args '--prediction-pipeline-only'
+            jvmArgs '-Xms512m', '-Xmx2g'
+            workingDir = project.projectDir
+        }
+        tasks.register('validatePackageObserverGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageObserverGpuValidation.java'
+            if (project.hasProperty('packageObserverBenchmark')) args '--benchmark'
+            workingDir = project.projectDir
+        }
+        tasks.register('validatePackageNativeObserverGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageNativeObserverGpuValidation.java'
+            if (project.hasProperty('packageNativeObserverBenchmark')) args '--benchmark'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkPackageMixed', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageGpuValidation.java'
+            args '--mixed-benchmark'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkPackageChain', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageGpuValidation.java'
+            args '--chain-benchmark'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkPackageChainContainers', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageChainContainerBenchmark.java'
             workingDir = project.projectDir
         }
     }

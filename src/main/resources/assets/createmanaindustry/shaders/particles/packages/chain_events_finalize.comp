@@ -1,0 +1,4 @@
+layout(std430,binding=2) buffer Header { uint requested,accepted,overflow,reserved; };
+layout(local_size_x=1) in;
+uniform uint uCapacity;
+void main(){accepted=min(requested,uCapacity);overflow=requested-accepted;}

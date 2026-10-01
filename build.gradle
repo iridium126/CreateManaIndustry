@@ -453,8 +453,13 @@ dependencies {
     compileOnly "dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:${flywheel_version}"
     compileOnly "com.tterrag.registrate:Registrate:${registrate_version}"
     compileOnly "net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}"
+    // Chain-container tests instantiate the resolved Create objects; their WorldAttached API
+    // comes from Ponder/Catnip. Keep this test dependency out of the published/runtime mod graph.
+    testRuntimeOnly("net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}") { transitive = false }
     implementation "maven.modrinth:3KUWeVhG:dqlL6EvF" // Veil
     compileOnly "curse.maven:irisshaders-455508:8242804"
+    // Inspect the selected Iris bytecode in contract tests without initializing the mod.
+    testRuntimeOnly("curse.maven:irisshaders-455508:8242804") { transitive = false }
     sodiumDistribution "curse.maven:sodium-394468:8756580"
     compileOnly files(sodiumCoreJar)
     // Voxy runtime adapter: compile against the locally built/cached artifact,

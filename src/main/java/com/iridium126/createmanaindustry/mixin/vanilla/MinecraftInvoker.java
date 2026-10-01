@@ -17,4 +17,7 @@ public interface MinecraftInvoker {
 
     @Invoker("startUseItem")
     void createmanaindustry$invokeStartUseItem();
+
+    @Invoker("startAttack")
+    boolean createmanaindustry$invokeStartAttack();
 }

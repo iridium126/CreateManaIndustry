@@ -154,6 +154,15 @@ public final class ParticleVertexInjector {
         }
     }
 
+    /** Package programs must fail closed; an unpatched vertex would read the wrong instance. */
+    public String patchStrict(String packVertexSource, String cmiVertexSource, String shaderName,
+                              Map<String, String> extensionValues) {
+        if (packVertexSource == null || cmiVertexSource == null || cmiVertexSource.isBlank())
+            throw new IllegalArgumentException("Missing merged vertex source");
+        return transformer.transform(packVertexSource,
+                new PatchParams(cmiVertexSource, shaderName, extensionValues));
+    }
+
     private void transform(TranslationUnit packTree, Root packRoot, PatchParams params) {
         // Step 1: parse our program as a separate tree
         TranslationUnit cmiTree = cmiTransformer.parseSeparateTranslationUnit(params.cmiVertexSource);
@@ -174,7 +183,10 @@ public final class ParticleVertexInjector {
                     && dex.getDeclaration() instanceof TypeAndInitDeclaration t) {
                 boolean clash = t.getMembers().stream()
                     .anyMatch(m -> hasGlobalDeclaration(packRoot, m.getName().getName()));
-                if (clash) continue;
+                if (clash) {
+                    if (params.strict) throw new IllegalArgumentException("Merged vertex declaration collision");
+                    continue;
+                }
             }
             decls.add(child);
         }
@@ -204,7 +216,7 @@ public final class ParticleVertexInjector {
         // Step 5: neutralise the Iris extension attributes (D1 option A)
         var dims = new HashMap<String, Integer>();
         removeExtensionAttributes(packRoot, dims);
-        replaceExtensionAttributes(packRoot, dims);
+        replaceExtensionAttributes(packRoot, dims, params.extensionValues);
     }
 
     // NOTE: the transformer field must be passed as the parser argument to
@@ -219,22 +231,31 @@ public final class ParticleVertexInjector {
                 if (node.getDeclaration() instanceof TypeAndInitDeclaration t) {
                     var found = t.getMembers().stream()
                         .filter(m -> IRIS_EXTENSION_ATTRIBUTES.contains(m.getName().getName()))
-                        .findAny();
-                    if (found.isPresent()) {
+                        .toList();
+                    if (!found.isEmpty()) {
                         if (t.getType().getTypeSpecifier() instanceof BuiltinNumericTypeSpecifier s) {
                             var d = s.type.getDimensions();
-                            dims.put(found.get().getName().getName(), d.length > 0 ? d[0] : 1);
+                            for(var member:found) dims.put(member.getName().getName(), d.length > 0 ? d[0] : 1);
                         }
-                        node.detachAndDelete();
+                        if(found.size()==t.getMembers().size()) node.detachAndDelete();
+                        else for(var member:found) member.detachAndDelete();
                     }
                 }
             }
         );
     }
 
-    private void replaceExtensionAttributes(Root root, Map<String, Integer> dims) {
+    private void replaceExtensionAttributes(Root root, Map<String, Integer> dims, Map<String, String> values) {
         for (var e : DEFAULT_REPLACEMENTS.entrySet()) {
-            root.replaceReferenceExpressions(transformer, e.getKey(), extensionAttributeReplacement(e.getKey(), dims));
+            String value = values.get(e.getKey());
+            if (value != null) {
+                // Foreign values are vec4 globals. Match the pack's declared attribute width.
+                int dimension = dims.getOrDefault(e.getKey(), e.getKey().equals("mc_Entity") ? 2 : 4);
+                value = "(" + value + ")" + switch (dimension) {
+                    case 1 -> ".x"; case 2 -> ".xy"; case 3 -> ".xyz"; default -> "";
+                };
+            } else value = extensionAttributeReplacement(e.getKey(), dims);
+            root.replaceReferenceExpressions(transformer, e.getKey(), value);
         }
     }
 
@@ -277,10 +298,23 @@ public final class ParticleVertexInjector {
     public static final class PatchParams implements JobParameters {
         public final String cmiVertexSource;
         public final String shaderName;
+        public final Map<String, String> extensionValues;
+        public final boolean strict;
 
         public PatchParams(String cmiVertexSource, String shaderName) {
             this.cmiVertexSource = cmiVertexSource;
             this.shaderName = shaderName;
+            this.extensionValues = Map.of();
+            this.strict = false;
+        }
+
+        public PatchParams(String cmiVertexSource, String shaderName, Map<String, String> extensionValues) {
+            this.cmiVertexSource = cmiVertexSource;
+            this.shaderName = shaderName;
+            this.extensionValues = Map.copyOf(extensionValues);
+            if (!IRIS_EXTENSION_ATTRIBUTES.containsAll(this.extensionValues.keySet()))
+                throw new IllegalArgumentException("Unknown Iris extension attribute");
+            this.strict = true;
         }
     }
 }

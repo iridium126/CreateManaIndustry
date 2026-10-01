@@ -30,18 +30,21 @@ final class PackageSableCollisionSources implements PackageMovingCollisionSource
         this.level = level;
     }
 
-    @Override public void discover() {
+    @Override public boolean discover(long deadlineNanos, int remainingVisits) {
         host.owner();
         var container = SubLevelContainer.getContainer(level);
-        if (container == null) return;
+        if (container == null) return true;
+        int visited = 0;
         for (ClientSubLevel sub : container.getAllSubLevels()) {
+            if (++visited > remainingVisits || System.nanoTime() - deadlineNanos >= 0) return false;
             if (sub.isRemoved()) continue;
             var key = new PackageMovingGeometry.Key(1, sub.getUniqueId());
             var old = host.source(key);
             if (!(old instanceof Source source) || source.sub != sub) {
-                if (!host.install(key, new Source(sub))) break;
+                if (!host.install(key, new Source(sub))) return false;
             }
         }
+        return true;
     }
 
     @Override public Vec3 projectContaining(Entity entity, Vec3 point, boolean previous) {

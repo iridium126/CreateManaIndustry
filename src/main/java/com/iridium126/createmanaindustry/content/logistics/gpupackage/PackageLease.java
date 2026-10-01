@@ -21,6 +21,8 @@ public final class PackageLease {
     }
 
     public static final long TIMEOUT_TICKS = 2;
+    /** Create still simulates while collision and model resources warm up. */
+    public static final long ACQUISITION_TIMEOUT_TICKS = 40;
     private final Identity identity;
     private State state = State.CREATE_OWNED;
     private UUID authority;
@@ -55,7 +57,7 @@ public final class PackageLease {
     /** Caller confirms collision coverage, model, pool allocation and the current baseline revision. */
     public boolean ready(UUID client, long candidateEpoch, long candidateBaseline, long tick, Pose current) {
         Objects.requireNonNull(current);
-        if (state != State.ACQUIRING || !matches(client, candidateEpoch) || expired(tick)
+        if (state != State.ACQUIRING || !frozen || !matches(client, candidateEpoch) || expired(tick)
                 || candidateBaseline != baselineRevision || !current.equals(committed)) return false;
         lastReceiptTick = tick;
         state = State.GPU_OWNED;
@@ -143,7 +145,8 @@ public final class PackageLease {
         long receipt=lastReceiptTick;
         // Shared server-owned receipt is O(1) per region. It cannot extend acquisition deadlines.
         if(state==State.GPU_OWNED && regionReceipt!=null)receipt=Math.max(receipt,regionReceipt.getAsLong());
-        return tick<receipt || tick-receipt>TIMEOUT_TICKS;
+        long allowed=state==State.ACQUIRING && !frozen?ACQUISITION_TIMEOUT_TICKS:TIMEOUT_TICKS;
+        return tick<receipt || tick-receipt>allowed;
     }
     private boolean matches(UUID client, long candidateEpoch) {
         return candidateEpoch == epoch && authority != null && authority.equals(client);

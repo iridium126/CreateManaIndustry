@@ -2,9 +2,14 @@
 layout(local_size_x=1) in;
 void main() {
     uint prefix=0u;
-    for(uint m=0u;m<uMeshCount;m++) {
+    for(uint m=0u;m<uMeshCount*PACKAGE_DRAW_LAYERS;m++) {
         uint n=commands[m].y;
-        commands[m]=uvec4(meshes[m].y,n,meshes[m].x,prefix);
+#ifdef CMI_SPLIT_DRAW
+        uint mesh=m<uMeshCount?m:m-uMeshCount;
+#else
+        uint mesh=m;
+#endif
+        commands[m]=uvec4(meshes[mesh].y,n,meshes[mesh].x,prefix);
         cursors[m]=prefix;prefix+=n;
     }
 }
