@@ -72,6 +72,8 @@ public final class PackageAuthorityClient {
                                 && box.getUUID().equals(offer.entityUuid())) {
                             PackageRenderOwnership.claimAfterAdmission(box,offer,active,slot);
                             control(ServerboundPackagePacket.VISIBLE_READY,active);
+                        }else if(offer.entityId()==-1||PackageLightClient.has(offer.baseline().identity())) {
+                            PackageRenderOwnership.claimLightAfterAdmission(offer,active,slot);control(ServerboundPackagePacket.VISIBLE_READY,active);
                         }else {
                             var owner=acquisitions.get(region);if(owner!=null)owner.requestRelease(offer.baseline().index());
                         }
@@ -164,8 +166,8 @@ public final class PackageAuthorityClient {
         var level=Minecraft.getInstance().level;
         if(level==null || !level.dimension().location().equals(offer.dimension()))return false;
         var entity=level.getEntity(offer.entityId());
-        if(!(entity instanceof com.simibubi.create.content.logistics.box.PackageEntity box)
-                || !box.getUUID().equals(offer.entityUuid()) || box.isRemoved())return false;
+        if(offer.entityId()!=-1&&!PackageLightClient.has(offer.baseline().identity())&&(!(entity instanceof com.simibubi.create.content.logistics.box.PackageEntity box)
+                || !box.getUUID().equals(offer.entityUuid()) || box.isRemoved()))return false;
         var p=checkpoint.baseline().snapshot().pose();double half=offer.width()*.5;
         var bounds=new net.minecraft.world.phys.AABB(p.x()-half,p.y(),p.z()-half,p.x()+half,p.y()+offer.height(),p.z()+half);
         return PackageCollisionRuntime.forLevel(level).gpuCovered(bounds.expandTowards(p.vx()*.15,p.vy()*.15,p.vz()*.15).inflate(2));
@@ -219,6 +221,7 @@ public final class PackageAuthorityClient {
         }
     }
     public static void receive(ClientboundPackagePacket packet) {
+        if(packet.action()==ClientboundPackagePacket.DETACHED){PackageLightClient.detached(packet);return;}
         var level=Minecraft.getInstance().level;
         if(level==null || !level.dimension().location().equals(packet.dimension()))return;
         var channel=channels.get(packet.region());

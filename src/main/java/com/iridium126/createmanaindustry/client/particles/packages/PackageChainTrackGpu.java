@@ -19,7 +19,7 @@ public final class PackageChainTrackGpu implements AutoCloseable {
     private final int[] programs=new int[4],headers=new int[BANKS],records=new int[BANKS];
     private final int[][] locations=new int[4][UNIFORMS.length];
     private final Capture[] captures=new Capture[BANKS];
-    private final HashSet<Identity> identities=new HashSet<>();
+    private final PackageGpuIdentityReservations identities=new PackageGpuIdentityReservations();
     private final int[] nodeFirst,nodeLength;
     private final long[] revisions;
     private final float[] thresholds;
@@ -121,7 +121,7 @@ public final class PackageChainTrackGpu implements AutoCloseable {
         for(int i=0;i<n;i++) {
             int p=v.position()+i*META_BYTES,t=v.getInt(p+16),mask=v.getInt(p+20),flags=v.getInt(p+24);
             var identity=new Identity(v.getLong(p),v.getLong(p+8));
-            if(identity.id<=0 || identity.generation<=0 || identities.contains(identity) || !added.add(identity)
+            if(identity.id<=0 || identity.generation<=0 || identities.contains(identity.id,identity.generation) || !added.add(identity)
                     || t<0 || t>=trackCount || (flags&~1)!=0 || v.getInt(p+28)!=0
                     || nodeLength[t]<32 && (mask>>>nodeLength[t])!=0)
                 throw new IllegalArgumentException("Chain identity/track/eligibility");
@@ -131,8 +131,9 @@ public final class PackageChainTrackGpu implements AutoCloseable {
             int p=v.position()+i*META_BYTES;
             lifecycle[count+i]=(byte)(v.getInt(p+24)&1);candidateTracks[count+i]=v.getInt(p+16);
             candidateIdentities[(count+i)*2]=v.getLong(p);candidateIdentities[(count+i)*2+1]=v.getLong(p+8);
+            identities.reserve(v.getLong(p),v.getLong(p+8),count+i);
         }
-        count+=n;identities.addAll(added);
+        count+=n;
     }
     /** Final checkpoint may update eligibility only while the exact identity is still prepared.
      * Never reads GL buffers back or changes the channel's candidate/identity namespace. */
@@ -159,6 +160,10 @@ public final class PackageChainTrackGpu implements AutoCloseable {
             upload(events,(long)candidate*EVENT_BYTES,stack.calloc(EVENT_BYTES));upload(flights,(long)candidate*4,stack.calloc(4));
         }
         lifecycle[candidate]=2;
+    }
+    public void retireIdentity(int candidate,long id,long generation) {
+        open();if(candidate<0 || candidate>=count || lifecycle[candidate]!=2)throw new IllegalArgumentException("Chain identity still live");
+        identities.retire(id,generation,candidate);
     }
     void validateStep(int bodies){open();if(bodies!=count || nextStep>0xffffffffL)throw new IllegalStateException("Chain body metadata/step namespace");}
     void bindStep(int trackCountLocation) {

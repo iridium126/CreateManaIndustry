@@ -42,9 +42,8 @@ public final class PackageForceClient implements AutoCloseable {
     private final ExecutorService worker=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"CMI package force BVH");t.setDaemon(true);return t;});
     private final ArrayList<PackageForceScene.Source> captured=new ArrayList<>();
     private final Set<Entity> visited=Collections.newSetFromMap(new IdentityHashMap<>());
-    private CompletableFuture<PackageForceScene.Snapshot> pending;
-    private PackageForceScene.Snapshot snapshot;
-    private long scheduled=Long.MIN_VALUE;
+    private final PackageForceSnapshots snapshots=new PackageForceSnapshots();
+    private List<PackageRegion> captureRegions=List.of();
     private boolean closed;
     public PackageForceClient(ClientLevel level){this.level=java.util.Objects.requireNonNull(level);}
     @SubscribeEvent public static void unloaded(LevelEvent.Unload e){if(e.getLevel() instanceof ClientLevel level)worlds.remove(level);}
@@ -65,10 +64,11 @@ public final class PackageForceClient implements AutoCloseable {
     /** Called once per tick from the client world runtime, never from a worker. No package scan. */
     public void prepare(double ox,double oy,double oz,Collection<PackageRegion> activeRegions){
         if(closed)throw new IllegalStateException("Package force client closed");
-        if(pending!=null&&pending.isDone()){snapshot=pending.join();pending=null;}
-        long tick=level.getGameTime();if(pending!=null||scheduled==tick)return;
+        long tick=level.getGameTime();
         var regions=List.copyOf(activeRegions);var sources=worlds.computeIfAbsent(level,k->new Sources());
         if(!sources.regions.equals(regions))sources.regions=regions;
+        if(!captureRegions.equals(regions)){captureRegions=regions;snapshots.invalidate();}
+        if(!snapshots.needsCapture(tick))return;
         sources.fans.entrySet().removeIf(row->row.getKey().source.isSourceRemoved()||tick-row.getValue().tick>1
                 ||row.getValue().source!=null&&!PackageForceScene.intersectsRegions(row.getValue().source,regions,QUERY_MARGIN));
         captured.clear();visited.clear();var bridge=bridge(sources);
@@ -86,8 +86,7 @@ public final class PackageForceClient implements AutoCloseable {
         }
         for(var fan:sources.fans.values()){if(fan.error!=null)throw new IllegalStateException(fan.error);captured.add(fan.source);}
         if(captured.size()>PackageForceScene.MAX_SOURCES)throw new IllegalStateException("Package force source capacity; restoring Create");
-        var immutable=List.copyOf(captured);scheduled=tick;
-        pending=CompletableFuture.supplyAsync(()->PackageForceScene.bake(tick,immutable,ox,oy,oz),worker);
+        snapshots.capture(tick,captured,ox,oy,oz,worker);
     }
     private static boolean eligibleEntity(Entity e) {
         if(e instanceof PackageEntity||!e.isAlive()||e.isRemoved()||e.noPhysics||e.isSpectator()||!e.isPushable()
@@ -96,7 +95,7 @@ public final class PackageForceClient implements AutoCloseable {
         if(team!=null&&(team.getCollisionRule()==Team.CollisionRule.NEVER||team.getCollisionRule()==Team.CollisionRule.PUSH_OTHER_TEAMS))return false;
         return e.getBoundingBox().getSize()>0;
     }
-    public boolean ready(){return !closed&&snapshot!=null&&level.getGameTime()>=snapshot.tick()&&level.getGameTime()-snapshot.tick()<=1;}
-    public PackageForceScene.Snapshot snapshot(){if(!ready())throw new IllegalStateException("Package force capture overdue; restoring Create");return snapshot;}
-    @Override public void close(){if(closed)return;closed=true;if(pending!=null)pending.cancel(false);pending=null;snapshot=null;worker.shutdownNow();}
+    public boolean ready(){return !closed&&snapshots.ready(level.getGameTime());}
+    public PackageForceScene.Snapshot snapshot(){if(closed)throw new IllegalStateException("Package force client closed");return snapshots.snapshot(level.getGameTime());}
+    @Override public void close(){if(closed)return;closed=true;snapshots.clear();worker.shutdownNow();}
 }

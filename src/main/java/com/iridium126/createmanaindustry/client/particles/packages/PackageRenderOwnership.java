@@ -29,24 +29,16 @@ public final class PackageRenderOwnership {
     /** The caller must already have verified GPU admission for the matching committed draw. */
     public static void claimAfterAdmission(PackageEntity entity,ClientboundPackagePacket offer,
                                            ClientboundPackagePacket active,int slotPlusOne) {
-        if(!(entity.level() instanceof ClientLevel level) || level!=Minecraft.getInstance().level
-                || offer==null || active==null || offer.action()!=ClientboundPackagePacket.OFFER
-                || active.action()!=ClientboundPackagePacket.ACTIVE || slotPlusOne<=0
-                || entity.getId()!=offer.entityId() || !entity.getUUID().equals(offer.entityUuid())
-                || !level.dimension().location().equals(offer.dimension())
-                || !offer.dimension().equals(active.dimension()) || !offer.region().equals(active.region())
-                || offer.epoch()!=active.epoch() || offer.regionRevision()!=active.regionRevision()
-                || offer.baseline().index()!=active.baseline().index()
-                || !offer.baseline().identity().equals(active.baseline().identity())
-                || offer.baseline().leaseEpoch()!=active.baseline().leaseEpoch())
-            throw new IllegalArgumentException("Package render admission");
-        Claim claim=new Claim(level,entity.getId(),entity.getUUID(),active.region(),active.epoch(),active.baseline().identity(),active.baseline().index(),active.baseline().leaseEpoch(),active.baseline().revision());
-        recoveries.remove(claim.identity);
-        Claim previous=byEntity.put(entity.getId(),claim);
-        if(previous!=null){byIdentity.remove(previous.identity,previous);recoveries.remove(previous.identity);}
-        Claim duplicate=byIdentity.put(claim.identity,claim);
-        if(duplicate!=null && duplicate!=claim)byEntity.remove(duplicate.entityId,duplicate);
+        if(!(entity.level() instanceof ClientLevel level)||entity.getId()!=offer.entityId()||!entity.getUUID().equals(offer.entityUuid()))throw new IllegalArgumentException("Package entity admission");
+        claimLightAfterAdmission(offer,active,slotPlusOne);
     }
+    public static void claimLightAfterAdmission(ClientboundPackagePacket offer,ClientboundPackagePacket active,int slotPlusOne) {
+        var level=Minecraft.getInstance().level;
+        if(level==null||offer.action()!=ClientboundPackagePacket.OFFER||active.action()!=ClientboundPackagePacket.ACTIVE||slotPlusOne<=0||!level.dimension().location().equals(offer.dimension())||!offer.dimension().equals(active.dimension())||!offer.region().equals(active.region())||offer.epoch()!=active.epoch()||offer.regionRevision()!=active.regionRevision()||offer.baseline().index()!=active.baseline().index()||!offer.baseline().identity().equals(active.baseline().identity())||offer.baseline().leaseEpoch()!=active.baseline().leaseEpoch())throw new IllegalArgumentException("Package light admission");
+        var claim=new Claim(level,offer.entityId(),offer.entityUuid(),active.region(),active.epoch(),active.baseline().identity(),active.baseline().index(),active.baseline().leaseEpoch(),active.baseline().revision());
+        recoveries.remove(claim.identity);if(claim.entityId>=0){var old=byEntity.put(claim.entityId,claim);if(old!=null)byIdentity.remove(old.identity,old);}var old=byIdentity.put(claim.identity,claim);if(old!=null&&old.entityId>=0)byEntity.remove(old.entityId,old);
+    }
+    public static boolean hasIdentity(PackageLease.Identity identity){var claim=byIdentity.get(identity);return claim!=null&&claim.level==Minecraft.getInstance().level;}
     public static void serverReleased(PackageRegion region,long epoch,PackageAuthorityRegion.Baseline baseline) {
         if(baseline==null)return;var claim=byIdentity.get(baseline.identity());
         if(claim==null||claim.epoch!=epoch||!claim.region.equals(region)||claim.index!=baseline.index()

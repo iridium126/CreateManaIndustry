@@ -36,6 +36,8 @@ public final class PackageShaderHook {
     public static String status(){return mainStatus+"; shadow="+shadowStatus+(COMPILER.error().isEmpty()?"":"; "+COMPILER.error())
             +"; main draw "+MAIN_TIMING.report()+"; shadow draw "+SHADOW_TIMING.report();}
     public static void reload(){reloadRequested=true;}
+    /** Identity-only world boundary check; never compiles or mutates GL state. */
+    public static Object pipelineBoundary(){return Iris.getPipelineManager().getPipelineNullable();}
     public static void close(){try{COMPILER.close();}finally{try{MAIN_TIMING.close();}finally{SHADOW_TIMING.close();state=null;failedPipeline=null;reloadRequested=false;mainStatus=shadowStatus="off";}}}
     public static boolean usable(){return !reloadRequested && ClientConfig.shaderPackIntegration && failedPipeline!=Iris.getPipelineManager().getPipelineNullable() && COMPILER.usable();}
     /** Render-thread preparation. Tick/network paths only call usable(), never compile. */

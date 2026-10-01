@@ -185,7 +185,9 @@ public class CreateManaIndustry {
                 ClientboundMistSyncPacket.STREAM_CODEC,
                 ClientboundMistSyncPacket::handle);
         // Optional development transport: old/unprepared clients continue using Create.
-        PayloadRegistrar packageRegistrar=event.registrar("gpu-packages-7").optional();
+        PayloadRegistrar packageRegistrar=event.registrar("gpu-packages-8").optional();
+        packageRegistrar.playToClient(com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundLightPackagePacket.TYPE,com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundLightPackagePacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundLightPackagePacket::handle);
+        packageRegistrar.playToServer(com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundLightPackageInteraction.TYPE,com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundLightPackageInteraction.STREAM_CODEC,com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundLightPackageInteraction::handle);
         packageRegistrar.playToServer(
                 com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket.TYPE,
                 com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket.STREAM_CODEC,
@@ -198,7 +200,7 @@ public class CreateManaIndustry {
                 com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageAckPacket.TYPE,
                 com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageAckPacket.STREAM_CODEC,
                 com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageAckPacket::handle);
-        PayloadRegistrar observerRegistrar=event.registrar("gpu-package-observers-3").optional();
+        PayloadRegistrar observerRegistrar=event.registrar("gpu-package-observers-4").optional();
         observerRegistrar.playToServer(
                 com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackageObserverPacket.TYPE,
                 com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackageObserverPacket.STREAM_CODEC,

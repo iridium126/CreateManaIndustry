@@ -12,10 +12,8 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
-/** GPU selects an exact admitted package; Create/Minecraft still execute the real native
- * client/server interaction, hooks, inventory and damage. No proxy entity or extra pose packet.
- * This bridge requires the retained native stream; downlink suppression needs separate handback
- * and interaction synchronization before it can replace that transport. */
+/** GPU selects an exact admitted package. Detached packages use stable record interactions;
+ * packages still awaiting entity removal use their existing native interaction entry point. */
 public final class PackageFreeInteractionClient implements AutoCloseable {
     private record Context(ClientLevel level,LocalPlayer player,Entity camera,HitResult fallback,
                            int slot,ItemStack main,ItemStack off,PackageChainInteractionClient chain,PackagePoseQueryGpu.Ray chainRay) {}
@@ -179,11 +177,19 @@ public final class PackageFreeInteractionClient implements AutoCloseable {
                 ||!ItemStack.isSameItemSameComponents(mc.player.getOffhandItem(),context.off))return;
         PackageEntity selected=null;
         var offer=result!=null?PackageAuthorityClient.freePickOffer(result):null;
+        if(offer!=null && (offer.entityId()==-1||PackageLightClient.has(offer.baseline().identity()))) {
+            var hand=mc.player.getMainHandItem().isEmpty()?net.minecraft.world.InteractionHand.MAIN_HAND:net.minecraft.world.InteractionHand.OFF_HAND;
+            if(input.action()==PackageFreePickQueue.Action.ATTACK||mc.player.getItemInHand(hand).isEmpty()) {
+                net.neoforged.neoforge.network.PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundLightPackageInteraction(offer.baseline().identity(),input.action()==PackageFreePickQueue.Action.ATTACK,hand));mc.player.swing(hand);
+            }
+            return;
+        }
         if(offer!=null) {
             var entity=mc.level.getEntity(offer.entityId());
             if(entity instanceof PackageEntity box&&!box.isRemoved()&&PackageRenderOwnership.matchesAuthority(box,offer)
                     &&box.getBbWidth()==offer.width()&&box.getBbHeight()==offer.height())selected=box;
         }
+        if(selected==null&&(chainPick==null||!chainPick.present())&&PackageLightClient.input(input.action()==PackageFreePickQueue.Action.ATTACK))return;
         var hit=mc.hitResult;var crosshair=mc.crosshairPickEntity;
         Vec3 nativePosition=selected==null?null:selected.position();float nativeYaw=selected==null?0:selected.getYRot();
         Vec3 displayed=selected==null?null:new Vec3(ox+result.ptx(),oy+result.pty()-result.halfHeight(),oz+result.ptz());
@@ -191,7 +197,7 @@ public final class PackageFreeInteractionClient implements AutoCloseable {
         if(injected==null)return;
         replaying=true;replayContext=context;replayChainPick=chainCompleted?chainPick:PackagePoseQueryGpu.Result.NONE;
         try {
-            // Materialize just the selected native entity for interactAt's relative hit vector
+            // Update the existing pre-detach entity for interactAt's relative hit vector
             // and client callbacks. Preserve vanilla's independent relative packet codec base.
             if(selected!=null){selected.setPos(displayed.x,displayed.y,displayed.z);selected.setYRot(result.previousTargetYaw());}
             mc.hitResult=injected;mc.crosshairPickEntity=selected;

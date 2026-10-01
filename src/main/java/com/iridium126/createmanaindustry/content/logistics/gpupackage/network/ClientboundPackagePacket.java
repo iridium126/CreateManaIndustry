@@ -16,18 +16,18 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 public record ClientboundPackagePacket(int action,ResourceLocation dimension,PackageRegion region,long epoch,
         long regionRevision,long sequence,PackageAuthorityRegion.Baseline baseline,int entityId,UUID entityUuid,
         ResourceLocation model,float width,float height) implements CustomPacketPayload {
-    public static final int OFFER=0,FINAL_BASELINE=1,ACTIVE=2,RELEASED=3,ACK=4;
+    public static final int OFFER=0,FINAL_BASELINE=1,ACTIVE=2,RELEASED=3,ACK=4,DETACHED=5;
     public static final Type<ClientboundPackagePacket> TYPE=new Type<>(ResourceLocation.fromNamespaceAndPath(CreateManaIndustry.MODID,"package_down"));
     public static final StreamCodec<RegistryFriendlyByteBuf,ClientboundPackagePacket> STREAM_CODEC=StreamCodec.of(
             ClientboundPackagePacket::encode,ClientboundPackagePacket::decode);
     private static final ClientPayloadHandler<ClientboundPackagePacket> CLIENT=new ClientPayloadHandler<>();
     public ClientboundPackagePacket {
-        if(action<0 || action>ACK || dimension==null || region==null || epoch<=0 || regionRevision<=0)
+        if(action<0 || action>DETACHED || dimension==null || region==null || epoch<=0 || regionRevision<=0)
             throw new IllegalArgumentException("Package server envelope");
         if(action==ACK) {if(sequence<0)throw new IllegalArgumentException("Package ACK sequence");}
         else if(baseline==null || baseline.index()<0 || baseline.leaseEpoch()<=0 || baseline.revision()<=0)
             throw new IllegalArgumentException("Package identity baseline");
-        if(action==OFFER && (entityId<0 || entityUuid==null || model==null || !Float.isFinite(width) || !Float.isFinite(height)
+        if(action==OFFER && (entityId< -1 || entityUuid==null || model==null || !Float.isFinite(width) || !Float.isFinite(height)
                 || width<=0 || height<=0 || width>16 || height>16))throw new IllegalArgumentException("Package model/dimensions");
     }
     private static void encode(RegistryFriendlyByteBuf b,ClientboundPackagePacket p) {
@@ -47,7 +47,7 @@ public record ClientboundPackagePacket(int action,ResourceLocation dimension,Pac
             int action=b.readUnsignedByte();ResourceLocation dimension=b.readResourceLocation();PackageRegion region=ServerboundPackagePacket.readRegion(b);
             long epoch=b.readVarLong(),revision=b.readVarLong();
             if(action==ACK)return new ClientboundPackagePacket(action,dimension,region,epoch,revision,b.readVarLong(),null,0,null,null,0,0);
-            if(action<OFFER || action>RELEASED)throw new IllegalArgumentException("Package server action");
+            if(action<OFFER || action>DETACHED || action==ACK)throw new IllegalArgumentException("Package server action");
             int index=b.readVarInt();var identity=new PackageLease.Identity(b.readVarLong(),b.readVarLong());
             long lease=b.readVarLong(),base=b.readVarLong();
             var pose=new PackageLease.Pose(0,0,0,0,0,0,0);int flags=0;

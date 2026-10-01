@@ -41,6 +41,19 @@ class PackageSimulationClockTest {
         var clock=new PackageSimulationClock();clock.advance(20,1,false);
         assertEquals(PackageSimulationClock.Advance.OVERDUE,clock.advance(19,2,false));
     }
+    @Test void unfinishedInputDoesNotConsumeTimeOrPosePair() {
+        var clock=new PackageSimulationClock();clock.advance(0,10,false);
+        assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(50_000_000,11,false,false));
+        assertEquals(1,clock.interpolation());
+        assertEquals(PackageSimulationClock.Advance.STEP,clock.advance(60_000_000,11,false,true));
+        assertEquals(.2f,clock.interpolation(),1e-6f);
+        assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(65_000_000,11,false,true));
+    }
+    @Test void unfinishedInputStillHasABoundedBacklog() {
+        var clock=new PackageSimulationClock();clock.advance(0,10,false);
+        assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(100_000_000,12,false,false));
+        assertEquals(PackageSimulationClock.Advance.OVERDUE,clock.advance(100_000_001,12,false,false));
+    }
     @Test void nanoTimeOriginAndWrapAreNotAbsoluteTime() {
         var clock=new PackageSimulationClock();clock.advance(-100_000_000,1,false);
         assertEquals(PackageSimulationClock.Advance.STEP,clock.advance(-50_000_000,2,false));

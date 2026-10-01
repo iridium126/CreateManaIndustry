@@ -772,15 +772,17 @@ public class PackageGpuValidation {
             rejected=false;try{PackageChainUpload.checkpoint(pose,new PackageLease.Identity(900001,600002),track,96,64,192);}
             catch(IllegalArgumentException expected){rejected=true;}check(rejected,"stale checkpoint reused a native generation");
             acquisition.receive(active);acquisition.receive(finalPacket);acquisition.pump(64,(o,c)->true);check(visible.size()==1,"late chain ACTIVE resurrected released package");
-            acquisition.receive(chainCheckpoint(ClientboundChainPackagePacket.OFFER,18,900001,19,1,3));acquisition.pump(64,(o,c)->true);
-            check(physics.chainCount()==1 && acquisition.pendingCount()==0,"retired identity reused a sidecar candidate");
+            check(!pool.reservesIdentity(900001,600001),"retired chain kept its global identity reservation");
+            acquisition.receive(chainCheckpoint(ClientboundChainPackagePacket.OFFER,18,900001,19,1,3));acquisition.pump(64,(o,c)->false);
+            check(physics.chainCount()==1 && acquisition.pendingCount()==1,"retired identity could not begin a fresh sidecar lifecycle");
+            acquisition.receive(chainCheckpoint(ClientboundChainPackagePacket.RELEASED,18,900001,19,1,3));acquisition.pump(64,(o,c)->true);
             // A RELEASE arrives while hidden admission is in flight; stale confirmation must not freeze Create.
             var canceled=chainCheckpoint(ClientboundChainPackagePacket.OFFER,19,900003,19,1,3);
             acquisition.receive(canceled);acquisition.pump(64,(o,c)->true);chainAcquisitionFrame(physics,pool,acquisition,particles,counter,7,true);
             acquisition.receive(chainCheckpoint(ClientboundChainPackagePacket.RELEASED,19,900003,19,1,3));acquisition.pump(64,(o,c)->true);
             chainAcquisitionFrame(physics,pool,acquisition,particles,counter,8,true);GL11.glFinish();acquisition.pump(64,(o,c)->true);
             chainAcquisitionFrame(physics,pool,acquisition,particles,counter,9,true);GL11.glFinish();acquisition.pump(64,(o,c)->true);
-            check(released.equals(List.of(17,19)) && controls.stream().filter(x->x==ServerboundChainPackagePacket.PREPARED).count()==1,"stale hidden admission froze a released chain object");
+            check(released.equals(List.of(17,18,19)) && controls.stream().filter(x->x==ServerboundChainPackagePacket.PREPARED).count()==1,"stale hidden admission froze a released chain object");
             check(checkpoints.size()==1,"never-activated chain read back a prepared pendulum");
             for(int n=0;n<8;n++)acquisition.receive(chainCheckpoint(ClientboundChainPackagePacket.OFFER,30+n,910001+n,19,1,3));
             acquisition.pump(64,(o,c)->true);
@@ -2639,29 +2641,35 @@ public class PackageGpuValidation {
             check(visible.size()==1,"late ACTIVE/final baseline resurrected retired identity");
             var reused=acquisitionPacket(offer,ClientboundPackagePacket.OFFER,18,900001,19,1);
             acquisition.receive(reused);acquisition.pump(64,(o,c)->true);
-            check(physics.freeCount()==1 && acquisition.pendingCount()==0 && controls.getLast()==ServerboundPackagePacket.RELEASE,
-                    "retired stable identity reused an unretired epoch attachment");
+            check(physics.freeCount()==2 && acquisition.pendingCount()==1,
+                    "retired stable identity could not enter a new immutable candidate");
+            check(pool.reservesIdentity(reused.baseline().identity().id(),reused.baseline().identity().generation()),"new lease reservation missing");
+            acquisition.receive(acquisitionPacket(reused,ClientboundPackagePacket.RELEASED,18,900001,19,1));
+            acquisition.pump(64,(o,c)->true);
+            acquisitionFrame(physics,pool,acquisition,particles,counter,ox,oy,oz,7,true);
+            GL11.glFinish();acquisition.pump(64,(o,c)->true);
+            check(released.equals(List.of(17,18)),"reacquired identity did not retire exactly once");
             var neverAllocated=acquisitionPacket(offer,ClientboundPackagePacket.OFFER,19,900003,19,1);
             acquisition.receive(neverAllocated);acquisition.receive(acquisitionPacket(neverAllocated,ClientboundPackagePacket.RELEASED,19,900003,19,1));
-            acquisition.pump(64,(o,c)->true);check(physics.freeCount()==1 && released.equals(List.of(17,19)),"preflight release allocated a body");
+            acquisition.pump(64,(o,c)->true);check(physics.freeCount()==2 && released.equals(List.of(17,18,19)),"preflight release allocated a body");
             var aborted=acquisitionPacket(offer,ClientboundPackagePacket.OFFER,20,900004,19,1);
             acquisition.receive(aborted);acquisition.pump(64,(o,c)->true);int before=controls.size();
-            acquisitionFrame(physics,pool,acquisition,particles,counter,ox,oy,oz,7,false);
+            acquisitionFrame(physics,pool,acquisition,particles,counter,ox,oy,oz,8,false);
             GL11.glFinish();acquisition.pump(64,(o,c)->true);check(controls.size()==before,"failed frame published PREPARED");
-            acquisitionFrame(physics,pool,acquisition,particles,counter,ox,oy,oz,8,true);
+            acquisitionFrame(physics,pool,acquisition,particles,counter,ox,oy,oz,9,true);
             acquisition.receive(acquisitionPacket(aborted,ClientboundPackagePacket.RELEASED,20,900004,19,1));
             GL11.glFinish();acquisition.pump(64,(o,c)->true);
-            check(controls.size()==before && released.size()==2,"superseded admission published a partial transition");
-            acquisitionFrame(physics,pool,acquisition,particles,counter,ox,oy,oz,9,true);
+            check(controls.size()==before && released.size()==3,"superseded admission published a partial transition");
+            acquisitionFrame(physics,pool,acquisition,particles,counter,ox,oy,oz,10,true);
             GL11.glFinish();acquisition.pump(64,(o,c)->true);
-            check(released.equals(List.of(17,19,20)) && acquisition.pendingCount()==0,"release during pending admission was lost");
+            check(released.equals(List.of(17,18,19,20)) && acquisition.pendingCount()==0,"release during pending admission was lost");
             var sparseIndex=acquisitionPacket(offer,ClientboundPackagePacket.OFFER,32768,900099,19,1);
             int allocated=physics.freeCount();acquisition.receive(sparseIndex);acquisition.pump(64,(o,c)->false);
             check(acquisition.pendingCount()==1 && physics.freeCount()==allocated,
                     "sparse server local ID was confused with dense GPU candidate capacity");
             acquisition.requestRelease(32768);
             physics.stepFree(.05f);physics.publish();rejected=false;
-            try{acquisition.committed(10);}catch(IllegalStateException expected){rejected=true;}
+            try{acquisition.committed(11);}catch(IllegalStateException expected){rejected=true;}
             check(rejected,"admission accepted physics buffers different from the committed draw input");
         }finally{GL15.glDeleteBuffers(particles);GL15.glDeleteBuffers(counter);}
     }

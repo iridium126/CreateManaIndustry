@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /** Keep the Flywheel instance allocated so handback can restore it next frame. */
 @Mixin(value=PackageVisual.class,remap=false)
 public abstract class PackageVisualOwnershipMixin extends AbstractEntityVisual<PackageEntity> {
-    @Shadow @Final public TransformedInstance instance=null;
+    @Shadow @Final public TransformedInstance instance;
     protected PackageVisualOwnershipMixin(VisualizationContext context,PackageEntity entity,float partialTick) {
         super(context,entity,partialTick);
     }

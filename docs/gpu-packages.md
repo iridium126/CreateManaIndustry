@@ -3,6 +3,8 @@
 
 ## 当前状态（2026-10-01）
 
+**自由包裹轻量记录更新：** 可见接管成功后移除 `PackageEntity`，库存、身份及姿态转存 `PackageLightStore`。拾取、机器查询、保存重载和超时恢复直接操作记录，不恢复实体；观察端改用自定义 GPU 观察流。GPU 身份预留在精确退役确认后释放，允许新候选重新接管；Flywheel shadow 的空初始化覆盖已修复，光影 pipeline 更换先撤销旧模拟。协议升级为 `gpu-packages-8` / `gpu-package-observers-4`。实现、兼容入口和验证范围见[轻量记录说明](gpu-light-package-records.md)。下文关于保留自由包裹实体、原生观察流和交还实体的段落保留为此前阶段记录，不再描述当前自由包裹路径。
+
 **最新范围调整：网络带宽优化及“总带宽 ≤ 原生 1.5 倍”验收移至后续版本，不再阻塞本次目标。** 保留当前已验证的相对已确认基线增量、批量 ACK、控制消息合并、可见确认后的权威原生重复下行抑制及原生观察者复制。未选择 CPU p95 收益不稳定的实验 predicted 模式。已移除带宽门禁；双端实验 opt-in、协议协商、模型/碰撞/力源覆盖、通用槽位、精确身份、成功可见提交、超时和回退检查仍执行。配置默认关闭。以下带宽数字是历史组件证据，不表示当前版本有完整总带宽验收结果。
 
 移动锁链本轮补充：服务端权威选举和拾取使用 Sable 父结构世界/局部坐标边界；区域随当前姿态投影，射线逆变换到原局部盒，父 UUID 改变撤销旧 lease。不可变仿射 capture 已与实际 companion 对照，详情见[锁链坐标边界](gpu-chain-authority.md)。GPU 已实现每 track 的 96 字节父姿态表、普通/Iris 顶点、缩放剔除与 logical pose 拾取；矩阵扩展随 admission/池一起 commit，保持 64 字节粒子、20 vec4 header 及三个 Iris TBO。运行时每提交代采集一次 Sable render/logical 父姿态，同代用于链帧上传及世界灯光探测；缺少 light-atlas 覆盖时不接管。131072 全容量和独立 CPU 顶点参考已验证，见[父姿态内部契约](gpu-package-chain-frames.md)。链路 readiness 只在实验开关、双向通道、资源创建和包裹级 admission 成功时开放；实际移动结构游戏验证仍待完成。
@@ -23,7 +25,7 @@ v4 将成功提交的 ACK 在服务端 tick 结束时合并为精确序号区间
 
 **自由包裹与锁链包裹的客户端 GPU 路径已接入，完整计划尚未验收。** 自由包裹有最终基线、GPU 物理、提交确认、Renderer/Flywheel 所有权、native observer 与增量通道；锁链包裹有链路握手、GPU acquisition/更新/绘制、服务端事务及 Sable 父姿态。双端实验 opt-in 后，模型、碰撞/力源覆盖、通用槽位和成功可见提交仍逐项门控；不符合条件的包裹继续由 Create 管理。客户端 travel 只对已确认可见所有权的实体暂停，保留交互及 vanilla 复制生命周期。Iris 主渲染/阴影代码路径已接线，实际 shaderpack 画面、游戏 Mixin、多人与完整玩法/性能验收仍待用户执行；不据组件结果声称达到 131072 活动包裹整帧 60 FPS。
 
-`PackageWorldRuntime` 在引擎 GL 边界惰性创建模型与共享 mixed solver，每自由区域创建 detector/journal/admission ring，最多八个区域；协商 chain payload 时预留链域，首次 TRACK 附加独立 chain channel/acquisition。GL 初始化必须预热。网络入口只排队，过量或没有就绪 runtime 的请求明确拒绝。运行时使用 20 Hz 墙钟物理与逐帧插值，一对动态结构 previous/current pose 不重复使用；积压超过 100ms 交还 Create。静态 section 与 Create/Sable 动态几何都来自已准备的版本化 GPU view，读取缺失或不支持数据时输出回退标记。清空、重载、预览、换世界、关闭主开关、shaderpack 程序不可用、失败帧及通道失败都会恢复原生成员、关闭确认/传输资源，再销毁 solver；不会等待 fence 或 worker。重试间隔五秒，区域或链 session epoch/revision 迁移当前使用全局回退重建，尚未实现无缝迁移。CHAIN_READY 由实验开关、四个链路通道和共享资源初始化结果共同决定；尚无无缝区域迁移。
+`PackageWorldRuntime` 在引擎 GL 边界惰性创建模型与共享 mixed solver，每自由区域创建 detector/journal/admission ring，最多八个区域；协商 chain payload 时预留链域，首次 TRACK 附加独立 chain channel/acquisition。GL 初始化必须预热。网络入口只排队，过量或没有就绪 runtime 的请求明确拒绝。运行时使用 20 Hz 墙钟物理与逐帧插值，一对动态结构 previous/current pose 不重复使用；物理时钟在实际有活动模拟后起算，不累计未接管阶段的初始化耗时。力源捕获在客户端 tick 更新，渲染边界仍负责初次捕获和兴趣区域变更；检查就绪时非阻塞接收已完成 BVH，区域变更使旧结果失效。力源暂未就绪时保留物理时间和位姿待下一帧重试，不使用过期快照；积压超过 100ms 仍交还 Create，记录带原因的 WARN，预期时限回退不抛出运行时故障堆栈。静态 section 与 Create/Sable 动态几何都来自已准备的版本化 GPU view，读取缺失或不支持数据时输出回退标记。清空、重载、预览、换世界、关闭主开关、shaderpack 程序不可用、失败帧及通道失败都会恢复原生成员、关闭确认/传输资源，再销毁 solver；不会等待 fence 或 worker。重试间隔五秒，区域或链 session epoch/revision 迁移当前使用全局回退重建，尚未实现无缝迁移。CHAIN_READY 由实验开关、四个链路通道和共享资源初始化结果共同决定；尚无无缝区域迁移。
 
 共享物理 publication 仅在状态变更时复制，插值帧复用已发布 bank；增量检测只针对新 publication 或新的精确 GPU ACK。后者保证旧状态在途时被跳过的较新状态，即使暂停物理也会在 ACK 后再次检测。准备追加统一经过 `PackageDeltaChannel.append` 登记 CPU journal 与 GPU detector 的身份和候选顺序；禁止绕过 journal 直接写 detector。服务端稀疏区域索引独立于 GPU 紧凑候选索引，不以粒子槽位容量限制其数值。GPU 回归覆盖该完整运动增量与 ACK 重采样路径。
 

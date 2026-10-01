@@ -32,7 +32,7 @@ public final class PackageDeltaGpu implements AutoCloseable {
     private final Map<Integer,Prepared> preparing=new HashMap<>();
     private int metadata,baselines,flights,ackRecords,predictors,count;
     private record Identity(long id,long generation) {}
-    private Set<Identity> identities=new HashSet<>();
+    private final PackageGpuIdentityReservations identities=new PackageGpuIdentityReservations();
     private Set<Integer> bodyIndices=new HashSet<>();
     private long nextStamp=1;
     private boolean closed;
@@ -87,7 +87,7 @@ public final class PackageDeltaGpu implements AutoCloseable {
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,meta);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,baselines);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,baseline);
         clear(flights);if(predictors!=0)clear(predictors);this.count=count;
-        identities=nextIdentities;bodyIndices=nextBodies;
+        identities.clear();reserveIdentities(meta,count,0);bodyIndices=nextBodies;
         preparing.clear();trackPrepared(meta,0,count);
     }
     private static void validateMetadata(ByteBuffer view,int count,Set<Identity> identities,Set<Integer> bodies) {
@@ -107,7 +107,7 @@ public final class PackageDeltaGpu implements AutoCloseable {
             throw new IllegalArgumentException("Package delta append layout");
         Set<Identity> nextIdentities=new HashSet<>();Set<Integer> nextBodies=new HashSet<>();
         validateMetadata(meta.duplicate().order(ByteOrder.nativeOrder()),added,nextIdentities,nextBodies);
-        for(Identity identity:nextIdentities)if(identities.contains(identity))
+        for(Identity identity:nextIdentities)if(identities.contains(identity.id,identity.generation))
             throw new IllegalArgumentException("Duplicate existing package delta identity");
         for(int body:nextBodies)if(bodyIndices.contains(body))
             throw new IllegalArgumentException("Duplicate existing package delta body");
@@ -122,7 +122,16 @@ public final class PackageDeltaGpu implements AutoCloseable {
             try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)count*PREDICTOR_BYTES,(long)added*PREDICTOR_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
         }
         trackPrepared(meta,count,added);
-        count+=added;identities.addAll(nextIdentities);bodyIndices.addAll(nextBodies);
+        reserveIdentities(meta,added,count);count+=added;bodyIndices.addAll(nextBodies);
+    }
+    private void reserveIdentities(ByteBuffer data,int length,int first) {
+        var v=data.duplicate().order(ByteOrder.nativeOrder());
+        for(int i=0;i<length;i++){int p=v.position()+i*META_BYTES;identities.reserve(v.getLong(p),v.getLong(p+8),first+i);}
+    }
+    /** Retired GPU body/candidate stay immutable for any older in-flight delta and ACK. */
+    public void retireIdentity(int candidate,long id,long generation) {
+        open();if(candidate<0 || candidate>=count)throw new IllegalArgumentException("Package delta identity retirement");
+        identities.retire(id,generation,candidate);preparing.remove(candidate);
     }
     private void trackPrepared(ByteBuffer meta,int first,int length) {
         ByteBuffer view=meta.duplicate().order(ByteOrder.nativeOrder());

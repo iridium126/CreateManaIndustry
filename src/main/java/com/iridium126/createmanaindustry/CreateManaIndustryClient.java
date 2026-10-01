@@ -61,7 +61,8 @@ public class CreateManaIndustryClient {
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageAckPacket.installClientHandler(
                 com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient::receiveAcks);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageObserverPacket.installClientHandler(
-                com.iridium126.createmanaindustry.client.particles.packages.PackageNativeObserverClient::receiveMembership);
+                com.iridium126.createmanaindustry.client.particles.packages.PackageLightObserverClient::receive);
+        com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundLightPackagePacket.installClientHandler(com.iridium126.createmanaindustry.client.particles.packages.PackageLightClient::receive);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainPackagePacket.installClientHandler(
                 com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient::receiveChain);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainInteractionPacket.installClientHandler(
@@ -148,6 +149,7 @@ public class CreateManaIndustryClient {
         // NB: Stage is a plain class of constants (not an enum) in this NeoForge
         // version, so stage dispatch must use identity comparison, not switch.
         var stage = event.getStage();
+        if(stage==RenderLevelStageEvent.Stage.AFTER_ENTITIES)com.iridium126.createmanaindustry.client.particles.packages.PackageLightClient.render(event);
         // ALLVR terrain is rendered by Sodium's normal terrain pass.  There is
         // deliberately no second ALLVR terrain draw here; Iris therefore sees
         // the same pass/framebuffer/material path as ordinary Sodium sections.

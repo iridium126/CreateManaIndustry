@@ -191,6 +191,8 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
             switch(entry.phase) {
                 case RESOURCES -> {
                     if(entry.offer.baseline().track()>=tracks.trackCount() || !covered.test(entry.offer,entry.checkpoint)){queue(entry);continue;}
+                    var identity=entry.offer.baseline().identity();
+                    if(pool.reservesIdentity(identity.id(),identity.generation())){queue(entry);continue;}
                     if(physics.chainCount()>=physics.chainCapacity() || physics.freeCount()+physics.chainCount()+physics.observerCount()>=131072
                             || pool.metadataCount()>=Math.min(pool.capacity(),131072) || tracks.count()>=tracks.capacity()) {
                         release(entry,entry.checkpoint.baseline(),true);continue;
@@ -245,7 +247,7 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
     }
     private void captureAdmissions() {
         var batch=captureEntries;var expected=captureExpected;batch.clear();expected.clear();
-        for(Entry entry:awaiting)if(!entry.captured) {
+        for(Entry entry:awaiting)if(!entry.captured && entry.phase!=Phase.RETIRE) {
             if(!batch.isEmpty() && entry.candidate!=batch.getLast().candidate+1) {
                 if(!submit(batch,expected))return;batch.clear();expected.clear();
             }
@@ -326,8 +328,10 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
         }
     }
     private void finish(Entry entry) {
+        var identity=entry.offer.baseline().identity();
+        if(entry.body>=0){pool.retireIdentity(entry.candidate,identity.id(),identity.generation());tracks.retireIdentity(entry.body,identity.id(),identity.generation());}
         entry.phase=Phase.RELEASED;entry.terminal=true;transitions--;awaiting.remove(entry);poseAwaiting.remove(entry);
-        if(entry.body<0)reservedIdentities.remove(entry.offer.baseline().identity());
+        reservedIdentities.remove(identity);
     }
     private void open(){if(closed || Thread.currentThread()!=owner)throw new IllegalStateException("Chain acquisition closed/off render thread");}
     @Override public void close() {

@@ -25,7 +25,7 @@ public record ClientboundPackageObserverPacket(ResourceLocation dimension,Packag
     public static final PackageDeltaCodec.Quantized NO_POSE=new PackageDeltaCodec.Quantized(0,0,0,(short)0,(short)0,(short)0,(short)0,0);
     public record Visual(int entityId,UUID entityUuid,ResourceLocation model,float width,float height) {
         public Visual {
-            if(entityId<0 || entityUuid==null || model==null || model.toString().length()>256
+            if(entityId< -1 || entityUuid==null || model==null || model.toString().length()>256
                     || !Float.isFinite(width) || !Float.isFinite(height) || width<=0 || height<=0 || width>16 || height>16)
                 throw new IllegalArgumentException("Observer visual");
         }

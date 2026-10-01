@@ -9,11 +9,15 @@ public final class PackageSimulationClock {
     private boolean initialized;
 
     public Advance advance(long now,long poseTick,boolean paused) {
+        return advance(now,poseTick,paused,true);
+    }
+    /** An unfinished force capture must not consume either time or the current pose pair. */
+    public Advance advance(long now,long poseTick,boolean paused,boolean inputsReady) {
         if(!initialized || paused){initialized=true;previous=now;accumulated=0;lastStepTick=poseTick;return Advance.IDLE;}
         long elapsed=now-previous;previous=now;
         if(elapsed<0 || elapsed>MAX_BACKLOG_NANOS || accumulated>MAX_BACKLOG_NANOS-elapsed)return Advance.OVERDUE;
         accumulated+=elapsed;
-        if(accumulated>=STEP_NANOS && poseTick!=lastStepTick) {
+        if(inputsReady && accumulated>=STEP_NANOS && poseTick!=lastStepTick) {
             accumulated-=STEP_NANOS;lastStepTick=poseTick;return Advance.STEP;
         }
         return Advance.IDLE;

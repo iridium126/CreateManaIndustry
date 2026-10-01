@@ -36,11 +36,12 @@ public final class PackageWorldRuntime {
     private final Map<PackageRegion,PackageFreeAcquisitionGpu> regions=new HashMap<>();
     private final PackageSimulationClock clock=new PackageSimulationClock();
     private ClientLevel level;
+    private Object shaderBoundary;
     private PackageMixedPhysicsGpu physics;
     private PackageWorldPrefetchGpu worldPrefetch;
     private PackageForceClient forceCapture;
     private PackageForceGpu forceGpu;
-    private PackageNativeObserverClient nativeObservers;
+    private PackageLightObserverClient nativeObservers;
     private static final java.util.concurrent.atomic.AtomicLong nativeEpochs=new java.util.concurrent.atomic.AtomicLong(0x6000000000000000L);
     private PackagePoolGpu pool;
     private PackageChainTrackGpu chainTracks;
@@ -122,8 +123,8 @@ public final class PackageWorldRuntime {
     public static boolean chainUse(){var runtime=current;return runtime!=null && runtime.failure==null && runtime.chainInteraction!=null && runtime.chainInteraction.onUse();}
     public static boolean freeInputReady(){var r=current;return r!=null&&r.failure==null&&r.freeInteraction!=null&&PackageAuthorityClient.activePackages()>0;}
     public static void injectFreeCrosshairPick(Minecraft mc){var r=current;if(r!=null&&r.failure==null&&r.freeInteraction!=null)r.freeInteraction.injectCrosshairPick(mc,r.interpolation);}
-    public static boolean freeUse(){var r=current;return r!=null&&r.failure==null&&r.freeInteraction!=null&&r.freeInteraction.onInput(PackageFreePickQueue.Action.USE);}
-    public static boolean freeAttack(){var r=current;return r!=null&&r.failure==null&&r.freeInteraction!=null&&r.freeInteraction.onInput(PackageFreePickQueue.Action.ATTACK);}
+    public static boolean freeUse(){var r=current;if(r!=null&&r.failure==null&&r.freeInteraction!=null&&r.freeInteraction.onInput(PackageFreePickQueue.Action.USE))return true;return PackageLightClient.input(false);}
+    public static boolean freeAttack(){var r=current;if(r!=null&&r.failure==null&&r.freeInteraction!=null&&r.freeInteraction.onInput(PackageFreePickQueue.Action.ATTACK))return true;return PackageLightClient.input(true);}
     public static boolean freeInputPending(){var r=current;return r!=null&&r.freeInteraction!=null&&r.freeInteraction.pending();}
     public static boolean forceReady(){var r=current;return r!=null&&r.forceCapture!=null&&r.forceCapture.ready();}
     public static void chainInteraction(ClientboundChainInteractionPacket packet){var runtime=current;if(runtime!=null && runtime.chainInteraction!=null)runtime.chainInteraction.acknowledge(packet);}
@@ -148,6 +149,10 @@ public final class PackageWorldRuntime {
             PackageAuthorityClient.closeAll("Package runtime disabled or world/render boundary changed",true);
         if(current==runtime && runtime.chainInteraction!=null)runtime.chainInteraction.tick();
         if(current==runtime && runtime.freeInteraction!=null)runtime.freeInteraction.tick();
+        if(current==runtime && runtime.forceCapture!=null && !mc.isPaused()) {
+            try{runtime.forceCapture.prepare(runtime.ox,runtime.oy,runtime.oz,runtime.regions.keySet());}
+            catch(RuntimeException | LinkageError error){runtime.failure="Package force tick capture failed: "+error.getMessage();}
+        }
     }
 
     /** Called after collision uploads, before package pool staging. Return value invalidates the
@@ -155,6 +160,11 @@ public final class PackageWorldRuntime {
     public boolean prepare(Supplier<PackagePoolGpu> poolFactory,Function<String,String> sources,boolean preview) {
         RenderSystem.assertOnRenderThread();
         var mc=Minecraft.getInstance();var connection=mc.getConnection();long now=System.nanoTime();
+        Object nextShaderBoundary=CreateManaIndustry.IRIS_ACTIVE
+                ? com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.pipelineBoundary() : null;
+        if(physics!=null && shaderBoundary!=nextShaderBoundary) {
+            PackageAuthorityClient.closeAll("Package shader pipeline changed",true);return true;
+        }
         boolean enabled=ClientConfig.particleEnabled && ClientConfig.packageGpuAuthority && !preview && mc.level!=null && mc.player!=null
                 && connection!=null && connection.hasChannel(ServerboundPackagePacket.TYPE)
                 && (!dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()
@@ -183,12 +193,15 @@ public final class PackageWorldRuntime {
             }
             pool.pollLightRequests(requestLight);
             if(worldPrefetch!=null)worldPrefetch.poll(requestCollision,collisionUsage);
-            // Native observer events are queued after vanilla handlers; prepare baselines and
+            // Lightweight observer streams prepare baselines and
             // retirement before authority acquisition can use the same shared reservation.
             if(nativeObservers!=null)nativeObservers.prepare(System.nanoTime());
             if(failure!=null)throw new IllegalStateException(failure);
             if(!drain(sources))return true;
             if(!drainChains(sources))return true;
+            // An OFFER may add interest within this frame. An empty/old-region capture cannot
+            // authorize acquisition; invalidate it and retry before pumping readiness.
+            if(forceCapture!=null)forceCapture.prepare(ox,oy,oz,regions.keySet());
             if(chainAcquisition!=null) {
                 var nativeOwnership=PackageChainClientOwnership.INSTANCE;nativeOwnership.prepare();
                 chainAcquisition.pump(64,this::chainCovered);nativeOwnership.publishRenderMembership();chainChannel.pump(256);
@@ -201,9 +214,16 @@ public final class PackageWorldRuntime {
             if(freeActive==0)PackageCollisionRuntime.releasePackageUsage(level);
             int active=freeActive+chainActive;
             if(active==0)clock.reset();
-            var advance=clock.advance(now,level.getGameTime(),mc.isPaused());
-            if(active>0 && advance==PackageSimulationClock.Advance.OVERDUE)
-                throw new IllegalStateException("Package physical clock exceeded two ticks");
+            // Initialization and acquisition can be expensive. Start an acquired body's clock
+            // here, rather than charging work done before it owned any simulation time.
+            var advance=active==0 ? PackageSimulationClock.Advance.IDLE
+                    : clock.advance(System.nanoTime(),level.getGameTime(),mc.isPaused(),freeActive==0 || forceCapture.ready());
+            if(active>0 && advance==PackageSimulationClock.Advance.OVERDUE) {
+                String reason=freeActive>0 && !forceCapture.ready()
+                        ? "Package force capture exceeded two ticks" : "Package physical clock exceeded two ticks";
+                CreateManaIndustry.LOGGER.warn("[CMI packages] {}; releasing GPU ownership",reason);
+                PackageAuthorityClient.closeAll(reason,true);return true;
+            }
             if(active>0 && advance==PackageSimulationClock.Advance.STEP) {
                 if(freeActive>0) {
                     var collision=PackageCollisionRuntime.forLevel(level);
@@ -234,11 +254,11 @@ public final class PackageWorldRuntime {
             if(statusRegions!=regions.size() || statusBodies!=physics.freeCount()+physics.chainCount()+physics.observerCount() || statusActive!=active+nativeActive) {
                 statusRegions=regions.size();statusBodies=physics.freeCount()+physics.chainCount()+physics.observerCount();statusActive=active+nativeActive;
                 status="free ready; physics backend=OpenGL compute; regions="+statusRegions+"; body indices="+statusBodies+"; active="+statusActive
-                        +"; chains="+(chainAcquisition==null?"interaction/checkpoint readiness pending":chainAcquisition.activeCount())+"; native observers="+nativeActive;
+                        +"; chains="+(chainAcquisition==null?"interaction/checkpoint readiness pending":chainAcquisition.activeCount())+"; lightweight observers="+nativeActive;
             }
             return true;
         }catch(RuntimeException | LinkageError error) {
-            CreateManaIndustry.LOGGER.error("[CMI packages] world runtime failed; restoring Create",error);
+            CreateManaIndustry.LOGGER.error("[CMI packages] world runtime failed; releasing GPU ownership",error);
             failure="Package world runtime failed: "+error.getMessage();
             PackageAuthorityClient.closeAll(failure,true);
             // Initialization can fail before the runtime has been attached globally.
@@ -257,11 +277,13 @@ public final class PackageWorldRuntime {
                 && Minecraft.getInstance().getConnection().hasChannel(ServerboundChainInteractionPacket.TYPE)
                 && Minecraft.getInstance().getConnection().hasChannel(ClientboundChainInteractionPacket.TYPE);
         baked.upload(pool);styles=baked.styles();level=nextLevel;
+        shaderBoundary=CreateManaIndustry.IRIS_ACTIVE
+                ? com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.pipelineBoundary() : null;
         var position=Minecraft.getInstance().player.position();
         ox=Math.floor(position.x/16)*16;oy=Math.floor(position.y/16)*16;oz=Math.floor(position.z/16)*16;
-        physics=new PackageMixedPhysicsGpu(capacity,chainProtocol?capacity:0,capacity,2,sources,new PackageObserverGpu.NativeOrigin(ox,oy,oz));
+        physics=new PackageMixedPhysicsGpu(capacity,chainProtocol?capacity:0,capacity,2,sources);
         worldPrefetch=new PackageWorldPrefetchGpu(nativeEpochs.incrementAndGet(),sources);
-        nativeObservers=new PackageNativeObserverClient(level,physics,pool,styles,nativeEpochs.incrementAndGet(),reason->failure=reason);
+        nativeObservers=new PackageLightObserverClient(level,physics,pool,styles,nativeEpochs.incrementAndGet(),ox,oy,oz,reason->failure=reason);
         physics.sampleObservers(0);
         physics.publish();physics.source(pool,(float)ox,(float)oy,(float)oz);
         clock.reset();heartbeatTick=Long.MIN_VALUE;failure=null;current=this;
@@ -410,7 +432,7 @@ public final class PackageWorldRuntime {
         if(chainChannel!=null)chainChannel.close();else if(chainTracks!=null)chainTracks.close();chainChannel=null;chainTracks=null;
         if(pool!=null)pool.chainFrames(0,0);
         if(chainFrames!=null)chainFrames.close();chainFrames=null;
-        packets.clear();chainPackets.clear();regions.clear();clock.reset();styles=Map.of();level=null;interpolation=1;
+        packets.clear();chainPackets.clear();regions.clear();clock.reset();styles=Map.of();level=null;shaderBoundary=null;interpolation=1;
         if(pool!=null)pool.reset();pool=null;
         if(worldPrefetch!=null)worldPrefetch.close();worldPrefetch=null;
         if(physics!=null)physics.close();physics=null;

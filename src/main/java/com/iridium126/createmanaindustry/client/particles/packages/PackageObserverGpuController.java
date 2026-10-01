@@ -20,6 +20,7 @@ public final class PackageObserverGpuController implements AutoCloseable {
         boolean supports(PackageObserverFeed.Member<Visual> member);
         /** Stage hidden pool metadata; do not hide Create until committed admission confirms it. */
         void uploaded(PackageObserverFeed.Member<Visual> member,int local);
+        default void uploaded(PackageRegion region,long epoch,long stream,PackageObserverFeed.Member<Visual> member,int local){uploaded(member,local);}
         /** Stage retirement and native handback under the existing engine generation rules. */
         void retired(PackageLease.Identity identity,int local);
         void namespaceRetired(PackageRegion region,long epoch,long stream);
@@ -163,7 +164,7 @@ public final class PackageObserverGpuController implements AutoCloseable {
         var p=pending.packet();var stream=pendingStream;
         for(int i=0;i<p.baselines().size();i++) {
             var entry=additions[i];stream.entries.put(entry.member.index(),entry);identities.put(entry.member.identity(),entry);
-            introduced++;if(entry.local>=0)lifecycle.uploaded(entry.member,entry.local);additions[i]=null;
+            introduced++;if(entry.local>=0)lifecycle.uploaded(stream.region,stream.epoch,stream.id,entry.member,entry.local);additions[i]=null;
         }
         for(int i=0;i<p.changes().size();i++) {
             var entry=changes[i];entry.tick=p.stateTicks().get(i);
@@ -191,6 +192,8 @@ public final class PackageObserverGpuController implements AutoCloseable {
     public boolean healthy(){return !closed && failure==null;}
     public String failure(){return failure;}
     public int queued(){open();return queue.size();}
+    public long stream(PackageRegion region){open();var s=streams.get(region);return s==null||s.closed?0:s.id;}
+    public void suspend(PackageRegion region,long now){open();var s=streams.get(region);if(s!=null&&!s.closed)retire(s,clock.now(now));}
     public int pendingFeedback(){open();return feedback.pending();}
     private void open(){if(closed || Thread.currentThread()!=owner)throw new IllegalStateException("Observer controller closed/off owner thread");}
     @Override public void close(){if(closed)return;open();closed=true;feedback.close();queue.clear();streams.clear();identities.clear();

@@ -45,7 +45,7 @@ public final class PackagePoolGpu implements AutoCloseable {
     private int bodyBuffer,chainBuffer,historyBuffer,bodyCount,frameBuffer,frameCount;
     private PackageChainFramesGpu.View frameView;
     private record Identity(long id,long generation) {}
-    private Set<Identity> identities=new HashSet<>();
+    private final PackageGpuIdentityReservations identities=new PackageGpuIdentityReservations();
     private Set<Integer> bodyIndices=new HashSet<>();
     private final byte[] candidateFlags;
     private float originX,originY,originZ;
@@ -146,7 +146,7 @@ public final class PackagePoolGpu implements AutoCloseable {
         clear(sampledLight);
         ByteBuffer flags=data.duplicate().order(ByteOrder.nativeOrder());
         for(int i=0;i<count;i++)candidateFlags[i]=(byte)flags.getInt(flags.position()+i*META_BYTES+28);
-        identities=nextIdentities;bodyIndices=nextBodies;
+        identities.clear();reserveIdentities(data,count,0);bodyIndices=nextBodies;
     }
     /** Adds stable package identities without retransmitting or revalidating the existing population. */
     public void appendMetadata(ByteBuffer data,int added) {
@@ -155,7 +155,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             throw new IllegalArgumentException("Package metadata append layout/capacity");
         Set<Identity> newIdentities=new HashSet<>();Set<Integer> newBodies=new HashSet<>();
         validateMetadata(data,added,newIdentities,newBodies);
-        for(Identity identity:newIdentities)if(identities.contains(identity))
+        for(Identity identity:newIdentities)if(identities.contains(identity.id,identity.generation))
             throw new IllegalArgumentException("Duplicate existing package identity");
         for(int body:newBodies)if(bodyIndices.contains(body))
             throw new IllegalArgumentException("Duplicate existing package body");
@@ -165,12 +165,24 @@ public final class PackagePoolGpu implements AutoCloseable {
         GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)count*META_BYTES,data);
         ByteBuffer flags=data.duplicate().order(ByteOrder.nativeOrder());
         for(int i=0;i<added;i++)candidateFlags[count+i]=(byte)flags.getInt(flags.position()+i*META_BYTES+28);
-        count+=added;identities.addAll(newIdentities);bodyIndices.addAll(newBodies);
+        reserveIdentities(data,added,count);count+=added;bodyIndices.addAll(newBodies);
+    }
+    private void reserveIdentities(ByteBuffer data,int length,int first) {
+        var v=data.duplicate().order(ByteOrder.nativeOrder());
+        for(int i=0;i<length;i++){int p=v.position()+i*META_BYTES;identities.reserve(v.getLong(p),v.getLong(p+8),first+i);}
+    }
+    public boolean reservesIdentity(long id,long generation){ensureOpen();return identities.contains(id,generation);}
+    /** Call only after the exact retired candidate is absent from a confirmed pool commit. */
+    public void retireIdentity(int candidate,long id,long generation) {
+        ensureOpen();
+        if(candidate<0 || candidate>=count || staged>=0 || (candidateFlags[candidate]&HIDDEN)==0
+                || (candidateFlags[candidate]&HANDBACKABLE)!=0)throw new IllegalArgumentException("Package identity still visible or staged");
+        identities.retire(id,generation,candidate);
     }
     /** A prepared candidate reserves a real slot while Create still owns and renders it. */
     public void setHidden(int candidate,boolean hidden) {
         ensureOpen();
-        if(candidate<0 || candidate>=count || staged>=0)throw new IllegalArgumentException("Package visibility transition outside committed generation");
+        if(candidate<0 || candidate>=count || staged>=0 || !hidden && identities.retired(candidate))throw new IllegalArgumentException("Package visibility transition outside live committed generation");
         int previous=Byte.toUnsignedInt(candidateFlags[candidate]);
         int next=hidden?previous|HIDDEN:previous&~HIDDEN;
         if(next==previous)return;
@@ -184,7 +196,7 @@ public final class PackagePoolGpu implements AutoCloseable {
     /** Mark only a visibly active free authority as eligible for frozen handback rendering. */
     public void setHandbackable(int candidate,boolean handbackable) {
         ensureOpen();
-        if(candidate<0 || candidate>=count || staged>=0)throw new IllegalArgumentException("Package handback transition outside committed generation");
+        if(candidate<0 || candidate>=count || staged>=0 || handbackable && identities.retired(candidate))throw new IllegalArgumentException("Package handback transition outside live committed generation");
         int previous=Byte.toUnsignedInt(candidateFlags[candidate]);
         int next=handbackable?previous|HANDBACKABLE:previous&~HANDBACKABLE;
         if(next==previous)return;
