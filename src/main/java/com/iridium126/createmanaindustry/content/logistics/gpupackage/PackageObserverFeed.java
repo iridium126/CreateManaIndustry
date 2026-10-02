@@ -46,15 +46,13 @@ public final class PackageObserverFeed<M> {
     public static final class Cursor {
         private final PackageObserverFeed<?> feed;
         private final long stream;
-        private final boolean membershipOnly;
         private long nextSerial,sequence;
         private int scanned=-1;
         private boolean reset=true,complete,closed,scanTurn;
         private final NavigableMap<Integer,SnapshotCut> cuts=new TreeMap<>();
-        private Cursor(PackageObserverFeed<?> feed,long stream,long serial,boolean membershipOnly){this.feed=feed;this.stream=stream;nextSerial=serial;this.membershipOnly=membershipOnly;}
+        private Cursor(PackageObserverFeed<?> feed,long stream,long serial){this.feed=feed;this.stream=stream;nextSerial=serial;}
         public long stream(){return stream;}
         public boolean complete(){return complete;}
-        public boolean membershipOnly(){return membershipOnly;}
     }
     private record SnapshotCut(int first,long serial) {}
     private record Mutation<M>(long serial,Member<M> addition,PackageDeltaCodec.Entry change,long stateTick) {}
@@ -68,10 +66,8 @@ public final class PackageObserverFeed<M> {
     private final Member<M>[] acceptedScratch;
     private final int logCapacity;
     private Mutation<M>[] log;
-    private Mutation<M>[] membershipLog;
     private long tail;
-    private long membershipTail;
-    private int subscribers,membershipSubscribers;
+    private int subscribers;
 
     public PackageObserverFeed(){this(DEFAULT_LOG_CAPACITY);}
     @SuppressWarnings("unchecked") public PackageObserverFeed(int capacity) {
@@ -120,43 +116,28 @@ public final class PackageObserverFeed<M> {
         appendChange(index,PackageDeltaCodec.RELEASE,cell.member.state(),cell.member.stateTick());return true;
     }
     private void appendChange(int index,int mask,PackageDeltaCodec.Quantized state,long tick) {
-        append(null,subscribers==0 && (mask!=PackageDeltaCodec.RELEASE || membershipSubscribers==0)?null:new PackageDeltaCodec.Entry(index,mask,state),tick);
+        append(null,subscribers==0?null:new PackageDeltaCodec.Entry(index,mask,state),tick);
     }
     private void append(Member<M> addition,PackageDeltaCodec.Entry change,long tick) {
         if(tail==Long.MAX_VALUE)throw new IllegalStateException("Observer journal serial exhausted");
         if(subscribers>0)log[(int)(tail%logCapacity)]=new Mutation<>(tail,addition,change,tick);tail++;
-        // Native pose consumers need only confirmed acquisitions/retirements. A burst of pose
-        // commits must neither create traffic nor overwrite their independent membership log.
-        if(addition!=null || change!=null && change.mask()==PackageDeltaCodec.RELEASE) {
-            if(membershipTail==Long.MAX_VALUE)throw new IllegalStateException("Membership journal serial exhausted");
-            if(membershipSubscribers>0)membershipLog[(int)(membershipTail%logCapacity)]=new Mutation<>(membershipTail,addition,change,tick);
-            membershipTail++;
-        }
     }
     @SuppressWarnings("unchecked") public Cursor subscribe(long stream) {
         if(stream<=0)throw new IllegalArgumentException("Observer stream epoch");
         if(log==null)log=(Mutation<M>[])new Mutation<?>[logCapacity];
-        subscribers++;return new Cursor(this,stream,tail,false);
-    }
-    @SuppressWarnings("unchecked") public Cursor subscribeMembership(long stream) {
-        if(stream<=0)throw new IllegalArgumentException("Membership stream epoch");
-        if(membershipLog==null)membershipLog=(Mutation<M>[])new Mutation<?>[logCapacity];
-        membershipSubscribers++;return new Cursor(this,stream,membershipTail,true);
+        subscribers++;return new Cursor(this,stream,tail);
     }
     public boolean unsubscribe(Cursor cursor) {
         if(cursor==null || cursor.feed!=this)throw new IllegalArgumentException("Observer cursor");
         if(cursor.closed)return false;
         cursor.closed=true;
-        if(cursor.membershipOnly){if(--membershipSubscribers==0)membershipLog=null;}
-        else if(--subscribers==0)log=null;return true;
+        if(--subscribers==0)log=null;return true;
     }
     /** A successful send consumes this cursor. If transport throws, discard the cursor; never retry a
      * partially enqueued batch under the same stream. Work is bounded even for unseen journal records. */
     public Batch<M> poll(Cursor cursor,int budget) {
         if(cursor==null || cursor.feed!=this || cursor.closed || budget<1 || budget>PackageDeltaCodec.MAX_ENTRIES)
             throw new IllegalArgumentException("Observer cursor/budget");
-        long tail=cursor.membershipOnly?membershipTail:this.tail;
-        var log=cursor.membershipOnly?membershipLog:this.log;
         if(cursor.nextSerial<tail-logCapacity)throw new LaggedException();
         if(!cursor.reset && cursor.complete && cursor.nextSerial==tail)return null;
         var baselines=new ArrayList<Member<M>>();var linearChanges=new ArrayList<PackageDeltaCodec.Entry>();

@@ -7,30 +7,6 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 class PackageObserverFeedTest {
-    @Test void nativeMembershipHasAnIndependentJournalAndMotionProducesNoRecords() {
-        var feed=new PackageObserverFeed<String>(4);feed.activate(member(0,0));
-        var nativeCursor=feed.subscribeMembership(10);var poseCursor=feed.subscribe(11);
-        assertTrue(nativeCursor.membershipOnly());assertFalse(poseCursor.membershipOnly());
-        assertEquals(1,feed.poll(nativeCursor,4).baselines().size());feed.poll(poseCursor,4);
-        for(int i=1;i<=100;i++)feed.accepted(List.of(change(0,i)),i);
-        assertNull(feed.poll(nativeCursor,4));assertEquals(100,feed.member(0).state().x());
-        assertThrows(PackageObserverFeed.LaggedException.class,()->feed.poll(poseCursor,4));
-        feed.activate(member(1,1));assertTrue(feed.retire(0,member(0,0).identity()));
-        var batch=feed.poll(nativeCursor,4);
-        assertEquals(1,batch.baselines().size());assertEquals(1,batch.changes().size());
-        assertEquals(PackageDeltaCodec.RELEASE,batch.changes().getFirst().mask());
-        assertTrue(feed.unsubscribe(poseCursor));assertTrue(feed.unsubscribe(nativeCursor));
-        var fresh=feed.subscribeMembership(12);assertEquals(1,feed.poll(fresh,4).baselines().size());assertNull(feed.poll(fresh,4));
-    }
-    @Test void nativeMembershipSnapshotAndRealLifecycleOverflowRemainBounded() {
-        var feed=new PackageObserverFeed<String>(4);for(int i=0;i<10;i++)feed.activate(member(i,i));
-        var cursor=feed.subscribeMembership(10);var replica=new PackageObserverReplica<String>(32);
-        for(int i=0;i<10;i++){feed.accepted(List.of(change(i,100+i)));var batch=feed.poll(cursor,1);
-            assertTrue(batch.baselines().size()+batch.changes().size()<=1);assertEquals(PackageObserverReplica.Result.ACCEPTED,replica.apply(batch));}
-        assertTrue(cursor.complete());assertEquals(10,replica.size());assertNull(feed.poll(cursor,1));
-        for(int i=0;i<5;i++)feed.retire(i,member(i,i).identity());
-        assertThrows(PackageObserverFeed.LaggedException.class,()->feed.poll(cursor,4));
-    }
     private static PackageObserverFeed.Member<String> member(int index,int x) {
         return new PackageObserverFeed.Member<>(index,new PackageLease.Identity(0x1234567800000000L+index+1,0x2345678900000001L),
                 0x3456789000000001L,3,state(x),"box:"+index);

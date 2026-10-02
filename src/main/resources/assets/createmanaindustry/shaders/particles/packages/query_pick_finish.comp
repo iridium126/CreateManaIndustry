@@ -29,8 +29,7 @@ void main() {
         if(uPickType==0u && bestCandidate[0]!=QUERY_NONE) {
             pose.targetYaw.xyz=uFrom+uRay*bestDistance[0];
             pose.progress.xy=vec2(bestDistance[0],uPartial);
-            // Free picking also returns the exact displayed center/yaw for the one retained
-            // native entity used by interaction callbacks. No CPU pose interpolation or scan.
+            // Keep the displayed center/yaw with the exact GPU ray result for diagnostics.
             pose.previousTargetYaw=mix(pose.previousPositionYaw,pose.positionYaw,uPartial);
             pose.previousTargetYaw.w=pose.previousPositionYaw.w
                     +(mod(pose.positionYaw.w-pose.previousPositionYaw.w+180.0,360.0)-180.0)*uPartial;

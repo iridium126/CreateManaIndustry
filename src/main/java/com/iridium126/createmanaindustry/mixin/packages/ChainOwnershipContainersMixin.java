@@ -64,7 +64,7 @@ public abstract class ChainOwnershipContainersMixin implements PackageChainAcces
     @Inject(method="exportToPort",at=@At("HEAD"))
     private void cmi$positionForPort(ChainConveyorPackage box,BlockPos port,CallbackInfoReturnable<Boolean> cir){cmi$logicalPosition(box);}
     @Inject(method="tick",at=@At("RETURN"))
-    private void cmi$publishNativeMembership(CallbackInfo ci){if(cmi$containers!=null)cmi$publishRenderPackages();}
+    private void cmi$publishRenderPackagesAfterRead(CallbackInfo ci){if(cmi$containers!=null)cmi$publishRenderPackages();}
 
     @Redirect(method={"tick","updateBoxWorldPositions"},at=@At(value="FIELD",opcode=Opcodes.GETFIELD,
             target="Lcom/simibubi/create/content/kinetics/chainConveyor/ChainConveyorBlockEntity;loopingPackages:Ljava/util/List;"))

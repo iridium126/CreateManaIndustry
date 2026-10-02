@@ -22,7 +22,7 @@ class PackageProtocolTest {
         assertTrue(lease.commit(owner,epoch,0,12,pose(3),2));
         assertFalse(lease.commit(owner,epoch,0,12,pose(4),2));
         assertFalse(lease.commit(owner,epoch,1,15,pose(4),2));
-        assertEquals(pose(3),lease.release());lease.restored();
+        assertEquals(pose(3),lease.release());lease.finishRelease();
         assertFalse(lease.commit(owner,epoch,2,15,pose(4),2));
         long next=lease.acquire(owner,pose(3),16);assertTrue(next>epoch);
         long nextFrozen=lease.freezeBaseline(owner,next,lease.baselineRevision(),16,pose(3));

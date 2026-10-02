@@ -65,7 +65,7 @@ public final class PackageObserverGpuValidation {
                 if(capacity>n)for(int i=0;i<144;i++)check(states.get(n*144+i)==(byte)0x5a,"tail state sentinel");
                 if(capacity>n)for(int i=n*64;i<capacity*64;i++)check(bodies.get(i)==0,"tail output sentinel");
                 gpu.sample(.101f);stats(gpu,0,n);var expired=read(gpu.bodyBuffer(),n*64);
-                for(int i=0;i<n;i++)check(expired.getFloat(i*64+60)==-1,"expired moving state needs handback");
+                for(int i=0;i<n;i++)check(expired.getFloat(i*64+60)==-1,"expired moving state must retire");
                 long version=gpu.publicationVersion();int body=gpu.bodyBuffer();gpu.sample(.101f);
                 check(gpu.publicationVersion()==version&&gpu.bodyBuffer()==body,"unchanged sample republished");
             }
@@ -392,7 +392,7 @@ public final class PackageObserverGpuValidation {
                 check(events.uploaded==2,"resource introduction duplicated");
                 var close=packet(0,4,102,List.of(),List.of());controller.enqueue(close,100_000_000,0);
                 GL11.glFinish();check(controller.prepare(100_000_000,8)==1&&controller.healthy(),"exact namespace close failed");stats(gpu,0,0);
-                check(events.namespaces==1,"namespace handback missing");
+                check(events.namespaces==1,"namespace retirement missing");
                 controller.enqueue(close,101_000_000,0);check(controller.prepare(101_000_000,8)==1&&events.namespaces==1,"late close retired twice");
                 check(read(gpu.stateBuffer(),288).getInt(184)==2,"namespace close did not retire every body");
             }

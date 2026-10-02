@@ -1,3 +1,0 @@
-#pragma cmi_include packages/delta_common.glsl
-layout(local_size_x=1) in;
-void main() { accepted=min(requested,uCapacity);overflow=requested-accepted; }

@@ -24,15 +24,15 @@
 | fast_vs_stationary | 9.807872 | 0.187600 |
 | moving_platform | 9.097216 | 0.204000 |
 
-原始数据：summary-5.csv 与 samples-5.csv。五轮文件本身含前三轮，不另存重复副本。统计脚本：scripts/particles/compare_package_indexes.py。复现命令：
+原始数据：summary-5.csv 与 samples-5.csv。五轮文件含前三轮，原始 summary-3.csv 与 samples-3.csv 另行保留。统计脚本：scripts/particles/compare_package_indexes.py。复现命令：
 
 ```powershell
 .\gradlew.bat -I scripts/particles/validation.init.gradle benchmarkPackageIndexes
-python scripts/particles/compare_package_indexes.py
+python scripts/particles/compare_package_indexes.py build/package-index-comparison
 .\gradlew.bat -I scripts/particles/validation.init.gradle benchmarkPackageIndexes -PpackageIndexBenchmarkExtra # 仅当前三轮差距不足 3% 时运行
-python scripts/particles/compare_package_indexes.py
+python scripts/particles/compare_package_indexes.py build/package-index-comparison
 ```
 
-benchmark 使用 scripts/particles/index-reference 中冻结的三模式实现和相同 shader；独立编译到 build/package-index-reference，覆盖测试进程的类路径，不参与生产 classes/resources/jar。三轮暂存数据保存在 build/package-index-three-round，追加两轮完成后删除。重新采样前应清理或另存现有数据，避免混用实验。
+benchmark 使用 scripts/particles/index-reference 中冻结的三模式实现和相同 shader；独立编译到 build/package-index-reference，覆盖测试进程的类路径，不参与生产 classes/resources/jar。新采样写入 build/package-index-comparison，不覆盖此目录的历史数据。追加两轮读取同一输出目录的 summary-3.csv / samples-3.csv。以 -PpackageIndexOutput=目录 指定新的实验目录；评分脚本接受该目录作为参数。裁剪后的入口只保留索引 fixture，环境程序与非索引公共资源使用当前生产实现；三模式使用同一物理与环境逻辑。
 
 数据代表该 GPU 与这些合成场景。尚不包含真实游戏的区块加载、多人网络延迟、机器库存或驱动之间的比较；不能作为这些路径已经通过实测的证据。

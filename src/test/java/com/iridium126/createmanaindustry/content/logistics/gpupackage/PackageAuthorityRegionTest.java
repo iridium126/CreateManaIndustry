@@ -271,7 +271,7 @@ class PackageAuthorityRegionTest {
     }
     @Test void mixedReleaseAndPoseDeltaAreCommittedOnceAndKeepOtherPackagesLeased() {
         var r=region(0);var a=new Target(1,5,1);var b=new Target(2,5,1);var aa=acquire(r,a,0);var bb=acquire(r,b,0);
-        a.eligible=false; // Unknown collision/machine context is a valid reason to hand back.
+        a.eligible=false; // Unknown collision/machine context is a valid reason to revoke authority.
         var changes=List.of(change(aa.index(),PackageDeltaCodec.RELEASE,pose(63),0),change(bb.index(),1,pose(6),1));
         assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.delta(OWNER,10,1,0,1,changes,4));
         assertEquals(1,a.releases);assertFalse(r.paused(a.id,1));assertTrue(r.paused(b.id,1));assertEquals(pose(5),a.current.pose());assertEquals(pose(6),b.current.pose());

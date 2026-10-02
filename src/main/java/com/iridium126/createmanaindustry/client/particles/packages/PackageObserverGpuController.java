@@ -21,7 +21,7 @@ public final class PackageObserverGpuController implements AutoCloseable {
         /** Stage hidden pool metadata; do not hide Create until committed admission confirms it. */
         void uploaded(PackageObserverFeed.Member<Visual> member,int local);
         default void uploaded(PackageRegion region,long epoch,long stream,PackageObserverFeed.Member<Visual> member,int local){uploaded(member,local);}
-        /** Stage retirement and native handback under the existing engine generation rules. */
+        /** Stage retirement under the existing engine generation rules. */
         void retired(PackageLease.Identity identity,int local);
         void namespaceRetired(PackageRegion region,long epoch,long stream);
         void fallback(String reason);
@@ -70,14 +70,13 @@ public final class PackageObserverGpuController implements AutoCloseable {
         if(this.subscribed.size()>MAX_REGIONS || !Double.isFinite(ox) || !Double.isFinite(oy) || !Double.isFinite(oz))
             throw new IllegalArgumentException("Observer controller scope/origin");
         this.gpu=Objects.requireNonNull(gpu);this.lifecycle=Objects.requireNonNull(lifecycle);
-        if(gpu.count()!=0 || gpu.nativePackets())throw new IllegalArgumentException("Observer controller needs a fresh custom-protocol domain");
+        if(gpu.count()!=0)throw new IllegalArgumentException("Observer controller needs a fresh custom-protocol domain");
         this.ox=ox;this.oy=oy;this.oz=oz;feedback=new PackageObserverFeedbackGpu(resourceEpoch);
     }
     /** Network/main-thread receipt; no GL calls or world scanning. Unknown dimensions/regions are
      * ignored. Extra processing latency counts from this receipt, separately from network lag. */
     public boolean enqueue(ClientboundPackageObserverPacket packet,long receivedNanos,long oneWayNanos) {
         open();Objects.requireNonNull(packet);
-        if((packet.flags()&ClientboundPackageObserverPacket.MEMBERSHIP_ONLY)!=0)throw new IllegalArgumentException("Native membership has no custom pose");
         if(failure!=null || !dimension.equals(packet.dimension()) || !subscribed.contains(packet.region()))return false;
         int records=packet.baselines().size()+packet.changes().size();
         if(queue.size()>=MAX_PACKETS || records>MAX_RECORDS-queuedRecords){fail("Observer input queue exhausted");return false;}

@@ -11,7 +11,7 @@ void main() {
     if(local>=uLength)return;
     uint i=uFirst+local;if(i>=uCount)return;
     // Retirement freezes the complete last pose, including interpolation history. Other
-    // active packages may keep stepping while this package's handback query is in flight.
+    // active packages may keep stepping while this chain package's retirement query is in flight.
     // Modes 0/2 initialize free/chain ranges; 3/1 capture free/chain simulation history.
     if((uChain==1 || uChain==3) && src[i].previousSleep.w==PACKAGE_RETIRED)return;
     // Tracked modes 2/3 already carry their exact uploaded hook target. startRadius

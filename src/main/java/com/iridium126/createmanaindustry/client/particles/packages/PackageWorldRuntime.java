@@ -41,8 +41,8 @@ public final class PackageWorldRuntime {
     private PackageWorldPrefetchGpu worldPrefetch;
     private PackageForceClient forceCapture;
     private PackageForceGpu forceGpu;
-    private PackageLightObserverClient nativeObservers;
-    private static final java.util.concurrent.atomic.AtomicLong nativeEpochs=new java.util.concurrent.atomic.AtomicLong(0x6000000000000000L);
+    private PackageLightObserverClient lightObservers;
+    private static final java.util.concurrent.atomic.AtomicLong resourceEpochs=new java.util.concurrent.atomic.AtomicLong(0x6000000000000000L);
     private PackagePoolGpu pool;
     private PackageChainTrackGpu chainTracks;
     private PackageChainFrameScene chainFrames;
@@ -70,7 +70,6 @@ public final class PackageWorldRuntime {
         @Override public void row(long tableVersion,int row) {
             if(level!=null)PackageCollisionRuntime.forLevel(level).touchPackageUsage(tableVersion,row);
         }
-        @Override public void unsafeBody(int bodyIndex) { /* GPU retains the last valid pose and retries coverage locally. */ }
     };
     private Map<ResourceLocation,PackageModelCache.Style> styles=Map.of();
     private double ox,oy,oz;
@@ -96,7 +95,7 @@ public final class PackageWorldRuntime {
     /** Engine success hook also runs when there are no free-package regions. */
     public static void committedChain(long generation) {
         var runtime=current;if(runtime==null || runtime.failure!=null)return;
-        if(runtime.nativeObservers!=null)runtime.nativeObservers.committed(generation);
+        if(runtime.lightObservers!=null)runtime.lightObservers.committed(generation);
         if(runtime.freeInteraction!=null)runtime.freeInteraction.committed(generation,runtime.interpolation);
         if(runtime.chainAcquisition==null)return;
         runtime.chainAcquisition.committed(generation,runtime.captureChainInput);
@@ -110,7 +109,6 @@ public final class PackageWorldRuntime {
     }
     public static boolean chainUse(){var runtime=current;return runtime!=null && runtime.failure==null && runtime.chainInteraction!=null && runtime.chainInteraction.onUse();}
     public static boolean freeInputReady(){var r=current;return r!=null&&r.failure==null&&r.freeInteraction!=null&&PackageAuthorityClient.activePackages()>0;}
-    public static void injectFreeCrosshairPick(Minecraft mc){var r=current;if(r!=null&&r.failure==null&&r.freeInteraction!=null)r.freeInteraction.injectCrosshairPick(mc,r.interpolation);}
     public static boolean freeUse(){var r=current;if(r!=null&&r.failure==null&&r.freeInteraction!=null&&r.freeInteraction.onInput(PackageFreePickQueue.Action.USE))return true;return PackageLightClient.input(false);}
     public static boolean freeAttack(){var r=current;if(r!=null&&r.failure==null&&r.freeInteraction!=null&&r.freeInteraction.onInput(PackageFreePickQueue.Action.ATTACK))return true;return PackageLightClient.input(true);}
     public static boolean freeInputPending(){var r=current;return r!=null&&r.freeInteraction!=null&&r.freeInteraction.pending();}
@@ -195,7 +193,7 @@ public final class PackageWorldRuntime {
             if(worldPrefetch!=null)worldPrefetch.poll(requestCollision,collisionUsage);
             // Lightweight observer streams prepare baselines and
             // retirement before authority acquisition can use the same shared reservation.
-            if(nativeObservers!=null)nativeObservers.prepare(System.nanoTime());
+            if(lightObservers!=null)lightObservers.prepare(System.nanoTime());
             if(failure!=null)throw new IllegalStateException(failure);
             if(!drain(sources))return true;
             if(!drainChains(sources))return true;
@@ -255,11 +253,11 @@ public final class PackageWorldRuntime {
                 if(chainAcquisition!=null)PacketDistributor.sendToServer(new ServerboundChainPackagePacket(
                         ServerboundChainPackagePacket.HEARTBEAT,chainAcquisition.epoch(),0,null,0,0,0,0,new byte[0]));
             }
-            int nativeActive=nativeObservers==null?0:nativeObservers.active();
-            if(statusRegions!=regions.size() || statusBodies!=physics.freeCount()+physics.chainCount()+physics.observerCount() || statusActive!=active+nativeActive) {
-                statusRegions=regions.size();statusBodies=physics.freeCount()+physics.chainCount()+physics.observerCount();statusActive=active+nativeActive;
+            int observerActive=lightObservers==null?0:lightObservers.active();
+            if(statusRegions!=regions.size() || statusBodies!=physics.freeCount()+physics.chainCount()+physics.observerCount() || statusActive!=active+observerActive) {
+                statusRegions=regions.size();statusBodies=physics.freeCount()+physics.chainCount()+physics.observerCount();statusActive=active+observerActive;
                 status="free ready; physics backend=OpenGL compute; regions="+statusRegions+"; body indices="+statusBodies+"; active="+statusActive
-                        +"; chains="+(chainAcquisition==null?"interaction/checkpoint readiness pending":chainAcquisition.activeCount())+"; lightweight observers="+nativeActive;
+                        +"; chains="+(chainAcquisition==null?"interaction/checkpoint readiness pending":chainAcquisition.activeCount())+"; lightweight observers="+observerActive;
             }
             return true;
         }catch(RuntimeException | LinkageError error) {
@@ -288,8 +286,8 @@ public final class PackageWorldRuntime {
         ox=Math.floor(position.x/16)*16;oy=Math.floor(position.y/16)*16;oz=Math.floor(position.z/16)*16;
         physics=new PackageMixedPhysicsGpu(capacity,chainProtocol?capacity:0,capacity,2,sources);
         physics.enableEnvironment(sources);
-        worldPrefetch=new PackageWorldPrefetchGpu(nativeEpochs.incrementAndGet(),sources);
-        nativeObservers=new PackageLightObserverClient(level,physics,pool,styles,nativeEpochs.incrementAndGet(),ox,oy,oz,reason->failure=reason);
+        worldPrefetch=new PackageWorldPrefetchGpu(resourceEpochs.incrementAndGet(),sources);
+        lightObservers=new PackageLightObserverClient(level,physics,pool,styles,resourceEpochs.incrementAndGet(),ox,oy,oz,reason->failure=reason);
         physics.sampleObservers(0);
         physics.publish();physics.source(pool,(float)ox,(float)oy,(float)oz);
         clock.reset();heartbeatTick=Long.MIN_VALUE;failure=null;current=this;
@@ -300,8 +298,8 @@ public final class PackageWorldRuntime {
     private boolean drain(Function<String,String> sources) {
         for(int n=0;n<PACKETS_PER_FRAME && !packets.isEmpty();n++) {
             var packet=packets.removeFirst();var acquisition=regions.get(packet.region());
-            if(nativeObservers!=null&&(packet.action()==ClientboundPackagePacket.OFFER||packet.action()==ClientboundPackagePacket.RELEASED))
-                nativeObservers.authority(packet);
+            if(lightObservers!=null&&(packet.action()==ClientboundPackagePacket.OFFER||packet.action()==ClientboundPackagePacket.RELEASED))
+                lightObservers.authority(packet);
             if(acquisition!=null && (packet.epoch()!=acquisition.epoch() || packet.regionRevision()!=acquisition.revision())) {
                 if(packet.action()!=ClientboundPackagePacket.OFFER)continue;
                 // Migration/recycling needs a fresh namespace; discard every old flight before rebuilding.
@@ -310,7 +308,7 @@ public final class PackageWorldRuntime {
             if(acquisition==null && packet.action()==ClientboundPackagePacket.OFFER) {
                 if(regions.size()>=MAX_REGIONS) {refuse(packet);continue;}
 
-                if(freeInteraction==null){freeInteraction=new PackageFreeInteractionClient(physics,pool,nativeEpochs.incrementAndGet(),ox,oy,oz,sources);freeInteraction.chainInteraction(chainInteraction);}
+                if(freeInteraction==null){freeInteraction=new PackageFreeInteractionClient(physics,pool,resourceEpochs.incrementAndGet(),ox,oy,oz,sources);freeInteraction.chainInteraction(chainInteraction);}
                 var detector=new PackageDeltaGpu(Math.min(131072,pool.capacity()),sources,true);
                 try {
                     acquisition=PackageAuthorityClient.openFreeAcquisition(packet.region(),packet.epoch(),packet.regionRevision(),
@@ -427,7 +425,7 @@ public final class PackageWorldRuntime {
         if(current==this)current=null;
         if(forceCapture!=null)forceCapture.close();forceCapture=null;
         if(forceGpu!=null)forceGpu.close();forceGpu=null;
-        if(nativeObservers!=null)nativeObservers.close();nativeObservers=null;
+        if(lightObservers!=null)lightObservers.close();lightObservers=null;
         if(chainInteraction!=null)chainInteraction.close();chainInteraction=null;
         if(freeInteraction!=null)freeInteraction.close();freeInteraction=null;
         PackageChainClientOwnership.INSTANCE.close();

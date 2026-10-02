@@ -37,7 +37,7 @@ public final class PackageWorldPrefetchGpu implements AutoCloseable {
                 GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,PackageCollisionRequests.HEADER_BYTES,
                         GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
                 GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,PackageCollisionRequests.TOUCH_OFFSET,
-                        PackageCollisionRequests.TOUCH_BYTES+PackageCollisionRequests.UNSAFE_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
+                        PackageCollisionRequests.TOUCH_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
             }
             nextRing=new PackageReadbackRing(PackageCollisionRequests.BYTES);
         } catch(RuntimeException failure) {
@@ -62,13 +62,13 @@ public final class PackageWorldPrefetchGpu implements AutoCloseable {
             GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,PackageCollisionRequests.HEADER_BYTES,
                     GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
             GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,PackageCollisionRequests.TOUCH_OFFSET,
-                    PackageCollisionRequests.TOUCH_BYTES+PackageCollisionRequests.UNSAFE_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
+                    PackageCollisionRequests.TOUCH_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
         }
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,bodyBuffer);
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,OUTPUT_BINDING,requests);
         GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,USAGE_BINDING,requests,PackageCollisionRequests.TOUCH_OFFSET,
-                PackageCollisionRequests.TOUCH_BYTES+PackageCollisionRequests.UNSAFE_BYTES);
+                PackageCollisionRequests.TOUCH_BYTES);
         GL20.glUseProgram(program);GL30.glUniform1ui(locations[5],count);GL20.glUniform1f(locations[6],lookahead);
         GL20.glUniform1f(locations[7],safetyLookahead);
         GL30.glUniform1ui(locations[8],PackageCollisionRequests.MAX_REQUESTS);

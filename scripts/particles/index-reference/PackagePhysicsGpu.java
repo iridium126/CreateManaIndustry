@@ -8,7 +8,7 @@ import org.lwjgl.system.MemoryStack;
 /**
  * Render-thread package solver. Buffers are sidecar state, not another particle pool.
  * Caller owns GL state boundaries and the common particle-slot mapping. There are no readbacks here.
- * Runtime ownership, world coverage, native recovery and lifecycle admission are gated by PackageWorldRuntime.
+ * Runtime ownership, world coverage, confirmed-state recovery and lifecycle admission are gated by PackageWorldRuntime.
  */
 public final class PackagePhysicsGpu implements AutoCloseable {
     public static final int BODY_BYTES=64, CHAIN_BYTES=64, ITERATIONS=4;
@@ -42,7 +42,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     public PackageEnvironmentGpu environment(){return environment;}
     private final java.util.Map<Integer,Long> movingFrames=new java.util.HashMap<>();
     public enum IndexMode { LINKED, EXACT_RANGES, BOUNDED_LINKED }
-    /** Conservative total candidates across all queried cells; exceeding it requests local handback. */
+    /** Conservative total candidates across all queried cells; exceeding it requests local pause. */
     public static final int CANDIDATE_BUDGET=8192;
     private static final int DYNAMIC_SWEEP_BUDGET=8192;
     private final int capacity, tableSize,rangeTableSize;
@@ -256,7 +256,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         int program=forces.frames()==0?38:39;
         bind(program);f(program,3,dt);forces.bind(locations[program][24],locations[program][25]);dispatch();
     }
-    /** World view spans all caller substeps; missing coverage marks local handback without moving that body. */
+    /** World view spans all caller substeps; missing coverage marks local pause without moving that body. */
     public void stepWorld(float dt,PackageCollisionGpu.View world){stepWorld(dt,world,false,ITERATIONS);}
     /** Explicit support-projection path. The legacy overload remains Jacobi-only. */
     public void stepWorld(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations) {

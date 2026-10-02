@@ -6,6 +6,6 @@ void main() {
     uint representative=heads[slot*4u];if(representative==0u)return;
     ivec3 cell=cellOf(src[representative-1u].positionMass.xyz);
     // Count once per exact cell, not per body. No positions change in this pass.
-    // Scatter has finished; its cursor now records count or local handback.
+    // Scatter has finished; its cursor now records count or local pause.
     if(!gridBudget(cell-1,cell+1))heads[slot*4u+3u]=GRID_OVERFLOW;
 }

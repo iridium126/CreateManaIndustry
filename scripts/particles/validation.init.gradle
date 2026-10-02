@@ -46,21 +46,23 @@ allprojects {
         // Archived comparison implementations live outside main sources/resources and the mod JAR.
         tasks.register('compilePackageIndexComparison', JavaCompile) {
             dependsOn tasks.named('classes')
-            source = files('scripts/particles/index-reference/PackagePhysicsGpu.java', 'scripts/particles/index-reference/PackageMixedPhysicsGpu.java', 'scripts/particles/index-reference/PackageGpuValidation.java')
+            source = files('scripts/particles/index-reference/PackagePhysicsGpu.java', 'scripts/particles/index-reference/PackageGpuValidation.java')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             destinationDirectory = layout.buildDirectory.dir('package-index-reference')
             options.encoding = 'UTF-8'
             options.release = 21
         }
-        tasks.register('copyPackageIndexReferenceResources', Copy) {
+        tasks.register('copyPackageIndexReferenceResources', Sync) {
             from 'scripts/particles/index-reference/resources'
-            into layout.buildDirectory.dir('package-index-reference')
+            into layout.buildDirectory.dir('package-index-reference-resources')
         }
         tasks.register('benchmarkPackageIndexes', JavaExec) {
             dependsOn tasks.named('compilePackageIndexComparison'), tasks.named('copyPackageIndexReferenceResources')
-            classpath = files(layout.buildDirectory.dir('package-index-reference')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            classpath = files(layout.buildDirectory.dir('package-index-reference'), layout.buildDirectory.dir('package-index-reference-resources')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'PackageGpuValidation'
             args project.hasProperty('packageIndexBenchmarkExtra') ? '--index-benchmark-extra' : '--index-benchmark'
+            if (project.hasProperty('packageIndexSmoke')) args '--smoke'
+            if (project.hasProperty('packageIndexOutput')) args '--output=' + project.property('packageIndexOutput')
             workingDir = project.projectDir
         }
         tasks.register('benchmarkPackagePause', JavaExec) {
@@ -112,9 +114,17 @@ allprojects {
             args '--backend-only'
             workingDir = project.projectDir
         }
+        tasks.register('compilePackageBenchmarkTools', JavaCompile) {
+            dependsOn tasks.named('testClasses')
+            source = files('scripts/particles/PackageObserverBenchmark.java', 'scripts/particles/PackageBatchNetworkBenchmark.java')
+            classpath = sourceSets.test.runtimeClasspath + configurations.compileClasspath + kotlin
+            destinationDirectory = layout.buildDirectory.dir('package-benchmark-tools')
+            options.encoding = 'UTF-8'
+            options.release = 21
+        }
         tasks.register('benchmarkPackageObservers', JavaExec) {
-            dependsOn tasks.named('classes')
-            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            dependsOn tasks.named('testClasses')
+            classpath = sourceSets.test.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/PackageObserverBenchmark.java'
             jvmArgs '-Xms512m', '-Xmx2g'
             workingDir = project.projectDir
@@ -160,13 +170,6 @@ allprojects {
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/PackageObserverGpuValidation.java'
             if (project.hasProperty('packageObserverBenchmark')) args '--benchmark'
-            workingDir = project.projectDir
-        }
-        tasks.register('validatePackageNativeObserverGpu', JavaExec) {
-            dependsOn tasks.named('classes')
-            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
-            mainClass = 'scripts/particles/PackageNativeObserverGpuValidation.java'
-            if (project.hasProperty('packageNativeObserverBenchmark')) args '--benchmark'
             workingDir = project.projectDir
         }
         tasks.register('benchmarkPackageMixed', JavaExec) {

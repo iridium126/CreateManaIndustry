@@ -226,7 +226,7 @@ public final class PackageAuthorityRegion {
             Snapshot restore=new Snapshot(checkpoint,entry.flags);
             if(!restore.equals(entry.target.snapshot()))entry.target.apply(restore);
         }
-        entry.lease.restored();
+        entry.lease.finishRelease();
         entry.target.released(previous);
     }
     private Entry find(UUID sender,long candidateEpoch,int index,PackageLease.Identity identity,long tick) {

@@ -33,10 +33,7 @@ void main() {
     Body b=bodies[m.selection.x];
     bool prepared=b.previousSleep.w==PACKAGE_PREPARED && (m.selection.w&4u)!=0u;
     bool collisionFrozen=b.previousSleep.w==PACKAGE_COLLISION_FROZEN;
-    // Keep a terminal handback body visible until its native Create renderer is restored
-    // after the retired pool generation commits. Collision-frozen bodies stay active below.
-    bool handback=b.previousSleep.w==-1.0 && (m.selection.w&16u)!=0u;
-    if((b.previousSleep.w<0.0 && !prepared && !handback && !collisionFrozen) || b.positionMass.w<=0.0)return;
+    if((b.previousSleep.w<0.0 && !prepared && !collisionFrozen) || b.positionMass.w<=0.0)return;
     if(any(isnan(b.positionMass.xyz)) || any(isinf(b.positionMass.xyz)))return;
     // The two streams grow from opposite ends; their total cannot exceed uCount.
     if((m.selection.w&4u)!=0u)selected[uCount-1u-atomicAdd(preparedCount,1u)]=i;

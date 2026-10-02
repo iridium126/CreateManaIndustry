@@ -1,26 +1,19 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
 import com.iridium126.createmanaindustry.mixin.vanilla.MinecraftInvoker;
-import com.simibubi.create.content.logistics.box.PackageEntity;
 import java.util.function.Function;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
-import net.minecraft.world.phys.Vec3;
 
-/** GPU selects an exact admitted package. Detached packages use stable record interactions;
- * packages still awaiting entity removal use their existing native interaction entry point. */
+/** GPU selects an exact admitted light record; inventory interactions use its stable identity. */
 public final class PackageFreeInteractionClient implements AutoCloseable {
     private record Context(ClientLevel level,LocalPlayer player,Entity camera,HitResult fallback,
                            int slot,ItemStack main,ItemStack off,PackageChainInteractionClient chain,PackagePoseQueryGpu.Ray chainRay) {}
     private record ChainFlight(PackageFreePickQueue.Input input) {}
-    private record HoverFlight(ClientLevel level,LocalPlayer player,Entity camera,PackagePoseQueryGpu.Ray ray,
-                               long publicationVersion,long submittedNanos) {}
-    private record HoverResult(HoverFlight flight,PackagePoseQueryGpu.Result result,long completedNanos,long submission) {}
     private static boolean replaying;
     private static PackagePoseQueryGpu.Result replayChainPick;
     private static Context replayContext;
@@ -34,10 +27,6 @@ public final class PackageFreeInteractionClient implements AutoCloseable {
     private PackagePoseQueryGpu.Result chainPick;
     private long chainSubmission;
     private PackageChainInteractionClient chain;
-    private HoverFlight hoverFlight;
-    private HoverResult hoverResult;
-    private PackagePoseQueryGpu.Ray lastHoverRay;
-    private long lastHoverPublication=-1;
     private boolean closed;
     public PackageFreeInteractionClient(PackageMixedPhysicsGpu physics,PackagePoolGpu pool,long epoch,
                                        double ox,double oy,double oz,Function<String,String> sources) {
@@ -84,12 +73,6 @@ public final class PackageFreeInteractionClient implements AutoCloseable {
             int chainFlags=PackagePoolGpu.CHAIN|PackagePoolGpu.FLIPPED|PackagePoolGpu.FRAMED;
             if(result.present()&&(!result.chain()||result.state()<0||(result.flags()&~chainFlags)!=0))throw new IllegalStateException("Parallel chain pick domain/lifecycle");
             chainPick=result;chainSubmission=completed.submission();chainCompleted=true;
-        }else if(completed.tag() instanceof HoverFlight flight) {
-            if(completed.results().size()!=1)throw new IllegalStateException("Free hover pick result length");
-            if(hoverFlight==flight) {
-                hoverFlight=null;
-                hoverResult=new HoverResult(flight,completed.results().getFirst(),System.nanoTime(),completed.submission());
-            }
         }else queue.completed(completed);
     });}
     public void committed(long generation,float partial) {
@@ -97,58 +80,13 @@ public final class PackageFreeInteractionClient implements AutoCloseable {
         if(!pool.sourceMatches(physics.bodyBuffer(),physics.chainBuffer(),physics.historyBuffer(),physics.bodyCount(),
                 (float)ox,(float)oy,(float)oz))throw new IllegalStateException("Free input uses a different publication");
         var input=queue.queued();
-        if(input==null){submitHover(generation,partial);return;}
+        if(input==null)return;
         var context=(Context)input.context();
         if(context.chain!=null&&!chainSubmitted) {
             if(!queries.pick(PackagePoseQueryGpu.Input.of(physics,pool),context.chainRay,generation,new ChainFlight(input)))return;
             chainSubmitted=true;
         }
         if(queries.pickFree(PackagePoseQueryGpu.Input.of(physics,pool),input.ray(),physics.freeCount(),partial,generation,input))queue.submitted(input);
-    }
-    /** Apply the newest completed GPU target after vanilla and particle targets were resolved. */
-    public void injectCrosshairPick(Minecraft mc,float partial) {
-        var previous=hoverResult;
-        if(closed||previous==null||PackageAuthorityClient.activePackages()==0||mc.level!=previous.flight.level
-                ||mc.player!=previous.flight.player||mc.getCameraEntity()!=previous.flight.camera||mc.screen!=null
-                ||mc.isPaused()||mc.hitResult==null)return;
-        var flight=previous.flight;var result=previous.result;
-        long now=System.nanoTime();
-        if(now-flight.submittedNanos>100_000_000L||now-previous.completedNanos>100_000_000L
-                ||physics.freePublicationVersion()!=flight.publicationVersion
-                ||!result.present()||result.chain())return;
-        var offer=PackageAuthorityClient.freePickOffer(result,previous.submission);
-        if(offer==null)return;
-        var entity=mc.level.getEntity(offer.entityId());
-        if(!(entity instanceof PackageEntity box)||box.isRemoved()||!box.getUUID().equals(offer.entityUuid())
-                ||!PackageRenderOwnership.matchesAuthority(box,offer)
-                ||box.getBbWidth()!=offer.width()||box.getBbHeight()!=offer.height())return;
-        var ray=interactionRay(mc,mc.hitResult);
-        if(ray==null)return;
-        if(!Float.isFinite(partial)||partial<0||partial>1)return;
-        float centerX=result.px()+(result.x()-result.px())*partial;
-        float centerY=result.py()+(result.y()-result.py())*partial;
-        float centerZ=result.pz()+(result.z()-result.pz())*partial;
-        var hit=PackageFreeHoverPick.intersection(ray,ox,oy,oz,centerX,centerY,centerZ,
-                offer.width()*.5f,result.halfHeight());
-        if(hit==null)return;
-        var eye=mc.getCameraEntity().getEyePosition(1);
-        double targetDistance=eye.distanceToSqr(hit),nativeDistance=mc.hitResult.getType()==HitResult.Type.MISS
-                ?Double.POSITIVE_INFINITY:eye.distanceToSqr(mc.hitResult.getLocation());
-        if(!(targetDistance+1e-7<nativeDistance))return;
-        mc.hitResult=new EntityHitResult(box,hit);mc.crosshairPickEntity=box;
-    }
-    private void submitHover(long generation,float partial) {
-        if(PackageAuthorityClient.activePackages()==0||queue.phase()!=PackageFreePickQueue.Phase.EMPTY||hoverFlight!=null
-                ||queries.pending()>=3)return;
-        var mc=Minecraft.getInstance();
-        if(mc.level==null||mc.player==null||mc.getCameraEntity()==null||mc.screen!=null||mc.isPaused())return;
-        var ray=interactionRay(mc,mc.hitResult);if(ray==null)return;
-        long publication=physics.freePublicationVersion();
-        if(publication==lastHoverPublication&&sameRay(ray,lastHoverRay))return;
-        var flight=new HoverFlight(mc.level,mc.player,mc.getCameraEntity(),ray,publication,System.nanoTime());
-        if(queries.pickFree(PackagePoseQueryGpu.Input.of(physics,pool),ray,physics.freeCount(),partial,generation,flight)) {
-            hoverFlight=flight;lastHoverRay=ray;lastHoverPublication=publication;
-        }
     }
     private PackagePoseQueryGpu.Ray interactionRay(Minecraft mc,HitResult obstruction) {
         var camera=mc.getCameraEntity();if(camera==null||mc.player==null)return null;
@@ -158,10 +96,6 @@ public final class PackageFreeInteractionClient implements AutoCloseable {
         if(!(length>0)||!Double.isFinite(length))return null;
         return new PackagePoseQueryGpu.Ray((float)(from.x-ox),(float)(from.y-oy),(float)(from.z-oz),
                 (float)(direction.x*length),(float)(direction.y*length),(float)(direction.z*length));
-    }
-    private static boolean sameRay(PackagePoseQueryGpu.Ray a,PackagePoseQueryGpu.Ray b) {
-        return a!=null&&b!=null&&Math.abs(a.x()-b.x())<1e-5f&&Math.abs(a.y()-b.y())<1e-5f&&Math.abs(a.z()-b.z())<1e-5f
-                &&Math.abs(a.dx()-b.dx())<1e-5f&&Math.abs(a.dy()-b.dy())<1e-5f&&Math.abs(a.dz()-b.dz())<1e-5f;
     }
     /** Main-thread boundary, outside GL. The operation is taken before native callbacks run. */
     public void tick() {
@@ -183,44 +117,26 @@ public final class PackageFreeInteractionClient implements AutoCloseable {
                 ||mc.gameMode==null||mc.getConnection()==null||mc.isPaused()||mc.player.getInventory().selected!=context.slot
                 ||!ItemStack.isSameItemSameComponents(mc.player.getMainHandItem(),context.main)
                 ||!ItemStack.isSameItemSameComponents(mc.player.getOffhandItem(),context.off))return;
-        PackageEntity selected=null;
         var offer=result!=null?PackageAuthorityClient.freePickOffer(result,submission):null;
-        if(offer!=null && (offer.entityId()==-1||PackageLightClient.has(offer.baseline().identity()))) {
+        if(offer!=null) {
             var hand=mc.player.getMainHandItem().isEmpty()?net.minecraft.world.InteractionHand.MAIN_HAND:net.minecraft.world.InteractionHand.OFF_HAND;
             if(input.action()==PackageFreePickQueue.Action.ATTACK||mc.player.getItemInHand(hand).isEmpty()) {
                 net.neoforged.neoforge.network.PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundLightPackageInteraction(offer.baseline().identity(),input.action()==PackageFreePickQueue.Action.ATTACK,hand));mc.player.swing(hand);
             }
             return;
         }
-        if(offer!=null) {
-            var entity=mc.level.getEntity(offer.entityId());
-            if(entity instanceof PackageEntity box&&!box.isRemoved()&&PackageRenderOwnership.matchesAuthority(box,offer)
-                    &&box.getBbWidth()==offer.width()&&box.getBbHeight()==offer.height())selected=box;
-        }
-        if(selected==null&&(chainPick==null||!chainPick.present())&&PackageLightClient.input(input.action()==PackageFreePickQueue.Action.ATTACK))return;
-        var hit=mc.hitResult;var crosshair=mc.crosshairPickEntity;
-        Vec3 nativePosition=selected==null?null:selected.position();float nativeYaw=selected==null?0:selected.getYRot();
-        Vec3 displayed=selected==null?null:new Vec3(ox+result.ptx(),oy+result.pty()-result.halfHeight(),oz+result.ptz());
-        HitResult injected=selected==null?context.fallback:new EntityHitResult(selected,new Vec3(ox+result.tx(),oy+result.ty(),oz+result.tz()));
+        if((chainPick==null||!chainPick.present())&&PackageLightClient.input(input.action()==PackageFreePickQueue.Action.ATTACK))return;
+        var hit=mc.hitResult;HitResult injected=context.fallback;
         if(injected==null)return;
         replaying=true;replayContext=context;replayChainPick=chainCompleted?chainPick:PackagePoseQueryGpu.Result.NONE;replayChainSubmission=chainSubmission;
         try {
-            // Update the existing pre-detach entity for interactAt's relative hit vector
-            // and client callbacks. Preserve vanilla's independent relative packet codec base.
-            if(selected!=null){selected.setPos(displayed.x,displayed.y,displayed.z);selected.setYRot(result.previousTargetYaw());}
-            mc.hitResult=injected;mc.crosshairPickEntity=selected;
+            mc.hitResult=injected;
             if(input.action()==PackageFreePickQueue.Action.USE)((MinecraftInvoker)(Object)mc).createmanaindustry$invokeStartUseItem();
             else ((MinecraftInvoker)(Object)mc).createmanaindustry$invokeStartAttack();
         }finally {
-            // Do not undo a mod callback which actually moved/removed the entity or changed world.
-            if(selected!=null&&!selected.isRemoved()&&selected.level()==context.level&&selected.position().equals(displayed)) {
-                selected.setPos(nativePosition.x,nativePosition.y,nativePosition.z);
-                if(selected.getYRot()==result.previousTargetYaw())selected.setYRot(nativeYaw);
-            }
             if(mc.hitResult==injected)mc.hitResult=hit;
-            if(mc.crosshairPickEntity==selected)mc.crosshairPickEntity=crosshair;
             replaying=false;replayContext=null;replayChainPick=null;replayChainSubmission=0;
         }
     }
-    @Override public void close(){if(closed)return;closed=true;queue.clear();hoverFlight=null;hoverResult=null;queries.close();}
+    @Override public void close(){if(closed)return;closed=true;queue.clear();queries.close();}
 }

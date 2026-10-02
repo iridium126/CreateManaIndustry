@@ -22,7 +22,7 @@ public final class PackageModelCache {
     }
     private PackageModelCache() {}
 
-    /** Unsupported/tinted custom models are omitted and must stay Create-owned. No world access occurs here. */
+    /** Unsupported/tinted custom models are omitted and cannot obtain GPU authority until model resources are available. No world access occurs here. */
     public static Baked bake() {
         RenderSystem.assertOnRenderThread();
         List<float[]> data=new ArrayList<>(),normals=new ArrayList<>();List<int[]> spans=new ArrayList<>();

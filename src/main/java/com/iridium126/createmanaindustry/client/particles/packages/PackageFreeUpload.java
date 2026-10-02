@@ -9,27 +9,7 @@ import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.Cl
 /** Mutation-time bridge from an immutable server checkpoint to reusable GPU upload records.
  * It performs no world queries, GL calls or per-frame entity scans. Buffer positions are preserved. */
 public final class PackageFreeUpload {
-    public record Checkpoint(com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageLease.Pose pose,
-                             com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageLease.Pose previous,boolean ground) {}
     private PackageFreeUpload() {}
-
-    /** Completed GPU state only; this conversion acknowledges no network proposal or inventory
-     * transaction. Origins stay double and velocities are converted to Create's per-tick units.
-     * Both active emergency and exact retired checkpoints are allowed, never prepared/hidden active. */
-    public static Checkpoint retainedCheckpoint(PackagePoseQueryGpu.Result p,
-            com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageLease.Identity identity,
-            float height,double ox,double oy,double oz) {
-        if(p==null||identity==null||p.id()!=identity.id()||p.generation()!=identity.generation()||p.chain()
-                ||(p.flags()&~(PackagePoolGpu.HIDDEN|PackagePoolGpu.HANDBACKABLE))!=0||!Float.isFinite(p.state())||p.state()<0&&!p.retired()
-                ||!p.retired()&&(p.flags()&PackagePoolGpu.HIDDEN)!=0
-                ||!Float.isFinite(height)||height<=0||height>2||p.reversed()!=height*.5f||p.rate()!=0&&p.rate()!=1
-                ||!Double.isFinite(ox)||!Double.isFinite(oy)||!Double.isFinite(oz))
-            throw new IllegalArgumentException("Free package checkpoint identity/lifecycle/collider");
-        boolean ground=p.grounded();float vx=p.vx()/20,vy=p.vy()/20,vz=p.vz()/20;
-        var pose=new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageLease.Pose(ox+p.x(),oy+p.y()-height*.5,oz+p.z(),vx,vy,vz,p.yaw());
-        var previous=new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageLease.Pose(ox+p.px(),oy+p.py()-height*.5,oz+p.pz(),vx,vy,vz,p.previousYaw());
-        return new Checkpoint(pose,previous,ground);
-    }
 
     /** OFFER supplies the immutable model/identity; checkpoint is that OFFER or its newer FINAL_BASELINE.
      * All inputs are checked before any output changes. The caller owns allocation and upload batching. */

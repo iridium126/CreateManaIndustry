@@ -16,11 +16,9 @@ import net.minecraft.network.Varint21LengthFieldPrepender;
 import net.minecraft.network.VarInt;
 import net.minecraft.resources.ResourceLocation;
 
-/** Byte-exact old/new/native serialization comparison. Cadence=3 and the old hypothetical
- * suppression columns remain internal comparisons. New routing rows execute the production
- * recipient policy under an assumed visible admission and count its one-time v6 control.
- * --framing measures real Minecraft zlib/frames, not connected gameplay, other acquisition
- * controls/baselines, observer extras, bundler delimiters, sockets or transport headers. */
+/** Byte-exact encoding and Minecraft zlib/frame comparison against native motion fixtures.
+ * Fixtures exclude acquisition, observer streams, connected gameplay and transport headers;
+ * partial coverage cannot certify total network traffic. */
 public final class PackageBatchNetworkBenchmark {
     static final PackageRegion REGION=new PackageRegion(0,0,0);
     // Create AllEntityTypes.PACKAGE sets updateFrequency=3. Stable fixtures exclude impulses,
@@ -48,12 +46,6 @@ public final class PackageBatchNetworkBenchmark {
         var predictedFrameRows=new ArrayList<String>();predictedFrameRows.add(frameRows.getFirst().replace("relative_up_framed_bytes","predicted_up_framed_bytes"));
         var acceptanceRows=new ArrayList<String>();
         acceptanceRows.add("packages,scene,cadence_ticks,compression_threshold,clients,encoding,evidence,native_component_bytes,gpu_component_bytes,ratio,verdict");
-        var routedRows=new ArrayList<String>();
-        routedRows.add("packages,scene,cadence_ticks,compression_threshold,clients,native_position_framed_bytes,routed_owner_down_framed_bytes,routed_observer_down_framed_bytes,relative_up_framed_bytes,ack_framed_bytes,visible_ready_up_framed_bytes,gpu_component_bytes,ratio,verdict");
-        var visibleFrames=new HashMap<Integer,long[]>();
-        var batchVisibleFrames=new HashMap<Integer,long[][]>();
-        var controlRows=new ArrayList<String>();
-        controlRows.add("packages,scene,cadence_ticks,compression_threshold,clients,control_batch_size,native_position_framed_bytes,single_visible_ready_framed_bytes,batch_visible_ready_framed_bytes,relative_up_framed_bytes,ack_framed_bytes,observer_native_framed_bytes,gpu_component_bytes,ratio,verdict");
         var rows=new ArrayList<String>();rows.add("packages,scene,cadence_ticks,logical_seconds,native_one_client_payload_bytes,old_up_payload_bytes,packed_up_payload_bytes,relative_up_payload_bytes,packed_to_native_ratio,relative_to_native_ratio,old_body_bytes,packed_body_bytes,relative_body_bytes");
         var out=new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY);
         var old=ByteBuffer.allocate(ServerboundPackagePacket.MAX_BYTES);var packed=ByteBuffer.allocate(ServerboundPackagePacket.MAX_BYTES);
@@ -66,60 +58,13 @@ public final class PackageBatchNetworkBenchmark {
                 long predictedBytes=0,predictedBodies=0;
                 long[] nativeFrames=new long[probes.length],relativeFrames=new long[probes.length],ackFrames=new long[probes.length];
                 long[] predictedFrames=new long[probes.length];
-                long[] routedOwner=new long[probes.length],routedObserver=new long[probes.length];
-                Object owner=new Object(),observer=new Object();
-                var routes=new ArrayList<PackageNativeDownlink<Object>>(framing?count:0);
-                if(framing)for(int i=0;i<count;i++)routes.add(new PackageNativeDownlink<>());
-                // One actual v6 visible-confirmation control per package. Other acquisition,
-                // native pairing, heartbeats and recovery remain explicitly outside this fixture.
-                if(framing&&!visibleFrames.containsKey(count)) {
-                    long[] totals=new long[probes.length];
-                    for(int i=0;i<count;i++) {
-                        var baseline=new PackageAuthorityRegion.Baseline(i,new PackageLease.Identity(0x1234567800000001L+i,1),1,2,
-                                new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(1,2,3,0,0,0,0),1));
-                        var visible=ServerboundPackagePacket.control(ServerboundPackagePacket.VISIBLE_READY,REGION,0x3456789000000001L,baseline);
-                        for(int k=0;k<probes.length;k++)totals[k]+=probes[k].uplink(visible);
-                    }
-                    visibleFrames.put(count,totals);
-                    long[][] batchTotals=new long[2][probes.length];
-                    for(int group=0;group<2;group++) {
-                        int width=group==0?64:256;final int variant=group;
-                        var namespace=new com.iridium126.createmanaindustry.client.particles.packages.PackageControlQueue.Namespace(REGION,0x3456789000000001L,1);
-                        var queue=new com.iridium126.createmanaindustry.client.particles.packages.PackageControlQueue();
-                        int[] confirmed={0};
-                        for(int first=0;first<count;first+=width) {
-                            for(int i=first;i<Math.min(count,first+width);i++)queue.offer(namespace,ServerboundPackagePacket.VISIBLE_READY,
-                                    new PackageAuthorityRegion.Baseline(i,new PackageLease.Identity(0x1234567800000001L+i,1),1,2,
-                                            new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(1,2,3,0,0,0,0),1)),0);
-                            queue.flush(0,message->{
-                                ServerboundPackagePacket packet;
-                                if(message.single()!=null){confirmed[0]++;packet=ServerboundPackagePacket.control(message.action(),REGION,namespace.epoch(),message.single());}
-                                else {
-                                    PackageControlBatchCodec.visitValidated(ByteBuffer.wrap(message.body()),(action,index,id,generation,lease,revision)->{
-                                        if(action!=9||index!=confirmed[0]++||id!=0x1234567800000001L+index||generation!=1||lease!=1||revision!=2)throw new AssertionError("Batched visible identity mismatch");
-                                    });
-                                    packet=ServerboundPackagePacket.controls(REGION,namespace.epoch(),1,message.body());
-                                }
-                                for(int k=0;k<probes.length;k++)batchTotals[variant][k]+=probes[k].uplink(packet);return true;
-                            });
-                        }
-                        if(confirmed[0]!=count)throw new AssertionError("Visible controls lost");
-                    }
-                    batchVisibleFrames.put(count,batchTotals);
-                }
                 for(int tick=1;tick<=TICKS;tick++) {
                     if(tick%NATIVE_INTERVAL==0)for(int i=0;i<count;i++) {
                         var q=entry(i,tick,scene).value();var before=entry(i,tick-NATIVE_INTERVAL,scene).value();out.clear();
                         ClientboundMoveEntityPacket.Pos.STREAM_CODEC.encode(out,new ClientboundMoveEntityPacket.Pos(i+1,
                                 (short)(q.x()-before.x()),(short)(q.y()-before.y()),(short)(q.z()-before.z()),true));nativeBytes+=out.readableBytes();
-                        var ownerAction=framing?routes.get(i).route(owner,PackageNativeDownlink.Kind.RELATIVE_POSITION,true):null;
-                        var observerAction=framing?routes.get(i).route(observer,PackageNativeDownlink.Kind.RELATIVE_POSITION,false):null;
                         for(int k=0;k<probes.length;k++) {
                             int bytes=probes[k].nativeFrame(out);nativeFrames[k]+=bytes;
-                            if(ownerAction==PackageNativeDownlink.Action.SEND)routedOwner[k]+=bytes;
-                            else if(ownerAction!=PackageNativeDownlink.Action.DROP)throw new AssertionError("Ready owner unexpectedly rebased");
-                            if(observerAction!=PackageNativeDownlink.Action.SEND)throw new AssertionError("Native observer stream changed");
-                            routedObserver[k]+=bytes;
                         }
                     }
                     if(tick%cadence!=0)continue;
@@ -191,24 +136,6 @@ public final class PackageBatchNetworkBenchmark {
                     var workload=new PackageNetworkComparison.Workload(scene+"-threshold-"+probes[k].threshold,count,clients,TICKS,(long)count*TICKS);
                     var coverage=EnumSet.of(PackageNetworkComparison.Coverage.MOTION,PackageNetworkComparison.Coverage.ACK_CONTROL);
                     var referenceMeasurement=new PackageNetworkComparison.Measurement(workload,PackageNetworkComparison.Scope.PROTOCOL_FRAMES,0,reference,0,coverage);
-                    if(routedObserver[k]!=nativeFrames[k])throw new AssertionError("Routed native observer byte mismatch");
-                    long ready=visibleFrames.get(count)[k],observed=routedObserver[k]*(clients-1);
-                    var routedMeasurement=new PackageNetworkComparison.Measurement(workload,PackageNetworkComparison.Scope.PROTOCOL_FRAMES,
-                            relativeFrames[k]+ready,routedOwner[k]+observed+ackFrames[k],0,Set.of());
-                    var routedComparison=PackageNetworkComparison.compare(referenceMeasurement,routedMeasurement);
-                    if(routedComparison.passed())throw new AssertionError("Routed component fixture certified total traffic");
-                    routedRows.add(count+","+scene+","+cadence+","+probes[k].threshold+","+clients+","+reference+","+routedOwner[k]+","+observed
-                            +","+relativeFrames[k]+","+ackFrames[k]+","+ready+","+routedComparison.gpuBytes()+","+String.format(Locale.ROOT,"%.6f",routedComparison.ratio())+","+routedComparison.verdict());
-                    for(int grouping=0;grouping<2;grouping++) {
-                        long batchedReady=batchVisibleFrames.get(count)[grouping][k];
-                        var measuredControls=new PackageNetworkComparison.Measurement(workload,PackageNetworkComparison.Scope.PROTOCOL_FRAMES,
-                                relativeFrames[k]+batchedReady,routedOwner[k]+observed+ackFrames[k],0,Set.of());
-                        var comparedControls=PackageNetworkComparison.compare(referenceMeasurement,measuredControls);
-                        if(comparedControls.passed())throw new AssertionError("Control component fixture certified total traffic");
-                        controlRows.add(count+","+scene+","+cadence+","+probes[k].threshold+","+clients+","+(grouping==0?64:256)+","+reference
-                                +","+ready+","+batchedReady+","+relativeFrames[k]+","+ackFrames[k]+","+observed+","+comparedControls.gpuBytes()
-                                +","+String.format(Locale.ROOT,"%.6f",comparedControls.ratio())+","+comparedControls.verdict());
-                    }
                     for(boolean usePrediction:new boolean[]{false,true})for(boolean hypothetical:new boolean[]{false,true}) {
                         long up=usePrediction?predictedFrames[k]:relativeFrames[k];
                         long down=ackFrames[k]+nativeFrames[k]*(hypothetical?clients-1:clients);
@@ -227,8 +154,6 @@ public final class PackageBatchNetworkBenchmark {
         if(framing)Files.write(Path.of("build/package-network-framing.csv"),frameRows);
         if(framing)Files.write(Path.of("build/package-predicted-network-framing.csv"),predictedFrameRows);
         if(framing)Files.write(Path.of("build/package-network-acceptance.csv"),acceptanceRows);
-        if(framing)Files.write(Path.of("build/package-native-downlink-routing.csv"),routedRows);
-        if(framing)Files.write(Path.of("build/package-control-batch-network.csv"),controlRows);
     }
 
     /** Actual current PLAY IDs, custom-payload identifier/codec and Minecraft zlib/frame handlers.

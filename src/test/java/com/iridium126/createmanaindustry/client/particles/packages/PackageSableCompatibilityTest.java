@@ -17,7 +17,6 @@ class PackageSableCompatibilityTest {
         assertNull(PackageMovingCollisionSources.optionalBridge(false, null));
         assertNull(PackageForceClient.optionalBridge(false));
         assertNull(PackageChainFrameScene.optionalBridge(false));
-        assertNull(com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageForceHooks.fanProbe(false,null));
     }
 
     @Test void commonSourcesHaveNoExternalSableTypesAndAdapterHasNoReflection() throws Exception {
@@ -48,19 +47,16 @@ class PackageSableCompatibilityTest {
                 "/com/iridium126/createmanaindustry/content/logistics/gpupackage/PackageForceHooks.class"}){
             try(var stream=getClass().getResourceAsStream(path)){assertNotNull(stream);assertFalse(new String(stream.readAllBytes(),StandardCharsets.ISO_8859_1).contains("dev/ryanhcode/sable/"));}
         }
-        for(String name:new String[]{"PackageSableForceHooks","PackageSableForceHooks$1"}){
-            try(var stream=getClass().getResourceAsStream("/com/iridium126/createmanaindustry/content/logistics/gpupackage/"+name+".class")){
-                assertNotNull(stream);String bytecode=new String(stream.readAllBytes(),StandardCharsets.ISO_8859_1);assertFalse(bytecode.contains("java/lang/reflect/"));assertFalse(bytecode.contains("forName"));}
-        }
+
     }
 
     @Test void plotBlockChangesInvalidateOnlyMovingCollisionAndMixinIsVersionGated() throws Exception {
-        var mixin=PackageNativePacketHookContractTest.type("com/iridium126/createmanaindustry/mixin/packages/sable/PackageSableCollisionPlotMixin");
+        var mixin=PackageCollisionHookContractTest.type("com/iridium126/createmanaindustry/mixin/packages/sable/PackageSableCollisionPlotMixin");
         var hook=mixin.methods.stream().filter(method->method.name.equals("cmi$invalidateMovingCollision")).findFirst().orElseThrow();
         var inject=hook.visibleAnnotations.stream().filter(a->a.desc.equals("Lorg/spongepowered/asm/mixin/injection/Inject;")).findFirst().orElseThrow();
-        assertTrue(PackageNativePacketHookContractTest.annotationValueContains(inject,"method",
+        assertTrue(PackageCollisionHookContractTest.annotationValueContains(inject,"method",
                 "onBlockChange(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;)V"));
-        assertTrue(PackageNativePacketHookContractTest.annotationAt(inject,"TAIL"));
+        assertTrue(PackageCollisionHookContractTest.annotationAt(inject,"TAIL"));
         boolean movingOnly=false;
         for(var instruction:hook.instructions)if(instruction instanceof MethodInsnNode call
                 && call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionRuntime")
@@ -73,7 +69,7 @@ class PackageSableCompatibilityTest {
             assertTrue(clients.contains("packages.sable.PackageSableCollisionPlotMixin"));
             assertFalse(common.contains("PackageSableCollisionPlotMixin"));
         }
-        var plugin=PackageNativePacketHookContractTest.type("com/iridium126/createmanaindustry/mixin/CMIMixinPlugin");
+        var plugin=PackageCollisionHookContractTest.type("com/iridium126/createmanaindustry/mixin/CMIMixinPlugin");
         var gate=plugin.methods.stream().filter(method->method.name.equals("shouldApplyMixin")).findFirst().orElseThrow();
         boolean packageGate=false,sableGate=false;
         for(var instruction:gate.instructions) {

@@ -196,7 +196,7 @@ public final class PackageChainAuthority {
         liveIdentities.remove(entry.target.identity().id(),entry);
         entries.remove(entry.index);candidates.remove(entry.candidate,entry);if(entry.candidate>=0)retired.put(entry.candidate,entry.target.identity());pending.remove(entry);
         var track=byTrack.get(entry.track);track.remove(entry);if(track.isEmpty())byTrack.remove(entry.track);
-        boolean frozen=entry.nativeFrozen;Baseline previous=baseline(entry);entry.lease.release();entry.lease.restored();
+        boolean frozen=entry.nativeFrozen;Baseline previous=baseline(entry);entry.lease.release();entry.lease.finishRelease();
         entry.target.released(previous,frozen);
     }
     private Entry find(UUID sender,long epoch,int index,PackageLease.Identity identity,long tick) {

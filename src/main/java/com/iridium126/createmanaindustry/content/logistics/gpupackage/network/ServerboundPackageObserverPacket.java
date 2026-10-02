@@ -12,13 +12,13 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /** Explicit observer opt-in. It grants no authority and cannot mutate a package or inventory. */
 public record ServerboundPackageObserverPacket(int action,PackageRegion region,long stream) implements CustomPacketPayload {
-    public static final int SUBSCRIBE=0,UNSUBSCRIBE=1,SUBSCRIBE_NATIVE=2;
+    public static final int SUBSCRIBE=0,UNSUBSCRIBE=1;
     public static final Type<ServerboundPackageObserverPacket> TYPE=new Type<>(ResourceLocation.fromNamespaceAndPath(
             CreateManaIndustry.MODID,"package_observer_up"));
     public static final StreamCodec<RegistryFriendlyByteBuf,ServerboundPackageObserverPacket> STREAM_CODEC=StreamCodec.of(
             ServerboundPackageObserverPacket::encode,ServerboundPackageObserverPacket::decode);
     public ServerboundPackageObserverPacket {
-        if(action<SUBSCRIBE || action>SUBSCRIBE_NATIVE || region==null || stream<0
+        if(action<SUBSCRIBE || action>UNSUBSCRIBE || region==null || stream<0
                 || action!=UNSUBSCRIBE && stream!=0 || action==UNSUBSCRIBE && stream==0)
             throw new IllegalArgumentException("Observer control");
     }

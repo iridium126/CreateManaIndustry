@@ -84,7 +84,7 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
      * a gameplay entity. Terminal/retiring/hidden/observer results cannot enter native input. */
     public ClientboundPackagePacket activeOffer(PackagePoseQueryGpu.Result result){return activeOffer(result,Long.MAX_VALUE);}
     public ClientboundPackagePacket activeOffer(PackagePoseQueryGpu.Result result,long submission) {
-        open();if(result==null||!result.present()||result.chain()||result.flags()!=PackagePoolGpu.HANDBACKABLE||(result.state()<0&&result.state()!=PackagePhysicsGpu.COLLISION_FROZEN))return null;
+        open();if(result==null||!result.present()||result.chain()||result.flags()!=PackagePoolGpu.ACTIVE_AUTHORITY||(result.state()<0&&result.state()!=PackagePhysicsGpu.COLLISION_FROZEN))return null;
         var entry=byCandidate.get(result.candidate());
         if(entry==null||entry.terminal||entry.phase!=Phase.ACTIVE||entry.body!=result.body()||submission<entry.visibleSince)return null;
         var identity=entry.offer.baseline().identity();
@@ -150,16 +150,10 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
     public void requestRelease(int localId) {
         open();Entry entry=entries.get(localId);if(entry!=null && !entry.terminal)release(entry,entry.checkpoint.baseline(),true);
     }
-    /** A GPU body index is resolved only through this acquisition's live, confirmed identity map. */
-    public boolean requestReleaseBody(int bodyIndex) {
-        open();Entry entry=byBody.get(bodyIndex);
-        if(entry==null||entry.terminal||entry.phase!=Phase.ACTIVE)return false;
-        release(entry,entry.checkpoint.baseline(),true);return true;
-    }
     private void release(Entry entry,PackageAuthorityRegion.Baseline baseline,boolean notify) {
         if(entry.phase==Phase.RETIRE || entry.phase==Phase.RETIRED_ADMISSION)return;
         if(notify)transport.control(ServerboundPackagePacket.RELEASE,entry.checkpoint);
-        // Keep the exact terminal baseline for the eventual render handback callback.
+        // Keep the exact terminal baseline for the exact retirement callback.
         entry.checkpoint=new ClientboundPackagePacket(ClientboundPackagePacket.RELEASED,entry.offer.dimension(),region,epoch,
                 revision,0,baseline,0,null,null,0,0);
         if(entry.body<0){finish(entry);transport.released(entry.offer,baseline);return;}
@@ -208,11 +202,11 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
                 }
                 case ACTIVATE -> {
                     if(!covered.test(entry.offer,entry.checkpoint)){release(entry,entry.checkpoint.baseline(),true);continue;}
-                    physics.activatePreparedFree(entry.body);detector.activate(entry.delta);pool.setHandbackable(entry.candidate,true);pool.setHidden(entry.candidate,false);
+                    physics.activatePreparedFree(entry.body);detector.activate(entry.delta);pool.setAuthorityActive(entry.candidate,true);pool.setHidden(entry.candidate,false);
                     entry.phase=Phase.VISIBLE_ADMISSION;awaiting.add(entry);
                 }
                 case RETIRE -> {
-                    physics.retireFree(entry.body);if(physics.environment()!=null)physics.environment().retire(entry.body);pool.setHandbackable(entry.candidate,false);pool.setHidden(entry.candidate,true);
+                    physics.retireFree(entry.body);if(physics.environment()!=null)physics.environment().retire(entry.body);pool.setAuthorityActive(entry.candidate,false);pool.setHidden(entry.candidate,true);
                     entry.phase=Phase.RETIRED_ADMISSION;awaiting.add(entry);
                 }
                 default -> throw new IllegalStateException("Unexpected queued acquisition phase "+entry.phase);
@@ -247,7 +241,7 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
             if(!batch.isEmpty() && entry.candidate!=batch.getLast().candidate+1) {
                 if(!submit(batch,expected))return;batch.clear();expected.clear();
             }
-            batch.add(entry);int flags=entry.phase==Phase.VISIBLE_ADMISSION?PackagePoolGpu.HANDBACKABLE:PackagePoolGpu.HIDDEN;
+            batch.add(entry);int flags=entry.phase==Phase.VISIBLE_ADMISSION?PackagePoolGpu.ACTIVE_AUTHORITY:PackagePoolGpu.HIDDEN;
             var identity=entry.offer.baseline().identity();expected.add(new PackageAdmissionTracker.Expected(identity.id(),identity.generation(),flags));
             if(batch.size()==MAX_TRANSITIONS){if(!submit(batch,expected))return;batch.clear();expected.clear();}
         }

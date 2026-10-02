@@ -1,0 +1,64 @@
+Calculating task graph as no cached configuration is available for tasks: build compilePackageBenchmarkTools benchmarkPackageIndexes
+> Task :cloneVoxy SKIPPED
+> Task :jarJar NO-SOURCE
+> Task :processTestResources NO-SOURCE
+> Task :extractSodiumCoreJar UP-TO-DATE
+> Task :generateModMetadata UP-TO-DATE
+> Task :extractSableCompanion UP-TO-DATE
+> Task :prepareVoxy SKIPPED
+> Task :activateVoxy SKIPPED
+> Task :buildVoxy SKIPPED
+> Task :cacheVoxy SKIPPED
+> Task :processResources UP-TO-DATE
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :compileJava UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :compileTestJava UP-TO-DATE
+> Task :testClasses UP-TO-DATE
+> Task :test UP-TO-DATE
+> Task :copyPackageIndexReferenceResources
+
+> Task :validatePackageSableAbsent
+Package Sable absent: direct bridge gate passed without Sable/companion
+
+> Task :check
+
+> Task :compilePackageBenchmarkTools
+注: 某些输入文件使用或覆盖了已过时的 API。
+注: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+
+> Task :jar
+> Task :assemble
+> Task :build
+> Task :compilePackageIndexComparison
+
+> Task :benchmarkPackageIndexes
+NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2 / 4.5.0 NVIDIA 581.15
+65,aligned_stack,linked,1,1.503232,6.71744,0.3182,0.3691,168068,0,65,0.0,0.0,0,1
+65,aligned_stack,exact_ranges,1,1.26976,2.666496,0.3525,0.5269,172704,4636,65,0.0,0.0,0,1
+65,aligned_stack,bounded_linked,1,0.67072,0.676864,0.2536,0.2547,169092,1024,65,0.0,0.0,0,1
+65,staggered_stack,linked,1,0.649216,0.651264,0.1886,0.1962,168068,0,65,0.0,0.0,0,1
+65,staggered_stack,exact_ranges,1,1.093632,1.302528,0.3409,0.3516,172704,4636,65,0.0,0.0,0,1
+65,staggered_stack,bounded_linked,1,0.620544,0.622592,0.1964,0.2123,169092,1024,65,0.0,0.0,0,1
+65,continuous_force,linked,1,0.666624,0.678912,0.1863,0.1956,168068,0,65,0.0,0.0,0,1
+65,continuous_force,exact_ranges,1,1.103872,1.110016,0.3176,0.3217,172704,4636,65,0.0,0.0,0,1
+65,continuous_force,bounded_linked,1,0.681984,0.687104,0.191,0.2166,169092,1024,65,0.0,0.0,0,1
+65,fast_vs_stationary,linked,1,0.636928,0.659456,0.183,0.2359,168068,0,65,0.0,0.0,0,1
+65,fast_vs_stationary,exact_ranges,1,0.97792,0.9984,0.3145,0.4052,172704,4636,65,0.0,0.0,0,1
+65,fast_vs_stationary,bounded_linked,1,0.632832,0.663552,0.2063,0.2388,169092,1024,65,0.0,0.0,0,1
+65,moving_platform,linked,1,0.303104,0.32256,0.2776,0.3605,169108,0,65,0.0,0.0,0,1
+65,moving_platform,exact_ranges,1,0.628736,0.641024,0.3647,0.3863,173744,4636,65,0.0,0.0,0,1
+65,moving_platform,bounded_linked,1,0.304128,0.313344,0.2333,0.238,170132,1024,65,0.0,0.0,0,1
+Package index comparison: 2276 assertions passed
+
+[Incubating] Problems report is available at: file:///D:/MAINFILE/MCMOD/CreateManaIndustry-1.21.1-Neoforge-branch/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.2.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 27s
+14 actionable tasks: 6 executed, 8 up-to-date
+Configuration cache entry stored.

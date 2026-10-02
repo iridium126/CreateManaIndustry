@@ -21,8 +21,7 @@ public record ClientboundPackageObserverPacket(ResourceLocation dimension,Packag
         long stream,long sequence,int flags,List<PackageObserverFeed.Member<Visual>> baselines,List<PackageDeltaCodec.Entry> changes,
         long serverTick,PackageObserverTimes stateTicks)
         implements CustomPacketPayload {
-    public static final int RESET=1,COMPLETE=2,CLOSE=4,MEMBERSHIP_ONLY=8,MAX_RECORDS=128,MAX_DELTA_BYTES=8192;
-    public static final PackageDeltaCodec.Quantized NO_POSE=new PackageDeltaCodec.Quantized(0,0,0,(short)0,(short)0,(short)0,(short)0,0);
+    public static final int RESET=1,COMPLETE=2,CLOSE=4,MAX_RECORDS=128,MAX_DELTA_BYTES=8192;
     public record Visual(int entityId,UUID entityUuid,ResourceLocation model,float width,float height) {
         public Visual {
             if(entityId< -1 || entityUuid==null || model==null || model.toString().length()>256
@@ -42,8 +41,8 @@ public record ClientboundPackageObserverPacket(ResourceLocation dimension,Packag
         this(dimension,region,epoch,revision,stream,sequence,flags,baselines,changes,0,PackageObserverTimes.zeros(changes.size()));
     }
     public ClientboundPackageObserverPacket {
-        if(dimension==null || region==null || epoch<=0 || revision<=0 || stream<=0 || sequence<0 || (flags&~15)!=0
-                || (flags&RESET)!=0 && sequence!=0 || (flags&CLOSE)!=0 && ((flags&~MEMBERSHIP_ONLY)!=CLOSE || !baselines.isEmpty() || !changes.isEmpty()))
+        if(dimension==null || region==null || epoch<=0 || revision<=0 || stream<=0 || sequence<0 || (flags&~7)!=0
+                || (flags&RESET)!=0 && sequence!=0 || (flags&CLOSE)!=0 && (flags!=CLOSE || !baselines.isEmpty() || !changes.isEmpty()))
             throw new IllegalArgumentException("Observer envelope");
         baselines=List.copyOf(baselines);changes=List.copyOf(changes);
         if(serverTick<0 || stateTicks==null || stateTicks.size()!=changes.size())throw new IllegalArgumentException("Observer time envelope");
@@ -53,8 +52,7 @@ public record ClientboundPackageObserverPacket(ResourceLocation dimension,Packag
         int previous=-1;
         for(var change:changes) {
             if(change.id()<=previous || (change.mask()&PackageDeltaCodec.FLAGS)!=0
-                    && (change.value().flags()&~PackageAuthorityRegion.STATE_FLAGS)!=0
-                    || (flags&MEMBERSHIP_ONLY)!=0 && change.mask()!=PackageDeltaCodec.RELEASE)
+                    && (change.value().flags()&~PackageAuthorityRegion.STATE_FLAGS)!=0)
                 throw new IllegalArgumentException("Observer changes");
             previous=change.id();
         }
@@ -72,7 +70,7 @@ public record ClientboundPackageObserverPacket(ResourceLocation dimension,Packag
         b.writeVarInt(p.baselines.size());
         for(var member:p.baselines) {
             b.writeVarInt(member.index());b.writeVarLong(member.identity().id());b.writeVarLong(member.identity().generation());
-            b.writeVarLong(member.leaseEpoch());b.writeVarLong(member.revision());if((p.flags&MEMBERSHIP_ONLY)==0)writeState(b,member.state());
+            b.writeVarLong(member.leaseEpoch());b.writeVarLong(member.revision());writeState(b,member.state());
             if(!shared)b.writeVarLong(p.serverTick-member.stateTick());
             var v=member.metadata();b.writeVarInt(v.entityId());b.writeUUID(v.entityUuid());b.writeUtf(v.model().toString(),256);
             b.writeFloat(v.width());b.writeFloat(v.height());
@@ -94,7 +92,7 @@ public record ClientboundPackageObserverPacket(ResourceLocation dimension,Packag
             var members=new ArrayList<PackageObserverFeed.Member<Visual>>(count);
             for(int i=0;i<count;i++) {
                 int index=b.readVarInt();var identity=new PackageLease.Identity(b.readVarLong(),b.readVarLong());
-                long lease=b.readVarLong(),base=b.readVarLong();var state=(flags&MEMBERSHIP_ONLY)==0?readState(b):NO_POSE;long stateTick=timeMode==0?sharedTick:readStateTick(b,tick);
+                long lease=b.readVarLong(),base=b.readVarLong();var state=readState(b);long stateTick=timeMode==0?sharedTick:readStateTick(b,tick);
                 var visual=new Visual(b.readVarInt(),b.readUUID(),ResourceLocation.parse(b.readUtf(256)),b.readFloat(),b.readFloat());
                 members.add(new PackageObserverFeed.Member<>(index,identity,lease,base,state,visual,stateTick));
             }

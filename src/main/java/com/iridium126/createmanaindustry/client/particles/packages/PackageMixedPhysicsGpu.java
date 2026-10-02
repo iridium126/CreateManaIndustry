@@ -33,16 +33,11 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
     }
     /** Observer reservation uses no extra generic particle slots and does not join either solver. */
     public PackageMixedPhysicsGpu(int freeCapacity,int chainCapacity,int observerCapacity,float cellSize,Function<String,String> sources) {
-        this(freeCapacity,chainCapacity,observerCapacity,cellSize,sources,null);
-    }
-    /** Native observer domain consumes existing entity packets, with no extra pose protocol. */
-    public PackageMixedPhysicsGpu(int freeCapacity,int chainCapacity,int observerCapacity,float cellSize,Function<String,String> sources,
-                                  PackageObserverGpu.NativeOrigin nativeOrigin) {
-        this(freeCapacity,chainCapacity,observerCapacity,cellSize,sources,nativeOrigin,()->true);
+        this(freeCapacity,chainCapacity,observerCapacity,cellSize,sources,()->true);
     }
     /** Validation may hold completed upload banks, never waive a real GPU fence. */
     public PackageMixedPhysicsGpu(int freeCapacity,int chainCapacity,int observerCapacity,float cellSize,Function<String,String> sources,
-                                  PackageObserverGpu.NativeOrigin nativeOrigin,java.util.function.BooleanSupplier consumeObserverUploads) {
+                                  java.util.function.BooleanSupplier consumeObserverUploads) {
         if(freeCapacity<0 || chainCapacity<0 || observerCapacity<0 || freeCapacity>131072 || chainCapacity>131072 || observerCapacity>131072
                 || (long)freeCapacity+chainCapacity+observerCapacity<1)
             throw new IllegalArgumentException("Mixed package capacity");
@@ -54,7 +49,7 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
         try {
             nextFree=new PackagePhysicsGpu(Math.max(1,freeCapacity),cellSize,sources);
             nextChain=new PackagePhysicsGpu(Math.max(1,chainCapacity),cellSize,sources);
-            if(observerCapacity>0)nextObservers=new PackageObserverGpu(observerCapacity,sources,consumeObserverUploads,nativeOrigin);
+            if(observerCapacity>0)nextObservers=new PackageObserverGpu(observerCapacity,sources,consumeObserverUploads);
             for(int bank=0;bank<2;bank++) {
                 bodies[bank]=buffer((long)totalCapacity*PackagePhysicsGpu.BODY_BYTES);
                 chains[bank]=buffer((long)totalCapacity*PackagePhysicsGpu.CHAIN_BYTES);

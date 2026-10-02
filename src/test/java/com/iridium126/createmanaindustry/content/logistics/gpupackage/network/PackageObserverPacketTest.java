@@ -14,22 +14,18 @@ import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 class PackageObserverPacketTest {
-    @Test void nativeMembershipOmitsEveryPoseFieldAndRejectsPoseChanges() {
-        var members=new ArrayList<PackageObserverFeed.Member<ClientboundPackageObserverPacket.Visual>>();for(int i=0;i<128;i++)members.add(member(i));
-        var pose=new ClientboundPackageObserverPacket(DIM,REGION,10,1,20,0,3,members,List.of());
-        var nativePacket=new ClientboundPackageObserverPacket(DIM,REGION,10,1,20,0,3|ClientboundPackageObserverPacket.MEMBERSHIP_ONLY,members,List.of());
+    @Test void removedNativeObserverModesCannotBeRequestedOrDecoded() {
+        assertThrows(IllegalArgumentException.class,()->new ServerboundPackageObserverPacket(2,REGION,0));
+        assertThrows(IllegalArgumentException.class,()->new ClientboundPackageObserverPacket(DIM,REGION,10,1,20,0,11,List.of(member(0)),List.of()));
         var bytes=buffer();try {
-            ClientboundPackageObserverPacket.STREAM_CODEC.encode(bytes,pose);int poseBytes=bytes.readableBytes();bytes.clear();
-            ClientboundPackageObserverPacket.STREAM_CODEC.encode(bytes,nativePacket);assertEquals(poseBytes-128*21,bytes.readableBytes());
-            var decoded=ClientboundPackageObserverPacket.STREAM_CODEC.decode(bytes);assertEquals(0,bytes.readableBytes());
-            for(int i=0;i<128;i++){assertEquals(members.get(i).identity(),decoded.baselines().get(i).identity());
-                assertEquals(members.get(i).metadata(),decoded.baselines().get(i).metadata());assertEquals(ClientboundPackageObserverPacket.NO_POSE,decoded.baselines().get(i).state());}
-            bytes.clear();var request=new ServerboundPackageObserverPacket(ServerboundPackageObserverPacket.SUBSCRIBE_NATIVE,REGION,0);
-            ServerboundPackageObserverPacket.STREAM_CODEC.encode(bytes,request);assertEquals(request,ServerboundPackageObserverPacket.STREAM_CODEC.decode(bytes));
+            bytes.writeByte(2);ServerboundPackagePacket.writeRegion(bytes,REGION);
+            assertThrows(DecoderException.class,()->ServerboundPackageObserverPacket.STREAM_CODEC.decode(bytes));
+            bytes.clear();var valid=new ClientboundPackageObserverPacket(DIM,REGION,10,1,20,0,3,List.of(member(0)),List.of());
+            ClientboundPackageObserverPacket.STREAM_CODEC.encode(bytes,valid);
+            var cursor=new RegistryFriendlyByteBuf(bytes.duplicate(),RegistryAccess.EMPTY);cursor.readResourceLocation();ServerboundPackagePacket.readRegion(cursor);
+            for(int i=0;i<4;i++)cursor.readVarLong();bytes.setByte(cursor.readerIndex(),11);
+            assertThrows(DecoderException.class,()->ClientboundPackageObserverPacket.STREAM_CODEC.decode(bytes));
         }finally{bytes.release();}
-        assertThrows(IllegalArgumentException.class,()->new ClientboundPackageObserverPacket(DIM,REGION,10,1,20,1,10,List.of(),
-                List.of(new PackageDeltaCodec.Entry(0,PackageDeltaCodec.POSITION,member(0).state()))));
-        assertThrows(IllegalArgumentException.class,()->new ServerboundPackageObserverPacket(ServerboundPackageObserverPacket.SUBSCRIBE_NATIVE,REGION,1));
     }
     private static final ResourceLocation DIM=ResourceLocation.parse("minecraft:overworld");
     private static final PackageRegion REGION=new PackageRegion(-200,33554432,-1);

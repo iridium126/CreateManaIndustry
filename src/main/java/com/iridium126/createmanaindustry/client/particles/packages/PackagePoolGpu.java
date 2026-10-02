@@ -18,7 +18,7 @@ import org.lwjgl.system.MemoryStack;
  */
 public final class PackagePoolGpu implements AutoCloseable {
     public static final int META_BYTES=80, VERTEX_BYTES=48, MESH_BYTES=16;
-    public static final int NO_MESH=-1, CHAIN=1, FLIPPED=2, HIDDEN=4, FRAMED=8, HANDBACKABLE=16;
+    public static final int NO_MESH=-1, CHAIN=1, FLIPPED=2, HIDDEN=4, FRAMED=8, ACTIVE_AUTHORITY=16;
     public static final int ATTACHMENT_BYTES=176;
     public enum DrawPass { GBUFFER, SHADOW }
     private static final class PassState {int commands,instances,pool;long publication=-1;}
@@ -201,7 +201,7 @@ public final class PackagePoolGpu implements AutoCloseable {
     public void retireIdentity(int candidate,long id,long generation) {
         ensureOpen();
         if(candidate<0 || candidate>=count || staged>=0 || (candidateFlags[candidate]&HIDDEN)==0
-                || (candidateFlags[candidate]&HANDBACKABLE)!=0)throw new IllegalArgumentException("Package identity still visible or staged");
+                || (candidateFlags[candidate]&ACTIVE_AUTHORITY)!=0)throw new IllegalArgumentException("Package identity still visible or staged");
         identities.retire(id,generation,candidate);
     }
     /** A prepared candidate reserves a real slot while Create still owns and renders it. */
@@ -218,12 +218,12 @@ public final class PackagePoolGpu implements AutoCloseable {
         }
         candidateFlags[candidate]=(byte)next;
     }
-    /** Mark only a visibly active free authority as eligible for frozen handback rendering. */
-    public void setHandbackable(int candidate,boolean handbackable) {
+    /** Mark a visibly admitted free package as carrying simulation authority. */
+    public void setAuthorityActive(int candidate,boolean active) {
         ensureOpen();
-        if(candidate<0 || candidate>=count || staged>=0 || handbackable && identities.retired(candidate))throw new IllegalArgumentException("Package handback transition outside live committed generation");
+        if(candidate<0 || candidate>=count || staged>=0 || active && identities.retired(candidate))throw new IllegalArgumentException("Package authority transition outside live committed generation");
         int previous=Byte.toUnsignedInt(candidateFlags[candidate]);
-        int next=handbackable?previous|HANDBACKABLE:previous&~HANDBACKABLE;
+        int next=active?previous|ACTIVE_AUTHORITY:previous&~ACTIVE_AUTHORITY;
         if(next==previous)return;
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);
@@ -240,7 +240,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             int body=v.getInt(p+16);
             if(id<=0 || generation<=0 || body<0 || !identities.add(new Identity(id,generation)) || !bodies.add(body))
                 throw new IllegalArgumentException("Invalid/duplicate package identity or body");
-            int flags=v.getInt(p+28);if((flags&~(CHAIN|FLIPPED|HIDDEN|FRAMED|HANDBACKABLE))!=0 || (flags&FRAMED)!=0&&(flags&CHAIN)==0)throw new IllegalArgumentException("Package flags");
+            int flags=v.getInt(p+28);if((flags&~(CHAIN|FLIPPED|HIDDEN|FRAMED|ACTIVE_AUTHORITY))!=0 || (flags&FRAMED)!=0&&(flags&CHAIN)==0)throw new IllegalArgumentException("Package flags");
             for(int j=0;j<12;j++)if(j!=7 && !Float.isFinite(v.getFloat(p+32+j*4)))
                 throw new IllegalArgumentException("Non-finite package metadata");
         }

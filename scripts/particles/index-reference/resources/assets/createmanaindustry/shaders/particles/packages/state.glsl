@@ -4,7 +4,7 @@ struct Body {
     vec4 positionMass; // centre.xyz, inverse mass (zero = static collider)
     vec4 velocityGround; // blocks/second.xyz, support flag
     vec4 extentYaw; // half extents.xyz, yaw in degrees
-    vec4 previousSleep; // previous centre.xyz; -1 handback, -2 prepared, -3 retired, -4 collision-frozen
+    vec4 previousSleep; // previous centre.xyz; -1 invalid, -2 prepared, -3 retired, -4 collision-frozen
 };
 void freezeForMissingCollision(inout Body body,vec3 stablePosition) {
     body.positionMass.xyz=stablePosition;

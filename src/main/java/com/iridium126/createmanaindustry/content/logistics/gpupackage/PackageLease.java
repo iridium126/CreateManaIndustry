@@ -6,7 +6,7 @@ import java.util.function.LongSupplier;
 
 /** Server-thread ownership fence. Pool indices never cross this boundary. */
 public final class PackageLease {
-    public enum State { CREATE_OWNED, ACQUIRING, GPU_OWNED, RELEASING }
+    public enum State { IDLE, ACQUIRING, GPU_OWNED, RELEASING }
     public record Identity(long id, long generation) {
         public Identity {
             if (id <= 0 || generation <= 0) throw new IllegalArgumentException("Invalid package identity");
@@ -21,12 +21,12 @@ public final class PackageLease {
     }
 
     public static final long TIMEOUT_TICKS = 2;
-    /** Create still simulates while collision and model resources warm up. */
+    /** Resource preparation has a bounded acquisition deadline. */
     public static final long ACQUISITION_TIMEOUT_TICKS = 40;
     /** Brief render/GPU stalls must not revoke an otherwise live region's packages. */
     public static final long AUTHORITY_HEARTBEAT_TIMEOUT_TICKS = 100;
     private final Identity identity;
-    private State state = State.CREATE_OWNED;
+    private State state = State.IDLE;
     private UUID authority;
     private long epoch, baselineRevision, lastSequence = -1, lastTransaction = -1, lastReceiptTick;
     private Pose committed;
@@ -48,9 +48,9 @@ public final class PackageLease {
         this.authorityTimeoutTicks=authorityTimeoutTicks;
     }
 
-    /** Begin only after server eligibility checks; Create keeps simulating until ready. */
+    /** Begin only after server eligibility checks; Records retain their confirmed state until ready. */
     public long acquire(UUID client, Pose current, long tick) {
-        if (state != State.CREATE_OWNED) throw new IllegalStateException("Package already leased");
+        if (state != State.IDLE) throw new IllegalStateException("Package already leased");
         authority = Objects.requireNonNull(client);
         committed = Objects.requireNonNull(current);
         epoch = Math.incrementExact(epoch);
@@ -73,8 +73,8 @@ public final class PackageLease {
         return true;
     }
 
-    /** Resources are prepared; capture the CURRENT Create checkpoint, then wait for its exact ACK.
-     * The adapter pauses only physics during this bounded final-baseline window. */
+    /** Resources are prepared; capture the current confirmed checkpoint, then wait for its exact ACK.
+     * The adapter freezes the baseline during this bounded final-baseline window. */
     public long freezeBaseline(UUID client,long candidateEpoch,long candidateBaseline,long tick,Pose current) {
         if(state!=State.ACQUIRING || frozen || !matches(client,candidateEpoch) || expired(tick)
                 || candidateBaseline!=baselineRevision)return -1;
@@ -84,7 +84,7 @@ public final class PackageLease {
         return baselineRevision;
     }
 
-    /** While Create is still moving the object, replace the offered baseline and require a fresh ACK. */
+    /** While the adapter is still advancing chain logistics, replace the offered baseline and require a fresh ACK. */
     public long refreshAcquisition(Pose current) {
         if (state != State.ACQUIRING) throw new IllegalStateException("No acquisition in progress");
         if(frozen)throw new IllegalStateException("Final acquisition baseline is frozen");
@@ -128,9 +128,9 @@ public final class PackageLease {
         return true;
     }
 
-    /** Invalidates authority before the caller restores the committed checkpoint to Create. */
+    /** Invalidate authority before the adapter completes pause or chain logistics migration. */
     public Pose release() {
-        if (state == State.CREATE_OWNED || state == State.RELEASING) return committed;
+        if (state == State.IDLE || state == State.RELEASING) return committed;
         epoch = Math.incrementExact(epoch);
         authority = null;
         state = State.RELEASING;
@@ -138,15 +138,15 @@ public final class PackageLease {
         return committed;
     }
 
-    /** Cancelling an acquisition must not rewind the Create simulation that still owned it. */
-    public Pose release(Pose currentCreatePose) {
-        if(state==State.ACQUIRING)committed=Objects.requireNonNull(currentCreatePose);
+    /** Cancelling an acquisition preserves the adapter's latest confirmed progress. */
+    public Pose release(Pose currentPose) {
+        if(state==State.ACQUIRING)committed=Objects.requireNonNull(currentPose);
         return release();
     }
 
-    public void restored() {
-        if (state != State.RELEASING) throw new IllegalStateException("No pending restore");
-        state = State.CREATE_OWNED;
+    public void finishRelease() {
+        if (state != State.RELEASING) throw new IllegalStateException("No pending release");
+        state = State.IDLE;
     }
 
     public boolean expired(long tick) {

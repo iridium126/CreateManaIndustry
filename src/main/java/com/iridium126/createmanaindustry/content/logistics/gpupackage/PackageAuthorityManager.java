@@ -12,14 +12,10 @@ import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorPackage;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.server.network.ServerPlayerConnection;
-import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket;
-import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
-import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
@@ -42,10 +38,9 @@ public final class PackageAuthorityManager {
     private record ObserverKey(UUID player,PackageRegion region) {}
     private static final class Observer {
         final PackageAuthorityRegion authority;
-        final boolean membershipOnly;
         PackageObserverFeed.Cursor cursor;
-        Observer(PackageAuthorityRegion authority,long stream,boolean membershipOnly){this.authority=authority;this.membershipOnly=membershipOnly;reset(stream);}
-        void reset(long stream){cursor=membershipOnly?authority.observers().subscribeMembership(stream):authority.observers().subscribe(stream);}
+        Observer(PackageAuthorityRegion authority,long stream){this.authority=authority;reset(stream);}
+        void reset(long stream){cursor=authority.observers().subscribe(stream);}
     }
     private static final class Runtime {
         final PackageLightStore light;
@@ -73,7 +68,6 @@ public final class PackageAuthorityManager {
     private static final class EntityTarget implements PackageAuthorityRegion.Target {
         final PackageLightStore.Entry light;
         int lightOrdinal=-1;
-        final int entityId=-1;
         final UUID uuid;
         net.minecraft.resources.ResourceLocation model;
         float width,height;
@@ -279,7 +273,7 @@ public final class PackageAuthorityManager {
         int regions=0;for(var observer:rt.observers.keySet())if(observer.player().equals(player.getUUID()))regions++;
         if(previous==null && regions>=MAX_OBSERVER_REGIONS)return;
         if(previous!=null)previous.authority.observers().unsubscribe(previous.cursor);
-        rt.observers.put(key,new Observer(region,PackageIdentityData.get(rt.level).epoch(),false));
+        rt.observers.put(key,new Observer(region,PackageIdentityData.get(rt.level).epoch()));
     }
     private static void pumpObservers(Runtime rt) {
         if(rt.observers.isEmpty())return;
@@ -312,14 +306,14 @@ public final class PackageAuthorityManager {
                     var members=new ArrayList<PackageObserverFeed.Member<ClientboundPackageObserverPacket.Visual>>(batch.baselines().size());
                     for(var member:batch.baselines()) {
                         var target=(EntityTarget)member.metadata();
-                        var visual=new ClientboundPackageObserverPacket.Visual(target.entityId,target.uuid,target.model,target.width,target.height);
+                        var visual=new ClientboundPackageObserverPacket.Visual(-1,target.uuid,target.model,target.width,target.height);
                         members.add(new PackageObserverFeed.Member<>(member.index(),member.identity(),member.leaseEpoch(),member.revision(),
-                                observer.membershipOnly?ClientboundPackageObserverPacket.NO_POSE:member.state(),visual,member.stateTick()));
+                                member.state(),visual,member.stateTick()));
                     }
                     PacketDistributor.sendToPlayer(player,new ClientboundPackageObserverPacket(rt.level.dimension().location(),key.region(),
                             observer.authority.epoch(),observer.authority.revision(),batch.stream(),batch.sequence(),
                             (batch.reset()?ClientboundPackageObserverPacket.RESET:0)|(batch.complete()?ClientboundPackageObserverPacket.COMPLETE:0)
-                                    |(observer.membershipOnly?ClientboundPackageObserverPacket.MEMBERSHIP_ONLY:0),members,batch.changes(),rt.level.getGameTime(),batch.stateTicks()));
+                                    ,members,batch.changes(),rt.level.getGameTime(),batch.stateTicks()));
                 }else idle++;
                 // Rotate even idle subscriptions so a large population cannot starve the tail.
                 rt.observers.put(key,observer);
@@ -333,7 +327,7 @@ public final class PackageAuthorityManager {
     private static void closeObserver(Runtime rt,ServerPlayer player,Observer observer) {
         try {PacketDistributor.sendToPlayer(player,new ClientboundPackageObserverPacket(rt.level.dimension().location(),observer.authority.region(),
                 observer.authority.epoch(),observer.authority.revision(),observer.cursor.stream(),0,
-                ClientboundPackageObserverPacket.CLOSE|(observer.membershipOnly?ClientboundPackageObserverPacket.MEMBERSHIP_ONLY:0),List.of(),List.of(),rt.level.getGameTime(),PackageObserverTimes.zeros(0)));}
+                ClientboundPackageObserverPacket.CLOSE,List.of(),List.of(),rt.level.getGameTime(),PackageObserverTimes.zeros(0)));}
         catch(RuntimeException failure){CreateManaIndustry.LOGGER.debug("[CMI packages] observer close could not be enqueued",failure);}
     }
     public static void receive(ServerboundPackagePacket packet,IPayloadContext context) {
@@ -362,7 +356,7 @@ public final class PackageAuthorityManager {
                     control(rt,region,player,action,index,new PackageLease.Identity(id,generation),lease,revision,tick));
                 peer.controlRecords+=count;
                 // A sent release may concern a sleeping body that heartbeats keep alive.
-                // Budget rejection must explicitly hand back, never silently lose that control.
+                // Budget rejection must explicitly revoke authority, never silently lose that control.
                 if(count==0)pauseRegion(rt,region);
             }
             catch(RuntimeException invalid){
@@ -448,15 +442,8 @@ public final class PackageAuthorityManager {
     private static void send(ServerLevel level,PackageAuthorityRegion region,int action,PackageAuthorityRegion.Baseline baseline,EntityTarget target) {
         ServerPlayer owner=level.getServer().getPlayerList().getPlayer(region.owner());if(owner==null)return;
         PacketDistributor.sendToPlayer(owner,new ClientboundPackagePacket(action,level.dimension().location(),region.region(),region.epoch(),
-                region.revision(),0,baseline,target.light!=null?-1:target.entityId,target.uuid,target.model,target.width,target.height,
+                region.revision(),0,baseline,-1,target.uuid,target.model,target.width,target.height,
                 target.light==null?0:target.light.fireTicks,target.light==null?5:target.light.health,target.light==null?7:PackageLightGameplay.environmentPermissions(level,target.light)));
-    }
-    /** Free entities are intercepted before their native motion lifecycle. */
-    public static boolean simulated(PackageEntity entity){return false;}
-    public static void release(PackageEntity entity){}
-    public static boolean hasSimulated(ServerLevel level) {
-        if(!ServerConfig.packageGpuAuthority)return false;var rt=WORLDS.get(level);if(rt==null)return false;
-        for(var region:rt.regions.values())if(region.simulatedCount()>0)return true;return false;
     }
     private static void release(EntityTarget target,long tick) {
         var region=target.region;if(region==null)return;

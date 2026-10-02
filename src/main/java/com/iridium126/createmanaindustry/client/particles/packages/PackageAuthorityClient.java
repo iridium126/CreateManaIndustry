@@ -43,11 +43,7 @@ public final class PackageAuthorityClient {
     public static int activePackages() {
         int count=0;for(var acquisition:activeAcquisitions)count+=acquisition.activeCount();return count;
     }
-    /** Resolve an asynchronous world-coverage failure through the stable acquisition body map. */
-    public static boolean requestReleaseBody(int bodyIndex) {
-        for(var acquisition:activeAcquisitions)if(acquisition.requestReleaseBody(bodyIndex))return true;
-        return false;
-    }
+    /** Resolve a GPU pick through the exact admitted record identity. */
     public static ClientboundPackagePacket freePickOffer(PackagePoseQueryGpu.Result result){return freePickOffer(result,Long.MAX_VALUE);}
     public static ClientboundPackagePacket freePickOffer(PackagePoseQueryGpu.Result result,long submission) {
         for(var acquisition:activeAcquisitions){var offer=acquisition.activeOffer(result,submission);if(offer!=null)return offer;}return null;
@@ -67,22 +63,13 @@ public final class PackageAuthorityClient {
                         controls.offer(controlNamespace,action,checkpoint.baseline(),System.nanoTime());
                     }
                     @Override public void activated(ClientboundPackagePacket offer,ClientboundPackagePacket active,int candidate,int slot) {
-                        var level=Minecraft.getInstance().level;
-                        var entity=level==null?null:level.getEntity(offer.entityId());
-                        if(entity instanceof com.simibubi.create.content.logistics.box.PackageEntity box
-                                && box.getUUID().equals(offer.entityUuid())) {
-                            PackageRenderOwnership.claimAfterAdmission(box,offer,active,slot);
-                            control(ServerboundPackagePacket.VISIBLE_READY,active);
-                        }else if(offer.entityId()==-1||PackageLightClient.has(offer.baseline().identity())) {
-                            PackageRenderOwnership.claimLightAfterAdmission(offer,active,slot);control(ServerboundPackagePacket.VISIBLE_READY,active);
-                        }else {
-                            var owner=acquisitions.get(region);if(owner!=null)owner.requestRelease(offer.baseline().index());
-                        }
+                        PackageRenderOwnership.claimLightAfterAdmission(offer,active,slot);
+                        control(ServerboundPackagePacket.VISIBLE_READY,active);
                     }
+
                     @Override public void released(ClientboundPackagePacket offer,
                             com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageAuthorityRegion.Baseline baseline) {
                         PackageRenderOwnership.released(region,epoch,baseline);
-                        PackageNativeObserverClient.authorityReleased(offer);
                     }
 
                 });
@@ -158,14 +145,11 @@ public final class PackageAuthorityClient {
         if(!PackageWorldRuntime.forceReady())return false;
         var level=Minecraft.getInstance().level;
         if(level==null || !level.dimension().location().equals(offer.dimension()))return false;
-        var entity=level.getEntity(offer.entityId());
-        if(offer.entityId()!=-1&&!PackageLightClient.has(offer.baseline().identity())&&(!(entity instanceof com.simibubi.create.content.logistics.box.PackageEntity box)
-                || !box.getUUID().equals(offer.entityUuid()) || box.isRemoved()))return false;
         var p=checkpoint.baseline().snapshot().pose();double half=offer.width()*.5;
         var bounds=new net.minecraft.world.phys.AABB(p.x()-half,p.y(),p.z()-half,p.x()+half,p.y()+offer.height(),p.z()+half);
         return PackageCollisionRuntime.forLevel(level).gpuCovered(bounds.expandTowards(p.vx()*.15,p.vy()*.15,p.vz()*.15).inflate(2));
     }
-    /** Success-only pool hook. Failure here restores ownership without throwing after the engine swap. */
+    /** Success-only pool hook. Failure here revokes ownership without throwing after the engine swap. */
     public static void committed(long generation) {
         try{for(var acquisition:activeAcquisitions) {
             var channel=channels.get(acquisition.region());if(channel==null || channel.closed())continue;
@@ -204,7 +188,7 @@ public final class PackageAuthorityClient {
             for(var acquisition:preparing)acquisition.close();
             hadClaims=PackageRenderOwnership.clear();
             channels.clear();transports.clear();activeChannels=new PackageDeltaChannel[0];for(var channel:active)channel.close();
-            for(var listener:listeners)try{listener.failed(reason);}catch(RuntimeException failure){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] Create restore callback failed",failure);}
+            for(var listener:listeners)try{listener.failed(reason);}catch(RuntimeException failure){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] Package shutdown callback failed",failure);}
             if(notifyServer && (advertised!=0 || !active.isEmpty() || hadClaims))capabilities(0);
         }finally {
             controls.clear();
@@ -222,7 +206,6 @@ public final class PackageAuthorityClient {
             if(channel!=null)channel.acknowledge(packet.epoch(),packet.regionRevision(),packet.sequence());return;
         }
         if(packet.action()==ClientboundPackagePacket.RELEASED) {
-            PackageRenderOwnership.serverReleased(packet.region(),packet.epoch(),packet.baseline());
             var acquisition=acquisitions.get(packet.region());
             if(acquisition==null) {
                 PackageRenderOwnership.released(packet.region(),packet.epoch(),packet.baseline());

@@ -52,19 +52,11 @@ bool observerLongPositive(uvec2 value) { return any(notEqual(value,uvec2(0))) &&
 bool observerLongGreater(uvec2 a,uvec2 b) { return a.y>b.y || (a.y==b.y && a.x>b.x); }
 bool observerFinite(vec4 v) { return !any(isnan(v)) && !any(isinf(v)); }
 float observerYaw(ObserverState s) {
-#ifdef CMI_NATIVE_OBSERVER
-    return intBitsToFloat(s.velocityYaw.w);
-#else
     return float(uint(s.velocityYaw.w)&65535u)*(360.0/65536.0);
-#endif
 }
 float observerAngle(float a,float b) { return mod(b-a+180.0,360.0)-180.0; }
 vec3 observerVelocity(ObserverState s) {
-#ifdef CMI_NATIVE_OBSERVER
-    return intBitsToFloat(s.velocityYaw.xyz);
-#else
     return vec3(s.velocityYaw.xyz)*(1.0/1024.0);
-#endif
 }
 float observerBlend(ObserverState s,float now) { return clamp((now-s.correction.w)/uSmoothing,0.0,1.0); }
 vec3 observerPredicted(ObserverState s,float now) {

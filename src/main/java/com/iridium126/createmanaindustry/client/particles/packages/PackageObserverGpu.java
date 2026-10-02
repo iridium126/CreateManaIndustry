@@ -17,15 +17,8 @@ public final class PackageObserverGpu implements AutoCloseable {
     public static final int UPLOAD_SLOTS=4;
     public static final float SMOOTHING_SECONDS=.05f,PREDICTION_SECONDS=.1f;
     private static final String[] NAMES={"observer_validate","observer_apply","observer_sample","observer_retire"};
-    private static final String[] NATIVE_NAMES={"observer_native_validate","observer_native_apply","observer_sample","observer_retire"};
     private static final String[] UNIFORMS={"uSlots","uPatches","uNow","uTag","uSmoothing","uPrediction","uCompact","uRetireFence"};
     private final int capacity;
-    /** Native packets retain absolute double precision until the GPU subtracts this origin. */
-    public record NativeOrigin(double x,double y,double z) {
-        public NativeOrigin { if(!Double.isFinite(x)||!Double.isFinite(y)||!Double.isFinite(z))throw new IllegalArgumentException("Native origin"); }
-    }
-    private final NativeOrigin nativeOrigin;
-    private int nativeStates;
     private final Thread owner=Thread.currentThread();
     private int[] programs;
     private int[][] locations;
@@ -47,13 +40,8 @@ public final class PackageObserverGpu implements AutoCloseable {
     }
     /** Validation gate can delay consumption, but never declares an unfinished fence complete. */
     public PackageObserverGpu(int capacity,Function<String,String> sources,BooleanSupplier consumeCompleted) {
-        this(capacity,sources,consumeCompleted,null);
-    }
-    /** Separate native entity namespace; never accepts custom quantized observer records. */
-    public PackageObserverGpu(int capacity,Function<String,String> sources,BooleanSupplier consumeCompleted,NativeOrigin nativeOrigin) {
         if(capacity<1 || capacity>131072)throw new IllegalArgumentException("Observer GPU capacity");
         this.capacity=capacity;
-        this.nativeOrigin=nativeOrigin;
         this.consumeCompleted=java.util.Objects.requireNonNull(consumeCompleted);
         if((capacity+63)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)
                 || (long)capacity*STATE_BYTES>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))
@@ -61,7 +49,6 @@ public final class PackageObserverGpu implements AutoCloseable {
         try {
             replacePrograms(sources);
             states=buffer((long)capacity*STATE_BYTES);
-            if(nativeOrigin!=null)nativeStates=buffer((long)capacity*64);
             for(int i=0;i<UPLOAD_SLOTS;i++)patches[i]=buffer((long)capacity*PATCH_BYTES);
             claims=buffer((long)capacity*4);control=buffer(CONTROL_BYTES);
             for(int i=0;i<2;i++){bodies[i]=buffer((long)capacity*BODY_BYTES);history[i]=buffer((long)capacity*HISTORY_BYTES);}
@@ -73,11 +60,10 @@ public final class PackageObserverGpu implements AutoCloseable {
         int[] next=new int[NAMES.length];int[][] nextLocations=new int[NAMES.length][UNIFORMS.length];
         try {
             for(int i=0;i<NAMES.length;i++) {
-                next[i]=compile(sources.apply("packages/"+(nativeOrigin==null?NAMES:NATIVE_NAMES)[i]+".comp"),nativeOrigin!=null);
+                next[i]=compile(sources.apply("packages/"+NAMES[i]+".comp"));
                 for(int j=0;j<UNIFORMS.length;j++)nextLocations[i][j]=GL20.glGetUniformLocation(next[i],UNIFORMS[j]);
-                GL41.glProgramUniform1f(next[i],nextLocations[i][4],nativeOrigin==null?SMOOTHING_SECONDS:.15f);
-                GL41.glProgramUniform1f(next[i],nextLocations[i][5],nativeOrigin==null?PREDICTION_SECONDS:.2f);
-                if(nativeOrigin!=null)GL41.glProgramUniform3d(next[i],GL20.glGetUniformLocation(next[i],"uNativeOrigin"),nativeOrigin.x(),nativeOrigin.y(),nativeOrigin.z());
+                GL41.glProgramUniform1f(next[i],nextLocations[i][4],SMOOTHING_SECONDS);
+                GL41.glProgramUniform1f(next[i],nextLocations[i][5],PREDICTION_SECONDS);
             }
         }catch(RuntimeException | LinkageError failure){for(int program:next)if(program!=0)GL20.glDeleteProgram(program);throw failure;}
         int[] previous=programs;programs=next;locations=nextLocations;
@@ -85,11 +71,11 @@ public final class PackageObserverGpu implements AutoCloseable {
         java.util.Arrays.fill(uniformCompact,-1);
         if(previous!=null)for(int program:previous)GL20.glDeleteProgram(program);
     }
-    private static int compile(String source,boolean nativePackets) {
+    private static int compile(String source) {
         if(source==null || source.isBlank())throw new IllegalArgumentException("Missing observer shader");
         int shader=GL20.glCreateShader(GL43.GL_COMPUTE_SHADER),program=0;
         try {
-            GL20.glShaderSource(shader,"#version 450 core\n"+(nativePackets?"#define CMI_NATIVE_OBSERVER\n":"")+source);GL20.glCompileShader(shader);
+            GL20.glShaderSource(shader,"#version 450 core\n"+source);GL20.glCompileShader(shader);
             if(GL20.glGetShaderi(shader,GL20.GL_COMPILE_STATUS)==0)throw new IllegalStateException(GL20.glGetShaderInfoLog(shader));
             program=GL20.glCreateProgram();GL20.glAttachShader(program,shader);GL20.glLinkProgram(program);
             if(GL20.glGetProgrami(program,GL20.GL_LINK_STATUS)==0)throw new IllegalStateException(GL20.glGetProgramInfoLog(program));return program;
@@ -107,7 +93,7 @@ public final class PackageObserverGpu implements AutoCloseable {
     }
     /** Caller must first confirm exact retired pool admission and drain older GPU references. */
     public void reclaimSlot(int local){
-        open();if(nativeOrigin!=null||local<0||local>=slots)throw new IllegalArgumentException("Observer recycle domain");
+        open();if(local<0||local>=slots)throw new IllegalArgumentException("Observer recycle domain");
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         clearRange(states,(long)local*STATE_BYTES,STATE_BYTES);clearRange(claims,(long)local*4,4);
         for(int i=0;i<2;i++){clearRange(bodies[i],(long)local*BODY_BYTES,BODY_BYTES);clearRange(history[i],(long)local*HISTORY_BYTES,HISTORY_BYTES);}
@@ -125,19 +111,13 @@ public final class PackageObserverGpu implements AutoCloseable {
      * still borrowed. The production adapter retains dirty fields and exact lifecycle events;
      * it must not busy-wait, overwrite a slot or treat upload submission as admission. */
     public boolean tryApply(ByteBuffer data,int count,int slots,float time) {
-        if(nativeOrigin!=null)throw new IllegalStateException("Use native baseline commands");
         return tryApply(data,count,slots,time,false);
     }
     /** Sparse pose/release records use a 64-byte mutation command. Identity is resolved on GPU
      * from the immutable full epoch/stream/server-index tuple and validated before any write.
      * Baselines still use tryApply; compact records cannot introduce or reuse a local identity. */
     public boolean tryApplyCompact(ByteBuffer data,int count,int slots,float time) {
-        if(nativeOrigin!=null)throw new IllegalStateException("Use native packet commands");
         return tryApply(data,count,slots,time,true);
-    }
-    public boolean tryApplyNative(ByteBuffer data,int count,int slots,float time,boolean compact) {
-        if(nativeOrigin==null)throw new IllegalStateException("Native observer domain not configured");
-        return tryApply(data,count,slots,time,compact);
     }
     public void applyCompact(ByteBuffer data,int count,int slots,float time) {
         if(!tryApplyCompact(data,count,slots,time))throw new IllegalStateException("Observer uploads busy; retain compact batch and retry");
@@ -198,7 +178,7 @@ public final class PackageObserverGpu implements AutoCloseable {
         published=next;publishedVersion=version;lastTime=time;publication++;
     }
     private void bind(){try(MemoryStack stack=MemoryStack.stackPush()){
-        GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(states,patches[boundUpload],control,claims,0,0,patches[boundUpload],nativeStates));
+        GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(states,patches[boundUpload],control,claims,0,0,patches[boundUpload]));
     }}
     private void use(int program,int count,float time) {
         GL20.glUseProgram(programs[program]);
@@ -215,9 +195,6 @@ public final class PackageObserverGpu implements AutoCloseable {
     public int capacity(){return capacity;}
     public int count(){open();return slots;}
     public int stateBuffer(){open();return states;}
-    public boolean nativePackets(){return nativeOrigin!=null;}
-    public NativeOrigin nativeOrigin(){open();if(nativeOrigin==null)throw new IllegalStateException("No native origin");return nativeOrigin;}
-    public int nativeStateBuffer(){open();if(nativeStates==0)throw new IllegalStateException("No native observer state");return nativeStates;}
     public int controlBuffer(){open();return control;}
     public int bodyBuffer(){ready();return bodies[published];}
     public int historyBuffer(){ready();return history[published];}
@@ -229,7 +206,7 @@ public final class PackageObserverGpu implements AutoCloseable {
         if(programs!=null)for(int program:programs)if(program!=0)GL20.glDeleteProgram(program);
         for(long fence:uploadFences)if(fence!=0)GL32.glDeleteSync(fence);
         for(int buffer:patches)if(buffer!=0)GL15.glDeleteBuffers(buffer);
-        for(int buffer:new int[]{states,nativeStates,control,claims,bodies[0],bodies[1],history[0],history[1]})if(buffer!=0)GL15.glDeleteBuffers(buffer);
+        for(int buffer:new int[]{states,control,claims,bodies[0],bodies[1],history[0],history[1]})if(buffer!=0)GL15.glDeleteBuffers(buffer);
         programs=null;published=-1;
     }
 }

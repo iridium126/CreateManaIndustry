@@ -5,7 +5,7 @@ uniform uint uCapacity, uCount;
 layout(std430,binding=7) readonly buffer Selection { uint activeCount; uint preparedCount; uint pad1; uint pad2; uint selected[]; };
 void main() {
     // Keep server-owned packages alive under ordinary emission pressure.
-    // A preparing Create-owned candidate may only use genuinely spare slots.
+    // A preparing candidate may only use genuinely spare slots.
     activeAccepted=min(activeCount,uCapacity);
     base=min(live,uCapacity-activeAccepted);
     preparedAccepted=min(preparedCount,uCapacity-activeAccepted-base);

@@ -1,0 +1,12 @@
+{
+  "samples-5.csv": {
+    "working_copy_sha256": "f8b3f22a4ecd7bcd27e4ad1d73c6f9db4f67e77b41acf9986a65cdce0222a2b3",
+    "git_blob_sha256": "5468ac719072270ee075be559df9ba7419aa21dd6bd4b6f77b21933feb417768",
+    "contents_match_HEAD_after_checkout_line_endings": true
+  },
+  "summary-5.csv": {
+    "working_copy_sha256": "55b9db000467beffba074b49e3bf3775a8e6bb8307a68b6469b4cd1163caf086",
+    "git_blob_sha256": "58ec1b66322d25f7b1180e6020c29c7619555512c3df754054466c0d84ec53c3",
+    "contents_match_HEAD_after_checkout_line_endings": true
+  }
+}

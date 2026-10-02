@@ -22,11 +22,7 @@ import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageReg
  * Native entity and fan synchronization supplies sources; the GPU calculates all package impulses. */
 @EventBusSubscriber(modid=CreateManaIndustry.MODID,value=Dist.CLIENT)
 public final class PackageForceClient implements AutoCloseable {
-    public static final PackageForceHooks.Listener HOOKS=new PackageForceHooks.Listener(){
-        @Override public void fan(AirCurrent current){captureFan(current);}
-        @Override public boolean owned(PackageEntity entity){return PackageRenderOwnership.authorityOwned(entity);}
-        @Override public boolean active(){return PackageAuthorityClient.activePackages()>0;}
-    };
+    public static final PackageForceHooks.Listener HOOKS=PackageForceClient::captureFan;
     private record Fan(long tick,PackageForceScene.Source source,String error) {}
     private static final double QUERY_MARGIN=2.0;
     private static final class Sources {
