@@ -4356,9 +4356,10 @@ public class PackageGpuValidation {
     static byte[] readBytes(PackagePhysicsGpu gpu){var buffer=read(gpu);byte[] bytes=new byte[buffer.remaining()];buffer.get(bytes);return bytes;}
     static void indexBenchmark(int firstRun,int lastRun)throws Exception{
         Path directory=Path.of("docs/benchmarks/package-index-2026-10-02");Files.createDirectories(directory);
-        Path summary=directory.resolve("summary-"+lastRun+".csv"),raw=directory.resolve("samples-"+lastRun+".csv");
+        Path summary=lastRun>3?directory.resolve("summary-5.csv"):Path.of("build/package-index-three-round/summary.csv");
+        Path raw=lastRun>3?directory.resolve("samples-5.csv"):Path.of("build/package-index-three-round/samples.csv");
         var rows=new ArrayList<String>();var samples=new ArrayList<String>();
-        if(firstRun>1){rows.addAll(Files.readAllLines(directory.resolve("summary-3.csv")));samples.addAll(Files.readAllLines(directory.resolve("samples-3.csv")));}
+        if(firstRun>1){rows.addAll(Files.readAllLines(Path.of("build/package-index-three-round/summary.csv")));samples.addAll(Files.readAllLines(Path.of("build/package-index-three-round/samples.csv")));}
         else{rows.add("count,scenario,index,run,gpu_p50_ms,gpu_p95_ms,cpu_submit_p50_ms,cpu_submit_p95_ms,gpu_buffer_bytes,index_extra_bytes,min_effective,overlap_max,terrain_penetration_max,nonfinite,quality_pass");
             samples.add("count,scenario,index,run,sample,gpu_ms,cpu_submit_ms,effective,moving,overlap_max,terrain_penetration_max,nonfinite");}
         var modes=PackagePhysicsGpu.IndexMode.values();
@@ -4412,7 +4413,9 @@ public class PackageGpuValidation {
             }
         }
         check(GL11.glGetError()==GL11.GL_NO_ERROR,"index benchmark GL error");
+        Files.createDirectories(summary.getParent());Files.createDirectories(raw.getParent());
         Files.write(summary,rows);Files.write(raw,samples);
+        if(lastRun>3){Files.deleteIfExists(Path.of("build/package-index-three-round/summary.csv"));Files.deleteIfExists(Path.of("build/package-index-three-round/samples.csv"));}
     }
     static void rangeBenchmark() throws Exception {
         var rows=new ArrayList<String>();var samples=new ArrayList<String>();

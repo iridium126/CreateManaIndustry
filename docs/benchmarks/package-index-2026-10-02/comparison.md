@@ -14,7 +14,7 @@
 | bounded_linked | 1.015969 | 1.035642 |
 | exact_ranges | 1.315400 | 1.817284 |
 
-胜者：**linked**。前三轮差距不足 3%，追加两轮后 GPU 前两名仍相差 1.0407%；按相同权重汇总的 CPU 提交 p95，linked 更低，因此胜出。 共完成 5 轮。生产源码仅保留该索引，其他实现与 shader 变体仅存于独立 benchmark 参考目录，不进入 mod JAR。
+胜者：**linked**。前三轮 GPU 前两名差距为 0.9022%，因此追加两轮；五轮后差距为 1.0407%。按约定以 CPU 提交 p95 决胜，linked 的加权分数更低。 共完成 5 轮。生产源码仅保留该索引，其他实现与 shader 变体仅存于独立 benchmark 参考目录，不进入 mod JAR。
 
 | 131072 场景 | linked GPU p95 中位数（ms） | CPU 提交 p95 中位数（ms） |
 |---|---:|---:|
@@ -24,14 +24,15 @@
 | fast_vs_stationary | 9.807872 | 0.187600 |
 | moving_platform | 9.097216 | 0.204000 |
 
-原始数据：summary-5.csv 与 samples-5.csv。前三轮还单独保存在 summary-3.csv 与 samples-3.csv。统计脚本：scripts/particles/compare_package_indexes.py。复现命令：
+原始数据：summary-5.csv 与 samples-5.csv。五轮文件本身含前三轮，不另存重复副本。统计脚本：scripts/particles/compare_package_indexes.py。复现命令：
 
 ```powershell
 .\gradlew.bat -I scripts/particles/validation.init.gradle benchmarkPackageIndexes
-.\gradlew.bat -I scripts/particles/validation.init.gradle benchmarkPackageIndexes -PpackageIndexBenchmarkExtra
+python scripts/particles/compare_package_indexes.py
+.\gradlew.bat -I scripts/particles/validation.init.gradle benchmarkPackageIndexes -PpackageIndexBenchmarkExtra # 仅当前三轮差距不足 3% 时运行
 python scripts/particles/compare_package_indexes.py
 ```
 
-benchmark 使用 scripts/particles/index-reference 中冻结的三模式实现和相同 shader；独立编译到 build/package-index-reference，覆盖测试进程的类路径，不参与生产 classes/resources/jar。此任务会重新写入 CSV，应先保存当前实验数据。重新采样前三轮时应先移走旧的五轮数据，再决定是否追加两轮，避免统计脚本混用旧实验。
+benchmark 使用 scripts/particles/index-reference 中冻结的三模式实现和相同 shader；独立编译到 build/package-index-reference，覆盖测试进程的类路径，不参与生产 classes/resources/jar。三轮暂存数据保存在 build/package-index-three-round，追加两轮完成后删除。重新采样前应清理或另存现有数据，避免混用实验。
 
 数据代表该 GPU 与这些合成场景。尚不包含真实游戏的区块加载、多人网络延迟、机器库存或驱动之间的比较；不能作为这些路径已经通过实测的证据。
