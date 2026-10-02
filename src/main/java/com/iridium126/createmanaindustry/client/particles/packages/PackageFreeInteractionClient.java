@@ -78,7 +78,8 @@ public final class PackageFreeInteractionClient implements AutoCloseable {
             if(flight.input!=queue.input())return;
             if(completed.results().size()!=1)throw new IllegalStateException("Parallel chain pick result length");
             var result=completed.results().getFirst();
-            if(result.present()&&(!result.chain()||result.state()<0||result.flags()!=PackagePoolGpu.CHAIN))throw new IllegalStateException("Parallel chain pick domain/lifecycle");
+            int chainFlags=PackagePoolGpu.CHAIN|PackagePoolGpu.FLIPPED|PackagePoolGpu.FRAMED;
+            if(result.present()&&(!result.chain()||result.state()<0||(result.flags()&~chainFlags)!=0))throw new IllegalStateException("Parallel chain pick domain/lifecycle");
             chainPick=result;chainCompleted=true;
         }else if(completed.tag() instanceof HoverFlight flight) {
             if(completed.results().size()!=1)throw new IllegalStateException("Free hover pick result length");
@@ -164,8 +165,12 @@ public final class PackageFreeInteractionClient implements AutoCloseable {
         if(closed)return;var phase=queue.phase();
         if(phase!=PackageFreePickQueue.Phase.READY&&phase!=PackageFreePickQueue.Phase.TIMED_OUT)return;
         if(phase==PackageFreePickQueue.Phase.READY&&!chainCompleted)return;
+        if(phase==PackageFreePickQueue.Phase.TIMED_OUT) {
+            // The ray result no longer describes the player's current target. Drop this click;
+            // a delayed local query is not a reason to revoke package authority.
+            queue.clear();return;
+        }
         var input=queue.input();var result=queue.result();queue.clear();
-        if(phase==PackageFreePickQueue.Phase.TIMED_OUT)PackageAuthorityClient.closeAll("Free package picking exceeded two ticks",true);
         replay(input,result);
     }
     private void replay(PackageFreePickQueue.Input input,PackagePoseQueryGpu.Result result) {

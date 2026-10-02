@@ -124,7 +124,7 @@ public final class CMIParticleCommand {
                                     if(mc.level==null || mc.player==null)return 0;
                                     var runtime=com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime.forLevel(mc.level);
                                     boolean queued=runtime.request(mc.player.getBoundingBox().inflate(16));
-                                    tell(ctx,queued?"Queued nearby collision sections; capture and GPU upload use separate 0.25 ms soft budgets. Check packagecollision for completed GPU coverage.":"Collision cache capacity unavailable; Create retains ownership.");return queued?1:0;
+                                    tell(ctx,queued?"Queued nearby collision sections; capture and GPU upload each use up to "+String.format(java.util.Locale.ROOT,"%.2f",ClientConfig.packageMainThreadBudgetMs)+" ms. Check packagecollision for completed GPU coverage.":"Collision cache capacity unavailable; Create retains ownership.");return queued?1:0;
                                 }))
                                 .then(Commands.literal("clear").executes(ctx->{
                                     com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime.closeCurrent();

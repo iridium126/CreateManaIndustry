@@ -25,7 +25,7 @@ public final class PackageAuthorityRegion {
         PackageDeltaCodec.Quantized acknowledged;
         int displacementX,displacementY,displacementZ;
         int flags;
-        long stateReceipt,motionTick=-1;
+        long motionTick=-1;
         double motionUsed;
         Entry(int index,Target target,PackageLease lease){this.index=index;this.target=target;this.lease=lease;}
     }
@@ -50,10 +50,10 @@ public final class PackageAuthorityRegion {
         if(closed || expired(tick) || pending.size()>=MAX_PENDING || identities.containsKey(target.identity())
                 || !target.eligible() || !region.contains(target.snapshot().pose()) || nextIndex==Integer.MAX_VALUE)return null;
         Snapshot snapshot=target.snapshot();
-        PackageLease lease=new PackageLease(target.identity(),snapshot.pose(),()->receipt);
+        PackageLease lease=new PackageLease(target.identity(),snapshot.pose(),()->receipt,
+                PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS);
         lease.acquire(owner,snapshot.pose(),tick);
         Entry entry=new Entry(nextIndex++,target,lease);entry.flags=snapshot.flags();
-        entry.stateReceipt=tick;
         entries.put(entry.index,entry);identities.put(target.identity(),entry);pending.add(entry);
         return baseline(entry);
     }
@@ -76,7 +76,7 @@ public final class PackageAuthorityRegion {
         var quantized=quantize(current);
         if(current.flags()!=entry.flags || !region.contains(current.pose())
                 || !entry.lease.ready(sender,leaseEpoch,finalRevision,tick,current.pose()))return false;
-        entry.acknowledged=quantized;entry.stateReceipt=tick;receipt=tick;pending.remove(entry);frozenPending--;
+        entry.acknowledged=quantized;receipt=tick;pending.remove(entry);frozenPending--;
         observers.activate(new PackageObserverFeed.Member<>(entry.index,entry.target.identity(),entry.lease.epoch(),
                 entry.lease.baselineRevision(),quantized,entry.target,tick));return true;
     }
@@ -134,7 +134,7 @@ public final class PackageAuthorityRegion {
                 Snapshot pose=decode(q,entry.lease.committed().yaw());
                 double distance=distance(entry.lease.committed(),pose.pose());
                 if(!region.contains(pose.pose()) || speed(pose.pose())>32
-                        || staleMotion(entry,tick) || (entry.motionTick==tick?entry.motionUsed:0)+distance>maximumDisplacement
+                        || (entry.motionTick==tick?entry.motionUsed:0)+distance>maximumDisplacement
                         || !entry.lease.canCommit(sender,entry.lease.epoch(),sequence,tick,pose.pose(),maximumDisplacement))return Result.INVALID;
                 next[i]=pose;quantized[i]=q;
                 if(positionMode!=0)observerChanges.add(new PackageDeltaCodec.Entry(change.id(),change.mask(),q));
@@ -162,7 +162,7 @@ public final class PackageAuthorityRegion {
                 entry.displacementZ=quantized[i].z()-entry.acknowledged.z();
             }
             entry.acknowledged=quantized[i];entry.flags=next[i].flags();
-            entry.stateReceipt=tick;entry.motionUsed=(entry.motionTick==tick?entry.motionUsed:0)+moved;entry.motionTick=tick;
+            entry.motionUsed=(entry.motionTick==tick?entry.motionUsed:0)+moved;entry.motionTick=tick;
         }
         // Publish only after every adapter and lease commit succeeded. Rollback/invalid/stale
         // batches never enter the observer journal; release callbacks already retire members.
@@ -184,7 +184,9 @@ public final class PackageAuthorityRegion {
     public boolean paused(PackageLease.Identity identity,long tick) {
         Entry entry=identities.get(identity);
         if(entry==null)return false;
-        if(expired(tick) || !entry.target.eligible() || entry.lease.expired(tick) || staleMotion(entry,tick)) {release(entry);return false;}
+        // Position deltas are sparse: quantized motion can remain unchanged for many ticks.
+        // The region heartbeat is the liveness signal; a quiet package is not a failed lease.
+        if(expired(tick) || !entry.target.eligible() || entry.lease.expired(tick)) {release(entry);return false;}
         return entry.lease.physicsPaused();
     }
     /** A frozen FINAL handshake is not a simulated contact body. Stale or newly ineligible
@@ -238,14 +240,9 @@ public final class PackageAuthorityRegion {
     }
     private static double speed(PackageLease.Pose p){return Math.hypot(Math.hypot(p.vx(),p.vy()),p.vz());}
     private static double distance(PackageLease.Pose a,PackageLease.Pose b){return Math.hypot(Math.hypot(a.x()-b.x(),a.y()-b.y()),a.z()-b.z());}
-    private static boolean staleMotion(Entry entry,long tick) {
-        if(entry.lease.state()!=PackageLease.State.GPU_OWNED)return false;
-        boolean stationary=(entry.flags&(SLEEPING|GROUNDED))!=0 && speed(entry.lease.committed())<1e-5;
-        return !stationary && (tick<entry.stateReceipt || tick-entry.stateReceipt>PackageLease.TIMEOUT_TICKS);
-    }
     public boolean expired(long tick){
         long allowed=!entries.isEmpty() && entries.size()==pending.size() && frozenPending==0
-                ?PackageLease.ACQUISITION_TIMEOUT_TICKS:PackageLease.TIMEOUT_TICKS;
+                ?PackageLease.ACQUISITION_TIMEOUT_TICKS:PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS;
         return tick<receipt || tick-receipt>allowed;
     }
     public void close(){if(closed)return;for(Entry entry:new ArrayList<>(entries.values()))release(entry);closed=true;}

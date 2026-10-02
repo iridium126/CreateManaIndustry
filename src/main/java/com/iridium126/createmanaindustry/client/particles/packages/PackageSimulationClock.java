@@ -1,9 +1,9 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
 /** Wall-clock 20 Hz accumulator. A moving pose pair may be consumed only once per client tick.
- * Overdue authority is handed back rather than silently slowing its physical clock. */
+ * Long render stalls rebase the clock and skip stale steps without changing package authority. */
 public final class PackageSimulationClock {
-    public enum Advance { IDLE, STEP, OVERDUE }
+    public enum Advance { IDLE, STEP }
     public static final long STEP_NANOS=50_000_000L,MAX_BACKLOG_NANOS=100_000_000L;
     private long previous,lastStepTick=Long.MIN_VALUE,accumulated;
     private boolean initialized;
@@ -15,9 +15,14 @@ public final class PackageSimulationClock {
     public Advance advance(long now,long poseTick,boolean paused,boolean inputsReady) {
         if(!initialized || paused){initialized=true;previous=now;accumulated=0;lastStepTick=poseTick;return Advance.IDLE;}
         long elapsed=now-previous;previous=now;
-        if(elapsed<0 || elapsed>MAX_BACKLOG_NANOS || accumulated>MAX_BACKLOG_NANOS-elapsed)return Advance.OVERDUE;
+        if(elapsed<0 || elapsed>MAX_BACKLOG_NANOS || accumulated>MAX_BACKLOG_NANOS-elapsed) {
+            accumulated=0;lastStepTick=poseTick;return Advance.IDLE;
+        }
+        if(!inputsReady) {
+            accumulated=0;lastStepTick=poseTick;return Advance.IDLE;
+        }
         accumulated+=elapsed;
-        if(inputsReady && accumulated>=STEP_NANOS && poseTick!=lastStepTick) {
+        if(accumulated>=STEP_NANOS && poseTick!=lastStepTick) {
             accumulated-=STEP_NANOS;lastStepTick=poseTick;return Advance.STEP;
         }
         return Advance.IDLE;

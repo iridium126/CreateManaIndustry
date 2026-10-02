@@ -11,7 +11,6 @@ import java.util.function.LongSupplier;
  * No world access or gameplay callbacks. Transport ACK means server accepted every candidate in
  * that immutable packet; copying, sending and receiving a packet are never implicit ACKs. */
 public final class PackageChainEventChannel implements AutoCloseable {
-    public static final long PREPARATION_TIMEOUT_NANOS=100_000_000L;
     public interface Transport {
         /** Copy borrowed bytes into reliable ordered transport before returning true. */
         boolean send(long epoch,long revision,long sequence,ByteBuffer bytes);
@@ -153,11 +152,10 @@ public final class PackageChainEventChannel implements AutoCloseable {
                 fragment.frame=frame;fragment.sequence=sequence;fragment.bytes=bytes;frame.submitted+=bytes;nextFragment++;
             }
             journal.prepare();now=clock.getAsLong();
-            if(journal.preparationExpired(now,PREPARATION_TIMEOUT_NANOS))throw new IllegalStateException("Chain encoding/transport preparation exceeded two ticks");
-            for(Frame frame:frames)if(frame.capture!=null && (now<frame.started || now-frame.started>PREPARATION_TIMEOUT_NANOS))
-                throw new IllegalStateException("Chain readback preparation exceeded two ticks");
+            // Delayed packet preparation/readback holds this bounded event journal in place;
+            // latency alone does not invalidate chain ownership.
             journal.sendReady((sequence,bytes)->transport.sendPrepared(epoch,revision,sequence,journal.prepared(sequence),bytes),
-                    clock,maximumPackets,PREPARATION_TIMEOUT_NANOS);
+                    clock,maximumPackets,Long.MAX_VALUE);
         }catch(RuntimeException failure){fail(failure.getMessage());}
     }
     private void fail(String reason){if(closed)return;close();transport.failed(reason==null?"Chain channel failed":reason);}

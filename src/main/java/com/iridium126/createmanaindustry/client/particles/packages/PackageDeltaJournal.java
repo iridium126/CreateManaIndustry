@@ -163,8 +163,8 @@ public final class PackageDeltaJournal implements AutoCloseable {
             if(slot.state==SENT || slot.state==ACKED)continue;
             if(slot.state!=READY)break;
             long now=clock.getAsLong();
-            if(now<slot.queuedNanos || now-slot.queuedNanos>timeout)
-                throw new IllegalStateException("Package encoding/transport preparation exceeded two ticks");
+            if(timeout!=Long.MAX_VALUE && (now<slot.queuedNanos || now-slot.queuedNanos>timeout))
+                throw new IllegalStateException("Package monotonic clock reversed during packet preparation");
             // Publish before sending: a loopback ACK can arrive inside the transport callback.
             slot.sentNanos=now;slot.state=SENT;
             if(!sender.send(seq,slot.wire.asReadOnlyBuffer())){slot.state=READY;break;}

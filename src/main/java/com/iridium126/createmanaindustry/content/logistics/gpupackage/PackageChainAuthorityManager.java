@@ -150,7 +150,7 @@ public final class PackageChainAuthorityManager {
         }
         flush(runtime);
         if(!PackageAuthorityManager.hasChainPeer(level))return;
-        long deadline=System.nanoTime()+250_000;int visits=0;
+        long deadline=System.nanoTime()+ServerConfig.packageMainThreadBudgetNanos();int visits=0;
         while(!runtime.scans.isEmpty() && visits++<64 && System.nanoTime()<deadline) {
             var it=runtime.scans.entrySet().iterator();var entry=it.next();var scan=entry.getValue();
             if(scan.conveyor.isRemoved()){it.remove();continue;}

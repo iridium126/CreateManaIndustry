@@ -44,7 +44,7 @@ class PackageFreePickQueueTest {
         }
     }
     @Test void onlyPickWithOneFreeVisibleActiveSegmentHitCanCompleteInput() {
-        for(var invalid:List.of(hit(1,0,.25f),hit(4,0,.25f),hit(0,-3,.25f),hit(0,0,-.1f),hit(0,0,1),hit(0,0,Float.NaN),hit(0,Float.NaN,.25f))) {
+        for(var invalid:List.of(hit(1,0,.25f),hit(4,0,.25f),hit(0,-1,.25f),hit(0,-3,.25f),hit(0,0,-.1f),hit(0,0,1),hit(0,0,Float.NaN),hit(0,Float.NaN,.25f))) {
             var queue=new PackageFreePickQueue(7,()->0);queue.enqueue(PackageFreePickQueue.Action.USE,RAY,"input");var input=queue.queued();queue.submitted(input);
             assertThrows(IllegalStateException.class,()->queue.completed(completed(input,invalid)));
         }
@@ -52,5 +52,11 @@ class PackageFreePickQueueTest {
         assertFalse(queue.completed(new PackagePoseQueryGpu.Completed(0,4,0,PackagePoseQueryGpu.Kind.POSES,input,List.of(hit(0,0,.25f)))));
         assertThrows(IllegalStateException.class,()->queue.completed(new PackagePoseQueryGpu.Completed(0,4,0,PackagePoseQueryGpu.Kind.PICK,input,List.of())));
         assertTrue(queue.completed(completed(input,hit(0,0,0))));
+    }
+    @Test void collisionFrozenFreePackagesRemainPickable() {
+        var queue=new PackageFreePickQueue(7,()->0);queue.enqueue(PackageFreePickQueue.Action.USE,RAY,"frozen");
+        var input=queue.queued();queue.submitted(input);
+        assertTrue(queue.completed(completed(input,hit(0,PackagePhysicsGpu.COLLISION_FROZEN,.25f))));
+        assertEquals(PackagePhysicsGpu.COLLISION_FROZEN,queue.result().state());
     }
 }

@@ -53,12 +53,18 @@ class PackageAuthorityRegionTest {
         assertFalse(r.visibleReady(OWNER,10,fresh.index(),t.id,fresh.leaseEpoch(),fresh.revision(),1));
         assertEquals(2,t.releases);
     }
-    @Test void delayedVisibleReadyCannotRenewAnOverdueMovingBodyWithARegionHeartbeat() {
+    @Test void delayedVisibleReadyKeepsAQuietMovingBodyLeasedWithARegionHeartbeat() {
         var r=region(0);var t=new Target(200,5,0);var baseline=acquire(r,t,0);
         assertTrue(r.heartbeat(OWNER,10,2));
         assertTrue(r.heartbeat(OWNER,10,4));
-        assertFalse(r.visibleReady(OWNER,10,baseline.index(),t.id,baseline.leaseEpoch(),baseline.revision(),4));
-        assertEquals(1,t.releases);assertNull(r.baseline(t.id));
+        assertTrue(r.visibleReady(OWNER,10,baseline.index(),t.id,baseline.leaseEpoch(),baseline.revision(),4));
+        assertEquals(0,t.releases);assertNotNull(r.baseline(t.id));
+    }
+    @Test void activeLeaseSurvivesBriefHeartbeatGapAndExpiresAfterGracePeriod() {
+        var r=region(0);var t=new Target(203,5,0);acquire(r,t,0);
+        assertTrue(r.paused(t.id,3));assertEquals(0,t.releases);
+        assertTrue(r.paused(t.id,PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS));assertEquals(0,t.releases);
+        assertFalse(r.paused(t.id,PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS+1));assertEquals(1,t.releases);
     }
     @Test void pairSuppressionRequiresBothFullFinalHandshakesAndTheSameAuthority() {
         var first=region(0);var same=new PackageAuthorityRegion(new PackageRegion(1,0,0),OWNER,11,1,0);
@@ -78,9 +84,9 @@ class PackageAuthorityRegionTest {
         var first=region(0);var other=new PackageAuthorityRegion(REGION,OWNER,11,1,0);
         var a=new Target(201,5,0);a.current=new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(5,5,5,1,0,0,0),0);
         var b=new Target(202,6,1);acquire(first,a,0);acquire(other,b,0);
-        first.heartbeat(OWNER,first.epoch(),2);other.heartbeat(OWNER,other.epoch(),2);
-        assertFalse(first.coSimulates(a.id,other,b.id,3));assertEquals(1,a.releases);assertEquals(0,b.releases);
-        b.eligible=false;assertFalse(other.coSimulates(b.id,other,b.id,3));assertEquals(1,b.releases);
+        other.heartbeat(OWNER,other.epoch(),PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS);
+        assertFalse(first.coSimulates(a.id,other,b.id,PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS+1));assertEquals(1,a.releases);assertEquals(0,b.releases);
+        b.eligible=false;assertFalse(other.coSimulates(b.id,other,b.id,PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS+1));assertEquals(1,b.releases);
         assertEquals(List.of("iron:64","address:A"),a.contents);assertEquals(List.of("iron:64","address:A"),b.contents);
     }
     @Test void predictedMotionPreservesExactPositionsIndependentFieldsAndAbsoluteObserverFeed() {
@@ -202,13 +208,13 @@ class PackageAuthorityRegionTest {
         assertNull(r.prepared(OWNER,10,offered.index(),t.id,offered.leaseEpoch(),offered.revision(),
                 PackageLease.ACQUISITION_TIMEOUT_TICKS+1));
     }
-    @Test void pendingWarmupCannotExtendAnExistingActiveAuthority() {
+    @Test void pendingWarmupTimeoutDoesNotRevokeAnActiveAuthority() {
         var r=region(0);var active=new Target(1,5,PackageAuthorityRegion.SLEEPING);
         acquire(r,active,0);
         var warming=new Target(2,6,0);assertNotNull(r.offer(warming,0));
-        r.tick(PackageLease.TIMEOUT_TICKS+1);
-        assertEquals(1,active.releases);assertEquals(1,warming.releases);
-        assertEquals(0,r.size());
+        r.tick(PackageLease.ACQUISITION_TIMEOUT_TICKS+1);
+        assertEquals(0,active.releases);assertEquals(1,warming.releases);
+        assertEquals(1,r.size());assertTrue(r.paused(active.id,PackageLease.ACQUISITION_TIMEOUT_TICKS+1));
     }
     @Test void cancelledFinalBaselineDoesNotShortenTheNextWarmup() {
         var r=region(0);var first=new Target(1,5,0);var offer=r.offer(first,0);
@@ -233,10 +239,13 @@ class PackageAuthorityRegionTest {
         assertEquals(reads,targets.stream().mapToInt(t->t.reads).sum());
         assertEquals(0,targets.stream().mapToInt(t->t.writes).sum());assertEquals(4096,r.size());
     }
-    @Test void movingPackageCannotHideStalledGpuReadbackBehindHeartbeat() {
+    @Test void quietMovingPackageStaysLeasedAndAcceptsTheNextSparseDelta() {
         var r=region(0);var t=new Target(1,5,0);acquire(r,t,0);
         for(int tick=1;tick<=3;tick++)assertTrue(r.heartbeat(OWNER,10,tick));
-        assertFalse(r.paused(t.id,3));assertEquals(1,t.releases);
+        assertTrue(r.paused(t.id,3));assertEquals(0,t.releases);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.delta(OWNER,10,1,0,3,
+                List.of(change(0,1,pose(5.5),0)),4));
+        assertEquals(5.5,t.current.pose().x());assertTrue(r.paused(t.id,3));assertEquals(0,t.releases);
     }
     @Test void mixedReleaseAndPoseDeltaAreCommittedOnceAndKeepOtherPackagesLeased() {
         var r=region(0);var a=new Target(1,5,1);var b=new Target(2,5,1);var aa=acquire(r,a,0);var bb=acquire(r,b,0);
@@ -259,12 +268,14 @@ class PackageAuthorityRegionTest {
                 List.of(change(aa.index(),PackageDeltaCodec.RELEASE,pose(5),0),change(bb.index(),1,pose(65),1)),4));
         assertEquals(0,a.releases);assertTrue(r.paused(a.id,1));assertEquals(0,b.writes);
     }
-    @Test void movingVelocityCannotUseSleepingFlagToHideStalledState() {
+    @Test void sleepingFlagDoesNotChangeSparseDeltaLeaseLiveness() {
         var r=region(0);var t=new Target(1,5,PackageAuthorityRegion.SLEEPING);
         t.current=new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(5,5,5,1,0,0,0),PackageAuthorityRegion.SLEEPING);
         acquire(r,t,0);
         for(int tick=1;tick<=3;tick++)assertTrue(r.heartbeat(OWNER,10,tick));
-        assertFalse(r.paused(t.id,3));assertEquals(1,t.releases);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.delta(OWNER,10,1,0,3,
+                List.of(change(0,1,pose(5.5),PackageAuthorityRegion.SLEEPING)),4));
+        assertTrue(r.paused(t.id,3));assertEquals(0,t.releases);
     }
     @Test void allRecordsValidateBeforeAnyPoseIsApplied() {
         var r=region(0);var a=new Target(1,5,1);var b=new Target(2,5,1);

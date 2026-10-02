@@ -1,4 +1,5 @@
 #pragma cmi_include packages/delta_common.glsl
+#pragma cmi_include packages/body_lifecycle.glsl
 struct Body { vec4 positionMass; vec4 velocityGround; vec4 extentYaw; vec4 previousSleep; };
 layout(std430,binding=5) readonly buffer Bodies { Body bodies[]; };
 layout(local_size_x=64) in;
@@ -20,21 +21,23 @@ void main() {
             if(m.selection.x>=uBodyCount) status=1u;
             else {
                 Body b=bodies[m.selection.x];
+                bool collisionFrozen=b.previousSleep.w==PACKAGE_COLLISION_FROZEN;
                 vec3 feet=b.positionMass.xyz+uOriginOffset-vec3(0,b.extentYaw.y,0);
                 vec3 position=roundEven(feet*4096.0);
                 vec3 velocity=floor(b.velocityGround.xyz*1024.0+0.5);
-                bool supported=finite4(b.positionMass) && finite4(b.velocityGround)
-                    && finite4(b.extentYaw) && finite4(b.previousSleep)
-                    && b.positionMass.w>0.0 && b.previousSleep.w>=0.0
-                    && all(greaterThan(b.extentYaw.xyz,vec3(0)))
-                    && all(greaterThanEqual(feet,vec3(0))) && all(lessThan(feet,vec3(64)))
-                    // A rounded point on 64 is outside the server's region too.
-                    && all(lessThan(position,vec3(262144)))
-                    && all(greaterThanEqual(velocity,vec3(-32768))) && all(lessThanEqual(velocity,vec3(32767)))
-                    && dot(dvec3(velocity),dvec3(velocity))<=1073741824.0
-                    && abs(b.extentYaw.w)<=1000000.0;
-                if(!supported) status=1u;
-                else {
+                if(!collisionFrozen) {
+                    bool supported=finite4(b.positionMass) && finite4(b.velocityGround)
+                        && finite4(b.extentYaw) && finite4(b.previousSleep)
+                        && b.positionMass.w>0.0 && b.previousSleep.w>=0.0
+                        && all(greaterThan(b.extentYaw.xyz,vec3(0)))
+                        && all(greaterThanEqual(feet,vec3(0))) && all(lessThan(feet,vec3(64)))
+                        // A rounded point on 64 is outside the server's region too.
+                        && all(lessThan(position,vec3(262144)))
+                        && all(greaterThanEqual(velocity,vec3(-32768))) && all(lessThanEqual(velocity,vec3(32767)))
+                        && dot(dvec3(velocity),dvec3(velocity))<=1073741824.0
+                        && abs(b.extentYaw.w)<=1000000.0;
+                    if(!supported) status=1u;
+                    else {
                     q.positionFlags=ivec4(ivec3(position),b.velocityGround.w>0.5?1:0);
                     // Java Math.round uses ties toward +infinity. Double keeps yaw's wire
                     // integer identical to PackageDeltaCodec, including negative windings.
@@ -56,6 +59,7 @@ void main() {
                     if(uRelativePosition!=0u) {
                         q.positionFlags.xyz-=old.positionFlags.xyz;
                         if(uPredictedPosition!=0u && mask!=0u)q.positionFlags.xyz-=displacement[i].xyz;
+                    }
                     }
                 }
             }

@@ -15,7 +15,7 @@ import java.util.function.LongSupplier;
  * A single capture call cannot be preempted: budget overruns are measured, never hidden.
  */
 public final class PackageCollisionCache {
-    public static final long DEFAULT_BUDGET_NANOS = 250_000;
+    public static final long DEFAULT_BUDGET_NANOS = 10_000_000;
     public static final int BLOCKS = 4096;
     public static final int UNSUPPORTED=8,MAX_GPU_SHAPES=16384;
     public interface Listener {

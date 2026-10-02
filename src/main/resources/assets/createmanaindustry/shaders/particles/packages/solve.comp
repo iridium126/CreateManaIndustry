@@ -41,7 +41,8 @@ void main() {
                 if(all(greaterThan(overlap,vec3(0.0)))) {
                     int axis=overlap.y<=overlap.x && overlap.y<=overlap.z ? 1 : (overlap.x<=overlap.z?0:2);
                     float direction=delta[axis]==0.0 ? (i<j?-1.0:1.0) : sign(delta[axis]);
-                    float weight=b.positionMass.w/(b.positionMass.w+other.positionMass.w);
+                    float otherInverseMass=other.previousSleep.w==PACKAGE_COLLISION_FROZEN?0.0:other.positionMass.w;
+                    float weight=b.positionMass.w/(b.positionMass.w+otherInverseMass);
 #ifdef CMI_RELATIVE_CONTACTS
                     float shift=direction*overlap[axis]*weight;
                     if(direction>0)positive[axis]=max(positive[axis],shift);else negative[axis]=min(negative[axis],shift);
@@ -79,11 +80,11 @@ void main() {
 #ifdef CMI_WORLD
     vec3 worldCorrection;
     if(!solveWorld(b,worldCorrection,velocity,grounded,material)) {
-        b.positionMass.xyz=b.previousSleep.xyz;b.previousSleep.w=-1.0;dst[i]=b;return;
+        freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;
     }
     b.positionMass.xyz+=worldCorrection;
     if(any(notEqual(worldCorrection,vec3(0))) && !coveredWorld(b)) {
-        b.positionMass.xyz=b.previousSleep.xyz;b.previousSleep.w=-1.0;dst[i]=b;return;
+        freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;
     }
 #endif
     b.velocityGround=vec4(velocity,grounded?1.0:0.0);

@@ -32,7 +32,8 @@ public final class PackageFreePickQueue {
         expire();if(phase!=Phase.QUERY||completed.kind()!=PackagePoseQueryGpu.Kind.PICK||completed.tag()!=input)return false;
         if(completed.results().size()!=1)throw new IllegalStateException("Free pick result length");
         var next=completed.results().getFirst();
-        if(next.present()&&(next.chain()||(next.flags()!=0&&next.flags()!=PackagePoolGpu.HANDBACKABLE)||!Float.isFinite(next.state())||next.state()<0
+        if(next.present()&&(next.chain()||(next.flags()!=0&&next.flags()!=PackagePoolGpu.HANDBACKABLE)||!Float.isFinite(next.state())
+                ||next.state()<0&&next.state()!=PackagePhysicsGpu.COLLISION_FROZEN
                 ||!Float.isFinite(next.before())||next.before()<0||next.before()>=1
                 ||!Float.isFinite(next.progress())||next.progress()<0||next.progress()>1))throw new IllegalStateException("Free pick result domain/lifecycle/fraction");
         result=next;phase=Phase.READY;return true;

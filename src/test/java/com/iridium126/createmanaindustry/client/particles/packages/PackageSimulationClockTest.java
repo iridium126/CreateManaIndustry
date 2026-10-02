@@ -10,7 +10,6 @@ class PackageSimulationClockTest {
             for(int frame=0;frame<=hz;frame++) {
                 long now=(long)frame*1_000_000_000L/hz;
                 var advance=clock.advance(now,now/50_000_000L,false);
-                assertNotEquals(PackageSimulationClock.Advance.OVERDUE,advance);
                 if(advance==PackageSimulationClock.Advance.STEP)steps++;
             }
             assertEquals(20,steps,"render Hz "+hz);
@@ -23,12 +22,12 @@ class PackageSimulationClockTest {
         assertEquals(PackageSimulationClock.Advance.STEP,clock.advance(101_000_000,12,false));
         assertEquals(.02f,clock.interpolation(),1e-6f);
     }
-    @Test void longFrameAndRepeatedFrozenTickRequireHandback() {
+    @Test void longFrameAndRepeatedFrozenTickRebaseWithoutHandback() {
         var clock=new PackageSimulationClock();clock.advance(0,1,false);
-        assertEquals(PackageSimulationClock.Advance.OVERDUE,clock.advance(100_000_001,2,false));
+        assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(100_000_001,2,false));
         clock.reset();clock.advance(0,1,false);
         assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(100_000_000,1,false));
-        assertEquals(PackageSimulationClock.Advance.OVERDUE,clock.advance(100_000_001,1,false));
+        assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(100_000_001,1,false));
     }
     @Test void pauseAndWorldResetDiscardElapsedTime() {
         var clock=new PackageSimulationClock();clock.advance(0,1,false);
@@ -37,22 +36,23 @@ class PackageSimulationClockTest {
         assertEquals(PackageSimulationClock.Advance.STEP,clock.advance(9_050_000_000L,2,false));
         clock.reset();assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(99_000_000_000L,1,false));
     }
-    @Test void backwardsClockRequiresHandback() {
+    @Test void backwardsClockRebasesWithoutHandback() {
         var clock=new PackageSimulationClock();clock.advance(20,1,false);
-        assertEquals(PackageSimulationClock.Advance.OVERDUE,clock.advance(19,2,false));
+        assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(19,2,false));
     }
     @Test void unfinishedInputDoesNotConsumeTimeOrPosePair() {
         var clock=new PackageSimulationClock();clock.advance(0,10,false);
         assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(50_000_000,11,false,false));
-        assertEquals(1,clock.interpolation());
-        assertEquals(PackageSimulationClock.Advance.STEP,clock.advance(60_000_000,11,false,true));
+        assertEquals(0,clock.interpolation());
+        assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(60_000_000,11,false,true));
         assertEquals(.2f,clock.interpolation(),1e-6f);
-        assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(65_000_000,11,false,true));
+        assertEquals(PackageSimulationClock.Advance.STEP,clock.advance(110_000_000,12,false,true));
+        assertEquals(.2f,clock.interpolation(),1e-6f);
     }
     @Test void unfinishedInputStillHasABoundedBacklog() {
         var clock=new PackageSimulationClock();clock.advance(0,10,false);
         assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(100_000_000,12,false,false));
-        assertEquals(PackageSimulationClock.Advance.OVERDUE,clock.advance(100_000_001,12,false,false));
+        assertEquals(PackageSimulationClock.Advance.IDLE,clock.advance(100_000_001,12,false,false));
     }
     @Test void nanoTimeOriginAndWrapAreNotAbsoluteTime() {
         var clock=new PackageSimulationClock();clock.advance(-100_000_000,1,false);

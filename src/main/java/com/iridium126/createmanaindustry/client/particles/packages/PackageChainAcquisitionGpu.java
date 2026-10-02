@@ -36,7 +36,6 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
         int body=-1,candidate=-1;
         boolean queued,captured,terminal;
         boolean needsPose,poseRequested,retirementConfirmed;
-        long poseDeadline;
         PackagePoseQueryGpu.Result pose;
         Entry(ClientboundChainPackagePacket offer){this.offer=checkpoint=offer;}
     }
@@ -173,8 +172,6 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
         open();if(maximum<0 || maximum>MAX_TRANSITIONS)throw new IllegalArgumentException("Chain work budget");
         if(queries!=null)queries.poll(c->{if(c.kind()==PackagePoseQueryGpu.Kind.PICK){if(picks==null)throw new IllegalStateException("Missing chain pick consumer");picks.accept(c);}else poseConfirmed(c);});
         admissions.poll(this::confirmed);
-        for(Entry entry:poseAwaiting)if(System.nanoTime()>entry.poseDeadline)
-            throw new IllegalStateException("Chain pose checkpoint exceeded two ticks");
         for(int n=0;n<maximum && !trackWork.isEmpty();n++) {
             var t=trackWork.getFirst();
             var origin=nativeOrigins==null?null:nativeOrigins.apply(t);
@@ -219,7 +216,7 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
                 case RETIRE -> {
                     physics.retireChain(entry.body);tracks.retire(entry.body);pool.setHidden(entry.candidate,true);
                     entry.phase=Phase.RETIRED_ADMISSION;awaiting.add(entry);
-                    if(entry.needsPose){entry.poseDeadline=System.nanoTime()+100_000_000;poseAwaiting.add(entry);}
+                    if(entry.needsPose)poseAwaiting.add(entry);
                 }
                 default -> {}
             }
@@ -279,7 +276,6 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
             if(!(batch.get(i) instanceof Entry entry) || byCandidate.get(entry.candidate)!=entry)
                 throw new IllegalStateException("Chain pose query owner");
             if(entry.terminal || entry.phase!=Phase.RETIRED_ADMISSION)continue;
-            if(System.nanoTime()>entry.poseDeadline)throw new IllegalStateException("Chain pose checkpoint exceeded two ticks");
             var result=completed.results().get(i);var id=entry.offer.baseline().identity();
             if(!entry.poseRequested || !result.present() || !result.chain() || !result.retired()
                     || result.id()!=id.id() || result.generation()!=id.generation() || result.candidate()!=entry.candidate
@@ -293,8 +289,6 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
     }
     private void completeRetirement(Entry entry) {
         if(!entry.retirementConfirmed || entry.needsPose && entry.pose==null)return;
-        if(entry.needsPose && System.nanoTime()>entry.poseDeadline)
-            throw new IllegalStateException("Chain retirement confirmation exceeded two ticks");
         finish(entry);transport.released(entry.offer,entry.checkpoint.baseline(),entry.pose);
     }
     public boolean captureCommitted(long generation) {

@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.client.particles.packages;
 
 import java.util.*;
 import java.util.function.Consumer;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.*;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainPackagePacket;
 import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorBlockEntity;
@@ -26,7 +27,6 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
         BlockPos connection;
         boolean queued,replacing;
         int rebinding;
-        long deadline;
         Index(ChainConveyorBlockEntity c){conveyor=c;restart();}
         void restart(){boxes.clear();loop=conveyor.getLoopingPackages().iterator();connections=conveyor.getTravellingPackages().entrySet().iterator();travelling=Collections.emptyIterator();connection=null;}
     }
@@ -67,13 +67,12 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
         if(index==null){index=new Index(conveyor);indices.put(conveyor,index);queue(index);}return index;
     }
     private void queue(Index index){if(!index.queued){index.queued=true;work.addLast(index);}}
-    /** Soft quarter-millisecond preparation budget; only owning-thread access to native lists. */
+    /** Configured soft main-thread budget; only owning-thread access to native lists. */
     public void prepare() {
         if(acquisition==null)return;
-        long until=System.nanoTime()+250_000;int count=0;
+        long until=System.nanoTime()+ClientConfig.packageMainThreadBudgetNanos();int count=0;
         while(!work.isEmpty() && count<2048 && (count%16!=0 || System.nanoTime()<until)) {
             var index=work.removeFirst();index.queued=false;
-            if(index.deadline!=0 && System.nanoTime()>index.deadline){failed.accept("Chain native snapshot rebind exceeded two ticks");return;}
             if(index.replacing){queue(index);break;}
             try {
                 if(index.loop.hasNext())accept(index,index.loop.next(),null);
@@ -82,7 +81,7 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
                         var next=index.connections.next();index.connection=next.getKey();index.travelling=next.getValue().iterator();
                     }
                     if(index.travelling.hasNext())accept(index,index.travelling.next(),index.connection);
-                    else {index.deadline=0;if(index.rebinding!=0)failed.accept("Native chain snapshot lost a leased identity");continue;}
+                    else {if(index.rebinding!=0)failed.accept("Native chain snapshot lost a leased identity");continue;}
                 }
                 count++;queue(index);
             }catch(ConcurrentModificationException changed){index.restart();queue(index);}
@@ -212,12 +211,12 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
         ChainConveyorPackage.physicsDataCache.get(level).put(box.netId,data);
     }
     @Override public void beforeRead(ChainConveyorBlockEntity conveyor) {
-        var index=indices.get(conveyor);if(index==null)return;index.replacing=true;index.deadline=System.nanoTime()+100_000_000;
+        var index=indices.get(conveyor);if(index==null)return;index.replacing=true;
         for(var claim:index.claims)if(!claim.rebinding){claim.rebinding=true;if(!claim.terminal)index.rebinding++;}
     }
     @Override public void afterRead(ChainConveyorBlockEntity conveyor) {
         var index=indices.get(conveyor);if(index==null)return;index.replacing=false;index.restart();
-        index.deadline=index.rebinding==0?0:System.nanoTime()+100_000_000;queue(index);
+        queue(index);
     }
     @Override public void removed(ChainConveyorBlockEntity conveyor) {
         var index=indices.get(conveyor);if(index==null)return;

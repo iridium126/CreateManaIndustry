@@ -1,3 +1,4 @@
+#pragma cmi_include packages/body_lifecycle.glsl
 struct QueryBody { vec4 positionMass; vec4 velocityGround; vec4 extentYaw; vec4 previousSleep; };
 struct QueryChain { vec4 startRadius; vec4 endLength; vec4 progress; vec4 targetYaw; };
 struct QueryMeta { uvec4 identity; uvec4 selection; vec4 previousTargetYaw; vec4 style; vec4 nudge; };
@@ -17,7 +18,8 @@ bool queryIdentity(uint candidate) {
 bool queryVisible(uint candidate) {
     if(!queryIdentity(candidate))return false;
     uvec4 a=admitted[2u*candidate+1u];
-    return a.x>0u && a.x<=uPoolCapacity && (a.y&4u)==0u && bodies[meta[candidate].selection.x].previousSleep.w>=0.0;
+    float state=bodies[meta[candidate].selection.x].previousSleep.w;
+    return a.x>0u && a.x<=uPoolCapacity && (a.y&4u)==0u && (state>=0.0 || state==PACKAGE_COLLISION_FROZEN);
 }
 QueryResult queryPose(uint candidate,bool retired) {
     QueryMeta m=meta[candidate];uint body=m.selection.x;QueryBody b=bodies[body];

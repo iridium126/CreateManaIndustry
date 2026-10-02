@@ -10,7 +10,8 @@ void main() {
         vec3 foot=b.positionMass.xyz-vec3(0,b.extentYaw.y,0);
         vec3 shift=projectPoint(localPoint(foot,true),false)-foot;
         float closest=1.;vec3 normal=vec3(0);
-        if(!sweepWorld(b,b.positionMass.xyz,shift,closest,normal)||closest<.99999){b.previousSleep.w=-1.;}
+        if(!sweepWorld(b,b.positionMass.xyz,shift,closest,normal))freezeForMissingCollision(b,src[i].positionMass.xyz);
+        else if(closest<.99999){b.previousSleep.w=-1.;}
         else {b.positionMass.xyz+=shift;b.velocityGround.xyz-=support.xyz;
             movingSupport[i]=vec4(shift*20.,uintBitsToFloat(movingIdentity()|MOVING_CARRIED));}
     }

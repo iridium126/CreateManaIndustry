@@ -10,18 +10,20 @@ void main() {
         Body b=src[i];uvec4 constraint=supportIn[i];float height=uintBitsToFloat(constraint.z);
         if(b.positionMass.w>0 && b.previousSleep.w>=0) {
             bool bad=constraint.x!=END || isnan(height) || isinf(height);
+            bool collisionUnavailable=false;
             if(!bad && height>b.positionMass.y) {
                 b.positionMass.y=height;
                 vec3 worldCorrection,velocity=b.velocityGround.xyz;bool grounded=b.velocityGround.w>.5;float friction;
-                bad=!solveWorld(b,worldCorrection,velocity,grounded,friction);
+                collisionUnavailable=!solveWorld(b,worldCorrection,velocity,grounded,friction);
                 // A ceiling contradicting the support constraint needs local handback.
-                if(!bad)bad=worldCorrection.y< -1e-4;
-                if(!bad) {
-                    b.positionMass.xyz+=worldCorrection;bad=!coveredWorld(b);
-                    if(!bad){velocity.y=max(velocity.y,uintBitsToFloat(constraint.w));b.velocityGround=vec4(velocity,grounded?1:0);count.x=1u;}
+                if(!bad&&!collisionUnavailable)bad=worldCorrection.y< -1e-4;
+                if(!bad&&!collisionUnavailable) {
+                    b.positionMass.xyz+=worldCorrection;collisionUnavailable=!coveredWorld(b);
+                    if(!collisionUnavailable){velocity.y=max(velocity.y,uintBitsToFloat(constraint.w));b.velocityGround=vec4(velocity,grounded?1:0);count.x=1u;}
                 }
             }
-            if(bad){b.positionMass.xyz=b.previousSleep.xyz;b.previousSleep.w=-1;count.y=1u;}
+            if(collisionUnavailable)freezeForMissingCollision(b,b.previousSleep.xyz);
+            else if(bad){b.positionMass.xyz=b.previousSleep.xyz;b.previousSleep.w=-1;count.y=1u;}
             src[i]=b;
         }
     }

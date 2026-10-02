@@ -55,7 +55,9 @@ public final class ServerConfig {
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
     private static final ModConfigSpec.BooleanValue PACKAGE_GPU_AUTHORITY;
+    private static final ModConfigSpec.DoubleValue PACKAGE_MAIN_THREAD_BUDGET_MS;
     public static volatile boolean packageGpuAuthority;
+    public static volatile double packageMainThreadBudgetMs = 10.0;
 
     // ---- fluid -------------------------------------------------------------
 
@@ -133,6 +135,9 @@ public final class ServerConfig {
         BUILDER.push("gpuPackages");
         PACKAGE_GPU_AUTHORITY=BUILDER.comment("Development ownership transport. Remains inactive until a client has verified complete GPU collision/render resources.")
                 .define("authorityEnabled",false);
+        PACKAGE_MAIN_THREAD_BUDGET_MS=BUILDER
+                .comment("Maximum server main-thread time per tick for each GPU package processing pass, in milliseconds.")
+                .defineInRange("mainThreadBudgetMs",10.0,0.25,50.0);
         BUILDER.pop();
         BUILDER.comment("Fluid conversion ratios — how much mana/media/source one bucket holds.").push("fluid");
         MANA_PER_BUCKET = BUILDER
@@ -449,6 +454,7 @@ public final class ServerConfig {
             fuelRodStrictStacking = FUEL_ROD_STRICT_STACKING.get();
             stormCorrectionHz = STORM_CORRECTION_HZ.get();
             packageGpuAuthority=PACKAGE_GPU_AUTHORITY.get();
+            packageMainThreadBudgetMs=PACKAGE_MAIN_THREAD_BUDGET_MS.get();
             stormMaxCount = STORM_MAX_COUNT.get();
             stormGrowthPerSecond = STORM_GROWTH_PER_SECOND.get();
             stormWaveInterval = STORM_WAVE_INTERVAL.get();
@@ -486,5 +492,9 @@ public final class ServerConfig {
         hexJitFastSpecialHandlerLookup = HEX_JIT_FAST_SPECIAL_HANDLER_LOOKUP.get();
         hexJitFastNumberLiterals = HEX_JIT_FAST_NUMBER_LITERALS.get();
         hexJitCacheNormalPatternLookup = HEX_JIT_CACHE_NORMAL_PATTERN_LOOKUP.get();
+    }
+
+    public static long packageMainThreadBudgetNanos() {
+        return Math.round(packageMainThreadBudgetMs * 1_000_000.0);
     }
 }

@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.client.particles.packages;
 
 import java.util.*;
 import java.util.function.Consumer;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.mixin.packages.NativeMotionPacketAccessor;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageLease;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion;
@@ -145,16 +146,17 @@ public final class PackageNativeObserverClient implements AutoCloseable,PackageN
     private void releaseAuthority(AuthorityKey key){var uuid=authorities.remove(key);if(uuid!=null)authorityCounts.computeIfPresent(uuid,(u,n)->n==1?null:n-1);}
     private static AuthorityKey authorityKey(ClientboundPackagePacket p){return new AuthorityKey(p.region(),p.epoch(),p.baseline().index(),p.baseline().identity(),p.baseline().leaseEpoch());}
     public static void authorityReleased(ClientboundPackagePacket offer){var c=live();if(c!=null)c.releaseAuthority(authorityKey(offer));}
+    public void prepare(){prepare(System.nanoTime());}
     public void prepare(long now){
         open();requestMembership();
-        long deadline=System.nanoTime()+250_000L;int records=0;
+        long deadline=System.nanoTime()+ClientConfig.packageMainThreadBudgetNanos();int records=0;
         // A packet is atomic, so this is a soft budget checked between bounded packets. Never
         // scan a whole initial subscription or wait for GL completion on the client thread.
         for(int i=0;i<64&&!inbox.isEmpty()&&records<1024&&(i==0||System.nanoTime()<deadline);i++) {
             var arrival=inbox.removeFirst();queuedRecords-=arrival.packet().baselines().size()+arrival.packet().changes().size();
             records+=arrival.packet().baselines().size()+arrival.packet().changes().size();
-            if(now-arrival.receipt()>100_000_000L||membership.apply(arrival.packet(),this)==PackageNativeMembershipRegistry.Result.RESYNC) {
-                failure.accept("Native membership sequence/identity/processing budget requires rebuild");return;
+            if(membership.apply(arrival.packet(),this)==PackageNativeMembershipRegistry.Result.RESYNC) {
+                failure.accept("Native membership sequence/identity requires rebuild");return;
             }
         }
         controller.prepare(System.nanoTime());if(controller.failure()!=null)failure.accept(controller.failure());

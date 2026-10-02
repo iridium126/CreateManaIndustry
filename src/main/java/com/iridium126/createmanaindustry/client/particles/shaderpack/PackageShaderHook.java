@@ -7,6 +7,7 @@ import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.simibubi.create.AllBlocks;
 import net.irisshaders.iris.Iris;
+import net.irisshaders.iris.pipeline.IrisRenderingPipeline;
 import net.irisshaders.iris.shaderpack.materialmap.*;
 import net.irisshaders.iris.shadows.ShadowRenderer;
 import net.irisshaders.iris.uniforms.CapturedRenderingState;
@@ -40,6 +41,12 @@ public final class PackageShaderHook {
     public static Object pipelineBoundary(){return Iris.getPipelineManager().getPipelineNullable();}
     public static void close(){try{COMPILER.close();}finally{try{MAIN_TIMING.close();}finally{SHADOW_TIMING.close();state=null;failedPipeline=null;reloadRequested=false;mainStatus=shadowStatus="off";}}}
     public static boolean usable(){return !reloadRequested && ClientConfig.shaderPackIntegration && failedPipeline!=Iris.getPipelineManager().getPipelineNullable() && COMPILER.usable();}
+    /** Distinguish a completed compile failure from the short pipeline-swap window. */
+    public static boolean terminalFailure() {
+        Object pipeline=Iris.getPipelineManager().getPipelineNullable();
+        if(reloadRequested || !(pipeline instanceof IrisRenderingPipeline))return false;
+        return failedPipeline==pipeline || !COMPILER.needsCompile()&&!COMPILER.error().isEmpty()&&!COMPILER.usable();
+    }
     /** Render-thread preparation. Tick/network paths only call usable(), never compile. */
     public static boolean prepare() {
         if(reloadRequested){reloadRequested=false;COMPILER.invalidate();failedPipeline=null;mainStatus=shadowStatus="reload pending";}

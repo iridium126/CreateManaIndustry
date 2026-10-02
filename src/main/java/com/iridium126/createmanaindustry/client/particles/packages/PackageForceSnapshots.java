@@ -27,7 +27,7 @@ final class PackageForceSnapshots {
         poll();return snapshot!=null && tick>=snapshot.tick() && tick-snapshot.tick()<=1;
     }
     PackageForceScene.Snapshot snapshot(long tick) {
-        if(!ready(tick))throw new IllegalStateException("Package force capture overdue; restoring Create");
+        if(!ready(tick))throw new IllegalStateException("Package force capture is not ready for this tick");
         return snapshot;
     }
     void invalidate() {revision++;snapshot=null;scheduled=Long.MIN_VALUE;}

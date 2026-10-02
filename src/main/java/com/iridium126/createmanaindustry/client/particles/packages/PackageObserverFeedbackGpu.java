@@ -5,7 +5,7 @@ import java.util.function.Consumer;
 
 /** Independent four-slot control snapshots for an observer namespace. No pose or item data is
  * read back. Capture only a sampled publication; callers retain their dirty publication when
- * capture returns false and restore native ownership on rejected/stale/overdue feedback.
+ * capture returns false. Rejected feedback requires fallback; a slow fence remains pending.
  * Namespace invalidation discards all pending old-world/stream results without waiting. */
 public final class PackageObserverFeedbackGpu implements AutoCloseable {
     public record Status(long epoch,long publication,int invalid,int active,int stale,int slots,

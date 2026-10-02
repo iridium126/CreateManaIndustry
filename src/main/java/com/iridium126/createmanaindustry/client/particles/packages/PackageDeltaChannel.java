@@ -13,7 +13,6 @@ import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageAck
  * Owns detector lifetime; close invalidates every pending capture/ACK. Never waits for a fence/worker.
  */
 public final class PackageDeltaChannel implements AutoCloseable {
-    public static final long PREPARATION_TIMEOUT_NANOS=100_000_000L;
     private static final int FRAGMENT_BYTES=1024*1024,MAX_NOTICES=2048;
     public interface Transport {
         /** Negotiated v3 free-package path. Original codec remains the reference/harness default. */
@@ -220,10 +219,10 @@ public final class PackageDeltaChannel implements AutoCloseable {
             }
             journal.prepare();
             now=clock.getAsLong();
-            if(journal.preparationExpired(now,PREPARATION_TIMEOUT_NANOS))throw new IllegalStateException("Package encoding/transport preparation exceeded two ticks");
-            for(Frame frame:frames)if(frame.capture!=null && (now<frame.started || now-frame.started>PREPARATION_TIMEOUT_NANOS))
-                throw new IllegalStateException("Package readback preparation exceeded two ticks");
-            journal.sendReady((sequence,bytes)->transport.sendPrepared(epoch,revision,sequence,journal.prepared(sequence),bytes),clock,maximumPackets,PREPARATION_TIMEOUT_NANOS);
+            // Worker/fence latency is backpressure, not an ownership failure. The journal and
+            // capture rings are bounded; keep their immutable records until they can be sent.
+            journal.sendReady((sequence,bytes)->transport.sendPrepared(epoch,revision,sequence,journal.prepared(sequence),bytes),
+                    clock,maximumPackets,Long.MAX_VALUE);
         }catch(RuntimeException failure){fail(failure.getMessage());}
         finally{if(cpuStarted!=0)pumpTimes.add(System.nanoTime()-cpuStarted);}
     }

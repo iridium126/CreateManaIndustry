@@ -89,11 +89,11 @@ public final class PackageObserverGpuController implements AutoCloseable {
         if(failure!=null)return 0;
         try {
             feedbackRejected=false;feedback.poll(consumeFeedback);
-            if(feedbackRejected || feedback.overdue(now)){fail(feedbackRejected?"Observer GPU rejected/expired presentation":"Observer feedback exceeded two ticks");return 0;}
+            if(feedbackRejected){fail("Observer GPU rejected/expired presentation");return 0;}
             int consumed=0;
             while(consumed<packetBudget && !queue.isEmpty()) {
                 var arrival=queue.getFirst();
-                if(now-arrival.receivedNanos()<0 || now-arrival.receivedNanos()>100_000_000L){fail("Observer queue exceeded two ticks");return consumed;}
+                if(now-arrival.receivedNanos()<0){fail("Observer monotonic clock reversed");return consumed;}
                 if(pending==null && !stage(arrival,now)){removeHead();consumed++;continue;}
                 float time=clock.now(now);
                 if(phase==0) {

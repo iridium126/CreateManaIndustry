@@ -145,7 +145,8 @@ public final class PackageWorldRuntime {
         var mc=Minecraft.getInstance();
         if(mc.level!=runtime.level || mc.getConnection()==null || !ClientConfig.particleEnabled
                 || !ClientConfig.packageGpuAuthority || (dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()
-                && (!CreateManaIndustry.IRIS_ACTIVE || !com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.usable())))
+                && (!CreateManaIndustry.IRIS_ACTIVE || !ClientConfig.shaderPackIntegration
+                    || com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.terminalFailure())))
             PackageAuthorityClient.closeAll("Package runtime disabled or world/render boundary changed",true);
         if(current==runtime && runtime.chainInteraction!=null)runtime.chainInteraction.tick();
         if(current==runtime && runtime.freeInteraction!=null)runtime.freeInteraction.tick();
@@ -162,18 +163,20 @@ public final class PackageWorldRuntime {
         var mc=Minecraft.getInstance();var connection=mc.getConnection();long now=System.nanoTime();
         Object nextShaderBoundary=CreateManaIndustry.IRIS_ACTIVE
                 ? com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.pipelineBoundary() : null;
-        if(physics!=null && shaderBoundary!=nextShaderBoundary) {
-            PackageAuthorityClient.closeAll("Package shader pipeline changed",true);return true;
-        }
+        // Package physics/storage are independent of an Iris pipeline object. The draw hook
+        // recompiles its pipeline-bound program; replacing that program must not revoke every lease.
+        if(physics!=null && shaderBoundary!=nextShaderBoundary)shaderBoundary=nextShaderBoundary;
+        boolean shaderPack=dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse();
+        boolean shaderReady=!shaderPack || (CreateManaIndustry.IRIS_ACTIVE
+                && com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.prepare());
         boolean enabled=ClientConfig.particleEnabled && ClientConfig.packageGpuAuthority && !preview && mc.level!=null && mc.player!=null
                 && connection!=null && connection.hasChannel(ServerboundPackagePacket.TYPE)
-                && (!dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()
-                || (CreateManaIndustry.IRIS_ACTIVE && com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.prepare()));
+                && (!shaderPack || (CreateManaIndustry.IRIS_ACTIVE && ClientConfig.shaderPackIntegration));
         if(physics!=null && (!enabled || level!=mc.level || failure!=null)) {
             PackageAuthorityClient.closeAll(failure==null?"Package runtime world/render boundary changed":failure,true);
             return true;
         }
-        if(!enabled || now<retryAfter)return false;
+        if(!enabled || now<retryAfter || physics==null&&!shaderReady)return false;
         try {
             if(physics==null)initialize(mc.level,poolFactory,sources);
             renderFrame=Math.incrementExact(renderFrame);
@@ -184,12 +187,10 @@ public final class PackageWorldRuntime {
             }
             if(freeCheckpoints!=null) {
                 freeCheckpoints.poll();
-                if(freeCheckpoints.overdue(now))throw new IllegalStateException("Free emergency checkpoint exceeded two ticks");
             }
             if(freeInteraction!=null)freeInteraction.prepare();
             if(chainCheckpoints!=null) {
                 chainCheckpoints.poll();
-                if(chainCheckpoints.overdue(now))throw new IllegalStateException("Chain emergency checkpoint exceeded two ticks");
             }
             pool.pollLightRequests(requestLight);
             if(worldPrefetch!=null)worldPrefetch.poll(requestCollision,collisionUsage);
@@ -217,24 +218,21 @@ public final class PackageWorldRuntime {
             // Initialization and acquisition can be expensive. Start an acquired body's clock
             // here, rather than charging work done before it owned any simulation time.
             var advance=active==0 ? PackageSimulationClock.Advance.IDLE
-                    : clock.advance(System.nanoTime(),level.getGameTime(),mc.isPaused(),freeActive==0 || forceCapture.ready());
-            if(active>0 && advance==PackageSimulationClock.Advance.OVERDUE) {
-                String reason=freeActive>0 && !forceCapture.ready()
-                        ? "Package force capture exceeded two ticks" : "Package physical clock exceeded two ticks";
-                CreateManaIndustry.LOGGER.warn("[CMI packages] {}; releasing GPU ownership",reason);
-                PackageAuthorityClient.closeAll(reason,true);return true;
-            }
+                    : clock.advance(System.nanoTime(),level.getGameTime(),mc.isPaused() || !shaderReady,freeActive==0 || forceCapture.ready());
             if(active>0 && advance==PackageSimulationClock.Advance.STEP) {
                 if(freeActive>0) {
                     var collision=PackageCollisionRuntime.forLevel(level);
                     try(var world=collision.view((int)(ox/16),(int)(oy/16),(int)(oz/16));
-                        var moving=collision.movingView((int)(ox/16),(int)(oy/16),(int)(oz/16));
-                        var forces=forceGpu.view(forceCapture.snapshot(),level.getGameTime())) {
-                        physics.applyFreeForces(forces,.05f);
-                        if(worldPrefetch!=null)worldPrefetch.capture(physics.freeStateBuffer(),physics.freeCount(),.5f,.15f,world);
-                        // A missing/retired atlas view must never be treated as empty world.
-                        // The async scan requests local handback while this frame holds position.
-                        if(world.ready())physics.stepFreeMoving(world,PackagePhysicsGpu.ITERATIONS,PackagePhysicsGpu.IndexMode.LINKED,moving.views());
+                        var moving=collision.movingView((int)(ox/16),(int)(oy/16),(int)(oz/16))) {
+                        // A frame-level atlas/pose-bank miss is temporary resource pressure. Do
+                        // not run prefetch or advance forces; resume from the unchanged state when
+                        // both immutable views are ready. Per-body missing geometry freezes only
+                        // the affected bodies inside the collision shaders.
+                        if(world.ready() && moving.ready())try(var forces=forceGpu.view(forceCapture.snapshot(),level.getGameTime())) {
+                            physics.applyFreeForces(forces,.05f);
+                            if(worldPrefetch!=null)worldPrefetch.capture(physics.freeStateBuffer(),physics.freeCount(),.5f,.15f,world);
+                            physics.stepFreeMoving(world,PackagePhysicsGpu.ITERATIONS,PackagePhysicsGpu.IndexMode.LINKED,moving.views());
+                        }
                     }
                 }
                 if(chainActive>0)physics.stepChains(.05f,chainTracks);

@@ -108,8 +108,6 @@ public final class PackageNativeObserverController implements AutoCloseable {
     public void prepare(long now) {
         open();if(failure!=null)return;
         feedback.poll(checkFeedback);admissions.poll(confirmed::addLast);
-        if(feedback.overdue(now))fail("Native package feedback exceeded budget");
-        if(failure!=null)return;
         while(!confirmed.isEmpty()) {
             var e=candidates.get(confirmed.getFirst().candidate());var health=feedback.latest();
             if(health==null||health.publication()<e.capturedPublication)break;

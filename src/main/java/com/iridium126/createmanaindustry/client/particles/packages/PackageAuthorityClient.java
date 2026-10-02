@@ -146,9 +146,9 @@ public final class PackageAuthorityClient {
         if(channels.isEmpty() && acquisitions.isEmpty())return false;
         try {
             for(var acquisition:activeAcquisitions)acquisition.pump(64,COVERAGE);
-            var controlResult=controls.flush(System.nanoTime(),CONTROL_SENDER);
+            var controlResult=controls.flush(System.nanoTime(),CONTROL_SENDER,Long.MAX_VALUE);
             if(controlResult==PackageControlQueue.Result.TIMED_OUT)
-                throw new IllegalStateException("Package control preparation exceeded two ticks");
+                throw new IllegalStateException("Package monotonic clock reversed during control preparation");
             // Do not let a later delta overtake a queued release/activation transition.
             if(controlResult==PackageControlQueue.Result.BLOCKED)return true;
         }catch(RuntimeException failure) {

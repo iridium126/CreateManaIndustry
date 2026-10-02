@@ -8,6 +8,7 @@ import com.iridium126.createmanaindustry.content.logistics.gpupackage.*;
  * phase/namespace order; flush at the end of the same pump without waiting for a fuller batch. */
 public final class PackageControlQueue {
     public static final int MAX_PENDING=4096;
+    /** Default API timeout; the live runtime uses an unbounded wait for transient backpressure. */
     public static final long TIMEOUT_NANOS=100_000_000;
     public record Namespace(PackageRegion region,long epoch,long revision){
         public Namespace{Objects.requireNonNull(region);if(epoch<=0||revision<=0)throw new IllegalArgumentException("Control namespace");}
@@ -37,10 +38,14 @@ public final class PackageControlQueue {
         tail.rows.add(baseline);records++;
     }
     public Result flush(long now,Sender sender) {
+        return flush(now,sender,TIMEOUT_NANOS);
+    }
+    /** A Long.MAX_VALUE timeout keeps live ownership through delayed but bounded transport work. */
+    public Result flush(long now,Sender sender,long timeoutNanos) {
         Objects.requireNonNull(sender);
         while(!pending.isEmpty()) {
             Batch batch=pending.peekFirst();
-            if(now<batch.firstNanos||now-batch.firstNanos>TIMEOUT_NANOS)return Result.TIMED_OUT;
+            if(timeoutNanos!=Long.MAX_VALUE && (now<batch.firstNanos||now-batch.firstNanos>timeoutNanos))return Result.TIMED_OUT;
             if(batch.prepared==null) {
                 if(batch.rows.size()==1)batch.prepared=new Prepared(batch.namespace,batch.action,batch.rows.getFirst(),null);
                 else {
@@ -50,7 +55,8 @@ public final class PackageControlQueue {
                 }
             }
             if(!sender.send(batch.prepared))return Result.BLOCKED;
-            packets++;sent+=batch.rows.size();bytes+=batch.prepared.body()==null?0:batch.prepared.body().length;maximumDelay=Math.max(maximumDelay,now-batch.firstNanos);
+            packets++;sent+=batch.rows.size();bytes+=batch.prepared.body()==null?0:batch.prepared.body().length;
+            maximumDelay=Math.max(maximumDelay,Math.max(0,now-batch.firstNanos));
             pending.removeFirst();records-=batch.rows.size();recycle(batch);
         }
         return Result.SENT;

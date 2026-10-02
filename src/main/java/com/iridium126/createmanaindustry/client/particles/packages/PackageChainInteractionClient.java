@@ -75,7 +75,7 @@ public final class PackageChainInteractionClient implements AutoCloseable {
         if(closed)return;var phase=queue.phase();
         if(phase!=PackageChainUseQueue.Phase.REPLAY && phase!=PackageChainUseQueue.Phase.TIMED_OUT)return;
         var use=queue.use();boolean sent=queue.sentToServer();queue.clear();
-        if(phase==PackageChainUseQueue.Phase.TIMED_OUT)PackageAuthorityClient.closeAll(sent?"Chain pickup network confirmation timed out":"Chain pickup processing exceeded two ticks",true);
+        if(phase==PackageChainUseQueue.Phase.TIMED_OUT)return;
         if(!sent)replay(use);
     }
     private static void replay(PackageChainUseQueue.Use use) {

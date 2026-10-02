@@ -23,6 +23,8 @@ public final class PackageLease {
     public static final long TIMEOUT_TICKS = 2;
     /** Create still simulates while collision and model resources warm up. */
     public static final long ACQUISITION_TIMEOUT_TICKS = 40;
+    /** Brief render/GPU stalls must not revoke an otherwise live region's packages. */
+    public static final long AUTHORITY_HEARTBEAT_TIMEOUT_TICKS = 100;
     private final Identity identity;
     private State state = State.CREATE_OWNED;
     private UUID authority;
@@ -30,14 +32,20 @@ public final class PackageLease {
     private Pose committed;
     private boolean frozen;
     private final LongSupplier regionReceipt;
+    private final long authorityTimeoutTicks;
 
     public PackageLease(Identity identity, Pose initial) {
-        this(identity,initial,null);
+        this(identity,initial,null,TIMEOUT_TICKS);
     }
     public PackageLease(Identity identity, Pose initial, LongSupplier regionReceipt) {
+        this(identity,initial,regionReceipt,TIMEOUT_TICKS);
+    }
+    public PackageLease(Identity identity, Pose initial, LongSupplier regionReceipt,long authorityTimeoutTicks) {
         this.identity = Objects.requireNonNull(identity);
         committed = Objects.requireNonNull(initial);
         this.regionReceipt=regionReceipt;
+        if(authorityTimeoutTicks<TIMEOUT_TICKS)throw new IllegalArgumentException("Authority timeout");
+        this.authorityTimeoutTicks=authorityTimeoutTicks;
     }
 
     /** Begin only after server eligibility checks; Create keeps simulating until ready. */
@@ -145,7 +153,8 @@ public final class PackageLease {
         long receipt=lastReceiptTick;
         // Shared server-owned receipt is O(1) per region. It cannot extend acquisition deadlines.
         if(state==State.GPU_OWNED && regionReceipt!=null)receipt=Math.max(receipt,regionReceipt.getAsLong());
-        long allowed=state==State.ACQUIRING && !frozen?ACQUISITION_TIMEOUT_TICKS:TIMEOUT_TICKS;
+        long allowed=state==State.ACQUIRING && !frozen?ACQUISITION_TIMEOUT_TICKS:
+                state==State.GPU_OWNED && regionReceipt!=null?authorityTimeoutTicks:TIMEOUT_TICKS;
         return tick<receipt || tick-receipt>allowed;
     }
     private boolean matches(UUID client, long candidateEpoch) {

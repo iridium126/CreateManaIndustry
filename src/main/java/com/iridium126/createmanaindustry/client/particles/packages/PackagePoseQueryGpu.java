@@ -167,7 +167,7 @@ public final class PackagePoseQueryGpu implements AutoCloseable {
             throw new IllegalStateException("Package query identity/index/flags");
         for(int j=32;j<RESULT_BYTES;j+=4)if(!Float.isFinite(b.getFloat(p+j)))throw new IllegalStateException("Non-finite package query pose");
         float state=b.getFloat(p+60);
-        if(state<0 && state!=PackagePhysicsGpu.RETIRED || state>=0 && (flags&4)!=0)
+        if(state<0 && state!=PackagePhysicsGpu.RETIRED && state!=PackagePhysicsGpu.COLLISION_FROZEN || state>=0 && (flags&4)!=0)
             throw new IllegalStateException("Package query not active/retired");
         return new Result(id,generation,candidate,body,flags,track,b.getFloat(p+32),b.getFloat(p+36),b.getFloat(p+40),b.getFloat(p+44),
                 b.getFloat(p+48),b.getFloat(p+52),b.getFloat(p+56),state,b.getFloat(p+64),b.getFloat(p+68),b.getFloat(p+72),b.getFloat(p+76),

@@ -52,7 +52,8 @@ void main() {
             if(++visits>uCandidateBudget) { handback(b,i);return; }
             if(j!=i && all(equal(cellOf(src[j].positionMass.xyz),cell))) {
                 Body other=src[j];
-                if(other.positionMass.w>0.0 && other.previousSleep.w>=0.0) {
+                bool otherLive=other.previousSleep.w>=0.0 || other.previousSleep.w==PACKAGE_COLLISION_FROZEN;
+                if(other.positionMass.w>0.0 && otherLive) {
                     vec3 otherMotion=other.positionMass.xyz-other.previousSleep.xyz;
                     if(all(lessThanEqual(abs(otherMotion),vec3(uCellSize)))) {
                         vec3 relativeStart=start-other.previousSleep.xyz;
@@ -61,7 +62,7 @@ void main() {
                         float time;vec3 normal;
                         if(sweepBox(relativeStart,relativeMotion,-extent,extent,time,normal) && time<earliest) {
                             earliest=time;hitNormal=normal;hitVelocity=other.velocityGround.xyz;hitMotion=otherMotion;
-                            hitInverseMass=other.positionMass.w;hit=true;
+                            hitInverseMass=other.previousSleep.w==PACKAGE_COLLISION_FROZEN?0.0:other.positionMass.w;hit=true;
                         }
                     }
                 }

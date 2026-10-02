@@ -33,11 +33,10 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 @EventBusSubscriber(modid=CreateManaIndustry.MODID)
 public final class PackageAuthorityManager {
     private static final String ID="CMIGpuPackageId",GENERATION="CMIGpuPackageGeneration";
-    private static final long OFFER_BUDGET_NANOS=250_000,RETRY_TICKS=40;
+    private static final long RETRY_TICKS=40;
     private static final int MAX_OFFERS_PER_TICK=64,MAX_MESSAGES_PER_TICK=512;
     private static final int MAX_CONTROL_RECORDS_PER_TICK=4096;
     private static final int MAX_OBSERVER_REGIONS=8,OBSERVER_RECORDS_PER_BATCH=64,MAX_OBSERVER_POLLS=64;
-    private static final long OBSERVER_BUDGET_NANOS=250_000;
     private static final Map<ServerLevel,Runtime> WORLDS=new IdentityHashMap<>();
     private static final class Peer {int flags,messages,controlRecords;long tick=-1;}
     private record ObserverKey(UUID player,PackageRegion region) {}
@@ -187,7 +186,13 @@ public final class PackageAuthorityManager {
         for(Iterator<PackageAuthorityRegion> it=rt.regions.values().iterator();it.hasNext();) {
             var region=it.next();region.tick(tick);
             var authority=level.getServer().getPlayerList().getPlayer(region.owner());
-            if(region.expired(tick) || !rt.peers.containsKey(region.owner()) || !subscribed(authority,level,region.region())){region.close();it.remove();}
+            boolean heartbeatExpired=region.expired(tick),peerPresent=rt.peers.containsKey(region.owner());
+            boolean inRange=subscribed(authority,level,region.region());
+            if(heartbeatExpired || !peerPresent || !inRange){
+                CreateManaIndustry.LOGGER.debug("[CMI packages] returning region {} to Create: heartbeatExpired={}, peerPresent={}, subscribed={}",
+                        region.region(),heartbeatExpired,peerPresent,inRange);
+                region.close();it.remove();
+            }
         }
         for(int index=0;index<rt.lightTargets.size();) {
             var target=rt.lightTargets.get(index);
@@ -203,7 +208,7 @@ public final class PackageAuthorityManager {
         publishLight(rt);
         pumpObservers(rt);
         if(rt.peers.isEmpty()||!ServerConfig.packageGpuAuthority)return;
-        long deadline=System.nanoTime()+OFFER_BUDGET_NANOS;int attempts=0;
+        long deadline=System.nanoTime()+ServerConfig.packageMainThreadBudgetNanos();int attempts=0;
         int available=rt.discovery.size();
         while(attempts++<MAX_OFFERS_PER_TICK && available-->0 && System.nanoTime()<deadline) {
             var iterator=rt.discovery.values().iterator();EntityTarget target=iterator.next();iterator.remove();
@@ -318,7 +323,7 @@ public final class PackageAuthorityManager {
     }
     private static void pumpObservers(Runtime rt) {
         if(rt.observers.isEmpty())return;
-        long deadline=System.nanoTime()+OBSERVER_BUDGET_NANOS;
+        long deadline=System.nanoTime()+ServerConfig.packageMainThreadBudgetNanos();
         int idle=0,polls=0;
         while(!rt.observers.isEmpty() && idle<rt.observers.size() && polls++<MAX_OBSERVER_POLLS && System.nanoTime()<deadline) {
             var iterator=rt.observers.entrySet().iterator();var entry=iterator.next();
@@ -422,7 +427,11 @@ public final class PackageAuthorityManager {
             if(result==PackageAuthorityRegion.Result.ACCEPTED || result==PackageAuthorityRegion.Result.STALE
                     && packet.revision()==region.revision() && packet.sequence()==region.lastSequence())
                 queueAck(rt,region,player,packet.sequence());
-            else if(result!=PackageAuthorityRegion.Result.STALE)region.close();
+            else if(result!=PackageAuthorityRegion.Result.STALE){
+                CreateManaIndustry.LOGGER.debug("[CMI packages] rejected delta result={} sequence={} region={}; restoring Create",
+                        result,packet.sequence(),region.region());
+                region.close();
+            }
             return;
         }
         if(peer.controlRecords>=MAX_CONTROL_RECORDS_PER_TICK){region.close();return;}

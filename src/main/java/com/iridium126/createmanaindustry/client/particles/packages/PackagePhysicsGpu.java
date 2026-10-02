@@ -14,6 +14,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     public static final int BODY_BYTES=64, CHAIN_BYTES=64, ITERATIONS=4;
     public static final float PREPARED=-2;
     public static final float RETIRED=-3;
+    public static final float COLLISION_FROZEN=-4;
     private static final String[] NAMES={"predict","grid","solve","chain","history","predict_world","solve_world",
             "world_support","support_prepare","support_jump","support_apply","solve_support",
             "range_insert","range_scan","range_add","range_scatter","range_guard",
@@ -224,7 +225,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         preparedMask[body]=false;
         staticCount-=staticMask[body];staticMask[body]=0;staticBodies=staticCount>0;
     }
-    /** Swept static collision plus Jacobi dynamic contacts. A negative sleep field requests CPU fallback. */
+    /** Swept world collision plus Jacobi contacts; missing world data freezes a body for retry. */
     public void step(float dt) {
         step(dt,null,false,ITERATIONS);
     }

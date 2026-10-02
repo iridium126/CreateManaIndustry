@@ -9,14 +9,16 @@ uniform bool uMovingFriction;
 void main() {
     uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;Body b=src[i];
     if(b.positionMass.w==0.||b.previousSleep.w<0.){dst[i]=b;return;}
-    if(!uMovingReady){b.positionMass.xyz=movingHistory[2u*i].xyz;b.previousSleep.w=-1.;dst[i]=b;return;}
+    if(!uMovingReady){freezeForMissingCollision(b,movingHistory[2u*i].xyz);dst[i]=b;return;}
     vec4 support=movingSupport[i];uint tag=floatBitsToUint(support.w);
     bool carried=(tag&MOVING_CARRIED)!=0u&&(tag&MOVING_ID_MASK)==movingIdentity();
     if((tag&MOVING_CARRIED)!=0u&&(tag&MOVING_CONVERTED)==0u){b.velocityGround.xyz+=support.xyz;tag|=MOVING_CONVERTED;support.w=uintBitsToFloat(tag);movingSupport[i]=support;}
     vec3 initial=movingHistory[2u*i].xyz,extent=b.extentYaw.xyz;
-    if(!movingGeometryReady()){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
     vec3 queryLo=min(initial,b.positionMass.xyz)-extent,queryHi=max(initial,b.positionMass.xyz)+extent;
     if(!movingCoarse(queryLo,queryHi)){dst[i]=b;return;}
+    // Missing geometry for a remote structure cannot affect this body. Only a body
+    // whose swept bounds touch it must pause until the replacement BVH is ready.
+    if(!movingGeometryReady()){freezeForMissingCollision(b,initial);dst[i]=b;return;}
     vec3 localA=localPoint(initial,true),localB=localPoint(b.positionMass.xyz,false);
     mat3 ra=rawRotation(true),rb=rawRotation(false);vec3 sa=movingScale(true),sb=movingScale(false);ra[0]/=sa.x;ra[1]/=sa.y;ra[2]/=sa.z;rb[0]/=sb.x;rb[1]/=sb.y;rb[2]/=sb.z;
     vec3 ea=vec3(dot(abs(ra[0]),extent),dot(abs(ra[1]),extent),dot(abs(ra[2]),extent))/sa;
@@ -91,11 +93,11 @@ void main() {
     }
     if(!grounded&&(tag&MOVING_ID_MASK)==movingIdentity())movingSupport[i]=vec4(0);
     vec3 correction;float material=-1.;bool worldGround=b.velocityGround.w>.5;
-    if(!solveWorld(b,correction,velocity,worldGround,material)){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
+    if(!solveWorld(b,correction,velocity,worldGround,material)){freezeForMissingCollision(b,initial);dst[i]=b;return;}
     // Opposing static-world corrections can crush a body between platforms and
     // terrain. Never publish an unresolved intersection as successful physics.
     if(length(correction)>1e-4&&grounded){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
     b.positionMass.xyz+=correction;
-    if(!coveredWorld(b)){b.positionMass.xyz=initial;b.previousSleep.w=-1.;dst[i]=b;return;}
+    if(!coveredWorld(b)){freezeForMissingCollision(b,initial);dst[i]=b;return;}
     b.velocityGround=vec4(velocity,grounded||worldGround?1.:0.);dst[i]=b;
 }

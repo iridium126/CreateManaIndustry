@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.client.particles.packages;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -131,7 +132,7 @@ public final class PackageCollisionRuntime {
         owner();if(current==null || current.level!=level)return;
         current.cache.clearPackageUsage();if(current.gpu!=null)current.gpu.clearPackageUsage();
     }
-    /** Coverage includes all touched sections and revokes immediately on a world change. */
+    /** Coverage includes all touched sections in the latest CPU capture. */
     public boolean covered(AABB sweptBounds) {
         owner();int[] bounds=sections(sweptBounds);if(bounds==null)return false;
         for(int x=bounds[0];x<=bounds[3];x++)for(int y=bounds[1];y<=bounds[4];y++)for(int z=bounds[2];z<=bounds[5];z++)
@@ -145,7 +146,20 @@ public final class PackageCollisionRuntime {
         int[] bounds=sections(sweptBounds.inflate(1));if(bounds==null)return false;
         for(int x=bounds[0];x<=bounds[3];x++)for(int y=bounds[1];y<=bounds[4];y++)for(int z=bounds[2];z<=bounds[5];z++) {
             var section=new PackageCollisionCache.Section(x,y,z);var snapshot=cache.snapshot(section);
-            if(snapshot==null || !gpu.covered(section,snapshot.revision())){requestCollisionSection(section);return false;}
+            if(snapshot==null) {
+                // A block edit clears the current CPU snapshot while the section is recaptured.
+                // Keep using the last complete atlas entry during that interval; sections with
+                // no prior GPU data still wait for their first complete capture/upload.
+                requestCollisionSection(section);
+                if(!gpu.covered(section))return false;
+                continue;
+            }
+            if(!gpu.covered(section,snapshot.revision())) {
+                requestCollisionSection(section);
+                // offer() stages a replacement without removing the visible version. Unsupported
+                // geometry explicitly revokes it, so this fallback cannot mask a known bad shape.
+                if(!gpu.covered(section))return false;
+            }
         }
         return true;
     }
@@ -164,6 +178,8 @@ public final class PackageCollisionRuntime {
         private final PackageMovingCollisionGpu gpu;private final java.util.List<PackageMovingCollisionGpu.View> views;private boolean closed;
         private MovingScene(PackageMovingCollisionGpu gpu,java.util.List<PackageMovingCollisionGpu.View> views){this.gpu=gpu;this.views=views;}
         public java.util.List<PackageMovingCollisionGpu.View> views(){if(closed)throw new IllegalStateException("Moving scene closed");return views;}
+        /** A missing pose bank is a frame-level pause, not evidence that every package is unsafe. */
+        public boolean ready(){if(closed)throw new IllegalStateException("Moving scene closed");for(var view:views)if(!view.ready())return false;return true;}
         @Override public void close(){if(!closed){gpu.endViews(views);closed=true;}}
     }
     /** Lazy uploads at the engine frame boundary, never from block events or collision workers. */
@@ -182,12 +198,12 @@ public final class PackageCollisionRuntime {
             if(current.lightRequested && current.lightGpu==null){current.lightGpu=new PackageLightGpu(MAX_SECTIONS);current.lights.forEachRequested(current.lightGpu::reserve);current.lights.snapshots().forEach(current.lightGpu::offer);}
             // A chain-only workload needs light data, not the collision atlas or moving-world scan.
             if(!current.collisionRequested) {
-                if(current.lightGpu!=null)current.lightGpu.pump(PackageCollisionGpu.DEFAULT_UPLOAD_BYTES,PackageCollisionGpu.DEFAULT_UPLOAD_NANOS);
+                if(current.lightGpu!=null)current.lightGpu.pump(PackageCollisionGpu.DEFAULT_UPLOAD_BYTES,ClientConfig.packageMainThreadBudgetNanos());
                 return true;
             }
             // Shared copy budget; alternate priority to avoid starving either atlas.
             long started=System.nanoTime(),beforeMoving=current.movingGpu.uploadedBytes(),beforeWorld=current.gpu.uploadedBytes();
-            int bytes=PackageCollisionGpu.DEFAULT_UPLOAD_BYTES;long nanos=PackageCollisionGpu.DEFAULT_UPLOAD_NANOS;
+            int bytes=PackageCollisionGpu.DEFAULT_UPLOAD_BYTES;long nanos=ClientConfig.packageMainThreadBudgetNanos();
             long beforeLight=current.lightGpu==null?0:current.lightGpu.uploadedBytes();
             if(current.lightGpu!=null && current.lightPriority==0){current.lightGpu.pump(bytes,nanos);bytes-=Math.toIntExact(current.lightGpu.uploadedBytes()-beforeLight);}
             if(current.uploadMovingFirst){current.movingGpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));bytes-=Math.toIntExact(current.movingGpu.uploadedBytes()-beforeMoving);current.gpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));}
@@ -237,7 +253,7 @@ public final class PackageCollisionRuntime {
         return "Package collisions: "+current.cache.readyCount()+"/"+current.cache.size()+" CPU sections ready, capture "
                 +String.format(java.util.Locale.ROOT,"%.3f",current.cache.lastCaptureNanos()/1_000_000.0)
                 +" ms, p50/p95 "+String.format(java.util.Locale.ROOT,"%.3f/%.3f",current.cache.capturePercentile(.5)/1_000_000.0,current.cache.capturePercentile(.95)/1_000_000.0)
-                +" ms (0.250 ms soft budget), overruns "+current.cache.overrunCount()+", LRU evictions/rejects "+current.cache.capacityEvictions()+"/"+current.cache.capacityRejections()
+                +String.format(java.util.Locale.ROOT," ms (%.3f ms soft budget), overruns ",ClientConfig.packageMainThreadBudgetMs)+current.cache.overrunCount()+", LRU evictions/rejects "+current.cache.capacityEvictions()+"/"+current.cache.capacityRejections()
                 +"; worker bake p50/p95 "+String.format(java.util.Locale.ROOT,"%.3f/%.3f",current.cache.bakePercentile(.5)/1e6,current.cache.bakePercentile(.95)/1e6)+" ms; "+gpuStatus
                 +"; moving="+current.movingCache.entries().size()+", poses="+(current.movingAvailable&&current.movingCache.posesReady())
                 +", capture="+String.format(java.util.Locale.ROOT,"%.3f",current.movingCache.lastCaptureNanos()/1e6)+" ms, overruns="+current.movingCache.overruns()
@@ -282,7 +298,7 @@ public final class PackageCollisionRuntime {
         if(!current.gpuRequested)return;
         if(!current.collisionRequested) {
             if(!current.lightRequested)return;
-            long started=System.nanoTime(),budget=PackageCollisionCache.DEFAULT_BUDGET_NANOS;
+            long started=System.nanoTime(),budget=ClientConfig.packageMainThreadBudgetNanos();
             var dirty=current.dirtyLightColumns.iterator();
             while(dirty.hasNext() && System.nanoTime()-started<budget) {
                 long column=dirty.next();current.dirtyLightColumns.remove(column);
@@ -292,8 +308,8 @@ public final class PackageCollisionRuntime {
             return;
         }
         if(current.movingSources==null){current.movingSources=new PackageMovingCollisionSources(current.level);current.movingSources.onInvalidated(current.movingCache::invalidate);}
-        long started=System.nanoTime(),budget=PackageCollisionCache.DEFAULT_BUDGET_NANOS;
-        // Rotate priority within the existing 0.25 ms total budget, including dirty notifications.
+        long started=System.nanoTime(),budget=ClientConfig.packageMainThreadBudgetNanos();
+        // Rotate priority within the configured total budget, including dirty notifications.
         var dirty=current.dirtyLightColumns.iterator();
         while(dirty.hasNext() && System.nanoTime()-started<budget) {
             long column=dirty.next();current.dirtyLightColumns.remove(column);

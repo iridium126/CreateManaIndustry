@@ -35,6 +35,7 @@ public final class ClientConfig {
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_PATTERN_REDIRECT;
     private static ModConfigSpec.BooleanValue PACKAGE_GPU_AUTHORITY;
+    private static ModConfigSpec.DoubleValue PACKAGE_MAIN_THREAD_BUDGET_MS;
 
     // ---- allay dimension (ALLVR) -------------------------------------------
 
@@ -78,6 +79,9 @@ public final class ClientConfig {
         PARTICLE_HEX_PATTERN_REDIRECT = BUILDER.comment("Render Hexcasting orbiting patterns with GPU particles.").define("hexPatternRedirect", true);
         PACKAGE_GPU_AUTHORITY = BUILDER.comment("Experimental Create package authority opt-in. Requires matching server opt-in and complete GPU collision/render resources; visual validation is pending. Further bandwidth optimization is deferred.")
                 .define("packageGpuAuthority", false);
+        PACKAGE_MAIN_THREAD_BUDGET_MS = BUILDER
+                .comment("Maximum client main-thread time per tick for each GPU package processing pass, in milliseconds.")
+                .defineInRange("packageMainThreadBudgetMs", 10.0, 0.25, 50.0);
         BUILDER.pop();
 
         BUILDER.comment("Allay dimension (ALLVR) options.").push("allvr");
@@ -101,6 +105,7 @@ public final class ClientConfig {
     public static boolean hexParticleRedirect = true;
     public static boolean hexPatternRedirect = true;
     public static boolean packageGpuAuthority = false;
+    public static double packageMainThreadBudgetMs = 10.0;
     public static boolean allvrLod = true;
 
     private ClientConfig() {}
@@ -121,7 +126,12 @@ public final class ClientConfig {
             hexParticleRedirect = PARTICLE_HEX_REDIRECT.get();
             hexPatternRedirect = PARTICLE_HEX_PATTERN_REDIRECT.get();
             packageGpuAuthority = PACKAGE_GPU_AUTHORITY.get();
+            packageMainThreadBudgetMs = PACKAGE_MAIN_THREAD_BUDGET_MS.get();
             allvrLod = ALLVR_LOD.get();
         }
+    }
+
+    public static long packageMainThreadBudgetNanos() {
+        return Math.round(packageMainThreadBudgetMs * 1_000_000.0);
     }
 }
