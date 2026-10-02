@@ -90,6 +90,16 @@ public final class PackageChainEventChannel implements AutoCloseable {
             journal.append(identityScratch,n);tracks.append(metadata);candidates+=n;
         }catch(RuntimeException failure){fail("Chain identity append failed: "+failure.getMessage());throw failure;}
     }
+    public boolean recyclable(int candidate,long barrier){
+        owner();if(!journal.recyclable(candidate))return false;
+        for(var frame:frames)if(frame.capture!=null&&Integer.toUnsignedLong(frame.capture.stamp())<=barrier)return false;
+        return true;
+    }
+    public void recycle(int candidate){owner();tracks.makeReusable(candidate);}
+    public void write(int candidate,ByteBuffer data){
+        owner();identityScratch.clear().put(data.duplicate()).flip();identityScratch.putInt(20,candidate);
+        journal.replace(candidate,identityScratch);tracks.write(candidate,data);candidates=Math.max(candidates,candidate+1);
+    }
     /** Called only after complete physical publication. Saturated banks retain pending GPU events. */
     public boolean capture() {
         owner();if(closed)return false;

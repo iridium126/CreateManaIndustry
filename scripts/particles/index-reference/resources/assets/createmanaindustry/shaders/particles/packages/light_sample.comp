@@ -1,0 +1,66 @@
+layout(local_size_x=64) in;
+layout(std430,binding=0) readonly buffer Pool { vec4 pool[]; };
+layout(std430,binding=1) readonly buffer Admission { uvec4 admitted[]; };
+layout(std430,binding=6) readonly buffer Attachment { vec4 attachment[]; };
+layout(std430,binding=7) buffer SampledLight { uint sampledLight[]; };
+layout(std430,binding=8) readonly buffer LightAtlas { uint lightWords[]; };
+uniform uint uCount,uCapacity,uLightTableSize,uLightDataOffset;
+uniform float uPartialTick;
+layout(std430,binding=9) writeonly buffer MissingSections { ivec4 missing[]; };
+layout(std430,binding=10) buffer Representatives { uint winners[]; };
+uniform uint uFeedback;
+uint hashSection(ivec3 s) {
+    uint h=uint(s.x)*0x8da6b343u^uint(s.y)*0xd8163841u^uint(s.z)*0xcb1ab31fu;
+    return h^(h>>16u);
+}
+uint sampleCandidate(uint i) {
+    if(uFeedback!=0u)missing[i]=ivec4(0);
+    uvec4 a=admitted[2u*i+1u];
+    if(a.x==0u || a.x>uCapacity || (a.y&4u)!=0u){sampledLight[i]=0u;return 0xffffffffu;}
+    uint p=4u*(a.x-1u);
+    uint previousLight=sampledLight[i];
+    uint packedLight=(previousLight&0x80000000u)!=0u?previousLight:floatBitsToUint(pool[p+2u].w)&0xffffffu;
+    vec3 position=mix(pool[p+1u].xyz,pool[p].xyz,uPartialTick);
+    // Ground imports store the exact native probe offset in otherwise unused attachment.w.
+    if((a.y&1u)==0u)position.y+=attachment[2u*i+1u].w;
+    ivec3 block=ivec3(floor(position)),section=block>>4;
+    uint head=hashSection(section)&(uLightTableSize-1u);
+    bool resident=false;
+    for(uint probe=0u;probe<uLightTableSize;probe++) {
+        uint h=4u*head,slot=lightWords[h+3u];
+        // An unavailable header still occupies its hash key: continue probing past it.
+        if(all(equal(ivec3(lightWords[h],lightWords[h+1u],lightWords[h+2u]),section)) && slot!=0u) {
+            resident=true;if(slot==0xffffffffu)break;
+            ivec3 local=block&15;uint index=uint(local.x|(local.z<<4)|(local.y<<8));
+            uint address=uLightDataOffset+(slot-1u)*1024u+(index>>3u),shift=(index&7u)*4u;
+            uint b=(lightWords[address]>>shift)&15u,s=(lightWords[address+512u]>>shift)&15u;
+            packedLight=(b<<4u)|(s<<20u)|0x80000000u;break;
+        }
+        // Empty hash keys are encoded separately from unavailable (resident) keys.
+        if(slot==0u)break;
+        head=(head+1u)&(uLightTableSize-1u);
+    }
+    sampledLight[i]=packedLight;
+    if(uFeedback!=0u && !resident) {
+        missing[i]=ivec4(section,1);
+        return hashSection(section)&1023u;
+    }
+    return 0xffffffffu;
+}
+shared uint groupBuckets[64];
+void main() {
+    uint i=gl_GlobalInvocationID.x,lane=gl_LocalInvocationID.x;
+    uint bucket=i<uCount?sampleCandidate(i):0xffffffffu;
+    // This branch is uniform for the entire workgroup. Every feedback-enabled tail
+    // lane reaches the barrier, including invalid/hidden candidates and empty tails.
+    if(uFeedback==0u)return;
+#ifdef CMI_LIGHT_GLOBAL_REQUESTS
+    // Benchmark reference only; production uses workgroup aggregation below.
+    if(bucket!=0xffffffffu)atomicMin(winners[bucket],i);
+#else
+    groupBuckets[lane]=bucket;barrier();
+    if(bucket==0xffffffffu)return;
+    for(uint before=0u;before<lane;before++)if(groupBuckets[before]==bucket)return;
+    atomicMin(winners[bucket],i);
+#endif
+}

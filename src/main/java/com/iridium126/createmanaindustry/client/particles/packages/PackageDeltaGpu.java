@@ -34,6 +34,8 @@ public final class PackageDeltaGpu implements AutoCloseable {
     private record Identity(long id,long generation) {}
     private final PackageGpuIdentityReservations identities=new PackageGpuIdentityReservations();
     private Set<Integer> bodyIndices=new HashSet<>();
+    private final int[] candidateBodies;
+    private final java.util.TreeSet<Integer> reusable=new java.util.TreeSet<>();
     private long nextStamp=1;
     private boolean closed;
 
@@ -51,7 +53,7 @@ public final class PackageDeltaGpu implements AutoCloseable {
                 || (long)capacity*RECORD_BYTES>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))
             throw new IllegalArgumentException("Package delta capacity/device limits");
         if(predictedPositions && !relativePositions)throw new IllegalArgumentException("Predicted package positions require relative encoding");
-        this.capacity=capacity;this.relativePositions=relativePositions;this.predictedPositions=predictedPositions;
+        this.capacity=capacity;candidateBodies=new int[capacity];this.relativePositions=relativePositions;this.predictedPositions=predictedPositions;
         try {
             rebuild(sources);
             metadata=buffer((long)capacity*META_BYTES);baselines=buffer((long)capacity*BASELINE_BYTES);
@@ -126,12 +128,33 @@ public final class PackageDeltaGpu implements AutoCloseable {
     }
     private void reserveIdentities(ByteBuffer data,int length,int first) {
         var v=data.duplicate().order(ByteOrder.nativeOrder());
-        for(int i=0;i<length;i++){int p=v.position()+i*META_BYTES;identities.reserve(v.getLong(p),v.getLong(p+8),first+i);}
+        for(int i=0;i<length;i++){int p=v.position()+i*META_BYTES;identities.reserve(v.getLong(p),v.getLong(p+8),first+i);candidateBodies[first+i]=v.getInt(p+16);}
     }
     /** Retired GPU body/candidate stay immutable for any older in-flight delta and ACK. */
     public void retireIdentity(int candidate,long id,long generation) {
         open();if(candidate<0 || candidate>=count)throw new IllegalArgumentException("Package delta identity retirement");
         identities.retire(id,generation,candidate);preparing.remove(candidate);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);try(var stack=MemoryStack.stackPush()){GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)candidate*META_BYTES+24,stack.ints(0));}
+    }
+    public long captureBarrier(){return nextStamp-1;}
+    public int nextCandidate(){return reusable.isEmpty()?(count<capacity?count:-1):reusable.first();}
+    public void makeReusable(int candidate){
+        open();if(!identities.retired(candidate))throw new IllegalArgumentException("Delta recycle fence");
+        identities.reclaim(candidate);bodyIndices.remove(candidateBodies[candidate]);reusable.add(candidate);
+        for(int buffer:new int[]{flights,predictors})if(buffer!=0){int stride=buffer==flights?4:PREDICTOR_BYTES;GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)candidate*stride,stride,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}}
+        while(count>0&&reusable.remove(count-1))count--;
+    }
+    public void write(int candidate,ByteBuffer meta,ByteBuffer baseline){
+        open();if(candidate==count){append(meta,baseline,1);return;}
+        if(!reusable.contains(candidate))throw new IllegalArgumentException("Delta replacement is not recyclable");
+        var v=meta.duplicate().order(ByteOrder.nativeOrder());var ids=new HashSet<Identity>();var bodies=new HashSet<Integer>();validateMetadata(v,1,ids,bodies);
+        long id=v.getLong(v.position()),generation=v.getLong(v.position()+8);int body=v.getInt(v.position()+16);
+        if(identities.contains(id,generation)||bodyIndices.contains(body)||v.getInt(v.position()+24)!=0)throw new IllegalArgumentException("Delta replacement identity/body");
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)candidate*META_BYTES,meta);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,baselines);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)candidate*BASELINE_BYTES,baseline);
+        for(int buffer:new int[]{flights,predictors})if(buffer!=0){int stride=buffer==flights?4:PREDICTOR_BYTES;GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)candidate*stride,stride,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}}
+        reserveIdentities(meta,1,candidate);trackPrepared(meta,candidate,1);bodyIndices.add(body);reusable.remove(candidate);
     }
     private void trackPrepared(ByteBuffer meta,int first,int length) {
         ByteBuffer view=meta.duplicate().order(ByteOrder.nativeOrder());

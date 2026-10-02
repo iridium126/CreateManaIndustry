@@ -26,7 +26,7 @@ class PackageForceSnapshotsTest {
     @Test void catchUpTicksDoNotAuthorizeAnExpiredSnapshot() {
         var worker=new Worker();var snapshots=new PackageForceSnapshots();
         snapshots.capture(10,List.of(),0,0,0,worker);worker.complete();
-        assertTrue(snapshots.ready(11));assertFalse(snapshots.ready(12));
+        assertFalse(snapshots.ready(11));assertFalse(snapshots.ready(12));
         assertThrows(IllegalStateException.class,()->snapshots.snapshot(12));
         snapshots.capture(12,List.of(),0,0,0,worker);
         assertFalse(snapshots.ready(12));worker.complete();assertTrue(snapshots.ready(12));
@@ -36,22 +36,29 @@ class PackageForceSnapshotsTest {
         snapshots.capture(10,List.of(),0,0,0,worker);worker.complete();assertTrue(snapshots.ready(10));
         snapshots.invalidate();assertFalse(snapshots.ready(10));assertTrue(snapshots.needsCapture(10));
         snapshots.capture(10,List.of(),0,0,0,worker);snapshots.invalidate();
-        assertFalse(snapshots.needsCapture(10));assertEquals(1,worker.tasks.size());
+        assertTrue(snapshots.needsCapture(10));assertEquals(1,worker.tasks.size());
         worker.complete();assertFalse(snapshots.ready(10));assertTrue(snapshots.needsCapture(10));
         snapshots.capture(10,List.of(),0,0,0,worker);worker.complete();assertTrue(snapshots.ready(10));
     }
-    @Test void captureFreezesInputAndKeepsOnlyOneWorkerJob() {
+    @Test void captureFreezesInputAndPreservesEachTick() {
         var worker=new Worker();var snapshots=new PackageForceSnapshots();
         var sources=new ArrayList<PackageForceScene.Source>();
         sources.add(new PackageForceScene.Source(PackageForceScene.ENTITY,0,0,0,1,1,1,.5,0,.5,1,0,0,0,0));
         snapshots.capture(10,sources,0,0,0,worker);sources.clear();
-        snapshots.capture(11,List.of(),0,0,0,worker);assertEquals(1,worker.tasks.size());
-        worker.complete();assertEquals(1,snapshots.snapshot(11).sources());assertFalse(snapshots.ready(9));
+        snapshots.capture(11,List.of(),0,0,0,worker);assertEquals(2,worker.tasks.size());
+        worker.complete();assertEquals(1,snapshots.snapshot(10).sources());assertFalse(snapshots.ready(11));worker.complete();assertEquals(0,snapshots.snapshot(11).sources());assertFalse(snapshots.ready(9));
     }
     @Test void workerFailureIsReportedInsteadOfPublishingEmptyForces() {
         var worker=new Worker();var snapshots=new PackageForceSnapshots();
         snapshots.capture(10,List.of(),Double.NaN,0,0,worker);worker.complete();
         assertThrows(CompletionException.class,()->snapshots.ready(10));
+    }
+    @Test void stalledWorkerHasBoundedJobsAndOneSecondHistory(){
+        var worker=new Worker();var snapshots=new PackageForceSnapshots();
+        for(long tick=0;tick<100;tick++)snapshots.capture(tick,List.of(),0,0,0,worker);
+        assertEquals(4,worker.tasks.size());assertFalse(snapshots.contains(79));assertTrue(snapshots.contains(80));
+        while(!worker.tasks.isEmpty())worker.complete();
+        snapshots.ready(80);assertTrue(worker.tasks.size()<=4);
     }
     @Test void shutdownCannotPublishLateWorkerResults() {
         var worker=new Worker();var snapshots=new PackageForceSnapshots();

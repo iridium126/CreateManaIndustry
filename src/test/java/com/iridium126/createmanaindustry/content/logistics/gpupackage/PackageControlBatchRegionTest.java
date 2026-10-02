@@ -50,7 +50,7 @@ class PackageControlBatchRegionTest {
         PackageControlBatchCodec.visitValidated(encode(1,offers),(a,i,id,g,l,r)->finals.add(region.prepared(OWNER,101,i,new PackageLease.Identity(id,g),l,r,0)));
         PackageControlBatchCodec.visitValidated(encode(2,finals),(a,i,id,g,l,r)->assertTrue(region.finalReady(OWNER,101,i,new PackageLease.Identity(id,g),l,r,0)));
         assertTrue(region.heartbeat(OWNER,101,2));assertTrue(region.heartbeat(OWNER,101,4));
-        PackageControlBatchCodec.visitValidated(encode(9,finals),(a,i,id,g,l,r)->assertFalse(region.visibleReady(OWNER,101,i,new PackageLease.Identity(id,g),l,r,4)));
-        assertEquals(1,first.releases);assertEquals(1,second.releases);
+        PackageControlBatchCodec.visitValidated(encode(9,finals),(a,i,id,g,l,r)->assertTrue(region.visibleReady(OWNER,101,i,new PackageLease.Identity(id,g),l,r,4)));
+        assertEquals(0,first.releases);assertEquals(0,second.releases);
     }
 }

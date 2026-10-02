@@ -118,4 +118,28 @@ class PackagePacketTest {
             bytes.writeVarInt(ServerboundPackagePacket.MAX_BYTES+1);assertThrows(DecoderException.class,()->ServerboundPackagePacket.STREAM_CODEC.decode(bytes));
         }finally{bytes.release();}
     }
+    @Test void environmentAckPreservesLifecycleAndConfirmedDamageState(){
+        var dimension=ResourceLocation.fromNamespaceAndPath("minecraft","overworld");
+        var packet=new ClientboundPackagePacket(ClientboundPackagePacket.ENVIRONMENT_ACK,dimension,REGION,100,3,3876543210L,BASELINE,-1,null,null,0,0,87,2.75f,1);
+        var bytes=buffer();
+        try{
+            ClientboundPackagePacket.STREAM_CODEC.encode(bytes,packet);var decoded=ClientboundPackagePacket.STREAM_CODEC.decode(bytes);
+            assertEquals(packet.sequence(),decoded.sequence());assertEquals(BASELINE.identity(),decoded.baseline().identity());
+            assertEquals(BASELINE.leaseEpoch(),decoded.baseline().leaseEpoch());assertEquals(BASELINE.index(),decoded.baseline().index());assertEquals(BASELINE.revision(),decoded.baseline().revision());
+            assertEquals(87,decoded.fireTicks());assertEquals(2.75f,decoded.health());assertEquals(1,decoded.environmentPermissions());assertEquals(0,bytes.readableBytes());
+            bytes.clear();bytes.writeByte(5).writeResourceLocation(dimension);ServerboundPackagePacket.writeRegion(bytes,REGION);bytes.writeVarLong(100).writeVarLong(3);
+            assertThrows(DecoderException.class,()->ClientboundPackagePacket.STREAM_CODEC.decode(bytes));
+            assertThrows(IllegalArgumentException.class,()->new ClientboundPackagePacket(5,dimension,REGION,100,3,0,BASELINE,0,null,null,0,0));
+            assertThrows(IllegalArgumentException.class,()->new ClientboundPackagePacket(ClientboundPackagePacket.ENVIRONMENT_ACK,dimension,REGION,100,3,0x1_0000_0000L,BASELINE,0,null,null,0,0));
+        }finally{bytes.release();}
+    }
+    @Test void deltaStepAndEnvironmentBodyRoundTripWithoutTruncation(){
+        for(int action:new int[]{ServerboundPackagePacket.DELTA,ServerboundPackagePacket.BATCH_DELTA,ServerboundPackagePacket.RELATIVE_DELTA,ServerboundPackagePacket.PREDICTED_DELTA,ServerboundPackagePacket.ENVIRONMENT}){
+            byte[] body=new byte[1024];body[1023]=42;long step=action==ServerboundPackagePacket.ENVIRONMENT?0:9876543210L;
+            var packet=new ServerboundPackagePacket(action,0,REGION,100,0,null,0,3,7,body,step);var bytes=buffer();
+            try{ServerboundPackagePacket.STREAM_CODEC.encode(bytes,packet);var decoded=ServerboundPackagePacket.STREAM_CODEC.decode(bytes);
+                assertEquals(step,decoded.simulationStep());assertArrayEquals(body,decoded.changes());assertEquals(action,decoded.action());assertEquals(REGION,decoded.region());assertEquals(0,bytes.readableBytes());
+            }finally{bytes.release();}
+        }
+    }
 }

@@ -1,0 +1,47 @@
+#pragma cmi_include packages/state.glsl
+#pragma cmi_include packages/chain_tracks.glsl
+struct Chain { vec4 startRadius; vec4 endLength; vec4 progress; vec4 targetYaw; };
+layout(std430,binding=4) buffer Chains { Chain chains[]; };
+layout(std430,binding=5) readonly buffer Tracks { ChainTrack tracks[]; };
+layout(std430,binding=6) readonly buffer Events { ChainEvent events[]; };
+layout(local_size_x=64) in;
+uniform uint uTrackCount;
+uniform float uDt;
+void main() {
+    uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
+    Body b=src[i];Chain c=chains[i];
+    if(b.previousSleep.w<0.0){dst[i]=b;return;}
+    // startRadius.w is an exact integer track index in the tracked sidecar layout.
+    uint track=uint(c.startRadius.w);
+    if(c.startRadius.w<0.0 || c.startRadius.w!=float(track) || track>=uTrackCount){b.previousSleep.w=-1.0;dst[i]=b;return;}
+    ChainTrack t=tracks[track];bool looping=t.motion.y>0.5,reversed=t.motion.z>0.5;
+    ChainEvent pending=events[i];
+    if((any(notEqual(pending.envelope.yz,t.nodes.zw)) && any(notEqual(pending.masks.xy,uvec2(0))))
+            || (pending.masks.w&0x80000000u)!=0u) {
+        b.previousSleep.w=-1.0;dst[i]=b;return;
+    }
+    c.startRadius.x=c.progress.x;
+    // Actual crossings hold progress until a server response. Anticipation never holds movement.
+    if(pending.masks.x==0u)c.progress.x=looping?mod(c.progress.x+t.motion.x*uDt,360.0):
+            min(t.endLength.w,c.progress.x+t.motion.x*uDt);
+    c.progress.y=t.motion.x;c.progress.z=looping?3.0:2.0;c.progress.w=reversed?1.0:0.0;
+    vec3 target;float yaw;
+    if(looping) {
+        float angle=radians(c.progress.x);
+        target=t.startRadius.xyz+vec3(sin(angle),0,cos(angle))*t.startRadius.w;
+        yaw=c.progress.x+(reversed?180.0:0.0);
+    }else {
+        vec3 direction=t.endLength.xyz-t.startRadius.xyz;
+        target=t.startRadius.xyz+direction*(t.endLength.w>0.0?c.progress.x/t.endLength.w:0.0);
+        yaw=t.motion.w;
+    }
+    float steps=uDt*20.0;float damping=pow(.75,steps);
+    b.previousSleep.xyz=b.positionMass.xyz;
+    vec3 offset=b.positionMass.xyz-target;float distance=length(offset);
+    if(distance>1.5)b.positionMass.xyz=target+offset*(1.5/distance);
+    b.velocityGround.xyz=(b.velocityGround.xyz+vec3(0,-.25*steps,0))*damping+(target-b.positionMass.xyz)*(1.0-damping);
+    b.positionMass.xyz+=b.velocityGround.xyz*steps;
+    b.extentYaw.w+=chainAngleDelta(b.extentYaw.w,yaw)*(1.0-damping);
+    c.targetYaw=vec4(target-vec3(0,9.0/16.0,0),yaw);
+    chains[i]=c;dst[i]=b;
+}

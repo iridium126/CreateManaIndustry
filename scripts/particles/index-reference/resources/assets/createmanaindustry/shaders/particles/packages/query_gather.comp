@@ -1,0 +1,16 @@
+#pragma cmi_include packages/query_state.glsl
+struct QueryRequest { uvec4 identity; uvec4 selection; };
+layout(std430,binding=4) readonly buffer QueryRequests { QueryRequest requests[]; };
+layout(std430,binding=5) buffer QueryOutput { QueryResult result[]; };
+layout(local_size_x=64) in;
+uniform uint uRequests;
+void main() {
+    uint i=gl_GlobalInvocationID.x;if(i>=uRequests)return;
+    QueryRequest r=requests[i];uint c=r.selection.x;QueryResult pose=queryEmpty();
+    if(queryIdentity(c) && all(equal(r.identity,meta[c].identity))) {
+        QueryBody b=bodies[meta[c].selection.x];
+        bool retired=r.selection.y==1u && b.previousSleep.w==-3.0 && admitted[2u*c+1u].x==0u;
+        if(retired || queryVisible(c))pose=queryPose(c,retired);
+    }
+    result[i]=pose;
+}

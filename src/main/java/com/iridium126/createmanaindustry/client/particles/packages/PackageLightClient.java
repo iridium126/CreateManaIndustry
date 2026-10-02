@@ -20,13 +20,11 @@ public final class PackageLightClient {
     private record Visual(ClientboundLightPackagePacket.Row row,PackageLease.Pose previous,long tick) {}
     private static final Map<PackageLease.Identity,Visual> entries=new LinkedHashMap<>();
     private static final Set<PackageLease.Identity> observed=new HashSet<>();
-    private static final Set<PackageLease.Identity> detached=new HashSet<>();
     private static ClientLevel world;
-    private static void world(){var current=Minecraft.getInstance().level;if(world!=current){world=current;entries.clear();observed.clear();detached.clear();}}
-    public static void detached(ClientboundPackagePacket packet){world();if(world!=null&&world.dimension().location().equals(packet.dimension()))detached.add(packet.baseline().identity());}
+    private static void world(){var current=Minecraft.getInstance().level;if(world!=current){world=current;entries.clear();observed.clear();}}
     static void observed(PackageLease.Identity identity,boolean value){world();if(value)observed.add(identity);else observed.remove(identity);}
-    public static void receive(ClientboundLightPackagePacket packet){world();if(world==null||!world.dimension().location().equals(packet.dimension()))return;for(var row:packet.rows()){if(row.removed()){entries.remove(row.identity());detached.remove(row.identity());continue;}var old=entries.get(row.identity());if(old==null&&entries.size()>=131072)continue;entries.put(row.identity(),new Visual(row,old==null?row.pose():old.row.pose(),world.getGameTime()));}}
-    public static boolean has(PackageLease.Identity identity){world();return entries.containsKey(identity)||detached.contains(identity);}
+    public static void receive(ClientboundLightPackagePacket packet){world();if(world==null||!world.dimension().location().equals(packet.dimension()))return;for(var row:packet.rows()){if(row.removed()){entries.remove(row.identity());continue;}var old=entries.get(row.identity());if(old==null&&entries.size()>=131072)continue;entries.put(row.identity(),new Visual(row,old==null?row.pose():old.row.pose(),world.getGameTime()));}}
+    public static boolean has(PackageLease.Identity identity){world();return entries.containsKey(identity);}
     public static void render(RenderLevelStageEvent event) {
         world();if(world==null||entries.isEmpty())return;
         var camera=event.getCamera().getPosition();var stack=event.getPoseStack();var buffers=Minecraft.getInstance().renderBuffers().bufferSource();float partial=event.getPartialTick().getGameTimeDeltaPartialTick(false);

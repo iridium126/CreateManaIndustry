@@ -1,0 +1,32 @@
+#pragma cmi_include packages/observer_native_state.glsl
+layout(local_size_x=64) in;
+void main() {
+    uint i=gl_GlobalInvocationID.x;if(i>=uPatches || invalid!=0u)return;
+    NativePatch p=nativeReadPatch(i);uint local=p.selection.x,op=p.selection.z,flags=p.selection.w;float receipt=p.attributes.w;
+    ObserverState s=state[local];NativeObserverState n=nativeState[local];
+    if(op==OBSERVER_RELEASE){s.lifecycle.xy=p.sequence.xy;s.lifecycle.z=2u;state[local]=s;return;}
+    if(op==OBSERVER_BASELINE) {
+        n.base=dvec4(nativeAbsolute(p),0);n.velocity=dvec4(nativeBaselineVelocity(p),0);
+        s.identity=p.identity;s.fence=p.fence;s.lifecycle=uvec4(p.sequence.xy,1u,p.selection.y);
+        s.positionFlags=ivec4(0,0,0,int(flags&1u));
+        s.velocityYaw=ivec4(floatBitsToInt(vec3(n.velocity.xyz*20.0)),floatBitsToInt(p.attributes.z));
+        s.originTime=vec4(0,0,0,receipt);s.extentTime=vec4(p.attributes.x*.5,p.attributes.y*.5,p.attributes.x*.5,receipt);
+        s.anchor=vec4(vec3(n.base.xyz-uNativeOrigin),p.attributes.z);
+        s.correction=vec4(s.anchor.xyz,receipt-uSmoothing);
+    } else {
+        vec3 displayed=observerDisplayed(s,receipt);float yaw=observerDisplayedYaw(s,receipt);
+        bool position=op==NATIVE_TELEPORT || (op==NATIVE_MOVE && (flags&2u)!=0u);
+        if(op==NATIVE_TELEPORT)n.base.xyz=nativeAbsolute(p);
+        else if(position)n.base.xyz=nativeMoved(n.base.xyz,ivec3(p.a.xyz));
+        if(op==NATIVE_MOTION)n.velocity.xyz=(n.velocity.xyz+dvec3(ivec3(p.a.xyz))/8000.0)*.5;
+        if(op==NATIVE_TELEPORT || (op==NATIVE_MOVE && (flags&4u)!=0u))s.velocityYaw.w=floatBitsToInt(nativeYaw(flags));
+        if(op==NATIVE_MOVE || op==NATIVE_TELEPORT)s.positionFlags.w=int(flags&1u);
+        s.velocityYaw.xyz=floatBitsToInt(vec3(n.velocity.xyz*20.0));
+        // Velocity/rotation-only packets do not confirm a new position; never extend its
+        // freshness indefinitely. Codec base remains exact even while presentation smooths.
+        if(position){s.originTime.w=receipt;s.extentTime.w=receipt;}
+        s.anchor=vec4(vec3(n.base.xyz-uNativeOrigin),yaw);s.correction=vec4(displayed,receipt);
+        s.lifecycle.xy=p.sequence.xy;
+    }
+    nativeState[local]=n;state[local]=s;
+}

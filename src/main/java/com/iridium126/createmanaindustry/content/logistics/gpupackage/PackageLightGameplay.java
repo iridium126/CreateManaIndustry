@@ -21,7 +21,6 @@ import net.minecraft.world.item.*;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.phys.*;
-import net.minecraft.world.phys.shapes.Shapes;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -48,57 +47,30 @@ public final class PackageLightGameplay {
         player.setItemInHand(request.hand(),stack.copy());
         level.playSound(null,BlockPos.containing(entry.position()),SoundEvents.ITEM_PICKUP,SoundSource.PLAYERS,.2f,.75f+level.random.nextFloat());
     }
-    /** Only unleased records use CPU motion during disconnection, reload or GPU recovery. */
-    static void fallback(ServerLevel level,PackageLightStore.Entry entry) {
-        var p=entry.state().pose();boolean grounded=(entry.state().flags()&PackageAuthorityRegion.GROUNDED)!=0;
-        if(grounded&&p.vx()==0&&p.vy()==0&&p.vz()==0&&!level.noCollision(entry.bounds().move(0,-.001,0)))return;
-        var motion=new Vec3(p.vx()/20.,p.vy()/20.-.08,p.vz()/20.);
-        var collisions=new java.util.ArrayList<net.minecraft.world.phys.shapes.VoxelShape>();
-        for(var other:PackageAuthorityManager.queryLight(level,entry.bounds().expandTowards(motion)))if(other!=entry&&other.bounds().maxY<entry.bounds().minY+.125)collisions.add(Shapes.create(other.bounds()));
-        for(var other:level.getEntitiesOfClass(com.simibubi.create.content.logistics.box.PackageEntity.class,entry.bounds().expandTowards(motion)))if(!other.noPhysics&&other.getBoundingBox().maxY<entry.bounds().minY+.125)collisions.add(Shapes.create(other.getBoundingBox()));
-        var moved=Entity.collideBoundingBox(null,motion,entry.bounds(),level,collisions);
-        grounded=motion.y<0&&motion.y!=moved.y;double friction=grounded?level.getBlockState(BlockPos.containing(p.x(),p.y()-.5000001,p.z())).getBlock().getFriction()*.91:.91;
-        float vx=(float)(motion.x==moved.x?motion.x*friction*20:0),vy=(float)(motion.y==moved.y?motion.y*.98*20:0),vz=(float)(motion.z==moved.z?motion.z*friction*20:0);
-        if(Math.abs(vx)<.06)vx=0;if(Math.abs(vy)<.06)vy=0;if(Math.abs(vz)<.06)vz=0;
-        PackageAuthorityManager.updateLight(level,entry,new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(p.x()+moved.x,p.y()+moved.y,p.z()+moved.z,vx,vy,vz,p.yaw()),grounded?PackageAuthorityRegion.GROUNDED:0));
+    /** Commit the actual remainder before another machine can observe the record. */
+    public static boolean inserted(ServerLevel level,PackageLightStore.Entry entry,ItemStack remainder) {
+        if(remainder.isEmpty())return PackageAuthorityManager.consumeLight(level,entry);
+        if(ItemStack.matches(remainder,entry.box(level)))return false;
+        entry.replaceBox(level,remainder);PackageLightStore.get(level).setDirty();return false;
     }
-    static boolean center(ServerLevel level,PackageLightStore.Entry entry,Vec3 target) {
-        PackageAuthorityManager.pauseForMachine(level,entry);var p=entry.state().pose();var pos=entry.position().lerp(target,.2);
-        float yaw=net.createmod.catnip.math.AngleHelper.angleLerp(.5f,p.yaw(),((int)p.yaw())/90*90);
-        PackageAuthorityManager.updateLight(level,entry,new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(pos.x,pos.y,pos.z,p.vx()*.75f,p.vy()*.1875f,p.vz()*.75f,yaw),entry.state().flags()));
-        entry.insertionDelay=Math.max(entry.insertionDelay-3,0);return entry.insertionDelay==0;
-    }
-    static void tick(ServerLevel level,PackageLightStore.Entry entry) {
-        entry.insertionDelay=Math.min(entry.insertionDelay+1,30);
-        var bounds=entry.bounds().deflate(.001);var pos=entry.position();var box=entry.box(level);
+    static void contact(ServerLevel level,PackageLightStore.Entry entry,PackageRegion region,PackageEnvironmentEvent.Sample sample) {
+        var pos=new Vec3(region.originX()+sample.px(),region.originY()+sample.py()-entry.height*.5,region.originZ()+sample.pz());
+        var bounds=entry.bounds().move(pos.subtract(entry.position())).deflate(.001);var box=entry.box(level);
         if(!PackageItem.isPackage(box)){PackageAuthorityManager.consumeLight(level,entry);return;}
         if(pos.y<level.getMinBuildHeight()-64){PackageAuthorityManager.consumeLight(level,entry);return;}
-        if(entry.fireTicks>0) {
-            boolean damageAllowed=!entry.data.getBoolean("Invulnerable")&&box.getItem().canBeHurtBy(box,level.damageSources().onFire());
-            boolean destroyed=burnTick(entry,damageAllowed);PackageLightStore.get(level).setDirty();
-            if(destroyed){destroy(level,entry);return;}
-        }
-        for(var blockPos:BlockPos.betweenClosed(BlockPos.containing(bounds.minX,bounds.minY,bounds.minZ),BlockPos.containing(bounds.maxX,bounds.maxY,bounds.maxZ))) {
+        var contacts=new java.util.LinkedHashSet<BlockPos>();contacts.add(sample.block(region));
+        for(var at:BlockPos.betweenClosed(BlockPos.containing(bounds.minX,bounds.minY,bounds.minZ),BlockPos.containing(bounds.maxX,bounds.maxY,bounds.maxZ)))contacts.add(at.immutable());
+        for(var blockPos:contacts) {
             var state=level.getBlockState(blockPos);var block=state.getBlock();
-            if(!state.getFluidState().isEmpty()&&!state.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)){destroy(level,entry);return;}
-            if(block instanceof FireBlock||state.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) {
-                var damage=state.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)?level.damageSources().lava():level.damageSources().inFire();
-                if(!entry.data.getBoolean("Invulnerable")&&box.getItem().canBeHurtBy(box,damage)) {
-                    boolean destroyed=burnContact(entry);PackageLightStore.get(level).setDirty();
-                    if(destroyed){destroy(level,entry);return;}
-                }
-            }
-            if(block==Blocks.NETHER_PORTAL&&entry.portalCooldown==0){portal(level,entry,blockPos.immutable(),state);return;}
-            if(block==Blocks.END_PORTAL&&entry.portalCooldown==0){endPortal(level,entry);return;}
-            if(block==Blocks.END_GATEWAY&&entry.portalCooldown==0&&level.getBlockEntity(blockPos) instanceof net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity gateway&&!gateway.isCoolingDown()) {
+            if(block==Blocks.NETHER_PORTAL&&entry.portalReady(level.getGameTime())){portal(level,entry,blockPos.immutable(),state);return;}
+            if(block==Blocks.END_PORTAL&&entry.portalReady(level.getGameTime())){endPortal(level,entry);return;}
+            if(block==Blocks.END_GATEWAY&&entry.portalReady(level.getGameTime())&&level.getBlockEntity(blockPos) instanceof net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity gateway&&!gateway.isCoolingDown()) {
                 var destination=gateway.getPortalPosition(level,blockPos);if(destination!=null){var current=entry.state().pose();PackageAuthorityManager.transferLight(level,level,entry,new PackageLease.Pose(destination.x,destination.y,destination.z,current.vx(),current.vy(),current.vz(),current.yaw()));net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity.triggerCooldown(level,blockPos,state,gateway);return;}
             }
             if(block instanceof FunnelBlock&&!state.getValue(AbstractFunnelBlock.POWERED)&&!state.getValue(FunnelBlock.EXTRACTING)) {
                 var facing=AbstractFunnelBlock.getFunnelFacing(state);var open=Vec3.atCenterOf(blockPos).add(Vec3.atLowerCornerOf(facing.getNormal()).scale(-.125));var diff=pos.subtract(open);
                 if((facing.getAxis().choose(diff.x,diff.y,diff.z)<0)==(facing.getAxisDirection()==Direction.AxisDirection.POSITIVE))continue;
-                var filter=BlockEntityBehaviour.get(level,blockPos,FilteringBehaviour.TYPE);
-                if(filter!=null&&filter.test(box)&&!center(level,entry,open.add(0,facing==Direction.UP?.25:-.5,0)))return;
-                if(AbstractFunnelBlock.tryInsert(level,blockPos,box.copy(),false).isEmpty()){PackageAuthorityManager.consumeLight(level,entry);return;}
+                if(inserted(level,entry,AbstractFunnelBlock.tryInsert(level,blockPos,entry.box(level).copy(),false)))return;
             }
         }
         // Create's landing callbacks use the same DirectBeltInputBehaviour and belt inventory.
@@ -108,18 +80,51 @@ public final class PackageLightGameplay {
             boolean belt=BeltBlock.canTransportObjects(state);
             if(entry.state().pose().vy()>0||pos.y<at.getY()||pos.y>at.getY()+1.15)continue;
             if(chute&&input!=null&&input.canInsertFromSide(Direction.UP)) {
-                if(!center(level,entry,Vec3.atBottomCenterOf(at.above())))return;
-                if(input.handleInsertion(box.copy(),Direction.UP,false).isEmpty()){if(entry.tossedBy!=null){var player=level.getServer().getPlayerList().getPlayer(entry.tossedBy);if(player!=null)com.simibubi.create.foundation.advancement.AllAdvancements.PACKAGE_CHUTE_THROW.awardTo(player);}PackageAuthorityManager.consumeLight(level,entry);return;}
+                if(inserted(level,entry,input.handleInsertion(entry.box(level).copy(),Direction.UP,false))){if(entry.tossedBy!=null){var player=level.getServer().getPlayerList().getPlayer(entry.tossedBy);if(player!=null)com.simibubi.create.foundation.advancement.AllAdvancements.PACKAGE_CHUTE_THROW.awardTo(player);}return;}
             }else if(belt) {
                 if(BeltTunnelInteractionHandler.getTunnelOnPosition(level,at)!=null)continue;
-                if(!center(level,entry,Vec3.atCenterOf(at).add(0,5/16.,0)))return;
                 var handler=level.getCapability(Capabilities.ItemHandler.BLOCK,at,null);
-                if(handler!=null&&handler.insertItem(0,box.copy(),false).isEmpty()){PackageAuthorityManager.consumeLight(level,entry);return;}
+                if(handler!=null&&inserted(level,entry,handler.insertItem(0,entry.box(level).copy(),false)))return;
             }else if(input!=null&&!chute) {
-                if(!center(level,entry,Vec3.atCenterOf(at).add(0,5/16.,0)))return;
-                if(input.handleInsertion(box.copy(),Direction.DOWN,false).isEmpty()){PackageAuthorityManager.consumeLight(level,entry);return;}
+                if(inserted(level,entry,input.handleInsertion(entry.box(level).copy(),Direction.DOWN,false)))return;
             }
         }
+    }
+    static int environmentPermissions(ServerLevel level,PackageLightStore.Entry entry){
+        if(entry.data.getBoolean("Invulnerable"))return 0;var box=entry.box(level);int flags=0;
+        if(box.getItem().canBeHurtBy(box,level.damageSources().drown()))flags|=1;
+        if(!box.has(net.minecraft.core.component.DataComponents.FIRE_RESISTANT)){
+            if(box.getItem().canBeHurtBy(box,level.damageSources().lava()))flags|=2;
+            if(box.getItem().canBeHurtBy(box,level.damageSources().inFire())&&box.getItem().canBeHurtBy(box,level.damageSources().onFire()))flags|=4;
+        }return flags;
+    }
+    static boolean environmentValid(ServerLevel level,PackageLightStore.Entry entry,PackageRegion region,PackageEnvironmentEvent.Sample sample){
+        var p=new Vec3(region.originX()+sample.px(),region.originY()+sample.py(),region.originZ()+sample.pz());
+        if(p.distanceToSqr(entry.position().add(0,entry.height*.5,0))>36*36)return false;
+        if(sample.contact()==0)return true;
+        var block=sample.block(region);if(!level.hasChunkAt(block))return false;
+        var bounds=new AABB(p.x-entry.width*.5,p.y-entry.height*.5,p.z-entry.width*.5,p.x+entry.width*.5,p.y+entry.height*.5,p.z+entry.width*.5).inflate(1.6001);
+        if(!bounds.intersects(new AABB(block)))return false;
+        var state=level.getBlockState(block);var fluid=state.getFluidState();
+        return switch(sample.contact()){
+            case 1->fluid.is(net.minecraft.tags.FluidTags.WATER);
+            case 2->fluid.is(net.minecraft.tags.FluidTags.LAVA);
+            case 4->state.getBlock() instanceof BaseFireBlock;
+            case 8->state.getBlock() instanceof FunnelBlock||state.getBlock() instanceof AbstractChuteBlock||BeltBlock.canTransportObjects(state)
+                    ||BlockEntityBehaviour.get(level,block,DirectBeltInputBehaviour.TYPE)!=null;
+            case 16->state.is(Blocks.NETHER_PORTAL)||state.is(Blocks.END_PORTAL)||state.is(Blocks.END_GATEWAY);
+            default->false;
+        };
+    }
+    static boolean environmentStep(ServerLevel level,PackageLightStore.Entry entry,PackageRegion region,PackageEnvironmentEvent.Sample sample){
+        int allowed=environmentPermissions(level,entry);
+        boolean destroyed=burnTick(entry,(allowed&4)!=0);
+        if((sample.contact()&allowed&1)!=0)destroyed=true;
+        if((sample.contact()&allowed&6)!=0){destroyed|=burnContact(entry);if(sample.contact()==2)entry.fireTicks=Math.max(entry.fireTicks,300);}
+        entry.environmentStep=sample.step();PackageLightStore.get(level).setDirty();
+        if(destroyed){destroy(level,entry);return true;}
+        if(sample.contact()==8||sample.contact()==16)contact(level,entry,region,sample);
+        return PackageAuthorityManager.light(level,entry.identity)!=entry;
     }
     /** Create ignites an unlit package, then damages it on subsequent fire contacts. */
     static boolean burnContact(PackageLightStore.Entry entry) {

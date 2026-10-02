@@ -70,7 +70,7 @@ public final class PackageNativeChainPlan {
         return mask;
     }
     public PackageChainAuthority.State snapshot(ChainConveyorPackage box,long tick) {
-        Vec3 position=box.worldPosition==null?position(box.chainPosition):box.worldPosition;float yaw=track.looping()?box.chainPosition+(track.reversed()?180:0):track.yaw();
+        Vec3 position=position(box.chainPosition);float yaw=track.looping()?box.chainPosition+(track.reversed()?180:0):track.yaw();
         return new PackageChainAuthority.State(box.chainPosition,tick,new PackageLease.Pose(position.x,position.y,position.z,0,0,0,yaw));
     }
     private boolean crossed(float before,float after,float threshold) {

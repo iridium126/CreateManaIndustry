@@ -1,0 +1,10 @@
+operation,run,records,pause_cpu_ms,retire_batch_p50_ms,retire_batch_p95_ms,reacquire_batch_p50_ms,reacquire_batch_p95_ms,maximum_batch,cpu_motion_calls
+disconnect,1,131072,0.0031,0.0762,0.1231,0.0991,0.166,64,0
+gpu_disabled,1,131072,0.006,0.0278,0.045,0.0528,0.0672,64,0
+authority_migration,1,131072,4.0E-4,0.0385,0.0544,0.0614,0.0842,64,0
+disconnect,2,131072,3.0E-4,0.0322,0.0446,0.0333,0.0518,64,0
+gpu_disabled,2,131072,3.0E-4,0.0328,0.0403,0.0347,0.0535,64,0
+authority_migration,2,131072,1.0E-4,0.0142,0.0205,0.0311,0.0423,64,0
+disconnect,3,131072,0.0,0.017,0.0221,0.0345,0.0573,64,0
+gpu_disabled,3,131072,2.0E-4,0.0172,0.0262,0.0294,0.0455,64,0
+authority_migration,3,131072,0.0259,0.0138,0.0179,0.0175,0.0299,64,0

@@ -356,6 +356,24 @@ public final class PackageObserverGpuValidation {
         public void namespaceRetired(PackageRegion region,long epoch,long stream){namespaces++;}
         public void fallback(String reason){failed++;}
     }
+    static void recycledObservers(){
+        try(var gpu=new PackageObserverGpu(4,PackageObserverGpuValidation::source)){
+            var events=new ObserverLifecycle();try(var controller=new PackageObserverGpuController(DIM,Set.of(REGION),gpu,EPOCH,0,0,0,events)){
+                for(int life=0;life<64;life++){
+                    long tick=100+life*2,now=life*100_000_000L;
+                    var baseline=packet(life*2L,life==0?3:2,tick,List.of(member(life,tick,false)),List.of());
+                    check(controller.enqueue(baseline,now,0),"observer reuse baseline queued");GL11.glFinish();controller.prepare(now,8);
+                    check(controller.healthy()&&gpu.count()==1,"observer reuse grew its body namespace");
+                    var stored=read(gpu.stateBuffer(),144);check(stored.getLong(0)==identity(life).id()&&stored.getLong(8)==identity(life).generation(),"observer reuse retained an old identity");
+                    if(life>0){controller.enqueue(packet(life*2L-1,2,tick-1,List.of(),List.of(new PackageDeltaCodec.Entry(serverIndex(life-1),16,state(life-1,false))),tick-1),now,0);controller.prepare(now,8);check(controller.healthy(),"late observer retirement affected new lifetime");}
+                    controller.enqueue(packet(life*2L+1,2,tick+1,List.of(),List.of(new PackageDeltaCodec.Entry(serverIndex(life),16,state(life,false))),tick+1),now+50_000_000L,0);
+                    controller.prepare(now+50_000_000L,8);GL11.glFinish();stats(gpu,0,0);controller.recycle(0);
+                    check(controller.availableLocalSlots()==4,"observer retired slot was not reclaimable");
+                }
+                check(events.uploaded==64&&events.retired==64&&events.failed==0,"observer reuse duplicated or lost lifecycle");
+            }
+        }
+    }
     static void controller() {
         try(var gpu=new PackageObserverGpu(4,PackageObserverGpuValidation::source)) {
             var events=new ObserverLifecycle();
@@ -460,7 +478,7 @@ public final class PackageObserverGpuValidation {
         long window=GLFW.glfwCreateWindow(64,64,"Package observer GPU validation",0,0);check(window!=0,"context");
         try {
             GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));
-            boundaries();mergeAndCorrection();atomicFailures();sequenceAndRebuild();namespaceRetirement();referenceMerges();delayedUploads();mixedImport();asynchronousFeedback();compactParity();controller();
+            boundaries();mergeAndCorrection();atomicFailures();sequenceAndRebuild();namespaceRetirement();referenceMerges();delayedUploads();mixedImport();asynchronousFeedback();compactParity();controller();recycledObservers();
             if(Arrays.asList(args).contains("--benchmark"))benchmark();
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"observer GL error");System.out.println("Package observer GPU: "+checks+" assertions passed");
         }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();callback.free();}

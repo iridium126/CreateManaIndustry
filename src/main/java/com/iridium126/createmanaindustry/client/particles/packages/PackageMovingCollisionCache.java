@@ -32,6 +32,21 @@ public final class PackageMovingCollisionCache {
     }
     private final Thread owner=Thread.currentThread();private final Executor executor;private final LongSupplier clock;
     private final LinkedHashMap<PackageMovingGeometry.Key,Entry> entries=new LinkedHashMap<>();
+    private final NavigableMap<Long,List<Entry>> history=new TreeMap<>();
+    public void captureHistory(long tick,boolean available){
+        owner();if(history.containsKey(tick))return;
+        List<Entry> frame=new ArrayList<>();
+        if(available&&posesReady())for(Entry source:entries.values()){
+            Entry frozen=new Entry(source.source,source.identity);frozen.revision=source.revision;
+            frozen.bounds=source.bounds;frozen.previous=source.previous;frozen.current=source.current;
+            frozen.unsupported=source.unsupported;frozen.poseFrame=tick+1;frame.add(frozen);
+        }
+        else frame=null;
+        history.put(tick,frame==null?null:List.copyOf(frame));
+        while(history.size()>PackageSimulationClock.HISTORY_TICKS)history.pollFirstEntry();
+    }
+    public List<Entry> history(long tick){owner();return history.get(tick);}
+    public boolean hasHistory(long tick){owner();return history.containsKey(tick);}
     private final int capacity;private int nextIdentity=1;private long serial,frame,lastCapture,overruns;
     private final java.util.concurrent.atomic.AtomicInteger workers=new java.util.concurrent.atomic.AtomicInteger();
     public PackageMovingCollisionCache(Executor executor,int capacity){this(executor,capacity,System::nanoTime);}
@@ -46,7 +61,7 @@ public final class PackageMovingCollisionCache {
     private void revoke(Entry e){e.snapshot=null;e.cursor=null;e.captured=null;e.revision=++serial;e.unsupported=false;e.poseFrame=0;}
     public void invalidate(PackageMovingGeometry.Key key){owner();Entry e=entries.get(key);if(e!=null)revoke(e);}
     public void remove(PackageMovingGeometry.Key key){owner();Entry e=entries.remove(key);if(e!=null)revoke(e);}
-    public void clear(){owner();for(Entry e:entries.values())revoke(e);entries.clear(); /* Never reuse an identity within this world. */}
+    public void clear(){owner();for(Entry e:entries.values())revoke(e);entries.clear();history.clear(); /* Never reuse an identity within this world. */}
     public Collection<Entry> entries(){owner();return Collections.unmodifiableCollection(entries.values());}
     public void tick(long budgetNanos) {
         owner();frame++;if(budgetNanos<=0)return;long start=clock.getAsLong();

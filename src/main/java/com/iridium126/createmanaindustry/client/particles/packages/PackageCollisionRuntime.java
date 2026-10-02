@@ -45,6 +45,7 @@ public final class PackageCollisionRuntime {
     private long lastDiscoveryNanos,discoveryOverruns;
     private boolean gpuRequested,collisionRequested,lightRequested;
     private String gpuError="";
+    private final java.util.LinkedHashMap<Long,java.util.Map<PackageCollisionCache.Section,Long>> geometryHistory=new java.util.LinkedHashMap<>();
 
     private PackageCollisionRuntime(ClientLevel level) {
         this.level=level;
@@ -173,6 +174,16 @@ public final class PackageCollisionRuntime {
         owner();if(movingGpu==null||!gpuError.isEmpty())throw new IllegalStateException("Moving atlas unavailable");
         var views=movingAvailable?movingGpu.views(movingCache.entries(),movingCache.posesReady(),originSectionX*16.,originSectionY*16.,originSectionZ*16.):movingGpu.unavailableViews();
         return new MovingScene(movingGpu,views);
+    }
+    public boolean hasStaticHistory(long tick){owner();return gpu!=null&&geometryHistory.containsKey(tick);}
+    public PackageCollisionGpu.View historicalView(long tick,int x,int y,int z){
+        owner();var versions=geometryHistory.get(tick);if(versions==null||gpu==null)throw new IllegalStateException("Static geometry history unavailable");
+        return gpu.historicalView(x,y,z,versions);
+    }
+    public boolean hasMovingHistory(long tick){owner();return movingCache.hasHistory(tick);}
+    public MovingScene movingView(long tick,int x,int y,int z){
+        owner();var frame=movingCache.history(tick);
+        return new MovingScene(movingGpu,frame==null?movingGpu.unavailableViews():movingGpu.views(frame,true,x*16.,y*16.,z*16.));
     }
     public static final class MovingScene implements AutoCloseable {
         private final PackageMovingCollisionGpu gpu;private final java.util.List<PackageMovingCollisionGpu.View> views;private boolean closed;
@@ -335,6 +346,9 @@ public final class PackageCollisionRuntime {
         current.recordDiscovery(System.nanoTime()-started,budget);
         if(current.captureMovingFirst){current.movingCache.tick(Math.max(0,budget-(System.nanoTime()-started)));current.cache.tick(current.source,Math.max(0,budget-(System.nanoTime()-started)));}
         else{current.cache.tick(current.source,Math.max(0,budget-(System.nanoTime()-started)));current.movingCache.tick(Math.max(0,budget-(System.nanoTime()-started)));}
+        current.movingCache.captureHistory(current.level.getGameTime(),current.movingAvailable);
+        current.geometryHistory.put(current.level.getGameTime(),current.cache.versions());
+        while(current.geometryHistory.size()>PackageSimulationClock.HISTORY_TICKS)current.geometryHistory.remove(current.geometryHistory.keySet().iterator().next());
         current.captureMovingFirst=!current.captureMovingFirst;
         if(current.lightRequested && current.lightPriority!=0)current.lights.tick(current.lightSource,Math.max(0,budget-(System.nanoTime()-started)));
         current.lightPriority=(current.lightPriority+1)%3;

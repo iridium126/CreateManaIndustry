@@ -1,0 +1,14 @@
+layout(local_size_x=64) in;
+layout(std430,binding=9) readonly buffer MissingSections { ivec4 missing[]; };
+layout(std430,binding=10) readonly buffer Representatives { uint winners[]; };
+layout(std430,binding=11) buffer LightRequests { uint requestCount; uint pad0,pad1,pad2; ivec4 requests[]; };
+uniform uint uCount;
+void main() {
+    uint bucket=gl_GlobalInvocationID.x;if(bucket>=1024u)return;
+    uint candidate=winners[bucket];if(candidate>=uCount)return;
+    ivec4 section=missing[candidate];if(section.w!=1)return;
+    uint outputIndex=atomicAdd(requestCount,1u);
+    if(outputIndex<256u)requests[outputIndex]=ivec4(section.xyz,0);
+    // Collisions/overflow are retried from the still-missing atlas on the next draw.
+    // A received section becomes a reserved header before its light data is captured.
+}

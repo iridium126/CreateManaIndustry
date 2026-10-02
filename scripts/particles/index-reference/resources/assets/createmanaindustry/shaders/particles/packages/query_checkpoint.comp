@@ -1,0 +1,13 @@
+#pragma cmi_include packages/query_state.glsl
+layout(std430,binding=5) writeonly buffer CheckpointOutput { QueryResult result[]; };
+layout(local_size_x=64) in;
+uniform uint uCheckpointType,uBodyLimit;
+void main() {
+    uint c=gl_GlobalInvocationID.x;if(c>=uCount)return;
+    QueryResult pose=queryEmpty();
+    if(queryIdentity(c) && meta[c].selection.x<uBodyLimit && (meta[c].selection.w&1u)==uCheckpointType) {
+        bool retired=bodies[meta[c].selection.x].previousSleep.w==-3.0 && admitted[2u*c+1u].x==0u;
+        if(retired || queryVisible(c) && (admitted[2u*c+1u].y&1u)==uCheckpointType)pose=queryPose(c,retired);
+    }
+    result[c]=pose;
+}

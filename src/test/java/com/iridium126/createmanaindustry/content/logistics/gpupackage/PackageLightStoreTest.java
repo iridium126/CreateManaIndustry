@@ -16,4 +16,11 @@ class PackageLightStoreTest {
     @Test void saturatedSingleAxisDoesNotWrapTheLoopCounter(){var store=new PackageLightStore();store.put(entry(1,0,0,0));assertTrue(store.query(new AABB(1e20,-1,-1,1e21,1,1)).isEmpty());}
     @Test void duplicateBackingDataCannotAliasAnotherPackage(){var store=new PackageLightStore();var e=entry(1,0,0,0);store.put(e);assertThrows(IllegalArgumentException.class,()->store.put(entry(1,10,0,0)));assertEquals(1,store.entries().size());}
     @Test void chunkIndexMovesEvenWithinTheSamePhysicsRegion(){var store=new PackageLightStore();var e=entry(1,15,70,15);store.put(e);assertEquals(1,store.inChunk(new net.minecraft.world.level.ChunkPos(0,0)).size());store.update(e,pose(16,70,16));assertTrue(store.inChunk(new net.minecraft.world.level.ChunkPos(0,0)).isEmpty());assertEquals(1,store.inChunk(new net.minecraft.world.level.ChunkPos(1,1)).size());assertSame(e,store.byIdentity(e.identity));store.remove(e);assertTrue(store.inChunk(new net.minecraft.world.level.ChunkPos(1,1)).isEmpty());}
+    @Test void optionalEnvironmentStateRoundTripsWithoutChangingInventoryOrIdentity(){
+        var store=new PackageLightStore();var e=entry(1,4,70,4);e.health=2.75f;e.fireTicks=87;e.environmentStep=456;store.put(e);
+        var saved=store.save(new CompoundTag(),null);var loaded=PackageLightStore.load(saved,null).byIdentity(e.identity);
+        assertEquals(e.data,loaded.data);assertEquals(e.uuid,loaded.uuid);assertEquals(2.75f,loaded.health);assertEquals(87,loaded.fireTicks);assertEquals(456,loaded.environmentStep);
+        var row=saved.getList("Packages",10).getCompound(0);row.remove("EnvironmentStep");row.remove("Health");row.remove("FireTicks");
+        var legacy=PackageLightStore.load(saved,null).byIdentity(e.identity);assertEquals(0,legacy.environmentStep);assertEquals(0,legacy.fireTicks);assertEquals(5,legacy.health);assertEquals(e.data,legacy.data);
+    }
 }

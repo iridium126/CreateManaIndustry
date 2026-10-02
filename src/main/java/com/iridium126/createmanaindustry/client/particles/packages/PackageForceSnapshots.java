@@ -1,37 +1,37 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-
-/** Owner-thread publication of a single immutable BVH job. Polls never wait for the worker. */
+/** Immutable one-second history with at most four queued/running worker jobs. */
 final class PackageForceSnapshots {
-    private CompletableFuture<PackageForceScene.Snapshot> pending;
-    private PackageForceScene.Snapshot snapshot;
-    private long revision,pendingRevision,scheduled=Long.MIN_VALUE;
-
-    private void poll() {
-        if(pending==null || !pending.isDone())return;
-        var completed=pending;pending=null;
-        var result=completed.join();
-        if(pendingRevision==revision)snapshot=result;
+    private record Input(long tick,List<PackageForceScene.Source> sources,double x,double y,double z,CompletableFuture<PackageForceScene.Snapshot> result) {}
+    private final NavigableMap<Long,Input> history=new TreeMap<>();
+    private final AtomicInteger workers=new AtomicInteger();
+    private final Set<Input> scheduled=Collections.newSetFromMap(new IdentityHashMap<>());
+    private Executor worker;
+    boolean needsCapture(long tick){schedule();return !history.containsKey(tick);}
+    void capture(long tick,List<PackageForceScene.Source> sources,double x,double y,double z,Executor worker){
+        if(!needsCapture(tick))return;this.worker=worker;
+        history.put(tick,new Input(tick,List.copyOf(sources),x,y,z,new CompletableFuture<>()));
+        while(history.size()>PackageSimulationClock.HISTORY_TICKS){var old=history.pollFirstEntry().getValue();old.result.cancel(false);scheduled.remove(old);}
+        schedule();
     }
-    boolean needsCapture(long tick) {poll();return pending==null && scheduled!=tick;}
-    void capture(long tick,List<PackageForceScene.Source> sources,double ox,double oy,double oz,Executor worker) {
-        if(!needsCapture(tick))return;
-        var immutable=List.copyOf(sources);
-        pending=CompletableFuture.supplyAsync(()->PackageForceScene.bake(tick,immutable,ox,oy,oz),worker);
-        pendingRevision=revision;scheduled=tick;
+    private void schedule(){
+        if(worker==null)return;
+        for(var input:history.values()){
+            if(workers.get()>=4)break;if(input.result.isDone()||!scheduled.add(input))continue;
+            workers.incrementAndGet();
+            try{worker.execute(()->{try{if(!input.result.isCancelled())input.result.complete(PackageForceScene.bake(input.tick,input.sources,input.x,input.y,input.z));}
+                catch(Throwable error){input.result.completeExceptionally(error);}finally{workers.decrementAndGet();}});}
+            catch(RejectedExecutionException rejected){workers.decrementAndGet();scheduled.remove(input);break;}
+        }
     }
-    boolean ready(long tick) {
-        poll();return snapshot!=null && tick>=snapshot.tick() && tick-snapshot.tick()<=1;
-    }
-    PackageForceScene.Snapshot snapshot(long tick) {
-        if(!ready(tick))throw new IllegalStateException("Package force capture is not ready for this tick");
-        return snapshot;
-    }
-    void invalidate() {revision++;snapshot=null;scheduled=Long.MIN_VALUE;}
-    void clear() {
-        invalidate();if(pending!=null)pending.cancel(false);pending=null;
-    }
+    boolean ready(long tick){schedule();var input=history.get(tick);if(input==null||!input.result.isDone()||input.result.isCancelled())return false;
+        input.result.join();return true;}
+    PackageForceScene.Snapshot snapshot(long tick){if(!ready(tick))throw new IllegalStateException("Package force history unavailable at tick "+tick);return history.get(tick).result.join();}
+    boolean contains(long tick){return history.containsKey(tick);}
+    void consumed(long tick){var old=new ArrayList<>(history.headMap(tick,true).values());history.headMap(tick,true).clear();scheduled.removeAll(old);schedule();}
+    void invalidate(){clear();}
+    void clear(){history.values().forEach(input->input.result.cancel(false));history.clear();scheduled.clear();}
 }

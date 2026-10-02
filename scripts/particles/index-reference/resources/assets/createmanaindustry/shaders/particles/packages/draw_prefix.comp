@@ -1,0 +1,15 @@
+#pragma cmi_include packages/draw_state.glsl
+layout(local_size_x=1) in;
+void main() {
+    uint prefix=0u;
+    for(uint m=0u;m<uMeshCount*PACKAGE_DRAW_LAYERS;m++) {
+        uint n=commands[m].y;
+#ifdef CMI_SPLIT_DRAW
+        uint mesh=m<uMeshCount?m:m-uMeshCount;
+#else
+        uint mesh=m;
+#endif
+        commands[m]=uvec4(meshes[mesh].y,n,meshes[mesh].x,prefix);
+        cursors[m]=prefix;prefix+=n;
+    }
+}

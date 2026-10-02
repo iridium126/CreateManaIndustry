@@ -16,7 +16,6 @@
     "packages.PackageLightNativeCollisionMixin",
     "packages.PackageExternalImpulseMixin",
     "packages.PackageAirCurrentMixin",
-    "packages.PackageNativeDownlinkMixin",
     "kinetics.KineticBlockEntityMixin",
     "kinetics.KineticBlockEntityAccessor",
     "kinetics.DirectionalShaftHalvesBlockEntityMixin",

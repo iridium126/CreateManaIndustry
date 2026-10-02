@@ -50,10 +50,7 @@ public final class PackageWorldRuntime {
     private PackageChainAcquisitionGpu chainAcquisition;
     private PackagePoseQueryGpu chainQueries;
     private PackageChainCheckpointGpu chainCheckpoints;
-    private PackageFreeCheckpointGpu freeCheckpoints;
     private PackageFreeInteractionClient freeInteraction;
-    private long freeCheckpointVersion=-1;
-    private int freeCheckpointCount=-1;
     private long checkpointVersion=-1;
     private int checkpointCount=-1;
     private PackageChainInteractionClient chainInteraction;
@@ -73,7 +70,7 @@ public final class PackageWorldRuntime {
         @Override public void row(long tableVersion,int row) {
             if(level!=null)PackageCollisionRuntime.forLevel(level).touchPackageUsage(tableVersion,row);
         }
-        @Override public void unsafeBody(int bodyIndex) {PackageAuthorityClient.requestReleaseBody(bodyIndex);}
+        @Override public void unsafeBody(int bodyIndex) { /* GPU retains the last valid pose and retries coverage locally. */ }
     };
     private Map<ResourceLocation,PackageModelCache.Style> styles=Map.of();
     private double ox,oy,oz;
@@ -101,15 +98,6 @@ public final class PackageWorldRuntime {
         var runtime=current;if(runtime==null || runtime.failure!=null)return;
         if(runtime.nativeObservers!=null)runtime.nativeObservers.committed(generation);
         if(runtime.freeInteraction!=null)runtime.freeInteraction.committed(generation,runtime.interpolation);
-        if(runtime.freeCheckpoints!=null && runtime.physics.freeCount()>0) {
-            if(!runtime.pool.sourceMatches(runtime.physics.bodyBuffer(),runtime.physics.chainBuffer(),runtime.physics.historyBuffer(),runtime.physics.bodyCount(),
-                    (float)runtime.ox,(float)runtime.oy,(float)runtime.oz))throw new IllegalStateException("Free checkpoint uses a different publication");
-            long version=runtime.physics.freePublicationVersion();int count=runtime.pool.admissionCount();
-            if((version!=runtime.freeCheckpointVersion||count!=runtime.freeCheckpointCount)
-                    && runtime.freeCheckpoints.captureAuthority(PackagePoseQueryGpu.Input.of(runtime.physics,runtime.pool),runtime.physics.freeCount(),generation)) {
-                runtime.freeCheckpointVersion=version;runtime.freeCheckpointCount=count;
-            }
-        }
         if(runtime.chainAcquisition==null)return;
         runtime.chainAcquisition.committed(generation,runtime.captureChainInput);
         runtime.chainAcquisition.captureCommitted(generation);
@@ -131,8 +119,6 @@ public final class PackageWorldRuntime {
     public static String status(){var runtime=current;return runtime==null?"off":runtime.status
             +(runtime.chainInteraction==null?"":"; pickup ACK round trip="+runtime.chainInteraction.networkNanos()/1_000_000.0+"ms")
             +(runtime.pool==null?"":"; light "+runtime.pool.lightFeedbackReport())
-            +(runtime.freeCheckpoints==null?"":"; free checkpoint bytes="+runtime.freeCheckpoints.readbackBytes()+", pending="+runtime.freeCheckpoints.pending()
-                    +", skipped="+runtime.freeCheckpoints.skipped()+", latency="+runtime.freeCheckpoints.lastLatencyNanos()/1_000_000.0+"ms")
             +(runtime.chainCheckpoints==null?"":"; chain checkpoint bytes="+runtime.chainCheckpoints.readbackBytes()+", pending="+runtime.chainCheckpoints.pending()
                     +", skipped="+runtime.chainCheckpoints.skipped()+", latency="+runtime.chainCheckpoints.lastLatencyNanos()/1_000_000.0+"ms")
             +(runtime.worldPrefetch==null?"":"; "+runtime.worldPrefetch.stats())
@@ -185,13 +171,26 @@ public final class PackageWorldRuntime {
                 if(forceCapture==null){forceCapture=new PackageForceClient(level);forceGpu=new PackageForceGpu();}
                 forceCapture.prepare(ox,oy,oz,regions.keySet());
             }
-            if(freeCheckpoints!=null) {
-                freeCheckpoints.poll();
-            }
             if(freeInteraction!=null)freeInteraction.prepare();
             if(chainCheckpoints!=null) {
                 chainCheckpoints.poll();
             }
+            if(physics.environment()!=null)physics.environment().poll(bytes->{
+                int body=bytes.getInt(52);long id=bytes.getLong(0),generation=bytes.getLong(8),lease=bytes.getLong(16);
+                for(var acquisition:regions.values()){
+                    var offer=acquisition.environmentOffer(body,id,generation,lease,bytes.getInt(40)-1,bytes.getLong(56));if(offer==null)continue;
+                    var copy=java.nio.ByteBuffer.allocate(bytes.remaining()).order(java.nio.ByteOrder.LITTLE_ENDIAN);copy.put(bytes);
+                    int pending=copy.getInt(24)-copy.getInt(28);
+                    for(int n=0;n<pending;n++){int p=64+n*48;
+                        copy.putInt(p,copy.getInt(p)+(int)ox).putInt(p+4,copy.getInt(p+4)+(int)oy).putInt(p+8,copy.getInt(p+8)+(int)oz);
+                        copy.putFloat(p+32,(float)(copy.getFloat(p+32)+ox-offer.region().originX()));
+                        copy.putFloat(p+36,(float)(copy.getFloat(p+36)+oy-offer.region().originY()));
+                        copy.putFloat(p+40,(float)(copy.getFloat(p+40)+oz-offer.region().originZ()));
+                    }
+                    var payload=copy.array();
+                    PacketDistributor.sendToServer(new ServerboundPackagePacket(ServerboundPackagePacket.ENVIRONMENT,0,offer.region(),offer.epoch(),0,null,0,offer.regionRevision(),0,payload));break;
+                }
+            });
             pool.pollLightRequests(requestLight);
             if(worldPrefetch!=null)worldPrefetch.poll(requestCollision,collisionUsage);
             // Lightweight observer streams prepare baselines and
@@ -217,26 +216,34 @@ public final class PackageWorldRuntime {
             if(active==0)clock.reset();
             // Initialization and acquisition can be expensive. Start an acquired body's clock
             // here, rather than charging work done before it owned any simulation time.
-            var advance=active==0 ? PackageSimulationClock.Advance.IDLE
-                    : clock.advance(System.nanoTime(),level.getGameTime(),mc.isPaused() || !shaderReady,freeActive==0 || forceCapture.ready());
-            if(active>0 && advance==PackageSimulationClock.Advance.STEP) {
-                if(freeActive>0) {
+            if(active>0)clock.sample(System.nanoTime(),level.getGameTime(),mc.isPaused()||!shaderReady);
+            for(int substep=0;active>0&&substep<PackageSimulationClock.MAX_STEPS_PER_FRAME&&clock.due(level.getGameTime());substep++){
+                long tick=clock.nextTick();boolean submitted=false;
+                if(freeActive>0){
                     var collision=PackageCollisionRuntime.forLevel(level);
-                    try(var world=collision.view((int)(ox/16),(int)(oy/16),(int)(oz/16));
-                        var moving=collision.movingView((int)(ox/16),(int)(oy/16),(int)(oz/16))) {
-                        // A frame-level atlas/pose-bank miss is temporary resource pressure. Do
-                        // not run prefetch or advance forces; resume from the unchanged state when
-                        // both immutable views are ready. Per-body missing geometry freezes only
-                        // the affected bodies inside the collision shaders.
-                        if(world.ready() && moving.ready())try(var forces=forceGpu.view(forceCapture.snapshot(),level.getGameTime())) {
+                    if(!forceCapture.ready(tick)||!collision.hasMovingHistory(tick)||!collision.hasStaticHistory(tick))break;
+                    try(var world=collision.historicalView(tick,(int)(ox/16),(int)(oy/16),(int)(oz/16));
+                        var moving=collision.movingView(tick,(int)(ox/16),(int)(oy/16),(int)(oz/16))){
+                        if(!world.ready()||!moving.ready())break;
+                        try(var forces=forceGpu.tryView(forceCapture.snapshot(tick),tick)){
+                            if(forces==null)break;
                             physics.applyFreeForces(forces,.05f);
                             if(worldPrefetch!=null)worldPrefetch.capture(physics.freeStateBuffer(),physics.freeCount(),.5f,.15f,world);
-                            physics.stepFreeMoving(world,PackagePhysicsGpu.ITERATIONS,PackagePhysicsGpu.IndexMode.LINKED,moving.views());
+                            physics.stepFreeMoving(world,PackagePhysicsGpu.ITERATIONS,moving.views());
+                            submitted=true;
                         }
                     }
+                }else submitted=true;
+                if(submitted){
+                    if(chainActive>0)physics.stepChains(.05f,chainTracks);
+                    clock.commit(tick);if(forceCapture!=null)forceCapture.consumed(tick);
                 }
-                if(chainActive>0)physics.stepChains(.05f,chainTracks);
             }
+            if(clock.historyGap()){
+                // The last confirmed record remains authoritative while fresh baselines are negotiated.
+                PackageAuthorityClient.closeAll("Package input history expired; pausing for a fresh baseline",true);return true;
+            }
+            if(physics.environment()!=null)physics.environment().capture(physics.freeCount());
             physics.publish();physics.source(pool,(float)ox,(float)oy,(float)oz);
             if(chainFrames!=null)chainFrames.prepare(pool);
             pool.lightSource(PackageCollisionRuntime.forLevel(level).lightGpu());
@@ -280,6 +287,7 @@ public final class PackageWorldRuntime {
         var position=Minecraft.getInstance().player.position();
         ox=Math.floor(position.x/16)*16;oy=Math.floor(position.y/16)*16;oz=Math.floor(position.z/16)*16;
         physics=new PackageMixedPhysicsGpu(capacity,chainProtocol?capacity:0,capacity,2,sources);
+        physics.enableEnvironment(sources);
         worldPrefetch=new PackageWorldPrefetchGpu(nativeEpochs.incrementAndGet(),sources);
         nativeObservers=new PackageLightObserverClient(level,physics,pool,styles,nativeEpochs.incrementAndGet(),ox,oy,oz,reason->failure=reason);
         physics.sampleObservers(0);
@@ -301,13 +309,13 @@ public final class PackageWorldRuntime {
             }
             if(acquisition==null && packet.action()==ClientboundPackagePacket.OFFER) {
                 if(regions.size()>=MAX_REGIONS) {refuse(packet);continue;}
-                if(freeCheckpoints==null)freeCheckpoints=new PackageFreeCheckpointGpu(Math.min(131072,pool.capacity()),nativeEpochs.incrementAndGet(),sources);
+
                 if(freeInteraction==null){freeInteraction=new PackageFreeInteractionClient(physics,pool,nativeEpochs.incrementAndGet(),ox,oy,oz,sources);freeInteraction.chainInteraction(chainInteraction);}
                 var detector=new PackageDeltaGpu(Math.min(131072,pool.capacity()),sources,true);
                 try {
                     acquisition=PackageAuthorityClient.openFreeAcquisition(packet.region(),packet.epoch(),packet.regionRevision(),
                             ox,oy,oz,physics,pool,detector,styles,this::light,reason->failure=reason);
-                    acquisition.emergencyCheckpoints(freeCheckpoints);
+
                 }catch(RuntimeException error){detector.close();throw error;}
                 regions.put(packet.region(),acquisition);
             }
@@ -423,7 +431,6 @@ public final class PackageWorldRuntime {
         if(chainInteraction!=null)chainInteraction.close();chainInteraction=null;
         if(freeInteraction!=null)freeInteraction.close();freeInteraction=null;
         PackageChainClientOwnership.INSTANCE.close();
-        if(freeCheckpoints!=null)freeCheckpoints.close();freeCheckpoints=null;freeCheckpointVersion=-1;freeCheckpointCount=-1;
         if(chainCheckpoints!=null)chainCheckpoints.close();chainCheckpoints=null;checkpointVersion=-1;checkpointCount=-1;
         if(chainAcquisition!=null)chainAcquisition.close();chainAcquisition=null;
         if(chainQueries!=null)chainQueries.close();chainQueries=null;

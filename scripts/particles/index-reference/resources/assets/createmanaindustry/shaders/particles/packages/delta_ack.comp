@@ -1,0 +1,34 @@
+#pragma cmi_include packages/delta_common.glsl
+layout(local_size_x=64) in;
+uniform uint uRecords;
+uniform uint uCancel;
+uniform uint uRecordOffset;
+void main() {
+    uint i=gl_GlobalInvocationID.x;
+    uint count=uRecords==0xffffffffu?min(accepted,uCapacity):min(uRecords,uCapacity);
+    if(i>=count)return;
+    DeltaRecord r=records[uRecordOffset+i];uint candidate=r.header.x;
+    if(candidate>=uCount || (uCancel!=2u && flight[candidate]!=uStamp))return;
+    DeltaMeta m=meta[candidate];
+    // Neither a recycled candidate nor a late ACK is allowed to update another identity.
+    if(any(notEqual(m.identity,r.identity)) || m.selection.y!=r.header.y)return;
+    if(uCancel==2u) {
+        if(r.header.w!=1u)return;
+        meta[candidate].selection.z&=~1u;
+    } else if(uCancel==0u) {
+        if(r.header.w==0u) {
+            ivec3 oldPosition=baseline[candidate].positionFlags.xyz;
+            if(uRelativePosition!=0u) {
+                r.value.positionFlags.xyz+=oldPosition;
+                if(uPredictedPosition!=0u)r.value.positionFlags.xyz+=displacement[candidate].xyz;
+            }
+            // Velocity/yaw/flags-only updates preserve the last POSITION displacement.
+            // Cancel, release and rejected/old identity ACKs never advance a predictor.
+            if(uPredictedPosition!=0u && (r.header.z&1u)!=0u)
+                displacement[candidate]=ivec4(r.value.positionFlags.xyz-oldPosition,0);
+            baseline[candidate]=r.value;
+        }
+        else meta[candidate].selection.z&=~1u; // acknowledged ownership release
+    }
+    flight[candidate]=0u;
+}

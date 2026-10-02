@@ -22,6 +22,8 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
     private int published=-1;
     private int publishedBodyCount;
     private long version,publishedVersion=-1;
+    private long freeStep;
+    public long freeSimulationStep(){open();return freeStep;}
     private long freeVersion,chainVersion,publishedFreeVersion=-1,publishedChainVersion=-1;
     private long observerVersion=-1;
     private boolean closed;
@@ -83,6 +85,14 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
         open();within(added,Math.min(freeCapacity-free.count(),maxPackages-free.count()-chain.count()-observerCount()));
         free.append(bodies,emptyChains,added,false);if(added>0)changed(false);
     }
+    public int nextChainBody(){open();return chain.nextBody();}
+    public void recycleChain(int local){open();chain.makeReusable(local);changed(true);}
+    public void writeChain(int local,ByteBuffer bodies,ByteBuffer data){open();chain.writeBody(local,bodies,data,true);changed(true);}
+    public int nextFreeBody(){open();return free.nextBody();}
+    public int freeLiveCount(){open();return free.liveCount();}
+    public int chainLiveCount(){open();return chain.liveCount();}
+    public void recycleFree(int local){open();free.makeReusable(local);changed(false);}
+    public void writeFree(int local,ByteBuffer bodies,ByteBuffer chains){open();free.writeBody(local,bodies,chains,false);changed(false);}
     public void replaceFree(int first,ByteBuffer bodies,ByteBuffer emptyChains,int length) {
         open();if(first<0 || (long)first+length>free.count())throw new IllegalArgumentException("Free package replacement range");
         free.replace(first,bodies,emptyChains,length,false);if(length>0)changed(false);
@@ -109,21 +119,23 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
     }
     public void stepFree(float dt) {open();free.step(dt);if(free.count()>0)changed(false);}
     public void applyFreeForces(PackageForceGpu.View forces,float dt){open();free.applyForces(forces,dt);if(free.count()>0&&forces.nodes()>0)changed(false);}
-    public void stepFreeWorld(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations,
-                              PackagePhysicsGpu.IndexMode mode) {
-        open();free.stepWorld(dt,world,supportProjection,iterations,mode);if(free.count()>0)changed(false);
+    public void stepFreeWorld(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations) {
+        open();free.stepWorld(dt,world,supportProjection,iterations);freeStep++;if(free.count()>0)changed(false);
     }
-    public void stepFreeMoving(PackageCollisionGpu.View world,int iterations,PackagePhysicsGpu.IndexMode mode,
+    public void stepFreeMoving(PackageCollisionGpu.View world,int iterations,
                                List<PackageMovingCollisionGpu.View> moving) {
-        open();free.stepWorldMoving(world,iterations,mode,moving);if(free.count()>0)changed(false);
+        open();free.stepWorldMoving(world,iterations,moving);freeStep++;if(free.count()>0)changed(false);
     }
     public void stepChains(float dt) {open();chain.stepChains(dt);if(chain.count()>0)changed(true);}
     public void stepChains(float dt,PackageChainTrackGpu tracks) {
         open();chain.stepChains(dt,tracks);if(chain.count()>0)changed(true);
     }
     public PackageObserverGpu observers(){open();if(observers==null)throw new IllegalStateException("No observer domain reserved");return observers;}
+    public int observerLiveCount(){open();return observerReservations<0?observerCount():observerReservations;}
     public int observerCount(){open();return observers==null?0:observers.count();}
-    public int observerRemaining(){open();return Math.min(observerCapacity-observerCount(),maxPackages-free.count()-chain.count()-observerCount());}
+    private int observerReservations=-1;
+    public void observerReservations(int count){open();if(count<0||count>observerCapacity)throw new IllegalArgumentException("Observer reservations");observerReservations=count;}
+    public int observerRemaining(){open();int reserved=observerReservations<0?observerCount():observerReservations;return Math.min(observerCapacity-reserved,maxPackages-free.liveCount()-chain.liveCount()-reserved);}
     public int observerBodyIndex(int local){open();if(local<0 || local>=observerCount())throw new IndexOutOfBoundsException();return freeCapacity+chainCapacity+local;}
     public void sampleObservers(float time) {
         open();if(observers==null)throw new IllegalStateException("No observer domain reserved");
@@ -170,6 +182,8 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
     public int freeCount(){open();return free.count();}
     /** Current render-thread solver state for the asynchronous collision prefetch pass. */
     public int freeStateBuffer(){open();return free.stateBuffer();}
+    public PackageEnvironmentGpu enableEnvironment(Function<String,String> sources){open();return free.enableEnvironment(sources);}
+    public PackageEnvironmentGpu environment(){open();return free.environment();}
     public int freeCapacity(){open();return freeCapacity;}
     public int chainCapacity(){open();return chainCapacity;}
     public int chainCount(){open();return chain.count();}

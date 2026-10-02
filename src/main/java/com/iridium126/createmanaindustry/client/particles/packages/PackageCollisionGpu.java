@@ -27,7 +27,8 @@ public final class PackageCollisionGpu implements AutoCloseable {
     }
     private static final class Bank {
         int buffer;ByteBuffer mapped;long fence;boolean leased;
-        long version=Long.MIN_VALUE;boolean coarse;
+        long version=Long.MIN_VALUE,tableToken;boolean coarse;
+        Map<PackageCollisionCache.Section,Long> versions;
         final BitSet references=new BitSet();
     }
     public record Stats(int residents,int ready,int pending,int retired,long uploadedBytes,long capacityRejections,long evictions,
@@ -44,6 +45,7 @@ public final class PackageCollisionGpu implements AutoCloseable {
     private final long[] timings=new long[128];
     private int timingCursor,timingCount,data;
     private ByteBuffer mappedData;
+    private long tableTokens;
     private long serial,usageGeneration=Long.MIN_VALUE,uploadedBytes,capacityRejections,evictions,shapeRejections,skippedViews,lastUploadNanos,overruns;
     private boolean closed,viewOpen,failed;
 
@@ -130,14 +132,14 @@ public final class PackageCollisionGpu implements AutoCloseable {
     public void clearPackageUsage(){open();packageUsage.clear();usageGeneration=Long.MIN_VALUE;}
     /** Begin an exact usage set only when the completed scan references the current table version. */
     public boolean beginPackageUsage(long tableVersion) {
-        open();if(tableVersion!=serial)return false;
-        for(Bank bank:banks)if(bank.version==tableVersion){packageUsage.clear();usageGeneration=tableVersion;return true;}
+        open();
+        for(Bank bank:banks)if(bank.tableToken==tableVersion&&bank.version==serial){packageUsage.clear();usageGeneration=tableVersion;return true;}
         return false;
     }
     /** Resolve a GPU table row to its current section and protect that active swept region from eviction. */
     public PackageCollisionCache.Section touchPackageUsage(long tableVersion,int row) {
-        open();if(tableVersion!=serial || usageGeneration!=tableVersion || row<0 || row>=tableSize)return null;
-        for(Bank bank:banks)if(bank.version==tableVersion) {
+        open();if(usageGeneration!=tableVersion || row<0 || row>=tableSize)return null;
+        for(Bank bank:banks)if(bank.tableToken==tableVersion&&bank.version==serial) {
             int p=row*HEAD_BYTES,slot=bank.mapped.getInt(p+12);
             if(slot<0 || bank.mapped.getInt(p+24)!=1)return null;
             var section=new PackageCollisionCache.Section(bank.mapped.getInt(p),bank.mapped.getInt(p+4),bank.mapped.getInt(p+8));
@@ -200,18 +202,23 @@ public final class PackageCollisionGpu implements AutoCloseable {
     }
     /** Internal validation switch: disabling coarse empty metadata keeps identical coverage. */
     public View view(int originSectionX,int originSectionY,int originSectionZ,boolean coarseEmpty) {
+        return view(originSectionX,originSectionY,originSectionZ,coarseEmpty,null);
+    }
+    /** Missing historical versions stay absent, so only bodies querying them pause. */
+    public View historicalView(int x,int y,int z,Map<PackageCollisionCache.Section,Long> versions){return view(x,y,z,true,Map.copyOf(versions));}
+    private View view(int originSectionX,int originSectionY,int originSectionZ,boolean coarseEmpty,Map<PackageCollisionCache.Section,Long> versions) {
         if(!validOrigin(originSectionX) || !validOrigin(originSectionY) || !validOrigin(originSectionZ))
             throw new IllegalArgumentException("World origin outside signed block coordinates");
         open();if(viewOpen)throw new IllegalStateException("Nested world view");collect();
         Bank bank=null;
         // Reuse the same immutable table even while previous commands still read it. Its
         // replacement fence covers both submissions; unchanged worlds need no new bank.
-        for(Bank candidate:banks)if(!candidate.leased && candidate.version==serial && candidate.coarse==coarseEmpty){bank=candidate;break;}
+        for(Bank candidate:banks)if(!candidate.leased && candidate.version==serial && candidate.coarse==coarseEmpty&&Objects.equals(candidate.versions,versions)){bank=candidate;break;}
         if(bank==null)for(Bank candidate:banks)if(candidate.fence==0 && !candidate.leased){bank=candidate;break;}
         if(bank!=null) {
-            if(bank.version!=serial || bank.coarse!=coarseEmpty) {
+            if(bank.version!=serial || bank.coarse!=coarseEmpty||!Objects.equals(bank.versions,versions)) {
                 empty(bank.mapped);bank.references.clear();
-                for(Entry entry:entries.values())if(entry.visible>=0) {
+                for(Entry entry:entries.values())if(entry.visible>=0&&(versions==null||Objects.equals(versions.get(entry.section),entry.visibleRevision))) {
                     var s=entry.section;int row=hash(s.x(),s.y(),s.z(),tableSize-1);
                     while(bank.mapped.getInt(row*HEAD_BYTES+12)!=-1)row=(row+1)&(tableSize-1);
                     int p=row*HEAD_BYTES;
@@ -219,7 +226,7 @@ public final class PackageCollisionGpu implements AutoCloseable {
                             .putLong(p+16,entry.visibleRevision).putInt(p+24,1).putInt(p+28,coarseEmpty && entry.visibleEmpty?1:0);
                     bank.references.set(entry.visible);
                 }
-                bank.version=serial;bank.coarse=coarseEmpty;
+                bank.version=serial;bank.coarse=coarseEmpty;bank.versions=versions;bank.tableToken=++tableTokens;
             }
             bank.leased=true;
         } else skippedViews++;
@@ -231,7 +238,7 @@ public final class PackageCollisionGpu implements AutoCloseable {
         private final int x,y,z;
         private boolean ended;
         private View(Bank bank,long version,int x,int y,int z){this.bank=bank;this.version=version;this.x=x;this.y=y;this.z=z;}
-        public long version(){open();if(ended)throw new IllegalStateException("World view ended");return version;}
+        public long version(){open();if(ended)throw new IllegalStateException("World view ended");return bank==null?0:bank.tableToken;}
         /** True only while this view still names the current uploaded table generation. */
         public boolean ready(){open();if(ended)throw new IllegalStateException("World view ended");return bank!=null&&version==serial;}
         public boolean bind(int[] locations,int first,boolean bindBuffers) {

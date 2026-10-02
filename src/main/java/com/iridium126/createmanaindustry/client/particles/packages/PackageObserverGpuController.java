@@ -50,6 +50,8 @@ public final class PackageObserverGpuController implements AutoCloseable {
     private final ArrayDeque<Arrival> queue=new ArrayDeque<>();
     private final Map<PackageRegion,Stream> streams=new HashMap<>();
     private final Map<PackageLease.Identity,Entry> identities=new HashMap<>();
+    private final Map<Integer,Entry> localEntries=new HashMap<>();
+    private final TreeSet<Integer> reusable=new TreeSet<>();
     private final ByteBuffer full=BufferUtils.createByteBuffer(ClientboundPackageObserverPacket.MAX_RECORDS*128);
     private final ByteBuffer compact=BufferUtils.createByteBuffer(ClientboundPackageObserverPacket.MAX_RECORDS*64);
     private final Entry[] additions=new Entry[ClientboundPackageObserverPacket.MAX_RECORDS],changes=new Entry[ClientboundPackageObserverPacket.MAX_RECORDS];
@@ -128,11 +130,11 @@ public final class PackageObserverGpuController implements AutoCloseable {
             clock.observe(p.serverTick(),arrival.receivedNanos(),arrival.oneWayNanos());
         }
         if(p.epoch()!=stream.epoch || p.revision()!=stream.revision)throw new IllegalArgumentException("Observer authority changed inside stream");
-        if(introduced+p.baselines().size()>MAX_RECORDS)throw new IllegalArgumentException("Observer identity namespace exhausted; renew domain");
+        if(identities.size()+p.baselines().size()>MAX_RECORDS)throw new IllegalArgumentException("Observer identity namespace exhausted; renew domain");
         pending=arrival;pendingStream=stream;phase=0;fullCount=compactCount=0;slots=gpu.count();
         overlay.clear();addingIdentities.clear();full.clear();compact.clear();
         long baselineOperation=Math.incrementExact(operation);operation=baselineOperation;
-        int remaining=Math.min(gpu.capacity()-slots,Math.max(0,lifecycle.availableSlots()));
+        int remaining=Math.min(availableLocalSlots(),Math.max(0,lifecycle.availableSlots()));
         for(int i=0;i<p.baselines().size();i++) {
             var member=p.baselines().get(i);var old=identities.get(member.identity());
             if(stream.entries.containsKey(member.index()) || overlay.containsKey(member.index()) || !addingIdentities.add(member.identity())
@@ -140,7 +142,8 @@ public final class PackageObserverGpuController implements AutoCloseable {
                 throw new IllegalArgumentException("Observer duplicate introduction/identity");
             var visual=member.metadata();
             boolean supported=remaining>0 && visual.width()<=2 && visual.height()<=2 && lifecycle.supports(member);
-            var entry=new Entry(stream,member,supported?slots++:-1);additions[i]=entry;overlay.put(member.index(),entry);
+            int local=supported?(reusable.isEmpty()?slots++:reusable.pollFirst()):-1;
+            var entry=new Entry(stream,member,local);additions[i]=entry;overlay.put(member.index(),entry);
             if(supported) {
                 remaining--;
                 full.position(fullCount*128);PackageObserverPatch.baseline(full,entry.local,member.index(),member.identity(),p.epoch(),p.stream(),baselineOperation,
@@ -164,7 +167,7 @@ public final class PackageObserverGpuController implements AutoCloseable {
         var p=pending.packet();var stream=pendingStream;
         for(int i=0;i<p.baselines().size();i++) {
             var entry=additions[i];stream.entries.put(entry.member.index(),entry);identities.put(entry.member.identity(),entry);
-            introduced++;if(entry.local>=0)lifecycle.uploaded(stream.region,stream.epoch,stream.id,entry.member,entry.local);additions[i]=null;
+            introduced++;if(entry.local>=0)localEntries.put(entry.local,entry);if(entry.local>=0)lifecycle.uploaded(stream.region,stream.epoch,stream.id,entry.member,entry.local);additions[i]=null;
         }
         for(int i=0;i<p.changes().size();i++) {
             var entry=changes[i];entry.tick=p.stateTicks().get(i);
@@ -194,8 +197,13 @@ public final class PackageObserverGpuController implements AutoCloseable {
     public int queued(){open();return queue.size();}
     public long stream(PackageRegion region){open();var s=streams.get(region);return s==null||s.closed?0:s.id;}
     public void suspend(PackageRegion region,long now){open();var s=streams.get(region);if(s!=null&&!s.closed)retire(s,clock.now(now));}
+    public int availableLocalSlots(){open();return gpu.capacity()-gpu.count()+reusable.size();}
+    public void recycle(int local){
+        open();var entry=localEntries.get(local);if(entry==null||!entry.retired&&!entry.stream.closed)throw new IllegalArgumentException("Live observer cannot be recycled");
+        gpu.reclaimSlot(local);localEntries.remove(local);identities.remove(entry.member.identity(),entry);entry.stream.entries.remove(entry.member.index(),entry);reusable.add(local);
+    }
     public int pendingFeedback(){open();return feedback.pending();}
     private void open(){if(closed || Thread.currentThread()!=owner)throw new IllegalStateException("Observer controller closed/off owner thread");}
-    @Override public void close(){if(closed)return;open();closed=true;feedback.close();queue.clear();streams.clear();identities.clear();
+    @Override public void close(){if(closed)return;open();closed=true;feedback.close();queue.clear();streams.clear();identities.clear();localEntries.clear();reusable.clear();
         overlay.clear();addingIdentities.clear();Arrays.fill(additions,null);Arrays.fill(changes,null);pending=null;pendingStream=null;}
 }

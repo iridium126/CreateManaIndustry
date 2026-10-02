@@ -105,6 +105,15 @@ public final class PackageObserverGpu implements AutoCloseable {
             GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(ByteBuffer)null);return id;
         }catch(RuntimeException failure){GL15.glDeleteBuffers(id);throw failure;}
     }
+    /** Caller must first confirm exact retired pool admission and drain older GPU references. */
+    public void reclaimSlot(int local){
+        open();if(nativeOrigin!=null||local<0||local>=slots)throw new IllegalArgumentException("Observer recycle domain");
+        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        clearRange(states,(long)local*STATE_BYTES,STATE_BYTES);clearRange(claims,(long)local*4,4);
+        for(int i=0;i<2;i++){clearRange(bodies[i],(long)local*BODY_BYTES,BODY_BYTES);clearRange(history[i],(long)local*HISTORY_BYTES,HISTORY_BYTES);}
+        version++;
+    }
+    private static void clearRange(int buffer,long offset,long bytes){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,offset,bytes,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}}
     /** Slots are the immutable local namespace's high-water count, never a CPU live census.
      * Unknown/reused identities, duplicate destinations and illegal fields set a sticky GPU error;
      * no member of that or any subsequent batch mutates. The adapter must consume control feedback

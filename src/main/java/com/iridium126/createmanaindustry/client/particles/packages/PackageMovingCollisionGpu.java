@@ -94,7 +94,8 @@ public final class PackageMovingCollisionGpu implements AutoCloseable {
         for(var source:captured) {
             Entry e=entries.get(source.identity);Bank bank=null;
             if(e!=null)for(Bank candidate:e.banks)if(candidate.fence==0&&!candidate.leased){bank=candidate;break;}
-            boolean ready=posesReady&&source.previous!=null&&source.current!=null&&source.bounds!=null;
+            boolean ready=posesReady&&source.previous!=null&&source.current!=null&&source.bounds!=null
+                    &&e!=null&&e.visible!=null&&e.visible.revision==source.revision()&&Objects.equals(e.visibleBounds,source.bounds);
             if(bank==null){skippedViews++;result.add(new View(null,false));continue;}
             ByteBuffer p=bank.mapped;p.clear();for(int i=0;i<POSE_BYTES;i+=4)p.putInt(i,0);p.position(0);
             if(ready)try {

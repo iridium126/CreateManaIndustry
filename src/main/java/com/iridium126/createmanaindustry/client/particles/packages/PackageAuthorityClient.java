@@ -48,8 +48,9 @@ public final class PackageAuthorityClient {
         for(var acquisition:activeAcquisitions)if(acquisition.requestReleaseBody(bodyIndex))return true;
         return false;
     }
-    public static ClientboundPackagePacket freePickOffer(PackagePoseQueryGpu.Result result) {
-        for(var acquisition:activeAcquisitions){var offer=acquisition.activeOffer(result);if(offer!=null)return offer;}return null;
+    public static ClientboundPackagePacket freePickOffer(PackagePoseQueryGpu.Result result){return freePickOffer(result,Long.MAX_VALUE);}
+    public static ClientboundPackagePacket freePickOffer(PackagePoseQueryGpu.Result result,long submission) {
+        for(var acquisition:activeAcquisitions){var offer=acquisition.activeOffer(result,submission);if(offer!=null)return offer;}return null;
     }
     /** Internal world-runtime entry. It does not advertise capabilities; the resource owner must
      * also provide physics publication, observer rendering, reload and failure cleanup. */
@@ -83,21 +84,7 @@ public final class PackageAuthorityClient {
                         PackageRenderOwnership.released(region,epoch,baseline);
                         PackageNativeObserverClient.authorityReleased(offer);
                     }
-                    @Override public void restore(ClientboundPackagePacket offer,PackagePoseQueryGpu.Result pose) {
-                        var level=Minecraft.getInstance().level;
-                        if(level==null||!level.dimension().location().equals(offer.dimension()))return;
-                        var entity=level.getEntity(offer.entityId());
-                        if(!(entity instanceof com.simibubi.create.content.logistics.box.PackageEntity box)||box.isRemoved()
-                                ||!box.getUUID().equals(offer.entityUuid())||box.getBbWidth()!=offer.width()||box.getBbHeight()!=offer.height())return;
-                        if(PackageRenderOwnership.restoreNativeRecovery(box,offer)||pose==null||!pose.present())return;
-                        var saved=PackageFreeUpload.retainedCheckpoint(pose,offer.baseline().identity(),offer.height(),ox,oy,oz);
-                        var now=saved.pose();var before=saved.previous();
-                        box.lerpTo(now.x(),now.y(),now.z(),now.yaw(),box.getXRot(),0);box.setPos(now.x(),now.y(),now.z());
-                        box.xo=before.x();box.yo=before.y();box.zo=before.z();box.yRotO=before.yaw();box.setYRot(now.yaw());
-                        box.setDeltaMovement(now.vx(),now.vy(),now.vz());box.setOnGround(saved.ground());
-                        // Do not rebase vanilla VecDeltaCodec: retained native packets still
-                        // use the server codec baseline, independently of visual recovery.
-                    }
+
                 });
         try {
             var channel=open(region,detector.capacity(),epoch,revision,detector,new PackageDeltaChannel.Transport() {
@@ -127,6 +114,12 @@ public final class PackageAuthorityClient {
                 return new ServerboundPackagePacket(predictedPositions?ServerboundPackagePacket.PREDICTED_DELTA:
                         relativePositions?ServerboundPackagePacket.RELATIVE_DELTA:ServerboundPackagePacket.BATCH_DELTA,
                         0,region,e,0,null,0,r,sequence,body);
+            }
+            @Override public Object prepare(long e,long r,long sequence,long step,java.nio.ByteBuffer bytes){
+                byte[] body=new byte[bytes.remaining()];bytes.get(body);
+                return new ServerboundPackagePacket(predictedPositions?ServerboundPackagePacket.PREDICTED_DELTA:
+                        relativePositions?ServerboundPackagePacket.RELATIVE_DELTA:ServerboundPackagePacket.BATCH_DELTA,
+                        0,region,e,0,null,0,r,sequence,body,step);
             }
             @Override public boolean send(long e,long r,long sequence,java.nio.ByteBuffer bytes) {
                 throw new IllegalStateException("Package transport requires worker-prepared packets");
@@ -221,7 +214,7 @@ public final class PackageAuthorityClient {
         }
     }
     public static void receive(ClientboundPackagePacket packet) {
-        if(packet.action()==ClientboundPackagePacket.DETACHED){PackageLightClient.detached(packet);return;}
+        if(packet.action()==ClientboundPackagePacket.ENVIRONMENT_ACK){PackageWorldRuntime.enqueue(packet);return;}
         var level=Minecraft.getInstance().level;
         if(level==null || !level.dimension().location().equals(packet.dimension()))return;
         var channel=channels.get(packet.region());
@@ -238,7 +231,7 @@ public final class PackageAuthorityClient {
             else acquisition.receive(packet);
             if(channel!=null)channel.released(packet.epoch(),packet.baseline());return;
         }
-        if(packet.action()==ClientboundPackagePacket.OFFER || packet.action()==ClientboundPackagePacket.FINAL_BASELINE
+        if(packet.action()==ClientboundPackagePacket.ENVIRONMENT_ACK || packet.action()==ClientboundPackagePacket.OFFER || packet.action()==ClientboundPackagePacket.FINAL_BASELINE
                 || packet.action()==ClientboundPackagePacket.ACTIVE) {
             if(packet.action()==ClientboundPackagePacket.OFFER) {
                 var pose=packet.baseline().snapshot().pose();

@@ -16,7 +16,7 @@ public final class PackageLightObserverClient implements AutoCloseable,PackageOb
     private enum Phase {HIDDEN,VISIBLE,ACTIVE,RETIRED,CLOSED}
     private static final class Entry {
         final PackageRegion region;final long epoch,stream;final PackageLease.Identity identity;final int local,candidate;
-        Phase phase=Phase.HIDDEN,capturedPhase;boolean captured;
+        Phase phase=Phase.HIDDEN,capturedPhase;boolean captured;long retireFence;
         Entry(PackageRegion r,long e,long s,PackageLease.Identity i,int l,int c){region=r;epoch=e;stream=s;identity=i;local=l;candidate=c;}
     }
     private final ClientLevel level;
@@ -29,8 +29,9 @@ public final class PackageLightObserverClient implements AutoCloseable,PackageOb
     private final Set<PackageRegion> subscriptions;
     private final Map<Integer,Entry> locals=new HashMap<>(),candidates=new HashMap<>();
     private final LinkedHashSet<Entry> awaiting=new LinkedHashSet<>();
-    private final java.nio.ByteBuffer metadata=BufferUtils.createByteBuffer(64*80);
-    private final List<Entry> uploads=new ArrayList<>(64),captureEntries=new ArrayList<>(128);
+    private final ArrayDeque<Entry> retired=new ArrayDeque<>();
+    private final java.nio.ByteBuffer metadata=BufferUtils.createByteBuffer(80);
+    private final List<Entry> captureEntries=new ArrayList<>(128);
     private final List<PackageAdmissionTracker.Expected> expected=new ArrayList<>(128);
     private long requestedTick=Long.MIN_VALUE,capture;
     private int active;
@@ -44,11 +45,17 @@ public final class PackageLightObserverClient implements AutoCloseable,PackageOb
     public static void receive(ClientboundPackageObserverPacket packet){var c=current;if(c!=null&&!c.closed&&c.level==Minecraft.getInstance().level){var mc=Minecraft.getInstance();var info=mc.getConnection()==null||mc.player==null?null:mc.getConnection().getPlayerInfo(mc.player.getUUID());long latency=info==null?0:Math.clamp(info.getLatency()*500_000L,0,5_000_000_000L);c.controller.enqueue(packet,System.nanoTime(),latency);}}
     public void prepare(long now) {
         admissions.poll(result->{var e=candidates.get(result.candidate());if(e==null||!e.identity.equals(new PackageLease.Identity(result.id(),result.generation())))throw new IllegalStateException("Light observer admission identity");e.captured=false;if(e.phase!=e.capturedPhase)return;
-            if(e.phase==Phase.RETIRED){if(result.accepted())throw new IllegalStateException("Retired observer still visible");pool.retireIdentity(e.candidate,e.identity.id(),e.identity.generation());PackageLightClient.observed(e.identity,false);e.phase=Phase.CLOSED;awaiting.remove(e);locals.remove(e.local);return;}
+            if(e.phase==Phase.RETIRED){if(result.accepted())throw new IllegalStateException("Retired observer still visible");pool.retireIdentity(e.candidate,e.identity.id(),e.identity.generation());PackageLightClient.observed(e.identity,false);e.phase=Phase.CLOSED;awaiting.remove(e);locals.remove(e.local);candidates.remove(e.candidate);e.retireFence=org.lwjgl.opengl.GL32.glFenceSync(org.lwjgl.opengl.GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);if(e.retireFence==0)throw new IllegalStateException("Observer retirement fence");retired.addLast(e);return;}
             if(!result.accepted()){retired(e.identity,e.local);return;}if(e.phase==Phase.HIDDEN){pool.setHidden(e.candidate,false);e.phase=Phase.VISIBLE;}else if(e.phase==Phase.VISIBLE){e.phase=Phase.ACTIVE;active++;PackageLightClient.observed(e.identity,true);awaiting.remove(e);}});
         var connection=Minecraft.getInstance().getConnection();long tick=level.getGameTime();if(connection!=null&&connection.hasChannel(ServerboundPackageObserverPacket.TYPE)&&(requestedTick==Long.MIN_VALUE||tick-requestedTick>=40)){requestedTick=tick;for(var r:subscriptions)if(controller.stream(r)==0)PacketDistributor.sendToServer(new ServerboundPackageObserverPacket(ServerboundPackageObserverPacket.SUBSCRIBE,r,0));}
         controller.prepare(now,64);
-        flushUploads();
+        for(int n=0;n<64&&!retired.isEmpty()&&controller.pendingFeedback()==0;n++){
+            var e=retired.getFirst();int status=org.lwjgl.opengl.GL32.glClientWaitSync(e.retireFence,0,0);
+            if(status==org.lwjgl.opengl.GL32.GL_WAIT_FAILED)throw new IllegalStateException("Observer retirement fence failed");
+            if(status==org.lwjgl.opengl.GL32.GL_TIMEOUT_EXPIRED)break;
+            retired.removeFirst();org.lwjgl.opengl.GL32.glDeleteSync(e.retireFence);controller.recycle(e.local);pool.makeReusable(e.candidate);
+        }
+        physics.observerReservations(locals.size()+retired.size());
     }
     public void committed(long generation){
         controller.committed(generation);
@@ -60,20 +67,18 @@ public final class PackageLightObserverClient implements AutoCloseable,PackageOb
             for(var e:captureEntries){e.captured=true;e.capturedPhase=e.phase;}
         }
     }
-    @Override public int availableSlots(){return Math.min(physics.observerRemaining(),Math.min(pool.capacity(),131072)-pool.metadataCount()-uploads.size());}
+    @Override public int availableSlots(){return Math.min(controller.availableLocalSlots(),Math.min(physics.observerRemaining(),pool.availableCandidates()));}
     @Override public boolean supports(PackageObserverFeed.Member<ClientboundPackageObserverPacket.Visual> member){return styles.containsKey(member.metadata().model())&&!pool.reservesIdentity(member.identity().id(),member.identity().generation());}
     @Override public void uploaded(PackageObserverFeed.Member<ClientboundPackageObserverPacket.Visual> member,int local){throw new IllegalStateException("Observer scope missing");}
     @Override public void uploaded(PackageRegion region,long epoch,long stream,PackageObserverFeed.Member<ClientboundPackageObserverPacket.Visual> member,int local) {
-        if(uploads.size()==64)flushUploads();
-        int candidate=pool.metadataCount()+uploads.size();var e=new Entry(region,epoch,stream,member.identity(),local,candidate);locals.put(local,e);candidates.put(candidate,e);awaiting.add(e);uploads.add(e);
-        var v=member.metadata();var style=styles.get(v.model());int offset=metadata.position();for(int i=0;i<80;i+=8)metadata.putLong(offset+i,0);
-        metadata.putLong(offset,member.identity().id()).putLong(offset+8,member.identity().generation()).putInt(offset+16,physics.observerBodyIndex(local)).putInt(offset+20,style.box()).putInt(offset+24,PackagePoolGpu.NO_MESH).putInt(offset+28,PackagePoolGpu.HIDDEN).putInt(offset+60,0xf000f0).putFloat(offset+76,v.height()*.85f);metadata.position(offset+80);
+        int candidate=pool.nextCandidate();if(candidate<0)throw new IllegalStateException("Observer metadata capacity");var e=new Entry(region,epoch,stream,member.identity(),local,candidate);locals.put(local,e);candidates.put(candidate,e);awaiting.add(e);
+        var v=member.metadata();var style=styles.get(v.model());metadata.clear().limit(80);int offset=0;for(int i=0;i<80;i+=8)metadata.putLong(offset+i,0);
+        metadata.putLong(offset,member.identity().id()).putLong(offset+8,member.identity().generation()).putInt(offset+16,physics.observerBodyIndex(local)).putInt(offset+20,style.box()).putInt(offset+24,PackagePoolGpu.NO_MESH).putInt(offset+28,PackagePoolGpu.HIDDEN).putInt(offset+60,0xf000f0).putFloat(offset+76,v.height()*.85f);metadata.position(0);pool.writeMetadata(candidate,metadata);physics.observerReservations(locals.size()+retired.size());
     }
-    private void flushUploads(){if(uploads.isEmpty())return;metadata.flip();pool.appendMetadata(metadata,uploads.size());metadata.clear();uploads.clear();}
-    @Override public void retired(PackageLease.Identity identity,int local){flushUploads();var e=locals.get(local);if(e==null||!e.identity.equals(identity)||e.phase==Phase.RETIRED||e.phase==Phase.CLOSED)return;if(e.phase==Phase.ACTIVE)active--;pool.setHidden(e.candidate,true);e.phase=Phase.RETIRED;awaiting.add(e);}
+    @Override public void retired(PackageLease.Identity identity,int local){var e=locals.get(local);if(e==null||!e.identity.equals(identity)||e.phase==Phase.RETIRED||e.phase==Phase.CLOSED)return;if(e.phase==Phase.ACTIVE)active--;pool.setHidden(e.candidate,true);e.phase=Phase.RETIRED;awaiting.add(e);}
     @Override public void namespaceRetired(PackageRegion region,long epoch,long stream){for(var e:new ArrayList<>(locals.values()))if(e.region.equals(region)&&e.epoch==epoch&&e.stream==stream)retired(e.identity,e.local);}
     @Override public void fallback(String reason){failure.accept(reason);}
     public void authority(ClientboundPackagePacket packet){if(packet.action()==ClientboundPackagePacket.OFFER)controller.suspend(packet.region(),System.nanoTime());}
     public int active(){return active;}
-    @Override public void close(){if(closed)return;closed=true;if(current==this)current=null;var connection=Minecraft.getInstance().getConnection();if(connection!=null&&connection.hasChannel(ServerboundPackageObserverPacket.TYPE))for(var region:subscriptions){long stream=controller.stream(region);if(stream!=0)PacketDistributor.sendToServer(new ServerboundPackageObserverPacket(ServerboundPackageObserverPacket.UNSUBSCRIBE,region,stream));}for(var e:locals.values())PackageLightClient.observed(e.identity,false);admissions.close();controller.close();locals.clear();candidates.clear();awaiting.clear();}
+    @Override public void close(){if(closed)return;closed=true;if(current==this)current=null;var connection=Minecraft.getInstance().getConnection();if(connection!=null&&connection.hasChannel(ServerboundPackageObserverPacket.TYPE))for(var region:subscriptions){long stream=controller.stream(region);if(stream!=0)PacketDistributor.sendToServer(new ServerboundPackageObserverPacket(ServerboundPackageObserverPacket.UNSUBSCRIBE,region,stream));}for(var e:locals.values())PackageLightClient.observed(e.identity,false);admissions.close();controller.close();for(var e:retired)org.lwjgl.opengl.GL32.glDeleteSync(e.retireFence);retired.clear();physics.observerReservations(0);locals.clear();candidates.clear();awaiting.clear();}
 }

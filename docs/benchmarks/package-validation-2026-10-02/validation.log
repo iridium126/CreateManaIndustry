@@ -1,0 +1,77 @@
+Calculating task graph as configuration cache cannot be reused because cached artifact information for org.sinytra.adapter.userdev:org.sinytra.adapter.userdev.gradle.plugin:1.2.1-SNAPSHOT has expired.
+> Task :cloneVoxy SKIPPED
+> Task :jarJar NO-SOURCE
+> Task :processTestResources NO-SOURCE
+> Task :extractSableCompanion UP-TO-DATE
+> Task :generateModMetadata UP-TO-DATE
+> Task :prepareVoxy SKIPPED
+> Task :extractSodiumCoreJar UP-TO-DATE
+> Task :activateVoxy SKIPPED
+> Task :buildVoxy SKIPPED
+> Task :cacheVoxy SKIPPED
+> Task :processResources UP-TO-DATE
+> Task :createMinecraftArtifacts UP-TO-DATE
+
+> Task :compileJava
+注: 某些输入文件使用或覆盖了已过时的 API。
+注: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+
+> Task :classes
+> Task :jar
+> Task :assemble
+
+> Task :compileTestJava
+注: D:\MAINFILE\MCMOD\CreateManaIndustry-1.21.1-Neoforge-branch\src\test\java\com\iridium126\createmanaindustry\content\logistics\gpupackage\network\PackagePacketTest.java使用或覆盖了已过时的 API。
+注: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+
+> Task :testClasses
+
+> Task :validatePackageSableAbsent
+Package Sable absent: direct bridge gate passed without Sable/companion
+
+> Task :validatePackageObserverGpu
+scripts\particles\PackageObserverGpuValidation.java:345: 警告: [deprecation] RegistryFriendlyByteBuf中的RegistryFriendlyByteBuf(ByteBuf,RegistryAccess)已过时
+        var bytes=new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY);
+                  ^
+1 个警告
+WARN StatusConsoleListener Advanced terminal features are not available in this environment
+NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2 / 4.5.0 NVIDIA 581.15
+Package observer GPU: 3548729 assertions passed
+
+> Task :validatePackageGpu
+scripts\particles\PackageGpuValidation.java:3202: 警告: [deprecation] RegistryFriendlyByteBuf中的RegistryFriendlyByteBuf(ByteBuf,RegistryAccess)已过时
+        var bytes=new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(),net.minecraft.core.RegistryAccess.EMPTY);
+                  ^
+1 个警告
+NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2 / 4.5.0 NVIDIA 581.15
+Moving collision fixtures passed
+WARN StatusConsoleListener Advanced terminal features are not available in this environment
+Support stack 1 edges=0 corrected=0 rejected=0 top=1.5
+Support stack 32 edges=31 corrected=31 rejected=0 top=32.5
+Support stack 63 edges=62 corrected=62 rejected=0 top=63.5
+Support stack 64 edges=63 corrected=63 rejected=0 top=64.5
+Support stack 65 edges=64 corrected=64 rejected=0 top=65.5
+Support stack 129 edges=128 corrected=128 rejected=0 top=129.5
+Support aligned 1024 pairs=0 max=0.0 fallbacks=0
+Removed support moving=1024 fallback=0 finite=0 root=-2.5633454 vy=-14.341495 top=12.436656 topVy=-14.341495
+Support staggered 1024 pairs=0 max=0.0 fallbacks=0
+Removed support moving=1024 fallback=0 finite=0 root=-2.5633454 vy=-14.341495 top=12.436656 topVy=-14.341495
+Support mixed mass 1024 pairs=0 max=0.0 fallbacks=0
+Removed support moving=1024 fallback=0 finite=0 root=-2.5633454 vy=-14.341495 top=12.436658 topVy=-14.341495
+Package GPU: 11765762 assertions passed
+
+> Task :test
+> Task :check
+> Task :build
+
+[Incubating] Problems report is available at: file:///D:/MAINFILE/MCMOD/CreateManaIndustry-1.21.1-Neoforge-branch/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.2.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 49s
+12 actionable tasks: 7 executed, 5 up-to-date
+Configuration cache entry stored.

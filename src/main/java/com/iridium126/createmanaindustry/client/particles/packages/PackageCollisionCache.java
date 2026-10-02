@@ -170,6 +170,7 @@ public final class PackageCollisionCache {
     public void clearPackageUsage(){owner();packageUsage.clear();}
     public void protectPackageUsage(Section section){owner();if(sections.containsKey(section))packageUsage.add(section);}
     public Snapshot snapshot(Section section) { owner(); Work w=sections.get(section); return w==null?null:w.published; }
+    public java.util.Map<Section,Long> versions(){owner();var result=new java.util.HashMap<Section,Long>();for(var entry:sections.entrySet())result.put(entry.getKey(),entry.getValue().revision);return java.util.Map.copyOf(result);}
     public int size(){owner();return sections.size();}
     public long capacityEvictions(){owner();return capacityEvictions;}
     public long capacityRejections(){owner();return capacityRejections;}

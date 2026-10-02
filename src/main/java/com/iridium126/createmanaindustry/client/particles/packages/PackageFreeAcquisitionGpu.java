@@ -27,9 +27,6 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         void activated(ClientboundPackagePacket offer,ClientboundPackagePacket active,int candidate,int slotPlusOne);
         /** The retired candidate has disappeared from a successfully committed pool. */
         void released(ClientboundPackagePacket offer,PackageAuthorityRegion.Baseline baseline);
-        /** Visual handback before releasing the render claim; NONE allows native recovery.
-         * Completed cached GPU state only, no fence wait, network ACK or gameplay transaction. */
-        default void restore(ClientboundPackagePacket offer,PackagePoseQueryGpu.Result pose) {}
     }
     private enum Phase { RESOURCES, OFFER_ADMISSION, PREPARED, FINAL_UPLOAD, FINAL_ADMISSION,
         FINAL_READY, ACTIVATE, VISIBLE_ADMISSION, ACTIVE, RETIRE, RETIRED_ADMISSION, RELEASED }
@@ -38,7 +35,7 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         ClientboundPackagePacket checkpoint,active;
         Phase phase=Phase.RESOURCES,capturedPhase;
         int body=-1,candidate=-1,delta=-1;
-        boolean queued,captured,terminal,owned;
+        boolean queued,captured,terminal,owned;long environmentAck,capturedSubmission,capturedCommit,visibleSince,retireBarrier,environmentBarrier,retireFence;
         Entry(ClientboundPackagePacket offer){this.offer=checkpoint=offer;}
     }
     private static final int MAX_TRANSITIONS=PackageAuthorityRegion.MAX_PENDING;
@@ -49,13 +46,13 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
     private final PackagePoolGpu pool;
     private final PackageDeltaGpu detector;
     private PackageDeltaChannel channel;
-    private PackageFreeCheckpointGpu checkpoints;
     private final Map<ResourceLocation,PackageModelCache.Style> styles;
     private final Transport transport;
     private final ToIntFunction<ClientboundPackagePacket> light;
     private final PackageAdmissionTracker admissions;
     private final Map<Integer,Entry> entries=new HashMap<>(),byCandidate=new HashMap<>(),byBody=new HashMap<>();
     private final Set<PackageLease.Identity> reservedIdentities=new HashSet<>();
+    private final ArrayDeque<Entry> retired=new ArrayDeque<>();
     private final ArrayDeque<Entry> work=new ArrayDeque<>();
     private final LinkedHashSet<Entry> awaiting=new LinkedHashSet<>();
     private final ArrayList<Entry> captureEntries=new ArrayList<>(MAX_TRANSITIONS);
@@ -85,16 +82,16 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
     public int activeCount(){open();return activeCount;}
     /** Resolve one GPU result through this confirmed lease; a pool index alone never selects
      * a gameplay entity. Terminal/retiring/hidden/observer results cannot enter native input. */
-    public ClientboundPackagePacket activeOffer(PackagePoseQueryGpu.Result result) {
-        open();if(result==null||!result.present()||result.chain()||result.flags()!=PackagePoolGpu.HANDBACKABLE||result.state()<0)return null;
+    public ClientboundPackagePacket activeOffer(PackagePoseQueryGpu.Result result){return activeOffer(result,Long.MAX_VALUE);}
+    public ClientboundPackagePacket activeOffer(PackagePoseQueryGpu.Result result,long submission) {
+        open();if(result==null||!result.present()||result.chain()||result.flags()!=PackagePoolGpu.HANDBACKABLE||(result.state()<0&&result.state()!=PackagePhysicsGpu.COLLISION_FROZEN))return null;
         var entry=byCandidate.get(result.candidate());
-        if(entry==null||entry.terminal||entry.phase!=Phase.ACTIVE||entry.body!=result.body())return null;
+        if(entry==null||entry.terminal||entry.phase!=Phase.ACTIVE||entry.body!=result.body()||submission<entry.visibleSince)return null;
         var identity=entry.offer.baseline().identity();
         return identity.id()==result.id()&&identity.generation()==result.generation()
                 &&result.halfHeight()==entry.offer.height()*.5f?entry.offer:null;
     }
     public int pendingCount(){open();return transitions;}
-    public void emergencyCheckpoints(PackageFreeCheckpointGpu checkpoints){open();if(this.checkpoints!=null||!entries.isEmpty())throw new IllegalStateException("Free checkpoint attachment");this.checkpoints=java.util.Objects.requireNonNull(checkpoints);}
     /** Attach before accepting any offers: detector and CPU journal must share candidate order. */
     public void attachChannel(PackageDeltaChannel channel) {
         open();
@@ -108,6 +105,7 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         open();
         if(!region.equals(packet.region()) || packet.epoch()!=epoch || packet.regionRevision()!=revision)return false;
         if(packet.action()==ClientboundPackagePacket.ACK)return false;
+        if(packet.action()==ClientboundPackagePacket.ENVIRONMENT_ACK){environmentAck(packet);return true;}
         var b=packet.baseline();Entry entry=entries.get(b.index());
         if(packet.action()==ClientboundPackagePacket.OFFER) {
             if(entry!=null) {
@@ -175,6 +173,15 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         open();if(maxTransitions<0 || maxTransitions>MAX_TRANSITIONS)throw new IllegalArgumentException("Acquisition work budget");
         if(channel==null)throw new IllegalStateException("Package acquisition has no identity journal");
         admissions.poll(this::confirmed);
+        int recycling=Math.min(maxTransitions,retired.size());
+        for(int i=0;i<recycling;i++){
+            var entry=retired.removeFirst();int status=org.lwjgl.opengl.GL32.glClientWaitSync(entry.retireFence,org.lwjgl.opengl.GL32.GL_SYNC_FLUSH_COMMANDS_BIT,0);
+            if(status==org.lwjgl.opengl.GL32.GL_WAIT_FAILED)throw new IllegalStateException("Package retirement fence failed");
+            if(status==org.lwjgl.opengl.GL32.GL_TIMEOUT_EXPIRED||!channel.recyclable(entry.delta,entry.retireBarrier)
+                    ||physics.environment()!=null&&!physics.environment().drained(entry.environmentBarrier)) {retired.addLast(entry);continue;}
+            org.lwjgl.opengl.GL32.glDeleteSync(entry.retireFence);entry.retireFence=0;
+            channel.recycle(entry.delta);pool.makeReusable(entry.candidate);physics.recycleFree(entry.body);
+        }
         int n=Math.min(maxTransitions,work.size());
         for(int i=0;i<n;i++) {
             Entry entry=work.removeFirst();entry.queued=false;if(entry.terminal)continue;
@@ -183,14 +190,14 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
                     if(!covered.test(entry.offer,entry.checkpoint)){queue(entry);continue;}
                     var identity=entry.offer.baseline().identity();
                     if(pool.reservesIdentity(identity.id(),identity.generation())){queue(entry);continue;}
-                    if(physics.freeCount()>=physics.freeCapacity() || physics.freeCount()+physics.chainCount()+physics.observerCount()>=131072
-                            || pool.metadataCount()>=Math.min(pool.capacity(),131072) || detector.metadataCount()>=detector.capacity()) {
+                    if(physics.nextFreeBody()<0||physics.freeLiveCount()+physics.chainLiveCount()+physics.observerLiveCount()>=131072
+                            ||pool.nextCandidate()<0||detector.nextCandidate()<0) {
                         release(entry,entry.checkpoint.baseline(),true);continue;
                     }
-                    int local=physics.freeCount();
+                    int local=physics.nextFreeBody();
                     try{encode(entry,local);}catch(IllegalArgumentException unsupported){release(entry,entry.checkpoint.baseline(),true);continue;}
-                    entry.body=local;entry.candidate=pool.metadataCount();entry.delta=detector.metadataCount();
-                    physics.appendFree(body,emptyChain,1);byBody.put(local,entry);pool.appendMetadata(metadata,1);channel.append(delta,baseline,1);
+                    entry.body=local;entry.candidate=pool.nextCandidate();entry.delta=detector.nextCandidate();
+                    physics.writeFree(local,body,emptyChain);byBody.put(local,entry);pool.writeMetadata(entry.candidate,metadata);channel.write(entry.delta,delta,baseline);
                     byCandidate.put(entry.candidate,entry);entry.phase=Phase.OFFER_ADMISSION;awaiting.add(entry);
                 }
                 case FINAL_UPLOAD -> {
@@ -205,14 +212,26 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
                     entry.phase=Phase.VISIBLE_ADMISSION;awaiting.add(entry);
                 }
                 case RETIRE -> {
-                    physics.retireFree(entry.body);pool.setHandbackable(entry.candidate,false);pool.setHidden(entry.candidate,true);
+                    physics.retireFree(entry.body);if(physics.environment()!=null)physics.environment().retire(entry.body);pool.setHandbackable(entry.candidate,false);pool.setHidden(entry.candidate,true);
                     entry.phase=Phase.RETIRED_ADMISSION;awaiting.add(entry);
                 }
                 default -> throw new IllegalStateException("Unexpected queued acquisition phase "+entry.phase);
             }
         }
     }
+    public ClientboundPackagePacket environmentOffer(int bodyIndex,long id,long generation,long lease,int index,long revision){
+        open();var entry=byBody.get(bodyIndex);if(entry==null||entry.terminal||entry.phase!=Phase.ACTIVE)return null;
+        var b=entry.checkpoint.baseline();return b.identity().id()==id&&b.identity().generation()==generation&&b.leaseEpoch()==lease&&b.index()==index&&b.revision()==revision?entry.checkpoint:null;
+    }
+    public void environmentAck(ClientboundPackagePacket packet){
+        open();if(packet.epoch()!=epoch||packet.regionRevision()!=revision||!packet.region().equals(region))return;
+        var entry=entries.get(packet.baseline().index());
+        if(entry==null||entry.terminal||entry.phase!=Phase.ACTIVE||!sameIdentity(entry,packet)
+                ||entry.checkpoint.baseline().leaseEpoch()!=packet.baseline().leaseEpoch()||entry.checkpoint.baseline().revision()!=packet.baseline().revision()||packet.sequence()<=entry.environmentAck)return;
+        entry.environmentAck=packet.sequence();if(physics.environment()!=null)physics.environment().acknowledge(entry.body,packet.sequence(),packet.fireTicks(),packet.health(),packet.environmentPermissions());
+    }
     private void encode(Entry entry,int bodyIndex) {
+        if(physics.environment()!=null){var b=entry.checkpoint.baseline();physics.environment().reset(bodyIndex,b.identity().id(),b.identity().generation(),b.leaseEpoch(),b.index(),b.revision(),entry.checkpoint.fireTicks(),entry.checkpoint.health(),entry.checkpoint.environmentPermissions());entry.environmentAck=0;}
         PackageFreeUpload.prepared(entry.offer,entry.checkpoint,styles.get(entry.offer.model()),bodyIndex,light.applyAsInt(entry.offer),ox,oy,oz,
                 body,metadata,delta,baseline);
     }
@@ -244,22 +263,21 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         long confirmation=channel.confirmationVersion();
         if(activeCount==0 || (version==lastCaptureVersion && confirmation==lastCaptureConfirmation))return false;
         boolean captured=channel.capture(physics.bodyBuffer(),physics.bodyCount(),
-                (float)(ox-region.originX()),(float)(oy-region.originY()),(float)(oz-region.originZ()));
+                (float)(ox-region.originX()),(float)(oy-region.originY()),(float)(oz-region.originZ()),physics.freeSimulationStep());
         if(captured){lastCaptureVersion=version;lastCaptureConfirmation=confirmation;}return captured;
     }
     private boolean submit(ArrayList<Entry> batch,ArrayList<PackageAdmissionTracker.Expected> expected) {
         if(!admissions.submit(pool,batch.getFirst().candidate,expected,nextCapture++))return false;
-        for(Entry entry:batch){entry.captured=true;entry.capturedPhase=entry.phase;}return true;
+        for(Entry entry:batch){entry.captured=true;entry.capturedPhase=entry.phase;entry.capturedSubmission=nextCapture-1;entry.capturedCommit=lastCommit;}return true;
     }
     private void confirmed(PackageAdmissionTracker.Outcome result) {
         Entry entry=byCandidate.get(result.candidate());
-        if(entry==null || !entry.captured)throw new IllegalStateException("Unknown acquisition admission");
+        if(entry==null||!entry.captured||entry.capturedSubmission!=result.submission()||entry.offer.baseline().identity().id()!=result.id()||entry.offer.baseline().identity().generation()!=result.generation())return;
         entry.captured=false;
         if(entry.terminal || entry.phase!=entry.capturedPhase)return; // Superseded by a terminal notice.
         awaiting.remove(entry);
         if(entry.phase==Phase.RETIRED_ADMISSION) {
             if(result.accepted())throw new IllegalStateException("Retired package still admitted");
-            restoreOwned(entry);
             finish(entry);transport.released(entry.offer,entry.checkpoint.baseline());return;
         }
         if(!result.accepted()){release(entry,entry.checkpoint.baseline(),true);return;}
@@ -267,7 +285,7 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
             case OFFER_ADMISSION -> {entry.phase=Phase.PREPARED;transport.control(ServerboundPackagePacket.PREPARED,entry.checkpoint);}
             case FINAL_ADMISSION -> {entry.phase=Phase.FINAL_READY;transport.control(ServerboundPackagePacket.FINAL_READY,entry.checkpoint);}
             case VISIBLE_ADMISSION -> {
-                entry.phase=Phase.ACTIVE;entry.owned=true;transitions--;activeCount++;
+                entry.phase=Phase.ACTIVE;entry.owned=true;entry.visibleSince=entry.capturedCommit;transitions--;activeCount++;
                 transport.activated(entry.offer,entry.active,entry.candidate,result.slotPlusOne());
             }
             default -> throw new IllegalStateException("Unexpected acquisition admission phase "+entry.phase);
@@ -277,23 +295,15 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         var identity=entry.offer.baseline().identity();
         if(entry.body>=0){pool.retireIdentity(entry.candidate,identity.id(),identity.generation());detector.retireIdentity(entry.delta,identity.id(),identity.generation());}
         entry.phase=Phase.RELEASED;entry.terminal=true;entry.owned=false;transitions--;awaiting.remove(entry);
-        if(entry.body>=0)byBody.remove(entry.body,entry);
+        entries.remove(entry.offer.baseline().index(),entry);byCandidate.remove(entry.candidate,entry);
+        if(entry.body>=0){byBody.remove(entry.body,entry);entry.retireBarrier=detector.captureBarrier();entry.environmentBarrier=physics.environment()==null?-1:physics.environment().barrier();
+            entry.retireFence=org.lwjgl.opengl.GL32.glFenceSync(org.lwjgl.opengl.GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);if(entry.retireFence==0)throw new IllegalStateException("Retirement fence unavailable");retired.addLast(entry);}
         reservedIdentities.remove(identity);
     }
     private void open(){if(closed || Thread.currentThread()!=owner)throw new IllegalStateException("Acquisition closed/off render thread");}
-    private void restoreOwned(Entry entry) {
-        if(!entry.owned||entry.candidate<0)return;
-        var identity=entry.offer.baseline().identity();
-        transport.restore(entry.offer,checkpoints==null?PackagePoseQueryGpu.Result.NONE:
-                checkpoints.find(entry.candidate,identity.id(),identity.generation()));
-    }
     @Override public void close(){
-        if(closed)return;
-        try {
-            if(checkpoints!=null)try{checkpoints.poll();}catch(RuntimeException failed){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] final free checkpoint poll failed",failed);}
-            for(var e:entries.values())if(e.owned)try {
-                restoreOwned(e);
-            }catch(RuntimeException failed){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] free checkpoint restore failed; retaining native state",failed);}
-        }finally{closed=true;admissions.close();work.clear();awaiting.clear();entries.clear();byCandidate.clear();byBody.clear();reservedIdentities.clear();captureEntries.clear();captureExpected.clear();checkpoints=null;}
+        if(closed)return;closed=true;admissions.close();
+        for(var entry:retired)if(entry.retireFence!=0)org.lwjgl.opengl.GL32.glDeleteSync(entry.retireFence);
+        retired.clear();work.clear();awaiting.clear();entries.clear();byCandidate.clear();byBody.clear();reservedIdentities.clear();captureEntries.clear();captureExpected.clear();
     }
 }

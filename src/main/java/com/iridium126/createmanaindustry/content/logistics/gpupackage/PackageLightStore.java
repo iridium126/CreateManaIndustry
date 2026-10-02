@@ -25,6 +25,7 @@ public final class PackageLightStore extends SavedData {
         private net.minecraft.world.item.ItemStack box;
         int insertionDelay=30;
         int fireTicks,portalCooldown;
+        long portalUpdatedTick,environmentStep;
         float health=5;
         UUID tossedBy;
         Entry(PackageLease.Identity identity,UUID uuid,ResourceLocation model,float width,float height,int entityId,
@@ -33,9 +34,15 @@ public final class PackageLightStore extends SavedData {
             if(!Float.isFinite(width)||!Float.isFinite(height)||width<=0||height<=0||width>16||height>16)throw new IllegalArgumentException("Light package dimensions");
             this.width=width;this.height=height;this.entityId=entityId;this.data=data.copy();this.state=Objects.requireNonNull(state);
         }
+        public int fireTicks(){return fireTicks;}
+        public float health(){return health;}
+        public boolean portalReady(long tick){if(portalCooldown>0){portalCooldown=(int)Math.max(0,portalCooldown-Math.max(0,tick-portalUpdatedTick));portalUpdatedTick=tick;}return portalCooldown==0;}
         public PackageAuthorityRegion.Snapshot state(){return state;}
         public AABB bounds(){var p=state.pose();double r=width*.5;return new AABB(p.x()-r,p.y(),p.z()-r,p.x()+r,p.y()+height,p.z()+r);}
         public net.minecraft.world.item.ItemStack box(ServerLevel level){if(box==null)box=net.minecraft.world.item.ItemStack.parseOptional(level.registryAccess(),data.getCompound("Box"));return box;}
+        public void replaceBox(ServerLevel level,net.minecraft.world.item.ItemStack remainder){
+            box=remainder.copy();data.put("Box",box.save(level.registryAccess()));
+        }
         public net.minecraft.world.phys.Vec3 position(){var p=state.pose();return new net.minecraft.world.phys.Vec3(p.x(),p.y(),p.z());}
     }
     private final Map<PackageLease.Identity,Entry> entries=new LinkedHashMap<>();
@@ -47,7 +54,7 @@ public final class PackageLightStore extends SavedData {
     public Entry capture(PackageEntity entity,PackageLease.Identity identity,PackageAuthorityRegion.Snapshot state) {
         var data=new CompoundTag();entity.saveWithoutId(data);
         var entry=new Entry(identity,entity.getUUID(),BuiltInRegistries.ITEM.getKey(entity.box.getItem()),
-                entity.getBbWidth(),entity.getBbHeight(),entity.getId(),data,state);entry.insertionDelay=entity.insertionDelay;entry.health=entity.getHealth();entry.fireTicks=Math.max(0,entity.getRemainingFireTicks());entry.portalCooldown=entity.getPortalCooldown();var thrower=entity.tossedBy.get();if(thrower!=null)entry.tossedBy=thrower.getUUID();put(entry);return entry;
+                entity.getBbWidth(),entity.getBbHeight(),entity.getId(),data,state);entry.insertionDelay=entity.insertionDelay;entry.health=entity.getHealth();entry.fireTicks=Math.max(0,entity.getRemainingFireTicks());entry.portalCooldown=entity.getPortalCooldown();entry.portalUpdatedTick=entity.level().getGameTime();var thrower=entity.tossedBy.get();if(thrower!=null)entry.tossedBy=thrower.getUUID();put(entry);return entry;
     }
     void put(Entry entry) {
         if(entries.containsKey(entry.identity)||uuids.containsKey(entry.uuid)||entry.entityId>=0&&ids.containsKey(entry.entityId))
@@ -92,7 +99,7 @@ public final class PackageLightStore extends SavedData {
             var p=new PackageLease.Pose(row.getDouble("X"),row.getDouble("Y"),row.getDouble("Z"),row.getFloat("Vx"),row.getFloat("Vy"),row.getFloat("Vz"),row.getFloat("Yaw"));
             var entry=new Entry(identity,row.getUUID("UUID"),ResourceLocation.parse(row.getString("Model")),row.getFloat("Width"),row.getFloat("Height"),-1,
                     row.getCompound("Data"),new PackageAuthorityRegion.Snapshot(p,row.getInt("Flags")));
-            entry.insertionDelay=row.contains("InsertionDelay")?Math.clamp(row.getInt("InsertionDelay"),0,30):30;entry.health=row.contains("Health")?row.getFloat("Health"):5;entry.fireTicks=Math.max(0,row.getInt("FireTicks"));entry.portalCooldown=Math.max(0,row.getInt("PortalCooldown"));if(row.hasUUID("TossedBy"))entry.tossedBy=row.getUUID("TossedBy");store.put(entry);
+            entry.insertionDelay=row.contains("InsertionDelay")?Math.clamp(row.getInt("InsertionDelay"),0,30):30;entry.health=row.contains("Health")?row.getFloat("Health"):5;entry.fireTicks=Math.max(0,row.getInt("FireTicks"));entry.environmentStep=row.getLong("EnvironmentStep");entry.portalCooldown=Math.max(0,row.getInt("PortalCooldown"));if(row.hasUUID("TossedBy"))entry.tossedBy=row.getUUID("TossedBy");store.put(entry);
         }
         return store;
     }
@@ -102,7 +109,7 @@ public final class PackageLightStore extends SavedData {
             var row=new CompoundTag();var p=e.state.pose();row.putLong("Id",e.identity.id());row.putLong("Generation",e.identity.generation());
             row.putUUID("UUID",e.uuid);row.putString("Model",e.model.toString());row.putFloat("Width",e.width);row.putFloat("Height",e.height);
             row.put("Data",e.data.copy());row.putDouble("X",p.x());row.putDouble("Y",p.y());row.putDouble("Z",p.z());
-            row.putInt("InsertionDelay",e.insertionDelay);row.putFloat("Health",e.health);row.putInt("FireTicks",e.fireTicks);row.putInt("PortalCooldown",e.portalCooldown);if(e.tossedBy!=null)row.putUUID("TossedBy",e.tossedBy);
+            row.putLong("EnvironmentStep",e.environmentStep);row.putInt("InsertionDelay",e.insertionDelay);row.putFloat("Health",e.health);row.putInt("FireTicks",e.fireTicks);row.putInt("PortalCooldown",e.portalCooldown);if(e.tossedBy!=null)row.putUUID("TossedBy",e.tossedBy);
             row.putFloat("Vx",p.vx());row.putFloat("Vy",p.vy());row.putFloat("Vz",p.vz());row.putFloat("Yaw",p.yaw());row.putInt("Flags",e.state.flags());rows.add(row);
         }
         tag.put("Packages",rows);return tag;

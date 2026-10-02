@@ -7,7 +7,7 @@ void main() {
     Body b=src[i];
     if(b.positionMass.w>0.0 && b.previousSleep.w>=0.0) {
         uint slot=bodySlots[i];
-        if(slot==GRID_OVERFLOW || heads[slot*4u+3u]==GRID_OVERFLOW)b.previousSleep.w=-1.0;
+        if(slot==GRID_OVERFLOW || heads[slot*4u+3u]==GRID_OVERFLOW)freezeForMissingCollision(b,b.previousSleep.xyz);
     }
     // Publish all admission decisions before consumers run. Positions stay
     // unchanged, so the exact-cell index still names this new state correctly.

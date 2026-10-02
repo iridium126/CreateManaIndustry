@@ -1,0 +1,15 @@
+#pragma cmi_include packages/state.glsl
+layout(std430,binding=7) buffer FastCells { uint fastCells[]; };
+layout(local_size_x=64) in;
+void main(){
+    uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
+    Body b=src[i];if(b.positionMass.w<=0.0||b.previousSleep.w<0.0)return;
+    vec3 motion=b.positionMass.xyz-b.previousSleep.xyz;
+    if(all(lessThanEqual(abs(motion),max(b.extentYaw.xyz,vec3(1e-5)))))return;
+    if(any(greaterThan(abs(motion),vec3(uCellSize))))return;
+    vec3 padding=b.extentYaw.xyz+vec3(uCellSize*1.5+1e-4);
+    ivec3 lo=cellOf(min(b.previousSleep.xyz,b.positionMass.xyz)-padding);
+    ivec3 hi=cellOf(max(b.previousSleep.xyz,b.positionMass.xyz)+padding);
+    for(int z=lo.z;z<=hi.z;z++)for(int y=lo.y;y<=hi.y;y++)for(int x=lo.x;x<=hi.x;x++)
+        atomicOr(fastCells[hashCell(ivec3(x,y,z))],1u);
+}

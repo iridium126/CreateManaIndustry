@@ -30,6 +30,7 @@ public final class PackageChainTrackGpu implements AutoCloseable {
     private int tracks,nodes,metadata,events,flights,ackRecords,count,trackCount,nodeCount;
     private long nextStep=1,nextStamp=1;
     private boolean closed;
+    private final java.util.TreeSet<Integer> reusable=new java.util.TreeSet<>();
 
     public PackageChainTrackGpu(int capacity,int trackCapacity,int nodeCapacity,Function<String,String> sources) {
         if(capacity<1 || capacity>131072 || trackCapacity<1 || trackCapacity>131072 || nodeCapacity<1 || nodeCapacity>1_048_576
@@ -134,6 +135,22 @@ public final class PackageChainTrackGpu implements AutoCloseable {
             identities.reserve(v.getLong(p),v.getLong(p+8),count+i);
         }
         count+=n;
+    }
+    public int nextCandidate(){open();return reusable.isEmpty()?(count<capacity?count:-1):reusable.first();}
+    public long captureBarrier(){open();return nextStamp-1;}
+    public void makeReusable(int candidate){
+        open();if(candidate<0||candidate>=count||lifecycle[candidate]!=2||reusable.contains(candidate))throw new IllegalArgumentException("Chain recycle fence");
+        identities.reclaim(candidate);reusable.add(candidate);
+        while(count>0&&reusable.remove(count-1)){count--;lifecycle[count]=0;candidateIdentities[count*2]=candidateIdentities[count*2+1]=0;candidateTracks[count]=0;}
+    }
+    public void write(int candidate,ByteBuffer data){
+        open();if(candidate==count){append(data);return;}
+        if(!reusable.remove(candidate)||layout(data,META_BYTES,1)!=1)throw new IllegalArgumentException("Chain replacement fence");
+        var v=view(data);int p=v.position(),track=v.getInt(p+16),mask=v.getInt(p+20);
+        long id=v.getLong(p),generation=v.getLong(p+8);
+        if(id<=0||generation<=0||identities.contains(id,generation)||track<0||track>=trackCount||v.getInt(p+24)!=0||v.getInt(p+28)!=0||nodeLength[track]<32&&(mask>>>nodeLength[track])!=0)throw new IllegalArgumentException("Chain replacement identity");
+        upload(metadata,(long)candidate*META_BYTES,data);lifecycle[candidate]=0;candidateIdentities[candidate*2]=id;candidateIdentities[candidate*2+1]=generation;candidateTracks[candidate]=track;identities.reserve(id,generation,candidate);
+        try(var stack=MemoryStack.stackPush()){upload(events,(long)candidate*EVENT_BYTES,stack.calloc(EVENT_BYTES));upload(flights,(long)candidate*4,stack.calloc(4));}
     }
     /** Final checkpoint may update eligibility only while the exact identity is still prepared.
      * Never reads GL buffers back or changes the channel's candidate/identity namespace. */

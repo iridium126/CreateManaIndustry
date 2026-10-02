@@ -32,6 +32,7 @@ public final class PackageDeltaJournal implements AutoCloseable {
     @FunctionalInterface public interface Preparer {
         /** Worker-only: build immutable transport data; no I/O, OpenGL or mutable world access. */
         Object prepare(long sequence,ByteBuffer bytes);
+        default Object prepare(long sequence,long simulationStep,ByteBuffer bytes){return prepare(sequence,bytes);}
     }
     public record Ack(int stamp,ByteBuffer records,long sentNanos,long queuedNanos) {}
     @FunctionalInterface interface RecordCodec {
@@ -43,7 +44,7 @@ public final class PackageDeltaJournal implements AutoCloseable {
         final long[] order;
         Slot(int batch,int bytes){raw=ByteBuffer.allocateDirect(batch*64).order(ByteOrder.nativeOrder());wire=ByteBuffer.allocate(bytes);order=new long[batch];}
         volatile long sequence=-1;
-        long queuedNanos,sentNanos;
+        long queuedNanos,sentNanos,simulationStep;
         int stamp,count;
         Object prepared;
         volatile int state;
@@ -90,7 +91,7 @@ public final class PackageDeltaJournal implements AutoCloseable {
         identities=new long[capacity*2];localIds=new int[capacity];reserved=new int[capacity];releaseNotified=new boolean[capacity];candidates.defaultReturnValue(-1);
     }
     private void open(){if(Thread.currentThread()!=owner)throw new IllegalStateException("Delta journal off owner thread");if(closed)throw new IllegalStateException("Delta journal closed");}
-    /** Append only. Never reuse a candidate or server-local identity within this region epoch. */
+    /** Append initial candidates; reuse requires a drained candidate and a new exact identity. */
     public void append(ByteBuffer metadata,int count) {
         open();if(count<0 || identityCount+count>localIds.length || metadata.remaining()!=count*32)throw new IllegalArgumentException("Journal identity layout");
         var input=metadata.duplicate().order(ByteOrder.nativeOrder());int start=input.position();
@@ -106,8 +107,17 @@ public final class PackageDeltaJournal implements AutoCloseable {
         }
         identityCount+=count;
     }
+    public boolean recyclable(int candidate){open();return candidate>=0&&candidate<identityCount&&reserved[candidate]==0;}
+    public void replace(int candidate,ByteBuffer metadata){
+        open();if(candidate==identityCount){append(metadata,1);return;}
+        if(!recyclable(candidate)||metadata.remaining()!=32)throw new IllegalArgumentException("Journal replacement has references");
+        var v=metadata.duplicate().order(ByteOrder.nativeOrder());int p=v.position(),local=v.getInt(p+20);
+        if(local<0||(candidates.containsKey(local)&&candidates.get(local)!=candidate)||v.getLong(p)<=0||v.getLong(p+8)<=0)throw new IllegalArgumentException("Journal replacement identity");
+        candidates.remove(localIds[candidate]);localIds[candidate]=local;identities[candidate*2]=v.getLong(p);identities[candidate*2+1]=v.getLong(p+8);candidates.put(local,candidate);releaseNotified[candidate]=false;
+    }
     /** Atomically borrow a whole <=1MiB fragment. Full capacity retains its readback slot. */
-    public boolean offer(int stamp,ByteBuffer fragment,long now) {
+    public boolean offer(int stamp,ByteBuffer fragment,long now){return offer(stamp,fragment,now,0);}
+    public boolean offer(int stamp,ByteBuffer fragment,long now,long simulationStep) {
         open();int bytes=fragment.remaining(),count=bytes/64,needed=(count+batch-1)/batch;
         if(stamp==0 || bytes<=0 || bytes%64!=0 || bytes>1024*1024)throw new IllegalArgumentException("Journal fragment");
         if(pending+needed>slots.length)return false;
@@ -126,7 +136,7 @@ public final class PackageDeltaJournal implements AutoCloseable {
             int n=Math.min(batch,count-i*batch),position=start+i*batch*64;
             var source=input.duplicate();source.position(position).limit(position+n*64);
             slot.raw.clear().put(source).flip();slot.sequence=nextSequence++;slot.stamp=stamp;slot.count=n;slot.prepared=null;
-            slot.queuedNanos=now;slot.state=QUEUED;pending++;
+            slot.queuedNanos=now;slot.simulationStep=simulationStep;slot.state=QUEUED;pending++;
         }
         groups.addLast(new Group(first,needed,identityCount));return true;
     }
@@ -140,7 +150,7 @@ public final class PackageDeltaJournal implements AutoCloseable {
                     for(int i=0;i<group.slots;i++) {
                         Slot slot=slot(group.first+i);
                         codec.encode(slot.raw.asReadOnlyBuffer(),slot.count,slot.wire,slot.order,identities,localIds,group.identities);
-                        slot.prepared=preparer.prepare(slot.sequence,slot.wire.asReadOnlyBuffer());
+                        slot.prepared=preparer.prepare(slot.sequence,slot.simulationStep,slot.wire.asReadOnlyBuffer());
                     }
                 });
                 if(group.future==null)break;

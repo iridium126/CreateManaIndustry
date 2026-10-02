@@ -14,5 +14,5 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(FunnelMovementBehaviour.class)
 public abstract class PackageMovingFunnelLightMixin {
     @Inject(method="succ",at=@At("TAIL"))
-    private void cmi$lightCollect(MovementContext context,BlockPos pos,CallbackInfo ci){if(!(context.world instanceof ServerLevel level))return;var filter=context.getFilterFromBE();for(var entry:PackageAuthorityManager.queryLight(level,new AABB(pos))){var box=entry.box(level);if(!filter.test(level,box))continue;var remainder=ItemHandlerHelper.insertItemStacked(context.contraption.getStorage().getAllItems(),box.copy(),false);if(remainder.isEmpty())PackageAuthorityManager.consumeLight(level,entry);}}
+    private void cmi$lightCollect(MovementContext context,BlockPos pos,CallbackInfo ci){if(!(context.world instanceof ServerLevel level))return;var filter=context.getFilterFromBE();for(var entry:PackageAuthorityManager.queryLight(level,new AABB(pos))){var box=entry.box(level);if(!filter.test(level,box))continue;var remainder=ItemHandlerHelper.insertItemStacked(context.contraption.getStorage().getAllItems(),box.copy(),false);PackageLightGameplay.inserted(level,entry,remainder);}}
 }

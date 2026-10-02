@@ -30,6 +30,28 @@ class PackageAuthorityRegionTest {
     private static PackageDeltaCodec.Entry change(int index,int mask,PackageLease.Pose pose,int flags) {
         return new PackageDeltaCodec.Entry(index,mask,PackageDeltaCodec.quantize(pose,0,0,0,flags));
     }
+    @Test void steppedCatchupAllowsBoundedMotionButRejectsReplayAndFutureClock(){
+        var r=region(0);var t=new Target(500,5,0);var b=acquire(r,t,0);
+        var move=change(b.index(),PackageDeltaCodec.POSITION,pose(9),0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,1,4,List.of(move),1,0,4));
+        assertEquals(9,t.current.pose().x());
+        assertEquals(PackageAuthorityRegion.Result.INVALID,r.deltaStepped(OWNER,10,1,2,4,List.of(change(b.index(),PackageDeltaCodec.POSITION,pose(10),0)),1,0,4));
+        assertEquals(PackageAuthorityRegion.Result.INVALID,r.deltaStepped(OWNER,10,1,3,4,List.of(change(b.index(),PackageDeltaCodec.POSITION,pose(10),0)),1,0,1000));
+        assertEquals(PackageAuthorityRegion.Result.INVALID,r.deltaStepped(OWNER,10,1,3,5,List.of(change(b.index(),PackageDeltaCodec.POSITION,pose(11),0)),1,0,5));
+        assertEquals(9,t.current.pose().x());
+        assertTrue(r.expired(4+PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS+1));
+    }
+    @Test void closingRevokesImmediatelyAndDrainsAtMostTheExplicitBudget(){
+        var r=region(0);var targets=new ArrayList<Target>();
+        for(int i=0;i<1024;i++){var t=new Target(10000+i,5,0);targets.add(t);acquire(r,t,0);}
+        r.beginClose();assertTrue(r.closed());
+        assertFalse(r.simulated(targets.getLast().id,0));assertFalse(r.paused(targets.getFirst().id,0));
+        assertEquals(0,targets.stream().mapToInt(t->t.releases).sum());
+        assertEquals(64,r.drainClose(64));assertEquals(64,targets.stream().mapToInt(t->t.releases).sum());
+        while(r.drainClose(64)>0){}
+        assertEquals(1024,targets.stream().mapToInt(t->t.releases).sum());
+        assertTrue(targets.stream().allMatch(t->t.writes==0&&t.releases==1));
+    }
     @Test void visibleReadyRequiresTheExactLiveFinalLeaseAndCannotReviveRetirement() {
         var r=region(0);var t=new Target(199,5,1);var initial=r.offer(t,0);
         assertFalse(r.visibleReady(OWNER,10,initial.index(),t.id,initial.leaseEpoch(),initial.revision(),0));

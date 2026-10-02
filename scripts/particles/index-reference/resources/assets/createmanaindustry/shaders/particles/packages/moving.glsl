@@ -1,0 +1,84 @@
+#ifdef CMI_MOVING_PREPARE
+layout(std430,binding=9) buffer MovingPose { uvec4 movingPose[16]; };
+#else
+layout(std430,binding=9) readonly buffer MovingPose { uvec4 movingPose[16]; };
+#endif
+struct MovingNode {vec4 lo;vec4 hi;uvec4 material;};
+layout(std430,binding=10) readonly buffer MovingGeometry {MovingNode movingNodes[];};
+uniform bool uMovingReady;
+vec3 mv(uint at){return uintBitsToFloat(movingPose[at].xyz);}
+mat3 rawRotation(bool old){uint p=old?0u:4u;return mat3(mv(p),mv(p+1u),mv(p+2u));}
+vec3 movingScale(bool old){mat3 r=rawRotation(old);return vec3(length(r[0]),length(r[1]),length(r[2]));}
+vec3 movingTranslation(bool old){return mv(old?3u:7u);}
+uint movingIdentity(){return movingPose[8].w;}
+bool movingGeometryReady(){return movingPose[9].w!=0u;}
+uint movingNodeCount(){return movingPose[15].x;}
+vec4 quaternion(mat3 r) {
+    float trace=r[0][0]+r[1][1]+r[2][2];vec4 q;
+    if(trace>0.0){float s=sqrt(trace+1.0)*2.0;q=vec4((r[1][2]-r[2][1])/s,(r[2][0]-r[0][2])/s,(r[0][1]-r[1][0])/s,.25*s);}
+    else if(r[0][0]>r[1][1]&&r[0][0]>r[2][2]){float s=sqrt(1.0+r[0][0]-r[1][1]-r[2][2])*2.0;q=vec4(.25*s,(r[1][0]+r[0][1])/s,(r[2][0]+r[0][2])/s,(r[1][2]-r[2][1])/s);}
+    else if(r[1][1]>r[2][2]){float s=sqrt(1.0+r[1][1]-r[0][0]-r[2][2])*2.0;q=vec4((r[1][0]+r[0][1])/s,.25*s,(r[2][1]+r[1][2])/s,(r[2][0]-r[0][2])/s);}
+    else{float s=sqrt(1.0+r[2][2]-r[0][0]-r[1][1])*2.0;q=vec4((r[2][0]+r[0][2])/s,(r[2][1]+r[1][2])/s,.25*s,(r[0][1]-r[1][0])/s);}
+    return normalize(q);
+}
+mat3 quaternionMatrix(vec4 q) {
+    vec3 v=q.xyz;float w=q.w;
+    return mat3(1.-2.*(v.y*v.y+v.z*v.z),2.*(v.x*v.y+v.z*w),2.*(v.x*v.z-v.y*w),
+                2.*(v.x*v.y-v.z*w),1.-2.*(v.x*v.x+v.z*v.z),2.*(v.y*v.z+v.x*w),
+                2.*(v.x*v.z+v.y*w),2.*(v.y*v.z-v.x*w),1.-2.*(v.x*v.x+v.y*v.y));
+}
+mat3 movingRotation(float t) {
+    vec4 a=uintBitsToFloat(movingPose[10]),b=uintBitsToFloat(movingPose[11]);
+    float cosine=clamp(dot(a,b),-1.0,1.0);
+    vec4 q;
+    if(cosine>.9995)q=normalize(mix(a,b,t));
+    else {float angle=acos(cosine);q=(a*sin((1.-t)*angle)+b*sin(t*angle))/sin(angle);}
+    return quaternionMatrix(q);
+}
+vec3 localPoint(vec3 point,bool old){mat3 r=rawRotation(old);vec3 s=movingScale(old);r[0]/=s.x;r[1]/=s.y;r[2]/=s.z;return transpose(r)*(point-movingTranslation(old))/s;}
+vec3 projectPoint(vec3 point,bool old){return rawRotation(old)*point+movingTranslation(old);}
+bool movingCoarse(vec3 lo,vec3 hi){return all(lessThanEqual(lo,mv(13u)))&&all(greaterThanEqual(hi,mv(12u)));}
+bool satAxis(vec3 axis,vec3 delta,vec3 bodyExtent,mat3 r,vec3 boxExtent,inout float gap,inout vec3 normal) {
+    float squared=dot(axis,axis);if(squared<1e-10)return false;
+    axis*=inversesqrt(squared);float side=dot(delta,axis);
+    float distance=abs(side)-dot(abs(axis),bodyExtent)-dot(abs(transpose(r)*axis),boxExtent);
+    if(distance>gap){gap=distance;normal=axis*(side<0.0?-1.0:1.0);}return distance>0.0;
+}
+// Full 15-axis AABB/OBB SAT, including edge/edge separation.
+float movingGap(vec3 point,vec3 extent,MovingNode box,float t,out vec3 normal) {
+    mat3 r=movingRotation(t);vec3 scale=mix(movingScale(true),movingScale(false),t);
+    vec3 centre=(box.lo.xyz+box.hi.xyz)*.5,boxHalf=(box.hi.xyz-box.lo.xyz)*.5*scale;
+    vec3 delta=point-(mix(movingTranslation(true),movingTranslation(false),t)+r*(centre*scale));
+    float gap=-1e30;normal=vec3(0,1,0);
+    satAxis(vec3(0,1,0),delta,extent,r,boxHalf,gap,normal);satAxis(vec3(1,0,0),delta,extent,r,boxHalf,gap,normal);satAxis(vec3(0,0,1),delta,extent,r,boxHalf,gap,normal);
+    for(int j=0;j<3;j++)satAxis(r[j],delta,extent,r,boxHalf,gap,normal);
+    for(int i=0;i<3;i++)for(int j=0;j<3;j++){vec3 axis=vec3(0);axis[i]=1.;satAxis(cross(axis,r[j]),delta,extent,r,boxHalf,gap,normal);}
+    return gap;
+}
+vec3 movingVelocity(vec3 globalPoint){vec3 local=localPoint(globalPoint,false);return (globalPoint-projectPoint(local,true))*20.0;}
+bool linearAxis(vec3 axis,vec3 delta,vec3 motion,vec3 extent,mat3 r,vec3 halfExtent,
+                inout float enter,inout float exit,inout vec3 normal) {
+    float squared=dot(axis,axis);if(squared<1e-10)return true;axis*=inversesqrt(squared);
+    float side=dot(delta,axis),travel=dot(motion,axis);
+    float radius=dot(abs(axis),extent)+dot(abs(transpose(r)*axis),halfExtent);
+    if(abs(travel)<1e-8)return abs(side)<=radius+1e-6;
+    float a=(-radius-side)/travel,b=(radius-side)/travel;
+    float first=min(a,b),last=max(a,b);
+    if(first>enter){enter=first;normal=axis*(travel>0.?-1.:1.);}exit=min(exit,last);
+    return enter<=exit;
+}
+// Exact swept SAT intervals for constant orientation and scale. In particular,
+// tangential movement across adjacent floor boxes cannot exhaust CCD iterations.
+bool movingLinearSweep(vec3 initial,vec3 motion,vec3 extent,MovingNode box,out float enter,out vec3 normal) {
+    mat3 r=movingRotation(0.);vec3 scale=movingScale(true),centre=(box.lo.xyz+box.hi.xyz)*.5;
+    vec3 halfExtent=(box.hi.xyz-box.lo.xyz)*.5*scale;
+    vec3 delta=initial-(movingTranslation(true)+r*(centre*scale));
+    vec3 relative=motion-(movingTranslation(false)-movingTranslation(true));float exit=1.;enter=0.;
+    movingGap(initial,extent,box,0.,normal);
+    if(!linearAxis(vec3(0,1,0),delta,relative,extent,r,halfExtent,enter,exit,normal))return false;
+    if(!linearAxis(vec3(1,0,0),delta,relative,extent,r,halfExtent,enter,exit,normal))return false;
+    if(!linearAxis(vec3(0,0,1),delta,relative,extent,r,halfExtent,enter,exit,normal))return false;
+    for(int j=0;j<3;j++)if(!linearAxis(r[j],delta,relative,extent,r,halfExtent,enter,exit,normal))return false;
+    for(int i=0;i<3;i++)for(int j=0;j<3;j++){vec3 axis=vec3(0);axis[i]=1.;if(!linearAxis(cross(axis,r[j]),delta,relative,extent,r,halfExtent,enter,exit,normal))return false;}
+    return enter<=1.&&exit>=0.;
+}

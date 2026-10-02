@@ -6,7 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /** Stable identities may acquire a new candidate only after the old lifetime is retired.
- * Candidate indices themselves are never recycled, so old admissions/ACKs remain isolated. */
+ * Candidate reuse requires all old admissions, flights and GPU references to be drained. */
 final class PackageGpuIdentityReservations {
     private final Map<PackageLease.Identity,Integer> live=new HashMap<>();
     private final BitSet retired=new BitSet();
@@ -20,6 +20,7 @@ final class PackageGpuIdentityReservations {
             throw new IllegalArgumentException("Package identity retirement does not match its candidate");
         retired.set(candidate);
     }
+    void reclaim(int candidate){if(!retired.get(candidate))throw new IllegalArgumentException("Candidate is not retired");retired.clear(candidate);}
     boolean retired(int candidate){return retired.get(candidate);}
     void clear(){live.clear();retired.clear();}
 }

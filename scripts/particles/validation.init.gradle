@@ -16,13 +16,13 @@ allprojects {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/PackageGpuValidation.java'
+            if (project.hasProperty('packageRepairOnly')) args '--repair-only'
             if (project.hasProperty('packageBenchmark')) args '--benchmark'
             if (project.hasProperty('packageDeltaPipelineBenchmark')) args '--delta-pipeline-benchmark'
             if (project.hasProperty('packageBatchPipelineBenchmark')) args '--delta-batch-pipeline-benchmark'
             if (project.hasProperty('packageWorldBenchmark')) args '--world-benchmark'
             if (project.hasProperty('packageStackBenchmark')) args '--stack-benchmark'
             if (project.hasProperty('packageStackStress')) args '--stack-stress'
-            if (project.hasProperty('packageRangeBenchmark')) args '--range-benchmark'
             if (project.hasProperty('packageMovingOnly')) args '--moving-only'
             if (project.hasProperty('packagePhysicsOnly')) args '--physics-only'
             if (project.hasProperty('packageWorldPrefetch')) args '--world-prefetch-only'
@@ -41,6 +41,32 @@ allprojects {
             if (project.hasProperty('packageDrawPassBenchmark')) args '--draw-pass-only', '--draw-pass-benchmark'
             if (project.hasProperty('packageIrisBoundaryBenchmark')) args '--draw-pass-only', '--iris-boundary-benchmark'
             if (project.hasProperty('packageMovingBenchmark')) args '--moving-benchmark'
+            workingDir = project.projectDir
+        }
+        // Archived comparison implementations live outside main sources/resources and the mod JAR.
+        tasks.register('compilePackageIndexComparison', JavaCompile) {
+            dependsOn tasks.named('classes')
+            source = files('scripts/particles/index-reference/PackagePhysicsGpu.java', 'scripts/particles/index-reference/PackageMixedPhysicsGpu.java', 'scripts/particles/index-reference/PackageGpuValidation.java')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            destinationDirectory = layout.buildDirectory.dir('package-index-reference')
+            options.encoding = 'UTF-8'
+            options.release = 21
+        }
+        tasks.register('copyPackageIndexReferenceResources', Copy) {
+            from 'scripts/particles/index-reference/resources'
+            into layout.buildDirectory.dir('package-index-reference')
+        }
+        tasks.register('benchmarkPackageIndexes', JavaExec) {
+            dependsOn tasks.named('compilePackageIndexComparison'), tasks.named('copyPackageIndexReferenceResources')
+            classpath = files(layout.buildDirectory.dir('package-index-reference')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'PackageGpuValidation'
+            args project.hasProperty('packageIndexBenchmarkExtra') ? '--index-benchmark-extra' : '--index-benchmark'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkPackagePause', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackagePauseBenchmark.java'
             workingDir = project.projectDir
         }
         tasks.register('validatePackageLightGpu', JavaExec) {

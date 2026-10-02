@@ -124,6 +124,7 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
         if(acquisition==null || active.epoch()!=epoch)return;
         var index=index(track);var box=nativeBox(offer);
         if(index==null || box==null || claims.containsKey(offer.baseline().identity())){acquisition.requestRelease(offer.baseline().index());return;}
+        if(checkpoints!=null)checkpoints.activateCandidate(candidate);
         var claim=new Claim(offer,active,track,index,box.box,candidate);
         claims.put(offer.baseline().identity(),claim);index.claims.add(claim);
         if(!acquire(claim)){forget(claim);acquisition.requestRelease(offer.baseline().index());return;}

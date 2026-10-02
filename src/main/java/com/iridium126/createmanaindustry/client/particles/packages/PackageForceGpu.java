@@ -24,12 +24,15 @@ public final class PackageForceGpu implements AutoCloseable {
         catch(RuntimeException failure){close();throw failure;}
     }
     public View view(PackageForceScene.Snapshot snapshot,long tick) {
+        var view=tryView(snapshot,tick);if(view==null)throw new IllegalStateException("All package force banks busy");return view;
+    }
+    public View tryView(PackageForceScene.Snapshot snapshot,long tick) {
         if(closed)throw new IllegalStateException("Package force uploader closed");
         if(snapshot==null||tick<snapshot.tick()||tick-snapshot.tick()>1)throw new IllegalStateException("Package force snapshot exceeded two tick budget");
         for(Bank b:banks){if(b.fence!=0){int result=poll.applyAsInt(b.fence);if(result==GL32.GL_WAIT_FAILED)throw new IllegalStateException("Package force fence failed");
                 if(result!=GL32.GL_TIMEOUT_EXPIRED){GL32.glDeleteSync(b.fence);b.fence=0;}}
             if(b.fence==0&&!b.leased){b.mapped.clear();b.mapped.put(snapshot.data());uploadedBytes+=snapshot.data().remaining();b.leased=true;return new View(b,snapshot.nodes(),snapshot.sources(),snapshot.frames());}}
-        throw new IllegalStateException("All package force banks busy; restoring Create");
+        return null;
     }
     public final class View implements AutoCloseable {
         private final Bank bank;private final int nodes,sources,frames;private boolean ended;

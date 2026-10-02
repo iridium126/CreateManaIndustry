@@ -23,6 +23,7 @@ public final class PackageDeltaChannel implements AutoCloseable {
         boolean send(long epoch,long revision,long sequence,ByteBuffer bytes);
         /** Worker-only immutable envelope preparation. No world access, GL or network writes. */
         default Object prepare(long epoch,long revision,long sequence,ByteBuffer bytes){return null;}
+        default Object prepare(long epoch,long revision,long sequence,long step,ByteBuffer bytes){return prepare(epoch,revision,sequence,bytes);}
         default boolean sendPrepared(long epoch,long revision,long sequence,Object prepared,ByteBuffer bytes){return send(epoch,revision,sequence,bytes);}
         /** Must relinquish this epoch and restore Create. Invoked once on the render thread. */
         void failed(String reason);
@@ -41,7 +42,7 @@ public final class PackageDeltaChannel implements AutoCloseable {
     }
     private static final class Frame {
         PackageDeltaGpu.Capture capture;
-        long started;
+        long started,simulationStep;
         int total=-1,submitted,consumed;
         void reset(){capture=null;total=-1;submitted=consumed=0;}
     }
@@ -92,7 +93,10 @@ public final class PackageDeltaChannel implements AutoCloseable {
         PackageReadbackRing headerRing=null;
         int nextGpuJournal=0;
         try{
-            PackageDeltaJournal.Preparer prepare=(sequence,bytes)->transport.prepare(epoch,revision,sequence,bytes);
+            PackageDeltaJournal.Preparer prepare=new PackageDeltaJournal.Preparer(){
+                public Object prepare(long sequence,ByteBuffer bytes){return transport.prepare(epoch,revision,sequence,bytes);}
+                public Object prepare(long sequence,long step,ByteBuffer bytes){return transport.prepare(epoch,revision,sequence,step,bytes);}
+            };
             nextJournal=transport.batchEncoded()?PackageDeltaJournal.batchEncoded(capacity,encoder,prepare):new PackageDeltaJournal(capacity,encoder,prepare);
             ackMailbox=new long[nextJournal.slotCapacity()];ackScratch=new long[ackMailbox.length];Arrays.fill(ackMailbox,-1);
             batchSequences=new long[ackMailbox.length];
@@ -113,15 +117,22 @@ public final class PackageDeltaChannel implements AutoCloseable {
         try{journal.append(metadata,count);detector.append(metadata,baseline,count);}
         catch(RuntimeException failure){fail("Package identity append failed: "+failure.getMessage());throw failure;}
     }
+    public boolean recyclable(int candidate,long barrier){
+        owner();for(var frame:frames)if(frame.capture!=null&&Integer.toUnsignedLong(frame.capture.stamp())<=barrier)return false;
+        return journal.recyclable(candidate);
+    }
+    public void recycle(int candidate){owner();detector.makeReusable(candidate);}
+    public void write(int candidate,ByteBuffer metadata,ByteBuffer baseline){owner();journal.replace(candidate,metadata);detector.write(candidate,metadata,baseline);}
     /** Capture only a complete committed physical state. Capacity/ring pressure never blocks simulation. */
-    public boolean capture(int bodies,int bodyCount,float ox,float oy,float oz) {
+    public boolean capture(int bodies,int bodyCount,float ox,float oy,float oz){return capture(bodies,bodyCount,ox,oy,oz,0);}
+    public boolean capture(int bodies,int bodyCount,float ox,float oy,float oz,long simulationStep) {
         owner();if(closed)return false;
         long cpuStarted=profiling?System.nanoTime():0;
         try {
             var capture=detector.capture(bodies,bodyCount,ox,oy,oz,capacity);
             if(capture==null){skipped++;return false;}
             Frame frame=frames[capture.bank()];if(frame.capture!=null)throw new IllegalStateException("Package readback frame overwritten");
-            frame.capture=capture;frame.started=clock.getAsLong();
+            frame.capture=capture;frame.simulationStep=simulationStep;frame.started=clock.getAsLong();
             if(!headers.submit(capture.headerBuffer(),epoch,Integer.toUnsignedLong(capture.stamp()))) {
                 detector.cancel(capture);frame.reset();skipped++;return false;
             }
@@ -198,7 +209,7 @@ public final class PackageDeltaChannel implements AutoCloseable {
                 Fragment fragment=fragments[(int)((snapshot.sequence()-1)%4)];Frame frame=fragment.frame;
                 if(frame==null || fragment.sequence!=snapshot.sequence())throw new IllegalStateException("Stale package fragment");
                 long first=journal.nextSequence();
-                if(!journal.offer(frame.capture.stamp(),snapshot.bytes(),frame.started))return false;
+                if(!journal.offer(frame.capture.stamp(),snapshot.bytes(),frame.started,frame.simulationStep))return false;
                 if(gpuJournal!=0)copyJournal(fragment,first);
                 payloadBytes+=fragment.bytes;frame.consumed+=fragment.bytes;fragment.frame=null;
                 if(frame.consumed==frame.total){detector.finish(frame.capture);frame.reset();}

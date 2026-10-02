@@ -1,0 +1,53 @@
+layout(local_size_x=64) in;
+struct Body { vec4 positionMass; vec4 velocityGround; vec4 extentYaw; vec4 previousSleep; };
+struct Meta { uvec4 identity; uvec4 selection; vec4 previousTargetYaw; vec4 style; vec4 nudge; };
+struct Chain { vec4 startRadius; vec4 endLength; vec4 progress; vec4 targetYaw; };
+layout(std430,binding=0) readonly buffer Bodies { Body bodies[]; };
+layout(std430,binding=1) buffer Pool { vec4 pool[]; };
+layout(std430,binding=2) readonly buffer Metadata { Meta meta[]; };
+layout(std430,binding=4) readonly buffer Chains { Chain chains[]; };
+layout(std430,binding=5) buffer Admission { uvec4 admitted[]; };
+layout(std430,binding=6) readonly buffer Reservation { uint base; uint accepted; uint activeAccepted; uint preparedAccepted; };
+uniform uint uEmitter,uCount;
+uniform vec3 uOrigin;
+layout(std430,binding=7) readonly buffer Selection { uint activeCount; uint preparedCount; uint pad1; uint pad2; uint selected[]; };
+layout(std430,binding=8) buffer Attachment { vec4 attachment[]; };
+layout(std430,binding=9) readonly buffer History { vec4 history[]; };
+#pragma cmi_include packages/chain_frames.glsl
+layout(std430,binding=10) readonly buffer Frames { ChainFrame frames[]; };
+void main() {
+    uint g=gl_GlobalInvocationID.x;if(g>=accepted)return;
+    uint i=selected[g<activeAccepted?g:uCount-1u-(g-activeAccepted)];
+    Meta m=meta[i];
+    // Two uvec4 per candidate: full stable identity plus slot+1/flags. Zero is rejected.
+    Body b=bodies[m.selection.x];
+    bool chain=(m.selection.w&1u)!=0u;
+    uint flags=m.selection.w;
+    if(chain && chains[m.selection.x].progress.z>=2.0)
+        flags=(flags&~2u)|(chains[m.selection.x].progress.w>.5?2u:0u);
+    vec3 position=b.positionMass.xyz, previous=history[2u*m.selection.x].xyz;
+    vec3 target=chain?chains[m.selection.x].targetYaw.xyz:position;
+    if((flags&8u)!=0u) {
+        ChainFrame f=frames[uint(chains[m.selection.x].startRadius.w)];
+        // Preserve the original 2-vec4 attachment prefix. The extension is candidate-indexed
+        // after that prefix; both publish with the same admission/pool generation.
+        uint a=2u*uint(attachment.length()/11)+9u*i;
+        attachment[a]=f.rx;attachment[a+1u]=f.ry;attachment[a+2u]=f.rz;
+        attachment[a+3u]=f.lx;attachment[a+4u]=f.ly;attachment[a+5u]=f.lz;
+        attachment[a+6u]=vec4(position,0);attachment[a+7u]=vec4(previous,0);attachment[a+8u]=vec4(target,0);
+        position=chainFramePoint(position,f.rx,f.ry,f.rz);previous=chainFramePoint(previous,f.rx,f.ry,f.rz);
+        target=chainFramePoint(target,f.rx,f.ry,f.rz);
+    }
+    if(!chain) { position.y-=b.extentYaw.y; previous.y-=b.extentYaw.y; }
+    uint slot=base+g, p=4u*slot;
+    pool[p]=vec4(position+uOrigin,uintBitsToFloat(m.selection.y));
+    pool[p+1u]=vec4(previous+uOrigin,uintBitsToFloat(m.selection.z));
+    // Light occupies vanilla bits 0..23; package flags occupy the remaining byte.
+    uint light=floatBitsToUint(m.style.w)&0x00ffffffu;
+    pool[p+2u]=vec4(target+uOrigin,uintBitsToFloat(light|(flags<<24u)));
+    pool[p+3u]=vec4(b.extentYaw.w,history[2u*m.selection.x].w,
+                        m.style.z,uintBitsToFloat(uEmitter));
+    admitted[2u*i+1u]=uvec4(slot+1u,flags,0,0);
+    attachment[2u*i]=vec4(history[2u*m.selection.x+1u].xyz+((flags&8u)!=0u?vec3(0):uOrigin),0);
+    attachment[2u*i+1u]=m.nudge;
+}

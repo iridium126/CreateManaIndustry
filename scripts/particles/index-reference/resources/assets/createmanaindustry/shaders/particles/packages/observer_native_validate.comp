@@ -1,0 +1,37 @@
+#pragma cmi_include packages/observer_native_state.glsl
+layout(std430,binding=3) buffer ObserverClaims { uint claims[]; };
+uniform uint uTag;
+layout(local_size_x=64) in;
+void main() {
+    uint i=gl_GlobalInvocationID.x;if(i>=uPatches)return;
+    NativePatch p=nativeReadPatch(i);uint local=p.selection.x,op=p.selection.z,flags=p.selection.w;
+    bool baseline=op==OBSERVER_BASELINE,move=op==NATIVE_MOVE,teleport=op==NATIVE_TELEPORT,motion=op==NATIVE_MOTION,release=op==OBSERVER_RELEASE;
+    if(local>=uSlots || !(baseline||move||teleport||motion||release)
+            || baseline!=(uCompact==0u) || !observerLongPositive(p.fence.xy) || any(notEqual(p.fence.zw,uvec2(1u,0u)))
+            || (p.sequence.y&0x80000000u)!=0u || any(notEqual(p.sequence.zw,uvec2(0)))
+            || !observerFinite(p.attributes) || p.attributes.w<0.0 || p.attributes.w>uNow
+            || (flags&~0xff07u)!=0u || ((baseline||teleport)&&(flags&6u)!=0u)
+            || ((motion||release)&&flags!=0u)) { atomicOr(invalid,1u);return; }
+    if(atomicExchange(claims[local],uTag)==uTag){atomicOr(invalid,2u);return;}
+    ObserverState s=state[local];
+    if(baseline) {
+        if(s.lifecycle.z!=0u || any(notEqual(s.identity,uvec4(0))) || !observerLongPositive(p.identity.xy)
+                || !observerLongPositive(p.identity.zw) || any(lessThanEqual(p.attributes.xy,vec2(0)))
+                || any(greaterThan(p.attributes.xy,vec2(2))) || (flags&~1u)!=0u
+                || !nativeFinite(nativeBaselineVelocity(p)) || any(greaterThan(abs(nativeBaselineVelocity(p)),dvec3(128.0))))
+            {atomicOr(invalid,4u);return;}
+    } else if(s.lifecycle.z!=1u || any(notEqual(s.fence,p.fence)) || s.lifecycle.w!=p.selection.y
+            || p.attributes.w<s.correction.w || !observerLongGreater(p.sequence.xy,s.lifecycle.xy))
+        {atomicOr(invalid,8u);return;}
+    dvec3 position=baseline||teleport?nativeAbsolute(p):nativeState[local].base.xyz;
+    if(move) {
+        ivec3 d=ivec3(p.a.xyz);
+        if(any(lessThan(d,ivec3(-32768))) || any(greaterThan(d,ivec3(32767)))){atomicOr(invalid,16u);return;}
+        if((flags&2u)!=0u)position=nativeMoved(position,d);
+    }
+    if(!nativePosition(position) || any(greaterThan(abs(position-uNativeOrigin),dvec3(4096.0)))){atomicOr(invalid,32u);return;}
+    if(motion && (any(lessThan(ivec3(p.a.xyz),ivec3(-32768))) || any(greaterThan(ivec3(p.a.xyz),ivec3(32767)))))
+        {atomicOr(invalid,64u);return;}
+    // Compact reserved words cannot carry hidden changes; absolute teleport owns all six words.
+    if(uCompact!=0u && (p.b.w!=0u || (!teleport && (p.a.w!=0u || any(notEqual(p.b.xy,uvec2(0)))))))atomicOr(invalid,128u);
+}

@@ -95,6 +95,10 @@ public final class PackageForceClient implements AutoCloseable {
         if(team!=null&&(team.getCollisionRule()==Team.CollisionRule.NEVER||team.getCollisionRule()==Team.CollisionRule.PUSH_OTHER_TEAMS))return false;
         return e.getBoundingBox().getSize()>0;
     }
+    public boolean ready(long tick){return !closed&&snapshots.ready(tick);}
+    public boolean contains(long tick){return !closed&&snapshots.contains(tick);}
+    public PackageForceScene.Snapshot snapshot(long tick){return snapshots.snapshot(tick);}
+    public void consumed(long tick){snapshots.consumed(tick);}
     public boolean ready(){return !closed&&snapshots.ready(level.getGameTime());}
     public PackageForceScene.Snapshot snapshot(){if(closed)throw new IllegalStateException("Package force client closed");return snapshots.snapshot(level.getGameTime());}
     @Override public void close(){if(closed)return;closed=true;snapshots.clear();worker.shutdownNow();}

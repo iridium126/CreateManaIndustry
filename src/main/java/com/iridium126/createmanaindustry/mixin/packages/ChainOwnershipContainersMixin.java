@@ -49,6 +49,20 @@ public abstract class ChainOwnershipContainersMixin implements PackageChainAcces
 
     @Inject(method="tick",at=@At("HEAD"))
     private void cmi$restoreNativeListsAfterTerminalRemoval(CallbackInfo ci){cmi$unwrapIfIdle();}
+    // Server routing needs progress only. Resolve a logical position at transaction boundaries.
+    @Redirect(method="tick",at=@At(value="INVOKE",target="Lcom/simibubi/create/content/kinetics/chainConveyor/ChainConveyorBlockEntity;updateBoxWorldPositions()V"))
+    private void cmi$skipServerVisualPositions(ChainConveyorBlockEntity self){
+        if(self.getLevel()==null||self.getLevel().isClientSide)self.updateBoxWorldPositions();
+    }
+    @Unique private void cmi$logicalPosition(ChainConveyorPackage box){
+        var self=(ChainConveyorBlockEntity)(Object)this;
+        if(self.getLevel()==null||self.getLevel().isClientSide)return;
+        BlockPos connection=null;
+        for(var entry:travellingPackages.entrySet())if(entry.getValue().contains(box)){connection=entry.getKey();break;}
+        box.worldPosition=self.getPackagePosition(box.chainPosition,connection);
+    }
+    @Inject(method="exportToPort",at=@At("HEAD"))
+    private void cmi$positionForPort(ChainConveyorPackage box,BlockPos port,CallbackInfoReturnable<Boolean> cir){cmi$logicalPosition(box);}
     @Inject(method="tick",at=@At("RETURN"))
     private void cmi$publishNativeMembership(CallbackInfo ci){if(cmi$containers!=null)cmi$publishRenderPackages();}
 
@@ -77,7 +91,7 @@ public abstract class ChainOwnershipContainersMixin implements PackageChainAcces
     @Inject(method="write",at=@At("HEAD"))
     private void cmi$checkpointForSave(CompoundTag tag,HolderLookup.Provider registries,boolean clientPacket,CallbackInfo ci){cmi$materializePackages();}
     @Inject(method="drop",at=@At("HEAD"))
-    private void cmi$checkpointForDrop(ChainConveyorPackage box,CallbackInfo ci){try{cmi$materializePackage(box);}finally{cmi$restorePackage(box);}}
+    private void cmi$checkpointForDrop(ChainConveyorPackage box,CallbackInfo ci){try{cmi$materializePackage(box);}finally{cmi$restorePackage(box);}cmi$logicalPosition(box);}
     @Inject(method="read",at=@At("HEAD"))
     private void cmi$beforeRead(CompoundTag tag,HolderLookup.Provider registries,boolean clientPacket,CallbackInfo ci) {
         PackageChainClientHooks.beforeRead((ChainConveyorBlockEntity)(Object)this);

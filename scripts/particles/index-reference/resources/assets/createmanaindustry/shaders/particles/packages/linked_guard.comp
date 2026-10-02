@@ -6,7 +6,7 @@ void main() {
     Body b=src[i];
     if(b.positionMass.w>0.0 && b.previousSleep.w>=0.0) {
         ivec3 cell=cellOf(b.positionMass.xyz);
-        if(!gridBudget(cell-1,cell+1))b.previousSleep.w=-1.0;
+        if(!gridBudget(cell-1,cell+1))freezeForMissingCollision(b,b.previousSleep.xyz);
     }
     dst[i]=b;
 }

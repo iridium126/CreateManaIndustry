@@ -48,7 +48,7 @@ public final class PackageChainInteractionClient implements AutoCloseable {
         var ray=PackageFreeInteractionClient.chainRay();if(ray==null)return false;
         var player=mc.player;
         if(!queue.enqueue(ray,new Context(mc.level,player,mc.hitResult,player.getInventory().selected,player.getMainHandItem().copy())))return true;
-        var use=queue.queued();var request=acquisition.interaction(result,use.transaction());
+        var use=queue.queued();var request=acquisition.interaction(result,use.transaction(),PackageFreeInteractionClient.chainSubmission());
         if(request==null){queue.clear();return false;}
         queue.submitted(use);queue.completed(new PackagePoseQueryGpu.Completed(0,0,0,PackagePoseQueryGpu.Kind.PICK,use,java.util.List.of(result)));
         queue.sent(request);PacketDistributor.sendToServer(new ServerboundChainInteractionPacket(request));return true;
@@ -60,7 +60,7 @@ public final class PackageChainInteractionClient implements AutoCloseable {
     private void completed(PackagePoseQueryGpu.Completed result) {
         if(closed || !queue.completed(result))return;
         var pose=queue.result();if(pose==null)return;
-        var request=acquisition.interaction(pose,queue.use().transaction());
+        var request=acquisition.interaction(pose,queue.use().transaction(),result.submission());
         if(request==null){queue.replay();return;}
         var context=(Context)queue.use().context();var mc=Minecraft.getInstance();
         if(mc.level!=context.level || mc.player!=context.player || mc.getConnection()==null){queue.clear();return;}

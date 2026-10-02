@@ -9,7 +9,7 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 
 /** Owner-thread adapter. No world, chunk or BlockState reference escapes into worker snapshots. */
 public final class PackageWorldCollisionSource implements PackageCollisionCache.Source {
-    public static final int WATER=1, LAVA=2, FIRE=4;
+    public static final int WATER=1, LAVA=2, FIRE=4,MACHINE=16,PORTAL=32;
     private final Thread owner=Thread.currentThread();
     private final Level level;
     private final BlockPos.MutableBlockPos position=new BlockPos.MutableBlockPos();
@@ -30,7 +30,14 @@ public final class PackageWorldCollisionSource implements PackageCollisionCache.
         for(var box:shape.toAabbs())boxes.add(new PackageCollisionCache.Box((float)box.minX,(float)box.minY,
                 (float)box.minZ,(float)box.maxX,(float)box.maxY,(float)box.maxZ));
         var fluid=state.getFluidState();
-        int flags=(fluid.is(FluidTags.WATER)?WATER:0)|(fluid.is(FluidTags.LAVA)?LAVA:0)|(state.is(Blocks.FIRE)?FIRE:0);
+        int flags=(fluid.is(FluidTags.WATER)?WATER:0)|(fluid.is(FluidTags.LAVA)?LAVA:0)|(state.getBlock() instanceof net.minecraft.world.level.block.BaseFireBlock?FIRE:0);
+        if((flags&3)!=0)flags|=Math.clamp((int)Math.ceil(fluid.getHeight(level,position)*255),1,255)<<8;
+        var block=state.getBlock();
+        if(block instanceof com.simibubi.create.content.logistics.funnel.FunnelBlock
+                ||block instanceof com.simibubi.create.content.logistics.chute.AbstractChuteBlock
+                ||com.simibubi.create.content.kinetics.belt.BeltBlock.canTransportObjects(state)
+                ||com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour.get(level,position,com.simibubi.create.content.kinetics.belt.behaviour.DirectBeltInputBehaviour.TYPE)!=null)flags|=MACHINE;
+        if(state.is(Blocks.NETHER_PORTAL)||state.is(Blocks.END_PORTAL)||state.is(Blocks.END_GATEWAY))flags|=PORTAL;
         return new PackageCollisionCache.Cell(boxes,state.getFriction(level,position,null),flags);
     }
 }

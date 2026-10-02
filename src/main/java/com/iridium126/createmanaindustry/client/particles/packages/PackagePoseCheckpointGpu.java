@@ -120,9 +120,11 @@ public class PackagePoseCheckpointGpu implements AutoCloseable {
         return completed;
     }
     /** No mapped view escapes: reset/close cannot leave a dangling borrowed native pointer. */
+    private final java.util.Map<Integer,Long> minimumSubmission=new java.util.HashMap<>();
+    public void activateCandidate(int candidate){open();minimumSubmission.put(candidate,lastSubmission+1);}
     public PackagePoseQueryGpu.Result find(int candidate,long id,long generation) {
         open();if(candidate<0 || candidate>=capacity || id<=0 || generation<=0)throw new IllegalArgumentException("Chain checkpoint identity");
-        if(latest<0)return PackagePoseQueryGpu.Result.NONE;
+        if(latest<0||banks[latest].submission<minimumSubmission.getOrDefault(candidate,0L))return PackagePoseQueryGpu.Result.NONE;
         var bank=banks[latest];if(candidate>=bank.input.count())return PackagePoseQueryGpu.Result.NONE;
         int p=candidate*PackagePoseQueryGpu.RESULT_BYTES;
         if(bank.mapped.getLong(p)!=id || bank.mapped.getLong(p+8)!=generation)return PackagePoseQueryGpu.Result.NONE;

@@ -38,7 +38,7 @@ public final class PackageAuthorityManager {
     private static final int MAX_CONTROL_RECORDS_PER_TICK=4096;
     private static final int MAX_OBSERVER_REGIONS=8,OBSERVER_RECORDS_PER_BATCH=64,MAX_OBSERVER_POLLS=64;
     private static final Map<ServerLevel,Runtime> WORLDS=new IdentityHashMap<>();
-    private static final class Peer {int flags,messages,controlRecords;long tick=-1;}
+    private static final class Peer {int flags,messages,controlRecords,environmentRecords;long tick=-1;}
     private record ObserverKey(UUID player,PackageRegion region) {}
     private static final class Observer {
         final PackageAuthorityRegion authority;
@@ -51,13 +51,17 @@ public final class PackageAuthorityManager {
         final PackageLightStore light;
         boolean unloading;
         final Set<EntityTarget> changed=new LinkedHashSet<>();
+        final ArrayDeque<PackageAuthorityRegion> closingRegions=new ArrayDeque<>();
+        final LinkedHashMap<net.minecraft.world.level.ChunkPos,Boolean> chunkChanges=new LinkedHashMap<>();
+        Iterator<PackageLightStore.Entry> chunkWork;
+        net.minecraft.world.level.ChunkPos chunkWorking;
+        boolean chunkLoading;
         final ArrayList<EntityTarget> lightTargets=new ArrayList<>();
         final Map<UUID,Set<PackageLease.Identity>> viewers=new HashMap<>();
         final Map<UUID,Set<PackageLease.Identity>> pendingVisuals=new HashMap<>();
         final ServerLevel level;
         final LinkedHashMap<UUID,Peer> peers=new LinkedHashMap<>();
         final Map<PackageRegion,PackageAuthorityRegion> regions=new HashMap<>();
-        final IdentityHashMap<PackageEntity,EntityTarget> entities=new IdentityHashMap<>();
         final Map<PackageLease.Identity,EntityTarget> identities=new HashMap<>();
         final LinkedHashMap<PackageLease.Identity,EntityTarget> discovery=new LinkedHashMap<>();
         final LinkedHashMap<ObserverKey,Observer> observers=new LinkedHashMap<>();
@@ -67,11 +71,9 @@ public final class PackageAuthorityManager {
         Runtime(ServerLevel level){this.level=level;light=PackageLightStore.get(level);long maximum=0;for(var entry:light.entries()){maximum=Math.max(maximum,entry.identity.id());if(level.hasChunkAt(net.minecraft.core.BlockPos.containing(entry.position())))activate(this,entry);}if(maximum>0)PackageIdentityData.get(level).observe(maximum);}
     }
     private static final class EntityTarget implements PackageAuthorityRegion.Target {
-        PackageEntity entity;
-        PackageLightStore.Entry light;
-        boolean detaching;
+        final PackageLightStore.Entry light;
         int lightOrdinal=-1;
-        final int entityId;
+        final int entityId=-1;
         final UUID uuid;
         net.minecraft.resources.ResourceLocation model;
         float width,height;
@@ -79,56 +81,18 @@ public final class PackageAuthorityManager {
         final PackageLease.Identity identity;
         PackageAuthorityRegion region;
         PackageAuthorityRegion.Snapshot checkpoint;
-        ServerPlayerConnection nativeOwner;
-        long retry;
-        EntityTarget(Runtime runtime,PackageEntity entity,PackageLease.Identity identity){
-            this.runtime=runtime;this.entity=entity;this.identity=identity;entityId=entity.getId();uuid=entity.getUUID();
-            model=BuiltInRegistries.ITEM.getKey(entity.box.getItem());width=entity.getBbWidth();height=entity.getBbHeight();
-        }
-        EntityTarget(Runtime runtime,PackageLightStore.Entry entry){this.runtime=runtime;light=entry;identity=entry.identity;uuid=entry.uuid;entityId=-1;model=entry.model;width=entry.width;height=entry.height;}
+        long retry,environmentWritten,environmentSimulationStep,environmentOriginStep,environmentOriginTick;
+        EntityTarget(Runtime runtime,PackageLightStore.Entry entry){this.runtime=runtime;light=entry;identity=entry.identity;uuid=entry.uuid;model=entry.model;width=entry.width;height=entry.height;}
         @Override public PackageLease.Identity identity(){return identity;}
-        @Override public PackageAuthorityRegion.Snapshot snapshot() {
-            if(light!=null)return light.state();
-            Vec3 v=entity.getDeltaMovement();
-            return new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(entity.getX(),entity.getY(),entity.getZ(),
-                    (float)(v.x*20),(float)(v.y*20),(float)(v.z*20),entity.getYRot()),entity.onGround()?PackageAuthorityRegion.GROUNDED:0);
-        }
-        @Override public boolean eligible() {
-            if(light!=null)return runtime.level.hasChunkAt(net.minecraft.core.BlockPos.containing(light.state().pose().x(),light.state().pose().y(),light.state().pose().z()));
-            return !entity.isRemoved() && entity.isAlive() && !entity.isPassenger() && !entity.isVehicle()
-                    && !entity.noPhysics && !entity.isInWater() && !entity.isInLava() && !entity.isOnFire()
-                    && entity.getTeam()==null && !entity.isShiftKeyDown()
-                    && entity.insertionDelay>=20 && PackageItem.isPackage(entity.box);
-        }
-        @Override public void apply(PackageAuthorityRegion.Snapshot state) {
-            if(light!=null){runtime.light.update(light,state);runtime.changed.add(this);checkpoint=state;return;}
-            var p=state.pose();
-            if(entity.getX()!=p.x() || entity.getY()!=p.y() || entity.getZ()!=p.z())entity.setPos(p.x(),p.y(),p.z());
-            Vec3 velocity=entity.getDeltaMovement();
-            double vx=p.vx()/20.0,vy=p.vy()/20.0,vz=p.vz()/20.0;
-            if(velocity.x!=vx || velocity.y!=vy || velocity.z!=vz)entity.setDeltaMovement(vx,vy,vz);
-            if(entity.getYRot()!=p.yaw())entity.setYRot(p.yaw());
-            boolean grounded=(state.flags()&PackageAuthorityRegion.GROUNDED)!=0;
-            if(entity.onGround()!=grounded)entity.setOnGround(grounded);
-            checkpoint=state;
-        }
+        @Override public PackageAuthorityRegion.Snapshot snapshot(){return light.state();}
+        @Override public boolean eligible(){return runtime.level.hasChunkAt(net.minecraft.core.BlockPos.containing(light.position()));}
+        @Override public void apply(PackageAuthorityRegion.Snapshot state){runtime.light.update(light,state);runtime.changed.add(this);checkpoint=state;}
         @Override public void released(PackageAuthorityRegion.Baseline baseline) {
-            ServerPlayerConnection recipient=nativeOwner;nativeOwner=null;
-            var previous=region;region=null;checkpoint=null;retry=runtime.level.getGameTime()+RETRY_TICKS;
-            if(light!=null && !runtime.closing)runtime.discovery.put(identity,this);
-            if(light!=null)runtime.changed.add(this);
-            if(entity!=null && !runtime.closing && runtime.entities.get(entity)==this && !entity.isRemoved())runtime.discovery.put(identity,this);
-            try {if(previous!=null)send(runtime.level,previous,ClientboundPackagePacket.RELEASED,baseline,this);}
-            catch(RuntimeException disconnected){CreateManaIndustry.LOGGER.debug("[CMI packages] release notification unavailable",disconnected);}
-            finally {
-                // Immediate recovery must not await the next 3-tick/60-tick vanilla update.
-                // Do NOT modify the shared server codec here: the native tracker replaces
-                // this connection's next relative position with an absolute rebase.
-                if(recipient!=null&&entity!=null&&!entity.isRemoved()&&recipient.getPlayer().serverLevel()==runtime.level
-                        &&!recipient.getPlayer().hasDisconnected()) {
-                    try{recipient.send(new ClientboundTeleportEntityPacket(entity));recipient.send(new ClientboundSetEntityMotionPacket(entity));}catch(RuntimeException disconnected){CreateManaIndustry.LOGGER.debug("[CMI packages] native preparation recovery unavailable",disconnected);}
-                }
-            }
+            var previous=region;region=null;checkpoint=null;retry=runtime.level.getGameTime();
+            // Pausing leaves the durable record at its latest confirmed state.
+            if(light!=null&&runtime.identities.get(identity)==this&&!runtime.unloading)runtime.discovery.put(identity,this);
+            try{if(previous!=null&&!runtime.unloading)send(runtime.level,previous,ClientboundPackagePacket.RELEASED,baseline,this);}
+            catch(RuntimeException disconnected){CreateManaIndustry.LOGGER.debug("[CMI packages] pause notification unavailable",disconnected);}
         }
     }
     private PackageAuthorityManager() {}
@@ -156,55 +120,52 @@ public final class PackageAuthorityManager {
     }
     @SubscribeEvent public static void onJoin(EntityJoinLevelEvent event) {
         if(event.getEntity() instanceof PackageEntity entity && event.getLevel() instanceof ServerLevel level) {
+            if(!((PackageInitialEntityAccess)entity).cmi$validInitialEntity()){event.setCanceled(true);return;}
             var identity=identity(entity,level);
             Runtime rt=runtime(level);var backing=rt.light.byIdentity(identity);
             // SavedData is authoritative after transfer. An old entity chunk must not duplicate it.
             if(backing!=null&&backing.uuid.equals(entity.getUUID())){event.setCanceled(true);entity.discard();return;}
             if(backing!=null){entity.getPersistentData().putLong(ID,PackageIdentityData.get(level).identity());identity=identity(entity,level);}
-            if(ServerConfig.packageGpuAuthority){
+            {
                 // A duplicated external save tag gets a fresh identity, never aliases another live entity.
-                if(rt.identities.containsKey(identity) && rt.identities.get(identity).entity!=entity) {
+                if(rt.identities.containsKey(identity)) {
                     var tag=entity.getPersistentData();tag.putLong(ID,PackageIdentityData.get(level).identity());identity=identity(entity,level);
                 }
-                if(rt.entities.containsKey(entity))return;
-                var target=new EntityTarget(rt,entity,identity);rt.entities.put(entity,target);rt.identities.put(identity,target);rt.discovery.put(target.identity,target);}
-        }
-    }
-    @SubscribeEvent public static void onLeave(EntityLeaveLevelEvent event) {
-        if(event.getEntity() instanceof PackageEntity entity && event.getLevel() instanceof ServerLevel level) {
-            Runtime rt=WORLDS.get(level);if(rt==null)return;
-            EntityTarget target=rt.entities.get(entity);if(target!=null&&target.detaching)return;
-            rt.entities.remove(entity);
-            if(target!=null){rt.identities.remove(target.identity(),target);release(target,level.getGameTime());rt.discovery.remove(target.identity);}
+                // Capture before the entity can enter ticking, collision or native tracking.
+                // Machine output, dropped items and entities read from old saves share this boundary.
+                var velocity=entity.getDeltaMovement();
+                var pose=new PackageLease.Pose(entity.getX(),entity.getY(),entity.getZ(),
+                        (float)(velocity.x*20),(float)(velocity.y*20),(float)(velocity.z*20),entity.getYRot());
+                var entry=rt.light.capture(entity,identity,new PackageAuthorityRegion.Snapshot(pose,entity.onGround()?PackageAuthorityRegion.GROUNDED:0));
+                activate(rt,entry);rt.changed.add(rt.identities.get(identity));
+                event.setCanceled(true);entity.discard();}
         }
     }
     @SubscribeEvent public static void onTick(LevelTickEvent.Pre event) {
         if(!(event.getLevel() instanceof ServerLevel level))return;
         Runtime rt=runtime(level);
-        if(!ServerConfig.packageGpuAuthority&&!rt.regions.isEmpty()){close(rt);rt.regions.clear();rt.closing=false;for(var target:rt.identities.values())rt.discovery.put(target.identity,target);}
+        if(!ServerConfig.packageGpuAuthority&&!rt.regions.isEmpty()){close(rt);rt.regions.clear();rt.closing=false;}
         long tick=level.getGameTime();
         for(Iterator<PackageAuthorityRegion> it=rt.regions.values().iterator();it.hasNext();) {
-            var region=it.next();region.tick(tick);
+            var region=it.next();
+            if(region.closed()){it.remove();continue;}
+            if(region.expired(tick)){pauseRegion(rt,region);it.remove();continue;}
+            region.tick(tick);
             var authority=level.getServer().getPlayerList().getPlayer(region.owner());
             boolean heartbeatExpired=region.expired(tick),peerPresent=rt.peers.containsKey(region.owner());
             boolean inRange=subscribed(authority,level,region.region());
             if(heartbeatExpired || !peerPresent || !inRange){
-                CreateManaIndustry.LOGGER.debug("[CMI packages] returning region {} to Create: heartbeatExpired={}, peerPresent={}, subscribed={}",
+                CreateManaIndustry.LOGGER.debug("[CMI packages] pausing region {}: heartbeatExpired={}, peerPresent={}, subscribed={}",
                         region.region(),heartbeatExpired,peerPresent,inRange);
-                region.close();it.remove();
+                pauseRegion(rt,region);it.remove();
             }
         }
-        for(int index=0;index<rt.lightTargets.size();) {
-            var target=rt.lightTargets.get(index);
-            if(target.eligible()) {
-                boolean paused=target.region!=null&&target.region.paused(target.identity,tick);
-                if(!paused)PackageLightGameplay.fallback(level,target.light);
-                var entry=target.light;
-                if(entry.portalCooldown>0){entry.portalCooldown--;rt.light.setDirty();}
-                if(rt.identities.get(target.identity)==target&&(!paused||rt.changed.contains(target)||entry.insertionDelay<30||entry.fireTicks>0||Math.floorMod(tick+target.identity.id(),20)==0))PackageLightGameplay.tick(level,entry);
-            }
-            if(index<rt.lightTargets.size()&&rt.lightTargets.get(index)==target)index++;
+        long retireDeadline=System.nanoTime()+ServerConfig.packageMainThreadBudgetNanos();int retireBudget=64;
+        while(retireBudget>0&&!rt.closingRegions.isEmpty()&&System.nanoTime()<retireDeadline){
+            var retired=rt.closingRegions.peekFirst();retireBudget-=retired.drainClose(1);
+            if(retired.size()==0)rt.closingRegions.removeFirst();
         }
+        pumpChunkChanges(rt);
         publishLight(rt);
         pumpObservers(rt);
         if(rt.peers.isEmpty()||!ServerConfig.packageGpuAuthority)return;
@@ -212,12 +173,10 @@ public final class PackageAuthorityManager {
         int available=rt.discovery.size();
         while(attempts++<MAX_OFFERS_PER_TICK && available-->0 && System.nanoTime()<deadline) {
             var iterator=rt.discovery.values().iterator();EntityTarget target=iterator.next();iterator.remove();
-            if(target.entity!=null&&target.entity.isRemoved())continue;
             rt.discovery.put(target.identity,target);
             if(target.region!=null && target.region.baseline(target.identity())!=null)continue;
             target.region=null;
             if(target.retry>tick || !target.eligible())continue;
-            if(target.entity!=null){target.model=BuiltInRegistries.ITEM.getKey(target.entity.box.getItem());target.width=target.entity.getBbWidth();target.height=target.entity.getBbHeight();}
             PackageRegion key=PackageRegion.at(target.snapshot().pose());
             var region=rt.regions.get(key);
             if(region==null) {
@@ -226,6 +185,7 @@ public final class PackageAuthorityManager {
                 rt.regions.put(key,region);
             }
             var baseline=region.offer(target,tick);if(baseline==null)continue;
+            target.environmentWritten=target.environmentSimulationStep=target.environmentOriginStep=0;target.environmentOriginTick=tick;
             target.region=region;target.checkpoint=baseline.snapshot();target.retry=tick+RETRY_TICKS;
             rt.discovery.remove(target.identity);
             send(level,region,ClientboundPackagePacket.OFFER,baseline,target);
@@ -242,7 +202,7 @@ public final class PackageAuthorityManager {
     }
     /** Flush only exact successful sequences at this level's tick end. No per-package scan;
      * normal batches wait less than one tick, and bounded overflow flushes before accepting
-     * another sequence. Failed transport restores Create instead of dropping confirmations. */
+     * another sequence. Failed transport pauses durable records without dropping confirmations. */
     @SubscribeEvent public static void onTickPost(LevelTickEvent.Post event) {
         if(!(event.getLevel() instanceof ServerLevel level))return;
         Runtime rt=WORLDS.get(level);if(rt==null || rt.pendingAcks.isEmpty())return;
@@ -250,7 +210,7 @@ public final class PackageAuthorityManager {
             var entry=iterator.next();var region=entry.getKey();
             var player=level.getServer().getPlayerList().getPlayer(region.owner());
             if(player!=null && player.serverLevel()==level)flushAcks(rt,region,player,entry.getValue());
-            else region.close();
+            else pauseRegion(rt,region);
             iterator.remove();
             entry.getValue().clear();if(rt.spareAcks.size()<64)rt.spareAcks.addLast(entry.getValue());
         }
@@ -274,8 +234,8 @@ public final class PackageAuthorityManager {
                     region.epoch(),region.revision(),builder.snapshot()));
             builder.clear();return true;
         }catch(RuntimeException failure) {
-            CreateManaIndustry.LOGGER.warn("[CMI packages] ACK enqueue failed; restoring Create",failure);
-            region.close();return false;
+            CreateManaIndustry.LOGGER.warn("[CMI packages] ACK enqueue failed; pausing package records",failure);
+            pauseRegion(rt,region);return false;
         }
     }
     /** Chain authority shares the same spatial election, capability and subscription boundary. */
@@ -305,7 +265,7 @@ public final class PackageAuthorityManager {
                 || !player.connection.hasChannel(ClientboundPackageObserverPacket.TYPE))return;
         Runtime rt=runtime(player.serverLevel());long tick=rt.level.getGameTime();
         Peer peer=rt.peers.computeIfAbsent(player.getUUID(),id->new Peer());
-        if(peer.tick!=tick){peer.tick=tick;peer.messages=0;peer.controlRecords=0;}
+        if(peer.tick!=tick){peer.tick=tick;peer.messages=0;peer.controlRecords=peer.environmentRecords=0;}
         if(++peer.messages>MAX_MESSAGES_PER_TICK)return;
         var key=new ObserverKey(player.getUUID(),packet.region());var previous=rt.observers.get(key);
         if(packet.action()==ServerboundPackageObserverPacket.UNSUBSCRIBE) {
@@ -380,20 +340,20 @@ public final class PackageAuthorityManager {
         if(!(context.player() instanceof ServerPlayer player) || !ServerConfig.packageGpuAuthority)return;
         Runtime rt=runtime(player.serverLevel());long tick=rt.level.getGameTime();
         Peer peer=rt.peers.computeIfAbsent(player.getUUID(),id->new Peer());
-        if(peer.tick!=tick){peer.tick=tick;peer.messages=0;peer.controlRecords=0;}
+        if(peer.tick!=tick){peer.tick=tick;peer.messages=0;peer.controlRecords=peer.environmentRecords=0;}
         if(++peer.messages>MAX_MESSAGES_PER_TICK){
             var affected=rt.regions.get(packet.region());
-            if(affected!=null&&affected.owner().equals(player.getUUID())&&affected.epoch()==packet.epoch())affected.close();
+            if(affected!=null&&affected.owner().equals(player.getUUID())&&affected.epoch()==packet.epoch())pauseRegion(rt,affected);
             return;
         }
         if(packet.action()==ServerboundPackagePacket.CAPABILITIES) {
             peer.flags=player.connection.hasChannel(ClientboundLightPackagePacket.TYPE)&&player.connection.hasChannel(ServerboundLightPackageInteraction.TYPE)?packet.capabilities():0;
-            if(peer.flags==0){rt.peers.remove(player.getUUID());for(var region:rt.regions.values())if(region.owner().equals(player.getUUID()))region.close();}
+            if(peer.flags==0){rt.peers.remove(player.getUUID());for(var region:rt.regions.values())if(region.owner().equals(player.getUUID()))pauseRegion(rt,region);}
             return;
         }
         var region=rt.regions.get(packet.region());
         if(region==null || !region.owner().equals(player.getUUID()) || region.epoch()!=packet.epoch())return;
-        if(!subscribed(player,rt.level,region.region())){region.close();return;}
+        if(!subscribed(player,rt.level,region.region())){pauseRegion(rt,region);return;}
         if(packet.action()==ServerboundPackagePacket.HEARTBEAT){region.heartbeat(player.getUUID(),packet.epoch(),tick);return;}
         if(packet.action()==ServerboundPackagePacket.CONTROL_BATCH) {
             if(packet.revision()!=region.revision())return;
@@ -403,14 +363,39 @@ public final class PackageAuthorityManager {
                 peer.controlRecords+=count;
                 // A sent release may concern a sleeping body that heartbeats keep alive.
                 // Budget rejection must explicitly hand back, never silently lose that control.
-                if(count==0)region.close();
+                if(count==0)pauseRegion(rt,region);
             }
             catch(RuntimeException invalid){
-                CreateManaIndustry.LOGGER.debug("[CMI packages] invalid/failed control batch; restoring Create",invalid);
+                CreateManaIndustry.LOGGER.debug("[CMI packages] invalid/failed control batch; pausing package records",invalid);
                 // Syntax is validated before callbacks. If a callback/transport fails, revoke
                 // even an already-processed prefix; a lost terminal control cannot stay owned.
-                region.close();
+                pauseRegion(rt,region);
             }
+            return;
+        }
+        if(packet.action()==ServerboundPackagePacket.ENVIRONMENT){
+            if(packet.revision()!=region.revision())return;
+            try{
+                var event=PackageEnvironmentEvent.decode(packet.changes());var target=rt.identities.get(event.identity());
+                if(target==null||target.light==null||target.region!=region)return;
+                var baseline=region.baseline(event.identity());
+                if(baseline==null||baseline.leaseEpoch()!=event.lease()||baseline.index()!=event.index()||baseline.revision()!=event.revision()||!region.simulated(event.identity(),tick))return;
+                if(event.first()>target.environmentWritten||peer.environmentRecords+event.samples().size()>256)return;
+                peer.environmentRecords+=event.samples().size();
+                for(int n=0;n<event.samples().size();n++){
+                    long serial=event.first()+n+1;if(serial<=target.environmentWritten)continue;
+                    var sample=event.samples().get(n);
+                    if(sample.step()<=target.environmentSimulationStep||target.environmentOriginStep>0&&sample.step()-target.environmentOriginStep>tick-target.environmentOriginTick+20||!PackageLightGameplay.environmentValid(rt.level,target.light,region.region(),sample)){
+                        region.release(event.identity());return;
+                    }
+                    if(target.environmentOriginStep==0){target.environmentOriginStep=sample.step();target.environmentOriginTick=tick;}
+                    target.environmentWritten=serial;target.environmentSimulationStep=sample.step();
+                    if(PackageLightGameplay.environmentStep(rt.level,target.light,packet.region(),sample))break;
+                }
+                if(rt.identities.get(event.identity())!=target)return;
+                PacketDistributor.sendToPlayer(player,new ClientboundPackagePacket(ClientboundPackagePacket.ENVIRONMENT_ACK,rt.level.dimension().location(),region.region(),region.epoch(),region.revision(),
+                        target.environmentWritten,baseline,-1,null,null,0,0,target.light.fireTicks,target.light.health,PackageLightGameplay.environmentPermissions(rt.level,target.light)));
+            }catch(IllegalArgumentException invalid){CreateManaIndustry.LOGGER.debug("[CMI packages] invalid environment event",invalid);}
             return;
         }
         if(ServerboundPackagePacket.deltaAction(packet.action())) {
@@ -419,22 +404,20 @@ public final class PackageAuthorityManager {
                 ByteBuffer bytes=ByteBuffer.wrap(packet.changes());var changes=packet.action()==ServerboundPackagePacket.DELTA
                         ?PackageDeltaCodec.decode(bytes):PackageBatchDeltaCodec.decode(bytes);
                 if(bytes.hasRemaining())return;
-                result=packet.action()==ServerboundPackagePacket.PREDICTED_DELTA
-                        ?region.deltaPredicted(player.getUUID(),packet.epoch(),packet.revision(),packet.sequence(),tick,changes,4)
-                        :packet.action()==ServerboundPackagePacket.RELATIVE_DELTA?region.deltaRelative(player.getUUID(),packet.epoch(),packet.revision(),packet.sequence(),tick,changes,4)
-                        :region.delta(player.getUUID(),packet.epoch(),packet.revision(),packet.sequence(),tick,changes,4);
+                int mode=packet.action()==ServerboundPackagePacket.PREDICTED_DELTA?2:packet.action()==ServerboundPackagePacket.RELATIVE_DELTA?1:0;
+                result=region.deltaStepped(player.getUUID(),packet.epoch(),packet.revision(),packet.sequence(),tick,changes,4,mode,packet.simulationStep());
             }catch(RuntimeException invalid){return;}
             if(result==PackageAuthorityRegion.Result.ACCEPTED || result==PackageAuthorityRegion.Result.STALE
                     && packet.revision()==region.revision() && packet.sequence()==region.lastSequence())
                 queueAck(rt,region,player,packet.sequence());
             else if(result!=PackageAuthorityRegion.Result.STALE){
-                CreateManaIndustry.LOGGER.debug("[CMI packages] rejected delta result={} sequence={} region={}; restoring Create",
+                CreateManaIndustry.LOGGER.debug("[CMI packages] rejected delta result={} sequence={} region={}; pausing package records",
                         result,packet.sequence(),region.region());
-                region.close();
+                pauseRegion(rt,region);
             }
             return;
         }
-        if(peer.controlRecords>=MAX_CONTROL_RECORDS_PER_TICK){region.close();return;}
+        if(peer.controlRecords>=MAX_CONTROL_RECORDS_PER_TICK){pauseRegion(rt,region);return;}
         peer.controlRecords++;
         control(rt,region,player,packet.action(),packet.index(),packet.identity(),packet.leaseEpoch(),packet.revision(),tick);
     }
@@ -456,7 +439,7 @@ public final class PackageAuthorityManager {
             }catch(IllegalArgumentException invalid){release(entity,tick);}
         } else if(action==ServerboundPackagePacket.VISIBLE_READY) {
             if(region.visibleReady(player.getUUID(),region.epoch(),index,identity,
-                    leaseEpoch,revision,tick)){entity.nativeOwner=player.connection;detach(entity);}
+                    leaseEpoch,revision,tick)){}
         }
     }
     private static EntityTarget findTarget(Runtime rt,PackageLease.Identity identity) {
@@ -465,80 +448,35 @@ public final class PackageAuthorityManager {
     private static void send(ServerLevel level,PackageAuthorityRegion region,int action,PackageAuthorityRegion.Baseline baseline,EntityTarget target) {
         ServerPlayer owner=level.getServer().getPlayerList().getPlayer(region.owner());if(owner==null)return;
         PacketDistributor.sendToPlayer(owner,new ClientboundPackagePacket(action,level.dimension().location(),region.region(),region.epoch(),
-                region.revision(),0,baseline,target.light!=null?-1:target.entityId,target.uuid,target.model,target.width,target.height));
+                region.revision(),0,baseline,target.light!=null?-1:target.entityId,target.uuid,target.model,target.width,target.height,
+                target.light==null?0:target.light.fireTicks,target.light==null?5:target.light.health,target.light==null?7:PackageLightGameplay.environmentPermissions(level,target.light)));
     }
-    /** The exact connection has confirmed a successful visible GPU submission. Preparation or
-     * ACTIVE alone never drops native replication; observers always retain their motion. */
-    public static boolean nativeMotionOwned(PackageEntity entity,ServerPlayerConnection recipient) {
-        if(!(entity.level() instanceof ServerLevel level))return false;
-        var rt=WORLDS.get(level);var target=rt==null?null:rt.entities.get(entity);
-        if(target!=null&&target.detaching)return false;
-        if(target==null||target.nativeOwner!=recipient||target.region==null)return false;
-        if(!ServerConfig.packageGpuAuthority){release(target,level.getGameTime());return false;}
-        return target.region.simulated(target.identity,level.getGameTime());
-    }
-    /** Losing the retained native entity also revokes its authority. Its removal packet makes
-     * an immediate motion recovery unnecessary; a later pairing supplies a fresh baseline. */
-    public static void nativeUnpaired(PackageEntity entity,ServerPlayerConnection recipient) {
-        if(!(entity.level() instanceof ServerLevel level))return;
-        var rt=WORLDS.get(level);var target=rt==null?null:rt.entities.get(entity);
-        if(target!=null&&target.detaching)return;
-        if(target!=null&&target.region!=null&&target.region.owner().equals(recipient.getPlayer().getUUID())
-                &&recipient.getPlayer().serverLevel()==level&&recipient.getPlayer().connection==recipient) {
-            target.nativeOwner=null;release(target,level.getGameTime());
-        }
-    }
-    public static boolean paused(PackageEntity entity) {
-        if(!(entity.level() instanceof ServerLevel level))return false;
-        Runtime rt=WORLDS.get(level);EntityTarget target=rt==null?null:rt.entities.get(entity);
-        if(target==null || target.region==null)return false;
-        if(!ServerConfig.packageGpuAuthority){release(target,level.getGameTime());return false;}
-        return target.region.paused(target.identity(),level.getGameTime());
-    }
-    /** A final handshake can pause travel, but may not replace native external forces yet. */
-    public static boolean simulated(PackageEntity entity) {
-        if(!ServerConfig.packageGpuAuthority||!(entity.level() instanceof ServerLevel level))return false;
-        var rt=WORLDS.get(level);var target=rt==null?null:rt.entities.get(entity);
-        return target!=null&&target.region!=null&&target.region.simulated(target.identity,level.getGameTime());
-    }
+    /** Free entities are intercepted before their native motion lifecycle. */
+    public static boolean simulated(PackageEntity entity){return false;}
+    public static void release(PackageEntity entity){}
     public static boolean hasSimulated(ServerLevel level) {
         if(!ServerConfig.packageGpuAuthority)return false;var rt=WORLDS.get(level);if(rt==null)return false;
         for(var region:rt.regions.values())if(region.simulatedCount()>0)return true;return false;
     }
-    /** This client's common free solver owns both contact bodies, even across its own regions.
-     * Never suppress contacts across worlds, different authorities or an unfinished handshake. */
-    public static boolean samePhysicsOwner(PackageEntity a,PackageEntity b) {
-        if(!ServerConfig.packageGpuAuthority||a==b||!(a.level() instanceof ServerLevel level)||b.level()!=level)return false;
-        var rt=WORLDS.get(level);if(rt==null)return false;
-        var first=rt.entities.get(a);var second=rt.entities.get(b);
-        return first!=null&&second!=null&&first.region!=null&&second.region!=null
-                &&first.region.coSimulates(first.identity,second.region,second.identity,level.getGameTime());
-    }
-    /** Preserve the exact final checkpoint while super.tick runs server-owned lifecycle callbacks. */
-    public static void maintainCheckpoint(PackageEntity entity) {
-        if(!paused(entity))return;
-        var target=WORLDS.get((ServerLevel)entity.level()).entities.get(entity);
-        if(target.checkpoint!=null)target.apply(target.checkpoint);
-    }
-    public static void release(PackageEntity entity) {
-        if(!(entity.level() instanceof ServerLevel level))return;
-        Runtime rt=WORLDS.get(level);var target=rt==null?null:rt.entities.get(entity);
-        if(target!=null)release(target,level.getGameTime());
-    }
     private static void release(EntityTarget target,long tick) {
-        if(target.detaching)return;
         var region=target.region;if(region==null)return;
         region.release(target.identity());
     }
-    private static void close(Runtime rt){rt.closing=true;for(EntityTarget target:new ArrayList<>(rt.identities.values()))release(target,rt.level.getGameTime());rt.regions.values().forEach(PackageAuthorityRegion::close);
+    private static void pauseRegion(Runtime rt,PackageAuthorityRegion region){
+        if(region.closed())return;region.beginClose();rt.closingRegions.addLast(region);
+    }
+    private static void close(Runtime rt){
+        rt.closing=true;for(var region:rt.regions.values())pauseRegion(rt,region);
         for(var entry:rt.observers.entrySet()){entry.getValue().authority.observers().unsubscribe(entry.getValue().cursor);
             var player=rt.level.getServer().getPlayerList().getPlayer(entry.getKey().player());
-            if(player!=null && player.serverLevel()==rt.level)closeObserver(rt,player,entry.getValue());}rt.observers.clear();rt.pendingAcks.clear();rt.spareAcks.clear();}
+            if(player!=null&&player.serverLevel()==rt.level)closeObserver(rt,player,entry.getValue());}
+        rt.observers.clear();rt.pendingAcks.clear();rt.spareAcks.clear();
+    }
     @SubscribeEvent public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         UUID id=event.getEntity().getUUID();for(Runtime rt:WORLDS.values()){rt.viewers.remove(id);rt.pendingVisuals.remove(id);
             rt.peers.remove(id);rt.observers.entrySet().removeIf(entry->{if(!entry.getKey().player().equals(id))return false;
                 entry.getValue().authority.observers().unsubscribe(entry.getValue().cursor);return true;});
-            for(var region:rt.regions.values())if(region.owner().equals(id))region.close();}
+            for(var region:rt.regions.values())if(region.owner().equals(id))pauseRegion(rt,region);}
     }
     @SubscribeEvent public static void lightDimensionChanged(PlayerEvent.PlayerChangedDimensionEvent event) {
         // The client's world switch clears all record visuals, even for a revisited dimension.
@@ -549,37 +487,34 @@ public final class PackageAuthorityManager {
         if(event.getLevel() instanceof ServerLevel level){Runtime rt=WORLDS.get(level);if(rt!=null){rt.unloading=true;close(rt);WORLDS.remove(level);}}
     }
     @SubscribeEvent public static void onStopped(ServerStoppedEvent event){WORLDS.clear();}
-    /** Visible admission is the transfer fence: inventory/NBT are durable before removal. */
-    private static void detach(EntityTarget target) {
-        if(target.light!=null || target.entity==null)return;
-        var rt=target.runtime;var entity=target.entity;target.detaching=true;
-        try {
-            target.light=rt.light.capture(entity,target.identity,target.snapshot());
-            send(rt.level,target.region,ClientboundPackagePacket.DETACHED,target.region.baseline(target.identity),target);
-            entity.discard();
-            if(!entity.isRemoved())throw new IllegalStateException("Native package removal rejected");
-            rt.entities.remove(entity);rt.discovery.remove(target.identity);target.entity=null;addLight(rt,target);rt.changed.add(target);
-        }catch(RuntimeException failure) {
-            if(!entity.isRemoved() && target.light!=null){rt.light.remove(target.light);target.light=null;}
-            else if(entity.isRemoved()&&target.light!=null){rt.entities.remove(entity);target.entity=null;addLight(rt,target);rt.changed.add(target);}
-            CreateManaIndustry.LOGGER.warn("[CMI packages] lightweight transfer failed; restoring Create",failure);
-        }finally {target.detaching=false;}
-        if(target.entity!=null)release(target,rt.level.getGameTime());
-    }
     private static void activate(Runtime rt,PackageLightStore.Entry entry){if(rt.identities.containsKey(entry.identity))return;var target=new EntityTarget(rt,entry);rt.identities.put(entry.identity,target);rt.discovery.put(entry.identity,target);addLight(rt,target);}
-    @SubscribeEvent public static void lightChunkLoaded(ChunkEvent.Load event){if(event.getLevel() instanceof ServerLevel level){var pos=event.getChunk().getPos();level.getServer().execute(()->{var rt=WORLDS.get(level);if(rt!=null)for(var entry:rt.light.inChunk(pos))activate(rt,entry);});}}
-    @SubscribeEvent public static void lightChunkUnloaded(ChunkEvent.Unload event){if(event.getLevel() instanceof ServerLevel level){var pos=event.getChunk().getPos();level.getServer().execute(()->{var rt=WORLDS.get(level);if(rt==null)return;for(var entry:rt.light.inChunk(pos)){var target=rt.identities.remove(entry.identity);if(target!=null&&target.light==entry){release(target,level.getGameTime());rt.discovery.remove(entry.identity);removeLight(rt,target);rt.changed.remove(target);withdrawVisual(rt,entry);}}});}}
+    @SubscribeEvent public static void lightChunkLoaded(ChunkEvent.Load event){if(event.getLevel() instanceof ServerLevel level){var pos=event.getChunk().getPos();level.getServer().execute(()->{var rt=WORLDS.get(level);if(rt!=null)rt.chunkChanges.put(pos,true);});}}
+    @SubscribeEvent public static void lightChunkUnloaded(ChunkEvent.Unload event){if(event.getLevel() instanceof ServerLevel level){var pos=event.getChunk().getPos();level.getServer().execute(()->{var rt=WORLDS.get(level);if(rt!=null)rt.chunkChanges.put(pos,false);});}}
+    private static void pumpChunkChanges(Runtime rt){
+        long deadline=System.nanoTime()+ServerConfig.packageMainThreadBudgetNanos();
+        for(int n=0;n<64&&System.nanoTime()<deadline;n++){
+            if(rt.chunkWork==null){
+                if(rt.chunkChanges.isEmpty())break;var iterator=rt.chunkChanges.entrySet().iterator();var change=iterator.next();
+                rt.chunkWorking=change.getKey();rt.chunkLoading=change.getValue();iterator.remove();rt.chunkWork=rt.light.inChunk(rt.chunkWorking).iterator();
+            }
+            var latest=rt.chunkChanges.remove(rt.chunkWorking);if(latest!=null){rt.chunkLoading=latest;rt.chunkWork=rt.light.inChunk(rt.chunkWorking).iterator();}
+            if(!rt.chunkWork.hasNext()){rt.chunkWork=null;continue;}
+            var entry=rt.chunkWork.next();if(rt.light.byIdentity(entry.identity)!=entry||!new net.minecraft.world.level.ChunkPos(net.minecraft.core.BlockPos.containing(entry.position())).equals(rt.chunkWorking))continue;
+            if(rt.chunkLoading){if(rt.level.hasChunkAt(net.minecraft.core.BlockPos.containing(entry.position())))activate(rt,entry);}
+            else{var target=rt.identities.remove(entry.identity);if(target!=null&&target.light==entry){release(target,rt.level.getGameTime());rt.discovery.remove(entry.identity);removeLight(rt,target);rt.changed.remove(target);withdrawVisual(rt,entry);}}
+        }
+    }
     private static void withdrawVisual(Runtime rt,PackageLightStore.Entry entry){for(var viewer:rt.viewers.entrySet()){var pending=rt.pendingVisuals.get(viewer.getKey());if(pending!=null)pending.remove(entry.identity);if(viewer.getValue().remove(entry.identity)){var player=rt.level.getServer().getPlayerList().getPlayer(viewer.getKey());if(player!=null&&player.serverLevel()==rt.level)sendLight(player,List.of(new ClientboundLightPackagePacket.Row(entry.identity,true,null,0,0,null)));}}}
-    private static void addLight(Runtime rt,EntityTarget target){if(target.lightOrdinal>=0)return;target.lightOrdinal=rt.lightTargets.size();rt.lightTargets.add(target);target.nativeOwner=null;}
+    private static void addLight(Runtime rt,EntityTarget target){if(target.lightOrdinal>=0)return;target.lightOrdinal=rt.lightTargets.size();rt.lightTargets.add(target);}
     private static void removeLight(Runtime rt,EntityTarget target){int index=target.lightOrdinal;if(index<0)return;var last=rt.lightTargets.removeLast();if(last!=target){rt.lightTargets.set(index,last);last.lightOrdinal=index;}target.lightOrdinal=-1;}
     public static List<PackageLightStore.Entry> queryLight(ServerLevel level,AABB bounds){return runtime(level).light.query(bounds);}
     static void transferLight(ServerLevel source,ServerLevel destination,PackageLightStore.Entry entry,PackageLease.Pose pose){
         var arrival=net.minecraft.core.BlockPos.containing(pose.x(),pose.y(),pose.z());destination.getChunkSource().addRegionTicket(net.minecraft.server.level.TicketType.PORTAL,new net.minecraft.world.level.ChunkPos(arrival),3,arrival);
-        if(source==destination){pauseForMachine(source,entry);entry.portalCooldown=300;updateLight(source,entry,new PackageAuthorityRegion.Snapshot(pose,0));return;}
-        var rt=runtime(destination);var identity=new PackageLease.Identity(PackageIdentityData.get(destination).identity(),entry.identity.generation());var next=new PackageLightStore.Entry(identity,entry.uuid,entry.model,entry.width,entry.height,-1,entry.data,new PackageAuthorityRegion.Snapshot(pose,0));next.health=entry.health;next.fireTicks=entry.fireTicks;next.tossedBy=entry.tossedBy;next.portalCooldown=300;rt.light.put(next);consumeLight(source,entry);var target=new EntityTarget(rt,next);rt.identities.put(identity,target);rt.discovery.put(identity,target);addLight(rt,target);rt.changed.add(target);}
+        if(source==destination){pauseForTransfer(source,entry);entry.portalCooldown=300;entry.portalUpdatedTick=source.getGameTime();updateLight(source,entry,new PackageAuthorityRegion.Snapshot(pose,0));return;}
+        var rt=runtime(destination);var identity=new PackageLease.Identity(PackageIdentityData.get(destination).identity(),entry.identity.generation());var next=new PackageLightStore.Entry(identity,entry.uuid,entry.model,entry.width,entry.height,-1,entry.data,new PackageAuthorityRegion.Snapshot(pose,0));next.health=entry.health;next.fireTicks=entry.fireTicks;next.tossedBy=entry.tossedBy;next.portalCooldown=300;next.portalUpdatedTick=destination.getGameTime();rt.light.put(next);consumeLight(source,entry);var target=new EntityTarget(rt,next);rt.identities.put(identity,target);rt.discovery.put(identity,target);addLight(rt,target);rt.changed.add(target);}
     static PackageLightStore.Entry light(ServerLevel level,PackageLease.Identity identity){var t=runtime(level).identities.get(identity);return t==null?null:t.light;}
     static void updateLight(ServerLevel level,PackageLightStore.Entry entry,PackageAuthorityRegion.Snapshot state){var t=runtime(level).identities.get(entry.identity);if(t!=null&&t.light==entry)t.apply(state);}
-    static void pauseForMachine(ServerLevel level,PackageLightStore.Entry entry){var t=runtime(level).identities.get(entry.identity);if(t!=null){release(t,level.getGameTime());t.retry=level.getGameTime()+40;}}
+    static void pauseForTransfer(ServerLevel level,PackageLightStore.Entry entry){var t=runtime(level).identities.get(entry.identity);if(t!=null){release(t,level.getGameTime());t.retry=level.getGameTime();}}
     public static boolean consumeLight(ServerLevel level,PackageLightStore.Entry entry){
         var rt=runtime(level);if(rt.light.byIdentity(entry.identity)!=entry)return false;
         var target=rt.identities.remove(entry.identity);if(target!=null){release(target,level.getGameTime());removeLight(rt,target);rt.changed.remove(target);}rt.discovery.remove(entry.identity);rt.light.remove(entry);withdrawVisual(rt,entry);return true;

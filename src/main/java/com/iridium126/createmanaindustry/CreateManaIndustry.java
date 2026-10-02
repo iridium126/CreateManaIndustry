@@ -185,7 +185,7 @@ public class CreateManaIndustry {
                 ClientboundMistSyncPacket.STREAM_CODEC,
                 ClientboundMistSyncPacket::handle);
         // Optional development transport: old/unprepared clients continue using Create.
-        PayloadRegistrar packageRegistrar=event.registrar("gpu-packages-8").optional();
+        PayloadRegistrar packageRegistrar=event.registrar("gpu-packages-9").optional();
         packageRegistrar.playToClient(com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundLightPackagePacket.TYPE,com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundLightPackagePacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundLightPackagePacket::handle);
         packageRegistrar.playToServer(com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundLightPackageInteraction.TYPE,com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundLightPackageInteraction.STREAM_CODEC,com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundLightPackageInteraction::handle);
         packageRegistrar.playToServer(

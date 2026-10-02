@@ -12,7 +12,8 @@ public final class PackageFreePickQueue {
     public record Input(long epoch,long sequence,Action action,PackagePoseQueryGpu.Ray ray,Object context,long createdNanos) {}
     private final long epoch;
     private final LongSupplier clock;
-    private long sequence=1;
+    private long sequence=1,submission=-1;
+    public long submission(){return submission;}
     private Input input;
     private PackagePoseQueryGpu.Result result;
     private Phase phase=Phase.EMPTY;
@@ -36,7 +37,7 @@ public final class PackageFreePickQueue {
                 ||next.state()<0&&next.state()!=PackagePhysicsGpu.COLLISION_FROZEN
                 ||!Float.isFinite(next.before())||next.before()<0||next.before()>=1
                 ||!Float.isFinite(next.progress())||next.progress()<0||next.progress()>1))throw new IllegalStateException("Free pick result domain/lifecycle/fraction");
-        result=next;phase=Phase.READY;return true;
+        result=next;submission=completed.submission();phase=Phase.READY;return true;
     }
     public Phase phase(){expire();return phase;}
     public Input input(){return input;}

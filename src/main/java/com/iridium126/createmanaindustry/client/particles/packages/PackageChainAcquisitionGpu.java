@@ -35,6 +35,7 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
         Phase phase=Phase.RESOURCES,capturedPhase;
         int body=-1,candidate=-1;
         boolean queued,captured,terminal;
+        long capturedSubmission,capturedCommit,visibleSince,retireBarrier,retireFence;
         boolean needsPose,poseRequested,retirementConfirmed;
         PackagePoseQueryGpu.Result pose;
         Entry(ClientboundChainPackagePacket offer){this.offer=checkpoint=offer;}
@@ -57,6 +58,7 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
     private final Map<Integer,Entry> entries=new HashMap<>(),byCandidate=new HashMap<>();
     private final Map<Integer,ClientboundChainPackagePacket.Track> table=new HashMap<>();
     private final Set<PackageLease.Identity> reservedIdentities=new HashSet<>();
+    private final ArrayDeque<Entry> retired=new ArrayDeque<>();
     private final ArrayDeque<Entry> work=new ArrayDeque<>();
     private final ArrayDeque<ClientboundChainPackagePacket.Track> trackWork=new ArrayDeque<>();
     private final LinkedHashSet<Entry> awaiting=new LinkedHashSet<>();
@@ -108,10 +110,11 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
         open();if(queries==null || use.epoch()!=epoch || generation!=lastCommit)return false;
         return queries.pick(PackagePoseQueryGpu.Input.of(physics,pool),use.ray(),generation,use);
     }
-    public PackageChainInteraction interaction(PackagePoseQueryGpu.Result result,long transaction) {
+    public PackageChainInteraction interaction(PackagePoseQueryGpu.Result result,long transaction){return interaction(result,transaction,Long.MAX_VALUE);}
+    public PackageChainInteraction interaction(PackagePoseQueryGpu.Result result,long transaction,long submission) {
         open();if(result==null || !result.present() || !result.chain() || result.state()<0 || (result.flags()&PackagePoolGpu.HIDDEN)!=0)return null;
         var entry=byCandidate.get(result.candidate());
-        if(entry==null || entry.phase!=Phase.ACTIVE || entry.terminal || result.body()!=physics.freeCapacity()+entry.body)return null;
+        if(entry==null || entry.phase!=Phase.ACTIVE || entry.terminal || submission<entry.visibleSince || result.body()!=physics.freeCapacity()+entry.body)return null;
         var b=entry.active.baseline();
         if(b.identity().id()!=result.id() || b.identity().generation()!=result.generation() || b.track()!=result.track())return null;
         return new PackageChainInteraction(epoch,b.identity(),b.leaseEpoch(),b.revision(),b.track(),b.trackRevision(),transaction,result.progress());
@@ -172,6 +175,12 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
         open();if(maximum<0 || maximum>MAX_TRANSITIONS)throw new IllegalArgumentException("Chain work budget");
         if(queries!=null)queries.poll(c->{if(c.kind()==PackagePoseQueryGpu.Kind.PICK){if(picks==null)throw new IllegalStateException("Missing chain pick consumer");picks.accept(c);}else poseConfirmed(c);});
         admissions.poll(this::confirmed);
+        for(int r=0;r<maximum&&!retired.isEmpty();r++){
+            var entry=retired.getFirst();int fence=org.lwjgl.opengl.GL32.glClientWaitSync(entry.retireFence,0,0);
+            if(fence==org.lwjgl.opengl.GL32.GL_WAIT_FAILED)throw new IllegalStateException("Chain retirement fence failed");
+            if(fence==org.lwjgl.opengl.GL32.GL_TIMEOUT_EXPIRED||!channel.recyclable(entry.body,entry.retireBarrier)||queries!=null&&queries.pending()>0)break;
+            retired.removeFirst();org.lwjgl.opengl.GL32.glDeleteSync(entry.retireFence);channel.recycle(entry.body);pool.makeReusable(entry.candidate);physics.recycleChain(entry.body);
+        }
         for(int n=0;n<maximum && !trackWork.isEmpty();n++) {
             var t=trackWork.getFirst();
             var origin=nativeOrigins==null?null:nativeOrigins.apply(t);
@@ -190,15 +199,15 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
                     if(entry.offer.baseline().track()>=tracks.trackCount() || !covered.test(entry.offer,entry.checkpoint)){queue(entry);continue;}
                     var identity=entry.offer.baseline().identity();
                     if(pool.reservesIdentity(identity.id(),identity.generation())){queue(entry);continue;}
-                    if(physics.chainCount()>=physics.chainCapacity() || physics.freeCount()+physics.chainCount()+physics.observerCount()>=131072
-                            || pool.metadataCount()>=Math.min(pool.capacity(),131072) || tracks.count()>=tracks.capacity()) {
+                    if(physics.nextChainBody()<0 || physics.freeLiveCount()+physics.chainLiveCount()+physics.observerLiveCount()>=131072
+                            ||pool.nextCandidate()<0||tracks.nextCandidate()<0) {
                         release(entry,entry.checkpoint.baseline(),true);continue;
                     }
-                    int local=physics.chainCount();
+                    int local=physics.nextChainBody();
                     try{encode(entry,local);}catch(IllegalArgumentException unsupported){release(entry,entry.checkpoint.baseline(),true);continue;}
-                    if(tracks.count()!=local)throw new IllegalStateException("Chain body/journal candidate order");
-                    entry.body=local;entry.candidate=pool.metadataCount();
-                    physics.appendChains(body,chain,1);pool.appendMetadata(metadata,1);channel.append(events);
+                    if(tracks.nextCandidate()!=local)throw new IllegalStateException("Chain body/journal candidate order");
+                    entry.body=local;entry.candidate=pool.nextCandidate();
+                    physics.writeChain(local,body,chain);pool.writeMetadata(entry.candidate,metadata);channel.write(local,events);
                     byCandidate.put(entry.candidate,entry);entry.phase=Phase.OFFER_ADMISSION;awaiting.add(entry);
                 }
                 case FINAL_UPLOAD -> {
@@ -299,11 +308,11 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
     }
     private boolean submit(ArrayList<Entry> batch,ArrayList<PackageAdmissionTracker.Expected> expected) {
         if(!admissions.submit(pool,batch.getFirst().candidate,expected,nextCapture++))return false;
-        for(Entry entry:batch){entry.captured=true;entry.capturedPhase=entry.phase;}return true;
+        for(Entry entry:batch){entry.captured=true;entry.capturedPhase=entry.phase;entry.capturedSubmission=nextCapture-1;entry.capturedCommit=lastCommit;}return true;
     }
     private void confirmed(PackageAdmissionTracker.Outcome result) {
         Entry entry=byCandidate.get(result.candidate());
-        if(entry==null || !entry.captured)throw new IllegalStateException("Unknown chain admission");
+        if(entry==null||!entry.captured||entry.capturedSubmission!=result.submission()||entry.offer.baseline().identity().id()!=result.id()||entry.offer.baseline().identity().generation()!=result.generation())return;
         entry.captured=false;if(entry.terminal || entry.phase!=entry.capturedPhase)return;
         awaiting.remove(entry);
         if(entry.phase==Phase.RETIRED_ADMISSION) {
@@ -315,7 +324,7 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
             case OFFER_ADMISSION -> {entry.phase=Phase.PREPARED;transport.control(ServerboundChainPackagePacket.PREPARED,entry.checkpoint,entry.body);}
             case FINAL_ADMISSION -> {entry.phase=Phase.FINAL_READY;transport.control(ServerboundChainPackagePacket.FINAL_READY,entry.checkpoint,entry.body);}
             case VISIBLE_ADMISSION -> {
-                entry.phase=Phase.ACTIVE;transitions--;activeCount++;
+                entry.phase=Phase.ACTIVE;entry.visibleSince=entry.capturedCommit;transitions--;activeCount++;
                 transport.activated(entry.offer,entry.active,table.get(entry.offer.baseline().track()),entry.candidate,result.slotPlusOne());
             }
             default -> throw new IllegalStateException("Unexpected chain admission "+entry.phase);
@@ -325,11 +334,12 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
         var identity=entry.offer.baseline().identity();
         if(entry.body>=0){pool.retireIdentity(entry.candidate,identity.id(),identity.generation());tracks.retireIdentity(entry.body,identity.id(),identity.generation());}
         entry.phase=Phase.RELEASED;entry.terminal=true;transitions--;awaiting.remove(entry);poseAwaiting.remove(entry);
-        reservedIdentities.remove(identity);
+        reservedIdentities.remove(identity);entries.remove(entry.offer.baseline().index(),entry);byCandidate.remove(entry.candidate,entry);
+        if(entry.body>=0){entry.retireBarrier=tracks.captureBarrier();entry.retireFence=org.lwjgl.opengl.GL32.glFenceSync(org.lwjgl.opengl.GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);if(entry.retireFence==0)throw new IllegalStateException("Chain retirement fence unavailable");retired.addLast(entry);}
     }
     private void open(){if(closed || Thread.currentThread()!=owner)throw new IllegalStateException("Chain acquisition closed/off render thread");}
     @Override public void close() {
-        if(closed)return;closed=true;admissions.close();work.clear();trackWork.clear();awaiting.clear();poseAwaiting.clear();entries.clear();byCandidate.clear();
+        if(closed)return;closed=true;admissions.close();for(var entry:retired)if(entry.retireFence!=0)org.lwjgl.opengl.GL32.glDeleteSync(entry.retireFence);retired.clear();work.clear();trackWork.clear();awaiting.clear();poseAwaiting.clear();entries.clear();byCandidate.clear();
         table.clear();reservedIdentities.clear();captureEntries.clear();captureExpected.clear();
     }
 }

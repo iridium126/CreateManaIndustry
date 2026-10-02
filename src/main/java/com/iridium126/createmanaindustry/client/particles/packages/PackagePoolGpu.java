@@ -48,13 +48,15 @@ public final class PackagePoolGpu implements AutoCloseable {
     private final PackageGpuIdentityReservations identities=new PackageGpuIdentityReservations();
     private Set<Integer> bodyIndices=new HashSet<>();
     private final byte[] candidateFlags;
+    private final int[] candidateBodies;
+    private final java.util.TreeSet<Integer> reusable=new java.util.TreeSet<>();
     private float originX,originY,originZ;
 
     public PackagePoolGpu(int capacity,int maxMeshes,Function<String,String> sources) {
         if(capacity<=0 || maxMeshes<=0 || maxMeshes>4096)throw new IllegalArgumentException("Package pool limits");
         this.capacity=capacity;this.packageCapacity=Math.min(capacity,131072);this.maxMeshes=maxMeshes;
         textureUnits=GL11.glGetInteger(GL20.GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);textureTexels=GL11.glGetInteger(GL31.GL_MAX_TEXTURE_BUFFER_SIZE);
-        candidateFlags=new byte[packageCapacity];
+        candidateFlags=new byte[packageCapacity];candidateBodies=new int[packageCapacity];java.util.Arrays.fill(candidateBodies,-1);
         if((packageCapacity+63L)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)
                 || (long)packageCapacity*ATTACHMENT_BYTES>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))
             throw new IllegalArgumentException("Package attachment exceeds device limits");
@@ -140,12 +142,12 @@ public final class PackagePoolGpu implements AutoCloseable {
             throw new IllegalArgumentException("Package metadata layout");
         Set<Identity> nextIdentities=new HashSet<>();Set<Integer> nextBodies=new HashSet<>();
         validateMetadata(data,count,nextIdentities,nextBodies);
-        upload(metadata,data);this.count=count;
+        upload(metadata,data);this.count=count;reusable.clear();
         // Full replacement can recycle candidate indices for different stable identities.
         // Append/visibility changes keep the existing lifetime's confirmed light instead.
         clear(sampledLight);
         ByteBuffer flags=data.duplicate().order(ByteOrder.nativeOrder());
-        for(int i=0;i<count;i++)candidateFlags[i]=(byte)flags.getInt(flags.position()+i*META_BYTES+28);
+        for(int i=0;i<count;i++){candidateFlags[i]=(byte)flags.getInt(flags.position()+i*META_BYTES+28);candidateBodies[i]=flags.getInt(flags.position()+i*META_BYTES+16);}
         identities.clear();reserveIdentities(data,count,0);bodyIndices=nextBodies;
     }
     /** Adds stable package identities without retransmitting or revalidating the existing population. */
@@ -164,8 +166,31 @@ public final class PackagePoolGpu implements AutoCloseable {
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);
         GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)count*META_BYTES,data);
         ByteBuffer flags=data.duplicate().order(ByteOrder.nativeOrder());
-        for(int i=0;i<added;i++)candidateFlags[count+i]=(byte)flags.getInt(flags.position()+i*META_BYTES+28);
+        for(int i=0;i<added;i++){candidateFlags[count+i]=(byte)flags.getInt(flags.position()+i*META_BYTES+28);candidateBodies[count+i]=flags.getInt(flags.position()+i*META_BYTES+16);}
         reserveIdentities(data,added,count);count+=added;bodyIndices.addAll(newBodies);
+    }
+    public int availableCandidates(){ensureOpen();return packageCapacity-count+reusable.size();}
+    public int nextCandidate(){ensureOpen();return reusable.isEmpty()?(count<packageCapacity?count:-1):reusable.first();}
+    /** Exact retirement confirmation and external reference drainage are prerequisites. */
+    public void makeReusable(int candidate){
+        ensureOpen();if(staged>=0||candidate<0||candidate>=count||!identities.retired(candidate))throw new IllegalArgumentException("Pool recycle fence");
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        bodyIndices.remove(candidateBodies[candidate]);candidateBodies[candidate]=-1;identities.reclaim(candidate);reusable.add(candidate);
+        for(int buffer:new int[]{sampledLight,admission[0],admission[1],attachments[0],attachments[1]}){
+            int stride=buffer==sampledLight?4:(buffer==admission[0]||buffer==admission[1]?32:ATTACHMENT_BYTES);
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
+            try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)candidate*stride,stride,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
+        }
+        while(count>0&&reusable.remove(count-1))count--;
+    }
+    public void writeMetadata(int candidate,ByteBuffer data){
+        ensureOpen();if(candidate==count){appendMetadata(data,1);return;}
+        if(!reusable.contains(candidate)||data.remaining()!=META_BYTES)throw new IllegalArgumentException("Pool replacement is not recyclable");
+        var nextIdentities=new HashSet<Identity>();var nextBodies=new HashSet<Integer>();validateMetadata(data,1,nextIdentities,nextBodies);
+        var v=data.duplicate().order(ByteOrder.nativeOrder());long id=v.getLong(v.position()),generation=v.getLong(v.position()+8);int body=v.getInt(v.position()+16);
+        if(identities.contains(id,generation)||bodyIndices.contains(body)||(v.getInt(v.position()+28)&HIDDEN)==0)throw new IllegalArgumentException("Pool replacement identity/body");
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)candidate*META_BYTES,data);
+        identities.reserve(id,generation,candidate);candidateBodies[candidate]=body;bodyIndices.add(body);candidateFlags[candidate]=(byte)v.getInt(v.position()+28);reusable.remove(candidate);
     }
     private void reserveIdentities(ByteBuffer data,int length,int first) {
         var v=data.duplicate().order(ByteOrder.nativeOrder());
@@ -333,7 +358,7 @@ public final class PackagePoolGpu implements AutoCloseable {
     public void commit(){ensureOpen();if(staged<0)throw new IllegalStateException("No package submission");long next=Math.incrementExact(publication);committed=staged;staged=-1;publication=next;}
     public void abort(){sealFrames();staged=-1;}
     public void invalidate(){committed=staged=-1;for(var pass:drawPasses)if(pass!=null)pass.publication=-1;}
-    public void reset(){sealFrames();count=0;bodyBuffer=chainBuffer=historyBuffer=bodyCount=frameBuffer=frameCount=0;lightSource(null);clear(sampledLight);identities.clear();bodyIndices.clear();invalidate();}
+    public void reset(){sealFrames();count=0;bodyBuffer=chainBuffer=historyBuffer=bodyCount=frameBuffer=frameCount=0;lightSource(null);clear(sampledLight);identities.clear();bodyIndices.clear();reusable.clear();java.util.Arrays.fill(candidateBodies,-1);invalidate();}
     public void lightSource(PackageLightGpu source){ensureOpen();if(lightSource==source)return;
         if(lightFeedback!=null)lightFeedback.close();lightFeedback=null;lightSource=null;clear(sampledLight);
         if(source!=null){long next=Math.incrementExact(lightEpoch);lightFeedback=new PackageLightFeedbackGpu(packageCapacity,next);lightEpoch=next;lightSource=source;}}
