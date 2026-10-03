@@ -4,7 +4,6 @@ import java.util.List;
 import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.api.block.BlockSubLevelCollisionShape;
 import dev.ryanhcode.sable.api.block.BlockSubLevelDynamicCollider;
-import dev.ryanhcode.sable.api.block.BlockWithSubLevelCollisionCallback;
 import dev.ryanhcode.sable.api.physics.collider.VoxelColliderData;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.companion.math.Pose3dc;
@@ -38,14 +37,34 @@ final class PackageSableCollisionSources implements PackageMovingCollisionSource
         int visited = 0;
         for (ClientSubLevel sub : container.getAllSubLevels()) {
             if (++visited > remainingVisits || System.nanoTime() - deadlineNanos >= 0) return false;
-            if (sub.isRemoved()) continue;
-            var key = new PackageMovingGeometry.Key(1, sub.getUniqueId());
+            PackageMovingGeometry.Key key;
+            try { key = new PackageMovingGeometry.Key(1, sub.getUniqueId()); }
+            catch (RuntimeException | LinkageError unavailable) { continue; }
+            if (!trackable(sub)) { host.forget(key); continue; }
             var old = host.source(key);
-            if (!(old instanceof Source source) || source.sub != sub) {
-                if (!host.install(key, new Source(sub))) return false;
+            try {
+                if (!(old instanceof Source source && source.sub == sub)) {
+                    var source = new Source(sub);
+                    if (!source.available()) host.forget(key);
+                    else if (!host.install(key, source)) return false;
+                }
+            } catch (RuntimeException | LinkageError unavailable) {
+                // One incomplete Sable plot must not make every package's shared moving
+                // collision history unavailable. Skip this source and try it again later.
+                host.forget(key);
             }
         }
         return true;
+    }
+
+    private static boolean trackable(ClientSubLevel sub) {
+        try {
+            var plot = sub.getPlot();
+            return PackageSableCollisionPolicy.trackable(sub.isRemoved(), sub.isFinalized(), plot != null,
+                    plot != null && !plot.getLoadedChunks().isEmpty());
+        } catch (RuntimeException | LinkageError unavailable) {
+            return false;
+        }
     }
 
     @Override public Vec3 projectContaining(Entity entity, Vec3 point, boolean previous) {
@@ -58,11 +77,6 @@ final class PackageSableCollisionSources implements PackageMovingCollisionSource
         scratch.set(point.x, point.y, point.z);
         pose.transformPosition(scratch, scratch);
         return new Vec3(scratch.x, scratch.y, scratch.z);
-    }
-
-    @Override public boolean unsupported(BlockState state) {
-        host.owner();
-        return BlockWithSubLevelCollisionCallback.hasCallback(state);
     }
 
     @Override public List<PackageMovingGeometry.Box> dynamicBoxes(BlockState state,BlockPos pos,int ox,int oy,int oz,float friction) {
@@ -86,16 +100,30 @@ final class PackageSableCollisionSources implements PackageMovingCollisionSource
             super(PackageSableCollisionSources.this.host);
             this.sub = sub;
             key = new PackageMovingGeometry.Key(1, sub.getUniqueId());
-            refresh();
         }
         @Override public PackageMovingGeometry.Key key() { return key; }
-        @Override public boolean alive() { owner(); return !sub.isRemoved(); }
+        @Override public boolean alive() { owner(); return trackable(sub); }
+        boolean available() {
+            owner();
+            if (!trackable(sub)) return false;
+            try {
+                refresh();
+                return raw != null;
+            } catch (RuntimeException | LinkageError unavailable) {
+                return false;
+            }
+        }
         @Override void refresh() {
             boolean ready = sub.isFinalized();
             if (ready != finalized) { finalized = ready; version++; }
-            plot = sub.getPlot();
+            LevelPlot nextPlot = sub.getPlot();
+            if (nextPlot != plot) {
+                plot = nextPlot;
+                version++;
+            }
             var b = plot.getBoundingBox();
-            // Inclusive absolute plot bounds, not coordinates relative to a sublevel.
+            // PlotChunkHolder keeps the parent storage chunk position. LevelPlot's bounds
+            // are therefore already in the parent world's absolute block coordinates.
             bounds(b.minX(), b.minY(), b.minZ(), b.maxX() + 1., b.maxY() + 1., b.maxZ() + 1.);
         }
         @Override Vec3 project(double x, double y, double z, boolean previous) {
@@ -112,30 +140,41 @@ final class PackageSableCollisionSources implements PackageMovingCollisionSource
         @Override public PackageMovingCollisionCache.Cursor open() {
             owner();
             if (!sub.isFinalized()) throw new IllegalStateException("Sable initial chunks not finalized");
+            LevelReader world = plot.getEmbeddedLevelAccessor();
+            var center = plot.getCenterBlock();
             var holders = plot.getLoadedChunks().iterator();
             return new PackageMovingCollisionCache.Cursor() {
                 LevelChunk chunk;
                 int section, index;
                 final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+                final BlockPos.MutableBlockPos contextPos = new BlockPos.MutableBlockPos();
 
                 public boolean hasNext() { owner(); return chunk != null || holders.hasNext(); }
                 public List<PackageMovingGeometry.Box> next() {
                     owner();
                     if (chunk == null) { chunk = holders.next().getChunk(); section = 0; index = 0; }
-                    if (section >= chunk.getSections().length) { chunk = null; return List.of(); }
-                    var cells = chunk.getSections()[section];
+                    var sections = chunk.getSections();
+                    section = PackageSableCollisionSections.nextNonNull(sections, section);
+                    if (section >= sections.length) { chunk = null; return List.of(); }
+                    var cells = sections[section];
                     if (cells.hasOnlyAir()) { section++; index = 0; return List.of(); }
                     pos.set(chunk.getPos().getMinBlockX() + (index & 15), chunk.getSectionYFromSectionIndex(section) * 16 + (index >>> 8),
                             chunk.getPos().getMinBlockZ() + ((index >>> 4) & 15));
-                    if (!level.hasChunkAt(pos)) return null;
-                    if (index == 0) for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
-                        int nx = pos.getX() + dx * 16, nz = pos.getZ() + dz * 16;
-                        if (nx + 16 > raw.x0() && nx < raw.x1() && nz + 16 > raw.z0() && nz < raw.z1()
-                                && !level.hasChunkAt(new BlockPos(nx, pos.getY(), nz))) return null;
+                    PackageSableCollisionCoordinates.contextPosition(pos, center, contextPos);
+                    // The plot holder owns this chunk. The parent Level's loaded-chunk test
+                    // can reject a valid plot chunk, leaving a pose-only collider forever.
+                    try {
+                        return shapes(cells.getBlockState(index & 15, index >>> 8, (index >>> 4) & 15), world, pos, contextPos);
+                    } catch (RuntimeException | LinkageError unavailableShape) {
+                        // One modded block with an unavailable shape must not make the
+                        // entire plot BVH permanently unavailable. Keep a fail-closed
+                        // marker at this cell so only bodies touching it pause.
+                        return List.of(new PackageMovingGeometry.Box(pos.getX() - ox, pos.getY() - oy, pos.getZ() - oz,
+                                pos.getX() - ox + 1, pos.getY() - oy + 1, pos.getZ() - oz + 1,
+                                .6f, PackageCollisionCache.UNSUPPORTED));
+                    } finally {
+                        if (++index == 4096) { section++; index = 0; }
                     }
-                    var result = shapes(cells.getBlockState(index & 15, index >>> 8, (index >>> 4) & 15), level, pos);
-                    if (++index == 4096) { section++; index = 0; }
-                    return result;
                 }
             };
         }

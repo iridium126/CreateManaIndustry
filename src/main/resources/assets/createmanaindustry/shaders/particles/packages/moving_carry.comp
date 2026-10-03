@@ -3,17 +3,37 @@
 #pragma cmi_include packages/moving.glsl
 #pragma cmi_include packages/moving_support.glsl
 layout(local_size_x=64) in;
+// Carry along the moving surface until static-world contact, then slide the
+// remaining displacement along the blocking face. A known obstruction is a
+// normal contact constraint, not missing collision coverage.
+bool sweepCarryWorld(Body b,vec3 start,vec3 shift,out vec3 carried) {
+    vec3 position=start,remaining=shift;carried=vec3(0);
+    for(int slide=0;slide<3;slide++) {
+        if(dot(remaining,remaining)<1e-12)return true;
+        float fraction=1.;vec3 normal=vec3(0);
+        if(!sweepWorld(b,position,remaining,fraction,normal))return false;
+        if(fraction>=.99999){carried+=remaining;return true;}
+        float distance=length(remaining);
+        float safeFraction=max(0.,fraction-min(.01,1e-4/max(distance,1e-4)));
+        vec3 advance=remaining*safeFraction;
+        position+=advance;carried+=advance;remaining-=advance;
+        float into=dot(remaining,normal);
+        if(into<0.)remaining-=normal*into;
+    }
+    // The fixed iteration bound can discard only the unresolved tangent tail;
+    // every applied segment has already passed the exact world sweep.
+    return true;
+}
 void main() {
     uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;Body b=src[i];vec4 support=movingSupport[i];
     support.w=uintBitsToFloat(floatBitsToUint(support.w)&~MOVING_FRICTION_DONE);movingSupport[i]=support;
     if(uMovingReady&&movingGeometryReady()&&b.positionMass.w>0.&&b.previousSleep.w>=0.&&(floatBitsToUint(support.w)&MOVING_ID_MASK)==movingIdentity()) {
         vec3 foot=b.positionMass.xyz-vec3(0,b.extentYaw.y,0);
         vec3 shift=projectPoint(localPoint(foot,true),false)-foot;
-        float closest=1.;vec3 normal=vec3(0);
-        if(!sweepWorld(b,b.positionMass.xyz,shift,closest,normal))freezeForMissingCollision(b,src[i].positionMass.xyz);
-        else if(closest<.99999){freezeForMissingCollision(b,b.previousSleep.xyz);}
-        else {b.positionMass.xyz+=shift;b.velocityGround.xyz-=support.xyz;
-            movingSupport[i]=vec4(shift*20.,uintBitsToFloat(movingIdentity()|MOVING_CARRIED));}
+        vec3 carried;
+        if(!sweepCarryWorld(b,b.positionMass.xyz,shift,carried))freezeForMissingCollision(b,src[i].positionMass.xyz);
+        else {b.positionMass.xyz+=carried;b.velocityGround.xyz-=support.xyz;
+            movingSupport[i]=vec4(carried*20.,uintBitsToFloat(movingIdentity()|MOVING_CARRIED));}
     }
     dst[i]=b;
 }

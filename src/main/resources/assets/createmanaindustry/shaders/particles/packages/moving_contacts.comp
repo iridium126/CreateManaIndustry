@@ -36,9 +36,9 @@ void main() {
     float localSweepRadiusSquared=localSweepRadius*localSweepRadius;
     uint node=0u,visits=0u;bool grounded=false;vec3 velocity=b.velocityGround.xyz;
     while(node<movingNodeCount()) {
-        // MAX_BOXES=4096 yields at most 8191 preorder BVH nodes. The work remains
+        // MAX_BOXES=16384 yields at most 32767 preorder BVH nodes. The work remains
         // strictly bounded while every supported node can be visited after culling.
-        if(++visits>8192u){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
+        if(++visits>32768u){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
         MovingNode box=movingNodes[node];uint escape=floatBitsToUint(box.lo.w);
         if(escape<=node||escape>movingNodeCount()){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
         if(rotating) {
@@ -106,9 +106,9 @@ void main() {
     if(!grounded&&(tag&MOVING_ID_MASK)==movingIdentity())movingSupport[i]=vec4(0);
     vec3 correction;float material=-1.;bool worldGround=b.velocityGround.w>.5;
     if(!solveWorld(b,correction,velocity,worldGround,material)){freezeForMissingCollision(b,initial);dst[i]=b;return;}
-    // Opposing static-world corrections can crush a body between platforms and
-    // terrain. Never publish an unresolved intersection as successful physics.
-    if(length(correction)>1e-4&&grounded){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
+    // A finite static-world correction is a solvable contact, even when this body
+    // also rests on the moving source. Only solveWorld's explicit unavailable or
+    // opposing-surface failure should pause the body.
     b.positionMass.xyz+=correction;
     if(!coveredWorld(b)){freezeForMissingCollision(b,initial);dst[i]=b;return;}
     b.velocityGround=vec4(velocity,grounded||worldGround?1.:0.);dst[i]=b;

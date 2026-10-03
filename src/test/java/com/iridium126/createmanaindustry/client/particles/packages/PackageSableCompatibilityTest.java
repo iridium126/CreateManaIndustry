@@ -79,4 +79,57 @@ class PackageSableCompatibilityTest {
         }
         assertTrue(sableGate&&packageGate,"the Sable-specific hook must be gated before its optional target is loaded");
     }
+
+    @Test void plotCollisionCaptureUsesEmbeddedCoordinatesWithoutParentChunkGate() throws Exception {
+        String sourceName="com/iridium126/createmanaindustry/client/particles/packages/PackageSableCollisionSources$Source";
+        var source=PackageCollisionHookContractTest.type(sourceName);
+        var open=source.methods.stream().filter(method->method.name.equals("open")).findFirst().orElseThrow();
+        assertTrue(java.util.stream.StreamSupport.stream(open.instructions.spliterator(),false)
+                .filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast)
+                .anyMatch(call->call.owner.equals("dev/ryanhcode/sable/sublevel/plot/LevelPlot")
+                        &&call.name.equals("getEmbeddedLevelAccessor")));
+
+        var cursor=PackageCollisionHookContractTest.type(sourceName+"$1");
+        var next=cursor.methods.stream().filter(method->method.name.equals("next")).findFirst().orElseThrow();
+        boolean convertsStorageCoordinates=false,usesParentChunkGate=false,skipsNullSections=false;
+        for(var instruction:next.instructions)if(instruction instanceof MethodInsnNode call) {
+            if(call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageSableCollisionCoordinates")
+                    &&call.name.equals("contextPosition"))convertsStorageCoordinates=true;
+            if(call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageSableCollisionSections")
+                    &&call.name.equals("nextNonNull"))skipsNullSections=true;
+            if(call.name.equals("hasChunkAt"))usesParentChunkGate=true;
+        }
+        assertTrue(convertsStorageCoordinates,"embedded world queries must use coordinates relative to the plot center");
+        assertTrue(skipsNullSections,"sparse plot chunk sections must be skipped without aborting the entire geometry capture");
+        assertFalse(usesParentChunkGate,"the plot holder, not ClientLevel.hasChunkAt, owns the captured chunk");
+    }
+
+    @Test void sableImpactCallbacksDoNotMarkKnownCollisionGeometryUnsupported() throws Exception {
+        String root = "com/iridium126/createmanaindustry/client/particles/packages/";
+        var bridge = PackageCollisionHookContractTest.type(root + "PackageMovingCollisionSources$OptionalBridge");
+        assertFalse(bridge.methods.stream().anyMatch(method -> method.name.equals("unsupported")),
+                "optional integrations must not classify impact callbacks as missing geometry");
+
+        var base = PackageCollisionHookContractTest.type(root + "PackageMovingCollisionSources$Base");
+        boolean capturesOrdinaryShape = false;
+        boolean queriesOptionalDynamicShape = false;
+        for (var method : base.methods) {
+            for (var instruction : method.instructions) if (instruction instanceof MethodInsnNode call) {
+                if (call.name.equals("getCollisionShape")) capturesOrdinaryShape = true;
+                if (call.name.equals("dynamicBoxes")) queriesOptionalDynamicShape = true;
+                assertFalse(call.name.equals("unsupported"),
+                        "an optional impact callback must not turn a collision into a freeze condition");
+            }
+        }
+        assertTrue(capturesOrdinaryShape, "callback blocks still use their normal collision shape");
+        assertTrue(queriesOptionalDynamicShape, "Sable-specific custom collider geometry remains supported");
+
+        try (var stream = getClass().getResourceAsStream("/" + root + "PackageSableCollisionSources.class")) {
+            assertNotNull(stream);
+            assertFalse(new String(stream.readAllBytes(), StandardCharsets.ISO_8859_1)
+                            .contains("BlockWithSubLevelCollisionCallback"),
+                    "impact callback APIs must not participate in geometry availability");
+        }
+    }
+
 }

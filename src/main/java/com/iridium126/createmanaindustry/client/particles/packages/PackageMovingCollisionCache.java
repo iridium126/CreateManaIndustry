@@ -23,10 +23,12 @@ public final class PackageMovingCollisionCache {
         long revision,sourceRevision=Long.MIN_VALUE,futureRevision;Cursor cursor;List<PackageMovingGeometry.Box> captured;
         CompletableFuture<PackageMovingGeometry.Snapshot> future;
         PackageMovingGeometry.Snapshot snapshot;
+        GeometryRevision geometryReference;
         boolean unsupported;
         public PackageMovingGeometry.Bounds bounds;public PackageMovingGeometry.Pose previous,current;
         public long poseFrame;
-        Entry(Source source,int identity){this.source=source;this.identity=identity;}
+        Entry(Source source,int identity){this.source=source;this.identity=identity;geometryReference=new GeometryRevision(identity,revision);}
+        void setRevision(long revision){this.revision=revision;geometryReference=new GeometryRevision(identity,revision);}
         public PackageMovingGeometry.Snapshot snapshot(){return snapshot;}
         public long revision(){return revision;}
         public boolean unsupported(){return unsupported;}
@@ -34,6 +36,9 @@ public final class PackageMovingCollisionCache {
     private final Thread owner=Thread.currentThread();private final Executor executor;private final LongSupplier clock;
     private final LinkedHashMap<PackageMovingGeometry.Key,Entry> entries=new LinkedHashMap<>();
     private final NavigableMap<Long,List<Entry>> history=new TreeMap<>();
+    private final Map<GeometryRevision,Integer> retainedGeometryCounts=new HashMap<>();
+    private Set<GeometryRevision> retainedGeometrySnapshot=Set.of();
+    private boolean retainedGeometryDirty;
     private int historyTicks=PackageSimulationClock.HISTORY_TICKS;
     public void tickRate(double rate){owner();historyTicks=Math.max(historyTicks,com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageTickTiming.historyTicks(rate));}
     public void captureHistory(long tick,boolean available){
@@ -49,13 +54,14 @@ public final class PackageMovingCollisionCache {
         owner();if(history.containsKey(tick))return;
         List<Entry> frame=new ArrayList<>();
         if(available&&posesReady())for(Entry source:entries.values()){
-            Entry frozen=new Entry(source.source,source.identity);frozen.revision=source.revision;
+            Entry frozen=new Entry(source.source,source.identity);frozen.revision=source.revision;frozen.geometryReference=source.geometryReference;
             frozen.bounds=source.bounds;frozen.previous=source.previous.interpolate(source.current,from);frozen.current=source.previous.interpolate(source.current,to);
             frozen.unsupported=source.unsupported;frozen.poseFrame=tick+1;frame.add(frozen);
         }
         else frame=null;
-        history.put(tick,frame==null?null:List.copyOf(frame));
-        while(history.size()>historyTicks)history.pollFirstEntry();
+        List<Entry> captured=frame==null?null:List.copyOf(frame);
+        history.put(tick,captured);retainGeometry(captured);
+        while(history.size()>historyTicks)releaseGeometry(history.pollFirstEntry().getValue());
     }
     public List<Entry> history(long tick){owner();return history.get(tick);}
     /** A missed moving-scene sample may be treated as empty only after a complete discovery
@@ -65,10 +71,26 @@ public final class PackageMovingCollisionCache {
     }
     /** Geometry versions referenced by retained input frames remain live in the GPU atlas. */
     public Set<GeometryRevision> retainedGeometry(){
-        owner();Set<GeometryRevision> result=new HashSet<>();
-        for(List<Entry> frame:history.values())if(frame!=null)for(Entry entry:frame)
-            result.add(new GeometryRevision(entry.identity,entry.revision));
-        return Set.copyOf(result);
+        owner();
+        if(retainedGeometryDirty){retainedGeometrySnapshot=Set.copyOf(retainedGeometryCounts.keySet());retainedGeometryDirty=false;}
+        return retainedGeometrySnapshot;
+    }
+    private void retainGeometry(List<Entry> frame){
+        if(frame==null)return;
+        for(Entry entry:frame){
+            GeometryRevision reference=entry.geometryReference;Integer count=retainedGeometryCounts.get(reference);
+            if(count==null){retainedGeometryCounts.put(reference,1);retainedGeometryDirty=true;}
+            else retainedGeometryCounts.put(reference,count+1);
+        }
+    }
+    private void releaseGeometry(List<Entry> frame){
+        if(frame==null)return;
+        for(Entry entry:frame){
+            GeometryRevision reference=entry.geometryReference;Integer count=retainedGeometryCounts.get(reference);
+            if(count==null)throw new IllegalStateException("Missing retained moving geometry reference");
+            if(count==1){retainedGeometryCounts.remove(reference);retainedGeometryDirty=true;}
+            else retainedGeometryCounts.put(reference,count-1);
+        }
     }
     public boolean hasHistory(long tick){owner();return history.containsKey(tick);}
     private final int capacity;private int nextIdentity=1;private long serial,frame,lastCapture,overruns;
@@ -82,24 +104,29 @@ public final class PackageMovingCollisionCache {
         if(nextIdentity>0x1fff_ffff)throw new IllegalStateException("Moving identity exhausted");
         if(old!=null)revoke(old);entries.put(source.key(),new Entry(source,nextIdentity++));return true;
     }
-    private void revoke(Entry e){e.snapshot=null;e.cursor=null;e.captured=null;e.revision=++serial;e.unsupported=false;e.poseFrame=0;}
+    private void revoke(Entry e){e.snapshot=null;e.cursor=null;e.captured=null;e.setRevision(++serial);e.unsupported=false;e.poseFrame=0;}
     public void invalidate(PackageMovingGeometry.Key key){owner();Entry e=entries.get(key);if(e!=null)revoke(e);}
     public void remove(PackageMovingGeometry.Key key){owner();Entry e=entries.remove(key);if(e!=null)revoke(e);}
-    public void clear(){owner();for(Entry e:entries.values())revoke(e);entries.clear();history.clear(); /* Never reuse an identity within this world. */}
+    public void clear(){owner();for(Entry e:entries.values())revoke(e);entries.clear();history.clear();retainedGeometryCounts.clear();retainedGeometrySnapshot=Set.of();retainedGeometryDirty=false; /* Never reuse an identity within this world. */}
     public Collection<Entry> entries(){owner();return Collections.unmodifiableCollection(entries.values());}
     public void tick(long budgetNanos) {
         owner();frame++;if(budgetNanos<=0)return;long start=clock.getAsLong();
-        // Rotation of the queue avoids one large structure monopolizing captures.
+        // Sample every light-weight pose before spending the tick budget on block geometry.
+        // Otherwise one large/slow sublevel can consume the budget and leave later sources
+        // with stale poseFrame values; the immutable history then rejects the whole scene.
+        for(var iterator=entries.entrySet().iterator();iterator.hasNext();) {
+            var row=iterator.next();Entry e=row.getValue();long version;
+            try{if(!e.source.alive()){iterator.remove();revoke(e);continue;}version=e.source.revision();}
+            catch(RuntimeException|LinkageError unavailable){e.snapshot=null;e.poseFrame=0;e.sourceRevision=Long.MIN_VALUE;e.setRevision(++serial);continue;}
+            if(version!=e.sourceRevision){e.sourceRevision=version;e.setRevision(++serial);e.snapshot=null;e.cursor=null;e.captured=null;e.unsupported=false;}
+            try{e.bounds=e.source.bounds();e.previous=e.source.pose(true);e.current=e.source.pose(false);e.poseFrame=frame;}
+            catch(RuntimeException|LinkageError unavailable){e.poseFrame=0;}
+        }
+        // Rotation of the queue avoids one large structure monopolizing geometry capture.
         int attempts=entries.size();
         while(attempts-->0&&!entries.isEmpty()&&clock.getAsLong()-start<budgetNanos) {
-            var iterator=entries.entrySet().iterator();var row=iterator.next();Entry e=row.getValue();iterator.remove();
-            entries.put(row.getKey(),e);
-            long version;
-            try{if(!e.source.alive()){remove(row.getKey());continue;}version=e.source.revision();}
-            catch(RuntimeException|LinkageError unavailable){e.snapshot=null;e.poseFrame=0;e.sourceRevision=Long.MIN_VALUE;e.revision=++serial;continue;}
-            if(version!=e.sourceRevision){e.sourceRevision=version;e.revision=++serial;e.snapshot=null;e.cursor=null;e.captured=null;e.unsupported=false;}
-            try{e.bounds=e.source.bounds();e.previous=e.source.pose(true);e.current=e.source.pose(false);e.poseFrame=frame;}
-            catch(RuntimeException|LinkageError unavailable){e.poseFrame=0;continue;}
+            var row=entries.entrySet().iterator().next();Entry e=row.getValue();entries.remove(row.getKey());entries.put(row.getKey(),e);
+            if(e.poseFrame!=frame)continue;
             if(e.future!=null) {
                 if(!e.future.isDone())continue;
                 if(!e.future.isCompletedExceptionally()&&!e.future.isCancelled()) {
@@ -110,11 +137,14 @@ public final class PackageMovingCollisionCache {
             if(e.snapshot!=null||e.unsupported)continue;
             if(e.cursor==null)try{e.cursor=e.source.open();e.captured=new ArrayList<>();}
             catch(RuntimeException|LinkageError unsupported){e.unsupported=true;continue;}
-            int batch=0;
             boolean complete=false;
-            while(batch++<16&&clock.getAsLong()-start<budgetNanos) {
+            // The wall-clock budget is the bound. A fixed per-tick cell count made
+            // large Sable plots take minutes to capture (a non-empty section has
+            // 4096 cells), keeping their pose-only collision proxy active long after
+            // the first packages reached it.
+            while(clock.getAsLong()-start<budgetNanos) {
                 List<PackageMovingGeometry.Box> boxes;
-                try{if(!e.cursor.hasNext()){complete=true;break;}boxes=e.cursor.next();}catch(RuntimeException|LinkageError changed){e.cursor=null;e.captured=null;e.snapshot=null;e.revision=++serial;break;}
+                try{if(!e.cursor.hasNext()){complete=true;break;}boxes=e.cursor.next();}catch(RuntimeException|LinkageError changed){e.cursor=null;e.captured=null;e.snapshot=null;e.setRevision(++serial);break;}
                 if(boxes==null)break;
                 if(e.captured.size()+boxes.size()>PackageMovingGeometry.MAX_CAPTURE_BOXES){e.unsupported=true;e.captured=null;e.cursor=null;break;}
                 e.captured.addAll(boxes);

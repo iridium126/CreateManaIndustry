@@ -44,10 +44,14 @@ class PackageMovingCollisionCacheTest {
         assertTrue(cache.offer(source));cache.tick(1);cache.captureHistory(0,true);
         var entry=cache.history(0).getFirst();
         var reference=new PackageMovingCollisionCache.GeometryRevision(entry.identity,entry.revision());
-        assertTrue(cache.retainedGeometry().contains(reference));
+        var retained=cache.retainedGeometry();assertTrue(retained.contains(reference));
+        cache.captureHistory(1,true);
+        assertSame(retained,cache.retainedGeometry(),"unchanged geometry revisions reuse the cached set");
         cache.remove(source.key());
         assertTrue(cache.retainedGeometry().contains(reference));
-        for(int tick=1;tick<=PackageSimulationClock.HISTORY_TICKS;tick++)cache.captureHistory(tick,true);
+        for(int tick=2;tick<=PackageSimulationClock.HISTORY_TICKS;tick++)cache.captureHistory(tick,true);
+        assertTrue(cache.retainedGeometry().contains(reference),"the second frame still retains the geometry revision");
+        cache.captureHistory(PackageSimulationClock.HISTORY_TICKS+1L,true);
         assertFalse(cache.retainedGeometry().contains(reference));
     }
     static final PackageMovingGeometry.Pose IDENTITY=new PackageMovingGeometry.Pose(1,0,0,0,1,0,0,0,1,0,0,0);
@@ -76,6 +80,17 @@ class PackageMovingCollisionCacheTest {
         assertEquals(1,tasks.size());var worker=new Thread(tasks.remove());worker.start();worker.join();
         cache.tick(10000);var result=cache.entries().iterator().next().snapshot();assertNotNull(result);
         assertEquals(1,result.count());assertEquals(40,result.nodes().getFloat(16));assertTrue(result.nodes().isReadOnly());
+    }
+    @Test void slowGeometryCaptureCannotStarveOtherSourcesPoseHistory() {
+        var clock=new AtomicLong();var slow=new Source(clock);slow.length=40;
+        var later=new Source(clock);later.length=1;
+        var cache=new PackageMovingCollisionCache(Runnable::run,2,clock::get);
+        assertTrue(cache.offer(slow));assertTrue(cache.offer(later));
+        cache.tick(250);
+        assertTrue(cache.posesReady(),"pose history must be sampled before a large collider consumes the geometry budget");
+        cache.captureHistory(11,true);
+        assertEquals(2,cache.history(11).size());
+        assertEquals(300,cache.lastCaptureNanos(),"geometry work remains bounded by the shared capture budget");
     }
     @Test void staleTasksAndClearedEntriesCannotBecomeCurrent() {
         var tasks=new ArrayDeque<Runnable>();var source=new Source(new AtomicLong());source.length=1;
@@ -128,7 +143,18 @@ class PackageMovingCollisionCacheTest {
         boxes.add(new PackageMovingGeometry.Box(1,0,0,2,1,1,.7f,0));assertEquals(3,PackageMovingGeometry.bake(1,boxes).count());
         boxes.set(1,new PackageMovingGeometry.Box(2,0,0,3,1,1,.6f,0));assertEquals(3,PackageMovingGeometry.bake(1,boxes).count());
         boxes.clear();for(int i=0;i<4097;i++)boxes.add(new PackageMovingGeometry.Box(i*2,0,0,i*2+1,1,1,.6f,0));
+        assertEquals(8193,PackageMovingGeometry.bake(1,boxes).count(),"a Sable sublevel above the old 4096-leaf cap must still produce collision geometry");
+        boxes.clear();for(int i=0;i<PackageMovingGeometry.MAX_BOXES+1;i++)boxes.add(new PackageMovingGeometry.Box(i*2,0,0,i*2+1,1,1,.6f,0));
         assertThrows(IllegalArgumentException.class,()->PackageMovingGeometry.bake(1,boxes));
+    }
+
+    @Test void largeSableLikePlotCaptureUsesItsTimeBudgetInsteadOfSixteenCellsPerTick() {
+        var tasks=new ArrayDeque<Runnable>();var clock=new AtomicLong();var source=new Source(clock);source.length=40;
+        var cache=new PackageMovingCollisionCache(tasks::add,1,clock::get);cache.offer(source);cache.tick(10_000);
+        assertEquals(1,tasks.size(),"capture should reach the worker in one budgeted tick when its time budget allows it");
+        assertNull(cache.entries().iterator().next().snapshot());
+        tasks.remove().run();cache.tick(10_000);
+        assertNotNull(cache.entries().iterator().next().snapshot());
     }
     @Test void optionalAbiFailuresRevokeCoverageAtEveryCaptureStage() {
         for(int stage=0;stage<5;stage++) {

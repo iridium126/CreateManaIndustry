@@ -50,7 +50,6 @@ public final class PackageMovingCollisionSources {
         /** False means the scan was incomplete; no moving-scene coverage may be claimed. */
         boolean discover(long deadlineNanos, int remainingVisits);
         Vec3 projectContaining(Entity entity, Vec3 point, boolean previous);
-        boolean unsupported(BlockState state);
         /** Null for ordinary blocks, otherwise copied unit-voxel geometry or a fail-closed box. */
         List<PackageMovingGeometry.Box> dynamicBoxes(BlockState state,BlockPos pos,int ox,int oy,int oz,float friction);
     }
@@ -102,6 +101,9 @@ public final class PackageMovingCollisionSources {
     }
 
     Base source(PackageMovingGeometry.Key key) { return sources.get(key); }
+
+    /** Drop one optional source whose own backing state is unavailable without revoking the scene. */
+    void forget(PackageMovingGeometry.Key key) { owner(); sources.remove(key); }
 
     boolean install(PackageMovingGeometry.Key key, Base source) {
         owner();
@@ -192,10 +194,17 @@ public final class PackageMovingCollisionSources {
         }
 
         final List<PackageMovingGeometry.Box> shapes(BlockState state, LevelReader world, BlockPos pos) {
+            return shapes(state, world, pos, pos);
+        }
+
+        /** Geometry coordinates stay in the captured source frame; contextual block queries may use another frame. */
+        final List<PackageMovingGeometry.Box> shapes(BlockState state, LevelReader world, BlockPos pos, BlockPos contextPos) {
             boolean unsupported = state.is(Blocks.MOVING_PISTON) || state.is(Blocks.POWDER_SNOW)
-                    || state.is(Blocks.SCAFFOLDING) || !state.getFluidState().isEmpty() || state.is(Blocks.FIRE)
-                    || host.sable != null && host.sable.unsupported(state);
-            float friction = state.getFriction(world, pos, null);
+                    || state.is(Blocks.SCAFFOLDING) || !state.getFluidState().isEmpty() || state.is(Blocks.FIRE);
+            // Optional Sable impact callbacks describe what a moving body does after
+            // contact; they do not mean the block's collision geometry is unknown.
+            // Tagging those blocks UNSUPPORTED makes the GPU freeze on contact.
+            float friction = state.getFriction(world, contextPos, null);
             var result = new ArrayList<PackageMovingGeometry.Box>();
             if (unsupported) {
                 result.add(new PackageMovingGeometry.Box(pos.getX() - ox, pos.getY() - oy, pos.getZ() - oz,
@@ -205,7 +214,7 @@ public final class PackageMovingCollisionSources {
                 List<PackageMovingGeometry.Box> dynamic=host.sable==null?null:
                         host.sable.dynamicBoxes(state,pos,ox,oy,oz,friction);
                 if(dynamic!=null){result.addAll(dynamic);return result;}
-                collisionShape(state, world, pos).forAllBoxes((a, b, c, d, e, f) -> {
+                collisionShape(state, world, contextPos).forAllBoxes((a, b, c, d, e, f) -> {
                     if (a < d && b < e && c < f) result.add(new PackageMovingGeometry.Box(
                             (float) (pos.getX() - ox + a), (float) (pos.getY() - oy + b), (float) (pos.getZ() - oz + c),
                             (float) (pos.getX() - ox + d), (float) (pos.getY() - oy + e), (float) (pos.getZ() - oz + f), friction, 0));

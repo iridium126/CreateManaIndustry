@@ -144,7 +144,7 @@ public final class PackageCollisionRuntime {
     public PackageCollisionCache.Snapshot snapshot(PackageCollisionCache.Section section){owner();return cache.snapshot(section);}
     /** Sweeps need the extra one-cell guard for neighbouring overhanging shapes. */
     public boolean gpuCovered(AABB sweptBounds) {
-        owner();if(gpu==null || !gpuError.isEmpty() || !movingAvailable || !movingCache.posesReady() || movingGpu==null || !movingGpu.covered(movingCache.entries()))return false;
+        owner();if(gpu==null || !gpuError.isEmpty() || !movingAvailable || !movingCache.posesReady() || movingGpu==null || !movingGpu.covered(movingCache.entries(),sweptBounds))return false;
         int[] bounds=sections(sweptBounds.inflate(1));if(bounds==null)return false;
         for(int x=bounds[0];x<=bounds[3];x++)for(int y=bounds[1];y<=bounds[4];y++)for(int z=bounds[2];z<=bounds[5];z++) {
             var section=new PackageCollisionCache.Section(x,y,z);var snapshot=cache.snapshot(section);

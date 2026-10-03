@@ -131,6 +131,10 @@ public final class PackageMovingCollisionGpu implements AutoCloseable {
             ByteBuffer p=bank.mapped;p.clear();for(int i=0;i<POSE_BYTES;i+=4)p.putInt(i,0);p.position(0);
             if(poseReady)try {
                 source.previous.put(p,ox,oy,oz);source.current.put(p,ox,oy,oz);var b=source.bounds;
+                // moving_prepare.comp consumes these as source-local bounds, then
+                // transforms them with the same render-relative pose as the bodies.
+                // Supplying world bounds here would transform them a second time and
+                // falsely classify distant bodies as touching an unuploaded source.
                 p.putFloat((float)b.x0()).putFloat((float)b.y0()).putFloat((float)b.z0()).putInt(source.identity);
                 p.putFloat((float)b.x1()).putFloat((float)b.y1()).putFloat((float)b.z1()).putInt(geometry==null?0:1);
                 p.putInt(60*4,geometry==null?0:geometry.size/PackageMovingGeometry.NODE_BYTES);
@@ -140,7 +144,19 @@ public final class PackageMovingCollisionGpu implements AutoCloseable {
         viewOpen=true;return result;
     }
     public void endViews(List<View> views){owner();for(View view:views)view.close();viewOpen=false;}
-    public boolean covered(Collection<PackageMovingCollisionCache.Entry> captured){owner();for(var source:captured){Entry e=entries.get(source.identity);if(e==null||e.visible==null||source.unsupported()||source.poseFrame==0||!Objects.equals(e.visibleBounds,source.bounds))return false;}return true;}
+    public boolean covered(Collection<PackageMovingCollisionCache.Entry> captured){owner();for(var source:captured)if(!geometryCovered(source))return false;return true;}
+    /** An unavailable distant BVH must not prevent unrelated packages from acquiring GPU authority. */
+    public boolean covered(Collection<PackageMovingCollisionCache.Entry> captured,net.minecraft.world.phys.AABB sweptBounds){
+        owner();for(var source:captured){
+            if(source.bounds==null||source.previous==null||source.current==null||source.poseFrame==0)return false;
+            if(!PackageMovingCollisionCoverage.intersects(source.bounds,source.previous,source.current,sweptBounds))continue;
+            if(!geometryCovered(source))return false;
+        }return true;
+    }
+    private boolean geometryCovered(PackageMovingCollisionCache.Entry source){
+        Entry e=entries.get(source.identity);return e!=null&&e.visible!=null&&!source.unsupported()&&source.poseFrame!=0
+                &&Objects.equals(e.visibleBounds,source.bounds);
+    }
     /** Unknown structure enumeration must revoke physics even if the known scene is empty. */
     public List<View> unavailableViews(){owner();if(viewOpen)throw new IllegalStateException("Nested moving scene");viewOpen=true;return java.util.List.of(new View(null,false));}
     public final class View implements AutoCloseable {

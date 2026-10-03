@@ -4927,6 +4927,27 @@ public class PackageGpuValidation {
     }
     static void movingContacts() {
         movingGeometryContract();var air=snapshot((s,i)->WORLD_AIR);
+        // This tree has more than the old 8192-node shader visit budget. A valid
+        // maximum-sized Sable-style plot must not freeze a body that is inside its
+        // conservative coarse bounds while the rotating sweep culls the whole BVH.
+        var denseBoxes=new ArrayList<PackageMovingGeometry.Box>(4097);
+        for(int y=0;y<16;y++)for(int z=0;z<16;z++)for(int x=0;x<16;x++) {
+            float x0=-.8f+x*.1f,y0=-.8f+y*.1f,z0=-.8f+z*.1f;
+            denseBoxes.add(new PackageMovingGeometry.Box(x0,y0,z0,x0+.04f,y0+.04f,z0+.04f,.6f,0));
+        }
+        denseBoxes.add(new PackageMovingGeometry.Box(.9f,0,0,.94f,.04f,.04f,.6f,0));
+        var denseSource=new MovingSource(0,0,0,1,1,1);denseSource.boxes=List.copyOf(denseBoxes);
+        denseSource.previous=movingPose(4,4,4,0,1,1,1);denseSource.current=movingPose(4,4,4,.01,1,1,1);
+        var denseCache=movingCache(denseSource);
+        check(denseCache.entries().iterator().next().snapshot().count()>8192,"dense moving BVH did not exceed the legacy traversal limit");
+        try(var atlas=new PackageMovingCollisionGpu();var world=new PackageCollisionGpu(27,1);
+            var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)) {
+            atlas.sync(denseCache.entries());atlas.pump(1_000_000,Long.MAX_VALUE);
+            cubeWorld(world,air,air,0,0,0);var body=bodies(1);body(body,0,5.4f,4,4,1);gpu.upload(body,1);
+            movingStep(gpu,world,atlas,denseCache);var result=read(gpu);
+            check(result.getFloat(60)>=0,"valid dense moving BVH froze a touching body at the old traversal limit");
+            check(Float.isFinite(result.getFloat(0))&&Float.isFinite(result.getFloat(4))&&Float.isFinite(result.getFloat(8)),"dense moving BVH produced a non-finite body");
+        }
         var dynamicBoxes=PackageMovingDynamicBoxes.capture(sink->sink.add(0,0,0,1,.5,1),0,0,0,0,0,0,.6f);
         var dynamicSource=new MovingSource(0,0,0,1,.5f,1);dynamicSource.boxes=dynamicBoxes;
         dynamicSource.previous=dynamicSource.current=movingPose(4,4,4,0,1,1,1);var dynamicCache=movingCache(dynamicSource);
@@ -5129,11 +5150,20 @@ public class PackageGpuValidation {
         source=new MovingSource(2,1,2,14,2,14);cache=movingCache(source);
         try(var moving=new PackageMovingCollisionGpu();
             var world=new PackageCollisionGpu(27,1);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)){
-            cubeWorld(world,air,air,0,0,0);var body=bodies(1);body(body,0,20,5,20,1);gpu.upload(body,1);moving.sync(cache.entries());
+            cubeWorld(world,air,air,0,0,0);var body=bodies(1);body(body,0,8,2.5f,8,1);gpu.upload(body,1);moving.sync(cache.entries());
             // No pump: source geometry exists on CPU but was never made visible.
             var views=moving.views(cache.entries(),true,0,0,0);
             try(var view=world.view(0,0,0)){gpu.stepWorldMoving(view,4,views);}finally{moving.endViews(views);}
-            check(read(gpu).getFloat(60)<0,"unuploaded shape treated as bounded air");
+            var unuploaded=read(gpu);
+            check(unuploaded.getFloat(60)<0,"unuploaded shape treated as bounded air: sentinel="+unuploaded.getFloat(60)
+                    +" position="+unuploaded.getFloat(0)+","+unuploaded.getFloat(4)+","+unuploaded.getFloat(8)
+                    +" velocity="+unuploaded.getFloat(16)+","+unuploaded.getFloat(20)+","+unuploaded.getFloat(24));
+            // Missing geometry is local to the source's swept bounds; distant bodies
+            // must keep simulating while an unrelated plot's BVH upload is pending.
+            cache.tick(1);body(body,0,20,5,20,1);gpu.upload(body,1);moving.sync(cache.entries());
+            views=moving.views(cache.entries(),true,0,0,0);
+            try(var view=world.view(0,0,0)){gpu.stepWorldMoving(view,4,views);}finally{moving.endViews(views);}
+            check(read(gpu).getFloat(60)>=0,"distant body paused by an unuploaded moving source");
             source.boxes=List.of(new PackageMovingGeometry.Box(2,1,2,14,2,14,.6f,PackageCollisionCache.UNSUPPORTED));
             source.revision++;cache.invalidate(source.key);cache.tick(1);cache.tick(1);body(body,0,4,2.5f,4,1);gpu.upload(body,1);
             movingStep(gpu,world,moving,cache);check(read(gpu).getFloat(60)<0,"callback/hazard box accepted");
@@ -5145,7 +5175,10 @@ public class PackageGpuValidation {
             cubeWorld(world,air,ceiling,0,0,0);var body=bodies(1);body(body,0,4,1.5f,4,1);gpu.upload(body,1);
             movingStep(gpu,world,moving,cache);
             source.previous=source.current;source.current=movingPose(0,4,0,0,1,1,1);
-            movingStep(gpu,world,moving,cache);check(read(gpu).getFloat(60)<0,"moving/static terrain crush must pause");
+            movingStep(gpu,world,moving,cache);var crushed=read(gpu);
+            check(crushed.getFloat(60)>=0&&crushed.getFloat(4)+.5f<4,
+                    "a blocked moving platform must leave its package active and outside static terrain: sentinel="+crushed.getFloat(60)
+                            +" position="+crushed.getFloat(0)+","+crushed.getFloat(4)+","+crushed.getFloat(8));
         }
     }
     static void movingFriction() {

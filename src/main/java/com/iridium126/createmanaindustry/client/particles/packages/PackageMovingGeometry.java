@@ -6,7 +6,10 @@ import org.joml.Vector3d;
 
 /** Immutable local geometry. Workers receive only these primitive values, never a world/source. */
 public final class PackageMovingGeometry {
-    public static final int NODE_BYTES=48,MAX_BOXES=4096,MAX_CAPTURE_BOXES=65536;
+    // Sable plots commonly contain much more detail than Create contraptions. Keep
+    // a bounded but substantially larger BVH so a large plot does not become an
+    // unsupported whole-source collider after the worker bake.
+    public static final int NODE_BYTES=48,MAX_BOXES=16384,MAX_CAPTURE_BOXES=262144;
     public record Key(int kind,UUID id){public Key{Objects.requireNonNull(id);if(kind<0||kind>1)throw new IllegalArgumentException("Moving collider kind");}}
     public record Bounds(double x0,double y0,double z0,double x1,double y1,double z1) {
         public Bounds {if(!Double.isFinite(x0+y0+z0+x1+y1+z1)||x0>x1||y0>y1||z0>z1)throw new IllegalArgumentException("Moving bounds");}
