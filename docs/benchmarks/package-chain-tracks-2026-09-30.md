@@ -34,6 +34,6 @@ shared 路径执行了 legacy 没有的可靠事件流程，成本更高。此�
 .\gradlew.bat benchmarkPackageChain --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
 ```
 
-[三次测量汇总 CSV](package-chain-tracks-2026-09-30.csv) · [全部 3240 个样本](package-chain-tracks-samples-2026-09-30.csv)
+[三次测量汇总 CSV](package-chain-tracks-2026-09-30.csv) · [全部 3240 个样本](package-chain-tracks-samples-2026-09-30.csv.gz)
 
 PhysX 的自由包裹后端对照见[独立报告](package-physics-backends-2026-09-30.md)；本次链上微基准未将 PhysX 作为同语义链路/节点后端。

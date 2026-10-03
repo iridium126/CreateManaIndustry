@@ -2,6 +2,58 @@ package com.iridium126.createmanaindustry.client.particles.packages;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 class PackageSimulationClockTest {
+    @Test void twoHundredTicksPerSecondConsumeEveryInputWithoutRevocation(){
+        var clock=new PackageSimulationClock();int submitted=0;
+        for(int frame=0;frame<=600;frame++){
+            long now=frame*1_000_000_000L/60,tick=now*200/1_000_000_000L;
+            clock.sample(now,tick,false,200);
+            for(int n=0;n<clock.stepsPerFrame()&&clock.due(tick);n++){clock.commit(clock.nextTick());submitted++;}
+            assertFalse(clock.historyGap(),"200 tick/s incorrectly expired input history at frame "+frame);
+        }
+        assertEquals(2000,submitted);
+    }
+    @Test void highTickRateKeepsOneSecondHistoryAndCatchupAtFiveFps(){
+        for(int fps:new int[]{5,30,60,200}){
+            var clock=new PackageSimulationClock();int steps=0;
+            for(int frame=0;frame<=fps*10;frame++){
+                long now=frame*1_000_000_000L/fps,tick=now*200/1_000_000_000L;
+                clock.sample(now,tick,false,200);int submitted=0;
+                while(submitted<clock.stepsPerFrame()&&clock.due(tick)){clock.commit(clock.nextTick());submitted++;steps++;}
+                assertFalse(clock.historyGap());assertTrue(submitted<=40);
+            }
+            assertEquals(2000,steps,"200 tick/s at FPS "+fps);
+        }
+        var clock=new PackageSimulationClock();clock.sample(0,0,false,200);
+        clock.sample(500_000_000,100,false,200);assertFalse(clock.historyGap());assertEquals(1,clock.nextTick());
+        clock.sample(1_005_000_000,201,false,200);assertTrue(clock.historyGap());assertEquals(0,clock.step());
+    }
+    @Test void changingTickRatePreservesStepIdentityAndFractionalReservation(){
+        var clock=new PackageSimulationClock();clock.sample(0,0,false,20);
+        clock.sample(25_000_000,0,false,20);assertEquals(.5f,clock.interpolation());
+        clock.sample(25_000_000,0,false,200);assertEquals(.5f,clock.interpolation());
+        clock.sample(27_500_000,1,false,200);clock.commit(1);assertEquals(1,clock.step());
+        clock.sample(27_500_000,1,false,20);clock.sample(77_500_000,2,false,20);clock.commit(2);assertEquals(2,clock.step());
+        assertFalse(clock.historyGap());
+    }
+    @Test void slowServerDoesNotTurnWallTimeIntoMissingHistory(){
+        for(int tps:new int[]{5,10,15}){
+            var clock=new PackageSimulationClock();int submitted=0;
+            for(int frame=0;frame<=60*20;frame++){
+                long now=frame*1_000_000_000L/60,tick=now*tps/1_000_000_000L;
+                clock.sample(now,tick,false);
+                for(int n=0;n<4&&clock.due(tick);n++){clock.commit(clock.nextTick());submitted++;}
+                assertFalse(clock.historyGap(),"healthy input history at server TPS "+tps+", frame "+frame);
+            }
+            assertEquals(tps*20,submitted);
+        }
+    }
+    @Test void stalledServerRetainsOneFutureStepAndResumesWithoutInventingTicks(){
+        var clock=new PackageSimulationClock();clock.sample(0,10,false);
+        clock.sample(5_000_000_000L,10,false);
+        assertFalse(clock.historyGap());assertFalse(clock.due(10));assertEquals(0,clock.step());
+        clock.sample(5_000_000_001L,11,false);assertTrue(clock.due(11));clock.commit(11);
+        assertFalse(clock.due(11));assertEquals(1,clock.step());
+    }
     @Test void fiveThroughSixtyFpsRetainEveryStep(){
         for(int hz:new int[]{5,9,10,15,20,30,60}){
             var clock=new PackageSimulationClock();int steps=0;

@@ -175,12 +175,12 @@ public final class PackageAuthorityManager {
             var region=rt.regions.get(key);
             if(region==null) {
                 ServerPlayer authority=elect(rt,key);if(authority==null)continue;
-                region=new PackageAuthorityRegion(key,authority.getUUID(),PackageIdentityData.get(level).epoch(),1,tick);
+                region=new PackageAuthorityRegion(key,authority.getUUID(),PackageIdentityData.get(level).epoch(),1,tick,()->level.tickRateManager().tickrate());
                 rt.regions.put(key,region);
             }
             var baseline=region.offer(target,tick);if(baseline==null)continue;
             target.environmentWritten=target.environmentSimulationStep=target.environmentOriginStep=0;target.environmentOriginTick=tick;
-            target.region=region;target.checkpoint=baseline.snapshot();target.retry=tick+RETRY_TICKS;
+            target.region=region;target.checkpoint=baseline.snapshot();target.retry=tick+PackageTickTiming.deadlineTicks(RETRY_TICKS,level.tickRateManager().tickrate());
             rt.discovery.remove(target.identity);
             send(level,region,ClientboundPackagePacket.OFFER,baseline,target);
         }
@@ -379,7 +379,9 @@ public final class PackageAuthorityManager {
                 for(int n=0;n<event.samples().size();n++){
                     long serial=event.first()+n+1;if(serial<=target.environmentWritten)continue;
                     var sample=event.samples().get(n);
-                    if(sample.step()<=target.environmentSimulationStep||target.environmentOriginStep>0&&sample.step()-target.environmentOriginStep>tick-target.environmentOriginTick+20||!PackageLightGameplay.environmentValid(rt.level,target.light,region.region(),sample)){
+                    if(sample.step()<=target.environmentSimulationStep||target.environmentOriginStep>0&&sample.step()-target.environmentOriginStep>tick-target.environmentOriginTick+region.historyTicks()||!PackageLightGameplay.environmentValid(rt.level,target.light,region.region(),sample)){
+                        CreateManaIndustry.LOGGER.debug("[CMI packages] rejected environment identity={} step={} previousStep={} contact={} block={} pose={},{},{} region={}",
+                                event.identity(),sample.step(),target.environmentSimulationStep,sample.contact(),sample.block(region.region()),sample.px(),sample.py(),sample.pz(),region.region());
                         region.release(event.identity());return;
                     }
                     if(target.environmentOriginStep==0){target.environmentOriginStep=sample.step();target.environmentOriginTick=tick;}

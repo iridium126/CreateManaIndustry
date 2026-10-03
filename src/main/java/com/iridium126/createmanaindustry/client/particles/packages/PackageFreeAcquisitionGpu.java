@@ -62,7 +62,8 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
     private final Thread owner=Thread.currentThread();
     private int transitions,activeCount;
     private long nextCapture,lastCommit=-1,lastCaptureVersion=-1,lastCaptureConfirmation=-1;
-    private boolean closed;
+    private boolean closed,closing;
+    private java.util.Iterator<Entry> closingEntries;
 
     public PackageFreeAcquisitionGpu(PackageRegion region,long epoch,long revision,double ox,double oy,double oz,
                                     PackageMixedPhysicsGpu physics,PackagePoolGpu pool,PackageDeltaGpu detector,
@@ -84,7 +85,7 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
      * a gameplay entity. Terminal/retiring/hidden/observer results cannot enter native input. */
     public ClientboundPackagePacket activeOffer(PackagePoseQueryGpu.Result result){return activeOffer(result,Long.MAX_VALUE);}
     public ClientboundPackagePacket activeOffer(PackagePoseQueryGpu.Result result,long submission) {
-        open();if(result==null||!result.present()||result.chain()||result.flags()!=PackagePoolGpu.ACTIVE_AUTHORITY||(result.state()<0&&result.state()!=PackagePhysicsGpu.COLLISION_FROZEN))return null;
+        open();if(closing||result==null||!result.present()||result.chain()||result.flags()!=PackagePoolGpu.ACTIVE_AUTHORITY||(result.state()<0&&result.state()!=PackagePhysicsGpu.COLLISION_FROZEN))return null;
         var entry=byCandidate.get(result.candidate());
         if(entry==null||entry.terminal||entry.phase!=Phase.ACTIVE||entry.body!=result.body()||submission<entry.visibleSince)return null;
         var identity=entry.offer.baseline().identity();
@@ -92,6 +93,9 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
                 &&result.halfHeight()==entry.offer.height()*.5f?entry.offer:null;
     }
     public int pendingCount(){open();return transitions;}
+    /** Namespace replacement drains only this region, under the normal transition budget. */
+    public void beginClose(){open();if(closing)return;closing=true;closingEntries=entries.values().iterator();channel.stop();}
+    public boolean replacementReady(){open();return closing&&!closingEntries.hasNext()&&transitions==0&&retired.isEmpty();}
     /** Attach before accepting any offers: detector and CPU journal must share candidate order. */
     public void attachChannel(PackageDeltaChannel channel) {
         open();
@@ -104,6 +108,7 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
     public boolean receive(ClientboundPackagePacket packet) {
         open();
         if(!region.equals(packet.region()) || packet.epoch()!=epoch || packet.regionRevision()!=revision)return false;
+        if(closing)return true;
         if(packet.action()==ClientboundPackagePacket.ACK)return false;
         if(packet.action()==ClientboundPackagePacket.ENVIRONMENT_ACK){environmentAck(packet);return true;}
         var b=packet.baseline();Entry entry=entries.get(b.index());
@@ -166,12 +171,15 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
     public void pump(int maxTransitions,BiPredicate<ClientboundPackagePacket,ClientboundPackagePacket> covered) {
         open();if(maxTransitions<0 || maxTransitions>MAX_TRANSITIONS)throw new IllegalArgumentException("Acquisition work budget");
         if(channel==null)throw new IllegalStateException("Package acquisition has no identity journal");
+        if(closing)for(int i=0;i<maxTransitions&&closingEntries.hasNext();i++){
+            var entry=closingEntries.next();closingEntries.remove();if(!entry.terminal)release(entry,entry.checkpoint.baseline(),false);
+        }
         admissions.poll(this::confirmed);
         int recycling=Math.min(maxTransitions,retired.size());
         for(int i=0;i<recycling;i++){
             var entry=retired.removeFirst();int status=org.lwjgl.opengl.GL32.glClientWaitSync(entry.retireFence,org.lwjgl.opengl.GL32.GL_SYNC_FLUSH_COMMANDS_BIT,0);
             if(status==org.lwjgl.opengl.GL32.GL_WAIT_FAILED)throw new IllegalStateException("Package retirement fence failed");
-            if(status==org.lwjgl.opengl.GL32.GL_TIMEOUT_EXPIRED||!channel.recyclable(entry.delta,entry.retireBarrier)
+            if(status==org.lwjgl.opengl.GL32.GL_TIMEOUT_EXPIRED||!closing&&!channel.recyclable(entry.delta,entry.retireBarrier)
                     ||physics.environment()!=null&&!physics.environment().drained(entry.environmentBarrier)) {retired.addLast(entry);continue;}
             org.lwjgl.opengl.GL32.glDeleteSync(entry.retireFence);entry.retireFence=0;
             channel.recycle(entry.delta);pool.makeReusable(entry.candidate);physics.recycleFree(entry.body);
@@ -179,6 +187,7 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         int n=Math.min(maxTransitions,work.size());
         for(int i=0;i<n;i++) {
             Entry entry=work.removeFirst();entry.queued=false;if(entry.terminal)continue;
+            if(closing&&entry.phase!=Phase.RETIRE)continue;
             switch(entry.phase) {
                 case RESOURCES -> {
                     if(!covered.test(entry.offer,entry.checkpoint)){queue(entry);continue;}
@@ -214,7 +223,7 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         }
     }
     public ClientboundPackagePacket environmentOffer(int bodyIndex,long id,long generation,long lease,int index,long revision){
-        open();var entry=byBody.get(bodyIndex);if(entry==null||entry.terminal||entry.phase!=Phase.ACTIVE)return null;
+        open();var entry=byBody.get(bodyIndex);if(closing||entry==null||entry.terminal||entry.phase!=Phase.ACTIVE)return null;
         var b=entry.checkpoint.baseline();return b.identity().id()==id&&b.identity().generation()==generation&&b.leaseEpoch()==lease&&b.index()==index&&b.revision()==revision?entry.checkpoint:null;
     }
     public void environmentAck(ClientboundPackagePacket packet){
@@ -255,7 +264,7 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         // body. It must not schedule extra authority detection/readback work between steps.
         long version=physics.freePublicationVersion();
         long confirmation=channel.confirmationVersion();
-        if(activeCount==0 || (version==lastCaptureVersion && confirmation==lastCaptureConfirmation))return false;
+        if(activeCount==0 || physics.freeSimulationStep()==0 || (version==lastCaptureVersion && confirmation==lastCaptureConfirmation))return false;
         boolean captured=channel.capture(physics.bodyBuffer(),physics.bodyCount(),
                 (float)(ox-region.originX()),(float)(oy-region.originY()),(float)(oz-region.originZ()),physics.freeSimulationStep());
         if(captured){lastCaptureVersion=version;lastCaptureConfirmation=confirmation;}return captured;
@@ -289,7 +298,8 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         var identity=entry.offer.baseline().identity();
         if(entry.body>=0){pool.retireIdentity(entry.candidate,identity.id(),identity.generation());detector.retireIdentity(entry.delta,identity.id(),identity.generation());}
         entry.phase=Phase.RELEASED;entry.terminal=true;entry.owned=false;transitions--;awaiting.remove(entry);
-        entries.remove(entry.offer.baseline().index(),entry);byCandidate.remove(entry.candidate,entry);
+        // A closing map is drained only through its bounded iterator.
+        if(!closing)entries.remove(entry.offer.baseline().index(),entry);byCandidate.remove(entry.candidate,entry);
         if(entry.body>=0){byBody.remove(entry.body,entry);entry.retireBarrier=detector.captureBarrier();entry.environmentBarrier=physics.environment()==null?-1:physics.environment().barrier();
             entry.retireFence=org.lwjgl.opengl.GL32.glFenceSync(org.lwjgl.opengl.GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);if(entry.retireFence==0)throw new IllegalStateException("Retirement fence unavailable");retired.addLast(entry);}
         reservedIdentities.remove(identity);

@@ -36,7 +36,7 @@ GPU timer 覆盖 kernel、barrier、有效结果 copy 和 fence 提交；CPU sub
 
 短 kernel 接近 timer 的 1.024µs 步长，微小差异不得用于选择算法。131072 命中的三组 GPU p95 均为 0.046080ms；256 项姿态 p95 为 0.023552/0.023552/0.026624ms。总帧率、真实事件延迟、服务端 tick 和网络带宽均未在此测量。
 
-原始数据：[汇总](package-pose-query-2026-09-30.csv)、[全部 3240 个测量样本](package-pose-query-samples-2026-09-30.csv)。复现入口：
+原始数据：[汇总](package-pose-query-2026-09-30.csv)、[全部 3240 个测量样本](package-pose-query-samples-2026-09-30.csv.gz)。复现入口：
 
 ```powershell
 .\gradlew.bat validatePackageGpu -PpackageQueryBenchmark --offline --no-configuration-cache -I scripts/particles/validation.init.gradle

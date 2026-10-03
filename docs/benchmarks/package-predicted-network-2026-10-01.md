@@ -39,7 +39,7 @@ GPU 仍按绝对量化状态比较脏字段，**零预测残差的移动包裹�
 
 RTX 4070 Laptop GPU、NVIDIA 581.15、OpenGL 4.5、JDK 21.0.8。
 
-GPU 内核测量含 detect/finalize/cancel，预先建立相同确认历史，30 次预热，三轮各 60 个 timer 样本，交替模式次序。131072 全量变化 p95：relative 三轮均 0.075776ms，predicted 均 0.076800ms；无变化两者 p50 0.034816–0.035840ms，p95 区间重叠。没有着色器提速结论；新增约一个 timer 量化单位的全量成本。只测组件，不含 ACK 上传、网络或整帧。[内核汇总](package-prediction-kernels-2026-10-01.csv)、[全部样本](package-prediction-kernel-samples-2026-10-01.csv)。
+GPU 内核测量含 detect/finalize/cancel，预先建立相同确认历史，30 次预热，三轮各 60 个 timer 样本，交替模式次序。131072 全量变化 p95：relative 三轮均 0.075776ms，predicted 均 0.076800ms；无变化两者 p50 0.034816–0.035840ms，p95 区间重叠。没有着色器提速结论；新增约一个 timer 量化单位的全量成本。只测组件，不含 ACK 上传、网络或整帧。[内核汇总](package-prediction-kernels-2026-10-01.csv)、[全部样本](package-prediction-kernel-samples-2026-10-01.csv.gz)。
 
 另用实际 GPU capture→四槽正文读回→两个后台 encoder→immutable packet→loopback ACK 比较。异速三轴匀速输入，所有包裹持续变化；模拟输入上传在计时外，生产由 solver 产生。15 次预热，三轮各 30 波，交替次序，均使用默认 CPU 原始 ACK 上传，不借 GPU journal 减少调用。
 
@@ -55,7 +55,7 @@ GPU 内核测量含 detect/finalize/cancel，预先建立相同确认历史，30
 | 包数及 GPU ACK dispatch/波 | 256 / 256 | 256 / 256 |
 | 渲染线程分配/波 | 约 57.5–57.6KiB | 约 57.6–57.9KiB |
 
-新模式正文减少约 19.8%，编码工作均值下降；但 CPU p95 一轮相近、两轮更差，不认定渲染线程提速，不切换默认模式。两份字节基准的 body 排序/采样不同，不应直接相减：网络模型按连续 ID 打包，实际 GPU reservation 及 1MiB 分片没有这种排序保证；真实管线还包含浮点物理坐标量化。loopback 队列/worker/driver 抖动不代表真实服务器网络 RTT。[管线汇总](package-delta-predicted-pipeline-2026-10-01.csv)、[全部样本](package-delta-predicted-pipeline-samples-2026-10-01.csv)。
+新模式正文减少约 19.8%，编码工作均值下降；但 CPU p95 一轮相近、两轮更差，不认定渲染线程提速，不切换默认模式。两份字节基准的 body 排序/采样不同，不应直接相减：网络模型按连续 ID 打包，实际 GPU reservation 及 1MiB 分片没有这种排序保证；真实管线还包含浮点物理坐标量化。loopback 队列/worker/driver 抖动不代表真实服务器网络 RTT。[管线汇总](package-delta-predicted-pipeline-2026-10-01.csv)、[全部样本](package-delta-predicted-pipeline-samples-2026-10-01.csv.gz)。
 
 ## 验证和下一步
 

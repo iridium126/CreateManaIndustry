@@ -1,0 +1,27 @@
+{
+  "unit": {
+    "tests": 437,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "packageGpuAssertions": 12257499,
+  "lightGpuAssertions": 886165,
+  "observerGpuAssertions": 3548729,
+  "irisGpuAssertions": 20586,
+  "gameTests": 4,
+  "continuousGpuCadences": [
+    "60FPS/20TPS",
+    "60FPS/10TPS",
+    "60FPS/5TPS",
+    "5FPS/20TPS",
+    "60FPS/200TPS",
+    "5FPS/200TPS"
+  ],
+  "packagesPerGpuRun": 48,
+  "secondsPerGpuRun": 20,
+  "continuousCreateOutputs": 32,
+  "gameTestTargetTickRate": 200,
+  "gameTestFinalBaselineDelayTicks": 80,
+  "realPlayerPerformanceMeasured": false
+}

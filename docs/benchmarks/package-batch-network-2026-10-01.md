@@ -47,7 +47,7 @@ CPU total 是渲染线程多次 capture/pump 的累积提交时间；不包含�
 
 残差 wire body 约减少 90.3%，worker work 降低，渲染分配基本相同。残差渲染 CPU p95 有两次升高，第三次降低，**不认定稳定渲染提交提速，也不据此启用默认生产接管**。完整版本仍读回 8MiB/满波、256 包和 256 次 ACK dispatch；压缩不会自动降低 GPU→CPU 读回或这些 GL 调用。需要继续批次/控制优化并复测。初次初始化费用被预热排除，实际游戏必须单独统计。
 
-[管线汇总](package-delta-batch-pipeline-2026-10-01.csv)、[逐样本](package-delta-batch-pipeline-samples-2026-10-01.csv)。正确性普通 GPU 回归通过 **14,169,968 项断言**，含旧/包内/相对三路径的 65/131072 通道、完整身份、释放和 velocity-only；独立残差测试含负差值、非零基线、容量拆分、飞行中继续移动、旧 ACK、编译失败保留模式。计时轮次连同附加校验共 14,173,667。JVM 60 套件/303 项测试通过，Sable 缺席门禁通过。视觉和实际多人/压缩网络由后续游戏测试证明。
+[管线汇总](package-delta-batch-pipeline-2026-10-01.csv)、[逐样本](package-delta-batch-pipeline-samples-2026-10-01.csv.gz)。正确性普通 GPU 回归通过 **14,169,968 项断言**，含旧/包内/相对三路径的 65/131072 通道、完整身份、释放和 velocity-only；独立残差测试含负差值、非零基线、容量拆分、飞行中继续移动、旧 ACK、编译失败保留模式。计时轮次连同附加校验共 14,173,667。JVM 60 套件/303 项测试通过，Sable 缺席门禁通过。视觉和实际多人/压缩网络由后续游戏测试证明。
 
 ```powershell
 .\gradlew.bat benchmarkPackageBatchNetwork --offline --no-configuration-cache -I scripts/particles/validation.init.gradle

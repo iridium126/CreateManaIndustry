@@ -60,4 +60,12 @@ class PackageControlQueueTest {
         q.clear();q.offer(NS,9,row(0),10);q.offer(NS,9,row(0),10);
         assertThrows(IllegalArgumentException.class,()->q.flush(10,message->fail("duplicate was sent")));assertEquals(2,q.stats().pending());
     }
+    @Test void revokedNamespaceDoesNotDiscardOtherRegionsOrFreshEpochControls(){
+        var q=new PackageControlQueue();var fresh=new PackageControlQueue.Namespace(NS.region(),102,1);
+        var other=new PackageControlQueue.Namespace(new PackageRegion(1,2,3),103,1);
+        q.offer(NS,9,row(0),0);q.offer(other,9,row(1),0);q.offer(NS,4,row(2),0);q.offer(fresh,9,row(3),0);
+        q.clear(NS);assertEquals(2,q.stats().pending());
+        var delivered=new ArrayList<PackageControlQueue.Namespace>();
+        q.flush(0,message->{delivered.add(message.namespace());return true;});assertEquals(List.of(other,fresh),delivered);
+    }
 }

@@ -18,6 +18,6 @@ public abstract class PackageCollisionPacketMixin {
     @Inject(method="handleBlockEntityData",at=@At("RETURN"))
     private void cmi$blockEntityCollision(ClientboundBlockEntityDataPacket packet,CallbackInfo ci) {
         var level=Minecraft.getInstance().level;
-        if(level!=null)PackageCollisionRuntime.blockChanged(level,packet.getPos());
+        if(level!=null)PackageCollisionRuntime.blockEntityChanged(level,packet.getPos());
     }
 }

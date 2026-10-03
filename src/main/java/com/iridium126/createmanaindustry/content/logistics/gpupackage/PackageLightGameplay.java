@@ -103,7 +103,9 @@ public final class PackageLightGameplay {
         if(p.distanceToSqr(entry.position().add(0,entry.height*.5,0))>36*36)return false;
         if(sample.contact()==0)return true;
         var block=sample.block(region);if(!level.hasChunkAt(block))return false;
-        var bounds=new AABB(p.x-entry.width*.5,p.y-entry.height*.5,p.z-entry.width*.5,p.x+entry.width*.5,p.y+entry.height*.5,p.z+entry.width*.5).inflate(1.6001);
+        // The GPU reports the actual swept contact point, before later solver corrections.
+        // A machine's touching boundary has the same 0.002 epsilon as the GPU sweep.
+        var bounds=new AABB(p.x-entry.width*.5,p.y-entry.height*.5,p.z-entry.width*.5,p.x+entry.width*.5,p.y+entry.height*.5,p.z+entry.width*.5).inflate(.0021);
         if(!bounds.intersects(new AABB(block)))return false;
         var state=level.getBlockState(block);var fluid=state.getFluidState();
         return switch(sample.contact()){

@@ -6,6 +6,11 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PackageChainAuthorityTest {
+    @Test void productionHeartbeatGraceAtTwoHundredTpsDoesNotCloseBetweenRenderFrames(){
+        var core=new PackageChainAuthority(OWNER,19,0,PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS,()->200);
+        for(int tick=0;tick<=1000;tick+=40){assertTrue(core.heartbeat(OWNER,19,tick));core.tick(tick);assertFalse(core.closed());}
+        assertFalse(core.expired(2000));assertTrue(core.expired(2001));
+    }
     private static final UUID OWNER=new UUID(7,13);
     private static final class Target implements PackageChainAuthority.Target {
         final PackageLease.Identity identity;float progress=10;int reads,freezes,releases,commits,anticipations;boolean eligible=true,valid=true,refuseFreeze,failCommit,terminal,frozenRelease;

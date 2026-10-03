@@ -30,6 +30,7 @@ int worldRow(ivec3 key) {
 void main() {
     uint i=gl_GlobalInvocationID.x,lane=gl_LocalInvocationID.x;
     ivec4 needed=ivec4(0);
+    int neededDistance=2147483647;
     if(i<uCount) {
         Body body=bodies[i];
         bool live=body.positionMass.w>0.0 && body.previousSleep.w!=-2.0 && body.previousSleep.w!=-3.0;
@@ -41,6 +42,7 @@ void main() {
                     && all(lessThan(body.extentYaw.xyz,vec3(16.0)));
             if(finiteBody && uWorldReady) {
             vec3 current=body.positionMass.xyz;
+            ivec3 currentSection=(ivec3(floor(current))>>4)+uWorldOriginSection;
             vec3 future=current+body.velocityGround.xyz*uLookahead+vec3(0.0,-16.0*uLookahead*uLookahead,0.0);
             vec3 lo=min(current,future)-body.extentYaw.xyz-vec3(1.0);
             vec3 hi=max(current,future)+body.extentYaw.xyz+vec3(1.0);
@@ -70,7 +72,12 @@ void main() {
                             int row=worldRow(key);
                             // Queue unavailable coverage only. The physics pass marks the body
                             // collision-frozen if it actually reaches this uncaptured section.
-                            if(row<0) {if(needed.w==0)needed=ivec4(key,1);}
+                            if(row<0) {
+                                ivec3 delta=abs(key-currentSection);int distance=delta.x+delta.y+delta.z;
+                                // A falling body's farthest look-ahead section must not
+                                // starve the next section immediately under its feet.
+                                if(distance<neededDistance){needed=ivec4(key,1);neededDistance=distance;}
+                            }
                             else if(uint(row>>5)<uTouchWordCount)
                                 atomicOr(packageUsageWords[row>>5],1u<<uint(row&31));
                         }

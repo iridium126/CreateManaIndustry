@@ -40,18 +40,25 @@ public final class PackageAuthorityRegion {
     private int nextIndex;
     private int frozenPending;
     private boolean closed;
+    private final java.util.function.DoubleSupplier tickRate;
+    private int historyTicks=20;
+    public int historyTicks(){return historyTicks=Math.max(historyTicks,PackageTickTiming.historyTicks(tickRate.getAsDouble()));}
 
     public PackageAuthorityRegion(PackageRegion region,UUID owner,long epoch,long revision,long tick) {
+        this(region,owner,epoch,revision,tick,PackageTickTiming.DEFAULT_RATE);
+    }
+    public PackageAuthorityRegion(PackageRegion region,UUID owner,long epoch,long revision,long tick,java.util.function.DoubleSupplier tickRate) {
         this.region=Objects.requireNonNull(region);this.owner=Objects.requireNonNull(owner);
         if(epoch<=0 || revision<=0)throw new IllegalArgumentException("Region epoch/revision");
         this.epoch=epoch;this.revision=revision;receipt=tick;
+        this.tickRate=Objects.requireNonNull(tickRate);
     }
     public Baseline offer(Target target,long tick) {
         if(closed || expired(tick) || pending.size()>=MAX_PENDING || identities.containsKey(target.identity())
                 || !target.eligible() || !region.contains(target.snapshot().pose()) || nextIndex==Integer.MAX_VALUE)return null;
         Snapshot snapshot=target.snapshot();
         PackageLease lease=new PackageLease(target.identity(),snapshot.pose(),()->receipt,
-                PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS);
+                PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS,PackageLease.FINAL_BASELINE_TIMEOUT_TICKS,tickRate);
         lease.acquire(owner,snapshot.pose(),tick);
         Entry entry=new Entry(nextIndex++,target,lease);entry.flags=snapshot.flags();
         entries.put(entry.index,entry);identities.put(target.identity(),entry);pending.add(entry);
@@ -113,7 +120,7 @@ public final class PackageAuthorityRegion {
                         List<PackageDeltaCodec.Entry> changes,double maximumDisplacement,int positionMode,long simulationStep) {
         if(closed || !owner.equals(sender) || candidateEpoch!=epoch || candidateRevision!=revision
                 || expired(tick) || sequence<0 || sequence<=lastSequence)return Result.STALE;
-        if(simulationStep>0&&stepOrigin>=0&&(simulationStep<stepOrigin||simulationStep-stepOrigin>tick-stepOriginTick+20))return Result.INVALID;
+        if(simulationStep>0&&stepOrigin>=0&&(simulationStep<stepOrigin||simulationStep-stepOrigin>tick-stepOriginTick+historyTicks()))return Result.INVALID;
         if(changes.isEmpty() || changes.size()>PackageDeltaCodec.MAX_ENTRIES)return Result.INVALID;
         Entry[] targets=new Entry[changes.size()];Snapshot[] next=new Snapshot[changes.size()],previous=new Snapshot[changes.size()];
         PackageDeltaCodec.Quantized[] quantized=new PackageDeltaCodec.Quantized[changes.size()];
@@ -138,9 +145,11 @@ public final class PackageAuthorityRegion {
                         positionMode==1?PackageDeltaCodec.mergeRelativePosition(entry.acknowledged,change):PackageDeltaCodec.merge(entry.acknowledged,change);
                 Snapshot pose=decode(q,entry.lease.committed().yaw());
                 double distance=distance(entry.lease.committed(),pose.pose());
-                long steps=simulationStep==0?1:entry.simulationStep==0?Math.clamp(tick-entry.activatedTick+4,1,20):Math.min(20,simulationStep-entry.simulationStep);
+                long steps=motionSteps(entry,tick,simulationStep);
                 double allowance=maximumDisplacement*steps;
-                if(steps<1||!region.contains(pose.pose())||speed(pose.pose())>32
+                // A delayed GPU confirmation can change flags/velocity while the physical
+                // step stays unchanged. It receives no additional position allowance.
+                if(steps<0||speed(pose.pose())>128
                         ||(simulationStep==0&&(entry.motionTick==tick?entry.motionUsed:0)+distance>maximumDisplacement)
                         ||!entry.lease.canCommit(sender,entry.lease.epoch(),sequence,tick,pose.pose(),allowance))return Result.INVALID;
                 next[i]=pose;quantized[i]=q;
@@ -161,7 +170,7 @@ public final class PackageAuthorityRegion {
             if(entry==null)continue;
             if(changes.get(i).mask()==PackageDeltaCodec.RELEASE){release(entry);continue;}
             double moved=distance(entry.lease.committed(),next[i].pose());
-            long steps=simulationStep==0?1:entry.simulationStep==0?Math.clamp(tick-entry.activatedTick+4,1,20):Math.min(20,simulationStep-entry.simulationStep);
+            long steps=motionSteps(entry,tick,simulationStep);
             if(!entry.lease.commit(sender,entry.lease.epoch(),sequence,tick,next[i].pose(),maximumDisplacement*steps))
                 throw new IllegalStateException("Package commit validation changed on the server thread");
             if((changes.get(i).mask()&PackageDeltaCodec.POSITION)!=0) {
@@ -171,6 +180,10 @@ public final class PackageAuthorityRegion {
             }
             entry.acknowledged=quantized[i];entry.flags=next[i].flags();
             entry.motionUsed=(entry.motionTick==tick?entry.motionUsed:0)+moved;entry.motionTick=tick;if(simulationStep>0)entry.simulationStep=simulationStep;
+            // Commit the bounded crossing before retiring this region's authority.
+            // Discovery can now acquire the same record in its destination region.
+            // Releasing an uncommitted crossing would replay the old side forever.
+            if(!region.contains(next[i].pose()))release(entry);
         }
         // Publish only after every adapter and lease commit succeeded. Rollback/invalid/stale
         // batches never enter the observer journal; release callbacks already retire members.
@@ -248,11 +261,16 @@ public final class PackageAuthorityRegion {
                 yaw),q.flags());
     }
     private static double speed(PackageLease.Pose p){return Math.hypot(Math.hypot(p.vx(),p.vy()),p.vz());}
+    private long motionSteps(Entry entry,long tick,long step){
+        return step==0?1:entry.simulationStep==0?
+                Math.clamp(tick-entry.activatedTick+PackageTickTiming.stepsPerFrame(tickRate.getAsDouble()),1,historyTicks()):
+                Math.min(historyTicks(),step-entry.simulationStep);
+    }
     private static double distance(PackageLease.Pose a,PackageLease.Pose b){return Math.hypot(Math.hypot(a.x()-b.x(),a.y()-b.y()),a.z()-b.z());}
     public boolean expired(long tick){
         long allowed=!entries.isEmpty() && entries.size()==pending.size() && frozenPending==0
                 ?PackageLease.ACQUISITION_TIMEOUT_TICKS:PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS;
-        return tick<receipt || tick-receipt>allowed;
+        return tick<receipt || tick-receipt>PackageTickTiming.deadlineTicks(allowed,tickRate.getAsDouble());
     }
     /** Constant-time ownership revocation; world adapters drain notifications under their tick budget. */
     public void beginClose(){closed=true;}

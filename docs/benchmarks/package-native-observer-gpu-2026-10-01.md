@@ -24,7 +24,7 @@ CPU 命令准备另外记录在 CSV，不计入上述提交：131072 的 p50 0.1
 
 尝试只在速度变化时读写 double velocity、只在位置变化时检查 double 坐标并部分写回。正确性对照通过，但 131072 三轮 GPU p95 为 2.1012 / 1.6650 / 1.7910ms，原版本为 1.6425 / 1.8893 / 1.5288ms；CPU 提交 p95 同样未稳定改善。未证明收益超过噪声，已恢复原验证版本，不将尝试版作为默认 native 实现。
 
-原始数据：[保留版本](package-native-observer-gpu-2026-10-01.csv)、[逐样本](package-native-observer-gpu-samples-2026-10-01.csv)、[尝试版](package-native-observer-gpu-selective-2026-10-01.csv)、[尝试版逐样本](package-native-observer-gpu-selective-samples-2026-10-01.csv)。保留版本 CSV 记录第一次原版测量；完全相同的 `before` 副本已从仓库清理。
+原始数据：[保留版本](package-native-observer-gpu-2026-10-01.csv)、[逐样本](package-native-observer-gpu-samples-2026-10-01.csv.gz)、[尝试版](package-native-observer-gpu-selective-2026-10-01.csv)、[尝试版逐样本](package-native-observer-gpu-selective-samples-2026-10-01.csv.gz)。保留版本 CSV 记录第一次原版测量；完全相同的 `before` 副本已从仓库清理。
 
 ## 正确性
 

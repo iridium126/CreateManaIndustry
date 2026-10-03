@@ -56,7 +56,7 @@ float observerYaw(ObserverState s) {
 }
 float observerAngle(float a,float b) { return mod(b-a+180.0,360.0)-180.0; }
 vec3 observerVelocity(ObserverState s) {
-    return vec3(s.velocityYaw.xyz)*(1.0/1024.0);
+    return vec3(s.velocityYaw.xyz)*(1.0/256.0);
 }
 float observerBlend(ObserverState s,float now) { return clamp((now-s.correction.w)/uSmoothing,0.0,1.0); }
 vec3 observerPredicted(ObserverState s,float now) {

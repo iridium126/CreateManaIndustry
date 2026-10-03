@@ -23,8 +23,8 @@ public final class PackageShaderCompiler implements AutoCloseable {
         public int location(String name){return uniforms.getOrDefault(name,-1);}
     }
     private static final String[] DRAW_UNIFORMS={"iris_ProjMat","iris_ProjMatInverse","iris_ModelViewMat","iris_ModelViewMatInverse",
-            "iris_NormalMat","iris_TextureMat","cmi_ModelView","cmi_PartialTick","cmi_CameraPos","cmi_SampledLighting",
-            "cmi_LightingMode","cmi_ConstantAmbient","cmi_Light0","cmi_Light1","cmi_BlockId","entityId","blockEntityId",
+            "iris_NormalMat","iris_TextureMat","cmi_PartialTick","cmi_CameraPos","cmi_SampledLighting",
+            "cmi_BlockId","entityId","blockEntityId",
             "currentRenderedItemId","entityColor","iris_ColorModulator","iris_ChunkOffset"};
     private record Bundle(CMIPackageIrisPipeline owner,long revision,Program main,Program shadow) {}
     private Bundle live;

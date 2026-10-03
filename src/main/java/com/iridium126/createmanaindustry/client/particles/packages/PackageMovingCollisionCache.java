@@ -33,17 +33,28 @@ public final class PackageMovingCollisionCache {
     private final Thread owner=Thread.currentThread();private final Executor executor;private final LongSupplier clock;
     private final LinkedHashMap<PackageMovingGeometry.Key,Entry> entries=new LinkedHashMap<>();
     private final NavigableMap<Long,List<Entry>> history=new TreeMap<>();
+    private int historyTicks=PackageSimulationClock.HISTORY_TICKS;
+    public void tickRate(double rate){owner();historyTicks=Math.max(historyTicks,com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageTickTiming.historyTicks(rate));}
     public void captureHistory(long tick,boolean available){
+        captureHistory(tick,tick,available);
+    }
+    /** Split the one observed client pose pair rather than sweeping that whole pair again
+     * for each accelerated game step. Each interval has its own immutable identity. */
+    public void captureHistory(long first,long last,boolean available){
+        if(first<0||last<first||last-first>=historyTicks)throw new IllegalArgumentException("Moving input range");
+        for(long tick=first;tick<=last;tick++)captureInterval(tick,available,(double)(tick-first)/(last-first+1),(double)(tick-first+1)/(last-first+1));
+    }
+    private void captureInterval(long tick,boolean available,double from,double to){
         owner();if(history.containsKey(tick))return;
         List<Entry> frame=new ArrayList<>();
         if(available&&posesReady())for(Entry source:entries.values()){
             Entry frozen=new Entry(source.source,source.identity);frozen.revision=source.revision;
-            frozen.bounds=source.bounds;frozen.previous=source.previous;frozen.current=source.current;
+            frozen.bounds=source.bounds;frozen.previous=source.previous.interpolate(source.current,from);frozen.current=source.previous.interpolate(source.current,to);
             frozen.unsupported=source.unsupported;frozen.poseFrame=tick+1;frame.add(frozen);
         }
         else frame=null;
         history.put(tick,frame==null?null:List.copyOf(frame));
-        while(history.size()>PackageSimulationClock.HISTORY_TICKS)history.pollFirstEntry();
+        while(history.size()>historyTicks)history.pollFirstEntry();
     }
     public List<Entry> history(long tick){owner();return history.get(tick);}
     public boolean hasHistory(long tick){owner();return history.containsKey(tick);}

@@ -64,5 +64,9 @@ public final class PackageControlQueue {
     private void recycle(Batch batch){batch.rows.clear();batch.prepared=null;batch.namespace=null;if(spare.size()<32)spare.addLast(batch);}
     /** Namespace shutdown explicitly restores Create; no individual inventory event is discarded. */
     public void clear(){while(!pending.isEmpty())recycle(pending.removeFirst());records=0;}
+    public void clear(Namespace namespace){
+        for(var iterator=pending.iterator();iterator.hasNext();){var batch=iterator.next();
+            if(batch.namespace.equals(namespace)){iterator.remove();records-=batch.rows.size();recycle(batch);}}
+    }
     public Stats stats(){return new Stats(records,packets,sent,bytes,maximumDelay);}
 }

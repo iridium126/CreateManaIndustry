@@ -29,4 +29,4 @@ compute 列是 OpenGL GPU timer 的物理 pass 时间，完成步 p95 另列在�
 .\scripts\particles\benchmark-physx.ps1 -Counts 0,1,63,64,65 -Frequencies 20 -Backends gpu -Warmup 5 -Samples 2 -Trials 1 -Output build/package-physx-boundaries
 ```
 
-原始数据：[compute 汇总](package-backend-compute-2026-09-30.csv)、[compute 样本](package-backend-compute-samples-2026-09-30.csv)、[PhysX 汇总](package-backend-physx-2026-09-30.csv)、[PhysX 样本](package-backend-physx-samples-2026-09-30.csv)。PhysX 边界 0/1/63/64/65 均通过一次实际 GPU 模拟与读回；后续加入输出缓冲 64B 哨兵并重复测试，均未越界。native 质量探针还对这些规模及 129 项与朴素全对检查交叉验证。Gradle 构建通过，160 个 Java 测试 0 失败，Sable 缺失运行检查通过；Hex 及游戏内视觉没有在本轮重测。
+原始数据：[compute 汇总](package-backend-compute-2026-09-30.csv)、[compute 样本](package-backend-compute-samples-2026-09-30.csv.gz)、[PhysX 汇总](package-backend-physx-2026-09-30.csv)、[PhysX 样本](package-backend-physx-samples-2026-09-30.csv.gz)。PhysX 边界 0/1/63/64/65 均通过一次实际 GPU 模拟与读回；后续加入输出缓冲 64B 哨兵并重复测试，均未越界。native 质量探针还对这些规模及 129 项与朴素全对检查交叉验证。Gradle 构建通过，160 个 Java 测试 0 失败，Sable 缺失运行检查通过；Hex 及游戏内视觉没有在本轮重测。

@@ -1,0 +1,85 @@
+Reusing configuration cache.
+> Task :cloneVoxy SKIPPED
+> Task :prepareVoxy SKIPPED
+> Task :activateVoxy SKIPPED
+> Task :buildVoxy SKIPPED
+> Task :cacheVoxy SKIPPED
+> Task :processTestResources NO-SOURCE
+> Task :extractSodiumCoreJar UP-TO-DATE
+> Task :extractSableCompanion UP-TO-DATE
+> Task :generateModMetadata UP-TO-DATE
+> Task :processResources UP-TO-DATE
+
+> Task :createMinecraftArtifacts
+Loaded 145 artifacts from D:\MAINFILE\MCMOD\CreateManaIndustry-1.21.1-Neoforge-branch\build\tmp\createMinecraftArtifacts\nfrt_artifact_manifest.properties
+*** Started working on downloadJson
+ DONE  Completed downloadJson in 0.02s
+*** Started working on downloadServer
+*** Started working on downloadClient
+*** Started working on downloadClientMappings
+ DONE  Completed downloadServer in 0.03s
+ DONE  Completed downloadClient in 0.03s
+ DONE  Completed downloadClientMappings in 0.03s
+*** Started working on mergeMappings
+ REUSE Used cache of mergeMappings in 0.00s
+*** Started working on stripClient
+ REUSE Used cache of stripClient in 0.00s
+*** Started working on extractServer
+ REUSE Used cache of extractServer in 0.00s
+*** Started working on stripServer
+ REUSE Used cache of stripServer in 0.00s
+*** Started working on merge
+ REUSE Used cache of merge in 0.00s
+*** Started working on rename
+ REUSE Used cache of rename in 0.00s
+*** Started working on decompile
+ REUSE Used cache of decompile in 0.00s
+*** Started working on inject
+ REUSE Used cache of inject in 0.00s
+*** Started working on patch
+ REUSE Used cache of patch in 0.00s
+*** Started working on applyNeoforgePatches
+ REUSE Used cache of applyNeoforgePatches in 0.00s
+*** Started working on transformSources
+ REUSE Used cache of transformSources in 0.00s
+*** Started working on recompile
+ REUSE Used cache of recompile in 0.00s
+*** Started working on sourcesWithNeoForge
+ REUSE Used cache of sourcesWithNeoForge in 0.00s
+*** Started working on compiledWithNeoForge
+ REUSE Used cache of compiledWithNeoForge in 0.00s
+*** Started working on sourcesAndCompiledWithNeoForge
+ REUSE Used cache of sourcesAndCompiledWithNeoForge in 0.00s
+Total runtime: 1.36s
+
+
+> Task :compileJava UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :compileTestJava
+> Task :testClasses
+
+> Task :test FAILED
+
+PackageSimulationClockTest > twoHundredTicksPerSecondConsumeEveryInputWithoutRevocation() FAILED
+    org.opentest4j.AssertionFailedError: 200 tick/s incorrectly expired input history at frame 7 ==> expected: <false> but was: <true>
+        at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+        at app//org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+        at app//org.junit.jupiter.api.AssertFalse.failNotFalse(AssertFalse.java:63)
+        at app//org.junit.jupiter.api.AssertFalse.assertFalse(AssertFalse.java:36)
+        at app//org.junit.jupiter.api.Assertions.assertFalse(Assertions.java:239)
+        at app//com.iridium126.createmanaindustry.client.particles.packages.PackageSimulationClockTest.twoHundredTicksPerSecondConsumeEveryInputWithoutRevocation(PackageSimulationClockTest.java:11)
+
+8 tests completed, 1 failed
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':test'.
+> There were failing tests. See the report at: file:///D:/MAINFILE/MCMOD/CreateManaIndustry-1.21.1-Neoforge-branch/build/reports/tests/test/index.html
+
+* Try:
+> Run with --scan to generate a Build Scan (powered by Develocity).
+
+BUILD FAILED in 4s
+8 actionable tasks: 3 executed, 5 up-to-date
+Configuration cache entry reused.

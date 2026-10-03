@@ -93,9 +93,9 @@ void main() {
     // Kinematic root friction is applied once by the final scene constraint,
     // regardless of Jacobi iterations or the number of adjacent platforms.
     if(grounded){vec2 surface=material<0.?groundVelocity.xz:vec2(0);bool root=(floatBitsToUint(movingSupport[i].w)&MOVING_ID_MASK)!=0u&&highestSupport==-3.402823e38;
-        b.velocityGround.xz=surface+(b.velocityGround.xz-surface)*(material<0.?(root?1.:uFriction):pow(material,uDt*5.));}
+        b.velocityGround.xz=surface+(b.velocityGround.xz-surface)*(material<0.?(root?1.:uFriction):pow(material,uDt*20.));}
 #else
-    if(grounded)b.velocityGround.xz*=material<0.0?uFriction:pow(material,uDt*5.0);
+    if(grounded)b.velocityGround.xz*=material<0.0?uFriction:pow(material,uDt*20.0);
 #endif
 #else
     if(grounded)b.velocityGround.xz*=uFriction;

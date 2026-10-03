@@ -52,14 +52,22 @@ public final class PackageChainAuthority {
     private final Map<UUID,InteractionReceipt> interactions=new HashMap<>();
     private final ByteBuffer lastPacket=ByteBuffer.allocate(PackageChainEventCodec.MAX_WIRE_BYTES).limit(0);
     private long receipt,lastSequence=-1;private int nextIndex;private boolean closed,applying;
+    private final long authorityTimeoutTicks;
+    private final java.util.function.DoubleSupplier tickRate;
     public PackageChainAuthority(UUID owner,long epoch,long tick) {
+        this(owner,epoch,tick,PackageLease.TIMEOUT_TICKS,PackageTickTiming.DEFAULT_RATE);
+    }
+    public PackageChainAuthority(UUID owner,long epoch,long tick,long authorityTimeoutTicks,java.util.function.DoubleSupplier tickRate) {
         this.owner=Objects.requireNonNull(owner);if(epoch<=0 || tick<0)throw new IllegalArgumentException("Chain authority epoch");this.epoch=epoch;receipt=tick;
+        if(authorityTimeoutTicks<PackageLease.TIMEOUT_TICKS)throw new IllegalArgumentException("Chain authority timeout");
+        this.authorityTimeoutTicks=authorityTimeoutTicks;this.tickRate=Objects.requireNonNull(tickRate);
     }
     public Baseline offer(Target target,int track,long revision,long tick) {
         Objects.requireNonNull(target);
         if(closed || nextIndex==Integer.MAX_VALUE || pending.size()>=256 || target.identity().generation()<=observedGeneration(target.identity().id()) || liveIdentities.containsKey(target.identity().id())
                 || track<0 || track>=131072 || revision<=0 || !target.eligible())return null;
-        var state=target.snapshot(tick);var lease=new PackageLease(target.identity(),state.pose(),()->receipt);lease.acquire(owner,state.pose(),tick);
+        var state=target.snapshot(tick);var lease=new PackageLease(target.identity(),state.pose(),()->receipt,authorityTimeoutTicks,
+                authorityTimeoutTicks==PackageLease.TIMEOUT_TICKS?PackageLease.TIMEOUT_TICKS:PackageLease.FINAL_BASELINE_TIMEOUT_TICKS,tickRate);lease.acquire(owner,state.pose(),tick);
         var entry=new Entry(nextIndex++,track,revision,target,state,lease);entry.mask=target.eligibility();
         entries.put(entry.index,entry);identities.put(target.identity(),entry);pending.add(entry);
         liveIdentities.put(target.identity().id(),entry);
@@ -205,5 +213,5 @@ public final class PackageChainAuthority {
     }
     private Baseline baseline(Entry entry){return new Baseline(entry.index,entry.target.identity(),entry.lease.epoch(),entry.lease.baselineRevision(),entry.track,entry.trackRevision,entry.state,entry.mask);}
     public UUID owner(){return owner;}public long epoch(){return epoch;}public boolean closed(){return closed;}public int size(){return entries.size();}
-    public boolean expired(long tick){return tick<receipt || tick-receipt>2;}
+    public boolean expired(long tick){return tick<receipt || tick-receipt>PackageTickTiming.deadlineTicks(authorityTimeoutTicks,tickRate.getAsDouble());}
 }

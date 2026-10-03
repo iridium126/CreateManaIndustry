@@ -27,7 +27,7 @@ public final class PackageObserverGpuValidation {
     static PackageLease.Identity identity(int i){return new PackageLease.Identity(0x1234567800000001L+i,0x2345678900000001L+i);}
     static int serverIndex(int i){return 65536+3*i;}
     static PackageDeltaCodec.Quantized state(int i,boolean moving){return new PackageDeltaCodec.Quantized((i%60)*4096+410,20480,(i/60%60)*4096+820,
-            (short)(moving?512:0),(short)0,(short)(moving?-256:0),(short)-16384,1);}
+            (short)(moving?128:0),(short)0,(short)(moving?-64:0),(short)-16384,1);}
     static ByteBuffer patches(int n){return BufferUtils.createByteBuffer(n*PackageObserverGpu.PATCH_BYTES);}
     static ByteBuffer baselines(int n,boolean moving) {
         var data=patches(n);for(int i=0;i<n;i++){data.position(i*128);PackageObserverPatch.baseline(data,i,serverIndex(i),identity(i),EPOCH,STREAM,0,state(i,moving),-64,128,64,1,.75f,0);}

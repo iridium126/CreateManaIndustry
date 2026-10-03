@@ -133,13 +133,9 @@ public final class PackageShaderHook {
         INVERSE_VIEW.set(VIEW).invert();INVERSE_PROJ.set(PROJECTION).invert();NORMAL.set(VIEW).invert().transpose();
         matrix(p,"iris_ModelViewMat",VIEW);matrix(p,"iris_ModelViewMatInverse",INVERSE_VIEW);matrix(p,"iris_ProjMat",PROJECTION);matrix(p,"iris_ProjMatInverse",INVERSE_PROJ);
         matrix(p,"iris_TextureMat",RenderSystem.getTextureMatrix());
-        matrix(p,"cmi_ModelView",VIEW);int normal=p.location("iris_NormalMat");if(normal>=0)GL20.glUniformMatrix3fv(normal,false,NORMAL.get(NORMAL_MATRIX));
+        int normal=p.location("iris_NormalMat");if(normal>=0)GL20.glUniformMatrix3fv(normal,false,NORMAL.get(NORMAL_MATRIX));
         vector(p,"cmi_CameraPos",x,y,z);scalar(p,"cmi_PartialTick",engine.packageInterpolation());integer(p,"cmi_SampledLighting",sampled?1:0);
-        var level=Minecraft.getInstance().level;
-        integer(p,"cmi_LightingMode",dev.engine_room.flywheel.api.visualization.VisualizationManager.supportsVisualization(level)?1:0);
-        integer(p,"cmi_ConstantAmbient",level.effects().constantAmbientLight()?1:0);integer(p,"cmi_BlockId",-1);integer(p,"currentRenderedItemId",0);
-        var directions=net.createmod.ponder.mixin.client.accessor.RenderSystemAccessor.catnip$getShaderLightDirections();
-        for(int i=0;i<2;i++) {var d=directions[i];float len=d.length();if(len>0)vector(p,i==0?"cmi_Light0":"cmi_Light1",d.x/len,d.y/len,d.z/len);}
+        integer(p,"cmi_BlockId",-1);integer(p,"currentRenderedItemId",0);
         int color=p.location("entityColor");if(color>=0)GL20.glUniform4f(color,0,0,0,0);
         color=p.location("iris_ColorModulator");if(color>=0)GL20.glUniform4f(color,1,1,1,1);vector(p,"iris_ChunkOffset",0,0,0);
         // Named pack uniforms (including shifted cameraPosition and shadow matrices)

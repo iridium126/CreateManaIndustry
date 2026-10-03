@@ -31,7 +31,7 @@ class PackageCollisionHookContractTest {
         boolean invalidates=false,afterApply=false;
         for(var instruction:invalidate.instructions)if(instruction instanceof MethodInsnNode call) {
             if(call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionRuntime")
-                    && call.name.equals("blockChanged"))invalidates=true;
+                    && call.name.equals("blockEntityChanged"))invalidates=true;
         }
         var annotation=invalidate.visibleAnnotations==null?List.<AnnotationNode>of():invalidate.visibleAnnotations;
         afterApply=annotation.stream().filter(a->a.desc.equals("Lorg/spongepowered/asm/mixin/injection/Inject;"))

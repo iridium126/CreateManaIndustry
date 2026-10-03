@@ -26,15 +26,16 @@ void main() {
     if(!fast&&fastCells[hashCell(cellOf(b.positionMass.xyz))]==0u){dst[i]=b;return;}
 
     // Package dimensions are admitted at <= half a grid cell. Other package
-    // displacement is bounded to one cell per 20 Hz step; faster bodies request
+    // displacement is bounded to two cells per 20 Hz step; faster bodies request
     // local pause to bound an unbounded GPU query. A long move
     // already clipped by the static-world sweep may still use its now-bounded path.
-    bool longMove=any(greaterThan(abs(motion),vec3(uCellSize)));
+    float maximumMotion=uCellSize*PACKAGE_MAX_SWEEP_CELLS;
+    bool longMove=any(greaterThan(abs(motion),vec3(maximumMotion)));
     float incomingSpeed=length(stepVelocity[i].xyz),currentSpeed=length(b.velocityGround.xyz);
     bool staticallyClipped=longMove && currentSpeed<incomingSpeed*.5
             && length(b.velocityGround.xyz-stepVelocity[i].xyz)>max(2.0,incomingSpeed*.5);
     if(longMove&&!staticallyClipped) { pauseCollision(b,i);return; }
-    vec3 padding=b.extentYaw.xyz+vec3(uCellSize*1.5+1e-4);
+    vec3 padding=b.extentYaw.xyz+vec3(maximumMotion+uCellSize*.5+1e-4);
     ivec3 lo=cellOf(min(start,b.positionMass.xyz)-padding);
     ivec3 hi=cellOf(max(start,b.positionMass.xyz)+padding);
     ivec3 size=hi-lo+1;
@@ -59,7 +60,7 @@ void main() {
                 bool otherLive=other.previousSleep.w>=0.0 || other.previousSleep.w==PACKAGE_COLLISION_FROZEN;
                 if(other.positionMass.w>0.0 && otherLive) {
                     vec3 otherMotion=other.positionMass.xyz-other.previousSleep.xyz;
-                    if(all(lessThanEqual(abs(otherMotion),vec3(uCellSize)))) {
+                    if(all(lessThanEqual(abs(otherMotion),vec3(maximumMotion)))) {
                         bool otherFast=any(greaterThan(abs(otherMotion),max(other.extentYaw.xyz,vec3(1e-5))));
                         if(!fast&&!otherFast){cursor=next;continue;}
                         vec3 relativeStart=start-other.previousSleep.xyz;

@@ -5,28 +5,40 @@ import java.util.*;
 import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryStack;
 
-/** Immutable local BVHs and four nonblocking pose banks per structure. No world access or readback. */
+/** Immutable local BVHs and nonblocking pose banks per structure. No world access or readback. */
 public final class PackageMovingCollisionGpu implements AutoCloseable {
     public static final int POSE_BYTES=256,MAX_STRUCTURES=64;
     private static final int MAP_FLAGS=GL30.GL_MAP_WRITE_BIT|GL44.GL_MAP_PERSISTENT_BIT|GL44.GL_MAP_COHERENT_BIT;
     private static final class Geometry {int buffer,size,copied;ByteBuffer mapped,source;long revision;PackageMovingGeometry.Bounds bounds;}
     private static final class Bank {int buffer;ByteBuffer mapped;long fence;Geometry geometry;boolean leased;}
-    private static final class Entry {final Bank[] banks=new Bank[4];Geometry visible,pending;long revision;PackageMovingGeometry.Bounds visibleBounds;}
+    private static final class Entry {Bank[] banks=new Bank[0];Geometry visible,pending;long revision;PackageMovingGeometry.Bounds visibleBounds;}
     private final Thread owner=Thread.currentThread();
     private final java.util.function.LongToIntFunction poll;
     private final Map<Integer,Entry> entries=new LinkedHashMap<>();private final List<Geometry> retired=new ArrayList<>();
-    private int empty;private boolean closed,viewOpen;
+    private int empty,bankCount=4;private boolean closed,viewOpen;
     private long uploadedBytes,skippedViews;
     public PackageMovingCollisionGpu(){this(fence->GL32.glClientWaitSync(fence,GL32.GL_SYNC_FLUSH_COMMANDS_BIT,0));}
     /** Injected completion observation is used by validation to hold all four banks busy. */
     public PackageMovingCollisionGpu(java.util.function.LongToIntFunction poll){this.poll=Objects.requireNonNull(poll);empty=GL15.glGenBuffers();if(empty==0)throw new IllegalStateException("Moving fallback buffer unavailable");GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,empty);GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,48,GL15.GL_DYNAMIC_DRAW);if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=48){GL15.glDeleteBuffers(empty);throw new IllegalStateException("Moving fallback storage unavailable");}}
     private static ByteBuffer map(int id,int bytes){if(id==0||bytes>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))throw new IllegalStateException("Moving storage/device limit");GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);GL44.glBufferStorage(GL43.GL_SHADER_STORAGE_BUFFER,bytes,MAP_FLAGS);if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)throw new IllegalStateException("Moving storage unavailable");var mapped=GL30.glMapBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,0,bytes,MAP_FLAGS);if(mapped==null)throw new IllegalStateException("Moving mapping unavailable");return mapped.order(ByteOrder.nativeOrder());}
     private void owner(){if(Thread.currentThread()!=owner||closed)throw new IllegalStateException("Moving GPU atlas unavailable/off owner thread");}
+    public void tickRate(double rate){
+        owner();if(viewOpen)throw new IllegalStateException("Moving bank resize during view");
+        bankCount=Math.max(bankCount,com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageTickTiming.stepsPerFrame(rate));
+        for(Entry entry:entries.values())grow(entry);
+    }
+    private void grow(Entry entry){
+        int oldCount=entry.banks.length;if(oldCount>=bankCount)return;
+        Bank[] next=Arrays.copyOf(entry.banks,bankCount);
+        try{for(int i=oldCount;i<bankCount;i++){Bank bank=new Bank();next[i]=bank;bank.buffer=GL15.glGenBuffers();bank.mapped=map(bank.buffer,POSE_BYTES);}}
+        catch(RuntimeException failure){for(int i=oldCount;i<next.length;i++)if(next[i]!=null&&next[i].buffer!=0)GL15.glDeleteBuffers(next[i].buffer);throw failure;}
+        entry.banks=next;
+    }
     private Entry entry(int identity) {
         Entry e=entries.get(identity);if(e!=null)return e;
         if(entries.size()==MAX_STRUCTURES)throw new IllegalStateException("Moving structure capacity");
         e=new Entry();
-        try{for(int i=0;i<4;i++){Bank b=new Bank();e.banks[i]=b;b.buffer=GL15.glGenBuffers();b.mapped=map(b.buffer,POSE_BYTES);}}
+        try{grow(e);}
         catch(RuntimeException failure){for(Bank b:e.banks)if(b!=null&&b.buffer!=0)GL15.glDeleteBuffers(b.buffer);throw failure;}
         entries.put(identity,e);return e;
     }

@@ -66,6 +66,7 @@ public final class PackageDeltaChannel implements AutoCloseable {
     private int noticeCount;
     private boolean noticeOverflow;
     private volatile boolean closed;
+    private boolean disposed;
     private boolean profiling;
     private final Samples captureTimes=new Samples(),pumpTimes=new Samples(),preparationTimes=new Samples(),roundTripTimes=new Samples();
     private long nextFragment=1,captures,skipped,headerBytes,payloadBytes,ackDispatches,latestPreparation,latestRoundTrip;
@@ -266,5 +267,7 @@ public final class PackageDeltaChannel implements AutoCloseable {
     public void profiling(boolean enabled){owner();if(enabled && !profiling){captureTimes.clear();pumpTimes.clear();preparationTimes.clear();roundTripTimes.clear();}profiling=enabled;}
     /** Sorting is diagnostic-only; never called from frame submission. */
     public Timings timings(){owner();return new Timings(captureTimes.report(),pumpTimes.report(),preparationTimes.report(),roundTripTimes.report());}
-    @Override public void close(){owner();if(closed)return;closed=true;headers.close();payload.close();journal.close();detector.close();if(gpuJournal!=0)GL15.glDeleteBuffers(gpuJournal);for(Frame frame:frames)frame.reset();}
+    /** Stop a revoked namespace before draining its members from the shared pools. */
+    public void stop(){owner();if(closed)return;closed=true;headers.close();payload.close();journal.close();for(Frame frame:frames)frame.reset();}
+    @Override public void close(){owner();if(disposed)return;stop();disposed=true;detector.close();if(gpuJournal!=0)GL15.glDeleteBuffers(gpuJournal);}
 }

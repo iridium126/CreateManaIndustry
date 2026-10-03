@@ -12,7 +12,7 @@ RTX 4070 Laptop GPU，OpenGL 4.5，NVIDIA 581.15。隐藏 64×64 GLFW 验证上�
 
 没有实时帧间等待或自动节流。样本结束后 GPU 结果等待/下载仅用于验证，生产 atlas 使用零超时 fence 轮询，没有 `glFinish`、阻塞 fence、等待 worker 或结果读回。初始 body 上传、CPU 形状打包、atlas 分配、view 建立和计时查询操作不包含在 substep CPU/GPU 时间中。CPU substep 提交分位数通常为微秒级，受系统/JIT/计时精度影响，不等于整个渲染线程成本。
 
-原始 [45 组统计](package-world-kernels-2026-09-29.csv) 与 [1350 个逐步样本](package-world-kernel-samples-2026-09-29.csv) 全部保留。下面分别取三组 p50/p95 的中位数，并非把不同负载合成一个帧率。
+原始 [45 组统计](package-world-kernels-2026-09-29.csv) 与 [1350 个逐步样本](package-world-kernel-samples-2026-09-29.csv.gz) 全部保留。下面分别取三组 p50/p95 的中位数，并非把不同负载合成一个帧率。
 
 ## 空分区查询对照
 

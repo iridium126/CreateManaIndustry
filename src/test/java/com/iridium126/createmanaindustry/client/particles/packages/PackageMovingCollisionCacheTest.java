@@ -6,6 +6,28 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 class PackageMovingCollisionCacheTest {
+    @Test void acceleratedPoseIntervalsCoverRotationAndTranslationExactlyOnce(){
+        var clock=new AtomicLong();var source=new Source(clock){
+            @Override public PackageMovingGeometry.Pose pose(boolean previous){return previous?IDENTITY:new PackageMovingGeometry.Pose(0,1,0,-1,0,0,0,0,1,10,0,0);}
+        };
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);cache.tickRate(200);cache.offer(source);cache.tick(1);cache.captureHistory(1,10,true);
+        var end=IDENTITY;double motion=0;
+        for(int tick=1;tick<=10;tick++){
+            var interval=cache.history(tick).getFirst();assertEquals(end,interval.previous);assertEquals(tick+1,interval.poseFrame);
+            motion+=interval.current.tx()-interval.previous.tx();end=interval.current;
+            assertEquals(tick,interval.current.tx(),1e-12);
+            assertEquals(1,interval.current.xx()*interval.current.xx()+interval.current.xy()*interval.current.xy(),1e-12);
+        }
+        assertEquals(10,motion,1e-12);assertEquals(source.pose(false),end);
+        cache.captureHistory(1,10,false);assertEquals(1,cache.history(1).getFirst().current.tx(),1e-12);
+    }
+    @Test void twoHundredTpsRetainsImmutablePosePairsForOneSecond(){
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);cache.tickRate(200);
+        for(int tick=0;tick<250;tick++){cache.tick(1);cache.captureHistory(tick,true);}
+        assertFalse(cache.hasHistory(49));assertTrue(cache.hasHistory(50));assertNotNull(cache.history(50));
+        cache.tickRate(20);assertTrue(cache.hasHistory(50));
+        cache.captureHistory(249,false);assertNotNull(cache.history(249),"same-tick data must stay immutable");
+    }
     static final PackageMovingGeometry.Pose IDENTITY=new PackageMovingGeometry.Pose(1,0,0,0,1,0,0,0,1,0,0,0);
     static class Source implements PackageMovingCollisionCache.Source {
         final Thread owner=Thread.currentThread();final PackageMovingGeometry.Key key=new PackageMovingGeometry.Key(0,UUID.randomUUID());

@@ -9,10 +9,9 @@ layout(location=6) in vec4 cmi_MeshTangent;
 layout(location=7) in vec2 cmi_MidUv;
 uniform samplerBuffer cmi_PackagePool,cmi_PackageAttachment;
 uniform usamplerBuffer cmi_PackageLight;
-uniform vec3 cmi_CameraPos,cmi_Light0,cmi_Light1;
-uniform mat4 cmi_ModelView;
+uniform vec3 cmi_CameraPos;
 uniform float cmi_PartialTick;
-uniform int cmi_SampledLighting,cmi_LightingMode,cmi_ConstantAmbient;
+uniform int cmi_SampledLighting;
 uniform int cmi_BlockId;
 vec4 cmi_VertexLevel,cmi_Tint,cmi_TexCoord0v,cmi_LightCoordv;
 vec3 cmi_NormalLevel;
@@ -47,15 +46,7 @@ void main() {
     uint light=cmi_SampledLighting!=0?texelFetch(cmi_PackageLight,i).x:pose.packedLight;
     cmi_LightCoordv=vec4(float((light>>4u)&15u)*16.0,float((light>>20u)&15u)*16.0,0,1);
     cmi_TexCoord0v=vec4(cmi_Uv,0,1);
-    vec3 normal=pose.normal,n2=normal*normal;bool unshaded=dot(n2,n2)<1e-8;
-    float shade;
-    if(cmi_LightingMode==1 && (pose.flags&1u)!=0u) {
-        float yFactor=cmi_ConstantAmbient!=0?.9:(3.0+normal.y)*.25;
-        shade=unshaded?(cmi_ConstantAmbient!=0?.9:1.0):min(n2.x*.6+n2.z*.8+n2.y*yFactor,1.0);
-    } else {
-        vec3 n=unshaded?vec3(0,1,0):mat3(cmi_ModelView)*normal;
-        shade=min(1.0,(max(dot(cmi_Light0,n),0.0)+max(dot(cmi_Light1,n),0.0))*.6+.4);
-    }
-    // Iris owns lightmap/PBR/fog. Do not multiply the lightmap into the vertex tint.
-    cmi_Tint=cmi_Color*vec4(vec3(shade),1);
+    // Catnip disables fake diffuse when a shaderpack is active. Preserve the
+    // material tint: Iris/pack lighting uses the real face normal above.
+    cmi_Tint=cmi_Color;
 }

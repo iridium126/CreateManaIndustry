@@ -1,0 +1,21 @@
+{
+  "build": "successful",
+  "gametest": {
+    "required": 2,
+    "passed": 2
+  },
+  "gpu": {
+    "targeted": 3922,
+    "light": 886165,
+    "iris": 20586,
+    "observers": 3548729,
+    "packages": 11481013
+  },
+  "unit": {
+    "tests": 426,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "date": "2026-10-03"
+}

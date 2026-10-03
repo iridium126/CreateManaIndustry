@@ -25,6 +25,17 @@ public final class PackageMovingGeometry {
                 throw new IllegalArgumentException("Moving pose is not an orthogonal positive-scale transform");
         }
         public Vector3d transform(double x,double y,double z){return new Vector3d(xx*x+yx*y+zx*z+tx,xy*x+yy*y+zy*z+ty,xz*x+yz*y+zz*z+tz);}
+        public Pose interpolate(Pose next,double fraction){
+            if(!Double.isFinite(fraction)||fraction<0||fraction>1)throw new IllegalArgumentException("Moving pose fraction");
+            if(fraction==0)return this;if(fraction==1)return next;
+            var a=new org.joml.Matrix3d(xx,xy,xz,yx,yy,yz,zx,zy,zz);
+            var b=new org.joml.Matrix3d(next.xx,next.xy,next.xz,next.yx,next.yy,next.yz,next.zx,next.zy,next.zz);
+            var rotation=a.getUnnormalizedRotation(new org.joml.Quaterniond()).slerp(b.getUnnormalizedRotation(new org.joml.Quaterniond()),fraction);
+            var scale=a.getScale(new Vector3d()).lerp(b.getScale(new Vector3d()),fraction);
+            var matrix=new org.joml.Matrix3d().rotation(rotation).scale(scale);
+            return new Pose(matrix.m00(),matrix.m01(),matrix.m02(),matrix.m10(),matrix.m11(),matrix.m12(),matrix.m20(),matrix.m21(),matrix.m22(),
+                    tx+(next.tx-tx)*fraction,ty+(next.ty-ty)*fraction,tz+(next.tz-tz)*fraction);
+        }
         public void put(ByteBuffer out,double ox,double oy,double oz) {
             if(!Float.isFinite((float)(tx-ox))||!Float.isFinite((float)(ty-oy))||!Float.isFinite((float)(tz-oz)))throw new IllegalArgumentException("Moving local origin overflow");
             out.putFloat((float)xx).putFloat((float)xy).putFloat((float)xz).putInt(0);

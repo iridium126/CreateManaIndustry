@@ -3,7 +3,9 @@ bool sweepBox(vec3 p,vec3 motion,vec3 lo,vec3 hi,out float time,out vec3 normal)
     float enter=-1e30,leave=1e30;normal=vec3(0);
     for(int axis=0;axis<3;axis++) {
         if(abs(motion[axis])<1e-10) {
-            if(p[axis]<lo[axis] || p[axis]>hi[axis])return false;
+            // A zero-width intersection on a stationary axis is a tangent, not an
+            // entry. Sliding over adjacent floor voxels must not hit their side faces.
+            if(p[axis]<=lo[axis] || p[axis]>=hi[axis])return false;
         } else {
             float a=(lo[axis]-p[axis])/motion[axis],b=(hi[axis]-p[axis])/motion[axis];
             float near=min(a,b),far=max(a,b);

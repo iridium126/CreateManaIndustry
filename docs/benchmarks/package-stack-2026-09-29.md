@@ -52,7 +52,7 @@
 
 最终 fixture 改为 448 section：X/Z=-1..6、Y=-3..3，覆盖完整轨迹及 guard。所有三算法、全部 81 组末尾回退为零，并显式断言。生产未知覆盖仍立即交还，未为通过测试把未知区域当空气。
 
-最终原始数据为 [分组结果](package-stack-kernels-2026-09-29.csv)（81组）与 [逐次样本](package-stack-kernel-samples-2026-09-29.csv)（3240项）。覆盖不完整的探索数据依次保存在 `package-stack-first-*`、`package-stack-axis-first-*`、`package-stack-entry-first-*`；它们分别对应首次相对速度、各轴极值、世界进入面阶段，不参与最终表格或优化资格判断。此前 [世界碰撞报告](package-world-2026-09-29.md) 的失败样本保留原样。
+最终原始数据保留为 [分组结果](package-stack-kernels-2026-09-29.csv)（81组）与 [逐次样本](package-stack-kernel-samples-2026-09-29.csv.gz)（3240项）。覆盖不足的首轮、各轴极值和世界进入面探索样本仅用于定位 fixture 与物理错误，不参与最终表格或优化资格判断，现已清理。此前 [世界碰撞报告](package-world-2026-09-29.md) 中记录的失败样本仍保留原样。
 
 ## 存储、复现与剩余范围
 

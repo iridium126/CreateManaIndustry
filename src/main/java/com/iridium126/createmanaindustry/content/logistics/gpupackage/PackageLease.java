@@ -23,6 +23,9 @@ public final class PackageLease {
     public static final long TIMEOUT_TICKS = 2;
     /** Resource preparation has a bounded acquisition deadline. */
     public static final long ACQUISITION_TIMEOUT_TICKS = 40;
+    /** Final upload plus GPU admission readback must fit the supported 5 FPS cadence.
+     * This fixed server deadline is never renewed by a region heartbeat. */
+    public static final long FINAL_BASELINE_TIMEOUT_TICKS = 20;
     /** Brief render/GPU stalls must not revoke an otherwise live region's packages. */
     public static final long AUTHORITY_HEARTBEAT_TIMEOUT_TICKS = 100;
     private final Identity identity;
@@ -33,6 +36,8 @@ public final class PackageLease {
     private boolean frozen;
     private final LongSupplier regionReceipt;
     private final long authorityTimeoutTicks;
+    private final long finalBaselineTimeoutTicks;
+    private final java.util.function.DoubleSupplier tickRate;
 
     public PackageLease(Identity identity, Pose initial) {
         this(identity,initial,null,TIMEOUT_TICKS);
@@ -41,11 +46,21 @@ public final class PackageLease {
         this(identity,initial,regionReceipt,TIMEOUT_TICKS);
     }
     public PackageLease(Identity identity, Pose initial, LongSupplier regionReceipt,long authorityTimeoutTicks) {
+        this(identity,initial,regionReceipt,authorityTimeoutTicks,TIMEOUT_TICKS);
+    }
+    public PackageLease(Identity identity, Pose initial, LongSupplier regionReceipt,long authorityTimeoutTicks,long finalBaselineTimeoutTicks) {
+        this(identity,initial,regionReceipt,authorityTimeoutTicks,finalBaselineTimeoutTicks,PackageTickTiming.DEFAULT_RATE);
+    }
+    public PackageLease(Identity identity, Pose initial, LongSupplier regionReceipt,long authorityTimeoutTicks,long finalBaselineTimeoutTicks,java.util.function.DoubleSupplier tickRate) {
         this.identity = Objects.requireNonNull(identity);
         committed = Objects.requireNonNull(initial);
         this.regionReceipt=regionReceipt;
         if(authorityTimeoutTicks<TIMEOUT_TICKS)throw new IllegalArgumentException("Authority timeout");
         this.authorityTimeoutTicks=authorityTimeoutTicks;
+        if(finalBaselineTimeoutTicks<TIMEOUT_TICKS || finalBaselineTimeoutTicks>ACQUISITION_TIMEOUT_TICKS)
+            throw new IllegalArgumentException("Final baseline timeout");
+        this.finalBaselineTimeoutTicks=finalBaselineTimeoutTicks;
+        this.tickRate=Objects.requireNonNull(tickRate);
     }
 
     /** Begin only after server eligibility checks; Records retain their confirmed state until ready. */
@@ -153,9 +168,9 @@ public final class PackageLease {
         long receipt=lastReceiptTick;
         // Shared server-owned receipt is O(1) per region. It cannot extend acquisition deadlines.
         if(state==State.GPU_OWNED && regionReceipt!=null)receipt=Math.max(receipt,regionReceipt.getAsLong());
-        long allowed=state==State.ACQUIRING && !frozen?ACQUISITION_TIMEOUT_TICKS:
+        long allowed=state==State.ACQUIRING?(frozen?finalBaselineTimeoutTicks:ACQUISITION_TIMEOUT_TICKS):
                 state==State.GPU_OWNED && regionReceipt!=null?authorityTimeoutTicks:TIMEOUT_TICKS;
-        return tick<receipt || tick-receipt>allowed;
+        return tick<receipt || tick-receipt>PackageTickTiming.deadlineTicks(allowed,tickRate.getAsDouble());
     }
     private boolean matches(UUID client, long candidateEpoch) {
         return candidateEpoch == epoch && authority != null && authority.equals(client);

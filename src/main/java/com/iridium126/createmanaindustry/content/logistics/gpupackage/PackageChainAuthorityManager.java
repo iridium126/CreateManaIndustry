@@ -50,7 +50,8 @@ public final class PackageChainAuthorityManager {
         final Map<Location,Track> tracks=new LinkedHashMap<>();
         final ByteBuffer decoded=ByteBuffer.allocateDirect(PackageChainEventCodec.BATCH*64);
         int nextTrack,messages;long messageTick=-1;boolean closing,failed;
-        Session(Runtime runtime,ServerPlayer player){this.runtime=runtime;authority=new PackageChainAuthority(player.getUUID(),PackageIdentityData.get(runtime.level).epoch(),runtime.level.getGameTime());runtime.epochs.put(authority.epoch(),this);}
+        Session(Runtime runtime,ServerPlayer player){this.runtime=runtime;authority=new PackageChainAuthority(player.getUUID(),PackageIdentityData.get(runtime.level).epoch(),runtime.level.getGameTime(),
+                PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS,()->runtime.level.tickRateManager().tickrate());runtime.epochs.put(authority.epoch(),this);}
         void send(ClientboundChainPackagePacket packet){if(runtime.batching)runtime.outgoing.addLast(new Outgoing(this,packet));else deliver(packet);}
         void deliver(ClientboundChainPackagePacket packet) {
             var player=runtime.level.getServer().getPlayerList().getPlayer(authority.owner());if(player==null || player.serverLevel()!=runtime.level)return;

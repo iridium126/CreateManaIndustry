@@ -6,7 +6,7 @@ void main(){
     Body b=src[i];if(b.positionMass.w<=0.0||b.previousSleep.w<0.0)return;
     vec3 motion=b.positionMass.xyz-b.previousSleep.xyz;
     if(all(lessThanEqual(abs(motion),max(b.extentYaw.xyz,vec3(1e-5)))))return;
-    if(any(greaterThan(abs(motion),vec3(uCellSize))))return;
+    if(any(greaterThan(abs(motion),vec3(uCellSize*PACKAGE_MAX_SWEEP_CELLS))))return;
     vec3 padding=b.extentYaw.xyz+vec3(uCellSize*1.5+1e-4);
     ivec3 lo=cellOf(min(b.previousSleep.xyz,b.positionMass.xyz)-padding);
     ivec3 hi=cellOf(max(b.previousSleep.xyz,b.positionMass.xyz)+padding);

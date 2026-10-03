@@ -286,7 +286,12 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         for(int iteration=0;iteration<contactIterations;iteration++) {
             buildGrid();
             bind(solve);f(solve,6,(float)Math.pow(.6,dt*20/contactIterations));
-            if(world!=null && iteration==0){world.bind(locations[solve],8,false);f(solve,3,dt);}
+            if(world!=null) {
+                if(iteration==0){world.bind(locations[solve],8,false);f(solve,3,0);}
+                // Contact iterations resolve constraints, not additional elapsed time.
+                // Apply world material friction only in the final contact generation.
+                if(!supportProjection && iteration==contactIterations-1)f(solve,3,dt);
+            }
             if(!moving.isEmpty())GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,11,movingSupport);
             dispatch();current^=1;
         }
@@ -299,7 +304,10 @@ public final class PackagePhysicsGpu implements AutoCloseable {
             // falling neighbour. Resolve that new generation before publishing it.
             for(int cleanup=0;cleanup<4;cleanup++){
                 buildGrid();bind(solve);f(solve,6,1);
-                if(world!=null&&cleanup==0){world.bind(locations[solve],8,false);f(solve,3,dt);}
+                if(world!=null) {
+                    if(cleanup==0){world.bind(locations[solve],8,false);f(solve,3,0);}
+                    if(cleanup==3)f(solve,3,dt);
+                }
                 if(!moving.isEmpty())GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,11,movingSupport);
                 dispatch();current^=1;
             }

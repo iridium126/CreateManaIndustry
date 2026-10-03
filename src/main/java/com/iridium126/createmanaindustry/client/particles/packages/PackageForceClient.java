@@ -60,12 +60,13 @@ public final class PackageForceClient implements AutoCloseable {
     /** Called once per tick from the client world runtime, never from a worker. No package scan. */
     public void prepare(double ox,double oy,double oz,Collection<PackageRegion> activeRegions){
         if(closed)throw new IllegalStateException("Package force client closed");
-        long tick=level.getGameTime();
+        long worldTick=level.getGameTime();var input=PackageClientInputs.current(level);long tick=input.last();
+        snapshots.tickRate(level.tickRateManager().tickrate());
         var regions=List.copyOf(activeRegions);var sources=worlds.computeIfAbsent(level,k->new Sources());
         if(!sources.regions.equals(regions))sources.regions=regions;
-        if(!captureRegions.equals(regions)){captureRegions=regions;snapshots.invalidate();}
+        if(!captureRegions.equals(regions)){captureRegions=regions;snapshots.changedRegions(tick);}
         if(!snapshots.needsCapture(tick))return;
-        sources.fans.entrySet().removeIf(row->row.getKey().source.isSourceRemoved()||tick-row.getValue().tick>1
+        sources.fans.entrySet().removeIf(row->row.getKey().source.isSourceRemoved()||worldTick-row.getValue().tick>1
                 ||row.getValue().source!=null&&!PackageForceScene.intersectsRegions(row.getValue().source,regions,QUERY_MARGIN));
         captured.clear();visited.clear();var bridge=bridge(sources);
         for(var region:regions) {
@@ -82,7 +83,7 @@ public final class PackageForceClient implements AutoCloseable {
         }
         for(var fan:sources.fans.values()){if(fan.error!=null)throw new IllegalStateException(fan.error);captured.add(fan.source);}
         if(captured.size()>PackageForceScene.MAX_SOURCES)throw new IllegalStateException("Package force source capacity; restoring Create");
-        snapshots.capture(tick,captured,ox,oy,oz,worker);
+        snapshots.captureRange(input.first(),tick,captured,ox,oy,oz,worker);
     }
     private static boolean eligibleEntity(Entity e) {
         if(e instanceof PackageEntity||!e.isAlive()||e.isRemoved()||e.noPhysics||e.isSpectator()||!e.isPushable()
@@ -94,8 +95,9 @@ public final class PackageForceClient implements AutoCloseable {
     public boolean ready(long tick){return !closed&&snapshots.ready(tick);}
     public boolean contains(long tick){return !closed&&snapshots.contains(tick);}
     public PackageForceScene.Snapshot snapshot(long tick){return snapshots.snapshot(tick);}
+    public Object snapshotIdentity(long tick){return snapshots.identity(tick);}
     public void consumed(long tick){snapshots.consumed(tick);}
-    public boolean ready(){return !closed&&snapshots.ready(level.getGameTime());}
-    public PackageForceScene.Snapshot snapshot(){if(closed)throw new IllegalStateException("Package force client closed");return snapshots.snapshot(level.getGameTime());}
+    public boolean ready(){return !closed&&snapshots.admissionReady(PackageClientInputs.current(level).last());}
+    public PackageForceScene.Snapshot snapshot(){if(closed)throw new IllegalStateException("Package force client closed");return snapshots.snapshot(PackageClientInputs.current(level).last());}
     @Override public void close(){if(closed)return;closed=true;snapshots.clear();worker.shutdownNow();}
 }

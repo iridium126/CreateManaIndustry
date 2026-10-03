@@ -35,7 +35,7 @@ RTX 4070 Laptop GPU，NVIDIA 581.15，OpenGL 4.5。固定输入与 27 个非均�
 | 65536 | 0.013312 | 0.015360 / 0.015360 / 0.014336 | 0.0009 / 0.0009 / 0.0009 |
 | 131072 | 0.018432 | 0.020480 / 0.020480 / 0.020480 | 0.0010 / 0.0011 / 0.0009 |
 
-[汇总 CSV](package-light-sampling-2026-09-30.csv)，[1080 个原始样本](package-light-sampling-samples-2026-09-30.csv)。CPU 数值是 standalone fixture 的缓存 uniform/绑定/dispatch 提交，不包含游戏 GL 边界、采集、atlas 更新、物理或 draw。GPU 计时只覆盖 light sample，计时查询等待只发生在显式验证程序中。
+[汇总 CSV](package-light-sampling-2026-09-30.csv)，[1080 个原始样本](package-light-sampling-samples-2026-09-30.csv.gz)。CPU 数值是 standalone fixture 的缓存 uniform/绑定/dispatch 提交，不包含游戏 GL 边界、采集、atlas 更新、物理或 draw。GPU 计时只覆盖 light sample，计时查询等待只发生在显式验证程序中。
 
 没有用初始冻结亮度作为“等价更快”基线：冻结亮度本身不正确。本次给出新增 pass 的成本，未测实际游戏 native 逐包裹光照或每顶点光照的同场景对照，因此不声称 CPU/GPU 加速比例。1024-section 配置的四个 GPU atlas 约 16.125MiB，131072 个 draw 光照 uint 另占 .5MiB；这是缓冲分配量，不是显存分析器实测。
 

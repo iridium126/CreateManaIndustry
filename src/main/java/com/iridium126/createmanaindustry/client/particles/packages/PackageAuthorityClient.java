@@ -43,6 +43,15 @@ public final class PackageAuthorityClient {
     public static int activePackages() {
         int count=0;for(var acquisition:activeAcquisitions)count+=acquisition.activeCount();return count;
     }
+    public static void retireRegion(PackageFreeAcquisitionGpu acquisition){
+        controls.clear(new PackageControlQueue.Namespace(acquisition.region(),acquisition.epoch(),acquisition.revision()));
+        acquisition.beginClose();
+    }
+    public static void closeRegion(PackageFreeAcquisitionGpu acquisition){
+        if(!acquisition.replacementReady()||!acquisitions.remove(acquisition.region(),acquisition))throw new IllegalStateException("Region retirement incomplete");
+        acquisition.close();var channel=channels.remove(acquisition.region());if(channel!=null)channel.close();transports.remove(acquisition.region());
+        activeAcquisitions=acquisitions.values().toArray(PackageFreeAcquisitionGpu[]::new);activeChannels=channels.values().toArray(PackageDeltaChannel[]::new);
+    }
     /** Resolve a GPU pick through the exact admitted record identity. */
     public static ClientboundPackagePacket freePickOffer(PackagePoseQueryGpu.Result result){return freePickOffer(result,Long.MAX_VALUE);}
     public static ClientboundPackagePacket freePickOffer(PackagePoseQueryGpu.Result result,long submission) {
@@ -165,7 +174,8 @@ public final class PackageAuthorityClient {
                 +"; "+com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageNetworkBudget.status();
         var result=new StringBuilder("Package transport:");
         for(var entry:channels.entrySet()) {
-            var channel=entry.getValue();var stats=channel.stats();var timing=channel.timings();
+            var channel=entry.getValue();if(channel.closed()){result.append("\n").append(entry.getKey()).append(" retiring");continue;}
+            var stats=channel.stats();var timing=channel.timings();
             var acquisition=acquisitions.get(entry.getKey());
             if(acquisition!=null)result.append(String.format(java.util.Locale.ROOT,"%nAcquisition %s: active=%d pending=%d",
                     entry.getKey(),acquisition.activeCount(),acquisition.pendingCount()));
@@ -178,6 +188,8 @@ public final class PackageAuthorityClient {
     }
     public static void closeAll(String reason,boolean notifyServer) {
         if(closing)return;
+        if(advertised!=0 || !channels.isEmpty())
+            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.info("[CMI packages] pausing GPU authority: {}",reason);
         PackageChainClientOwnership.INSTANCE.close();
         boolean hadClaims=false;
         closing=true;

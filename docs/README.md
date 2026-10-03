@@ -13,6 +13,13 @@
 | 文档 | 内容 | 状态 |
 | --- | --- | --- |
 | [particle-engine-dev.md](particle-engine-dev.md) | GPU 粒子池、发射器、排序、碰撞、Hexcasting 与 shaderpack | 🟡 |
+| [gpu-packages.md](gpu-packages.md) | GPU 包裹当前实现总览与运行边界 | 🟡 |
+| [gpu-light-package-records.md](gpu-light-package-records.md) | 自由包裹记录、物理历史、环境与库存事务 | 🟡 |
+| [gpu-package-observers.md](gpu-package-observers.md) | GPU 包裹观察者协议和姿态流 | 🟡 |
+| [gpu-chain-authority.md](gpu-chain-authority.md) / [gpu-package-chain-frames.md](gpu-package-chain-frames.md) | 锁链权威、事务及父姿态坐标边界 | 🟡 |
+| [gpu-package-repair-validation.md](gpu-package-repair-validation.md) | 当前测试摘要与原始证据索引 | 🟡 |
+| [gpu-block-emitters.md](gpu-block-emitters.md) | GPU 方块粒子发射器 | 🟡 |
+| [particle-engine-performance.md](particle-engine-performance.md) | GPU 粒子性能数据和验收限制 | 🟡 |
 | [allay-dimension-dev.md](allay-dimension-dev.md) | ALLVR 维度总览、坐标、加载、客户端渲染入口 | 🟡 |
 | [allay-dimension-worldgen.md](allay-dimension-worldgen.md) | ALLVR 世界生成和 Y 分带 | ✅ |
 | [allay-dimension-persistence-plan.md](allay-dimension-persistence-plan.md) | Cube 持久化格式、IO 和恢复约束 | 🟡 |
@@ -23,6 +30,8 @@
 | [allay-storm-ai.md](allay-storm-ai.md) | Allay Storm 波次、追击和伤害规则 | 🟡 |
 | [allay-particle-vanilla-alignment.md](allay-particle-vanilla-alignment.md) | 原版粒子视觉对齐范围和验收项 | 🟡 |
 | [g-self-design.md](g-self-design.md) | G-self/Iris shaderpack 的 MODEL 粒子接入 | 🟡 |
+
+`benchmarks/` 保存汇总 CSV、测试 JSON 和少量关键复现摘录；大型逐次样本以 `.csv.gz` 无损压缩，仍需工具直接读写的数据保持原格式。当前结论及证据入口集中在相关主题文档，不把原始数据作为实现契约。
 
 ## 维护规则
 

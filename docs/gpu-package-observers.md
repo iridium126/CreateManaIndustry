@@ -1,6 +1,6 @@
 # GPU 包裹观察者内部契约
 
-更新：2026-10-02。生产只使用轻量记录姿态流。原生实体观察 adapter、命令/patch 队列、双精度侧缓冲、shader 变体和仅成员订阅日志已删除。旧 `SUBSCRIBE_NATIVE=2` 与 `MEMBERSHIP_ONLY=8` 输入拒绝；普通订阅和完整姿态编码保持现有 wire 格式。协商版本为 `gpu-package-observers-4`，权威为 `gpu-packages-9`。
+更新：2026-10-03。生产只使用轻量记录姿态流。原生实体观察 adapter、命令/patch 队列、双精度侧缓冲、shader 变体和仅成员订阅日志已删除。旧 `SUBSCRIBE_NATIVE=2` 与 `MEMBERSHIP_ONLY=8` 输入拒绝；普通订阅和完整姿态编码保持现有 wire 格式。协商版本为 `gpu-package-observers-5`，权威为 `gpu-packages-12`。
 
 ## 服务端记录与调度
 
@@ -8,7 +8,7 @@
 
 每个 envelope 携带维度、区域、authority epoch/revision、observer stream epoch 和序号。新成员包括服务器局部索引、完整 long 身份/生命周期、lease epoch/revision、量化姿态、UUID、模型和尺寸。自由记录的实体 ID 为 -1；wire 字段保留用于稳定格式，并不恢复实体。服务器索引不是通用粒子槽位，同一 authority epoch 内不复用。
 
-位置、速度、偏航及 ground/sleep 标志独立合并；位置保持 1/4096、速度保持 1/1024 的量化精度。未变字段不产生重复 pose。基线/变化携带服务端确认状态的 tick，共同时刻用共享 age 编码。此时间是确认时刻，不能视为消除了全部网络延迟。
+位置、速度、偏航及 ground/sleep 标志独立合并；位置保持 1/4096、速度保持 1/256 的量化精度。未变字段不产生重复 pose。基线/变化携带服务端确认状态的 tick，共同时刻用共享 age 编码。此时间是确认时刻，不能视为消除了全部网络延迟。
 
 初始兴趣为附近八个区域，订阅及 journal 遍历有界。慢观察者超过有限日志窗口时取得新 stream 和基线；不阻塞权威模拟。离开最后一个观察者后释放日志存储。服务端仅维护一份姿态/生命周期日志，没有旧原生成员专用日志。
 
@@ -31,4 +31,4 @@
 
 GPU 回归包含工作组边界、131072 成员、完整/紧凑路径对照、乱序/旧身份/时钟、原子失败、上传及反馈积压、退休和安全复用。CPU benchmark 测量 journal、实际编码及参考器，GPU benchmark 测量上传/合并/呈现；两者不代表完整网络或游戏帧成本。
 
-[本轮清理验证](gpu-package-cleanup.md)、[轻量记录契约](gpu-light-package-records.md)。旧[原生消费报告](benchmarks/package-native-observer-gpu-2026-10-01.md)与[权威下行报告](benchmarks/package-native-downlink-2026-10-01.md)只作为历史测量保留，对应运行代码已删除。多人订阅迁移、实际延迟、视觉和完整流量仍需游戏验证。
+[当前实现总览](gpu-packages.md)、[测试与原始证据](gpu-package-repair-validation.md)、[轻量记录契约](gpu-light-package-records.md)。旧[原生消费报告](benchmarks/package-native-observer-gpu-2026-10-01.md)与[权威下行报告](benchmarks/package-native-downlink-2026-10-01.md)只作为历史测量保留，对应运行代码已删除。多人订阅迁移、实际延迟、视觉和完整流量仍需游戏验证。

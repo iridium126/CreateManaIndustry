@@ -18,9 +18,9 @@ RTX 4070 Laptop GPU，NVIDIA 581.15，OpenGL 4.5，JDK 21.0.8；隐藏 GLFW cont
 
 CPU prepare 单独测量修改复用命令缓冲的整数位置、序号及 receipt，不含网络 packet 解码、成员索引维护或模型处理。CPU submit 是计时区域的 GL 调用成本；GPU 使用 TIME_ELAPSED query。离线工具在计时区间外同步获取结果和校验缓冲，生产代码不等待 query、worker 或未完成 fence。本报告不含实际栅格化、光照、Iris/阴影、碰撞、玩家交互、库存回调或 GPU 反馈的计时。
 
-- [最终汇总](package-observer-gpu-2026-10-01.csv)、[最终逐样本](package-observer-gpu-samples-2026-10-01.csv)。
-- [紧凑路径前的四槽完整记录汇总](package-observer-gpu-expanded-ring-before-2026-10-01.csv)、[逐样本](package-observer-gpu-expanded-ring-before-samples-2026-10-01.csv)。
-- [早期单上传缓冲汇总](package-observer-gpu-single-upload-before-2026-10-01.csv)、[逐样本](package-observer-gpu-single-upload-before-samples-2026-10-01.csv)。
+- [最终汇总](package-observer-gpu-2026-10-01.csv)、[最终逐样本](package-observer-gpu-samples-2026-10-01.csv.gz)。
+- [紧凑路径前的四槽完整记录汇总](package-observer-gpu-expanded-ring-before-2026-10-01.csv)、[逐样本](package-observer-gpu-expanded-ring-before-samples-2026-10-01.csv.gz)。
+- [早期单上传缓冲汇总](package-observer-gpu-single-upload-before-2026-10-01.csv)、[逐样本](package-observer-gpu-single-upload-before-samples-2026-10-01.csv.gz)。
 
 上传改四槽主要保证不覆盖 GPU 仍借用的数据；前后 GPU 范围相近，不为 ring 单独声称明显性能收益。完整和紧凑路径在最终版本内比较，均经过相同预热和实际 shader；未以此前单缓冲版本作为严格提速比例分母。
 

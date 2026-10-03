@@ -1,0 +1,60 @@
+Calculating task graph as no cached configuration is available for tasks: test --tests *PackageSimulationClockTest
+> Task :cloneVoxy SKIPPED
+> Task :prepareVoxy SKIPPED
+> Task :extractSodiumCoreJar UP-TO-DATE
+> Task :generateModMetadata UP-TO-DATE
+> Task :extractSableCompanion UP-TO-DATE
+> Task :activateVoxy SKIPPED
+> Task :buildVoxy SKIPPED
+> Task :cacheVoxy SKIPPED
+> Task :processResources UP-TO-DATE
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :processTestResources NO-SOURCE
+> Task :compileJava FROM-CACHE
+> Task :classes UP-TO-DATE
+> Task :compileTestJava
+> Task :testClasses
+
+> Task :test FAILED
+
+PackageSimulationClockTest > slowServerDoesNotTurnWallTimeIntoMissingHistory() FAILED
+    org.opentest4j.AssertionFailedError: healthy input history at server TPS 5, frame 79 ==> expected: <false> but was: <true>
+        at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+        at app//org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+        at app//org.junit.jupiter.api.AssertFalse.failNotFalse(AssertFalse.java:63)
+        at app//org.junit.jupiter.api.AssertFalse.assertFalse(AssertFalse.java:36)
+        at app//org.junit.jupiter.api.Assertions.assertFalse(Assertions.java:239)
+        at app//com.iridium126.createmanaindustry.client.particles.packages.PackageSimulationClockTest.slowServerDoesNotTurnWallTimeIntoMissingHistory(PackageSimulationClockTest.java:12)
+
+PackageSimulationClockTest > stalledServerRetainsOneFutureStepAndResumesWithoutInventingTicks() FAILED
+    org.opentest4j.AssertionFailedError: expected: <false> but was: <true>
+        at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+        at app//org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+        at app//org.junit.jupiter.api.AssertFalse.failNotFalse(AssertFalse.java:63)
+        at app//org.junit.jupiter.api.AssertFalse.assertFalse(AssertFalse.java:36)
+        at app//org.junit.jupiter.api.AssertFalse.assertFalse(AssertFalse.java:31)
+        at app//org.junit.jupiter.api.Assertions.assertFalse(Assertions.java:231)
+        at app//com.iridium126.createmanaindustry.client.particles.packages.PackageSimulationClockTest.stalledServerRetainsOneFutureStepAndResumesWithoutInventingTicks(PackageSimulationClockTest.java:20)
+
+7 tests completed, 2 failed
+
+[Incubating] Problems report is available at: file:///D:/MAINFILE/MCMOD/CreateManaIndustry-1.21.1-Neoforge-branch/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':test'.
+> There were failing tests. See the report at: file:///D:/MAINFILE/MCMOD/CreateManaIndustry-1.21.1-Neoforge-branch/build/reports/tests/test/index.html
+
+* Try:
+> Run with --scan to generate a Build Scan (powered by Develocity).
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.2.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 7s
+8 actionable tasks: 2 executed, 1 from cache, 5 up-to-date
+Configuration cache entry stored.

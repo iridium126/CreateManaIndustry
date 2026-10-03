@@ -10,7 +10,8 @@ public final class PackageDeltaCodec {
     public static final int RELEASE = 16;
     public static final int MAX_ENTRIES = 2048;
     public static final double POSITION_SCALE = 4096;
-    public static final float VELOCITY_SCALE = 1024;
+    // Signed shorts cover free-fall terminal speed (78.4 blocks/s) without an escape.
+    public static final float VELOCITY_SCALE = 256;
     public record Quantized(int x, int y, int z, short vx, short vy, short vz, short yaw, int flags) {}
     public record Entry(int id, int mask, Quantized value) {
         public Entry {

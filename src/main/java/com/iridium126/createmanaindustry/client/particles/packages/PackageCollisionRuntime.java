@@ -46,6 +46,7 @@ public final class PackageCollisionRuntime {
     private boolean gpuRequested,collisionRequested,lightRequested;
     private String gpuError="";
     private final java.util.LinkedHashMap<Long,java.util.Map<PackageCollisionCache.Section,Long>> geometryHistory=new java.util.LinkedHashMap<>();
+    private int historyTicks=PackageSimulationClock.HISTORY_TICKS;
 
     private PackageCollisionRuntime(ClientLevel level) {
         this.level=level;
@@ -204,6 +205,7 @@ public final class PackageCollisionRuntime {
             }
             if(current.collisionRequested) {
                 if(current.movingGpu==null)current.movingGpu=new PackageMovingCollisionGpu();
+                current.movingGpu.tickRate(current.level.tickRateManager().tickrate());
                 current.movingGpu.sync(current.movingCache.entries());
             }
             if(current.lightRequested && current.lightGpu==null){current.lightGpu=new PackageLightGpu(MAX_SECTIONS);current.lights.forEachRequested(current.lightGpu::reserve);current.lights.snapshots().forEach(current.lightGpu::offer);}
@@ -244,6 +246,10 @@ public final class PackageCollisionRuntime {
     }
     public static void blockChanged(ClientLevel level,BlockPos position) {
         if(current!=null && current.level==level){current.cache.invalidateBlock(position.getX(),position.getY(),position.getZ());if(current.movingSources!=null)current.movingSources.blockChanged(position);}
+    }
+    public static void blockEntityChanged(ClientLevel level,BlockPos position){
+        owner();if(current==null||current.level!=level||!current.collisionRequested)return;
+        if(PackageWorldCollisionSource.blockEntityAffectsCollision(level.getBlockState(position)))blockChanged(level,position);
     }
     /** A Sable plot edit changes moving geometry only; do not recapture the parent world's static cells. */
     public static void movingBlockChanged(ClientLevel level,BlockPos position) {
@@ -346,9 +352,13 @@ public final class PackageCollisionRuntime {
         current.recordDiscovery(System.nanoTime()-started,budget);
         if(current.captureMovingFirst){current.movingCache.tick(Math.max(0,budget-(System.nanoTime()-started)));current.cache.tick(current.source,Math.max(0,budget-(System.nanoTime()-started)));}
         else{current.cache.tick(current.source,Math.max(0,budget-(System.nanoTime()-started)));current.movingCache.tick(Math.max(0,budget-(System.nanoTime()-started)));}
-        current.movingCache.captureHistory(current.level.getGameTime(),current.movingAvailable);
-        current.geometryHistory.put(current.level.getGameTime(),current.cache.versions());
-        while(current.geometryHistory.size()>PackageSimulationClock.HISTORY_TICKS)current.geometryHistory.remove(current.geometryHistory.keySet().iterator().next());
+        current.historyTicks=Math.max(current.historyTicks,com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageTickTiming.historyTicks(current.level.tickRateManager().tickrate()));
+        current.movingCache.tickRate(current.level.tickRateManager().tickrate());
+        var input=PackageClientInputs.current(current.level);
+        current.movingCache.captureHistory(input.first(),input.last(),current.movingAvailable);
+        var versions=current.cache.versions();
+        for(long tick=input.first();tick<=input.last();tick++)current.geometryHistory.putIfAbsent(tick,versions);
+        while(current.geometryHistory.size()>current.historyTicks)current.geometryHistory.remove(current.geometryHistory.keySet().iterator().next());
         current.captureMovingFirst=!current.captureMovingFirst;
         if(current.lightRequested && current.lightPriority!=0)current.lights.tick(current.lightSource,Math.max(0,budget-(System.nanoTime()-started)));
         current.lightPriority=(current.lightPriority+1)%3;

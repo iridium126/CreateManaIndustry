@@ -31,7 +31,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 public final class PackageWorldRuntime {
     private static final int MAX_REGIONS=8,MAX_QUEUED=1024,PACKETS_PER_FRAME=64;
     private static PackageWorldRuntime current;
-    private final ArrayDeque<ClientboundPackagePacket> packets=new ArrayDeque<>();
+    private final PackageTransitionInbox packets=new PackageTransitionInbox();
     private final ArrayDeque<ClientboundChainPackagePacket> chainPackets=new ArrayDeque<>();
     private final Map<PackageRegion,PackageFreeAcquisitionGpu> regions=new HashMap<>();
     private final PackageSimulationClock clock=new PackageSimulationClock();
@@ -75,15 +75,16 @@ public final class PackageWorldRuntime {
     private double ox,oy,oz;
     private long heartbeatTick=Long.MIN_VALUE,retryAfter;
     private String failure,status="off";
+    private String waitingInput="none";
     private int statusRegions=-1,statusBodies=-1,statusActive=-1;
     private float interpolation=1;
 
     /** False means the caller must explicitly refuse the offered ownership. */
     public static boolean enqueue(ClientboundPackagePacket packet) {
         var runtime=current;
-        if(runtime==null || runtime.failure!=null || runtime.level!=Minecraft.getInstance().level)return false;
-        if(runtime.packets.size()>=MAX_QUEUED){runtime.failure="Package transition queue exhausted";return false;}
-        runtime.packets.addLast(packet);return true;
+        if(runtime==null || runtime.failure!=null || runtime.level!=Minecraft.getInstance().level
+                || !runtime.level.dimension().location().equals(packet.dimension()))return false;
+        return runtime.packets.offer(packet);
     }
     public static boolean enqueueChain(ClientboundChainPackagePacket packet) {
         var runtime=current;
@@ -124,7 +125,7 @@ public final class PackageWorldRuntime {
     public float interpolation(){return interpolation;}
     /** The master switch can prevent the engine from submitting any more frames. Revoke its
      * claims here too, so disabling rendering cannot leave invisible retained Create entities. */
-    @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
+    @SubscribeEvent(priority=net.neoforged.bus.api.EventPriority.LOWEST) public static void tick(ClientTickEvent.Post event) {
         var runtime=current;if(runtime==null)return;
         var mc=Minecraft.getInstance();
         if(mc.level!=runtime.level || mc.getConnection()==null || !ClientConfig.particleEnabled
@@ -177,15 +178,7 @@ public final class PackageWorldRuntime {
                 int body=bytes.getInt(52);long id=bytes.getLong(0),generation=bytes.getLong(8),lease=bytes.getLong(16);
                 for(var acquisition:regions.values()){
                     var offer=acquisition.environmentOffer(body,id,generation,lease,bytes.getInt(40)-1,bytes.getLong(56));if(offer==null)continue;
-                    var copy=java.nio.ByteBuffer.allocate(bytes.remaining()).order(java.nio.ByteOrder.LITTLE_ENDIAN);copy.put(bytes);
-                    int pending=copy.getInt(24)-copy.getInt(28);
-                    for(int n=0;n<pending;n++){int p=64+n*48;
-                        copy.putInt(p,copy.getInt(p)+(int)ox).putInt(p+4,copy.getInt(p+4)+(int)oy).putInt(p+8,copy.getInt(p+8)+(int)oz);
-                        copy.putFloat(p+32,(float)(copy.getFloat(p+32)+ox-offer.region().originX()));
-                        copy.putFloat(p+36,(float)(copy.getFloat(p+36)+oy-offer.region().originY()));
-                        copy.putFloat(p+40,(float)(copy.getFloat(p+40)+oz-offer.region().originZ()));
-                    }
-                    var payload=copy.array();
+                    var payload=com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent.regionPayload(bytes,(int)ox,(int)oy,(int)oz,offer.region());
                     PacketDistributor.sendToServer(new ServerboundPackagePacket(ServerboundPackagePacket.ENVIRONMENT,0,offer.region(),offer.epoch(),0,null,0,offer.regionRevision(),0,payload));break;
                 }
             });
@@ -212,21 +205,32 @@ public final class PackageWorldRuntime {
             if(freeActive==0)PackageCollisionRuntime.releasePackageUsage(level);
             int active=freeActive+chainActive;
             if(active==0)clock.reset();
+            // Coverage discovery uses the current resident atlas, independently of
+            // whether the next immutable physics tick is ready. Historical views
+            // intentionally omit later requests and must not drive cache demand.
+            if(freeActive>0&&worldPrefetch!=null){
+                try(var world=PackageCollisionRuntime.forLevel(level).view((int)(ox/16),(int)(oy/16),(int)(oz/16))){
+                    worldPrefetch.capture(physics.freeStateBuffer(),physics.freeCount(),.5f,.15f,world);
+                }
+            }
             // Initialization and acquisition can be expensive. Start an acquired body's clock
             // here, rather than charging work done before it owned any simulation time.
-            if(active>0)clock.sample(System.nanoTime(),level.getGameTime(),mc.isPaused()||!shaderReady);
-            for(int substep=0;active>0&&substep<PackageSimulationClock.MAX_STEPS_PER_FRAME&&clock.due(level.getGameTime());substep++){
+            long availableInput=PackageClientInputs.current(level).last();
+            double rate=level.tickRateManager().tickrate();
+            if(active>0)clock.sample(System.nanoTime(),availableInput,mc.isPaused()||!shaderReady||!level.tickRateManager().runsNormally(),rate,(int)Math.ceil(Math.max(1,rate/20)));
+            waitingInput="none";
+            for(int substep=0;active>0&&substep<clock.stepsPerFrame()&&clock.due(availableInput);substep++){
                 long tick=clock.nextTick();boolean submitted=false;
                 if(freeActive>0){
                     var collision=PackageCollisionRuntime.forLevel(level);
-                    if(!forceCapture.ready(tick)||!collision.hasMovingHistory(tick)||!collision.hasStaticHistory(tick))break;
+                    if(!forceCapture.ready(tick)){waitingInput=forceCapture.contains(tick)?"force worker":"force history";break;}
+                    if(!collision.hasMovingHistory(tick)||!collision.hasStaticHistory(tick)){waitingInput="collision history";break;}
                     try(var world=collision.historicalView(tick,(int)(ox/16),(int)(oy/16),(int)(oz/16));
                         var moving=collision.movingView(tick,(int)(ox/16),(int)(oy/16),(int)(oz/16))){
-                        if(!world.ready()||!moving.ready())break;
-                        try(var forces=forceGpu.tryView(forceCapture.snapshot(tick),tick)){
-                            if(forces==null)break;
+                        if(!world.ready()||!moving.ready()){waitingInput=!world.ready()?"static geometry/version":"moving geometry/pose bank";break;}
+                        try(var forces=forceGpu.tryView(forceCapture.snapshot(tick),tick,forceCapture.snapshotIdentity(tick))){
+                            if(forces==null){waitingInput="force upload bank";break;}
                             physics.applyFreeForces(forces,.05f);
-                            if(worldPrefetch!=null)worldPrefetch.capture(physics.freeStateBuffer(),physics.freeCount(),.5f,.15f,world);
                             physics.stepFreeMoving(world,PackagePhysicsGpu.ITERATIONS,moving.views());
                             submitted=true;
                         }
@@ -238,6 +242,7 @@ public final class PackageWorldRuntime {
                 }
             }
             if(clock.historyGap()){
+                CreateManaIndustry.LOGGER.info("[CMI packages] input gap next={} available={} worldTime={} rate={} step={} waiting={}",clock.nextTick(),availableInput,level.getGameTime(),rate,clock.step(),waitingInput);
                 // The last confirmed record remains authoritative while fresh baselines are negotiated.
                 PackageAuthorityClient.closeAll("Package input history expired; pausing for a fresh baseline",true);return true;
             }
@@ -302,8 +307,12 @@ public final class PackageWorldRuntime {
                 lightObservers.authority(packet);
             if(acquisition!=null && (packet.epoch()!=acquisition.epoch() || packet.regionRevision()!=acquisition.revision())) {
                 if(packet.action()!=ClientboundPackagePacket.OFFER)continue;
-                // Migration/recycling needs a fresh namespace; discard every old flight before rebuilding.
-                PackageAuthorityClient.closeAll("Package authority namespace changed",true);return false;
+                // A replacement drains only this region. Unrelated bodies keep their states,
+                // outstanding ACKs and simulation clock. Late offers cannot revoke a newer epoch.
+                if(packet.epoch()<acquisition.epoch()||packet.epoch()==acquisition.epoch()&&packet.regionRevision()<acquisition.revision())continue;
+                PackageAuthorityClient.retireRegion(acquisition);
+                if(!acquisition.replacementReady()){packets.addLast(packet);break;}
+                PackageAuthorityClient.closeRegion(acquisition);regions.remove(packet.region());acquisition=null;
             }
             if(acquisition==null && packet.action()==ClientboundPackagePacket.OFFER) {
                 if(regions.size()>=MAX_REGIONS) {refuse(packet);continue;}

@@ -31,12 +31,12 @@ void main() {
     if(uSampledLighting!=0)packedLight=sampledLight[i];
     vCutout=flags&1u;
     vec3 normal=pose.normal;
-    // Create's ordinary SBB uses Minecraft light directions. Flywheel's chain model
-    // explicitly uses chunk diffuse. Unshaded quads use a zero normal in the cache.
+    // Flywheel uses chunk diffuse for both free and chain package models.
+    // Unshaded quads use a zero normal in the cache.
     vec3 n2=normal*normal;
     bool unshaded=dot(n2,n2)<1e-8;
     float shade;
-    if(uLightingMode==1 && (flags&1u)!=0u) {
+    if(uLightingMode==1) {
         float yFactor=uConstantAmbient!=0?.9:(3.0+normal.y)*.25;
         shade=unshaded?(uConstantAmbient!=0?.9:1.0):min(n2.x*.6+n2.z*.8+n2.y*yFactor,1.0);
     } else {

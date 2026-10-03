@@ -35,15 +35,15 @@
 
 编码正文不含区域/epoch/序号 envelope、网络 framing、压缩和服务端广播；数值随 GPU 输出排序略有变化。上述全部对象每次移动的输入仍需要较高带宽，不能以“只发变化”宣称带宽目标已完成。真实采样频率、视觉阈值、链路参数同步、观察者订阅及停止重复 vanilla 同步仍需验证。
 
-原始摘要：[package-delta-pipeline-2026-09-29.csv](package-delta-pipeline-2026-09-29.csv)；全部 810 个预热后样本：[package-delta-pipeline-samples-2026-09-29.csv](package-delta-pipeline-samples-2026-09-29.csv)。
+原始摘要：[package-delta-pipeline-2026-09-29.csv](package-delta-pipeline-2026-09-29.csv)；全部 810 个预热后样本：[package-delta-pipeline-samples-2026-09-29.csv.gz](package-delta-pipeline-samples-2026-09-29.csv.gz)。
 
 ## 未进入默认路径的 ACK 合并
 
-第一版在 CPU 拼接同 stamp 的原始 ACK 记录后上传 1MiB 批次。131072 的 CPU 总量 p95 中位数由 3.7628ms 增至 4.3575ms，虽然 dispatch 从 256 次降为 8 次，实际提交回退；该实现已移除。结果保留在 [upload-batch 摘要](package-delta-pipeline-upload-batch-2026-09-29.csv) 和 [逐次样本](package-delta-pipeline-upload-batch-samples-2026-09-29.csv)。
+第一版在 CPU 拼接同 stamp 的原始 ACK 记录后上传 1MiB 批次。131072 的 CPU 总量 p95 中位数由 3.7628ms 增至 4.3575ms，虽然 dispatch 从 256 次降为 8 次，实际提交回退；该实现已移除。结果保留在 [upload-batch 摘要](package-delta-pipeline-upload-batch-2026-09-29.csv) 和 [逐次样本](package-delta-pipeline-upload-batch-samples-2026-09-29.csv.gz)。
 
 第二版将原始记录额外复制到 GPU journal，ACK 只选择匹配的 GPU 区间；同 stamp、连续槽合并，满容量时 8 次 dispatch，额外显存最多 8MiB。在相同后台 packet 路径上，131072 的 CPU 总量 p95 为 2.7840 / 4.0387 / 3.3227ms，对应逐包 ACK 为 2.6118 / 2.7241 / 2.9010ms。收益没有复现，因此仅保留内部显式构造开关和验证，不进入默认接管路径。
 
-GPU journal 的第一次比较没有后台 packet 构造，用于隔离该尝试：[首次摘要](package-delta-pipeline-gpu-journal-first-2026-09-29.csv)、[逐次样本](package-delta-pipeline-gpu-journal-first-samples-2026-09-29.csv)。最终三路径比较见上面的当前摘要。不能把减少 GL API 次数本身当作实际加速。
+GPU journal 的第一次比较没有后台 packet 构造，用于隔离该尝试：[首次摘要](package-delta-pipeline-gpu-journal-first-2026-09-29.csv)、[逐次样本](package-delta-pipeline-gpu-journal-first-samples-2026-09-29.csv.gz)。最终三路径比较见上面的当前摘要。不能把减少 GL API 次数本身当作实际加速。
 
 ## 正确性和资源边界
 

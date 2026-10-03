@@ -24,7 +24,7 @@
 
 一次几何上传分别为 48B / 768B，运动过程中不重新烘焙。每个平台姿态 bank 为 256B、四槽；包裹承载 sidecar 为 16B/body，131072 个增加 2MiB，仍只占一个通用粒子槽位。姿态与附加缓冲不进入 shaderpack 的 64B 粒子读取协议。
 
-原始汇总：[27 行 CSV](package-moving-kernels-2026-09-29.csv)。原始样本：[810 行 CSV](package-moving-kernel-samples-2026-09-29.csv)。
+原始汇总：[27 行 CSV](package-moving-kernels-2026-09-29.csv)。原始样本：[810 行 CSV](package-moving-kernel-samples-2026-09-29.csv.gz)。
 
 ## 正确性及修复
 

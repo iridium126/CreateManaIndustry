@@ -25,4 +25,20 @@ class PackageEnvironmentEventTest {
         assertEquals(new net.minecraft.core.BlockPos(628,-125,1294),sample.block(new PackageRegion(10,-2,20)));
         assertEquals(new net.minecraft.core.BlockPos(-12,3,14),sample.block(new PackageRegion(0,0,0)));
     }
+    @Test void gpuPayloadUsesOneRegionOriginForBlocksAndBodyPositions(){
+        for(var region:new PackageRegion[]{new PackageRegion(10,2,-20),new PackageRegion(-10,-2,20),new PackageRegion(0,0,0)}) {
+            var raw=event();int ox=672,oy=144,oz=-1248;
+            var converted=PackageEnvironmentEvent.decode(PackageEnvironmentEvent.regionPayload(raw,ox,oy,oz,region));
+            assertEquals(0,raw.position());assertEquals(-12,raw.getInt(64));
+            assertEquals(20,converted.samples().size());
+            for(var sample:converted.samples()) {
+                assertEquals(new net.minecraft.core.BlockPos(ox-12,oy+3,oz+14),sample.block(region));
+                assertEquals(ox+1,region.originX()+sample.px());
+                assertEquals(oy+2,region.originY()+sample.py());
+                assertEquals(oz+3,region.originZ()+sample.pz());
+            }
+            assertEquals(91,converted.identity().id());assertEquals(7,converted.identity().generation());
+            assertEquals(3,converted.lease());assertEquals(9,converted.revision());
+        }
+    }
 }
