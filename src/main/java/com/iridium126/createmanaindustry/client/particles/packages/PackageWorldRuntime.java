@@ -217,7 +217,11 @@ public final class PackageWorldRuntime {
             // here, rather than charging work done before it owned any simulation time.
             long availableInput=PackageClientInputs.current(level).last();
             double rate=level.tickRateManager().tickrate();
-            if(active>0)clock.sample(System.nanoTime(),availableInput,mc.isPaused()||!shaderReady||!level.tickRateManager().runsNormally(),rate,(int)Math.ceil(Math.max(1,rate/20)));
+            // Shader program availability controls how packages are drawn, not whether their
+            // already-authoritative physics can advance. Iris may spend seconds rebuilding a
+            // pipeline; pausing the simulation clock for that render-only work creates an
+            // artificial history gap even though physics inputs keep being captured.
+            if(active>0)clock.sample(System.nanoTime(),availableInput,mc.isPaused()||!level.tickRateManager().runsNormally(),rate,(int)Math.ceil(Math.max(1,rate/20)));
             waitingInput="none";
             for(int substep=0;active>0&&substep<clock.stepsPerFrame()&&clock.due(availableInput);substep++){
                 long tick=clock.nextTick();boolean submitted=false;
@@ -227,7 +231,7 @@ public final class PackageWorldRuntime {
                     if(!collision.hasMovingHistory(tick)||!collision.hasStaticHistory(tick)){waitingInput="collision history";break;}
                     try(var world=collision.historicalView(tick,(int)(ox/16),(int)(oy/16),(int)(oz/16));
                         var moving=collision.movingView(tick,(int)(ox/16),(int)(oy/16),(int)(oz/16))){
-                        if(!world.ready()||!moving.ready()){waitingInput=!world.ready()?"static geometry/version":"moving geometry/pose bank";break;}
+                        if(!world.ready()||!moving.ready()){waitingInput=!world.ready()?"static geometry/version":"moving pose bank";break;}
                         try(var forces=forceGpu.tryView(forceCapture.snapshot(tick),tick,forceCapture.snapshotIdentity(tick))){
                             if(forces==null){waitingInput="force upload bank";break;}
                             physics.applyFreeForces(forces,.05f);
@@ -243,8 +247,10 @@ public final class PackageWorldRuntime {
             }
             if(clock.historyGap()){
                 CreateManaIndustry.LOGGER.info("[CMI packages] input gap next={} available={} worldTime={} rate={} step={} waiting={}",clock.nextTick(),availableInput,level.getGameTime(),rate,clock.step(),waitingInput);
-                // The last confirmed record remains authoritative while fresh baselines are negotiated.
-                PackageAuthorityClient.closeAll("Package input history expired; pausing for a fresh baseline",true);return true;
+                // Keep the last confirmed GPU state and its lease. Old collision/force history
+                // cannot be replayed after a render stall, so establish a fresh input baseline
+                // and resume only on a subsequently captured tick. Never revoke every region.
+                clock.rebase(System.nanoTime(),availableInput);
             }
             if(physics.environment()!=null)physics.environment().capture(physics.freeCount());
             physics.publish();physics.source(pool,(float)ox,(float)oy,(float)oz);

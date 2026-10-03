@@ -12,7 +12,7 @@ import org.lwjgl.system.MemoryStack;
  * history contract; observers do not enter the authority's contact grid. */
 public final class PackageObserverGpu implements AutoCloseable {
     public static final int STATE_BYTES=144,PATCH_BYTES=128,BODY_BYTES=64,HISTORY_BYTES=32,CONTROL_BYTES=16;
-    public static final int COMPACT_BYTES=64;
+    public static final int COMPACT_BYTES=80;
     public static final int BASELINE=32,RELEASE=16;
     public static final int UPLOAD_SLOTS=4;
     public static final float SMOOTHING_SECONDS=.05f,PREDICTION_SECONDS=.1f;

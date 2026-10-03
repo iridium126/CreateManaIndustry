@@ -26,7 +26,9 @@ struct ObserverCompact {
     uvec4 fence;
     uvec4 selection; // local slot, server index, field mask, receipt float bits
     ivec4 positionFlags;
-    uvec4 velocitySequence; // packed signed shorts vx/vy, vz/yaw; sequence.xy
+    ivec4 velocityYaw;
+    uvec2 sequence;
+    uvec2 padding;
 };
 layout(std430,binding=6) readonly buffer ObserverCompactUpdates { ObserverCompact compactUpdates[]; };
 uniform uint uSlots,uPatches,uCompact;
@@ -40,10 +42,9 @@ ObserverPatch observerReadPatch(uint i) {
     p.identity=c.selection.x<uSlots?state[c.selection.x].identity:uvec4(0);
     p.fence=c.fence;p.selection=uvec4(c.selection.xyz,0u);
     p.positionFlags=c.positionFlags;
-    p.velocityYaw=ivec4(bitfieldExtract(int(c.velocitySequence.x),0,16),bitfieldExtract(int(c.velocitySequence.x),16,16),
-                       bitfieldExtract(int(c.velocitySequence.y),0,16),bitfieldExtract(int(c.velocitySequence.y),16,16));
+    p.velocityYaw=c.velocityYaw;
     p.originTime=vec4(0,0,0,uintBitsToFloat(c.selection.w));p.extent=vec4(0);
-    p.sequence=uvec4(c.velocitySequence.zw,0u,0u);
+    p.sequence=uvec4(c.sequence,0u,0u);
     // A compact record cannot introduce an identity or modify the stored baseline geometry.
     if(c.selection.z==OBSERVER_BASELINE)p.selection.z=0u;
     return p;
@@ -56,7 +57,7 @@ float observerYaw(ObserverState s) {
 }
 float observerAngle(float a,float b) { return mod(b-a+180.0,360.0)-180.0; }
 vec3 observerVelocity(ObserverState s) {
-    return vec3(s.velocityYaw.xyz)*(1.0/256.0);
+    return vec3(s.velocityYaw.xyz)*(1.0/16.0);
 }
 float observerBlend(ObserverState s,float now) { return clamp((now-s.correction.w)/uSmoothing,0.0,1.0); }
 vec3 observerPredicted(ObserverState s,float now) {

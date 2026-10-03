@@ -124,6 +124,13 @@ public final class PackageMovingCollisionSources {
             if (source instanceof CreateSource create && create.contraption == target) changed(source);
     }
 
+    /** A leave event identifies the exact source that disappeared; other known sources stay covered. */
+    public boolean forget(AbstractContraptionEntity entity) {
+        owner();var key=new PackageMovingGeometry.Key(0,entity.getUUID());Base source=sources.get(key);
+        if(!(source instanceof CreateSource create)||create.entity!=entity)return false;
+        sources.remove(key);return true;
+    }
+
     public void blockChanged(BlockPos position) {
         owner();
         for (Base source : sources.values())

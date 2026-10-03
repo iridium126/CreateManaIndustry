@@ -7,7 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class PackageAuthorityCapabilitiesTest {
     @Test void chainReadinessRequiresInitializedFreeRuntimeAndCompleteChainProtocol() {
         assertEquals(0,PackageAuthorityClient.readyFlags(false,true));
-        assertEquals(ServerboundPackagePacket.FREE_READY,PackageAuthorityClient.readyFlags(true,false));
-        assertEquals(ServerboundPackagePacket.FREE_READY|ServerboundPackagePacket.CHAIN_READY,PackageAuthorityClient.readyFlags(true,true));
+        int free=ServerboundPackagePacket.FREE_READY|ServerboundPackagePacket.WIDE_VELOCITY;
+        assertEquals(free,PackageAuthorityClient.readyFlags(true,false));
+        assertEquals(free|ServerboundPackagePacket.CHAIN_READY,PackageAuthorityClient.readyFlags(true,true));
     }
 }

@@ -7,7 +7,8 @@ void main(){
     vec3 motion=b.positionMass.xyz-b.previousSleep.xyz;
     if(all(lessThanEqual(abs(motion),max(b.extentYaw.xyz,vec3(1e-5)))))return;
     if(any(greaterThan(abs(motion),vec3(uCellSize*PACKAGE_MAX_SWEEP_CELLS))))return;
-    vec3 padding=b.extentYaw.xyz+vec3(uCellSize*1.5+1e-4);
+    // Match the exact center-cell reach used by the swept collision query.
+    vec3 padding=b.extentYaw.xyz+vec3(uCellSize*.5+1e-4);
     ivec3 lo=cellOf(min(b.previousSleep.xyz,b.positionMass.xyz)-padding);
     ivec3 hi=cellOf(max(b.previousSleep.xyz,b.positionMass.xyz)+padding);
     for(int z=lo.z;z<=hi.z;z++)for(int y=lo.y;y<=hi.y;y++)for(int x=lo.x;x<=hi.x;x++)

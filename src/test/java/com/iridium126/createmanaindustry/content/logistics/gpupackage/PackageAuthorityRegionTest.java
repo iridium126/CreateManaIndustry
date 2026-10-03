@@ -14,6 +14,68 @@ class PackageAuthorityRegionTest {
         assertEquals(PackageAuthorityRegion.Result.INVALID,r.deltaStepped(OWNER,10,1,3,5,List.of(change(b.index(),PackageDeltaCodec.FLAGS,pose(9),0)),1,0,3));
         assertEquals(PackageAuthorityRegion.Result.STALE,r.deltaStepped(OWNER,10,1,2,5,List.of(change(b.index(),PackageDeltaCodec.FLAGS,pose(9),0)),1,0,4));
     }
+    @Test void highRpmSupportVelocityAndCorrespondingTravelStayWithinTheLease() {
+        var r=region(0);var t=new Target(506,5,0);var b=acquire(r,t,0);
+        var still=pose(5);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,1,1,
+                List.of(change(b.index(),PackageDeltaCodec.VELOCITY,still,0)),4,0,1));
+        var carried=new PackageLease.Pose(18.4,5,5,268,0,0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,2,2,
+                List.of(change(b.index(),PackageDeltaCodec.POSITION|PackageDeltaCodec.VELOCITY,carried,0)),4,0,2));
+        assertEquals(18.4,t.current.pose().x(),1.0/4096);
+        assertEquals(268,t.current.pose().vx(),1.0/16);
+    }
+    @Test void smallMovingColliderCorrectionsDoNotPauseTheWholePackageRegion() {
+        var slowRegion=region(0);var slow=new Target(507,5,0);var slowBase=acquire(slowRegion,slow,0);
+        var slowStart=new PackageLease.Pose(5,5,5,1.5823736f,0,0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,slowRegion.deltaStepped(OWNER,10,1,1,1,
+                List.of(change(slowBase.index(),PackageDeltaCodec.VELOCITY,slowStart,0)),4,0,1));
+        var slowMove=new PackageLease.Pose(9.1700849,5,5,1.5823736f,0,0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,slowRegion.deltaStepped(OWNER,10,1,2,2,
+                List.of(change(slowBase.index(),PackageDeltaCodec.POSITION|PackageDeltaCodec.VELOCITY,slowMove,0)),4,0,2));
+        assertEquals(1,slowRegion.simulatedCount());
+
+        var fastRegion=region(0);var fast=new Target(508,5,0);var fastBase=acquire(fastRegion,fast,0);
+        var fastStart=new PackageLease.Pose(5,5,5,62.8905609f,0,0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,fastRegion.deltaStepped(OWNER,10,1,1,1,
+                List.of(change(fastBase.index(),PackageDeltaCodec.VELOCITY,fastStart,0)),4,0,1));
+        var fastMove=new PackageLease.Pose(9.2275214,5,5,62.8905609f,0,0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,fastRegion.deltaStepped(OWNER,10,1,2,2,
+                List.of(change(fastBase.index(),PackageDeltaCodec.POSITION|PackageDeltaCodec.VELOCITY,fastMove,0)),4,0,2));
+        assertEquals(1,fastRegion.simulatedCount());
+    }
+    @Test void highRpmMovingStructureImpactFitsVelocityBudgetAcrossCatchupSteps() {
+        var r=region(0);var t=new Target(509,5,0);var b=acquire(r,t,0);
+        var impactVelocity=new PackageLease.Pose(5,5,5,125.288978f,0,0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,1,1,
+                List.of(change(b.index(),PackageDeltaCodec.VELOCITY,impactVelocity,0)),4,0,82));
+        var afterImpact=new PackageLease.Pose(21.8920246,5,5,125.288978f,0,0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,2,2,
+                List.of(change(b.index(),PackageDeltaCodec.POSITION|PackageDeltaCodec.VELOCITY,afterImpact,0)),4,0,84));
+        assertEquals(1,r.simulatedCount());assertEquals(21.8920246,t.current.pose().x(),1.0/4096);
+    }
+    @Test void movingStructureImpactMayStopWithinOneSweepStepWithoutRevokingTheRegion() {
+        var r=region(0);var t=new Target(510,5,0);var b=acquire(r,t,0);
+        var impactVelocity=new PackageLease.Pose(5,5,5,125.288978f,0,0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,1,1,
+                List.of(change(b.index(),PackageDeltaCodec.VELOCITY,impactVelocity,0)),4,0,45));
+        var stopped=new PackageLease.Pose(9.539333,5,5,0,0,0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,2,2,
+                List.of(change(b.index(),PackageDeltaCodec.POSITION|PackageDeltaCodec.VELOCITY,stopped,0)),4,0,46));
+        assertEquals(1,r.simulatedCount());assertEquals(9.539333,t.current.pose().x(),1.0/4096);
+    }
+    @Test void oneStepSweepAllowanceMatchesThePerAxisGpuCapAndRejectsLargerTeleport() {
+        var r=region(0);var t=new Target(511,5,0);var b=acquire(r,t,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,1,1,
+                List.of(change(b.index(),PackageDeltaCodec.POSITION,pose(5),0)),4,0,1));
+        var valid=new PackageLease.Pose(37.5,5,5,0,0,0,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,2,2,
+                List.of(change(b.index(),PackageDeltaCodec.POSITION,valid,0)),4,0,2));
+        var outside=new PackageLease.Pose(71.1,5,5,0,0,0,0);
+        assertEquals(PackageAuthorityRegion.Result.INVALID,r.deltaStepped(OWNER,10,1,3,3,
+                List.of(change(b.index(),PackageDeltaCodec.POSITION,outside,0)),4,0,3));
+        assertEquals(37.5,t.current.pose().x(),1.0/4096);
+    }
     @Test void twoHundredTpsAcceptsFortyStepCatchupButStillRejectsReplayAndFutureClock(){
         var r=new PackageAuthorityRegion(REGION,OWNER,10,1,0,()->200);
         var t=new Target(801,5,0);var b=acquire(r,t,0);var other=new Target(802,10,0);acquire(r,other,0);
@@ -84,9 +146,11 @@ class PackageAuthorityRegionTest {
         assertEquals(9,t.current.pose().x());
         assertEquals(PackageAuthorityRegion.Result.INVALID,r.deltaStepped(OWNER,10,1,2,4,List.of(change(b.index(),PackageDeltaCodec.POSITION,pose(10),0)),1,0,4));
         assertEquals(PackageAuthorityRegion.Result.INVALID,r.deltaStepped(OWNER,10,1,3,4,List.of(change(b.index(),PackageDeltaCodec.POSITION,pose(10),0)),1,0,1000));
-        assertEquals(PackageAuthorityRegion.Result.INVALID,r.deltaStepped(OWNER,10,1,3,5,List.of(change(b.index(),PackageDeltaCodec.POSITION,pose(11),0)),1,0,5));
-        assertEquals(9,t.current.pose().x());
-        assertTrue(r.expired(4+PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS+1));
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,3,5,List.of(change(b.index(),PackageDeltaCodec.POSITION,pose(11),0)),1,0,5));
+        assertEquals(PackageAuthorityRegion.Result.INVALID,r.deltaStepped(OWNER,10,1,4,5,List.of(change(b.index(),PackageDeltaCodec.POSITION,pose(12),0)),1,0,5));
+        assertEquals(PackageAuthorityRegion.Result.INVALID,r.deltaStepped(OWNER,10,1,4,5,List.of(change(b.index(),PackageDeltaCodec.POSITION,pose(12),0)),1,0,1000));
+        assertEquals(11,t.current.pose().x());
+        assertTrue(r.expired(5+PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS+1));
     }
     @Test void closingRevokesImmediatelyAndDrainsAtMostTheExplicitBudget(){
         var r=region(0);var targets=new ArrayList<Target>();
@@ -171,7 +235,7 @@ class PackageAuthorityRegionTest {
         assertEquals(6,a.current.pose().x());assertEquals(21,b.current.pose().x());
         // Position fields of this velocity-only record must be ignored, and must not reset
         // the POSITION predictor before the next motion update.
-        var velocity=new PackageDeltaCodec.Quantized(Integer.MAX_VALUE,Integer.MIN_VALUE,19,(short)256,(short)-128,(short)0,(short)0,0);
+        var velocity=new PackageDeltaCodec.Quantized(Integer.MAX_VALUE,Integer.MIN_VALUE,19,16,-8,0,(short)0,0);
         assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaPredicted(OWNER,10,1,2,2,List.of(new PackageDeltaCodec.Entry(0,2,velocity)),4));
         assertEquals(6,a.current.pose().x());assertEquals(1,a.current.pose().vx());
         assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaPredicted(OWNER,10,1,3,3,

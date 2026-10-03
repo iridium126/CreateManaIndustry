@@ -11,9 +11,10 @@ import java.util.List;
  * Selected axis values are signed differences; unchanged axes use the packet predictor.
  * Header zero escapes a positive ID gap followed by a nonzero header. Release has no pose.
  * All predictors reset for each packet. Identity/epoch/revision stay in the enclosing envelope.
- * This changes encoding only: no quantization, simulation/cadence or ACK semantics change. */
+ * Velocity predictors are signed 32-bit values for the negotiated fast-contraption range;
+ * position and yaw quantization, simulation cadence and ACK semantics remain unchanged. */
 public final class PackageBatchDeltaCodec {
-    public static final int MAX_RECORD_BYTES=40;
+    public static final int MAX_RECORD_BYTES=47;
     private PackageBatchDeltaCodec() {}
 
     /** Reusable worker encoder; primitive entry method avoids one Java object per GPU record. */
@@ -28,8 +29,7 @@ public final class PackageBatchDeltaCodec {
         public void entry(int id,int mask,int nx,int ny,int nz,int nvx,int nvy,int nvz,int nyaw,int flags) {
             if(out==null || written>=count || id<=previous || !PackageDeltaCodec.validMask(mask))
                 throw new IllegalArgumentException("Batch delta ID/mask/count");
-            if((mask&PackageDeltaCodec.VELOCITY)!=0 && (!shortValue(nvx) || !shortValue(nvy) || !shortValue(nvz))
-                    || (mask&PackageDeltaCodec.YAW)!=0 && !shortValue(nyaw))throw new IllegalArgumentException("Batch delta short");
+            if((mask&PackageDeltaCodec.YAW)!=0 && !shortValue(nyaw))throw new IllegalArgumentException("Batch delta short");
             int axes=(mask&PackageDeltaCodec.POSITION)!=0?axes(x,y,z,nx,ny,nz):0;
             if(id!=previous+1){out.put((byte)0);unsigned(out,id-(previous+1));}
             out.put((byte)(mask | axes<<5));
@@ -81,9 +81,9 @@ public final class PackageBatchDeltaCodec {
             if((mask&PackageDeltaCodec.VELOCITY)!=0) {
                 int velocityAxes=Byte.toUnsignedInt(in.get());
                 if((velocityAxes&~7)!=0)throw new IllegalArgumentException("Batch delta velocity axes");
-                if((velocityAxes&1)!=0)vx=shortSum(vx,signed(in));
-                if((velocityAxes&2)!=0)vy=shortSum(vy,signed(in));
-                if((velocityAxes&4)!=0)vz=shortSum(vz,signed(in));
+                if((velocityAxes&1)!=0)vx=integer(vx,signed(in));
+                if((velocityAxes&2)!=0)vy=integer(vy,signed(in));
+                if((velocityAxes&4)!=0)vz=integer(vz,signed(in));
             }
             if((mask&PackageDeltaCodec.YAW)!=0)yaw=shortSum(yaw,signed(in));
             int flags=(mask&PackageDeltaCodec.FLAGS)!=0?(int)readUnsigned(in,0xffffffffL):0;
@@ -91,7 +91,7 @@ public final class PackageBatchDeltaCodec {
             // retains the acknowledged per-member values, never this packet-local predictor.
             result.add(new PackageDeltaCodec.Entry((int)id,mask,new PackageDeltaCodec.Quantized(
                     (mask&1)!=0?x:0,(mask&1)!=0?y:0,(mask&1)!=0?z:0,
-                    (short)((mask&2)!=0?vx:0),(short)((mask&2)!=0?vy:0),(short)((mask&2)!=0?vz:0),
+                    (mask&2)!=0?vx:0,(mask&2)!=0?vy:0,(mask&2)!=0?vz:0,
                     (short)((mask&4)!=0?yaw:0),flags)));
             previous=id;
         }

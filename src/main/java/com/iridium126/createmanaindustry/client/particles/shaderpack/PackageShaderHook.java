@@ -4,8 +4,10 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
 import com.iridium126.createmanaindustry.client.particles.packages.*;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
+import com.iridium126.createmanaindustry.mixin.render.PackageCameraFrustumAccessor;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.simibubi.create.AllBlocks;
+import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorBlockEntity;
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.pipeline.IrisRenderingPipeline;
 import net.irisshaders.iris.shaderpack.materialmap.*;
@@ -16,10 +18,12 @@ import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import org.joml.*;
 import org.lwjgl.opengl.*;
+import java.util.*;
 
-/** Package-owned Iris draws; only loaded under the Iris presence gate. No CPU package census. */
+/** Package-owned Iris draws; CPU visibility input is limited to native visible-conveyor lists. */
 public final class PackageShaderHook {
     private static final PackageShaderCompiler COMPILER=new PackageShaderCompiler();
     private static final PackageDrawCulling CULLING=new PackageDrawCulling();
@@ -27,6 +31,8 @@ public final class PackageShaderHook {
     private static final Matrix3f NORMAL=new Matrix3f();
     private static final Vector4f PLANE=new Vector4f();
     private static final float[] MATRIX=new float[16],NORMAL_MATRIX=new float[9];
+    private static int[] CHAIN_VISIBILITY_MASK=new int[0];
+    private static final Set<ChainConveyorBlockEntity> VISIBLE_CONVEYORS=Collections.newSetFromMap(new IdentityHashMap<>());
     private static final NamespacedId PACKAGE_ID=new NamespacedId("create","package");
     private static final PackageDrawTelemetry MAIN_TIMING=new PackageDrawTelemetry(),SHADOW_TIMING=new PackageDrawTelemetry();
     private static PackageRenderState state;
@@ -56,27 +62,46 @@ public final class PackageShaderHook {
         if(state==null)state=new PackageRenderState();
         state.capture();try{return COMPILER.ensureCompiled();}finally{state.restore();}
     }
-    public static void render() {
+    public static boolean wantsMainDraw() {
+        var engine=CMIParticleEngine.INSTANCE;var pool=engine.packageParticlesForDraw();
+        return pool!=null && pool.admissionCount()!=0 && engine.packageMainFrameReady() && ClientConfig.shaderPackIntegration
+                && !reloadRequested && dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse();
+    }
+    public static void render(Frustum frustum,Set<ChainConveyorBlockEntity> visibleConveyors) {
         var engine=CMIParticleEngine.INSTANCE;var pool=engine.packageParticlesForDraw();
         if(pool==null || pool.admissionCount()==0 || !engine.packageMainFrameReady() || !ClientConfig.shaderPackIntegration
                 || reloadRequested || !dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse())return;
         try{
             if(!prepare()){mainStatus="program unavailable";return;}
             VIEW.set(CapturedRenderingState.INSTANCE.getGbufferModelView());PROJECTION.set(CapturedRenderingState.INSTANCE.getGbufferProjection());
-            CULLING.clear();CULLING.count=6;CLIP.set(PROJECTION).mul(VIEW);
+            CULLING.clear();CULLING.count=6;CLIP.set(((PackageCameraFrustumAccessor)frustum).createmanaindustry$getMatrix());
             for(int i=0;i<6;i++){CLIP.frustumPlane(i,PLANE);int p=i*4;CULLING.planes[p]=PLANE.x;CULLING.planes[p+1]=PLANE.y;CULLING.planes[p+2]=PLANE.z;CULLING.planes[p+3]=PLANE.w;}
-            timedDraw(MAIN_TIMING,engine,pool,PackagePoolGpu.DrawPass.GBUFFER,COMPILER.main(),Minecraft.getInstance().gameRenderer.getMainCamera(),true,true);engine.markHookPackageDrawn();mainStatus="active";
+            int words=(pool.packageCapacity()+31)>>>5;
+            if(CHAIN_VISIBILITY_MASK.length!=words)CHAIN_VISIBILITY_MASK=new int[words];
+            PackageChainClientOwnership.INSTANCE.mainVisibilityMask(CHAIN_VISIBILITY_MASK,visibleConveyors);
+            timedDraw(MAIN_TIMING,engine,pool,PackagePoolGpu.DrawPass.GBUFFER,COMPILER.main(),Minecraft.getInstance().gameRenderer.getMainCamera(),true,true,CHAIN_VISIBILITY_MASK);engine.markHookPackageDrawn();mainStatus="active";
         }
         catch(RuntimeException|LinkageError failure){fail(failure);}
     }
-    public static void renderShadow(Camera camera,Frustum frustum,boolean entities,boolean blockEntities) {
+    public static void renderShadow(Camera camera,Frustum frustum,boolean entities,boolean blockEntities,
+            List<BlockEntity> visibleBlockEntities,boolean hasEntityFrustum,double blockEntityDistance) {
         var engine=CMIParticleEngine.INSTANCE;var pool=engine.packageParticlesForDraw();
         if(pool==null || pool.admissionCount()==0 || (!entities && !blockEntities) || !ClientConfig.shaderPackIntegration || reloadRequested)return;
         try {
             if(!prepare() || COMPILER.shadow()==null){shadowStatus="program unavailable";return;}
             if(!PackageShadowPolicy.copy(frustum,CULLING))throw new IllegalStateException("Unsupported Iris shadow frustum");
+            int words=(pool.packageCapacity()+31)>>>5;
+            if(CHAIN_VISIBILITY_MASK.length!=words)CHAIN_VISIBILITY_MASK=new int[words];
+            VISIBLE_CONVEYORS.clear();
+            try {
+                if(blockEntities && visibleBlockEntities!=null)for(BlockEntity entity:visibleBlockEntities)
+                    if(entity instanceof ChainConveyorBlockEntity conveyor)VISIBLE_CONVEYORS.add(conveyor);
+                var cameraPosition=camera.getPosition();
+                PackageChainClientOwnership.INSTANCE.shadowVisibilityMask(CHAIN_VISIBILITY_MASK,VISIBLE_CONVEYORS,
+                        cameraPosition.x,cameraPosition.y,cameraPosition.z,hasEntityFrustum,blockEntityDistance);
+            }finally{VISIBLE_CONVEYORS.clear();}
             VIEW.set(ShadowRenderer.MODELVIEW);PROJECTION.set(ShadowRenderer.PROJECTION);
-            timedDraw(SHADOW_TIMING,engine,pool,PackagePoolGpu.DrawPass.SHADOW,COMPILER.shadow(),camera,entities,blockEntities);
+            timedDraw(SHADOW_TIMING,engine,pool,PackagePoolGpu.DrawPass.SHADOW,COMPILER.shadow(),camera,entities,blockEntities,CHAIN_VISIBILITY_MASK);
             shadowStatus="active (previous generation)";
         }catch(RuntimeException|LinkageError failure){fail(failure);}
     }
@@ -86,15 +111,15 @@ public final class PackageShaderHook {
         PackageAuthorityClient.closeAll("Iris package draw failed",true);
     }
     private static void timedDraw(PackageDrawTelemetry timing,CMIParticleEngine engine,PackagePoolGpu pool,PackagePoolGpu.DrawPass pass,
-            PackageShaderCompiler.Program program,Camera camera,boolean ground,boolean chain) {
+            PackageShaderCompiler.Program program,Camera camera,boolean ground,boolean chain,int[] chainVisibility) {
         engine.addExternalGpuMs(timing.poll());
         try {
             timing.begin(ClientConfig.particleAutoThrottle || com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled());
-            draw(engine,pool,pass,program,camera,ground,chain);
+            draw(engine,pool,pass,program,camera,ground,chain,chainVisibility);
         }finally{timing.end();}
     }
     private static void draw(CMIParticleEngine engine,PackagePoolGpu pool,PackagePoolGpu.DrawPass pass,
-            PackageShaderCompiler.Program program,Camera camera,boolean ground,boolean chain) {
+            PackageShaderCompiler.Program program,Camera camera,boolean ground,boolean chain,int[] chainVisibility) {
         var mc=Minecraft.getInstance();var captured=CapturedRenderingState.INSTANCE;var position=camera.getPosition();
         int entity=captured.getCurrentRenderedEntity(),blockEntity=captured.getCurrentRenderedBlockEntity(),item=captured.getCurrentRenderedItem();
         float alpha=captured.getCurrentAlphaTest();boolean tessellation=ImmediateState.usingTessellation;
@@ -102,7 +127,7 @@ public final class PackageShaderHook {
         state.capture();boolean applied=false;
         try {
             if(!pool.preparePass(pass,pool.committedPoolBuffer(),CULLING.planes,CULLING.count,CULLING.distance,CULLING.safe,
-                    (float)position.x,(float)position.y,(float)position.z))return;
+                    (float)position.x,(float)position.y,(float)position.z,chainVisibility))return;
             boolean sampled=pool.bindPassTbos(pass,PackageShaderCompiler.SAMPLER_BASE,engine.packageInterpolation());
             RenderSystem.setShaderTexture(0,TextureAtlas.LOCATION_BLOCKS);
             RenderSystem.setShaderTexture(2,mc.getTextureManager().getTexture(mc.gameRenderer.lightTexture().lightTextureLocation).getId());

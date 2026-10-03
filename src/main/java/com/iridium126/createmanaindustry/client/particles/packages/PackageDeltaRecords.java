@@ -8,7 +8,7 @@ import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageBat
 
 /** Allocation-free wire encoding of a bounded immutable GPU fragment, on a worker thread. */
 final class PackageDeltaRecords {
-    static final int BYTES=64,BATCH=512,MAX_WIRE_BYTES=17410;
+    static final int BYTES=64,BATCH=512,MAX_WIRE_BYTES=24576;
     static final int MAX_BATCH_WIRE_BYTES=PackageBatchDeltaCodec.MAX_RECORD_BYTES*BATCH+2;
     private static final ThreadLocal<PackageBatchDeltaCodec.Writer> WRITERS=ThreadLocal.withInitial(PackageBatchDeltaCodec.Writer::new);
     private PackageDeltaRecords() {}

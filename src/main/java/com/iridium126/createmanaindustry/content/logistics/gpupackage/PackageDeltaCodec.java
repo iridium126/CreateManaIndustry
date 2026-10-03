@@ -10,9 +10,11 @@ public final class PackageDeltaCodec {
     public static final int RELEASE = 16;
     public static final int MAX_ENTRIES = 2048;
     public static final double POSITION_SCALE = 4096;
-    // Signed shorts cover free-fall terminal speed (78.4 blocks/s) without an escape.
-    public static final float VELOCITY_SCALE = 256;
-    public record Quantized(int x, int y, int z, short vx, short vy, short vz, short yaw, int flags) {}
+    // RPM-driven Create contraptions can impart velocities far above vanilla terminal
+    // speed. Keep velocity in signed-varint fields (server bound: 2048 blocks/s), with a
+    // 1/16 block/s step.
+    public static final float VELOCITY_SCALE = 16;
+    public record Quantized(int x, int y, int z, int vx, int vy, int vz, short yaw, int flags) {}
     public record Entry(int id, int mask, Quantized value) {
         public Entry {
             if (id < 0 || !validMask(mask) || value == null)
@@ -32,11 +34,11 @@ public final class PackageDeltaCodec {
             throw new IllegalArgumentException("Position requires new region origin");
         return (int) scaled;
     }
-    private static short velocity(float v) {
+    private static int velocity(float v) {
         long scaled = Math.round((double) v * VELOCITY_SCALE);
-        if (scaled < Short.MIN_VALUE || scaled > Short.MAX_VALUE)
-            throw new IllegalArgumentException("Velocity requires full-state escape");
-        return (short) scaled;
+        if (scaled < Integer.MIN_VALUE || scaled > Integer.MAX_VALUE)
+            throw new IllegalArgumentException("Velocity exceeds wire range");
+        return (int) scaled;
     }
     public static int changes(Quantized before, Quantized after) {
         if (before == null) return 15;
@@ -111,9 +113,9 @@ public final class PackageDeltaCodec {
             previous = id;
             int mask = Byte.toUnsignedInt(in.get());
             if (!validMask(mask)) throw new IllegalArgumentException("Delta mask");
-            int x=0,y=0,z=0; short vx=0,vy=0,vz=0,yaw=0;
+            int x=0,y=0,z=0,vx=0,vy=0,vz=0; short yaw=0;
             if ((mask & POSITION) != 0) { x=getSigned(in); y=getSigned(in); z=getSigned(in); }
-            if ((mask & VELOCITY) != 0) { vx=getShort(in); vy=getShort(in); vz=getShort(in); }
+            if ((mask & VELOCITY) != 0) { vx=getSigned(in); vy=getSigned(in); vz=getSigned(in); }
             if ((mask & YAW) != 0) yaw=getShort(in);
             int flags = (mask & FLAGS) != 0 ? getVarInt(in) : 0;
             entries.add(new Entry((int)id, mask, new Quantized(x,y,z,vx,vy,vz,yaw,flags)));

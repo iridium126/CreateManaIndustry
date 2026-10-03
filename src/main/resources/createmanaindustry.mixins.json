@@ -94,6 +94,7 @@
     "voxy.AllvrVoxyViewportMixin",
     "voxy.AllvrVoxyTopLevelRangeMixin",
     "render.LevelRendererBlockEntitiesMixin",
+    "render.PackageCameraFrustumAccessor",
     "render.CachedBuffersMixin",
     "render.ModelsMixin",
     "render.SafeBlockEntityRendererMixin",

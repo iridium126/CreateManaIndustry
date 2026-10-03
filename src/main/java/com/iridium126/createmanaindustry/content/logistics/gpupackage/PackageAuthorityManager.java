@@ -188,7 +188,8 @@ public final class PackageAuthorityManager {
     private static ServerPlayer elect(Runtime rt,PackageRegion key) {
         // Evaluate subscribers once per region election, not once per package/frame.
         for(var peer:rt.peers.entrySet()) {
-            if((peer.getValue().flags&ServerboundPackagePacket.FREE_READY)==0)continue;
+            int requiredFree=ServerboundPackagePacket.FREE_READY|ServerboundPackagePacket.WIDE_VELOCITY;
+            if((peer.getValue().flags&requiredFree)!=requiredFree)continue;
             ServerPlayer player=rt.level.getServer().getPlayerList().getPlayer(peer.getKey());
             if(subscribed(player,rt.level,key))return player;
         }
@@ -269,6 +270,9 @@ public final class PackageAuthorityManager {
         }
         var region=rt.regions.get(packet.region());
         if(packet.action()!=ServerboundPackageObserverPacket.SUBSCRIBE)return;
+        // Observer state now carries wider quantized velocities. Keep older clients on
+        // Create's native replication path instead of sending them the incompatible layout.
+        if(!supportsWideVelocity(rt,player.getUUID()))return;
         if(region==null || region.owner().equals(player.getUUID()) || !subscribed(player,rt.level,packet.region()))return;
         int regions=0;for(var observer:rt.observers.keySet())if(observer.player().equals(player.getUUID()))regions++;
         if(previous==null && regions>=MAX_OBSERVER_REGIONS)return;
@@ -283,7 +287,7 @@ public final class PackageAuthorityManager {
             var iterator=rt.observers.entrySet().iterator();var entry=iterator.next();
             var key=entry.getKey();var observer=entry.getValue();iterator.remove();
             var player=rt.level.getServer().getPlayerList().getPlayer(key.player());
-            if(observer.authority.owner().equals(key.player()) || !rt.peers.containsKey(key.player()) || rt.regions.get(key.region())!=observer.authority
+            if(observer.authority.owner().equals(key.player()) || !supportsWideVelocity(rt,key.player()) || rt.regions.get(key.region())!=observer.authority
                     || observer.authority.expired(rt.level.getGameTime()) || !subscribed(player,rt.level,key.region())
                     || !player.connection.hasChannel(ClientboundPackageObserverPacket.TYPE)) {
                 observer.authority.observers().unsubscribe(observer.cursor);
@@ -329,6 +333,11 @@ public final class PackageAuthorityManager {
                 observer.authority.epoch(),observer.authority.revision(),observer.cursor.stream(),0,
                 ClientboundPackageObserverPacket.CLOSE,List.of(),List.of(),rt.level.getGameTime(),PackageObserverTimes.zeros(0)));}
         catch(RuntimeException failure){CreateManaIndustry.LOGGER.debug("[CMI packages] observer close could not be enqueued",failure);}
+    }
+    private static boolean supportsWideVelocity(Runtime rt,UUID player) {
+        Peer peer=rt.peers.get(player);
+        int required=ServerboundPackagePacket.FREE_READY|ServerboundPackagePacket.WIDE_VELOCITY;
+        return peer!=null&&(peer.flags&required)==required;
     }
     public static void receive(ServerboundPackagePacket packet,IPayloadContext context) {
         if(!(context.player() instanceof ServerPlayer player) || !ServerConfig.packageGpuAuthority)return;
@@ -407,8 +416,8 @@ public final class PackageAuthorityManager {
                     && packet.revision()==region.revision() && packet.sequence()==region.lastSequence())
                 queueAck(rt,region,player,packet.sequence());
             else if(result!=PackageAuthorityRegion.Result.STALE){
-                CreateManaIndustry.LOGGER.debug("[CMI packages] rejected delta result={} sequence={} region={}; pausing package records",
-                        result,packet.sequence(),region.region());
+                CreateManaIndustry.LOGGER.debug("[CMI packages] rejected delta result={} reason={} sequence={} region={}; pausing package records",
+                        result,region.lastDeltaRejection(),packet.sequence(),region.region());
                 pauseRegion(rt,region);
             }
             return;

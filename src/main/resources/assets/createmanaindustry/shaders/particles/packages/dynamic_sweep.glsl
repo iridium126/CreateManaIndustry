@@ -26,20 +26,23 @@ void main() {
     if(!fast&&fastCells[hashCell(cellOf(b.positionMass.xyz))]==0u){dst[i]=b;return;}
 
     // Package dimensions are admitted at <= half a grid cell. Other package
-    // displacement is bounded to two cells per 20 Hz step; faster bodies request
-    // local pause to bound an unbounded GPU query. A long move
-    // already clipped by the static-world sweep may still use its now-bounded path.
+    // displacement is bounded to 16 cells (32 blocks) per 20 Hz step; faster
+    // bodies request a local pause to bound the GPU query. A long move already
+    // clipped by the static-world sweep may still use its now-bounded path.
     float maximumMotion=uCellSize*PACKAGE_MAX_SWEEP_CELLS;
     bool longMove=any(greaterThan(abs(motion),vec3(maximumMotion)));
     float incomingSpeed=length(stepVelocity[i].xyz),currentSpeed=length(b.velocityGround.xyz);
     bool staticallyClipped=longMove && currentSpeed<incomingSpeed*.5
             && length(b.velocityGround.xyz-stepVelocity[i].xyz)>max(2.0,incomingSpeed*.5);
     if(longMove&&!staticallyClipped) { pauseCollision(b,i);return; }
-    vec3 padding=b.extentYaw.xyz+vec3(maximumMotion+uCellSize*.5+1e-4);
+    // The segment is already covered by min(start,end)..max(start,end). Only pad
+    // for this body's extent and the largest admitted counterpart half-extent;
+    // adding maximumMotion again made ordinary fast hits exceed the volume budget.
+    vec3 padding=b.extentYaw.xyz+vec3(uCellSize*.5+1e-4);
     ivec3 lo=cellOf(min(start,b.positionMass.xyz)-padding);
     ivec3 hi=cellOf(max(start,b.positionMass.xyz)+padding);
     ivec3 size=hi-lo+1;
-    if(any(lessThanEqual(size,ivec3(0))) || any(greaterThan(size,ivec3(32))) || size.x*size.y*size.z>1024) {
+    if(any(lessThanEqual(size,ivec3(0))) || any(greaterThan(size,ivec3(32))) || size.x*size.y*size.z>PACKAGE_SWEEP_CELL_VOLUME) {
         pauseCollision(b,i);return;
     }
 

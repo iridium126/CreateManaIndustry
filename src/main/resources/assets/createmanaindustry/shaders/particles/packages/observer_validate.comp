@@ -25,9 +25,9 @@ void main() {
             || any(greaterThanEqual(p.positionFlags.xyz,ivec3(262144))))) { atomicOr(invalid,16u);return; }
     if((baseline || (mask&8u)!=0u) && (p.positionFlags.w<0 || (p.positionFlags.w&~3)!=0)) { atomicOr(invalid,32u);return; }
     if((baseline || (mask&2u)!=0u) && (any(lessThan(p.velocityYaw.xyz,ivec3(-32768)))
-            || any(greaterThan(p.velocityYaw.xyz,ivec3(32767))))) { atomicOr(invalid,64u);return; }
+            || any(greaterThan(p.velocityYaw.xyz,ivec3(32768))))) { atomicOr(invalid,64u);return; }
     if((baseline || (mask&4u)!=0u) && (p.velocityYaw.w< -32768 || p.velocityYaw.w>32767)) { atomicOr(invalid,128u);return; }
     ivec3 v=baseline || (mask&2u)!=0u?p.velocityYaw.xyz:s.velocityYaw.xyz;
-    // Use float for the norm: three legal signed-short squares can overflow signed int.
+    // The negotiated velocity range is +/-2048 blocks/s, quantized at 1/16.
     if(!release && dot(vec3(v),vec3(v))>1073741824.0)atomicOr(invalid,256u);
 }

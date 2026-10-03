@@ -19,7 +19,7 @@ public record ServerboundPackagePacket(int action,int capabilities,PackageRegion
     /** Sent only after ACTIVE and a successful visible GPU admission for this exact baseline. */
     public static final int VISIBLE_READY=9;
     public static final int CONTROL_BATCH=10,ENVIRONMENT=11;
-    public static final int FREE_READY=1,CHAIN_READY=2,MAX_BYTES=24576;
+    public static final int FREE_READY=1,CHAIN_READY=2,WIDE_VELOCITY=4,MAX_BYTES=24576;
     public static final Type<ServerboundPackagePacket> TYPE=new Type<>(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(CreateManaIndustry.MODID,"package_up"));
     public static final StreamCodec<RegistryFriendlyByteBuf,ServerboundPackagePacket> STREAM_CODEC=StreamCodec.of(
             ServerboundPackagePacket::encode,ServerboundPackagePacket::decode);
@@ -27,7 +27,7 @@ public record ServerboundPackagePacket(int action,int capabilities,PackageRegion
         this(action,capabilities,region,epoch,index,identity,leaseEpoch,revision,sequence,changes,0);
     }
     public ServerboundPackagePacket {
-        if(action<0 || action>ENVIRONMENT || (capabilities&~3)!=0)throw new IllegalArgumentException("Package action/capabilities");
+        if(action<0 || action>ENVIRONMENT || (capabilities&~7)!=0)throw new IllegalArgumentException("Package action/capabilities");
         if(simulationStep<0||!deltaAction(action)&&simulationStep!=0)throw new IllegalArgumentException("Package simulation step");
         changes=Objects.requireNonNull(changes).clone();
         if(changes.length>MAX_BYTES)throw new IllegalArgumentException("Package packet too large");

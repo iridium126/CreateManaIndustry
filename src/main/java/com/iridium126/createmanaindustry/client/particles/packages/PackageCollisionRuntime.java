@@ -183,7 +183,8 @@ public final class PackageCollisionRuntime {
     }
     public boolean hasMovingHistory(long tick){owner();return movingCache.hasHistory(tick);}
     public MovingScene movingView(long tick,int x,int y,int z){
-        owner();var frame=movingCache.history(tick);
+        owner();boolean confirmedEmptyScene=movingAvailable&&movingCache.entries().isEmpty();
+        var frame=movingCache.simulationFrame(tick,confirmedEmptyScene);
         return new MovingScene(movingGpu,frame==null?movingGpu.unavailableViews():movingGpu.views(frame,true,x*16.,y*16.,z*16.));
     }
     public static final class MovingScene implements AutoCloseable {
@@ -206,7 +207,7 @@ public final class PackageCollisionRuntime {
             if(current.collisionRequested) {
                 if(current.movingGpu==null)current.movingGpu=new PackageMovingCollisionGpu();
                 current.movingGpu.tickRate(current.level.tickRateManager().tickrate());
-                current.movingGpu.sync(current.movingCache.entries());
+                current.movingGpu.sync(current.movingCache.entries(),current.movingCache.retainedGeometry());
             }
             if(current.lightRequested && current.lightGpu==null){current.lightGpu=new PackageLightGpu(MAX_SECTIONS);current.lights.forEachRequested(current.lightGpu::reserve);current.lights.snapshots().forEach(current.lightGpu::offer);}
             // A chain-only workload needs light data, not the collision atlas or moving-world scan.
@@ -366,10 +367,21 @@ public final class PackageCollisionRuntime {
     @SubscribeEvent public static void chunkLoaded(ChunkEvent.Load event){chunkChanged(event);}
     @SubscribeEvent public static void chunkUnloaded(ChunkEvent.Unload event){chunkChanged(event);}
     @SubscribeEvent public static void movingEntityJoined(EntityJoinLevelEvent event){movingEntityChanged(event.getLevel(),event.getEntity());}
-    @SubscribeEvent public static void movingEntityLeft(EntityLeaveLevelEvent event){movingEntityChanged(event.getLevel(),event.getEntity());}
+    @SubscribeEvent public static void movingEntityLeft(EntityLeaveLevelEvent event){movingEntityRemoved(event.getLevel(),event.getEntity());}
     private static void movingEntityChanged(net.minecraft.world.level.Level level,net.minecraft.world.entity.Entity entity) {
         if(current!=null && current.collisionRequested && level==current.level && entity instanceof com.simibubi.create.content.contraptions.AbstractContraptionEntity)
             current.movingAvailable=false;
+    }
+    private static void movingEntityRemoved(net.minecraft.world.level.Level level,net.minecraft.world.entity.Entity entity) {
+        if(current==null||!current.collisionRequested||level!=current.level
+                ||!(entity instanceof com.simibubi.create.content.contraptions.AbstractContraptionEntity contraption))return;
+        var sources=current.movingSources;
+        if(sources!=null&&sources.forget(contraption)){
+            current.movingCache.remove(new PackageMovingGeometry.Key(0,contraption.getUUID()));
+            return;
+        }
+        // If the source was never captured, membership is still unknown and discovery must recover it.
+        current.movingAvailable=false;
     }
     private static void chunkChanged(ChunkEvent event) {
         if(current!=null && event.getLevel()==current.level) {

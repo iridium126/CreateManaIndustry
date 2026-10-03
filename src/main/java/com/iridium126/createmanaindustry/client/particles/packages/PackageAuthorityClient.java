@@ -32,7 +32,8 @@ public final class PackageAuthorityClient {
     private PackageAuthorityClient() {}
     static int readyFlags(boolean freeReady,boolean chainProtocol) {
         if(!freeReady)return 0;
-        return ServerboundPackagePacket.FREE_READY|(chainProtocol?ServerboundPackagePacket.CHAIN_READY:0);
+        return ServerboundPackagePacket.FREE_READY|ServerboundPackagePacket.WIDE_VELOCITY
+                |(chainProtocol?ServerboundPackagePacket.CHAIN_READY:0);
     }
     static PackageDeltaJournal.Encoder encoder(){return Encoding.SHARED;}
     public static void capabilities(int flags) {

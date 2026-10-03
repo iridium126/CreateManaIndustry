@@ -30,8 +30,8 @@ public final class PackagePoolGpu implements AutoCloseable {
     private boolean sampledLightingEnabled;
     private static final String[] COMPUTE={"pool_select","pool_reserve","pool_import","draw_count","draw_prefix","draw_scatter"};
     private final int capacity, packageCapacity, maxMeshes;
-    private final int[] programs=new int[12], admission=new int[2], commands=new int[2], instances=new int[2], attachments=new int[2];
-    private static final String[] UNIFORMS={"uCount","uCapacity","uBodyCount","uMeshCount","uEmitter","uOrigin","uCamPos","uFrustum","ModelViewMat","ProjMat","uPartialTick","uLightingMode","uConstantAmbient","uLight0","uLight1","uLightTableSize","uLightDataOffset","uSampledLighting","uFeedback","uFrustumCount","uCullBounds","uFrameCount"};
+    private final int[] programs=new int[12], admission=new int[2], commands=new int[2], instances=new int[2], attachments=new int[2], nativeBounds=new int[2];
+    private static final String[] UNIFORMS={"uCount","uCapacity","uBodyCount","uMeshCount","uEmitter","uOrigin","uCamPos","uFrustum","ModelViewMat","ProjMat","uPartialTick","uLightingMode","uConstantAmbient","uLight0","uLight1","uLightTableSize","uLightDataOffset","uSampledLighting","uFeedback","uFrustumCount","uCullBounds","uFrameCount","uEntityViewScale","uNativeCull"};
     private final int[][] locations=new int[12][UNIFORMS.length];
     private final int[] uniformCounts=new int[12],uniformBodyCounts=new int[12],uniformFrameCounts=new int[12];
     private int sampledLight;
@@ -39,6 +39,8 @@ public final class PackagePoolGpu implements AutoCloseable {
     private PackageLightFeedbackGpu lightFeedback;
     private long lightEpoch;
     private int metadata, selection, reservation, meshes, cursors, vertices, vertexAttributes, vao;
+    private int chainVisibility;
+    private final java.nio.IntBuffer chainVisibilityUpload;
     private int count, meshCount, committed=-1, staged=-1, stagedCount;
     private final int[] candidateCounts=new int[2];
     private boolean closed;
@@ -55,6 +57,7 @@ public final class PackagePoolGpu implements AutoCloseable {
     public PackagePoolGpu(int capacity,int maxMeshes,Function<String,String> sources) {
         if(capacity<=0 || maxMeshes<=0 || maxMeshes>4096)throw new IllegalArgumentException("Package pool limits");
         this.capacity=capacity;this.packageCapacity=Math.min(capacity,131072);this.maxMeshes=maxMeshes;
+        chainVisibilityUpload=BufferUtils.createIntBuffer((packageCapacity+31)/32);
         textureUnits=GL11.glGetInteger(GL20.GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);textureTexels=GL11.glGetInteger(GL31.GL_MAX_TEXTURE_BUFFER_SIZE);
         candidateFlags=new byte[packageCapacity];candidateBodies=new int[packageCapacity];java.util.Arrays.fill(candidateBodies,-1);
         if((packageCapacity+63L)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)
@@ -64,10 +67,12 @@ public final class PackagePoolGpu implements AutoCloseable {
             rebuild(sources);
             metadata=buffer((long)packageCapacity*META_BYTES);selection=buffer(16L+4L*packageCapacity);reservation=buffer(16);
             meshes=buffer((long)maxMeshes*MESH_BYTES);cursors=buffer((long)maxMeshes*8);vertices=buffer(VERTEX_BYTES);
+            chainVisibility=buffer((long)Math.max(1,(packageCapacity+31)/32)*4);
             sampledLight=buffer((long)packageCapacity*4);clear(sampledLight);
             for(int j=0;j<2;j++) {
                 admission[j]=buffer((long)packageCapacity*32);commands[j]=buffer((long)maxMeshes*16);
                 instances[j]=buffer((long)packageCapacity*16);attachments[j]=buffer((long)packageCapacity*ATTACHMENT_BYTES);
+                nativeBounds[j]=buffer((long)packageCapacity*16);
             }
             vao=GL30.glGenVertexArrays();GL30.glBindVertexArray(vao);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,vertices);
@@ -176,8 +181,9 @@ public final class PackagePoolGpu implements AutoCloseable {
         ensureOpen();if(staged>=0||candidate<0||candidate>=count||!identities.retired(candidate))throw new IllegalArgumentException("Pool recycle fence");
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         bodyIndices.remove(candidateBodies[candidate]);candidateBodies[candidate]=-1;identities.reclaim(candidate);reusable.add(candidate);
-        for(int buffer:new int[]{sampledLight,admission[0],admission[1],attachments[0],attachments[1]}){
+        for(int buffer:new int[]{sampledLight,admission[0],admission[1],attachments[0],attachments[1],nativeBounds[0],nativeBounds[1]}){
             int stride=buffer==sampledLight?4:(buffer==admission[0]||buffer==admission[1]?32:ATTACHMENT_BYTES);
+            if(buffer==nativeBounds[0] || buffer==nativeBounds[1])stride=16;
             GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
             try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)candidate*stride,stride,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
         }
@@ -326,6 +332,7 @@ public final class PackagePoolGpu implements AutoCloseable {
         }
         use(0);dispatch(stagedCount);
         use(1);GL43.glDispatchCompute(1,1,1);barrier();
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,3,nativeBounds[staged]);
         use(2);GL30.glUniform1ui(locations[2][4],emitter);
         GL20.glUniform3f(locations[2][5],originX,originY,originZ);dispatch(stagedCount);
         try(MemoryStack stack=MemoryStack.stackPush()) {
@@ -371,13 +378,17 @@ public final class PackagePoolGpu implements AutoCloseable {
     public int commandBuffer(){ensureOpen();return committed<0?0:commands[committed];}
     public int instanceBuffer(){ensureOpen();return committed<0?0:instances[committed];}
     public int committedPoolBuffer(){ensureOpen();return committed<0?0:publishedPools[committed];}
-    /** GPU-only material split/cull of the exact committed generation. Shadow culling policy
-     * comes from Iris's shadow-caster frustum, never the main camera's command stream. Does
-     * not import, reserve, update physics, change admission or publish any gameplay result. */
+    public int packageCapacity(){ensureOpen();return packageCapacity;}
+    /** GPU material split/cull of the exact committed generation. Native culling uses package
+     * entity bounds for free packages and visible parent conveyors for chain packages.
+     * Neither path imports, reserves, updates physics or publishes gameplay results. */
     public boolean preparePass(DrawPass kind,int pool,float[] frustum,float cameraX,float cameraY,float cameraZ) {
         return preparePass(kind,pool,frustum,6,-1,-1,cameraX,cameraY,cameraZ);
     }
     public boolean preparePass(DrawPass kind,int pool,float[] frustum,int planes,float distance,float safe,float cameraX,float cameraY,float cameraZ) {
+        return preparePass(kind,pool,frustum,planes,distance,safe,cameraX,cameraY,cameraZ,null);
+    }
+    public boolean preparePass(DrawPass kind,int pool,float[] frustum,int planes,float distance,float safe,float cameraX,float cameraY,float cameraZ,int[] chainVisibility) {
         ensureOpen();java.util.Objects.requireNonNull(kind);
         if(frustum==null || planes<0 || planes>PackageDrawCulling.MAX_PLANES || frustum.length<planes*4 || frustum.length%4!=0
                 || frustum.length>PackageDrawCulling.MAX_PLANES*4 || !Float.isFinite(distance) || !Float.isFinite(safe)
@@ -393,14 +404,25 @@ public final class PackagePoolGpu implements AutoCloseable {
         }
         pass.publication=-1;
         clear(pass.commands);
+        int words=(packageCapacity+31)/32;
+        if(chainVisibility!=null && chainVisibility.length<words)throw new IllegalArgumentException("Package chain visibility mask capacity");
+        chainVisibilityUpload.clear();
+        for(int i=0;i<words;i++)chainVisibilityUpload.put(chainVisibility==null?0:chainVisibility[i]);
+        chainVisibilityUpload.flip();
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,this.chainVisibility);
+        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,chainVisibilityUpload);
         try(var stack=MemoryStack.stackPush()) {
             GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(pool,admission[committed],pass.commands,pass.instances,cursors,meshes,attachments[committed]));
         }
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,7,nativeBounds[committed]);
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,8,this.chainVisibility);
         int count=candidateCounts[committed];
         for(int p=9;p<12;p++) {
             use(p,count);GL20.glUniform3f(locations[p][6],cameraX,cameraY,cameraZ);GL20.glUniform4fv(locations[p][7],frustum);
             if(locations[p][19]>=0)GL30.glUniform1ui(locations[p][19],planes);
             if(locations[p][20]>=0)GL20.glUniform2f(locations[p][20],distance,safe);
+            if(locations[p][22]>=0)GL20.glUniform1f(locations[p][22],(float)net.minecraft.world.entity.Entity.getViewScale());
+            if(locations[p][23]>=0)GL30.glUniform1ui(locations[p][23],chainVisibility==null?0:1);
             if(p==10){GL43.glDispatchCompute(1,1,1);barrier();}else dispatch(count);
         }
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
@@ -509,7 +531,7 @@ public final class PackagePoolGpu implements AutoCloseable {
         for(int[] group:new int[][]{admission,commands,instances,attachments})for(int b:group)if(b!=0)GL15.glDeleteBuffers(b);
         for(var pass:drawPasses)if(pass!=null){if(pass.commands!=0)GL15.glDeleteBuffers(pass.commands);if(pass.instances!=0)GL15.glDeleteBuffers(pass.instances);}
         for(int texture:passTextures)if(texture!=0)GL11.glDeleteTextures(texture);
-        for(int b:new int[]{metadata,selection,reservation,meshes,cursors,vertices,vertexAttributes,sampledLight})if(b!=0)GL15.glDeleteBuffers(b);
+        for(int b:new int[]{metadata,selection,reservation,meshes,cursors,vertices,vertexAttributes,sampledLight,chainVisibility,nativeBounds[0],nativeBounds[1]})if(b!=0)GL15.glDeleteBuffers(b);
         if(vao!=0)GL30.glDeleteVertexArrays(vao);
     }
 }

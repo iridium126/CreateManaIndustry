@@ -21,7 +21,7 @@ class PackageBatchDeltaCodecTest {
             for(int i=0;i<n;i++) {
                 id+=random.nextInt(4)+1;int mask=random.nextInt(5)==0?16:1+random.nextInt(15);
                 var value=new PackageDeltaCodec.Quantized(random.nextInt(),random.nextInt(),random.nextInt(),
-                        (short)random.nextInt(),(short)random.nextInt(),(short)random.nextInt(),(short)random.nextInt(),random.nextInt());
+                        random.nextInt(),random.nextInt(),random.nextInt(),(short)random.nextInt(),random.nextInt());
                 entries.add(new PackageDeltaCodec.Entry(id,mask,value));
             }
             var bytes=encoded(entries);assertEquals(normalized(entries),PackageBatchDeltaCodec.decode(bytes));assertFalse(bytes.hasRemaining());
@@ -64,8 +64,9 @@ class PackageBatchDeltaCodecTest {
                 {1,0,0,1}, {1,0,1,0}, {1,17}, {1,48}, {1,34}, {1,2,8},
                 {(byte)129,0}, {(byte)128,16}, {1,0,(byte)255,(byte)255,(byte)255,(byte)255,15,1}})
             assertThrows(RuntimeException.class,()->PackageBatchDeltaCodec.decode(ByteBuffer.wrap(invalid)));
-        // Positive encoded difference 32768 cannot produce a signed-short velocity.
-        assertThrows(IllegalArgumentException.class,()->PackageBatchDeltaCodec.decode(ByteBuffer.wrap(new byte[]{1,2,1,(byte)128,(byte)128,4})));
+        // The signed-varint velocity field now retains values beyond the former short range.
+        var wide=PackageBatchDeltaCodec.decode(ByteBuffer.wrap(new byte[]{1,2,1,(byte)128,(byte)128,4}));
+        assertEquals(32768,wide.getFirst().value().vx());
         assertThrows(IllegalArgumentException.class,()->PackageBatchDeltaCodec.decode(encoded(List.of(new PackageDeltaCodec.Entry(0,1,ZERO))),0));
     }
     @Test void primitiveWriterResetsAndRejectsIncompleteOrDuplicateOutput() {
@@ -74,6 +75,7 @@ class PackageBatchDeltaCodecTest {
         writer.entry(0,16,0,0,0,0,0,0,0,0);writer.finish();bytes.flip();assertEquals(List.of(new PackageDeltaCodec.Entry(0,16,ZERO)),PackageBatchDeltaCodec.decode(bytes));
         bytes.clear();writer.reset(bytes,2);writer.entry(0,1,0,0,0,0,0,0,0,0);
         assertThrows(IllegalArgumentException.class,()->writer.entry(0,1,0,0,0,0,0,0,0,0));
-        assertThrows(IllegalArgumentException.class,()->writer.entry(1,2,0,0,0,32768,0,0,0,0));
+        writer.entry(1,2,0,0,0,32768,0,0,0,0);writer.finish();bytes.flip();
+        assertEquals(32768,PackageBatchDeltaCodec.decode(bytes).getLast().value().vx());
     }
 }

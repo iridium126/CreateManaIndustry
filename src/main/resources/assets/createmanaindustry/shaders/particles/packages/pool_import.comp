@@ -5,6 +5,7 @@ struct Chain { vec4 startRadius; vec4 endLength; vec4 progress; vec4 targetYaw; 
 layout(std430,binding=0) readonly buffer Bodies { Body bodies[]; };
 layout(std430,binding=1) buffer Pool { vec4 pool[]; };
 layout(std430,binding=2) readonly buffer Metadata { Meta meta[]; };
+layout(std430,binding=3) writeonly buffer PackageCullBounds { vec4 packageCullBounds[]; };
 layout(std430,binding=4) readonly buffer Chains { Chain chains[]; };
 layout(std430,binding=5) buffer Admission { uvec4 admitted[]; };
 layout(std430,binding=6) readonly buffer Reservation { uint base; uint accepted; uint activeAccepted; uint preparedAccepted; };
@@ -50,4 +51,5 @@ void main() {
     admitted[2u*i+1u]=uvec4(slot+1u,flags,0,0);
     attachment[2u*i]=vec4(history[2u*m.selection.x+1u].xyz+((flags&8u)!=0u?vec3(0):uOrigin),0);
     attachment[2u*i+1u]=m.nudge;
+    packageCullBounds[i]=vec4(2.0*b.extentYaw.x,2.0*b.extentYaw.y,0,0);
 }

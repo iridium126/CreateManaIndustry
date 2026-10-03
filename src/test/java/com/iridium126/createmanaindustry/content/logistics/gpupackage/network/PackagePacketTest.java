@@ -67,8 +67,9 @@ class PackagePacketTest {
     @Test void capabilitiesHeartbeatAndDeltaHaveBoundedBodies() {
         var bytes=buffer();
         try {
-            ServerboundPackagePacket.STREAM_CODEC.encode(bytes,ServerboundPackagePacket.capabilities(3));assertEquals(2,bytes.readableBytes());
-            assertEquals(3,ServerboundPackagePacket.STREAM_CODEC.decode(bytes).capabilities());bytes.clear();
+            int capabilities=ServerboundPackagePacket.FREE_READY|ServerboundPackagePacket.CHAIN_READY|ServerboundPackagePacket.WIDE_VELOCITY;
+            ServerboundPackagePacket.STREAM_CODEC.encode(bytes,ServerboundPackagePacket.capabilities(capabilities));assertEquals(2,bytes.readableBytes());
+            assertEquals(capabilities,ServerboundPackagePacket.STREAM_CODEC.decode(bytes).capabilities());bytes.clear();
             var heartbeat=new ServerboundPackagePacket(ServerboundPackagePacket.HEARTBEAT,0,REGION,10,0,null,0,0,0,new byte[0]);
             ServerboundPackagePacket.STREAM_CODEC.encode(bytes,heartbeat);assertTrue(bytes.readableBytes()<32);
             var decoded=ServerboundPackagePacket.STREAM_CODEC.decode(bytes);assertEquals(REGION,decoded.region());assertEquals(0,decoded.changes().length);
@@ -110,7 +111,7 @@ class PackagePacketTest {
         var bytes=buffer();
         try {
             bytes.writeByte(100);assertThrows(DecoderException.class,()->ServerboundPackagePacket.STREAM_CODEC.decode(bytes));bytes.clear();
-            bytes.writeByte(ServerboundPackagePacket.CAPABILITIES).writeByte(4);
+            bytes.writeByte(ServerboundPackagePacket.CAPABILITIES).writeByte(8);
             assertThrows(DecoderException.class,()->ServerboundPackagePacket.STREAM_CODEC.decode(bytes));bytes.clear();
             bytes.writeByte(ServerboundPackagePacket.HEARTBEAT);ServerboundPackagePacket.writeRegion(bytes,REGION);bytes.writeVarLong(0);
             assertThrows(DecoderException.class,()->ServerboundPackagePacket.STREAM_CODEC.decode(bytes));bytes.clear();

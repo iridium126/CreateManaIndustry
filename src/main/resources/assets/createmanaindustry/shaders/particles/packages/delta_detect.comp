@@ -26,7 +26,7 @@ void main() {
                 vec3 position=roundEven(feet*4096.0);
                 // Confirm local pauses too; retries must not restore an older pose.
                 // The original resume velocity remains in the GPU body only.
-                vec3 velocity=collisionFrozen?vec3(0):floor(b.velocityGround.xyz*256.0+0.5);
+                vec3 velocity=collisionFrozen?vec3(0):floor(b.velocityGround.xyz*16.0+0.5);
                 {
                     bool supported=finite4(b.positionMass) && finite4(b.velocityGround)
                         && finite4(b.extentYaw) && finite4(b.previousSleep)
@@ -35,7 +35,7 @@ void main() {
                         // A crossing is a signed position in the old region origin.
                         // The server validates displacement before committing/migrating.
                         && all(lessThan(abs(position),vec3(2147483000.0)))
-                        && all(greaterThanEqual(velocity,vec3(-32768))) && all(lessThanEqual(velocity,vec3(32767)))
+                        && all(greaterThanEqual(velocity,vec3(-32768))) && all(lessThanEqual(velocity,vec3(32768)))
                         && dot(dvec3(velocity),dvec3(velocity))<=1073741824.0
                         && abs(b.extentYaw.w)<=1000000.0;
                     if(!supported) status=1u;

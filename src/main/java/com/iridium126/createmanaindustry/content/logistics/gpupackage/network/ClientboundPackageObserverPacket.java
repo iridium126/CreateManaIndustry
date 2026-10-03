@@ -107,10 +107,10 @@ public record ClientboundPackageObserverPacket(ResourceLocation dimension,Packag
         return serverTick-age;
     }
     private static void writeState(RegistryFriendlyByteBuf b,PackageDeltaCodec.Quantized q) {
-        b.writeInt(q.x());b.writeInt(q.y());b.writeInt(q.z());b.writeShort(q.vx());b.writeShort(q.vy());b.writeShort(q.vz());b.writeShort(q.yaw());b.writeByte(q.flags());
+        b.writeInt(q.x());b.writeInt(q.y());b.writeInt(q.z());b.writeInt(q.vx());b.writeInt(q.vy());b.writeInt(q.vz());b.writeShort(q.yaw());b.writeByte(q.flags());
     }
     private static PackageDeltaCodec.Quantized readState(RegistryFriendlyByteBuf b) {
-        return new PackageDeltaCodec.Quantized(b.readInt(),b.readInt(),b.readInt(),b.readShort(),b.readShort(),b.readShort(),b.readShort(),b.readUnsignedByte());
+        return new PackageDeltaCodec.Quantized(b.readInt(),b.readInt(),b.readInt(),b.readInt(),b.readInt(),b.readInt(),b.readShort(),b.readUnsignedByte());
     }
     @Override public Type<? extends CustomPacketPayload> type(){return TYPE;}
     public static void installClientHandler(Consumer<? super ClientboundPackageObserverPacket> handler){CLIENT.install(handler);}

@@ -5,6 +5,13 @@ import java.util.*;
 /** Server-thread protocol and pose commit boundary, independent of Minecraft and GPU code. */
 public final class PackageAuthorityRegion {
     public static final int GROUNDED=1,SLEEPING=2,STATE_FLAGS=3,MAX_PENDING=256;
+    /** Network range for packages flung by fast Create contraptions. */
+    public static final double MAX_PACKAGE_SPEED=2048.0;
+    private static final double SIMULATION_STEP_SECONDS=.05, VELOCITY_WINDOW_TOLERANCE_SECONDS=.01,
+            MOTION_TOLERANCE=1.25, STEPPED_BASE_TOLERANCE=.25;
+    /** Matches dynamic_sweep.glsl: 16 two-block cells per axis, plus motion tolerance. */
+    private static final double MAX_SWEEP_AXIS_DISPLACEMENT=32.0, SWEEP_AXIS_TOLERANCE=MOTION_TOLERANCE;
+    private static final double MAX_SWEEP_STEP_DISTANCE=Math.sqrt(3.0)*(MAX_SWEEP_AXIS_DISPLACEMENT+SWEEP_AXIS_TOLERANCE);
     public record Snapshot(PackageLease.Pose pose,int flags) {
         public Snapshot {Objects.requireNonNull(pose);if((flags&~STATE_FLAGS)!=0)throw new IllegalArgumentException("Package flags");}
     }
@@ -40,6 +47,7 @@ public final class PackageAuthorityRegion {
     private int nextIndex;
     private int frozenPending;
     private boolean closed;
+    private String lastDeltaRejection="none";
     private final java.util.function.DoubleSupplier tickRate;
     private int historyTicks=20;
     public int historyTicks(){return historyTicks=Math.max(historyTicks,PackageTickTiming.historyTicks(tickRate.getAsDouble()));}
@@ -113,49 +121,72 @@ public final class PackageAuthorityRegion {
         return delta(sender,candidateEpoch,candidateRevision,sequence,tick,changes,maximumDisplacement,2,0);
     }
     public Result deltaStepped(UUID sender,long epoch,long revision,long sequence,long tick,List<PackageDeltaCodec.Entry> changes,double maximumDisplacement,int mode,long simulationStep){
-        if(simulationStep<1||mode<0||mode>2)return Result.INVALID;
+        if(simulationStep<1||mode<0||mode>2){lastDeltaRejection="invalid step/mode";return Result.INVALID;}
         return delta(sender,epoch,revision,sequence,tick,changes,maximumDisplacement,mode,simulationStep);
     }
     private Result delta(UUID sender,long candidateEpoch,long candidateRevision,long sequence,long tick,
                         List<PackageDeltaCodec.Entry> changes,double maximumDisplacement,int positionMode,long simulationStep) {
         if(closed || !owner.equals(sender) || candidateEpoch!=epoch || candidateRevision!=revision
                 || expired(tick) || sequence<0 || sequence<=lastSequence)return Result.STALE;
-        if(simulationStep>0&&stepOrigin>=0&&(simulationStep<stepOrigin||simulationStep-stepOrigin>tick-stepOriginTick+historyTicks()))return Result.INVALID;
-        if(changes.isEmpty() || changes.size()>PackageDeltaCodec.MAX_ENTRIES)return Result.INVALID;
+        lastDeltaRejection="none";
+        if(simulationStep>0&&stepOrigin>=0&&(simulationStep<stepOrigin||simulationStep-stepOrigin>tick-stepOriginTick+historyTicks())){lastDeltaRejection="simulation step outside retained history";return Result.INVALID;}
+        if(changes.isEmpty() || changes.size()>PackageDeltaCodec.MAX_ENTRIES){lastDeltaRejection="empty/oversized delta";return Result.INVALID;}
         Entry[] targets=new Entry[changes.size()];Snapshot[] next=new Snapshot[changes.size()],previous=new Snapshot[changes.size()];
+        double[] allowances=new double[changes.size()];
         PackageDeltaCodec.Quantized[] quantized=new PackageDeltaCodec.Quantized[changes.size()];
         List<PackageDeltaCodec.Entry> observerChanges=positionMode!=0?new ArrayList<>(changes.size()):changes;
         int lastIndex=-1;
         try {
             for(int i=0;i<changes.size();i++) {
                 var change=changes.get(i);Entry entry=entries.get(change.id());
-                if(change.id()<=lastIndex)return Result.INVALID;
+                if(change.id()<=lastIndex){lastDeltaRejection="unsorted delta indices";return Result.INVALID;}
                 lastIndex=change.id();
                 // Dense, never-reused server baseline indices prove this is an already retired
                 // identity. In-flight updates after pickup must not reject unrelated live records.
-                if(entry==null){if(change.id()<nextIndex)continue;return Result.INVALID;}
-                if(entry.acknowledged==null)return Result.INVALID;
+                if(entry==null){if(change.id()<nextIndex)continue;lastDeltaRejection="unknown future baseline index";return Result.INVALID;}
+                if(entry.acknowledged==null){lastDeltaRejection="baseline not acknowledged";return Result.INVALID;}
                 targets[i]=entry;previous[i]=entry.target.snapshot();
                 if(change.mask()==PackageDeltaCodec.RELEASE) {
                     if(positionMode!=0)observerChanges.add(change);
                     next[i]=new Snapshot(entry.lease.committed(),entry.flags);continue;
                 }
-                if(!entry.target.eligible())return Result.INVALID;
+                if(!entry.target.eligible()){lastDeltaRejection="target no longer eligible";return Result.INVALID;}
                 var q=positionMode==2?PackageDeltaCodec.mergePredictedPosition(entry.acknowledged,change,entry.displacementX,entry.displacementY,entry.displacementZ):
                         positionMode==1?PackageDeltaCodec.mergeRelativePosition(entry.acknowledged,change):PackageDeltaCodec.merge(entry.acknowledged,change);
                 Snapshot pose=decode(q,entry.lease.committed().yaw());
                 double distance=distance(entry.lease.committed(),pose.pose());
                 long steps=motionSteps(entry,tick,simulationStep);
-                double allowance=maximumDisplacement*steps;
+                if(steps<0){lastDeltaRejection="simulation step moved backwards";return Result.INVALID;}
+                // Keep the original small allowance for ordinary motion, but allow the
+                // distance implied by a confirmed 50 ms velocity step. Fast rotating
+                // contraptions can move a supported package several blocks per step.
+                double speed=Math.max(speed(entry.lease.committed()),speed(pose.pose()));
+                // A moving Create collider can impart an impulse during the interval, so
+                // endpoint velocity can understate the displacement across a catch-up
+                // batch. Bound the correction per confirmed 50 ms step; do not let one
+                // legitimate high-RPM impact revoke every package in the region.
+                double minimumSteppedAllowance=maximumDisplacement+STEPPED_BASE_TOLERANCE;
+                double velocityAllowance=speed*(SIMULATION_STEP_SECONDS+VELOCITY_WINDOW_TOLERANCE_SECONDS)+MOTION_TOLERANCE;
+                double perStepAllowance=Math.max(Math.max(minimumSteppedAllowance,velocityAllowance),MAX_SWEEP_STEP_DISTANCE);
+                double allowance=perStepAllowance*steps;
+                double axisAllowance=(MAX_SWEEP_AXIS_DISPLACEMENT+SWEEP_AXIS_TOLERANCE)*steps;
+                double dx=Math.abs(pose.pose().x()-entry.lease.committed().x());
+                double dy=Math.abs(pose.pose().y()-entry.lease.committed().y());
+                double dz=Math.abs(pose.pose().z()-entry.lease.committed().z());
+                boolean outsideSweep=dx>axisAllowance||dy>axisAllowance||dz>axisAllowance;
                 // A delayed GPU confirmation can change flags/velocity while the physical
                 // step stays unchanged. It receives no additional position allowance.
-                if(steps<0||speed(pose.pose())>128
-                        ||(simulationStep==0&&(entry.motionTick==tick?entry.motionUsed:0)+distance>maximumDisplacement)
-                        ||!entry.lease.canCommit(sender,entry.lease.epoch(),sequence,tick,pose.pose(),allowance))return Result.INVALID;
+                if(speed(pose.pose())>MAX_PACKAGE_SPEED){lastDeltaRejection="package speed exceeds negotiated range: "+speed(pose.pose());return Result.INVALID;}
+                if((simulationStep==0&&(entry.motionTick==tick?entry.motionUsed:0)+distance>maximumDisplacement)
+                        ||outsideSweep||!entry.lease.canCommit(sender,entry.lease.epoch(),sequence,tick,pose.pose(),allowance)){
+                    lastDeltaRejection="displacement exceeds swept/velocity allowance: distance="+distance+", allowance="+allowance+", axisAllowance="+axisAllowance+", speed="+speed+", steps="+steps+", minimum="+minimumSteppedAllowance+", velocityAllowance="+velocityAllowance+", simulationStep="+simulationStep;
+                    return Result.INVALID;
+                }
+                allowances[i]=allowance;
                 next[i]=pose;quantized[i]=q;
                 if(positionMode!=0)observerChanges.add(new PackageDeltaCodec.Entry(change.id(),change.mask(),q));
             }
-        }catch(IllegalArgumentException | ArithmeticException invalid){return Result.INVALID;}
+        }catch(IllegalArgumentException | ArithmeticException invalid){lastDeltaRejection=invalid.getMessage()==null?"invalid delta value":invalid.getMessage();return Result.INVALID;}
         int applied=0;
         try {
             for(;applied<targets.length;applied++)if(targets[applied]!=null && !previous[applied].equals(next[applied]))targets[applied].target.apply(next[applied]);
@@ -170,8 +201,7 @@ public final class PackageAuthorityRegion {
             if(entry==null)continue;
             if(changes.get(i).mask()==PackageDeltaCodec.RELEASE){release(entry);continue;}
             double moved=distance(entry.lease.committed(),next[i].pose());
-            long steps=motionSteps(entry,tick,simulationStep);
-            if(!entry.lease.commit(sender,entry.lease.epoch(),sequence,tick,next[i].pose(),maximumDisplacement*steps))
+            if(!entry.lease.commit(sender,entry.lease.epoch(),sequence,tick,next[i].pose(),allowances[i]))
                 throw new IllegalStateException("Package commit validation changed on the server thread");
             if((changes.get(i).mask()&PackageDeltaCodec.POSITION)!=0) {
                 entry.displacementX=quantized[i].x()-entry.acknowledged.x();
@@ -285,6 +315,7 @@ public final class PackageAuthorityRegion {
     public long epoch(){return epoch;}
     public long revision(){return revision;}
     public long lastSequence(){return lastSequence;}
+    public String lastDeltaRejection(){return lastDeltaRejection;}
     public int size(){return entries.size();}
     public int simulatedCount(){return entries.size()-pending.size();}
     public PackageObserverFeed<Target> observers(){return observers;}

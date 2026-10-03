@@ -53,7 +53,7 @@ public final class PackageObserverGpuController implements AutoCloseable {
     private final Map<Integer,Entry> localEntries=new HashMap<>();
     private final TreeSet<Integer> reusable=new TreeSet<>();
     private final ByteBuffer full=BufferUtils.createByteBuffer(ClientboundPackageObserverPacket.MAX_RECORDS*128);
-    private final ByteBuffer compact=BufferUtils.createByteBuffer(ClientboundPackageObserverPacket.MAX_RECORDS*64);
+    private final ByteBuffer compact=BufferUtils.createByteBuffer(ClientboundPackageObserverPacket.MAX_RECORDS*PackageObserverGpu.COMPACT_BYTES);
     private final Entry[] additions=new Entry[ClientboundPackageObserverPacket.MAX_RECORDS],changes=new Entry[ClientboundPackageObserverPacket.MAX_RECORDS];
     private final Int2ObjectOpenHashMap<Entry> overlay=new Int2ObjectOpenHashMap<>();
     private final Set<PackageLease.Identity> addingIdentities=new HashSet<>();
@@ -156,11 +156,11 @@ public final class PackageObserverGpuController implements AutoCloseable {
             if(entry==null || entry.retired || p.stateTicks().get(i)<entry.tick)throw new IllegalArgumentException("Observer unknown/retired/backdated delta");
             changes[i]=entry;
             if(entry.local>=0) {
-                compact.position(compactCount*64);PackageObserverPatch.compactDelta(compact,entry.local,p.epoch(),p.stream(),deltaOperation,
+                compact.position(compactCount*PackageObserverGpu.COMPACT_BYTES);PackageObserverPatch.compactDelta(compact,entry.local,p.epoch(),p.stream(),deltaOperation,
                         change,clock.receipt(p.stateTicks().get(i)));compactCount++;
             }
         }
-        full.position(0).limit(fullCount*128);compact.position(0).limit(compactCount*64);return true;
+        full.position(0).limit(fullCount*128);compact.position(0).limit(compactCount*PackageObserverGpu.COMPACT_BYTES);return true;
     }
     private void finish() {
         var p=pending.packet();var stream=pendingStream;

@@ -44,8 +44,10 @@ public final class PackageFreeUpload {
         if(!region.contains(pose) || Math.abs(pose.yaw())>1_000_000)
             throw new IllegalArgumentException("Package free upload outside region");
         var q=PackageDeltaCodec.quantize(pose,region.originX(),region.originY(),region.originZ(),snapshot.flags());
-        long speed=(long)q.vx()*q.vx()+(long)q.vy()*q.vy()+(long)q.vz()*q.vz();
-        if(q.x()<0 || q.y()<0 || q.z()<0 || q.x()>=262144 || q.y()>=262144 || q.z()>=262144 || speed>1073741824L)
+        double speed=(double)q.vx()*q.vx()+(double)q.vy()*q.vy()+(double)q.vz()*q.vz();
+        long maxQuantizedSpeed=Math.round(PackageAuthorityRegion.MAX_PACKAGE_SPEED*PackageDeltaCodec.VELOCITY_SCALE);
+        if(q.x()<0 || q.y()<0 || q.z()<0 || q.x()>=262144 || q.y()>=262144 || q.z()>=262144
+                || speed>(double)maxQuantizedSpeed*maxQuantizedSpeed)
             throw new IllegalArgumentException("Package free upload requires full-state escape");
         float x=(float)(pose.x()-ox),z=(float)(pose.z()-oz);
         float halfWidth=offer.width()*.5f,halfHeight=offer.height()*.5f;

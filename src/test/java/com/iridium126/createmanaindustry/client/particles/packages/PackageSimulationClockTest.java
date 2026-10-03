@@ -83,6 +83,15 @@ class PackageSimulationClockTest {
         assertTrue(clock.historyGap());assertFalse(clock.due(22));assertEquals(0,clock.step());
         clock.rebase(1_050_000_000,22);clock.sample(1_100_000_000,23,false);clock.commit(23);assertEquals(1,clock.step());
     }
+    @Test void longRenderStallCanRebaselineWithoutDroppingGpuAuthority(){
+        var clock=new PackageSimulationClock();clock.sample(0,10,false);clock.sample(50_000_000L,11,false);clock.commit(11);
+        clock.sample(1_100_000_000L,33,false);
+        assertTrue(clock.historyGap());assertEquals(1,clock.step());
+        clock.rebase(1_100_000_000L,33);
+        clock.sample(1_150_000_000L,34,false);
+        assertTrue(clock.due(34));clock.commit(34);
+        assertEquals(2,clock.step());assertFalse(clock.historyGap());assertFalse(clock.due(34));
+    }
     @Test void pauseAndWrapAreSafe(){
         var clock=new PackageSimulationClock();long now=Long.MAX_VALUE-10_000_000;
         clock.sample(now,1,false);clock.sample(now+50_000_000,2,false);clock.commit(2);

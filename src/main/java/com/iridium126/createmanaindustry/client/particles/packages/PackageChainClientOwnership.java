@@ -14,7 +14,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.phys.Vec3;
 
 /** Native chain membership bridge. Lookup preparation is budgeted; an unindexed package
- * remains Create-owned. Steady state never traverses all owned objects or samples GPU poses. */
+ * remains Create-owned. Render admission visits only claims belonging to visible conveyors. */
 public final class PackageChainClientOwnership implements PackageChainClientHooks.Listener,AutoCloseable {
     public static final PackageChainClientOwnership INSTANCE=new PackageChainClientOwnership();
     private record Native(ChainConveyorPackage box,BlockPos connection) {}
@@ -149,6 +149,39 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
         for(var conveyor:dirty)((PackageChainRenderAccess)conveyor).cmi$publishRenderPackages();dirty.clear();
     }
     public int ownedCount(){return claims.size();}
+    /** Builds the main-camera candidate mask from the conveyors admitted by LevelRenderer. */
+    public void mainVisibilityMask(int[] mask,Set<ChainConveyorBlockEntity> visible) {
+        visibilityMask(mask,visible,false,0,0,0,0);
+    }
+    /** Mirrors Iris's block-entity shadow admission for each GPU-owned package candidate. */
+    public void shadowVisibilityMask(int[] mask,Set<ChainConveyorBlockEntity> visible,double cameraX,double cameraY,double cameraZ,
+            boolean cullByEntityFrustum,double maxDistance) {
+        visibilityMask(mask,visible,cullByEntityFrustum,cameraX,cameraY,cameraZ,maxDistance);
+    }
+    private void visibilityMask(int[] mask,Set<ChainConveyorBlockEntity> visible,boolean cullByEntityFrustum,
+            double cameraX,double cameraY,double cameraZ,double maxDistance) {
+        Objects.requireNonNull(mask);Arrays.fill(mask,0);
+        if(visible==null || visible.isEmpty())return;
+        for(ChainConveyorBlockEntity conveyor:visible) {
+            Index index=indices.get(conveyor);if(index==null || index.claims.isEmpty())continue;
+            BlockPos pos=conveyor.getBlockPos();
+            if(cullByEntityFrustum) {
+                if(boxCullerRejects(pos.getX()-1,pos.getY()-1,pos.getZ()-1,pos.getX()+1,pos.getY()+1,pos.getZ()+1,
+                        cameraX,cameraY,cameraZ,maxDistance))continue;
+            }
+            for(Claim claim:index.claims) {
+                int candidate=claim.candidate;
+                if(candidate<0 || (candidate>>>5)>=mask.length)throw new IllegalStateException("Chain visibility candidate outside GPU mask");
+                mask[candidate>>>5]|=1<<(candidate&31);
+            }
+        }
+    }
+    private static boolean boxCullerRejects(double minX,double minY,double minZ,double maxX,double maxY,double maxZ,
+            double cameraX,double cameraY,double cameraZ,double distance) {
+        return maxX<cameraX-distance || minX>cameraX+distance
+                || maxY<cameraY-distance || minY>cameraY+distance
+                || maxZ<cameraZ-distance || minZ>cameraZ+distance;
+    }
     public void released(ClientboundChainPackagePacket offer,PackageChainAuthority.Baseline baseline) {
         released(offer,baseline,null,0,0,0);
     }

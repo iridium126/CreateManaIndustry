@@ -41,8 +41,8 @@ public final class PackageObserverPatch {
         out.putLong(p,epoch).putLong(p+8,stream).putInt(p+16,local).putInt(p+20,change.id())
                 .putInt(p+24,change.mask()).putFloat(p+28,receipt);
         out.putInt(p+32,q.x()).putInt(p+36,q.y()).putInt(p+40,q.z()).putInt(p+44,q.flags());
-        out.putInt(p+48,(q.vx()&65535)|((q.vy()&65535)<<16)).putInt(p+52,(q.vz()&65535)|((q.yaw()&65535)<<16))
-                .putLong(p+56,sequence);
+        out.putInt(p+48,q.vx()).putInt(p+52,q.vy()).putInt(p+56,q.vz()).putInt(p+60,q.yaw())
+                .putLong(p+64,sequence).putLong(p+72,0);
     }
     private static void validate(ByteBuffer out,int local,int serverIndex,PackageLease.Identity identity,
                                  long epoch,long stream,long sequence,float receipt) {

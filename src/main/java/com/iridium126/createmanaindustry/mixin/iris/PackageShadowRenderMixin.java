@@ -14,9 +14,15 @@ public abstract class PackageShadowRenderMixin {
     @Shadow @Final private boolean shouldRenderEntities;
     @Shadow @Final private boolean shouldRenderBlockEntities;
     @Shadow private FrustumHolder entityFrustumHolder;
+    @Shadow @Final private float halfPlaneLength;
+    @Shadow @Final private float renderDistanceMultiplier;
+    @Shadow @Final private float entityShadowDistanceMultiplier;
     @Inject(method="renderShadows",at=@At(value="INVOKE_STRING",
             target="Lnet/minecraft/util/profiling/ProfilerFiller;popPush(Ljava/lang/String;)V",args="ldc=draw entities"))
     private void cmi$drawPackageShadows(LevelRendererAccessor renderer,Camera camera,CallbackInfo ci) {
-        PackageShaderHook.renderShadow(camera,entityFrustumHolder.getFrustum(),shouldRenderEntities,shouldRenderBlockEntities);
+        boolean hasEntityFrustum=entityShadowDistanceMultiplier!=1.0F && !(entityShadowDistanceMultiplier<0.0F);
+        double blockEntityDistance=halfPlaneLength*(renderDistanceMultiplier*entityShadowDistanceMultiplier);
+        PackageShaderHook.renderShadow(camera,entityFrustumHolder.getFrustum(),shouldRenderEntities,shouldRenderBlockEntities,
+                ShadowRenderer.visibleBlockEntities,hasEntityFrustum,blockEntityDistance);
     }
 }

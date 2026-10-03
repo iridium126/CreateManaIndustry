@@ -28,6 +28,28 @@ class PackageMovingCollisionCacheTest {
         cache.tickRate(20);assertTrue(cache.hasHistory(50));
         cache.captureHistory(249,false);assertNotNull(cache.history(249),"same-tick data must stay immutable");
     }
+    @Test void removedLastStructureTurnsAnUnavailableIntervalIntoAConfirmedEmptyScene(){
+        var source=new Source(new AtomicLong());source.length=1;
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);
+        assertTrue(cache.offer(source));cache.tick(1);cache.captureHistory(7,false);
+        assertTrue(cache.hasHistory(7));assertNull(cache.history(7));
+        cache.remove(source.key());assertTrue(cache.entries().isEmpty());
+        assertNull(cache.simulationFrame(7,false));
+        assertTrue(cache.simulationFrame(7,true).isEmpty());
+        assertNull(cache.history(7),"historical capture remains immutable");
+    }
+    @Test void removedStructureGeometryRemainsReferencedUntilItsLastInputFrameExpires(){
+        var source=new Source(new AtomicLong());source.length=1;
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);
+        assertTrue(cache.offer(source));cache.tick(1);cache.captureHistory(0,true);
+        var entry=cache.history(0).getFirst();
+        var reference=new PackageMovingCollisionCache.GeometryRevision(entry.identity,entry.revision());
+        assertTrue(cache.retainedGeometry().contains(reference));
+        cache.remove(source.key());
+        assertTrue(cache.retainedGeometry().contains(reference));
+        for(int tick=1;tick<=PackageSimulationClock.HISTORY_TICKS;tick++)cache.captureHistory(tick,true);
+        assertFalse(cache.retainedGeometry().contains(reference));
+    }
     static final PackageMovingGeometry.Pose IDENTITY=new PackageMovingGeometry.Pose(1,0,0,0,1,0,0,0,1,0,0,0);
     static class Source implements PackageMovingCollisionCache.Source {
         final Thread owner=Thread.currentThread();final PackageMovingGeometry.Key key=new PackageMovingGeometry.Key(0,UUID.randomUUID());
@@ -72,6 +94,18 @@ class PackageMovingCollisionCacheTest {
         source.poseMissing=true;cache.tick(1);assertFalse(cache.posesReady());
         source.poseMissing=false;cache.tick(1);assertTrue(cache.posesReady());assertNotNull(cache.entries().iterator().next().snapshot());
         cache.tick(0);assertFalse(cache.posesReady());
+    }
+    @Test void missingMovingBvhKeepsPoseAndBoundsForBodyLocalCollisionPauses() {
+        var source=new Source(new AtomicLong());source.length=1;source.missing=true;
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);
+        assertTrue(cache.offer(source));cache.tick(1);
+        var entry=cache.entries().iterator().next();
+        assertNull(entry.snapshot());assertTrue(cache.posesReady());
+        assertNotNull(entry.bounds);assertNotNull(entry.previous);assertNotNull(entry.current);
+        cache.captureHistory(4,true);
+        var historical=cache.history(4).getFirst();
+        assertNotNull(historical.bounds);assertNotNull(historical.previous);assertNotNull(historical.current);
+        assertNull(historical.snapshot());
     }
     @Test void iteratorChangesAreRetriedWithoutPublishingPartialGeometry() {
         var source=new Source(new AtomicLong());source.length=1;source.throwCursor=true;

@@ -16,8 +16,8 @@ void main() {
     vec3 initial=movingHistory[2u*i].xyz,extent=b.extentYaw.xyz;
     vec3 queryLo=min(initial,b.positionMass.xyz)-extent,queryHi=max(initial,b.positionMass.xyz)+extent;
     if(!movingCoarse(queryLo,queryHi)){dst[i]=b;return;}
-    // Missing geometry for a remote structure cannot affect this body. Only a body
-    // whose swept bounds touch it must pause until the replacement BVH is ready.
+    // A pose-only record still supplies conservative transformed source bounds.
+    // Unknown geometry pauses only packages whose swept bounds touch that source.
     if(!movingGeometryReady()){freezeForMissingCollision(b,initial);dst[i]=b;return;}
     vec3 localA=localPoint(initial,true),localB=localPoint(b.positionMass.xyz,false);
     mat3 ra=rawRotation(true),rb=rawRotation(false);vec3 sa=movingScale(true),sb=movingScale(false);ra[0]/=sa.x;ra[1]/=sa.y;ra[2]/=sa.z;rb[0]/=sb.x;rb[1]/=sb.y;rb[2]/=sb.z;
@@ -27,12 +27,24 @@ void main() {
     // endpoint local queries alone cannot prove swept coverage.
     bool rotating=uintBitsToFloat(movingPose[14].x)>1e-6;
     vec3 lo=min(localA-ea,localB-eb)-vec3(.001),hi=max(localA+ea,localB+eb)+vec3(.001);
+    float minimumScale=max(1e-6,min(min(sa.x,min(sa.y,sa.z)),min(sb.x,min(sb.y,sb.z))));
+    // During rotation endpoint local AABBs do not bound the path. A sphere around
+    // the local origin does: relative body position is linear before rotation,
+    // rotation preserves its norm, and minimumScale bounds nonuniform scaling.
+    float localSweepRadius=(max(length(initial-movingTranslation(true)),
+            length(b.positionMass.xyz-movingTranslation(false)))+length(extent))/minimumScale+.001;
+    float localSweepRadiusSquared=localSweepRadius*localSweepRadius;
     uint node=0u,visits=0u;bool grounded=false;vec3 velocity=b.velocityGround.xyz;
     while(node<movingNodeCount()) {
-        if(++visits>1024u){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
+        // MAX_BOXES=4096 yields at most 8191 preorder BVH nodes. The work remains
+        // strictly bounded while every supported node can be visited after culling.
+        if(++visits>8192u){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
         MovingNode box=movingNodes[node];uint escape=floatBitsToUint(box.lo.w);
         if(escape<=node||escape>movingNodeCount()){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
-        if(!rotating&&(any(greaterThan(lo,box.hi.xyz))||any(lessThan(hi,box.lo.xyz)))){node=escape;continue;}
+        if(rotating) {
+            vec3 nearest=clamp(vec3(0),box.lo.xyz,box.hi.xyz);
+            if(dot(nearest,nearest)>localSweepRadiusSquared){node=escape;continue;}
+        } else if(any(greaterThan(lo,box.hi.xyz))||any(lessThan(hi,box.lo.xyz))){node=escape;continue;}
         if(floatBitsToUint(box.hi.w)==0u){node++;continue;}
         vec3 normal;float gap=movingGap(b.positionMass.xyz,extent,box,1.,normal);
         // Preserve the entry face at adjacent platform edges. A body that was

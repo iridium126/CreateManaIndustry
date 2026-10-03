@@ -6,6 +6,7 @@ import java.util.function.LongSupplier;
 
 /** Owner-thread incremental capture plus immutable worker BVH construction. */
 public final class PackageMovingCollisionCache {
+    public record GeometryRevision(int identity,long revision) {}
     public interface Cursor {
         boolean hasNext();
         /** Null pauses capture (missing chunk/context); empty means a confirmed empty block. */
@@ -57,6 +58,18 @@ public final class PackageMovingCollisionCache {
         while(history.size()>historyTicks)history.pollFirstEntry();
     }
     public List<Entry> history(long tick){owner();return history.get(tick);}
+    /** A missed moving-scene sample may be treated as empty only after a complete discovery
+     * confirms there are no moving sources left. Keep the recorded history itself immutable. */
+    public List<Entry> simulationFrame(long tick,boolean confirmedEmptyScene){
+        owner();List<Entry> frame=history.get(tick);return frame==null&&confirmedEmptyScene?List.of():frame;
+    }
+    /** Geometry versions referenced by retained input frames remain live in the GPU atlas. */
+    public Set<GeometryRevision> retainedGeometry(){
+        owner();Set<GeometryRevision> result=new HashSet<>();
+        for(List<Entry> frame:history.values())if(frame!=null)for(Entry entry:frame)
+            result.add(new GeometryRevision(entry.identity,entry.revision));
+        return Set.copyOf(result);
+    }
     public boolean hasHistory(long tick){owner();return history.containsKey(tick);}
     private final int capacity;private int nextIdentity=1;private long serial,frame,lastCapture,overruns;
     private final java.util.concurrent.atomic.AtomicInteger workers=new java.util.concurrent.atomic.AtomicInteger();
