@@ -70,10 +70,10 @@ bool sweepWorld(Body b,vec3 p,vec3 motion,inout float closest,inout vec3 normal)
     }
     return true;
 }
-// Jacobi can push beyond the predicted bounds. Validate the final contact correction before
-// publishing it, including neighbour geometry; unknown sections must never become air.
-bool coveredWorld(Body b) {
-    vec3 lo=b.positionMass.xyz-b.extentYaw.xyz,hi=b.positionMass.xyz+b.extentYaw.xyz;
+// A collision-frozen body must not be resumed until its next swept range is
+// available. Check cells and unsupported markers without repeating the shape
+// sweep; this also prevents a one-step unfreeze/refreeze pulse at section seams.
+bool worldAvailable(vec3 lo,vec3 hi) {
     ivec3 first,last,cached=ivec3(0);int slot=-2;
     if(!worldBounds(lo,hi,first,last))return false;
     if(clearWorld(first,last))return true;
@@ -82,6 +82,15 @@ bool coveredWorld(Body b) {
         if(!worldCell(ivec3(x,y,z),lo,hi,cached,slot,cell,base))return false;
     }
     return true;
+}
+bool worldSweepAvailable(Body b,vec3 p,vec3 motion) {
+    return worldAvailable(min(p,p+motion)-b.extentYaw.xyz,max(p,p+motion)+b.extentYaw.xyz);
+}
+// Jacobi can push beyond the predicted bounds. Validate the final contact correction before
+// publishing it, including neighbour geometry; unknown sections must never become air.
+bool coveredWorld(Body b) {
+    vec3 lo=b.positionMass.xyz-b.extentYaw.xyz,hi=b.positionMass.xyz+b.extentYaw.xyz;
+    return worldAvailable(lo,hi);
 }
 bool solveWorld(Body b,out vec3 correction,inout vec3 velocity,inout bool grounded,out float friction) {
     vec3 lo=b.positionMass.xyz-b.extentYaw.xyz,hi=b.positionMass.xyz+b.extentYaw.xyz;

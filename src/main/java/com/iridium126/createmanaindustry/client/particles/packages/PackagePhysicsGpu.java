@@ -18,7 +18,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     private static final String[] NAMES={"predict","grid","solve","chain","history","predict_world","solve_world","world_support","support_prepare","support_jump","support_apply","solve_support","moving_prepare","moving_carry","moving_contacts","solve_moving","chain_tracked","forces","forces_framed","velocity_capture","dynamic_sweep","fast_sweep_cells","resume"};
     private static final String[] UNIFORMS={"uCount","uTableMask","uCellSize","uDt","uGravity","uDrag","uFriction","uChain",
             "uWorldReady","uWorldOriginSection","uWorldTableMask","uWorldSlotWords","uWorldShapeCapacity","uStaticBodies",
-            null,"uCandidateBudget",null,null,"uMovingReady","uMovingSweep","uMovingFriction","uFirst","uLength","uTrackCount","uForceNodes","uForceSources","uEnvironmentReady"};
+            null,"uCandidateBudget",null,null,"uMovingReady","uMovingSweep","uMovingFriction","uFirst","uLength","uTrackCount","uForceNodes","uForceSources","uEnvironmentReady","uCheckWorld"};
     private final int[] programs=new int[NAMES.length], states=new int[2];
     private final int[][] locations=new int[NAMES.length][UNIFORMS.length];
     private final int[] uploadedCounts=new int[NAMES.length];
@@ -268,7 +268,10 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         int predict=world==null?0:5;
         int solve=world==null?2:(supportProjection?11:6);
         if(!moving.isEmpty())solve=15;
-        bind(22);dispatch();
+        bind(22);f(22,3,dt);f(22,4,32f);f(22,5,(float)Math.pow(.98,dt*20));
+        GL20.glUniform1i(locations[22][27],world==null?0:1);
+        if(world!=null)world.bind(locations[22],8,true);
+        dispatch();
         captureStepVelocity();captureHistory(3);
         for(var view:moving) {
             bind(12);view.bind(locations[12][18]);GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);

@@ -72,6 +72,24 @@ class PackageCollisionCacheTest {
         assertEquals(15,snapshot.coordinate(0,0));assertEquals(15.5f,snapshot.coordinate(0,4));
         assertEquals(2,snapshot.flags(4095));
     }
+    @Test void capturedCellComparisonUsesTheLatestPublishableCollisionInput() {
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);
+        var shape=List.of(new PackageCollisionCache.Box(0,0,0,1,1,1));
+        var current=new PackageCollisionCache.Cell(shape,.6f,0);
+        var changedShape=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,.5f,1)),.6f,0);
+        var changedMaterial=new PackageCollisionCache.Cell(shape,.8f,0);
+        var changedFlags=new PackageCollisionCache.Cell(shape,.6f,PackageWorldCollisionSource.MACHINE);
+        cache.request(SECTION);
+        assertNull(cache.capturedCellMatches(SECTION,0,current),"a not-yet-captured cell will observe the latest world state");
+        cache.tick((s,i)->i==0?current:AIR,Long.MAX_VALUE);
+        assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,0,current),"an in-flight bake retains its immutable cell input");
+        assertEquals(Boolean.FALSE,cache.capturedCellMatches(SECTION,0,changedShape));
+        assertEquals(Boolean.FALSE,cache.capturedCellMatches(SECTION,0,changedMaterial));
+        assertEquals(Boolean.FALSE,cache.capturedCellMatches(SECTION,0,changedFlags));
+        tasks.remove().run();cache.tick((s,i)->AIR,Long.MAX_VALUE);
+        assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,0,current),"the published snapshot can be compared without rebuilding the section");
+        assertEquals(Boolean.FALSE,cache.capturedCellMatches(SECTION,0,changedShape));
+    }
     private static void finish(PackageCollisionCache cache,ArrayDeque<Runnable> tasks) {
         // Worker scheduling remains bounded at four, including evicted work.
         for(int i=0;i<20 && cache.readyCount()!=cache.size();i++) {

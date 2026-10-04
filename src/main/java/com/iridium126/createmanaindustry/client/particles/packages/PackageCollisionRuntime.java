@@ -246,11 +246,37 @@ public final class PackageCollisionRuntime {
         return count>MAX_REQUEST_SECTIONS?null:result;
     }
     public static void blockChanged(ClientLevel level,BlockPos position) {
-        if(current!=null && current.level==level){current.cache.invalidateBlock(position.getX(),position.getY(),position.getZ());if(current.movingSources!=null)current.movingSources.blockChanged(position);}
+        var runtime=current;if(runtime==null||runtime.level!=level)return;
+        owner();
+        if(runtime.collisionRequested)invalidateStaticCollisionIfChanged(runtime,position);
+        if(runtime.movingSources!=null)runtime.movingSources.blockChanged(position);
     }
     public static void blockEntityChanged(ClientLevel level,BlockPos position){
-        owner();if(current==null||current.level!=level||!current.collisionRequested)return;
-        if(PackageWorldCollisionSource.blockEntityAffectsCollision(level.getBlockState(position)))blockChanged(level,position);
+        blockChanged(level,position);
+    }
+    private static void invalidateStaticCollisionIfChanged(PackageCollisionRuntime runtime,BlockPos position) {
+        int x=position.getX(),y=position.getY(),z=position.getZ();
+        if(capturedCollisionCellChanged(runtime,x,y,z)){runtime.cache.invalidateBlock(x,y,z);return;}
+        // Vanilla connected shapes (fences, walls, etc.) can depend on a neighboring state.
+        // If the edited cell itself is unchanged, compare the one-block neighborhood before
+        // suppressing invalidation; boundary section coverage is revoked only on a real delta.
+        for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++) {
+            if(dx==0&&dy==0&&dz==0)continue;
+            if(capturedCollisionCellChanged(runtime,x+dx,y+dy,z+dz)){runtime.cache.invalidateBlock(x,y,z);return;}
+        }
+    }
+    private static boolean capturedCollisionCellChanged(PackageCollisionRuntime runtime,int x,int y,int z) {
+        var section=new PackageCollisionCache.Section(x>>4,y>>4,z>>4);
+        int cell=(y&15)<<8|(z&15)<<4|(x&15);
+        if(!runtime.cache.hasCapturedCell(section,cell))return false;
+        PackageCollisionCache.Cell live;
+        try{live=runtime.source.capture(section,cell);}
+        catch(RuntimeException|LinkageError unavailable){return true;}
+        if(live==null)return false;
+        Boolean unchanged=runtime.cache.capturedCellMatches(section,cell,live);
+        // Unknown cells have not been captured in the current revision; the queued capture
+        // will read their latest world state without restarting the section.
+        return Boolean.FALSE.equals(unchanged);
     }
     /** A Sable plot edit changes moving geometry only; do not recapture the parent world's static cells. */
     public static void movingBlockChanged(ClientLevel level,BlockPos position) {

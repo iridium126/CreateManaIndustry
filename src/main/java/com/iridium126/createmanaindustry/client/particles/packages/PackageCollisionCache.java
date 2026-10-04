@@ -65,6 +65,23 @@ public final class PackageCollisionCache {
         public float coordinate(int box, int component) { return boxes[box*6+component]; }
         public float friction(int cell) { return friction[cell]; }
         public int flags(int cell) { return flags[cell]; }
+        private boolean matchesCell(int cell,Cell candidate) {
+            if(cell<0||cell>=BLOCKS||flags[cell]!=candidate.flags
+                    ||Float.floatToIntBits(friction[cell])!=Float.floatToIntBits(candidate.friction))return false;
+            int start=offsets[cell],end=offsets[cell+1];
+            if(end-start!=candidate.shapes.size())return false;
+            int x=cell&15,y=cell>>>8,z=(cell>>>4)&15;
+            for(int i=0;i<candidate.shapes.size();i++) {
+                Box shape=candidate.shapes.get(i);int p=(start+i)*6;
+                if(Float.floatToIntBits(boxes[p])!=Float.floatToIntBits(x+shape.minX)
+                        ||Float.floatToIntBits(boxes[p+1])!=Float.floatToIntBits(y+shape.minY)
+                        ||Float.floatToIntBits(boxes[p+2])!=Float.floatToIntBits(z+shape.minZ)
+                        ||Float.floatToIntBits(boxes[p+3])!=Float.floatToIntBits(x+shape.maxX)
+                        ||Float.floatToIntBits(boxes[p+4])!=Float.floatToIntBits(y+shape.maxY)
+                        ||Float.floatToIntBits(boxes[p+5])!=Float.floatToIntBits(z+shape.maxZ))return false;
+            }
+            return true;
+        }
         public int gpuShapeCount(){return gpuShapeCount;}
         /** Only a fully captured, flag-free empty section can use the GPU coarse fast path. */
         public boolean gpuEmpty(){return gpuEmpty;}
@@ -75,6 +92,8 @@ public final class PackageCollisionCache {
         long revision;
         int cursor;
         Cell[] cells;
+        Cell[] futureCells;
+        long futureRevision;
         Snapshot published;
         CompletableFuture<Snapshot> future;
         boolean queued;
@@ -135,7 +154,7 @@ public final class PackageCollisionCache {
         // Multiple edits before any new capture share one invalidation. An obsolete worker
         // must still finish, but can never publish into the replacement revision.
         if(work.revision!=0 && work.cursor==0 && work.cells==null && work.published==null && work.future==null && work.queued)return;
-        work.revision=++revision; work.cursor=0; work.cells=null; work.published=null;
+        work.revision=++revision; work.cursor=0; work.cells=null;work.futureCells=null;work.futureRevision=0;work.published=null;
         listener.invalidated(section,work.revision);
         // Keep an obsolete worker in flight until it completes: repeated edits cannot flood the executor.
         enqueue(section,work);
@@ -177,6 +196,27 @@ public final class PackageCollisionCache {
     public int readyCount(){owner();int count=0;for(Work work:sections.values())if(work.published!=null)count++;return count;}
     private static long column(int x,int z){return ((long)x<<32)|(z&0xffffffffL);}
 
+    /**
+     * Compare a live cell with the newest capture that could still publish. A null result means
+     * the active capture has not reached this cell, so it will observe the live value directly.
+     */
+    public Boolean capturedCellMatches(Section section,int cell,Cell live) {
+        owner();if(cell<0||cell>=BLOCKS)return null;
+        Work work=sections.get(section);if(work==null)return null;
+        if(work.published!=null)return work.published.matchesCell(cell,live);
+        if(work.futureCells!=null&&work.futureRevision==work.revision)
+            return work.futureCells[cell]!=null&&work.futureCells[cell].equals(live);
+        if(work.cells!=null&&cell<work.cursor&&work.cells[cell]!=null)return work.cells[cell].equals(live);
+        return null;
+    }
+    public boolean hasCapturedCell(Section section,int cell) {
+        owner();if(cell<0||cell>=BLOCKS)return false;
+        Work work=sections.get(section);if(work==null)return false;
+        return work.published!=null
+                ||work.futureCells!=null&&work.futureRevision==work.revision&&work.futureCells[cell]!=null
+                ||work.cells!=null&&cell<work.cursor&&work.cells[cell]!=null;
+    }
+
     /** Poll and capture share the same budget; never joins an unfinished worker. */
     public void tick(Source source, long budgetNanos) {
         owner(); if(budgetNanos<=0)return;
@@ -191,10 +231,12 @@ public final class PackageCollisionCache {
                     if(!w.future.isCompletedExceptionally() && !w.future.isCancelled()) {
                         Snapshot result=w.future.getNow(null);
                         if(result!=null && result.revision==w.revision){
-                            w.published=result;bakeTimes[bakeCursor]=result.bakeNanos;bakeCursor=(bakeCursor+1)%bakeTimes.length;
+                            w.published=result;w.futureCells=null;w.futureRevision=0;
+                            bakeTimes[bakeCursor]=result.bakeNanos;bakeCursor=(bakeCursor+1)%bakeTimes.length;
                             bakeSamples=Math.min(bakeSamples+1,bakeTimes.length);listener.published(section,result);
                         }
                     }
+                    else {w.futureCells=null;w.futureRevision=0;}
                     w.future=null;
                 }
                 if(w.published!=null)continue;
@@ -221,7 +263,7 @@ public final class PackageCollisionCache {
                         w.future=CompletableFuture.supplyAsync(() -> {
                             try { return pack(version,captured); } finally { accounting.decrementAndGet(); }
                         },executor);
-                        w.cells=null; w.cursor=0;
+                        w.futureCells=captured;w.futureRevision=version;w.cells=null; w.cursor=0;
                     } catch(java.util.concurrent.RejectedExecutionException rejected) { workers.decrementAndGet(); }
                 }
             }

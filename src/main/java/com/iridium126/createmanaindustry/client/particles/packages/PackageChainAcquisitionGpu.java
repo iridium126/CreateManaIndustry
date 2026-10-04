@@ -128,8 +128,10 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
         if(packet.action()==ClientboundChainPackagePacket.TRACK) {
             var t=packet.track();var previous=table.get(t.index());
             if(previous!=null){if(!previous.equals(t))throw new IllegalStateException("Conflicting chain table namespace");return true;}
-            if(t.index()!=table.size() || table.size()>=tracks.trackCapacity() || trackWork.size()>=MAX_TRANSITIONS)
-                throw new IllegalStateException("Chain table order/capacity");
+            if(t.index()!=table.size())
+                throw new IllegalStateException("Chain table index order: received="+t.index()+", expected="+table.size());
+            if(table.size()>=tracks.trackCapacity())
+                throw new IllegalStateException("Chain table capacity reached: capacity="+tracks.trackCapacity());
             table.put(t.index(),t);trackWork.addLast(t);return true;
         }
         var b=packet.baseline();Entry entry=entries.get(b.index());

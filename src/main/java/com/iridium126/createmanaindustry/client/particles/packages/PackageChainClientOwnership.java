@@ -184,8 +184,10 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
             double cameraX,double cameraY,double cameraZ,double maxDistance) {
         Objects.requireNonNull(mask);Arrays.fill(mask,0);
         if(visible==null || visible.isEmpty())return;
+        var camera=new Vec3(cameraX,cameraY,cameraZ);
         for(ChainConveyorBlockEntity conveyor:visible) {
             Index index=indices.get(conveyor);if(index==null || index.claims.isEmpty())continue;
+            if(frames.localRenderCamera(index.claims.iterator().next().track.index(),camera)==null)continue;
             BlockPos pos=conveyor.getBlockPos();
             if(cullByEntityFrustum) {
                 if(boxCullerRejects(pos.getX()-1,pos.getY()-1,pos.getZ()-1,pos.getX()+1,pos.getY()+1,pos.getZ()+1,

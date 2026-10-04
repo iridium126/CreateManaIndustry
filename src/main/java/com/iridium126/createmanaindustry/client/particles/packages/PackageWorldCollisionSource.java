@@ -14,12 +14,6 @@ public final class PackageWorldCollisionSource implements PackageCollisionCache.
     private final Level level;
     private final BlockPos.MutableBlockPos position=new BlockPos.MutableBlockPos();
     public PackageWorldCollisionSource(Level level){this.level=java.util.Objects.requireNonNull(level);}
-    /** Create's empty-context belt collider, friction, fluid and machine flags depend only
-     * on BlockState. Inventory/passenger/speed update tags do not change this GPU input.
-     * Exact class match keeps overrides in other mods on the conservative invalidation path. */
-    public static boolean blockEntityAffectsCollision(net.minecraft.world.level.block.state.BlockState state){
-        return state.getBlock().getClass()!=com.simibubi.create.content.kinetics.belt.BeltBlock.class;
-    }
     @Override public PackageCollisionCache.Cell capture(PackageCollisionCache.Section section,int index) {
         if(Thread.currentThread()!=owner)throw new IllegalStateException("World capture off owner thread");
         position.set((section.x()<<4)+(index&15),(section.y()<<4)+(index>>>8),(section.z()<<4)+((index>>>4)&15));

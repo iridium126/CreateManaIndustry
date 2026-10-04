@@ -2166,6 +2166,11 @@ public class PackageGpuValidation {
             GL11.glFinish();var requested=new java.util.HashSet<PackageCollisionCache.Section>();prefetch.poll(requested::add);
             check(requested.equals(java.util.Set.of(lower)),"far look-ahead starved the section below the body: "+requested);
             var paused=read(physics);check(paused.getFloat(4)==1.25f&&paused.getFloat(60)==PackagePhysicsGpu.COLLISION_FROZEN,"missing section did not preserve stable pose");
+            float retainedVelocity=paused.getFloat(20);
+            try(var world=atlas.view(0,0,0)){physics.stepWorld(.05f,world);}
+            paused=read(physics);
+            check(paused.getFloat(4)==1.25f&&paused.getFloat(60)==PackagePhysicsGpu.COLLISION_FROZEN
+                    &&paused.getFloat(20)==retainedVelocity,"uncovered world section caused a repeated resume/refreeze step");
             var meta=BufferUtils.createByteBuffer(32);deltaMeta(meta,0,1);detector.upload(meta,BufferUtils.createByteBuffer(32),1);
             var capture=detector.capture(physics.stateBuffer(),1,0,0,0,1);var raw=captureRecords(capture);
             check(raw.remaining()==64&&raw.getInt(28)==0&&raw.getInt(36)==3072,"paused section pose was omitted from confirmation");

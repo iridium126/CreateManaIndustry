@@ -45,7 +45,50 @@ class PackageCollisionHookContractTest {
             for(String name:List.of("packages.PackageCollisionPacketMixin","packages.PackageCollisionChunkMixin")){assertTrue(clients.contains(name));assertFalse(shared.contains(name));}
         }
     }
-    @Test void successfulClientBlockEditsImmediatelyRevokeCollisionCoverage() throws Exception {
+    @Test void blockAndBlockEntityUpdatesRevokeOnlyChangedCapturedCollisionInputs() throws Exception {
+        var runtime=type("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionRuntime");
+        var handler=runtime.methods.stream().filter(method->method.name.equals("blockChanged")
+                &&method.desc.equals("(Lnet/minecraft/client/multiplayer/ClientLevel;Lnet/minecraft/core/BlockPos;)V"))
+                .findFirst().orElseThrow();
+        assertTrue(java.util.stream.StreamSupport.stream(handler.instructions.spliterator(),false)
+                .filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast)
+                .anyMatch(call->call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionRuntime")
+                        &&call.name.equals("invalidateStaticCollisionIfChanged")),
+                "block changes must pass through the captured-input comparison");
+        var comparisonPath=runtime.methods.stream().filter(method->method.name.equals("capturedCollisionCellChanged"))
+                .findFirst().orElseThrow();
+        int known=-1,capture=-1,comparison=-1;
+        for(int i=0;i<comparisonPath.instructions.size();i++) {
+            var instruction=comparisonPath.instructions.get(i);
+            if(instruction instanceof MethodInsnNode call&&call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionCache")
+                    &&call.name.equals("hasCapturedCell"))known=i;
+            if(instruction instanceof MethodInsnNode call&&call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageWorldCollisionSource")
+                    &&call.name.equals("capture"))capture=i;
+            if(instruction instanceof MethodInsnNode call&&call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionCache")
+                    &&call.name.equals("capturedCellMatches"))comparison=i;
+        }
+        assertTrue(known>=0&&capture>known&&comparison>capture,
+                "only captured cells should be sampled and compared before deciding on invalidation");
+        var invalidationPath=runtime.methods.stream().filter(method->method.name.equals("invalidateStaticCollisionIfChanged"))
+                .findFirst().orElseThrow();
+        int sample=-1,invalidation=-1;
+        for(int i=0;i<invalidationPath.instructions.size();i++) {
+            var instruction=invalidationPath.instructions.get(i);
+            if(instruction instanceof MethodInsnNode call&&call.name.equals("capturedCollisionCellChanged"))sample=i;
+            if(instruction instanceof MethodInsnNode call&&call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionCache")
+                    &&call.name.equals("invalidateBlock"))invalidation=i;
+        }
+        assertTrue(sample>=0&&invalidation>sample,"a changed captured neighborhood must invalidate its sections");
+        var blockEntity=runtime.methods.stream().filter(method->method.name.equals("blockEntityChanged")
+                &&method.desc.equals("(Lnet/minecraft/client/multiplayer/ClientLevel;Lnet/minecraft/core/BlockPos;)V"))
+                .findFirst().orElseThrow();
+        assertTrue(java.util.stream.StreamSupport.stream(blockEntity.instructions.spliterator(),false)
+                .filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast)
+                .anyMatch(call->call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionRuntime")
+                        &&call.name.equals("blockChanged")),
+                "all block-entity packets should use the same captured-input comparison, with no block-type allowlist");
+    }
+    @Test void successfulClientBlockEditsAreComparedAgainstCapturedCollisionInputs() throws Exception {
         var target=type("net/minecraft/world/level/chunk/LevelChunk");
         assertTrue(target.methods.stream().anyMatch(method->method.name.equals("setBlockState")
                 &&method.desc.equals("(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;Z)Lnet/minecraft/world/level/block/state/BlockState;")),
@@ -71,7 +114,7 @@ class PackageCollisionHookContractTest {
         }
         for(var instruction:hook.instructions)if(instruction instanceof TypeInsnNode type&&type.desc.equals("net/minecraft/client/multiplayer/ClientLevel"))checksClientLevel=true;
         assertTrue(checksChangedEdit&&getsOwningLevel&&checksClientLevel&&invalidates,
-                "only changed client-side LevelChunk writes should invalidate package collision coverage");
+                "successful client-side LevelChunk writes must pass through collision-input comparison");
 
         var allvr=type("com/iridium126/createmanaindustry/mixin/allvr/AllvrClientLevelMixin");
         var cubeHook=allvr.methods.stream().filter(method->method.name.equals("allvr$clientSetBlock")).findFirst().orElseThrow();
