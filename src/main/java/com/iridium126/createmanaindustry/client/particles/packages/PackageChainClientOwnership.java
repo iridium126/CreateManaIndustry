@@ -9,12 +9,14 @@ import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorBlockEnti
 import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorPackage;
 import com.simibubi.create.content.logistics.box.PackageItem;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.culling.Frustum;
+import net.neoforged.neoforge.client.ClientHooks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.phys.Vec3;
 
 /** Native chain membership bridge. Lookup preparation is budgeted; an unindexed package
- * remains Create-owned. Render admission visits only claims belonging to visible conveyors. */
+ * remains Create-owned. Render admission tests owning conveyors, never individual package bounds. */
 public final class PackageChainClientOwnership implements PackageChainClientHooks.Listener,AutoCloseable {
     public static final PackageChainClientOwnership INSTANCE=new PackageChainClientOwnership();
     private record Native(ChainConveyorPackage box,BlockPos connection) {}
@@ -25,7 +27,7 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
         Iterator<ChainConveyorPackage> loop,travelling;
         Iterator<Map.Entry<BlockPos,List<ChainConveyorPackage>>> connections;
         BlockPos connection;
-        boolean queued,replacing;
+        boolean queued,replacing,removed;
         int rebinding;
         Index(ChainConveyorBlockEntity c){conveyor=c;restart();}
         void restart(){boxes.clear();loop=conveyor.getLoopingPackages().iterator();connections=conveyor.getTravellingPackages().entrySet().iterator();travelling=Collections.emptyIterator();connection=null;}
@@ -46,15 +48,16 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
     private final Set<ChainConveyorBlockEntity> dirty=Collections.newSetFromMap(new IdentityHashMap<>());
     private PackageChainAcquisitionGpu acquisition;
     private PackageChainCheckpointGpu checkpoints;
+    private PackageChainFrameScene frames;
     private double ox,oy,oz;
     private Consumer<String> failed;
     private long epoch;
     private boolean closing;
     private PackageChainClientOwnership() {}
-    public void attach(PackageChainAcquisitionGpu acquisition,PackageChainCheckpointGpu checkpoints,double ox,double oy,double oz,Consumer<String> failed) {
+    public void attach(PackageChainAcquisitionGpu acquisition,PackageChainCheckpointGpu checkpoints,PackageChainFrameScene frames,double ox,double oy,double oz,Consumer<String> failed) {
         if(this.acquisition!=null)throw new IllegalStateException("Chain native ownership already attached");
         if(checkpoints==null || checkpoints.epoch()!=acquisition.epoch())throw new IllegalArgumentException("Chain checkpoint epoch");
-        this.checkpoints=checkpoints;this.ox=ox;this.oy=oy;this.oz=oz;
+        this.checkpoints=checkpoints;this.frames=Objects.requireNonNull(frames);this.ox=ox;this.oy=oy;this.oz=oz;
         this.acquisition=Objects.requireNonNull(acquisition);this.failed=Objects.requireNonNull(failed);epoch=acquisition.epoch();
     }
     public void track(ClientboundChainPackagePacket.Track track) {
@@ -138,7 +141,11 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
                 dirty.add(claim.index.conveyor);
                 if(claim.index.replacing){claim.box=null;return;}
                 if(removed)claim.box=null;
-                if(!claim.releasing && !closing && acquisition!=null)acquisition.requestRelease(claim.offer.baseline().index());
+                // A conveyor lifecycle packet is retired by the server against this exact
+                // track. Let its RELEASED baseline win; a client-side RELEASE here can race
+                // that packet and freeze an older pose into a transformed conveyor.
+                if(!claim.releasing && !claim.index.removed && !closing && acquisition!=null)
+                    acquisition.requestRelease(claim.offer.baseline().index());
             }
         });
         if(result)ChainConveyorPackage.physicsDataCache.get(claim.index.conveyor.getLevel()).invalidate(claim.box.netId);
@@ -149,9 +156,23 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
         for(var conveyor:dirty)((PackageChainRenderAccess)conveyor).cmi$publishRenderPackages();dirty.clear();
     }
     public int ownedCount(){return claims.size();}
-    /** Builds the main-camera candidate mask from the conveyors admitted by LevelRenderer. */
-    public void mainVisibilityMask(int[] mask,Set<ChainConveyorBlockEntity> visible) {
-        visibilityMask(mask,visible,false,0,0,0,0);
+    /** Create's chain renderer is off-screen/global with a 256-block view distance.
+     * Sodium owns separate global BE lists, so LevelRenderer's vanilla lists cannot
+     * supply this mask. Check the renderer once per owning conveyor instead. */
+    public void mainVisibilityMask(int[] mask,Frustum frustum) {
+        Objects.requireNonNull(mask);Arrays.fill(mask,0);
+        var mc=Minecraft.getInstance();var dispatcher=mc.getBlockEntityRenderDispatcher();
+        var camera=mc.gameRenderer.getMainCamera().getPosition();
+        for(var index:indices.values()) {
+            var conveyor=index.conveyor;
+            if(index.claims.isEmpty()||conveyor.isRemoved()||conveyor.getLevel()!=mc.level)continue;
+            var localCamera=frames.localRenderCamera(index.claims.iterator().next().track.index(),camera);
+            if(localCamera==null)continue;
+            var renderer=dispatcher.getRenderer(conveyor);
+            if(renderer==null||!renderer.shouldRender(conveyor,localCamera))continue;
+            if(!renderer.shouldRenderOffScreen(conveyor)&&!ClientHooks.isBlockEntityRendererVisible(dispatcher,conveyor,frustum))continue;
+            admit(mask,index);
+        }
     }
     /** Mirrors Iris's block-entity shadow admission for each GPU-owned package candidate. */
     public void shadowVisibilityMask(int[] mask,Set<ChainConveyorBlockEntity> visible,double cameraX,double cameraY,double cameraZ,
@@ -169,11 +190,14 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
                 if(boxCullerRejects(pos.getX()-1,pos.getY()-1,pos.getZ()-1,pos.getX()+1,pos.getY()+1,pos.getZ()+1,
                         cameraX,cameraY,cameraZ,maxDistance))continue;
             }
-            for(Claim claim:index.claims) {
-                int candidate=claim.candidate;
-                if(candidate<0 || (candidate>>>5)>=mask.length)throw new IllegalStateException("Chain visibility candidate outside GPU mask");
-                mask[candidate>>>5]|=1<<(candidate&31);
-            }
+            admit(mask,index);
+        }
+    }
+    private static void admit(int[] mask,Index index) {
+        for(Claim claim:index.claims) {
+            int candidate=claim.candidate;
+            if(candidate<0 || (candidate>>>5)>=mask.length)throw new IllegalStateException("Chain visibility candidate outside GPU mask");
+            mask[candidate>>>5]|=1<<(candidate&31);
         }
     }
     private static boolean boxCullerRejects(double minX,double minY,double minZ,double maxX,double maxY,double maxZ,
@@ -254,7 +278,11 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
     }
     @Override public void removed(ChainConveyorBlockEntity conveyor) {
         var index=indices.get(conveyor);if(index==null)return;
-        if(!index.claims.isEmpty())failed.accept("Leased native conveyor removed or transformed");
+        // The server invalidates this conveyor's track and sends one RELEASED
+        // checkpoint per lease. This only removes the stale render/index admission;
+        // revoking the shared world would unnecessarily stop free packages and every
+        // unrelated conveyor in the same GPU session.
+        index.removed=true;
         indices.remove(conveyor);work.remove(index);index.queued=false;
     }
     @Override public void added(ChainConveyorBlockEntity conveyor,ChainConveyorPackage box,BlockPos connection) {
@@ -283,6 +311,6 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
             }
             for(var conveyor:dirty)try{((PackageChainRenderAccess)conveyor).cmi$publishRenderPackages();}
             catch(RuntimeException error){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] native render restore failed",error);}
-        }finally{dirty.clear();claims.clear();indices.clear();tracks.clear();work.clear();acquisition=null;checkpoints=null;failed=null;ox=oy=oz=0;epoch=0;closing=false;}
+        }finally{dirty.clear();claims.clear();indices.clear();tracks.clear();work.clear();acquisition=null;checkpoints=null;frames=null;failed=null;ox=oy=oz=0;epoch=0;closing=false;}
     }
 }

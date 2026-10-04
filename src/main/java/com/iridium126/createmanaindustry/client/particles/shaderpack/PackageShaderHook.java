@@ -23,7 +23,7 @@ import org.joml.*;
 import org.lwjgl.opengl.*;
 import java.util.*;
 
-/** Package-owned Iris draws; CPU visibility input is limited to native visible-conveyor lists. */
+/** Package-owned Iris draws; main visibility checks only owning conveyors. */
 public final class PackageShaderHook {
     private static final PackageShaderCompiler COMPILER=new PackageShaderCompiler();
     private static final PackageDrawCulling CULLING=new PackageDrawCulling();
@@ -67,7 +67,7 @@ public final class PackageShaderHook {
         return pool!=null && pool.admissionCount()!=0 && engine.packageMainFrameReady() && ClientConfig.shaderPackIntegration
                 && !reloadRequested && dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse();
     }
-    public static void render(Frustum frustum,Set<ChainConveyorBlockEntity> visibleConveyors) {
+    public static void render(Frustum frustum) {
         var engine=CMIParticleEngine.INSTANCE;var pool=engine.packageParticlesForDraw();
         if(pool==null || pool.admissionCount()==0 || !engine.packageMainFrameReady() || !ClientConfig.shaderPackIntegration
                 || reloadRequested || !dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse())return;
@@ -78,7 +78,7 @@ public final class PackageShaderHook {
             for(int i=0;i<6;i++){CLIP.frustumPlane(i,PLANE);int p=i*4;CULLING.planes[p]=PLANE.x;CULLING.planes[p+1]=PLANE.y;CULLING.planes[p+2]=PLANE.z;CULLING.planes[p+3]=PLANE.w;}
             int words=(pool.packageCapacity()+31)>>>5;
             if(CHAIN_VISIBILITY_MASK.length!=words)CHAIN_VISIBILITY_MASK=new int[words];
-            PackageChainClientOwnership.INSTANCE.mainVisibilityMask(CHAIN_VISIBILITY_MASK,visibleConveyors);
+            PackageChainClientOwnership.INSTANCE.mainVisibilityMask(CHAIN_VISIBILITY_MASK,frustum);
             timedDraw(MAIN_TIMING,engine,pool,PackagePoolGpu.DrawPass.GBUFFER,COMPILER.main(),Minecraft.getInstance().gameRenderer.getMainCamera(),true,true,CHAIN_VISIBILITY_MASK);engine.markHookPackageDrawn();mainStatus="active";
         }
         catch(RuntimeException|LinkageError failure){fail(failure);}

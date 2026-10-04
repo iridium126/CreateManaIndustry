@@ -261,12 +261,18 @@ public final class PackageAuthorityRegion {
      * packet. Bound its reach by the same retained steps and per-axis CCD cap. */
     public boolean environmentReachable(PackageLease.Identity identity,long step,long tick,PackageLease.Pose contact){
         Entry entry=identities.get(identity);if(entry==null||step<1||!simulated(identity,tick))return false;
+        if(stepOrigin>=0&&step-stepOrigin>tick-stepOriginTick+historyTicks())return false;
         long steps;
         if(entry.simulationStep==0)steps=motionSteps(entry,tick,step);
         else {
             long lag=step>=entry.simulationStep?step-entry.simulationStep:entry.simulationStep-step;
-            if(lag>historyTicks())return false;
-            steps=lag+1; // Contact may occur before the endpoint of its own step.
+            if(lag>historyTicks()) {
+                if(step<entry.simulationStep)return false;
+                // An unchanged quantized pose produces no delta. Its old pose step
+                // must not expire later contacts at the same location. Grant only
+                // one sweep here; the manager still validates the event timeline.
+                steps=1;
+            }else steps=lag+1; // Contact may occur before the endpoint of its own step.
         }
         double allowance=(MAX_SWEEP_AXIS_DISPLACEMENT+SWEEP_AXIS_TOLERANCE)*steps+.0021;
         var pose=entry.lease.committed();

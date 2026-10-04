@@ -2,6 +2,24 @@ package com.iridium126.createmanaindustry.client.particles.packages;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 class PackageSimulationClockTest {
+    @Test void burstCapturesCatchUpEvenWhenWallTimeHasNotCaughtUp(){
+        for(int rate:new int[]{20,200}){
+            int captureSteps=rate/20;var clock=new PackageSimulationClock();
+            clock.sample(0,0,false,rate,captureSteps);
+            long now=0,input=0;
+            for(int burst=0;burst<200;burst++){
+                input+=4L*captureSteps;now+=1_000_000;
+                clock.sample(now,input,false,rate,captureSteps);
+                for(int n=0;n<clock.stepsPerFrame()&&clock.due(input);n++)clock.commit(clock.nextTick());
+                assertFalse(clock.historyGap(),"available capture burst expired at rate "+rate);
+                assertTrue(input-clock.step()<=captureSteps,"scheduler retained more than an interpolation interval");
+                assertFalse(clock.due(clock.nextTick()-1),"scheduler invented uncaptured input");
+            }
+            clock.sample(now+50_000_000,input,false,rate,captureSteps);
+            while(clock.due(input))clock.commit(clock.nextTick());
+            assertEquals(input,clock.step());
+        }
+    }
     @Test void blockedFreeClockDoesNotConsumeOrBlockTheChainClock(){
         var free=new PackageSimulationClock();var chain=new PackageSimulationClock();
         free.sample(0,0,false);chain.sample(0,0,false);

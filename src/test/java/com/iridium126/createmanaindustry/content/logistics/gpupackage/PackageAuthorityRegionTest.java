@@ -5,6 +5,19 @@ import java.util.*;
 import org.junit.jupiter.api.Test;
 
 class PackageAuthorityRegionTest {
+    @Test void quietPoseDoesNotExpireLaterEnvironmentContacts(){
+        var r=region(0);var t=new Target(902,5,0);var b=acquire(r,t,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,1,1,List.of(change(b.index(),PackageDeltaCodec.FLAGS,pose(5),1)),4,0,1));
+        int writes=t.writes;
+        for(int tick=2;tick<=200;tick++){
+            assertTrue(r.heartbeat(OWNER,10,tick));
+            assertTrue(r.environmentReachable(t.id,tick,tick,pose(5)),"unchanged quantized pose at tick "+tick);
+        }
+        assertEquals(writes,t.writes,"contacts must not force pose writes or deltas");
+        assertFalse(r.environmentReachable(t.id,1000,200,pose(5)),"future step still rejected");
+        assertFalse(r.environmentReachable(t.id,200,200,pose(50)),"old sparse pose grants at most one new sweep");
+        r.release(t.id);assertFalse(r.environmentReachable(t.id,200,200,pose(5)));
+    }
     @Test void historicalEnvironmentContactSharesTheConfirmedStepBudget(){
         var r=new PackageAuthorityRegion(REGION,OWNER,10,1,0,()->200);var t=new Target(901,5,0);var b=acquire(r,t,0);
         assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,1,1,List.of(change(b.index(),1,pose(5),0)),4,0,100));

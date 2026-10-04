@@ -1,18 +1,13 @@
 package com.iridium126.createmanaindustry.mixin.render;
 
 import java.util.Map;
-import java.util.Set;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 import net.minecraft.client.renderer.LevelRenderer;
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
-import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
@@ -28,13 +23,4 @@ import net.neoforged.api.distmarker.OnlyIn;
 public interface LevelRendererAccessor {
     @Accessor("playingJukeboxSongs")
     Map<BlockPos, SoundInstance> createmanaindustry$getPlayingJukeboxSongs();
-
-    @Accessor("visibleSections")
-    ObjectArrayList<SectionRenderDispatcher.RenderSection> createmanaindustry$getVisibleSections();
-
-    @Accessor("globalBlockEntities")
-    Set<BlockEntity> createmanaindustry$getGlobalBlockEntities();
-
-    @Accessor("blockEntityRenderDispatcher")
-    BlockEntityRenderDispatcher createmanaindustry$getBlockEntityRenderDispatcher();
 }

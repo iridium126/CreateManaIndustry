@@ -73,6 +73,15 @@ public final class PackageChainFrameScene implements AutoCloseable {
         var frame=capture(group);
         return frame==null?null:frame.logical().world(local);
     }
+    /** Native renderer distance checks use the camera in the conveyor's render
+     * space. Reuse this frame's parent capture, including Sable rotation/scale. */
+    public Vec3 localRenderCamera(int trackIndex,Vec3 worldCamera) {
+        var track=tracks.get(trackIndex);if(track==null)return null;
+        var group=track.parent()==null?ordered.getFirst():groups.get(track.parent());
+        if(group==null)return null;
+        var frame=capture(group);
+        return frame==null?null:frame.render().local(worldCamera);
+    }
     /** Acquire a new immutable frame source. Bank exhaustion cannot expose stale parent
      * matrices as current: the runtime explicitly restores Create instead of waiting. */
     public void prepare(PackagePoolGpu pool) {

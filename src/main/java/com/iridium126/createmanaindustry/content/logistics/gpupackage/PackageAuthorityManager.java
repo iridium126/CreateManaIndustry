@@ -398,10 +398,14 @@ public final class PackageAuthorityManager {
                     peer.environmentRecords++;
                     var sample=event.samples().get(n);
                     var contactPose=new PackageLease.Pose(region.region().originX()+sample.px(),region.region().originY()+sample.py()-target.light.height*.5,region.region().originZ()+sample.pz(),0,0,0,0);
-                    if(sample.ticks()>region.historyTicks()||sample.step()-sample.ticks()<target.environmentSimulationStep||target.environmentOriginStep>0&&sample.step()-target.environmentOriginStep>tick-target.environmentOriginTick+region.historyTicks()
-                            ||!region.environmentReachable(event.identity(),sample.step(),tick,contactPose)||!PackageLightGameplay.environmentValid(rt.level,target.light,region.region(),sample)){
-                        CreateManaIndustry.LOGGER.debug("[CMI packages] rejected environment identity={} step={} previousStep={} contact={} block={} pose={},{},{} region={}",
-                                event.identity(),sample.step(),target.environmentSimulationStep,sample.contact(),sample.block(region.region()),sample.px(),sample.py(),sample.pz(),region.region());
+                    String rejection=sample.ticks()>region.historyTicks()?"duration exceeds history":
+                            sample.step()-sample.ticks()<target.environmentSimulationStep?"overlapping simulation interval":
+                            target.environmentOriginStep>0&&sample.step()-target.environmentOriginStep>tick-target.environmentOriginTick+region.historyTicks()?"future simulation interval":
+                            !region.environmentReachable(event.identity(),sample.step(),tick,contactPose)?"contact outside pose reach":
+                            PackageLightGameplay.environmentRejection(rt.level,target.light,region.region(),sample);
+                    if(rejection!=null){
+                        CreateManaIndustry.LOGGER.debug("[CMI packages] rejected environment reason={} identity={} step={} ticks={} previousStep={} contact={} block={} pose={},{},{} committed={} dimensions={}x{} region={}",
+                                rejection,event.identity(),sample.step(),sample.ticks(),target.environmentSimulationStep,sample.contact(),sample.block(region.region()),sample.px(),sample.py(),sample.pz(),baseline.snapshot().pose(),target.light.width,target.light.height,region.region());
                         region.release(event.identity());return;
                     }
                     if(target.environmentOriginStep==0){target.environmentOriginStep=sample.step();target.environmentOriginTick=tick;}

@@ -227,7 +227,7 @@ public final class PackageWorldRuntime {
             long simulationNow=System.nanoTime();boolean paused=mc.isPaused()||!level.tickRateManager().runsNormally();int captureSteps=(int)Math.ceil(Math.max(1,rate/20));
             if(freeActive>0)clock.sample(simulationNow,availableInput,paused,rate,captureSteps);
             if(chainActive>0)chainClock.sample(simulationNow,availableInput,paused,rate,captureSteps);
-            waitingInput="none";
+            String previousWaitingInput=waitingInput;waitingInput="none";
             for(int substep=0;freeActive>0&&substep<clock.stepsPerFrame()&&clock.due(availableInput);substep++){
                 long tick=clock.nextTick();var collision=PackageCollisionRuntime.forLevel(level);
                 if(!forceCapture.ready(tick)){waitingInput=forceCapture.contains(tick)?"force worker":"force history";break;}
@@ -244,7 +244,7 @@ public final class PackageWorldRuntime {
                 clock.commit(tick);forceCapture.consumed(tick);
             }
             if(clock.historyGap()){
-                CreateManaIndustry.LOGGER.info("[CMI packages] input gap next={} available={} worldTime={} rate={} step={} waiting={}",clock.nextTick(),availableInput,level.getGameTime(),rate,clock.step(),waitingInput);
+                CreateManaIndustry.LOGGER.info("[CMI packages] input gap next={} available={} worldTime={} rate={} step={} frameMs={} previousWaiting={}",clock.nextTick(),availableInput,level.getGameTime(),rate,clock.step(),clock.lastElapsedNanos()/1_000_000.0,previousWaitingInput);
                 // Keep the last confirmed GPU state and its lease. Old collision/force history
                 // cannot be replayed after a render stall, so establish a fresh input baseline
                 // and resume only on a subsequently captured tick. Never revoke every region.
@@ -410,7 +410,7 @@ public final class PackageWorldRuntime {
         chainCheckpoints=new PackageChainCheckpointGpu(capacity,epoch,sources);checkpointVersion=-1;checkpointCount=-1;
         chainInteraction=new PackageChainInteractionClient(chainAcquisition,ox,oy,oz);
         if(freeInteraction!=null)freeInteraction.chainInteraction(chainInteraction);
-        nativeOwnership.attach(chainAcquisition,chainCheckpoints,ox,oy,oz,reason->failure=reason);
+        nativeOwnership.attach(chainAcquisition,chainCheckpoints,chainFrames,ox,oy,oz,reason->failure=reason);
     }
     private boolean chainCovered(ClientboundChainPackagePacket offer,ClientboundChainPackagePacket checkpoint) {
         if(!PackageChainClientOwnership.INSTANCE.covered(offer,checkpoint))return false;

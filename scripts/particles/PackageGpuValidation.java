@@ -4064,6 +4064,27 @@ public class PackageGpuValidation {
         public void close(){bridge.close();physics.close();GL15.glDeleteBuffers(pool);GL15.glDeleteBuffers(counter);}
     }
     static void preparedDrawPasses() {
+        // A native global/off-screen conveyor remains eligible even when both its
+        // packages and parent are outside the main frustum. The GPU must obey the
+        // parent mask, independently for box, rigging, hidden slots and shadows.
+        try(var f=new DrawPassFixture(65,true)) {
+            float[] rejected=new float[24];rejected[3]=-1_000_000;f.stage(rejected);
+            int[] admitted=new int[3];Arrays.fill(admitted,-1);int expected=0;
+            for(int i=0;i<65;i++)if(i%2==0&&i%17!=5)expected++;
+            var before=readBuffer(f.pool,65*64);
+            f.bridge.preparePass(PackagePoolGpu.DrawPass.GBUFFER,f.pool,rejected,6,-1,-1,16,0,-32,admitted);
+            var main=readBuffer(f.bridge.passCommandBuffer(PackagePoolGpu.DrawPass.GBUFFER),64);
+            check(main.getInt(4)==0&&main.getInt(20)==0&&main.getInt(36)==expected&&main.getInt(52)==expected,"native offscreen conveyor lost main box/rigging");
+            f.bridge.preparePass(PackagePoolGpu.DrawPass.SHADOW,f.pool,new float[24],6,-1,-1,16,0,-32,new int[3]);
+            var shadow=readBuffer(f.bridge.passCommandBuffer(PackagePoolGpu.DrawPass.SHADOW),64);
+            check(shadow.getInt(36)==0&&shadow.getInt(52)==0,"shadow reused main conveyor admission");
+            check(main.equals(readBuffer(f.bridge.passCommandBuffer(PackagePoolGpu.DrawPass.GBUFFER),64)),"shadow overwrote native main admission");
+            admitted[1]=0;expected=0;for(int i=0;i<65;i++)if(i%2==0&&i%17!=5&&(i<32||i>=64))expected++;
+            f.bridge.preparePass(PackagePoolGpu.DrawPass.GBUFFER,f.pool,rejected,6,-1,-1,16,0,-32,admitted);
+            main=readBuffer(f.bridge.passCommandBuffer(PackagePoolGpu.DrawPass.GBUFFER),64);
+            check(main.getInt(36)==expected&&main.getInt(52)==expected,"native conveyor mask crossed word or hidden identity boundary");
+            check(before.equals(readBuffer(f.pool,65*64)),"native admission mutated package poses");
+        }
         float[] culled=new float[24];culled[3]=-1_000_000;
         for(int n:new int[]{0,1,63,64,65,131072})try(var f=new DrawPassFixture(n,true)) {
             var bridge=f.bridge;f.stage(culled);

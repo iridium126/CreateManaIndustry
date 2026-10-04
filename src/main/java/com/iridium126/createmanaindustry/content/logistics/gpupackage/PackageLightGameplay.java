@@ -100,15 +100,18 @@ public final class PackageLightGameplay {
         }return flags;
     }
     static boolean environmentValid(ServerLevel level,PackageLightStore.Entry entry,PackageRegion region,PackageEnvironmentEvent.Sample sample){
+        return environmentRejection(level,entry,region,sample)==null;
+    }
+    static String environmentRejection(ServerLevel level,PackageLightStore.Entry entry,PackageRegion region,PackageEnvironmentEvent.Sample sample){
         var p=new Vec3(region.originX()+sample.px(),region.originY()+sample.py(),region.originZ()+sample.pz());
-        if(sample.contact()==0)return true;
-        var block=sample.block(region);if(!level.hasChunkAt(block))return false;
+        if(sample.contact()==0)return null;
+        var block=sample.block(region);if(!level.hasChunkAt(block))return "contact chunk unavailable";
         // The GPU reports the actual swept contact point, before later solver corrections.
         // A machine's touching boundary has the same 0.002 epsilon as the GPU sweep.
         var bounds=new AABB(p.x-entry.width*.5,p.y-entry.height*.5,p.z-entry.width*.5,p.x+entry.width*.5,p.y+entry.height*.5,p.z+entry.width*.5).inflate(.0021);
-        if(!bounds.intersects(new AABB(block)))return false;
+        if(!bounds.intersects(new AABB(block)))return "contact bounds miss block";
         var state=level.getBlockState(block);var fluid=state.getFluidState();
-        return switch(sample.contact()){
+        boolean valid=switch(sample.contact()){
             case 1->fluid.is(net.minecraft.tags.FluidTags.WATER);
             case 2->fluid.is(net.minecraft.tags.FluidTags.LAVA);
             case 4->state.getBlock() instanceof BaseFireBlock;
@@ -117,6 +120,7 @@ public final class PackageLightGameplay {
             case 16->state.is(Blocks.NETHER_PORTAL)||state.is(Blocks.END_PORTAL)||state.is(Blocks.END_GATEWAY);
             default->false;
         };
+        return valid?null:"contact block type changed";
     }
     static boolean environmentStep(ServerLevel level,PackageLightStore.Entry entry,PackageRegion region,PackageEnvironmentEvent.Sample sample){
         int allowed=environmentPermissions(level,entry);
