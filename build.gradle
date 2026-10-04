@@ -207,7 +207,10 @@ def extractSableCompanion = tasks.register("extractSableCompanion") {
     inputs.files(configurations.sableDistribution)
     outputs.file(sableCompanionJar)
     doLast {
-        def outer = new java.util.zip.ZipFile(configurations.sableDistribution.singleFile)
+        // Read the task's declared input instead of reaching back into the
+        // project configuration from the execution-time closure. This keeps
+        // the action compatible with Gradle's configuration cache.
+        def outer = new java.util.zip.ZipFile(inputs.files.singleFile)
         try {
             def matches = outer.entries().findAll { entry ->
                 !entry.directory && entry.name.startsWith("META-INF/jarjar/sable-companion-common-")

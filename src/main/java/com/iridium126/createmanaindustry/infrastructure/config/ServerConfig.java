@@ -1,7 +1,10 @@
 package com.iridium126.createmanaindustry.infrastructure.config;
 
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.DoubleSupplier;
 
 import org.jetbrains.annotations.Nullable;
@@ -113,6 +116,10 @@ public final class ServerConfig {
     private static ModConfigSpec.LongValue BATTERY_MAX_MEDIA;
     private static ModConfigSpec.IntValue YSM_APPLY_CRYSTALS;
     private static ModConfigSpec.IntValue YSM_EXPORT_CRYSTALS;
+    private static ModConfigSpec.DoubleValue HEX_TICK_CONSTANT_COST;
+    private static ModConfigSpec.DoubleValue HEX_TICK_COST_PER_TICKED;
+    private static ModConfigSpec.IntValue HEX_TICK_RANDOM_TICK_I_PROB;
+    private static ModConfigSpec.ConfigValue<List<? extends String>> HEX_TICK_ACCELERATE_DENY_LIST;
     private static ModConfigSpec.EnumValue<HexJitMode> HEX_JIT_MODE;
     private static ModConfigSpec.IntValue HEX_JIT_THRESHOLD;
     private static ModConfigSpec.IntValue HEX_JIT_MAX_UNITS;
@@ -258,6 +265,21 @@ public final class ServerConfig {
         YSM_EXPORT_CRYSTALS = BUILDER
                 .comment("Charged amethyst units consumed when exporting a YSM model.")
                 .defineInRange("ysmExportCrystalUnits", 1, 0, 64);
+        BUILDER.comment("Hexal-compatible settings for the Tick Acceleration great spell.").push("great_spells");
+        HEX_TICK_CONSTANT_COST = BUILDER
+                .comment("Base cost per block tick, in Amethyst Dust units. Hexcasting counts 1 dust as 10,000 media.")
+                .defineInRange("tickConstantCost", 0.1, 0.0001, 10000.0);
+        HEX_TICK_COST_PER_TICKED = BUILDER
+                .comment("Additional cost per earlier acceleration of the same block during this cast, in Amethyst Dust units.")
+                .defineInRange("tickCostPerTicked", 0.001, 0.0001, 10000.0);
+        HEX_TICK_RANDOM_TICK_I_PROB = BUILDER
+                .comment("Inverse probability denominator for a random tick: a randomly ticking block is advanced once per this many casts on average.")
+                .defineInRange("tickRandomTickIProb", 1365, 600, 2100);
+        HEX_TICK_ACCELERATE_DENY_LIST = BUILDER
+                .comment("Block IDs that Tick Acceleration cannot advance.")
+                .defineList("accelerateDenyList", List.of("hexcasting:impetus_look", "create:deployer"),
+                        ServerConfig::isValidResourceLocation);
+        BUILDER.pop();
         BUILDER.comment("Server-side Hex JIT controls. These tune execution only; compiled calls preserve Hexcasting action semantics.").push("jit");
         HEX_JIT_MODE = BUILDER
                 .comment("OFF uses the interpreter; PROFILE counts hot calls without compiling; AUTO enables tiered compilation.")
@@ -379,6 +401,12 @@ public final class ServerConfig {
     public static long batteryMaxMedia = 640000000L;
     public static int ysmApplyCrystalUnits = 1;
     public static int ysmExportCrystalUnits = 1;
+    /** Tick spell cost in media; config values are expressed in dust units like Hexal. */
+    public static long tickConstantCost = 1_000L;
+    public static long tickCostPerTicked = 10L;
+    public static int tickRandomTickIProb = 1365;
+    private static volatile Set<ResourceLocation> tickAccelerateDenyList = Set.of(
+            ResourceLocation.parse("hexcasting:impetus_look"), ResourceLocation.parse("create:deployer"));
 
     // ---- stress accessors (BlockStressValues providers) --------------------
 
@@ -469,8 +497,33 @@ public final class ServerConfig {
             batteryMaxMedia = BATTERY_MAX_MEDIA.get();
             ysmApplyCrystalUnits = YSM_APPLY_CRYSTALS.get();
             ysmExportCrystalUnits = YSM_EXPORT_CRYSTALS.get();
+            refreshHexTickSettings();
             refreshHexJitSettings();
         }
+    }
+
+    private static void refreshHexTickSettings() {
+        // Hexcasting's MediaConstants.DUST_UNIT is 10,000. Keep that unit conversion here
+        // so the always-loaded server config does not directly depend on Hexcasting classes.
+        tickConstantCost = (long) (HEX_TICK_CONSTANT_COST.get() * 10_000L);
+        tickCostPerTicked = (long) (HEX_TICK_COST_PER_TICKED.get() * 10_000L);
+        tickRandomTickIProb = HEX_TICK_RANDOM_TICK_I_PROB.get();
+
+        Set<ResourceLocation> denyList = new HashSet<>();
+        for (String rawId : HEX_TICK_ACCELERATE_DENY_LIST.get()) {
+            ResourceLocation id = ResourceLocation.tryParse(rawId);
+            if (id != null)
+                denyList.add(id);
+        }
+        tickAccelerateDenyList = Set.copyOf(denyList);
+    }
+
+    private static boolean isValidResourceLocation(Object value) {
+        return value instanceof String id && ResourceLocation.tryParse(id) != null;
+    }
+
+    public static boolean isHexTickAccelerateAllowed(ResourceLocation blockId) {
+        return !tickAccelerateDenyList.contains(blockId);
     }
 
     /** Copies the loaded server config values into the optional JIT runtime. */
