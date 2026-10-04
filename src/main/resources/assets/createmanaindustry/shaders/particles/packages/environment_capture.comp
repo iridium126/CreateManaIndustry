@@ -3,12 +3,15 @@
 struct PackageEnvironmentEvent { PackageEnvironment header; PackageEnvironmentSample samples[20]; };
 layout(std430,binding=6) buffer EnvironmentEvents { uvec4 eventCount; PackageEnvironmentEvent events[]; };
 uniform uint uScanOffset;
+uniform uint uEventCapacity;
 layout(local_size_x=64) in;
 void main(){
     uint invocation=gl_GlobalInvocationID.x;if(invocation>=uCount)return;
     uint i=(invocation+uScanOffset)%uCount;PackageEnvironment e=environment[i];
     uint pending=e.lease.z-e.lease.w;if(e.control.z==0u||pending==0u||pending>20u)return;
-    uint slot=atomicAdd(eventCount.x,1u);if(slot>=16u)return;
+    uint slot=atomicAdd(eventCount.x,1u);if(slot>=uEventCapacity)return;
+    // state.zw carry the exact 64-bit lease revision; state.y is local scratch.
+    environment[i].state.y=uintBitsToFloat(e.lease.z);
     e.state.y=uintBitsToFloat(i);events[slot].header=e;
     for(uint n=0u;n<pending;n++)events[slot].samples[n]=environmentSamples[i*20u+(e.lease.w+n)%20u];
 }

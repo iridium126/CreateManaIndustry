@@ -27,7 +27,7 @@ public final class PackageObserverGpuValidation {
     static PackageLease.Identity identity(int i){return new PackageLease.Identity(0x1234567800000001L+i,0x2345678900000001L+i);}
     static int serverIndex(int i){return 65536+3*i;}
     static PackageDeltaCodec.Quantized state(int i,boolean moving){return new PackageDeltaCodec.Quantized((i%60)*4096+410,20480,(i/60%60)*4096+820,
-            (short)(moving?128:0),(short)0,(short)(moving?-64:0),(short)-16384,1);}
+            (short)(moving?8:0),(short)0,(short)(moving?-4:0),(short)-16384,1);}
     static ByteBuffer patches(int n){return BufferUtils.createByteBuffer(n*PackageObserverGpu.PATCH_BYTES);}
     static ByteBuffer baselines(int n,boolean moving) {
         var data=patches(n);for(int i=0;i<n;i++){data.position(i*128);PackageObserverPatch.baseline(data,i,serverIndex(i),identity(i),EPOCH,STREAM,0,state(i,moving),-64,128,64,1,.75f,0);}
@@ -123,7 +123,7 @@ public final class PackageObserverGpuValidation {
                 case "duplicate"->{for(int i=0;i<128;i+=4)data.putInt(p+i,data.getInt(i));}
                 case "slot"->data.putInt(p+32,2);
                 case "flags"->{data.putInt(p+40,8);data.putInt(p+60,4);}
-                case "velocity"->{data.putInt(p+40,2);data.putInt(p+64,32768);}
+                case "velocity"->{data.putInt(p+40,2);data.putInt(p+64,32769);}
                 case "sequence"->data.putLong(p+112,0);
                 case "time"->data.putFloat(p+92,.04f);
                 case "reuse"->PackageObserverPatch.baseline(data,1,serverIndex(1),identity(1),EPOCH,STREAM,2,state(1,false),-64,128,64,1,.75f,.02f);
@@ -188,11 +188,11 @@ public final class PackageObserverGpuValidation {
                 data.position(0);
                 if((step&1)==0)gpu.apply(data,n,n,receipt);
                 else {
-                    var packed=BufferUtils.createByteBuffer(n*64);
+                    var packed=BufferUtils.createByteBuffer(n*PackageObserverGpu.COMPACT_BYTES);
                     for(int i=0;i<n;i++) {
                         int p=i*128;var value=new PackageDeltaCodec.Quantized(data.getInt(p+48),data.getInt(p+52),data.getInt(p+56),
                                 (short)data.getInt(p+64),(short)data.getInt(p+68),(short)data.getInt(p+72),(short)data.getInt(p+76),data.getInt(p+60));
-                        packed.position(i*64);PackageObserverPatch.compactDelta(packed,i,EPOCH,STREAM,step,new PackageDeltaCodec.Entry(serverIndex(i),data.getInt(p+40),value),receipt);
+                        packed.position(i*PackageObserverGpu.COMPACT_BYTES);PackageObserverPatch.compactDelta(packed,i,EPOCH,STREAM,step,new PackageDeltaCodec.Entry(serverIndex(i),data.getInt(p+40),value),receipt);
                     }
                     packed.position(0);gpu.applyCompact(packed,n,n,receipt);
                 }
@@ -213,7 +213,7 @@ public final class PackageObserverGpuValidation {
             for(int sequence=1;sequence<=3;sequence++)check(gpu.tryApply(delta(0,sequence,1,state(sequence,false),sequence*.01f),1,1,sequence*.01f),"independent upload slot");
             GL11.glFinish();gpu.sample(.03f);var before=read(gpu.stateBuffer(),2*144);long publication=gpu.publicationVersion();
             var release=delta(0,4,PackageDeltaCodec.RELEASE,state(0,false),.04f);
-            var compactRelease=BufferUtils.createByteBuffer(64);
+            var compactRelease=BufferUtils.createByteBuffer(PackageObserverGpu.COMPACT_BYTES);
             PackageObserverPatch.compactDelta(compactRelease,0,EPOCH,STREAM,4,new PackageDeltaCodec.Entry(serverIndex(0),PackageDeltaCodec.RELEASE,state(0,false)),.04f);
             check(!gpu.tryApply(release,1,2,.04f),"borrowed slot overwritten");
             check(gpu.count()==1&&gpu.publicationVersion()==publication,"full upload ring advanced count/publication");
@@ -301,14 +301,14 @@ public final class PackageObserverGpuValidation {
         for(int n:new int[]{1,63,64,65,131072})try(var full=new PackageObserverGpu(n,PackageObserverGpuValidation::source);
             var compact=new PackageObserverGpu(n,PackageObserverGpuValidation::source)) {
             var initial=baselines(n,true);full.apply(initial,n,n,0);compact.apply(initial,n,n,0);
-            var expanded=patches(n);var packed=BufferUtils.createByteBuffer(n*64);
+            var expanded=patches(n);var packed=BufferUtils.createByteBuffer(n*PackageObserverGpu.COMPACT_BYTES);
             for(int step=1;step<=16;step++) {
                 int mask=step==16?PackageDeltaCodec.RELEASE:step;long sequence=(1L<<40)+step;float receipt=step*.01f;
                 for(int i=0;i<n;i++) {
                     var value=new PackageDeltaCodec.Quantized((i%60)*4096+step,20480,820,(short)-32768,(short)0,(short)0,(short)(step%2==0?-32768:32767),step%4);
                     var change=new PackageDeltaCodec.Entry(serverIndex(i),mask,value);
                     expanded.position(i*128);PackageObserverPatch.delta(expanded,i,identity(i),EPOCH,STREAM,sequence,change,receipt);
-                    packed.position(i*64);PackageObserverPatch.compactDelta(packed,i,EPOCH,STREAM,sequence,change,receipt);
+                    packed.position(i*PackageObserverGpu.COMPACT_BYTES);PackageObserverPatch.compactDelta(packed,i,EPOCH,STREAM,sequence,change,receipt);
                 }
                 expanded.position(0);packed.position(0);full.apply(expanded,n,n,receipt);compact.applyCompact(packed,n,n,receipt);
                 full.sample(receipt+.005f);compact.sample(receipt+.005f);stats(full,step==16?0:n,0);stats(compact,step==16?0:n,0);
@@ -318,14 +318,14 @@ public final class PackageObserverGpuValidation {
             }
         }
         for(int bad=0;bad<11;bad++)try(var gpu=new PackageObserverGpu(3,PackageObserverGpuValidation::source)) {
-            gpu.apply(baselines(2,false),2,3,0);var before=read(gpu.stateBuffer(),3*144);var data=BufferUtils.createByteBuffer(128);
-            for(int i=0;i<2;i++){data.position(i*64);PackageObserverPatch.compactDelta(data,i,EPOCH,STREAM,1,new PackageDeltaCodec.Entry(serverIndex(i),15,state(i,true)),.01f);}
-            int p=64;
+            gpu.apply(baselines(2,false),2,3,0);var before=read(gpu.stateBuffer(),3*144);var data=BufferUtils.createByteBuffer(2*PackageObserverGpu.COMPACT_BYTES);
+            for(int i=0;i<2;i++){data.position(i*PackageObserverGpu.COMPACT_BYTES);PackageObserverPatch.compactDelta(data,i,EPOCH,STREAM,1,new PackageDeltaCodec.Entry(serverIndex(i),15,state(i,true)),.01f);}
+            int p=PackageObserverGpu.COMPACT_BYTES;
             switch(bad) {
                 case 0->data.putLong(p,EPOCH+(1L<<32));case 1->data.putLong(p+8,STREAM+(1L<<32));
                 case 2->data.putInt(p+16,3);case 3->data.putInt(p+20,serverIndex(1)+1);
                 case 4->data.putInt(p+24,32);case 5->data.putInt(p+24,0);case 6->data.putFloat(p+28,Float.NaN);
-                case 7->data.putLong(p+56,0);case 8->data.putInt(p+44,4);case 9->data.putInt(p+16,0).putInt(p+20,serverIndex(0));
+                case 7->data.putLong(p+64,0);case 8->data.putInt(p+44,4);case 9->data.putInt(p+16,0).putInt(p+20,serverIndex(0));
                 case 10->data.putInt(p+16,2);
             }
             data.position(0);gpu.applyCompact(data,2,3,.01f);gpu.sample(.01f);
@@ -427,8 +427,8 @@ public final class PackageObserverGpuValidation {
     }
     static void prepareCompactMotion(ByteBuffer data,int n,long sequence,float receipt) {
         int displacement=(int)(sequence%64)*102;
-        for(int i=0;i<n;i++){int p=i*64;data.putInt(p+24,1).putInt(p+32,(i%60)*4096+410+displacement)
-                .putFloat(p+28,receipt).putLong(p+56,sequence);}
+        for(int i=0;i<n;i++){int p=i*PackageObserverGpu.COMPACT_BYTES;data.putInt(p+24,1).putInt(p+32,(i%60)*4096+410+displacement)
+                .putFloat(p+28,receipt).putLong(p+64,sequence);}
     }
     static void benchmark() throws Exception {
         var rows=new ArrayList<String>();var samples=new ArrayList<String>();
@@ -439,8 +439,8 @@ public final class PackageObserverGpuValidation {
                 var gpu=mixed.observers();var data=baselines(n,true);gpu.apply(data,n,n,0);mixed.sampleObservers(0);mixed.publish();
                 boolean compact=scenario.startsWith("compact_");
                 if(compact) {
-                    data=BufferUtils.createByteBuffer(n*64);
-                    for(int i=0;i<n;i++){data.position(i*64);PackageObserverPatch.compactDelta(data,i,EPOCH,STREAM,1,new PackageDeltaCodec.Entry(serverIndex(i),1,state(i,true)),.05f);}
+                    data=BufferUtils.createByteBuffer(n*PackageObserverGpu.COMPACT_BYTES);
+                    for(int i=0;i<n;i++){data.position(i*PackageObserverGpu.COMPACT_BYTES);PackageObserverPatch.compactDelta(data,i,EPOCH,STREAM,1,new PackageDeltaCodec.Entry(serverIndex(i),1,state(i,true)),.05f);}
                     data.position(0);
                 }
                 int query=GL15.glGenQueries();long sequence=0;
@@ -466,7 +466,7 @@ public final class PackageObserverGpuValidation {
                     stats(gpu,n,0);var output=read(mixed.bodyBuffer(),n*64);
                     check(Float.isFinite(output.getFloat(0))&&Float.isFinite(output.getFloat((n-1)*64)),"benchmark nonfinite output");
                     String row=n+","+scenario+","+repeat+",120,"+percentile(prepare,.5)+","+percentile(prepare,.95)+","+percentile(submit,.5)+","+percentile(submit,.95)
-                            +","+percentile(timing,.5)+","+percentile(timing,.95)+","+(compact?(long)n*64:scenario.equals("delta_sample_publish_motion")?(long)n*128:0)+",0,"+n+",0";
+                            +","+percentile(timing,.5)+","+percentile(timing,.95)+","+(compact?(long)n*PackageObserverGpu.COMPACT_BYTES:scenario.equals("delta_sample_publish_motion")?(long)n*128:0)+",0,"+n+",0";
                     rows.add(row);System.out.println(row);
                 }finally{GL15.glDeleteQueries(query);}
             }

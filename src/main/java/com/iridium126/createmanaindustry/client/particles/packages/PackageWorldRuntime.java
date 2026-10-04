@@ -35,6 +35,7 @@ public final class PackageWorldRuntime {
     private final ArrayDeque<ClientboundChainPackagePacket> chainPackets=new ArrayDeque<>();
     private final Map<PackageRegion,PackageFreeAcquisitionGpu> regions=new HashMap<>();
     private final PackageSimulationClock clock=new PackageSimulationClock();
+    private final PackageSimulationClock chainClock=new PackageSimulationClock();
     private ClientLevel level;
     private Object shaderBoundary;
     private PackageMixedPhysicsGpu physics;
@@ -204,7 +205,8 @@ public final class PackageWorldRuntime {
             int freeActive=PackageAuthorityClient.activePackages(),chainActive=chainAcquisition==null?0:chainAcquisition.simulationCount();
             if(freeActive==0)PackageCollisionRuntime.releasePackageUsage(level);
             int active=freeActive+chainActive;
-            if(active==0)clock.reset();
+            if(freeActive==0)clock.reset();
+            if(chainActive==0)chainClock.reset();
             // Coverage discovery uses the current resident atlas, independently of
             // whether the next immutable physics tick is ready. Historical views
             // intentionally omit later requests and must not drive cache demand.
@@ -217,33 +219,29 @@ public final class PackageWorldRuntime {
             // here, rather than charging work done before it owned any simulation time.
             long availableInput=PackageClientInputs.current(level).last();
             double rate=level.tickRateManager().tickrate();
+            if(physics.environment()!=null)physics.environment().tickRate(rate);
             // Shader program availability controls how packages are drawn, not whether their
             // already-authoritative physics can advance. Iris may spend seconds rebuilding a
             // pipeline; pausing the simulation clock for that render-only work creates an
             // artificial history gap even though physics inputs keep being captured.
-            if(active>0)clock.sample(System.nanoTime(),availableInput,mc.isPaused()||!level.tickRateManager().runsNormally(),rate,(int)Math.ceil(Math.max(1,rate/20)));
+            long simulationNow=System.nanoTime();boolean paused=mc.isPaused()||!level.tickRateManager().runsNormally();int captureSteps=(int)Math.ceil(Math.max(1,rate/20));
+            if(freeActive>0)clock.sample(simulationNow,availableInput,paused,rate,captureSteps);
+            if(chainActive>0)chainClock.sample(simulationNow,availableInput,paused,rate,captureSteps);
             waitingInput="none";
-            for(int substep=0;active>0&&substep<clock.stepsPerFrame()&&clock.due(availableInput);substep++){
-                long tick=clock.nextTick();boolean submitted=false;
-                if(freeActive>0){
-                    var collision=PackageCollisionRuntime.forLevel(level);
-                    if(!forceCapture.ready(tick)){waitingInput=forceCapture.contains(tick)?"force worker":"force history";break;}
-                    if(!collision.hasMovingHistory(tick)||!collision.hasStaticHistory(tick)){waitingInput="collision history";break;}
-                    try(var world=collision.historicalView(tick,(int)(ox/16),(int)(oy/16),(int)(oz/16));
-                        var moving=collision.movingView(tick,(int)(ox/16),(int)(oy/16),(int)(oz/16))){
-                        if(!world.ready()||!moving.ready()){waitingInput=!world.ready()?"static geometry/version":"moving pose bank";break;}
-                        try(var forces=forceGpu.tryView(forceCapture.snapshot(tick),tick,forceCapture.snapshotIdentity(tick))){
-                            if(forces==null){waitingInput="force upload bank";break;}
-                            physics.applyFreeForces(forces,.05f);
-                            physics.stepFreeMoving(world,PackagePhysicsGpu.ITERATIONS,moving.views());
-                            submitted=true;
-                        }
+            for(int substep=0;freeActive>0&&substep<clock.stepsPerFrame()&&clock.due(availableInput);substep++){
+                long tick=clock.nextTick();var collision=PackageCollisionRuntime.forLevel(level);
+                if(!forceCapture.ready(tick)){waitingInput=forceCapture.contains(tick)?"force worker":"force history";break;}
+                if(!collision.hasMovingHistory(tick)||!collision.hasStaticHistory(tick)){waitingInput="collision history";break;}
+                try(var world=collision.historicalView(tick,(int)(ox/16),(int)(oy/16),(int)(oz/16));
+                    var moving=collision.movingView(tick,(int)(ox/16),(int)(oy/16),(int)(oz/16))){
+                    if(!world.ready()||!moving.ready()){waitingInput=!world.ready()?"static geometry/version":"moving pose bank";break;}
+                    try(var forces=forceGpu.tryView(forceCapture.snapshot(tick),tick,forceCapture.snapshotIdentity(tick))){
+                        if(forces==null){waitingInput="force upload bank";break;}
+                        physics.applyFreeForces(forces,.05f);
+                        physics.stepFreeMoving(world,PackagePhysicsGpu.ITERATIONS,moving.views());
                     }
-                }else submitted=true;
-                if(submitted){
-                    if(chainActive>0)physics.stepChains(.05f,chainTracks);
-                    clock.commit(tick);if(forceCapture!=null)forceCapture.consumed(tick);
                 }
+                clock.commit(tick);forceCapture.consumed(tick);
             }
             if(clock.historyGap()){
                 CreateManaIndustry.LOGGER.info("[CMI packages] input gap next={} available={} worldTime={} rate={} step={} waiting={}",clock.nextTick(),availableInput,level.getGameTime(),rate,clock.step(),waitingInput);
@@ -252,11 +250,17 @@ public final class PackageWorldRuntime {
                 // and resume only on a subsequently captured tick. Never revoke every region.
                 clock.rebase(System.nanoTime(),availableInput);
             }
+            // Free-scene readiness must never gate the independent track domain.
+            for(int substep=0;chainActive>0&&substep<chainClock.stepsPerFrame()&&chainClock.due(availableInput);substep++){
+                long tick=chainClock.nextTick();physics.stepChains(.05f,chainTracks);chainClock.commit(tick);
+            }
+            if(chainClock.historyGap())chainClock.rebase(simulationNow,availableInput);
             if(physics.environment()!=null)physics.environment().capture(physics.freeCount());
             physics.publish();physics.source(pool,(float)ox,(float)oy,(float)oz);
             if(chainFrames!=null)chainFrames.prepare(pool);
             pool.lightSource(PackageCollisionRuntime.forLevel(level).lightGpu());
-            interpolation=clock.interpolation();
+            interpolation=freeActive>0?clock.interpolation():chainClock.interpolation();
+            pool.chainInterpolation(chainActive>0?chainClock.interpolation():Float.NaN);
             if(!mc.isPaused() && heartbeatTick!=level.getGameTime()) {
                 heartbeatTick=level.getGameTime();
                 for(var acquisition:regions.values())PacketDistributor.sendToServer(new ServerboundPackagePacket(
@@ -301,12 +305,18 @@ public final class PackageWorldRuntime {
         lightObservers=new PackageLightObserverClient(level,physics,pool,styles,resourceEpochs.incrementAndGet(),ox,oy,oz,reason->failure=reason);
         physics.sampleObservers(0);
         physics.publish();physics.source(pool,(float)ox,(float)oy,(float)oz);
-        clock.reset();heartbeatTick=Long.MIN_VALUE;failure=null;current=this;
+        clock.reset();chainClock.reset();heartbeatTick=Long.MIN_VALUE;failure=null;current=this;
         // Shared GPU/model resources exist before readiness is advertised. TRACK then builds
         // epoch-specific query/checkpoint resources before a following OFFER can freeze Create.
         PackageAuthorityClient.capabilities(PackageAuthorityClient.readyFlags(true,chainProtocol));
     }
     private boolean drain(Function<String,String> sources) {
+        // ACKs have their own bounded budget; hundreds of active journals must
+        // not wait behind a 64-record admission quota and fill while waiting.
+        for(int n=0;n<PackageEnvironmentGpu.MAX_EVENTS;n++){
+            var ack=packets.pollAcknowledgement();if(ack==null)break;var acquisition=regions.get(ack.region());
+            if(acquisition!=null&&ack.epoch()==acquisition.epoch()&&ack.regionRevision()==acquisition.revision())acquisition.receive(ack);
+        }
         for(int n=0;n<PACKETS_PER_FRAME && !packets.isEmpty();n++) {
             var packet=packets.removeFirst();var acquisition=regions.get(packet.region());
             if(lightObservers!=null&&(packet.action()==ClientboundPackagePacket.OFFER||packet.action()==ClientboundPackagePacket.RELEASED))
@@ -450,8 +460,8 @@ public final class PackageWorldRuntime {
         if(chainChannel!=null)chainChannel.close();else if(chainTracks!=null)chainTracks.close();chainChannel=null;chainTracks=null;
         if(pool!=null)pool.chainFrames(0,0);
         if(chainFrames!=null)chainFrames.close();chainFrames=null;
-        packets.clear();chainPackets.clear();regions.clear();clock.reset();styles=Map.of();level=null;shaderBoundary=null;interpolation=1;
-        if(pool!=null)pool.reset();pool=null;
+        packets.clear();chainPackets.clear();regions.clear();clock.reset();chainClock.reset();styles=Map.of();level=null;shaderBoundary=null;interpolation=1;
+        if(pool!=null){pool.chainInterpolation(Float.NaN);pool.reset();}pool=null;
         if(worldPrefetch!=null)worldPrefetch.close();worldPrefetch=null;
         if(physics!=null)physics.close();physics=null;
         failure=null;status=reason;retryAfter=System.nanoTime()+5_000_000_000L;

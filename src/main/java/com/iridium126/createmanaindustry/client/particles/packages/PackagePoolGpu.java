@@ -31,7 +31,7 @@ public final class PackagePoolGpu implements AutoCloseable {
     private static final String[] COMPUTE={"pool_select","pool_reserve","pool_import","draw_count","draw_prefix","draw_scatter"};
     private final int capacity, packageCapacity, maxMeshes;
     private final int[] programs=new int[12], admission=new int[2], commands=new int[2], instances=new int[2], attachments=new int[2], nativeBounds=new int[2];
-    private static final String[] UNIFORMS={"uCount","uCapacity","uBodyCount","uMeshCount","uEmitter","uOrigin","uCamPos","uFrustum","ModelViewMat","ProjMat","uPartialTick","uLightingMode","uConstantAmbient","uLight0","uLight1","uLightTableSize","uLightDataOffset","uSampledLighting","uFeedback","uFrustumCount","uCullBounds","uFrameCount","uEntityViewScale","uNativeCull"};
+    private static final String[] UNIFORMS={"uCount","uCapacity","uBodyCount","uMeshCount","uEmitter","uOrigin","uCamPos","uFrustum","ModelViewMat","ProjMat","uPartialTick","uLightingMode","uConstantAmbient","uLight0","uLight1","uLightTableSize","uLightDataOffset","uSampledLighting","uFeedback","uFrustumCount","uCullBounds","uFrameCount","uEntityViewScale","uNativeCull","uChainPartialTick","uSeparateChainInterpolation"};
     private final int[][] locations=new int[12][UNIFORMS.length];
     private final int[] uniformCounts=new int[12],uniformBodyCounts=new int[12],uniformFrameCounts=new int[12];
     private int sampledLight;
@@ -53,6 +53,12 @@ public final class PackagePoolGpu implements AutoCloseable {
     private final int[] candidateBodies;
     private final java.util.TreeSet<Integer> reusable=new java.util.TreeSet<>();
     private float originX,originY,originZ;
+    private float chainPartial=Float.NaN;
+    private float viewScale=1;
+    /** Supplied by the game renderer; GPU validation needs no entity/registry bootstrap. */
+    public void viewScale(float scale){if(!Float.isFinite(scale)||scale<=0)throw new IllegalArgumentException("Package view scale");viewScale=scale;}
+    public void chainInterpolation(float partial){chainPartial=partial;}
+    public float chainInterpolationOr(float partial){return Math.clamp(Float.isFinite(chainPartial)?chainPartial:partial,0,1);}
 
     public PackagePoolGpu(int capacity,int maxMeshes,Function<String,String> sources) {
         if(capacity<=0 || maxMeshes<=0 || maxMeshes>4096)throw new IllegalArgumentException("Package pool limits");
@@ -421,7 +427,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             use(p,count);GL20.glUniform3f(locations[p][6],cameraX,cameraY,cameraZ);GL20.glUniform4fv(locations[p][7],frustum);
             if(locations[p][19]>=0)GL30.glUniform1ui(locations[p][19],planes);
             if(locations[p][20]>=0)GL20.glUniform2f(locations[p][20],distance,safe);
-            if(locations[p][22]>=0)GL20.glUniform1f(locations[p][22],(float)net.minecraft.world.entity.Entity.getViewScale());
+            if(locations[p][22]>=0)GL20.glUniform1f(locations[p][22],viewScale);
             if(locations[p][23]>=0)GL30.glUniform1ui(locations[p][23],chainVisibility==null?0:1);
             if(p==10){GL43.glDispatchCompute(1,1,1);barrier();}else dispatch(count);
         }
@@ -496,6 +502,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             GL20.glUniformMatrix4fv(locations[6][9],false,projection.get(stack.mallocFloat(16)));
         }
         GL20.glUniform3f(locations[6][6],x,y,z);GL20.glUniform1f(locations[6][10],Math.clamp(partialTick,0,1));
+        GL20.glUniform1f(locations[6][24],chainInterpolationOr(partialTick));GL20.glUniform1i(locations[6][25],1);
         GL30.glBindVertexArray(vao);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,instances[committed]);
         GL30.glVertexAttribIPointer(4,2,GL11.GL_UNSIGNED_INT,8,0L);
         GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,commands[committed]);
@@ -517,6 +524,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             light.bind(8);
             GL30.glUniform1ui(locations[7][15],light.tableSize());GL30.glUniform1ui(locations[7][16],light.dataWordOffset());
             GL20.glUniform1f(locations[7][10],Math.clamp(partialTick,0,1));
+            GL20.glUniform1f(locations[7][24],chainInterpolationOr(partialTick));GL20.glUniform1i(locations[7][25],1);
             GL30.glUniform1ui(locations[7][18],lightFeedback==null?0:1);
             if(lightFeedback!=null)lightFeedback.begin();dispatch(candidateCounts[committed]);
             if(lightFeedback!=null){GL20.glUseProgram(programs[8]);GL30.glUniform1ui(locations[8][0],candidateCounts[committed]);

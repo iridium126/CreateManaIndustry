@@ -5,6 +5,17 @@ import java.util.*;
 import org.junit.jupiter.api.Test;
 
 class PackageAuthorityRegionTest {
+    @Test void historicalEnvironmentContactSharesTheConfirmedStepBudget(){
+        var r=new PackageAuthorityRegion(REGION,OWNER,10,1,0,()->200);var t=new Target(901,5,0);var b=acquire(r,t,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,1,1,List.of(change(b.index(),1,pose(5),0)),4,0,100));
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,2,41,List.of(change(b.index(),1,pose(55),0)),4,0,140));
+        assertTrue(r.environmentReachable(t.id,100,41,pose(5)),"valid historical contact farther than 36 blocks");
+        assertTrue(r.environmentReachable(t.id,141,41,pose(5)),"environment uplink ahead of pose uplink");
+        assertFalse(r.environmentReachable(t.id,140,41,pose(5)),"same-step contact cannot exceed one sweep");
+        assertFalse(r.environmentReachable(t.id,1000,41,pose(5)),"future contact outside retained window");
+        assertFalse(r.environmentReachable(t.id,100,41,pose(2000)),"historical contact still needs bounded reach");
+        r.release(t.id);assertFalse(r.environmentReachable(t.id,100,41,pose(5)),"retired lifecycle");
+    }
     @Test void sameStepConfirmationDoesNotGrantAnotherMotionBudget(){
         var r=region(0);var t=new Target(500,5,0);var b=acquire(r,t,0);
         assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,1,4,List.of(change(b.index(),PackageDeltaCodec.POSITION,pose(9),0)),1,0,4));

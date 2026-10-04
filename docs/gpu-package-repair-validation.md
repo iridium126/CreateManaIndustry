@@ -1,8 +1,12 @@
 # GPU 包裹测试与证据
 
-更新：2026-10-03。当前行为见[实现总览](gpu-packages.md)和[轻量记录契约](gpu-light-package-records.md)。每个修复批次只保留结构化测试摘要；完整构建输出、GPU 逐项日志和 GameTest 原始日志已清理。
+更新：2026-10-04。当前行为见[实现总览](gpu-packages.md)和[轻量记录契约](gpu-light-package-records.md)。每个修复批次保留结构化测试摘要，完整诊断输出放在忽略的 `build` 目录。
 
 ## 最新验证
+
+10 月 4 日审查的六项问题已按建议顺序修复，见[审查与修复记录](gpu-package-review-2026-10-04.md)。保留[验证摘要及基准索引](benchmarks/package-review-fixes-2026-10-04/tests.json)：全部 478 项单元测试、12,297,727 项完整 GPU 断言通过；光照/观察者/Iris 分别通过 886,165 / 3,548,729 / 26,730 项断言；6 项真实 Create/NeoForge GameTest 通过。正式构建成功，发布 JAR 不含 GameTest 夹具。131072 包裹的同环境修复前后基准均通过质量检查，p95 区间重叠，未观察到新增性能退化；不代表整帧或 200 tick/s 满容量达标。权威协议升级为 `gpu-packages-13`，两端需同时升级。
+
+## 10 月 3 日验证
 
 200 tick/s 客户端采集修复已通过单元测试、GPU 回归、隔离 Create/NeoForge GameTest 和正式构建。保留[测试摘要](benchmarks/package-client-cadence-2026-10-03/tests.json)及[用户日志复现摘录](benchmarks/package-client-cadence-2026-10-03/reproduction-excerpt.log)。修复原因和剩余实机限制见[客户端采集修复记录](gpu-package-client-cadence-fix.md)。
 

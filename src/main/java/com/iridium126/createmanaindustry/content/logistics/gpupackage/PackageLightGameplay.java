@@ -31,6 +31,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 @EventBusSubscriber(modid=CreateManaIndustry.MODID)
 public final class PackageLightGameplay {
     private PackageLightGameplay() {}
+    static boolean belowVoid(double feetY,int minBuildHeight){return feetY<(double)minBuildHeight-64;}
     public static void interact(ServerboundLightPackageInteraction request,IPayloadContext context) {
         if(!(context.player() instanceof ServerPlayer player)||player.isSpectator())return;
         var level=player.serverLevel();var entry=PackageAuthorityManager.light(level,request.identity());if(entry==null)return;
@@ -57,7 +58,7 @@ public final class PackageLightGameplay {
         var pos=new Vec3(region.originX()+sample.px(),region.originY()+sample.py()-entry.height*.5,region.originZ()+sample.pz());
         var bounds=entry.bounds().move(pos.subtract(entry.position())).deflate(.001);var box=entry.box(level);
         if(!PackageItem.isPackage(box)){PackageAuthorityManager.consumeLight(level,entry);return;}
-        if(pos.y<level.getMinBuildHeight()-64){PackageAuthorityManager.consumeLight(level,entry);return;}
+        if(belowVoid(pos.y,level.getMinBuildHeight())){PackageAuthorityManager.consumeLight(level,entry);return;}
         var contacts=new java.util.LinkedHashSet<BlockPos>();contacts.add(sample.block(region));
         for(var at:BlockPos.betweenClosed(BlockPos.containing(bounds.minX,bounds.minY,bounds.minZ),BlockPos.containing(bounds.maxX,bounds.maxY,bounds.maxZ)))contacts.add(at.immutable());
         for(var blockPos:contacts) {
@@ -100,7 +101,6 @@ public final class PackageLightGameplay {
     }
     static boolean environmentValid(ServerLevel level,PackageLightStore.Entry entry,PackageRegion region,PackageEnvironmentEvent.Sample sample){
         var p=new Vec3(region.originX()+sample.px(),region.originY()+sample.py(),region.originZ()+sample.pz());
-        if(p.distanceToSqr(entry.position().add(0,entry.height*.5,0))>36*36)return false;
         if(sample.contact()==0)return true;
         var block=sample.block(region);if(!level.hasChunkAt(block))return false;
         // The GPU reports the actual swept contact point, before later solver corrections.
@@ -120,12 +120,24 @@ public final class PackageLightGameplay {
     }
     static boolean environmentStep(ServerLevel level,PackageLightStore.Entry entry,PackageRegion region,PackageEnvironmentEvent.Sample sample){
         int allowed=environmentPermissions(level,entry);
-        boolean destroyed=burnTick(entry,(allowed&4)!=0);
-        if((sample.contact()&allowed&1)!=0)destroyed=true;
-        if((sample.contact()&allowed&6)!=0){destroyed|=burnContact(entry);if(sample.contact()==2)entry.fireTicks=Math.max(entry.fireTicks,300);}
+        boolean destroyed=false;
+        for(int tick=0;tick<sample.ticks()&&!destroyed;tick++){
+            destroyed=burnTick(entry,(allowed&4)!=0);
+            if((sample.contact()&allowed&1)!=0)destroyed=true;
+            if((sample.contact()&allowed&6)!=0){destroyed|=burnContact(entry);if(sample.contact()==2)entry.fireTicks=Math.max(entry.fireTicks,300);}
+        }
         entry.environmentStep=sample.step();PackageLightStore.get(level).setDirty();
         if(destroyed){destroy(level,entry);return true;}
-        if(sample.contact()==8||sample.contact()==16)contact(level,entry,region,sample);
+        if(sample.contact()==8||sample.contact()==16){
+            for(int tick=0;tick<sample.ticks();tick++){
+                var before=sample.ticks()>1?entry.box(level).copy():null;
+                contact(level,entry,region,sample);
+                if(PackageAuthorityManager.light(level,entry.identity)!=entry)return true;
+                // Retry a partial insertion, but repeating an unchanged blocked
+                // transaction within this same server callback cannot help.
+                if(before==null||ItemStack.matches(before,entry.box(level)))break;
+            }
+        }
         return PackageAuthorityManager.light(level,entry.identity)!=entry;
     }
     /** Create ignites an unlit package, then damages it on subsequent fire contacts. */

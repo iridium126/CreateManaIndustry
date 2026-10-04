@@ -4,6 +4,12 @@ import java.nio.*;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 class PackageEnvironmentEventTest {
+    @Test void coalescedRunsPreserveDurationAndRejectOverlapOrOversizedRuns(){
+        var b=event();b.putInt(24,3).putLong(64+16,140).putInt(64+44,40);
+        var sample=PackageEnvironmentEvent.decode(b.array()).samples().getFirst();assertEquals(40,sample.ticks());assertEquals(140,sample.step());
+        b.putInt(24,4).putLong(112+16,150).putInt(112+44,20);assertThrows(IllegalArgumentException.class,()->PackageEnvironmentEvent.decode(b.array()));
+        b.putInt(24,3).putInt(64+44,10001);assertThrows(IllegalArgumentException.class,()->PackageEnvironmentEvent.decode(b.array()));
+    }
     private static ByteBuffer event(){
         var b=ByteBuffer.allocate(1024).order(ByteOrder.LITTLE_ENDIAN);
         b.putLong(0,91).putLong(8,7).putLong(16,3).putInt(24,22).putInt(28,2).putInt(40,18).putLong(56,9);

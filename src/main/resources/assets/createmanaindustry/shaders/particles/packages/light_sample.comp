@@ -6,6 +6,8 @@ layout(std430,binding=7) buffer SampledLight { uint sampledLight[]; };
 layout(std430,binding=8) readonly buffer LightAtlas { uint lightWords[]; };
 uniform uint uCount,uCapacity,uLightTableSize,uLightDataOffset;
 uniform float uPartialTick;
+uniform float uChainPartialTick;
+uniform bool uSeparateChainInterpolation;
 layout(std430,binding=9) writeonly buffer MissingSections { ivec4 missing[]; };
 layout(std430,binding=10) buffer Representatives { uint winners[]; };
 uniform uint uFeedback;
@@ -20,7 +22,8 @@ uint sampleCandidate(uint i) {
     uint p=4u*(a.x-1u);
     uint previousLight=sampledLight[i];
     uint packedLight=(previousLight&0x80000000u)!=0u?previousLight:floatBitsToUint(pool[p+2u].w)&0xffffffu;
-    vec3 position=mix(pool[p+1u].xyz,pool[p].xyz,uPartialTick);
+    float partialTick=uSeparateChainInterpolation&&(a.y&1u)!=0u?uChainPartialTick:uPartialTick;
+    vec3 position=mix(pool[p+1u].xyz,pool[p].xyz,partialTick);
     // Ground imports store the exact native probe offset in otherwise unused attachment.w.
     if((a.y&1u)==0u)position.y+=attachment[2u*i+1u].w;
     ivec3 block=ivec3(floor(position)),section=block>>4;

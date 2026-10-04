@@ -77,7 +77,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
             GL41.glProgramUniform1ui(programs[20],locations[20][15],DYNAMIC_SWEEP_BUDGET);
             states[0]=buffer((long)capacity*BODY_BYTES);states[1]=buffer((long)capacity*BODY_BYTES);
             heads=buffer((long)tableSize*4);links=buffer((long)capacity*4);chains=buffer((long)capacity*CHAIN_BYTES);
-            history=buffer((long)capacity*32);stepVelocity=buffer((long)capacity*16);fastCells=buffer((long)tableSize*4);
+            history=buffer((long)capacity*32);stepVelocity=buffer((long)capacity*16);fastCells=buffer((long)tableSize*32);
         } catch(RuntimeException failure) { close();throw failure; }
     }
     private static int buffer(long bytes) {

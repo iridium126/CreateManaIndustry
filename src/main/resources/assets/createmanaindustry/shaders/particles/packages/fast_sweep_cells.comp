@@ -1,5 +1,6 @@
 #pragma cmi_include packages/state.glsl
-layout(std430,binding=7) buffer FastCells { uint fastCells[]; };
+#pragma cmi_include packages/sweep_cells.glsl
+layout(std430,binding=7) buffer FastCells { SweepCell fastCells[]; };
 layout(local_size_x=64) in;
 void main(){
     uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
@@ -7,10 +8,16 @@ void main(){
     vec3 motion=b.positionMass.xyz-b.previousSleep.xyz;
     if(all(lessThanEqual(abs(motion),max(b.extentYaw.xyz,vec3(1e-5)))))return;
     if(any(greaterThan(abs(motion),vec3(uCellSize*PACKAGE_MAX_SWEEP_CELLS))))return;
-    // Match the exact center-cell reach used by the swept collision query.
-    vec3 padding=b.extentYaw.xyz+vec3(uCellSize*.5+1e-4);
+    // Record actual local motion bounds wherever a fast trajectory can meet a
+    // query. Endpoint-only indexing needs this reach to find crossing paths.
+    vec3 padding=b.extentYaw.xyz+vec3(uCellSize+1e-4);
     ivec3 lo=cellOf(min(b.previousSleep.xyz,b.positionMass.xyz)-padding);
     ivec3 hi=cellOf(max(b.previousSleep.xyz,b.positionMass.xyz)+padding);
-    for(int z=lo.z;z<=hi.z;z++)for(int y=lo.y;y<=hi.y;y++)for(int x=lo.x;x<=hi.x;x++)
-        atomicOr(fastCells[hashCell(ivec3(x,y,z))],1u);
+    uvec3 positive=floatBitsToUint(max(motion,vec3(0))),negative=floatBitsToUint(max(-motion,vec3(0)));
+    for(int z=lo.z;z<=hi.z;z++)for(int y=lo.y;y<=hi.y;y++)for(int x=lo.x;x<=hi.x;x++) {
+        uint cell=hashCell(ivec3(x,y,z));
+        atomicMax(fastCells[cell].positive.x,positive.x);atomicMax(fastCells[cell].positive.y,positive.y);atomicMax(fastCells[cell].positive.z,positive.z);
+        atomicMax(fastCells[cell].negative.x,negative.x);atomicMax(fastCells[cell].negative.y,negative.y);atomicMax(fastCells[cell].negative.z,negative.z);
+        atomicOr(fastCells[cell].positive.w,1u);
+    }
 }

@@ -22,7 +22,8 @@ public record PackageEnvironmentEvent(PackageLease.Identity identity,long lease,
         }
         return copy.array();
     }
-    public record Sample(long step,int contact,int x,int y,int z,float px,float py,float pz,int fireTicks,float health) {
+    public record Sample(long step,int contact,int x,int y,int z,float px,float py,float pz,int fireTicks,float health,int ticks) {
+        public Sample(long step,int contact,int x,int y,int z,float px,float py,float pz,int fireTicks,float health){this(step,contact,x,y,z,px,py,pz,fireTicks,health,1);}
         public net.minecraft.core.BlockPos block(PackageRegion region){
             return net.minecraft.core.BlockPos.containing(region.originX()+x,region.originY()+y,region.originZ()+z);
         }
@@ -38,10 +39,11 @@ public record PackageEnvironmentEvent(PackageLease.Identity identity,long lease,
         for(int i=0;i<end-first;i++){
             int p=64+i*48;int contact=b.getInt(p+12);long step=b.getLong(p+16);
             int fire=b.getInt(p+24);float health=b.getFloat(p+28),x=b.getFloat(p+32),y=b.getFloat(p+36),z=b.getFloat(p+40);
-            if(step<=previous||step<1||(contact!=0&&contact!=1&&contact!=2&&contact!=4&&contact!=8&&contact!=16)||fire<0||fire>72000
+            int ticks=Math.max(1,b.getInt(p+44));
+            if(ticks>10000||b.getInt(p+44)<0||step-ticks<previous||step<ticks||(contact!=0&&contact!=1&&contact!=2&&contact!=4&&contact!=8&&contact!=16)||fire<0||fire>72000
                     ||!Float.isFinite(health)||health<0||health>1024||!Float.isFinite(x)||!Float.isFinite(y)||!Float.isFinite(z))
                 throw new IllegalArgumentException("Invalid environment sample");
-            previous=step;samples.add(new Sample(step,contact,b.getInt(p),b.getInt(p+4),b.getInt(p+8),x,y,z,fire,health));
+            previous=step;samples.add(new Sample(step,contact,b.getInt(p),b.getInt(p+4),b.getInt(p+8),x,y,z,fire,health,ticks));
         }
         return new PackageEnvironmentEvent(identity,lease,index,revision,first,end,List.copyOf(samples));
     }

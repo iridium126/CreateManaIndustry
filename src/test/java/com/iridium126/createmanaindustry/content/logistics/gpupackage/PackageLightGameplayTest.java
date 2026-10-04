@@ -8,6 +8,10 @@ import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 class PackageLightGameplayTest {
+    @Test void voidBoundaryUsesFeetAndWorksForTallDimensions(){
+        assertFalse(PackageLightGameplay.belowVoid(-128,-64));assertTrue(PackageLightGameplay.belowVoid(Math.nextDown(-128d),-64));
+        assertFalse(PackageLightGameplay.belowVoid(9936,10000));assertTrue(PackageLightGameplay.belowVoid(9935.99,10000));
+    }
     private static PackageLightStore.Entry entry() {
         var pose=new PackageLease.Pose(0,64,0,0,0,0,0);
         return new PackageLightStore.Entry(new PackageLease.Identity(1,1),UUID.randomUUID(),

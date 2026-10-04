@@ -2,6 +2,17 @@ package com.iridium126.createmanaindustry.client.particles.packages;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 class PackageSimulationClockTest {
+    @Test void blockedFreeClockDoesNotConsumeOrBlockTheChainClock(){
+        var free=new PackageSimulationClock();var chain=new PackageSimulationClock();
+        free.sample(0,0,false);chain.sample(0,0,false);
+        for(int tick=1;tick<=10;tick++){
+            free.sample(tick*50_000_000L,tick,false);chain.sample(tick*50_000_000L,tick,false);
+            while(chain.due(tick))chain.commit(chain.nextTick());
+        }
+        assertEquals(0,free.step());assertEquals(10,chain.step());assertEquals(1,free.nextTick());
+        for(int i=0;i<free.stepsPerFrame()&&free.due(10);i++)free.commit(free.nextTick());
+        assertEquals(4,free.step());assertEquals(10,chain.step());
+    }
     @Test void twoHundredTicksPerSecondConsumeEveryInputWithoutRevocation(){
         var clock=new PackageSimulationClock();int submitted=0;
         for(int frame=0;frame<=600;frame++){

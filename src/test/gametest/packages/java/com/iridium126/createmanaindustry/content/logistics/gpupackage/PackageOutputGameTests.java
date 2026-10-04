@@ -20,6 +20,34 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder("createmanaindustry")
 @PrefixGameTestTemplate(false)
 public final class PackageOutputGameTests {
+    @GameTest(template="package_output_test",timeoutTicks=40)
+    public static void voidLifecycleDoesNotNeedAnEnvironmentContact(GameTestHelper helper){
+        var level=helper.getLevel();var item=box("CMI void fixture");var p=Vec3.atCenterOf(helper.absolutePos(new BlockPos(2,4,2)));
+        var entity=PackageEntity.fromItemStack(level,p,item.copy());level.addFreshEntity(entity);
+        var entries=PackageAuthorityManager.queryLight(level,new AABB(p,p).inflate(2));
+        helper.assertTrue(entries.size()==1,"Package capture missing");var entry=entries.getFirst();
+        var pose=entry.state().pose();PackageAuthorityManager.updateLight(level,entry,new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(pose.x(),level.getMinBuildHeight()-65,pose.z(),0,-10,0,0),0));
+        var below=PackageEntity.fromItemStack(level,new Vec3(p.x+2,level.getMinBuildHeight()-65,p.z),box("CMI initial void fixture"));level.addFreshEntity(below);
+        var initialIdentity=PackageAuthorityManager.identity(below,level);
+        helper.assertTrue(PackageAuthorityManager.light(level,initialIdentity)!=null,"Initial void package was not captured");
+        helper.runAfterDelay(2,()->{
+            helper.assertTrue(PackageLightStore.get(level).byIdentity(entry.identity)==null,"Void record survived accepted pose");
+            helper.assertTrue(PackageLightStore.get(level).byIdentity(initialIdentity)==null,"Initial void record survived without GPU authority");
+            helper.assertTrue(!PackageAuthorityManager.consumeLight(level,entry),"Void inventory consumed twice");helper.succeed();
+        });
+    }
+    @GameTest(template="package_output_test",timeoutTicks=40)
+    public static void compactEnvironmentReplaysEveryServerDamageTick(GameTestHelper helper){
+        var level=helper.getLevel();var p=Vec3.atCenterOf(helper.absolutePos(new BlockPos(2,4,2)));
+        var item=box("CMI compact fire fixture");level.addFreshEntity(PackageEntity.fromItemStack(level,p,item.copy()));
+        var entry=emitted(helper,BlockPos.containing(p),item);entry.fireTicks=120;
+        var region=PackageRegion.at(entry.state().pose());var c=entry.bounds().getCenter();
+        var sample=new PackageEnvironmentEvent.Sample(40,0,0,0,0,(float)(c.x-region.originX()),(float)(c.y-region.originY()),(float)(c.z-region.originZ()),80,4.7f,40);
+        helper.assertTrue(!PackageLightGameplay.environmentStep(level,entry,region,sample),"Compact fire unexpectedly consumed inventory");
+        helper.assertTrue(entry.fireTicks==80&&Math.abs(entry.health-4.7f)<1e-5&&entry.environmentStep==40,"Compact duration lost server damage ticks");
+        helper.assertTrue(ItemStack.matches(item,entry.box(level)),"Compact fire changed surviving inventory");
+        PackageAuthorityManager.consumeLight(level,entry);helper.succeed();
+    }
     @GameTest(template="package_output_test",timeoutTicks=200)
     public static void realTwoHundredTickRateAllowsDelayedBeltPackageAdmission(GameTestHelper helper){
         var manager=helper.getLevel().getServer().tickRateManager();float previous=manager.tickrate();manager.setTickRate(200);

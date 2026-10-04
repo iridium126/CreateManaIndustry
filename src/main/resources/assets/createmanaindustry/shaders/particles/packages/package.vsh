@@ -9,6 +9,8 @@ layout(std430,binding=7) readonly buffer SampledLight { uint sampledLight[]; };
 uniform mat4 ModelViewMat,ProjMat;
 uniform vec3 uCamPos;
 uniform float uPartialTick;
+uniform float uChainPartialTick;
+uniform bool uSeparateChainInterpolation;
 uniform sampler2D uLightmap;
 uniform int uLightingMode,uConstantAmbient;
 uniform int uSampledLighting;
@@ -19,13 +21,14 @@ flat out uint vCutout;
 #pragma cmi_include packages/vertex_pose.glsl
 void main() {
     uint s=aInstance.x,p=4u*s,i=aInstance.y>>1u;
+    float partialTick=uSeparateChainInterpolation&&((floatBitsToUint(pool[p+2u].w)>>24u)&1u)!=0u?uChainPartialTick:uPartialTick;
     PackageVertexPose pose;
     if(((floatBitsToUint(pool[p+2u].w)>>24u)&8u)!=0u) {
         uint a=2u*uint(attachment.length()/11)+9u*i;
-        pose=packageFramedVertexPose(aPosition,aNormal,aInstance,uPartialTick,
+        pose=packageFramedVertexPose(aPosition,aNormal,aInstance,partialTick,
             pool[p],pool[p+1u],pool[p+2u],pool[p+3u],attachment[2u*i],attachment[2u*i+1u],
             attachment[a],attachment[a+1u],attachment[a+2u],attachment[a+6u],attachment[a+7u],attachment[a+8u]);
-    }else pose=packageVertexPose(aPosition,aNormal,aInstance,uPartialTick,
+    }else pose=packageVertexPose(aPosition,aNormal,aInstance,partialTick,
             pool[p],pool[p+1u],pool[p+2u],pool[p+3u],attachment[2u*i],attachment[2u*i+1u]);
     uint packedLight=pose.packedLight,flags=pose.flags;
     if(uSampledLighting!=0)packedLight=sampledLight[i];

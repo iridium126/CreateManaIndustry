@@ -1,0 +1,4 @@
+count,scenario,solver,run,gpu_p50_ms,gpu_p95_ms,cpu_submit_p50_ms,cpu_submit_p95_ms,penetrating_pairs,all_pair_overlap_max,terrain_penetration_max,fallbacks,moving,quality_pass
+131072,staggered_driven,support4_linked,1,13.860864,15.982592,0.0201,0.0562,0,0.0,0.0,0,131036,1
+131072,staggered_driven,support4_linked,2,14.132224,16.064512,0.0194,0.041,0,0.0,0.0,0,131036,1
+131072,staggered_driven,support4_linked,3,13.904896,17.214464,0.0113,0.04,0,0.0,0.0,0,131036,1

@@ -28,10 +28,14 @@ public final class PackageTransitionInbox {
     }
     public boolean isEmpty(){return controls.isEmpty()&&acknowledgements.isEmpty();}
     public int size(){return controls.size()+acknowledgements.size();}
+    public ClientboundPackagePacket pollAcknowledgement(){
+        if(acknowledgements.isEmpty())return null;
+        var iterator=acknowledgements.entrySet().iterator();var packet=iterator.next().getValue();iterator.remove();return packet;
+    }
     public ClientboundPackagePacket removeFirst(){
         acknowledgementTurn=!acknowledgementTurn;
         if(!acknowledgements.isEmpty()&&(acknowledgementTurn||controls.isEmpty())){
-            var iterator=acknowledgements.entrySet().iterator();var packet=iterator.next().getValue();iterator.remove();return packet;
+            return pollAcknowledgement();
         }
         return controls.removeFirst();
     }

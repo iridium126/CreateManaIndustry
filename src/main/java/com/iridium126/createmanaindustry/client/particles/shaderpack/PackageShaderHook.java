@@ -126,6 +126,7 @@ public final class PackageShaderHook {
         int atlas=RenderSystem.getShaderTexture(0),light=RenderSystem.getShaderTexture(2);
         state.capture();boolean applied=false;
         try {
+            pool.viewScale((float)net.minecraft.world.entity.Entity.getViewScale());
             if(!pool.preparePass(pass,pool.committedPoolBuffer(),CULLING.planes,CULLING.count,CULLING.distance,CULLING.safe,
                     (float)position.x,(float)position.y,(float)position.z,chainVisibility))return;
             boolean sampled=pool.bindPassTbos(pass,PackageShaderCompiler.SAMPLER_BASE,engine.packageInterpolation());
@@ -141,7 +142,7 @@ public final class PackageShaderHook {
             for(int layer=0;layer<2;layer++) {
                 if(layer==0?!ground:!chain)continue;
                 captured.setCurrentEntity(layer==0?packageId:0);captured.setCurrentBlockEntity(layer==1?chainId:0);captured.setCurrentRenderedItem(0);
-                applied=true;shader.apply();upload(program,engine,sampled,(float)position.x,(float)position.y,(float)position.z);
+                applied=true;shader.apply();upload(program,engine,sampled,(float)position.x,(float)position.y,(float)position.z,layer==1?pool.chainInterpolationOr(engine.packageInterpolation()):engine.packageInterpolation());
                 integer(program,"entityId",layer==0?packageId:0);integer(program,"blockEntityId",layer==1?chainId:0);
                 pool.drawPrepared(pass,layer,1,program.tessellation());shader.clear();applied=false;
             }
@@ -154,12 +155,12 @@ public final class PackageShaderHook {
             }
         }
     }
-    private static void upload(PackageShaderCompiler.Program p,CMIParticleEngine engine,boolean sampled,float x,float y,float z) {
+    private static void upload(PackageShaderCompiler.Program p,CMIParticleEngine engine,boolean sampled,float x,float y,float z,float partialTick) {
         INVERSE_VIEW.set(VIEW).invert();INVERSE_PROJ.set(PROJECTION).invert();NORMAL.set(VIEW).invert().transpose();
         matrix(p,"iris_ModelViewMat",VIEW);matrix(p,"iris_ModelViewMatInverse",INVERSE_VIEW);matrix(p,"iris_ProjMat",PROJECTION);matrix(p,"iris_ProjMatInverse",INVERSE_PROJ);
         matrix(p,"iris_TextureMat",RenderSystem.getTextureMatrix());
         int normal=p.location("iris_NormalMat");if(normal>=0)GL20.glUniformMatrix3fv(normal,false,NORMAL.get(NORMAL_MATRIX));
-        vector(p,"cmi_CameraPos",x,y,z);scalar(p,"cmi_PartialTick",engine.packageInterpolation());integer(p,"cmi_SampledLighting",sampled?1:0);
+        vector(p,"cmi_CameraPos",x,y,z);scalar(p,"cmi_PartialTick",partialTick);integer(p,"cmi_SampledLighting",sampled?1:0);
         integer(p,"cmi_BlockId",-1);integer(p,"currentRenderedItemId",0);
         int color=p.location("entityColor");if(color>=0)GL20.glUniform4f(color,0,0,0,0);
         color=p.location("iris_ColorModulator");if(color>=0)GL20.glUniform4f(color,1,1,1,1);vector(p,"iris_ChunkOffset",0,0,0);

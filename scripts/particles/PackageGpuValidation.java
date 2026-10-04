@@ -1770,9 +1770,63 @@ public class PackageGpuValidation {
             ByteBuffer b=bodies(2);body(b,0,-4,10,0,1);body(b,1,4,10,0,1);
             b.putFloat(16,100).putFloat(64+16,-100);gpu.upload(b,2);gpu.step(.05f);
             ByteBuffer r=read(gpu);
-            check(r.getFloat(60)<0&&r.getFloat(64+60)<0,"unbounded pair sweeps did not request local pause");
-            check(r.getFloat(0)==-4&&r.getFloat(64)==4&&r.getFloat(16)==100&&r.getFloat(64+16)==-100,
-                    "fallback did not restore the pre-step package state");
+            check(r.getFloat(60)>=0&&r.getFloat(124)>=0,"bounded head-on sweep paused");
+            check(Math.abs(r.getFloat(0)+.5f)<1e-4&&Math.abs(r.getFloat(64)-.5f)<1e-4&&Math.abs(r.getFloat(16))<1e-4&&Math.abs(r.getFloat(80))<1e-4,"bounded head-on CCD response");
+            body(b,0,-4,10,0,1);body(b,1,4,10,0,1);b.putFloat(16,1000).putFloat(80,-1000);gpu.upload(b,2);gpu.step(.05f);r=read(gpu);
+            check(r.getFloat(60)<0&&r.getFloat(124)<0,"oversized pair sweeps did not pause");
+            check(r.getFloat(0)==-4&&r.getFloat(64)==4&&r.getFloat(16)==1000&&r.getFloat(80)==-1000,"oversized sweep did not restore stable state");
+        }
+        crossingPackageSweeps();
+    }
+    static void environmentThroughput(){
+        var air=snapshot((s,i)->WORLD_AIR);
+        var floor=snapshot((s,i)->i>>>8==0?new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,16):WORLD_AIR);
+        for(int rate:new int[]{20,200})try(var world=new PackageCollisionGpu(75,1);var gpu=new PackagePhysicsGpu(512,2,PackageGpuValidation::source)){
+            for(int x=-1;x<=3;x++)for(int y=-1;y<=1;y++)for(int z=-1;z<=3;z++)world.offer(new PackageCollisionCache.Section(x,y,z),y==0?floor:air);
+            uploadWorld(world);var b=bodies(512);var env=gpu.enableEnvironment(PackageGpuValidation::source);env.tickRate(rate);
+            for(int i=0;i<512;i++){body(b,i,.6f+(i%32)*1.01f,1.5f,.6f+(i/32)*1.01f,1);env.reset(i,i+1,1,1,0,5,7);}gpu.upload(b,512);
+            var previous=new ArrayList<com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent>();
+            try(var view=world.view(0,0,0)){for(int frame=0;frame<6;frame++){
+                for(int step=0;step<rate/5;step++)gpu.stepWorld(.05f,view,true,4);
+                var state=read(gpu);for(int i=0;i<512;i++)check(state.getFloat(i*64+60)>=0,"healthy machine journal paused at 5 FPS / rate="+rate);
+                check(env.capture(512),"throughput capture");GL11.glFinish();var events=new ArrayList<com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent>();
+                env.poll(bytes->{byte[] payload=new byte[bytes.remaining()];bytes.get(payload);events.add(com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent.decode(payload));});
+                check(events.size()==512,"environment capture lost the large active burst");
+                for(var event:events){
+                    long begin=frame*(long)rate/5,end=(frame+1L)*rate/5,covered=0;var last=event.samples().getLast();
+                    check(last.step()==end,"environment run lost game steps");
+                    for(var sample:event.samples())covered+=Math.max(0,Math.min(end,sample.step())-Math.max(begin,sample.step()-sample.ticks()));
+                    check(covered==rate/5,"compact history lost elapsed ticks");
+                    // The initial support correction can split the first run at a slightly different contact point.
+                    check(last.ticks()>=rate/5-1,"stationary contact failed to compact");
+                }
+                // A whole-frame delayed ACK must not erase the newly captured suffix.
+                for(var event:previous)env.acknowledge((int)event.identity().id()-1,event.through(),0,5,7);
+                previous=events;
+            }}
+        }
+        // Fire state after a delayed ACK must replay every tick in its compact suffix.
+        var flames=snapshot((s,i)->i>>>8==0?shape(1,.6f):i>>>8==1?new PackageCollisionCache.Cell(List.of(),.6f,4):WORLD_AIR);
+        try(var world=new PackageCollisionGpu(27,1);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)){
+            cubeWorld(world,air,flames,0,0,0);var env=gpu.enableEnvironment(PackageGpuValidation::source);env.tickRate(200);var b=bodies(1);body(b,0,5,1.5f,5,1);gpu.upload(b,1);env.reset(0,1,1,1,0,5,7);
+            long[] through={0};
+            try(var view=world.view(0,0,0)){
+                for(int i=0;i<5;i++)gpu.stepWorld(.05f,view,true,4);env.capture(1);GL11.glFinish();
+                env.poll(bytes->{byte[] payload=new byte[bytes.remaining()];bytes.get(payload);through[0]=com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent.decode(payload).through();});
+                for(int i=0;i<5;i++)gpu.stepWorld(.05f,view,true,4);env.acknowledge(0,through[0],96,4.4f,7);
+            }
+            var h=readBuffer(env.headerBuffer(),64);check(h.getInt(24)==through[0]+1&&h.getInt(28)==through[0]&&h.getInt(32)==91&&Math.abs(h.getFloat(48)-3.65f)<1e-5,"compact ACK lost the five-tick fire suffix / written="+h.getInt(24)+" ack="+h.getInt(28)+" fire="+h.getInt(32)+" health="+h.getFloat(48));
+        }
+    }
+    static void crossingPackageSweeps(){
+        var air=snapshot((s,i)->WORLD_AIR);
+        for(int axis:new int[]{1,2})for(boolean support:new boolean[]{false,true})for(int sign:new int[]{-1,1})for(float speed:new float[]{200,240})try(var world=new PackageCollisionGpu(27,1);var gpu=new PackagePhysicsGpu(2,2,PackageGpuValidation::source)){
+            float start=-sign*speed*.025f;
+            cubeWorld(world,air,air,0,0,0);var b=bodies(2);body(b,0,-sign*5,10,0,1);body(b,1,0,axis==1?10+start:10,axis==2?start:0,1);
+            b.putFloat(16,sign*200).putFloat(64+16+axis*4,sign*speed);gpu.upload(b,2);
+            try(var view=world.view(0,0,0)){gpu.stepWorld(.05f,view,support,4);}var r=read(gpu);
+            check(r.getFloat(60)>=0&&r.getFloat(124)>=0,"crossing sweep paused / axis="+axis+" support="+support+" sign="+sign+" speed="+speed+" status="+r.getFloat(60)+","+r.getFloat(124));
+            check(Math.abs(r.getFloat(16)-sign*196)>1||Math.abs(r.getFloat(64+16+axis*4)-sign*speed*.98f)>2,"crossing trajectories passed without CCD response axis="+axis);
         }
     }
     static void dynamicPackageBenchmark() throws Exception {
@@ -2366,14 +2420,18 @@ public class PackageGpuValidation {
                 for(int tick=0;tick<3 && cache.snapshot(section)==null;tick++)cache.tick((s,i)->i>>>8==0?shape(height,.6f):WORLD_AIR,1);
                 var snapshot=cache.snapshot(section);atlas.invalidate(section,snapshot.revision());atlas.offer(section,snapshot);uploadWorld(atlas);
                 body(b,0,4,4,4,1);b.putFloat(20,-100);gpu.upload(b,1);
-                try(var view=atlas.view(0,0,0)){gpu.stepWorld(.05f,view);}
+                var view=atlas.view(0,0,0);
+                // Ring backpressure is legitimate. This offline geometry-lifetime
+                // fixture waits only on exhaustion, then tests the requested revision.
+                if(!view.ready()){view.close();GL11.glFinish();view=atlas.view(0,0,0);}
+                try(var readyView=view){check(readyView.ready(),"version replacement view did not recover");gpu.stepWorld(.05f,readyView);}
                 GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
                 GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,gpu.stateBuffer());GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,saved);
                 GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,version*64,64);
             }
             var records=readBuffer(saved,12*64);
             for(int version=0;version<12;version++) {
-                check(Math.abs(records.getFloat(version*64+4)-((version&1)==0?1f:1.5f))<1e-4,"world version snapshot overwritten");
+                check(Math.abs(records.getFloat(version*64+4)-((version&1)==0?1f:1.5f))<1e-4,"world version snapshot overwritten / version="+version+" y="+records.getFloat(version*64+4)+" sentinel="+records.getFloat(version*64+60));
                 check(records.getFloat(version*64+60)>=0,"world version unexpectedly unavailable");
             }
         }finally{GL15.glDeleteBuffers(saved);}
@@ -3374,8 +3432,8 @@ public class PackageGpuValidation {
         int n=8;ByteBuffer b=bodies(n),meta=BufferUtils.createByteBuffer(n*32),baseline=BufferUtils.createByteBuffer(n*32);
         for(int i=0;i<n;i++){body(b,i,1,2,3,1);deltaMeta(meta,i,1);}
         b.putFloat(0,Math.nextDown(64f)); // crossing must carry its new position, not release
-        b.putFloat(64+16,100).putFloat(64+20,100); // each component fits short, speed does not
-        b.putFloat(128+16,128); // short overflow, never saturated
+        b.putFloat(64+16,1600).putFloat(64+20,1600); // each component fits, speed exceeds 2048 blocks/s
+        b.putFloat(128+16,4096); // negotiated velocity overflow, never saturated
         b.putFloat(192+44,-999999.9375f);
         b.putFloat(256+44,999999.9375f);
         b.putFloat(320+16,-.5f/PackageDeltaCodec.VELOCITY_SCALE).putFloat(320+20,.5f/PackageDeltaCodec.VELOCITY_SCALE); // Java's signed round ties
@@ -4443,7 +4501,8 @@ public class PackageGpuValidation {
         GL20.glUniform3f(GL20.glGetUniformLocation(program,"uLight1"),l1.x,l1.y,l1.z);
         Random random=new Random(79);
         try {
-            for(int flags:new int[]{0,1,3})for(int rig=0;rig<2;rig++)for(float pt:new float[]{0,.25f,.5f,1})for(int run=0;run<32;run++) {
+            for(boolean separate:new boolean[]{false,true})for(int flags:new int[]{0,1,3})for(int rig=0;rig<2;rig++)for(float freePt:new float[]{0,.25f,.5f,1})for(int run=0;run<32;run++) {
+                float pt=separate&&(flags&1)!=0?1-freePt:freePt;
                 Vector3f previous=new Vector3f(random.nextFloat()*2,random.nextFloat()*2,random.nextFloat()*2);
                 Vector3f current=new Vector3f(previous).add(.2f,-.1f,.3f),oldTarget=new Vector3f(1,2,3),target=new Vector3f(1.2f,2.1f,3.2f);
                 float yaw0=random.nextFloat()*720-360,yaw1=yaw0+210,hook=23/16f;
@@ -4462,7 +4521,9 @@ public class PackageGpuValidation {
                 GL20.glUniform1i(GL20.glGetUniformLocation(program,"uLightingMode"),lighting);
                 GL20.glUniform1i(GL20.glGetUniformLocation(program,"uConstantAmbient"),ambient);
                 GL20.glVertexAttrib3f(0,vertex.x,vertex.y,vertex.z);GL30.glVertexAttribI2ui(4,0,rig);
-                GL20.glUniform1f(GL20.glGetUniformLocation(program,"uPartialTick"),pt);
+                GL20.glUniform1f(GL20.glGetUniformLocation(program,"uPartialTick"),freePt);
+                GL20.glUniform1f(GL20.glGetUniformLocation(program,"uChainPartialTick"),1-freePt);
+                GL20.glUniform1i(GL20.glGetUniformLocation(program,"uSeparateChainInterpolation"),separate?1:0);
                 GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL30.glBeginTransformFeedback(GL11.GL_POINTS);
                 GL11.glDrawArrays(GL11.GL_POINTS,0,1);GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);
                 float yaw=yaw0+((yaw1-yaw0+180)%360-180)*pt;
@@ -5268,11 +5329,11 @@ public class PackageGpuValidation {
                 worldPrefetchBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"world prefetch benchmark GL error");return;
             }
             if(Arrays.asList(args).contains("--repair-only")){
-                continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();sectionDemandAndPause();fallingSectionConfirmations();packageFaceLighting();asymmetricSweepRegression();environmentRegression();recycledFreeAcquisitions();recycledChainAcquisitions();historicalGeometryIsolation();localBudgetRetry();
+                continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();sectionDemandAndPause();fallingSectionConfirmations();packageFaceLighting();asymmetricSweepRegression();environmentRegression();environmentThroughput();recycledFreeAcquisitions();recycledChainAcquisitions();historicalGeometryIsolation();localBudgetRetry();
                 check(GL11.glGetError()==GL11.GL_NO_ERROR,"repair regression GL error");System.out.println("Package repair GPU: "+checks+" assertions passed");return;
             }
             if(Arrays.asList(args).contains("--physics-only")) {
-                sourceContract();boundaries();contact();sweep();dynamicPackageSweep();
+                sourceContract();boundaries();contact();sweep();dynamicPackageSweep();environmentThroughput();
                 check(GL11.glGetError()==GL11.GL_NO_ERROR,"physics GL error");
                 System.out.println("Package physics GPU: "+checks+" assertions passed");return;
             }
@@ -5292,7 +5353,7 @@ public class PackageGpuValidation {
             if(Arrays.asList(args).contains("--forces-only")){sourceContract();externalForces();framedForces();if(Arrays.asList(args).contains("--forces-benchmark"))forceBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"force GL error");System.out.println("Package forces GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--chain-only")){sourceContract();chainReference();trackedChains();chainEventChannels();chainAcquisitions();check(GL11.glGetError()==GL11.GL_NO_ERROR,"chain GL error");System.out.println("Package chain GPU: "+checks+" assertions passed");return;}
             movingContacts();movingReference();movingLifecycle();movingFriction();movingCapacity();if(Arrays.asList(args).contains("--moving-benchmark"))movingBenchmark();if(Arrays.asList(args).contains("--moving-only")){check(GL11.glGetError()==GL11.GL_NO_ERROR,"moving GL error");System.out.println("Package moving GPU: "+checks+" assertions passed");return;}
-            continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();sectionDemandAndPause();fallingSectionConfirmations();asymmetricSweepRegression();environmentRegression();recycledFreeAcquisitions();recycledChainAcquisitions();historicalGeometryIsolation();localBudgetRetry();sourceContract();externalForces();framedForces();chainParentFrames();mergedPackageVertices();poseQueries();freePoseQueries();parallelFreeChainQueries();chainCheckpoints();boundaries();contact();sweep();dynamicPackageSweep();worldUploadVersions();worldAtlasLru();worldShapes();worldSweepsAndMaterials();historicalGeometryIsolation();worldMissingAndInvalidated();worldFullCapacity();worldRigidSupportAndReplacement();supportProjection();contactProbeReference();supportContactCases();worldEntryFace();supportSustainedMotion();chain();chainReference();trackedChains();chainEventChannels();chainAcquisitions();incrementalPhysics();preparedPhysics();mixedPhysics();mixedFullReservation();readbacks();pool();preparedDrawPasses();shadowCullingAndBoundary();packageDrawTelemetry();render();previewLoad();poseParity();deltas();deltaIncrementalIdentity();deltaPreparedBaselines();acquisitions();batchedAcquisitions();deltaOverflowAndIdentity();deltaQuantizationLimits();deltaYawTies();deltaRelativeBaselines();deltaPredictedMotion();channelRoundTrip();channelBatchAckHoles();channelLifecycle();channelImmutableAndPartialTransport();if(Arrays.asList(args).contains("--benchmark")){benchmark();deltaBenchmark();}
+            continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();sectionDemandAndPause();fallingSectionConfirmations();asymmetricSweepRegression();environmentRegression();environmentThroughput();recycledFreeAcquisitions();recycledChainAcquisitions();historicalGeometryIsolation();localBudgetRetry();sourceContract();externalForces();framedForces();chainParentFrames();mergedPackageVertices();poseQueries();freePoseQueries();parallelFreeChainQueries();chainCheckpoints();boundaries();contact();sweep();dynamicPackageSweep();worldUploadVersions();worldAtlasLru();worldShapes();worldSweepsAndMaterials();historicalGeometryIsolation();worldMissingAndInvalidated();worldFullCapacity();worldRigidSupportAndReplacement();supportProjection();contactProbeReference();supportContactCases();worldEntryFace();supportSustainedMotion();chain();chainReference();trackedChains();chainEventChannels();chainAcquisitions();incrementalPhysics();preparedPhysics();mixedPhysics();mixedFullReservation();readbacks();pool();preparedDrawPasses();shadowCullingAndBoundary();packageDrawTelemetry();render();previewLoad();poseParity();deltas();deltaIncrementalIdentity();deltaPreparedBaselines();acquisitions();batchedAcquisitions();deltaOverflowAndIdentity();deltaQuantizationLimits();deltaYawTies();deltaRelativeBaselines();deltaPredictedMotion();channelRoundTrip();channelBatchAckHoles();channelLifecycle();channelImmutableAndPartialTransport();if(Arrays.asList(args).contains("--benchmark")){benchmark();deltaBenchmark();}
             if(Arrays.asList(args).contains("--delta-pipeline-benchmark"))pipelineBenchmark();
             if(Arrays.asList(args).contains("--delta-batch-pipeline-benchmark"))pipelineBenchmark(true);
             if(Arrays.asList(args).contains("--world-benchmark"))worldBenchmark();

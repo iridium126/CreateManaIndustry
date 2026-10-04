@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-04",
+  "baseCommit": "c2d76ba8b0ce5a0a7dd162023e0ff1d45c166746",
+  "device": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "opengl": "4.5",
+  "driver": "581.15",
+  "java": 21,
+  "unit": {
+    "errors": 0,
+    "skipped": 0,
+    "tests": 478,
+    "failures": 0
+  },
+  "gpu": {
+    "full": 12297727,
+    "light": 886165,
+    "observer": 3548729,
+    "iris": 26730
+  },
+  "gameTests": {
+    "passed": 6,
+    "failed": 0
+  },
+  "build": {
+    "success": true,
+    "jar": "createmanaindustry-0.2.6.jar",
+    "gameTestFixtures": 0
+  },
+  "benchmark": {
+    "baselineMethod": "HEAD PackagePhysicsGpu and both CCD shaders shadowed in an isolated build directory; same current harness and runtime; no production reset",
+    "scenario": "131072 staggered_driven support4_linked",
+    "current": "ccd-current.csv",
+    "baseline": "ccd-baseline.csv",
+    "scope": "GPU timer covers drive probe and physics, excluding draw/network/frame",
+    "baselineSamples": "ccd-baseline-samples.csv",
+    "runs": 3,
+    "currentSamples": "ccd-current-samples.csv",
+    "qualityPassBoth": true
+  },
+  "protocol": {
+    "authority": "gpu-packages-13",
+    "observer": "gpu-package-observers-5"
+  }
+}

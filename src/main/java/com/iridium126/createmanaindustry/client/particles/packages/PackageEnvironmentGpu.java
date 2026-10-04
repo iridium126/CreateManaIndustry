@@ -8,7 +8,7 @@ import org.lwjgl.system.MemoryStack;
 
 /** Reliable per-lifecycle environmental journal. GPU backpressure pauses only full bodies. */
 public final class PackageEnvironmentGpu implements AutoCloseable {
-    public static final int HEADER_BYTES=64,SAMPLE_BYTES=48,HISTORY=20,EVENT_BYTES=1024,MAX_EVENTS=16;
+    public static final int HEADER_BYTES=64,SAMPLE_BYTES=48,HISTORY=20,EVENT_BYTES=1024,MAX_EVENTS=512;
     private static final int OUTPUT_BYTES=16+MAX_EVENTS*EVENT_BYTES;
     private final int capacity,headers,samples,output,stepProgram,captureProgram,ackProgram;
     private final PackageReadbackRing ring;
@@ -17,6 +17,8 @@ public final class PackageEnvironmentGpu implements AutoCloseable {
     public long barrier(){return sequence-1;}
     public boolean drained(long barrier){return completed>=barrier;}
     private int scanOffset;
+    private int coalesceTicks=1;
+    public void tickRate(double rate){open();coalesceTicks=com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageTickTiming.historyTicks(rate);}
     private boolean closed;
     public PackageEnvironmentGpu(int capacity,Function<String,String> sources){
         if(capacity<1||capacity>131072)throw new IllegalArgumentException("Environment capacity");this.capacity=capacity;
@@ -65,6 +67,7 @@ public final class PackageEnvironmentGpu implements AutoCloseable {
         open();if(count==0)return;GL20.glUseProgram(stepProgram);bind(GL20.glGetUniformLocation(stepProgram,"uEnvironmentReady"));
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,bodies);GL30.glUniform1ui(GL20.glGetUniformLocation(stepProgram,"uCount"),count);
         long step=++simulationStep;GL30.glUniform2ui(GL20.glGetUniformLocation(stepProgram,"uSimulationStep"),(int)step,(int)(step>>>32));
+        GL30.glUniform1ui(GL20.glGetUniformLocation(stepProgram,"uCoalesceTicks"),coalesceTicks);
         world.bind(new int[]{GL20.glGetUniformLocation(stepProgram,"uWorldReady"),GL20.glGetUniformLocation(stepProgram,"uWorldOriginSection"),
             GL20.glGetUniformLocation(stepProgram,"uWorldTableMask"),GL20.glGetUniformLocation(stepProgram,"uWorldSlotWords"),GL20.glGetUniformLocation(stepProgram,"uWorldShapeCapacity")},0,true);
         GL43.glDispatchCompute((count+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
@@ -73,7 +76,8 @@ public final class PackageEnvironmentGpu implements AutoCloseable {
         open();if(count==0||ring.pending()==PackageReadbackRing.SLOTS)return false;
         clear(output,0,16);GL20.glUseProgram(captureProgram);bind(GL20.glGetUniformLocation(captureProgram,"uEnvironmentReady"));
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,output);GL30.glUniform1ui(GL20.glGetUniformLocation(captureProgram,"uCount"),count);
-        GL30.glUniform1ui(GL20.glGetUniformLocation(captureProgram,"uScanOffset"),scanOffset%count);scanOffset=(scanOffset+4096)%count;
+        GL30.glUniform1ui(GL20.glGetUniformLocation(captureProgram,"uScanOffset"),scanOffset%count);scanOffset=(scanOffset+MAX_EVENTS)%count;
+        GL30.glUniform1ui(GL20.glGetUniformLocation(captureProgram,"uEventCapacity"),MAX_EVENTS);
         GL43.glDispatchCompute((count+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         return ring.submit(output,1,sequence++);
     }

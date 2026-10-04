@@ -4,6 +4,7 @@
 #pragma cmi_include packages/environment_state.glsl
 layout(local_size_x=64) in;
 uniform uvec2 uSimulationStep;
+uniform uint uCoalesceTicks;
 void main(){
     uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
     Body b=src[i];PackageEnvironment e=environment[i];
@@ -38,9 +39,25 @@ void main(){
     }
     if(flags==0u&&oldFire==0u)return;
     uint written=e.lease.z;
-    environmentSamples[i*PACKAGE_ENV_HISTORY+written%PACKAGE_ENV_HISTORY]=PackageEnvironmentSample(
-        ivec4(contact,int(flags)),uvec4(uSimulationStep,e.control.x,floatBitsToUint(max(health,0.0))),vec4(contactPosition,0));
-    e.lease.z++;e.state.x=max(health,0.0);
+    bool merged=false;
+    // A captured record is immutable until its exact cumulative ACK. Only an
+    // unsent, contiguous run at one unchanged contact point can be extended.
+    if(uCoalesceTicks>1u&&written>e.lease.w&&written>floatBitsToUint(e.state.y)&&((flags&24u)==0u||oldFire==0u)) {
+        uint at=i*PACKAGE_ENV_HISTORY+(written-1u)%PACKAGE_ENV_HISTORY;
+        PackageEnvironmentSample previous=environmentSamples[at];uint ticks=max(1u,floatBitsToUint(previous.position.w));
+        uvec2 next=previous.timeline.xy+uvec2(1u,0u);if(next.x==0u)next.y++;
+        if(ticks<uCoalesceTicks&&all(equal(next,uSimulationStep))&&all(equal(previous.contact,ivec4(contact,int(flags))))
+                &&all(lessThanEqual(abs(previous.position.xyz-contactPosition),vec3(1e-6)))) {
+            previous.timeline=uvec4(uSimulationStep,e.control.x,floatBitsToUint(max(health,0.0)));previous.position.w=uintBitsToFloat(ticks+1u);
+            environmentSamples[at]=previous;merged=true;
+        }
+    }
+    if(!merged){
+        environmentSamples[i*PACKAGE_ENV_HISTORY+written%PACKAGE_ENV_HISTORY]=PackageEnvironmentSample(
+            ivec4(contact,int(flags)),uvec4(uSimulationStep,e.control.x,floatBitsToUint(max(health,0.0))),vec4(contactPosition,uintBitsToFloat(1u)));
+        e.lease.z++;
+    }
+    e.state.x=max(health,0.0);
     if((flags&e.control.w&1u)!=0u||health<=.5){e.control.y=1u;b.previousSleep.w=PACKAGE_COLLISION_FROZEN;src[i]=b;}
     environment[i]=e;
 }

@@ -1,4 +1,5 @@
-layout(std430,binding=7) readonly buffer FastCells { uint fastCells[]; };
+#pragma cmi_include packages/sweep_cells.glsl
+layout(std430,binding=7) readonly buffer FastCells { SweepCell fastCells[]; };
 layout(std430,binding=6) readonly buffer StepVelocity { vec4 stepVelocity[]; };
 layout(local_size_x=64) in;
 
@@ -23,7 +24,7 @@ void main() {
     bool fast=any(greaterThan(abs(motion),max(b.extentYaw.xyz,vec3(1e-5))));
     // Slow bodies must participate when the other body is fast. The prepass marks
     // conservative affected cells so stationary populations retain a cheap early out.
-    if(!fast&&fastCells[hashCell(cellOf(b.positionMass.xyz))]==0u){dst[i]=b;return;}
+    if(!fast&&fastCells[hashCell(cellOf(b.positionMass.xyz))].positive.w==0u){dst[i]=b;return;}
 
     // Package dimensions are admitted at <= half a grid cell. Other package
     // displacement is bounded to 16 cells (32 blocks) per 20 Hz step; faster
@@ -35,12 +36,20 @@ void main() {
     bool staticallyClipped=longMove && currentSpeed<incomingSpeed*.5
             && length(b.velocityGround.xyz-stepVelocity[i].xyz)>max(2.0,incomingSpeed*.5);
     if(longMove&&!staticallyClipped) { pauseCollision(b,i);return; }
-    // The segment is already covered by min(start,end)..max(start,end). Only pad
-    // for this body's extent and the largest admitted counterpart half-extent;
-    // adding maximumMotion again made ordinary fast hits exceed the volume budget.
-    vec3 padding=b.extentYaw.xyz+vec3(uCellSize*.5+1e-4);
+    // Slow counterparts can move by their own half extent. Fast counterparts
+    // contribute their actual signed reach only in cells touched by this path.
+    // This is conservative for both swept trajectories without padding every
+    // body by the global maximum displacement.
+    vec3 padding=b.extentYaw.xyz+vec3(uCellSize+1e-4);
     ivec3 lo=cellOf(min(start,b.positionMass.xyz)-padding);
     ivec3 hi=cellOf(max(start,b.positionMass.xyz)+padding);
+    vec3 positive=vec3(0),negative=vec3(0);
+    for(int z=lo.z;z<=hi.z;z++)for(int y=lo.y;y<=hi.y;y++)for(int x=lo.x;x<=hi.x;x++) {
+        SweepCell reach=fastCells[hashCell(ivec3(x,y,z))];
+        positive=max(positive,uintBitsToFloat(reach.positive.xyz));negative=max(negative,uintBitsToFloat(reach.negative.xyz));
+    }
+    lo=cellOf(min(start,b.positionMass.xyz)-padding-negative);
+    hi=cellOf(max(start,b.positionMass.xyz)+padding+positive);
     ivec3 size=hi-lo+1;
     if(any(lessThanEqual(size,ivec3(0))) || any(greaterThan(size,ivec3(32))) || size.x*size.y*size.z>PACKAGE_SWEEP_CELL_VOLUME) {
         pauseCollision(b,i);return;
