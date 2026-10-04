@@ -7,7 +7,7 @@ import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageReg
 /** Immutable external sources only. Neither this worker BVH nor its GPU consumer scans packages. */
 public final class PackageForceScene {
     public static final int MAX_SOURCES=4096,NODE_BYTES=32,SOURCE_BYTES=64,FRAME_BYTES=64;
-    public static final int ENTITY=1,FAN=2;
+    public static final int ENTITY=1,FAN=2,NOZZLE=3;
     public record Source(int kind,double x0,double y0,double z0,double x1,double y1,double z1,
                          double x,double y,double z,float strength,float fx,float fy,float fz,float range,Frame frame) {
         public Source(int kind,double x0,double y0,double z0,double x1,double y1,double z1,
@@ -15,10 +15,11 @@ public final class PackageForceScene {
             this(kind,x0,y0,z0,x1,y1,z1,x,y,z,strength,fx,fy,fz,range,null);
         }
         public Source {
-            if(kind!=ENTITY&&kind!=FAN||!Double.isFinite(x0+y0+z0+x1+y1+z1+x+y+z)
+            if(kind!=ENTITY&&kind!=FAN&&kind!=NOZZLE||!Double.isFinite(x0+y0+z0+x1+y1+z1+x+y+z)
                     ||x0>=x1||y0>=y1||z0>=z1||!Float.isFinite(strength+fx+fy+fz+range)
                     ||strength<0||range<0||kind==ENTITY&&(strength!=0&&strength!=1)
-                    ||kind==FAN&&(range<=0||fx*fx+fy*fy+fz*fz!=1))
+                    ||(kind==FAN||kind==NOZZLE)&&(range<=0||fx*fx+fy*fy+fz*fz!=1)
+                    ||kind==NOZZLE&&strength<=0)
                 throw new IllegalArgumentException("Package force source");
         }
         public Source framed(Frame frame){return new Source(kind,x0,y0,z0,x1,y1,z1,x,y,z,strength,fx,fy,fz,range,Objects.requireNonNull(frame));}
@@ -62,7 +63,7 @@ public final class PackageForceScene {
         var worldBounds=new PackageMovingGeometry.Bounds[sources.size()];
         int frameCount=0;
         for(int i=0;i<sources.size();i++){var source=sources.get(i);worldBounds[i]=bounds(source);var indexed=new Indexed(source,i,worldBounds[i]);(source.kind==ENTITY?entities:fans).add(indexed);
-            if(source.kind==FAN&&source.frame!=null)frameCount++;}
+            if((source.kind==FAN||source.kind==NOZZLE)&&source.frame!=null)frameCount++;}
         var nodes=new ArrayList<Node>(Math.max(0,sources.size()*2-1));
         if(!entities.isEmpty()&&!fans.isEmpty()){
             nodes.add(null);build(entities.toArray(Indexed[]::new),0,entities.size(),nodes,true);build(fans.toArray(Indexed[]::new),0,fans.size(),nodes,false);
@@ -74,15 +75,15 @@ public final class PackageForceScene {
         for(var n:nodes){xyz(out,n.x0-ox,n.y0-oy,n.z0-oz);out.putInt(n.end);xyz(out,n.x1-ox,n.y1-oy,n.z1-oz);out.putInt(n.source);}
         int frameIndex=0;
         int sourceIndex=0;
-        for(var s:sources){var b=worldBounds[sourceIndex++];boolean framed=s.kind==FAN&&s.frame!=null;
+        for(var s:sources){var b=worldBounds[sourceIndex++];boolean framed=(s.kind==FAN||s.kind==NOZZLE)&&s.frame!=null;
             xyz(out,b.x0()-ox,b.y0()-oy,b.z0()-oz);out.putInt(s.kind|(framed?++frameIndex<<2:0));xyz(out,b.x1()-ox,b.y1()-oy,b.z1()-oz);out.putFloat(s.strength);
             if(s.frame==null)xyz(out,s.x-ox,s.y-oy,s.z-oz);
             else {var centre=s.frame.project(s.x,s.y,s.z);xyz(out,centre.x-ox,centre.y-oy,centre.z-oz);}
             out.putFloat(s.strength);
-            if(framed){var p=s.frame.pose;xyz(out,p.xx()*s.fx+p.yx()*s.fy+p.zx()*s.fz,p.xy()*s.fx+p.yy()*s.fy+p.zy()*s.fz,p.xz()*s.fx+p.yz()*s.fy+p.zz()*s.fz);}
+            if(framed&&s.kind==FAN){var p=s.frame.pose;xyz(out,p.xx()*s.fx+p.yx()*s.fy+p.zx()*s.fz,p.xy()*s.fx+p.yy()*s.fy+p.zy()*s.fz,p.xz()*s.fx+p.yz()*s.fy+p.zz()*s.fz);}
             else out.putFloat(s.fx).putFloat(s.fy).putFloat(s.fz);
             out.putFloat(s.range);}
-        for(var s:sources)if(s.kind==FAN&&s.frame!=null){
+        for(var s:sources)if((s.kind==FAN||s.kind==NOZZLE)&&s.frame!=null){
             var centre=s.frame.project((s.x0+s.x1)*.5,(s.y0+s.y1)*.5,(s.z0+s.z1)*.5);
             xyz(out,centre.x-ox,centre.y-oy,centre.z-oz);out.putInt(0);
             for(int axis=0;axis<3;axis++){var row=s.frame.inverseRow(axis);xyz(out,row.x,row.y,row.z);

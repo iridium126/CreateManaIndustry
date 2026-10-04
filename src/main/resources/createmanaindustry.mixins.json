@@ -19,6 +19,7 @@
     "packages.PackageMovingFunnelLightMixin",
     "packages.PackageLightArrowMixin",
     "packages.PackageAirCurrentMixin",
+    "packages.PackageNozzleMixin",
     "kinetics.KineticBlockEntityMixin",
     "kinetics.KineticBlockEntityAccessor",
     "kinetics.DirectionalShaftHalvesBlockEntityMixin",

@@ -48,7 +48,7 @@ public final class PackageWorldPrefetchGpu implements AutoCloseable {
 
     /** Called once before a free-body physical step. Full readback rings skip this prefetch pass. */
     public boolean capture(int bodyBuffer,int count,float lookahead,PackageCollisionGpu.View world) {
-        return capture(bodyBuffer,count,lookahead,Math.min(.15f,lookahead),world);
+        return capture(bodyBuffer,count,lookahead,Math.min(.05f,lookahead),world);
     }
     public boolean capture(int bodyBuffer,int count,float lookahead,float safetyLookahead,PackageCollisionGpu.View world) {
         open();if(count<0||count>PackageCollisionRequests.MAX_BODIES||!Float.isFinite(lookahead)||lookahead<0||lookahead>2

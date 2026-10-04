@@ -53,7 +53,31 @@ void worldBox(uint base,uint shape,ivec3 block,out vec3 lo,out vec3 hi) {
     lo=vec3(block)+vec3(uintBitsToFloat(worldData[p]),uintBitsToFloat(worldData[p+1u]),uintBitsToFloat(worldData[p+2u]));
     hi=vec3(block)+vec3(uintBitsToFloat(worldData[p+4u]),uintBitsToFloat(worldData[p+5u]),uintBitsToFloat(worldData[p+6u]));
 }
-bool sweepWorld(Body b,vec3 p,vec3 motion,inout float closest,inout vec3 normal) {
+// Pick the largest conservative time slice that stays inside the bounded voxel
+// query. The server accepts up to 2048 blocks/second; at the 20 Hz physics step
+// that is 102.4 blocks. Subdividing only the exceptional long path keeps the
+// common one-query sweep unchanged while bounding every GPU voxel walk.
+bool worldSweepBoundsFit(vec3 motion,vec3 extent) {
+    ivec3 size=ivec3(ceil(abs(motion)+2.0*extent+vec3(2.0)))+1;
+    return all(lessThanEqual(size,ivec3(16))) && size.x*size.y*size.z<=2048;
+}
+int worldSweepSegments(vec3 motion,vec3 extent) {
+    if(worldSweepBoundsFit(motion,extent))return 1;
+    float low=0.0,high=1.0;
+    for(int iteration=0;iteration<16;iteration++) {
+        float fraction=(low+high)*.5;
+        if(worldSweepBoundsFit(motion*fraction,extent))low=fraction;else high=fraction;
+    }
+    int segments=max(2,int(ceil(1.0/max(low,1e-5))));
+    // Binary-search rounding can add one unnecessary slice at exact integer
+    // boundaries. Verify and trim it with the same conservative bound.
+    if(segments>2 && worldSweepBoundsFit(motion/float(segments-1),extent))segments--;
+    // Admitted package speed and the fixed <=.05 s physics step need fewer than
+    // 64 slices. Keep an explicit shader bound for malformed/non-finite state.
+    return clamp(segments,1,64);
+}
+bool sweepWorldSegment(Body b,vec3 p,vec3 motion,inout float closest,inout vec3 normal,out bool hitFound) {
+    hitFound=false;
     vec3 lo=min(p,p+motion)-b.extentYaw.xyz,hi=max(p,p+motion)+b.extentYaw.xyz;
     ivec3 first,last,cached=ivec3(0);int slot=-2;
     if(!worldBounds(lo,hi,first,last))return false;
@@ -64,9 +88,20 @@ bool sweepWorld(Body b,vec3 p,vec3 motion,inout float closest,inout vec3 normal)
         for(uint j=0u;j<cell.y;j++) {
             vec3 boxLo,boxHi;worldBox(base,cell.x+j,block,boxLo,boxHi);
             if(any(lessThanEqual(boxHi,boxLo)))continue;
-            float time;vec3 hit;
-            if(sweepBox(p,motion,boxLo-b.extentYaw.xyz,boxHi+b.extentYaw.xyz,time,hit) && time<=closest){closest=time;normal=hit;}
+            float time;vec3 boxNormal;
+            if(sweepBox(p,motion,boxLo-b.extentYaw.xyz,boxHi+b.extentYaw.xyz,time,boxNormal) && time<=closest){closest=time;normal=boxNormal;hitFound=true;}
         }
+    }
+    return true;
+}
+bool sweepWorld(Body b,vec3 p,vec3 motion,inout float closest,inout vec3 normal) {
+    float limit=clamp(closest,0.0,1.0);vec3 boundedMotion=motion*limit;
+    int segments=worldSweepSegments(boundedMotion,b.extentYaw.xyz);
+    for(int segment=0;segment<segments;segment++) {
+        float begin=float(segment)/float(segments),end=float(segment+1)/float(segments);
+        float localClosest=1.0;vec3 localNormal=vec3(0);bool hit;
+        if(!sweepWorldSegment(b,p+boundedMotion*begin,boundedMotion*(end-begin),localClosest,localNormal,hit))return false;
+        if(hit) {closest=limit*mix(begin,end,localClosest);normal=localNormal;return true;}
     }
     return true;
 }
@@ -84,7 +119,13 @@ bool worldAvailable(vec3 lo,vec3 hi) {
     return true;
 }
 bool worldSweepAvailable(Body b,vec3 p,vec3 motion) {
-    return worldAvailable(min(p,p+motion)-b.extentYaw.xyz,max(p,p+motion)+b.extentYaw.xyz);
+    int segments=worldSweepSegments(motion,b.extentYaw.xyz);
+    for(int segment=0;segment<segments;segment++) {
+        float begin=float(segment)/float(segments),end=float(segment+1)/float(segments);
+        vec3 a=p+motion*begin,c=p+motion*end;
+        if(!worldAvailable(min(a,c)-b.extentYaw.xyz,max(a,c)+b.extentYaw.xyz))return false;
+    }
+    return true;
 }
 // Jacobi can push beyond the predicted bounds. Validate the final contact correction before
 // publishing it, including neighbour geometry; unknown sections must never become air.

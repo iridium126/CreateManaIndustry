@@ -114,6 +114,7 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
     }
     public void stepFree(float dt) {open();free.step(dt);freeStep++;if(free.count()>0)changed(false);}
     public void applyFreeForces(PackageForceGpu.View forces,float dt){open();free.applyForces(forces,dt);if(free.count()>0&&forces.nodes()>0)changed(false);}
+    public void applyFreeForces(PackageForceGpu.View forces,float dt,PackageCollisionGpu.View world){open();free.applyForces(forces,dt,world);if(free.count()>0&&forces.nodes()>0)changed(false);}
     public void stepFreeWorld(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations) {
         open();free.stepWorld(dt,world,supportProjection,iterations);freeStep++;if(free.count()>0)changed(false);
     }

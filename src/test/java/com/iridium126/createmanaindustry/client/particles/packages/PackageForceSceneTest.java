@@ -29,6 +29,20 @@ class PackageForceSceneTest {
             if(sourceList.get(source-1).kind()==2){fanSeen=true;fanOrder.add(source);}else assertFalse(fanSeen,"entity tree must precede sequential fans");}
         assertEquals(List.of(1,3),fanOrder);
     }
+    @Test void nozzleSourcesPreserveRangeAndOptionalFrameInTheGpuLayout(){
+        var nozzle=new PackageForceScene.Source(PackageForceScene.NOZZLE,3,4,5,7,8,9,5,6,7,1/32f,-1,0,0,4);
+        var pose=new PackageMovingGeometry.Pose(0,0,-1,0,1,0,1,0,0,10,0,0);
+        var scene=PackageForceScene.bake(3,List.of(nozzle,nozzle.framed(new PackageForceScene.Frame(pose,5,6,7))),0,0,0);
+        var data=scene.data();int sourcesAt=scene.nodes()*PackageForceScene.NODE_BYTES;
+        assertEquals(2,scene.sources());assertEquals(1,scene.frames());
+        assertEquals(PackageForceScene.NOZZLE,data.getInt(sourcesAt+12));
+        assertEquals(1/32f,data.getFloat(sourcesAt+44));assertEquals(-1,data.getFloat(sourcesAt+48));assertEquals(4,data.getFloat(sourcesAt+60));
+        int framedAt=sourcesAt+PackageForceScene.SOURCE_BYTES;
+        assertEquals(PackageForceScene.NOZZLE|4,data.getInt(framedAt+12));
+        assertEquals(1/32f,data.getFloat(framedAt+44));assertEquals(-1,data.getFloat(framedAt+48));
+        assertEquals(0,data.getFloat(framedAt+52));assertEquals(0,data.getFloat(framedAt+56));assertEquals(4,data.getFloat(framedAt+60));
+        assertEquals(scene.nodes()*PackageForceScene.NODE_BYTES+2*PackageForceScene.SOURCE_BYTES+PackageForceScene.FRAME_BYTES,data.remaining());
+    }
     @Test void forceInterestUsesWorldBoundsForStaticAndFramedSources(){
         var first=new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion(0,0,0);
         var second=new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion(2,0,0);
@@ -44,7 +58,7 @@ class PackageForceSceneTest {
     @Test void rejectMalformedUnknownAndOverflowRatherThanTreatThemAsAir(){
         assertThrows(IllegalArgumentException.class,()->PackageForceScene.bake(0,Collections.nCopies(4097,source(0)),0,0,0));
         assertThrows(IllegalArgumentException.class,()->PackageForceScene.bake(0,List.of(source(0)),Double.NaN,0,0));
-        assertThrows(IllegalArgumentException.class,()->new PackageForceScene.Source(3,0,0,0,1,1,1,0,0,0,1,0,0,0,0));
+        assertThrows(IllegalArgumentException.class,()->new PackageForceScene.Source(4,0,0,0,1,1,1,0,0,0,1,0,0,0,0));
         assertThrows(IllegalArgumentException.class,()->new PackageForceScene.Source(2,0,0,0,1,1,1,0,0,0,1,0,0,0,1));
         assertThrows(IllegalArgumentException.class,()->new PackageForceScene.Source(1,0,0,0,1,1,1,0,0,0,2,0,0,0,0));
         assertThrows(IllegalArgumentException.class,()->new PackageForceScene.Source(2,0,0,0,1,1,1,0,0,0,Float.POSITIVE_INFINITY,1,0,0,1));

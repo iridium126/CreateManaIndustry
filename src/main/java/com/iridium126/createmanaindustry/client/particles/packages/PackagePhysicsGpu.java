@@ -15,7 +15,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     public static final float PREPARED=-2;
     public static final float RETIRED=-3;
     public static final float COLLISION_FROZEN=-4;
-    private static final String[] NAMES={"predict","grid","solve","chain","history","predict_world","solve_world","world_support","support_prepare","support_jump","support_apply","solve_support","moving_prepare","moving_carry","moving_contacts","solve_moving","chain_tracked","forces","forces_framed","velocity_capture","dynamic_sweep","fast_sweep_cells","resume"};
+    private static final String[] NAMES={"predict","grid","solve","chain","history","predict_world","solve_world","world_support","support_prepare","support_jump","support_apply","solve_support","moving_prepare","moving_carry","moving_contacts","solve_moving","chain_tracked","forces","forces_framed","dynamic_sweep","fast_sweep_cells","resume"};
     private static final String[] UNIFORMS={"uCount","uTableMask","uCellSize","uDt","uGravity","uDrag","uFriction","uChain",
             "uWorldReady","uWorldOriginSection","uWorldTableMask","uWorldSlotWords","uWorldShapeCapacity","uStaticBodies",
             null,"uCandidateBudget",null,null,"uMovingReady","uMovingSweep","uMovingFriction","uFirst","uLength","uTrackCount","uForceNodes","uForceSources","uEnvironmentReady","uCheckWorld"};
@@ -26,7 +26,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     private final int[] supports=new int[2];
     private int supportControl;
     private int movingSupport;
-    private int stepVelocity,fastCells;
+    private int fastCells,longBodies;
     private PackageEnvironmentGpu environment;
     public PackageEnvironmentGpu enableEnvironment(Function<String,String> sources){ensureOpen();if(environment==null)environment=new PackageEnvironmentGpu(capacity,sources);return environment;}
     public PackageEnvironmentGpu environment(){return environment;}
@@ -76,10 +76,11 @@ public final class PackagePhysicsGpu implements AutoCloseable {
                 GL41.glProgramUniform1f(programs[i],locations[i][2],cellSize);
                 GL41.glProgramUniform1ui(programs[i],locations[i][15],CANDIDATE_BUDGET);
             }
-            GL41.glProgramUniform1ui(programs[20],locations[20][15],DYNAMIC_SWEEP_BUDGET);
+            GL41.glProgramUniform1ui(programs[19],locations[19][15],DYNAMIC_SWEEP_BUDGET);
             states[0]=buffer((long)capacity*BODY_BYTES);states[1]=buffer((long)capacity*BODY_BYTES);
             heads=buffer((long)tableSize*4);links=buffer((long)capacity*4);chains=buffer((long)capacity*CHAIN_BYTES);
-            history=buffer((long)capacity*32);stepVelocity=buffer((long)capacity*16);fastCells=buffer((long)tableSize*32);
+            history=buffer((long)capacity*32);fastCells=buffer((long)tableSize*32);
+            longBodies=buffer((long)(capacity+1)*4);
         } catch(RuntimeException failure) { close();throw failure; }
     }
     private static int buffer(long bytes) {
@@ -240,9 +241,15 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     /** Free domain only. In-place per-body velocities; the subsequent step handles sweeps/contacts.
      * No pose readback, float atomics, particle ABI changes, or work for an empty force scene. */
     public void applyForces(PackageForceGpu.View forces,float dt) {
+        applyForces(forces,dt,null);
+    }
+    /** Static world view is shared with the following physics step and supplies nozzle LOS. */
+    public void applyForces(PackageForceGpu.View forces,float dt,PackageCollisionGpu.View world) {
         ensureStep(dt);java.util.Objects.requireNonNull(forces);if(count==0||forces.nodes()==0)return;
         int program=forces.frames()==0?17:18;
-        bind(program);f(program,3,dt);forces.bind(locations[program][24],locations[program][25]);dispatch();
+        bind(program);f(program,3,dt);
+        if(world==null)GL20.glUniform1i(locations[program][8],0);else world.bind(locations[program],8,true);
+        forces.bind(locations[program][24],locations[program][25]);dispatch();
     }
     /** World view spans all caller substeps; missing coverage marks local pause without moving that body. */
     public void stepWorld(float dt,PackageCollisionGpu.View world){stepWorld(dt,world,false,ITERATIONS);}
@@ -268,11 +275,11 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         int predict=world==null?0:5;
         int solve=world==null?2:(supportProjection?11:6);
         if(!moving.isEmpty())solve=15;
-        bind(22);f(22,3,dt);f(22,4,32f);f(22,5,(float)Math.pow(.98,dt*20));
-        GL20.glUniform1i(locations[22][27],world==null?0:1);
-        if(world!=null)world.bind(locations[22],8,true);
+        bind(21);f(21,3,dt);f(21,4,32f);f(21,5,(float)Math.pow(.98,dt*20));
+        GL20.glUniform1i(locations[21][27],world==null?0:1);
+        if(world!=null)world.bind(locations[21],8,true);
         dispatch();
-        captureStepVelocity();captureHistory(3);
+        captureHistory(3);
         for(var view:moving) {
             bind(12);view.bind(locations[12][18]);GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             bind(13);view.bind(locations[13][18]);world.bind(locations[13],8,true);
@@ -281,7 +288,8 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         if(world==null || staticBodies)buildGrid();
         bind(predict);f(predict,3,dt);f(predict,4,32f);
         f(predict,5,(float)Math.pow(.98,dt*20));
-        if(world!=null){world.bind(locations[predict],8,true);GL20.glUniform1i(locations[predict][13],staticBodies?1:0);}
+        if(world!=null)world.bind(locations[predict],8,true);
+        GL20.glUniform1i(locations[predict][13],staticBodies?1:0);
         dispatch();current^=1;
         // The solver grid is built from this predicted endpoint generation. The CCD
         // query walks a bounded swept neighborhood and filters exact endpoint cells.
@@ -333,17 +341,19 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,movingSupport);
         try(var stack=MemoryStack.stackPush()){GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
     }
-    private void captureStepVelocity() {
-        bind(19);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,stepVelocity);dispatch();
-    }
     private void dynamicSweep() {
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,fastCells);
         try(var stack=MemoryStack.stackPush()){GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
-        bind(21);GL30.glUniform1ui(locations[21][1],tableSize-1);
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,7,fastCells);dispatch();
-        int program=20;bind(program);
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,longBodies);
+        try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,4,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        bind(20);GL30.glUniform1ui(locations[20][1],tableSize-1);
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,7,fastCells);
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,stepVelocity);dispatch();current^=1;
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,8,longBodies);dispatch();
+        int program=19;bind(program);
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,7,fastCells);
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,8,longBodies);dispatch();current^=1;
     }
     void claimMovingFrame(PackageMovingCollisionCache.Entry entry,long frame){
         Long previous=movingFrames.get(entry.identity);if(previous!=null&&frame<=previous)throw new IllegalStateException("Moving tick pose already simulated");movingFrames.put(entry.identity,frame);
@@ -432,7 +442,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     /** Exact allocated buffer storage, queried outside timing intervals by the benchmark. */
     public long storageBytes(){
         ensureOpen();var buffers=new java.util.HashSet<Integer>();
-        for(int id:new int[]{states[0],states[1],heads,links,chains,history,stepVelocity,fastCells,supports[0],supports[1],supportControl,movingSupport})if(id!=0)buffers.add(id);
+        for(int id:new int[]{states[0],states[1],heads,links,chains,history,fastCells,longBodies,supports[0],supports[1],supportControl,movingSupport})if(id!=0)buffers.add(id);
         long bytes=0;for(int id:buffers){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);bytes+=GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE);}
         return bytes+(environment==null?0:environment.bytes());
     }
@@ -452,8 +462,8 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         if(history!=0)GL15.glDeleteBuffers(history);
         for(int buffer:supports)if(buffer!=0)GL15.glDeleteBuffers(buffer);if(supportControl!=0)GL15.glDeleteBuffers(supportControl);
          if(movingSupport!=0)GL15.glDeleteBuffers(movingSupport);
-         if(stepVelocity!=0)GL15.glDeleteBuffers(stepVelocity);
          if(fastCells!=0)GL15.glDeleteBuffers(fastCells);
+         if(longBodies!=0)GL15.glDeleteBuffers(longBodies);
          if(environment!=null)environment.close();
     }
 }

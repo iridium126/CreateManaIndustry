@@ -48,7 +48,7 @@ public final class PackageForceGpu implements AutoCloseable {
         public int frames(){return frames;}
         public void bind(int location,int sourcesLocation){if(ended||closed)throw new IllegalStateException("Package force view closed");
             GL42.glMemoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,4,bank.buffer);GL30.glUniform1ui(location,nodes);if(sourcesLocation>=0)GL30.glUniform1ui(sourcesLocation,sources);}
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,bank.buffer);GL30.glUniform1ui(location,nodes);if(sourcesLocation>=0)GL30.glUniform1ui(sourcesLocation,sources);}
         @Override public void close(){if(ended)return;ended=true;long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);
             if(fence==0)throw new IllegalStateException("Package force upload fence unavailable");
             if(bank.fence!=0)GL32.glDeleteSync(bank.fence);bank.fence=fence;bank.leased=false;}

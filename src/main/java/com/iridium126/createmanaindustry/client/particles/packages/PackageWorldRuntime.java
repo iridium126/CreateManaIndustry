@@ -212,7 +212,7 @@ public final class PackageWorldRuntime {
             // intentionally omit later requests and must not drive cache demand.
             if(freeActive>0&&worldPrefetch!=null){
                 try(var world=PackageCollisionRuntime.forLevel(level).view((int)(ox/16),(int)(oy/16),(int)(oz/16))){
-                    worldPrefetch.capture(physics.freeStateBuffer(),physics.freeCount(),.5f,.15f,world);
+                    worldPrefetch.capture(physics.freeStateBuffer(),physics.freeCount(),.5f,.05f,world);
                 }
             }
             // Initialization and acquisition can be expensive. Start an acquired body's clock
@@ -237,7 +237,7 @@ public final class PackageWorldRuntime {
                     if(!world.ready()||!moving.ready()){waitingInput=!world.ready()?"static geometry/version":"moving pose bank";break;}
                     try(var forces=forceGpu.tryView(forceCapture.snapshot(tick),tick,forceCapture.snapshotIdentity(tick))){
                         if(forces==null){waitingInput="force upload bank";break;}
-                        physics.applyFreeForces(forces,.05f);
+                        physics.applyFreeForces(forces,.05f,world);
                         physics.stepFreeMoving(world,PackagePhysicsGpu.ITERATIONS,moving.views());
                     }
                 }

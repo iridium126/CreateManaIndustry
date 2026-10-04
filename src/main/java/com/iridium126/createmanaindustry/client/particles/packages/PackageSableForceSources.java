@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
 import com.simibubi.create.content.kinetics.fan.AirCurrent;
+import com.simibubi.create.content.kinetics.fan.NozzleBlockEntity;
 import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.sublevel.ClientSubLevel;
 import net.minecraft.world.entity.Entity;
@@ -18,4 +19,5 @@ final class PackageSableForceSources implements PackageForceClient.OptionalBridg
     }
     @Override public PackageForceScene.Source entity(PackageForceScene.Source source,Entity entity){return framed(source,Sable.HELPER.getContaining(entity));}
     @Override public PackageForceScene.Source fan(PackageForceScene.Source source,AirCurrent fan){return framed(source,Sable.HELPER.getContaining(fan.source.getAirCurrentWorld(),fan.source.getAirCurrentPos()));}
+    @Override public PackageForceScene.Source nozzle(PackageForceScene.Source source,NozzleBlockEntity nozzle){return framed(source,Sable.HELPER.getContaining(nozzle.getLevel(),nozzle.getBlockPos()));}
 }

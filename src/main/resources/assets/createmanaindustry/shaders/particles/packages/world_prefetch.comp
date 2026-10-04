@@ -61,7 +61,11 @@ void main() {
             bool safetyValid=all(greaterThanEqual(safetyFirst,ivec3(-134217728)))
                     && all(lessThanEqual(safetyLast,ivec3(134217727)))
                     && all(greaterThan(safetySpan,ivec3(0)))
-                    && all(lessThanEqual(safetySpan,ivec3(8))) && safetySpan.x*safetySpan.y*safetySpan.z<=64;
+                    // The fallback covers one complete physics tick. A fast but
+                    // legal package can cross several sections in that interval;
+                    // retain a bounded request scan instead of dropping all
+                    // prefetch when the older 64-section budget is exceeded.
+                    && all(lessThanEqual(safetySpan,ivec3(8))) && safetySpan.x*safetySpan.y*safetySpan.z<=256;
             bool prefetchValid=signedBlockRange && all(greaterThan(span,ivec3(0)))
                     && all(lessThanEqual(span,ivec3(8))) && span.x*span.y*span.z<=64;
             if(prefetchValid)
@@ -86,7 +90,10 @@ void main() {
                     for(int y=safetyFirst.y;y<=safetyLast.y;y++)
                         for(int x=safetyFirst.x;x<=safetyLast.x;x++) {
                             ivec3 key=ivec3(x,y,z);int row=worldRow(key);
-                            if(row<0) {if(needed.w==0)needed=ivec4(key,1);}
+                            if(row<0) {
+                                ivec3 delta=abs(key-currentSection);int distance=delta.x+delta.y+delta.z;
+                                if(distance<neededDistance){needed=ivec4(key,1);neededDistance=distance;}
+                            }
                             else if(uint(row>>5)<uTouchWordCount)
                                 atomicOr(packageUsageWords[row>>5],1u<<uint(row&31));
                         }

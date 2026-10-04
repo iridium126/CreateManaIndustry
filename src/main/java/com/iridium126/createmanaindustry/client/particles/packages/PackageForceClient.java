@@ -5,6 +5,7 @@ import java.util.concurrent.*;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageForceHooks;
 import com.simibubi.create.content.kinetics.fan.AirCurrent;
+import com.simibubi.create.content.kinetics.fan.NozzleBlockEntity;
 import com.simibubi.create.content.logistics.box.PackageEntity;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.world.phys.AABB;
@@ -19,19 +20,22 @@ import net.neoforged.neoforge.event.level.LevelEvent;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion;
 
 /** Tick-owned mutable world reads, immutable worker input, zero additional force network packets.
- * Native entity and fan synchronization supplies sources; the GPU calculates all package impulses. */
+ * Native entity, fan, and nozzle state supplies sources; the GPU calculates package impulses. */
 @EventBusSubscriber(modid=CreateManaIndustry.MODID,value=Dist.CLIENT)
 public final class PackageForceClient implements AutoCloseable {
-    public static final PackageForceHooks.Listener HOOKS=PackageForceClient::captureFan;
-    private record Fan(long tick,PackageForceScene.Source source) {}
+    public static final PackageForceHooks.Listener HOOKS=new PackageForceHooks.Listener(){
+        @Override public void fan(AirCurrent current){captureFan(current);}
+        @Override public void nozzle(NozzleBlockEntity nozzle,float range,boolean pushing){captureNozzle(nozzle,range,pushing);}
+    };
+    private record Flow(long tick,PackageForceScene.Source source) {}
     private static final double QUERY_MARGIN=2.0;
     private static final class Sources {
-        final Map<AirCurrent,Fan> fans=new LinkedHashMap<>();
+        final Map<Object,Flow> airflow=new LinkedHashMap<>();
         List<PackageRegion> regions=List.of();
         OptionalBridge bridge;boolean bridgeResolved;
     }
     private static final Map<ClientLevel,Sources> worlds=new IdentityHashMap<>();
-    interface OptionalBridge {PackageForceScene.Source entity(PackageForceScene.Source source,Entity entity);PackageForceScene.Source fan(PackageForceScene.Source source,AirCurrent fan);}
+    interface OptionalBridge {PackageForceScene.Source entity(PackageForceScene.Source source,Entity entity);PackageForceScene.Source fan(PackageForceScene.Source source,AirCurrent fan);PackageForceScene.Source nozzle(PackageForceScene.Source source,NozzleBlockEntity nozzle);}
     static OptionalBridge optionalBridge(boolean loaded){return loaded?new PackageSableForceSources():null;}
     private static OptionalBridge bridge(Sources sources){if(!sources.bridgeResolved){sources.bridge=optionalBridge(ModList.get().isLoaded("sable"));sources.bridgeResolved=true;}return sources.bridge;}
     private final ClientLevel level;
@@ -61,9 +65,24 @@ public final class PackageForceClient implements AutoCloseable {
         // A stale Sable sub-level pose only invalidates this fan for this capture. Never put a
         // failed optional source in the shared history: that used to fail prepare() and revoke
         // GPU authority for every package in the world.
-        if(fan==null)sources.fans.remove(current);else sources.fans.put(current,new Fan(level.getGameTime(),fan));
+        if(fan==null)sources.airflow.remove(current);else {sources.airflow.remove(current);sources.airflow.put(current,new Flow(level.getGameTime(),fan));}
     }
-    private static void removeFan(AirCurrent current){for(var sources:worlds.values())sources.fans.remove(current);}
+    private static void captureNozzle(NozzleBlockEntity nozzle,float range,boolean pushing){
+        if(!com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.packageGpuAuthority){removeNozzle(nozzle);return;}
+        if(!(nozzle.getLevel() instanceof ClientLevel level)){removeNozzle(nozzle);return;}
+        var sources=worlds.computeIfAbsent(level,k->new Sources());
+        var captured=PackageForceCapturePolicy.optionalSource(()->{
+            if(nozzle.isRemoved()||!(range>0)||!Float.isFinite(range))return null;
+            var p=nozzle.getBlockPos();double x=p.getX()+.5,y=p.getY()+.5,z=p.getZ()+.5,half=range*.5;
+            var source=new PackageForceScene.Source(PackageForceScene.NOZZLE,x-half,y-half,z-half,x+half,y+half,z+half,
+                    x,y,z,1/32f,pushing?1:-1,0,0,range);
+            var optional=bridge(sources);if(optional!=null)source=optional.nozzle(source,nozzle);
+            return PackageForceScene.intersectsRegions(source,sources.regions,QUERY_MARGIN)?source:null;
+        });
+        if(captured==null)sources.airflow.remove(nozzle);else {sources.airflow.remove(nozzle);sources.airflow.put(nozzle,new Flow(level.getGameTime(),captured));}
+    }
+    private static void removeFan(AirCurrent current){for(var sources:worlds.values())sources.airflow.remove(current);}
+    private static void removeNozzle(NozzleBlockEntity nozzle){for(var sources:worlds.values())sources.airflow.remove(nozzle);}
     /** Called once per tick from the client world runtime, never from a worker. No package scan. */
     public void prepare(double ox,double oy,double oz,Collection<PackageRegion> activeRegions){
         if(closed)throw new IllegalStateException("Package force client closed");
@@ -73,8 +92,10 @@ public final class PackageForceClient implements AutoCloseable {
         if(!sources.regions.equals(regions))sources.regions=regions;
         if(!captureRegions.equals(regions)){captureRegions=regions;snapshots.changedRegions(tick);}
         if(!snapshots.needsCapture(tick))return;
-        sources.fans.entrySet().removeIf(row->row.getKey().source.isSourceRemoved()||worldTick-row.getValue().tick>1
-                ||row.getValue().source!=null&&!PackageForceScene.intersectsRegions(row.getValue().source,regions,QUERY_MARGIN));
+        sources.airflow.entrySet().removeIf(row->row.getKey() instanceof AirCurrent fan&&fan.source.isSourceRemoved()
+                ||row.getKey() instanceof NozzleBlockEntity nozzle&&nozzle.isRemoved()
+                ||worldTick-row.getValue().tick>1
+                ||!PackageForceScene.intersectsRegions(row.getValue().source,regions,QUERY_MARGIN));
         captured.clear();visited.clear();var bridge=bridge(sources);
         for(var region:regions) {
             double x=region.originX(),y=region.originY(),z=region.originZ();
@@ -91,7 +112,7 @@ public final class PackageForceClient implements AutoCloseable {
                 if(framed!=null)captured.add(framed);
             }
         }
-        for(var fan:sources.fans.values())captured.add(fan.source);
+        for(var source:sources.airflow.values())captured.add(source.source);
         if(captured.size()>PackageForceScene.MAX_SOURCES)throw new IllegalStateException("Package force source capacity; restoring Create");
         snapshots.captureRange(input.first(),tick,captured,ox,oy,oz,worker);
     }

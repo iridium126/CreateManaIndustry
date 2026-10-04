@@ -1,12 +1,71 @@
 #define CMI_BODY_INPLACE
 #pragma cmi_include packages/state.glsl
+#pragma cmi_include packages/world_collision.glsl
 layout(local_size_x=64) in;
-layout(std430,binding=4) readonly buffer ForceScene { vec4 forceData[]; };
+layout(std430,binding=6) readonly buffer ForceScene { vec4 forceData[]; };
 uniform uint uForceNodes;
 #ifdef CMI_FRAMED_FORCES
 uniform uint uForceSources;
 #endif
-uniform float uDt;
+
+bool segmentHitsForceBox(vec3 from,vec3 to,vec3 lo,vec3 hi) {
+    vec3 ray=to-from;
+    float enter=-1e30,exit=1e30;
+    for(int axis=0;axis<3;axis++) {
+        if(abs(ray[axis])<1e-8) {
+            if(from[axis]<lo[axis]||from[axis]>hi[axis])return false;
+        } else {
+            float a=(lo[axis]-from[axis])/ray[axis],b=(hi[axis]-from[axis])/ray[axis];
+            enter=max(enter,min(a,b));exit=min(exit,max(a,b));
+            if(exit<enter)return false;
+        }
+    }
+    return enter>=0.0&&enter<=1.0&&exit>=enter;
+}
+
+// DDA over Create's collider voxels. Unknown or unsupported cells conservatively occlude;
+// the nozzle's own block is the accepted terminal hit in NozzleBlockEntity.canSee().
+bool nozzleRayBlocked(vec3 from,vec3 to,ivec3 nozzleBlock) {
+    vec3 ray=to-from;
+    if(any(isnan(from))||any(isinf(from))||any(isnan(to))||any(isinf(to))
+            ||any(greaterThan(abs(from),vec3(1000000)))||any(greaterThan(abs(to),vec3(1000000))))return true;
+    ivec3 cell=ivec3(floor(from)),last=ivec3(floor(to)),step=ivec3(sign(ray));
+    vec3 tDelta=vec3(1e30),tMax=vec3(1e30),rayAbs=max(abs(ray),vec3(1e-30));
+    for(int axis=0;axis<3;axis++)if(step[axis]!=0) {
+        tDelta[axis]=1.0/rayAbs[axis];
+        float boundary=float(cell[axis]+(step[axis]>0?1:0));
+        tMax[axis]=(boundary-from[axis])/ray[axis];
+    }
+    vec3 segmentLo=min(from,to),segmentHi=max(from,to);
+    ivec3 cached=ivec3(0);int slot=-2;bool clearSection=false;
+    for(int visited=0;visited<512;visited++) {
+        if(!all(equal(cell,nozzleBlock))) {
+            ivec3 section=(cell>>4)+uWorldOriginSection;
+            if(slot==-2||any(notEqual(section,cached))) {
+                cached=section;slot=worldSlot(section,clearSection);
+            }
+            if(slot<0)return true;
+            if(!clearSection) {
+                vec3 cellLo=max(segmentLo,vec3(cell)),cellHi=min(segmentHi,vec3(cell+1));
+                uvec4 metadata;uint base;
+                if(!worldCell(cell,cellLo,cellHi,cached,slot,metadata,base))return true;
+                for(uint shape=0u;shape<metadata.y;shape++) {
+                    vec3 boxLo,boxHi;worldBox(base,metadata.x+shape,cell,boxLo,boxHi);
+                    if(any(lessThanEqual(boxHi,boxLo)))continue;
+                    if(segmentHitsForceBox(from,to,boxLo,boxHi))return true;
+                }
+            }
+        }
+        if(all(equal(cell,last)))return false;
+        float next=min(tMax.x,min(tMax.y,tMax.z));
+        if(next>1.0)return false;
+        for(int axis=0;axis<3;axis++)if(tMax[axis]<=next+1e-7) {
+            cell[axis]+=step[axis];tMax[axis]+=tDelta[axis];
+        }
+    }
+    return true;
+}
+
 void main() {
     uint i=gl_GlobalInvocationID.x;
     if(i>=uCount)return;
@@ -23,11 +82,11 @@ void main() {
         if(source==0u)continue;
         uint at=uForceNodes*2u+(source-1u)*4u;
         vec4 bounds=forceData[at],limits=forceData[at+1u],centre=forceData[at+2u],flow=forceData[at+3u];
-#ifdef CMI_FRAMED_FORCES
         uint kind=floatBitsToUint(bounds.w);
+#ifdef CMI_FRAMED_FORCES
         if((kind&3u)==1u) {
 #else
-        if(floatBitsToUint(bounds.w)==1u) {
+        if(kind==1u) {
 #endif
             // Package.tick -> other.push(package), plus living other.tick -> package.push(other).
             // The latter retains Create's feet-height condition. Units change ticks -> seconds.
@@ -44,6 +103,7 @@ void main() {
             // AirCurrent uses the entity's feet and the fan block's centre, including suction.
             vec3 feet=vec3(b.positionMass.x,low.y,b.positionMass.z);
             vec3 offset=feet-centre.xyz;
+            vec3 localOffset=offset;
 #ifdef CMI_FRAMED_FORCES
             uint frame=kind>>2u;
             if(frame>0u) {
@@ -55,14 +115,23 @@ void main() {
                 vec3 extent=vec3(dot(abs(rx.xyz),b.extentYaw.xyz),dot(abs(ry.xyz),b.extentYaw.xyz),dot(abs(rz.xyz),b.extentYaw.xyz));
                 // Sable's native airflow tests the inverse-projected AABB in plot coordinates.
                 if(any(greaterThanEqual(abs(local),vec3(rx.w,ry.w,rz.w)+extent)))continue;
-                offset=vec3(dot(rx.xyz,offset),dot(ry.xyz,offset),dot(rz.xyz,offset));
+                localOffset=vec3(dot(rx.xyz,offset),dot(ry.xyz,offset),dot(rz.xyz,offset));
             }
 #endif
-            float distance=length(offset);
-            // The native zero-distance case saturates through the same component clamp.
-            float acceleration=centre.w*flow.w/max(distance,1e-20);
-            vec3 difference=clamp(flow.xyz*acceleration-velocity/20.0,vec3(-5),vec3(5));
-            velocity+=difference*(2.5*uDt*20.0);
+            if((kind&3u)==3u) {
+                // NozzleBlockEntity uses the entity's feet position, range/2 broadphase,
+                // Euclidean range, a 1.5-block suction dead zone, and 1/32 per tick.
+                float distance=length(localOffset);
+                if(distance>flow.w||(flow.x<0.0&&distance<1.5)||distance<1e-4)continue;
+                if(nozzleRayBlocked(feet,centre.xyz,ivec3(floor(centre.xyz))))continue;
+                velocity+=normalize(offset)*((flow.w-distance)*flow.x*centre.w*20.0);
+            } else {
+                float distance=length(localOffset);
+                // AirCurrent saturates component impulses after subtracting native motion.
+                float acceleration=centre.w*flow.w/max(distance,1e-20);
+                vec3 difference=clamp(flow.xyz*acceleration-velocity/20.0,vec3(-5),vec3(5));
+                velocity+=difference*(2.5*uDt*20.0);
+            }
         }
     }
     src[i].velocityGround.xyz=velocity;

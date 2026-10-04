@@ -1646,8 +1646,8 @@ public class PackageGpuValidation {
             ByteBuffer r=read(gpu);check(r.getFloat(68)>=.9999f,"high-speed body tunneled through static block");
             check(r.getFloat(64+20)==0,"swept collision did not remove inward velocity");
             body(b,1,0,4,0,1);b.putFloat(64+20,-100000);gpu.upload(b,2);gpu.step(.05f);
-            r=read(gpu);check(r.getFloat(64+60)<0,"oversized sweep did not request fallback");
-            check(r.getFloat(68)==4,"oversized sweep advanced without collision coverage");
+            r=read(gpu);check(r.getFloat(64+60)>=0,"oversized static sweep left the body frozen");
+            check(Math.abs(r.getFloat(68)-1)<1e-4,"oversized static sweep tunneled through its exact fallback");
         }
     }
     static void asymmetricSweepRegression(){
@@ -1772,9 +1772,32 @@ public class PackageGpuValidation {
             ByteBuffer r=read(gpu);
             check(r.getFloat(60)>=0&&r.getFloat(124)>=0,"bounded head-on sweep paused");
             check(Math.abs(r.getFloat(0)+.5f)<1e-4&&Math.abs(r.getFloat(64)-.5f)<1e-4&&Math.abs(r.getFloat(16))<1e-4&&Math.abs(r.getFloat(80))<1e-4,"bounded head-on CCD response");
-            body(b,0,-4,10,0,1);body(b,1,4,10,0,1);b.putFloat(16,1000).putFloat(80,-1000);gpu.upload(b,2);gpu.step(.05f);r=read(gpu);
-            check(r.getFloat(60)<0&&r.getFloat(124)<0,"oversized pair sweeps did not pause");
-            check(r.getFloat(0)==-4&&r.getFloat(64)==4&&r.getFloat(16)==1000&&r.getFloat(80)==-1000,"oversized sweep did not restore stable state");
+            body(b,0,-4,10,0,1);body(b,1,4,10,0,1);b.putFloat(16,2048).putFloat(80,-2048);gpu.upload(b,2);gpu.step(.05f);r=read(gpu);
+            check(r.getFloat(60)>=0&&r.getFloat(124)>=0,"maximum legal pair sweep froze");
+            check(Math.abs(r.getFloat(0)+.5f)<1e-4&&Math.abs(r.getFloat(64)-.5f)<1e-4
+                    &&Math.abs(r.getFloat(16))<1e-3&&Math.abs(r.getFloat(80))<1e-3,"maximum legal pair CCD missed its collision");
+        }
+        // The static-world path must split the maximum negotiated one-tick
+        // displacement into bounded voxel queries and stop at the first wall.
+        int wallCell=8|(5<<4)|(10<<8);
+        var wall=snapshot((s,i)->i==wallCell?shape(1,.6f):WORLD_AIR);
+        try(var world=new PackageCollisionGpu(16,1);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)) {
+            for(int sectionX=0;sectionX<2;sectionX++)
+                check(world.offer(new PackageCollisionCache.Section(sectionX,0,0),air),"initial fast world section admission");
+            uploadWorld(world);ByteBuffer b=bodies(1);body(b,0,5,10.5f,5.5f,1);b.putFloat(16,2048);gpu.upload(b,1);
+            try(var view=world.view(0,0,0)){gpu.stepWorld(.05f,view);}
+            var r=read(gpu);
+            check(r.getFloat(60)==PackagePhysicsGpu.COLLISION_FROZEN&&Math.abs(r.getFloat(0)-5)<1e-4,
+                    "unavailable high-speed section did not pause at its stable pose");
+            for(int sectionX=2;sectionX<8;sectionX++)
+                check(world.offer(new PackageCollisionCache.Section(sectionX,0,0),sectionX==2?wall:air),"fast world section recovery admission");
+            uploadWorld(world);
+            try(var view=world.view(0,0,0)){gpu.stepWorld(.05f,view);}
+            r=read(gpu);
+            check(r.getFloat(60)>=0&&Math.abs(r.getFloat(0)-39.5f)<1e-3&&Math.abs(r.getFloat(16))<1e-3,
+                    "maximum legal static sweep froze or tunneled through the wall: x="+r.getFloat(0)+" state="+r.getFloat(60));
+            try(var view=world.view(0,0,0)){gpu.stepWorld(.05f,view);}
+            check(read(gpu).getFloat(60)>=0,"maximum legal wall contact remained collision-frozen");
         }
         crossingPackageSweeps();
     }
@@ -1816,6 +1839,44 @@ public class PackageGpuValidation {
                 for(int i=0;i<5;i++)gpu.stepWorld(.05f,view,true,4);env.acknowledge(0,through[0],96,4.4f,7);
             }
             var h=readBuffer(env.headerBuffer(),64);check(h.getInt(24)==through[0]+1&&h.getInt(28)==through[0]&&h.getInt(32)==91&&Math.abs(h.getFloat(48)-3.65f)<1e-5,"compact ACK lost the five-tick fire suffix / written="+h.getInt(24)+" ack="+h.getInt(28)+" fire="+h.getInt(32)+" health="+h.getFloat(48));
+        }
+    }
+    static void nozzleForces(){
+        var section=new PackageCollisionCache.Section(0,0,0);
+        var air=snapshot((s,i)->WORLD_AIR);
+        var blocked=snapshot((s,i)->i==(4|(2<<4)|(1<<8))?shape(1,.6f):WORLD_AIR);
+        try(var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source);var upload=new PackageForceGpu();var atlas=new PackageCollisionGpu(1,1)){
+            check(atlas.offer(section,air),"nozzle open-ray fixture rejected");uploadWorld(atlas);
+            var body=bodies(1);body(body,0,5.5f,2.0f,2.5f,1);gpu.upload(body,1);
+            var nozzle=new PackageForceScene.Source(PackageForceScene.NOZZLE,-.5, -1.5,-.5,5.5,4.5,5.5,
+                    2.5,1.5,2.5,1/32f,1,0,0,6);
+            var scene=PackageForceScene.bake(5,List.of(nozzle),0,0,0);
+            try(var world=atlas.view(0,0,0);var force=upload.view(scene,5)){gpu.applyForces(force,.05f,world);}
+            var result=read(gpu);check(Math.abs(result.getFloat(16)-1.875f)<1e-5,"Create nozzle push must use range falloff and 1/32 per-tick impulse");
+            check(Math.abs(result.getFloat(20))<1e-6&&Math.abs(result.getFloat(24))<1e-6,"nozzle push direction must be radial");
+
+            gpu.upload(body,1);var suction=new PackageForceScene.Source(PackageForceScene.NOZZLE,-.5,-1.5,-.5,5.5,4.5,5.5,
+                    2.5,1.5,2.5,1/32f,-1,0,0,6);scene=PackageForceScene.bake(6,List.of(suction),0,0,0);
+            try(var world=atlas.view(0,0,0);var force=upload.view(scene,6)){gpu.applyForces(force,.05f,world);}
+            result=read(gpu);check(Math.abs(result.getFloat(16)+1.875f)<1e-5,"Create nozzle suction must pull radially toward its center");
+
+            var nearBody=bodies(1);body(nearBody,0,3.5f,2.0f,2.5f,1);gpu.upload(nearBody,1);
+            scene=PackageForceScene.bake(7,List.of(suction),0,0,0);
+            try(var world=atlas.view(0,0,0);var force=upload.view(scene,7)){gpu.applyForces(force,.05f,world);}
+            result=read(gpu);check(Math.abs(result.getFloat(16))<1e-6,"Create nozzle suction dead zone must suppress force within 1.5 blocks");
+
+            var pose=new PackageMovingGeometry.Pose(0,0,1,0,1,0,-1,0,0,2.5,1.5,2.5);
+            var frame=new PackageForceScene.Frame(pose,2.5,1.5,2.5);
+            var rotatedBody=bodies(1);body(rotatedBody,0,2.5f,2.0f,5.5f,1);gpu.upload(rotatedBody,1);
+            var framedSuction=suction.framed(frame);scene=PackageForceScene.bake(8,List.of(framedSuction),0,0,0);
+            try(var world=atlas.view(0,0,0);var force=upload.view(scene,8)){gpu.applyForces(force,.05f,world);}
+            result=read(gpu);check(Math.abs(result.getFloat(16))<1e-6&&Math.abs(result.getFloat(24)+1.875f)<1e-5,
+                    "framed Create nozzle must preserve suction sign and rotate its radial impulse");
+
+            check(atlas.offer(section,blocked),"nozzle blocker fixture rejected");uploadWorld(atlas);
+            gpu.upload(body,1);scene=PackageForceScene.bake(8,List.of(nozzle),0,0,0);
+            try(var world=atlas.view(0,0,0);var force=upload.view(scene,8)){gpu.applyForces(force,.05f,world);}
+            result=read(gpu);check(Math.abs(result.getFloat(16))<1e-6,"solid collider must occlude Create nozzle force");
         }
     }
     static void crossingPackageSweeps(){
@@ -2298,6 +2359,19 @@ public class PackageGpuValidation {
                 @Override public void row(long version,int row) {}
             });
             check(requests.contains(new PackageCollisionCache.Section(2,0,0)),"GPU did not prefetch the section ahead of the swept package");
+
+            // The 0.5 s look-ahead is too large for a legal maximum-speed
+            // diagonal path. The one-tick fallback spans 5x5x5 sections and
+            // must still request the nearest missing section.
+            bodies=bodies(1);body(bodies,0,30.5f,8,30.5f,1);
+            float diagonalSpeed=(float)(2048/Math.sqrt(3));
+            bodies.putFloat(16,diagonalSpeed).putFloat(20,diagonalSpeed).putFloat(24,diagonalSpeed);gpu.upload(bodies,1);
+            try(var view=atlas.view(0,0,0)) {
+                check(prefetch.capture(gpu.stateBuffer(),1,.5f,.05f,view),"maximum-speed diagonal prefetch submission");
+            }
+            GL11.glFinish();requests.clear();prefetch.poll(requests::add);
+            check(requests.contains(new PackageCollisionCache.Section(2,0,1)),
+                    "bounded maximum-speed prefetch dropped or misprioritized its nearest section: "+requests);
 
             // Sixty-five identical bodies cross a workgroup boundary. Per-group compaction may
             // retain one copy per group, but the decoder must deliver a single numeric request.
@@ -5379,7 +5453,7 @@ public class PackageGpuValidation {
             if(Arrays.asList(args).contains("--mixed-benchmark")){sourceContract();mixedPhysics();mixedBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"mixed benchmark GL error");return;}
             if(Arrays.asList(args).contains("--chain-benchmark")){sourceContract();chainReference();trackedChains();chainTrackBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"chain benchmark GL error");System.out.println("Package chain GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--query-only")){sourceContract();poseQueries();freePoseQueries();parallelFreeChainQueries();if(Arrays.asList(args).contains("--query-benchmark"))poseQueryBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"query GL error");System.out.println("Package query GPU: "+checks+" assertions passed");return;}
-            if(Arrays.asList(args).contains("--forces-only")){sourceContract();externalForces();framedForces();if(Arrays.asList(args).contains("--forces-benchmark"))forceBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"force GL error");System.out.println("Package forces GPU: "+checks+" assertions passed");return;}
+            if(Arrays.asList(args).contains("--forces-only")){sourceContract();externalForces();nozzleForces();framedForces();if(Arrays.asList(args).contains("--forces-benchmark"))forceBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"force GL error");System.out.println("Package forces GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--chain-only")){sourceContract();chainReference();trackedChains();chainEventChannels();chainAcquisitions();check(GL11.glGetError()==GL11.GL_NO_ERROR,"chain GL error");System.out.println("Package chain GPU: "+checks+" assertions passed");return;}
             movingContacts();movingReference();movingLifecycle();movingFriction();movingCapacity();if(Arrays.asList(args).contains("--moving-benchmark"))movingBenchmark();if(Arrays.asList(args).contains("--moving-only")){check(GL11.glGetError()==GL11.GL_NO_ERROR,"moving GL error");System.out.println("Package moving GPU: "+checks+" assertions passed");return;}
             continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();sectionDemandAndPause();fallingSectionConfirmations();asymmetricSweepRegression();environmentRegression();environmentThroughput();recycledFreeAcquisitions();recycledChainAcquisitions();historicalGeometryIsolation();localBudgetRetry();sourceContract();externalForces();framedForces();chainParentFrames();mergedPackageVertices();poseQueries();freePoseQueries();parallelFreeChainQueries();chainCheckpoints();boundaries();contact();sweep();dynamicPackageSweep();worldUploadVersions();worldAtlasLru();worldShapes();worldSweepsAndMaterials();historicalGeometryIsolation();worldMissingAndInvalidated();worldFullCapacity();worldRigidSupportAndReplacement();supportProjection();contactProbeReference();supportContactCases();worldEntryFace();supportSustainedMotion();chain();chainReference();trackedChains();chainEventChannels();chainAcquisitions();incrementalPhysics();preparedPhysics();mixedPhysics();mixedFullReservation();readbacks();pool();preparedDrawPasses();shadowCullingAndBoundary();packageDrawTelemetry();render();previewLoad();poseParity();deltas();deltaIncrementalIdentity();deltaPreparedBaselines();acquisitions();batchedAcquisitions();deltaOverflowAndIdentity();deltaQuantizationLimits();deltaYawTies();deltaRelativeBaselines();deltaPredictedMotion();channelRoundTrip();channelBatchAckHoles();channelLifecycle();channelImmutableAndPartialTransport();if(Arrays.asList(args).contains("--benchmark")){benchmark();deltaBenchmark();}

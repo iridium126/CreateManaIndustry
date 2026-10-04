@@ -6,7 +6,7 @@ const float PACKAGE_RETIRED=-3.0;
 const float PACKAGE_COLLISION_FROZEN=-4.0;
 // Shared by render and compute shaders through state.glsl. Keep these limits
 // here so every shader that includes the lifecycle definitions sees the same
-// bounds; longer paths take the bounded local pause instead of rewinding.
+// local broad-phase bounds; longer paths use the sparse exact fallback.
 const float PACKAGE_MAX_SWEEP_CELLS=16.0;
 const int PACKAGE_SWEEP_CELL_VOLUME=8192;
 bool packageInContactGrid(float state) { return state!=PACKAGE_PREPARED && state!=PACKAGE_RETIRED; }
