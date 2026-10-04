@@ -1,16 +1,32 @@
 #pragma cmi_include packages/support.glsl
 layout(local_size_x=64) in;
 uniform uint uCount;
+uvec4 advance(uvec4 value) {
+    if(value.x!=0xffffffffu) {
+        if(value.x>=uCount) { value.x=0xffffffffu;value.z=0x7fc00000u; }
+        else {
+            uvec4 parent=supportIn[value.x];float gap=uintBitsToFloat(value.y),height=uintBitsToFloat(parent.z)+gap;
+            if(height>uintBitsToFloat(value.z)){value.z=floatBitsToUint(height);value.w=parent.w;}
+            value.y=floatBitsToUint(gap+uintBitsToFloat(parent.y));value.x=parent.x;
+        }
+    }
+    return value;
+}
+uvec4 combine(uvec4 value,uvec4 parent) {
+    float gap=uintBitsToFloat(value.y),height=uintBitsToFloat(parent.z)+gap;
+    if(height>uintBitsToFloat(value.z)){value.z=floatBitsToUint(height);value.w=parent.w;}
+    value.y=floatBitsToUint(gap+uintBitsToFloat(parent.y));value.x=parent.x;
+    return value;
+}
 void main() {
     uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
-    uvec4 a=supportIn[i];
+    // Fuse two pointer-doubling rounds. The ancestor's first-round record is
+    // recomputed locally, preserving the original composition order while
+    // cutting a full-buffer dispatch, write and global barrier per pair.
+    uvec4 a=advance(supportIn[i]);
     if(a.x!=0xffffffffu) {
-        if(a.x>=uCount){a.x=0xffffffffu;a.z=0x7fc00000u;}
-        else {
-            uvec4 p=supportIn[a.x];float gap=uintBitsToFloat(a.y),height=uintBitsToFloat(p.z)+gap;
-            if(height>uintBitsToFloat(a.z)){a.z=floatBitsToUint(height);a.w=p.w;}
-            a.y=floatBitsToUint(gap+uintBitsToFloat(p.y));a.x=p.x;
-        }
+        if(a.x>=uCount) { a.x=0xffffffffu;a.z=0x7fc00000u; }
+        else a=combine(a,advance(supportIn[a.x]));
     }
     supportOut[i]=a;
 }

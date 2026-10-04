@@ -29,8 +29,12 @@ public record PackageEnvironmentEvent(PackageLease.Identity identity,long lease,
         }
     }
     public static PackageEnvironmentEvent decode(byte[] payload){
-        if(payload.length!=1024)throw new IllegalArgumentException("Environment event length");
-        var b=ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        return decode(ByteBuffer.wrap(payload));
+    }
+    /** Decode the server-owned packet view without cloning its bounded payload. */
+    public static PackageEnvironmentEvent decode(ByteBuffer payload){
+        if(payload.remaining()!=1024)throw new IllegalArgumentException("Environment event length");
+        var b=payload.slice().order(ByteOrder.LITTLE_ENDIAN);
         var identity=new PackageLease.Identity(b.getLong(0),b.getLong(8));long lease=b.getLong(16);
         long end=Integer.toUnsignedLong(b.getInt(24)),first=Integer.toUnsignedLong(b.getInt(28));
         int index=b.getInt(40)-1;long revision=b.getLong(56);

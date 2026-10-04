@@ -101,10 +101,15 @@ public final class PackageDeltaCodec {
     }
     /** Downstream packets may impose a tighter allocation bound than the authority uplink. */
     public static List<Entry> decode(ByteBuffer in,int maximumEntries) {
+        return decodeInto(in,maximumEntries,new ArrayList<>());
+    }
+    /** Decode into a caller-owned list so a serialized server receiver can reuse its storage. */
+    public static List<Entry> decodeInto(ByteBuffer in,int maximumEntries,List<Entry> result) {
         if(maximumEntries<0 || maximumEntries>MAX_ENTRIES)throw new IllegalArgumentException("Delta decode bound");
+        java.util.Objects.requireNonNull(result).clear();
         int count = getVarInt(in);
         if (count < 0 || count > maximumEntries) throw new IllegalArgumentException("Delta count");
-        List<Entry> entries = new ArrayList<>(count);
+        if(result instanceof ArrayList<?> array)array.ensureCapacity(count);
         long previous = -1;
         for (int i = 0; i < count; i++) {
             int difference = getVarInt(in);
@@ -118,9 +123,9 @@ public final class PackageDeltaCodec {
             if ((mask & VELOCITY) != 0) { vx=getSigned(in); vy=getSigned(in); vz=getSigned(in); }
             if ((mask & YAW) != 0) yaw=getShort(in);
             int flags = (mask & FLAGS) != 0 ? getVarInt(in) : 0;
-            entries.add(new Entry((int)id, mask, new Quantized(x,y,z,vx,vy,vz,yaw,flags)));
+            result.add(new Entry((int)id, mask, new Quantized(x,y,z,vx,vy,vz,yaw,flags)));
         }
-        return entries;
+        return result;
     }
     private static short getShort(ByteBuffer b) {
         int n=getSigned(b);

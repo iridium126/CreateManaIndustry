@@ -4175,16 +4175,18 @@ public class PackageGpuValidation {
             }
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"shadow culling GL error");
             int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
-            int foreign=buffer(BufferUtils.createByteBuffer(alignment+256)),vao=GL30.glGenVertexArrays(),fb=GL30.glGenFramebuffers();
+            int foreign=buffer(BufferUtils.createByteBuffer(alignment+256)),vao=GL30.glGenVertexArrays();
             int tex=texture(10,1),view=GL11.glGenTextures();GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,view);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_RGBA32F,foreign);
             int program=feedbackProgram("#version 450 core\nvoid main(){gl_Position=vec4(0,0,0,1);}","gl_Position");
             var state=new com.iridium126.createmanaindustry.client.particles.packages.PackageRenderState();
             try {
                 for(int attempt=0;attempt<3;attempt++) {
                     GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,1,foreign,alignment,128);
-                    GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,foreign);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,foreign);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,foreign);
+                    GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,10,foreign,alignment,128);
+                    GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,11,foreign);
+                    GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,foreign);
                     GL30.glBindVertexArray(vao);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,foreign);GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,foreign);
-                    GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,fb);GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,0);GL20.glUseProgram(program);
+                    GL20.glUseProgram(program);
                     GL11.glDisable(GL11.GL_DEPTH_TEST);GL11.glDisable(GL11.GL_CULL_FACE);GL11.glDepthMask(false);GL40.glPatchParameteri(GL40.GL_PATCH_VERTICES,5);
                     GL30.glEnablei(GL11.GL_BLEND,1);GL40.glBlendFuncSeparatei(1,GL11.GL_ONE,GL11.GL_ZERO,GL11.GL_SRC_ALPHA,GL11.GL_ONE_MINUS_SRC_ALPHA);
                     GL40.glBlendEquationSeparatei(1,GL14.GL_FUNC_SUBTRACT,GL14.GL_FUNC_REVERSE_SUBTRACT);
@@ -4194,8 +4196,8 @@ public class PackageGpuValidation {
                     try {
                         f.bridge.preparePass(PackagePoolGpu.DrawPass.GBUFFER,f.pool,new float[24],16,0,-32);
                         f.bridge.bindPassTbos(PackagePoolGpu.DrawPass.GBUFFER,10,1);
-                        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glBindVertexArray(0);GL20.glUseProgram(0);
-                        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,0);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,0);
+                        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,10,0);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,11,0);
+                        GL30.glBindVertexArray(0);GL20.glUseProgram(0);
                         GL11.glEnable(GL11.GL_DEPTH_TEST);GL11.glEnable(GL11.GL_CULL_FACE);GL11.glDepthMask(true);GL40.glPatchParameteri(GL40.GL_PATCH_VERTICES,3);
                         GL11.glDisable(GL11.GL_BLEND);GL20.glBlendEquationSeparate(GL14.GL_FUNC_ADD,GL14.GL_FUNC_ADD);
                         if(attempt==1)throw new IllegalStateException("draw failed");
@@ -4203,13 +4205,15 @@ public class PackageGpuValidation {
                     int boundaryError=GL11.glGetError();check(boundaryError==GL11.GL_NO_ERROR,"restore boundary GL error "+boundaryError);
                     check(failed==(attempt==1),"boundary failure fixture");
                     check(GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM)==program && GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING)==vao,"program/VAO boundary");
-                    check(GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)==fb && GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING)==0,"framebuffer boundary");
                     check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,1)==foreign && GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,1)==alignment
                             && GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,1)==128,"SSBO ranged binding boundary");
+                    check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,10)==foreign && GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,10)==alignment
+                            && GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,10)==128,"light feedback ranged binding boundary");
+                    check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,11)==foreign
+                            && GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,11)==0,"light feedback base binding boundary");
                     check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,0)==f.pool
                             && GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,0)==0,"SSBO base binding semantics boundary");
-                    check(GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_BINDING)==foreign && GL11.glGetInteger(GL31.GL_COPY_READ_BUFFER)==foreign
-                            && GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER)==foreign,"generic buffer boundary");
+                    check(GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_BINDING)==foreign,"generic buffer boundary");
                     check(GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING)==foreign && GL11.glGetInteger(GL40.GL_DRAW_INDIRECT_BUFFER_BINDING)==foreign,"vertex/indirect boundary");
                     check(!GL11.glIsEnabled(GL11.GL_DEPTH_TEST) && !GL11.glIsEnabled(GL11.GL_CULL_FACE) && !GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK),"depth/cull boundary");
                     check(GL11.glGetInteger(GL40.GL_PATCH_VERTICES)==5,"patch vertices boundary");
@@ -4220,13 +4224,12 @@ public class PackageGpuValidation {
                     check(GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER)==view && GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D)==tex,"TBO restoration destroyed foreign texture target");
                 }
             }finally {
-                state.restore();GL20.glUseProgram(0);GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glBindVertexArray(0);
+                state.restore();GL20.glUseProgram(0);GL30.glBindVertexArray(0);
                 GL40.glPatchParameteri(GL40.GL_PATCH_VERTICES,3);GL11.glDepthMask(true);GL11.glEnable(GL11.GL_DEPTH_TEST);GL11.glDisable(GL11.GL_CULL_FACE);
                 GL11.glDisable(GL11.GL_BLEND);GL20.glBlendEquationSeparate(GL14.GL_FUNC_ADD,GL14.GL_FUNC_ADD);
                 for(int i=0;i<12;i++)GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,i,0);
                 GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,0);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,0);
-                GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,0);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,0);
-                GL20.glDeleteProgram(program);GL30.glDeleteVertexArrays(vao);GL30.glDeleteFramebuffers(fb);GL11.glDeleteTextures(view);GL11.glDeleteTextures(tex);GL15.glDeleteBuffers(foreign);GL13.glActiveTexture(GL13.GL_TEXTURE0);
+                GL20.glDeleteProgram(program);GL30.glDeleteVertexArrays(vao);GL11.glDeleteTextures(view);GL11.glDeleteTextures(tex);GL15.glDeleteBuffers(foreign);GL13.glActiveTexture(GL13.GL_TEXTURE0);
             }
         }
     }

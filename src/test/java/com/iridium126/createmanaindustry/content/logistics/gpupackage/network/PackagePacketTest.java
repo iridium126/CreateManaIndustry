@@ -80,6 +80,13 @@ class PackagePacketTest {
             assertThrows(IllegalArgumentException.class,()->new ServerboundPackagePacket(ServerboundPackagePacket.DELTA,0,REGION,10,0,null,0,1,7,new byte[ServerboundPackagePacket.MAX_BYTES+1]));
         }finally{bytes.release();}
     }
+    @Test void serverPayloadViewIsReadOnlyAndPublicArrayAccessRemainsDefensive() {
+        byte[] body={3,4,5};var packet=new ServerboundPackagePacket(ServerboundPackagePacket.DELTA,0,REGION,10,0,null,0,1,7,body);
+        body[0]=9;var view=packet.changesView();
+        assertTrue(view.isReadOnly());assertEquals(3,view.get(0));
+        assertThrows(java.nio.ReadOnlyBufferException.class,()->view.put(0,(byte)8));
+        byte[] exposed=packet.changes();exposed[0]=7;assertEquals(3,packet.changes()[0]);
+    }
     @Test void initialAndFinalBaselineOnlyInitialCarriesModelAndEntityIdentity() {
         var dimension=ResourceLocation.fromNamespaceAndPath("minecraft","overworld");var model=ResourceLocation.fromNamespaceAndPath("create","cardboard_package_10x8");
         var uuid=new UUID(11,17);

@@ -21,6 +21,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
             null,"uCandidateBudget",null,null,"uMovingReady","uMovingSweep","uMovingFriction","uFirst","uLength","uTrackCount","uForceNodes","uForceSources","uEnvironmentReady"};
     private final int[] programs=new int[NAMES.length], states=new int[2];
     private final int[][] locations=new int[NAMES.length][UNIFORMS.length];
+    private final int[] uploadedCounts=new int[NAMES.length];
     private int heads, links, chains, history, count, current;
     private final int[] supports=new int[2];
     private int supportControl;
@@ -60,6 +61,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         if(capacity<=0 || capacity>1_048_576 || !(cellSize>0) || !Float.isFinite(cellSize))
             throw new IllegalArgumentException("Invalid package physics capacity/cell size");
         this.capacity=capacity;this.cellSize=cellSize;
+        java.util.Arrays.fill(uploadedCounts,-1);
         staticMask=new byte[capacity];
         preparedMask=new boolean[capacity];
         tableSize=Integer.highestOneBit(Math.max(64,capacity-1))<<1;
@@ -366,8 +368,8 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,supportControl);
         int input=0;
-        for(int span=1;span<count;span<<=1) {
-            GL20.glUseProgram(programs[9]);GL30.glUniform1ui(locations[9][0],count);
+        for(int span=1;span<count;span<<=2) {
+            GL20.glUseProgram(programs[9]);setCountUniform(9);
             try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,6,stack.ints(supports[input],supports[input^1]));}
             GL43.glDispatchComputeIndirect(16);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);input^=1;
         }
@@ -409,8 +411,11 @@ public final class PackagePhysicsGpu implements AutoCloseable {
             GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(states[current],states[current^1],
                     heads,links));
         }
-        GL30.glUniform1ui(locations[index][0],count);
+        setCountUniform(index);
         if(locations[index][26]>=0){if(environment!=null)environment.bind(locations[index][26]);else GL20.glUniform1i(locations[index][26],0);}
+    }
+    private void setCountUniform(int index) {
+        if(uploadedCounts[index]!=count){GL30.glUniform1ui(locations[index][0],count);uploadedCounts[index]=count;}
     }
     private void f(int index,int uniform,float value){GL20.glUniform1f(locations[index][uniform],value);}
     private void clearHeads() {

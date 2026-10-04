@@ -39,8 +39,10 @@ public final class PackagePoolGpu implements AutoCloseable {
     private PackageLightFeedbackGpu lightFeedback;
     private long lightEpoch;
     private int metadata, selection, reservation, meshes, cursors, vertices, vertexAttributes, vao;
-    private int chainVisibility;
+    private int chainVisibility,drawVisibility;
     private final java.nio.IntBuffer chainVisibilityUpload;
+    private final int[] cachedChainVisibility;
+    private boolean chainVisibilityUploaded;
     private int count, meshCount, committed=-1, staged=-1, stagedCount;
     private final int[] candidateCounts=new int[2];
     private boolean closed;
@@ -64,6 +66,7 @@ public final class PackagePoolGpu implements AutoCloseable {
         if(capacity<=0 || maxMeshes<=0 || maxMeshes>4096)throw new IllegalArgumentException("Package pool limits");
         this.capacity=capacity;this.packageCapacity=Math.min(capacity,131072);this.maxMeshes=maxMeshes;
         chainVisibilityUpload=BufferUtils.createIntBuffer((packageCapacity+31)/32);
+        cachedChainVisibility=new int[(packageCapacity+31)/32];
         textureUnits=GL11.glGetInteger(GL20.GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);textureTexels=GL11.glGetInteger(GL31.GL_MAX_TEXTURE_BUFFER_SIZE);
         candidateFlags=new byte[packageCapacity];candidateBodies=new int[packageCapacity];java.util.Arrays.fill(candidateBodies,-1);
         if((packageCapacity+63L)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)
@@ -74,6 +77,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             metadata=buffer((long)packageCapacity*META_BYTES);selection=buffer(16L+4L*packageCapacity);reservation=buffer(16);
             meshes=buffer((long)maxMeshes*MESH_BYTES);cursors=buffer((long)maxMeshes*8);vertices=buffer(VERTEX_BYTES);
             chainVisibility=buffer((long)Math.max(1,(packageCapacity+31)/32)*4);
+            drawVisibility=buffer((long)packageCapacity*4);
             sampledLight=buffer((long)packageCapacity*4);clear(sampledLight);
             for(int j=0;j<2;j++) {
                 admission[j]=buffer((long)packageCapacity*32);commands[j]=buffer((long)maxMeshes*16);
@@ -412,16 +416,32 @@ public final class PackagePoolGpu implements AutoCloseable {
         clear(pass.commands);
         int words=(packageCapacity+31)/32;
         if(chainVisibility!=null && chainVisibility.length<words)throw new IllegalArgumentException("Package chain visibility mask capacity");
-        chainVisibilityUpload.clear();
-        for(int i=0;i<words;i++)chainVisibilityUpload.put(chainVisibility==null?0:chainVisibility[i]);
-        chainVisibilityUpload.flip();
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,this.chainVisibility);
-        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,chainVisibilityUpload);
+        boolean visibilityChanged=!chainVisibilityUploaded;
+        if(!visibilityChanged && chainVisibility==null) {
+            for(int i=0;i<words;i++)if(cachedChainVisibility[i]!=0){visibilityChanged=true;break;}
+        } else if(!visibilityChanged) {
+            visibilityChanged=!java.util.Arrays.equals(cachedChainVisibility,0,words,chainVisibility,0,words);
+        }
+        if(visibilityChanged) {
+            chainVisibilityUpload.clear();
+            if(chainVisibility==null) {
+                for(int i=0;i<words;i++)chainVisibilityUpload.put(0);
+                java.util.Arrays.fill(cachedChainVisibility,0);
+            } else {
+                chainVisibilityUpload.put(chainVisibility,0,words);
+                System.arraycopy(chainVisibility,0,cachedChainVisibility,0,words);
+            }
+            chainVisibilityUpload.flip();
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,this.chainVisibility);
+            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,chainVisibilityUpload);
+            chainVisibilityUploaded=true;
+        }
         try(var stack=MemoryStack.stackPush()) {
             GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(pool,admission[committed],pass.commands,pass.instances,cursors,meshes,attachments[committed]));
         }
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,7,nativeBounds[committed]);
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,8,this.chainVisibility);
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,9,drawVisibility);
         int count=candidateCounts[committed];
         for(int p=9;p<12;p++) {
             use(p,count);GL20.glUniform3f(locations[p][6],cameraX,cameraY,cameraZ);GL20.glUniform4fv(locations[p][7],frustum);
@@ -539,7 +559,7 @@ public final class PackagePoolGpu implements AutoCloseable {
         for(int[] group:new int[][]{admission,commands,instances,attachments})for(int b:group)if(b!=0)GL15.glDeleteBuffers(b);
         for(var pass:drawPasses)if(pass!=null){if(pass.commands!=0)GL15.glDeleteBuffers(pass.commands);if(pass.instances!=0)GL15.glDeleteBuffers(pass.instances);}
         for(int texture:passTextures)if(texture!=0)GL11.glDeleteTextures(texture);
-        for(int b:new int[]{metadata,selection,reservation,meshes,cursors,vertices,vertexAttributes,sampledLight,chainVisibility,nativeBounds[0],nativeBounds[1]})if(b!=0)GL15.glDeleteBuffers(b);
+        for(int b:new int[]{metadata,selection,reservation,meshes,cursors,vertices,vertexAttributes,sampledLight,chainVisibility,drawVisibility,nativeBounds[0],nativeBounds[1]})if(b!=0)GL15.glDeleteBuffers(b);
         if(vao!=0)GL30.glDeleteVertexArrays(vao);
     }
 }

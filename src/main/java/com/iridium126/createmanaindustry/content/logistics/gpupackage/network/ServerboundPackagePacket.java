@@ -40,6 +40,8 @@ public record ServerboundPackagePacket(int action,int capabilities,PackageRegion
         if(!deltaAction(action)&&action!=CONTROL_BATCH&&action!=ENVIRONMENT&&changes.length!=0)throw new IllegalArgumentException("Unexpected package body");
     }
     @Override public byte[] changes(){return changes.clone();}
+    /** Read-only, zero-copy view for the server-thread decoders; public byte-array access stays defensive. */
+    public java.nio.ByteBuffer changesView(){return java.nio.ByteBuffer.wrap(changes).asReadOnlyBuffer();}
     public static ServerboundPackagePacket capabilities(int flags){return new ServerboundPackagePacket(CAPABILITIES,flags,null,0,0,null,0,0,0,new byte[0]);}
     public static ServerboundPackagePacket control(int action,PackageRegion region,long epoch,PackageAuthorityRegion.Baseline baseline) {
         return new ServerboundPackagePacket(action,0,region,epoch,baseline.index(),baseline.identity(),baseline.leaseEpoch(),baseline.revision(),0,new byte[0]);

@@ -42,6 +42,7 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
         Claim(ClientboundChainPackagePacket o,ClientboundChainPackagePacket a,ClientboundChainPackagePacket.Track t,Index i,ChainConveyorPackage b,int c){offer=o;active=a;track=t;index=i;box=b;candidate=c;}
     }
     private final Map<ChainConveyorBlockEntity,Index> indices=new IdentityHashMap<>();
+    private final Set<Index> renderIndices=Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<Integer,ClientboundChainPackagePacket.Track> tracks=new HashMap<>();
     private final Map<PackageLease.Identity,Claim> claims=new HashMap<>();
     private final ArrayDeque<Index> work=new ArrayDeque<>();
@@ -129,7 +130,7 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
         if(index==null || box==null || claims.containsKey(offer.baseline().identity())){acquisition.requestRelease(offer.baseline().index());return;}
         if(checkpoints!=null)checkpoints.activateCandidate(candidate);
         var claim=new Claim(offer,active,track,index,box.box,candidate);
-        claims.put(offer.baseline().identity(),claim);index.claims.add(claim);
+        claims.put(offer.baseline().identity(),claim);index.claims.add(claim);renderIndices.add(index);
         if(!acquire(claim)){forget(claim);acquisition.requestRelease(offer.baseline().index());return;}
         dirty.add(index.conveyor);
     }
@@ -163,7 +164,7 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
         Objects.requireNonNull(mask);Arrays.fill(mask,0);
         var mc=Minecraft.getInstance();var dispatcher=mc.getBlockEntityRenderDispatcher();
         var camera=mc.gameRenderer.getMainCamera().getPosition();
-        for(var index:indices.values()) {
+        for(var index:renderIndices) {
             var conveyor=index.conveyor;
             if(index.claims.isEmpty()||conveyor.isRemoved()||conveyor.getLevel()!=mc.level)continue;
             var localCamera=frames.localRenderCamera(index.claims.iterator().next().track.index(),camera);
@@ -230,7 +231,7 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
             claim.terminal=true;if(claim.rebinding)claim.index.rebinding--;
         }
     }
-    private void forget(Claim claim){claims.remove(claim.offer.baseline().identity(),claim);claim.index.claims.remove(claim);if(claim.rebinding){claim.rebinding=false;if(!claim.terminal)claim.index.rebinding--;}}
+    private void forget(Claim claim){claims.remove(claim.offer.baseline().identity(),claim);claim.index.claims.remove(claim);if(claim.index.claims.isEmpty())renderIndices.remove(claim.index);if(claim.rebinding){claim.rebinding=false;if(!claim.terminal)claim.index.rebinding--;}}
     private static void checkpoint(Claim claim,ChainConveyorPackage box,PackageChainAuthority.Baseline baseline) {
         if(!(box instanceof PackageIdentified id) || id.cmi$packageId()!=claim.offer.baseline().identity().id()
                 || id.cmi$packageGeneration()!=claim.offer.baseline().identity().generation())return;
@@ -283,6 +284,7 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
         // revoking the shared world would unnecessarily stop free packages and every
         // unrelated conveyor in the same GPU session.
         index.removed=true;
+        renderIndices.remove(index);
         indices.remove(conveyor);work.remove(index);index.queued=false;
     }
     @Override public void added(ChainConveyorBlockEntity conveyor,ChainConveyorPackage box,BlockPos connection) {
@@ -311,6 +313,6 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
             }
             for(var conveyor:dirty)try{((PackageChainRenderAccess)conveyor).cmi$publishRenderPackages();}
             catch(RuntimeException error){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] native render restore failed",error);}
-        }finally{dirty.clear();claims.clear();indices.clear();tracks.clear();work.clear();acquisition=null;checkpoints=null;frames=null;failed=null;ox=oy=oz=0;epoch=0;closing=false;}
+        }finally{dirty.clear();claims.clear();indices.clear();renderIndices.clear();tracks.clear();work.clear();acquisition=null;checkpoints=null;frames=null;failed=null;ox=oy=oz=0;epoch=0;closing=false;}
     }
 }

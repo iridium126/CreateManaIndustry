@@ -3,13 +3,13 @@ package com.iridium126.createmanaindustry.client.particles.packages;
 import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryStack;
 
-/** Reused external-pass boundary. Saves binding ranges, including nonzero offsets. Never waits. */
+/** Reused package-pass boundary. Restores the GL state touched by package draws. Never waits. */
 public final class PackageRenderState {
     private final int[] ssbo=new int[12],tbo=new int[3],textures=new int[3];
     private final long[] offsets=new long[12],sizes=new long[12];
     private final int[][] blend;
     private final boolean[] blendEnabled;
-    private int program,vao,array,indirect,storage,copyRead,copyWrite,active,drawFb,readFb,patchVertices;
+    private int program,vao,array,indirect,storage,active,patchVertices;
     private boolean cull,depth,depthMask,open;
     public PackageRenderState() {
         int n=GL11.glGetInteger(GL20.GL_MAX_DRAW_BUFFERS);blend=new int[n][6];blendEnabled=new boolean[n];
@@ -19,8 +19,7 @@ public final class PackageRenderState {
         program=GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);vao=GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
         array=GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);indirect=GL11.glGetInteger(GL40.GL_DRAW_INDIRECT_BUFFER_BINDING);
         storage=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_BINDING);
-        copyRead=GL11.glGetInteger(GL31.GL_COPY_READ_BUFFER);copyWrite=GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER);
-        active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);drawFb=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);readFb=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+        active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
         patchVertices=GL11.glGetInteger(GL40.GL_PATCH_VERTICES);
         cull=GL11.glIsEnabled(GL11.GL_CULL_FACE);depth=GL11.glIsEnabled(GL11.GL_DEPTH_TEST);depthMask=GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
         for(int i=0;i<ssbo.length;i++) {
@@ -52,14 +51,12 @@ public final class PackageRenderState {
                 GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,i,ssbo[i],offsets[i],sizes[i]);
         }
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,storage);
-        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,copyRead);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,copyWrite);
         for(int i=0;i<3;i++) {
             GL13.glActiveTexture(GL13.GL_TEXTURE0+i);GL11.glBindTexture(GL11.GL_TEXTURE_2D,textures[i]);
             // Zero glBindTextures would unbind every foreign target on these units.
             GL13.glActiveTexture(GL13.GL_TEXTURE10+i);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,tbo[i]);
         }
         GL13.glActiveTexture(active);
-        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,drawFb);GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,readFb);
         GL30.glBindVertexArray(vao);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,array);GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,indirect);
         GL40.glPatchParameteri(GL40.GL_PATCH_VERTICES,patchVertices);
         if(cull)GL11.glEnable(GL11.GL_CULL_FACE);else GL11.glDisable(GL11.GL_CULL_FACE);

@@ -57,13 +57,19 @@ public final class PackageObserverFeed<M> {
     private record SnapshotCut(int first,long serial) {}
     private record Mutation<M>(long serial,Member<M> addition,PackageDeltaCodec.Entry change,long stateTick) {}
     private static final class Cell<M> {
-        Member<M> member;
-        Cell(Member<M> member){this.member=member;}
+        final int index;
+        final PackageLease.Identity identity;
+        final long leaseEpoch,revision;
+        final M metadata;
+        PackageDeltaCodec.Quantized state;
+        long stateTick;
+        Cell(Member<M> member){index=member.index();identity=member.identity();leaseEpoch=member.leaseEpoch();revision=member.revision();metadata=member.metadata();state=member.state();stateTick=member.stateTick();}
+        Member<M> snapshot(){return new Member<>(index,identity,leaseEpoch,revision,state,metadata,stateTick);}
     }
     private final NavigableMap<Integer,Cell<M>> ordered=new TreeMap<>();
     private final Int2ObjectOpenHashMap<Cell<M>> members=new Int2ObjectOpenHashMap<>();
     private final IntOpenHashSet usedIndices=new IntOpenHashSet();
-    private final Member<M>[] acceptedScratch;
+    private final PackageDeltaCodec.Quantized[] acceptedScratch;
     private final int logCapacity;
     private Mutation<M>[] log;
     private long tail;
@@ -73,7 +79,7 @@ public final class PackageObserverFeed<M> {
     @SuppressWarnings("unchecked") public PackageObserverFeed(int capacity) {
         if(capacity<1)throw new IllegalArgumentException("Observer journal capacity");
         logCapacity=capacity;
-        acceptedScratch=(Member<M>[])new Member<?>[PackageDeltaCodec.MAX_ENTRIES];
+        acceptedScratch=new PackageDeltaCodec.Quantized[PackageDeltaCodec.MAX_ENTRIES];
     }
     public void activate(Member<M> member) {
         Objects.requireNonNull(member);
@@ -86,34 +92,44 @@ public final class PackageObserverFeed<M> {
         accepted(changes,0);
     }
     public void accepted(List<PackageDeltaCodec.Entry> changes,long tick) {
+        accepted(changes,null,tick);
+    }
+    /** Commit already-resolved authority poses, avoiding relative-position wrapper entries and merges. */
+    public void acceptedResolved(List<PackageDeltaCodec.Entry> changes,PackageDeltaCodec.Quantized[] resolved,long tick) {
+        if(resolved==null || resolved.length<changes.size())throw new IllegalArgumentException("Resolved observer delta");
+        accepted(changes,resolved,tick);
+    }
+    private void accepted(List<PackageDeltaCodec.Entry> changes,PackageDeltaCodec.Quantized[] resolved,long tick) {
         if(tick<0)throw new IllegalArgumentException("Observer state tick");
         if(changes.size()>PackageDeltaCodec.MAX_ENTRIES)throw new IllegalArgumentException("Observer delta count");
         int previous=-1,staged=0;
         try {
-        for(var change:changes) {
+        for(int i=0;i<changes.size();i++) {
+            var change=changes.get(i);
             if(change.id()<=previous)throw new IllegalArgumentException("Observer delta index");
             previous=change.id();var cell=members.get(change.id());
             if(cell==null || change.mask()==PackageDeltaCodec.RELEASE){acceptedScratch[staged++]=null;continue;}
-            var member=cell.member;
-            if(tick<member.stateTick())throw new IllegalArgumentException("Observer state clock reversed");
-            var state=PackageDeltaCodec.merge(member.state(),change);
-            acceptedScratch[staged++]=new Member<>(member.index(),member.identity(),member.leaseEpoch(),member.revision(),state,member.metadata(),tick);
+            if(tick<cell.stateTick)throw new IllegalArgumentException("Observer state clock reversed");
+            var state=resolved==null?PackageDeltaCodec.merge(cell.state,change):resolved[i];
+            if(state==null || (state.flags()&~PackageAuthorityRegion.STATE_FLAGS)!=0)
+                throw new IllegalArgumentException("Invalid resolved observer state");
+            acceptedScratch[staged++]=state;
         }
         for(int i=0;i<changes.size();i++) {
             var change=changes.get(i);var cell=members.get(change.id());
-            if(cell==null)continue;var member=cell.member;
-            if(change.mask()==PackageDeltaCodec.RELEASE){retire(member.index(),member.identity());continue;}
-            var after=acceptedScratch[i];int mask=PackageDeltaCodec.changes(member.state(),after.state());
-            cell.member=after;
-            if(mask!=0)appendChange(after.index(),mask,after.state(),tick);
+            if(cell==null)continue;
+            if(change.mask()==PackageDeltaCodec.RELEASE){retire(cell.index,cell.identity);continue;}
+            var before=cell.state;var after=acceptedScratch[i];int mask=PackageDeltaCodec.changes(before,after);
+            cell.state=after;cell.stateTick=tick;
+            if(mask!=0)appendChange(cell.index,mask,after,tick);
         }
         }finally {java.util.Arrays.fill(acceptedScratch,0,staged,null);}
     }
     public boolean retire(int index,PackageLease.Identity identity) {
         var cell=members.get(index);
-        if(cell==null || !cell.member.identity().equals(identity))return false;
+        if(cell==null || !cell.identity.equals(identity))return false;
         members.remove(index);ordered.remove(index);
-        appendChange(index,PackageDeltaCodec.RELEASE,cell.member.state(),cell.member.stateTick());return true;
+        appendChange(index,PackageDeltaCodec.RELEASE,cell.state,cell.stateTick);return true;
     }
     private void appendChange(int index,int mask,PackageDeltaCodec.Quantized state,long tick) {
         append(null,subscribers==0?null:new PackageDeltaCodec.Entry(index,mask,state),tick);
@@ -158,7 +174,7 @@ public final class PackageObserverFeed<M> {
             if(!cursor.complete && index>cursor.scanned)continue;
             var cut=cursor.cuts.ceilingEntry(index);
             if(cut!=null && index>=cut.getValue().first() && mutation.serial()<cut.getValue().serial())continue;
-            if(mutation.addition()!=null)baselines.add(mutation.addition());
+                if(mutation.addition()!=null)baselines.add(mutation.addition());
             else {
                 var change=mutation.change();
                 if(mergedChanges==null && (linearChanges.isEmpty() || index>linearChanges.getLast().id())) {
@@ -178,7 +194,7 @@ public final class PackageObserverFeed<M> {
             while(work<budget) {
                 var entry=ordered.higherEntry(cursor.scanned);
                 if(entry==null){cursor.complete=true;break;}
-                cursor.scanned=entry.getKey();baselines.add(entry.getValue().member);work++;
+                cursor.scanned=entry.getKey();baselines.add(entry.getValue().snapshot());work++;
             }
             if(ordered.higherEntry(cursor.scanned)==null)cursor.complete=true;
             if(cursor.nextSerial<tail) {
@@ -195,7 +211,7 @@ public final class PackageObserverFeed<M> {
         else {times=new long[changes.size()];for(int i=0;i<changes.size();i++)times[i]=mergedTicks.get(changes.get(i).id());}
         return new Batch<>(cursor.stream,cursor.sequence++,reset,cursor.complete,baselines,changes,new PackageObserverTimes(times));
     }
-    public Member<M> member(int index){var cell=members.get(index);return cell==null?null:cell.member;}
+    public Member<M> member(int index){var cell=members.get(index);return cell==null?null:cell.snapshot();}
     public int size(){return members.size();}
     public int logCapacity(){return logCapacity;}
 }

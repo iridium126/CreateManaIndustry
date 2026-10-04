@@ -59,10 +59,15 @@ public final class PackageBatchDeltaCodec {
         return decode(in,PackageDeltaCodec.MAX_ENTRIES);
     }
     public static List<PackageDeltaCodec.Entry> decode(ByteBuffer in,int maximumEntries) {
+        return decodeInto(in,maximumEntries,new ArrayList<>());
+    }
+    /** Decode into a caller-owned list so a serialized server receiver can reuse its storage. */
+    public static List<PackageDeltaCodec.Entry> decodeInto(ByteBuffer in,int maximumEntries,List<PackageDeltaCodec.Entry> result) {
         if(maximumEntries<0 || maximumEntries>PackageDeltaCodec.MAX_ENTRIES)throw new IllegalArgumentException("Batch delta bound");
+        java.util.Objects.requireNonNull(result).clear();
         int count=(int)readUnsigned(in,PackageDeltaCodec.MAX_ENTRIES);
         if(count>maximumEntries || count>in.remaining())throw new IllegalArgumentException("Batch delta count/body");
-        var result=new ArrayList<PackageDeltaCodec.Entry>(count);
+        if(result instanceof ArrayList<?> array)array.ensureCapacity(count);
         long previous=-1;
         int x=0,y=0,z=0,vx=0,vy=0,vz=0,yaw=0;
         for(int i=0;i<count;i++) {

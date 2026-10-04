@@ -113,7 +113,14 @@ public final class PackageLease {
     /** Receipt time is server-owned. Client timestamps cannot extend a stale lease. */
     public boolean commit(UUID client, long candidateEpoch, long sequence, long tick, Pose pose,
                           double maxDisplacement) {
-        if(!canCommit(client,candidateEpoch,sequence,tick,pose,maxDisplacement))return false;
+        Objects.requireNonNull(pose);
+        double dx=pose.x-committed.x,dy=pose.y-committed.y,dz=pose.z-committed.z;
+        return commitMeasured(client,candidateEpoch,sequence,tick,pose,maxDisplacement,
+                Math.hypot(Math.hypot(dx,dy),dz));
+    }
+    boolean commitMeasured(UUID client,long candidateEpoch,long sequence,long tick,Pose pose,
+                           double maxDisplacement,double measuredDisplacement) {
+        if(!canCommitMeasured(client,candidateEpoch,sequence,tick,pose,maxDisplacement,measuredDisplacement))return false;
         committed = pose;
         lastSequence = sequence;
         lastReceiptTick = tick;
@@ -121,11 +128,18 @@ public final class PackageLease {
     }
     public boolean canCommit(UUID client,long candidateEpoch,long sequence,long tick,Pose pose,double maxDisplacement) {
         Objects.requireNonNull(pose);
+        double dx=pose.x-committed.x,dy=pose.y-committed.y,dz=pose.z-committed.z;
+        return canCommitMeasured(client,candidateEpoch,sequence,tick,pose,maxDisplacement,
+                Math.hypot(Math.hypot(dx,dy),dz));
+    }
+    boolean canCommitMeasured(UUID client,long candidateEpoch,long sequence,long tick,Pose pose,
+                              double maxDisplacement,double measuredDisplacement) {
+        Objects.requireNonNull(pose);
         if (state != State.GPU_OWNED || !matches(client, candidateEpoch) || expired(tick)
                 || sequence <= lastSequence || sequence < 0 || !(maxDisplacement >= 0)
-                || !Double.isFinite(maxDisplacement)) return false;
-        double dx = pose.x - committed.x, dy = pose.y - committed.y, dz = pose.z - committed.z;
-        return Math.hypot(Math.hypot(dx, dy), dz) <= maxDisplacement;
+                || !Double.isFinite(maxDisplacement) || !(measuredDisplacement>=0)
+                || !Double.isFinite(measuredDisplacement)) return false;
+        return measuredDisplacement<=maxDisplacement;
     }
 
     /** Region heartbeat keeps sleeping packages leased without repeated coordinate packets. */

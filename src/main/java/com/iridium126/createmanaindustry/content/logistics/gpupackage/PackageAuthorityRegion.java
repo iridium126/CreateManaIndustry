@@ -33,8 +33,26 @@ public final class PackageAuthorityRegion {
         int displacementX,displacementY,displacementZ;
         int flags;
         long motionTick=-1,simulationStep,activatedTick;
-        double motionUsed;
+        double motionUsed,committedSpeed,acknowledgedSpeed;
         Entry(int index,Target target,PackageLease lease){this.index=index;this.target=target;this.lease=lease;}
+    }
+    /** Server-thread scratch shared by sequential delta packets for one world runtime. */
+    public static final class DeltaWorkspace {
+        private Entry[] targets=new Entry[0];
+        private Snapshot[] next=new Snapshot[0],previous=new Snapshot[0];
+        private double[] allowances=new double[0],distances=new double[0],speeds=new double[0];
+        private PackageDeltaCodec.Quantized[] quantized=new PackageDeltaCodec.Quantized[0];
+        private void ensure(int count) {
+            if(targets.length>=count)return;
+            int capacity=Math.max(count,Math.max(16,targets.length*2));
+            targets=Arrays.copyOf(targets,capacity);next=Arrays.copyOf(next,capacity);previous=Arrays.copyOf(previous,capacity);
+            allowances=Arrays.copyOf(allowances,capacity);distances=Arrays.copyOf(distances,capacity);speeds=Arrays.copyOf(speeds,capacity);
+            quantized=Arrays.copyOf(quantized,capacity);
+        }
+        private void clear(int count) {
+            Arrays.fill(targets,0,count,null);Arrays.fill(next,0,count,null);Arrays.fill(previous,0,count,null);
+            Arrays.fill(quantized,0,count,null);
+        }
     }
     private final PackageRegion region;
     private final UUID owner;
@@ -91,7 +109,9 @@ public final class PackageAuthorityRegion {
         var quantized=quantize(current);
         if(current.flags()!=entry.flags || !region.contains(current.pose())
                 || !entry.lease.ready(sender,leaseEpoch,finalRevision,tick,current.pose()))return false;
-        entry.acknowledged=quantized;entry.activatedTick=tick;receipt=tick;pending.remove(entry);frozenPending--;
+        entry.acknowledged=quantized;entry.committedSpeed=speed(current.pose());
+        entry.acknowledgedSpeed=speed(decode(quantized,current.pose().yaw()).pose());
+        entry.activatedTick=tick;receipt=tick;pending.remove(entry);frozenPending--;
         observers.activate(new PackageObserverFeed.Member<>(entry.index,entry.target.identity(),entry.lease.epoch(),
                 entry.lease.baselineRevision(),quantized,entry.target,tick));return true;
     }
@@ -121,105 +141,110 @@ public final class PackageAuthorityRegion {
         return delta(sender,candidateEpoch,candidateRevision,sequence,tick,changes,maximumDisplacement,2,0);
     }
     public Result deltaStepped(UUID sender,long epoch,long revision,long sequence,long tick,List<PackageDeltaCodec.Entry> changes,double maximumDisplacement,int mode,long simulationStep){
+        return deltaStepped(sender,epoch,revision,sequence,tick,changes,maximumDisplacement,mode,simulationStep,new DeltaWorkspace());
+    }
+    public Result deltaStepped(UUID sender,long epoch,long revision,long sequence,long tick,List<PackageDeltaCodec.Entry> changes,double maximumDisplacement,int mode,long simulationStep,DeltaWorkspace workspace){
         if(simulationStep<1||mode<0||mode>2){lastDeltaRejection="invalid step/mode";return Result.INVALID;}
-        return delta(sender,epoch,revision,sequence,tick,changes,maximumDisplacement,mode,simulationStep);
+        return delta(sender,epoch,revision,sequence,tick,changes,maximumDisplacement,mode,simulationStep,workspace);
     }
     private Result delta(UUID sender,long candidateEpoch,long candidateRevision,long sequence,long tick,
                         List<PackageDeltaCodec.Entry> changes,double maximumDisplacement,int positionMode,long simulationStep) {
+        return delta(sender,candidateEpoch,candidateRevision,sequence,tick,changes,maximumDisplacement,positionMode,simulationStep,new DeltaWorkspace());
+    }
+    private Result delta(UUID sender,long candidateEpoch,long candidateRevision,long sequence,long tick,
+                        List<PackageDeltaCodec.Entry> changes,double maximumDisplacement,int positionMode,long simulationStep,DeltaWorkspace workspace) {
         if(closed || !owner.equals(sender) || candidateEpoch!=epoch || candidateRevision!=revision
                 || expired(tick) || sequence<0 || sequence<=lastSequence)return Result.STALE;
         lastDeltaRejection="none";
         if(simulationStep>0&&stepOrigin>=0&&(simulationStep<stepOrigin||simulationStep-stepOrigin>tick-stepOriginTick+historyTicks())){lastDeltaRejection="simulation step outside retained history";return Result.INVALID;}
         if(changes.isEmpty() || changes.size()>PackageDeltaCodec.MAX_ENTRIES){lastDeltaRejection="empty/oversized delta";return Result.INVALID;}
-        Entry[] targets=new Entry[changes.size()];Snapshot[] next=new Snapshot[changes.size()],previous=new Snapshot[changes.size()];
-        double[] allowances=new double[changes.size()];
-        PackageDeltaCodec.Quantized[] quantized=new PackageDeltaCodec.Quantized[changes.size()];
-        List<PackageDeltaCodec.Entry> observerChanges=positionMode!=0?new ArrayList<>(changes.size()):changes;
-        int lastIndex=-1;
+        Objects.requireNonNull(workspace).ensure(changes.size());
+        Entry[] targets=workspace.targets;Snapshot[] next=workspace.next,previous=workspace.previous;
+        double[] allowances=workspace.allowances,distances=workspace.distances,speeds=workspace.speeds;
+        PackageDeltaCodec.Quantized[] quantized=workspace.quantized;
         try {
+            int lastIndex=-1;
+            try {
+                for(int i=0;i<changes.size();i++) {
+                    var change=changes.get(i);Entry entry=entries.get(change.id());
+                    if(change.id()<=lastIndex){lastDeltaRejection="unsorted delta indices";return Result.INVALID;}
+                    lastIndex=change.id();
+                    // Dense, never-reused server baseline indices prove this is an already retired
+                    // identity. In-flight updates after pickup must not reject unrelated live records.
+                    if(entry==null){if(change.id()<nextIndex)continue;lastDeltaRejection="unknown future baseline index";return Result.INVALID;}
+                    if(entry.acknowledged==null){lastDeltaRejection="baseline not acknowledged";return Result.INVALID;}
+                    targets[i]=entry;previous[i]=entry.target.snapshot();
+                    if(change.mask()==PackageDeltaCodec.RELEASE) {
+                        next[i]=new Snapshot(entry.lease.committed(),entry.flags);continue;
+                    }
+                    if(!entry.target.eligible()){lastDeltaRejection="target no longer eligible";return Result.INVALID;}
+                    var q=positionMode==2?PackageDeltaCodec.mergePredictedPosition(entry.acknowledged,change,entry.displacementX,entry.displacementY,entry.displacementZ):
+                            positionMode==1?PackageDeltaCodec.mergeRelativePosition(entry.acknowledged,change):PackageDeltaCodec.merge(entry.acknowledged,change);
+                    Snapshot pose=decode(q,entry.lease.committed().yaw());
+                    double distance=distance(entry.lease.committed(),pose.pose());distances[i]=distance;
+                    long steps=motionSteps(entry,tick,simulationStep);
+                    if(steps<0){lastDeltaRejection="simulation step moved backwards";return Result.INVALID;}
+                    // Keep the original allowance for ordinary motion, with confirmed 50 ms
+                    // velocity steps covering legitimate fast Create contraption impacts.
+                    double candidateSpeed=(change.mask()&PackageDeltaCodec.VELOCITY)!=0
+                            ?speed(pose.pose()):entry.acknowledgedSpeed;
+                    speeds[i]=candidateSpeed;
+                    double speed=Math.max(entry.committedSpeed,candidateSpeed);
+                    double minimumSteppedAllowance=maximumDisplacement+STEPPED_BASE_TOLERANCE;
+                    double velocityAllowance=speed*(SIMULATION_STEP_SECONDS+VELOCITY_WINDOW_TOLERANCE_SECONDS)+MOTION_TOLERANCE;
+                    double perStepAllowance=Math.max(Math.max(minimumSteppedAllowance,velocityAllowance),MAX_SWEEP_STEP_DISTANCE);
+                    double allowance=perStepAllowance*steps;allowances[i]=allowance;
+                    double axisAllowance=(MAX_SWEEP_AXIS_DISPLACEMENT+SWEEP_AXIS_TOLERANCE)*steps;
+                    double dx=Math.abs(pose.pose().x()-entry.lease.committed().x());
+                    double dy=Math.abs(pose.pose().y()-entry.lease.committed().y());
+                    double dz=Math.abs(pose.pose().z()-entry.lease.committed().z());
+                    boolean outsideSweep=dx>axisAllowance||dy>axisAllowance||dz>axisAllowance;
+                    // A delayed GPU confirmation can change flags/velocity while the physical
+                    // step stays unchanged. It receives no additional position allowance.
+                    if(candidateSpeed>MAX_PACKAGE_SPEED){lastDeltaRejection="package speed exceeds negotiated range: "+candidateSpeed;return Result.INVALID;}
+                    if((simulationStep==0&&(entry.motionTick==tick?entry.motionUsed:0)+distance>maximumDisplacement)
+                            ||outsideSweep||!entry.lease.canCommitMeasured(sender,entry.lease.epoch(),sequence,tick,pose.pose(),allowance,distance)){
+                        lastDeltaRejection="displacement exceeds swept/velocity allowance: distance="+distance+", allowance="+allowance+", axisAllowance="+axisAllowance+", speed="+speed+", steps="+steps+", minimum="+minimumSteppedAllowance+", velocityAllowance="+velocityAllowance+", simulationStep="+simulationStep;
+                        return Result.INVALID;
+                    }
+                    next[i]=pose;quantized[i]=q;
+                }
+            }catch(IllegalArgumentException | ArithmeticException invalid){lastDeltaRejection=invalid.getMessage()==null?"invalid delta value":invalid.getMessage();return Result.INVALID;}
+            int applied=0;
+            try {
+                for(;applied<changes.size();applied++)if(targets[applied]!=null && !previous[applied].equals(next[applied]))targets[applied].target.apply(next[applied]);
+            }catch(RuntimeException failed) {
+                // Include the failing adapter: it may have thrown after changing its pose.
+                for(int i=Math.min(applied,changes.size()-1);i>=0;i--)
+                    try {if(targets[i]!=null)targets[i].target.apply(previous[i]);}catch(RuntimeException ignored){}
+                for(int i=0;i<changes.size();i++)if(targets[i]!=null)release(targets[i]);return Result.FAILED;
+            }
             for(int i=0;i<changes.size();i++) {
-                var change=changes.get(i);Entry entry=entries.get(change.id());
-                if(change.id()<=lastIndex){lastDeltaRejection="unsorted delta indices";return Result.INVALID;}
-                lastIndex=change.id();
-                // Dense, never-reused server baseline indices prove this is an already retired
-                // identity. In-flight updates after pickup must not reject unrelated live records.
-                if(entry==null){if(change.id()<nextIndex)continue;lastDeltaRejection="unknown future baseline index";return Result.INVALID;}
-                if(entry.acknowledged==null){lastDeltaRejection="baseline not acknowledged";return Result.INVALID;}
-                targets[i]=entry;previous[i]=entry.target.snapshot();
-                if(change.mask()==PackageDeltaCodec.RELEASE) {
-                    if(positionMode!=0)observerChanges.add(change);
-                    next[i]=new Snapshot(entry.lease.committed(),entry.flags);continue;
+                Entry entry=targets[i];
+                if(entry==null)continue;
+                if(changes.get(i).mask()==PackageDeltaCodec.RELEASE){release(entry);continue;}
+                double moved=distances[i];
+                if(!entry.lease.commitMeasured(sender,entry.lease.epoch(),sequence,tick,next[i].pose(),allowances[i],moved))
+                    throw new IllegalStateException("Package commit validation changed on the server thread");
+                if((changes.get(i).mask()&PackageDeltaCodec.POSITION)!=0) {
+                    entry.displacementX=quantized[i].x()-entry.acknowledged.x();
+                    entry.displacementY=quantized[i].y()-entry.acknowledged.y();
+                    entry.displacementZ=quantized[i].z()-entry.acknowledged.z();
                 }
-                if(!entry.target.eligible()){lastDeltaRejection="target no longer eligible";return Result.INVALID;}
-                var q=positionMode==2?PackageDeltaCodec.mergePredictedPosition(entry.acknowledged,change,entry.displacementX,entry.displacementY,entry.displacementZ):
-                        positionMode==1?PackageDeltaCodec.mergeRelativePosition(entry.acknowledged,change):PackageDeltaCodec.merge(entry.acknowledged,change);
-                Snapshot pose=decode(q,entry.lease.committed().yaw());
-                double distance=distance(entry.lease.committed(),pose.pose());
-                long steps=motionSteps(entry,tick,simulationStep);
-                if(steps<0){lastDeltaRejection="simulation step moved backwards";return Result.INVALID;}
-                // Keep the original small allowance for ordinary motion, but allow the
-                // distance implied by a confirmed 50 ms velocity step. Fast rotating
-                // contraptions can move a supported package several blocks per step.
-                double speed=Math.max(speed(entry.lease.committed()),speed(pose.pose()));
-                // A moving Create collider can impart an impulse during the interval, so
-                // endpoint velocity can understate the displacement across a catch-up
-                // batch. Bound the correction per confirmed 50 ms step; do not let one
-                // legitimate high-RPM impact revoke every package in the region.
-                double minimumSteppedAllowance=maximumDisplacement+STEPPED_BASE_TOLERANCE;
-                double velocityAllowance=speed*(SIMULATION_STEP_SECONDS+VELOCITY_WINDOW_TOLERANCE_SECONDS)+MOTION_TOLERANCE;
-                double perStepAllowance=Math.max(Math.max(minimumSteppedAllowance,velocityAllowance),MAX_SWEEP_STEP_DISTANCE);
-                double allowance=perStepAllowance*steps;
-                double axisAllowance=(MAX_SWEEP_AXIS_DISPLACEMENT+SWEEP_AXIS_TOLERANCE)*steps;
-                double dx=Math.abs(pose.pose().x()-entry.lease.committed().x());
-                double dy=Math.abs(pose.pose().y()-entry.lease.committed().y());
-                double dz=Math.abs(pose.pose().z()-entry.lease.committed().z());
-                boolean outsideSweep=dx>axisAllowance||dy>axisAllowance||dz>axisAllowance;
-                // A delayed GPU confirmation can change flags/velocity while the physical
-                // step stays unchanged. It receives no additional position allowance.
-                if(speed(pose.pose())>MAX_PACKAGE_SPEED){lastDeltaRejection="package speed exceeds negotiated range: "+speed(pose.pose());return Result.INVALID;}
-                if((simulationStep==0&&(entry.motionTick==tick?entry.motionUsed:0)+distance>maximumDisplacement)
-                        ||outsideSweep||!entry.lease.canCommit(sender,entry.lease.epoch(),sequence,tick,pose.pose(),allowance)){
-                    lastDeltaRejection="displacement exceeds swept/velocity allowance: distance="+distance+", allowance="+allowance+", axisAllowance="+axisAllowance+", speed="+speed+", steps="+steps+", minimum="+minimumSteppedAllowance+", velocityAllowance="+velocityAllowance+", simulationStep="+simulationStep;
-                    return Result.INVALID;
-                }
-                allowances[i]=allowance;
-                next[i]=pose;quantized[i]=q;
-                if(positionMode!=0)observerChanges.add(new PackageDeltaCodec.Entry(change.id(),change.mask(),q));
+                entry.acknowledged=quantized[i];entry.flags=next[i].flags();
+                entry.committedSpeed=entry.acknowledgedSpeed=speeds[i];
+                entry.motionUsed=(entry.motionTick==tick?entry.motionUsed:0)+moved;entry.motionTick=tick;if(simulationStep>0)entry.simulationStep=simulationStep;
+                // Commit the bounded crossing before retiring this region's authority.
+                // Discovery can now acquire the same record in its destination region.
+                // Releasing an uncommitted crossing would replay the old side forever.
+                if(!region.contains(next[i].pose()))release(entry);
             }
-        }catch(IllegalArgumentException | ArithmeticException invalid){lastDeltaRejection=invalid.getMessage()==null?"invalid delta value":invalid.getMessage();return Result.INVALID;}
-        int applied=0;
-        try {
-            for(;applied<targets.length;applied++)if(targets[applied]!=null && !previous[applied].equals(next[applied]))targets[applied].target.apply(next[applied]);
-        }catch(RuntimeException failed) {
-            // Include the failing adapter: it may have thrown after changing its pose.
-            for(int i=Math.min(applied,targets.length-1);i>=0;i--)
-                try {if(targets[i]!=null)targets[i].target.apply(previous[i]);}catch(RuntimeException ignored){}
-            for(Entry entry:targets)if(entry!=null)release(entry);return Result.FAILED;
-        }
-        for(int i=0;i<targets.length;i++) {
-            Entry entry=targets[i];
-            if(entry==null)continue;
-            if(changes.get(i).mask()==PackageDeltaCodec.RELEASE){release(entry);continue;}
-            double moved=distance(entry.lease.committed(),next[i].pose());
-            if(!entry.lease.commit(sender,entry.lease.epoch(),sequence,tick,next[i].pose(),allowances[i]))
-                throw new IllegalStateException("Package commit validation changed on the server thread");
-            if((changes.get(i).mask()&PackageDeltaCodec.POSITION)!=0) {
-                entry.displacementX=quantized[i].x()-entry.acknowledged.x();
-                entry.displacementY=quantized[i].y()-entry.acknowledged.y();
-                entry.displacementZ=quantized[i].z()-entry.acknowledged.z();
-            }
-            entry.acknowledged=quantized[i];entry.flags=next[i].flags();
-            entry.motionUsed=(entry.motionTick==tick?entry.motionUsed:0)+moved;entry.motionTick=tick;if(simulationStep>0)entry.simulationStep=simulationStep;
-            // Commit the bounded crossing before retiring this region's authority.
-            // Discovery can now acquire the same record in its destination region.
-            // Releasing an uncommitted crossing would replay the old side forever.
-            if(!region.contains(next[i].pose()))release(entry);
-        }
-        // Publish only after every adapter and lease commit succeeded. Rollback/invalid/stale
-        // batches never enter the observer journal; release callbacks already retire members.
-        observers.accepted(observerChanges,tick);
-        if(simulationStep>0&&stepOrigin<0){stepOrigin=simulationStep;stepOriginTick=tick;}
-        lastSequence=sequence;receipt=tick;return Result.ACCEPTED;
+            // Publish resolved server poses directly; relative modes need no wrapper entries
+            // and observers need no second per-record merge.
+            observers.acceptedResolved(changes,quantized,tick);
+            if(simulationStep>0&&stepOrigin<0){stepOrigin=simulationStep;stepOriginTick=tick;}
+            lastSequence=sequence;receipt=tick;return Result.ACCEPTED;
+        }finally {workspace.clear(changes.size());}
     }
     public void tick(long tick) {
         if(closed)return;

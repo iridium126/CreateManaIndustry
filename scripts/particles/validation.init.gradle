@@ -136,6 +136,13 @@ allprojects {
             jvmArgs '-Xms512m', '-Xmx2g'
             workingDir = project.projectDir
         }
+        tasks.register('benchmarkPackageServerValidation', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageServerValidationBenchmark.java'
+            jvmArgs '-Xms512m', '-Xmx2g'
+            workingDir = project.projectDir
+        }
         tasks.register('benchmarkPackageBatchNetwork', JavaExec) {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin

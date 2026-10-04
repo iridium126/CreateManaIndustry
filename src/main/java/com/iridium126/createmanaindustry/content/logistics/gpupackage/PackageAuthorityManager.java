@@ -64,6 +64,8 @@ public final class PackageAuthorityManager {
         final LinkedHashMap<ObserverKey,Observer> observers=new LinkedHashMap<>();
         final Map<PackageAuthorityRegion,PackageAckRanges.Builder> pendingAcks=new LinkedHashMap<>();
         final ArrayDeque<PackageAckRanges.Builder> spareAcks=new ArrayDeque<>();
+        final ArrayList<PackageDeltaCodec.Entry> deltaScratch=new ArrayList<>(512);
+        final PackageAuthorityRegion.DeltaWorkspace deltaWorkspace=new PackageAuthorityRegion.DeltaWorkspace();
         boolean closing;
         Runtime(ServerLevel level){this.level=level;light=PackageLightStore.get(level);long maximum=0;for(var entry:light.entries()){maximum=Math.max(maximum,entry.identity.id());if(level.hasChunkAt(net.minecraft.core.BlockPos.containing(entry.position())))activate(this,entry);}if(maximum>0)PackageIdentityData.get(level).observe(maximum);}
     }
@@ -364,7 +366,7 @@ public final class PackageAuthorityManager {
         if(packet.action()==ServerboundPackagePacket.HEARTBEAT){region.heartbeat(player.getUUID(),packet.epoch(),tick);return;}
         if(packet.action()==ServerboundPackagePacket.CONTROL_BATCH) {
             if(packet.revision()!=region.revision())return;
-            try {int count=PackageControlBatchCodec.visitValidated(ByteBuffer.wrap(packet.changes()),
+            try {int count=PackageControlBatchCodec.visitValidated(packet.changesView(),
                     MAX_CONTROL_RECORDS_PER_TICK-peer.controlRecords,(action,index,id,generation,lease,revision)->
                     control(rt,region,player,action,index,new PackageLease.Identity(id,generation),lease,revision,tick));
                 peer.controlRecords+=count;
@@ -385,7 +387,7 @@ public final class PackageAuthorityManager {
             long budget=ServerConfig.packageMainThreadBudgetNanos();if(peer.environmentNanos>=budget)return;
             long started=System.nanoTime(),deadline=started+(budget-peer.environmentNanos);
             try{
-                var event=PackageEnvironmentEvent.decode(packet.changes());var target=rt.identities.get(event.identity());
+                var event=PackageEnvironmentEvent.decode(packet.changesView());var target=rt.identities.get(event.identity());
                 if(target==null||target.light==null||target.region!=region)return;
                 var baseline=region.baseline(event.identity());
                 if(baseline==null||baseline.leaseEpoch()!=event.lease()||baseline.index()!=event.index()||baseline.revision()!=event.revision()||!region.simulated(event.identity(),tick))return;
@@ -421,13 +423,15 @@ public final class PackageAuthorityManager {
         }
         if(ServerboundPackagePacket.deltaAction(packet.action())) {
             PackageAuthorityRegion.Result result;
+            var changes=rt.deltaScratch;
             try {
-                ByteBuffer bytes=ByteBuffer.wrap(packet.changes());var changes=packet.action()==ServerboundPackagePacket.DELTA
-                        ?PackageDeltaCodec.decode(bytes):PackageBatchDeltaCodec.decode(bytes);
+                ByteBuffer bytes=packet.changesView();if(packet.action()==ServerboundPackagePacket.DELTA)
+                    PackageDeltaCodec.decodeInto(bytes,PackageDeltaCodec.MAX_ENTRIES,changes);
+                else PackageBatchDeltaCodec.decodeInto(bytes,PackageDeltaCodec.MAX_ENTRIES,changes);
                 if(bytes.hasRemaining())return;
                 int mode=packet.action()==ServerboundPackagePacket.PREDICTED_DELTA?2:packet.action()==ServerboundPackagePacket.RELATIVE_DELTA?1:0;
-                result=region.deltaStepped(player.getUUID(),packet.epoch(),packet.revision(),packet.sequence(),tick,changes,4,mode,packet.simulationStep());
-            }catch(RuntimeException invalid){return;}
+                result=region.deltaStepped(player.getUUID(),packet.epoch(),packet.revision(),packet.sequence(),tick,changes,4,mode,packet.simulationStep(),rt.deltaWorkspace);
+            }catch(RuntimeException invalid){return;}finally{changes.clear();}
             if(result==PackageAuthorityRegion.Result.ACCEPTED || result==PackageAuthorityRegion.Result.STALE
                     && packet.revision()==region.revision() && packet.sequence()==region.lastSequence()){
                 queueAck(rt,region,player,packet.sequence());
