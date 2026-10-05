@@ -27,6 +27,7 @@ import at.petrak.hexcasting.xplat.IXplatAbstractions;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.ActionSites;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.CompiledCall;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope;
+import com.iridium126.createmanaindustry.compat.hexcasting.jit.FastTickAction;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.FastAddMotionArguments;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.FastNumberLiteral;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime;
@@ -124,6 +125,11 @@ public abstract class PatternIotaMixin {
                     && HexJitRuntime.onServerThread()) {
                 ExecutionScope.markCompiled();
                 return FastAddMotionArguments.operate(vm.getEnv(), vm.getImage(), continuation, self);
+            }
+
+            if (!inParens && FastTickAction.supports(action)) {
+                ExecutionScope.markCompiled();
+                return FastTickAction.operate(vm.getEnv(), vm.getImage(), continuation, self);
             }
 
             IOperationResult result;

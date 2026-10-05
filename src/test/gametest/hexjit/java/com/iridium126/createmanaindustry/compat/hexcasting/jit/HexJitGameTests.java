@@ -1187,6 +1187,29 @@ public final class HexJitGameTests {
                         && source.getCompound("nested").getCompound("grandchild").getString("level").equals("third")
                         && !source.getList("list", Tag.TAG_COMPOUND).getCompound(0).contains("extra"),
                 "Mutating copied nested NBT changed the source tag");
+
+        CompoundTag tickData = new CompoundTag();
+        CompoundTag ticks = new CompoundTag();
+        ticks.putInt("0,0,0", 4);
+        CompoundTag ravenmind = new CompoundTag();
+        ravenmind.put("large-iota", list.copy());
+        tickData.put("hexal:times_ticked", ticks);
+        tickData.put("hexcasting:ravenmind", ravenmind);
+        tickData.put("extension-data", child);
+        CompoundTag tickCopy = FastCompoundTagCopy.copyForTick(
+                tickData, "hexal:times_ticked", "hexcasting:ravenmind");
+        helper.assertTrue(tickCopy != tickData
+                        && tickCopy.get("hexcasting:ravenmind") == ravenmind
+                        && tickCopy.get("hexal:times_ticked") != ticks
+                        && tickCopy.get("extension-data") != child,
+                "Tick's selective userdata copy did not isolate its counter and other data");
+        tickCopy.getCompound("hexal:times_ticked").putInt("0,0,0", 5);
+        tickCopy.getCompound("extension-data").putString("text", "tick-copy");
+        helper.assertTrue(ticks.getInt("0,0,0") == 4
+                        && child.getString("text").equals("deep")
+                        && ravenmind.getList("large-iota", Tag.TAG_COMPOUND).equals(list),
+                "Tick's selective userdata copy mutated its source data");
+
         CopyTrackingCompoundTag customRoot = new CopyTrackingCompoundTag();
         helper.assertTrue(FastCompoundTagCopy.copy(customRoot) != customRoot && customRoot.copies == 1,
                 "Fast copy bypassed the root CompoundTag subclass override");

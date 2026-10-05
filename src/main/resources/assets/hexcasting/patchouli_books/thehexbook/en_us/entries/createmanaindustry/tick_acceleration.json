@@ -1,0 +1,22 @@
+{
+  "name": "hexcasting.entry.createmanaindustry.tick",
+  "category": "hexcasting:patterns/great_spells",
+  "icon": "minecraft:clock",
+  "sortnum": 98,
+  "advancement": "hexcasting:root",
+  "read_by_default": true,
+  "pages": [
+    {
+      "type": "hexcasting:pattern",
+      "op_id": "createmanaindustry:tick",
+      "anchor": "createmanaindustry:tick",
+      "input": "vector",
+      "output": "",
+      "text": "hexcasting.page.createmanaindustry.tick.0"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.tick.1"
+    }
+  ]
+}

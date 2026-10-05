@@ -31,6 +31,9 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
     private static final String NUMBER_LITERAL = ROOT + "common/casting/actions/math/SpecialHandlerNumberLiteral";
     private static final String NUMBER_LITERAL_INNER = NUMBER_LITERAL + "$InnerAction";
     private static final String CONST_MEDIA_ACTION = ROOT + "api/casting/castables/ConstMediaAction";
+    private static final String PLAYER_CAST_ENV = ROOT + "api/casting/eval/env/PlayerBasedCastEnv";
+    private static final String SPIRAL_CAST_ENV = ROOT + "api/casting/eval/env/PlayerBasedSpiralPatternCastEnv";
+    private static final String STAFF_CAST_ENV = ROOT + "api/casting/eval/env/StaffCastEnv";
     private static final String DOUBLE_IOTA = ROOT + "api/casting/iota/DoubleIota";
     private static final String TREE_LIST = ROOT + "api/utils/TreeList";
     private static final String HEX_DIR = ROOT + "api/casting/math/HexDir";
@@ -206,6 +209,15 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
         if (!version) { JitCompatibility.disable("unsupported Hexcasting version"); return false; }
         // Validate the actual jar, not only a version string. Do not install signature-sensitive hooks on an unknown ABI.
         String internal = target.replace('.', '/');
+        if (mixin.equals(OWN + "PlayerBasedCastEnvMixin")) {
+            return matchesPlayerMediaScanTarget(internal);
+        }
+        if (mixin.equals(OWN + "SpiralPatternSetMixin")) {
+            return matchesSpiralPatternSetTarget(internal);
+        }
+        if (mixin.equals(OWN + "StaffCastEnvMixin")) {
+            return matchesStaffOvercastTarget(internal);
+        }
         if (internal.equals(TREE_LIST) || internal.startsWith(TREE_LIST + "$")) {
             String expected = TREE_LIST_HASHES.get(internal);
             if (expected != null && matchesHash(internal, expected)) return true;
@@ -245,6 +257,80 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
         } catch (Exception | LinkageError ignored) {
             return false;
         }
+    }
+
+    private boolean matchesPlayerMediaScanTarget(String internal) {
+        if (!PLAYER_CAST_ENV.equals(internal)) return false;
+        try (InputStream stream = getClass().getClassLoader().getResourceAsStream(internal + ".class")) {
+            if (stream == null) return false;
+            ClassNode node = new ClassNode();
+            new ClassReader(stream).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            for (MethodNode method : node.methods) {
+                if (!method.name.equals("extractMediaFromInventory") || !method.desc.equals("(JZZ)J")) continue;
+                for (AbstractInsnNode insn : method.instructions) {
+                    if (insn instanceof MethodInsnNode call && call.getOpcode() == org.objectweb.asm.Opcodes.INVOKESTATIC
+                            && call.owner.equals("at/petrak/hexcasting/api/utils/MediaHelper")
+                            && call.name.equals("scanPlayerForMediaStuff")
+                            && call.desc.equals("(Lnet/minecraft/server/level/ServerPlayer;)Ljava/util/List;"))
+                        return true;
+                }
+            }
+        } catch (Exception | LinkageError ignored) {
+            return false;
+        }
+        return false;
+    }
+
+    private boolean matchesSpiralPatternSetTarget(String internal) {
+        if (!SPIRAL_CAST_ENV.equals(internal)) return false;
+        try (InputStream stream = getClass().getClassLoader().getResourceAsStream(internal + ".class")) {
+            if (stream == null) return false;
+            ClassNode node = new ClassNode();
+            new ClassReader(stream).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            boolean recordsPatterns = false;
+            boolean clearsPatterns = false;
+            for (MethodNode method : node.methods) {
+                if (method.name.equals("postExecution")
+                        && method.desc.equals("(Lat/petrak/hexcasting/api/casting/eval/CastResult;)V")) {
+                    for (AbstractInsnNode insn : method.instructions) {
+                        if (insn instanceof MethodInsnNode call && call.owner.equals("java/util/Set")
+                                && call.name.equals("add") && call.desc.equals("(Ljava/lang/Object;)Z")) {
+                            recordsPatterns = true;
+                        }
+                    }
+                } else if (method.name.equals("postCast")
+                        && method.desc.equals("(Lat/petrak/hexcasting/api/casting/eval/vm/CastingImage;)V")) {
+                    for (AbstractInsnNode insn : method.instructions) {
+                        if (insn instanceof MethodInsnNode call && call.owner.equals("java/util/Set")
+                                && call.name.equals("clear") && call.desc.equals("()V")) {
+                            clearsPatterns = true;
+                        }
+                    }
+                }
+            }
+            return recordsPatterns && clearsPatterns;
+        } catch (Exception | LinkageError ignored) {
+            return false;
+        }
+    }
+
+    private boolean matchesStaffOvercastTarget(String internal) {
+        if (!STAFF_CAST_ENV.equals(internal)) return false;
+        try (InputStream stream = getClass().getClassLoader().getResourceAsStream(internal + ".class")) {
+            if (stream == null) return false;
+            ClassNode node = new ClassNode();
+            new ClassReader(stream).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            for (MethodNode method : node.methods) {
+                if (!method.name.equals("extractMediaEnvironment") || !method.desc.equals("(JZ)J")) continue;
+                for (AbstractInsnNode insn : method.instructions) {
+                    if (insn instanceof MethodInsnNode call && call.name.equals("canOvercast")
+                            && call.desc.equals("()Z") && call.owner.equals(STAFF_CAST_ENV)) return true;
+                }
+            }
+        } catch (Exception | LinkageError ignored) {
+            return false;
+        }
+        return false;
     }
 
     @Override public void preApply(String target, ClassNode node, String mixin, IMixinInfo info) {
@@ -512,5 +598,7 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
     @Override public String getRefMapperConfig() { return null; }
     @Override public List<String> getMixins() { return null; }
     @Override public void acceptTargets(Set<String> mine, Set<String> others) {}
-    @Override public void postApply(String target, ClassNode node, String mixin, IMixinInfo info) {}
+    @Override public void postApply(String target, ClassNode node, String mixin, IMixinInfo info) {
+        if (mixin.equals(OWN + "PlayerBasedCastEnvMixin")) JitCompatibility.mediaPoolTargetVerified();
+    }
 }

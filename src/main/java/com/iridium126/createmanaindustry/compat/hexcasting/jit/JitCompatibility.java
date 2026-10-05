@@ -23,6 +23,7 @@ public final class JitCompatibility {
     private static volatile boolean specialHandlerLookupTargetVerified;
     private static volatile String numberLiteralFailure;
     private static volatile boolean numberLiteralTargetVerified;
+    private static volatile boolean mediaPoolTargetVerified;
     private static volatile boolean verifierInstalled;
     private static volatile boolean coreReady;
     private static volatile boolean motionReady;
@@ -66,6 +67,7 @@ public final class JitCompatibility {
         specialHandlerLookupFailure = reason;
     }
     public static void numberLiteralTargetVerified() { numberLiteralTargetVerified = true; }
+    public static void mediaPoolTargetVerified() { mediaPoolTargetVerified = true; }
     public static void disableNumberLiteral(String reason) {
         if (numberLiteralFailure == null) LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT number-literal fast path disabled: {}", reason);
         numberLiteralFailure = reason;
@@ -92,6 +94,7 @@ public final class JitCompatibility {
     public static boolean fastNumberLiteralReady() {
         return coreReady && numberLiteralTargetVerified && numberLiteralFailure == null;
     }
+    public static boolean mediaPoolTargetReady() { return mediaPoolTargetVerified; }
     public static String status() {
         String core = failure != null ? failure : ready() ? "verified pre-53" : "waiting for target verification (" + VERIFIED.size() + "/7)";
         return core + (motionBatchingReady() ? ", motionBatch=verified" : motionFailure != null

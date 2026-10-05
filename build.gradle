@@ -207,7 +207,10 @@ def extractSableCompanion = tasks.register("extractSableCompanion") {
     inputs.files(configurations.sableDistribution)
     outputs.file(sableCompanionJar)
     doLast {
-        def outer = new java.util.zip.ZipFile(configurations.sableDistribution.singleFile)
+        // Read the task's declared input instead of reaching back into the
+        // project configuration from the execution-time closure. This keeps
+        // the action compatible with Gradle's configuration cache.
+        def outer = new java.util.zip.ZipFile(inputs.files.singleFile)
         try {
             def matches = outer.entries().findAll { entry ->
                 !entry.directory && entry.name.startsWith("META-INF/jarjar/sable-companion-common-")
@@ -474,6 +477,9 @@ dependencies {
     implementation "hexcasting:hexcasting-neoforge-1.21.1-0.12.0-devel-pre-53@jar"
     // Optional HexParse adapter API; HexParse itself remains user-installed and is never bundled.
     compileOnly "maven.modrinth:WjFyIzFj:fFV6HwT2"
+    // HexJIT GameTests parse and execute the stored great-spell reference with HexParse.
+    // localRuntime keeps this benchmark dependency out of the published mod.
+    localRuntime "maven.modrinth:PkhtCPsD:I3vfDCiE" // Hex Overpowered
     localRuntime "paucal:paucal-0.7.1-pre-27+1.21.1-neoforge@jar"
     localRuntime "curse.maven:caelus-308989:5694215"
     implementation "curse.maven:inline-971167:6556868"
