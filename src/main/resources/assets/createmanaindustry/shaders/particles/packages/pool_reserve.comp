@@ -11,4 +11,7 @@ void main() {
     preparedAccepted=min(preparedCount,uCapacity-activeAccepted-base);
     accepted=activeAccepted+preparedAccepted;
     live=base+accepted;
+    // Until capture.comp publishes the translucent census, word 1 is the
+    // ordinary-particle boundary. No extra SSBO or CPU readback is needed.
+    spare=base;
 }

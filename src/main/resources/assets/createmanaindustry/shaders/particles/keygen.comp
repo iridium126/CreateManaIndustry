@@ -59,6 +59,7 @@ layout(std430, binding = BIND_CARRIERSINK) buffer CarrierSink { uvec2 kv[]; } ca
 layout(std430, binding = BIND_ORDER_ADD) buffer OrderAddW { uint order[]; } orderAdd;
 layout(std430, binding = BIND_ORDER_OPAQUE) buffer OrderOpaqueW { uint order[]; } orderOpaque;
 
+uniform uint uPackageStaged; // counter.spare is the pre-package boundary until capture
 uniform uint uUpper;      // physical capacity; dispatch size comes from the GPU live count
 uniform uint uCarrierBase; // fixed sort-buffer base of the held-item carrier region
 uniform float uWaveTier[4]; // held-sword material id per wave slot (carrier sweep)
@@ -72,10 +73,12 @@ uniform vec4 uFrustum[6]; // normalized planes, distances vs camera-relative poi
 // reads (uTimeSec / uWave / uWaveTarget live in the chunk)
 #pragma cmi_include chunks/allay_storm.glsl
 
+#pragma cmi_include chunks/frustum_culling.glsl
+
 bool sphereVisible(vec3 rel, float r) {
     for (int i = 0; i < 6; i++) {
         vec4 pl = uFrustum[i];
-        if (dot(pl.xyz, rel) + pl.w < -r)
+        if (cmiOutsideSphere(pl,rel,r))
             return false;
     }
     return true;
@@ -92,7 +95,8 @@ uint depthKey(vec3 worldPos) {
 
 void main() {
     uint g = gl_GlobalInvocationID.x;
-    if (g >= uUpper || g >= counter.writeSlot)
+    uint ordinary = uPackageStaged!=0u ? min(counter.spare,counter.writeSlot) : counter.writeSlot;
+    if (g >= uUpper || g >= ordinary)
         return;
 
     uint base = g * VEC4_PER_PARTICLE;

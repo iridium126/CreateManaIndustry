@@ -57,6 +57,8 @@ import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.Cl
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundChainPackagePacket;
 import net.minecraft.resources.ResourceLocation;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource;
+import com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers;
+import com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms;
 
 /** Driver validation of package kernels; does not enable gameplay takeover. */
 public class PackageGpuValidation {
@@ -4114,13 +4116,17 @@ public class PackageGpuValidation {
             this(n,hidden,false);
         }
         DrawPassFixture(int n,boolean hidden,boolean reference) {
+            this(n,hidden,reference,reference);
+        }
+        DrawPassFixture(int n,boolean hidden,boolean reference,boolean legacy) {
             count=n;capacity=Math.max(1,n);pool=buffer(bodies(capacity));counter=buffer(BufferUtils.createByteBuffer(16));
             physics=new PackagePhysicsGpu(capacity,2,PackageGpuValidation::source);bridge=new PackagePoolGpu(capacity,2,name->{
                 String text=source(name);
-                if(reference && (name.endsWith("draw_count.comp") || name.endsWith("draw_scatter.comp"))) {
+                if(reference && name.endsWith("pool_import.comp"))text=text.replace("#ifdef CMI_IMPORT_DRAW","#if 0");
+                if(legacy && (name.endsWith("draw_count.comp") || name.endsWith("draw_scatter.comp"))) {
                     text=text.replace("s>uCapacity || ","").replace("drawGroup(box,result.y)","box").replace("drawGroup(rig,result.y)","rig");
                 }
-                if(reference && name.endsWith("draw_prefix.comp")) {
+                if(legacy && name.endsWith("draw_prefix.comp")) {
                     text=text.replace("m<uMeshCount*PACKAGE_DRAW_LAYERS","m<uMeshCount").replace("uint mesh=m<uMeshCount?m:m-uMeshCount;","uint mesh=m;");
                 }
                 return text;
@@ -4139,10 +4145,114 @@ public class PackageGpuValidation {
             bridge.uploadMeshes(BufferUtils.createByteBuffer(6*PackagePoolGpu.VERTEX_BYTES),ranges,2);bridge.uploadMetadata(meta,n);
             bridge.source(physics.stateBuffer(),physics.chainBuffer(),physics.historyBuffer(),n,16,0,-32);
         }
-        void stage(float[] frustum){putBuffer(counter,BufferUtils.createByteBuffer(16));bridge.stage(pool,counter,7,frustum,16,0,-32);bridge.commit();}
+        void stage(float[] frustum){stage(frustum,true);}
+        void stage(float[] frustum,boolean basicDraw){putBuffer(counter,BufferUtils.createByteBuffer(16));bridge.stage(pool,counter,7,frustum,16,0,-32,basicDraw);bridge.commit();}
         public void close(){bridge.close();physics.close();GL15.glDeleteBuffers(pool);GL15.glDeleteBuffers(counter);}
     }
+    static void particleCullBoundary() {
+        String prelude;
+        try {
+            var field=ParticlePrograms.class.getDeclaredField("PRELUDE");field.setAccessible(true);prelude=(String)field.get(null);
+        }catch(ReflectiveOperationException e){throw new RuntimeException(e);}
+        int prepare=compute(prelude+source("prepare_dispatch.comp")),keygen=compute(prelude+source("keygen.comp"));
+        int capture=compute(prelude+source("capture.comp"));
+        int capacity=131,pool=buffer(bodies(capacity)),counter=buffer(BufferUtils.createByteBuffer(16));
+        int previous=buffer(BufferUtils.createByteBuffer(16)),indirect=buffer(BufferUtils.createByteBuffer(ParticleBuffers.INDIRECT_UINTS*4));
+        int args=buffer(BufferUtils.createByteBuffer(36)),emitters=buffer(BufferUtils.createByteBuffer(ParticleBuffers.VEC4_PER_EMITTER*16));
+        int order=buffer(BufferUtils.createByteBuffer(capacity*4)),opaque=buffer(BufferUtils.createByteBuffer(capacity*4));
+        int sort=buffer(BufferUtils.createByteBuffer((capacity+1)*8)),carrier=buffer(BufferUtils.createByteBuffer(capacity*8));
+        int hit=buffer(BufferUtils.createByteBuffer(16)),identity=buffer(BufferUtils.createByteBuffer(capacity*8));
+        try {
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.PARTICLE_BB_READ,pool);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.PARTICLE_BB_WRITE,pool);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.COUNTER_BB,counter);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.PREVCOUNTER_BINDING,previous);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.INDIRECT_BB,indirect);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.DISPATCH_BB,args);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.EMITTER_BB,emitters);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.ORDERADD_BINDING,order);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.ORDEROPAQUE_BINDING,opaque);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.SORTWRITE_BINDING,sort);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.CARRIERSINK_BB,carrier);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.HIT_BB,hit);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.IDENTITY_BB,identity);
+            for(int staged:new int[]{0,1})for(int ordinary:new int[]{0,1,63,64,65}) {
+                int total=ordinary+66,expected=staged==0?total:ordinary;
+                putBuffer(counter,BufferUtils.createByteBuffer(16).putInt(0,total).putInt(4,ordinary).putInt(8,7));
+                putBuffer(indirect,BufferUtils.createByteBuffer(ParticleBuffers.INDIRECT_UINTS*4));
+                GL20.glUseProgram(prepare);GL30.glUniform1ui(GL20.glGetUniformLocation(prepare,"uPhase"),1);
+                GL30.glUniform1ui(GL20.glGetUniformLocation(prepare,"uCapacity"),capacity);
+                GL30.glUniform1ui(GL20.glGetUniformLocation(prepare,"uPackageStaged"),staged);
+                GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                check(readBuffer(args,36).getInt(12)==(expected+63)/64,"keygen dispatch included package tail or lost ordinary particles");
+                check(readBuffer(counter,16).getInt(0)==total,"cull boundary changed total published live count");
+                GL20.glUseProgram(keygen);GL30.glUniform1ui(GL20.glGetUniformLocation(keygen,"uUpper"),capacity);
+                GL30.glUniform1ui(GL20.glGetUniformLocation(keygen,"uPackageStaged"),staged);
+                // Deliberately oversize the dispatch to exercise the shader's boundary guard.
+                GL43.glDispatchCompute((total+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                check(readBuffer(indirect,ParticleBuffers.INDIRECT_UINTS*4).getInt(ParticleBuffers.IDX_CNT_ADD*4)==expected,"keygen read package tail or dropped ordinary particles");
+                putBuffer(hit,BufferUtils.createByteBuffer(16).putInt(0,-1));
+                GL20.glUseProgram(capture);GL20.glUniform1i(GL20.glGetUniformLocation(capture,"uMetaSlot"),capacity);
+                GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                check(readBuffer(counter,16).getInt(4)==7,"capture leaked temporary cull boundary into census readback");
+            }
+        }finally {
+            for(int p:new int[]{prepare,keygen,capture})GL20.glDeleteProgram(p);
+            for(int b:new int[]{pool,counter,previous,indirect,args,emitters,order,opaque,sort,carrier,hit,identity})GL15.glDeleteBuffers(b);
+        }
+    }
     static void preparedDrawPasses() {
+        particleCullBoundary();fusedDrawParity();
+        for(int n:new int[]{0,1,65,131072})try(var f=new DrawPassFixture(n,true)) {
+            f.stage(new float[24]);var poses=readBuffer(f.pool,f.capacity*64);
+            var admission=n==0?null:readBuffer(f.bridge.admissionBuffer(),n*32);
+            f.stage(new float[24],false);
+            var nextPoses=readBuffer(f.pool,f.capacity*64);
+            var nextAdmission=n==0?null:readBuffer(f.bridge.admissionBuffer(),n*32);
+            // GPU append order may change slot assignments; compare each stable candidate.
+            for(int i=0;i<n;i++) {
+                int a=admission.getInt(i*32+16)-1,b=nextAdmission.getInt(i*32+16)-1;
+                check(admission.getLong(i*32)==nextAdmission.getLong(i*32)
+                        && admission.getLong(i*32+8)==nextAdmission.getLong(i*32+8)
+                        && admission.getInt(i*32+20)==nextAdmission.getInt(i*32+20),"import-only staging changed candidate identity/flags");
+                check((a<0)==(b<0),"import-only staging changed accepted candidates");
+                if(a>=0)for(int word=0;word<8;word++)
+                    check(poses.getLong(a*64+word*8)==nextPoses.getLong(b*64+word*8),"import-only staging changed candidate pose");
+            }
+            boolean rejected=false;try{f.bridge.commandBuffer();}catch(IllegalStateException expected){rejected=true;}
+            check(rejected,"import-only generation exposed stale basic commands");
+            var drawTiming=new int[1];GL11.glGetIntegerv(GL20.GL_CURRENT_PROGRAM,drawTiming);
+            f.bridge.draw(f.pool,new Matrix4f(),new Matrix4f(),16,0,-32,1);
+            check(GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM)==drawTiming[0],"mid-frame shaderpack switch consumed stale basic commands");
+            check(f.bridge.preparePass(PackagePoolGpu.DrawPass.GBUFFER,f.pool,new float[24],16,0,-32),"import-only generation failed gbuffer preparation");
+            var main=readBuffer(f.bridge.passCommandBuffer(PackagePoolGpu.DrawPass.GBUFFER),64);
+            f.bridge.preparePass(PackagePoolGpu.DrawPass.SHADOW,f.pool,new float[24],16,0,-32);
+            check(main.equals(readBuffer(f.bridge.passCommandBuffer(PackagePoolGpu.DrawPass.GBUFFER),64)),"import-only shadow overwrote main commands");
+            f.stage(new float[24]);
+            check(f.bridge.commandBuffer()>0,"basic draw did not recover after a shaderpack switch");
+        }
+        // The main range is independent of entity view scale and does not restrict
+        // parent-admitted chains or change the shadow entity-distance policy.
+        try(var f=new DrawPassFixture(65,false)) {
+            f.bridge.mainRenderDistance(40);f.stage(new float[24]);
+            var poses=readBuffer(f.pool,65*64);var admission=readBuffer(f.bridge.admissionBuffer(),65*32);
+            int nearFree=0,chain=0;
+            for(int i=0;i<65;i++) {
+                if(i%2==0){chain++;continue;}
+                int slot=admission.getInt(i*32+16)-1;
+                float x=poses.getFloat(slot*64)-16,y=poses.getFloat(slot*64+4),z=poses.getFloat(slot*64+8)+32;
+                if(x*x+y*y+z*z<=1600)nearFree++;
+            }
+            var plain=readBuffer(f.bridge.commandBuffer(),32);
+            check(plain.getInt(4)==nearFree+chain && plain.getInt(20)==chain,"plain main range did not preserve chain visibility");
+            int[] mask=new int[3];Arrays.fill(mask,-1);f.bridge.viewScale(.001f);
+            f.bridge.preparePass(PackagePoolGpu.DrawPass.GBUFFER,f.pool,new float[24],6,-1,-1,16,0,-32,mask);
+            var main=readBuffer(f.bridge.passCommandBuffer(PackagePoolGpu.DrawPass.GBUFFER),64);
+            check(main.getInt(4)==nearFree && main.getInt(36)==chain && main.getInt(52)==chain,"native main range still used entity view scale");
+            f.bridge.viewScale(10);
+            f.bridge.preparePass(PackagePoolGpu.DrawPass.SHADOW,f.pool,new float[24],6,-1,-1,16,0,-32,mask);
+            check(readBuffer(f.bridge.passCommandBuffer(PackagePoolGpu.DrawPass.SHADOW),64).getInt(4)==32,"shadow inherited the main distance cutoff");
+        }
         // A native global/off-screen conveyor remains eligible even when both its
         // packages and parent are outside the main frustum. The GPU must obey the
         // parent mask, independently for box, rigging, hidden slots and shadows.
@@ -4337,6 +4447,69 @@ public class PackageGpuValidation {
                 check(GL11.glGetError()==GL11.GL_NO_ERROR,"draw timestamp GL error");
             }finally{if(GL15.glGetQueryi(GL33.GL_TIME_ELAPSED,GL15.GL_CURRENT_QUERY)==foreign)GL15.glEndQuery(GL33.GL_TIME_ELAPSED);GL15.glDeleteQueries(foreign);}
         }
+    }
+    static Set<Long> basicDrawCandidates(DrawPassFixture f) {
+        var commands=readBuffer(f.bridge.commandBuffer(),32);
+        int total=commands.getInt(4)+commands.getInt(20);
+        var result=new HashSet<Long>();if(total==0)return result;
+        var instances=readBuffer(f.bridge.instanceBuffer(),total*8);
+        for(int i=0;i<total;i++)check(result.add(Integer.toUnsignedLong(instances.getInt(i*8+4))),"basic draw duplicated a candidate/rig");
+        return result;
+    }
+    static void fusedDrawParity() {
+        for(int n:new int[]{0,1,63,64,65,1025})try(var fused=new DrawPassFixture(n,true);var reference=new DrawPassFixture(n,true,true,false)) {
+            for(float range:new float[]{40,120})for(boolean narrow:new boolean[]{false,true}) {
+                fused.bridge.mainRenderDistance(range);reference.bridge.mainRenderDistance(range);
+                float[] planes=new float[24];if(narrow){planes[0]=1;planes[3]=16;planes[4]=-1;planes[7]=16;}
+                fused.stage(planes);reference.stage(planes);
+                check(readBuffer(fused.bridge.commandBuffer(),32).equals(readBuffer(reference.bridge.commandBuffer(),32)),"fused import changed mesh counts/prefix");
+                check(basicDrawCandidates(fused).equals(basicDrawCandidates(reference)),"fused import changed visible candidate identities");
+                // Exercise stale visibility when the next generation admits fewer candidates.
+                fused.bridge.stage(fused.pool,fused.counter,-1,planes,16,0,-32);fused.bridge.commit();
+                check(readBuffer(fused.bridge.commandBuffer(),32).getInt(4)==0,"empty import retained stale visibility");
+            }
+        }
+    }
+    static void cullPipelineBenchmark() throws Exception {
+        var rows=new ArrayList<String>();var samples=new ArrayList<String>();
+        rows.add("count,visibility,mode,run,gpu_p50_ms,gpu_p95_ms,cpu_submit_p50_ms,cpu_submit_p95_ms,instances");
+        samples.add("count,visibility,mode,run,sample,gpu_ms,cpu_submit_ms");
+        for(int n:new int[]{10000,65536,131072})for(boolean narrow:new boolean[]{false,true})
+            for(String mode:new String[]{"unfused_main","fused_main","iris_duplicate","iris_import_only"})
+                try(var f=new DrawPassFixture(n,false,mode.equals("unfused_main") || mode.equals("iris_duplicate"),false)) {
+                    boolean iris=mode.startsWith("iris_"),basic=!mode.equals("iris_import_only");
+                    float[] planes=new float[24];if(narrow){planes[0]=1;planes[3]=64;planes[4]=-1;planes[7]=64;}
+                    int expected=0;for(int i=0;i<n;i++) {
+                        float x=i*3-n*1.5f;
+                        if(!narrow || x+2>=-64 && x-2<=64)expected+=i%2==0?2:1;
+                    }
+                    Runnable submit=()->{
+                        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+                        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,f.counter);
+                        GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(ByteBuffer)null);
+                        f.bridge.stage(f.pool,f.counter,7,planes,16,0,-32,basic);f.bridge.commit();
+                        if(iris)f.bridge.preparePass(PackagePoolGpu.DrawPass.GBUFFER,f.pool,planes,16,0,-32);
+                    };
+                    int timer=GL15.glGenQueries();String visibility=narrow?"narrow":"all";
+                    try {
+                        long began=System.nanoTime();int warm=0;
+                        while(warm<30 || System.nanoTime()-began<1_000_000_000L){submit.run();GL11.glFinish();warm++;}
+                        for(int run=0;run<3;run++) {
+                            double[] gpu=new double[120],cpu=new double[120];
+                            for(int i=0;i<120;i++) {
+                                GL15.glBeginQuery(GL33.GL_TIME_ELAPSED,timer);long start=System.nanoTime();submit.run();cpu[i]=(System.nanoTime()-start)/1e6;
+                                GL15.glEndQuery(GL33.GL_TIME_ELAPSED);gpu[i]=GL33.glGetQueryObjectui64(timer,GL15.GL_QUERY_RESULT)/1e6;
+                                samples.add(n+","+visibility+","+mode+","+run+","+i+","+gpu[i]+","+cpu[i]);
+                            }
+                            var commands=readBuffer(iris?f.bridge.passCommandBuffer(PackagePoolGpu.DrawPass.GBUFFER):f.bridge.commandBuffer(),iris?64:32);
+                            int total=0;for(int mesh=0;mesh<(iris?4:2);mesh++)total+=commands.getInt(mesh*16+4);
+                            check(total==expected,"cull pipeline benchmark changed visible work");
+                            String row=n+","+visibility+","+mode+","+run+","+percentile(gpu,.5)+","+percentile(gpu,.95)+","+percentile(cpu,.5)+","+percentile(cpu,.95)+","+total;
+                            rows.add(row);System.out.println(row);
+                            Files.write(Path.of("build/package-cull-pipeline.csv"),rows);Files.write(Path.of("build/package-cull-pipeline-samples.csv"),samples);
+                        }
+                    }finally{GL15.glDeleteQueries(timer);}
+                }
     }
     static void drawPassBenchmark() throws Exception {
         drawPassBenchmark(false);
@@ -5447,7 +5620,7 @@ public class PackageGpuValidation {
             }
             if(Arrays.asList(args).contains("--chain-frames-only")){sourceContract();chainParentFrames();mergedPackageVertices();check(GL11.glGetError()==GL11.GL_NO_ERROR,"chain frames GL error");System.out.println("Package chain frames GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--shaderpack-only")){sourceContract();mergedPackageVertices();shadowCullingAndBoundary();packageDrawTelemetry();render();packageFaceLighting();poseParity();check(GL11.glGetError()==GL11.GL_NO_ERROR,"shaderpack GL error");System.out.println("Package shaderpack GPU: "+checks+" assertions passed");return;}
-            if(Arrays.asList(args).contains("--draw-pass-only")){sourceContract();preparedDrawPasses();shadowCullingAndBoundary();packageDrawTelemetry();render();packageFaceLighting();poseParity();if(Arrays.asList(args).contains("--draw-pass-benchmark"))drawPassBenchmark();if(Arrays.asList(args).contains("--iris-boundary-benchmark"))drawPassBenchmark(true);check(GL11.glGetError()==GL11.GL_NO_ERROR,"draw pass GL error");System.out.println("Package draw pass GPU: "+checks+" assertions passed");return;}
+            if(Arrays.asList(args).contains("--draw-pass-only")){sourceContract();preparedDrawPasses();shadowCullingAndBoundary();packageDrawTelemetry();render();packageFaceLighting();poseParity();if(Arrays.asList(args).contains("--cull-benchmark"))cullPipelineBenchmark();if(Arrays.asList(args).contains("--draw-pass-benchmark"))drawPassBenchmark();if(Arrays.asList(args).contains("--iris-boundary-benchmark"))drawPassBenchmark(true);check(GL11.glGetError()==GL11.GL_NO_ERROR,"draw pass GL error");System.out.println("Package draw pass GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--checkpoint-only")){sourceContract();chainCheckpoints();if(Arrays.asList(args).contains("--checkpoint-benchmark"))chainCheckpointBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"checkpoint GL error");System.out.println("Package checkpoint GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--backend-only")){sourceContract();contactProbeReference();backendBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"backend GL error");return;}
             if(Arrays.asList(args).contains("--mixed-benchmark")){sourceContract();mixedPhysics();mixedBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"mixed benchmark GL error");return;}

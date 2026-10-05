@@ -38,6 +38,7 @@ allprojects {
             if (project.hasProperty('packageCheckpointBenchmark')) args '--checkpoint-only', '--checkpoint-benchmark'
             if (project.hasProperty('packageDrawPassOnly')) args '--draw-pass-only'
             if (project.hasProperty('packageShaderpackOnly')) args '--shaderpack-only'
+            if (project.hasProperty('packageCullBenchmark')) args '--draw-pass-only', '--cull-benchmark'
             if (project.hasProperty('packageDrawPassBenchmark')) args '--draw-pass-only', '--draw-pass-benchmark'
             if (project.hasProperty('packageIrisBoundaryBenchmark')) args '--draw-pass-only', '--iris-boundary-benchmark'
             if (project.hasProperty('packageMovingBenchmark')) args '--moving-benchmark'

@@ -127,6 +127,7 @@ public final class PackageShaderHook {
         state.capture();boolean applied=false;
         try {
             pool.viewScale((float)net.minecraft.world.entity.Entity.getViewScale());
+            pool.mainRenderDistance((float)engine.renderDistanceBlocks());
             if(!pool.preparePass(pass,pool.committedPoolBuffer(),CULLING.planes,CULLING.count,CULLING.distance,CULLING.safe,
                     (float)position.x,(float)position.y,(float)position.z,chainVisibility))return;
             boolean sampled=pool.bindPassTbos(pass,PackageShaderCompiler.SAMPLER_BASE,engine.packageInterpolation());

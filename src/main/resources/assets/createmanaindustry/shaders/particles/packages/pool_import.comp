@@ -16,6 +16,13 @@ layout(std430,binding=8) buffer Attachment { vec4 attachment[]; };
 layout(std430,binding=9) readonly buffer History { vec4 history[]; };
 #pragma cmi_include packages/chain_frames.glsl
 layout(std430,binding=10) readonly buffer Frames { ChainFrame frames[]; };
+#ifdef CMI_IMPORT_DRAW
+layout(std430,binding=11) buffer ImportCommands { uvec4 importCommands[]; };
+layout(std430,binding=12) readonly buffer ImportMeshes { uvec4 importMeshes[]; };
+layout(std430,binding=13) writeonly buffer ImportVisibility { uint importVisible[]; };
+uniform uint uPrepareBasicDraw,uMeshCount;
+#pragma cmi_include packages/draw_cull.glsl
+#endif
 void main() {
     uint g=gl_GlobalInvocationID.x;if(g>=accepted)return;
     uint i=selected[g<activeAccepted?g:uCount-1u-(g-activeAccepted)];
@@ -28,8 +35,17 @@ void main() {
         flags=(flags&~2u)|(chains[m.selection.x].progress.w>.5?2u:0u);
     vec3 position=b.positionMass.xyz, previous=history[2u*m.selection.x].xyz;
     vec3 target=chain?chains[m.selection.x].targetYaw.xyz:position;
+#ifdef CMI_IMPORT_DRAW
+    float parentScale=1.0;
+#endif
     if((flags&8u)!=0u) {
         ChainFrame f=frames[uint(chains[m.selection.x].startRadius.w)];
+#ifdef CMI_IMPORT_DRAW
+        if(uPrepareBasicDraw!=0u) {
+            mat3 parent=transpose(mat3(f.rx.xyz,f.ry.xyz,f.rz.xyz));
+            parentScale=sqrt(max(dot(parent[0],parent[0]),max(dot(parent[1],parent[1]),dot(parent[2],parent[2]))));
+        }
+#endif
         // Preserve the original 2-vec4 attachment prefix. The extension is candidate-indexed
         // after that prefix; both publish with the same admission/pool generation.
         uint a=2u*uint(attachment.length()/11)+9u*i;
@@ -52,4 +68,18 @@ void main() {
     attachment[2u*i]=vec4(history[2u*m.selection.x+1u].xyz+((flags&8u)!=0u?vec3(0):uOrigin),0);
     attachment[2u*i+1u]=m.nudge;
     packageCullBounds[i]=vec4(2.0*b.extentYaw.x,2.0*b.extentYaw.y,0,0);
+#ifdef CMI_IMPORT_DRAW
+    if(uPrepareBasicDraw!=0u) {
+        importVisible[i]=0u;
+        if((flags&4u)!=0u)return;
+        uint box=m.selection.y,rig=m.selection.z;
+        float boxRadius=box<uMeshCount?uintBitsToFloat(importMeshes[box].z):0.0;
+        float rigRadius=rig<uMeshCount?uintBitsToFloat(importMeshes[rig].z):0.0;
+        float r=packageDrawRadius(boxRadius,rigRadius,m.style.z,parentScale);
+        if(!packageGeometryVisible(position+uOrigin-uCamPos,previous+uOrigin-uCamPos,r,flags))return;
+        importVisible[i]=1u;
+        if(box<uMeshCount)atomicAdd(importCommands[box].y,1u);
+        if(chain && rig<uMeshCount)atomicAdd(importCommands[rig].y,1u);
+    }
+#endif
 }

@@ -30,10 +30,12 @@ public final class PackagePoolGpu implements AutoCloseable {
     private boolean sampledLightingEnabled;
     private static final String[] COMPUTE={"pool_select","pool_reserve","pool_import","draw_count","draw_prefix","draw_scatter"};
     private final int capacity, packageCapacity, maxMeshes;
-    private final int[] programs=new int[12], admission=new int[2], commands=new int[2], instances=new int[2], attachments=new int[2], nativeBounds=new int[2];
-    private static final String[] UNIFORMS={"uCount","uCapacity","uBodyCount","uMeshCount","uEmitter","uOrigin","uCamPos","uFrustum","ModelViewMat","ProjMat","uPartialTick","uLightingMode","uConstantAmbient","uLight0","uLight1","uLightTableSize","uLightDataOffset","uSampledLighting","uFeedback","uFrustumCount","uCullBounds","uFrameCount","uEntityViewScale","uNativeCull","uChainPartialTick","uSeparateChainInterpolation"};
-    private final int[][] locations=new int[12][UNIFORMS.length];
-    private final int[] uniformCounts=new int[12],uniformBodyCounts=new int[12],uniformFrameCounts=new int[12];
+    private final boolean supportsFusedImport;
+    private boolean fusedImportCount;
+    private final int[] programs=new int[13], admission=new int[2], commands=new int[2], instances=new int[2], attachments=new int[2], nativeBounds=new int[2];
+    private static final String[] UNIFORMS={"uCount","uCapacity","uBodyCount","uMeshCount","uEmitter","uOrigin","uCamPos","uFrustum","ModelViewMat","ProjMat","uPartialTick","uLightingMode","uConstantAmbient","uLight0","uLight1","uLightTableSize","uLightDataOffset","uSampledLighting","uFeedback","uFrustumCount","uCullBounds","uFrameCount","uEntityViewScale","uNativeCull","uChainPartialTick","uSeparateChainInterpolation","uMainRangeSquared","uPrepareBasicDraw"};
+    private final int[][] locations=new int[13][UNIFORMS.length];
+    private final int[] uniformCounts=new int[13],uniformBodyCounts=new int[13],uniformFrameCounts=new int[13];
     private int sampledLight;
     private PackageLightGpu lightSource;
     private PackageLightFeedbackGpu lightFeedback;
@@ -45,6 +47,7 @@ public final class PackagePoolGpu implements AutoCloseable {
     private boolean chainVisibilityUploaded;
     private int count, meshCount, committed=-1, staged=-1, stagedCount;
     private final int[] candidateCounts=new int[2];
+    private final boolean[] basicDrawReady=new boolean[2];
     private boolean closed;
     private int bodyBuffer,chainBuffer,historyBuffer,bodyCount,frameBuffer,frameCount;
     private PackageChainFramesGpu.View frameView;
@@ -57,6 +60,13 @@ public final class PackagePoolGpu implements AutoCloseable {
     private float originX,originY,originZ;
     private float chainPartial=Float.NaN;
     private float viewScale=1;
+    private float mainRangeSquared=-1;
+    /** Main-camera range shared with the particle engine; shadows retain their native policy. */
+    public void mainRenderDistance(float distance) {
+        if(!Float.isFinite(distance) || distance<=0 || !Float.isFinite(distance*distance))
+            throw new IllegalArgumentException("Package main render distance");
+        mainRangeSquared=distance*distance;
+    }
     /** Supplied by the game renderer; GPU validation needs no entity/registry bootstrap. */
     public void viewScale(float scale){if(!Float.isFinite(scale)||scale<=0)throw new IllegalArgumentException("Package view scale");viewScale=scale;}
     public void chainInterpolation(float partial){chainPartial=partial;}
@@ -64,6 +74,7 @@ public final class PackagePoolGpu implements AutoCloseable {
 
     public PackagePoolGpu(int capacity,int maxMeshes,Function<String,String> sources) {
         if(capacity<=0 || maxMeshes<=0 || maxMeshes>4096)throw new IllegalArgumentException("Package pool limits");
+        supportsFusedImport=GL11.glGetInteger(GL43.GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS)>=14;
         this.capacity=capacity;this.packageCapacity=Math.min(capacity,131072);this.maxMeshes=maxMeshes;
         chainVisibilityUpload=BufferUtils.createIntBuffer((packageCapacity+31)/32);
         cachedChainVisibility=new int[(packageCapacity+31)/32];
@@ -105,11 +116,18 @@ public final class PackagePoolGpu implements AutoCloseable {
     public void rebuild(Function<String,String> sources) {
         ensureOpen();int[] candidate=new int[programs.length];int[][] uniform=new int[programs.length][UNIFORMS.length];
         try {
-            for(int p=0;p<COMPUTE.length;p++)candidate[p]=link(sources.apply("packages/"+COMPUTE[p]+".comp"),null);
+            for(int p=0;p<COMPUTE.length;p++) {
+                String define=p==2 && supportsFusedImport?"#define CMI_IMPORT_DRAW\n":"";
+                if(p==5 && supportsFusedImport && GL20.glGetUniformLocation(candidate[2],"uPrepareBasicDraw")>=0)
+                    define="#define CMI_IMPORTED_SCATTER\n";
+                candidate[p]=link(define+sources.apply("packages/"+COMPUTE[p]+".comp"),null);
+            }
             candidate[6]=link(sources.apply("packages/package.vsh"),sources.apply("packages/package.fsh"));
             candidate[7]=link(sources.apply("packages/light_sample.comp"),null);
             candidate[8]=link(sources.apply("packages/light_requests.comp"),null);
             for(int p=9;p<12;p++)candidate[p]=link("#define CMI_SPLIT_DRAW\n"+sources.apply("packages/"+COMPUTE[p-6]+".comp"),null);
+            // A separate import-only program avoids the fused kernel's register footprint in Iris.
+            candidate[12]=link(sources.apply("packages/pool_import.comp"),null);
             for(int p=0;p<candidate.length;p++)for(int j=0;j<UNIFORMS.length;j++)
                 uniform[p][j]=GL20.glGetUniformLocation(candidate[p],UNIFORMS[j]);
             for(int p=0;p<candidate.length;p++) {
@@ -121,6 +139,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             GL41.glProgramUniform3f(candidate[6],uniform[6][13],.16169f,.80845f,-.56594f);
             GL41.glProgramUniform3f(candidate[6],uniform[6][14],-.16169f,.80845f,.56594f);
         } catch(RuntimeException failure) {for(int p:candidate)if(p!=0)GL20.glDeleteProgram(p);throw failure;}
+        fusedImportCount=uniform[2][27]>=0;
         for(int p=0;p<programs.length;p++) {
             if(programs[p]!=0)GL20.glDeleteProgram(programs[p]);programs[p]=candidate[p];
             System.arraycopy(uniform[p],0,locations[p],0,UNIFORMS.length);
@@ -326,15 +345,21 @@ public final class PackagePoolGpu implements AutoCloseable {
     }
     /** Called after ordinary update/emission. Uses the GPU counter, never the lagged CPU census. */
     public void stage(int pool,int counter,int emitter,float[] frustum,float cameraX,float cameraY,float cameraZ) {
-        try{stagePrepared(pool,counter,emitter,frustum,cameraX,cameraY,cameraZ);}
+        stage(pool,counter,emitter,frustum,cameraX,cameraY,cameraZ,true);
+    }
+    /** Iris consumes independently prepared commands; staging only publishes its input generation. */
+    public void stage(int pool,int counter,int emitter,float[] frustum,float cameraX,float cameraY,float cameraZ,boolean prepareBasicDraw) {
+        try{stagePrepared(pool,counter,emitter,frustum,cameraX,cameraY,cameraZ,prepareBasicDraw);}
         finally{sealFrames();}
     }
-    private void stagePrepared(int pool,int counter,int emitter,float[] frustum,float cameraX,float cameraY,float cameraZ) {
+    private void stagePrepared(int pool,int counter,int emitter,float[] frustum,float cameraX,float cameraY,float cameraZ,boolean prepareBasicDraw) {
         ensureOpen();staged=committed<0?0:committed^1;
         stagedCount=emitter>=0?count():0;candidateCounts[staged]=stagedCount;
         publishedPools[staged]=pool;
         if(frustum.length!=24)throw new IllegalArgumentException("Frustum layout");
-        clear(commands[staged]);clear(selection);
+        basicDrawReady[staged]=prepareBasicDraw;
+        if(prepareBasicDraw)clear(commands[staged]);
+        clear(selection);
         try(MemoryStack stack=MemoryStack.stackPush()) {
             GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(bodyBuffer,pool,metadata,counter,chainBuffer,
                     admission[staged],reservation,selection,attachments[staged],historyBuffer));
@@ -343,15 +368,32 @@ public final class PackagePoolGpu implements AutoCloseable {
         use(0);dispatch(stagedCount);
         use(1);GL43.glDispatchCompute(1,1,1);barrier();
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,3,nativeBounds[staged]);
-        use(2);GL30.glUniform1ui(locations[2][4],emitter);
-        GL20.glUniform3f(locations[2][5],originX,originY,originZ);dispatch(stagedCount);
+        if(fusedImportCount && prepareBasicDraw) {
+            try(var stack=MemoryStack.stackPush()) {
+                GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,11,stack.ints(commands[staged],meshes,drawVisibility));
+            }
+            GL41.glProgramUniform1ui(programs[2],locations[2][27],prepareBasicDraw?1:0);
+            GL41.glProgramUniform3f(programs[2],locations[2][6],cameraX,cameraY,cameraZ);
+            GL41.glProgramUniform4fv(programs[2],locations[2][7],frustum);
+            GL41.glProgramUniform1f(programs[2],locations[2][26],mainRangeSquared);
+        }
+        int importer=prepareBasicDraw?2:12;
+        use(importer);GL30.glUniform1ui(locations[importer][4],emitter);
+        GL20.glUniform3f(locations[importer][5],originX,originY,originZ);dispatch(stagedCount);
+        if(!prepareBasicDraw)return;
         try(MemoryStack stack=MemoryStack.stackPush()) {
             GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(pool,admission[staged],commands[staged],
                     instances[staged],cursors,meshes,attachments[staged]));
         }
-        for(int p=3;p<6;p++) {
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,9,drawVisibility);
+        if(fusedImportCount) {
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,7,reservation);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,8,selection);
+        }
+        for(int p=fusedImportCount?4:3;p<6;p++) {
             use(p);GL20.glUniform3f(locations[p][6],cameraX,cameraY,cameraZ);
             GL20.glUniform4fv(locations[p][7],frustum);
+            if(locations[p][26]>=0)GL20.glUniform1f(locations[p][26],mainRangeSquared);
             if(p==4){GL43.glDispatchCompute(1,1,1);barrier();}else dispatch(stagedCount);
         }
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
@@ -385,8 +427,9 @@ public final class PackagePoolGpu implements AutoCloseable {
     public int admissionBuffer(){ensureOpen();return committed<0?0:admission[committed];}
     public int admissionCount(){ensureOpen();return committed<0?0:candidateCounts[committed];}
     public int capacity(){ensureOpen();return capacity;}
-    public int commandBuffer(){ensureOpen();return committed<0?0:commands[committed];}
-    public int instanceBuffer(){ensureOpen();return committed<0?0:instances[committed];}
+    private void requireBasicDraw(){if(committed>=0 && !basicDrawReady[committed])throw new IllegalStateException("Basic package draw not prepared for this generation");}
+    public int commandBuffer(){ensureOpen();requireBasicDraw();return committed<0?0:commands[committed];}
+    public int instanceBuffer(){ensureOpen();requireBasicDraw();return committed<0?0:instances[committed];}
     public int committedPoolBuffer(){ensureOpen();return committed<0?0:publishedPools[committed];}
     public int packageCapacity(){ensureOpen();return packageCapacity;}
     /** GPU material split/cull of the exact committed generation. Native culling uses package
@@ -449,6 +492,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             if(locations[p][20]>=0)GL20.glUniform2f(locations[p][20],distance,safe);
             if(locations[p][22]>=0)GL20.glUniform1f(locations[p][22],viewScale);
             if(locations[p][23]>=0)GL30.glUniform1ui(locations[p][23],chainVisibility==null?0:1);
+            if(locations[p][26]>=0)GL20.glUniform1f(locations[p][26],kind==DrawPass.GBUFFER?mainRangeSquared:-1);
             if(p==10){GL43.glDispatchCompute(1,1,1);barrier();}else dispatch(count);
         }
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
@@ -512,6 +556,10 @@ public final class PackagePoolGpu implements AutoCloseable {
     }
     public void draw(int pool,Matrix4fc view,Matrix4fc projection,float x,float y,float z,float partialTick) {
         ensureOpen();if(committed<0 || meshCount==0)return;
+        // A shaderpack can be disabled between staging and AFTER_LEVEL. The next
+        // frame builds basic commands; this boundary must never draw an older bank.
+        if(!basicDrawReady[committed])return;
+        if(pool!=publishedPools[committed])throw new IllegalArgumentException("Basic package draw uses another pool generation");
         sampleLight(pool,partialTick);
         GL20.glUseProgram(programs[6]);
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,pool);

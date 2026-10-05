@@ -38,6 +38,8 @@ vec3 randomDir(float s) {
 #pragma cmi_include chunks/particle_identity.glsl
 #pragma cmi_include chunks/classic_spawn.glsl
 
+#pragma cmi_include chunks/frustum_culling.glsl
+
 void main() {
     uint cluster = gl_LocalInvocationID.x / 16u;
     uint lane = gl_LocalInvocationID.x % 16u;
@@ -51,10 +53,10 @@ void main() {
         if (work < uEmitterCount) {
             BlockEmitter e = blocks.data[index];
             vec3 rel = e.originRate.xyz - uCamPos;
-            bool visible = e.originRate.w > 0.0 && dot(rel, rel) <= uRangeSquared;
+            bool visible = e.originRate.w > 0.0 && !cmiOutsideRange(rel,uRangeSquared);
             // Cull the effect envelope, not just the attached face.
             for (int p = 0; p < 6; p++)
-                visible = visible && dot(uFrustum[p].xyz, rel) + uFrustum[p].w >= -e.params.z;
+                visible = visible && !cmiOutsideSphere(uFrustum[p],rel,e.params.z);
             if (visible && uDtScale > 0.0) {
                 float want = e.params.y + e.originRate.w * uDtScale;
                 uint count = uint(floor(want));

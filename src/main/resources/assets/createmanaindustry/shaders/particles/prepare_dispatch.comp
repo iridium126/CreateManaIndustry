@@ -6,12 +6,13 @@ layout(std430, binding = BIND_INDIRECT) buffer Draw { uint cmd[INDIRECT_UINTS]; 
 layout(std430, binding = BIND_DISPATCH) writeonly buffer Dispatch { uint args[9]; } dispatchOut;
 uniform uint uCapacity;
 uniform uint uPhase;
+uniform uint uPackageStaged;
 void main() {
     uint n;
     if (uPhase == 0u) n = min(previous.live, uCapacity);
     else if (uPhase == 1u) {
         current.requested = min(current.requested, uCapacity);
-        n = current.requested;
+        n = uPackageStaged!=0u ? min(current.spare,current.requested) : current.requested;
     } else {
         n = min(current.items, uCapacity);
         draw.cmd[IDX_CNT_CARRIER] = min(draw.cmd[IDX_CNT_CARRIER], CARRIER_CAP);

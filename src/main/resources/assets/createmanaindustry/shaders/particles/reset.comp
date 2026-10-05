@@ -16,7 +16,7 @@ layout(std430, binding = BIND_INDIRECT) buffer IndirectBuf {
 
 layout(std430, binding = BIND_COUNTER) buffer CounterBuf {
     uint writeSlot;          // live-particle compaction cursor (update/emit atomicAdd)
-    uint spare;              // end-of-frame capture slot (see capture.comp)
+    uint spare;              // package reserve: ordinary upper; capture: translucent census
     uint translucentCensus;  // unculled translucent census: ALPHA + MODEL (keygen)
     uint sortItems;          // initial-sort-array append cursor (keygen only)
 } counter;

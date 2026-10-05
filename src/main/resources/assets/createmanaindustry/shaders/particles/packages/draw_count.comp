@@ -1,19 +1,13 @@
 #pragma cmi_include packages/draw_state.glsl
 layout(local_size_x=64) in;
-#ifdef CMI_SPLIT_DRAW
 layout(std430,binding=9) buffer DrawVisibility { uint drawVisible[]; };
-#endif
 void main() {
     uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
-#ifdef CMI_SPLIT_DRAW
     drawVisible[i]=0u;
-#endif
     uvec4 result=admitted[2u*i+1u];uint s=result.x;
     if(s==0u || s>uCapacity || (result.y&4u)!=0u)return;--s;
     if(!visible(s,i,result.y))return;
-#ifdef CMI_SPLIT_DRAW
     drawVisible[i]=1u;
-#endif
     uint box=mesh(s,false),rig=mesh(s,true);
     if(box<uMeshCount)atomicAdd(commands[drawGroup(box,result.y)].y,1u);
     if(rig<uMeshCount && (result.y&1u)!=0u)atomicAdd(commands[drawGroup(rig,result.y)].y,1u);

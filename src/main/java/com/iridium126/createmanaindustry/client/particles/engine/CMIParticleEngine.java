@@ -1641,10 +1641,12 @@ public final class CMIParticleEngine {
             if(this.packageParticles!=null && this.packageParticles.needsStage()) {
                 ParticleDiagnostics.INSTANCE.mark("package_import_group");
                 Vec3 packageCamera=camera.getPosition();
+                this.packageParticles.mainRenderDistance((float)renderDistanceBlocks());
                 this.packageParticles.stage(this.gpu.particleWriteBufferId(),this.gpu.counterBufferId(slot),
-                        this.packageEmitter,this.frustumPlanes,(float)packageCamera.x,(float)packageCamera.y,(float)packageCamera.z);
+                        this.packageEmitter,this.frustumPlanes,(float)packageCamera.x,(float)packageCamera.y,(float)packageCamera.z,
+                        !dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse());
                 packageStaged=true;
-                // Package passes reuse bindings 0..10. Invalidate the owner's cached bindings.
+                // Package passes reuse bindings 0..13. Invalidate the owner's cached bindings.
                 this.gpu.beginBindings();
                 this.gpu.bindDispatch();this.gpu.bindCounter(ParticleBuffers.COUNTER_BB,slot);
                 this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,this.lastGoodSlot);
@@ -1655,7 +1657,7 @@ public final class CMIParticleEngine {
             //    counts, so update/emit never touch the indirect buffer.
             int finalPerm = -1;
             ParticleDiagnostics.INSTANCE.mark("keygen");
-            ParticleDispatch.prepare(this.programs, 1);
+            ParticleDispatch.prepare(this.programs, 1,packageStaged);
             int aliveEstimate = cap; // Draw counts and dispatch bounds live on the GPU.
             this.frameAliveEstimate = aliveEstimate; // draw-phase handoff
             if (aliveEstimate > 0 || entryCount > 0) {
@@ -1677,6 +1679,7 @@ public final class CMIParticleEngine {
                 // buffers (the committed one differs by path — see CARRIERSINK_BB)
                 this.gpu.bindCarrierSink();
                 setUIntUniform(kg, "uUpper", sortUpper);
+                setUIntUniform(kg,"uPackageStaged",packageStaged?1:0);
                 // held-item carrier sweep: fixed carrier-region base + the
                 // wave staging the shared cmiStormWaveClaim predicate reads
                 // (identical arrays update.comp steers and the render paths
