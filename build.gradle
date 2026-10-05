@@ -496,8 +496,8 @@ dependencies {
     localRuntime "curse.maven:lithostitched-936015:8321754"
 
     // Add Connector to the launch classpath and for compile-time access
-    compileOnly "org.sinytra:connector:2.0.0-beta.12+1.21.1"
-    additionalRuntimeClasspath "org.sinytra:connector:2.0.0-beta.12+1.21.1"
+    compileOnly "org.sinytra:connector:2.0.0-beta.17+1.21.1"
+    additionalRuntimeClasspath "org.sinytra:connector:2.0.0-beta.17+1.21.1"
     // Add FFAPI dependency
     implementation "curse.maven:forgified-fabric-api-889079:7658611"
     // Compile-time deps for Trickster's transitive dependencies (needed for remapped jar)

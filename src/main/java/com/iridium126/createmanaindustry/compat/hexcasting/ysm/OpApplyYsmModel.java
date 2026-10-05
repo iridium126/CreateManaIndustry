@@ -8,6 +8,7 @@ import at.petrak.hexcasting.api.casting.castables.SpellAction;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
 import at.petrak.hexcasting.api.casting.iota.*;
 import at.petrak.hexcasting.api.casting.mishaps.*;
+import at.petrak.hexcasting.api.item.IotaHolderItem;
 import com.iridium126.createmanaindustry.compat.hexcasting.HexCompat;
 import com.iridium126.createmanaindustry.compat.ysm.YsmPreparedCache;
 import com.iridium126.createmanaindustry.compat.ysm.YsmServerRuntime;
@@ -15,6 +16,7 @@ import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.LivingEntity;
 
 /** Validates a complete edit before media is checked; rendered effects stage it afterwards. */
 public final class OpApplyYsmModel implements SpellAction {
@@ -22,6 +24,15 @@ public final class OpApplyYsmModel implements SpellAction {
     @Override public Result execute(List<? extends Iota> args, CastingEnvironment env) throws Mishap {
         if (!(args.get(0) instanceof EntityIota entity) || !(entity.getEntity(env.getWorld()) instanceof ServerPlayer target))
             throw MishapInvalidIota.ofType(args.get(0), 0, "entity.player");
+        LivingEntity caster = env.getCastingEntity();
+        if (target != caster) {
+            if (caster == null) throw new MishapOthersName(target);
+            var otherHandStack = caster.getItemInHand(env.getOtherHand());
+            if (!(otherHandStack.getItem() instanceof IotaHolderItem iotaHolder)
+                    || !(iotaHolder.readIota(otherHandStack) instanceof EntityIota knownEntity)
+                    || knownEntity.getEntity(env.getWorld()) != target)
+                throw new MishapOthersName(target);
+        }
         if (target.serverLevel() != env.getWorld()) throw new MishapYsm("Target player is in another dimension");
         env.assertVecInRange(target.position());
         if (!(args.get(1) instanceof ListIota list) || list.getList().isEmpty())

@@ -130,7 +130,7 @@ public class TrickIota extends Iota {
 
         @Override
         public int color() {
-            return 0xff_b879ff;
+            return 0xff_ffd700;
         }
 
         @Override
