@@ -13,6 +13,7 @@ import at.petrak.hexcasting.api.casting.iota.Iota;
 import at.petrak.hexcasting.api.pigment.FrozenPigment;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.AddMotionNormalizationCache;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope;
+import com.iridium126.createmanaindustry.compat.hexcasting.jit.FastHexOPMediaPool;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.IotaStackValidation;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.JitCompatibility;
@@ -124,9 +125,17 @@ public abstract class CastingVMMixin {
     private void cmi$performSideEffect(OperatorSideEffect effect, CastingVM vm, Operation<Void> original) {
         // The two opt-ins affect disjoint effect types. Check their cheap gates before touching
         // the per-cast ThreadLocal so ordinary casts pay only this single wrapper.
+        if (effect instanceof OperatorSideEffect.ConsumeMedia) {
+            try {
+                original.call(effect, vm);
+            } finally {
+                FastHexOPMediaPool.end(vm.getEnv());
+            }
+            return;
+        }
+        ExecutionScope scope = ExecutionScope.current();
         if (ServerConfig.hexJitCoalesceDecorations && JitCompatibility.particleCoalescingReady()
                 && effect instanceof OperatorSideEffect.Particles particles) {
-            ExecutionScope scope = ExecutionScope.current();
             if (scope != null) {
                 FrozenPigment pigment = vm.getEnv().getPigment();
                 if (!scope.emitParticle(particles.getSpray(), pigment)) return;
@@ -137,7 +146,6 @@ public abstract class CastingVMMixin {
         if (ServerConfig.hexJitBatchAddMotion && JitCompatibility.motionBatchingReady()
                 && effect instanceof AttemptSpell attempt
                 && ADD_MOTION_SPELL.equals(attempt.getSpell().getClass().getName())) {
-            ExecutionScope scope = ExecutionScope.current();
             if (scope != null) {
                 boolean previous = scope.inAddMotionEffect();
                 scope.addMotionEffect(true);

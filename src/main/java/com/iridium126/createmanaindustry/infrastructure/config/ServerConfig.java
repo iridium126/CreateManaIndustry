@@ -48,6 +48,7 @@ public final class ServerConfig {
     public static volatile boolean hexJitBatchAddMotion;
     public static volatile boolean hexJitFastAddMotionArguments;
     public static volatile boolean hexJitMemoAddMotionNormalization;
+    public static volatile boolean hexJitFastTickAction = true;
     public static volatile boolean hexJitFastStackValidation;
     public static volatile boolean hexJitCacheStackMetrics = true;
     public static volatile boolean hexJitReuseFrameTail;
@@ -130,6 +131,7 @@ public final class ServerConfig {
     private static ModConfigSpec.BooleanValue HEX_JIT_BATCH_ADD_MOTION;
     private static ModConfigSpec.BooleanValue HEX_JIT_FAST_ADD_MOTION_ARGUMENTS;
     private static ModConfigSpec.BooleanValue HEX_JIT_MEMO_ADD_MOTION_NORMALIZATION;
+    private static ModConfigSpec.BooleanValue HEX_JIT_FAST_TICK_ACTION;
     private static ModConfigSpec.BooleanValue HEX_JIT_FAST_STACK_VALIDATION;
     private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_STACK_METRICS;
     private static ModConfigSpec.BooleanValue HEX_JIT_REUSE_FRAME_TAIL;
@@ -311,6 +313,9 @@ public final class ServerConfig {
         HEX_JIT_MEMO_ADD_MOTION_NORMALIZATION = BUILDER
                 .comment("Reuse bit-identical Vec3 normalization results inside the stock Add Motion action after exact bytecode verification.")
                 .define("memoAddMotionNormalization", true);
+        HEX_JIT_FAST_TICK_ACTION = BUILDER
+                .comment("Use the low-allocation execution path for this project's Hexcasting Tick action in AUTO mode.")
+                .define("fastTickAction", true);
         HEX_JIT_FAST_STACK_VALIDATION = BUILDER
                 .comment("Use indexed validation for Hexcasting's immutable TreeList casting stacks after exact bytecode verification.")
                 .define("fastStackValidation", true);
@@ -538,6 +543,7 @@ public final class ServerConfig {
         hexJitBatchAddMotion = HEX_JIT_BATCH_ADD_MOTION.get();
         hexJitFastAddMotionArguments = HEX_JIT_FAST_ADD_MOTION_ARGUMENTS.get();
         hexJitMemoAddMotionNormalization = HEX_JIT_MEMO_ADD_MOTION_NORMALIZATION.get();
+        hexJitFastTickAction = HEX_JIT_FAST_TICK_ACTION.get();
         hexJitFastStackValidation = HEX_JIT_FAST_STACK_VALIDATION.get();
         hexJitCacheStackMetrics = HEX_JIT_CACHE_STACK_METRICS.get();
         hexJitReuseFrameTail = HEX_JIT_REUSE_FRAME_TAIL.get();

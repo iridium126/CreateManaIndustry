@@ -63,6 +63,7 @@ public final class ExecutionScope implements AutoCloseable {
     public void addMotionEffect(boolean value) { addMotionEffect = value; }
     public boolean inAddMotionEffect() { return addMotionEffect; }
     public boolean batchMotionEnabled() { return batchMotion; }
+
     /** Preserve each Vec3.add rounding step while deferring only Entity's field writes and allocations. */
     public void accumulateMotion(Entity entity, double x, double y, double z) {
         MotionState state = motionState();
@@ -102,6 +103,12 @@ public final class ExecutionScope implements AutoCloseable {
     public static boolean maySkip() {
         ExecutionScope scope = current();
         return scope != null && scope.compiled && scope.notifying;
+    }
+
+    /** Returns true when this exact spray/pigment pair has already been emitted in this cast. */
+    public boolean isDuplicateParticle(ParticleSpray spray, FrozenPigment pigment) {
+        if (!ServerConfig.hexJitCoalesceDecorations || !JitCompatibility.particleCoalescingReady()) return false;
+        return hasLastParticle && (spray == lastSpray || spray.equals(lastSpray)) && lastPigment.matches(pigment);
     }
 
     /** Returns true when this exact spray/pigment pair should still be sent to clients. */
@@ -152,6 +159,7 @@ public final class ExecutionScope implements AutoCloseable {
             if (previous == null) flushAllMotion();
             if (emittedParticles != null) emittedParticles.clear();
         } finally {
+            FastHexOPMediaPool.endCast(this);
             if (previous == null) {
                 lastMotionPushes = motions == null ? 0 : motions.pushes;
                 lastMotionWrites = motions == null ? 0 : motions.writes;

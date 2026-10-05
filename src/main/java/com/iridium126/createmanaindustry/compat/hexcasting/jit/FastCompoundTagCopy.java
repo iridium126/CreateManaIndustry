@@ -32,4 +32,30 @@ public final class FastCompoundTagCopy {
         // allocating and abandoning the public constructor's empty map.
         return CompoundTagAccessor.cmi$newWithTags(copied);
     }
+
+    /**
+     * Copy user data for Tick while isolating its mutable counter and sharing only Ravenmind.
+     * Hexcasting actions replace the root Ravenmind entry; they do not mutate the encoded iota tag.
+     */
+    public static CompoundTag copyForTick(CompoundTag source, String tickCounterKey, String ravenmindKey) {
+        if (source.getClass() != CompoundTag.class) return source.copy();
+        Map<String, Tag> tags = ((CompoundTagAccess) (Object) source).cmi$getTags();
+        int size = tags.size();
+        if (size == 0) return new CompoundTag();
+        int capacity = Math.min(1 << 30, (int) (size / 0.75F + 1.0F));
+        Map<String, Tag> copied = new HashMap<>(capacity);
+        for (Map.Entry<String, Tag> entry : tags.entrySet()) {
+            Tag value = entry.getValue();
+            String key = entry.getKey();
+            if (key.equals(tickCounterKey) && value.getClass() == CompoundTag.class) {
+                copied.put(key, copy((CompoundTag) value));
+            } else if (key.equals(ravenmindKey) && value.getClass() == CompoundTag.class) {
+                copied.put(key, value);
+            } else {
+                copied.put(key, value.getClass() == CompoundTag.class
+                        ? copy((CompoundTag) value) : value.copy());
+            }
+        }
+        return CompoundTagAccessor.cmi$newWithTags(copied);
+    }
 }
