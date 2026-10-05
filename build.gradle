@@ -34,6 +34,25 @@ tasks.withType(ProcessResources).configureEach {
 }
 
 repositories {
+    // This NeoForge owo build is distributed as a release asset without a POM.
+    // Use normal Gradle dependency caching so it also resolves with --offline.
+    exclusiveContent {
+        forRepository {
+            ivy {
+                name = "TricksterOwoRelease"
+                url = uri("https://codeberg.org/master_bw3/trickster/releases/download/2.0.0-beta.46-dev.5-neo/")
+                patternLayout {
+                    artifact "[artifact]-[revision].[ext]"
+                }
+                metadataSources {
+                    artifact()
+                }
+            }
+        }
+        filter {
+            includeModule "codeberg.master_bw3.trickster", "owo-lib-neoforge"
+        }
+    }
     mavenCentral()
     // Add here additional repositories if required by some of the dependencies below.
     mavenLocal()
@@ -100,6 +119,50 @@ base {
 
 // Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+// A transformation service is loaded into ModLauncher's service layer. Keeping
+// it in main output makes FML consider the entire mod already located and skip
+// discovering it. Keep the service and mod in separate jars/layers internally;
+// the installable distribution embeds the main jar and exposes it via CMIModLocator.
+sourceSets {
+    bootstrap {
+        compileClasspath += sourceSets.main.compileClasspath
+    }
+}
+
+def bootstrapJar = tasks.register('bootstrapJar', Jar) {
+    archiveClassifier = 'bootstrap'
+    destinationDirectory = layout.buildDirectory.dir('internal')
+    from(sourceSets.bootstrap.output)
+    manifest.attributes('FMLModType': 'LIBRARY', 'Automatic-Module-Name': 'createmanaindustry.bootstrap')
+}
+
+// main's compile task prepares the generated Minecraft and optional API jars
+// shared by the bytecode template's compile classpath.
+tasks.named('compileBootstrapJava') { dependsOn(tasks.named('compileJava')) }
+
+// Only the distribution belongs in build/libs. The bootstrap-only jar is for
+// development runs; the normal Java component jar is the embedded mod payload.
+tasks.named('jar', Jar) {
+    destinationDirectory = layout.buildDirectory.dir('internal')
+}
+def distributionJar = tasks.register('distributionJar', Jar) {
+    from(sourceSets.bootstrap.output)
+    from(tasks.named('jar').flatMap { it.archiveFile }) {
+        into('META-INF/jars')
+        rename { 'createmanaindustry.jar' }
+    }
+    manifest.attributes('FMLModType': 'LIBRARY', 'Automatic-Module-Name': 'createmanaindustry.bootstrap')
+}
+tasks.named('jar') { finalizedBy(distributionJar) }
+tasks.named('assemble') { dependsOn(distributionJar, bootstrapJar) }
+// Publish and resolve the same installable artifact advertised by module metadata.
+['apiElements', 'runtimeElements'].each { configurationName ->
+    configurations.named(configurationName) {
+        outgoing.artifacts.clear()
+        outgoing.artifact(distributionJar)
+    }
+}
 
 neoForge {
     // Specify the version of NeoForge to use.
@@ -179,6 +242,12 @@ neoForge {
 // "optional", meaning it will not be pulled by dependents of this mod.
 configurations {
     runtimeClasspath.extendsFrom localRuntime
+    // Keep Trickster out of runtimeClasspath; the run tasks copy it into run/mods.
+    tricksterLocalRuntime {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
 }
 
 // The persistence unit tests compile/run against the mod's own classes plus
@@ -187,6 +256,7 @@ configurations {
 configurations {
     testCompileClasspath.extendsFrom compileClasspath
     testRuntimeClasspath.extendsFrom runtimeClasspath
+    testRuntimeClasspath.extendsFrom tricksterLocalRuntime
     // Sodium's CurseForge artifact is a NeoForge loader jar whose named
     // implementation is nested under META-INF/jarjar.
     sodiumDistribution
@@ -423,6 +493,7 @@ dependencies {
     testImplementation platform("org.junit:junit-bom:5.10.2")
     testImplementation "org.junit.jupiter:junit-jupiter"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+    testImplementation sourceSets.bootstrap.output
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
@@ -498,12 +569,18 @@ dependencies {
     localRuntime "curse.maven:strut-your-stuff-1486746:8301563"
 
     localRuntime "curse.maven:accessories-938917:7583320"
-    //localRuntime "curse.maven:owo-lib-532610:6785734" 需要更新至0.13.0 alpha.15
+    localRuntime("codeberg.master_bw3.trickster:owo-lib-neoforge:0.13.0-alpha.15+1.21@jar") {
+        transitive = false
+    }
     localRuntime "curse.maven:lithostitched-936015:8321754"
 
+    // Early Trickster jar patch service uses ModLauncher before Connector scans mods.
+    compileOnly "cpw.mods:modlauncher:11.0.5"
+    testRuntimeOnly "cpw.mods:modlauncher:11.0.5"
     // Add Connector to the launch classpath and for compile-time access
     compileOnly "org.sinytra:connector:2.0.0-beta.17+1.21.1"
     additionalRuntimeClasspath "org.sinytra:connector:2.0.0-beta.17+1.21.1"
+    additionalRuntimeClasspath files(bootstrapJar)
     // Add FFAPI dependency
     implementation "curse.maven:forgified-fabric-api-889079:7658611"
     // Compile-time deps for Trickster's transitive dependencies (needed for remapped jar)
@@ -528,10 +605,21 @@ dependencies {
     compileOnly "io.vavr:vavr:0.10.4"
     // Endec API for custom FragmentType endecs (runtime endec is bundled in owo-lib, required by trickster)
     compileOnly "io.wispforest:endec:0.1.5.1"
-    localRuntime "curse.maven:trickster-${trickster_project_id}:${trickster_file_id}"
+    tricksterLocalRuntime "curse.maven:trickster-${trickster_project_id}:${trickster_file_id}"
     runtimeOnly "curse.maven:cicada-989574:7068950"
     runtimeOnly "curse.maven:lavender-api-962916:6107175"
     runtimeOnly "curse.maven:cardinal-components-api-318449:7250871"
+}
+
+def copyTricksterToRunMods = tasks.register("copyTricksterToRunMods", Copy) {
+    from(configurations.tricksterLocalRuntime)
+    into(layout.projectDirectory.dir("run/mods"))
+}
+
+tasks.matching { it.name in ["runClient", "runServer", "runGameTestServer", "runData"] }.configureEach {
+    // ModDevGradle writes additionalRuntimeClasspath to a text file, so retain
+    // the producer dependency explicitly instead of relying on files(...).
+    dependsOn(copyTricksterToRunMods, bootstrapJar)
 }
 
 def sodiumDistributionFiles = configurations.getByName("sodiumDistribution").files

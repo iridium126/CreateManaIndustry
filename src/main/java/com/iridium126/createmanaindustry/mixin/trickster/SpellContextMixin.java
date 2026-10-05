@@ -18,7 +18,7 @@ import dev.enjarai.trickster.spell.execution.source.SpellSource;
  * Normally both return the same storage, so behavior is unchanged; when CMI
  * injects a pool override ({@code execute_trick} in a hex circle), the check
  * and the actual spend now read the same slate-knot pool. The target method
- * descriptors contain no Minecraft classes (Trick/ManaVariant/Storage are
+ * descriptors contain no Minecraft classes (ManaVariant/Storage are
  * mod/fabric names), so they are mapping-independent.
  * <p>
  * Implemented as a {@code @Redirect} on the {@code source} field read (the
@@ -30,10 +30,10 @@ import dev.enjarai.trickster.spell.execution.source.SpellSource;
 public class SpellContextMixin {
 
     @Redirect(method = {
-            "checkScaledMana(Ldev/enjarai/trickster/spell/trick/Trick;Ldev/enjarai/trickster/spell/mana/storage/ManaVariant;DLnet/fabricmc/fabric/api/transfer/v1/transaction/TransactionContext;)V",
-            "checkScaledMana(Ldev/enjarai/trickster/spell/trick/Trick;Ljava/util/function/Predicate;DLnet/fabricmc/fabric/api/transfer/v1/transaction/TransactionContext;)V"
+            "checkScaledMana(Ldev/enjarai/trickster/spell/mana/storage/ManaVariant;DLnet/fabricmc/fabric/api/transfer/v1/transaction/TransactionContext;)V",
+            "checkScaledMana(Ljava/util/function/Predicate;DLnet/fabricmc/fabric/api/transfer/v1/transaction/TransactionContext;)V"
     }, at = @At(value = "FIELD",
-            target = "Ldev/enjarai/trickster/spell/SpellContext;source:Ldev/enjarai/trickster/spell/execution/source/SpellSource;"))
+            target = "Ldev/enjarai/trickster/spell/SpellContext;source:Ldev/enjarai/trickster/spell/execution/source/SpellSource;"), remap = false)
     private SpellSource createmanaindustry$overrideCheckSource(SpellContext instance) {
         SpellSource delegate = instance.source();
         return (SpellSource) Proxy.newProxyInstance(SpellSource.class.getClassLoader(),

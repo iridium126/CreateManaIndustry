@@ -1,15 +1,16 @@
 package com.iridium126.createmanaindustry.compat.trickster;
 
-import dev.enjarai.trickster.spell.blunder.TrickBlunderException;
-import dev.enjarai.trickster.spell.trick.Trick;
+import dev.enjarai.trickster.spell.TrickContext;
+import dev.enjarai.trickster.spell.exception.blunder.WrappableBlunder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Component;
+import org.jetbrains.annotations.Nullable;
 
-public class InvalidKineticTargetBlunder extends TrickBlunderException {
+public class InvalidKineticTargetBlunder extends WrappableBlunder {
     private final BlockPos pos;
 
-    public InvalidKineticTargetBlunder(Trick<?> source, BlockPos pos) {
-        super(source);
+    public InvalidKineticTargetBlunder(BlockPos pos) {
         this.pos = pos;
     }
 
@@ -18,8 +19,8 @@ public class InvalidKineticTargetBlunder extends TrickBlunderException {
     }
 
     @Override
-    public MutableComponent createMessage() {
-        return super.createMessage()
+    public MutableComponent createMessage(@Nullable TrickContext ctx) {
+        return Component.empty()
                 .append("Invalid kinetic target at ")
                 .append(pos.toShortString());
     }

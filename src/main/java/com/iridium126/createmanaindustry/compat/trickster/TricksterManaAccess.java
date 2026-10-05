@@ -16,7 +16,6 @@ import dev.enjarai.trickster.spell.mana.ManaPool;
 import dev.enjarai.trickster.spell.mana.MutableManaPool;
 import dev.enjarai.trickster.spell.mana.storage.ManaVariant;
 import dev.enjarai.trickster.spell.mana.type.Manae;
-import dev.enjarai.trickster.spell.trick.Trick;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -132,9 +131,9 @@ public final class TricksterManaAccess {
     // ---- public: trickster spell mana ----------------------------------------
 
     /** Consume traditional mana from a spell context. */
-    public static void useTraditionalMana(SpellContext ctx, Trick<?> trick, double amount) {
+    public static void useTraditionalMana(SpellContext ctx, double amount) {
         if (CreateManaIndustry.TRICKSTER_ACTIVE)
-            ctx.useScaledMana(trick, amount);
+            ctx.useScaledMana(amount);
     }
 
     // ---- public: knot crafting -----------------------------------------------

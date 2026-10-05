@@ -7,12 +7,12 @@ import at.petrak.hexcasting.xplat.IXplatAbstractions;
 import dev.enjarai.trickster.spell.Fragment;
 import dev.enjarai.trickster.spell.Pattern;
 import dev.enjarai.trickster.spell.SpellContext;
-import dev.enjarai.trickster.spell.blunder.ItemInvalidBlunder;
-import dev.enjarai.trickster.spell.blunder.NoPlayerBlunder;
-import dev.enjarai.trickster.spell.blunder.OutOfRangeBlunder;
+import dev.enjarai.trickster.spell.exception.blunder.InvalidItemBlunder;
+import dev.enjarai.trickster.spell.exception.blunder.NoPlayerBlunder;
+import dev.enjarai.trickster.spell.exception.blunder.OutOfRangeBlunder;
 import dev.enjarai.trickster.spell.fragment.FragmentType;
-import dev.enjarai.trickster.spell.fragment.slot.SlotFragment;
-import dev.enjarai.trickster.spell.fragment.slot.VariantType;
+import dev.enjarai.trickster.spell.fragment.storage.SlotFragment;
+import dev.enjarai.trickster.spell.fragment.storage.VariantType;
 import dev.enjarai.trickster.spell.trick.Trick;
 import dev.enjarai.trickster.spell.type.RetType;
 import dev.enjarai.trickster.spell.type.Signature;
@@ -37,22 +37,22 @@ public class ReadIotaTrick extends Trick<ReadIotaTrick> {
 
     public Optional<Fragment> run(SpellContext ctx, Optional<SlotFragment> optionalSlot) {
         var slot = optionalSlot.or(() -> ctx.source().getOtherHandSlot())
-                .orElseThrow(() -> new NoPlayerBlunder(this));
+                .orElseThrow(NoPlayerBlunder::new);
 
-        double range = ctx.source().getPos().distance(slot.getSourceOrCasterPos(this, ctx));
+        double range = ctx.source().getPos().distance(slot.getSourceOrCasterPos(ctx));
         if (range > 16) {
-            throw new OutOfRangeBlunder(this, 16.0, range);
+            throw new OutOfRangeBlunder(16.0, range);
         }
 
         // ItemVariant resolves from the loom-remap exported Mojang-mapped
         // fabric-api jar, so toStack() returns a Mojang ItemStack.
-        ItemVariant variant = slot.getResource(this, ctx, VariantType.ITEM);
+        ItemVariant variant = slot.getResource(ctx, VariantType.ITEM);
         ItemStack stack = variant.toStack();
 
         var holder = IXplatAbstractions.INSTANCE.findDataHolder(stack);
         Iota iota = holder == null ? null : holder.readIota();
         if (iota == null) {
-            throw new ItemInvalidBlunder(this);
+            throw new InvalidItemBlunder();
         }
 
         byte[] bytes;
@@ -60,7 +60,7 @@ public class ReadIotaTrick extends Trick<ReadIotaTrick> {
             bytes = IotaFragment.serializeIota(iota);
         } catch (RuntimeException e) {
             // Iota not serializable (e.g. oversized — degrades to garbage) — treat as invalid item.
-            throw new ItemInvalidBlunder(this);
+            throw new InvalidItemBlunder();
         }
         return Optional.of(new IotaFragment(bytes));
     }

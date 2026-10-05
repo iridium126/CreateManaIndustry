@@ -59,7 +59,7 @@
 - [机械动力（Create）](https://createmod.net)（6.0.10+）
 
 ### 可选
-- [Trickster](https://modrinth.com/mod/trickster)（2.0.0-beta.48+）——晶结自动化、动力法术核心、Display Link 目标、应力戏法
+- [Trickster](https://modrinth.com/mod/trickster)（2.0.0-beta.56+）——晶结自动化、动力法术核心、Display Link 目标、应力戏法
 - [咒法学（Hexcasting）](https://modrinth.com/mod/hexcasting)（0.12.0-devel-pre-35+）——施法物品流水线、媒质之瓶、自定义图案、石板切石
 - [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs)（2.1.9-beta+）——齿轮链集成
 - [Veil](https://modrinth.com/mod/veil)（4.1.4+）——体积雾场着色器渲染
@@ -127,6 +127,28 @@
 ```bash
 ./gradlew build
 ```
+
+构建会在 `build/libs/` 生成单个 `createmanaindustry-<版本>.jar` 安装包。
+手动安装只需将该 jar 放入 `mods/`，其中已经包含 Trickster 的早期补丁服务。
+包内本体通过独立的模组发现入口加载，避免被启动层服务占用。
+开发启动仍从源码加载本体，并自动使用 `build/internal/` 中的补丁服务包。
+
+安装了 Connector 时，Create Mana Industry 会在 Connector 扫描 Fabric 模组之前自动修补 Trickster。
+目前仅支持 Trickster `2.0.0-beta.56`，并要求目标 `KeyBindingMixin.class` 与已验证版本一致
+（SHA-256：`47a8849c8056c8f7776d3aa83cd359247ebf1b640a2994dd8f230c8ab6af7769`）。
+补丁将三个受影响的按键拦截方法改为调用 NeoForge 的 `KeyMappingLookup` API，
+保留上下文按键优先级，并释放被覆盖的普通按键。
+同时为区块固定功能的 `worldPinTick` 注入指定完整的 `ChunkPos` 方法描述符，
+避免匹配到 NeoForge 新增的 `BlockPos` 重载。原始 `ServerWorldMixin.class` 必须符合
+SHA-256：`2ba126372f77660835ad7d363098c7ec01accb44eb9b536d9589d7d97a3e27c7`。
+只识别当前补丁；旧补丁标记会保持原样，不会自动升级。
+其他方法和资源文件会保留。
+在玩家环境中，此操作会直接修改 `mods` 文件夹中的 Trickster jar，并在同目录保存原文件，文件名追加 `.backup`。
+在本项目的 ModDevGradle 开发环境中，Gradle 会在 `runClient`、`runServer`、`runGameTestServer` 或 `runData` 启动前，将专用开发依赖 `tricksterLocalRuntime` 中的 Trickster jar 复制到 `run/mods`。该配置不会将缓存 jar 加入运行时模组候选；补丁服务只扫描 `mods` 文件夹，并在同目录保存原 jar，文件名追加 `.backup`。
+只修改资源文件（例如汉化文本）且两个目标 Mixin 类未变的 jar 也受支持。
+如需还原，请先关闭游戏，再将备份复制覆盖到已修补的 jar，并保留原 `.jar` 文件名，然后删除备份文件。
+其他 Trickster 版本、目标类被修改的 jar，或同时存在多个 Trickster jar 时均不会修改，并会在日志中说明原因；
+在这些情况下，原有的 Connector 启动报错仍可能出现。如果目标 jar 所在目录不可写，补丁会跳过并记录警告。
 
 ## 开发文档
 

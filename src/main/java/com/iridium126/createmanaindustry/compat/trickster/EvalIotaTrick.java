@@ -19,8 +19,8 @@ import at.petrak.hexcasting.api.utils.TreeList;
 import dev.enjarai.trickster.spell.Fragment;
 import dev.enjarai.trickster.spell.Pattern;
 import dev.enjarai.trickster.spell.SpellContext;
-import dev.enjarai.trickster.spell.blunder.InvalidInputsBlunder;
-import dev.enjarai.trickster.spell.blunder.NoPlayerBlunder;
+import dev.enjarai.trickster.spell.exception.blunder.InvalidInputsBlunder;
+import dev.enjarai.trickster.spell.exception.blunder.NoPlayerBlunder;
 import dev.enjarai.trickster.spell.execution.source.BlockSpellSource;
 import dev.enjarai.trickster.spell.trick.Trick;
 import dev.enjarai.trickster.spell.type.ArgType;
@@ -64,7 +64,7 @@ public class EvalIotaTrick extends Trick<EvalIotaTrick> {
             }
         }
         if (!(iota instanceof PatternIota) && !(iota instanceof ListIota)) {
-            throw new InvalidInputsBlunder(this, args);
+            throw new InvalidInputsBlunder();
         }
 
         // Environment: construct-cast vs player-cast.
@@ -74,7 +74,7 @@ public class EvalIotaTrick extends Trick<EvalIotaTrick> {
             level = bs.world;
             env = new ConstructCastEnv(level, bs.blockEntity);
         } else {
-            ServerPlayer player = ctx.source().getPlayer().orElseThrow(() -> new NoPlayerBlunder(this));
+            ServerPlayer player = ctx.source().getPlayer().orElseThrow(NoPlayerBlunder::new);
             level = player.serverLevel();
             env = new StaffCastEnv(player, InteractionHand.MAIN_HAND);
         }

@@ -110,7 +110,7 @@ spell-casting item production, and more — all through Create's mechanical syst
 - [Create](https://createmod.net) (6.0.10+)
 
 ### Optional
-- [Trickster](https://modrinth.com/mod/trickster) (2.0.0-beta.48+) — knot automation, kinetic spell core, Display Link targets, stress trick
+- [Trickster](https://modrinth.com/mod/trickster) (2.0.0-beta.56+) — knot automation, kinetic spell core, Display Link targets, stress trick
 - [Hexcasting](https://modrinth.com/mod/hexcasting) (0.12.0-devel-pre-35+) — casting item pipeline, media batteries, custom hex action, slate stonecutting
 - [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs) (2.1.9-beta+) — cogwheel chain integration
 - [Veil](https://modrinth.com/mod/veil) (4.1.4+) — volumetric mist shader rendering
@@ -181,6 +181,40 @@ The kinetic blocks' **stress** values (`impact` / `capacity` sections) also live
 ```bash
 ./gradlew build
 ```
+
+The build produces a single installable `createmanaindustry-<version>.jar`
+in `build/libs/`. Put this jar in `mods/`; the early Trickster patch service is
+included. The main mod is embedded and discovered separately, keeping it out of
+ModLauncher's service layer. Development runs load main from its source set and
+automatically add the bootstrap-only jar from `build/internal/`.
+
+When Connector is installed, Create Mana Industry automatically patches the
+Trickster jar before Connector scans Fabric mods. This is currently restricted
+to Trickster `2.0.0-beta.56` and the verified `KeyBindingMixin.class`
+(SHA-256 `47a8849c8056c8f7776d3aa83cd359247ebf1b640a2994dd8f230c8ab6af7769`).
+The patch replaces the three affected keybinding wrappers with handlers for
+NeoForge's `KeyMappingLookup` API, preserving contextual key priority and
+clearing competing bindings. It also gives the chunk-pinning `worldPinTick`
+injection an explicit `ChunkPos` target descriptor, avoiding NeoForge's added
+`BlockPos` overload. The original `ServerWorldMixin.class` must match SHA-256
+`2ba126372f77660835ad7d363098c7ec01accb44eb9b536d9589d7d97a3e27c7`.
+Only the current patch is recognized; older patch markers are left unchanged.
+Other methods and resources are preserved. In a player installation, the Trickster jar in `mods/` is
+modified in place, and the original is saved beside it with the suffix
+`.jar.backup`. In this project's ModDevGradle development runs, a Gradle task
+copies the Trickster development dependency into `run/mods/` before
+`runClient`, `runServer`, `runGameTestServer`, or `runData`; the patch service
+scans that folder and saves its backup beside the copied jar. The dependency is
+kept out of `runtimeClasspath`, so Connector sees the copied jar from `mods/`
+instead of another candidate from Gradle's cache.
+Resource-only changes such as translations are supported as long as
+both target mixin classes are unchanged. To restore the original, close the game,
+copy the backup over the patched jar while keeping the original `.jar` filename,
+then remove the backup.
+Other Trickster versions, changed target classes, and ambiguous multiple-jar
+installations are left untouched and reported in the log; the original
+Connector startup error may still occur in those cases. If the target jar's
+directory cannot be written, the patch is skipped and a warning is logged.
 
 ## Development Documentation
 

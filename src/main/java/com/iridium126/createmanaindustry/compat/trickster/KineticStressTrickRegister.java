@@ -11,7 +11,7 @@ import dev.enjarai.trickster.spell.EvaluationResult;
 import dev.enjarai.trickster.spell.Fragment;
 import dev.enjarai.trickster.spell.Pattern;
 import dev.enjarai.trickster.spell.SpellContext;
-import dev.enjarai.trickster.spell.blunder.BlunderException;
+import dev.enjarai.trickster.spell.exception.TricksterEngineException;
 import dev.enjarai.trickster.spell.fragment.NumberFragment;
 import dev.enjarai.trickster.spell.fragment.VectorFragment;
 import dev.enjarai.trickster.spell.trick.Tricks;
@@ -77,7 +77,7 @@ public final class KineticStressTrickRegister {
 
         @Override
         public EvaluationResult run(LoadArgumentTrick trick, SpellContext ctx, List<Fragment> fragments)
-                throws BlunderException {
+                throws TricksterEngineException {
             VectorFragment vectorFragment = (VectorFragment) fragments.get(0);
             double speedInput = ((NumberFragment) fragments.get(1)).number();
             double durationInput = ((NumberFragment) fragments.get(2)).number();
@@ -86,17 +86,17 @@ public final class KineticStressTrickRegister {
             int durationTicks = (int) Math.floor(durationInput);
 
             if (stressMagnitude <= 0 || durationTicks <= 0)
-                throw new InvalidKineticStressBlunder(trick, stressMagnitude, durationTicks);
+                throw new InvalidKineticStressBlunder(stressMagnitude, durationTicks);
 
             BlockPos pos = vectorFragment.toBlockPos();
             ServerLevel level = ctx.source().getWorld();
             BlockEntity be = level.getBlockEntity(pos);
             if (!(be instanceof KineticBlockEntity kinetic))
-                throw new InvalidKineticTargetBlunder(trick, pos);
+                throw new InvalidKineticTargetBlunder(pos);
 
             double manaCost = ServerConfig.manaPerStress * stressMagnitude * durationTicks
                     * ServerConfig.kineticStressTrickManaMultiplier;
-            TricksterManaAccess.useTraditionalMana(ctx, trick, manaCost);
+            TricksterManaAccess.useTraditionalMana(ctx, manaCost);
 
             float speed = (float) speedInput;
             TemporaryKinetics.apply(kinetic, speed < 0 ? -stressMagnitude : stressMagnitude, speed, durationTicks);
