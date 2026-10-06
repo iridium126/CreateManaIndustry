@@ -5,6 +5,9 @@ gradle.projectsEvaluated {
     if (!owo.isFile()) throw new GradleException('GameTest runtime requires the local owo-lib fixture used by Accessories')
     p.dependencies.add('localRuntime', p.files(owo))
     p.dependencies.add('localRuntime', 'maven.modrinth:WjFyIzFj:fFV6HwT2')
+    // The isolated NeoForge GameTest server launches from main runtimeClasspath.
+    // Keep Hex Overpowered out of normal runs and add it only for this test run.
+    p.dependencies.add('localRuntime', 'maven.modrinth:PkhtCPsD:I3vfDCiE')
     def resources = p.layout.buildDirectory.dir('hexjit-test-resources').get().asFile
     p.sourceSets.main.java.srcDir(p.file('src/test/gametest/hexjit/java'))
     p.sourceSets.main.resources.srcDir(resources)

@@ -46,7 +46,7 @@ public final class MistPonderScenes {
 
     public static void atomizing(SceneBuilder builder, SceneBuildingUtil util) {
         Workshop w = new Workshop(builder, util, "atomizer_setup", "Turning liquid into mist", "把液体变成雾");
-        BlockPos a = p(5, 2, 3);
+        BlockPos a = p(3, 2, 4);
         w.place(a, CMIBlocks.KINETIC_ATOMIZER.getDefaultState().setValue(BlockStateProperties.FACING, Direction.UP));
         w.text(a, "An Atomizer turns supplied liquid into a mist field while rotating.", "雾化器接入液体和旋转动力后，就会产生雾场。");
         atomizer(w, a, CMIFluids.LIQUID_MEDIA.get());
@@ -65,7 +65,7 @@ public final class MistPonderScenes {
 
     public static void range(SceneBuilder builder, SceneBuildingUtil util) {
         Workshop w = new Workshop(builder, util, "atomizer_range", "Reaching the next machine", "让雾覆盖目标机器");
-        BlockPos a = p(5, 2, 3), target = p(7, 2, 4);
+        BlockPos a = p(3, 2, 4), target = p(6, 1, 4);
         atomizer(w, a, CMIFluids.LIQUID_MEDIA.get());
         Workshop.Mist mist = w.mist(a, MEDIA, 1);
         w.place(target, AllBlocks.BASIN.get());
@@ -88,41 +88,44 @@ public final class MistPonderScenes {
     static void coolingLine(Workshop w, BlockPos c) {
         w.place(c, CMIBlocks.CONDENSER.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.X));
         w.place(c.below(), AllBlocks.ITEM_DRAIN.get());
-        w.tank(c.west(3), CMIFluids.COOLANT.get(), 3000);
-        w.pump(c.west(2), Direction.EAST);
-        w.pipe(c.west(), Direction.WEST, Direction.EAST);
+        w.place(c.east(3).below(), AllBlocks.COPPER_CASING.get());
+        w.tank(c.east(3), CMIFluids.COOLANT.get(), 3000);
+        w.pump(c.east(2), Direction.WEST);
         w.pipe(c.east(), Direction.WEST, Direction.EAST);
-        w.tank(c.east(2), CMIFluids.COOLANT.get(), 0);
+        w.pipe(c.west(), Direction.WEST, Direction.EAST);
+        w.place(c.west(2).below(), AllBlocks.COPPER_CASING.get());
+        w.tank(c.west(2), CMIFluids.COOLANT.get(), 0);
     }
 
     public static void soul(SceneBuilder builder, SceneBuildingUtil util) {
         Workshop w = new Workshop(builder, util, "soul_recovery", "Collecting the Allay's mist", "收集悦灵产生的灵魂雾");
-        BlockPos b = p(5, 1, 5), c = p(4, 2, 3);
+        BlockPos b = p(3, 1, 3), c = p(5, 2, 5);
         w.burner(b, false);
         w.use(b, new ItemStack(Items.AMETHYST_SHARD)); w.light(b, true);
         Workshop.Mist mist = w.mist(b, SOUL, 3);
         w.text(b, "A burning Allay Burner produces Liquid Soul mist around itself.", "悦灵燃烧室燃烧时，会在周围产生液态灵魂雾。");
         coolingLine(w, c);
         w.text(c, "Place a Condenser inside the mist, with an Item Drain directly below it.", "在雾中放置冷凝管，并在它正下方放一个分液池。");
-        w.text(c.west(2), "Pump Coolant through the condenser. Ordinary water does not work.", "让冷却液流经冷凝管。普通的水不能代替冷却液。");
+        w.text(c.east(2), "Pump Coolant through the condenser. Ordinary water does not work.", "让冷却液流经冷凝管。普通的水不能代替冷却液。");
         w.liquid(c.below(), CMIFluids.LIQUID_SOUL.get(), 500);
-        w.liquid(c.west(3), CMIFluids.COOLANT.get(), 2500);
+        w.liquid(c.east(3), CMIFluids.COOLANT.get(), 2500);
         w.text(c.below(), "Cooling consumes Coolant and mist. Liquid Soul collects in the drain below.", "冷凝会消耗冷却液和雾，液态灵魂收集在下方的分液池中。");
-        w.pipe(c.below().south(), Direction.NORTH, Direction.SOUTH);
-        w.pump(c.below().south(2), Direction.SOUTH);
-        w.tank(c.below().south(3), CMIFluids.LIQUID_SOUL.get(), 500);
+        w.pipe(c.below().north(), Direction.NORTH, Direction.SOUTH);
+        w.pump(c.below().north(2), Direction.NORTH);
+        w.tank(c.below().north(3), CMIFluids.LIQUID_SOUL.get(), 500);
         w.liquid(c.below(), CMIFluids.LIQUID_SOUL.get(), 0);
-        w.text(c.below().south(3), "Use a separate pipe to move the collected soul liquid into storage.", "另外接一条管路，把收集到的液态灵魂送进储罐。");
+        w.text(c.below().north(3), "Use a separate pipe to move the collected soul liquid into storage.", "另外接一条管路，把收集到的液态灵魂送进储罐。");
         w.mistOff(mist); w.finish();
     }
 
     public static void condenser(SceneBuilder builder, SceneBuildingUtil util) {
         Workshop w = new Workshop(builder, util, "condenser_setup", "A working cooling circuit", "搭建冷凝回路");
-        BlockPos c = p(4, 2, 3);
+        BlockPos c = p(5, 2, 5);
         coolingLine(w, c);
         w.text(c, "Run Coolant along the condenser's pipe axis, with somewhere for the remaining coolant to go.", "沿冷凝管的轴向输送冷却液，并为剩余冷却液连接出口。");
-        w.burner(p(5, 1, 5), true);
-        Workshop.Mist mist = w.mist(p(5, 1, 5), SOUL, 3);
+        BlockPos b = p(3, 1, 3);
+        w.burner(b, true);
+        Workshop.Mist mist = w.mist(b, SOUL, 3);
         w.liquid(c.below(), CMIFluids.LIQUID_SOUL.get(), 500);
         w.text(c.below(), "The product drops into an Item Drain below; it does not leave through the coolant pipe.", "产物进入正下方的分液池，不会从冷却液管路流出。");
         w.remove(c.below());
@@ -131,9 +134,9 @@ public final class MistPonderScenes {
         w.place(c.below(), AllBlocks.ITEM_DRAIN.get());
         w.liquid(c.below(), CMIFluids.LIQUID_SOUL.get(), 1500);
         w.text(c.below(), "A full drain, or one holding a different liquid, also stops collection.", "分液池已满，或里面装着另一种液体，也会停止收集。");
-        w.pipe(c.below().south(), Direction.NORTH, Direction.SOUTH);
-        w.pump(c.below().south(2), Direction.SOUTH);
-        w.tank(c.below().south(3), CMIFluids.LIQUID_SOUL.get(), 1500);
+        w.pipe(c.below().north(), Direction.NORTH, Direction.SOUTH);
+        w.pump(c.below().north(2), Direction.NORTH);
+        w.tank(c.below().north(3), CMIFluids.LIQUID_SOUL.get(), 1500);
         w.liquid(c.below(), CMIFluids.LIQUID_SOUL.get(), 0);
         w.text(c.below(), "Pump out the product to keep working. Oxidized and waxed condensers work the same way.", "及时抽走产物，就能继续工作。氧化或涂蜡的冷凝管用法相同。");
         w.mistOff(mist); w.finish();
@@ -141,7 +144,7 @@ public final class MistPonderScenes {
 
     public static void cogwheel(SceneBuilder builder, SceneBuildingUtil util) {
         Workshop w = new Workshop(builder, util, "mana_cogwheel", "Mist-powered milling", "用雾驱动磨石");
-        BlockPos a = p(5, 2, 3), cog = p(6, 2, 4), mill = p(7, 2, 4);
+        BlockPos a = p(3, 2, 4), cog = p(6, 1, 4), mill = p(7, 1, 4);
         atomizer(w, a, CMIFluids.LIQUID_MANA.get());
         Workshop.Mist mist = w.mist(a, MANA, 3);
         w.place(cog, CMIBlocks.MANA_COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
@@ -169,7 +172,7 @@ public final class MistPonderScenes {
 
     public static void reversal(SceneBuilder builder, SceneBuildingUtil util) {
         Workshop w = new Workshop(builder, util, "mana_reversal", "Changing direction and adding a casing", "反转与包覆机壳");
-        BlockPos a = p(5, 2, 3), cog = p(6, 2, 4);
+        BlockPos a = p(3, 2, 4), cog = p(6, 1, 4);
         atomizer(w, a, CMIFluids.LIQUID_MANA.get());
         w.place(cog, CMIBlocks.MANA_COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
         Workshop.Mist mist = w.mist(a, MANA, 3); w.speed(cog, 256);
