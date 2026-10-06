@@ -23,7 +23,19 @@ public final class JitCompatibility {
     private static volatile boolean specialHandlerLookupTargetVerified;
     private static volatile String numberLiteralFailure;
     private static volatile boolean numberLiteralTargetVerified;
+    private static volatile String actionResourceKeyCacheFailure;
+    private static volatile boolean actionResourceKeyCacheTargetVerified;
+    private static volatile String actionTagMembershipFailure;
+    private static volatile boolean actionTagMembershipTargetVerified;
+    private static volatile String actionPrecheckFailure;
+    private static volatile boolean actionPrecheckTargetVerified;
     private static volatile boolean mediaPoolTargetVerified;
+    private static volatile boolean personalMediaBatchTargetVerified;
+    private static volatile boolean loopTickImageMutationTargetVerified;
+    private static volatile boolean directPreflightCastingEnvironmentVerified;
+    private static volatile boolean directPreflightPlayerEnvironmentVerified;
+    private static volatile boolean directPreflightStaffEnvironmentVerified;
+    private static volatile String directPreflightFailure;
     private static volatile boolean verifierInstalled;
     private static volatile boolean coreReady;
     private static volatile boolean motionReady;
@@ -67,7 +79,34 @@ public final class JitCompatibility {
         specialHandlerLookupFailure = reason;
     }
     public static void numberLiteralTargetVerified() { numberLiteralTargetVerified = true; }
+    public static void actionResourceKeyCacheTargetVerified() { actionResourceKeyCacheTargetVerified = true; }
+    public static void actionTagMembershipTargetVerified() { actionTagMembershipTargetVerified = true; }
+    public static void actionPrecheckTargetVerified() { actionPrecheckTargetVerified = true; }
+    public static void disableActionResourceKeyCache(String reason) {
+        if (actionResourceKeyCacheFailure == null)
+            LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT action ResourceKey cache disabled: {}", reason);
+        actionResourceKeyCacheFailure = reason;
+    }
+    public static void disableActionTagMembership(String reason) {
+        if (actionTagMembershipFailure == null)
+            LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT action tag membership cache disabled: {}", reason);
+        actionTagMembershipFailure = reason;
+    }
+    public static void disableActionPrechecks(String reason) {
+        if (actionPrecheckFailure == null)
+            LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT action precheck cache disabled: {}", reason);
+        actionPrecheckFailure = reason;
+    }
     public static void mediaPoolTargetVerified() { mediaPoolTargetVerified = true; }
+    public static void personalMediaBatchTargetVerified() { personalMediaBatchTargetVerified = true; }
+    public static void directPreflightCastingEnvironmentVerified() { directPreflightCastingEnvironmentVerified = true; }
+    public static void directPreflightPlayerEnvironmentVerified() { directPreflightPlayerEnvironmentVerified = true; }
+    public static void directPreflightStaffEnvironmentVerified() { directPreflightStaffEnvironmentVerified = true; }
+    public static void disableDirectMediaPreflight(String reason) {
+        if (directPreflightFailure == null)
+            LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT direct Tick media preflight disabled: {}", reason);
+        directPreflightFailure = reason;
+    }
     public static void disableNumberLiteral(String reason) {
         if (numberLiteralFailure == null) LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT number-literal fast path disabled: {}", reason);
         numberLiteralFailure = reason;
@@ -94,7 +133,23 @@ public final class JitCompatibility {
     public static boolean fastNumberLiteralReady() {
         return coreReady && numberLiteralTargetVerified && numberLiteralFailure == null;
     }
+    public static boolean actionResourceKeyCacheReady() {
+        return actionResourceKeyCacheTargetVerified && actionResourceKeyCacheFailure == null;
+    }
+    public static boolean actionTagMembershipReady() {
+        return actionTagMembershipTargetVerified && actionTagMembershipFailure == null;
+    }
+    public static boolean actionPrechecksReady() {
+        return coreReady && actionPrecheckTargetVerified && actionPrecheckFailure == null;
+    }
     public static boolean mediaPoolTargetReady() { return mediaPoolTargetVerified; }
+    public static boolean personalMediaBatchTargetReady() { return personalMediaBatchTargetVerified; }
+    public static void loopTickImageMutationTargetVerified() { loopTickImageMutationTargetVerified = true; }
+    public static boolean loopTickImageMutationReady() { return loopTickImageMutationTargetVerified; }
+    public static boolean directMediaPreflightReady() {
+        return directPreflightFailure == null && directPreflightCastingEnvironmentVerified
+                && directPreflightPlayerEnvironmentVerified && directPreflightStaffEnvironmentVerified;
+    }
     public static String status() {
         String core = failure != null ? failure : ready() ? "verified pre-53" : "waiting for target verification (" + VERIFIED.size() + "/7)";
         return core + (motionBatchingReady() ? ", motionBatch=verified" : motionFailure != null
@@ -112,7 +167,16 @@ public final class JitCompatibility {
                 + (specialHandlerLookupReady() ? ", specialHandlerLookup=verified" : specialHandlerLookupFailure != null
                 ? ", specialHandlerLookup=disabled (" + specialHandlerLookupFailure + ")" : ", specialHandlerLookup=unverified")
                 + (fastNumberLiteralReady() ? ", numberLiteral=verified" : numberLiteralFailure != null
-                ? ", numberLiteral=disabled (" + numberLiteralFailure + ")" : ", numberLiteral=unverified");
+                ? ", numberLiteral=disabled (" + numberLiteralFailure + ")" : ", numberLiteral=unverified")
+                + (actionResourceKeyCacheReady() ? ", actionResourceKeyCache=verified" : actionResourceKeyCacheFailure != null
+                ? ", actionResourceKeyCache=disabled (" + actionResourceKeyCacheFailure + ")"
+                : ", actionResourceKeyCache=unverified")
+                + (actionTagMembershipReady() ? ", actionTagMembership=verified" : actionTagMembershipFailure != null
+                ? ", actionTagMembership=disabled (" + actionTagMembershipFailure + ")"
+                : ", actionTagMembership=unverified")
+                + (actionPrechecksReady() ? ", actionPrechecks=verified" : actionPrecheckFailure != null
+                ? ", actionPrechecks=disabled (" + actionPrecheckFailure + ")"
+                : ", actionPrechecks=unverified");
     }
     private static void refreshReadiness() {
         coreReady = failure == null && verifierInstalled && VERIFIED.size() == 7;

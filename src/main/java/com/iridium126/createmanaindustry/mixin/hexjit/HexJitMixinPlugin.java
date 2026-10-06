@@ -18,6 +18,9 @@ import org.spongepowered.asm.mixin.transformer.ext.*;
 public final class HexJitMixinPlugin implements IMixinConfigPlugin {
     private static final String OWN = "com.iridium126.createmanaindustry.mixin.hexjit.";
     private static final String ROOT = "at/petrak/hexcasting/";
+    private static final String SIMPLE_CRITERION_TRIGGER = "net/minecraft/advancements/critereon/SimpleCriterionTrigger";
+    private static final String PERSONAL_MANA_HOLDER = "io/yukkuric/hexop/personal_mana/PersonalManaHolder";
+    private static final String SPEND_MEDIA_TRIGGER = ROOT + "api/advancements/SpendMediaTrigger";
     private static final String ENTITY = "net/minecraft/world/entity/Entity";
     private static final String VEC3 = "net/minecraft/world/phys/Vec3";
     private static final String PARTICLE_SIDE_EFFECT = ROOT
@@ -25,6 +28,7 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
     private static final String IOTA_TYPE = ROOT + "api/casting/iota/IotaType";
     private static final String IOTA = ROOT + "api/casting/iota/Iota";
     private static final String CASTING_VM = ROOT + "api/casting/eval/vm/CastingVM";
+    private static final String CASTING_IMAGE = ROOT + "api/casting/eval/vm/CastingImage";
     private static final String SPELL_ACTION = ROOT + "api/casting/castables/SpellAction";
     private static final String ADD_MOTION = ROOT + "common/casting/actions/spells/OpAddMotion";
     private static final String NBT_COMPOUND = "net/minecraft/nbt/CompoundTag";
@@ -38,6 +42,8 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
     private static final String TREE_LIST = ROOT + "api/utils/TreeList";
     private static final String HEX_DIR = ROOT + "api/casting/math/HexDir";
     private static final String HEX_ANGLE = ROOT + "api/casting/math/HexAngle";
+    private static final String HEX_UTILS = ROOT + "api/utils/HexUtils";
+    private static final String HEX_UTILS_HASH = "c639728299f4283cf97e21d991a455d910e1ce73c56640b3749cd17819f11bbd";
     private static final Map<String, String> SPECIAL_HANDLER_MATH_HASHES = Map.of(
             HEX_DIR, "1d1bce98ea4fb3387d2f0b0211725463503ef1fe33a013d1b3eb3ac337f652fe",
             HEX_ANGLE, "1fdf67e5f754ae371391dd15cfce4227473ac781963ad8bb9a44313ae0b97d62");
@@ -64,6 +70,7 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
     private static final Map<String, String> DEFAULT_IOTA_METRIC_HASHES = Map.of(
             IOTA, "48da3833538c0412c73eacc135bd4014175d1c9a7d6592a58255421b3b9f3a99",
             ROOT + "api/casting/iota/BooleanIota", "b4c9fda11824dc99e7b4cb18beaf74144796cd1dcd2a3e03fd97ff907387428b",
+            ROOT + "api/casting/iota/ContinuationIota", "7e25d88bd3ac10af9ed7d78c554d7eba9837a5d158b128f4d7d02c631e8b54ff",
             ROOT + "api/casting/iota/DoubleIota", "6a07bc3c346b33b39dccc380b96e0d5912a3882eea956880980506760a69d56f",
             ROOT + "api/casting/iota/EntityIota", "3e43789075dfbc1eeccc783eff95908db9b6252ee828932d51ed78b6bdbdfd0f",
             ROOT + "api/casting/iota/GarbageIota", "2e02b7a088a60dc03fecad7d59d35515f5d17f7aad8d0f1a144e2c0682170915",
@@ -209,6 +216,22 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
         if (!version) { JitCompatibility.disable("unsupported Hexcasting version"); return false; }
         // Validate the actual jar, not only a version string. Do not install signature-sensitive hooks on an unknown ABI.
         String internal = target.replace('.', '/');
+        if (mixin.equals(OWN + "SimpleCriterionTriggerAccessor"))
+            return SIMPLE_CRITERION_TRIGGER.equals(internal);
+        if (mixin.equals(OWN + "SimpleCriterionTriggerMixin"))
+            return SIMPLE_CRITERION_TRIGGER.equals(internal);
+        if (mixin.equals(OWN + "SpendMediaTriggerMixin"))
+            return SPEND_MEDIA_TRIGGER.equals(internal);
+        if (mixin.equals(OWN + "PersonalManaHolderMixin"))
+            return matchesPersonalManaHolderTarget(internal);
+        if (mixin.equals(OWN + "CastingImageLoopMixin"))
+            return matchesCastingImageLoopTarget(internal);
+        if (mixin.equals(OWN + "HexUtilsResourceKeyMixin")) {
+            if (HEX_UTILS.equals(internal) && matchesHash(internal, HEX_UTILS_HASH)) return true;
+            JitCompatibility.disableActionResourceKeyCache("upstream HexUtils bytecode mismatch");
+            JitCompatibility.disableActionTagMembership("upstream HexUtils bytecode mismatch");
+            return false;
+        }
         if (mixin.equals(OWN + "PlayerBasedCastEnvMixin")) {
             return matchesPlayerMediaScanTarget(internal);
         }
@@ -257,6 +280,50 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
         } catch (Exception | LinkageError ignored) {
             return false;
         }
+    }
+
+    private boolean matchesPersonalManaHolderTarget(String internal) {
+        if (!PERSONAL_MANA_HOLDER.equals(internal)) return false;
+        try (InputStream stream = getClass().getClassLoader().getResourceAsStream(internal + ".class")) {
+            if (stream == null) return false;
+            ClassNode node = new ClassNode();
+            new ClassReader(stream).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            boolean readsMedia = false;
+            boolean writesMedia = false;
+            for (MethodNode method : node.methods) {
+                readsMedia |= method.name.equals("getMedia") && method.desc.equals("()J");
+                writesMedia |= method.name.equals("setMedia") && method.desc.equals("(J)V");
+            }
+            return readsMedia && writesMedia;
+        } catch (Exception | LinkageError ignored) {
+            return false;
+        }
+    }
+
+    private boolean matchesCastingImageLoopTarget(String internal) {
+        if (!CASTING_IMAGE.equals(internal)) return false;
+        try (InputStream stream = getClass().getClassLoader().getResourceAsStream(internal + ".class")) {
+            if (stream == null) return false;
+            ClassNode node = new ClassNode();
+            new ClassReader(stream).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            String treeList = "Lat/petrak/hexcasting/api/utils/TreeList;";
+            String compoundTag = "Lnet/minecraft/nbt/CompoundTag;";
+            return hasFinalField(node, "stack", treeList)
+                    && hasFinalField(node, "parenCount", "I")
+                    && hasFinalField(node, "parenthesized", treeList)
+                    && hasFinalField(node, "escapeNext", "Z")
+                    && hasFinalField(node, "simulateNext", "Z")
+                    && hasFinalField(node, "opsConsumed", "J")
+                    && hasFinalField(node, "userData", compoundTag);
+        } catch (Exception | LinkageError ignored) {
+            return false;
+        }
+    }
+
+    private static boolean hasFinalField(ClassNode node, String name, String descriptor) {
+        return node.fields.stream().anyMatch(field -> field.name.equals(name)
+                && field.desc.equals(descriptor)
+                && (field.access & org.objectweb.asm.Opcodes.ACC_FINAL) != 0);
     }
 
     private boolean matchesPlayerMediaScanTarget(String internal) {
@@ -497,6 +564,8 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
                     JitCompatibility.disableStackValidation("foreign Mixin changed TreeList.get/size");
                 if (hasForeignMixin(node, Set.of("dropRight")))
                     JitCompatibility.disableFastAction("foreign Mixin changed TreeList.dropRight");
+                if (hasForeignMixin(node, Set.of("init")))
+                    JitCompatibility.disableFastAction("foreign Mixin changed TreeList.init");
                 if (hasForeignMixin(node, Set.of("tail")))
                     JitCompatibility.disableFrameTailCache("foreign Mixin changed TreeList.tail");
                 return;
@@ -517,9 +586,28 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
                 return;
             }
             if ((ROOT + "api/casting/eval/CastingEnvironment").equals(node.name)) {
+                if (hasForeignMixin(node, Set.of("precheckAction", "getCostModifier", "actionKey")))
+                    JitCompatibility.disableActionPrechecks(
+                            "foreign Mixin changed CastingEnvironment action prechecks or cost modifiers");
+                else JitCompatibility.actionPrecheckTargetVerified();
                 if (hasForeignMixin(node, Set.of("postExecution")))
                     JitCompatibility.disable("foreign execution Mixin: " + node.name + ".postExecution");
+                if (hasForeignMixin(node, Set.of("extractMedia")))
+                    JitCompatibility.disableDirectMediaPreflight("foreign Mixin changed CastingEnvironment.extractMedia");
+                else JitCompatibility.directPreflightCastingEnvironmentVerified();
                 JitCompatibility.verified(node.name);
+                return;
+            }
+            if (PLAYER_CAST_ENV.equals(node.name)) {
+                if (hasForeignMixin(node, Set.of("extractMediaFromInventory", "canOvercast")))
+                    JitCompatibility.disableDirectMediaPreflight("foreign Mixin changed PlayerBasedCastEnv media extraction");
+                else JitCompatibility.directPreflightPlayerEnvironmentVerified();
+                return;
+            }
+            if (STAFF_CAST_ENV.equals(node.name)) {
+                if (hasForeignMixin(node, Set.of("extractMediaEnvironment")))
+                    JitCompatibility.disableDirectMediaPreflight("foreign Mixin changed StaffCastEnv media extraction");
+                else JitCompatibility.directPreflightStaffEnvironmentVerified();
                 return;
             }
             if (CASTING_VM.equals(node.name)
@@ -600,5 +688,9 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
     @Override public void acceptTargets(Set<String> mine, Set<String> others) {}
     @Override public void postApply(String target, ClassNode node, String mixin, IMixinInfo info) {
         if (mixin.equals(OWN + "PlayerBasedCastEnvMixin")) JitCompatibility.mediaPoolTargetVerified();
+        if (mixin.equals(OWN + "PersonalManaHolderMixin")) JitCompatibility.personalMediaBatchTargetVerified();
+        if (mixin.equals(OWN + "CastingImageLoopMixin")) JitCompatibility.loopTickImageMutationTargetVerified();
+        if (mixin.equals(OWN + "HexUtilsResourceKeyMixin")) JitCompatibility.actionResourceKeyCacheTargetVerified();
+        if (mixin.equals(OWN + "HexUtilsResourceKeyMixin")) JitCompatibility.actionTagMembershipTargetVerified();
     }
 }

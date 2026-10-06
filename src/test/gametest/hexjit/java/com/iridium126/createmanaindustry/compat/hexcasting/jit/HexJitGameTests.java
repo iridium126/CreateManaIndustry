@@ -15,8 +15,6 @@ import at.petrak.hexcasting.api.pigment.FrozenPigment;
 import at.petrak.hexcasting.api.utils.TreeList;
 import at.petrak.hexcasting.common.lib.hex.*;
 import at.petrak.hexcasting.common.lib.HexBlocks;
-import at.petrak.hexcasting.common.casting.actions.math.SpecialHandlerNumberLiteral;
-import at.petrak.hexcasting.common.casting.actions.stack.SpecialHandlerMask;
 import at.petrak.hexcasting.common.casting.PatternRegistryManifest;
 import at.petrak.hexcasting.xplat.IXplatAbstractions;
 import com.iridium126.createmanaindustry.compat.hexcasting.HexCompat;
@@ -48,11 +46,6 @@ import net.neoforged.neoforge.gametest.*;
 public final class HexJitGameTests {
     private static volatile Object blackhole;
     private static final CMIThreadFactory TEST_THREADS = CMIThreadFactory.daemonFactory("hexjit-test-isolation");
-    private static final String FULL_FEATURE_BENCH_CASE = "AUTO_FULL_FEATURE_SET";
-    private static boolean hasFullObserverOptimization(String name) {
-        return name.equals(FULL_FEATURE_BENCH_CASE) || name.startsWith("AUTO_FULL_FEATURES_");
-    }
-
     @GameTest(template = "hex_jit_test", timeoutTicks = 1200)
     public static void differentialAndBenchmark(GameTestHelper helper) throws Exception {
         // Force all seven guarded targets through transformation before checking readiness.
@@ -94,18 +87,29 @@ public final class HexJitGameTests {
         Scenario normalCacheScenario = s("normal pattern cache", List.of(), cachedPattern);
         Snapshot normalCacheFirst = run(helper, normalCacheScenario, ServerConfig.HexJitMode.AUTO);
         var normalCacheEpochField = PatternIota.class.getDeclaredField("cmi$normalPatternEpoch");
-        var normalCacheKeyField = PatternIota.class.getDeclaredField("cmi$normalPatternKey");
+        var normalCacheMatchField = PatternIota.class.getDeclaredField("cmi$normalPatternMatch");
+        var normalActionEpochField = PatternIota.class.getDeclaredField("cmi$normalActionEpoch");
+        var normalActionKeyField = PatternIota.class.getDeclaredField("cmi$normalActionKey");
+        var normalActionField = PatternIota.class.getDeclaredField("cmi$normalAction");
         normalCacheEpochField.setAccessible(true);
-        normalCacheKeyField.setAccessible(true);
+        normalCacheMatchField.setAccessible(true);
+        normalActionEpochField.setAccessible(true);
+        normalActionKeyField.setAccessible(true);
+        normalActionField.setAccessible(true);
         long firstPatternEpoch = normalCacheEpochField.getLong(cachedPattern);
+        var cachedNormalMatch = (PatternShapeMatch.Normal) normalCacheMatchField.get(cachedPattern);
         helper.assertTrue(firstPatternEpoch == HexJitRuntime.generation()
-                        && normalCacheKeyField.get(cachedPattern) == ordinaryKey,
-                "Normal add-on pattern was not cached against the active registry epoch");
+                        && cachedNormalMatch != null && cachedNormalMatch.key == ordinaryKey
+                        && normalActionEpochField.getLong(cachedPattern) == HexJitRuntime.generation()
+                        && normalActionKeyField.get(cachedPattern) == ordinaryKey
+                        && normalActionField.get(cachedPattern) == ordinaryAction,
+                "Normal add-on pattern and Action were not cached against the active registry epoch");
         HexJitRuntime.invalidate("normal-pattern cache epoch test");
         Snapshot normalCacheAfterInvalidation = run(helper, normalCacheScenario, ServerConfig.HexJitMode.AUTO);
         helper.assertTrue(sameState(normalCacheFirst, normalCacheAfterInvalidation)
-                        && normalCacheEpochField.getLong(cachedPattern) == HexJitRuntime.generation(),
-                "Normal pattern cache survived a registry epoch change");
+                        && normalCacheEpochField.getLong(cachedPattern) == HexJitRuntime.generation()
+                        && normalActionEpochField.getLong(cachedPattern) == HexJitRuntime.generation(),
+                "Normal pattern or Action cache survived a registry epoch change");
         ServerConfig.hexJitCacheNormalPatternLookup = false;
         Snapshot normalPatternUncached = run(helper, normalCacheScenario, ServerConfig.HexJitMode.AUTO);
         helper.assertTrue(sameState(normalCacheFirst, normalPatternUncached),
@@ -151,6 +155,21 @@ public final class HexJitGameTests {
                             + scenario.name + "\n" + baseline + "\n" + cached);
                 }
                 ServerConfig.hexJitCacheStackMetrics = false;
+                ServerConfig.hexJitCacheStackValidationResults = true;
+                for (Scenario scenario : corpus) {
+                    Snapshot baseline = run(helper, scenario, ServerConfig.HexJitMode.OFF);
+                    Snapshot cached = run(helper, scenario, ServerConfig.HexJitMode.AUTO);
+                    helper.assertTrue(sameState(baseline, cached), "Cached stack validation result mismatch: "
+                            + scenario.name + "\n" + baseline + "\n" + cached);
+                }
+                ServerConfig.hexJitCacheStackValidationResults = false;
+                for (Scenario scenario : corpus) {
+                    Snapshot baseline = run(helper, scenario, ServerConfig.HexJitMode.OFF);
+                    Snapshot uncached = run(helper, scenario, ServerConfig.HexJitMode.AUTO);
+                    helper.assertTrue(sameState(baseline, uncached), "Disabling stack validation result caching changed state: "
+                            + scenario.name + "\n" + baseline + "\n" + uncached);
+                }
+                ServerConfig.hexJitCacheStackValidationResults = true;
                 ServerConfig.hexJitFastStackValidation = false;
                 ServerConfig.hexJitReuseFrameTail = true;
                 for (Scenario scenario : corpus) {
@@ -217,37 +236,6 @@ public final class HexJitGameTests {
     private record BlockSnapshot(BlockPos relativePos, BlockState state, CompoundTag blockEntity) {}
     private record WorldSnapshot(List<BlockSnapshot> blocks, List<DropSnapshot> drops) {}
     private record WorldCastSnapshot(Snapshot cast, WorldSnapshot world) {}
-    private record SpellBenchCase(String name, ServerConfig.HexJitMode mode, boolean compileActions,
-                                  boolean coalesceDecorations, boolean batchAddMotion,
-                                  boolean fastAddMotionArguments, boolean fastStackValidation,
-                                  boolean reuseFrameTail, boolean fastSpecialHandlerMath,
-                                  boolean fastSpecialHandlerLookup, boolean fastNumberLiterals,
-                                  boolean cacheStackMetrics) {
-        private SpellBenchCase(String name, ServerConfig.HexJitMode mode, boolean compileActions,
-                               boolean coalesceDecorations, boolean batchAddMotion,
-                               boolean fastAddMotionArguments, boolean fastStackValidation,
-                               boolean reuseFrameTail, boolean fastSpecialHandlerMath) {
-            this(name, mode, compileActions, coalesceDecorations, batchAddMotion, fastAddMotionArguments,
-                    fastStackValidation, reuseFrameTail, fastSpecialHandlerMath, false, false, false);
-        }
-        private SpellBenchCase(String name, ServerConfig.HexJitMode mode, boolean compileActions,
-                               boolean coalesceDecorations, boolean batchAddMotion,
-                               boolean fastAddMotionArguments, boolean fastStackValidation,
-                               boolean reuseFrameTail, boolean fastSpecialHandlerMath,
-                               boolean fastSpecialHandlerLookup) {
-            this(name, mode, compileActions, coalesceDecorations, batchAddMotion, fastAddMotionArguments,
-                    fastStackValidation, reuseFrameTail, fastSpecialHandlerMath, fastSpecialHandlerLookup, false, false);
-        }
-        private SpellBenchCase(String name, ServerConfig.HexJitMode mode, boolean compileActions,
-                               boolean coalesceDecorations, boolean batchAddMotion,
-                               boolean fastAddMotionArguments, boolean fastStackValidation,
-                               boolean reuseFrameTail, boolean fastSpecialHandlerMath,
-                               boolean fastSpecialHandlerLookup, boolean fastNumberLiterals) {
-            this(name, mode, compileActions, coalesceDecorations, batchAddMotion, fastAddMotionArguments,
-                    fastStackValidation, reuseFrameTail, fastSpecialHandlerMath, fastSpecialHandlerLookup,
-                    fastNumberLiterals, false);
-        }
-    }
     private static PatternIota p(Holder<ActionRegistryEntry> entry) { return new PatternIota(entry.value().prototype()); }
     private static PatternIota math(HexPattern pattern) { return new PatternIota(pattern); }
     private static Scenario s(String name, List<Iota> stack, Iota... program) { return new Scenario(name, stack, List.of(program), 100000); }
@@ -388,7 +376,6 @@ public final class HexJitGameTests {
                         + " ns/op=" + elapsed / 50000.0 + " bytes/op=" + bytes / 50000.0);
             }
         }
-        benchmarkReferenceSpell(helper, bean);
     }
 
     private static void benchmarkColdPattern(GameTestHelper helper, com.sun.management.ThreadMXBean bean) {
@@ -433,300 +420,6 @@ public final class HexJitGameTests {
         blackhole = vm.queueExecuteAndWrapIotas(program, level);
     }
 
-    private static final String REFERENCE_SPELL_TEXT = "get_caster,get_caster,get_entity_look,num_3,mul,num_2,last_n_list,write/local,empty_list,duplicate,num_100(empty_list,eval/cc,num_4,fisherman,read/local,add,num_4,fisherman(add_motion)add,num_4,fisherman,duplicate,num_0,greater(num_1,sub,num_4,fisherman)()if,eval,num_4,fisherman,duplicate,eval)eval/cc,mask_v--vv,append,num_4,num_100,mul,write/local(empty_list,eval/cc,read/local,duplicate,num_0,greater(num_1,sub,write/local,rotate,duplicate,splat,eval,rotate_reverse)(mask_v-vv)if,eval,duplicate,eval)eval/cc,mask_v,const/null,write/local";
-
-    private static void benchmarkReferenceSpell(GameTestHelper helper, com.sun.management.ThreadMXBean bean) {
-        List<Iota> program = parseReferenceSpell();
-        var caster = Objects.requireNonNull(net.minecraft.world.entity.EntityType.ARMOR_STAND.create(helper.getLevel()));
-        BlockPos casterPos = helper.absolutePos(new BlockPos(1, 2, 1));
-        caster.setPos(casterPos.getX() + 0.5, casterPos.getY(), casterPos.getZ() + 0.5);
-        caster.setYRot(0);
-        caster.setXRot(0);
-        helper.assertTrue(helper.getLevel().addFreshEntity(caster), "Could not add the isolated benchmark caster");
-        var patternEnv = new TestEnvironment(helper.getLevel(), caster);
-        for (double value : new double[] {0, 1, 2, 3, 4, 100}) {
-            var match = PatternRegistryManifest.matchPatternToSpecialHandler(numberPattern(value), patternEnv);
-            helper.assertTrue(match != null && match.getFirst() instanceof SpecialHandlerNumberLiteral number
-                            && number.getX() == value,
-                    "Benchmark numeric token resolved to the wrong number handler: " + value + " -> " + match);
-        }
-        verifyMask(helper, patternEnv, "v--vv", List.of(false, true, true, false, false));
-        verifyMask(helper, patternEnv, "v-vv", List.of(false, true, false, false));
-        ServerConfig.hexJitThreshold = 2;
-        ServerConfig.hexJitCoalesceDecorations = true;
-        ServerConfig.hexJitBatchAddMotion = true;
-        ServerConfig.hexJitFastAddMotionArguments = false;
-        ServerConfig.hexJitFastStackValidation = false;
-        ServerConfig.hexJitFastSpecialHandlerMath = false;
-        HexJitRuntime.invalidate("reference spell benchmark");
-        helper.assertTrue(JitCompatibility.motionBatchingReady(),
-                "Entity motion batching target failed verification: " + JitCompatibility.status());
-        helper.assertTrue(JitCompatibility.fastAddMotionReady(),
-                "Add Motion argument target failed verification: " + JitCompatibility.status());
-        helper.assertTrue(JitCompatibility.fastStackValidationReady(),
-                "Iota stack validation target failed verification: " + JitCompatibility.status());
-
-        // Run once in the isolated GameTest world before measuring, and compare the
-        // interpreter and compiled paths from a fresh caster with the same state.
-        Snapshot baseline = runReferenceSpell(helper, program, ServerConfig.HexJitMode.OFF, caster);
-        ServerConfig.hexJitCoalesceDecorations = false;
-        ServerConfig.hexJitBatchAddMotion = false;
-        ServerConfig.hexJitFastAddMotionArguments = true;
-        Snapshot fastArguments = runReferenceSpell(helper, program, ServerConfig.HexJitMode.AUTO, caster);
-        helper.assertTrue(sameState(baseline, fastArguments), "Fast Add Motion arguments changed spell state\n"
-                + baseline + "\n" + fastArguments);
-        ServerConfig.hexJitFastAddMotionArguments = false;
-        ServerConfig.hexJitFastStackValidation = true;
-        Snapshot fastValidation = runReferenceSpell(helper, program, ServerConfig.HexJitMode.AUTO, caster);
-        helper.assertTrue(sameState(baseline, fastValidation), "Indexed stack validation changed spell state\n"
-                + baseline + "\n" + fastValidation);
-        ServerConfig.hexJitFastStackValidation = false;
-        ServerConfig.hexJitFastAddMotionArguments = true;
-        ServerConfig.hexJitFastStackValidation = true;
-        ServerConfig.hexJitReuseFrameTail = true;
-        Snapshot fastBoth = runReferenceSpell(helper, program, ServerConfig.HexJitMode.AUTO, caster);
-        helper.assertTrue(sameState(baseline, fastBoth), "Combined Hex JIT fast paths changed spell state\n"
-                + baseline + "\n" + fastBoth);
-        ServerConfig.hexJitFastSpecialHandlerMath = true;
-        Snapshot fastSpecialMath = runReferenceSpell(helper, program, ServerConfig.HexJitMode.AUTO, caster);
-        helper.assertTrue(sameState(baseline, fastSpecialMath), "Special-handler math optimization changed spell state\n"
-                + baseline + "\n" + fastSpecialMath);
-        ServerConfig.hexJitFastSpecialHandlerMath = false;
-        ServerConfig.hexJitFastAddMotionArguments = false;
-        ServerConfig.hexJitFastStackValidation = false;
-        ServerConfig.hexJitReuseFrameTail = false;
-        ServerConfig.hexJitCoalesceDecorations = true;
-        ServerConfig.hexJitBatchAddMotion = true;
-        Snapshot compiled = runReferenceSpell(helper, program, ServerConfig.HexJitMode.AUTO, caster);
-        helper.assertTrue(sameState(baseline, compiled), "Reference spell changed under JIT\n" + baseline + "\n" + compiled);
-        helper.assertTrue(ExecutionScope.lastMotionPushes() > 1000 && ExecutionScope.lastMotionWrites() == 1,
-                "Add Motion batching did not collapse ordered writes: pushes=" + ExecutionScope.lastMotionPushes()
-                        + ", writes=" + ExecutionScope.lastMotionWrites());
-        helper.assertTrue(compiled.particleCalls < baseline.particleCalls,
-                "Identical AddMotion particle sprays were not coalesced: baseline=" + baseline.particleCalls
-                        + ", JIT=" + compiled.particleCalls);
-        ServerConfig.hexJitCompileActions = true;
-        ServerConfig.hexJitSkipObservers = true;
-        ServerConfig.hexJitFastAddMotionArguments = true;
-        ServerConfig.hexJitMemoAddMotionNormalization = true;
-        ServerConfig.hexJitFastStackValidation = true;
-        ServerConfig.hexJitCacheStackMetrics = true;
-        ServerConfig.hexJitReuseFrameTail = true;
-        ServerConfig.hexJitFastSpecialHandlerMath = true;
-        ServerConfig.hexJitFastSpecialHandlerLookup = true;
-        ServerConfig.hexJitFastNumberLiterals = true;
-        Snapshot fullyEnabled = runReferenceSpell(helper, program, ServerConfig.HexJitMode.AUTO, caster);
-        helper.assertTrue(sameState(baseline, fullyEnabled),
-                "Full Hex JIT feature set changed reference spell state\n" + baseline + "\n" + fullyEnabled);
-        CompoundTag seededUserData = new CompoundTag();
-        seededUserData.putString("fixture", "preserve-me");
-        CompoundTag nestedUserData = new CompoundTag();
-        nestedUserData.putIntArray("values", new int[] {3, 5, 8, 13});
-        seededUserData.put("nested", nestedUserData);
-        CompoundTag originalUserData = seededUserData.copy();
-        Snapshot seededBaseline = runReferenceSpell(helper, program, ServerConfig.HexJitMode.OFF, caster, seededUserData);
-        Snapshot seededFull = runReferenceSpell(helper, program, ServerConfig.HexJitMode.AUTO, caster, seededUserData);
-        helper.assertTrue(sameState(seededBaseline, seededFull),
-                "Full Hex JIT feature set changed a reference spell with nested userData\n"
-                        + seededBaseline + "\n" + seededFull);
-        helper.assertTrue(seededUserData.equals(originalUserData),
-                "Reference spell differential test mutated its caller-owned userData");
-        Snapshot insufficientMotionMediaBaseline = runReferenceSpell(helper, program,
-                ServerConfig.HexJitMode.OFF, caster, new CompoundTag(), 0L);
-        Snapshot insufficientMotionMediaJit = runReferenceSpell(helper, program,
-                ServerConfig.HexJitMode.AUTO, caster, new CompoundTag(), 0L);
-        helper.assertTrue(sameState(insufficientMotionMediaBaseline, insufficientMotionMediaJit)
-                        && insufficientMotionMediaBaseline.resolution.startsWith("ERRORED:")
-                        && insufficientMotionMediaBaseline.nonzeroMediaChecks > 0,
-                "Fast Add Motion changed the insufficient-media mishap or remaining spell state\n"
-                        + insufficientMotionMediaBaseline + "\n" + insufficientMotionMediaJit);
-        ServerConfig.hexJitCompileActions = false;
-        ServerConfig.hexJitSkipObservers = false;
-        ServerConfig.hexJitFastAddMotionArguments = false;
-        ServerConfig.hexJitMemoAddMotionNormalization = true;
-        ServerConfig.hexJitFastStackValidation = false;
-        ServerConfig.hexJitCacheStackMetrics = true;
-        ServerConfig.hexJitReuseFrameTail = false;
-        ServerConfig.hexJitFastSpecialHandlerMath = false;
-        ServerConfig.hexJitFastSpecialHandlerLookup = false;
-        ServerConfig.hexJitFastNumberLiterals = true;
-        helper.assertTrue("EVALUATED:true".equals(baseline.resolution)
-                        && baseline.trace.stream().noneMatch(line -> line.startsWith("mishap:")),
-                "Reference spell mishapped in the test context: resolution=" + baseline.resolution
-                        + ", mishaps=" + baseline.trace.stream().filter(line -> line.startsWith("mishap:")).toList());
-        long mediaChecks = baseline.mediaChecks;
-        helper.assertTrue(mediaChecks >= 1000,
-                "Reference spell did not exercise its repeated action loop: media checks=" + mediaChecks);
-        helper.assertTrue(baseline.nonzeroMediaChecks > 0 && (baseline.nonzeroMediaChecks & 1) == 0
-                        && baseline.externalState.contains(":hurtMarked=true:"),
-                "Reference spell did not apply its repeated motion effect: costs=" + baseline.nonzeroMediaChecks
-                        + ", caster=" + baseline.externalState);
-        // The correctness pass above deliberately uses a low threshold to exercise add-on call sites.
-        // Start the performance matrix from a fresh cache with the server's default hot threshold.
-        ServerConfig.hexJitThreshold = 64;
-        HexJitRuntime.invalidate("reference spell benchmark matrix");
-        System.out.println("HEXJIT_SPELL_ANALYSIS workload=reference_fisherman_loop iotas=" + program.size()
-                + " mediaChecks=" + mediaChecks + " nonzeroCostChecks=" + baseline.nonzeroMediaChecks + " resolution=" + baseline.resolution
-                + " mishaps=" + baseline.trace.stream().filter(line -> line.startsWith("mishap:")).toList()
-                + " syntheticCaster=" + baseline.externalState);
-
-        int warmupCasts = Integer.getInteger("cmi.hexjit.benchmarkWarmup", 6);
-        int measuredCasts = Integer.getInteger("cmi.hexjit.benchmarkMeasuredCasts", 24);
-        List<SpellBenchCase> cases = List.of(
-                new SpellBenchCase("OFF", ServerConfig.HexJitMode.OFF, false, false, false, false, false, false, false),
-                new SpellBenchCase("AUTO_ARITHMETIC", ServerConfig.HexJitMode.AUTO, false, false, false, false, false, false, false),
-                new SpellBenchCase("AUTO_FAST_ADD_MOTION_ARGUMENTS", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, true, false, false, false),
-                new SpellBenchCase("AUTO_FAST_STACK_VALIDATION", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, false, true, false, false),
-                new SpellBenchCase("AUTO_FAST_FRAME_TAIL", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, false, false, true, false),
-                new SpellBenchCase("AUTO_FAST_SPECIAL_HANDLER_MATH", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, false, false, false, true),
-                new SpellBenchCase("AUTO_STACK_AND_FRAME_TAIL", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, false, true, true, false),
-                new SpellBenchCase("AUTO_ALL_FAST_PATHS", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, true, true, true, false),
-                new SpellBenchCase("AUTO_ALL_NO_NORMALIZATION", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, true, true, true, false),
-                new SpellBenchCase("AUTO_ALL_PLUS_SPECIAL_HANDLER_LOOKUP_CACHE", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, true, true, true, false, true),
-                new SpellBenchCase("AUTO_ALL_PLUS_NUMBER_LITERAL", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, true, true, true, false, false, true),
-                new SpellBenchCase("AUTO_ALL_PLUS_STACK_METRIC_CACHE", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, true, true, true, false, false, false, true),
-                new SpellBenchCase("AUTO_STACK_CACHE_PLUS_SPECIAL_MATH", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, true, true, true, true, false, false, true),
-                new SpellBenchCase("AUTO_STACK_CACHE_PLUS_NUMBER_LITERAL", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, true, true, true, false, false, true, true),
-                new SpellBenchCase("AUTO_STACK_CACHE_PLUS_BOTH_MATH_AND_NUMBER", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, true, true, true, true, false, true, true),
-                new SpellBenchCase("AUTO_COMPILE_ACTIONS", ServerConfig.HexJitMode.AUTO,
-                        true, false, false, false, false, false, false),
-                new SpellBenchCase("AUTO_ALL_WITH_ACTION_JIT", ServerConfig.HexJitMode.AUTO,
-                        true, false, false, true, true, true, false),
-                new SpellBenchCase("AUTO_ALL_PLUS_MOTION_BATCH", ServerConfig.HexJitMode.AUTO,
-                        false, false, true, true, true, true, false),
-                new SpellBenchCase("AUTO_ALL_PLUS_DECORATION_COALESCING", ServerConfig.HexJitMode.AUTO,
-                        false, true, false, true, true, true, false),
-                new SpellBenchCase("AUTO_ALL_PLUS_BOTH_BATCHES", ServerConfig.HexJitMode.AUTO,
-                        false, true, true, true, true, true, false),
-                new SpellBenchCase("AUTO_ALL_PLUS_SPECIAL_HANDLER_MATH", ServerConfig.HexJitMode.AUTO,
-                        false, false, false, true, true, true, true),
-                new SpellBenchCase("AUTO_FULL_FEATURES_NO_ACTION_JIT", ServerConfig.HexJitMode.AUTO,
-                        false, true, true, true, true, true, true, true, true, true),
-                new SpellBenchCase("AUTO_FULL_FEATURES_NO_BATCHING", ServerConfig.HexJitMode.AUTO,
-                        true, false, false, true, true, true, true, true, true, true),
-                new SpellBenchCase("AUTO_FULL_FEATURES_NO_MOTION_BATCH", ServerConfig.HexJitMode.AUTO,
-                        true, true, false, true, true, true, true, true, true, true),
-                new SpellBenchCase("AUTO_FULL_FEATURES_NO_DECORATION_COALESCING", ServerConfig.HexJitMode.AUTO,
-                        true, false, true, true, true, true, true, true, true, true),
-                new SpellBenchCase("AUTO_FULL_FEATURES_NO_NORMAL_PATTERN_CACHE", ServerConfig.HexJitMode.AUTO,
-                        true, true, true, true, true, true, true, true, true, true),
-                new SpellBenchCase(FULL_FEATURE_BENCH_CASE, ServerConfig.HexJitMode.AUTO,
-                        true, true, true, true, true, true, true, true, true, true));
-        String selectedCases = System.getProperty("cmi.hexjit.benchmarkCases");
-        if (selectedCases != null && !selectedCases.isBlank()) {
-            List<String> requested = List.of(selectedCases.split(","));
-            Map<String, SpellBenchCase> byName = new HashMap<>();
-            for (SpellBenchCase benchCase : cases) byName.put(benchCase.name, benchCase);
-            cases = requested.stream().map(byName::get).filter(java.util.Objects::nonNull).toList();
-            if (cases.size() != requested.size() || new HashSet<>(requested).size() != requested.size()) {
-                throw new IllegalArgumentException("Unknown or duplicate Hex JIT benchmark case: " + selectedCases);
-            }
-        }
-        if (warmupCasts < 0 || measuredCasts < 1) {
-            throw new IllegalArgumentException("Invalid Hex JIT benchmark counts: warmup=" + warmupCasts
-                    + ", measured=" + measuredCasts);
-        }
-        long[][] elapsed = new long[cases.size()][measuredCasts];
-        long[][] allocated = new long[cases.size()][measuredCasts];
-        long[] warmupElapsed = new long[cases.size()];
-        long[] particleCalls = new long[cases.size()];
-        long[] lastCastParticleCalls = new long[1];
-        for (int cast = 0; cast < warmupCasts; cast++) for (int offset = 0; offset < cases.size(); offset++) {
-            int index = (cast + offset) % cases.size();
-            SpellBenchCase benchCase = cases.get(index);
-            ServerConfig.hexJitMode = benchCase.mode;
-            ServerConfig.hexJitCompileActions = benchCase.compileActions;
-            ServerConfig.hexJitSkipObservers = hasFullObserverOptimization(benchCase.name);
-            ServerConfig.hexJitCoalesceDecorations = benchCase.coalesceDecorations;
-            ServerConfig.hexJitBatchAddMotion = benchCase.batchAddMotion;
-            ServerConfig.hexJitFastAddMotionArguments = benchCase.fastAddMotionArguments;
-            ServerConfig.hexJitMemoAddMotionNormalization = !benchCase.name.equals("AUTO_ALL_NO_NORMALIZATION");
-            ServerConfig.hexJitFastStackValidation = benchCase.fastStackValidation;
-            ServerConfig.hexJitCacheStackMetrics = benchCase.cacheStackMetrics;
-            ServerConfig.hexJitReuseFrameTail = benchCase.reuseFrameTail;
-            ServerConfig.hexJitFastSpecialHandlerMath = benchCase.fastSpecialHandlerMath;
-            ServerConfig.hexJitFastSpecialHandlerLookup = benchCase.fastSpecialHandlerLookup;
-            ServerConfig.hexJitFastNumberLiterals = benchCase.fastNumberLiterals;
-            ServerConfig.hexJitCacheNormalPatternLookup = !benchCase.name.equals("AUTO_FULL_FEATURES_NO_NORMAL_PATTERN_CACHE");
-            long start = System.nanoTime();
-            blackhole = benchmarkReferenceCast(helper, program, benchCase.mode, caster, lastCastParticleCalls);
-            warmupElapsed[index] += System.nanoTime() - start;
-        }
-        for (int cast = 0; cast < measuredCasts; cast++) {
-            for (int offset = 0; offset < cases.size(); offset++) {
-                int index = (cast + offset) % cases.size();
-                SpellBenchCase benchCase = cases.get(index);
-                ServerConfig.hexJitMode = benchCase.mode;
-                ServerConfig.hexJitCompileActions = benchCase.compileActions;
-                ServerConfig.hexJitSkipObservers = hasFullObserverOptimization(benchCase.name);
-                ServerConfig.hexJitCoalesceDecorations = benchCase.coalesceDecorations;
-                ServerConfig.hexJitBatchAddMotion = benchCase.batchAddMotion;
-                ServerConfig.hexJitFastAddMotionArguments = benchCase.fastAddMotionArguments;
-                ServerConfig.hexJitMemoAddMotionNormalization = !benchCase.name.equals("AUTO_ALL_NO_NORMALIZATION");
-                ServerConfig.hexJitFastStackValidation = benchCase.fastStackValidation;
-                ServerConfig.hexJitCacheStackMetrics = benchCase.cacheStackMetrics;
-                ServerConfig.hexJitReuseFrameTail = benchCase.reuseFrameTail;
-                ServerConfig.hexJitFastSpecialHandlerMath = benchCase.fastSpecialHandlerMath;
-                ServerConfig.hexJitFastSpecialHandlerLookup = benchCase.fastSpecialHandlerLookup;
-                ServerConfig.hexJitFastNumberLiterals = benchCase.fastNumberLiterals;
-                ServerConfig.hexJitCacheNormalPatternLookup = !benchCase.name.equals("AUTO_FULL_FEATURES_NO_NORMAL_PATTERN_CACHE");
-                long beforeBytes = bean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-                long start = System.nanoTime();
-                blackhole = benchmarkReferenceCast(helper, program, benchCase.mode, caster, lastCastParticleCalls);
-                elapsed[index][cast] = System.nanoTime() - start;
-                allocated[index][cast] = bean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - beforeBytes;
-                particleCalls[index] += lastCastParticleCalls[0];
-            }
-        }
-        for (int index = 0; index < cases.size(); index++) {
-            SpellBenchCase benchCase = cases.get(index);
-            System.out.println("HEXJIT_SPELL_BENCH workload=reference_fisherman_loop mode=" + benchCase.name
-                    + " compileActions=" + benchCase.compileActions + " coalesceDecorations=" + benchCase.coalesceDecorations
-                    + " batchAddMotion=" + benchCase.batchAddMotion
-                    + " fastAddMotionArguments=" + benchCase.fastAddMotionArguments
-                    + " memoAddMotionNormalization=" + !benchCase.name.equals("AUTO_ALL_NO_NORMALIZATION")
-                    + " fastStackValidation=" + benchCase.fastStackValidation
-                    + " cacheStackMetrics=" + benchCase.cacheStackMetrics
-                    + " reuseFrameTail=" + benchCase.reuseFrameTail
-                    + " fastSpecialHandlerMath=" + benchCase.fastSpecialHandlerMath
-                    + " fastSpecialHandlerLookup=" + benchCase.fastSpecialHandlerLookup
-                    + " fastNumberLiterals=" + benchCase.fastNumberLiterals
-                    + " cacheNormalPatternLookup=" + !benchCase.name.equals("AUTO_FULL_FEATURES_NO_NORMAL_PATTERN_CACHE")
-                    + " skipDeclaredObservers=" + hasFullObserverOptimization(benchCase.name)
-                    + " warmupCasts=" + warmupCasts
-                    + " warmupNs/cast=" + warmupElapsed[index] / (double) warmupCasts
-                    + " measuredCasts=" + measuredCasts + " meanNs/cast=" + average(elapsed[index])
-                    + " medianNs/cast=" + median(elapsed[index]) + " p95Ns/cast=" + percentile(elapsed[index], 0.95)
-                    + " meanBytes/cast=" + average(allocated[index]) + " medianBytes/cast=" + median(allocated[index])
-                    + " p95Bytes/cast=" + percentile(allocated[index], 0.95)
-                    + " emittedParticles/cast=" + particleCalls[index] / (double) measuredCasts);
-        }
-        ServerConfig.hexJitMode = ServerConfig.HexJitMode.AUTO;
-        ServerConfig.hexJitCompileActions = true;
-        ServerConfig.hexJitSkipObservers = false;
-        System.out.println("HEXJIT_SPELL_JIT_STATS " + HexJitRuntime.status());
-        caster.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
-    }
-
-    private static double average(long[] samples) {
-        long total = 0;
-        for (long sample : samples) total += sample;
-        return total / (double) samples.length;
-    }
-
     private static double median(long[] samples) {
         long[] sorted = samples.clone();
         Arrays.sort(sorted);
@@ -734,70 +427,8 @@ public final class HexJitGameTests {
         return (sorted.length & 1) == 0 ? (sorted[middle - 1] + sorted[middle]) / 2.0 : sorted[middle];
     }
 
-    private static long percentile(long[] samples, double percentile) {
-        long[] sorted = samples.clone();
-        Arrays.sort(sorted);
-        return sorted[Math.max(0, (int) Math.ceil(percentile * sorted.length) - 1)];
-    }
-
-    private static Snapshot runReferenceSpell(GameTestHelper helper, List<Iota> program, ServerConfig.HexJitMode mode,
-                                              LivingEntity caster) {
-        return runReferenceSpell(helper, program, mode, caster, new CompoundTag(), Long.MAX_VALUE / 4);
-    }
-
-    private static Snapshot runReferenceSpell(GameTestHelper helper, List<Iota> program, ServerConfig.HexJitMode mode,
-                                              LivingEntity caster, CompoundTag initialUserData) {
-        return runReferenceSpell(helper, program, mode, caster, initialUserData, Long.MAX_VALUE / 4);
-    }
-
-    private static Snapshot runReferenceSpell(GameTestHelper helper, List<Iota> program, ServerConfig.HexJitMode mode,
-                                              LivingEntity caster, CompoundTag initialUserData, long initialMedia) {
-        ServerConfig.hexJitMode = mode;
-        caster.setDeltaMovement(Vec3.ZERO);
-        caster.hurtMarked = false;
-        var env = new TestEnvironment(helper.getLevel(), caster);
-        env.remainingMedia = initialMedia;
-        env.getWorld().random.setSeed(9128374L);
-        CastingVM vm = new CastingVM(new CastingImage(TreeList.empty(), 0, TreeList.empty(),
-                false, false, 0, initialUserData.copy()), env);
-        ExecutionClientView view = vm.queueExecuteAndWrapIotas(program, helper.getLevel());
-        Vec3 finalMotion = caster.getDeltaMovement();
-        String motion = finalMotion.x + "," + finalMotion.y + "," + finalMotion.z
-                + ":hurtMarked=" + caster.hurtMarked + ":observerMotionHash=" + env.observerMotionHash
-                + ":mediaRemaining=" + env.remainingMedia;
-        return new Snapshot(CastingImage.Companion.getCODEC().encodeStart(NbtOps.INSTANCE, vm.getImage()).getOrThrow(),
-                List.copyOf(env.trace), view.getResolutionType() + ":" + view.isStackClear(), env.getWorld().random.nextLong(), motion,
-                env.mediaChecks, env.nonzeroMediaChecks, env.particleCalls,
-                encodeContinuation(env.lastContinuation), env.continuationSteps);
-    }
-
-    private static ExecutionClientView benchmarkReferenceCast(GameTestHelper helper, List<Iota> program,
-                                                               ServerConfig.HexJitMode mode, LivingEntity caster,
-                                                               long[] particleCalls) {
-        ServerConfig.hexJitMode = mode;
-        caster.setDeltaMovement(Vec3.ZERO);
-        caster.hurtMarked = false;
-        var env = new TestEnvironment(helper.getLevel(), caster, false);
-        env.getWorld().random.setSeed(9128374L);
-        CastingVM vm = new CastingVM(new CastingImage(TreeList.empty(), 0, TreeList.empty(),
-                false, false, 0, new CompoundTag()), env);
-        ExecutionClientView result = vm.queueExecuteAndWrapIotas(program, helper.getLevel());
-        particleCalls[0] = env.particleCalls;
-        return result;
-    }
-
     private static Tag encodeContinuation(SpellContinuation continuation) {
         return SpellContinuation.getCODEC().encodeStart(NbtOps.INSTANCE, continuation).getOrThrow();
-    }
-
-    private static void verifyMask(GameTestHelper helper, TestEnvironment env, String mask, List<Boolean> expected) {
-        var match = PatternRegistryManifest.matchPatternToSpecialHandler(maskPattern(mask), env);
-        helper.assertTrue(match != null && match.getFirst() instanceof SpecialHandlerMask,
-                "Benchmark mask did not resolve to the mask handler: " + mask);
-        var decoded = ((SpecialHandlerMask) match.getFirst()).getMask();
-        var actual = new ArrayList<Boolean>(decoded.size());
-        for (int i = 0; i < decoded.size(); i++) actual.add(decoded.getBoolean(i));
-        helper.assertTrue(actual.equals(expected), "Benchmark mask encoding mismatch: " + mask + " -> " + actual);
     }
 
     private static void verifyHexDirMath(GameTestHelper helper) {
@@ -1125,6 +756,40 @@ public final class HexJitGameTests {
                             == IotaType.isTooLargeToSerialize(extensionTree),
                     "Cached TreeList2 scan changed custom add-on Iota metrics");
         }
+        class MutableSizeIota extends Iota {
+            int metricSize = 1;
+            MutableSizeIota() {
+                super(() -> (IotaType<? extends Iota>) (IotaType<?>) HexIotaTypes.NULL.get());
+            }
+            @Override public int size() { return metricSize; }
+            @Override public int hashCode() { return System.identityHashCode(this); }
+            @Override public boolean isTruthy() { return true; }
+            @Override protected boolean toleratesOther(Iota other) { return other == this; }
+            @Override public Component display() { return Component.literal("mutable metric fixture"); }
+        }
+        MutableSizeIota nestedMutableMetric = new MutableSizeIota();
+        ListIota stableMetricsList = new ListIota(List.of(nestedMutableMetric));
+        TreeList<Iota> stableMetricsTree = TreeList.from(Collections.nCopies(64, stableMetricsList));
+        var stableMetricsCache = new IotaStackValidation.MetricCache(false, true);
+        boolean stableMetricsExpected = IotaType.isTooLargeToSerialize(stableMetricsTree);
+        helper.assertTrue(IotaStackValidation.isTooLarge(stableMetricsTree, stableMetricsCache)
+                        == stableMetricsExpected
+                        && IotaStackValidation.isTooLarge(stableMetricsTree, stableMetricsCache)
+                        == stableMetricsExpected,
+                "Cached ListIota metric snapshots changed the validation result");
+        nestedMutableMetric.metricSize = HexIotaTypes.MAX_SERIALIZATION_TOTAL;
+        helper.assertTrue(IotaStackValidation.isTooLarge(stableMetricsTree, stableMetricsCache)
+                        == IotaType.isTooLargeToSerialize(stableMetricsTree),
+                "Successful stack-result caching disagreed with ListIota's construction-time metrics");
+        MutableSizeIota mutableMetric = new MutableSizeIota();
+        TreeList<Iota> mutableMetricTree = TreeList.from(List.of(mutableMetric));
+        var validatedStackCache = new IotaStackValidation.MetricCache(false, true);
+        helper.assertTrue(!IotaStackValidation.isTooLarge(mutableMetricTree, validatedStackCache),
+                "A small extension-Iota stack was rejected");
+        mutableMetric.metricSize = HexIotaTypes.MAX_SERIALIZATION_TOTAL;
+        helper.assertTrue(IotaStackValidation.isTooLarge(mutableMetricTree, validatedStackCache)
+                        == IotaType.isTooLargeToSerialize(mutableMetricTree),
+                "Successful stack-result caching retained a result for a mutable extension Iota");
         TreeList<Iota> evolving = TreeList.from(Collections.nCopies(192, new DoubleIota(1)));
         var evolvingCache = new IotaStackValidation.MetricCache();
         for (int i = 0; i < 64; i++) {
@@ -1213,92 +878,6 @@ public final class HexJitGameTests {
         CopyTrackingCompoundTag customRoot = new CopyTrackingCompoundTag();
         helper.assertTrue(FastCompoundTagCopy.copy(customRoot) != customRoot && customRoot.copies == 1,
                 "Fast copy bypassed the root CompoundTag subclass override");
-    }
-
-    private static List<Iota> parseReferenceSpell() {
-        var result = new ArrayList<Iota>();
-        var token = new StringBuilder();
-        for (int i = 0; i < REFERENCE_SPELL_TEXT.length(); i++) {
-            char ch = REFERENCE_SPELL_TEXT.charAt(i);
-            if (ch == ',' || ch == '(' || ch == ')') {
-                appendReferenceToken(result, token);
-                if (ch == '(') result.add(p(HexActions.OPEN_PAREN));
-                else if (ch == ')') result.add(p(HexActions.CLOSE_PAREN));
-            } else {
-                token.append(ch);
-            }
-        }
-        appendReferenceToken(result, token);
-        return List.copyOf(result);
-    }
-
-    private static void appendReferenceToken(List<Iota> out, StringBuilder token) {
-        if (token.length() == 0) return;
-        String name = token.toString();
-        token.setLength(0);
-        if (name.startsWith("num_")) {
-            out.add(math(numberPattern(Double.parseDouble(name.substring(4)))));
-            return;
-        }
-        if (name.startsWith("mask_")) {
-            out.add(math(maskPattern(name.substring(5))));
-            return;
-        }
-        out.add(switch (name) {
-            case "get_caster" -> p(HexActions.GET_CASTER);
-            case "get_entity_look" -> p(HexActions.ENTITY_LOOK);
-            case "last_n_list" -> p(HexActions.LAST_N_LIST);
-            case "write/local" -> p(HexActions.WRITE$LOCAL);
-            case "read/local" -> p(HexActions.READ$LOCAL);
-            case "empty_list" -> p(HexActions.EMPTY_LIST);
-            case "duplicate" -> p(HexActions.DUPLICATE);
-            case "eval/cc" -> p(HexActions.EVAL$CC);
-            case "fisherman" -> p(HexActions.FISHERMAN);
-            case "add_motion" -> p(HexActions.ADD_MOTION);
-            case "if" -> p(HexActions.IF);
-            case "eval" -> p(HexActions.EVAL);
-            case "const/null" -> p(HexActions.CONST$NULL);
-            case "splat" -> p(HexActions.SPLAT);
-            case "rotate" -> p(HexActions.ROTATE);
-            case "rotate_reverse" -> p(HexActions.ROTATE_REVERSE);
-            case "add" -> p(HexActions.ADD);
-            case "sub" -> p(HexActions.SUB);
-            case "mul" -> p(HexActions.MUL_DOT);
-            case "greater" -> p(HexActions.GREATER);
-            case "append" -> p(HexActions.APPEND);
-            default -> throw new IllegalArgumentException("Unknown benchmark spell token: " + name);
-        });
-    }
-
-    private static HexPattern numberPattern(double number) {
-        boolean negative = number < 0;
-        double remaining = Math.abs(number);
-        var suffix = new StringBuilder();
-        // These constants have exact short encodings in HexMod's numerical handler.
-        if (remaining == 100) suffix.append("eeeeeeeeee");
-        else if (remaining == 4) suffix.append("wwww");
-        else if (remaining == 3) suffix.append("www");
-        else if (remaining == 2) suffix.append("ww");
-        else if (remaining == 1) suffix.append('w');
-        else if (remaining != 0) throw new IllegalArgumentException("Unsupported benchmark numeric literal: " + number);
-        return HexPattern.fromAngleString((negative ? "dedd" : "aqaa") + suffix, HexDir.SOUTH_EAST, false);
-    }
-
-    private static HexPattern maskPattern(String mask) {
-        if (mask.isEmpty()) throw new IllegalArgumentException("Empty mask in benchmark spell");
-        boolean startsWithDrop = mask.charAt(0) == 'v';
-        HexDir orientation = startsWithDrop ? HexDir.SOUTH_EAST : HexDir.EAST;
-        var angles = new StringBuilder();
-        if (startsWithDrop) angles.append('a');
-        char previous = mask.charAt(0);
-        for (int i = startsWithDrop ? 1 : 0; i < mask.length(); i++) {
-            char current = mask.charAt(i);
-            if (current == '-') angles.append(previous == 'v' ? 'e' : 'w');
-            else if (current == 'v') angles.append(previous == 'v' ? "da" : "ea");
-            else throw new IllegalArgumentException("Invalid mask in benchmark spell: " + mask);
-            previous = current;
-        }
-        return HexPattern.fromAngleString(angles.toString(), orientation, false);
     }
 
     private static void benchmarkCold(ArithmeticEngine template, TestEnvironment env,

@@ -27,19 +27,7 @@ gradle.projectsEvaluated {
             }
         }
     }
-    def referenceSpell = p.file('.refs/spell.txt')
-    def referenceSpellResource = new File(resources, 'hexjit/reference_spell.txt')
-    def spellFixture = p.tasks.register('hexJitReferenceSpellFixture') {
-        inputs.file(referenceSpell)
-        outputs.file(referenceSpellResource)
-        doLast {
-            if (!referenceSpell.isFile()) throw new GradleException('HexJIT benchmark requires .refs/spell.txt')
-            referenceSpellResource.parentFile.mkdirs()
-            java.nio.file.Files.copy(referenceSpell.toPath(), referenceSpellResource.toPath(),
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-        }
-    }
-    p.tasks.named('processResources').configure { dependsOn(fixtures, spellFixture) }
+    p.tasks.named('processResources').configure { dependsOn(fixtures) }
     p.neoForge.runs.gameTestServer.gameDirectory = p.file('build/hexjit-test-run')
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.verbose', 'true')
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.export', 'true')
