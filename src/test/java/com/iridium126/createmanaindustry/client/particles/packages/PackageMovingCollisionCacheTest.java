@@ -92,6 +92,42 @@ class PackageMovingCollisionCacheTest {
         assertEquals(2,cache.history(11).size());
         assertEquals(300,cache.lastCaptureNanos(),"geometry work remains bounded by the shared capture budget");
     }
+    @Test void staticSectionCaptureCannotStarveMovingInputHistory() {
+        var clock=new AtomicLong();
+        double[] translation={0};
+        var source=new Source(clock){
+            @Override public PackageMovingGeometry.Pose pose(boolean previous){
+                owner();return new PackageMovingGeometry.Pose(1,0,0,0,1,0,0,0,1,translation[0]-(previous?1:0),0,0);
+            }
+        };
+        source.length=1;
+        var moving=new PackageMovingCollisionCache(Runnable::run,1,clock::get);
+        moving.offer(source);moving.tick(10_000);moving.tick(10_000);
+        var geometry=moving.entries().iterator().next().snapshot();assertNotNull(geometry);
+        var world=new PackageCollisionCache(Runnable::run,1,clock::get);
+        world.request(new PackageCollisionCache.Section(1,0,0));
+        long started=clock.get(),budget=250;
+        world.tick((section,cell)->{clock.addAndGet(100);return new PackageCollisionCache.Cell(List.of(),.6f,0);},budget);
+        translation[0]=16;
+        moving.tick(Math.max(0,budget-(clock.get()-started)));
+        moving.captureHistory(12,true);
+        assertTrue(moving.posesReady(),"a newly demanded section consumed the geometry budget and dropped the moving pose tick");
+        var captured=moving.history(12);assertNotNull(captured,"missing pose history blocks all subsequent free-body ticks");
+        assertEquals(15,captured.getFirst().previous.tx());assertEquals(16,captured.getFirst().current.tx());
+        assertSame(geometry,moving.entries().iterator().next().snapshot());
+        assertEquals(300,clock.get()-started,"zero remaining budget must not start geometry work");
+    }
+    @Test void zeroBudgetCapturesDirtyPoseWithoutStartingGeometryWork() {
+        var tasks=new ArrayDeque<Runnable>();var clock=new AtomicLong();var source=new Source(clock);
+        var cache=new PackageMovingCollisionCache(tasks::add,1,clock::get);cache.offer(source);
+        cache.tick(0);cache.captureHistory(1,true);
+        var entry=cache.entries().iterator().next();assertNotNull(cache.history(1));
+        assertTrue(cache.posesReady());assertNull(entry.snapshot());assertNull(entry.cursor);assertTrue(tasks.isEmpty());
+        long revision=entry.revision();source.revision++;source.length=50;
+        cache.tick(0);cache.captureHistory(2,true);
+        assertTrue(entry.revision()>revision);assertEquals(50,cache.history(2).getFirst().bounds.x1());
+        assertNull(entry.snapshot());assertNull(entry.cursor);assertTrue(tasks.isEmpty());assertEquals(0,clock.get());
+    }
     @Test void staleTasksAndClearedEntriesCannotBecomeCurrent() {
         var tasks=new ArrayDeque<Runnable>();var source=new Source(new AtomicLong());source.length=1;
         var cache=new PackageMovingCollisionCache(tasks::add,1,()->0L);cache.offer(source);cache.tick(1);
@@ -108,7 +144,8 @@ class PackageMovingCollisionCacheTest {
         source.missing=false;cache.tick(1);cache.tick(1);assertNotNull(cache.entries().iterator().next().snapshot());
         source.poseMissing=true;cache.tick(1);assertFalse(cache.posesReady());
         source.poseMissing=false;cache.tick(1);assertTrue(cache.posesReady());assertNotNull(cache.entries().iterator().next().snapshot());
-        cache.tick(0);assertFalse(cache.posesReady());
+        cache.tick(0);assertTrue(cache.posesReady());
+        source.poseMissing=true;cache.tick(0);assertFalse(cache.posesReady(),"a zero geometry budget must not hide an unavailable pose");
     }
     @Test void missingMovingBvhKeepsPoseAndBoundsForBodyLocalCollisionPauses() {
         var source=new Source(new AtomicLong());source.length=1;source.missing=true;

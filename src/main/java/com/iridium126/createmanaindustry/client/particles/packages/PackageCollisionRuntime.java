@@ -20,7 +20,7 @@ import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 
 /** Lazy, client-thread collision preparation. No world access, waits or uploads on workers. */
 @EventBusSubscriber(modid=CreateManaIndustry.MODID,value=Dist.CLIENT)
-public final class PackageCollisionRuntime {
+public final class PackageCollisionRuntime implements PackageCollisionCaptureSchedule.Work {
     private static final int MAX_SECTIONS=1024,MAX_REQUEST_SECTIONS=64;
     private static volatile PackageCollisionRuntime current;
     private final ClientLevel level;
@@ -352,33 +352,8 @@ public final class PackageCollisionRuntime {
             return;
         }
         if(current.movingSources==null){current.movingSources=new PackageMovingCollisionSources(current.level);current.movingSources.onInvalidated(current.movingCache::invalidate);}
-        long started=System.nanoTime(),budget=ClientConfig.packageMainThreadBudgetNanos();
-        // Rotate priority within the configured total budget, including dirty notifications.
-        var dirty=current.dirtyLightColumns.iterator();
-        while(dirty.hasNext() && System.nanoTime()-started<budget) {
-            long column=dirty.next();current.dirtyLightColumns.remove(column);
-            current.lights.invalidateColumn((int)(column>>32),(int)column);
-        }
-        if(current.lightRequested && current.lightPriority==0)current.lights.tick(current.lightSource,Math.max(0,budget-(System.nanoTime()-started)));
-        try{var found=current.movingSources.discover(started+budget);current.movingAvailable=current.movingSources.error().isEmpty();
-            if(current.movingAvailable) {
-                current.movingSeen.clear();current.movingMissing.clear();
-                for(var candidate:found) {
-                    if(System.nanoTime()-started>=budget){current.movingAvailable=false;break;}
-                    current.movingSeen.add(candidate.key());current.movingAvailable&=current.movingCache.offer(candidate);
-                }
-                if(current.movingAvailable) {
-                    for(var entry:current.movingCache.entries()) {
-                        if(System.nanoTime()-started>=budget){current.movingAvailable=false;break;}
-                        if(!current.movingSeen.contains(entry.source.key()))current.movingMissing.add(entry.source.key());
-                    }
-                    if(current.movingAvailable)for(var key:current.movingMissing)current.movingCache.remove(key);
-                }
-            }
-        }catch(RuntimeException | LinkageError unavailable){current.movingAvailable=false;}
-        current.recordDiscovery(System.nanoTime()-started,budget);
-        if(current.captureMovingFirst){current.movingCache.tick(Math.max(0,budget-(System.nanoTime()-started)));current.cache.tick(current.source,Math.max(0,budget-(System.nanoTime()-started)));}
-        else{current.cache.tick(current.source,Math.max(0,budget-(System.nanoTime()-started)));current.movingCache.tick(Math.max(0,budget-(System.nanoTime()-started)));}
+        long budget=ClientConfig.packageMainThreadBudgetNanos();
+        PackageCollisionCaptureSchedule.tick(current,current.captureMovingFirst,current.lightPriority==0,budget,System::nanoTime);
         current.historyTicks=Math.max(current.historyTicks,com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageTickTiming.historyTicks(current.level.tickRateManager().tickrate()));
         current.movingCache.tickRate(current.level.tickRateManager().tickrate());
         var input=PackageClientInputs.current(current.level);
@@ -387,8 +362,39 @@ public final class PackageCollisionRuntime {
         for(long tick=input.first();tick<=input.last();tick++)current.geometryHistory.putIfAbsent(tick,versions);
         while(current.geometryHistory.size()>current.historyTicks)current.geometryHistory.remove(current.geometryHistory.keySet().iterator().next());
         current.captureMovingFirst=!current.captureMovingFirst;
-        if(current.lightRequested && current.lightPriority!=0)current.lights.tick(current.lightSource,Math.max(0,budget-(System.nanoTime()-started)));
         current.lightPriority=(current.lightPriority+1)%3;
+    }
+    @Override public void invalidateLight(long deadline) {
+        owner();
+        var dirty=dirtyLightColumns.iterator();
+        while(dirty.hasNext() && System.nanoTime()-deadline<0) {
+            long column=dirty.next();dirtyLightColumns.remove(column);
+            lights.invalidateColumn((int)(column>>32),(int)column);
+        }
+    }
+    @Override public void captureLight(long budget){owner();if(lightRequested)lights.tick(lightSource,budget);}
+    @Override public void captureMoving(long budget){owner();movingCache.tick(budget);}
+    @Override public void captureWorld(long budget){owner();cache.tick(source,budget);}
+    @Override public void discoverMoving(long deadline) {
+        owner();
+        long started=System.nanoTime(),budget=Math.max(0,deadline-started);
+        try{var found=movingSources.discover(deadline);movingAvailable=movingSources.error().isEmpty();
+            if(movingAvailable) {
+                movingSeen.clear();movingMissing.clear();
+                for(var candidate:found) {
+                    if(System.nanoTime()-deadline>=0){movingAvailable=false;break;}
+                    movingSeen.add(candidate.key());movingAvailable&=movingCache.offer(candidate);
+                }
+                if(movingAvailable) {
+                    for(var entry:movingCache.entries()) {
+                        if(System.nanoTime()-deadline>=0){movingAvailable=false;break;}
+                        if(!movingSeen.contains(entry.source.key()))movingMissing.add(entry.source.key());
+                    }
+                    if(movingAvailable)for(var key:movingMissing)movingCache.remove(key);
+                }
+            }
+        }catch(RuntimeException | LinkageError unavailable){movingAvailable=false;}
+        recordDiscovery(System.nanoTime()-started,budget);
     }
     @SubscribeEvent public static void chunkLoaded(ChunkEvent.Load event){chunkChanged(event);}
     @SubscribeEvent public static void chunkUnloaded(ChunkEvent.Unload event){chunkChanged(event);}

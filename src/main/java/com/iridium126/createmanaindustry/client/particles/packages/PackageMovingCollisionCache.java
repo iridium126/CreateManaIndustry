@@ -110,10 +110,13 @@ public final class PackageMovingCollisionCache {
     public void clear(){owner();for(Entry e:entries.values())revoke(e);entries.clear();history.clear();retainedGeometryCounts.clear();retainedGeometrySnapshot=Set.of();retainedGeometryDirty=false; /* Never reuse an identity within this world. */}
     public Collection<Entry> entries(){owner();return Collections.unmodifiableCollection(entries.values());}
     public void tick(long budgetNanos) {
-        owner();frame++;if(budgetNanos<=0)return;long start=clock.getAsLong();
+        owner();frame++;long start=clock.getAsLong();
         // Sample every light-weight pose before spending the tick budget on block geometry.
         // Otherwise one large/slow sublevel can consume the budget and leave later sources
         // with stale poseFrame values; the immutable history then rejects the whole scene.
+        // Static section capture shares this budget and may have already consumed all of it.
+        // Poses remain mandatory even with no remaining geometry budget: losing one immutable
+        // input interval blocks subsequent physics ticks, including unrelated free packages.
         for(var iterator=entries.entrySet().iterator();iterator.hasNext();) {
             var row=iterator.next();Entry e=row.getValue();long version;
             try{if(!e.source.alive()){iterator.remove();revoke(e);continue;}version=e.source.revision();}
@@ -157,7 +160,7 @@ public final class PackageMovingCollisionCache {
                 catch(RejectedExecutionException rejected){accounting.decrementAndGet();/* Retry unchanged cursor next tick. */}
             }
         }
-        lastCapture=clock.getAsLong()-start;if(lastCapture>budgetNanos)overruns++;
+        lastCapture=clock.getAsLong()-start;if(lastCapture>Math.max(0,budgetNanos))overruns++;
     }
     public long lastCaptureNanos(){return lastCapture;}public long overruns(){return overruns;}
     public boolean posesReady(){owner();for(Entry e:entries.values())if(e.poseFrame!=frame)return false;return true;}

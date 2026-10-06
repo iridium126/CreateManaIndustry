@@ -43,18 +43,24 @@ void main() {
             if(finiteBody && uWorldReady) {
             vec3 current=body.positionMass.xyz;
             ivec3 currentSection=(ivec3(floor(current))>>4)+uWorldOriginSection;
-            vec3 future=current+body.velocityGround.xyz*uLookahead+vec3(0.0,-16.0*uLookahead*uLookahead,0.0);
+            // Upward fans can sustain a velocity that a gravity-only endpoint predicts
+            // will turn downward within this horizon. Include the unaccelerated endpoint
+            // so the next section is requested before its guard cells stop the body.
+            // This upper bound also covers the apex of an unforced ballistic trajectory.
+            vec3 linearFuture=current+body.velocityGround.xyz*uLookahead;
+            vec3 future=linearFuture+vec3(0.0,-16.0*uLookahead*uLookahead,0.0);
             vec3 lo=min(current,future)-body.extentYaw.xyz-vec3(1.0);
-            vec3 hi=max(current,future)+body.extentYaw.xyz+vec3(1.0);
+            vec3 hi=max(current,linearFuture)+body.extentYaw.xyz+vec3(1.0);
             ivec3 first=(ivec3(floor(lo))>>4)+uWorldOriginSection;
             ivec3 last=(ivec3(floor(hi))>>4)+uWorldOriginSection;
             ivec3 span=last-first+1;
             bool signedBlockRange=all(greaterThanEqual(first,ivec3(-134217728)))
                     && all(lessThanEqual(last,ivec3(134217727)));
-            vec3 safetyFuture=current+body.velocityGround.xyz*uSafetyLookahead
+            vec3 safetyLinearFuture=current+body.velocityGround.xyz*uSafetyLookahead;
+            vec3 safetyFuture=safetyLinearFuture
                     +vec3(0.0,-16.0*uSafetyLookahead*uSafetyLookahead,0.0);
             vec3 safetyLo=min(current,safetyFuture)-body.extentYaw.xyz-vec3(1.0);
-            vec3 safetyHi=max(current,safetyFuture)+body.extentYaw.xyz+vec3(1.0);
+            vec3 safetyHi=max(current,safetyLinearFuture)+body.extentYaw.xyz+vec3(1.0);
             ivec3 safetyFirst=(ivec3(floor(safetyLo))>>4)+uWorldOriginSection;
             ivec3 safetyLast=(ivec3(floor(safetyHi))>>4)+uWorldOriginSection;
             ivec3 safetySpan=safetyLast-safetyFirst+1;
