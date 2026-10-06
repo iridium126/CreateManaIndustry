@@ -2,14 +2,26 @@
 gradle.projectsEvaluated {
     def p = gradle.rootProject
     def owo = p.file('run/mods/owo-lib-neoforge-0.13.0-alpha.15+1.21.jar')
+    if (!owo.isFile()) {
+        def cached = p.fileTree(new File(gradle.gradleUserHomeDir, 'caches/modules-2/files-2.1/codeberg.master_bw3.trickster/owo-lib-neoforge/0.13.0-alpha.15+1.21')) {
+            include '**/owo-lib-neoforge-0.13.0-alpha.15+1.21.jar'
+        }.files
+        if (cached.size() == 1) owo = cached.first()
+    }
     if (!owo.isFile()) throw new GradleException('GameTest runtime requires the existing local owo-lib fixture')
     p.dependencies.add('localRuntime', p.files(owo))
     def resources = p.layout.buildDirectory.dir('package-output-test-resources').get().asFile
     p.sourceSets.main.java.srcDir(p.file('src/test/gametest/packages/java'))
+    def recovery = p.hasProperty('packageRecoveryGameTest')
+    p.sourceSets.main.java.exclude(recovery ? '**/PackageOutputGameTests.java' : '**/PackageRecoveryGameTests.java')
     p.sourceSets.main.resources.srcDir(resources)
     def fixture = p.tasks.register('packageOutputGameTestFixture') {
+        inputs.property('recoveryMode', recovery)
         outputs.dir(resources)
         doLast {
+            def defaults = p.file('build/package-output-test-run/defaultconfigs/createmanaindustry-server.toml')
+            defaults.parentFile.mkdirs()
+            defaults.text = '[gpuPackages]\nauthorityEnabled = ' + (!recovery) + '\n'
             def target = new File(resources, 'data/createmanaindustry/structure/package_output_test.nbt')
             target.parentFile.mkdirs()
             target.withOutputStream { file ->
@@ -27,5 +39,13 @@ gradle.projectsEvaluated {
     }
     p.tasks.named('processResources').configure { dependsOn(fixture) }
     p.neoForge.runs.gameTestServer.gameDirectory = p.file('build/package-output-test-run')
-    p.tasks.named('runGameTestServer', JavaExec).configure { maxHeapSize = '3g' }
+    p.tasks.named('runGameTestServer', JavaExec).configure {
+        maxHeapSize = '3g'
+        doFirst {
+            // This isolated test world may have been created by the opposite mode's last run.
+            def config = p.file('build/package-output-test-run/world/serverconfig/createmanaindustry-server.toml')
+            config.parentFile.mkdirs()
+            config.text = '[gpuPackages]\nauthorityEnabled = ' + (!recovery) + '\n'
+        }
+    }
 }

@@ -34,6 +34,9 @@ public final class PackageChainAuthorityManager {
     }
     private static final class Runtime {
         final ServerLevel level;
+        boolean gpuMode=ServerConfig.packageGpuAuthority;
+        final Set<ChainConveyorBlockEntity> conveyors=new LinkedHashSet<>();
+        final ArrayDeque<Session> retiring=new ArrayDeque<>();
         final Map<UUID,Session> sessions=new LinkedHashMap<>();
         final Map<Long,Session> epochs=new HashMap<>();
         final LinkedHashMap<PackageLease.Identity,Discovery> discovery=new LinkedHashMap<>();
@@ -59,6 +62,7 @@ public final class PackageChainAuthorityManager {
             catch(RuntimeException error){failed=true;CreateManaIndustry.LOGGER.error("[CMI packages] chain transport failed; retiring session",error);}
         }
         void close(){if(closing)return;closing=true;runtime.epochs.remove(authority.epoch(),this);try{authority.close();}finally{send(new ClientboundChainPackagePacket(ClientboundChainPackagePacket.CLOSE,runtime.level.dimension().location(),authority.epoch(),null,null,null,0,0,0));}}
+        void retire(){if(closing)return;closing=true;runtime.epochs.remove(authority.epoch(),this);authority.beginClose();runtime.retiring.addLast(this);send(new ClientboundChainPackagePacket(ClientboundChainPackagePacket.CLOSE,runtime.level.dimension().location(),authority.epoch(),null,null,null,0,0,0));}
     }
     private record Track(int index,PackageNativeChainPlan plan,UUID parent) {}
     private static final class Target implements PackageChainAuthority.Target {
@@ -90,7 +94,7 @@ public final class PackageChainAuthorityManager {
                 session.runtime.dirty.add(discovery.location.conveyor);
             }
             if(!session.closing && !session.authority.closed())session.send(packet(session,ClientboundChainPackagePacket.RELEASED,baseline,null));
-            if(!removed && !discovery.location.conveyor.isRemoved() && !session.runtime.invalidating.contains(discovery.location.conveyor)) {
+            if(ServerConfig.packageGpuAuthority && !removed && !discovery.location.conveyor.isRemoved() && !session.runtime.invalidating.contains(discovery.location.conveyor)) {
                 var identified=(PackageIdentified)discovery.box;
                 identified.cmi$packageIdentity(identity().id(),Math.incrementExact(identity().generation()));
                 session.runtime.dirty.add(discovery.location.conveyor);
@@ -99,10 +103,13 @@ public final class PackageChainAuthorityManager {
         }
     }
     private static final Map<ServerLevel,Runtime> WORLDS=new IdentityHashMap<>();
+    static boolean migrationPending(ServerLevel level){var rt=WORLDS.get(level);return rt!=null&&(!rt.retiring.isEmpty()||!ServerConfig.packageGpuAuthority&&!rt.sessions.isEmpty());}
     private PackageChainAuthorityManager() {}
     public static void register(ChainConveyorBlockEntity conveyor) {
-        if(ServerConfig.packageGpuAuthority && conveyor.getLevel() instanceof ServerLevel level)
-            WORLDS.computeIfAbsent(level,Runtime::new).scans.putIfAbsent(conveyor,new Scan(conveyor));
+        if(conveyor.getLevel() instanceof ServerLevel level){
+            var runtime=WORLDS.computeIfAbsent(level,Runtime::new);runtime.conveyors.add(conveyor);
+            if(ServerConfig.packageGpuAuthority)runtime.scans.putIfAbsent(conveyor,new Scan(conveyor));
+        }
     }
     /** Called only on a successful native append, not every tick or render. */
     public static void observe(ChainConveyorBlockEntity conveyor,ChainConveyorPackage box,BlockPos connection) {
@@ -129,6 +136,7 @@ public final class PackageChainAuthorityManager {
     }
     public static void unregister(ChainConveyorBlockEntity conveyor) {
         if(!(conveyor.getLevel() instanceof ServerLevel level))return;var runtime=WORLDS.get(level);if(runtime==null)return;
+        runtime.conveyors.remove(conveyor);
         runtime.scans.remove(conveyor);var queued=runtime.queued.remove(conveyor);if(queued!=null)for(var identity:queued)runtime.discovery.remove(identity);
         runtime.invalidating.add(conveyor);
         try{for(var session:runtime.sessions.values())for(var it=session.tracks.values().iterator();it.hasNext();) {
@@ -137,7 +145,18 @@ public final class PackageChainAuthorityManager {
     }
     @SubscribeEvent public static void tick(LevelTickEvent.Pre event) {
         if(!(event.getLevel() instanceof ServerLevel level))return;var runtime=WORLDS.get(level);if(runtime==null)return;
-        if(!ServerConfig.packageGpuAuthority){close(runtime);WORLDS.remove(level);return;}
+        boolean enabled=ServerConfig.packageGpuAuthority;
+        if(runtime.gpuMode!=enabled){
+            runtime.gpuMode=enabled;
+            if(enabled){for(var conveyor:runtime.conveyors)if(!conveyor.isRemoved())runtime.scans.put(conveyor,new Scan(conveyor));}
+            else{for(var session:runtime.sessions.values())session.retire();runtime.sessions.clear();runtime.scans.clear();runtime.discovery.clear();runtime.queued.clear();}
+        }
+        long retireDeadline=System.nanoTime()+ServerConfig.packageMainThreadBudgetNanos();int retireBudget=PackageAuthorityManager.freeMigrationPending(level)?32:64;
+        while(retireBudget>0&&!runtime.retiring.isEmpty()&&System.nanoTime()<retireDeadline&&PackageAuthorityManager.claimMigration(level)){
+            var session=runtime.retiring.peekFirst();session.authority.drainClose(1);retireBudget--;
+            if(session.authority.size()==0)runtime.retiring.removeFirst();
+        }
+        flush(runtime);if(!enabled)return;
         long tick=level.getGameTime();
         for(var it=runtime.sessions.values().iterator();it.hasNext();) {
             var session=it.next();
@@ -277,7 +296,7 @@ public final class PackageChainAuthorityManager {
         if(runtime.dirty.isEmpty())return;var dirty=new ArrayList<>(runtime.dirty);runtime.dirty.clear();
         for(var conveyor:dirty)if(!conveyor.isRemoved())conveyor.notifyUpdate();
     }
-    private static void close(Runtime runtime){try{for(var session:runtime.sessions.values())session.close();}finally{flush(runtime);}}
+    private static void close(Runtime runtime){try{for(var session:runtime.sessions.values())session.close();for(var session:runtime.retiring)session.authority.close();runtime.retiring.clear();}finally{flush(runtime);}}
     private static PackageChainSpace.Frame frame(ChainConveyorBlockEntity conveyor){
         try{return PackageChainSpace.capture(conveyor.getLevel(),conveyor.getBlockPos());}
         catch(RuntimeException|LinkageError unavailable){return null;}

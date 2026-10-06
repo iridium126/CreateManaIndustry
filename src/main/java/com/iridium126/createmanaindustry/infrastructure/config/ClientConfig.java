@@ -36,6 +36,7 @@ public final class ClientConfig {
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_PATTERN_REDIRECT;
     private static ModConfigSpec.BooleanValue PACKAGE_GPU_AUTHORITY;
     private static ModConfigSpec.DoubleValue PACKAGE_MAIN_THREAD_BUDGET_MS;
+    private static ModConfigSpec.IntValue PACKAGE_COLLISION_MAX_SECTIONS;
 
     // ---- allay dimension (ALLVR) -------------------------------------------
 
@@ -82,6 +83,9 @@ public final class ClientConfig {
         PACKAGE_MAIN_THREAD_BUDGET_MS = BUILDER
                 .comment("Maximum client main-thread time per tick for each GPU package processing pass, in milliseconds.")
                 .defineInRange("packageMainThreadBudgetMs", 10.0, 0.25, 50.0);
+        PACKAGE_COLLISION_MAX_SECTIONS = BUILDER
+                .comment("Maximum resident GPU package collision sections for this client. Independent of other players; changes apply on re-entering the world. Clamped to the device SSBO limit; light capacity is separate.")
+                .defineInRange("packageCollisionMaxSections", 256, 1, 1024);
         BUILDER.pop();
 
         BUILDER.comment("Allay dimension (ALLVR) options.").push("allvr");
@@ -106,6 +110,7 @@ public final class ClientConfig {
     public static boolean hexPatternRedirect = true;
     public static boolean packageGpuAuthority = false;
     public static double packageMainThreadBudgetMs = 10.0;
+    public static int packageCollisionMaxSections = 256;
     public static boolean allvrLod = true;
 
     private ClientConfig() {}
@@ -127,6 +132,7 @@ public final class ClientConfig {
             hexPatternRedirect = PARTICLE_HEX_PATTERN_REDIRECT.get();
             packageGpuAuthority = PACKAGE_GPU_AUTHORITY.get();
             packageMainThreadBudgetMs = PACKAGE_MAIN_THREAD_BUDGET_MS.get();
+            packageCollisionMaxSections = PACKAGE_COLLISION_MAX_SECTIONS.get();
             allvrLod = ALLVR_LOD.get();
         }
     }

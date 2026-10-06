@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-06",
+  "scope": "Client collision capacity and disable-only native package restoration",
+  "unit_tests": {
+    "tests": 499,
+    "suites": 100,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "package_gpu": {
+    "assertions": 13615504,
+    "renderer": "NVIDIA GeForce RTX 4070 Laptop GPU",
+    "opengl": "4.5",
+    "driver": "581.15",
+    "independent_atlas_capacities": [
+      1,
+      257
+    ]
+  },
+  "game_tests": {
+    "recovery": 1,
+    "existing_output": 6,
+    "failures": 0,
+    "recovery_scenarios": [
+      "64-per-level-per-tick migration cap",
+      "confirmed pose and full state",
+      "actual inventory remainder",
+      "native NBT reload",
+      "disabled ordinary creation",
+      "live disable and re-enable",
+      "canceled entity admission retry",
+      "UUID conflict",
+      "persisted record with disabled startup",
+      "unloaded record preservation and natural chunk load"
+    ]
+  },
+  "build": {
+    "success": true,
+    "sable_absent_probe": true,
+    "fixture_entries_in_release": 0,
+    "artifact": "build/libs/createmanaindustry-0.2.6.jar",
+    "sha256": "85cea18c232e38d180620483550b554980835cbcf75d79d6d0f54c739c34288e"
+  },
+  "logs": [
+    "build/package-capacity-recovery-validation.log",
+    "build/package-capacity-recovery-build.log",
+    "build/package-recovery-gametest.log",
+    "build/package-output-gametest.log"
+  ],
+  "limitations": [
+    "No two-real-client multiplayer session",
+    "No original user save recovery run"
+  ]
+}

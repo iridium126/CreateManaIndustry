@@ -195,9 +195,19 @@ public final class PackageChainAuthority {
         if(!pending.isEmpty())for(Entry entry:new ArrayList<>(pending))if(entry.lease.expired(tick))release(entry);
     }
     public void close() {
-        if(closed)return;closed=true;RuntimeException failure=null;
+        if(closed&&entries.isEmpty())return;closed=true;RuntimeException failure=null;
         for(Entry entry:new ArrayList<>(entries.values()))try{release(entry);}catch(RuntimeException error){if(failure==null)failure=error;else failure.addSuppressed(error);}
         if(failure!=null)throw failure;
+    }
+    /** Revoke packet eligibility now, restore native objects in bounded owner-thread batches. */
+    public void beginClose(){closed=true;}
+    public int drainClose(int budget){
+        if(!closed||budget<0)throw new IllegalStateException("Chain authority is not closing");
+        int count=0;RuntimeException failure=null;
+        while(count<budget&&!entries.isEmpty()){
+            count++;try{release(entries.values().iterator().next());}catch(RuntimeException error){if(failure==null)failure=error;else failure.addSuppressed(error);}
+        }
+        if(failure!=null)throw failure;return count;
     }
     private void release(Entry entry) {
         if(!identities.remove(entry.target.identity(),entry))return;

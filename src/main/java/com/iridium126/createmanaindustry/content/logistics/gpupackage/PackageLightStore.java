@@ -11,7 +11,7 @@ import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.phys.AABB;
 
 /** Durable package backing records, outside entity ticking, collision and native tracking.
- * Position updates touch one spatial bucket. Gameplay never constructs a replacement entity. */
+ * Position updates touch one spatial bucket. Only disabling server authority restores entities. */
 public final class PackageLightStore extends SavedData {
     private static final Factory<PackageLightStore> FACTORY=new Factory<>(PackageLightStore::new,PackageLightStore::load,null);
     public static final class Entry {
@@ -54,7 +54,7 @@ public final class PackageLightStore extends SavedData {
     public Entry capture(PackageEntity entity,PackageLease.Identity identity,PackageAuthorityRegion.Snapshot state) {
         var data=new CompoundTag();entity.saveWithoutId(data);
         var entry=new Entry(identity,entity.getUUID(),BuiltInRegistries.ITEM.getKey(entity.box.getItem()),
-                entity.getBbWidth(),entity.getBbHeight(),entity.getId(),data,state);entry.insertionDelay=entity.insertionDelay;entry.health=entity.getHealth();entry.fireTicks=Math.max(0,entity.getRemainingFireTicks());entry.portalCooldown=entity.getPortalCooldown();entry.portalUpdatedTick=entity.level().getGameTime();var thrower=entity.tossedBy.get();if(thrower!=null)entry.tossedBy=thrower.getUUID();put(entry);return entry;
+                entity.getBbWidth(),entity.getBbHeight(),entity.getId(),data,state);entry.insertionDelay=entity.insertionDelay;entry.health=entity.getHealth();entry.fireTicks=Math.max(0,entity.getRemainingFireTicks());entry.portalCooldown=entity.getPortalCooldown();entry.portalUpdatedTick=entity.level().getGameTime();entry.tossedBy=((PackageInitialEntityAccess)entity).cmi$tossedBy();put(entry);return entry;
     }
     void put(Entry entry) {
         if(entries.containsKey(entry.identity)||uuids.containsKey(entry.uuid)||entry.entityId>=0&&ids.containsKey(entry.entityId))

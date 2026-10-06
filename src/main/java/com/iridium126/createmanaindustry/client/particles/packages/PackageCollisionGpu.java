@@ -50,6 +50,13 @@ public final class PackageCollisionGpu implements AutoCloseable {
     private boolean closed,viewOpen,failed;
 
     public PackageCollisionGpu(int capacity,int shapes){this(capacity,shapes,System::nanoTime);}
+    /** Both visible and replacement slots must fit in one SSBO. No GL calls for policy tests. */
+    public static int deviceCapacity(int requested,int shapes,long maximumBlockBytes) {
+        if(requested<1||requested>1024||shapes<1||shapes>PackageCollisionCache.MAX_GPU_SHAPES)
+            throw new IllegalArgumentException("World atlas capacity");
+        long perSection=2L*(CELL_BYTES+shapes*32L);
+        return (int)Math.max(0,Math.min(requested,Math.min(Integer.MAX_VALUE,maximumBlockBytes)/perSection));
+    }
     public PackageCollisionGpu(int capacity,int shapes,LongSupplier clock) {
         if(capacity<=0 || capacity>1024 || shapes<=0 || shapes>PackageCollisionCache.MAX_GPU_SHAPES)
             throw new IllegalArgumentException("World atlas capacity");

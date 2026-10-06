@@ -16,6 +16,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
+import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
@@ -46,6 +47,13 @@ public final class PackageAuthorityManager {
     private static final class Runtime {
         final PackageLightStore light;
         boolean unloading;
+        boolean gpuMode=ServerConfig.packageGpuAuthority;
+        final LinkedHashMap<PackageLease.Identity,PackageLightStore.Entry> restoration=new LinkedHashMap<>();
+        final Set<PackageLease.Identity> restorationFailures=new HashSet<>();
+        final Map<UUID,PackageEntity> nativePackages=new LinkedHashMap<>();
+        final Set<UUID> nativeCapture=new LinkedHashSet<>();
+        long migrationTick=Long.MIN_VALUE;
+        int migrations;
         final Set<EntityTarget> changed=new LinkedHashSet<>();
         final Set<EntityTarget> voidPackages=new LinkedHashSet<>();
         final ArrayDeque<PackageAuthorityRegion> closingRegions=new ArrayDeque<>();
@@ -67,7 +75,7 @@ public final class PackageAuthorityManager {
         final ArrayList<PackageDeltaCodec.Entry> deltaScratch=new ArrayList<>(512);
         final PackageAuthorityRegion.DeltaWorkspace deltaWorkspace=new PackageAuthorityRegion.DeltaWorkspace();
         boolean closing;
-        Runtime(ServerLevel level){this.level=level;light=PackageLightStore.get(level);long maximum=0;for(var entry:light.entries()){maximum=Math.max(maximum,entry.identity.id());if(level.hasChunkAt(net.minecraft.core.BlockPos.containing(entry.position())))activate(this,entry);}if(maximum>0)PackageIdentityData.get(level).observe(maximum);}
+        Runtime(ServerLevel level){this.level=level;light=PackageLightStore.get(level);long maximum=0;for(var entry:light.entries()){maximum=Math.max(maximum,entry.identity.id());if(level.hasChunkAt(net.minecraft.core.BlockPos.containing(entry.position()))){activate(this,entry);if(!gpuMode)restoration.put(entry.identity,entry);}}if(maximum>0)PackageIdentityData.get(level).observe(maximum);}
     }
     private static final class EntityTarget implements PackageAuthorityRegion.Target {
         final PackageLightStore.Entry light;
@@ -120,10 +128,14 @@ public final class PackageAuthorityManager {
         if(event.getEntity() instanceof PackageEntity entity && event.getLevel() instanceof ServerLevel level) {
             if(!((PackageInitialEntityAccess)entity).cmi$validInitialEntity()){event.setCanceled(true);return;}
             var identity=identity(entity,level);
-            Runtime rt=runtime(level);var backing=rt.light.byIdentity(identity);
+            Runtime rt=runtime(level);
+            if(PackageLightRestoration.joining(level,entity,rt.light)){rt.nativePackages.put(entity.getUUID(),entity);return;}
+            var backing=rt.light.byUuid(entity.getUUID());
             // SavedData is authoritative after transfer. An old entity chunk must not duplicate it.
-            if(backing!=null&&backing.uuid.equals(entity.getUUID())){event.setCanceled(true);entity.discard();return;}
+            if(backing!=null){if(!ServerConfig.packageGpuAuthority)rt.restoration.put(backing.identity,backing);event.setCanceled(true);entity.discard();return;}
+            backing=rt.light.byIdentity(identity);
             if(backing!=null){entity.getPersistentData().putLong(ID,PackageIdentityData.get(level).identity());identity=identity(entity,level);}
+            if(!ServerConfig.packageGpuAuthority){rt.nativePackages.put(entity.getUUID(),entity);return;}
             {
                 // A duplicated external save tag gets a fresh identity, never aliases another live entity.
                 if(rt.identities.containsKey(identity)) {
@@ -139,11 +151,67 @@ public final class PackageAuthorityManager {
                 event.setCanceled(true);entity.discard();}
         }
     }
+    @SubscribeEvent public static void onEntityLeave(EntityLeaveLevelEvent event) {
+        if(event.getEntity() instanceof PackageEntity entity&&event.getLevel() instanceof ServerLevel level){
+            var rt=WORLDS.get(level);if(rt!=null&&rt.nativePackages.remove(entity.getUUID(),entity))rt.nativeCapture.remove(entity.getUUID());
+        }
+    }
+    private static void switchMode(Runtime rt) {
+        boolean enabled=ServerConfig.packageGpuAuthority;if(enabled==rt.gpuMode)return;
+        rt.gpuMode=enabled;
+        if(enabled){rt.restoration.clear();rt.restorationFailures.clear();rt.nativeCapture.addAll(rt.nativePackages.keySet());}
+        else{
+            close(rt);rt.regions.clear();rt.closing=false;rt.nativeCapture.clear();
+            for(var entry:rt.light.entries())if(rt.level.hasChunkAt(net.minecraft.core.BlockPos.containing(entry.position())))rt.restoration.put(entry.identity,entry);
+        }
+    }
+    private static void pumpNativeCapture(Runtime rt) {
+        long deadline=System.nanoTime()+ServerConfig.packageMainThreadBudgetNanos();int budget=PackageChainAuthorityManager.migrationPending(rt.level)?32:64;
+        while(budget-->0&&!rt.nativeCapture.isEmpty()&&System.nanoTime()<deadline&&claimMigration(rt.level)){
+            var it=rt.nativeCapture.iterator();var uuid=it.next();it.remove();var entity=rt.nativePackages.get(uuid);
+            if(entity==null||entity.isRemoved()||rt.level.getEntity(uuid)!=entity){rt.nativePackages.remove(uuid);continue;}
+            try{
+                if(!((PackageInitialEntityAccess)entity).cmi$validInitialEntity())continue;
+                if(rt.light.byUuid(uuid)!=null)continue;
+                var identity=identity(entity,rt.level);long generation=Math.incrementExact(identity.generation());
+                entity.getPersistentData().putLong(GENERATION,generation);identity=new PackageLease.Identity(identity.id(),generation);
+                var v=entity.getDeltaMovement();var p=new PackageLease.Pose(entity.getX(),entity.getY(),entity.getZ(),(float)(v.x*20),(float)(v.y*20),(float)(v.z*20),entity.getYRot());
+                var entry=rt.light.capture(entity,identity,new PackageAuthorityRegion.Snapshot(p,entity.onGround()?PackageAuthorityRegion.GROUNDED:0));
+                // The durable record exists before the native entity is removed from tracking.
+                activate(rt,entry);rt.changed.add(rt.identities.get(identity));rt.nativePackages.remove(uuid);entity.discard();
+            }catch(RuntimeException failure){rt.nativeCapture.add(uuid);CreateManaIndustry.LOGGER.warn("[CMI packages] native capture deferred for {}",uuid,failure);}
+        }
+    }
+    private static void pumpRestoration(Runtime rt) {
+        long deadline=System.nanoTime()+ServerConfig.packageMainThreadBudgetNanos();int budget=PackageChainAuthorityManager.migrationPending(rt.level)?32:64;
+        while(budget-->0&&!rt.restoration.isEmpty()&&System.nanoTime()<deadline&&claimMigration(rt.level)){
+            var it=rt.restoration.values().iterator();var entry=it.next();it.remove();
+            if(rt.light.byIdentity(entry.identity)!=entry||!rt.level.hasChunkAt(net.minecraft.core.BlockPos.containing(entry.position())))continue;
+            try{
+                var target=rt.identities.get(entry.identity);if(target!=null)release(target,rt.level.getGameTime());
+                var restored=PackageLightRestoration.restore(rt.level,entry);
+                if(restored!=null){consumeLight(rt.level,entry);rt.restorationFailures.remove(entry.identity);continue;}
+                if(rt.restorationFailures.add(entry.identity))CreateManaIndustry.LOGGER.warn("[CMI packages] package restoration deferred (entity admission or UUID conflict): {}",entry.uuid);
+            }catch(RuntimeException failure){if(rt.restorationFailures.add(entry.identity))CreateManaIndustry.LOGGER.warn("[CMI packages] package restoration deferred for {}",entry.uuid,failure);}
+            rt.restoration.put(entry.identity,entry);
+        }
+    }
+    static boolean freeMigrationPending(ServerLevel level){
+        var rt=WORLDS.get(level);return rt!=null&&(ServerConfig.packageGpuAuthority?
+                !rt.nativeCapture.isEmpty()||!rt.gpuMode&&!rt.nativePackages.isEmpty():!rt.restoration.isEmpty()||rt.gpuMode&&!rt.lightTargets.isEmpty());
+    }
+    static boolean claimMigration(ServerLevel level){
+        var rt=runtime(level);long tick=level.getGameTime();if(rt.migrationTick!=tick){rt.migrationTick=tick;rt.migrations=0;}
+        if(rt.migrations>=64)return false;rt.migrations++;return true;
+    }
     @SubscribeEvent public static void onTick(LevelTickEvent.Pre event) {
         if(!(event.getLevel() instanceof ServerLevel level))return;
         Runtime rt=runtime(level);
+        switchMode(rt);
+        pumpChunkChanges(rt);
+        if(!rt.gpuMode){pumpRestoration(rt);return;}
+        pumpNativeCapture(rt);
         drainVoid(rt);
-        if(!ServerConfig.packageGpuAuthority&&!rt.regions.isEmpty()){close(rt);rt.regions.clear();rt.closing=false;}
         long tick=level.getGameTime();
         for(Iterator<PackageAuthorityRegion> it=rt.regions.values().iterator();it.hasNext();) {
             var region=it.next();
@@ -164,7 +232,6 @@ public final class PackageAuthorityManager {
             var retired=rt.closingRegions.peekFirst();retireBudget-=retired.drainClose(1);
             if(retired.size()==0)rt.closingRegions.removeFirst();
         }
-        pumpChunkChanges(rt);
         publishLight(rt);
         pumpObservers(rt);
         if(rt.peers.isEmpty()||!ServerConfig.packageGpuAuthority)return;
@@ -344,8 +411,11 @@ public final class PackageAuthorityManager {
         int required=ServerboundPackagePacket.FREE_READY|ServerboundPackagePacket.WIDE_VELOCITY;
         return peer!=null&&(peer.flags&required)==required;
     }
+    static boolean acceptsClientAction(boolean enabled,int action){return enabled||action==ServerboundPackagePacket.CAPABILITIES;}
     public static void receive(ServerboundPackagePacket packet,IPayloadContext context) {
-        if(!(context.player() instanceof ServerPlayer player) || !ServerConfig.packageGpuAuthority)return;
+        // Readiness may arrive while disabled. Remember it for a later live enable,
+        // but never accept ownership, motion or environment mutations in native mode.
+        if(!(context.player() instanceof ServerPlayer player) || !acceptsClientAction(ServerConfig.packageGpuAuthority,packet.action()))return;
         Runtime rt=runtime(player.serverLevel());long tick=rt.level.getGameTime();
         Peer peer=rt.peers.computeIfAbsent(player.getUUID(),id->new Peer());
         if(peer.tick!=tick){peer.tick=tick;peer.messages=peer.environmentMessages=0;peer.controlRecords=peer.environmentRecords=0;peer.environmentNanos=0;}
@@ -529,7 +599,7 @@ public final class PackageAuthorityManager {
             var latest=rt.chunkChanges.remove(rt.chunkWorking);if(latest!=null){rt.chunkLoading=latest;rt.chunkWork=rt.light.inChunk(rt.chunkWorking).iterator();}
             if(!rt.chunkWork.hasNext()){rt.chunkWork=null;continue;}
             var entry=rt.chunkWork.next();if(rt.light.byIdentity(entry.identity)!=entry||!new net.minecraft.world.level.ChunkPos(net.minecraft.core.BlockPos.containing(entry.position())).equals(rt.chunkWorking))continue;
-            if(rt.chunkLoading){if(rt.level.hasChunkAt(net.minecraft.core.BlockPos.containing(entry.position())))activate(rt,entry);}
+            if(rt.chunkLoading){if(rt.level.hasChunkAt(net.minecraft.core.BlockPos.containing(entry.position()))){activate(rt,entry);if(!rt.gpuMode)rt.restoration.put(entry.identity,entry);}}
             else{var target=rt.identities.remove(entry.identity);if(target!=null&&target.light==entry){release(target,rt.level.getGameTime());rt.discovery.remove(entry.identity);removeLight(rt,target);rt.changed.remove(target);withdrawVisual(rt,entry);}}
         }
     }
@@ -546,6 +616,7 @@ public final class PackageAuthorityManager {
     static void pauseForTransfer(ServerLevel level,PackageLightStore.Entry entry){var t=runtime(level).identities.get(entry.identity);if(t!=null){release(t,level.getGameTime());t.retry=level.getGameTime();}}
     public static boolean consumeLight(ServerLevel level,PackageLightStore.Entry entry){
         var rt=runtime(level);if(rt.light.byIdentity(entry.identity)!=entry)return false;
+        rt.restoration.remove(entry.identity);rt.restorationFailures.remove(entry.identity);
         var target=rt.identities.remove(entry.identity);if(target!=null){release(target,level.getGameTime());removeLight(rt,target);rt.changed.remove(target);}rt.discovery.remove(entry.identity);rt.light.remove(entry);withdrawVisual(rt,entry);return true;
     }
     private static ClientboundLightPackagePacket.Row visual(PackageLightStore.Entry entry){return new ClientboundLightPackagePacket.Row(entry.identity,false,entry.model,entry.width,entry.height,entry.state().pose());}

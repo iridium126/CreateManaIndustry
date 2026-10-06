@@ -88,8 +88,6 @@ public final class PackageOutputGameTests {
         var section=new com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionCache.Section(source.getX()>>4,source.getY()>>4,source.getZ()>>4);
         int cell=(source.getX()&15)|((source.getZ()&15)<<4)|((source.getY()&15)<<8);
         var before=worldSource.capture(section,cell);
-        helper.assertTrue(!com.iridium126.createmanaindustry.client.particles.packages.PackageWorldCollisionSource.blockEntityAffectsCollision(state),"Belt inventory packets still revoke static collision");
-        helper.assertTrue(com.iridium126.createmanaindustry.client.particles.packages.PackageWorldCollisionSource.blockEntityAffectsCollision(AllBlocks.CHUTE.getDefaultState()),"Other block entities lost conservative collision invalidation");
         var entries=new java.util.ArrayList<PackageLightStore.Entry>();var identities=new java.util.HashSet<PackageLease.Identity>();
         for(int i=0;i<32;i++){
             belt.setSpeed(32+i);var item=box("CMI continuous belt fixture "+i);

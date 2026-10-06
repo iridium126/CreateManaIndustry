@@ -6,6 +6,14 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PackageChainAuthorityTest {
+    @Test void disabledAuthorityRevokesImmediatelyAndRestoresAtMostTheRequestedBatch(){
+        var core=core();var targets=new ArrayList<Target>();
+        for(int i=0;i<65;i++){var target=new Target(i+1);targets.add(target);acquire(core,target,0,i);}
+        core.beginClose();assertTrue(core.closed());assertFalse(core.heartbeat(OWNER,core.epoch(),0));
+        assertEquals(64,core.drainClose(64));assertEquals(1,core.size());assertEquals(64,targets.stream().filter(t->t.releases==1).count());
+        core.close();assertEquals(0,core.size());assertTrue(targets.stream().allMatch(t->t.releases==1&&t.frozenRelease));
+        assertEquals(0,core.drainClose(64));
+    }
     @Test void productionHeartbeatGraceAtTwoHundredTpsDoesNotCloseBetweenRenderFrames(){
         var core=new PackageChainAuthority(OWNER,19,0,PackageLease.AUTHORITY_HEARTBEAT_TIMEOUT_TICKS,()->200);
         for(int tick=0;tick<=1000;tick+=40){assertTrue(core.heartbeat(OWNER,19,tick));core.tick(tick);assertFalse(core.closed());}

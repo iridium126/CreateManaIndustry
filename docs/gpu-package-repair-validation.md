@@ -4,6 +4,8 @@
 
 ## 最新验证
 
+客户端碰撞 section 容量与服务端关闭接管后的原生恢复已实施，见[配置与恢复记录](gpu-package-capacity-recovery-2026-10-06.md)及[测试摘要](benchmarks/package-capacity-recovery-2026-10-06/tests.json)。499 项单元测试、13,615,504 项完整 GPU 断言、7 项真实 Create/NeoForge GameTest 和正式构建通过；支持分批双向切换、失败重试及区块自然加载恢复，发布 JAR 不含夹具。
+
 复杂邻接 section 中从分散网风场向 Sable 风场水平跨界的停顿路径已修复，见[共享预算与组合回归记录](gpu-package-mixed-section-pause-fix-2026-10-06.md)。结构发现现在先于可选光照工作，避免光照耗尽预算后留下不可回放的结构历史空缺；全驻留的 contraption／Sable／分散网组合 GPU 场景连续跨界。493 项单元测试、13,615,496 项完整 GPU 断言和正式构建通过，尚未复测用户原存档画面。
 
 Sable 结构内无喷嘴竖直鼓风机的跨 section 停顿已修复，见[上行预取修复记录](gpu-package-sable-vertical-fan-section-fix-2026-10-06.md)。预取现在同时覆盖持续上行范围和重力轨迹，避免慢速上升时遗漏上方 section；旧路径的边界冻结已在真实 GPU 夹具中复现。491 项单元测试、13,615,418 项完整 GPU 断言、122 项预取断言及正式构建通过，尚未复测用户原存档画面。

@@ -24,6 +24,8 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
     private static final int MAX_SECTIONS=1024,MAX_REQUEST_SECTIONS=64;
     private static volatile PackageCollisionRuntime current;
     private final ClientLevel level;
+    private final int configuredSections;
+    private int allocatedSections;
     private final ExecutorService workers;
     private final PackageCollisionCache cache;
     private final PackageWorldCollisionSource source;
@@ -50,6 +52,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
 
     private PackageCollisionRuntime(ClientLevel level) {
         this.level=level;
+        configuredSections=ClientConfig.packageCollisionMaxSections;
         workers=Executors.newFixedThreadPool(2,task->{
             Thread thread=new Thread(task,"CMI package collision bake");thread.setDaemon(true);return thread;
         });
@@ -201,7 +204,10 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         if(Minecraft.getInstance().level!=current.level){closeCurrent();return true;}
         try {
             if(current.collisionRequested && current.gpu==null) {
-                current.gpu=new PackageCollisionGpu(PackageCollisionGpu.DEFAULT_SECTIONS,PackageCollisionGpu.DEFAULT_SHAPES);
+                current.allocatedSections=PackageCollisionGpu.deviceCapacity(current.configuredSections,PackageCollisionGpu.DEFAULT_SHAPES,
+                        org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE));
+                if(current.allocatedSections==0)throw new IllegalStateException("Device cannot fit one package collision section");
+                current.gpu=new PackageCollisionGpu(current.allocatedSections,PackageCollisionGpu.DEFAULT_SHAPES);
                 current.cache.forEachReady(current.gpu::offer);
             }
             if(current.collisionRequested) {
@@ -294,7 +300,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         owner();if(current==null)return "Package collisions: inactive";
         String gpuStatus=current.gpu==null?"GPU "+(!current.gpuError.isEmpty()?current.gpuError:!current.collisionRequested?"collision atlas not requested":current.gpuRequested?"queued":"inactive"):
                 gpuReport(current.gpu.stats());
-        return "Package collisions: "+current.cache.readyCount()+"/"+current.cache.size()+" CPU sections ready, capture "
+        return "Package collisions: configured/allocated capacity="+current.configuredSections+"/"+current.allocatedSections+"; "+current.cache.readyCount()+"/"+current.cache.size()+" CPU sections ready, capture "
                 +String.format(java.util.Locale.ROOT,"%.3f",current.cache.lastCaptureNanos()/1_000_000.0)
                 +" ms, p50/p95 "+String.format(java.util.Locale.ROOT,"%.3f/%.3f",current.cache.capturePercentile(.5)/1_000_000.0,current.cache.capturePercentile(.95)/1_000_000.0)
                 +String.format(java.util.Locale.ROOT," ms (%.3f ms soft budget), overruns ",ClientConfig.packageMainThreadBudgetMs)+current.cache.overrunCount()+", LRU evictions/rejects "+current.cache.capacityEvictions()+"/"+current.cache.capacityRejections()

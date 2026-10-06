@@ -3,7 +3,6 @@ package com.iridium126.createmanaindustry.mixin.packages;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageAuthorityManager;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageChainAuthorityManager;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageChainClientHooks;
-import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorBlockEntity;
 import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorPackage;
 import net.minecraft.core.HolderLookup;
@@ -26,7 +25,6 @@ public abstract class ChainIdentityLifecycleMixin {
         var self=(ChainConveyorBlockEntity)(Object)this;
         if(self.getLevel()==null)return;
         if(self.getLevel() instanceof ServerLevel) {
-            if(!ServerConfig.packageGpuAuthority)return;
             PackageChainAuthorityManager.register(self);
         }
         cmi$identitiesInitialized=true;
