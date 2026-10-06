@@ -476,8 +476,8 @@ public final class PackageAuthorityManager {
                             !region.environmentReachable(event.identity(),sample.step(),tick,contactPose)?"contact outside pose reach":
                             PackageLightGameplay.environmentRejection(rt.level,target.light,region.region(),sample);
                     if(rejection!=null){
-                        CreateManaIndustry.LOGGER.debug("[CMI packages] rejected environment reason={} identity={} step={} ticks={} previousStep={} contact={} block={} pose={},{},{} committed={} dimensions={}x{} region={}",
-                                rejection,event.identity(),sample.step(),sample.ticks(),target.environmentSimulationStep,sample.contact(),sample.block(region.region()),sample.px(),sample.py(),sample.pz(),baseline.snapshot().pose(),target.light.width,target.light.height,region.region());
+                        CreateManaIndustry.LOGGER.debug("[CMI packages] rejected environment reason={} identity={} step={} ticks={} previousStep={} poseStep={} historyTicks={} contact={} block={} pose={},{},{} committed={} dimensions={}x{} region={}",
+                                rejection,event.identity(),sample.step(),sample.ticks(),target.environmentSimulationStep,region.confirmedSimulationStep(event.identity()),region.historyTicks(),sample.contact(),sample.block(region.region()),sample.px(),sample.py(),sample.pz(),baseline.snapshot().pose(),target.light.width,target.light.height,region.region());
                         region.release(event.identity());return;
                     }
                     if(target.environmentOriginStep==0){target.environmentOriginStep=sample.step();target.environmentOriginTick=tick;}

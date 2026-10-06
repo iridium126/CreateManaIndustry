@@ -1664,12 +1664,12 @@ public class PackageGpuValidation {
         }
     }
     static void localBudgetRetry(){
-        int n=8202;try(var gpu=new PackagePhysicsGpu(n,2,PackageGpuValidation::source)){
+        int n=20000;try(var gpu=new PackagePhysicsGpu(n,2,PackageGpuValidation::source)){
             var data=bodies(n);for(int i=0;i<n;i++)body(data,i,4,4,4,i==n-1?1:0);gpu.upload(data,n);gpu.step(.05f);
-            var r=read(gpu);check(r.getFloat((n-1)*64+60)==PackagePhysicsGpu.COLLISION_FROZEN,"candidate budget did not pause locally");
-            check(r.getFloat((n-1)*64+4)==4,"budget exhaustion lost the last stable position");
+            var r=read(gpu);check(r.getFloat((n-1)*64+60)>=0,"dense candidate query froze instead of resolving exact contacts");
+            check(Math.abs(r.getFloat((n-1)*64+4)-3)<1e-3,"dense candidate fallback lost its static contact: y="+r.getFloat((n-1)*64+4));
             for(int i=0;i<n-1;i++)gpu.retire(i);gpu.step(.05f);r=read(gpu);
-            check(r.getFloat((n-1)*64+60)>=0&&r.getFloat((n-1)*64+4)<4,"local pause did not retry after congestion cleared");
+            check(r.getFloat((n-1)*64+60)>=0&&r.getFloat((n-1)*64+4)<3,"resolved dense contact did not fall after support removal");
         }
     }
     static void environmentRegression(){
@@ -2140,6 +2140,48 @@ public class PackageGpuValidation {
             }
         }
     }
+    static void delayedMachineEnvironmentConfirmations() {
+        var air=snapshot((s,i)->WORLD_AIR);
+        var machine=snapshot((s,i)->i==(5|5<<4|4<<8)?new PackageCollisionCache.Cell(List.of(
+                new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,16):i>>>8==0?shape(1,.6f):WORLD_AIR);
+        var owner=new UUID(7,9);var target=new ChannelTarget(0);
+        target.state=new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(5.5,5,5.5,12,0,0,0),0);
+        var region=PackageRegion.at(target.state.pose());var server=new PackageAuthorityRegion(region,owner,70,1,0);
+        var offer=server.offer(target,0);var baseline=server.prepared(owner,70,offer.index(),target.identity,offer.leaseEpoch(),offer.revision(),0);
+        check(server.finalReady(owner,70,baseline.index(),target.identity,baseline.leaseEpoch(),baseline.revision(),0),"delayed environment admission");
+        try(var world=new PackageCollisionGpu(27,1);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)) {
+            cubeWorld(world,air,machine,0,0,0);var env=gpu.enableEnvironment(PackageGpuValidation::source);
+            env.reset(0,target.identity.id(),target.identity.generation(),baseline.leaseEpoch(),baseline.index(),baseline.revision(),0,5,7);
+            var b=bodies(1);body(b,0,5.5f,5.5f,5.5f,1);b.putFloat(16,12);gpu.upload(b,1);
+            for(int step=1;step<=50;step++) {
+                try(var view=world.view(0,0,0)){gpu.stepWorldMoving(view,PackagePhysicsGpu.ITERATIONS,List.of());}
+                if(step==1||step==50) {
+                    var r=read(gpu);var pose=new PackageLease.Pose(r.getFloat(0),r.getFloat(4)-.5,r.getFloat(8),
+                            r.getFloat(16),r.getFloat(20),r.getFloat(24),r.getFloat(44));
+                    var quantized=PackageDeltaCodec.quantize(pose,region.originX(),region.originY(),region.originZ(),0);
+                    check(server.deltaStepped(owner,70,1,step==1?1:2,step,
+                            List.of(new PackageDeltaCodec.Entry(baseline.index(),15,quantized)),4,0,step)==PackageAuthorityRegion.Result.ACCEPTED,
+                            "pose confirmation ahead of delayed machine journal");
+                }
+            }
+            check(env.capture(1),"delayed machine journal capture");GL11.glFinish();
+            var events=new ArrayList<com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent>();
+            env.poll(bytes->events.add(com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent.decode(
+                    com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent.regionPayload(bytes,0,0,0,region))));
+            check(events.size()==1,"delayed machine journal lost its unacknowledged contact");var event=events.getFirst();
+            check(event.first()==0&&event.samples().getFirst().step()<50-server.historyTicks(),"fixture did not retain a contact older than pose history");
+            for(var sample:event.samples()) {
+                var contact=new PackageLease.Pose(region.originX()+sample.px(),region.originY()+sample.py()-.5,region.originZ()+sample.pz(),0,0,0,0);
+                check(sample.contact()==8&&server.environmentReachable(event.identity(),sample.step(),50,contact),
+                        "valid delayed GPU machine contact rejected against newer committed pose");
+            }
+            env.acknowledge(0,event.through(),0,5,7);
+            check(readBuffer(env.headerBuffer(),64).getInt(28)==event.through(),"delayed machine journal ACK did not advance");
+            check(env.capture(1),"acknowledged journal recapture");GL11.glFinish();
+            env.poll(bytes->{throw new AssertionError("acknowledged delayed machine contact was replayed");});
+            check(server.simulatedCount()==1&&target.releases==0,"valid delayed machine contact revoked GPU ownership");
+        }
+    }
     static void machineOutputProgress() {
         var air=snapshot((s,i)->WORLD_AIR);
         int sourceIndex=5|5<<4|4<<8;
@@ -2369,6 +2411,144 @@ public class PackageGpuValidation {
         }
         }
     }
+    static void complexResidentNozzleProgress() {
+        for(boolean stationary:new boolean[]{false,true}) {
+        for(int count:new int[]{65,20000}) {
+        for(boolean suction:new boolean[]{false,true}) {
+            var air=snapshot((s,i)->WORLD_AIR);
+            var staticFanCells=snapshot((s,i)->i==(8|8<<4)?shape(1,.6f):WORLD_AIR);
+            var staticNozzleCells=snapshot((s,i)->i==(8<<4)?shape(1,.6f):WORLD_AIR);
+            double startAngle=stationary?.3:0,initialSin=Math.sin(startAngle),initialCos=Math.cos(startAngle);
+            var panel=new MovingSource(1,-96,-128,-.5f,96,128,.5f);
+            panel.previous=panel.current=movingPose(8,8,8,startAngle,1,1,1);
+            var contraption=new MovingSource(-1,-1,-1,1,1,1);
+            contraption.previous=contraption.current=movingPose(24,16,24,.1,1,1,1);
+            var moving=movingCache(panel,contraption);
+            double px=20480000,py=2147483500,pz=-20480000;
+            var frame=new PackageForceScene.Frame(panel.current,px,py,pz);
+            var nozzle=new PackageForceScene.Source(PackageForceScene.NOZZLE,px-8,py-3,pz-7.5,
+                    px+8,py+13,pz+8.5,px,py+5,pz+.5,1/32f,-1,0,0,16).framed(frame);
+            var fan=new PackageForceScene.Source(PackageForceScene.FAN,0,0,7,16,64,10,8,0,8.8325,.1f,0,1,0,32);
+            var staticNozzle=new PackageForceScene.Source(PackageForceScene.NOZZLE,-16,0,-7.2,16,32,24.9,
+                    0,16,8.8325,1/32f,1,0,0,32);
+            var framedFan=new PackageForceScene.Source(PackageForceScene.FAN,px-8,py-8,pz-.1,px+8,py+56,pz+2,
+                    px,py-8,pz+.8325,.1f,0,1,0,32).framed(frame);
+            // Fixture-only marker identifies conservative advancement exhaustion;
+            // production collision math and the body ABI remain unchanged.
+            java.util.function.Function<String,String> diagnostic=name->source(name).replace(
+                    "if(!done){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);",
+                    "if(!done){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);b.extentYaw.w=32.;");
+            int maxX=count==65?3:4,maxY=count==65?3:6,columns=count==65?8:100;
+            try(var world=new PackageCollisionGpu((maxX+2)*(maxY+2)*3,1);var atlas=new PackageMovingCollisionGpu();
+                var gpu=new PackagePhysicsGpu(count,2,diagnostic);var forces=new PackageForceGpu()) {
+                for(int x=-1;x<=maxX;x++)for(int y=-1;y<=maxY;y++)for(int z=-1;z<=1;z++)world.offer(new PackageCollisionCache.Section(x,y,z),
+                        x==0&&z==0?(y==0?staticFanCells:y==1?staticNozzleCells:air):air);
+                uploadWorld(world);atlas.sync(moving.entries());atlas.pump(262144,Long.MAX_VALUE);
+                var b=bodies(count);
+                for(int i=0;i<count;i++) {
+                    double localX=(i%columns)*.66,localZ=.5+.3125*(Math.abs(initialSin)+Math.abs(initialCos))
+                            +(suction?.0004:.02)+(i/(columns*100))*.66;
+                    int at=i*64;body(b,i,(float)(8+initialCos*localX+initialSin*localZ),13.5f+(i/columns%100)*.79f,
+                            (float)(8-initialSin*localX+initialCos*localZ),1);
+                    b.putFloat(at+32,.3125f).putFloat(at+36,.375f).putFloat(at+40,.3125f);
+                    if(!suction)b.putFloat(at+20,80);
+                }
+                // A separate real package hits and then rides the Create source,
+                // so the mixed scene exercises contacts in both structure kinds.
+                int contactProbe=(count-1)*64;body(b,count-1,24,18,24,1);
+                b.putFloat(contactProbe+32,.3125f).putFloat(contactProbe+36,.375f).putFloat(contactProbe+40,.3125f).putFloat(contactProbe+20,-30);
+                gpu.upload(b,count);float previous=13.5f;
+                for(int tick=0;tick<3;tick++) {
+                    panel.previous=panel.current;panel.current=movingPose(8,8,8,stationary?startAngle:(tick+1)*.001,1,1,1);
+                    contraption.previous=contraption.current;contraption.current=movingPose(24,16,24,.1+(tick+1)*.001,1,1,1);
+                    var tickFrame=new PackageForceScene.Frame(panel.current,px,py,pz);
+                    var scene=PackageForceScene.bake(tick,suction?List.of(nozzle.framed(tickFrame)):
+                            List.of(fan,staticNozzle,framedFan.framed(tickFrame),nozzle.framed(tickFrame)),0,0,0);
+                    moving.tick(0);var views=atlas.views(moving.entries(),moving.posesReady(),0,0,0);
+                    try(var view=world.view(0,0,0);var force=forces.view(scene,tick)) {
+                        gpu.applyForces(force,.05f,view);gpu.stepWorldMoving(view,PackagePhysicsGpu.ITERATIONS,views);
+                    }finally{atlas.endViews(views);}
+                    var r=read(gpu);
+                    double angle=stationary?startAngle:(tick+1)*.001,s=Math.sin(angle),c=Math.cos(angle);
+                    for(int i=0;i<count;i++) {
+                        int at=i*64;
+                        check(r.getFloat(at+60)>=0,"complex resident scene froze stationary="+stationary+" count="+count+" suction="+suction+" tick="+tick+" body="+i+" marker="+r.getFloat(at+44));
+                        double side=s*(r.getFloat(at)-8)+c*(r.getFloat(at+8)-8);
+                        check(Math.abs(side)-.5-Math.abs(s)*.3125-Math.abs(c)*.3125>-.0004,
+                                "complex scene penetrated the independently checked Sable face count="+count+" body="+i);
+                    }
+                    check(referenceMovingGap(r.getFloat(contactProbe),r.getFloat(contactProbe+4),r.getFloat(contactProbe+8),
+                            .3125f,.375f,.3125f,contraption)>-.0004,"complex scene lost the real Create structure contact");
+                    float next=r.getFloat(4);
+                    check(suction?next<previous:next>previous,"complex resident scene stopped its free motion suction="+suction+" tick="+tick);
+                    previous=next;
+                }
+                if(!suction)check(previous>16,"complex resident crowd did not cross y=16");
+            }
+        }
+        }
+        }
+    }
+    static void movingAdvanceSafety() {
+        int prepare=compute(source("packages/moving_prepare.comp"));
+        int probe=compute(source("packages/moving.glsl")+"""
+                layout(local_size_x=1) in;
+                layout(std430,binding=11) buffer AdvanceResult { vec4 result; };
+                uniform vec3 uInitial,uMotion,uExtent;
+                uniform float uTime;
+                void main(){vec3 normal;float gap=movingGap(uInitial+uMotion*uTime,uExtent,movingNodes[0],uTime,normal);
+                    result=vec4(gap,movingFaceAdvance(uInitial,uMotion,uExtent,movingNodes[0],uTime,0.),0,0);}
+                """);
+        var shape=new MovingSource(-4,-4,-.25f,4,4,.25f);
+        int poses=buffer(BufferUtils.createByteBuffer(256)),nodes=buffer(PackageMovingGeometry.bake(1,shape.boxes).nodes()),output=buffer(BufferUtils.createByteBuffer(16));
+        var random=new Random(712026);int sampled=0;
+        try {
+            for(int test=0;test<64;test++) {
+                double angle=random.nextDouble()*6.28;
+                var stationary=arbitraryPose(angle,angle*.37,angle*.19,.6+random.nextDouble(),.6+random.nextDouble(),.6+random.nextDouble());
+                var data=BufferUtils.createByteBuffer(256);stationary.put(data,0,0,0);stationary.put(data,0,0,0);
+                data.putInt(9*16+12,1).putInt(15*16,1);data.clear();
+                GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,poses);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,data);
+                GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,9,poses);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,10,nodes);
+                GL20.glUseProgram(prepare);GL20.glUniform1i(GL20.glGetUniformLocation(prepare,"uMovingReady"),1);GL43.glDispatchCompute(1,1,1);
+                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+                float rotation=readBuffer(poses,256).getFloat(14*16);
+                check(rotation==0,"stationary source invented angular motion: "+rotation+" case="+test);
+            }
+            for(int test=0;test<160;test++) {
+                double a0=test==0?0:random.nextDouble()*6.28,da=test==0?Math.PI/2:(random.nextDouble()-.5)*3;
+                double tx=test==0?0:(random.nextDouble()-.5)*2,ty=test==0?0:(random.nextDouble()-.5)*2,tz=test==0?0:(random.nextDouble()-.5)*2;
+                double sx=test==0?1:.6+random.nextDouble(),sy=test==0?1:.6+random.nextDouble(),sz=test==0?1:.6+random.nextDouble();
+                var old=movingPose(8,8,8,a0,1,1,1);var current=movingPose(8+tx,8+ty,8+tz,a0+da,sx,sy,sz);
+                float x=test==0?9.3f:8+(random.nextFloat()-.5f)*12,y=test==0?8:8+(random.nextFloat()-.5f)*12,z=test==0?6.7f:8+(random.nextFloat()-.5f)*12;
+                float mx=test==0?0:(random.nextFloat()-.5f)*40,my=test==0?0:(random.nextFloat()-.5f)*20,mz=test==0?0:(random.nextFloat()-.5f)*40;
+                float time=test==0?0:random.nextFloat()*.8f;
+                var data=BufferUtils.createByteBuffer(256);old.put(data,0,0,0);current.put(data,0,0,0);
+                data.putInt(9*16+12,1).putInt(15*16,1);data.clear();
+                GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,poses);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,data);
+                GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,9,poses);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,10,nodes);
+                GL20.glUseProgram(prepare);GL20.glUniform1i(GL20.glGetUniformLocation(prepare,"uMovingReady"),1);GL43.glDispatchCompute(1,1,1);
+                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                GL20.glUseProgram(probe);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,11,output);
+                GL20.glUniform3f(GL20.glGetUniformLocation(probe,"uInitial"),x,y,z);GL20.glUniform3f(GL20.glGetUniformLocation(probe,"uMotion"),mx,my,mz);
+                GL20.glUniform3f(GL20.glGetUniformLocation(probe,"uExtent"),.3125f,.375f,.3125f);GL20.glUniform1f(GL20.glGetUniformLocation(probe,"uTime"),time);
+                GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+                var result=readBuffer(output,16);float gap=result.getFloat(0),advance=Math.min(result.getFloat(4),1-time);
+                if(gap<=.001f||advance<=1e-6)continue;
+                check(Float.isFinite(advance),"non-finite rotating advance interval");sampled++;
+                for(int sample=0;sample<=128;sample++) {
+                    double t=time+advance*(sample/128.0)*.9999;
+                    shape.current=movingPose(8+tx*t,8+ty*t,8+tz*t,a0+da*t,1+(sx-1)*t,1+(sy-1)*t,1+(sz-1)*t);
+                    check(referenceMovingGap((float)(x+mx*t),(float)(y+my*t),(float)(z+mz*t),.3125f,.375f,.3125f,shape)>-.0001,
+                            "rotating face advance skipped a reference collision test="+test+" sample="+sample+" advance="+advance);
+                }
+            }
+            check(sampled>=80,"insufficient independent rotating/translation/scale advance cases: "+sampled);
+        }finally {
+            for(int id:new int[]{poses,nodes,output})GL15.glDeleteBuffers(id);
+            GL20.glDeleteProgram(prepare);GL20.glDeleteProgram(probe);
+        }
+    }
     static void fallingSectionConfirmations() {
         var air=snapshot((s,i)->WORLD_AIR);var owner=new UUID(7,9);var target=new ChannelTarget(0);
         target.state=new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(8,39.5,8,0,0,0,0),0);
@@ -2444,6 +2624,107 @@ public class PackageGpuValidation {
                 check(r.getFloat(i*64+60)>=0,"full world coverage "+i);
                 for(int word=0;word<16;word++)check(r.getInt(i*64+word*4)==reference.getInt(i*64+word*4),"coarse/cell full-world parity "+i+"/"+word);
             }
+        }
+    }
+    static void sableNozzleResidentSectionProgress() {
+        for(boolean vertical:new boolean[]{true,false}) {
+        var air=snapshot((s,i)->WORLD_AIR);
+        int count=256;
+        double plotX=20480000,plotY=2147483500,plotZ=-20480000;
+        var frame=new PackageForceScene.Frame(movingPose(vertical?3:24,vertical?24:3,3,0,1,1,1),plotX,plotY,plotZ);
+        var nozzle=new PackageForceScene.Source(PackageForceScene.NOZZLE,plotX-16,plotY-16,plotZ-16,
+                plotX+16,plotY+16,plotZ+16,plotX,plotY,plotZ,1/32f,1,0,0,32).framed(frame);
+        var scene=PackageForceScene.bake(0,List.of(nozzle),0,0,0);
+        var collider=new MovingSource(1,-.5f,-.5f,-.5f,.5f,.5f,.5f);
+        collider.previous=collider.current=frame.pose();var moving=movingCache(collider);
+        // Scale only the cheap-query budget to exercise the exact overflow path with
+        // a small, touching population. The shader, world and contact pipeline
+        // otherwise remain the production ones; no collision data is missing.
+        java.util.function.Function<String,String> boundedSource=name->{
+            String text=source(name);
+            return name.startsWith("packages/solve")||name.equals("packages/world_support.comp")
+                    ?text.replace("++visits>uCandidateBudget","++visits>64u"):text;
+        };
+        try(var atlas=new PackageCollisionGpu(125,1);var gpu=new PackagePhysicsGpu(count,2,boundedSource);
+            var reference=new PackagePhysicsGpu(count,2,PackageGpuValidation::source);
+            var forces=new PackageForceGpu();var movingAtlas=new PackageMovingCollisionGpu()) {
+            for(int x=-1;x<=3;x++)for(int y=-1;y<=3;y++)for(int z=-1;z<=3;z++)
+                check(atlas.offer(new PackageCollisionCache.Section(x,y,z),air),"resident nozzle fixture admission");
+            uploadWorld(atlas);movingAtlas.sync(moving.entries());movingAtlas.pump(262144,Long.MAX_VALUE);
+            var b=bodies(count);
+            for(int i=0;i<count;i++) {
+                int p=i*64;float across=6+(i&15)*.25f;
+                body(b,i,vertical?across:30,vertical?30:across,6+(i>>>4)*.25f,1);
+                b.putFloat(p+(vertical?20:16),120).putFloat(p+32,.14f).putFloat(p+36,.14f).putFloat(p+40,.14f);
+            }
+            gpu.upload(b,count);reference.upload(b,count);
+            try(var force=forces.view(scene,0);var world=atlas.view(0,0,0)){
+                gpu.applyForces(force,.05f,world);reference.applyForces(force,.05f,world);
+            }
+            var accelerated=read(gpu);
+            check(accelerated.getFloat(vertical?20:16)>120,"Sable nozzle did not accelerate the population");
+            for(int tick=0;tick<3;tick++) {
+                // No prefetch or upload between steps: both sides and all sweep guard
+                // sections were uploaded before the first accelerated crossing.
+                moving.tick(0);var views=movingAtlas.views(moving.entries(),moving.posesReady(),0,0,0);
+                try(var world=atlas.view(0,0,0)){
+                    gpu.stepWorldMoving(world,PackagePhysicsGpu.ITERATIONS,views);
+                }
+                finally{movingAtlas.endViews(views);}
+                var referenceViews=movingAtlas.views(moving.entries(),moving.posesReady(),0,0,0);
+                try(var world=atlas.view(0,0,0)){reference.stepWorldMoving(world,PackagePhysicsGpu.ITERATIONS,referenceViews);}
+                finally{movingAtlas.endViews(referenceViews);}
+                var r=read(gpu);var expected=read(reference);
+                for(int i=0;i<count;i++) {
+                    int p=i*64;
+                    check(r.getFloat(p+(vertical?4:0))>32&&r.getFloat(p+60)>=0,"bulk Sable nozzle package froze with resident sections: "+i+" tick="+tick);
+                    // Equal-time CCD contacts in a touching crowd can choose different
+                    // neighbors in independently built atomic grids. Allow sub-centimetre
+                    // pose differences and <0.25 blocks/s velocity differences.
+                    for(int component=0;component<7;component++)check(Math.abs(r.getFloat(p+component*4)-expected.getFloat(p+component*4))<(component<4?.01:.25),
+                            "dense fallback differed from complete hashed contacts: "+i+" component="+component+" tick="+tick+" vertical="+vertical+" actual="+r.getFloat(p+component*4)+" expected="+expected.getFloat(p+component*4));
+                }
+            }
+        }
+        }
+    }
+    static void denseResidentVerticalSectionProgress() {
+        int count=20000;
+        var air=snapshot((s,i)->WORLD_AIR);
+        double plotX=20480000,plotY=2147483500,plotZ=-20480000;
+        var frame=new PackageForceScene.Frame(movingPose(8,8,8,0,1,1,1),plotX,plotY,plotZ);
+        var nozzle=new PackageForceScene.Source(PackageForceScene.NOZZLE,plotX-16,plotY-16,plotZ-16,
+                plotX+16,plotY+16,plotZ+16,plotX,plotY,plotZ,1/32f,1,0,0,32).framed(frame);
+        var scene=PackageForceScene.bake(0,List.of(nozzle),0,0,0);
+        var collider=new MovingSource(1,-.5f,-.5f,-.5f,.5f,.5f,.5f);
+        collider.previous=collider.current=frame.pose();var moving=movingCache(collider);
+        try(var world=new PackageCollisionGpu(27,1);var gpu=new PackagePhysicsGpu(count,2,PackageGpuValidation::source);
+            var forces=new PackageForceGpu();var movingAtlas=new PackageMovingCollisionGpu()) {
+            cubeWorld(world,air,air,0,0,0);movingAtlas.sync(moving.entries());movingAtlas.pump(262144,Long.MAX_VALUE);
+            var b=bodies(count);
+            // A 40x50x10 crowd puts >8192 candidates in central 27-cell queries.
+            // Small admitted boxes isolate query congestion from initial penetration;
+            // every candidate is a live, fast upward-moving package.
+            for(int i=0;i<count;i++) {
+                int p=i*64;body(b,i,3+(i%40)*.25f,12+(i/2000)*.25f,3+(i/40%50)*.25f,1);
+                b.putFloat(p+20,80).putFloat(p+32,.1f).putFloat(p+36,.1f).putFloat(p+40,.1f);
+            }
+            gpu.upload(b,count);
+            try(var force=forces.view(scene,0);var view=world.view(0,0,0)){gpu.applyForces(force,.05f,view);}
+            float[] last=new float[count];for(int i=0;i<count;i++)last[i]=b.getFloat(i*64+4);
+            for(int tick=0;tick<3;tick++) {
+                moving.tick(0);var views=movingAtlas.views(moving.entries(),moving.posesReady(),0,0,0);
+                try(var view=world.view(0,0,0)){gpu.stepWorldMoving(view,PackagePhysicsGpu.ITERATIONS,views);}
+                finally{movingAtlas.endViews(views);}
+                var r=read(gpu);
+                for(int i=0;i<count;i++) {
+                    int p=i*64;float next=r.getFloat(p+4);
+                    check(r.getFloat(p+60)>=0&&next>last[i],"20000-package vertical crossing froze with resident section data: package="+i+" tick="+tick+" y="+next);
+                    check(Float.isFinite(r.getFloat(p))&&Float.isFinite(r.getFloat(p+8)),"dense fallback produced a non-finite crowd position");
+                    last[i]=next;
+                }
+            }
+            for(int i=0;i<count;i++)check(last[i]>16,"production-budget package did not cross the vertical section boundary: "+i);
         }
     }
     static void worldPrefetch() {
@@ -5755,15 +6036,19 @@ public class PackageGpuValidation {
                 GL43.glDebugMessageControl(GL43.GL_DONT_CARE,GL43.GL_DEBUG_TYPE_ERROR,GL43.GL_DONT_CARE,(IntBuffer)null,true);
             }
             System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));
+            if(Arrays.asList(args).contains("--complex-free-only")) {
+                complexResidentNozzleProgress();movingAdvanceSafety();check(GL11.glGetError()==GL11.GL_NO_ERROR,"complex free GL error");
+                System.out.println("Package complex free GPU: "+checks+" assertions passed");return;
+            }
             if(Arrays.asList(args).contains("--world-prefetch-only")) {
-                worldPrefetch();check(GL11.glGetError()==GL11.GL_NO_ERROR,"world prefetch GL error");
+                worldPrefetch();sableNozzleResidentSectionProgress();denseResidentVerticalSectionProgress();check(GL11.glGetError()==GL11.GL_NO_ERROR,"world prefetch GL error");
                 System.out.println("Package world prefetch GPU: "+checks+" assertions passed");return;
             }
             if(Arrays.asList(args).contains("--world-prefetch-benchmark")) {
                 worldPrefetchBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"world prefetch benchmark GL error");return;
             }
             if(Arrays.asList(args).contains("--repair-only")){
-                continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();movingSectionSeamProgress();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();sectionDemandAndPause();fallingSectionConfirmations();packageFaceLighting();asymmetricSweepRegression();environmentRegression();environmentThroughput();recycledFreeAcquisitions();recycledChainAcquisitions();historicalGeometryIsolation();localBudgetRetry();
+                continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();delayedMachineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();movingSectionSeamProgress();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();complexResidentNozzleProgress();movingAdvanceSafety();sableNozzleResidentSectionProgress();denseResidentVerticalSectionProgress();sectionDemandAndPause();fallingSectionConfirmations();packageFaceLighting();asymmetricSweepRegression();environmentRegression();environmentThroughput();recycledFreeAcquisitions();recycledChainAcquisitions();historicalGeometryIsolation();localBudgetRetry();
                 check(GL11.glGetError()==GL11.GL_NO_ERROR,"repair regression GL error");System.out.println("Package repair GPU: "+checks+" assertions passed");return;
             }
             if(Arrays.asList(args).contains("--physics-only")) {
@@ -5787,7 +6072,7 @@ public class PackageGpuValidation {
             if(Arrays.asList(args).contains("--forces-only")){sourceContract();externalForces();nozzleForces();framedForces();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();if(Arrays.asList(args).contains("--forces-benchmark"))forceBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"force GL error");System.out.println("Package forces GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--chain-only")){sourceContract();chainReference();trackedChains();chainEventChannels();chainAcquisitions();check(GL11.glGetError()==GL11.GL_NO_ERROR,"chain GL error");System.out.println("Package chain GPU: "+checks+" assertions passed");return;}
             movingContacts();movingReference();movingLifecycle();movingFriction();movingSectionSeamProgress();movingCapacity();if(Arrays.asList(args).contains("--moving-benchmark"))movingBenchmark();if(Arrays.asList(args).contains("--moving-only")){check(GL11.glGetError()==GL11.GL_NO_ERROR,"moving GL error");System.out.println("Package moving GPU: "+checks+" assertions passed");return;}
-            continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();movingSectionSeamProgress();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();sectionDemandAndPause();fallingSectionConfirmations();asymmetricSweepRegression();environmentRegression();environmentThroughput();recycledFreeAcquisitions();recycledChainAcquisitions();historicalGeometryIsolation();localBudgetRetry();sourceContract();externalForces();framedForces();chainParentFrames();mergedPackageVertices();poseQueries();freePoseQueries();parallelFreeChainQueries();chainCheckpoints();boundaries();contact();sweep();dynamicPackageSweep();worldUploadVersions();independentlyConfiguredCollisionAtlases();worldAtlasLru();worldShapes();worldSweepsAndMaterials();historicalGeometryIsolation();worldMissingAndInvalidated();worldFullCapacity();worldRigidSupportAndReplacement();supportProjection();contactProbeReference();supportContactCases();worldEntryFace();supportSustainedMotion();chain();chainReference();trackedChains();chainEventChannels();chainAcquisitions();incrementalPhysics();preparedPhysics();mixedPhysics();mixedFullReservation();readbacks();pool();preparedDrawPasses();shadowCullingAndBoundary();packageDrawTelemetry();render();previewLoad();poseParity();deltas();deltaIncrementalIdentity();deltaPreparedBaselines();acquisitions();batchedAcquisitions();deltaOverflowAndIdentity();deltaQuantizationLimits();deltaYawTies();deltaRelativeBaselines();deltaPredictedMotion();channelRoundTrip();channelBatchAckHoles();channelLifecycle();channelImmutableAndPartialTransport();if(Arrays.asList(args).contains("--benchmark")){benchmark();deltaBenchmark();}
+            continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();delayedMachineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();movingSectionSeamProgress();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();complexResidentNozzleProgress();movingAdvanceSafety();sableNozzleResidentSectionProgress();denseResidentVerticalSectionProgress();sectionDemandAndPause();fallingSectionConfirmations();asymmetricSweepRegression();environmentRegression();environmentThroughput();recycledFreeAcquisitions();recycledChainAcquisitions();historicalGeometryIsolation();localBudgetRetry();sourceContract();externalForces();framedForces();chainParentFrames();mergedPackageVertices();poseQueries();freePoseQueries();parallelFreeChainQueries();chainCheckpoints();boundaries();contact();sweep();dynamicPackageSweep();worldUploadVersions();independentlyConfiguredCollisionAtlases();worldAtlasLru();worldShapes();worldSweepsAndMaterials();historicalGeometryIsolation();worldMissingAndInvalidated();worldFullCapacity();worldRigidSupportAndReplacement();supportProjection();contactProbeReference();supportContactCases();worldEntryFace();supportSustainedMotion();chain();chainReference();trackedChains();chainEventChannels();chainAcquisitions();incrementalPhysics();preparedPhysics();mixedPhysics();mixedFullReservation();readbacks();pool();preparedDrawPasses();shadowCullingAndBoundary();packageDrawTelemetry();render();previewLoad();poseParity();deltas();deltaIncrementalIdentity();deltaPreparedBaselines();acquisitions();batchedAcquisitions();deltaOverflowAndIdentity();deltaQuantizationLimits();deltaYawTies();deltaRelativeBaselines();deltaPredictedMotion();channelRoundTrip();channelBatchAckHoles();channelLifecycle();channelImmutableAndPartialTransport();if(Arrays.asList(args).contains("--benchmark")){benchmark();deltaBenchmark();}
             if(Arrays.asList(args).contains("--delta-pipeline-benchmark"))pipelineBenchmark();
             if(Arrays.asList(args).contains("--delta-batch-pipeline-benchmark"))pipelineBenchmark(true);
             if(Arrays.asList(args).contains("--world-benchmark"))worldBenchmark();

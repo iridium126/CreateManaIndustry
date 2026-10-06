@@ -5,6 +5,38 @@ import java.util.*;
 import org.junit.jupiter.api.Test;
 
 class PackageAuthorityRegionTest {
+    @Test void delayedJournalContactsFromTheLogSurviveNewerPoseConfirmations(){
+        // Region-relative feet positions reconstructed from the supplied log. The
+        // environment journal can wait longer than the sparse pose history window.
+        double[][] cases={
+                {38.5,19.624023-.375,12.5,38.63037109375,17.125,8.615966796875},
+                {47.375977,21.250229-.375,17.5,60.53564453125,10.78662109375,19.576904296875},
+                {47.313477,21.250229-.375,17.5,53.532470703125,4.375,25.6875}
+        };
+        for(int i=0;i<cases.length;i++){
+            var c=cases[i];var r=region(0);var t=new Target(903+i,c[0],0);
+            var contact=new PackageLease.Pose(c[0],c[1],c[2],0,0,0,0);
+            var current=new PackageLease.Pose(c[3],c[4],c[5],0,0,0,0);
+            t.current=new PackageAuthorityRegion.Snapshot(contact,0);var b=acquire(r,t,0);
+            assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,1,1,
+                    List.of(change(b.index(),PackageDeltaCodec.POSITION,contact,0)),4,0,5652));
+            assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,2,42,
+                    List.of(change(b.index(),PackageDeltaCodec.POSITION,current,0)),4,0,5693));
+            assertTrue(r.environmentReachable(t.id,5652,42,contact),"retained journal contact was expired by a newer pose: case "+i);
+            assertEquals(0,t.releases);assertEquals(current.x(),t.current.pose().x(),1.0/4096);
+        }
+    }
+    @Test void agedJournalContactsRetainOneSweepSpatialAndLifecycleBounds(){
+        var r=region(0);var t=new Target(906,5,0);var b=acquire(r,t,0);
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,1,1,
+                List.of(change(b.index(),PackageDeltaCodec.FLAGS,pose(5),0)),4,0,100));
+        assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,2,42,
+                List.of(change(b.index(),PackageDeltaCodec.FLAGS,pose(5),1)),4,0,141));
+        assertTrue(r.environmentReachable(t.id,100,42,pose(5)),"old contact at the confirmed position");
+        assertFalse(r.environmentReachable(t.id,100,42,pose(50)),"journal delay must not grant a long-distance contact");
+        assertFalse(r.environmentReachable(t.id,1000,42,pose(5)),"future interval remains invalid");
+        r.release(t.id);assertFalse(r.environmentReachable(t.id,100,42,pose(5)),"retired lifecycle remains invalid");
+    }
     @Test void quietPoseDoesNotExpireLaterEnvironmentContacts(){
         var r=region(0);var t=new Target(902,5,0);var b=acquire(r,t,0);
         assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,1,1,List.of(change(b.index(),PackageDeltaCodec.FLAGS,pose(5),1)),4,0,1));

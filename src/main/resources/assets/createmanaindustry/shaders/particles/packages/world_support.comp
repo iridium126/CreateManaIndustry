@@ -11,26 +11,36 @@ void main() {
             ivec3 cell=cellOf(b.positionMass.xyz);float best=-1e30;
             uint visits=0u;bool exhausted=false;
             float reach=min(uCellSize,max(0.0,b.previousSleep.y-b.positionMass.y))+1e-4;
-            for(int z=-1;z<=1&&!exhausted;z++)for(int y=-1;y<=1&&!exhausted;y++)for(int x=-1;x<=1&&!exhausted;x++) {
-                ivec3 neighbor=cell+ivec3(x,y,z);uint cursor,end;cellCursor(neighbor,cursor,end);
-                while(cursor!=end) {
-                    if(++visits>uCandidateBudget){exhausted=true;break;}
-                    uint j=cursorBody(cursor);
-                    Body other=src[j];
-                    if(j!=i && other.previousSleep.w>=0 && all(equal(cellOf(other.positionMass.xyz),neighbor))) {
-                        vec3 delta=b.positionMass.xyz-other.positionMass.xyz;
-                        vec3 overlap=b.extentYaw.xyz+other.extentYaw.xyz-abs(delta);
-                        // Strict (Y,index) ordering is acyclic, including coincident centres.
-                        if((delta.y>0 || (delta.y==0 && j<i)) && overlap.x>1e-4 && overlap.z>1e-4
-                                && overlap.y>=-reach && overlap.y<=min(overlap.x,overlap.z)+1e-4) {
-                            float gap=b.extentYaw.y+other.extentYaw.y,target=other.positionMass.y+gap;
-                            if(target>best || (target==best && j<parent)){best=target;parent=j;separation=gap;}
+            // A full grid bucket is a query optimization limit, not missing geometry.
+            // Recompute the best support exactly so pointer jumping never receives a
+            // synthetic GRID_OVERFLOW ancestor for a valid dense population.
+            for(int pass=0;pass<2;pass++) {
+                if(pass==1) {
+                    if(!exhausted)break;
+                    parent=END;separation=0.;best=-1e30;
+                }
+                int radius=pass==0?1:0;
+                for(int z=-radius;z<=radius&&(pass==1||!exhausted);z++)for(int y=-radius;y<=radius&&(pass==1||!exhausted);y++)for(int x=-radius;x<=radius&&(pass==1||!exhausted);x++) {
+                    ivec3 neighbor=cell+ivec3(x,y,z);uint cursor,end;
+                    if(pass==0)cellCursor(neighbor,cursor,end);else {cursor=0u;end=uCount;}
+                    while(cursor!=end) {
+                        if(pass==0&&++visits>uCandidateBudget){exhausted=true;break;}
+                        uint j=pass==0?cursorBody(cursor):cursor;
+                        Body other=src[j];
+                        if(j!=i && other.previousSleep.w>=0 && (pass==1||all(equal(cellOf(other.positionMass.xyz),neighbor)))) {
+                            vec3 delta=b.positionMass.xyz-other.positionMass.xyz;
+                            vec3 overlap=b.extentYaw.xyz+other.extentYaw.xyz-abs(delta);
+                            // Strict (Y,index) ordering is acyclic, including coincident centres.
+                            if((delta.y>0 || (delta.y==0 && j<i)) && overlap.x>1e-4 && overlap.z>1e-4
+                                    && overlap.y>=-reach && overlap.y<=min(overlap.x,overlap.z)+1e-4) {
+                                float gap=b.extentYaw.y+other.extentYaw.y,target=other.positionMass.y+gap;
+                                if(target>best || (target==best && j<parent)){best=target;parent=j;separation=gap;}
+                            }
                         }
+                        cursor=pass==0?cursorNext(cursor,j):cursor+1u;
                     }
-                    cursor=cursorNext(cursor,j);
                 }
             }
-            if(exhausted)parent=GRID_OVERFLOW;
         }
         supportOut[i]=uvec4(parent,floatBitsToUint(separation),floatBitsToUint(minimumY),floatBitsToUint(velocityY));
     }

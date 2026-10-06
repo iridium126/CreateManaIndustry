@@ -282,6 +282,8 @@ public final class PackageAuthorityRegion {
         release(entry);return true;
     }
     public Baseline baseline(PackageLease.Identity identity) {Entry entry=identities.get(identity);return entry==null?null:baseline(entry);}
+    /** Diagnostic timestamp of the latest confirmed pose; absent identities have no step. */
+    public long confirmedSimulationStep(PackageLease.Identity identity){Entry entry=identities.get(identity);return entry==null?-1:entry.simulationStep;}
     /** A contact belongs to a past/future GPU step, not necessarily the latest pose
      * packet. Bound its reach by the same retained steps and per-axis CCD cap. */
     public boolean environmentReachable(PackageLease.Identity identity,long step,long tick,PackageLease.Pose contact){
@@ -292,10 +294,12 @@ public final class PackageAuthorityRegion {
         else {
             long lag=step>=entry.simulationStep?step-entry.simulationStep:entry.simulationStep-step;
             if(lag>historyTicks()) {
-                if(step<entry.simulationStep)return false;
-                // An unchanged quantized pose produces no delta. Its old pose step
-                // must not expire later contacts at the same location. Grant only
-                // one sweep here; the manager still validates the event timeline.
+                // Sparse poses and the reliable environment journal have independent
+                // delivery. The journal is bounded by sample count, not elapsed steps:
+                // an old unacknowledged contact can outlive this pose-history window.
+                // In either direction grant only one sweep of spatial reach, rather
+                // than expiring a nearby contact or multiplying reach by a long delay.
+                // The manager still validates serials, lifecycle and event intervals.
                 steps=1;
             }else steps=lag+1; // Contact may occur before the endpoint of its own step.
         }

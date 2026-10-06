@@ -4,12 +4,19 @@ layout(local_size_x=1) in;
 void main() {
     if(!uMovingReady)return;
     mat3 a=rawRotation(true),b=rawRotation(false);vec3 sa=movingScale(true),sb=movingScale(false);
+    bool identical=all(equal(a[0],b[0]))&&all(equal(a[1],b[1]))&&all(equal(a[2],b[2]));
     a[0]/=sa.x;a[1]/=sa.y;a[2]/=sa.z;b[0]/=sb.x;b[1]/=sb.y;b[2]/=sb.z;
     vec4 qa=quaternion(a),qb=quaternion(b);if(dot(qa,qb)<0.)qb=-qb;
     movingPose[10]=floatBitsToUint(qa);movingPose[11]=floatBitsToUint(qb);
-    float angle=2.*acos(clamp(dot(qa,qb),0.,1.));
+    // A float-normalized quaternion can have dot(q,q)<1. acos then invents
+    // rotation even for identical poses, routing static sources into grazing CCD.
+    // The relative quaternion vector is exactly zero for identical inputs.
+    vec3 turn=qa.w*qb.xyz-qb.w*qa.xyz+cross(qa.xyz,qb.xyz);
+    float angle=2.*atan(length(turn),max(0.,dot(qa,qb)));
     // The nlerp small-angle branch has a slightly larger derivative than its arc.
-    float boundAngle=max(angle,2.*length(qa-qb)*1.001);
+    // Do not let fused multiply/subtract roundoff turn equal raw matrices into
+    // nonzero motion even when their quaternions were normalized identically.
+    float boundAngle=identical?0.:max(angle,2.*length(qa-qb)*1.001);
     movingPose[14]=floatBitsToUint(vec4(boundAngle,0,0,0));
     vec3 lo=mv(8u)-vec3(1),hi=mv(9u)+vec3(1);
     if(movingGeometryReady()&&movingNodeCount()>0u){lo=movingNodes[0].lo.xyz;hi=movingNodes[0].hi.xyz;}

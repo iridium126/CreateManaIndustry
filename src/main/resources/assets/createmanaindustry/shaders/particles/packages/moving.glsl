@@ -56,6 +56,51 @@ float movingGap(vec3 point,vec3 extent,MovingNode box,float t,out vec3 normal) {
     return gap;
 }
 vec3 movingVelocity(vec3 globalPoint){vec3 local=localPoint(globalPoint,false);return (globalPoint-projectPoint(local,true))*20.0;}
+// Rotation of an OBB face changes the projection of the body relative to the
+// rotation axis. A long remote corner of the box is irrelevant to that face's
+// local separation; using its radius can stall grazing bodies indefinitely.
+vec4 movingTurn() {
+    vec4 qa=uintBitsToFloat(movingPose[10]),qb=uintBitsToFloat(movingPose[11]);
+    if(all(equal(qa,qb)))return vec4(0);
+    // qb * conjugate(qa): the fixed world-space axis of the slerp/nlerp arc.
+    vec3 axis=qa.w*qb.xyz-qb.w*qa.xyz+cross(qa.xyz,qb.xyz);
+    float sine=length(axis);
+    if(sine<1e-8)return vec4(0);
+    return vec4(axis/sine,2.*atan(sine,max(0.,dot(qa,qb))));
+}
+float movingBodyTurnRadius(vec3 initial,vec3 motion,vec3 extent,vec3 axis) {
+    vec3 a=initial-movingTranslation(true),b=initial+motion-movingTranslation(false);
+    if(dot(axis,axis)<.5)return max(length(a),length(b))+length(extent);
+    return max(length(cross(axis,a)),length(cross(axis,b)))+length(extent);
+}
+// Each separating OBB face proves a collision-free time interval. Taking the
+// largest proven interval is conservative: all axes must overlap for a hit.
+float movingFaceAdvance(vec3 initial,vec3 motion,vec3 extent,MovingNode box,float t,float fallback) {
+    mat3 r=movingRotation(t);vec3 sa=movingScale(true),sb=movingScale(false),scale=mix(sa,sb,t);
+    vec3 centre=(box.lo.xyz+box.hi.xyz)*.5,halfExtent=(box.hi.xyz-box.lo.xyz)*.5;
+    vec3 relative=initial+motion*t-mix(movingTranslation(true),movingTranslation(false),t);
+    vec3 relativeMotion=motion-(movingTranslation(false)-movingTranslation(true));
+    vec4 turn=movingTurn();vec3 angularVelocity=turn.xyz*turn.w;
+    float angle=max(uintBitsToFloat(movingPose[14].x),turn.w*1.001);
+    float radius=movingBodyTurnRadius(initial,motion,extent,turn.xyz);
+    // Keep the signed angular/linear closing velocity: suction and a rotating
+    // face often nearly cancel. Bound derivative changes over the remaining
+    // interval, including the nlerp rate variation and rotating projection.
+    float variation=max(0.,angle-turn.w)*radius+(1.-t)
+            *(2.*angle*length(relativeMotion)+angle*angle*radius);
+    float advance=fallback;
+    for(int j=0;j<3;j++) {
+        float side=dot(relative,r[j])-centre[j]*scale[j];
+        float gap=abs(side)-dot(abs(r[j]),extent)-halfExtent[j]*scale[j];
+        if(gap<=0.)continue;
+        float direction=side<0.?-1.:1.;vec3 normal=r[j]*direction;
+        float closing=-dot(relativeMotion,normal)-dot(cross(angularVelocity,normal),relative)
+                +direction*centre[j]*(sb[j]-sa[j])+abs(sb[j]-sa[j])*halfExtent[j]
+                +angle*length(extent)+variation;
+        advance=max(advance,gap/max(closing,1e-8));
+    }
+    return advance;
+}
 bool linearAxis(vec3 axis,vec3 delta,vec3 motion,vec3 extent,mat3 r,vec3 halfExtent,
                 inout float enter,inout float exit,inout vec3 normal) {
     float squared=dot(axis,axis);if(squared<1e-10)return true;axis*=inversesqrt(squared);

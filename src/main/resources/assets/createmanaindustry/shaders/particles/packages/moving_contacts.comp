@@ -69,8 +69,10 @@ void main() {
             else for(int advance=0;advance<32;advance++) {
                 gap=movingGap(initial+motion*t,extent,box,t,normal);
                 if(gap<=1e-4){hit=true;done=true;break;}
-                if(speed<1e-8||t+gap/speed>=1.){done=true;break;}
-                float next=t+gap/speed*.9;
+                float safeAdvance=speed<1e-8?1.:gap/speed;
+                safeAdvance=movingFaceAdvance(initial,motion,extent,box,t,safeAdvance);
+                if(t+safeAdvance>=1.){done=true;break;}
+                float next=t+safeAdvance*.9;
                 if(next<=t)break;t=next;
             }
             if(!done){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
