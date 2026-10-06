@@ -62,6 +62,7 @@ public final class FastHexOPMediaPool {
 
     public static boolean supportsEnvironment(CastingEnvironment env) {
         return env instanceof StaffCastEnv
+                && (env.getClass() == StaffCastEnv.class || env instanceof TickStateReuseEnvironment)
                 && env instanceof CastingEnvironmentObserverAccess hooks
                 && STANDARD_STAFF_ENVIRONMENT.get(env.getClass())
                 && hooks.cmi$getPostExecutions().isEmpty()
@@ -97,6 +98,27 @@ public final class FastHexOPMediaPool {
         } catch (Throwable ignored) {
             return false;
         }
+    }
+
+    /** Reuse a proven personal pool only between adjacent successful loop Ticks. */
+    public static boolean prepareRepeatedTickPreflight(CastingEnvironment env, long rawCost, ExecutionScope scope) {
+        if (scope == null || !scope.repeatedTickMediaPreflightEnabled() || rawCost <= 0) return false;
+        Pending pending = serverPending; // The loop dispatcher is exclusively server-thread owned.
+        if (pending == null || pending.active || pending.scope != scope || pending.env != env
+                || !pending.personalManaHolder || !pending.hasCachedPersonalMediaAvailability
+                || !pending.canDeferMediaWrites || !scope.hasDeferredPersonalMediaValue(pending.holder)
+                || pending.player.isCreative()) return false;
+        long cost = (long) (rawCost * ((CastingEnvironmentObserverAccess) env).cmi$getCostModifier());
+        long available = scope.deferredPersonalMediaValue();
+        if (cost <= 0 || available < cost) return false;
+        // Use the holder's exact rounded virtual balance, including double-to-long conversion.
+        pending.cachePersonalMediaAvailability(available);
+        pending.active = true;
+        pending.forced = pending.holder;
+        pending.coverageChecked = true;
+        pending.checkedCost = cost;
+        scope.recordRepeatedTickPreflight();
+        return true;
     }
 
     /** Called by the guarded PlayerBasedCastEnv wrapper before it scans inventory sources. */
@@ -437,9 +459,11 @@ public final class FastHexOPMediaPool {
             boolean sameSource = this.env == env && this.player == player && this.holder == holder;
             if (this.holder != holder) sources = List.of(holder);
             if (!sameSource) invalidateCachedPersonalMediaAvailability();
-            personalManaHolder = PERSONAL_MEDIA_HOLDER_CLASS.equals(holder.getClass().getName());
-            cachePersonalMediaAvailability = scope != null && scope.cacheTickMediaAvailabilityEnabled()
-                    && personalManaHolder;
+            if (this.holder != holder) {
+                personalManaHolder = PERSONAL_MEDIA_HOLDER_CLASS.equals(holder.getClass().getName());
+                cachePersonalMediaAvailability = scope != null && scope.cacheTickMediaAvailabilityEnabled()
+                        && personalManaHolder;
+            }
             this.env = env;
             this.player = player;
             this.holder = holder;

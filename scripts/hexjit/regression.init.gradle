@@ -1,0 +1,7 @@
+// Apply after gametest.init.gradle to run just the correctness regressions.
+gradle.projectsEvaluated {
+    def p = gradle.rootProject
+    p.sourceSets.main.java.exclude('**/HexJitGameTests.java', '**/HexJitReferenceSpellGameTests.java', '**/JitTestAddon.java')
+    p.neoForge.runs.gameTestServer.systemProperty('hexjit.regression.stage',
+            p.findProperty('hexjitRegressionStage') ?: '5')
+}

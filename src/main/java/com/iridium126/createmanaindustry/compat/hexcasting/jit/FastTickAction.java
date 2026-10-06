@@ -7,6 +7,7 @@ import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
 import at.petrak.hexcasting.api.casting.eval.CastResult;
 import at.petrak.hexcasting.api.casting.eval.ResolvedPatternType;
 import at.petrak.hexcasting.api.casting.eval.sideeffects.OperatorSideEffect;
+import at.petrak.hexcasting.api.casting.eval.sideeffects.EvalSound;
 import at.petrak.hexcasting.api.casting.eval.vm.CastingImage;
 import at.petrak.hexcasting.api.casting.eval.vm.SpellContinuation;
 import at.petrak.hexcasting.api.casting.eval.env.PlayerBasedCastEnv;
@@ -54,6 +55,8 @@ public final class FastTickAction {
                 Class<?> rangeOwner = methodOwner(type, "isVecInRangeEnvironment", Vec3.class);
                 return type.getMethod("isVecInRange", Vec3.class).getDeclaringClass()
                                 == CastingEnvironment.class
+                        && type.getMethod("precheckAction", at.petrak.hexcasting.api.casting.PatternShapeMatch.class)
+                                .getDeclaringClass() == CastingEnvironment.class
                         && (rangeOwner == PlayerBasedCastEnv.class
                                 || rangeOwner == PlayerBasedSpiralPatternCastEnv.class);
             } catch (ReflectiveOperationException | LinkageError ignored) {
@@ -62,6 +65,52 @@ public final class FastTickAction {
         }
     };
     private FastTickAction() {}
+    private static final ClassValue<Boolean> HAS_STANDARD_CALLBACK_BRIDGE = new ClassValue<>() {
+        @Override protected Boolean computeValue(Class<?> type) {
+            try {
+                return type.getMethod("cmi$getTickCaster").getDeclaringClass() == PlayerBasedCastEnv.class
+                        && type.getMethod("cmi$hasPureRangeAttributes").getDeclaringClass() == PlayerBasedCastEnv.class
+                        && type.getMethod("cmi$canCollapseQuotedCallbacks", EvalSound.class).getDeclaringClass() == StaffCastEnv.class
+                        && type.getMethod("cmi$recordCollapsedQuotedCallbacks", EvalSound.class, int.class).getDeclaringClass() == StaffCastEnv.class
+                        && type.getMethod("cmi$refreshTickRangeAttributes").getDeclaringClass() == PlayerBasedCastEnv.class
+                        && type.getMethod("cmi$recordTickPattern", at.petrak.hexcasting.api.casting.math.HexPattern.class)
+                                .getDeclaringClass() == PlayerBasedSpiralPatternCastEnv.class
+                        && type.getMethod("cmi$postSuccessfulTick", at.petrak.hexcasting.api.casting.math.HexPattern.class,
+                                at.petrak.hexcasting.api.casting.eval.sideeffects.EvalSound.class)
+                                .getDeclaringClass() == StaffCastEnv.class;
+            } catch (ReflectiveOperationException ignored) { return false; }
+        }
+    };
+    public static boolean hasStandardCallbackBridge(CastingEnvironment env) {
+        return HAS_STANDARD_CALLBACK_BRIDGE.get(env.getClass());
+    }
+
+    private static final ClassValue<Boolean> HAS_BASE_OP_LIMIT = new ClassValue<>() {
+        @Override protected Boolean computeValue(Class<?> type) {
+            try {
+                return type.getMethod("maxOpCount").getDeclaringClass() == CastingEnvironment.class;
+            } catch (ReflectiveOperationException ignored) { return false; }
+        }
+    };
+    public static boolean hasBaseOpLimit(CastingEnvironment env) { return HAS_BASE_OP_LIMIT.get(env.getClass()); }
+
+    /** Read-only player callbacks still report mishaps, refresh range, and play staff sounds. */
+    private static final ClassValue<Boolean> HAS_EMPTY_POST_EXECUTION = new ClassValue<>() {
+        @Override protected Boolean computeValue(Class<?> type) {
+            try {
+                return type.getMethod("postExecution", CastResult.class).getDeclaringClass()
+                        == CastingEnvironment.class;
+            } catch (ReflectiveOperationException ignored) {
+                return false;
+            }
+        }
+    };
+
+    public static boolean maySkipPostExecution(CastingEnvironment env) {
+        return env instanceof CastingEnvironmentObserverAccess access
+                && access.cmi$getPostExecutions().isEmpty()
+                && HAS_EMPTY_POST_EXECUTION.get(env.getClass());
+    }
 
     public static boolean enabled() {
         return ServerConfig.hexJitFastTickAction
@@ -75,7 +124,8 @@ public final class FastTickAction {
     }
 
     public static boolean mayMutateExecutionState(CastingEnvironment env) {
-        return env instanceof CastingEnvironmentObserverAccess access
+        return (env.getClass() == StaffCastEnv.class || env instanceof TickStateReuseEnvironment)
+                && env instanceof CastingEnvironmentObserverAccess access
                 && access.cmi$getPostExecutions().isEmpty()
                 && HAS_READ_ONLY_POST_EXECUTION.get(env.getClass());
     }
@@ -124,6 +174,7 @@ public final class FastTickAction {
     /** Preserve Tick's exact simulated preflight and clean up the prepared pool on failure. */
     static void preflightTickMedia(CastingEnvironment env, CastingImage image, long cost,
                                    ExecutionScope scope) {
+        if (!image.getSimulateNext() && FastHexOPMediaPool.prepareRepeatedTickPreflight(env, cost, scope)) return;
         boolean useHexOPMediaPool = cost > 0 && !image.getSimulateNext()
                 && FastHexOPMediaPool.begin(env, scope);
         try {
@@ -222,7 +273,7 @@ public final class FastTickAction {
         }
 
         if (mutateUserDataInPlace && scope != null && !image.getSimulateNext())
-            scope.rememberTickSubstack(stackWithoutArgs);
+            scope.rememberTickSubstack(stack, stackWithoutArgs);
         // FrameEvaluate replaces every successful sound emitted by a metacast with Hermes.
         // Return that final sound here so the loop frame does not allocate a second CastResult
         // just to overwrite Tick's intermediate SPELL/MUTE sound on every iteration.

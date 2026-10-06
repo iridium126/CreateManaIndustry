@@ -21,6 +21,8 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Random;
 import java.util.UUID;
 import net.minecraft.nbt.CompoundTag;
@@ -88,6 +90,11 @@ public final class ExecutionScope implements AutoCloseable {
     private final boolean loopSpecialization;
     private final boolean fastTickAction;
     private final boolean loopTickBatch;
+    private final boolean repeatedTickMediaPreflight;
+    private long repeatedTickPreflights;
+    private static long lastRepeatedTickPreflights;
+    private long uniformTickSteps;
+    private static long lastUniformTickSteps;
     private final boolean loopFastTickCounter;
     private final boolean batchMediaUsedStat;
     private final boolean collectMetrics;
@@ -204,6 +211,31 @@ public final class ExecutionScope implements AutoCloseable {
     private FrozenPigment castPigment;
     private CastingEnvironment unobservedEnvironment;
     private boolean checkedUnobservedEnvironment;
+    private CastingEnvironment staffTickCallbackEnvironment;
+    private boolean staffTickCallbackEligible;
+    private long staffTickCallbacks;
+    private static long lastStaffTickCallbacks;
+    private CastingEnvironment effectiveOpLimitEnvironment;
+    private int effectiveOpLimit;
+    private boolean stableEffectiveOpLimit;
+    private boolean baseEffectiveOpLimit;
+    private Map<String, Long> frameDiagnostics;
+    private static Map<String, Long> lastFrameDiagnostics = Map.of();
+    private IdentityHashMap<TreeList<CastingImage.ParenthesizedIota>, QuoteAppend> quotedVectors;
+    private long quotedVectorCacheHits;
+    private static long lastQuotedVectorCacheHits;
+    private long quotedVectorFolds;
+    private static long lastQuotedVectorFolds;
+    private long pureQuoteRuns;
+    private static long lastPureQuoteRuns;
+    private Set<CastSoundKey> castSounds;
+    private CastSoundKey lastStaffSound;
+    private long soundsEmitted;
+    private long soundsCoalesced;
+    private static long lastSoundsEmitted;
+    private static long lastSoundsCoalesced;
+    private net.minecraft.stats.Stat<?> spellsCastStat;
+    private net.minecraft.stats.Stat<?> mediaUsedStat;
     private boolean canMutateTickUserDataInPlace;
     private long evalSoundCopiesSkipped;
     private static long lastEvalSoundCopiesSkipped;
@@ -211,6 +243,8 @@ public final class ExecutionScope implements AutoCloseable {
     private static long lastEmptyPostExecutionCallsSkipped;
     private List<TreeList<Iota>> frameLoopContinuationSources;
     private TreeList<Iota> pendingTickValidationOutput;
+    private Object validatedTickStack;
+    private IotaStackValidation.MetricCache loopStackValidationCache;
     private long tickSubstackValidationSkips;
     private static long lastTickSubstackValidationSkips;
     private long frameLoopTailHits;
@@ -275,6 +309,10 @@ public final class ExecutionScope implements AutoCloseable {
                 && ServerConfig.hexJitFastTickAction && HexJitRuntime.enabled()
                 && JitCompatibility.fastAddMotionReady();
         loopTickBatch = loopSpecialization && fastTickAction && ServerConfig.hexJitLoopTickBatch;
+        repeatedTickMediaPreflight = loopTickBatch && ServerConfig.hexJitFastHexOPMediaPool
+                && ServerConfig.hexJitDirectTickMediaPreflight && ServerConfig.hexJitCacheTickMediaHolder
+                && ServerConfig.hexJitCacheTickMediaAvailability && ServerConfig.hexJitBatchTickPersonalMediaWrites
+                && JitCompatibility.directMediaPreflightReady();
         loopFastTickCounter = loopTickBatch && ServerConfig.hexJitLoopFastTickCounter;
         batchMediaUsedStat = loopTickBatch && ServerConfig.hexJitFastSpendMediaTrigger;
         batchTickCounterWrites = reuseTickUserData && loopSpecialization && fastTickAction
@@ -329,6 +367,9 @@ public final class ExecutionScope implements AutoCloseable {
     public boolean loopSpecializationEnabled() { return loopSpecialization; }
     public boolean fastTickActionEnabled() { return fastTickAction; }
     public boolean loopTickBatchEnabled() { return loopTickBatch; }
+    public boolean repeatedTickMediaPreflightEnabled() { return repeatedTickMediaPreflight; }
+    public void recordRepeatedTickPreflight() { if (collectMetrics) repeatedTickPreflights++; }
+    public static long lastRepeatedTickPreflights() { return lastRepeatedTickPreflights; }
     public boolean loopFastTickCounterEnabled() { return loopFastTickCounter; }
     public boolean collectMetricsEnabled() { return collectMetrics; }
     public boolean batchTickCounterWritesEnabled() { return batchTickCounterWrites; }
@@ -349,10 +390,146 @@ public final class ExecutionScope implements AutoCloseable {
             canMutateTickUserDataInPlace = FastTickAction.mayMutateExecutionState(env);
             checkedUnobservedEnvironment = true;
         }
-        return canMutateTickUserDataInPlace;
+        return canMutateTickUserDataInPlace
+                && ((CastingEnvironmentObserverAccess) env).cmi$getPostExecutions().isEmpty();
     }
 
-    public boolean canSkipEmptyCallbacks(CastingEnvironment env) { return canMutateTickUserDataInPlace(env); }
+    public boolean canSkipEmptyCallbacks(CastingEnvironment env) { return FastTickAction.maySkipPostExecution(env); }
+
+    public boolean postSuccessfulStaffTick(CastingEnvironment env, PatternIota pattern) {
+        return postStaffResult(env, pattern.getPattern(), loopTickHermesSound());
+    }
+
+    public boolean canUseStaffTickCallback(CastingEnvironment env) {
+        if (staffTickCallbackEnvironment != env) {
+            staffTickCallbackEnvironment = env;
+            staffTickCallbackEligible = env instanceof StaffCastEnv
+                    && FastTickAction.mayMutateExecutionState(env)
+                    && JitCompatibility.fastStaffCallbacksReady() && FastTickAction.hasStandardCallbackBridge(env);
+        }
+        return staffTickCallbackEligible && JitCompatibility.fastStaffCallbacksReady()
+                && ((CastingEnvironmentObserverAccess) env).cmi$getPostExecutions().isEmpty();
+    }
+    public void recordUniformTickStep() { if (collectMetrics) uniformTickSteps++; }
+    public static long lastUniformTickSteps() { return lastUniformTickSteps; }
+
+    public boolean postSuccessfulStaffResult(CastingEnvironment env, CastResult result) {
+        var effects = result.getSideEffects();
+        for (int i = 0; i < effects.size(); i++)
+            if (effects.get(i) instanceof OperatorSideEffect.DoMishap) return false;
+        return postStaffResult(env, result.getCast() instanceof PatternIota pattern ? pattern.getPattern() : null,
+                result.getSound());
+    }
+
+    private boolean postStaffResult(CastingEnvironment env, at.petrak.hexcasting.api.casting.math.HexPattern pattern,
+                                   EvalSound sound) {
+        if (!canUseStaffTickCallback(env)) return false;
+        ((TickPostExecutionAccess) env).cmi$postSuccessfulTick(pattern, sound);
+        if (collectMetrics) staffTickCallbacks++;
+        return true;
+    }
+    public static long lastStaffTickCallbacks() { return lastStaffTickCallbacks; }
+    public void recordFrameDiagnostics(at.petrak.hexcasting.api.casting.eval.vm.ContinuationFrame frame,
+                                       CastingImage image) {
+        if (!collectMetrics) return;
+        String kind = frame.getClass().getSimpleName();
+        if (frame instanceof FrameEvaluate eval && !eval.getList().isEmpty()) {
+            Iota head = eval.getList().head();
+            kind += ":" + head.getClass().getSimpleName() + ":paren=" + image.getParenCount()
+                    + ":escape=" + image.getEscapeNext();
+        }
+        if (frameDiagnostics == null) frameDiagnostics = new HashMap<>();
+        frameDiagnostics.merge(kind, 1L, Long::sum);
+    }
+    public static Map<String, Long> lastFrameDiagnostics() { return lastFrameDiagnostics; }
+    public CastingImage quoteVector(CastingImage image, Iota vector) {
+        var next = appendQuotedVector(image.getParenthesized(), vector);
+        return new CastingImage(image.getStack(), image.getParenCount(), next, image.getEscapeNext(),
+                image.getSimulateNext(), image.getOpsConsumed(), image.getUserData());
+    }
+    public TreeList<CastingImage.ParenthesizedIota> appendQuotedVector(TreeList<CastingImage.ParenthesizedIota> source, Iota vector) {
+        if (quotedVectors == null) quotedVectors = new IdentityHashMap<>();
+        QuoteAppend cached = quotedVectors.get(source);
+        TreeList<CastingImage.ParenthesizedIota> next;
+        if (cached != null && cached.iota == vector) {
+            next = cached.result;
+            if (collectMetrics) quotedVectorCacheHits++;
+        } else {
+            next = source.appended(new CastingImage.ParenthesizedIota(vector, false));
+            if (quotedVectors.size() < 1024) quotedVectors.put(source, new QuoteAppend(vector, next));
+        }
+        return next;
+    }
+    public static long lastQuotedVectorCacheHits() { return lastQuotedVectorCacheHits; }
+    public boolean hasStableValidatedStack(Object stack) { return stack == validatedTickStack; }
+    public void postQuotedVector(CastingEnvironment env, EvalSound sound) {
+        postStaffResult(env, null, sound);
+        if (collectMetrics) quotedVectorFolds++;
+    }
+    public static long lastQuotedVectorFolds() { return lastQuotedVectorFolds; }
+    public boolean canCollapseQuotedCallbacks(CastingEnvironment env, EvalSound sound) {
+        return JitCompatibility.pureQuotesReady() && canUseStaffTickCallback(env)
+                && (env instanceof StableMaxOpCountEnvironment || ServerConfig.hexJitCacheMaxOpCount && FastTickAction.hasBaseOpLimit(env))
+                && ((TickPostExecutionAccess) env).cmi$canCollapseQuotedCallbacks(sound);
+    }
+    public void recordCollapsedQuotes(CastingEnvironment env, EvalSound sound, int count) {
+        ((TickPostExecutionAccess) env).cmi$recordCollapsedQuotedCallbacks(sound, count);
+        if (collectMetrics) pureQuoteRuns++;
+        if (collectMetrics) { quotedVectorFolds += count; staffTickCallbacks += count; }
+    }
+    public static long lastPureQuoteRuns() { return lastPureQuoteRuns; }
+    public boolean coalesceStaffSoundsEnabled() {
+        return serverThreadScope && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
+                && ServerConfig.hexJitCoalesceStaffSounds;
+    }
+    private boolean staffSoundsUnobserved(net.minecraft.world.level.Level world) {
+        return coalesceStaffSoundsEnabled() && JitCompatibility.soundElisionReady()
+                && world.getClass() == net.minecraft.server.level.ServerLevel.class && SoundEventObservers.unobserved();
+    }
+    public boolean canSkipStaffSound(net.minecraft.world.level.Level world, net.minecraft.world.entity.player.Player excluded,
+                                    net.minecraft.sounds.SoundEvent sound,
+                                    net.minecraft.sounds.SoundSource source, double x, double y, double z,
+                                    float volume, float pitch) {
+        return lastStaffSound != null && staffSoundsUnobserved(world)
+                && (lastStaffSound.matches(world, excluded, sound, source, x, y, z, volume, pitch)
+                || castSounds.contains(CastSoundKey.of(world, excluded, sound, source, x, y, z, volume, pitch)));
+    }
+    public void recordSkippedSounds(int count) {
+        if (collectMetrics) soundsCoalesced += count;
+    }
+    public void rememberStaffSound(net.minecraft.world.level.Level world, net.minecraft.world.entity.player.Player excluded,
+                                   net.minecraft.sounds.SoundEvent sound, net.minecraft.sounds.SoundSource source,
+                                   double x, double y, double z, float volume, float pitch) {
+        if (staffSoundsUnobserved(world)) {
+            if (castSounds == null) castSounds = new HashSet<>();
+            lastStaffSound = CastSoundKey.of(world, excluded, sound, source, x, y, z, volume, pitch);
+            castSounds.add(lastStaffSound);
+        }
+        if (collectMetrics) soundsEmitted++;
+    }
+    public static long lastSoundsEmitted() { return lastSoundsEmitted; }
+    public static long lastSoundsCoalesced() { return lastSoundsCoalesced; }
+    private record QuoteAppend(Iota iota, TreeList<CastingImage.ParenthesizedIota> result) {}
+    public net.minecraft.stats.Stat<?> cachedHexStat(Object value) {
+        return value == HexStatistics.SPELLS_CAST ? spellsCastStat : mediaUsedStat;
+    }
+    public void rememberHexStat(Object value, net.minecraft.stats.Stat<?> stat) {
+        if (value == HexStatistics.SPELLS_CAST) spellsCastStat = stat;
+        else mediaUsedStat = stat;
+    }
+
+    public int actualMaxOpCount(CastingEnvironment env) {
+        if (!ServerConfig.hexJitCacheMaxOpCount) return env.maxOpCount();
+        if (effectiveOpLimitEnvironment != env) {
+            effectiveOpLimitEnvironment = env;
+            stableEffectiveOpLimit = env instanceof StableMaxOpCountEnvironment;
+            baseEffectiveOpLimit = FastTickAction.hasBaseOpLimit(env);
+            if (stableEffectiveOpLimit) effectiveOpLimit = env.maxOpCount();
+        }
+        if (stableEffectiveOpLimit) return effectiveOpLimit;
+        // The base cache is the full return value only when no subclass overrides that method.
+        return baseEffectiveOpLimit && hasMaxOpCount ? maxOpCount : env.maxOpCount();
+    }
 
     /** Start a scoped virtual balance for HexOP's exact holder after Tick's fast-pool path is proven. */
     public boolean beginDeferredPersonalMediaWrites(Object holder) {
@@ -438,8 +615,24 @@ public final class ExecutionScope implements AutoCloseable {
     }
 
     /** Mark Tick's immutable one-element stack pop so the VM can reuse the input's validated bound. */
-    public void rememberTickSubstack(TreeList<Iota> output) {
-        pendingTickValidationOutput = output;
+    public void rememberTickSubstack(TreeList<Iota> input, TreeList<Iota> output) {
+        pendingTickValidationOutput = input == validatedTickStack ? output : null;
+    }
+
+    public void observeStackValidation(Object stack, boolean stableAndValid) {
+        validatedTickStack = stableAndValid ? stack : null;
+    }
+
+    public boolean isTickStackTooLarge(TreeList<Iota> stack) {
+        if (consumeTickSubstackValidationSkip(stack)) return false;
+        if (!ServerConfig.hexJitFastStackValidation || !JitCompatibility.fastStackValidationReady())
+            return at.petrak.hexcasting.api.casting.iota.IotaType.isTooLargeToSerialize(stack);
+        if (loopStackValidationCache == null)
+            loopStackValidationCache = new IotaStackValidation.MetricCache(
+                    ServerConfig.hexJitCacheStackMetrics, ServerConfig.hexJitCacheStackValidationResults);
+        boolean tooLarge = IotaStackValidation.isTooLarge(stack, loopStackValidationCache);
+        observeStackValidation(stack, !tooLarge && loopStackValidationCache.hasValidatedStableStack(stack));
+        return tooLarge;
     }
 
     /** Consume the proof only for the exact immutable output TreeList from the preceding Tick. */
@@ -447,6 +640,7 @@ public final class ExecutionScope implements AutoCloseable {
         TreeList<Iota> output = pendingTickValidationOutput;
         pendingTickValidationOutput = null;
         if (output == null || stack != output) return false;
+        validatedTickStack = output;
         if (collectMetrics) tickSubstackValidationSkips++;
         return true;
     }
@@ -1296,6 +1490,8 @@ public final class ExecutionScope implements AutoCloseable {
             cachedTickCounterMapAttached = false;
             hasMaxOpCount = false;
             pendingTickValidationOutput = null;
+            validatedTickStack = null;
+            loopStackValidationCache = null;
             clearPendingLoopTickResult();
             clearPreparedTickCounterUpdate();
             pendingTickMediaEnvironment = null;
@@ -1339,6 +1535,15 @@ public final class ExecutionScope implements AutoCloseable {
             lastFrozenPigment = null;
             unobservedEnvironment = null;
         } finally {
+            if (castSounds != null) castSounds.clear();
+            castSounds = null;
+            lastStaffSound = null;
+            if (quotedVectors != null) quotedVectors.clear();
+            quotedVectors = null;
+            staffTickCallbackEnvironment = null;
+            effectiveOpLimitEnvironment = null;
+            spellsCastStat = null;
+            mediaUsedStat = null;
             if (frameLoopContinuationSources != null) {
                 for (TreeList<Iota> source : frameLoopContinuationSources) {
                     ((TreeListLoopCacheAccess) (Object) source).cmi$clearLoopContinuation(this);
@@ -1361,6 +1566,15 @@ public final class ExecutionScope implements AutoCloseable {
                 lastLoopTickActionPrecheckHits = collectMetrics ? loopTickActionPrecheckHits : 0;
                 lastEvalSoundCopiesSkipped = collectMetrics ? evalSoundCopiesSkipped : 0;
                 lastEmptyPostExecutionCallsSkipped = collectMetrics ? emptyPostExecutionCallsSkipped : 0;
+                lastStaffTickCallbacks = collectMetrics ? staffTickCallbacks : 0;
+                lastFrameDiagnostics = frameDiagnostics == null ? Map.of() : Map.copyOf(frameDiagnostics);
+                lastQuotedVectorCacheHits = collectMetrics ? quotedVectorCacheHits : 0;
+                lastQuotedVectorFolds = collectMetrics ? quotedVectorFolds : 0;
+                lastPureQuoteRuns = collectMetrics ? pureQuoteRuns : 0;
+                lastSoundsEmitted = collectMetrics ? soundsEmitted : 0;
+                lastSoundsCoalesced = collectMetrics ? soundsCoalesced : 0;
+                lastRepeatedTickPreflights = collectMetrics ? repeatedTickPreflights : 0;
+                lastUniformTickSteps = collectMetrics ? uniformTickSteps : 0;
                 lastBuddingAmethystRandomTickCalls = collectMetrics ? buddingAmethystRandomTickCalls : 0;
                 lastMotionPushes = !collectMetrics || motions == null ? 0 : motions.pushes;
                 lastMotionWrites = !collectMetrics || motions == null ? 0 : motions.writes;

@@ -197,7 +197,7 @@ public final class HexJitReferenceSpellGameTests {
             ServerConfig.hexJitFastSpecialHandlerMath = true;
             ServerConfig.hexJitFastSpecialHandlerLookup = true;
             ServerConfig.hexJitFastNumberLiterals = true;
-            ServerConfig.hexJitCacheNormalPatternLookup = false;
+            ServerConfig.hexJitCacheNormalPatternLookup = true;
             ServerConfig.hexJitCachePerWorldPatternLookup = true;
 
             for (ReferenceSpell referenceSpell : REFERENCE_SPELLS) {
@@ -342,6 +342,13 @@ public final class HexJitReferenceSpellGameTests {
                     "Loop Tick batch did not fold any consecutive Tick frames");
             helper.assertTrue(diagnosticFoldedBuddingAmethystActions > 0,
                     "Budding Amethyst loop action specialization did not run");
+            System.out.println("HEXJIT_REPEATED_MEDIA preflights=" + ExecutionScope.lastRepeatedTickPreflights()
+                    + " staffCallbacks=" + ExecutionScope.lastStaffTickCallbacks()
+                    + " uniformTickSteps=" + ExecutionScope.lastUniformTickSteps()
+                    + " quotedVectorCacheHits=" + ExecutionScope.lastQuotedVectorCacheHits()
+                    + " quotedVectorFolds=" + ExecutionScope.lastQuotedVectorFolds()
+                    + " pureQuoteRuns=" + ExecutionScope.lastPureQuoteRuns() + " pureReady=" + JitCompatibility.pureQuotesReady());
+            System.out.println("HEXJIT_FRAME_DIAGNOSTICS " + ExecutionScope.lastFrameDiagnostics());
             System.out.println("HEXJIT_DIRECT_MEDIA spell=" + referenceSpell.name()
                     + " extractions=" + FastHexOPMediaPool.lastDirectExtractions());
             System.out.println("HEXJIT_TICK_SUBSTACK_VALIDATION spell=" + referenceSpell.name()
@@ -354,6 +361,28 @@ public final class HexJitReferenceSpellGameTests {
                     + " cacheHits=" + diagnosticSpendMediaTriggerCacheHits);
         }
         assertEquivalent(helper, profiledOff, profiledAuto, "JFR profile");
+
+        int steadySamples = Integer.getInteger("hexjit.steadySamples", 9);
+        if (referenceSpell.expectedTickCalls() > 0 && steadySamples > 0) {
+            for (int i = 0; i < 20; i++)
+                castInMode(helper, player, target, program, referenceSpell, yjspIota, tickIota, ServerConfig.HexJitMode.AUTO);
+            long[] steadyNanos = new long[steadySamples];
+            long[] steadyCpuNanos = new long[steadySamples];
+            var cpuBean = java.lang.management.ManagementFactory.getThreadMXBean();
+            if (cpuBean.isCurrentThreadCpuTimeSupported()) cpuBean.setThreadCpuTimeEnabled(true);
+            for (int i = 0; i < steadyNanos.length; i++) {
+                long beforeCpu = cpuBean.getCurrentThreadCpuTime();
+                var sample = castInMode(helper, player, target, program, referenceSpell, yjspIota, tickIota,
+                        ServerConfig.HexJitMode.AUTO);
+                steadyCpuNanos[i] = cpuBean.getCurrentThreadCpuTime() - beforeCpu;
+                assertEquivalent(helper, profiledAuto, sample, "steady sample " + i);
+                steadyNanos[i] = sample.elapsedNanos;
+            }
+            double steadyMs = median(steadyNanos) / 1_000_000.0;
+            System.out.println("HEXJIT_STEADY spell=" + referenceSpell.name() + " warmups=20 medianMs=" + steadyMs
+                    + " samplesMs=" + Arrays.stream(steadyNanos).mapToDouble(n -> n / 1_000_000.0).boxed().toList()
+                    + " cpuMsIncludingSetup=" + Arrays.stream(steadyCpuNanos).mapToDouble(n -> n / 1_000_000.0).boxed().toList());
+        }
 
         long[] offNanos = new long[3];
         long[] autoNanos = new long[3];
@@ -880,8 +909,8 @@ public final class HexJitReferenceSpellGameTests {
             evalSoundCopiesSkipped[0] = ExecutionScope.lastEvalSoundCopiesSkipped();
         }
         if (referenceSpell.expectedTickCalls() > 0) {
-            helper.assertTrue(Arrays.stream(evalSoundCopiesSkipped).sum() > 0,
-                    "Eval sound specialization did not skip any unobserved result copies");
+            helper.assertTrue(Arrays.stream(evalSoundCopiesSkipped).sum() == 0,
+                    "Staff callbacks must receive the correct metacast sound");
         }
 
         long[] emptyPostExecutionSkipOnNanos = new long[5];
@@ -913,8 +942,8 @@ public final class HexJitReferenceSpellGameTests {
         }
         ServerConfig.hexJitSkipEmptyPostExecution = true;
         if (referenceSpell.expectedTickCalls() > 0) {
-            helper.assertTrue(Arrays.stream(emptyPostExecutionCallsSkipped).sum() > 0,
-                    "Empty post-execution specialization skipped no callbacks");
+            helper.assertTrue(Arrays.stream(emptyPostExecutionCallsSkipped).sum() == 0,
+                    "Staff postExecution is not empty and must never be skipped");
         }
 
         long[] combineTickSideEffectsOnNanos = new long[5];
@@ -1191,7 +1220,7 @@ public final class HexJitReferenceSpellGameTests {
 
         if (referenceSpell.expectedTickCalls() > 0) {
             for (String feature : new String[] {
-                    "hexJitSkipObservers", "hexJitCoalesceDecorations", "hexJitFastTickAction",
+                    "hexJitSkipObservers", "hexJitCoalesceDecorations", "hexJitCoalesceStaffSounds", "hexJitFastTickAction",
                     "hexJitFastHexOPMediaPool", "hexJitCacheActionResourceKeys",
                     "hexJitCacheActionTagMembership", "hexJitFastStackValidation",
                     "hexJitCacheStackMetrics", "hexJitCacheStackValidationResults",
@@ -1308,8 +1337,10 @@ public final class HexJitReferenceSpellGameTests {
             long[] offNanos) throws ReflectiveOperationException {
         java.lang.reflect.Field field = ServerConfig.class.getField(fieldName);
         boolean original = field.getBoolean(null);
-        long[] enabledNanos = new long[5];
-        long[] disabledNanos = new long[5];
+        int samples = fieldName.equals("hexJitCoalesceStaffSounds")
+                ? Math.max(1, Integer.getInteger("hexjit.soundAblationSamples", 5)) : 5;
+        long[] enabledNanos = new long[samples];
+        long[] disabledNanos = new long[samples];
         try {
             for (int i = 0; i < enabledNanos.length; i++) {
                 SpellRun enabled;
@@ -1336,6 +1367,24 @@ public final class HexJitReferenceSpellGameTests {
                 assertEquivalent(helper, enabled, disabled, fieldName + " ablation " + i);
                 enabledNanos[i] = enabled.elapsedNanos();
                 disabledNanos[i] = disabled.elapsedNanos();
+            }
+            if (fieldName.equals("hexJitCoalesceStaffSounds")) {
+                for (boolean enabled : List.of(true, false)) {
+                    field.setBoolean(null, enabled);
+                    var diagnostic = castInModeWithMetrics(helper, player, target, program, referenceSpell, yjspIota,
+                            tickIota, ServerConfig.HexJitMode.AUTO);
+                    assertCompleted(helper, diagnostic, target, referenceSpell, "Staff sound ablation counters");
+                    System.out.println("HEXJIT_STAFF_SOUND_COUNTS enabled=" + enabled
+                            + " platformCalls=" + ExecutionScope.lastSoundsEmitted()
+                            + " skipped=" + ExecutionScope.lastSoundsCoalesced()
+                            + " pureQuoteRuns=" + ExecutionScope.lastPureQuoteRuns());
+                }
+                long[] pairedSavings = new long[samples];
+                for (int i = 0; i < samples; i++) pairedSavings[i] = disabledNanos[i] - enabledNanos[i];
+                System.out.println("HEXJIT_STAFF_SOUND_SAMPLES pairs=" + samples
+                        + " medianPairedSavingMs=" + median(pairedSavings) / 1_000_000.0
+                        + " enabledMs=" + Arrays.stream(enabledNanos).mapToDouble(n -> n / 1_000_000.0).boxed().toList()
+                        + " disabledMs=" + Arrays.stream(disabledNanos).mapToDouble(n -> n / 1_000_000.0).boxed().toList());
             }
         } finally {
             field.setBoolean(null, original);
@@ -1771,12 +1820,13 @@ public final class HexJitReferenceSpellGameTests {
 
     private record FeatureAblation(long[] enabledNanos, long[] disabledNanos) {}
 
-    private static class BenchmarkSpellEnvironment extends StaffCastEnv {
+    private static class BenchmarkSpellEnvironment extends StaffCastEnv
+            implements TickStateReuseEnvironment, StableMaxOpCountEnvironment {
         private final int opLimit;
 
         private BenchmarkSpellEnvironment(net.minecraft.server.level.ServerPlayer player, int opLimit) {
             super(player, InteractionHand.MAIN_HAND);
-            this.opLimit = opLimit;
+            this.opLimit = Math.max(super.maxOpCount(), opLimit);
         }
 
         @Override
@@ -1786,7 +1836,7 @@ public final class HexJitReferenceSpellGameTests {
 
         @Override
         public int maxOpCount() {
-            return Math.max(super.maxOpCount(), opLimit);
+            return opLimit;
         }
     }
 

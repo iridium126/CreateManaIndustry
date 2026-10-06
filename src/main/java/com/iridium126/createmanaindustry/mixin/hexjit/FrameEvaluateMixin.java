@@ -12,6 +12,7 @@ import at.petrak.hexcasting.api.utils.TreeList;
 import at.petrak.hexcasting.common.lib.hex.HexEvalSounds;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.FastLoopTickDispatch;
+import com.iridium126.createmanaindustry.compat.hexcasting.jit.FastQuotedVectors;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.JitCompatibility;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.PatternIotaLoopDispatchAccess;
@@ -73,7 +74,18 @@ public abstract class FrameEvaluateMixin {
         CastResult update;
         try {
             Iota head = list.head();
-            if (ServerConfig.hexJitLoopTickDispatch && loopDispatchScope != null
+            var image = harness.getImage();
+            if (loopDispatchScope != null && loopDispatchScope.loopSpecializationEnabled()
+                    && head.getClass() == at.petrak.hexcasting.api.casting.iota.Vec3Iota.class
+                    && image.getParenCount() > 0 && !image.getEscapeNext() && !image.getSimulateNext()
+                    && JitCompatibility.quotedVectorReady() && loopDispatchScope.canUseStaffTickCallback(harness.getEnv())) {
+                if (list.size() > 1 && list.get(1).getClass() == at.petrak.hexcasting.api.casting.iota.Vec3Iota.class
+                        && loopDispatchScope.hasStableValidatedStack(image.getStack())) {
+                    update = FastQuotedVectors.execute(harness, list, continuation, isMetacasting, loopDispatchScope);
+                } else {
+                    update = FastQuotedVectors.single(harness, head, next, isMetacasting, loopDispatchScope);
+                }
+            } else if (ServerConfig.hexJitLoopTickDispatch && loopDispatchScope != null
                     && loopDispatchScope.loopSpecializationEnabled()
                     && loopDispatchScope.fastTickActionEnabled()
                     && !harness.getImage().getEscapeNext() && !harness.getImage().getSimulateNext()

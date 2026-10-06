@@ -50,8 +50,11 @@ public abstract class CastingVMMixin {
                 cmi$stackMetricCache = new IotaStackValidation.MetricCache(
                         cmi$cacheStackMetrics, cmi$cacheStackValidationResults);
             }
-            if (cmi$stackMetricCache == null) return IotaStackValidation.isTooLarge(stack);
-            return IotaStackValidation.isTooLarge(stack, cmi$stackMetricCache);
+            boolean tooLarge = cmi$stackMetricCache == null ? IotaStackValidation.isTooLarge(stack)
+                    : IotaStackValidation.isTooLarge(stack, cmi$stackMetricCache);
+            if (scope != null) scope.observeStackValidation(stack, !tooLarge && cmi$stackMetricCache != null
+                    && cmi$stackMetricCache.hasValidatedStableStack(stack));
+            return tooLarge;
         }
         return original.call(stack);
     }
@@ -97,7 +100,7 @@ public abstract class CastingVMMixin {
         boolean needsScope = ServerConfig.hexJitSkipObservers || coalesceDecorations || batchMotion
                 || reuseTickUserData || cacheTickChunk || cacheTickBlockEligibility || cacheMaxOpCount
                 || cacheActionTagMembership || cacheActionPrechecks || loopSpecialization || coalesceEvalSounds
-                || skipEmptyPostExecution;
+                || skipEmptyPostExecution || ServerConfig.hexJitCoalesceStaffSounds && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO;
         if (!jitEnabled || (!fastStack && !needsScope && !memoAddMotionNormalization))
             return original.call(iotas, level);
         boolean previous = cmi$fastStackValidation;
@@ -141,6 +144,7 @@ public abstract class CastingVMMixin {
             scope.flushTickCounterWrites();
         if (!skipObservers) scope = null;
         if (scope != null) scope.startStep();
+        if (scope != null) scope.recordFrameDiagnostics(frame, vm.getImage());
         return original.call(frame, continuation, level, vm);
     }
 
@@ -151,6 +155,8 @@ public abstract class CastingVMMixin {
         boolean skipEmpty = ServerConfig.hexJitSkipEmptyPostExecution
                 && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO;
         ExecutionScope scope = ServerConfig.hexJitSkipObservers || skipEmpty ? ExecutionScope.current() : null;
+        if (scope != null && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
+                && scope.postSuccessfulStaffResult(env, result)) return;
         if (skipEmpty && scope != null && scope.canSkipEmptyCallbacks(env)) {
             scope.recordEmptyPostExecutionSkipped();
             return;
@@ -169,6 +175,15 @@ public abstract class CastingVMMixin {
         } finally {
             scope.notifying(false);
         }
+    }
+
+    @WrapOperation(method = "queueExecuteAndWrapIotas", at = @At(value = "INVOKE", target =
+            "Lat/petrak/hexcasting/api/casting/eval/CastingEnvironment;maxOpCount()I"))
+    private int cmi$actualOpLimit(CastingEnvironment env, Operation<Integer> original) {
+        ExecutionScope scope = ExecutionScope.current();
+        return scope != null && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
+                && env instanceof com.iridium126.createmanaindustry.compat.hexcasting.jit.StableMaxOpCountEnvironment
+                ? scope.actualMaxOpCount(env) : original.call(env);
     }
 
     @WrapOperation(method = "performSideEffects", at = @At(value = "INVOKE", target =

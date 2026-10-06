@@ -13,7 +13,6 @@ import at.petrak.hexcasting.api.casting.eval.vm.CastingVM;
 import at.petrak.hexcasting.api.casting.eval.vm.FrameEvaluate;
 import at.petrak.hexcasting.api.casting.eval.vm.SpellContinuation;
 import at.petrak.hexcasting.api.casting.iota.Iota;
-import at.petrak.hexcasting.api.casting.iota.IotaType;
 import at.petrak.hexcasting.api.casting.iota.PatternIota;
 import at.petrak.hexcasting.api.casting.mishaps.MishapEvalTooMuch;
 import at.petrak.hexcasting.api.casting.mishaps.MishapStackSize;
@@ -56,8 +55,8 @@ public final class FastLoopTickDispatch {
     /**
      * Fold a run of direct Tick-only loop frames into one outer CastingVM iteration. Intermediate
      * frames still run their Tick action, precheck, world effects, side effects, postExecution,
-     * and op-limit check in order. The initial stack was already validated by CastingVM, and each
-     * Tick only removes one argument, so repeating the serialization-size scan is unnecessary.
+     * and op-limit check in order. A substack skips its size scan only after a successful
+     * validation of that exact input and proof that its Iota metrics are stable.
      */
     public static CastResult executeRun(CastingVM vm, SpellContinuation continuation,
                                         PatternIota pattern, PatternShapeMatch.PerWorld match,
@@ -65,6 +64,15 @@ public final class FastLoopTickDispatch {
         CastResult result = execute(vm, continuation, pattern, match, scope);
         if (!scope.loopTickBatchEnabled() || !scope.inMetacastingFrame()
                 || !scope.canMutateTickUserDataInPlace(vm.getEnv())) return result;
+
+        if (result.getResolutionType() == ResolvedPatternType.EVALUATED && result.getNewData() != null
+                && continuation instanceof SpellContinuation.NotDone next
+                && next.getFrame() instanceof FrameEvaluate frame && frame.isMetacasting()
+                && scope.canUseStaffTickCallback(vm.getEnv())) {
+            int prefix = uniformTickPrefix(frame.getList(), match, scope.registryGeneration());
+            if (prefix > 0)
+                return executeUniformRun(vm, result, frame.getList(), prefix, next.getNext(), match, scope);
+        }
 
         boolean pendingDirectResult = false;
         SpellContinuation completedContinuation = continuation;
@@ -122,18 +130,109 @@ public final class FastLoopTickDispatch {
         return pendingDirectResult ? scope.finishPendingLoopTickResult() : result;
     }
 
+    private static int uniformTickPrefix(TreeList<Iota> list, PatternShapeMatch.PerWorld match, long epoch) {
+        int count = Math.min(list.size(), MAX_TICKS_PER_FRAME_BATCH);
+        int i = 0;
+        for (; i < count; i++) {
+            if (!(list.get(i) instanceof PatternIota pattern)
+                    || !(pattern instanceof PatternIotaLoopDispatchAccess access)) break;
+            var cached = access.cmi$getCachedLoopTickMatch(epoch);
+            if (cached == null || cached.key != match.key) break;
+        }
+        return i;
+    }
+
+    /** Standard Staff callbacks never inspect a continuation; materialize suffixes only on exit. */
+    private static CastResult executeUniformRun(CastingVM vm, CastResult first, TreeList<Iota> remaining,
+                                                int count, SpellContinuation parent,
+                                                PatternShapeMatch.PerWorld match, ExecutionScope scope) {
+        CastResult result = first;
+        boolean pending = false;
+        for (int index = 0; index < count; index++) {
+            CastResult failed = pending ? commitPendingIntermediate(vm, scope) : commitIntermediate(vm, result, scope);
+            if (failed != null) return pending ? withContinuation(failed, uniformContinuation(remaining, index, parent)) : failed;
+
+            // Side effects can change enlightenment or register an observer. Re-enter normal
+            // per-iota dispatch at the exact next continuation when the closed path no longer holds.
+            PatternIota pattern = (PatternIota) remaining.get(index);
+            var lookup = (PatternIotaLoopDispatchAccess) pattern;
+            var current = vm.getImage();
+            if (!scope.canUseStaffTickCallback(vm.getEnv())
+                    || current.getEscapeNext() || current.getSimulateNext() || current.getParenCount() != 0
+                    || lookup.cmi$cachedLoopTickRequiresEnlightenment() && !vm.getEnv().isEnlightened()) {
+                scope.startStep();
+                return new FrameEvaluate(remaining.drop(index), true)
+                        .evaluate(parent, vm.getEnv().getWorld(), vm);
+            }
+            scope.startStep();
+            scope.recordUniformTickStep();
+            result = executeUniformStep(vm, parent, pattern, match, scope, remaining, index + 1);
+            pending = result == null && scope.hasPendingLoopTickResult();
+            if (!pending) return result;
+        }
+        return withContinuation(scope.finishPendingLoopTickResult(), uniformContinuation(remaining, count, parent));
+    }
+
+    private static CastResult executeUniformStep(CastingVM vm, SpellContinuation parent, PatternIota pattern,
+                                                PatternShapeMatch.PerWorld match, ExecutionScope scope,
+                                                TreeList<Iota> source, int consumed) {
+        var env = vm.getEnv();
+        boolean prechecked = false;
+        scope.recordLoopTickDispatch();
+        scope.loopTickDispatchActive(true);
+        try {
+            if (scope.canReuseLoopTickActionPrecheck(match.key)) scope.recordLoopTickActionPrecheckHit();
+            else if (!(env instanceof CastingEnvironmentObserverAccess access)
+                    || !access.cmi$applyCachedLoopTickPrecheck(match, scope)) env.precheckAction(match);
+            prechecked = true;
+            ExecutionScope.markCompiled();
+            var result = FastTickAction.operateFolded(env, vm.getImage(), parent, pattern, scope);
+            scope.loopTickDispatchCompleted(true);
+            return result;
+        } catch (Mishap mishap) {
+            var continuation = uniformContinuation(source, consumed, parent);
+            boolean wipe = continuation instanceof SpellContinuation.NotDone nd
+                    && nd.getFrame() instanceof FrameEvaluate frame && frame.isMetacasting();
+            return new CastResult(pattern, continuation, wipe ? vm.getImage().withResetEscape() : null,
+                    List.of(new OperatorSideEffect.DoMishap(mishap, new Mishap.Context(pattern.getPattern(),
+                            prechecked ? HexAPI.instance().getActionI18n(match.key,
+                                    ((PatternIotaLoopDispatchAccess) pattern).cmi$cachedLoopTickRequiresEnlightenment()) : null))),
+                    mishap.resolutionType(env), HexEvalSounds.MISHAP.get());
+        } catch (Exception exception) {
+            exception.printStackTrace();
+            scope.loopTickDispatchCompleted(false);
+            return new CastResult(pattern, uniformContinuation(source, consumed, parent), null,
+                    List.of(new OperatorSideEffect.DoMishap(
+                            new at.petrak.hexcasting.api.casting.mishaps.MishapInternalException(exception),
+                            new Mishap.Context(pattern.getPattern(), null))),
+                    ResolvedPatternType.ERRORED, HexEvalSounds.MISHAP.get());
+        } finally {
+            if (!prechecked) scope.loopTickDispatchCompleted(false);
+            scope.loopTickDispatchActive(false);
+        }
+    }
+
+    private static SpellContinuation uniformContinuation(TreeList<Iota> source, int consumed, SpellContinuation parent) {
+        return consumed == source.size() ? parent
+                : parent.pushFrame(new FrameEvaluate(source.drop(consumed), true));
+    }
+
+    private static CastResult withContinuation(CastResult result, SpellContinuation continuation) {
+        return new CastResult(result.getCast(), continuation, result.getNewData(), result.getSideEffects(),
+                result.getResolutionType(), result.getSound());
+    }
+
     /** Returns a replacement mishap result if the intermediate Tick crossed the op limit. */
     private static CastResult commitIntermediate(CastingVM vm, CastResult result, ExecutionScope scope) {
         CastingImage image = result.getNewData();
-        if (!scope.consumeTickSubstackValidationSkip(image.getStack())
-                && IotaType.isTooLargeToSerialize(image.getStack())) {
+        if (scope.isTickStackTooLarge(image.getStack())) {
             return new CastResult(result.getCast(), result.getContinuation(), null,
                     List.of(new OperatorSideEffect.DoMishap(new MishapStackSize(),
                             new Mishap.Context(null, null))),
                     ResolvedPatternType.ERRORED, HexEvalSounds.MISHAP.get());
         }
-        int maxOpCount = scope.hasCachedMaxOpCount()
-                ? scope.cachedMaxOpCount() : vm.getEnv().maxOpCount();
+        // The base-method cache does not include a subclass's adjustment after super().
+        int maxOpCount = scope.actualMaxOpCount(vm.getEnv());
         if (image.getOpsConsumed() > maxOpCount) {
             return new CastResult(result.getCast(), result.getContinuation(), null,
                     List.of(new OperatorSideEffect.DoMishap(new MishapEvalTooMuch(),
@@ -143,7 +242,20 @@ public final class FastLoopTickDispatch {
 
         scope.recordLoopTickBatchFold();
         vm.setImage(image);
-        CastingEnvironment env = vm.getEnv();
+        notifyPostExecution(vm.getEnv(), result, scope);
+
+        try {
+            vm.performSideEffects(result.getSideEffects());
+        } catch (Exception exception) {
+            exception.printStackTrace();
+            vm.performSideEffects(List.of(new OperatorSideEffect.DoMishap(
+                    new at.petrak.hexcasting.api.casting.mishaps.MishapInternalException(exception),
+                    new Mishap.Context(null, null))));
+        }
+        return null;
+    }
+
+    private static void notifyPostExecution(CastingEnvironment env, CastResult result, ExecutionScope scope) {
         boolean skipEmpty = ServerConfig.hexJitSkipEmptyPostExecution
                 && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
                 && scope.canSkipEmptyCallbacks(env);
@@ -159,15 +271,6 @@ public final class FastLoopTickDispatch {
             }
         }
 
-        try {
-            vm.performSideEffects(result.getSideEffects());
-        } catch (Exception exception) {
-            exception.printStackTrace();
-            vm.performSideEffects(List.of(new OperatorSideEffect.DoMishap(
-                    new at.petrak.hexcasting.api.casting.mishaps.MishapInternalException(exception),
-                    new Mishap.Context(null, null))));
-        }
-        return null;
     }
 
     /** Commit an internal folded Tick without ever allocating its CastResult wrapper. */
@@ -180,15 +283,13 @@ public final class FastLoopTickDispatch {
         PatternIota pattern = scope.pendingLoopTickPattern();
         List<OperatorSideEffect> sideEffects = scope.pendingLoopTickSideEffects();
         scope.clearPendingLoopTickResult();
-        if (!scope.consumeTickSubstackValidationSkip(outputStack)
-                && IotaType.isTooLargeToSerialize(outputStack)) {
+        if (scope.isTickStackTooLarge(outputStack)) {
             return new CastResult(pattern, continuation, null,
                     List.of(new OperatorSideEffect.DoMishap(new MishapStackSize(),
                             new Mishap.Context(null, null))),
                     ResolvedPatternType.ERRORED, HexEvalSounds.MISHAP.get());
         }
-        int maxOpCount = scope.hasCachedMaxOpCount()
-                ? scope.cachedMaxOpCount() : vm.getEnv().maxOpCount();
+        int maxOpCount = scope.actualMaxOpCount(vm.getEnv());
         if (outputOpsConsumed > maxOpCount) {
             return new CastResult(pattern, continuation, null,
                     List.of(new OperatorSideEffect.DoMishap(new MishapEvalTooMuch(),
@@ -197,20 +298,18 @@ public final class FastLoopTickDispatch {
         }
 
         scope.recordLoopTickBatchFold();
-        CastingImage image;
-        if (inputImage == vm.getImage() && JitCompatibility.loopTickImageMutationReady()
-                && (Object) inputImage instanceof CastingImageLoopAccess access) {
-            // This image has no retained observer result in the gated loop path; advance it in
-            // place so each folded Tick doesn't allocate another seven-field immutable wrapper.
-            access.cmi$applyFastTickOutput(outputStack, outputOpsConsumed, userData);
-            image = inputImage;
-        } else {
-            image = new CastingImage(outputStack, inputImage.getParenCount(), inputImage.getParenthesized(),
-                    inputImage.getEscapeNext(), inputImage.getSimulateNext(), outputOpsConsumed, userData);
-        }
+        CastingImage image = new CastingImage(outputStack, inputImage.getParenCount(), inputImage.getParenthesized(),
+                inputImage.getEscapeNext(), inputImage.getSimulateNext(), outputOpsConsumed, userData);
         vm.setImage(image);
-        // Direct results are held only when the empty post-execution callback fast path is safe.
-        scope.recordEmptyPostExecutionSkipped();
+        if (scope.postSuccessfulStaffTick(vm.getEnv(), pattern)) {
+            // Preserve all standard Staff behavior without constructing an observer result.
+        } else if (ServerConfig.hexJitSkipEmptyPostExecution && scope.canSkipEmptyCallbacks(vm.getEnv())) {
+            scope.recordEmptyPostExecutionSkipped();
+        } else {
+            // Staff callbacks have real behavior. Preserve them even when folding VM iterations.
+            notifyPostExecution(vm.getEnv(), new CastResult(pattern, continuation, image, sideEffects,
+                    ResolvedPatternType.EVALUATED, scope.loopTickHermesSound()), scope);
+        }
         try {
             if (sideEffects.size() == 1 && sideEffects.get(0) instanceof AttemptSpell attempt
                     && OpTick.isTickSpell(attempt.getSpell())) {
@@ -242,9 +341,7 @@ public final class FastLoopTickDispatch {
 
     private static CastResult executeFolded(CastingVM vm, SpellContinuation continuation, PatternIota pattern,
                                             PatternShapeMatch.PerWorld match, ExecutionScope scope) {
-        boolean deferResult = ServerConfig.hexJitSkipEmptyPostExecution
-                && scope.canSkipEmptyCallbacks(vm.getEnv());
-        return execute(vm, continuation, pattern, match, scope, deferResult);
+        return execute(vm, continuation, pattern, match, scope, true);
     }
 
     /**
@@ -259,7 +356,6 @@ public final class FastLoopTickDispatch {
         if (scope == null || !scope.loopSpecializationEnabled() || !scope.loopTickBatchEnabled()
                 || !scope.inMetacastingFrame() || !scope.coalesceDecorationsEnabled()
                 || !scope.combineTickSideEffectsEnabled() || !scope.reuseTickUserDataEnabled()
-                || !ServerConfig.hexJitSkipEmptyPostExecution || !scope.canSkipEmptyCallbacks(env)
                 || image.getEscapeNext() || image.getSimulateNext() || image.getParenCount() != 0
                 || !scope.canMutateTickUserDataInPlace(env)) return false;
 
@@ -286,7 +382,7 @@ public final class FastLoopTickDispatch {
                 : OpTick.INSTANCE.executeForFastPath(pos, env, userData, true, scope, assets);
         FastTickAction.preflightTickMedia(env, image, cost, scope);
         if (cost > 0) scope.prepareTickMediaExtraction(env, cost);
-        scope.rememberTickSubstack(stackWithoutArgs);
+        scope.rememberTickSubstack(stack, stackWithoutArgs);
         if (foldedCounterFast) scope.prepareFoldedTickCounterFastUpdate();
         scope.preparePendingLoopTickResult(pattern, continuation, image, stackWithoutArgs,
                 userData, assets.attemptSideEffects(), scope.loopTickHermesSound());
@@ -321,11 +417,21 @@ public final class FastLoopTickDispatch {
             boolean wipeParens = continuation instanceof SpellContinuation.NotDone cnd
                     && cnd.getFrame() instanceof FrameEvaluate frameEval && frameEval.isMetacasting();
             var image = wipeParens ? vm.getImage().withResetEscape() : null;
-            Component actionName = precheckPassed ? HexAPI.instance().getActionI18n(match.key, false) : null;
+            Component actionName = precheckPassed ? HexAPI.instance().getActionI18n(match.key,
+                    ((PatternIotaLoopDispatchAccess) pattern).cmi$cachedLoopTickRequiresEnlightenment()) : null;
             return new CastResult(pattern, continuation, image,
                     List.of(new OperatorSideEffect.DoMishap(mishap,
                             new Mishap.Context(pattern.getPattern(), actionName))),
                     mishap.resolutionType(env), HexEvalSounds.MISHAP.get());
+        } catch (Exception exception) {
+            // Direct dispatch replaces executeInner, including its non-Mishap failure boundary.
+            exception.printStackTrace();
+            scope.loopTickDispatchCompleted(false);
+            return new CastResult(pattern, continuation, null,
+                    List.of(new OperatorSideEffect.DoMishap(
+                            new at.petrak.hexcasting.api.casting.mishaps.MishapInternalException(exception),
+                            new Mishap.Context(pattern.getPattern(), null))),
+                    ResolvedPatternType.ERRORED, HexEvalSounds.MISHAP.get());
         } finally {
             if (!precheckPassed) scope.loopTickDispatchCompleted(false);
             scope.loopTickDispatchActive(false);

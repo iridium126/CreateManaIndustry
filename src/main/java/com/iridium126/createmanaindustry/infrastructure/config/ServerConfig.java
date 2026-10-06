@@ -45,6 +45,7 @@ public final class ServerConfig {
     public static volatile boolean hexJitCompileActions;
     public static volatile boolean hexJitSkipObservers = true;
     public static volatile boolean hexJitCoalesceDecorations = true;
+    public static volatile boolean hexJitCoalesceStaffSounds = true;
     public static volatile boolean hexJitBatchAddMotion;
     public static volatile boolean hexJitFastAddMotionArguments = true;
     public static volatile boolean hexJitMemoAddMotionNormalization;
@@ -84,7 +85,7 @@ public final class ServerConfig {
     public static volatile boolean hexJitFastSpecialHandlerMath = true;
     public static volatile boolean hexJitFastSpecialHandlerLookup = true;
     public static volatile boolean hexJitFastNumberLiterals = true;
-    public static volatile boolean hexJitCacheNormalPatternLookup;
+    public static volatile boolean hexJitCacheNormalPatternLookup = true;
     public static volatile boolean hexJitCachePerWorldPatternLookup = true;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
@@ -158,6 +159,7 @@ public final class ServerConfig {
     private static ModConfigSpec.BooleanValue HEX_JIT_COMPILE_ACTIONS;
     private static ModConfigSpec.BooleanValue HEX_JIT_SKIP_OBSERVERS;
     private static ModConfigSpec.BooleanValue HEX_JIT_COALESCE_DECORATIONS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_COALESCE_STAFF_SOUNDS;
     private static ModConfigSpec.BooleanValue HEX_JIT_BATCH_ADD_MOTION;
     private static ModConfigSpec.BooleanValue HEX_JIT_FAST_ADD_MOTION_ARGUMENTS;
     private static ModConfigSpec.BooleanValue HEX_JIT_MEMO_ADD_MOTION_NORMALIZATION;
@@ -182,7 +184,6 @@ public final class ServerConfig {
     private static ModConfigSpec.BooleanValue HEX_JIT_LOOP_SPECIALIZATION;
     private static ModConfigSpec.BooleanValue HEX_JIT_LOOP_TICK_DISPATCH;
     private static ModConfigSpec.BooleanValue HEX_JIT_LOOP_TICK_BATCH;
-    private static ModConfigSpec.BooleanValue HEX_JIT_REUSE_LOOP_TICK_IMAGE;
     private static ModConfigSpec.BooleanValue HEX_JIT_COLLECT_METRICS;
     private static ModConfigSpec.BooleanValue HEX_JIT_COALESCE_EVAL_SOUNDS;
     private static ModConfigSpec.BooleanValue HEX_JIT_SKIP_EMPTY_POST_EXECUTION;
@@ -365,6 +366,9 @@ public final class ServerConfig {
         HEX_JIT_COALESCE_DECORATIONS = BUILDER
                 .comment("Within one JIT cast, emit only one copy of each identical Hexcasting particle spray and pigment.")
                 .define("coalesceDecorations", true);
+        HEX_JIT_COALESCE_STAFF_SOUNDS = BUILDER
+                .comment("Within one AUTO JIT cast, play identical Staff callback sounds once. Unobserved duplicates may skip seed generation and pure intermediate callbacks, changing the sound RNG stream. Disable to retain original sound playback and RNG consumption.")
+                .define("coalesceStaffSounds", true);
         HEX_JIT_BATCH_ADD_MOTION = BUILDER
                 .comment("Batch repeated Hexcasting Add Motion vector writes while preserving ordered double additions.")
                 .define("batchAddMotion", false);
@@ -481,7 +485,7 @@ public final class ServerConfig {
                 .define("fastSpecialHandlerLookup", true);
         HEX_JIT_CACHE_NORMAL_PATTERN_LOOKUP = BUILDER
                 .comment("Cache normal registry matches on immutable PatternIota instances until the pattern registry epoch changes.")
-                .define("cacheNormalPatternLookup", false);
+                .define("cacheNormalPatternLookup", true);
         HEX_JIT_CACHE_PER_WORLD_PATTERN_LOOKUP = BUILDER
                 .comment("Cache deterministic per-world great-pattern matches on immutable PatternIota instances until the pattern registry epoch changes.")
                 .define("cachePerWorldPatternLookup", true);
@@ -691,6 +695,7 @@ public final class ServerConfig {
         hexJitCompileActions = HEX_JIT_COMPILE_ACTIONS.get();
         hexJitSkipObservers = HEX_JIT_SKIP_OBSERVERS.get();
         hexJitCoalesceDecorations = HEX_JIT_COALESCE_DECORATIONS.get();
+        hexJitCoalesceStaffSounds = HEX_JIT_COALESCE_STAFF_SOUNDS.get();
         hexJitBatchAddMotion = HEX_JIT_BATCH_ADD_MOTION.get();
         hexJitFastAddMotionArguments = HEX_JIT_FAST_ADD_MOTION_ARGUMENTS.get();
         hexJitMemoAddMotionNormalization = HEX_JIT_MEMO_ADD_MOTION_NORMALIZATION.get();

@@ -65,6 +65,9 @@ public final class IotaStackValidation {
             return false;
         }
 
+        /** Only successful scans of exact built-in, stable metrics enter this cache. */
+        public boolean hasValidatedStableStack(Object stack) { return containsValidatedStack(stack); }
+
         private void rememberValidatedStack(Object stack) {
             if (!cacheSuccessfulStackResults) return;
             validatedStacks[nextValidatedStack] = stack;

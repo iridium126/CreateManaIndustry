@@ -8,6 +8,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
 import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
 
 /** Bounded, server-thread-owned cache. No game objects may be used as keys or compiler inputs. */
@@ -15,7 +16,9 @@ public final class CompilationCache implements AutoCloseable {
     private final LinkedHashMap<Long, Entry> entries = new LinkedHashMap<>(16, .75f, true);
     /** Stateless call stubs are shared by descriptor; sites keep independent heat and failure state. */
     private final Map<CallCompiler.Description, SharedUnit> linkedByDescription = new HashMap<>();
-    private final Map<CallCompiler.Description, Future<Product>> pendingByDescription = new HashMap<>();
+    private final Map<CallCompiler.Description, PendingUnit> pendingByDescription = new HashMap<>();
+    /** Includes completed worker products as well as linked bytecode. */
+    private final AtomicLong budgetBytes = new AtomicLong();
     private final ThreadPoolExecutor worker;
     private final int threshold, maxEntries;
     private final long maxBytes;
@@ -43,31 +46,37 @@ public final class CompilationCache implements AutoCloseable {
             entry.description = description;
             entries.put(site, entry);
         } else if (!entry.description.equals(description)) {
+            releasePending(entry);
             entry.failed = true;
             failures++;
             return null;
         }
         if (entry.unit != null) { hits++; return entry.unit.code; }
         if (entry.failed) return null;
-        if (entry.pending != null && entry.pending.isDone()) {
-            Future<Product> pending = entry.pending;
+        if (entry.pending != null && entry.pending.future.isDone()) {
+            PendingUnit pending = entry.pending;
             try {
-                Product product = pending.get();
+                Product product = pending.future.get();
                 if (!product.accounted) {
                     compileNanos += product.nanos;
                     product.accounted = true;
                 }
                 // Refuse publication rather than evict an entry while its operation is in flight.
-                SharedUnit shared = linkedByDescription.get(description);
+                SharedUnit shared = pending.shared;
                 if (shared != null) {
                     retain(entry, shared);
-                } else if (residentBytes + product.bytes.length > maxBytes) {
+                } else if (product.bytes == null) {
                     entry.failed = true;
                     failures++;
                 } else {
                     shared = new SharedUnit(CallCompiler.link(product.bytes), product.bytes.length);
                     linkedByDescription.put(description, shared);
                     residentBytes += product.bytes.length;
+                    // The pending unit owns one reference until its last waiting site resolves.
+                    shared.references = 1;
+                    pending.shared = shared;
+                    pending.reservedBytes = 0; // Transfer the existing budget reservation.
+                    product.bytes = null;
                     retain(entry, shared);
                 }
             } catch (InterruptedException interrupted) {
@@ -78,8 +87,7 @@ public final class CompilationCache implements AutoCloseable {
                 entry.failed = true;
                 failures++;
             } finally {
-                pendingByDescription.remove(description, pending);
-                entry.pending = null;
+                releasePending(entry);
             }
             if (entry.unit != null) { hits++; return entry.unit.code; }
         }
@@ -91,16 +99,25 @@ public final class CompilationCache implements AutoCloseable {
                 hits++;
                 return shared.code;
             }
-            Future<Product> sharedPending = pendingByDescription.get(description);
+            PendingUnit sharedPending = pendingByDescription.get(description);
             if (sharedPending != null) {
                 entry.pending = sharedPending;
+                sharedPending.references++;
                 return null;
             }
             try {
-                Future<Product> pending = worker.submit(() -> {
+                PendingUnit pending = new PendingUnit();
+                pending.future = worker.submit(() -> {
                     long start = System.nanoTime();
-                    return new Product(CallCompiler.compile(description), System.nanoTime() - start);
+                    byte[] bytes = CallCompiler.compile(description);
+                    long nanos = System.nanoTime() - start;
+                    synchronized (pending) {
+                        if (pending.released || !reserve(bytes.length)) return new Product(null, nanos);
+                        pending.reservedBytes = bytes.length;
+                        return new Product(bytes, nanos);
+                    }
                 });
+                pending.references = 1;
                 entry.pending = pending;
                 pendingByDescription.put(description, pending);
                 submitted++;
@@ -115,12 +132,42 @@ public final class CompilationCache implements AutoCloseable {
         var iterator = entries.values().iterator();
         Entry oldest = iterator.next();
         iterator.remove();
-        if (oldest.unit != null && --oldest.unit.references == 0) {
-            linkedByDescription.remove(oldest.description, oldest.unit);
-            residentBytes -= oldest.unit.bytes;
-        }
+        releasePending(oldest);
+        if (oldest.unit != null) releaseShared(oldest.description, oldest.unit);
         worker.purge();
         evictions++;
+    }
+
+    private boolean reserve(int bytes) {
+        long current;
+        do {
+            current = budgetBytes.get();
+            if (bytes > maxBytes - current) return false;
+        } while (!budgetBytes.compareAndSet(current, current + bytes));
+        return true;
+    }
+
+    private void releasePending(Entry entry) {
+        PendingUnit pending = entry.pending;
+        if (pending == null) return;
+        entry.pending = null;
+        if (--pending.references != 0) return;
+        pendingByDescription.remove(entry.description, pending);
+        synchronized (pending) {
+            // A cancelled running Future may still finish: prevent a late reservation.
+            pending.released = true;
+            budgetBytes.addAndGet(-pending.reservedBytes);
+            pending.reservedBytes = 0;
+        }
+        pending.future.cancel(false);
+        if (pending.shared != null) releaseShared(entry.description, pending.shared);
+    }
+
+    private void releaseShared(CallCompiler.Description description, SharedUnit unit) {
+        if (--unit.references != 0) return;
+        linkedByDescription.remove(description, unit);
+        residentBytes -= unit.bytes;
+        budgetBytes.addAndGet(-unit.bytes);
     }
 
     private static void retain(Entry entry, SharedUnit unit) {
@@ -129,12 +176,16 @@ public final class CompilationCache implements AutoCloseable {
     }
 
     public Stats stats() {
-        return new Stats(calls, hits, submitted, failures, compileNanos, entries.size(), residentBytes, evictions);
+        return new Stats(calls, hits, submitted, failures, compileNanos, entries.size(), budgetBytes.get(), evictions,
+                pendingByDescription.size(), budgetBytes.get() - residentBytes);
     }
 
     @Override public void close() {
         closed = true;
-        for (Future<Product> pending : pendingByDescription.values()) pending.cancel(false);
+        for (Entry entry : entries.values()) {
+            releasePending(entry);
+            if (entry.unit != null) releaseShared(entry.description, entry.unit);
+        }
         entries.clear();
         linkedByDescription.clear();
         pendingByDescription.clear();
@@ -143,9 +194,9 @@ public final class CompilationCache implements AutoCloseable {
     }
 
     public record Stats(long calls, long compiledHits, long submitted, long failures, long compileNanos,
-                        int entries, long bytecodeBytes, long evictions) {}
+                        int entries, long bytecodeBytes, long evictions, int pendingDescriptions, long pendingBytes) {}
     private static final class Product {
-        final byte[] bytes;
+        byte[] bytes;
         final long nanos;
         boolean accounted;
 
@@ -159,7 +210,14 @@ public final class CompilationCache implements AutoCloseable {
         boolean failed;
         CallCompiler.Description description;
         SharedUnit unit;
-        Future<Product> pending;
+        PendingUnit pending;
+    }
+    private static final class PendingUnit {
+        Future<Product> future;
+        int references;
+        boolean released;
+        int reservedBytes;
+        SharedUnit shared;
     }
     private static final class SharedUnit {
         final CompiledCall code;

@@ -33,6 +33,8 @@ gradle.projectsEvaluated {
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.export', 'true')
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.export.filter', 'at.petrak.hexcasting.*')
     p.neoForge.runs.gameTestServer.systemProperty('hexjit.jfr.dir', p.layout.buildDirectory.dir('hexjit-jfr').get().asFile.absolutePath)
+    p.neoForge.runs.gameTestServer.systemProperty('hexjit.steadySamples', p.findProperty('hexjitSteadySamples') ?: '9')
+    p.neoForge.runs.gameTestServer.systemProperty('hexjit.soundAblationSamples', p.findProperty('hexjitSoundAblationSamples') ?: '5')
     p.tasks.named('runGameTestServer', JavaExec).configure {
         maxHeapSize = '3g'
     }

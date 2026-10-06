@@ -7,6 +7,15 @@ import org.slf4j.LoggerFactory;
 /** Bootstrap-safe: must not reference Hexcasting classes or initialise registries. */
 public final class JitCompatibility {
     private static final Set<String> VERIFIED = ConcurrentHashMap.newKeySet();
+    private static final Set<String> STAFF_CALLBACKS = ConcurrentHashMap.newKeySet();
+    private static volatile String staffCallbackFailure;
+    private static volatile boolean staffCallbacksReady;
+    private static volatile boolean statLookupVerified;
+    private static volatile boolean quotedVectorsVerified;
+    private static volatile boolean rangeAttributesVerified;
+    private static volatile boolean pureQuotesVerified;
+    private static final Set<String> SOUND_EMISSION = ConcurrentHashMap.newKeySet();
+    private static volatile boolean soundElisionDisabled;
     private static volatile String failure;
     private static volatile String motionFailure;
     private static volatile boolean motionTargetVerified;
@@ -31,7 +40,6 @@ public final class JitCompatibility {
     private static volatile boolean actionPrecheckTargetVerified;
     private static volatile boolean mediaPoolTargetVerified;
     private static volatile boolean personalMediaBatchTargetVerified;
-    private static volatile boolean loopTickImageMutationTargetVerified;
     private static volatile boolean directPreflightCastingEnvironmentVerified;
     private static volatile boolean directPreflightPlayerEnvironmentVerified;
     private static volatile boolean directPreflightStaffEnvironmentVerified;
@@ -117,6 +125,29 @@ public final class JitCompatibility {
         refreshReadiness();
     }
     public static boolean ready() { return coreReady; }
+    public static void verifiedPureQuotes() { pureQuotesVerified = true; }
+    public static void disablePureQuotes() { pureQuotesVerified = false; }
+    public static boolean pureQuotesReady() { return coreReady && pureQuotesVerified && quotedVectorReady() && rangeAttributesReady(); }
+    public static void verifiedSoundEmission(String name) { SOUND_EMISSION.add(name); }
+    public static void disableSoundElision() { soundElisionDisabled = true; }
+    public static boolean soundElisionReady() { return coreReady && !soundElisionDisabled && SOUND_EMISSION.size() == 3; }
+    public static void verifiedRangeAttributes() { rangeAttributesVerified = true; }
+    public static void disableRangeAttributes() { rangeAttributesVerified = false; }
+    public static boolean rangeAttributesReady() { return coreReady && rangeAttributesVerified; }
+    public static void verifiedQuotedVectors() { quotedVectorsVerified = true; }
+    public static void disableQuotedVectors() { quotedVectorsVerified = false; }
+    public static boolean quotedVectorReady() { return coreReady && quotedVectorsVerified; }
+    public static void verifiedStatLookup() { statLookupVerified = true; }
+    public static void disableStatLookup() { statLookupVerified = false; }
+    public static boolean statLookupReady() { return coreReady && statLookupVerified; }
+    public static void verifiedStaffCallback(String name) {
+        STAFF_CALLBACKS.add(name);
+        staffCallbacksReady = staffCallbackFailure == null && STAFF_CALLBACKS.size() == 3;
+    }
+    public static void disableStaffCallbacks(String reason) { staffCallbackFailure = reason; staffCallbacksReady = false; }
+    public static boolean fastStaffCallbacksReady() {
+        return coreReady && staffCallbacksReady;
+    }
     public static boolean motionBatchingReady() { return motionReady; }
     public static boolean particleCoalescingReady() { return coreReady && particleCoalescingFailure == null; }
     public static boolean fastAddMotionReady() { return coreReady && fastActionTargetVerified && fastActionFailure == null; }
@@ -144,15 +175,15 @@ public final class JitCompatibility {
     }
     public static boolean mediaPoolTargetReady() { return mediaPoolTargetVerified; }
     public static boolean personalMediaBatchTargetReady() { return personalMediaBatchTargetVerified; }
-    public static void loopTickImageMutationTargetVerified() { loopTickImageMutationTargetVerified = true; }
-    public static boolean loopTickImageMutationReady() { return loopTickImageMutationTargetVerified; }
     public static boolean directMediaPreflightReady() {
         return directPreflightFailure == null && directPreflightCastingEnvironmentVerified
                 && directPreflightPlayerEnvironmentVerified && directPreflightStaffEnvironmentVerified;
     }
     public static String status() {
         String core = failure != null ? failure : ready() ? "verified pre-53" : "waiting for target verification (" + VERIFIED.size() + "/7)";
-        return core + (motionBatchingReady() ? ", motionBatch=verified" : motionFailure != null
+        return core + ", staffCallbacks=" + (fastStaffCallbacksReady() ? "verified" : staffCallbackFailure != null
+                ? staffCallbackFailure : "waiting")
+                + (motionBatchingReady() ? ", motionBatch=verified" : motionFailure != null
                 ? ", motionBatch=disabled (" + motionFailure + ")" : ", motionBatch=unverified")
                 + (particleCoalescingReady() ? ", particleCoalescing=verified" : particleCoalescingFailure != null
                 ? ", particleCoalescing=disabled (" + particleCoalescingFailure + ")" : ", particleCoalescing=unverified")
