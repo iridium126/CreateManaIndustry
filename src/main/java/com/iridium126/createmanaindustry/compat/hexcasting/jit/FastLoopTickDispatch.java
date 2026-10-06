@@ -278,10 +278,16 @@ public final class FastLoopTickDispatch {
         TreeList<Iota> stackWithoutArgs = cachedStackWithoutArgs == null ? stack.init() : cachedStackWithoutArgs;
         var userData = scope.reuseTickUserData(image.getUserData(), OpTick.TAG_TIMES_TICKED,
                 HexAPI.RAVENMIND_USERDATA);
-        long cost = OpTick.INSTANCE.executeForFastPath(pos, env, userData, true, scope, assets);
+        boolean foldedCounterFast = scope.loopFastTickCounterEnabled()
+                && scope.hasCachedTickCounterFor(
+                userData, OpTick.TAG_TIMES_TICKED, assets.posKey());
+        long cost = foldedCounterFast
+                ? OpTick.INSTANCE.executeForFoldedLoopPath(pos, env, userData, scope, assets)
+                : OpTick.INSTANCE.executeForFastPath(pos, env, userData, true, scope, assets);
         FastTickAction.preflightTickMedia(env, image, cost, scope);
         if (cost > 0) scope.prepareTickMediaExtraction(env, cost);
         scope.rememberTickSubstack(stackWithoutArgs);
+        if (foldedCounterFast) scope.prepareFoldedTickCounterFastUpdate();
         scope.preparePendingLoopTickResult(pattern, continuation, image, stackWithoutArgs,
                 userData, assets.attemptSideEffects(), scope.loopTickHermesSound());
         scope.recordFoldedBuddingAmethystAction();

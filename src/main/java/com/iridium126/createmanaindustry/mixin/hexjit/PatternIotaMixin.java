@@ -63,7 +63,8 @@ public abstract class PatternIotaMixin implements PatternIotaLoopDispatchAccess 
 
     @Override
     public PatternShapeMatch.PerWorld cmi$getCachedLoopTickMatch(long registryGeneration) {
-        if (cmi$perWorldPatternEpoch != registryGeneration || cmi$perWorldActionEpoch != registryGeneration
+        if (!ServerConfig.hexJitCachePerWorldPatternLookup
+                || cmi$perWorldPatternEpoch != registryGeneration || cmi$perWorldActionEpoch != registryGeneration
                 || cmi$perWorldAction != OpTick.INSTANCE)
             return null;
         return cmi$perWorldPatternMatch;

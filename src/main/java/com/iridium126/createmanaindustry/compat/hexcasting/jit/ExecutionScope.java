@@ -88,6 +88,7 @@ public final class ExecutionScope implements AutoCloseable {
     private final boolean loopSpecialization;
     private final boolean fastTickAction;
     private final boolean loopTickBatch;
+    private final boolean loopFastTickCounter;
     private final boolean batchMediaUsedStat;
     private final boolean collectMetrics;
     private final boolean batchTickCounterWrites;
@@ -121,8 +122,10 @@ public final class ExecutionScope implements AutoCloseable {
     private boolean hasDeferredTickCounterWrite;
     private long tickCounterWritesDeferred;
     private long tickCounterWriteCommits;
+    private long foldedTickCounterFastUpdates;
     private static long lastTickCounterWritesDeferred;
     private static long lastTickCounterWriteCommits;
+    private static long lastFoldedTickCounterFastUpdates;
     private TreeList<?> pendingTickStackPopInput;
     private TreeList<?> pendingTickStackPopSource;
     private CastingImage pendingLoopTickInputImage;
@@ -174,6 +177,7 @@ public final class ExecutionScope implements AutoCloseable {
     private int cachedTickCounterValue;
     private boolean hasCachedTickCounter;
     private boolean cachedTickCounterMapAttached;
+    private boolean pendingFoldedTickCounterFastUpdate;
     private Iota tickTargetIota;
     private BlockPos tickTargetPos;
     private BlockPos fastTickAssetsPos;
@@ -271,6 +275,7 @@ public final class ExecutionScope implements AutoCloseable {
                 && ServerConfig.hexJitFastTickAction && HexJitRuntime.enabled()
                 && JitCompatibility.fastAddMotionReady();
         loopTickBatch = loopSpecialization && fastTickAction && ServerConfig.hexJitLoopTickBatch;
+        loopFastTickCounter = loopTickBatch && ServerConfig.hexJitLoopFastTickCounter;
         batchMediaUsedStat = loopTickBatch && ServerConfig.hexJitFastSpendMediaTrigger;
         batchTickCounterWrites = reuseTickUserData && loopSpecialization && fastTickAction
                 && ServerConfig.hexJitBatchTickCounterWrites;
@@ -324,6 +329,7 @@ public final class ExecutionScope implements AutoCloseable {
     public boolean loopSpecializationEnabled() { return loopSpecialization; }
     public boolean fastTickActionEnabled() { return fastTickAction; }
     public boolean loopTickBatchEnabled() { return loopTickBatch; }
+    public boolean loopFastTickCounterEnabled() { return loopFastTickCounter; }
     public boolean collectMetricsEnabled() { return collectMetrics; }
     public boolean batchTickCounterWritesEnabled() { return batchTickCounterWrites; }
     public boolean cacheTickStackPopEnabled() { return cacheTickStackPop; }
@@ -490,6 +496,59 @@ public final class ExecutionScope implements AutoCloseable {
         return cachedTickCounterValue;
     }
 
+    /** True while the current loop still has the same private Tick counter compound. */
+    public boolean hasCachedTickCounterFor(CompoundTag root, String counterTag, String counterKey) {
+        return hasCachedTickCounter && cachedTickCounterRoot == root
+                && cachedTickCounterTag == counterTag && cachedTickCounterKey == counterKey;
+    }
+
+    /** Read the already validated counter directly inside a consecutive Tick-only loop run. */
+    public int currentCachedTickCounterValue() { return cachedTickCounterValue; }
+
+    /** Mark that this folded Tick can advance the already validated cache without a prepared tuple. */
+    public void prepareFoldedTickCounterFastUpdate() {
+        pendingFoldedTickCounterFastUpdate = true;
+    }
+
+    /** Apply one successful folded Tick's increment using the cast-local counter cache. */
+    public boolean applyFoldedTickCounterFastUpdate(CompoundTag root, BlockPos pos,
+                                                     String counterTag, String counterKey) {
+        if (!pendingFoldedTickCounterFastUpdate) return false;
+        pendingFoldedTickCounterFastUpdate = false;
+        if (!hasCachedTickCounterFor(root, counterTag, counterKey)) {
+            invalidateCachedTickCounter();
+            return false;
+        }
+
+        int nextValue = cachedTickCounterValue + 1;
+        cachedTickCounterValue = nextValue;
+        if (collectMetrics) foldedTickCounterFastUpdates++;
+        if (batchTickCounterWrites) {
+            boolean sameDeferredCounter = hasDeferredTickCounterWrite
+                    && deferredTickCounterRoot == root && deferredTickCounterMap == cachedTickCounterMap
+                    && deferredTickCounterPos != null
+                    && (deferredTickCounterPos == pos || deferredTickCounterPos.equals(pos))
+                    && (deferredTickCounterTag == counterTag || deferredTickCounterTag.equals(counterTag))
+                    && (deferredTickCounterKey == counterKey || deferredTickCounterKey.equals(counterKey));
+            if (hasDeferredTickCounterWrite && !sameDeferredCounter) flushTickCounterWrites();
+            deferredTickCounterRoot = root;
+            deferredTickCounterMap = cachedTickCounterMap;
+            deferredTickCounterPos = pos;
+            deferredTickCounterTag = counterTag;
+            deferredTickCounterKey = counterKey;
+            deferredTickCounterValue = nextValue;
+            hasDeferredTickCounterWrite = true;
+            if (collectMetrics) tickCounterWritesDeferred++;
+        } else {
+            cachedTickCounterMap.putInt(counterKey, nextValue);
+            if (!cachedTickCounterMapAttached) {
+                root.put(counterTag, cachedTickCounterMap);
+                cachedTickCounterMapAttached = true;
+            }
+        }
+        return true;
+    }
+
     /** Reuse the counter compound without a root-tag lookup between Tick actions in one cast. */
     public CompoundTag cachedTickCounterMap(CompoundTag root, String counterTag, String counterKey) {
         if (hasCachedTickCounter && cachedTickCounterRoot == root
@@ -500,6 +559,7 @@ public final class ExecutionScope implements AutoCloseable {
 
     /** Other actions may replace Tick's user-data compound, so forget its cached child map first. */
     public void invalidateCachedTickCounter() {
+        pendingFoldedTickCounterFastUpdate = false;
         hasCachedTickCounter = false;
         cachedTickCounterRoot = null;
         cachedTickCounterMap = null;
@@ -603,6 +663,7 @@ public final class ExecutionScope implements AutoCloseable {
 
     public static long lastTickCounterWritesDeferred() { return lastTickCounterWritesDeferred; }
     public static long lastTickCounterWriteCommits() { return lastTickCounterWriteCommits; }
+    public static long lastFoldedTickCounterFastUpdates() { return lastFoldedTickCounterFastUpdates; }
 
     /** Keep one append parent per cast; only an identity-matching Tick stack may consume it. */
     public static void recordTickStackAppendOnServerThread(TreeList<?> previous, TreeList<?> appended) {
@@ -1306,10 +1367,12 @@ public final class ExecutionScope implements AutoCloseable {
                 lastDeferredPersonalMediaWrites = collectMetrics ? deferredPersonalMediaWrites : 0;
                 lastTickCounterWritesDeferred = collectMetrics ? tickCounterWritesDeferred : 0;
                 lastTickCounterWriteCommits = collectMetrics ? tickCounterWriteCommits : 0;
+                lastFoldedTickCounterFastUpdates = collectMetrics ? foldedTickCounterFastUpdates : 0;
                 lastTickStackPopCacheHits = collectMetrics ? tickStackPopCacheHits : 0;
                 lastTickRangeCheckCacheHits = collectMetrics ? tickRangeCheckCacheHits : 0;
             } else {
                 previous.buddingAmethystRandomTickCalls += buddingAmethystRandomTickCalls;
+                previous.foldedTickCounterFastUpdates += foldedTickCounterFastUpdates;
                 previous.tickStackPopCacheHits += tickStackPopCacheHits;
                 previous.tickRangeCheckCacheHits += tickRangeCheckCacheHits;
             }

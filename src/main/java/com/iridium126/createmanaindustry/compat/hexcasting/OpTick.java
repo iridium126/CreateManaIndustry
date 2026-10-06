@@ -71,6 +71,20 @@ public final class OpTick implements SpellAction {
         return prepareTick(pos, env, userData, true, mutateUserDataInPlace, scope, fastAssets);
     }
 
+    /** Cost-only preparation for the uninterrupted folded Tick body with its counter already cached. */
+    public long executeForFoldedLoopPath(BlockPos pos, CastingEnvironment env, CompoundTag userData,
+                                         ExecutionScope scope, FastTickAssets fastAssets) {
+        String posKey = fastAssets.posKey();
+        if (!scope.hasCachedTickCounterFor(userData, TAG_TIMES_TICKED, posKey))
+            return executeForFastPath(pos, env, userData, true, scope, fastAssets);
+
+        boolean cachedRangeCheck = ServerConfig.hexJitCacheTickRangeCheck
+                && scope.skipCachedBuddingAmethystRangeCheck(env, pos);
+        if (!cachedRangeCheck) env.assertVecInRange(fastAssets.center());
+        int timesTicked = scope.currentCachedTickCounterValue();
+        return ServerConfig.tickConstantCost + ServerConfig.tickCostPerTicked * timesTicked;
+    }
+
     private long prepareTick(BlockPos pos, CastingEnvironment env, CompoundTag userData,
                              boolean fastUserDataCopy, boolean mutateUserDataInPlace,
                              ExecutionScope currentScope, FastTickAssets fastAssets) {
@@ -190,8 +204,10 @@ public final class OpTick implements SpellAction {
                     ? image.getUserData()
                     : fastUserDataCopy ? FastCompoundTagCopy.copy(image.getUserData()) : image.getUserData().copy();
             String key = posKey == null ? pos.toShortString() : posKey;
-            if (scope == null || !scope.applyPreparedTickCounterUpdate(userData, pos,
-                    TAG_TIMES_TICKED, key)) {
+            boolean appliedFastLoopCounter = scope != null
+                    && scope.applyFoldedTickCounterFastUpdate(userData, pos, TAG_TIMES_TICKED, key);
+            if (!appliedFastLoopCounter && (scope == null || !scope.applyPreparedTickCounterUpdate(userData, pos,
+                    TAG_TIMES_TICKED, key))) {
                 CompoundTag timesTickedMap = userData.getCompound(TAG_TIMES_TICKED);
                 timesTickedMap.putInt(key, timesTickedMap.getInt(key) + 1);
                 userData.put(TAG_TIMES_TICKED, timesTickedMap);
@@ -340,7 +356,10 @@ public final class OpTick implements SpellAction {
 
             CompoundTag userData = image.getUserData();
             String key = posKey == null ? pos.toShortString() : posKey;
-            if (!scope.applyPreparedTickCounterUpdate(userData, pos, TAG_TIMES_TICKED, key)) {
+            boolean appliedFastLoopCounter = scope.applyFoldedTickCounterFastUpdate(
+                    userData, pos, TAG_TIMES_TICKED, key);
+            if (!appliedFastLoopCounter
+                    && !scope.applyPreparedTickCounterUpdate(userData, pos, TAG_TIMES_TICKED, key)) {
                 CompoundTag timesTickedMap = userData.getCompound(TAG_TIMES_TICKED);
                 timesTickedMap.putInt(key, timesTickedMap.getInt(key) + 1);
                 userData.put(TAG_TIMES_TICKED, timesTickedMap);
