@@ -106,7 +106,7 @@ public final class ProcessingPonderScenes {
     }
 
     public static void roseDeposition(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "rose_deposition", "Rose quartz coating", "玫瑰石英镀层工坊");
+        Workshop w = new Workshop(builder, util, "rose_deposition", "Rose Quartz Coating Line", "玫瑰石英镀层产线");
         BlockPos source = p(3, 2, 4), target = p(6, 2, 3);
         w.burner(source.below(), true); w.place(source, AllBlocks.BASIN.get());
         w.liquid(source, CMIFluids.MOLTEN_ROSE_QUARTZ.get(), 125);

@@ -35,7 +35,7 @@ public final class AllayBurnerPonderScenes {
         w.text(b, "Hold an empty burner and right-click an Allay to capture it.", "手持空悦灵燃烧室，右键点击悦灵即可捕获。");
         w.scene.world().modifyEntities(Allay.class, Entity::discard);
         w.depot(p(6, 1, 3), CMIBlocks.ALLAY_BURNER.asStack());
-        w.text(p(6, 1, 3), "The filled burner is now ready to place in your workshop.", "装入悦灵后，就可以把燃烧室放进工坊了。");
+        w.text(p(6, 1, 3), "The filled burner is now ready to place in your workstation.", "装入悦灵后，就可以把燃烧室放进工作站了。");
         w.display(p(6, 1, 3), ItemStack.EMPTY);
         w.burner(b, false);
         w.point(b, PonderPalette.RED);
@@ -47,7 +47,7 @@ public final class AllayBurnerPonderScenes {
     }
 
     public static void solidFuel(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "allay_fuel", "Keeping the workshop warm", "让工坊持续供热");
+        Workshop w = new Workshop(builder, util, "allay_fuel", "Keeping the Allay Burner Burning", "让燃烧室持续燃烧");
         BlockPos b = p(5, 1, 3), depot = p(3, 1, 2), arm = p(4, 1, 4);
         w.burner(b, false);
         w.text(b, "Feed the Allay Burner with Amethyst Shards to provide heat.", "给悦灵燃烧室喂入紫水晶碎片，就能开始供热。");
@@ -69,7 +69,7 @@ public final class AllayBurnerPonderScenes {
     }
 
     public static void liquidMedia(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "allay_liquid", "Fuel through pipes", "用管道自动供料");
+        Workshop w = new Workshop(builder, util, "allay_liquid", "Using Liquid Fuel", "使用液态燃料");
         BlockPos b = p(6, 1, 3), tank = p(2, 1, 3);
         w.burner(b, false);
         w.use(b, new ItemStack(CMIFluids.LIQUID_MEDIA.get().getBucket()));
@@ -84,19 +84,19 @@ public final class AllayBurnerPonderScenes {
         w.liquid(tank, CMIFluids.LIQUID_MEDIA.get(), 3000);
         w.text(b, "The internal tank holds one bucket. Pipes can insert Liquid Media, but cannot extract it.", "内置储罐能装一桶液态媒质。管道可以灌入，但不能抽出。");
         w.use(b, new ItemStack(Items.AMETHYST_SHARD));
-        w.text(b, "Solid fuel is used first. Liquid Media waits until that fuel runs out.", "固体燃料优先消耗，耗尽后才会继续使用液态媒质。");
+        w.text(b, "Solid fuel is used first. Liquid Media waits until that fuel runs out.", "固态燃料优先消耗，耗尽后才会继续使用液态媒质。");
         w.point(tank, PonderPalette.INPUT);
         w.text(tank, "Keep the supply topped up for unattended heating.", "保持储罐中有液态媒质，就能持续自动供热。");
         w.finish();
     }
 
     public static void heating(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "allay_heating", "Amethyst into Liquid Media", "把紫水晶加工成液态媒质");
+        Workshop w = new Workshop(builder, util, "allay_heating", "Producing Liquid Media from Amethyst", "从紫水晶生产液态媒质");
         BlockPos b = p(4, 1, 3), basin = b.above(), press = b.above(3);
         w.burner(b, false);
         w.place(basin, AllBlocks.BASIN.get());
         w.text(basin, "Place a Basin directly above the burner to use its heat.", "把工作盆放在燃烧室正上方，让热量传给工作盆。");
-        w.place(press, AllBlocks.MECHANICAL_PRESS.getDefaultState().setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH));
+        w.place(press, AllBlocks.MECHANICAL_PRESS.getDefaultState().setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST));
         w.drive(press, Direction.Axis.X);
         w.text(press, "Add a powered Mechanical Press, leaving one block between the press and Basin.", "上方安装有动力的冲压机，冲压机与工作盆之间留一格空间。");
         w.basinItems(basin, new ItemStack(Items.AMETHYST_SHARD));
