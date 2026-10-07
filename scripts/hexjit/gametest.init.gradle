@@ -5,6 +5,9 @@ gradle.projectsEvaluated {
     if (!owo.isFile()) throw new GradleException('GameTest runtime requires the local owo-lib fixture used by Accessories')
     p.dependencies.add('localRuntime', p.files(owo))
     p.dependencies.add('localRuntime', 'maven.modrinth:WjFyIzFj:fFV6HwT2')
+    // The isolated NeoForge GameTest server launches from main runtimeClasspath.
+    // Keep Hex Overpowered out of normal runs and add it only for this test run.
+    p.dependencies.add('localRuntime', 'maven.modrinth:PkhtCPsD:I3vfDCiE')
     def resources = p.layout.buildDirectory.dir('hexjit-test-resources').get().asFile
     p.sourceSets.main.java.srcDir(p.file('src/test/gametest/hexjit/java'))
     p.sourceSets.main.resources.srcDir(resources)
@@ -27,24 +30,14 @@ gradle.projectsEvaluated {
             }
         }
     }
-    def referenceSpell = p.file('.refs/spell.txt')
-    def referenceSpellResource = new File(resources, 'hexjit/reference_spell.txt')
-    def spellFixture = p.tasks.register('hexJitReferenceSpellFixture') {
-        inputs.file(referenceSpell)
-        outputs.file(referenceSpellResource)
-        doLast {
-            if (!referenceSpell.isFile()) throw new GradleException('HexJIT benchmark requires .refs/spell.txt')
-            referenceSpellResource.parentFile.mkdirs()
-            java.nio.file.Files.copy(referenceSpell.toPath(), referenceSpellResource.toPath(),
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-        }
-    }
-    p.tasks.named('processResources').configure { dependsOn(fixtures, spellFixture) }
+    p.tasks.named('processResources').configure { dependsOn(fixtures) }
     p.neoForge.runs.gameTestServer.gameDirectory = p.file('build/hexjit-test-run')
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.verbose', 'true')
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.export', 'true')
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.export.filter', 'at.petrak.hexcasting.*')
     p.neoForge.runs.gameTestServer.systemProperty('hexjit.jfr.dir', p.layout.buildDirectory.dir('hexjit-jfr').get().asFile.absolutePath)
+    p.neoForge.runs.gameTestServer.systemProperty('hexjit.steadySamples', p.findProperty('hexjitSteadySamples') ?: '9')
+    p.neoForge.runs.gameTestServer.systemProperty('hexjit.soundAblationSamples', p.findProperty('hexjitSoundAblationSamples') ?: '5')
     p.tasks.named('runGameTestServer', JavaExec).configure {
         maxHeapSize = '3g'
     }

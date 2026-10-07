@@ -46,4 +46,38 @@ class CompilationCacheTest {
             assertEquals(0, cache.stats().bytecodeBytes());
         }
     }
+
+    @Test void evictedWorkerProductsRemainWithinBothBudgets() throws Exception {
+        try (var cache = new CompilationCache(1, 2, 2048)) {
+            for (int i = 0; i < 200; i++) {
+                cache.acquire(i, new CallCompiler.Description("java/lang/Object", "fixture" + i,
+                        "()Ljava/lang/Object;", false), true);
+                Thread.sleep(1);
+                assertTrue(cache.stats().pendingDescriptions() <= 2);
+                assertTrue(cache.stats().bytecodeBytes() <= 2048);
+            }
+        }
+    }
+
+    @Test void evictingOneSiteDoesNotCancelAnotherSitesSharedCompilation() {
+        try (var cache = new CompilationCache(1, 2, 65536)) {
+            cache.acquire(1, CallCompilerTest.fixture(), true);
+            cache.acquire(2, CallCompilerTest.fixture(), true);
+            cache.acquire(3, new CallCompiler.Description("java/lang/Object", "toString",
+                    "()Ljava/lang/String;", false), true);
+            assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+                while (cache.acquire(2, CallCompilerTest.fixture(), true) == null) Thread.sleep(1);
+            });
+            assertEquals(2, cache.stats().submitted());
+        }
+    }
+
+    @Test void closingPendingCompilationCannotReserveBytesAfterClose() throws Exception {
+        var cache = new CompilationCache(1, 2, 65536);
+        cache.acquire(1, CallCompilerTest.fixture(), true);
+        cache.close();
+        Thread.sleep(20);
+        assertEquals(0, cache.stats().pendingDescriptions());
+        assertEquals(0, cache.stats().bytecodeBytes());
+    }
 }

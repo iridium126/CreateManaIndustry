@@ -62,7 +62,7 @@ public final class ProcessingPonderScenes {
 
     public static void glass(SceneBuilder builder, SceneBuildingUtil util) {
         Workshop w = new Workshop(builder, util, "mist_amethyst", "Growing amethyst in a Basin", "在工作盆中生成紫水晶");
-        BlockPos basin = p(6, 2, 3), a = p(3, 2, 4);
+        BlockPos basin = p(6, 2, 4), a = p(3, 2, 4);
         mixer(w, basin, true);
         w.text(basin.below(), "This recipe needs Allay Heat and Liquid Media mist at the same time.", "这个配方需要同时满足悦灵加热和液态媒质雾两个条件。");
         MistPonderScenes.atomizer(w, a, CMIFluids.LIQUID_MEDIA.get());
@@ -82,7 +82,7 @@ public final class ProcessingPonderScenes {
 
     public static void amethystDeposition(SceneBuilder builder, SceneBuildingUtil util) {
         Workshop w = new Workshop(builder, util, "amethyst_deposition", "Coating a metal sheet", "给金属板镀上紫水晶");
-        BlockPos basin = p(6, 2, 3), a = p(3, 2, 4);
+        BlockPos basin = p(6, 2, 4), a = p(3, 2, 4);
         w.place(basin.below(), Blocks.ANDESITE);
         w.place(basin, AllBlocks.BASIN.get());
         w.basinItems(basin, AllItems.IRON_SHEET.asStack());
@@ -100,13 +100,13 @@ public final class ProcessingPonderScenes {
         w.text(basin.above(), "Close the lid to begin deposition. Opening it interrupts the process.", "关上盖子就能开始沉积，打开盖子会中断加工。");
         lid(w, basin, true);
         w.basinItems(basin);
-        w.depot(p(6, 1, 1), CMIItems.AMETHYST_DEPOSITED_IRON_SHEET.asStack());
-        w.text(p(6, 1, 1), "The coated sheet is ready. Copper, gold and brass sheets use the same method.", "镀层铁板完成了！铜板、金板和黄铜板也使用同样的方法。");
+        w.depot(p(6, 1, 2), CMIItems.AMETHYST_DEPOSITED_IRON_SHEET.asStack());
+        w.text(p(6, 1, 2), "The coated sheet is ready. Copper, gold and brass sheets use the same method.", "镀层铁板完成了！铜板、金板和黄铜板也使用同样的方法。");
         w.mistOff(mist); w.finish();
     }
 
     public static void roseDeposition(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "rose_deposition", "Rose quartz coating", "玫瑰石英镀层工坊");
+        Workshop w = new Workshop(builder, util, "rose_deposition", "Rose Quartz Coating Line", "玫瑰石英镀层产线");
         BlockPos source = p(3, 2, 4), target = p(6, 2, 3);
         w.burner(source.below(), true); w.place(source, AllBlocks.BASIN.get());
         w.liquid(source, CMIFluids.MOLTEN_ROSE_QUARTZ.get(), 125);

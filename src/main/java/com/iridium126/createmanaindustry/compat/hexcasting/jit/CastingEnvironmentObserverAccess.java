@@ -1,5 +1,6 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
+import at.petrak.hexcasting.api.casting.PatternShapeMatch;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironmentComponent;
 import java.util.List;
 
@@ -10,4 +11,10 @@ public interface CastingEnvironmentObserverAccess {
     List<?> cmi$getPreMediaExtract();
 
     List<?> cmi$getPostMediaExtract();
+
+    List<?> cmi$getIsVecInRanges();
+
+    double cmi$getCostModifier();
+
+    boolean cmi$applyCachedLoopTickPrecheck(PatternShapeMatch.PerWorld match, ExecutionScope scope);
 }

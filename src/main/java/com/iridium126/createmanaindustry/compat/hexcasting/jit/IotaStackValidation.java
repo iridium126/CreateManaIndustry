@@ -1,11 +1,14 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
-import at.petrak.hexcasting.api.casting.iota.Iota;
-import at.petrak.hexcasting.api.casting.iota.IotaType;
+import at.petrak.hexcasting.api.casting.eval.vm.SpellContinuation;
 import at.petrak.hexcasting.api.casting.iota.BooleanIota;
+import at.petrak.hexcasting.api.casting.iota.ContinuationIota;
 import at.petrak.hexcasting.api.casting.iota.DoubleIota;
 import at.petrak.hexcasting.api.casting.iota.EntityIota;
 import at.petrak.hexcasting.api.casting.iota.GarbageIota;
+import at.petrak.hexcasting.api.casting.iota.Iota;
+import at.petrak.hexcasting.api.casting.iota.IotaType;
+import at.petrak.hexcasting.api.casting.iota.ListIota;
 import at.petrak.hexcasting.api.casting.iota.NullIota;
 import at.petrak.hexcasting.api.casting.iota.PatternIota;
 import at.petrak.hexcasting.api.casting.iota.Vec3Iota;
@@ -15,6 +18,7 @@ import java.util.List;
 
 /** Exact indexed equivalent of the upstream serialization-bound scan for immutable VM collections. */
 public final class IotaStackValidation {
+    private static final int NO_CACHED_SEGMENT = Integer.MIN_VALUE;
     private static final Class<?> EMPTY_IMMUTABLE_LIST = List.of().getClass();
     private static final Class<?> ONE_IMMUTABLE_LIST = List.of(Boolean.TRUE).getClass();
     private static final Class<?> TWO_IMMUTABLE_LIST = List.of(Boolean.TRUE, Boolean.FALSE).getClass();
@@ -23,17 +27,53 @@ public final class IotaStackValidation {
 
     /** A small cache whose lifetime is restricted to one CastingVM queue execution. */
     public static final class MetricCache {
+        private final boolean cacheSharedSegments;
+        private final boolean cacheSuccessfulStackResults;
         private Object[][] cachedSegments;
-        // Positive values are known-unit element counts; -1 marks an immutable segment
-        // containing an extension Iota whose metrics must still be called in order.
-        private int[] cachedUnitCounts;
+        // Nonnegative values are exact serialized sizes; -1 marks a segment with extension
+        // Iotas whose metrics must still be called for every validation.
+        private int[] cachedSerializedSizes;
+        private int[] cachedMaxDepths;
         private Object[][] currentRoot;
         private Object[][] currentSegments;
-        private int[] currentUnitCounts;
+        private int[] currentSerializedSizes;
+        private int[] currentMaxDepths;
         private Object[] cachedPrefix;
         private int cachedPrefixUnits;
         private int cachedSize;
         private int currentSize;
+        private int lastMaxDepth;
+        private final Object[] validatedStacks = new Object[8];
+        private int nextValidatedStack;
+        private Object lastValidatedStack;
+
+        public MetricCache() {
+            this(true, false);
+        }
+
+        public MetricCache(boolean cacheSharedSegments, boolean cacheSuccessfulStackResults) {
+            this.cacheSharedSegments = cacheSharedSegments;
+            this.cacheSuccessfulStackResults = cacheSuccessfulStackResults;
+        }
+
+        private boolean containsValidatedStack(Object stack) {
+            if (!cacheSuccessfulStackResults) return false;
+            if (lastValidatedStack == stack) return true;
+            for (Object validated : validatedStacks) {
+                if (validated == stack) return true;
+            }
+            return false;
+        }
+
+        /** Only successful scans of exact built-in, stable metrics enter this cache. */
+        public boolean hasValidatedStableStack(Object stack) { return containsValidatedStack(stack); }
+
+        private void rememberValidatedStack(Object stack) {
+            if (!cacheSuccessfulStackResults) return;
+            validatedStacks[nextValidatedStack] = stack;
+            lastValidatedStack = stack;
+            nextValidatedStack = (nextValidatedStack + 1) % validatedStacks.length;
+        }
 
         private void begin(Object[][] root) {
             if (currentRoot != root) {
@@ -43,29 +83,38 @@ public final class IotaStackValidation {
         }
 
         private int get(int index, Object[] segment) {
-            if (index < currentSize && currentSegments[index] == segment) return currentUnitCounts[index];
+            if (index < currentSize && currentSegments[index] == segment) {
+                lastMaxDepth = currentMaxDepths[index];
+                return currentSerializedSizes[index];
+            }
             for (int i = 0; i < cachedSize; i++) {
                 if (cachedSegments[i] == segment) {
-                    rememberCurrent(index, segment, cachedUnitCounts[i]);
-                    return cachedUnitCounts[i];
+                    rememberCurrent(index, segment, cachedSerializedSizes[i], cachedMaxDepths[i]);
+                    lastMaxDepth = cachedMaxDepths[i];
+                    return cachedSerializedSizes[i];
                 }
             }
-            return 0;
+            return NO_CACHED_SEGMENT;
         }
 
-        private void put(int index, Object[] segment, int unitCount) {
+        private int lastMaxDepth() { return lastMaxDepth; }
+
+        private void put(int index, Object[] segment, int serializedSize, int maxDepth, boolean stable) {
             if (cachedSegments == null) {
-                cachedSegments = new Object[16][];
-                cachedUnitCounts = new int[16];
-                currentSegments = new Object[16][];
-                currentUnitCounts = new int[16];
+                cachedSegments = new Object[64][];
+                cachedSerializedSizes = new int[64];
+                cachedMaxDepths = new int[64];
+                currentSegments = new Object[64][];
+                currentSerializedSizes = new int[64];
+                currentMaxDepths = new int[64];
             }
             if (cachedSize < cachedSegments.length) {
                 cachedSegments[cachedSize] = segment;
-                cachedUnitCounts[cachedSize] = unitCount;
+                cachedSerializedSizes[cachedSize] = stable ? serializedSize : -1;
+                cachedMaxDepths[cachedSize] = stable ? maxDepth : -1;
                 cachedSize++;
             }
-            rememberCurrent(index, segment, unitCount);
+            rememberCurrent(index, segment, stable ? serializedSize : -1, stable ? maxDepth : -1);
         }
 
         private int cachePrefix(Object[] prefix) {
@@ -82,10 +131,11 @@ public final class IotaStackValidation {
             return unitCount;
         }
 
-        private void rememberCurrent(int index, Object[] segment, int unitCount) {
+        private void rememberCurrent(int index, Object[] segment, int serializedSize, int maxDepth) {
             if (index < currentSegments.length) {
                 currentSegments[index] = segment;
-                currentUnitCounts[index] = unitCount;
+                currentSerializedSizes[index] = serializedSize;
+                currentMaxDepths[index] = maxDepth;
                 currentSize = Math.max(currentSize, index + 1);
             }
         }
@@ -97,6 +147,16 @@ public final class IotaStackValidation {
                 || type == GarbageIota.class;
     }
 
+    private static boolean hasStableMetrics(Class<?> type) {
+        // ListIota snapshots depth and size in final fields at construction time.
+        return hasDefaultUnitMetrics(type) || type == ContinuationIota.class || type == ListIota.class;
+    }
+
+    private static int continuationSerializationSize(Iota iota) {
+        // ContinuationIota.size() walks every frame, then clamps the result to 0 or 1.
+        return ((ContinuationIota) iota).getContinuation() instanceof SpellContinuation.NotDone ? 1 : 0;
+    }
+
     public static boolean isTooLarge(Iterable<Iota> stack) {
         if (stack instanceof TreeList<?> tree) return isTooLarge(tree);
         if (stack instanceof List<?> list && isJdkImmutableList(list)) return isTooLarge(list);
@@ -104,8 +164,11 @@ public final class IotaStackValidation {
     }
 
     public static boolean isTooLarge(Iterable<Iota> stack, MetricCache cache) {
-        if (cache != null && stack instanceof TreeList<?> tree
-                && (Object) tree instanceof TreeList2Access segments) return isTooLarge(segments, cache);
+        if (cache != null && stack instanceof TreeList<?> tree) {
+            if (cache.containsValidatedStack(tree)) return false;
+            if ((Object) tree instanceof TreeList2Access segments) return isTooLarge(segments, cache);
+            return isTooLarge(tree, cache);
+        }
         return isTooLarge(stack);
     }
 
@@ -122,12 +185,32 @@ public final class IotaStackValidation {
         for (int index = 0; index < count; index++) {
             Iota iota = (Iota) tree.get(index);
             Class<?> type = iota.getClass();
-            boolean defaultMetrics = hasDefaultUnitMetrics(type);
-            int depth = defaultMetrics ? 1 : iota.depth();
+            boolean unitMetrics = hasDefaultUnitMetrics(type);
+            boolean continuation = type == ContinuationIota.class;
+            int depth = unitMetrics || continuation ? 1 : iota.depth();
             if (depth >= HexIotaTypes.MAX_SERIALIZATION_DEPTH) return true;
-            totalSize += defaultMetrics ? 1 : iota.size();
+            totalSize += unitMetrics ? 1 : continuation ? continuationSerializationSize(iota) : iota.size();
         }
         return totalSize >= HexIotaTypes.MAX_SERIALIZATION_TOTAL;
+    }
+
+    private static boolean isTooLarge(TreeList<?> tree, MetricCache cache) {
+        int totalSize = 1;
+        int count = tree.size();
+        boolean cacheable = true;
+        for (int index = 0; index < count; index++) {
+            Iota iota = (Iota) tree.get(index);
+            Class<?> type = iota.getClass();
+            boolean unitMetrics = hasDefaultUnitMetrics(type);
+            boolean continuation = type == ContinuationIota.class;
+            int depth = unitMetrics || continuation ? 1 : iota.depth();
+            if (depth >= HexIotaTypes.MAX_SERIALIZATION_DEPTH) return true;
+            totalSize += unitMetrics ? 1 : continuation ? continuationSerializationSize(iota) : iota.size();
+            if (!hasStableMetrics(type)) cacheable = false;
+        }
+        boolean tooLarge = totalSize >= HexIotaTypes.MAX_SERIALIZATION_TOTAL;
+        if (!tooLarge && cacheable) cache.rememberValidatedStack(tree);
+        return tooLarge;
     }
 
     private static boolean isTooLarge(TreeList2Access tree) {
@@ -136,8 +219,9 @@ public final class IotaStackValidation {
 
     private static boolean isTooLarge(TreeList2Access tree, MetricCache cache) {
         int totalSize = 1;
+        boolean cacheable = true;
         Object[] prefix = tree.cmi$getPrefix1();
-        if (cache != null && prefix.length == tree.cmi$getLen1()) {
+        if (cache != null && cache.cacheSharedSegments && prefix.length == tree.cmi$getLen1()) {
             int cachedUnits = cache.cachePrefix(prefix);
             if (cachedUnits > 0) {
                 if (1 >= HexIotaTypes.MAX_SERIALIZATION_DEPTH && cachedUnits > 0) return true;
@@ -146,66 +230,72 @@ public final class IotaStackValidation {
                 for (Object value : prefix) {
                     Iota iota = (Iota) value;
                     Class<?> type = iota.getClass();
-                    boolean defaultMetrics = hasDefaultUnitMetrics(type);
-                    int depth = defaultMetrics ? 1 : iota.depth();
+                    boolean unitMetrics = hasDefaultUnitMetrics(type);
+                    boolean continuation = type == ContinuationIota.class;
+                    int depth = unitMetrics || continuation ? 1 : iota.depth();
                     if (depth >= HexIotaTypes.MAX_SERIALIZATION_DEPTH) return true;
-                    totalSize += defaultMetrics ? 1 : iota.size();
+                    totalSize += unitMetrics ? 1 : continuation ? continuationSerializationSize(iota) : iota.size();
+                    if (!hasStableMetrics(type)) cacheable = false;
                 }
             }
         } else {
             for (int index = 0, count = tree.cmi$getLen1(); index < count; index++) {
                 Iota iota = (Iota) prefix[index];
                 Class<?> type = iota.getClass();
-                boolean defaultMetrics = hasDefaultUnitMetrics(type);
-                int depth = defaultMetrics ? 1 : iota.depth();
+                boolean unitMetrics = hasDefaultUnitMetrics(type);
+                boolean continuation = type == ContinuationIota.class;
+                int depth = unitMetrics || continuation ? 1 : iota.depth();
                 if (depth >= HexIotaTypes.MAX_SERIALIZATION_DEPTH) return true;
-                totalSize += defaultMetrics ? 1 : iota.size();
+                totalSize += unitMetrics ? 1 : continuation ? continuationSerializationSize(iota) : iota.size();
+                if (!hasStableMetrics(type)) cacheable = false;
             }
         }
         Object[][] middle = tree.cmi$getData2();
-        if (cache != null) cache.begin(middle);
+        if (cache != null && cache.cacheSharedSegments) cache.begin(middle);
         for (int index = 0; index < middle.length; index++) {
             Object[] segment = middle[index];
-            int cachedUnits = cache == null ? 0 : cache.get(index, segment);
-            if (cachedUnits > 0) {
-                if (1 >= HexIotaTypes.MAX_SERIALIZATION_DEPTH) return true;
-                totalSize += cachedUnits;
+            int cachedSize = cache == null || !cache.cacheSharedSegments
+                    ? NO_CACHED_SEGMENT : cache.get(index, segment);
+            if (cachedSize >= 0) {
+                if (cache.lastMaxDepth() >= HexIotaTypes.MAX_SERIALIZATION_DEPTH) return true;
+                totalSize += cachedSize;
                 continue;
             }
-            boolean unitMetrics = cachedUnits != -1;
-            if (cache != null && cachedUnits == 0) {
-                for (Object value : segment) {
-                    if (!hasDefaultUnitMetrics(value.getClass())) {
-                        unitMetrics = false;
-                        break;
-                    }
-                }
-                cache.put(index, segment, unitMetrics ? segment.length : -1);
-            }
-            if (unitMetrics && cache != null) {
-                if (1 >= HexIotaTypes.MAX_SERIALIZATION_DEPTH && segment.length > 0) return true;
-                totalSize += segment.length;
-                continue;
-            }
+            boolean stable = cachedSize != -1;
+            int segmentSize = 0;
+            int segmentMaxDepth = 0;
             for (Object value : segment) {
                 Iota iota = (Iota) value;
                 Class<?> type = iota.getClass();
-                boolean defaultMetrics = hasDefaultUnitMetrics(type);
-                int depth = defaultMetrics ? 1 : iota.depth();
+                boolean unitMetrics = hasDefaultUnitMetrics(type);
+                boolean continuation = type == ContinuationIota.class;
+                int depth = unitMetrics || continuation ? 1 : iota.depth();
                 if (depth >= HexIotaTypes.MAX_SERIALIZATION_DEPTH) return true;
-                totalSize += defaultMetrics ? 1 : iota.size();
+                segmentSize += unitMetrics ? 1 : continuation ? continuationSerializationSize(iota) : iota.size();
+                segmentMaxDepth = Math.max(segmentMaxDepth, depth);
+                if (!hasStableMetrics(type)) {
+                    stable = false;
+                    cacheable = false;
+                }
             }
+            if (cache != null && cache.cacheSharedSegments && cachedSize == NO_CACHED_SEGMENT)
+                cache.put(index, segment, segmentSize, segmentMaxDepth, stable);
+            totalSize += segmentSize;
         }
         Object[] suffix = tree.cmi$getSuffix1();
         for (Object value : suffix) {
             Iota iota = (Iota) value;
             Class<?> type = iota.getClass();
-            boolean defaultMetrics = hasDefaultUnitMetrics(type);
-            int depth = defaultMetrics ? 1 : iota.depth();
+            boolean unitMetrics = hasDefaultUnitMetrics(type);
+            boolean continuation = type == ContinuationIota.class;
+            int depth = unitMetrics || continuation ? 1 : iota.depth();
             if (depth >= HexIotaTypes.MAX_SERIALIZATION_DEPTH) return true;
-            totalSize += defaultMetrics ? 1 : iota.size();
+            totalSize += unitMetrics ? 1 : continuation ? continuationSerializationSize(iota) : iota.size();
+            if (!hasStableMetrics(type)) cacheable = false;
         }
-        return totalSize >= HexIotaTypes.MAX_SERIALIZATION_TOTAL;
+        boolean tooLarge = totalSize >= HexIotaTypes.MAX_SERIALIZATION_TOTAL;
+        if (!tooLarge && cacheable && cache != null) cache.rememberValidatedStack(tree);
+        return tooLarge;
     }
 
     private static boolean isTooLarge(List<?> list) {
@@ -213,10 +303,12 @@ public final class IotaStackValidation {
         int count = list.size();
         for (int index = 0; index < count; index++) {
             Iota iota = (Iota) list.get(index);
-            boolean defaultMetrics = hasDefaultUnitMetrics(iota.getClass());
-            int depth = defaultMetrics ? 1 : iota.depth();
+            Class<?> type = iota.getClass();
+            boolean unitMetrics = hasDefaultUnitMetrics(type);
+            boolean continuation = type == ContinuationIota.class;
+            int depth = unitMetrics || continuation ? 1 : iota.depth();
             if (depth >= HexIotaTypes.MAX_SERIALIZATION_DEPTH) return true;
-            totalSize += defaultMetrics ? 1 : iota.size();
+            totalSize += unitMetrics ? 1 : continuation ? continuationSerializationSize(iota) : iota.size();
         }
         return totalSize >= HexIotaTypes.MAX_SERIALIZATION_TOTAL;
     }

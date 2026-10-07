@@ -43,19 +43,50 @@ public final class ServerConfig {
     public static volatile int hexJitMaxUnits = 1024;
     public static volatile long hexJitByteBudget = 16L << 20;
     public static volatile boolean hexJitCompileActions;
-    public static volatile boolean hexJitSkipObservers;
+    public static volatile boolean hexJitSkipObservers = true;
     public static volatile boolean hexJitCoalesceDecorations = true;
+    public static volatile boolean hexJitCoalesceStaffSounds = true;
     public static volatile boolean hexJitBatchAddMotion;
-    public static volatile boolean hexJitFastAddMotionArguments;
+    public static volatile boolean hexJitFastAddMotionArguments = true;
     public static volatile boolean hexJitMemoAddMotionNormalization;
     public static volatile boolean hexJitFastTickAction = true;
-    public static volatile boolean hexJitFastStackValidation;
+    public static volatile boolean hexJitCombineTickSideEffects = true;
+    public static volatile boolean hexJitCacheMaxOpCount = true;
+    public static volatile boolean hexJitReuseTickUserData = true;
+    public static volatile boolean hexJitBatchTickCounterWrites;
+    public static volatile boolean hexJitLoopFastTickCounter = true;
+    public static volatile boolean hexJitCacheTickStackPop;
+    public static volatile boolean hexJitReuseTickMediaScan = true;
+    public static volatile boolean hexJitFastHexOPMediaPool = true;
+    public static volatile boolean hexJitBatchTickPersonalMediaWrites = true;
+    public static volatile boolean hexJitCacheTickMediaHolder = true;
+    public static volatile boolean hexJitCacheTickMediaAvailability = true;
+    public static volatile boolean hexJitDirectTickMediaPreflight = true;
+    public static volatile boolean hexJitDirectTickMediaExtraction = true;
+    public static volatile boolean hexJitCacheTickChunk = true;
+    public static volatile boolean hexJitCacheTickRangeCheck = true;
+    public static volatile boolean hexJitCacheTickBlockEligibility;
+    public static volatile boolean hexJitCacheBuddingAmethystState = true;
+    public static volatile boolean hexJitLoopSpecialization = true;
+    public static volatile boolean hexJitLoopTickDispatch = true;
+    public static volatile boolean hexJitLoopTickBatch = true;
+    public static volatile boolean hexJitCollectMetrics;
+    public static volatile boolean hexJitCoalesceEvalSounds;
+    public static volatile boolean hexJitSkipEmptyPostExecution = true;
+    public static volatile boolean hexJitFastSpendMediaTrigger = true;
+    public static volatile boolean hexJitFastBuddingAmethystRandomTick;
+    public static volatile boolean hexJitCacheActionResourceKeys;
+    public static volatile boolean hexJitCacheActionTagMembership = true;
+    public static volatile boolean hexJitCacheActionPrechecks;
+    public static volatile boolean hexJitFastStackValidation = true;
     public static volatile boolean hexJitCacheStackMetrics = true;
-    public static volatile boolean hexJitReuseFrameTail;
+    public static volatile boolean hexJitCacheStackValidationResults = true;
+    public static volatile boolean hexJitReuseFrameTail = true;
     public static volatile boolean hexJitFastSpecialHandlerMath = true;
-    public static volatile boolean hexJitFastSpecialHandlerLookup;
+    public static volatile boolean hexJitFastSpecialHandlerLookup = true;
     public static volatile boolean hexJitFastNumberLiterals = true;
     public static volatile boolean hexJitCacheNormalPatternLookup = true;
+    public static volatile boolean hexJitCachePerWorldPatternLookup = true;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
     private static final ModConfigSpec.BooleanValue PACKAGE_GPU_AUTHORITY;
@@ -128,17 +159,48 @@ public final class ServerConfig {
     private static ModConfigSpec.BooleanValue HEX_JIT_COMPILE_ACTIONS;
     private static ModConfigSpec.BooleanValue HEX_JIT_SKIP_OBSERVERS;
     private static ModConfigSpec.BooleanValue HEX_JIT_COALESCE_DECORATIONS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_COALESCE_STAFF_SOUNDS;
     private static ModConfigSpec.BooleanValue HEX_JIT_BATCH_ADD_MOTION;
     private static ModConfigSpec.BooleanValue HEX_JIT_FAST_ADD_MOTION_ARGUMENTS;
     private static ModConfigSpec.BooleanValue HEX_JIT_MEMO_ADD_MOTION_NORMALIZATION;
     private static ModConfigSpec.BooleanValue HEX_JIT_FAST_TICK_ACTION;
+    private static ModConfigSpec.BooleanValue HEX_JIT_COMBINE_TICK_SIDE_EFFECTS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_MAX_OP_COUNT;
+    private static ModConfigSpec.BooleanValue HEX_JIT_REUSE_TICK_USER_DATA;
+    private static ModConfigSpec.BooleanValue HEX_JIT_BATCH_TICK_COUNTER_WRITES;
+    private static ModConfigSpec.BooleanValue HEX_JIT_LOOP_FAST_TICK_COUNTER;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_TICK_STACK_POP;
+    private static ModConfigSpec.BooleanValue HEX_JIT_REUSE_TICK_MEDIA_SCAN;
+    private static ModConfigSpec.BooleanValue HEX_JIT_FAST_HEXOP_MEDIA_POOL;
+    private static ModConfigSpec.BooleanValue HEX_JIT_BATCH_TICK_PERSONAL_MEDIA_WRITES;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_TICK_MEDIA_HOLDER;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_TICK_MEDIA_AVAILABILITY;
+    private static ModConfigSpec.BooleanValue HEX_JIT_DIRECT_TICK_MEDIA_PREFLIGHT;
+    private static ModConfigSpec.BooleanValue HEX_JIT_DIRECT_TICK_MEDIA_EXTRACTION;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_TICK_CHUNK;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_TICK_RANGE_CHECK;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_TICK_BLOCK_ELIGIBILITY;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_BUDDING_AMETHYST_STATE;
+    private static ModConfigSpec.BooleanValue HEX_JIT_LOOP_SPECIALIZATION;
+    private static ModConfigSpec.BooleanValue HEX_JIT_LOOP_TICK_DISPATCH;
+    private static ModConfigSpec.BooleanValue HEX_JIT_LOOP_TICK_BATCH;
+    private static ModConfigSpec.BooleanValue HEX_JIT_COLLECT_METRICS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_COALESCE_EVAL_SOUNDS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_SKIP_EMPTY_POST_EXECUTION;
+    private static ModConfigSpec.BooleanValue HEX_JIT_FAST_SPEND_MEDIA_TRIGGER;
+    private static ModConfigSpec.BooleanValue HEX_JIT_FAST_BUDDING_AMETHYST_RANDOM_TICK;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_ACTION_RESOURCE_KEYS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_ACTION_TAG_MEMBERSHIP;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_ACTION_PRECHECKS;
     private static ModConfigSpec.BooleanValue HEX_JIT_FAST_STACK_VALIDATION;
     private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_STACK_METRICS;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_STACK_VALIDATION_RESULTS;
     private static ModConfigSpec.BooleanValue HEX_JIT_REUSE_FRAME_TAIL;
     private static ModConfigSpec.BooleanValue HEX_JIT_FAST_SPECIAL_HANDLER_MATH;
     private static ModConfigSpec.BooleanValue HEX_JIT_FAST_SPECIAL_HANDLER_LOOKUP;
     private static ModConfigSpec.BooleanValue HEX_JIT_FAST_NUMBER_LITERALS;
     private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_NORMAL_PATTERN_LOOKUP;
+    private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_PER_WORLD_PATTERN_LOOKUP;
 
     static {
         BUILDER.push("gpuPackages");
@@ -296,14 +358,17 @@ public final class ServerConfig {
                 .comment("Maximum generated class bytecode retained by the JIT, in MiB.")
                 .defineInRange("bytecodeBudgetMiB", 16, 1, 256);
         HEX_JIT_COMPILE_ACTIONS = BUILDER
-                .comment("Experimental ordinary Action call-site compilation; disabled until it demonstrates a net benefit.")
+                .comment("Experimental ordinary Action call-site compilation; disabled because combined reference-cast AUTO/OFF measurements showed no repeatable net improvement.")
                 .define("compileActions", false);
         HEX_JIT_SKIP_OBSERVERS = BUILDER
                 .comment("Allow skipping only PostExecution observers that explicitly implement SkippablePostExecutionObserver.")
-                .define("skipDeclaredObservers", false);
+                .define("skipDeclaredObservers", true);
         HEX_JIT_COALESCE_DECORATIONS = BUILDER
                 .comment("Within one JIT cast, emit only one copy of each identical Hexcasting particle spray and pigment.")
                 .define("coalesceDecorations", true);
+        HEX_JIT_COALESCE_STAFF_SOUNDS = BUILDER
+                .comment("Within one AUTO JIT cast, play identical Staff callback sounds once. Unobserved duplicates may skip seed generation and pure intermediate callbacks, changing the sound RNG stream. Disable to retain original sound playback and RNG consumption.")
+                .define("coalesceStaffSounds", true);
         HEX_JIT_BATCH_ADD_MOTION = BUILDER
                 .comment("Batch repeated Hexcasting Add Motion vector writes while preserving ordered double additions.")
                 .define("batchAddMotion", false);
@@ -312,16 +377,103 @@ public final class ServerConfig {
                 .define("fastAddMotionArguments", true);
         HEX_JIT_MEMO_ADD_MOTION_NORMALIZATION = BUILDER
                 .comment("Reuse bit-identical Vec3 normalization results inside the stock Add Motion action after exact bytecode verification.")
-                .define("memoAddMotionNormalization", true);
+                .define("memoAddMotionNormalization", false);
         HEX_JIT_FAST_TICK_ACTION = BUILDER
                 .comment("Use the low-allocation execution path for this project's Hexcasting Tick action in AUTO mode.")
                 .define("fastTickAction", true);
+        HEX_JIT_COMBINE_TICK_SIDE_EFFECTS = BUILDER
+                .comment("Combine Tick media extraction with its AttemptSpell side effect when AUTO casts have no post-execution observers.")
+                .define("combineTickSideEffects", true);
+        HEX_JIT_CACHE_MAX_OP_COUNT = BUILDER
+                .comment("Cache Hexcasting's configured per-cast operation limit for one synchronous AUTO cast.")
+                .define("cacheMaxOpCount", true);
+        HEX_JIT_REUSE_TICK_USER_DATA = BUILDER
+                .comment("Reuse one private Tick user-data copy during a cast when no execution observer can retain intermediate images.")
+                .define("reuseTickUserData", true);
+        HEX_JIT_BATCH_TICK_COUNTER_WRITES = BUILDER
+                .comment("Experimental: defer Tick's per-cast counter NBT writes across adjacent loop-dispatched Tick actions; flush before another continuation, callback, or cast completion. Disabled by default because current benchmarks show no consistent speedup.")
+                .define("batchTickCounterWrites", false);
+        HEX_JIT_LOOP_FAST_TICK_COUNTER = BUILDER
+                .comment("Use the validated cast-local Tick counter directly in consecutive loop-specialized Tick actions; disable to use the regular prepared NBT counter path.")
+                .define("loopFastTickCounter", true);
+        HEX_JIT_CACHE_TICK_STACK_POP = BUILDER
+                .comment("Reuse a persistent VM stack predecessor after the same TreeList instance was appended during this cast. Disabled by default pending a reference-spell benchmark.")
+                .define("cacheTickStackPop", false);
+        HEX_JIT_REUSE_TICK_MEDIA_SCAN = BUILDER
+                .comment("Reuse the source list from a successful simulated Tick media extraction for its immediate real extraction.")
+                .define("reuseTickMediaScan", true);
+        HEX_JIT_FAST_HEXOP_MEDIA_POOL = BUILDER
+                .comment("Use HexOverpowered's personal media pool directly during eligible standard AUTO casts.")
+                .define("fastHexOPMediaPool", true);
+        HEX_JIT_BATCH_TICK_PERSONAL_MEDIA_WRITES = BUILDER
+                .comment("Defer HexOverpowered personal media attribute writes during repeated Tick extraction while preserving ordered media reads and extraction callbacks.")
+                .define("batchTickPersonalMediaWrites", true);
+        HEX_JIT_CACHE_TICK_MEDIA_HOLDER = BUILDER
+                .comment("Reuse the validated HexOverpowered personal media holder for the current cast.")
+                .define("cacheTickMediaHolder", true);
+        HEX_JIT_CACHE_TICK_MEDIA_AVAILABILITY = BUILDER
+                .comment("Track HexOverpowered personal media remaining during one Tick loop to avoid repeated simulated reads; invalidate before other spell actions.")
+                .define("cacheTickMediaAvailability", true);
+        HEX_JIT_DIRECT_TICK_MEDIA_PREFLIGHT = BUILDER
+                .comment("Directly simulate Tick's media preflight against HexOverpowered's pool when it covers the full scaled cost.")
+                .define("directTickMediaPreflight", true);
+        HEX_JIT_DIRECT_TICK_MEDIA_EXTRACTION = BUILDER
+                .comment("Skip Hexcasting's outer media extraction dispatch for Tick when the prepared HexOverpowered pool covers the full cost and the standard environment has no media hooks.")
+                .define("directTickMediaExtraction", true);
+        HEX_JIT_CACHE_TICK_CHUNK = BUILDER
+                .comment("Reuse Tick target positions and LevelChunks during one AUTO cast while reading the live block state on every Tick.")
+                .define("cacheTickChunk", true);
+        HEX_JIT_CACHE_TICK_RANGE_CHECK = BUILDER
+                .comment("Reuse a successful Tick range check for the same Budding Amethyst target in standard player casts without range or execution observers; invalidate it before other spell effects.")
+                .define("cacheTickRangeCheck", true);
+        HEX_JIT_CACHE_TICK_BLOCK_ELIGIBILITY = BUILDER
+                .comment("Cache the Tick acceleration deny-list decision for the current block during one AUTO cast.")
+                .define("cacheTickBlockEligibility", false);
+        HEX_JIT_CACHE_BUDDING_AMETHYST_STATE = BUILDER
+                .comment("Reuse Budding Amethyst's unchanged block state during one AUTO cast and skip its block-entity lookup.")
+                .define("cacheBuddingAmethystState", true);
+        HEX_JIT_LOOP_SPECIALIZATION = BUILDER
+                .comment("Reuse FrameEvaluate loop frames and immutable program tails during synchronous AUTO casts without post-execution observers.")
+                .define("loopSpecialization", true);
+        HEX_JIT_LOOP_TICK_DISPATCH = BUILDER
+                .comment("Dispatch cached Tick patterns directly from repeated loop frames while retaining per-call environment and media prechecks.")
+                .define("loopTickDispatch", true);
+        HEX_JIT_LOOP_TICK_BATCH = BUILDER
+                .comment("Collapse consecutive loop-specialized Tick VM steps into one frame evaluation while preserving each Tick action, media precheck, world effect, and op-limit check.")
+                .define("loopTickBatch", true);
+        HEX_JIT_COLLECT_METRICS = BUILDER
+                .comment("Collect per-cast HexJIT optimization counters used for profiling and GameTests. Disable to avoid hot-loop counter writes.")
+                .define("collectMetrics", false);
+        HEX_JIT_COALESCE_EVAL_SOUNDS = BUILDER
+                .comment("Skip rebuilding intermediate metacast result wrappers only when the cast environment has no post-execution observers to receive their sound.")
+                .define("coalesceEvalSounds", false);
+        HEX_JIT_SKIP_EMPTY_POST_EXECUTION = BUILDER
+                .comment("Skip the per-pattern post-execution callback when a standard cast environment has no registered observers.")
+                .define("skipEmptyPostExecution", true);
+        HEX_JIT_FAST_SPEND_MEDIA_TRIGGER = BUILDER
+                .comment("Skip Hexcasting's unused player loot-context construction for Spend Media advancement checks during AUTO casts; matching media thresholds still award normally.")
+                .define("fastSpendMediaTrigger", true);
+        HEX_JIT_FAST_BUDDING_AMETHYST_RANDOM_TICK = BUILDER
+                .comment("Use a cast-local geometric random gate for repeated Tick calls on Budding Amethyst. This preserves the configured random-tick probability but changes the world's random-number stream.")
+                .define("fastBuddingAmethystRandomTick", false);
+        HEX_JIT_CACHE_ACTION_RESOURCE_KEYS = BUILDER
+                .comment("Reuse immutable registry resource keys created for Hexcasting action tag checks after exact HexUtils bytecode verification.")
+                .define("cacheActionResourceKeys", false);
+        HEX_JIT_CACHE_ACTION_TAG_MEMBERSHIP = BUILDER
+                .comment("Cache registry tag membership results during AUTO casts until the registry/data-pack epoch changes.")
+                .define("cacheActionTagMembership", true);
+        HEX_JIT_CACHE_ACTION_PRECHECKS = BUILDER
+                .comment("Reuse successful action precheck cost modifiers for immutable registry actions during one standard staff cast.")
+                .define("cacheActionPrechecks", false);
         HEX_JIT_FAST_STACK_VALIDATION = BUILDER
                 .comment("Use indexed validation for Hexcasting's immutable TreeList casting stacks after exact bytecode verification.")
                 .define("fastStackValidation", true);
         HEX_JIT_CACHE_STACK_METRICS = BUILDER
                 .comment("Cache serialization metrics for shared immutable TreeList2 segments during one cast after exact bytecode verification.")
                 .define("cacheStackMetrics", true);
+        HEX_JIT_CACHE_STACK_VALIDATION_RESULTS = BUILDER
+                .comment("Reuse successful size checks for identical immutable casting stacks during one cast.")
+                .define("cacheStackValidationResults", true);
         HEX_JIT_REUSE_FRAME_TAIL = BUILDER
                 .comment("Reuse FrameEvaluate's immutable TreeList tail instead of slicing it twice for one step after exact upstream bytecode verification.")
                 .define("reuseFrameTail", true);
@@ -330,10 +482,13 @@ public final class ServerConfig {
                 .define("fastSpecialHandlerMath", true);
         HEX_JIT_FAST_SPECIAL_HANDLER_LOOKUP = BUILDER
                 .comment("Cache the ordered special-handler factory registry while still evaluating every factory for each pattern.")
-                .define("fastSpecialHandlerLookup", false);
+                .define("fastSpecialHandlerLookup", true);
         HEX_JIT_CACHE_NORMAL_PATTERN_LOOKUP = BUILDER
                 .comment("Cache normal registry matches on immutable PatternIota instances until the pattern registry epoch changes.")
                 .define("cacheNormalPatternLookup", true);
+        HEX_JIT_CACHE_PER_WORLD_PATTERN_LOOKUP = BUILDER
+                .comment("Cache deterministic per-world great-pattern matches on immutable PatternIota instances until the pattern registry epoch changes.")
+                .define("cachePerWorldPatternLookup", true);
         HEX_JIT_FAST_NUMBER_LITERALS = BUILDER
                 .comment("Use the verified zero-argument fast path for Hexcasting's built-in number-literal special handler.")
                 .define("fastNumberLiterals", true);
@@ -540,17 +695,48 @@ public final class ServerConfig {
         hexJitCompileActions = HEX_JIT_COMPILE_ACTIONS.get();
         hexJitSkipObservers = HEX_JIT_SKIP_OBSERVERS.get();
         hexJitCoalesceDecorations = HEX_JIT_COALESCE_DECORATIONS.get();
+        hexJitCoalesceStaffSounds = HEX_JIT_COALESCE_STAFF_SOUNDS.get();
         hexJitBatchAddMotion = HEX_JIT_BATCH_ADD_MOTION.get();
         hexJitFastAddMotionArguments = HEX_JIT_FAST_ADD_MOTION_ARGUMENTS.get();
         hexJitMemoAddMotionNormalization = HEX_JIT_MEMO_ADD_MOTION_NORMALIZATION.get();
         hexJitFastTickAction = HEX_JIT_FAST_TICK_ACTION.get();
+        hexJitCombineTickSideEffects = HEX_JIT_COMBINE_TICK_SIDE_EFFECTS.get();
+        hexJitCacheMaxOpCount = HEX_JIT_CACHE_MAX_OP_COUNT.get();
+        hexJitReuseTickUserData = HEX_JIT_REUSE_TICK_USER_DATA.get();
+        hexJitBatchTickCounterWrites = HEX_JIT_BATCH_TICK_COUNTER_WRITES.get();
+        hexJitLoopFastTickCounter = HEX_JIT_LOOP_FAST_TICK_COUNTER.get();
+        hexJitCacheTickStackPop = HEX_JIT_CACHE_TICK_STACK_POP.get();
+        hexJitReuseTickMediaScan = HEX_JIT_REUSE_TICK_MEDIA_SCAN.get();
+        hexJitFastHexOPMediaPool = HEX_JIT_FAST_HEXOP_MEDIA_POOL.get();
+        hexJitBatchTickPersonalMediaWrites = HEX_JIT_BATCH_TICK_PERSONAL_MEDIA_WRITES.get();
+        hexJitCacheTickMediaHolder = HEX_JIT_CACHE_TICK_MEDIA_HOLDER.get();
+        hexJitCacheTickMediaAvailability = HEX_JIT_CACHE_TICK_MEDIA_AVAILABILITY.get();
+        hexJitDirectTickMediaPreflight = HEX_JIT_DIRECT_TICK_MEDIA_PREFLIGHT.get();
+        hexJitDirectTickMediaExtraction = HEX_JIT_DIRECT_TICK_MEDIA_EXTRACTION.get();
+        hexJitCacheTickChunk = HEX_JIT_CACHE_TICK_CHUNK.get();
+        hexJitCacheTickRangeCheck = HEX_JIT_CACHE_TICK_RANGE_CHECK.get();
+        hexJitCacheTickBlockEligibility = HEX_JIT_CACHE_TICK_BLOCK_ELIGIBILITY.get();
+        hexJitCacheBuddingAmethystState = HEX_JIT_CACHE_BUDDING_AMETHYST_STATE.get();
+        hexJitLoopSpecialization = HEX_JIT_LOOP_SPECIALIZATION.get();
+        hexJitLoopTickDispatch = HEX_JIT_LOOP_TICK_DISPATCH.get();
+        hexJitLoopTickBatch = HEX_JIT_LOOP_TICK_BATCH.get();
+        hexJitCollectMetrics = HEX_JIT_COLLECT_METRICS.get();
+        hexJitCoalesceEvalSounds = HEX_JIT_COALESCE_EVAL_SOUNDS.get();
+        hexJitSkipEmptyPostExecution = HEX_JIT_SKIP_EMPTY_POST_EXECUTION.get();
+        hexJitFastSpendMediaTrigger = HEX_JIT_FAST_SPEND_MEDIA_TRIGGER.get();
+        hexJitFastBuddingAmethystRandomTick = HEX_JIT_FAST_BUDDING_AMETHYST_RANDOM_TICK.get();
+        hexJitCacheActionResourceKeys = HEX_JIT_CACHE_ACTION_RESOURCE_KEYS.get();
+        hexJitCacheActionTagMembership = HEX_JIT_CACHE_ACTION_TAG_MEMBERSHIP.get();
+        hexJitCacheActionPrechecks = HEX_JIT_CACHE_ACTION_PRECHECKS.get();
         hexJitFastStackValidation = HEX_JIT_FAST_STACK_VALIDATION.get();
         hexJitCacheStackMetrics = HEX_JIT_CACHE_STACK_METRICS.get();
+        hexJitCacheStackValidationResults = HEX_JIT_CACHE_STACK_VALIDATION_RESULTS.get();
         hexJitReuseFrameTail = HEX_JIT_REUSE_FRAME_TAIL.get();
         hexJitFastSpecialHandlerMath = HEX_JIT_FAST_SPECIAL_HANDLER_MATH.get();
         hexJitFastSpecialHandlerLookup = HEX_JIT_FAST_SPECIAL_HANDLER_LOOKUP.get();
         hexJitFastNumberLiterals = HEX_JIT_FAST_NUMBER_LITERALS.get();
         hexJitCacheNormalPatternLookup = HEX_JIT_CACHE_NORMAL_PATTERN_LOOKUP.get();
+        hexJitCachePerWorldPatternLookup = HEX_JIT_CACHE_PER_WORLD_PATTERN_LOOKUP.get();
     }
 
     public static long packageMainThreadBudgetNanos() {
