@@ -40,6 +40,9 @@ public final class PackageWorldRuntime {
     private Object shaderBoundary;
     private PackageMixedPhysicsGpu physics;
     private PackageWorldPrefetchGpu worldPrefetch;
+    private PackageFreezeDiagnosticsGpu freezeDiagnostics;
+    private long nextFreezeSummary;
+    private int lastFrozen;
     private PackageForceClient forceCapture;
     private PackageForceGpu forceGpu;
     private PackageLightObserverClient lightObservers;
@@ -165,6 +168,7 @@ public final class PackageWorldRuntime {
         if(!enabled || now<retryAfter || physics==null&&!shaderReady)return false;
         try {
             if(physics==null)initialize(mc.level,poolFactory,sources);
+            pollFreezeDiagnostics();
             renderFrame=Math.incrementExact(renderFrame);
             if(chainFrames!=null)chainFrames.beginFrame(renderFrame);
             if(!regions.isEmpty()||!packets.isEmpty()||PackageAuthorityClient.activePackages()>0){
@@ -241,7 +245,7 @@ public final class PackageWorldRuntime {
                         physics.stepFreeMoving(world,PackagePhysicsGpu.ITERATIONS,moving.views());
                     }
                 }
-                clock.commit(tick);forceCapture.consumed(tick);
+                clock.commit(tick);forceCapture.consumed(tick);collision.staticGeometryConsumed(tick);
             }
             if(clock.historyGap()){
                 CreateManaIndustry.LOGGER.info("[CMI packages] input gap next={} available={} worldTime={} rate={} step={} frameMs={} previousWaiting={}",clock.nextTick(),availableInput,level.getGameTime(),rate,clock.step(),clock.lastElapsedNanos()/1_000_000.0,previousWaitingInput);
@@ -256,6 +260,7 @@ public final class PackageWorldRuntime {
             }
             if(chainClock.historyGap())chainClock.rebase(simulationNow,availableInput);
             if(physics.environment()!=null)physics.environment().capture(physics.freeCount());
+            captureFreezeDiagnostics();
             physics.publish();physics.source(pool,(float)ox,(float)oy,(float)oz);
             if(chainFrames!=null)chainFrames.prepare(pool);
             pool.lightSource(PackageCollisionRuntime.forLevel(level).lightGpu());
@@ -301,6 +306,8 @@ public final class PackageWorldRuntime {
         ox=Math.floor(position.x/16)*16;oy=Math.floor(position.y/16)*16;oz=Math.floor(position.z/16)*16;
         physics=new PackageMixedPhysicsGpu(capacity,chainProtocol?capacity:0,capacity,2,sources);
         physics.enableEnvironment(sources);
+        try{freezeDiagnostics=physics.enableFreezeDiagnostics(sources);}
+        catch(RuntimeException diagnosticFailure){CreateManaIndustry.LOGGER.warn("[CMI packages] freeze diagnostics unavailable; physics continues",diagnosticFailure);}
         worldPrefetch=new PackageWorldPrefetchGpu(resourceEpochs.incrementAndGet(),sources);
         lightObservers=new PackageLightObserverClient(level,physics,pool,styles,resourceEpochs.incrementAndGet(),ox,oy,oz,reason->failure=reason);
         physics.sampleObservers(0);
@@ -309,6 +316,31 @@ public final class PackageWorldRuntime {
         // Shared GPU/model resources exist before readiness is advertised. TRACK then builds
         // epoch-specific query/checkpoint resources before a following OFFER can freeze Create.
         PackageAuthorityClient.capabilities(PackageAuthorityClient.readyFlags(true,chainProtocol));
+    }
+    private void pollFreezeDiagnostics(){
+        if(freezeDiagnostics==null)return;
+        try{freezeDiagnostics.poll(event->{
+            CreateManaIndustry.LOGGER.debug("[CMI packages] free package frozen reason={} stage={} stillFrozen={} dimension={} id={} generation={} lease={} body={} index={} revision={} step={} center={},{},{} halfHeight={} velocity={},{},{} {}",
+                    event.reason(),event.stage(),event.stillFrozen(),level.dimension().location(),event.id(),event.generation(),event.lease(),event.body(),event.index(),event.revision(),event.step(),
+                    event.x()+ox,event.y()+oy,event.z()+oz,event.halfHeight(),event.vx(),event.vy(),event.vz(),event.context());
+        },summary->{
+            long now=System.nanoTime();
+            if((summary.frozen()>0&&now>=nextFreezeSummary)||(summary.frozen()==0&&lastFrozen>0)){
+                CreateManaIndustry.LOGGER.debug("[CMI packages] free package freeze summary frozen={} changed={} deferred={} reasons={}",
+                        summary.frozen(),summary.changed(),summary.deferred(),summary.description());
+                nextFreezeSummary=now+10_000_000_000L;
+            }
+            lastFrozen=summary.frozen();
+        });}catch(RuntimeException failure){disableFreezeDiagnostics(failure);}
+    }
+    private void captureFreezeDiagnostics(){
+        if(freezeDiagnostics==null)return;
+        try{freezeDiagnostics.capture(physics.freeStateBuffer(),physics.freeCount(),physics.environment(),System.nanoTime());}
+        catch(RuntimeException failure){disableFreezeDiagnostics(failure);}
+    }
+    private void disableFreezeDiagnostics(RuntimeException failure){
+        CreateManaIndustry.LOGGER.warn("[CMI packages] freeze diagnostics stopped; physics continues",failure);
+        physics.disableFreezeDiagnostics();freezeDiagnostics=null;
     }
     private boolean drain(Function<String,String> sources) {
         // ACKs have their own bounded budget; hundreds of active journals must
@@ -464,6 +496,7 @@ public final class PackageWorldRuntime {
         if(pool!=null){pool.chainInterpolation(Float.NaN);pool.reset();}pool=null;
         if(worldPrefetch!=null)worldPrefetch.close();worldPrefetch=null;
         if(physics!=null)physics.close();physics=null;
+        freezeDiagnostics=null;nextFreezeSummary=0;lastFrozen=0;
         failure=null;status=reason;retryAfter=System.nanoTime()+5_000_000_000L;
         statusRegions=statusBodies=statusActive=-1;
     }

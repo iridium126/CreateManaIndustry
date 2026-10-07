@@ -122,6 +122,15 @@ public final class PackageMovingCollisionCache {
             try{if(!e.source.alive()){iterator.remove();revoke(e);continue;}version=e.source.revision();}
             catch(RuntimeException|LinkageError unavailable){e.snapshot=null;e.poseFrame=0;e.sourceRevision=Long.MIN_VALUE;e.setRevision(++serial);continue;}
             if(version!=e.sourceRevision){e.sourceRevision=version;e.setRevision(++serial);e.snapshot=null;e.cursor=null;e.captured=null;e.unsupported=false;}
+            // Publication only consumes an already completed immutable result.
+            // It must not depend on capture budget left by static-world demand.
+            // Check the source revision first so an edit cannot publish stale data.
+            if(e.future!=null&&e.future.isDone()) {
+                if(!e.future.isCompletedExceptionally()&&!e.future.isCancelled()) {
+                    var result=e.future.getNow(null);if(result!=null&&result.revision()==e.revision)e.snapshot=result;
+                } else if(e.futureRevision==e.revision)e.unsupported=true;
+                e.future=null;
+            }
             try{e.bounds=e.source.bounds();e.previous=e.source.pose(true);e.current=e.source.pose(false);e.poseFrame=frame;}
             catch(RuntimeException|LinkageError unavailable){e.poseFrame=0;}
         }
@@ -130,13 +139,7 @@ public final class PackageMovingCollisionCache {
         while(attempts-->0&&!entries.isEmpty()&&clock.getAsLong()-start<budgetNanos) {
             var row=entries.entrySet().iterator().next();Entry e=row.getValue();entries.remove(row.getKey());entries.put(row.getKey(),e);
             if(e.poseFrame!=frame)continue;
-            if(e.future!=null) {
-                if(!e.future.isDone())continue;
-                if(!e.future.isCompletedExceptionally()&&!e.future.isCancelled()) {
-                    var result=e.future.getNow(null);if(result!=null&&result.revision()==e.revision)e.snapshot=result;
-                } else if(e.futureRevision==e.revision)e.unsupported=true;
-                e.future=null;
-            }
+            if(e.future!=null)continue;
             if(e.snapshot!=null||e.unsupported)continue;
             if(e.cursor==null)try{e.cursor=e.source.open();e.captured=new ArrayList<>();}
             catch(RuntimeException|LinkageError unsupported){e.unsupported=true;continue;}

@@ -20,7 +20,7 @@ import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 
 /** Lazy, client-thread collision preparation. No world access, waits or uploads on workers. */
 @EventBusSubscriber(modid=CreateManaIndustry.MODID,value=Dist.CLIENT)
-public final class PackageCollisionRuntime implements PackageCollisionCaptureSchedule.Work {
+public final class PackageCollisionRuntime implements PackageCollisionCaptureSchedule.Work,PackageCollisionUploadSchedule.Work {
     private static final int MAX_SECTIONS=1024,MAX_REQUEST_SECTIONS=64;
     private static volatile PackageCollisionRuntime current;
     private final ClientLevel level;
@@ -47,7 +47,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
     private long lastDiscoveryNanos,discoveryOverruns;
     private boolean gpuRequested,collisionRequested,lightRequested;
     private String gpuError="";
-    private final java.util.LinkedHashMap<Long,java.util.Map<PackageCollisionCache.Section,Long>> geometryHistory=new java.util.LinkedHashMap<>();
+    private final PackageCollisionHistory geometryHistory=new PackageCollisionHistory();
     private int historyTicks=PackageSimulationClock.HISTORY_TICKS;
 
     private PackageCollisionRuntime(ClientLevel level) {
@@ -60,6 +60,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         cache.listener(new PackageCollisionCache.Listener() {
             @Override public void invalidated(PackageCollisionCache.Section section,long revision){if(gpu!=null)gpu.invalidate(section,revision);}
             @Override public void published(PackageCollisionCache.Section section,PackageCollisionCache.Snapshot snapshot){if(gpu!=null)gpu.offer(section,snapshot);}
+            @Override public void historical(PackageCollisionCache.Section section,PackageCollisionCache.Snapshot snapshot){if(gpu!=null)gpu.offerHistorical(section,snapshot);}
             @Override public void removed(PackageCollisionCache.Section section){if(gpu!=null)gpu.forget(section);}
             @Override public void cleared(){if(gpu!=null)gpu.clear();}
         });
@@ -179,7 +180,8 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         var views=movingAvailable?movingGpu.views(movingCache.entries(),movingCache.posesReady(),originSectionX*16.,originSectionY*16.,originSectionZ*16.):movingGpu.unavailableViews();
         return new MovingScene(movingGpu,views);
     }
-    public boolean hasStaticHistory(long tick){owner();return gpu!=null&&geometryHistory.containsKey(tick);}
+    public boolean hasStaticHistory(long tick){owner();return gpu!=null&&geometryHistory.contains(tick);}
+    public void staticGeometryConsumed(long tick){owner();geometryHistory.consumed(tick);}
     public PackageCollisionGpu.View historicalView(long tick,int x,int y,int z){
         owner();var versions=geometryHistory.get(tick);if(versions==null||gpu==null)throw new IllegalStateException("Static geometry history unavailable");
         return gpu.historicalView(x,y,z,versions);
@@ -211,6 +213,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
                 current.cache.forEachReady(current.gpu::offer);
             }
             if(current.collisionRequested) {
+                current.gpu.retainHistory(current.geometryHistory.retained());
                 if(current.movingGpu==null)current.movingGpu=new PackageMovingCollisionGpu();
                 current.movingGpu.tickRate(current.level.tickRateManager().tickrate());
                 current.movingGpu.sync(current.movingCache.entries(),current.movingCache.retainedGeometry());
@@ -221,14 +224,8 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
                 if(current.lightGpu!=null)current.lightGpu.pump(PackageCollisionGpu.DEFAULT_UPLOAD_BYTES,ClientConfig.packageMainThreadBudgetNanos());
                 return true;
             }
-            // Shared copy budget; alternate priority to avoid starving either atlas.
-            long started=System.nanoTime(),beforeMoving=current.movingGpu.uploadedBytes(),beforeWorld=current.gpu.uploadedBytes();
-            int bytes=PackageCollisionGpu.DEFAULT_UPLOAD_BYTES;long nanos=ClientConfig.packageMainThreadBudgetNanos();
-            long beforeLight=current.lightGpu==null?0:current.lightGpu.uploadedBytes();
-            if(current.lightGpu!=null && current.lightPriority==0){current.lightGpu.pump(bytes,nanos);bytes-=Math.toIntExact(current.lightGpu.uploadedBytes()-beforeLight);}
-            if(current.uploadMovingFirst){current.movingGpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));bytes-=Math.toIntExact(current.movingGpu.uploadedBytes()-beforeMoving);current.gpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));}
-            else{current.gpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));bytes-=Math.toIntExact(current.gpu.uploadedBytes()-beforeWorld);current.movingGpu.pump(Math.max(0,bytes),Math.max(0,nanos-(System.nanoTime()-started)));}
-            if(current.lightGpu!=null && current.lightPriority!=0){int used=Math.toIntExact(current.gpu.uploadedBytes()-beforeWorld+current.movingGpu.uploadedBytes()-beforeMoving);current.lightGpu.pump(Math.max(0,PackageCollisionGpu.DEFAULT_UPLOAD_BYTES-used),Math.max(0,nanos-(System.nanoTime()-started)));}
+            PackageCollisionUploadSchedule.pump(current,current.uploadMovingFirst,current.lightPriority==0,current.lightGpu!=null,
+                    PackageCollisionGpu.DEFAULT_UPLOAD_BYTES,ClientConfig.packageMainThreadBudgetNanos(),System::nanoTime);
             current.uploadMovingFirst=!current.uploadMovingFirst;
         }catch(RuntimeException failure) {
             current.gpuError=failure.getClass().getSimpleName()+": "+failure.getMessage();current.gpuRequested=false;
@@ -261,28 +258,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         blockChanged(level,position);
     }
     private static void invalidateStaticCollisionIfChanged(PackageCollisionRuntime runtime,BlockPos position) {
-        int x=position.getX(),y=position.getY(),z=position.getZ();
-        if(capturedCollisionCellChanged(runtime,x,y,z)){runtime.cache.invalidateBlock(x,y,z);return;}
-        // Vanilla connected shapes (fences, walls, etc.) can depend on a neighboring state.
-        // If the edited cell itself is unchanged, compare the one-block neighborhood before
-        // suppressing invalidation; boundary section coverage is revoked only on a real delta.
-        for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++) {
-            if(dx==0&&dy==0&&dz==0)continue;
-            if(capturedCollisionCellChanged(runtime,x+dx,y+dy,z+dz)){runtime.cache.invalidateBlock(x,y,z);return;}
-        }
-    }
-    private static boolean capturedCollisionCellChanged(PackageCollisionRuntime runtime,int x,int y,int z) {
-        var section=new PackageCollisionCache.Section(x>>4,y>>4,z>>4);
-        int cell=(y&15)<<8|(z&15)<<4|(x&15);
-        if(!runtime.cache.hasCapturedCell(section,cell))return false;
-        PackageCollisionCache.Cell live;
-        try{live=runtime.source.capture(section,cell);}
-        catch(RuntimeException|LinkageError unavailable){return true;}
-        if(live==null)return false;
-        Boolean unchanged=runtime.cache.capturedCellMatches(section,cell,live);
-        // Unknown cells have not been captured in the current revision; the queued capture
-        // will read their latest world state without restarting the section.
-        return Boolean.FALSE.equals(unchanged);
+        runtime.cache.invalidateChangedBlock(position.getX(),position.getY(),position.getZ(),runtime.source);
     }
     /** A Sable plot edit changes moving geometry only; do not recapture the parent world's static cells. */
     public static void movingBlockChanged(ClientLevel level,BlockPos position) {
@@ -365,10 +341,15 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         var input=PackageClientInputs.current(current.level);
         current.movingCache.captureHistory(input.first(),input.last(),current.movingAvailable);
         var versions=current.cache.versions();
-        for(long tick=input.first();tick<=input.last();tick++)current.geometryHistory.putIfAbsent(tick,versions);
-        while(current.geometryHistory.size()>current.historyTicks)current.geometryHistory.remove(current.geometryHistory.keySet().iterator().next());
+        current.geometryHistory.capture(input.first(),input.last(),versions,current.historyTicks);
         current.captureMovingFirst=!current.captureMovingFirst;
         current.lightPriority=(current.lightPriority+1)%3;
+    }
+    @Override public long uploaded(PackageCollisionUploadSchedule.Atlas atlas){
+        owner();return switch(atlas){case WORLD->gpu.uploadedBytes();case MOVING->movingGpu.uploadedBytes();case LIGHT->lightGpu==null?0:lightGpu.uploadedBytes();};
+    }
+    @Override public void upload(PackageCollisionUploadSchedule.Atlas atlas,int bytes,long nanos){
+        owner();switch(atlas){case WORLD->gpu.pump(bytes,nanos);case MOVING->movingGpu.pump(bytes,nanos);case LIGHT->{if(lightGpu!=null)lightGpu.pump(bytes,nanos);}}
     }
     @Override public void invalidateLight(long deadline) {
         owner();

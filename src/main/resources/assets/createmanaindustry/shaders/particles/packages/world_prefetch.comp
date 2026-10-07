@@ -21,7 +21,7 @@ int worldRow(ivec3 key) {
     uvec3 c=uvec3(key);uint row=((c.x*73856093u)^(c.y*19349663u)^(c.z*83492791u))&uWorldTableMask;
     for(uint probe=0u;probe<=uWorldTableMask;probe++) {
         WorldSection section=worldSections[row];
-        if(section.keySlot.w<0)return -1;
+        if(section.keySlot.w==-1)return -1;
         if(all(equal(section.keySlot.xyz,key)))return section.keySlot.w>=0 && section.revisionActive.z==1u?int(row):-1;
         row=(row+1u)&uWorldTableMask;
     }

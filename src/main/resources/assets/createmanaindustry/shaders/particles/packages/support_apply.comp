@@ -10,22 +10,32 @@ void main() {
         Body b=src[i];uvec4 constraint=supportIn[i];float height=uintBitsToFloat(constraint.z);
         if(b.positionMass.w>0 && b.previousSleep.w>=0) {
             bool bad=constraint.x!=END || isnan(height) || isinf(height);
+            uint supportFailure=constraint.x!=END?FREEZE_SUPPORT_ANCESTOR:FREEZE_SUPPORT_HEIGHT;
             bool collisionUnavailable=false;
             if(!bad && height>b.positionMass.y) {
-                b.positionMass.y=height;
+                // The support forest proposes a height; a known ceiling is a rigid
+                // motion constraint. Sweep the lift so a target beyond a thin ceiling
+                // cannot tunnel through it, then keep its safe, clipped displacement.
+                vec3 initial=b.positionMass.xyz,normal=vec3(0);
+                vec3 lift=vec3(0,height-initial.y,0);float fraction=1.;
+                collisionUnavailable=!sweepWorld(b,initial,lift,fraction,normal);
+                bool ceiling=normal.y<-.5;
+                if(!collisionUnavailable)b.positionMass.y=fraction>=1.?height:initial.y+lift.y*fraction;
                 vec3 worldCorrection,velocity=b.velocityGround.xyz;bool grounded=b.velocityGround.w>.5;float friction;
-                collisionUnavailable=!solveWorld(b,worldCorrection,velocity,grounded,friction);
-                // A ceiling contradicting the support constraint needs local pause.
-                if(!bad&&!collisionUnavailable)bad=worldCorrection.y< -1e-4;
+                if(!collisionUnavailable)collisionUnavailable=!solveWorld(b,worldCorrection,velocity,grounded,friction);
+                if(!collisionUnavailable)ceiling=ceiling||worldCorrection.y< -1e-4;
                 if(!bad&&!collisionUnavailable) {
                     b.positionMass.xyz+=worldCorrection;collisionUnavailable=!coveredWorld(b);
-                    if(!collisionUnavailable){velocity.y=max(velocity.y,uintBitsToFloat(constraint.w));b.velocityGround=vec4(velocity,grounded?1:0);count.x=1u;}
+                    if(!collisionUnavailable){velocity.y=ceiling?min(velocity.y,0.):max(velocity.y,uintBitsToFloat(constraint.w));
+                        b.velocityGround=vec4(velocity,grounded?1:0);count.x=any(notEqual(initial,b.positionMass.xyz))?1u:0u;
+                        if(ceiling&&height-b.positionMass.y>1e-3)constraint.x=SUPPORT_CEILING_CLIPPED;}
                 }
             }
-            if(collisionUnavailable)freezeForMissingCollision(b,b.previousSleep.xyz);
-            else if(bad){b.positionMass.xyz=b.previousSleep.xyz;freezeForMissingCollision(b,b.previousSleep.xyz);count.y=1u;}
+            if(collisionUnavailable)freezeForWorldCollision(b,b.previousSleep.xyz,FREEZE_SUPPORT);
+            else if(bad){b.positionMass.xyz=b.previousSleep.xyz;freezePackage(b,b.previousSleep.xyz,supportFailure,FREEZE_SUPPORT,ivec4(constraint));count.y=1u;}
             src[i]=b;
         }
+        supportOut[i]=constraint;
     }
     counts[lane]=count;barrier();
     for(uint stride=32u;stride>0u;stride>>=1u){if(lane<stride)counts[lane]+=counts[lane+stride];barrier();}

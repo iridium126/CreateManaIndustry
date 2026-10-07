@@ -31,7 +31,7 @@ void main() {
         vec3 foot=b.positionMass.xyz-vec3(0,b.extentYaw.y,0);
         vec3 shift=projectPoint(localPoint(foot,true),false)-foot;
         vec3 carried;
-        if(!sweepCarryWorld(b,b.positionMass.xyz,shift,carried))freezeForMissingCollision(b,src[i].positionMass.xyz);
+        if(!sweepCarryWorld(b,b.positionMass.xyz,shift,carried))freezeForWorldCollision(b,src[i].positionMass.xyz,FREEZE_CARRY);
         else {b.positionMass.xyz+=carried;b.velocityGround.xyz-=support.xyz;
             movingSupport[i]=vec4(carried*20.,uintBitsToFloat(movingIdentity()|MOVING_CARRIED));}
     }

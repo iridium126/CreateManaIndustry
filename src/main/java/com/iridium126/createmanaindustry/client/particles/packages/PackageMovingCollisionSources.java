@@ -116,6 +116,7 @@ public final class PackageMovingCollisionSources {
     }
 
     private void changed(Base source) {
+        source.clearCapturedCells();
         source.version++;
         invalidated.accept(source.key());
     }
@@ -137,7 +138,7 @@ public final class PackageMovingCollisionSources {
         owner();
         for (Base source : sources.values())
             if (source.key().kind() == 1 && source.raw != null
-                    && source.raw.contains(position.getX(), position.getY(), position.getZ())) changed(source);
+                    && source.raw.contains(position.getX(), position.getY(), position.getZ())&&source.cellChanged(position)) changed(source);
     }
 
     public void chunkChanged(int x, int z) {
@@ -162,10 +163,13 @@ public final class PackageMovingCollisionSources {
         final void owner() { host.owner(); }
         @Override public long revision() { owner(); refresh(); return version; }
         abstract void refresh();
+        void clearCapturedCells() {}
+        boolean cellChanged(BlockPos position){return true;}
 
         final void bounds(double x0, double y0, double z0, double x1, double y1, double z1) {
             var next = new PackageMovingGeometry.Bounds(x0, y0, z0, x1, y1, z1);
             if (!next.equals(raw)) {
+                clearCapturedCells();
                 raw = next;
                 version++;
                 ox = (int) Math.floor((x0 + x1) * .5);

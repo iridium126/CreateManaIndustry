@@ -1,6 +1,10 @@
 #pragma cmi_include packages/state.glsl
 #ifdef CMI_WORLD
 #pragma cmi_include packages/world_collision.glsl
+#ifdef CMI_RELATIVE_CONTACTS
+#pragma cmi_include packages/support.glsl
+uniform bool uSupportContactConstraints;
+#endif
 #endif
 #ifdef CMI_MOVING_CONTACTS
 #pragma cmi_include packages/moving_support.glsl
@@ -17,6 +21,9 @@ void main() {
     vec3 correction=vec3(0.0), velocity=b.velocityGround.xyz;
 #ifdef CMI_RELATIVE_CONTACTS
     vec3 positive=vec3(0),negative=vec3(0),velocityCorrection=vec3(0);
+#ifdef CMI_WORLD
+    vec3 lateralPositive=vec3(0),lateralNegative=vec3(0),lateralVelocity=vec3(0);float pairHeight=0.;
+#endif
 #endif
     float contacts=0.0;uint visits=0u;
     bool grounded=b.velocityGround.w>0.5;
@@ -33,6 +40,9 @@ void main() {
             correction=vec3(0);velocity=b.velocityGround.xyz;contacts=0.;grounded=b.velocityGround.w>.5;
 #ifdef CMI_RELATIVE_CONTACTS
             positive=vec3(0);negative=vec3(0);velocityCorrection=vec3(0);
+#ifdef CMI_WORLD
+            lateralPositive=vec3(0);lateralNegative=vec3(0);lateralVelocity=vec3(0);pairHeight=0.;
+#endif
 #endif
 #ifdef CMI_MOVING_CONTACTS
             groundVelocity=movingSupport[i].xyz;highestSupport=-3.402823e38;
@@ -63,6 +73,18 @@ void main() {
                         float depth=overlap[axis]+(axis==1?0.0:0.008);
                         float shift=direction*depth*weight;
                         if(direction>0)positive[axis]=max(positive[axis],shift);else negative[axis]=min(negative[axis],shift);
+#ifdef CMI_WORLD
+                        pairHeight=max(pairHeight,2.*(b.extentYaw.y+other.extentYaw.y));
+                        if(axis==1) {
+                            int lateralAxis=overlap.x<=overlap.z?0:2;
+                            float lateralDirection=delta[lateralAxis]==0.?(i<j?-1.:1.):sign(delta[lateralAxis]);
+                            float lateralShift=lateralDirection*(overlap[lateralAxis]+.008)*weight;
+                            if(lateralDirection>0.)lateralPositive[lateralAxis]=max(lateralPositive[lateralAxis],lateralShift);
+                            else lateralNegative[lateralAxis]=min(lateralNegative[lateralAxis],lateralShift);
+                            float relativeLateral=b.velocityGround[lateralAxis]-other.velocityGround[lateralAxis];
+                            if(relativeLateral*lateralDirection<0.)lateralVelocity[lateralAxis]-=weight*relativeLateral;
+                        }
+#endif
 #else
                         correction[axis]+=direction*overlap[axis]*weight;
 #endif
@@ -98,11 +120,34 @@ void main() {
 #ifdef CMI_WORLD
     vec3 worldCorrection;
     if(!solveWorld(b,worldCorrection,velocity,grounded,material)) {
-        freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;
+        freezeForWorldCollision(b,b.previousSleep.xyz,FREEZE_SOLVE);dst[i]=b;return;
     }
+#ifdef CMI_RELATIVE_CONTACTS
+    bool clippedColumn=uSupportContactConstraints&&supportIn[i].x==SUPPORT_CEILING_CLIPPED;
+    bool verticalBlocked=worldCorrection.y*(positive.y+negative.y)<-1e-6;
+    bool limitedHeight=pairHeight>0.&&verticalBlocked&&insufficientWorldHeight(src[i],pairHeight);
+    if(pairHeight>0.&&(limitedHeight||clippedColumn)) {
+        vec3 lateral=vec3(max(positive.x,lateralPositive.x)+min(negative.x,lateralNegative.x),0.,
+                max(positive.z,lateralPositive.z)+min(negative.z,lateralNegative.z));
+        vec3 escapedVelocity=lateralVelocity;
+        float fraction=1.;vec3 normal=vec3(0);
+        if(!sweepWorld(b,src[i].positionMass.xyz,lateral,fraction,normal)) {
+            freezeForWorldCollision(b,b.previousSleep.xyz,FREEZE_SOLVE);dst[i]=b;return;
+        }
+        b.positionMass.xyz=src[i].positionMass.xyz+lateral*fraction;
+        velocity=b.velocityGround.xyz+(vec3(velocityCorrection.x,0.,velocityCorrection.z)+escapedVelocity)/max(1.,contacts);
+        velocity-=normal*min(0.,dot(velocity,normal));grounded=b.velocityGround.w>.5;
+#ifdef CMI_MOVING_CONTACTS
+        groundVelocity=movingSupport[i].xyz;highestSupport=-3.402823e38;
+#endif
+        if(!solveWorld(b,worldCorrection,velocity,grounded,material)) {
+            freezeForWorldCollision(b,b.previousSleep.xyz,FREEZE_SOLVE);dst[i]=b;return;
+        }
+    }
+#endif
     b.positionMass.xyz+=worldCorrection;
     if(any(notEqual(worldCorrection,vec3(0))) && !coveredWorld(b)) {
-        freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;
+        freezeForWorldCollision(b,b.previousSleep.xyz,FREEZE_SOLVE);dst[i]=b;return;
     }
 #endif
     b.velocityGround=vec4(velocity,grounded?1.0:0.0);

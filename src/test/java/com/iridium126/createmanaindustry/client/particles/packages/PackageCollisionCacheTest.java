@@ -99,6 +99,32 @@ class PackageCollisionCacheTest {
         }
         cache.tick((s,n)->AIR,1);assertEquals(cache.size(),cache.readyCount());
     }
+    @Test void boundaryNotificationKeepsUnchangedAdjacentSectionsButRevokesChangedContext(){
+        var cache=new PackageCollisionCache(Runnable::run,8,()->0L);
+        for(int x=-1;x<=0;x++)for(int y=-1;y<=0;y++)for(int z=-1;z<=0;z++)cache.request(new PackageCollisionCache.Section(x,y,z));
+        cache.tick((s,c)->AIR,1);cache.tick((s,c)->AIR,1);assertEquals(8,cache.readyCount());
+        var versions=cache.versions();var solid=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,0);
+        var changed=new PackageCollisionCache.Section(0,0,0);var neighbor=new PackageCollisionCache.Section(-1,0,0);
+        cache.invalidateChangedBlock(0,0,0,(s,c)->s.equals(changed)&&c==0?solid:AIR);
+        assertEquals(7,cache.readyCount());assertNull(cache.snapshot(changed));
+        for(var section:versions.keySet())if(!section.equals(changed))assertEquals(versions.get(section),cache.versions().get(section));
+        cache.tick((s,c)->s.equals(changed)&&c==0?solid:AIR,1);cache.tick((s,c)->s.equals(changed)&&c==0?solid:AIR,1);
+        cache.invalidateChangedBlock(0,0,0,(s,c)->s.equals(changed)&&c==0?solid:s.equals(neighbor)&&c==15?solid:AIR);
+        assertNull(cache.snapshot(neighbor));assertNotNull(cache.snapshot(changed));assertEquals(7,cache.readyCount());
+    }
+    @Test void completedStaticBakePublishesWithZeroCaptureBudgetAndOldBakeStaysUnavailable(){
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);cache.request(SECTION);
+        cache.tick((s,c)->AIR,1);tasks.remove().run();
+        cache.tick((s,c)->{fail("zero-budget publication must not query a world");return AIR;},0);
+        assertNotNull(cache.snapshot(SECTION));
+        cache.invalidate(SECTION);cache.tick((s,c)->AIR,1);tasks.remove().run();cache.invalidate(SECTION);
+        var oldResults=new java.util.ArrayList<PackageCollisionCache.Snapshot>();cache.listener(new PackageCollisionCache.Listener(){
+            @Override public void historical(PackageCollisionCache.Section section,PackageCollisionCache.Snapshot snapshot){oldResults.add(snapshot);}
+        });
+        cache.tick((s,c)->{fail("zero-budget stale bake check must not query a world");return AIR;},0);
+        assertNull(cache.snapshot(SECTION));
+        assertEquals(1,oldResults.size());assertTrue(oldResults.getFirst().revision()<cache.versions().get(SECTION));
+    }
     @Test void boundaryEditsInvalidateNeighbourContextAcrossNegativeSections() {
         var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,9,()->0L);
         for(int x=-1;x<=0;x++)for(int y=-1;y<=0;y++)for(int z=-1;z<=0;z++)cache.request(new PackageCollisionCache.Section(x,y,z));

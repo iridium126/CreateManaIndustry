@@ -10,7 +10,7 @@ import org.lwjgl.system.MemoryStack;
 public final class PackageEnvironmentGpu implements AutoCloseable {
     public static final int HEADER_BYTES=64,SAMPLE_BYTES=48,HISTORY=20,EVENT_BYTES=1024,MAX_EVENTS=512;
     private static final int OUTPUT_BYTES=16+MAX_EVENTS*EVENT_BYTES;
-    private final int capacity,headers,samples,output,stepProgram,captureProgram,ackProgram;
+    private final int capacity,headers,samples,captureStamps,output,stepProgram,captureProgram,ackProgram;
     private final PackageReadbackRing ring;
     private final ByteBuffer baseline=BufferUtils.createByteBuffer(HEADER_BYTES);
     private long simulationStep,sequence,completed=-1;
@@ -20,15 +20,18 @@ public final class PackageEnvironmentGpu implements AutoCloseable {
     private int coalesceTicks=1;
     public void tickRate(double rate){open();coalesceTicks=com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageTickTiming.historyTicks(rate);}
     private boolean closed;
+    private PackageFreezeDiagnosticsGpu freezeDiagnostics;
+    public void freezeDiagnostics(PackageFreezeDiagnosticsGpu diagnostics){freezeDiagnostics=diagnostics;}
     public PackageEnvironmentGpu(int capacity,Function<String,String> sources){
         if(capacity<1||capacity>131072)throw new IllegalArgumentException("Environment capacity");this.capacity=capacity;
-        int h=0,s=0,o=0,p=0,c=0,a=0;PackageReadbackRing r=null;
+        int h=0,s=0,stamps=0,o=0,p=0,c=0,a=0;PackageReadbackRing r=null;
         try{
-            h=buffer((long)capacity*HEADER_BYTES);s=buffer((long)capacity*HISTORY*SAMPLE_BYTES);o=buffer(OUTPUT_BYTES);
-            p=compile(sources.apply("packages/environment.comp"));c=compile(sources.apply("packages/environment_capture.comp"));
-            a=compile(sources.apply("packages/environment_ack.comp"));r=new PackageReadbackRing(OUTPUT_BYTES);clear(h,0,(long)capacity*HEADER_BYTES);
-        }catch(RuntimeException failure){if(r!=null)r.close();for(int id:new int[]{h,s,o})if(id!=0)GL15.glDeleteBuffers(id);for(int id:new int[]{p,c,a})if(id!=0)GL20.glDeleteProgram(id);throw failure;}
-        headers=h;samples=s;output=o;stepProgram=p;captureProgram=c;ackProgram=a;ring=r;
+            h=buffer((long)capacity*HEADER_BYTES);s=buffer((long)capacity*HISTORY*SAMPLE_BYTES);stamps=buffer((long)capacity*4);o=buffer(OUTPUT_BYTES);
+            String diagnosticPrefix=PackageFreezeDiagnosticsGpu.supported()?"#define CMI_FREEZE_DIAGNOSTICS\n":"";
+            p=compile(diagnosticPrefix+sources.apply("packages/environment.comp"));c=compile(diagnosticPrefix+sources.apply("packages/environment_capture.comp"));
+            a=compile(sources.apply("packages/environment_ack.comp"));r=new PackageReadbackRing(OUTPUT_BYTES);clear(h,0,(long)capacity*HEADER_BYTES);clear(stamps,0,(long)capacity*4);
+        }catch(RuntimeException failure){if(r!=null)r.close();for(int id:new int[]{h,s,stamps,o})if(id!=0)GL15.glDeleteBuffers(id);for(int id:new int[]{p,c,a})if(id!=0)GL20.glDeleteProgram(id);throw failure;}
+        headers=h;samples=s;captureStamps=stamps;output=o;stepProgram=p;captureProgram=c;ackProgram=a;ring=r;
     }
     private static int buffer(long bytes){
         if(bytes>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))throw new IllegalStateException("Environment storage exceeds device limit");
@@ -56,15 +59,19 @@ public final class PackageEnvironmentGpu implements AutoCloseable {
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,headers);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)body*HEADER_BYTES,baseline);
         clear(samples,(long)body*HISTORY*SAMPLE_BYTES,(long)HISTORY*SAMPLE_BYTES);
+        clear(captureStamps,(long)body*4,4);
     }
     public void upload(ByteBuffer data,int count){
         open();if(!data.isDirect()||count<0||count>capacity||data.remaining()!=count*HEADER_BYTES)throw new IllegalArgumentException("Environment upload layout");
         clear(headers,0,(long)capacity*HEADER_BYTES);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,headers);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,data);
+        clear(captureStamps,0,(long)capacity*4);
     }
-    public void retire(int body){open();clear(headers,(long)body*HEADER_BYTES,HEADER_BYTES);}
+    public void retire(int body){open();clear(headers,(long)body*HEADER_BYTES,HEADER_BYTES);clear(captureStamps,(long)body*4,4);}
     public void bind(int readyLocation){open();GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,13,headers);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,14,samples);GL20.glUniform1i(readyLocation,1);}
     public void step(int bodies,int count,PackageCollisionGpu.View world){
         open();if(count==0)return;GL20.glUseProgram(stepProgram);bind(GL20.glGetUniformLocation(stepProgram,"uEnvironmentReady"));
+        int freezeReady=GL20.glGetUniformLocation(stepProgram,"uFreezeDiagnostics"),freezeStep=GL20.glGetUniformLocation(stepProgram,"uFreezeStep");
+        if(freezeDiagnostics==null)GL20.glUniform1i(freezeReady,0);else freezeDiagnostics.bind(freezeReady,freezeStep);
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,bodies);GL30.glUniform1ui(GL20.glGetUniformLocation(stepProgram,"uCount"),count);
         long step=++simulationStep;GL30.glUniform2ui(GL20.glGetUniformLocation(stepProgram,"uSimulationStep"),(int)step,(int)(step>>>32));
         GL30.glUniform1ui(GL20.glGetUniformLocation(stepProgram,"uCoalesceTicks"),coalesceTicks);
@@ -78,6 +85,14 @@ public final class PackageEnvironmentGpu implements AutoCloseable {
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,output);GL30.glUniform1ui(GL20.glGetUniformLocation(captureProgram,"uCount"),count);
         GL30.glUniform1ui(GL20.glGetUniformLocation(captureProgram,"uScanOffset"),scanOffset%count);scanOffset=(scanOffset+MAX_EVENTS)%count;
         GL30.glUniform1ui(GL20.glGetUniformLocation(captureProgram,"uEventCapacity"),MAX_EVENTS);
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,7,captureStamps);
+        GL30.glUniform1ui(GL20.glGetUniformLocation(captureProgram,"uCaptureSerial"),(int)(sequence+1));
+        int fresh=GL20.glGetUniformLocation(captureProgram,"uFreshOnly");
+        // Unreported suffixes take the bounded queue first. Retransmits fill spare
+        // slots, so lost/delayed ACKs remain recoverable without starving new journals.
+        GL20.glUniform1i(fresh,1);
+        GL43.glDispatchCompute((count+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        GL20.glUniform1i(fresh,0);
         GL43.glDispatchCompute((count+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         return ring.submit(output,1,sequence++);
     }
@@ -96,8 +111,8 @@ public final class PackageEnvironmentGpu implements AutoCloseable {
         GL20.glUniform1f(GL20.glGetUniformLocation(ackProgram,"uHealth"),health);GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
     public int pending(){return ring.pending();}
-    public long bytes(){return (long)capacity*(HEADER_BYTES+HISTORY*SAMPLE_BYTES)+OUTPUT_BYTES*(1+PackageReadbackRing.SLOTS);}
+    public long bytes(){return (long)capacity*(HEADER_BYTES+HISTORY*SAMPLE_BYTES+4)+OUTPUT_BYTES*(1+PackageReadbackRing.SLOTS);}
     public int headerBuffer(){open();return headers;}
     private void open(){if(closed)throw new IllegalStateException("Environment journal closed");}
-    @Override public void close(){if(closed)return;closed=true;ring.close();GL15.glDeleteBuffers(headers);GL15.glDeleteBuffers(samples);GL15.glDeleteBuffers(output);GL20.glDeleteProgram(stepProgram);GL20.glDeleteProgram(captureProgram);GL20.glDeleteProgram(ackProgram);}
+    @Override public void close(){if(closed)return;closed=true;ring.close();GL15.glDeleteBuffers(headers);GL15.glDeleteBuffers(samples);GL15.glDeleteBuffers(captureStamps);GL15.glDeleteBuffers(output);GL20.glDeleteProgram(stepProgram);GL20.glDeleteProgram(captureProgram);GL20.glDeleteProgram(ackProgram);}
 }

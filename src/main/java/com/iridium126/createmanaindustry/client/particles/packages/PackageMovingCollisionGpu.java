@@ -11,13 +11,13 @@ public final class PackageMovingCollisionGpu implements AutoCloseable {
     private static final int MAP_FLAGS=GL30.GL_MAP_WRITE_BIT|GL44.GL_MAP_PERSISTENT_BIT|GL44.GL_MAP_COHERENT_BIT;
     private static final class Geometry {int buffer,size,copied,identity;ByteBuffer mapped,source;long revision;PackageMovingGeometry.Bounds bounds;}
     private static final class Bank {int buffer;ByteBuffer mapped;long fence;Geometry geometry;boolean leased;}
-    private static final class Entry {Bank[] banks=new Bank[0];Geometry visible,pending;long revision;PackageMovingGeometry.Bounds visibleBounds;}
+    private static final class Entry {Bank[] banks=new Bank[0];Geometry visible,pending;long revision;int capturePhase;PackageMovingGeometry.Bounds visibleBounds;}
     private final Thread owner=Thread.currentThread();
     private final java.util.function.LongToIntFunction poll;
     private final Map<Integer,Entry> entries=new LinkedHashMap<>();private final List<Geometry> retired=new ArrayList<>();
     private Set<PackageMovingCollisionCache.GeometryRevision> retainedHistory=Set.of();
     private Set<Integer> retainedHistoryIdentities=Set.of();
-    private int empty,bankCount=4;private boolean closed,viewOpen;
+    private int empty,bankCount=4,uploadCursor;private boolean closed,viewOpen;
     private long uploadedBytes,skippedViews;
     public PackageMovingCollisionGpu(){this(fence->GL32.glClientWaitSync(fence,GL32.GL_SYNC_FLUSH_COMMANDS_BIT,0));}
     /** Injected completion observation is used by validation to hold all four banks busy. */
@@ -55,6 +55,7 @@ public final class PackageMovingCollisionGpu implements AutoCloseable {
         var seen=new HashSet<Integer>();
         for(var source:captured) {
             seen.add(source.identity);Entry e=entry(source.identity);var snapshot=source.snapshot();
+            e.capturePhase=source.unsupported()?5:snapshot!=null?3:source.future!=null?2:1;
             boolean changed=e.revision!=source.revision();
             if(changed) {
                 // A dirty source is being recaptured. Keep its last complete geometry live;
@@ -111,15 +112,21 @@ public final class PackageMovingCollisionGpu implements AutoCloseable {
     /** Persistent copies are split into <=16KiB slices; incomplete geometry is never ready. */
     public void pump(int maximumBytes,long budgetNanos) {
         owner();if(viewOpen)throw new IllegalStateException("Moving upload during view");collect();long start=System.nanoTime();int copied=0;
-        for(Entry e:entries.values()) {
-            Geometry g=e.pending;if(g==null)continue;
-            while(g.copied<g.size&&copied<maximumBytes&&System.nanoTime()-start<budgetNanos) {
-                int n=Math.min(16384,Math.min(g.size-g.copied,maximumBytes-copied));g.source.position(g.copied).limit(g.copied+n);
-                g.mapped.position(g.copied);g.mapped.put(g.source);g.copied+=n;copied+=n;uploadedBytes+=n;
-            }
-            if(g.copied==g.size){g.source=null;if(e.visible!=null)retired.add(e.visible);e.visible=g;e.visibleBounds=g.bounds;e.pending=null;}
+        Entry[] round=entries.values().toArray(Entry[]::new);if(round.length==0)return;
+        // Empty captured geometry needs no transfer and remains publishable with zero budget.
+        for(Entry e:round)if(e.pending!=null&&e.pending.copied==e.pending.size)publish(e);
+        int idle=0;
+        while(idle<round.length&&copied<maximumBytes&&System.nanoTime()-start<budgetNanos) {
+            int at=uploadCursor%round.length;uploadCursor=(at+1)%round.length;Entry e=round[at];Geometry g=e.pending;
+            if(g==null){idle++;continue;}
+            // One slice per structure per round; a large first BVH cannot consume
+            // every frame's budget before a small collider gets its first bytes.
+            int n=Math.min(16384,Math.min(g.size-g.copied,maximumBytes-copied));g.source.position(g.copied).limit(g.copied+n);
+            g.mapped.position(g.copied);g.mapped.put(g.source);g.copied+=n;copied+=n;uploadedBytes+=n;idle=0;
+            if(g.copied==g.size)publish(e);
         }
     }
+    private void publish(Entry entry){Geometry geometry=entry.pending;geometry.source=null;if(entry.visible!=null)retired.add(entry.visible);entry.visible=geometry;entry.visibleBounds=geometry.bounds;entry.pending=null;}
     public List<View> views(Collection<PackageMovingCollisionCache.Entry> captured,boolean posesReady,double ox,double oy,double oz) {
         if(!Double.isFinite(ox)||!Double.isFinite(oy)||!Double.isFinite(oz))throw new IllegalArgumentException("Moving origin");
         owner();if(viewOpen)throw new IllegalStateException("Nested moving scene");collect();var result=new ArrayList<View>();
@@ -138,6 +145,9 @@ public final class PackageMovingCollisionGpu implements AutoCloseable {
                 p.putFloat((float)b.x0()).putFloat((float)b.y0()).putFloat((float)b.z0()).putInt(source.identity);
                 p.putFloat((float)b.x1()).putFloat((float)b.y1()).putFloat((float)b.z1()).putInt(geometry==null?0:1);
                 p.putInt(60*4,geometry==null?0:geometry.size/PackageMovingGeometry.NODE_BYTES);
+                p.putInt(61*4,(int)source.revision()).putInt(62*4,(int)(source.revision()>>>32));
+                int phase=geometry!=null?0:e.revision!=source.revision()?4:e.capturePhase;
+                p.putInt(63*4,phase);
             }catch(IllegalArgumentException invalidPose){poseReady=false;}
             bank.geometry=geometry;bank.leased=true;result.add(new View(bank,poseReady,source));
         }

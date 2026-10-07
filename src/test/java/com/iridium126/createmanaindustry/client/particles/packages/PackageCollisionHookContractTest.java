@@ -55,30 +55,30 @@ class PackageCollisionHookContractTest {
                 .anyMatch(call->call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionRuntime")
                         &&call.name.equals("invalidateStaticCollisionIfChanged")),
                 "block changes must pass through the captured-input comparison");
-        var comparisonPath=runtime.methods.stream().filter(method->method.name.equals("capturedCollisionCellChanged"))
+        var cache=type("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionCache");
+        var comparisonPath=cache.methods.stream().filter(method->method.name.equals("invalidateChangedBlock"))
                 .findFirst().orElseThrow();
-        int known=-1,capture=-1,comparison=-1;
+        int known=-1,capture=-1,comparison=-1,invalidate=-1;
         for(int i=0;i<comparisonPath.instructions.size();i++) {
             var instruction=comparisonPath.instructions.get(i);
             if(instruction instanceof MethodInsnNode call&&call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionCache")
                     &&call.name.equals("hasCapturedCell"))known=i;
-            if(instruction instanceof MethodInsnNode call&&call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageWorldCollisionSource")
+            if(instruction instanceof MethodInsnNode call&&call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionCache$Source")
                     &&call.name.equals("capture"))capture=i;
             if(instruction instanceof MethodInsnNode call&&call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionCache")
                     &&call.name.equals("capturedCellMatches"))comparison=i;
+            if(instruction instanceof MethodInsnNode call&&call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionCache")
+                    &&call.name.equals("invalidate"))invalidate=i;
         }
         assertTrue(known>=0&&capture>known&&comparison>capture,
                 "only captured cells should be sampled and compared before deciding on invalidation");
+        assertTrue(invalidate>comparison,"section revocation must follow owned-cell comparisons");
         var invalidationPath=runtime.methods.stream().filter(method->method.name.equals("invalidateStaticCollisionIfChanged"))
                 .findFirst().orElseThrow();
-        int sample=-1,invalidation=-1;
-        for(int i=0;i<invalidationPath.instructions.size();i++) {
-            var instruction=invalidationPath.instructions.get(i);
-            if(instruction instanceof MethodInsnNode call&&call.name.equals("capturedCollisionCellChanged"))sample=i;
-            if(instruction instanceof MethodInsnNode call&&call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionCache")
-                    &&call.name.equals("invalidateBlock"))invalidation=i;
-        }
-        assertTrue(sample>=0&&invalidation>sample,"a changed captured neighborhood must invalidate its sections");
+        assertTrue(java.util.stream.StreamSupport.stream(invalidationPath.instructions.spliterator(),false)
+                .filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast)
+                .anyMatch(call->call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionCache")&&call.name.equals("invalidateChangedBlock")),
+                "block notifications must choose changed sections through the shared comparison path");
         var blockEntity=runtime.methods.stream().filter(method->method.name.equals("blockEntityChanged")
                 &&method.desc.equals("(Lnet/minecraft/client/multiplayer/ClientLevel;Lnet/minecraft/core/BlockPos;)V"))
                 .findFirst().orElseThrow();

@@ -13,6 +13,7 @@ vec3 movingTranslation(bool old){return mv(old?3u:7u);}
 uint movingIdentity(){return movingPose[8].w;}
 bool movingGeometryReady(){return movingPose[9].w!=0u;}
 uint movingNodeCount(){return movingPose[15].x;}
+ivec4 movingGeometryFailureDetail(){return ivec4(movingIdentity(),movingPose[15].yzw);}
 vec4 quaternion(mat3 r) {
     float trace=r[0][0]+r[1][1]+r[2][2];vec4 q;
     if(trace>0.0){float s=sqrt(trace+1.0)*2.0;q=vec4((r[1][2]-r[2][1])/s,(r[2][0]-r[0][2])/s,(r[0][1]-r[1][0])/s,.25*s);}
@@ -75,6 +76,11 @@ float movingBodyTurnRadius(vec3 initial,vec3 motion,vec3 extent,vec3 axis) {
 }
 // Each separating OBB face proves a collision-free time interval. Taking the
 // largest proven interval is conservative: all axes must overlap for a hit.
+float movingSafeInterval(float gap,float closing,float curvature) {
+    if(curvature<1e-8)return gap/max(closing,1e-8);
+    float root=sqrt(closing*closing+2.*curvature*gap);
+    return closing>=0.?2.*gap/(closing+root):(root-closing)/curvature;
+}
 float movingFaceAdvance(vec3 initial,vec3 motion,vec3 extent,MovingNode box,float t,float fallback) {
     mat3 r=movingRotation(t);vec3 sa=movingScale(true),sb=movingScale(false),scale=mix(sa,sb,t);
     vec3 centre=(box.lo.xyz+box.hi.xyz)*.5,halfExtent=(box.hi.xyz-box.lo.xyz)*.5;
@@ -83,22 +89,59 @@ float movingFaceAdvance(vec3 initial,vec3 motion,vec3 extent,MovingNode box,floa
     vec4 turn=movingTurn();vec3 angularVelocity=turn.xyz*turn.w;
     float angle=max(uintBitsToFloat(movingPose[14].x),turn.w*1.001);
     float radius=movingBodyTurnRadius(initial,motion,extent,turn.xyz);
-    // Keep the signed angular/linear closing velocity: suction and a rotating
-    // face often nearly cancel. Bound derivative changes over the remaining
-    // interval, including the nlerp rate variation and rotating projection.
-    float variation=max(0.,angle-turn.w)*radius+(1.-t)
-            *(2.*angle*length(relativeMotion)+angle*angle*radius);
+    // Bound separation locally: g(t+h) >= gap - closing*h - curvature*h*h/2.
+    // Charging the whole remaining frame's derivative variation to each tiny
+    // advance stalls a clear grazing path near its minimum separation.
+    float rateVariation=max(0.,angle-turn.w)*radius;
+    float curvature=2.*angle*length(relativeMotion)+angle*angle*radius;
     float advance=fallback;
     for(int j=0;j<3;j++) {
         float side=dot(relative,r[j])-centre[j]*scale[j];
         float gap=abs(side)-dot(abs(r[j]),extent)-halfExtent[j]*scale[j];
         if(gap<=0.)continue;
         float direction=side<0.?-1.:1.;vec3 normal=r[j]*direction;
-        float closing=-dot(relativeMotion,normal)-dot(cross(angularVelocity,normal),relative)
+        vec3 derivative=cross(angularVelocity,normal);
+        float supportClosing=0.;
+        for(int k=0;k<3;k++) {
+            // A component that cannot cross zero has a signed support derivative.
+            // At an abs() cusp retain the upper derivative; never skip a hit.
+            float slope=abs(normal[k])>angle*(1.-t)?sign(normal[k])*derivative[k]:abs(derivative[k]);
+            supportClosing+=extent[k]*slope;
+        }
+        float closing=-dot(relativeMotion,normal)-dot(derivative,relative)
                 +direction*centre[j]*(sb[j]-sa[j])+abs(sb[j]-sa[j])*halfExtent[j]
-                +angle*length(extent)+variation;
-        advance=max(advance,gap/max(closing,1e-8));
+                +supportClosing+rateVariation;
+        advance=max(advance,movingSafeInterval(gap,closing,curvature));
     }
+    return advance;
+}
+// The SAT normal may be a world face or edge/edge axis while all three OBB
+// face gaps are negative. Freeze that normal in world space and prove that
+// every transformed corner remains behind the body's separating plane.
+float movingAxisAdvance(vec3 initial,vec3 motion,vec3 extent,MovingNode box,float t,vec3 normal) {
+    mat3 r=movingRotation(t);vec3 sa=movingScale(true),sb=movingScale(false),scale=mix(sa,sb,t);
+    vec3 relative=initial+motion*t-mix(movingTranslation(true),movingTranslation(false),t);
+    vec3 relativeMotion=motion-(movingTranslation(false)-movingTranslation(true));
+    vec4 turn=movingTurn();vec3 angularVelocity=turn.xyz*turn.w;
+    float angle=max(uintBitsToFloat(movingPose[14].x),turn.w*1.001);
+    float plane=dot(relative,normal)-dot(abs(normal),extent),advance=1e30;
+    for(int corner=0;corner<8;corner++) {
+        vec3 local=vec3((corner&1)==0?box.lo.x:box.hi.x,(corner&2)==0?box.lo.y:box.hi.y,(corner&4)==0?box.lo.z:box.hi.z);
+        vec3 vertex=r*(local*scale);float gap=plane-dot(vertex,normal);
+        if(gap<=0.)return 0.;
+        vec3 scaleMotion=r*(local*(sb-sa));
+        float radius=max(length(cross(turn.xyz,r*(local*sa))),length(cross(turn.xyz,r*(local*sb))));
+        if(dot(turn.xyz,turn.xyz)<.5)radius=max(length(local*sa),length(local*sb));
+        float closing=dot(cross(angularVelocity,vertex)+scaleMotion-relativeMotion,normal)
+                +max(0.,angle-turn.w)*radius;
+        float curvature=angle*angle*radius+2.*angle*length(scaleMotion);
+        advance=min(advance,movingSafeInterval(gap,closing,curvature));
+    }
+    return advance;
+}
+float movingConservativeAdvance(vec3 initial,vec3 motion,vec3 extent,MovingNode box,float t,vec3 normal,float fallback) {
+    float advance=movingFaceAdvance(initial,motion,extent,box,t,fallback);
+    if(t+advance<1.)advance=max(advance,movingAxisAdvance(initial,motion,extent,box,t,normal));
     return advance;
 }
 bool linearAxis(vec3 axis,vec3 delta,vec3 motion,vec3 extent,mat3 r,vec3 halfExtent,

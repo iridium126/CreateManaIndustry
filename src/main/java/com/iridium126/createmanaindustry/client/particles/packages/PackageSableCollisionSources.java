@@ -13,6 +13,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.Vec3;
@@ -95,6 +96,8 @@ final class PackageSableCollisionSources implements PackageMovingCollisionSource
         final PackageMovingGeometry.Key key;
         LevelPlot plot;
         boolean finalized;
+        final PackageMovingCollisionCells capturedCells=new PackageMovingCollisionCells();
+        boolean contextualGeometry;
 
         Source(ClientSubLevel sub) {
             super(PackageSableCollisionSources.this.host);
@@ -115,10 +118,11 @@ final class PackageSableCollisionSources implements PackageMovingCollisionSource
         }
         @Override void refresh() {
             boolean ready = sub.isFinalized();
-            if (ready != finalized) { finalized = ready; version++; }
+            if (ready != finalized) { finalized = ready; clearCapturedCells(); version++; }
             LevelPlot nextPlot = sub.getPlot();
             if (nextPlot != plot) {
                 plot = nextPlot;
+                clearCapturedCells();
                 version++;
             }
             var b = plot.getBoundingBox();
@@ -137,9 +141,45 @@ final class PackageSableCollisionSources implements PackageMovingCollisionSource
             return state.getBlock() instanceof BlockSubLevelCollisionShape custom
                     ? custom.getSubLevelCollisionShape(world, state) : super.collisionShape(state, world, pos);
         }
+        @Override void clearCapturedCells(){capturedCells.clear();contextualGeometry=false;}
+        @Override boolean cellChanged(BlockPos position) {
+            owner();
+            // Optional custom/dynamic shapes may query remote context. A local
+            // numeric comparison cannot prove that the rest of this source is unchanged.
+            if(contextualGeometry)return true;
+            try {
+                return capturedCells.changed(position.getX(),position.getY(),position.getZ(),raw,cell->{
+                    var holder=plot.getChunkHolder(plot.toLocal(new ChunkPos(cell.x()>>4,cell.z()>>4)));
+                    if(holder==null||holder.getChunk()==null)return null;
+                    var chunk=holder.getChunk();int section=chunk.getSectionIndex(cell.y());
+                    var sections=chunk.getSections();if(section<0||section>=sections.length)return null;
+                    var cells=sections[section];BlockState state=cells==null?net.minecraft.world.level.block.Blocks.AIR.defaultBlockState():
+                            cells.getBlockState(cell.x()&15,cell.y()&15,cell.z()&15);
+                    if(contextualShape(state))return null;
+                    BlockPos pos=new BlockPos(cell.x(),cell.y(),cell.z());
+                    var contextPos=new BlockPos.MutableBlockPos();
+                    PackageSableCollisionCoordinates.contextPosition(pos,plot.getCenterBlock(),contextPos);
+                    return shapes(state,plot.getEmbeddedLevelAccessor(),pos,contextPos);
+                });
+            }catch(RuntimeException|LinkageError unavailable){return true;}
+        }
+        private boolean contextualShape(BlockState state){
+            return state.getBlock().hasDynamicShape()||state.getBlock() instanceof BlockSubLevelCollisionShape
+                    ||state.getBlock() instanceof BlockSubLevelDynamicCollider;
+        }
+        private void rememberEmptySection(LevelChunk chunk,int section){
+            int x=chunk.getPos().getMinBlockX(),z=chunk.getPos().getMinBlockZ(),y=chunk.getSectionYFromSectionIndex(section);
+            if(x<raw.x1()&&(double)x+16>raw.x0()&&z<raw.z1()&&(double)z+16>raw.z0()
+                    &&y*16.0<raw.y1()&&(y+1.0)*16>raw.y0())
+                capturedCells.emptySection(chunk.getPos().x,y,chunk.getPos().z);
+        }
+        private void rememberCell(BlockPos pos,List<PackageMovingGeometry.Box> boxes){
+            if(raw.contains(pos.getX(),pos.getY(),pos.getZ()))capturedCells.record(pos.getX(),pos.getY(),pos.getZ(),boxes);
+        }
         @Override public PackageMovingCollisionCache.Cursor open() {
             owner();
             if (!sub.isFinalized()) throw new IllegalStateException("Sable initial chunks not finalized");
+            clearCapturedCells();
             LevelReader world = plot.getEmbeddedLevelAccessor();
             var center = plot.getCenterBlock();
             var holders = plot.getLoadedChunks().iterator();
@@ -154,24 +194,34 @@ final class PackageSableCollisionSources implements PackageMovingCollisionSource
                     owner();
                     if (chunk == null) { chunk = holders.next().getChunk(); section = 0; index = 0; }
                     var sections = chunk.getSections();
-                    section = PackageSableCollisionSections.nextNonNull(sections, section);
+                    int nextSection=PackageSableCollisionSections.nextNonNull(sections, section);
+                    for(int skipped=section;skipped<nextSection;skipped++)
+                        rememberEmptySection(chunk,skipped);
+                    section = nextSection;
                     if (section >= sections.length) { chunk = null; return List.of(); }
                     var cells = sections[section];
-                    if (cells.hasOnlyAir()) { section++; index = 0; return List.of(); }
+                    if (cells.hasOnlyAir()) {
+                        rememberEmptySection(chunk,section);
+                        section++; index = 0; return List.of();
+                    }
                     pos.set(chunk.getPos().getMinBlockX() + (index & 15), chunk.getSectionYFromSectionIndex(section) * 16 + (index >>> 8),
                             chunk.getPos().getMinBlockZ() + ((index >>> 4) & 15));
                     PackageSableCollisionCoordinates.contextPosition(pos, center, contextPos);
                     // The plot holder owns this chunk. The parent Level's loaded-chunk test
                     // can reject a valid plot chunk, leaving a pose-only collider forever.
                     try {
-                        return shapes(cells.getBlockState(index & 15, index >>> 8, (index >>> 4) & 15), world, pos, contextPos);
+                        var state=cells.getBlockState(index & 15, index >>> 8, (index >>> 4) & 15);
+                        contextualGeometry|=contextualShape(state);
+                        var boxes=shapes(state, world, pos, contextPos);
+                        rememberCell(pos,boxes);return boxes;
                     } catch (RuntimeException | LinkageError unavailableShape) {
                         // One modded block with an unavailable shape must not make the
                         // entire plot BVH permanently unavailable. Keep a fail-closed
                         // marker at this cell so only bodies touching it pause.
-                        return List.of(new PackageMovingGeometry.Box(pos.getX() - ox, pos.getY() - oy, pos.getZ() - oz,
+                        var boxes=List.of(new PackageMovingGeometry.Box(pos.getX() - ox, pos.getY() - oy, pos.getZ() - oz,
                                 pos.getX() - ox + 1, pos.getY() - oy + 1, pos.getZ() - oz + 1,
                                 .6f, PackageCollisionCache.UNSUPPORTED));
+                        rememberCell(pos,boxes);return boxes;
                     } finally {
                         if (++index == 4096) { section++; index = 0; }
                     }

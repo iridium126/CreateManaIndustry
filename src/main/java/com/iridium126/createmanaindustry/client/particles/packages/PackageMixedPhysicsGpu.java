@@ -180,6 +180,8 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
     public int freeStateBuffer(){open();return free.stateBuffer();}
     public PackageEnvironmentGpu enableEnvironment(Function<String,String> sources){open();return free.enableEnvironment(sources);}
     public PackageEnvironmentGpu environment(){open();return free.environment();}
+    public PackageFreezeDiagnosticsGpu enableFreezeDiagnostics(Function<String,String> sources){open();return free.enableFreezeDiagnostics(sources);}
+    public void disableFreezeDiagnostics(){open();free.disableFreezeDiagnostics();}
     public int freeCapacity(){open();return freeCapacity;}
     public int chainCapacity(){open();return chainCapacity;}
     public int chainCount(){open();return chain.count();}

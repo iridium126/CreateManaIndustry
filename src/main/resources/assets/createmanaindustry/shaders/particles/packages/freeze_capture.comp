@@ -1,0 +1,29 @@
+#define CMI_BODY_INPLACE 1
+#pragma cmi_include packages/state.glsl
+#pragma cmi_include packages/environment_state.glsl
+struct FreezeEvent { PackageFreezeState state; uvec4 identity; uvec4 lease; uvec4 selection; uvec4 reserved; };
+layout(std430,binding=6) buffer FreezeEvents { uvec4 totals; uint reasons[32]; FreezeEvent events[]; };
+layout(local_size_x=64) in;
+uniform uint uEventCapacity,uScanOffset;
+void main(){
+    uint invocation=gl_GlobalInvocationID.x;if(invocation>=uCount)return;
+    uint i=(invocation+uScanOffset)%uCount;Body b=src[i];PackageFreezeState state=freezeStates[i];
+    bool frozen=b.previousSleep.w==PACKAGE_COLLISION_FROZEN;
+    if(!frozen&&state.meta.x==0u){freezeStates[i].meta.y=0u;return;}
+    uint reason=state.meta.x&65535u;
+    if(frozen){atomicAdd(totals.y,1u);atomicAdd(reasons[min(reason,31u)],1u);}
+    // Unknown compatibility freezes also produce an explicit diagnostic event.
+    // Suppress the same reason/context even if the retry occurs in another stage.
+    uint code=((reason*0x9e3779b9u)^(uint(state.detail.x)*73856093u)^(uint(state.detail.y)*19349663u)
+            ^(uint(state.detail.z)*83492791u)^(uint(state.detail.w)*0x85ebca6bu))|1u;
+    if(reason==FREEZE_SECTION_VERSION)code=(code^(state.velocity.w*0x9e3779b9u)^((state.meta.x>>24u)&127u))|1u;
+    if(code==state.meta.y){if(!frozen)freezeStates[i].meta.xy=uvec2(0);return;}
+    uint slot=atomicAdd(totals.x,1u);if(slot>=uEventCapacity)return;
+    if(state.meta.x==0u){state.position=vec4(b.positionMass.xyz,b.extentYaw.y);state.velocity=floatBitsToUint(b.velocityGround);state.meta.zw=uFreezeStep;}
+    PackageEnvironment e;
+    uvec4 identity=uvec4(0),lease=uvec4(0),selection=uvec4(i,0,0,0);
+    if(uEnvironmentReady){e=environment[i];identity=e.identity;lease=e.lease;selection.y=e.control.z;selection.zw=floatBitsToUint(e.state.zw);}
+    events[slot]=FreezeEvent(state,identity,lease,selection,uvec4(frozen?1u:0u,0,0,0));
+    freezeStates[i].meta.y=code; // Overflow remains unreported and is retried later.
+    if(!frozen)freezeStates[i].meta.xy=uvec2(0);
+}

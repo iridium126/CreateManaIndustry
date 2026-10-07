@@ -21,6 +21,8 @@ public final class PackageCollisionCache {
     public interface Listener {
         default void invalidated(Section section,long revision) {}
         default void published(Section section,Snapshot snapshot) {}
+        /** A completed capture predates a later edit; never make it the current CPU snapshot. */
+        default void historical(Section section,Snapshot snapshot) {}
         default void removed(Section section) {}
         default void cleared() {}
     }
@@ -168,6 +170,23 @@ public final class PackageCollisionCache {
         int z0=sz-((z&15)==0?1:0),z1=sz+((z&15)==15?1:0);
         for(int cx=x0;cx<=x1;cx++)for(int cy=y0;cy<=y1;cy++)for(int cz=z0;cz<=z1;cz++)invalidate(new Section(cx,cy,cz));
     }
+    /** Compare the same one-cell context neighborhood, but revoke only sections
+     * whose owned collision input actually changed. Boundary guards read those
+     * cells directly; unchanged adjacent sections need no new revision. */
+    public void invalidateChangedBlock(int x,int y,int z,Source source) {
+        owner();var changed=new HashSet<Section>();
+        for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++) {
+            long nx=(long)x+dx,ny=(long)y+dy,nz=(long)z+dz;
+            if(nx<Integer.MIN_VALUE||nx>Integer.MAX_VALUE||ny<Integer.MIN_VALUE||ny>Integer.MAX_VALUE||nz<Integer.MIN_VALUE||nz>Integer.MAX_VALUE)continue;
+            int cx=(int)nx,cy=(int)ny,cz=(int)nz;var section=new Section(cx>>4,cy>>4,cz>>4);
+            int cell=(cy&15)<<8|(cz&15)<<4|(cx&15);if(!hasCapturedCell(section,cell))continue;
+            try {
+                Cell live=source.capture(section,cell);
+                if(live!=null&&Boolean.FALSE.equals(capturedCellMatches(section,cell,live)))changed.add(section);
+            }catch(RuntimeException|LinkageError unavailable){changed.add(section);}
+        }
+        for(Section section:changed)invalidate(section);
+    }
     /** Packet replacement/unload changes context in the eight adjacent chunk columns too. */
     public void invalidateChunk(int x,int z) {
         owner();
@@ -219,26 +238,21 @@ public final class PackageCollisionCache {
 
     /** Poll and capture share the same budget; never joins an unfinished worker. */
     public void tick(Source source, long budgetNanos) {
-        owner(); if(budgetNanos<=0)return;
+        owner();
         long start=clock.getAsLong();
+        // Publishing immutable completed work needs no world reads. A moving/light
+        // capture that spent the shared budget must not delay ready static geometry.
+        var completed=new java.util.ArrayList<Section>();
+        for(var row:pending.entrySet())if(row.getValue().future!=null&&row.getValue().future.isDone())completed.add(row.getKey());
+        for(Section section:completed){Work work=sections.get(section);if(work!=null)publishCompleted(section,work);}
+        if(budgetNanos<=0){lastCaptureNanos=clock.getAsLong()-start;return;}
         int attempts=pending.size();
         while(attempts-- > 0 && !pending.isEmpty() && clock.getAsLong()-start<budgetNanos) {
             var iterator=pending.entrySet().iterator();var queued=iterator.next();iterator.remove();
             Section section=queued.getKey();Work w=queued.getValue();
             w.queued=false;
             if(w.future!=null) {
-                if(w.future.isDone()) {
-                    if(!w.future.isCompletedExceptionally() && !w.future.isCancelled()) {
-                        Snapshot result=w.future.getNow(null);
-                        if(result!=null && result.revision==w.revision){
-                            w.published=result;w.futureCells=null;w.futureRevision=0;
-                            bakeTimes[bakeCursor]=result.bakeNanos;bakeCursor=(bakeCursor+1)%bakeTimes.length;
-                            bakeSamples=Math.min(bakeSamples+1,bakeTimes.length);listener.published(section,result);
-                        }
-                    }
-                    else {w.futureCells=null;w.futureRevision=0;}
-                    w.future=null;
-                }
+                publishCompleted(section,w);
                 if(w.published!=null)continue;
                 if(w.future!=null) { enqueue(section,w); continue; }
             }
@@ -275,6 +289,17 @@ public final class PackageCollisionCache {
         captureTimes[captureCursor]=lastCaptureNanos;captureCursor=(captureCursor+1)%captureTimes.length;
         captureSamples=Math.min(captureSamples+1,captureTimes.length);
         if(lastCaptureNanos>budgetNanos)overrunCount++;
+    }
+    private void publishCompleted(Section section,Work work) {
+        var future=work.future;if(future==null||!future.isDone())return;
+        Snapshot result=!future.isCompletedExceptionally()&&!future.isCancelled()?future.getNow(null):null;
+        work.future=null;work.futureCells=null;work.futureRevision=0;
+        if(result==null)return;
+        if(result.revision==work.revision) {
+            work.published=result;pending.remove(section);work.queued=false;
+            bakeTimes[bakeCursor]=result.bakeNanos;bakeCursor=(bakeCursor+1)%bakeTimes.length;
+            bakeSamples=Math.min(bakeSamples+1,bakeTimes.length);listener.published(section,result);
+        } else listener.historical(section,result);
     }
     private void enqueue(Section s,Work w) { if(!w.queued){pending.put(s,w);w.queued=true;} }
     private static Snapshot pack(long revision,Cell[] cells) {

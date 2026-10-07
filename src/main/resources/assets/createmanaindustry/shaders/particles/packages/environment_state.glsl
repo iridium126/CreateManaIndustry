@@ -8,3 +8,10 @@ bool environmentBlocked(uint i){
     return uEnvironmentReady&&environment[i].control.z!=0u
         &&(environment[i].control.y!=0u||environment[i].lease.z-environment[i].lease.w>=PACKAGE_ENV_HISTORY);
 }
+#ifdef CMI_PACKAGE_FREEZE_TYPES
+uint environmentFreezeReason(uint i){
+    PackageEnvironment e=environment[i];
+    return e.control.y==0u?FREEZE_ENV_BACKPRESSURE:e.state.x<=.5?FREEZE_ENV_HEALTH:FREEZE_ENV_WATER;
+}
+ivec4 environmentFreezeDetail(uint i){PackageEnvironment e=environment[i];return ivec4(e.lease.z-e.lease.w,e.lease.z,e.lease.w,floatBitsToUint(e.state.x));}
+#endif

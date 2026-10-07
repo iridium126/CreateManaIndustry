@@ -9,7 +9,7 @@ uniform bool uMovingFriction;
 void main() {
     uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;Body b=src[i];
     if(b.positionMass.w==0.||b.previousSleep.w<0.){dst[i]=b;return;}
-    if(!uMovingReady){freezeForMissingCollision(b,movingHistory[2u*i].xyz);dst[i]=b;return;}
+    if(!uMovingReady){freezePackage(b,movingHistory[2u*i].xyz,FREEZE_MOVING_POSE,FREEZE_MOVING,ivec4(int(movingIdentity()),0,0,0));dst[i]=b;return;}
     vec4 support=movingSupport[i];uint tag=floatBitsToUint(support.w);
     bool carried=(tag&MOVING_CARRIED)!=0u&&(tag&MOVING_ID_MASK)==movingIdentity();
     if((tag&MOVING_CARRIED)!=0u&&(tag&MOVING_CONVERTED)==0u){b.velocityGround.xyz+=support.xyz;tag|=MOVING_CONVERTED;support.w=uintBitsToFloat(tag);movingSupport[i]=support;}
@@ -18,7 +18,7 @@ void main() {
     if(!movingCoarse(queryLo,queryHi)){dst[i]=b;return;}
     // A pose-only record still supplies conservative transformed source bounds.
     // Unknown geometry pauses only packages whose swept bounds touch that source.
-    if(!movingGeometryReady()){freezeForMissingCollision(b,initial);dst[i]=b;return;}
+    if(!movingGeometryReady()){freezePackage(b,initial,FREEZE_MOVING_GEOMETRY,FREEZE_MOVING,movingGeometryFailureDetail());dst[i]=b;return;}
     vec3 localA=localPoint(initial,true),localB=localPoint(b.positionMass.xyz,false);
     mat3 ra=rawRotation(true),rb=rawRotation(false);vec3 sa=movingScale(true),sb=movingScale(false);ra[0]/=sa.x;ra[1]/=sa.y;ra[2]/=sa.z;rb[0]/=sb.x;rb[1]/=sb.y;rb[2]/=sb.z;
     vec3 ea=vec3(dot(abs(ra[0]),extent),dot(abs(ra[1]),extent),dot(abs(ra[2]),extent))/sa;
@@ -38,9 +38,9 @@ void main() {
     while(node<movingNodeCount()) {
         // MAX_BOXES=16384 yields at most 32767 preorder BVH nodes. The work remains
         // strictly bounded while every supported node can be visited after culling.
-        if(++visits>32768u){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
+        if(++visits>32768u){b.positionMass.xyz=initial;freezePackage(b,b.previousSleep.xyz,FREEZE_MOVING_BUDGET,FREEZE_MOVING,ivec4(int(movingIdentity()),int(node),int(visits),0));dst[i]=b;return;}
         MovingNode box=movingNodes[node];uint escape=floatBitsToUint(box.lo.w);
-        if(escape<=node||escape>movingNodeCount()){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
+        if(escape<=node||escape>movingNodeCount()){b.positionMass.xyz=initial;freezePackage(b,b.previousSleep.xyz,FREEZE_MOVING_BVH,FREEZE_MOVING,ivec4(int(movingIdentity()),int(node),int(escape),int(movingNodeCount())));dst[i]=b;return;}
         if(rotating) {
             vec3 nearest=clamp(vec3(0),box.lo.xyz,box.hi.xyz);
             if(dot(nearest,nearest)>localSweepRadiusSquared){node=escape;continue;}
@@ -70,14 +70,14 @@ void main() {
                 gap=movingGap(initial+motion*t,extent,box,t,normal);
                 if(gap<=1e-4){hit=true;done=true;break;}
                 float safeAdvance=speed<1e-8?1.:gap/speed;
-                safeAdvance=movingFaceAdvance(initial,motion,extent,box,t,safeAdvance);
+                safeAdvance=movingConservativeAdvance(initial,motion,extent,box,t,normal,safeAdvance);
                 if(t+safeAdvance>=1.){done=true;break;}
                 float next=t+safeAdvance*.9;
                 if(next<=t)break;t=next;
             }
-            if(!done){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
+            if(!done){b.positionMass.xyz=initial;freezePackage(b,b.previousSleep.xyz,FREEZE_MOVING_SWEEP,FREEZE_MOVING,ivec4(int(movingIdentity()),int(node),32,floatBitsToInt(t)));dst[i]=b;return;}
             if(hit) {
-                if(box.material.y!=0u){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
+                if(box.material.y!=0u){b.positionMass.xyz=initial;freezePackage(b,b.previousSleep.xyz,FREEZE_MOVING_UNSUPPORTED,FREEZE_MOVING,ivec4(int(movingIdentity()),int(node),int(box.material.y),0));dst[i]=b;return;}
                 // Follow the impacted surface for the remaining frame, then retain
                 // tangent relative motion. Final SAT removes residual overlap.
                 vec3 hitPoint=initial+motion*t;mat3 r=movingRotation(t);vec3 scale=mix(sa,sb,t);
@@ -92,7 +92,7 @@ void main() {
             }
         }
         if(gap<=1e-4) {
-            if(box.material.y!=0u){b.positionMass.xyz=initial;freezeForMissingCollision(b,b.previousSleep.xyz);dst[i]=b;return;}
+            if(box.material.y!=0u){b.positionMass.xyz=initial;freezePackage(b,b.previousSleep.xyz,FREEZE_MOVING_UNSUPPORTED,FREEZE_MOVING,ivec4(int(movingIdentity()),int(node),int(box.material.y),0));dst[i]=b;return;}
             b.positionMass.xyz+=normal*max(0.,-gap);
             vec3 surfaceVelocity=movingVelocity(b.positionMass.xyz-vec3(0,extent.y,0));
             velocity-=normal*min(0.,dot(velocity-surfaceVelocity,normal));
@@ -107,11 +107,11 @@ void main() {
     }
     if(!grounded&&(tag&MOVING_ID_MASK)==movingIdentity())movingSupport[i]=vec4(0);
     vec3 correction;float material=-1.;bool worldGround=b.velocityGround.w>.5;
-    if(!solveWorld(b,correction,velocity,worldGround,material)){freezeForMissingCollision(b,initial);dst[i]=b;return;}
+    if(!solveWorld(b,correction,velocity,worldGround,material)){freezeForWorldCollision(b,initial,FREEZE_MOVING);dst[i]=b;return;}
     // A finite static-world correction is a solvable contact, even when this body
     // also rests on the moving source. Only solveWorld's explicit unavailable or
     // opposing-surface failure should pause the body.
     b.positionMass.xyz+=correction;
-    if(!coveredWorld(b)){freezeForMissingCollision(b,initial);dst[i]=b;return;}
+    if(!coveredWorld(b)){freezeForWorldCollision(b,initial,FREEZE_MOVING);dst[i]=b;return;}
     b.velocityGround=vec4(velocity,grounded||worldGround?1.:0.);dst[i]=b;
 }

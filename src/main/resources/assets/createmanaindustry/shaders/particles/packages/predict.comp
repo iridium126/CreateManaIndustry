@@ -14,7 +14,7 @@ void main() {
     uint i=gl_GlobalInvocationID.x;
     if(i>=uCount)return;
     Body b=src[i];
-    if(environmentBlocked(i)){freezeForMissingCollision(b,b.positionMass.xyz);dst[i]=b;return;}
+    if(environmentBlocked(i)){freezePackage(b,b.positionMass.xyz,environmentFreezeReason(i),FREEZE_PREDICT,environmentFreezeDetail(i));dst[i]=b;return;}
     if(b.previousSleep.w<0.0){dst[i]=b;return;}
     b.previousSleep.xyz=b.positionMass.xyz;
     if(b.positionMass.w>0.0) {
@@ -33,7 +33,7 @@ void main() {
             if(!sweepWorld(b,p,motion,closest,hitNormal)) {
                 // Unknown/unsupported world coverage is a temporary simulation pause.
                 // Keep the last stable pose and retry once the collision atlas is ready.
-                b=src[i];freezeForMissingCollision(b,src[i].positionMass.xyz);dst[i]=b;return;
+                b=src[i];freezeForWorldCollision(b,src[i].positionMass.xyz,FREEZE_PREDICT);dst[i]=b;return;
             }
 #endif
             if(uStaticBodies) {

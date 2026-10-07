@@ -17,7 +17,13 @@ allprojects {
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/PackageGpuValidation.java'
             if (project.hasProperty('packageRepairOnly')) args '--repair-only'
+            if (project.hasProperty('packageFreezeDiagnostics')) args '--freeze-diagnostics-only'
+            if (project.hasProperty('packageKnownContact')) args '--known-contact-only'
             if (project.hasProperty('packageComplexFreeOnly')) args '--complex-free-only'
+            if (project.hasProperty('packageMovingAdvance')) args '--moving-advance-only'
+            if (project.hasProperty('packageJournalFairness')) args '--journal-fairness-only'
+            if (project.hasProperty('packageWorldHistory')) args '--world-history-only'
+            if (project.hasProperty('packageUploadFairness')) args '--upload-fairness-only'
             if (project.hasProperty('packageBenchmark')) args '--benchmark'
             if (project.hasProperty('packageDeltaPipelineBenchmark')) args '--delta-pipeline-benchmark'
             if (project.hasProperty('packageBatchPipelineBenchmark')) args '--delta-batch-pipeline-benchmark'

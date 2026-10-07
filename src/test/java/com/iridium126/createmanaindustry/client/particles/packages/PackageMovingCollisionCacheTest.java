@@ -117,6 +117,19 @@ class PackageMovingCollisionCacheTest {
         assertSame(geometry,moving.entries().iterator().next().snapshot());
         assertEquals(300,clock.get()-started,"zero remaining budget must not start geometry work");
     }
+    @Test void completedGeometryPublishesEvenWhenStaticCaptureSpentTheBudget() {
+        var tasks=new ArrayDeque<Runnable>();var clock=new AtomicLong();var source=new Source(clock);source.length=1;
+        var cache=new PackageMovingCollisionCache(tasks::add,1,clock::get);cache.offer(source);cache.tick(10_000);
+        var entry=cache.entries().iterator().next();assertNull(entry.snapshot());tasks.remove().run();
+        long before=clock.get();cache.tick(0);
+        assertNotNull(entry.snapshot(),"completed BVH must not wait for another geometry capture budget");
+        assertEquals(before,clock.get(),"publication must not capture any more blocks");assertTrue(tasks.isEmpty());
+        source.revision++;cache.tick(10_000);assertNull(entry.snapshot());tasks.remove().run();
+        source.revision++;cache.tick(0);
+        assertNull(entry.snapshot(),"a completed stale BVH must never publish after a newer edit");
+        assertNull(entry.future);assertNull(entry.cursor);assertTrue(tasks.isEmpty());
+        cache.tick(10_000);tasks.remove().run();cache.tick(0);assertNotNull(entry.snapshot());
+    }
     @Test void zeroBudgetCapturesDirtyPoseWithoutStartingGeometryWork() {
         var tasks=new ArrayDeque<Runnable>();var clock=new AtomicLong();var source=new Source(clock);
         var cache=new PackageMovingCollisionCache(tasks::add,1,clock::get);cache.offer(source);

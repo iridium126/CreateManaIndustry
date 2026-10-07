@@ -6,11 +6,15 @@ struct Body {
     vec4 extentYaw; // half extents.xyz, yaw in degrees
     vec4 previousSleep; // previous centre.xyz; -1 invalid, -2 prepared, -3 retired, -4 collision-frozen
 };
-void freezeForMissingCollision(inout Body body,vec3 stablePosition) {
+#pragma cmi_include packages/freeze_state.glsl
+void freezePackage(inout Body body,vec3 stablePosition,uint reason,uint stage,ivec4 detail) {
+    recordPackageFreeze(body,stablePosition,reason,stage,detail);
     body.positionMass.xyz=stablePosition;
     body.previousSleep.xyz=stablePosition;
     body.previousSleep.w=PACKAGE_COLLISION_FROZEN;
 }
+// Compatibility for archived validation shaders. Production callers use explicit reasons.
+void freezeForMissingCollision(inout Body body,vec3 position){freezePackage(body,position,0u,0u,ivec4(0));}
 #ifdef CMI_BODY_INPLACE
 // Apply kernels only read/write their own body; all inter-body constraints are immutable.
 layout(std430,binding=0) buffer InputBodies { Body src[]; };

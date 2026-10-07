@@ -58,6 +58,10 @@ void main(){
         e.lease.z++;
     }
     e.state.x=max(health,0.0);
-    if((flags&e.control.w&1u)!=0u||health<=.5){e.control.y=1u;b.previousSleep.w=PACKAGE_COLLISION_FROZEN;src[i]=b;}
+    if((flags&e.control.w&1u)!=0u||health<=.5){e.control.y=1u;
+        // Preserve the original terminal physics state; diagnostics do not rewind it.
+        recordPackageFreeze(b,b.positionMass.xyz,health<=.5?FREEZE_ENV_HEALTH:FREEZE_ENV_WATER,FREEZE_ENVIRONMENT,
+                ivec4(e.lease.z-e.lease.w,e.lease.z,e.lease.w,floatBitsToUint(health)));
+        b.previousSleep.w=PACKAGE_COLLISION_FROZEN;src[i]=b;}
     environment[i]=e;
 }
