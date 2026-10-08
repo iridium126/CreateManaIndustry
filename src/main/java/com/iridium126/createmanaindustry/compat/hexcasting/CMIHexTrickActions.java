@@ -37,6 +37,10 @@ public class CMIHexTrickActions {
                             HexPattern.fromAngleString("wdwewawqwqw", HexDir.SOUTH_WEST),
                             OpExecuteTrick.INSTANCE));
 
+    public static final DeferredHolder<ActionRegistryEntry, ActionRegistryEntry> MEDIA_TO_MANA =
+            ACTIONS.register("media_to_mana", () -> new ActionRegistryEntry(
+                    HexPattern.fromAngleString("dadaw", HexDir.NORTH_EAST), OpMediaToMana.INSTANCE));
+
     public static void register(IEventBus modEventBus) {
         ACTIONS.register(modEventBus);
     }

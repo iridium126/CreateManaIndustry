@@ -13,6 +13,7 @@ public final class HexTricksBootstrap {
         InlineAPI.INSTANCE.addDataType(InlineTrickData.InlineTrickDataType.INSTANCE);
         CMIHexTrickActions.register(modEventBus);
         CMITricksterIotaRegister.register();
+        ConversionTickTime.register();
         SlateKnotInteraction.register();
         CircleSlateManaPool.ensureTypeRegistered();
     }

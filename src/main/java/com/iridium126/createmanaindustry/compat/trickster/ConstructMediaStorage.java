@@ -13,10 +13,13 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
+import net.fabricmc.fabric.api.transfer.v1.transaction.base.SnapshotParticipant;
+import com.iridium126.createmanaindustry.compat.hexcasting.ResourceConversionException;
 
 /**
  * Hex media stored on Trickster spell construct block entities, charged by
- * hoppers/funnels inserting media items and consumed by spells executed via
+ * hoppers/funnels inserting media items or the mana-to-media trick, and consumed by spells executed via
  * {@code eval_iota} in a {@link ConstructCastEnv}. Runtime state lives in a
  * weak map; persistence goes through the NBT tag {@code cmi_media} (written
  * by {@code ConstructBlockEntityMediaMixin}).
@@ -71,6 +74,23 @@ public final class ConstructMediaStorage {
             return 0;
         }
         return Math.max(0, MAX_CAPACITY - media);
+    }
+
+    public static void checkConversionCapacity(BlockEntity blockEntity, long amount) {
+        if (amount <= 0 || amount > remainingMediaCapacity(blockEntity))
+            throw new ResourceConversionException("media_capacity");
+    }
+
+    /** The native knot debit and stored media participate in the same transaction. */
+    public static void insertConvertedMedia(BlockEntity blockEntity, long amount, TransactionContext transaction) {
+        checkConversionCapacity(blockEntity, amount);
+        var snapshot = new SnapshotParticipant<Long>() {
+            @Override protected Long createSnapshot() { return getMedia(blockEntity); }
+            @Override protected void readSnapshot(Long value) { setStoredMedia(blockEntity, value); }
+            @Override protected void onFinalCommit() { syncMedia(blockEntity); }
+        };
+        snapshot.updateSnapshots(transaction);
+        setStoredMedia(blockEntity, getMedia(blockEntity) + amount);
     }
 
     public static long extractMediaFromItem(BlockEntity blockEntity, ItemStack stack, boolean simulate) {
