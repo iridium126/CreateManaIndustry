@@ -68,7 +68,7 @@ class PackageCollisionHookContractTest {
             if(instruction instanceof MethodInsnNode call&&call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionCache")
                     &&call.name.equals("capturedCellMatches"))comparison=i;
             if(instruction instanceof MethodInsnNode call&&call.owner.equals("com/iridium126/createmanaindustry/client/particles/packages/PackageCollisionCache")
-                    &&call.name.equals("invalidate"))invalidate=i;
+                    &&call.name.equals("invalidateCells"))invalidate=i;
         }
         assertTrue(known>=0&&capture>known&&comparison>capture,
                 "only captured cells should be sampled and compared before deciding on invalidation");

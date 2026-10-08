@@ -7,8 +7,158 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 class PackageCollisionCacheTest {
+    @Test void forceInterestFollowsOccupiedSectionsAcrossNegativeAndPositiveRegionBoundaries() {
+        var cache=new PackageCollisionCache(Runnable::run,8,()->0L);
+        var sections=List.of(new PackageCollisionCache.Section(-1,0,0),new PackageCollisionCache.Section(0,0,0),
+                new PackageCollisionCache.Section(4,-1,0),new PackageCollisionCache.Section(7,-1,0));
+        for(var section:sections){cache.request(section);cache.protectPackageUsage(section);}
+        var anchor=new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion(-1,0,0);
+        var result=cache.forceRegions(List.of(anchor));
+        assertEquals(List.of(anchor,new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion(0,0,0),
+                new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion(1,-1,0)),result);
+        assertEquals(result,cache.forceRegions(List.of(anchor,anchor)));
+        cache.clearPackageUsage();assertEquals(List.of(anchor),cache.forceRegions(List.of(anchor)));
+    }
     private static final PackageCollisionCache.Section SECTION=new PackageCollisionCache.Section(0,0,0);
     private static final PackageCollisionCache.Cell AIR=new PackageCollisionCache.Cell(List.of(),.6f,0);
+    @Test void anObsoleteWorkerCannotBlockLocalRescueOrOverwriteLaterNotifications(){
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);cache.request(SECTION);
+        cache.tick((s,c)->AIR,1);tasks.remove().run();cache.tick((s,c)->AIR,0);int cell=8|8<<4|8<<8;
+        var complex=new PackageCollisionCache.Cell(java.util.Collections.nCopies(65,new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,0);
+        cache.invalidateChangedBlock(8,8,8,(s,c)->c==cell?complex:AIR);cache.tick((s,c)->c==cell?complex:AIR,1);
+        long obsolete=cache.versions().get(SECTION);assertEquals(1,tasks.size());
+        var slab=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,.5f,1)),.6f,0);
+        cache.invalidateChangedBlock(8,8,8,(s,c)->c==cell?slab:AIR);cache.tick((s,c)->c==cell?slab:AIR,1);
+        assertNotNull(cache.snapshot(SECTION));assertEquals(1,tasks.size(),"rescue must not add a new worker");
+        var quarter=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,.25f,1)),.8f,0);
+        cache.invalidateChangedBlock(8,8,8,(s,c)->c==cell?quarter:AIR);var latest=cache.snapshot(SECTION);assertNotNull(latest);
+        var history=new java.util.ArrayList<PackageCollisionCache.Snapshot>();cache.listener(new PackageCollisionCache.Listener(){
+            public void historical(PackageCollisionCache.Section section,PackageCollisionCache.Snapshot result){history.add(result);}
+        });
+        tasks.remove().run();cache.tick((s,c)->{fail("ready local snapshots must not recapture");return AIR;},0);
+        assertSame(latest,cache.snapshot(SECTION));assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,cell,quarter));
+        assertEquals(1,history.size());assertEquals(obsolete,history.getFirst().revision());
+    }
+    @Test void zeroCaptureBudgetDoesNotReadDirtyCellsForRescue(){
+        var cache=new PackageCollisionCache(Runnable::run,1,()->0L);cache.request(SECTION);
+        cache.tick((s,c)->AIR,1);cache.tick((s,c)->AIR,0);
+        cache.invalidateChangedBlock(8,8,8,(s,c)->null);
+        cache.tick((s,c)->{fail("zero-budget rescue read mutable world state");return AIR;},0);assertNull(cache.snapshot(SECTION));
+    }
+    @Test void captureTickRescuesAColdLocalBudgetFailureWithoutSubmittingAWorker(){
+        var tasks=new ArrayDeque<Runnable>();var time=new AtomicLong();boolean[] cold={false};
+        var cache=new PackageCollisionCache(tasks::add,1,()->cold[0]?time.getAndAdd(600_000):time.get());cache.request(SECTION);
+        cache.tick((s,c)->AIR,1);tasks.remove().run();cache.tick((s,c)->AIR,0);
+        var solid=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,0);int cell=8|8<<4|8<<8;
+        cold[0]=true;cache.invalidateChangedBlock(8,8,8,(s,c)->c==cell?solid:AIR);assertNull(cache.snapshot(SECTION));
+        long wanted=cache.versions().get(SECTION);cold[0]=false;int[] reads={0};
+        cache.tick((s,c)->{reads[0]++;return c==cell?solid:AIR;},10_000);
+        assertNotNull(cache.snapshot(SECTION),"pending local work must retry after the notification's cold budget failure");
+        assertEquals(wanted,cache.snapshot(SECTION).revision());assertTrue(tasks.isEmpty());
+        assertEquals(1,reads[0],"rescue should reread only the dirty cell");
+    }
+    @Test void continuousLocalNotificationsKeepAnOlderGpuBaselineWithoutWorkerJobs(){
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);cache.request(SECTION);
+        cache.tick((s,c)->AIR,1);tasks.remove().run();cache.tick((s,c)->AIR,0);var base=cache.snapshot(SECTION);int cell=8|8<<4|8<<8;
+        for(int i=1;i<=7;i++){
+            var value=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,i/10f,1)),.6f,0);
+            cache.invalidateChangedBlock(8,8,8,(s,c)->c==cell?value:AIR);
+            assertNotNull(cache.snapshot(SECTION));assertTrue(tasks.isEmpty());assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,cell,value));
+        }
+        var latest=cache.snapshot(SECTION);var patch=latest.gpuPatch(base.gpuIdentity(),base.revision());
+        assertNotNull(patch);assertEquals(List.of(cell),patch.cells());assertEquals(240,patch.bytes());
+        assertEquals(0,base.shapeEnd(4095));assertEquals(0,base.gpuCells().getInt(cell*16+4));
+        assertTrue(cache.describeCapture(SECTION,latest.revision()).contains("observedCaptureMode=local"));
+        for(int i=8;i<=20;i++){
+            var value=new PackageCollisionCache.Cell(List.of(),i/10f,0);cache.invalidateChangedBlock(8,8,8,(s,c)->c==cell?value:AIR);
+        }
+        assertNull(cache.snapshot(SECTION).gpuPatch(base.gpuIdentity(),base.revision()),"old proof history must be bounded");
+    }
+    @Test void aFailedNeighbourSampleCannotPublishOnlyTheOtherKnownLocalChanges(){
+        var cache=new PackageCollisionCache(Runnable::run,1,()->0L);cache.request(SECTION);cache.tick((s,c)->AIR,1);cache.tick((s,c)->AIR,0);
+        int cell=8|8<<4|8<<8;var solid=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,0);
+        cache.invalidateChangedBlock(8,8,8,(s,c)->{if(c==cell+1)throw new IllegalStateException("unavailable neighbor");return c==cell?solid:AIR;});
+        assertNull(cache.snapshot(SECTION),"a missing neighbour must revoke the entire unknown replacement until recapture");
+    }
+    @Test void localTimeBudgetExpiryFallsBackWithoutChangingTheBaseline(){
+        var time=new AtomicLong();boolean[] bounded={false};
+        var cache=new PackageCollisionCache(Runnable::run,1,()->bounded[0]?time.getAndAdd(600_000):time.get());cache.request(SECTION);
+        cache.tick((s,c)->AIR,1);cache.tick((s,c)->AIR,0);var base=cache.snapshot(SECTION);
+        var solid=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,0);bounded[0]=true;
+        cache.invalidateChangedBlock(8,8,8,(s,c)->c==(8|8<<4|8<<8)?solid:AIR);
+        assertNull(cache.snapshot(SECTION));assertEquals(0,base.shapeEnd(4095));
+        bounded[0]=false;cache.tick((s,c)->c==(8|8<<4|8<<8)?solid:AIR,1);cache.tick((s,c)->AIR,0);
+        assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,8|8<<4|8<<8,solid));
+    }
+    @Test void aSmallLocalEditPublishesImmediatelyWithoutAnotherWorkerOrWorldRecapture(){
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);cache.request(SECTION);
+        cache.tick((s,c)->AIR,1);tasks.remove().run();cache.tick((s,c)->AIR,0);var old=cache.snapshot(SECTION);
+        var solid=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.8f,16);int cell=8|8<<4|8<<8;
+        cache.invalidateChangedBlock(8,8,8,(s,c)->c==cell?solid:AIR);
+        var updated=cache.snapshot(SECTION);assertNotNull(updated,"known local changes must not wait for a whole-section capture/worker");
+        assertTrue(tasks.isEmpty());assertTrue(updated.revision()>old.revision());
+        assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,cell,solid));assertEquals(0,old.gpuShapeCount());
+        cache.tick((s,c)->{fail("an immediate local snapshot must not query more world cells");return AIR;},1);
+    }
+    @Test void localGpuPatchContainsAllChangedHeadersAndOnlyAnUnchangedDictionaryPrefix(){
+        var cache=new PackageCollisionCache(Runnable::run,1,()->0L);cache.request(SECTION);
+        cache.tick((s,c)->AIR,1);cache.tick((s,c)->AIR,0);long base=cache.snapshot(SECTION).revision();
+        var solid=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.8f,16);
+        int edited=8|8<<4|8<<8;cache.invalidateChangedBlock(8,8,8,(s,c)->c==edited?solid:AIR);
+        cache.tick((s,c)->solid,1);cache.tick((s,c)->AIR,0);var patch=cache.snapshot(SECTION).gpuPatch();
+        assertNotNull(patch);assertEquals(base,patch.baseRevision());assertEquals(0,patch.baseShapes());
+        assertEquals(List.of(edited),patch.cells());assertEquals(48,patch.bytes());
+        assertThrows(UnsupportedOperationException.class,()->patch.cells().clear());
+        cache.invalidateChunk(0,0);cache.tick((s,c)->c==edited?solid:AIR,1);cache.tick((s,c)->AIR,0);
+        assertNull(cache.snapshot(SECTION).gpuPatch(),"full context changes must not infer a local GPU patch");
+    }
+    @Test void incompatibleShapeDictionaryCannotDescribeAnInPlaceGpuPatch(){
+        var cache=new PackageCollisionCache(Runnable::run,1,()->0L);cache.request(SECTION);
+        var cube=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,0);
+        var slab=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,.5f,1)),.6f,0);
+        cache.tick((s,c)->c==0?cube:c==1?slab:AIR,1);cache.tick((s,c)->AIR,0);
+        cache.invalidateChangedBlock(0,0,0,(s,c)->c==1?slab:AIR);
+        cache.tick((s,c)->AIR,1);cache.tick((s,c)->AIR,0);
+        assertNotNull(cache.snapshot(SECTION).gpuPatch());assertEquals(2,cache.snapshot(SECTION).gpuShapeCount());
+        assertEquals(1,cache.snapshot(SECTION).gpuCells().getInt(16));
+        cache.invalidate(SECTION);cache.tick((s,c)->c==1?slab:AIR,1);cache.tick((s,c)->AIR,0);
+        assertNull(cache.snapshot(SECTION).gpuPatch(),"complete context recapture must compact independently");
+        assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,1,slab));
+    }
+    @Test void deferredVersionDiagnosticsRetainTheirOwnCauseAndClearlyLabelCurrentProgress(){
+        var cache=new PackageCollisionCache(Runnable::run,1,()->0L);cache.request(SECTION);
+        cache.tick((s,c)->AIR,1);cache.tick((s,c)->AIR,0);long initial=cache.versions().get(SECTION);
+        cache.invalidateChunk(-1,0,PackageCollisionCache.Invalidation.CHUNK_LOAD);long chunk=cache.versions().get(SECTION);
+        assertEquals(new PackageCollisionCache.CaptureCause(SECTION,PackageCollisionCache.Invalidation.CHUNK_LOAD,-1,0,0,1),cache.captureCause(SECTION,chunk));
+        cache.tick((s,c)->AIR,1);cache.tick((s,c)->AIR,0);
+        var solid=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,0);
+        cache.invalidateChangedBlock(8,8,8,(s,c)->c==(8|8<<4|8<<8)?solid:AIR);long block=cache.versions().get(SECTION);
+        assertEquals(PackageCollisionCache.Invalidation.BLOCK,cache.captureCause(SECTION,block).cause());
+        assertEquals(PackageCollisionCache.Invalidation.INITIAL,cache.captureCause(SECTION,initial).cause());
+        var delayed=cache.describeCapture(SECTION,chunk);assertTrue(delayed.contains("captureCause=CHUNK_LOAD causeChunk=-1,0"));
+        assertTrue(delayed.contains("observedTargetRevision="+block+" observedCapture=complete observedCells=4096/4096"));
+        assertNull(cache.captureCause(new PackageCollisionCache.Section(1,0,0),chunk));
+    }
+    @Test void captureCauseHistoryIsBoundedAndCoalescedNotificationsAreCounted(){
+        var cache=new PackageCollisionCache(Runnable::run,4100,()->0L);cache.request(SECTION);long first=cache.versions().get(SECTION);
+        cache.invalidateChunk(0,0,PackageCollisionCache.Invalidation.CHUNK_UNLOAD);
+        assertEquals(2,cache.captureCause(SECTION,first).notifications());
+        for(int i=1;i<4100;i++)cache.request(new PackageCollisionCache.Section(i,0,0));
+        assertNull(cache.captureCause(SECTION,first));assertTrue(cache.describeCapture(SECTION,first).startsWith("captureCause=unretained"));
+        var latest=new PackageCollisionCache.Section(4099,0,0);assertNotNull(cache.captureCause(latest,cache.versions().get(latest)));
+        cache.clear();assertNull(cache.captureCause(latest,4100));
+    }
+    @Test void aPackageUsedSectionFinishesAheadOfBackgroundCaptureButBackgroundStillProgresses(){
+        var clock=new AtomicLong();var cache=new PackageCollisionCache(Runnable::run,33,clock::get);
+        for(int i=0;i<32;i++)cache.request(new PackageCollisionCache.Section(i,0,0));
+        var live=new PackageCollisionCache.Section(-1,4,0);cache.request(live);cache.protectPackageUsage(live);
+        int[] backgroundReads={0};PackageCollisionCache.Source source=(s,c)->{clock.incrementAndGet();if(!s.equals(live))backgroundReads[0]++;return AIR;};
+        cache.tick(source,4096);cache.tick(source,4096);cache.tick(source,0);
+        assertNotNull(cache.snapshot(live),"a live package section stayed behind all background sections");
+        assertTrue(backgroundReads[0]>0,"live demand must not starve background captures");
+        assertTrue(cache.readyCount()<cache.size(),"the priority assertion must run while background sections are unfinished");
+        assertEquals(8192,clock.get(),"priority must retain the total wall-clock capture allowance");
+    }
     @Test void captureIsBudgetedAndOnlyCompletedCurrentRevisionPublishes() {
         var tasks=new ArrayDeque<Runnable>();var clock=new AtomicLong();
         var cache=new PackageCollisionCache(tasks::add,2,clock::get);
@@ -106,11 +256,12 @@ class PackageCollisionCacheTest {
         var versions=cache.versions();var solid=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,0);
         var changed=new PackageCollisionCache.Section(0,0,0);var neighbor=new PackageCollisionCache.Section(-1,0,0);
         cache.invalidateChangedBlock(0,0,0,(s,c)->s.equals(changed)&&c==0?solid:AIR);
-        assertEquals(7,cache.readyCount());assertNull(cache.snapshot(changed));
+        assertEquals(8,cache.readyCount());assertNotNull(cache.snapshot(changed));
         for(var section:versions.keySet())if(!section.equals(changed))assertEquals(versions.get(section),cache.versions().get(section));
         cache.tick((s,c)->s.equals(changed)&&c==0?solid:AIR,1);cache.tick((s,c)->s.equals(changed)&&c==0?solid:AIR,1);
         cache.invalidateChangedBlock(0,0,0,(s,c)->s.equals(changed)&&c==0?solid:s.equals(neighbor)&&c==15?solid:AIR);
-        assertNull(cache.snapshot(neighbor));assertNotNull(cache.snapshot(changed));assertEquals(7,cache.readyCount());
+        assertNotNull(cache.snapshot(neighbor));assertNotNull(cache.snapshot(changed));assertEquals(8,cache.readyCount());
+        assertEquals(Boolean.TRUE,cache.capturedCellMatches(neighbor,15,solid));
     }
     @Test void completedStaticBakePublishesWithZeroCaptureBudgetAndOldBakeStaysUnavailable(){
         var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);cache.request(SECTION);
@@ -124,6 +275,54 @@ class PackageCollisionCacheTest {
         cache.tick((s,c)->{fail("zero-budget stale bake check must not query a world");return AIR;},0);
         assertNull(cache.snapshot(SECTION));
         assertEquals(1,oldResults.size());assertTrue(oldResults.getFirst().revision()<cache.versions().get(SECTION));
+    }
+    @Test void localEditsReadOnlyChangedCellsAndReuseExactUntouchedLocalShapeCoordinates(){
+        var cache=new PackageCollisionCache(Runnable::run,1,()->0L);cache.request(SECTION);
+        var original=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(.1f,.2f,.3f,.9f,.8f,.7f)),.6f,0);
+        cache.tick((s,c)->c==4095?original:AIR,1);cache.tick((s,c)->AIR,1);
+        var solid=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.8f,16);
+        cache.invalidateChangedBlock(8,8,8,(s,c)->c==(8|8<<4|8<<8)?solid:c==4095?original:AIR);
+        var read=new java.util.ArrayList<Integer>();cache.tick((s,c)->{read.add(c);return solid;},1);cache.tick((s,c)->{fail("finished partial capture must not query more cells");return AIR;},1);
+        assertTrue(read.isEmpty(),"local publication must not reread unchanged cells");var snapshot=cache.snapshot(SECTION);assertNotNull(snapshot);
+        assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,4095,original));assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,8|8<<4|8<<8,solid));
+        var data=snapshot.gpuBoxes();boolean exact=false;for(int p=0;p<data.remaining();p+=32)if(data.getFloat(p)==.1f&&data.getFloat(p+4)==.2f&&data.getFloat(p+8)==.3f)exact=true;
+        assertTrue(exact,"unchanged fractional local shapes must not acquire translated-coordinate rounding");
+        cache.invalidateChunk(0,0);read.clear();cache.tick((s,c)->{read.add(c);return AIR;},1);
+        assertEquals(4096,read.size(),"chunk replacement must retain full-context recapture");
+    }
+    @Test void repeatedLocalEditsRetainTheUnionOfDirtyCellsUntilCurrentPublication(){
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,1,()->0L);cache.request(SECTION);
+        cache.tick((s,c)->AIR,1);tasks.remove().run();cache.tick((s,c)->AIR,0);
+        var solid=new PackageCollisionCache.Cell(java.util.Collections.nCopies(65,new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,0);
+        int first=8|8<<4|8<<8,second=9|8<<4|8<<8;
+        cache.invalidateChangedBlock(8,8,8,(s,c)->c==first?solid:AIR);cache.tick((s,c)->c==first?solid:AIR,1);
+        cache.invalidateChangedBlock(9,8,8,(s,c)->c==first||c==second?solid:AIR);tasks.remove().run();
+        var reads=new java.util.ArrayList<Integer>();cache.tick((s,c)->{reads.add(c);return solid;},1);tasks.remove().run();cache.tick((s,c)->AIR,0);
+        assertEquals(List.of(first,second),reads);assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,first,solid));assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,second,solid));
+    }
+    @Test void editsBeforeIncrementalCaptureCompareTheRetainedBaselineAndFullInvalidationDiscardsIt(){
+        var cache=new PackageCollisionCache(Runnable::run,1,()->0L);cache.request(SECTION);
+        cache.tick((s,c)->AIR,1);cache.tick((s,c)->AIR,0);
+        var solid=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,0);
+        int first=8|8<<4|8<<8,second=9|8<<4|8<<8;
+        cache.invalidateChangedBlock(8,8,8,(s,c)->c==first?solid:AIR);
+        assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,second,AIR));
+        cache.invalidateChangedBlock(9,8,8,(s,c)->c==first||c==second?solid:AIR);
+        var reads=new java.util.ArrayList<Integer>();cache.tick((s,c)->{reads.add(c);return solid;},1);cache.tick((s,c)->AIR,0);
+        assertTrue(reads.isEmpty());assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,first,solid));assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,second,solid));
+        cache.invalidateChangedBlock(8,8,8,(s,c)->AIR);
+        cache.invalidateChunk(0,0);reads.clear();cache.tick((s,c)->{reads.add(c);return AIR;},1);
+        assertEquals(4096,reads.size(),"full invalidation before capture cannot keep a partial baseline through coalescing");
+    }
+    @Test void unavailableEditedCellRevokesCoverageAndWaitsUntilTheSourceRecovers(){
+        var cache=new PackageCollisionCache(Runnable::run,1,()->0L);cache.request(SECTION);
+        cache.tick((s,c)->AIR,1);cache.tick((s,c)->AIR,0);int changed=8|8<<4|8<<8;
+        cache.invalidateChangedBlock(8,8,8,(s,c)->c==changed?null:AIR);
+        assertNull(cache.snapshot(SECTION));var reads=new java.util.ArrayList<Integer>();
+        cache.tick((s,c)->{reads.add(c);return null;},1);assertFalse(reads.isEmpty());assertTrue(reads.stream().allMatch(c->c==changed));assertNull(cache.snapshot(SECTION));
+        var solid=new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,0);
+        cache.tick((s,c)->solid,1);cache.tick((s,c)->AIR,0);
+        assertEquals(Boolean.TRUE,cache.capturedCellMatches(SECTION,changed,solid));
     }
     @Test void boundaryEditsInvalidateNeighbourContextAcrossNegativeSections() {
         var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,9,()->0L);

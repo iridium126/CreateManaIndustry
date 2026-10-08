@@ -134,6 +134,15 @@ public final class PackageMovingCollisionCache {
             try{e.bounds=e.source.bounds();e.previous=e.source.pose(true);e.current=e.source.pose(false);e.poseFrame=frame;}
             catch(RuntimeException|LinkageError unavailable){e.poseFrame=0;}
         }
+        captureGeometry(start,budgetNanos);
+        lastCapture=clock.getAsLong()-start;if(lastCapture>Math.max(0,budgetNanos))overruns++;
+    }
+    /** Reuse the pose pair already sampled by tick; only immutable geometry work continues. */
+    public void continueGeometry(long budgetNanos) {
+        owner();long start=clock.getAsLong();captureGeometry(start,budgetNanos);
+        long elapsed=clock.getAsLong()-start;lastCapture+=elapsed;if(elapsed>Math.max(0,budgetNanos))overruns++;
+    }
+    private void captureGeometry(long start,long budgetNanos) {
         // Rotation of the queue avoids one large structure monopolizing geometry capture.
         int attempts=entries.size();
         while(attempts-->0&&!entries.isEmpty()&&clock.getAsLong()-start<budgetNanos) {
@@ -163,7 +172,6 @@ public final class PackageMovingCollisionCache {
                 catch(RejectedExecutionException rejected){accounting.decrementAndGet();/* Retry unchanged cursor next tick. */}
             }
         }
-        lastCapture=clock.getAsLong()-start;if(lastCapture>Math.max(0,budgetNanos))overruns++;
     }
     public long lastCaptureNanos(){return lastCapture;}public long overruns(){return overruns;}
     public boolean posesReady(){owner();for(Entry e:entries.values())if(e.poseFrame!=frame)return false;return true;}

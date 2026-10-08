@@ -95,6 +95,13 @@ public final class PackageAuthorityManager {
         @Override public void apply(PackageAuthorityRegion.Snapshot state){runtime.light.update(light,state);runtime.changed.add(this);checkpoint=state;queueVoid(runtime,this);}
         @Override public void released(PackageAuthorityRegion.Baseline baseline) {
             var previous=region;region=null;checkpoint=null;retry=runtime.level.getGameTime();
+            if(previous!=null&&!runtime.unloading&&!previous.region().contains(baseline.snapshot().pose())) {
+                var pose=baseline.snapshot().pose();var destination=PackageRegion.at(pose);
+                var assigned=runtime.regions.get(destination);
+                String reason=previous.closed()?"source_region_closed":canContinue(runtime,previous.owner(),pose)?"explicit_release_outside_anchor":assigned!=null&&!assigned.owner().equals(previous.owner())?"destination_owner_changed":"destination_subscription_unavailable";
+                CreateManaIndustry.LOGGER.debug("[CMI packages] free package authority handoff reason={} id={} generation={} lease={} source={} destination={} owner={} pose=({}, {}, {})",
+                        reason,identity.id(),identity.generation(),baseline.leaseEpoch(),previous.region(),destination,previous.owner(),pose.x(),pose.y(),pose.z());
+            }
             // Pausing leaves the durable record at its latest confirmed state.
             if(light!=null&&runtime.identities.get(identity)==this&&!runtime.unloading)runtime.discovery.put(identity,this);
             try{if(previous!=null&&!runtime.unloading)send(runtime.level,previous,ClientboundPackagePacket.RELEASED,baseline,this);}
@@ -247,7 +254,9 @@ public final class PackageAuthorityManager {
             var region=rt.regions.get(key);
             if(region==null) {
                 ServerPlayer authority=elect(rt,key);if(authority==null)continue;
-                region=new PackageAuthorityRegion(key,authority.getUUID(),PackageIdentityData.get(level).epoch(),1,tick,()->level.tickRateManager().tickrate());
+                UUID owner=authority.getUUID();
+                region=new PackageAuthorityRegion(key,owner,PackageIdentityData.get(level).epoch(),1,tick,
+                        ()->level.tickRateManager().tickrate(),pose->canContinue(rt,owner,pose));
                 rt.regions.put(key,region);
             }
             var baseline=region.offer(target,tick);if(baseline==null)continue;
@@ -256,6 +265,13 @@ public final class PackageAuthorityManager {
             rt.discovery.remove(target.identity);
             send(level,region,ClientboundPackagePacket.OFFER,baseline,target);
         }
+    }
+    private static boolean canContinue(Runtime rt,UUID owner,PackageLease.Pose pose) {
+        PackageRegion destination=PackageRegion.at(pose);
+        PackageAuthorityRegion assigned=rt.regions.get(destination);
+        if(assigned!=null&&!assigned.owner().equals(owner))return false;
+        ServerPlayer player=rt.level.getServer().getPlayerList().getPlayer(owner);
+        return subscribed(player,rt.level,destination);
     }
     private static ServerPlayer elect(Runtime rt,PackageRegion key) {
         // Evaluate subscribers once per region election, not once per package/frame.

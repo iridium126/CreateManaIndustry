@@ -20,17 +20,37 @@ public final class PackageCollisionGpu implements AutoCloseable {
         /** Latest CPU revision requested for this section. */
         long revision;
         /** Revision in the currently visible slot; it remains usable during replacement upload. */
-        long visibleRevision=Long.MIN_VALUE;
+        long visibleRevision=Long.MIN_VALUE,visibleIdentity;
         int visible=-1,staging=-1,progress;
         boolean visibleEmpty;
         PackageCollisionCache.Snapshot snapshot;
         ByteBuffer cells,boxes;
         Entry(PackageCollisionCache.Section section){this.section=section;}
     }
+    private record TableRow(int slot,long revision,int active,int flags) {}
+    private Map<PackageCollisionCache.Section,TableRow> tableRows(boolean coarse,Map<PackageCollisionCache.Section,Long> versions) {
+        var rows=new HashMap<PackageCollisionCache.Section,TableRow>();
+        for(Entry entry:entries.values())if(entry.visible>=0&&(versions==null||Objects.equals(versions.get(entry.section),entry.visibleRevision)))
+            rows.put(entry.section,new TableRow(entry.visible,entry.visibleRevision,1,coarse&&entry.visibleEmpty?1:0));
+        if(versions!=null)for(var item:historical.entrySet()){
+            var reference=item.getKey();var slot=item.getValue();
+            if(!retainedHistory.contains(reference)||!Objects.equals(versions.get(reference.section()),reference.revision()))continue;
+            rows.putIfAbsent(reference.section(),new TableRow(slot.slot(),reference.revision(),1,coarse&&slot.empty()?1:0));
+        }
+        if(versions!=null)for(Entry entry:entries.values()){
+            Long wanted=versions.get(entry.section);if(wanted==null||entry.visible<0||rows.containsKey(entry.section))continue;
+            var reference=new GeometryRevision(entry.section,wanted);
+            int wait=historicalUploads.containsKey(reference)||entry.cells!=null&&entry.snapshot!=null&&entry.snapshot.revision()==wanted?2:
+                    entry.revision==wanted&&entry.snapshot==null?1:3;
+            rows.put(entry.section,new TableRow(-2,wanted,0,wait));
+        }
+        return Map.copyOf(rows);
+    }
     private static final class Bank {
         int buffer;ByteBuffer mapped;long fence;boolean leased;
         long version=Long.MIN_VALUE,historyVersion=Long.MIN_VALUE,tableToken;boolean coarse;
         Map<PackageCollisionCache.Section,Long> versions;
+        Map<PackageCollisionCache.Section,TableRow> rows;
         final BitSet references=new BitSet();
     }
     public record Stats(int residents,int ready,int pending,int retired,long uploadedBytes,long capacityRejections,long evictions,
@@ -120,7 +140,7 @@ public final class PackageCollisionGpu implements AutoCloseable {
     }
     private void revoke(Entry entry) {
         if(entry.visible>=0){retire(entry,entry.visible);entry.visible=-1;}
-        entry.visibleRevision=Long.MIN_VALUE;entry.visibleEmpty=false;
+        entry.visibleRevision=Long.MIN_VALUE;entry.visibleIdentity=0;entry.visibleEmpty=false;
         discardStaging(entry);entry.snapshot=null;
     }
     private void retire(Entry entry,int slot) {
@@ -258,12 +278,14 @@ public final class PackageCollisionGpu implements AutoCloseable {
             while(attempts-- >0 && !pending.isEmpty() && copied<limit && clock.getAsLong()-start<budgetNanos) {
                 var iterator=pending.entrySet().iterator();Entry entry=iterator.next().getValue();iterator.remove();
                 if(packageUsage.contains(entry.section)!=occupied){pending.put(entry.section,entry);continue;}
+                int patched=patchVisible(entry,Math.min(SLICE_BYTES,limit-copied));
+                if(patched>=0){copied+=patched;continue;}
                 if(entry.staging<0){if(free.isEmpty()){pending.put(entry.section,entry);continue;}entry.staging=free.removeFirst();}
                 int total=CELL_BYTES+entry.snapshot.gpuShapeCount()*32;
                 copied+=copySlice(entry,limit-copied);
                 if(entry.progress==total){
                     int previous=entry.visible;if(previous>=0)retire(entry,previous);
-                    entry.visible=entry.staging;entry.visibleRevision=entry.revision;entry.staging=-1;
+                    entry.visible=entry.staging;entry.visibleRevision=entry.revision;entry.visibleIdentity=entry.snapshot.gpuIdentity();entry.staging=-1;
                     entry.visibleEmpty=entry.snapshot.gpuEmpty();
                     entry.progress=0;entry.cells=null;entry.boxes=null;serial++;
                 }
@@ -272,6 +294,31 @@ public final class PackageCollisionGpu implements AutoCloseable {
         }
         lastUploadNanos=clock.getAsLong()-start;timings[timingCursor]=lastUploadNanos;timingCursor=(timingCursor+1)%timings.length;
         timingCount=Math.min(timingCount+1,timings.length);if(lastUploadNanos>budgetNanos)overruns++;
+    }
+    /** Atomic owner-thread patch only after every previous GPU reader has completed.
+     * Historical input and incompatible dictionaries continue through the versioned copy path. */
+    private int patchVisible(Entry entry,int allowance) {
+        var patch=entry.snapshot.gpuPatch(entry.visibleIdentity,entry.visibleRevision);
+        if(patch==null||entry.visible<0
+                ||entry.visibleRevision!=patch.baseRevision()||entry.visibleIdentity!=patch.baseIdentity()||patch.bytes()>allowance
+                ||retainedHistory.contains(new GeometryRevision(entry.section,entry.visibleRevision)))return -1;
+        for(Bank bank:banks)if((bank.leased||bank.fence!=0)&&bank.references.get(entry.visible))return -1;
+        // All writes finish in this call before the new table revision becomes visible.
+        // No mutable view exists and no future input still needs the overwritten revision.
+        int at=entry.visible*slotBytes;
+        for(int cell:patch.cells()){
+            var bytes=entry.snapshot.gpuCells();bytes.position(cell*16).limit(cell*16+16);
+            mappedData.position(at+cell*16);mappedData.put(bytes);
+        }
+        int prefix=patch.baseShapes()*32;
+        if(entry.snapshot.gpuBoxes().remaining()>prefix){
+            var boxes=entry.snapshot.gpuBoxes();boxes.position(prefix);
+            mappedData.position(at+CELL_BYTES+prefix);mappedData.put(boxes);
+        }
+        entry.visibleRevision=entry.revision;entry.visibleIdentity=entry.snapshot.gpuIdentity();entry.visibleEmpty=entry.snapshot.gpuEmpty();
+        if(entry.staging>=0){free.addLast(entry.staging);entry.staging=-1;}
+        entry.progress=0;entry.cells=null;entry.boxes=null;uploadedBytes+=patch.bytes();serial++;
+        return patch.bytes();
     }
     private int copySlice(Entry entry,int maximumBytes) {
         int total=CELL_BYTES+entry.snapshot.gpuShapeCount()*32;
@@ -295,55 +342,33 @@ public final class PackageCollisionGpu implements AutoCloseable {
     /** Missing historical versions stay absent, so only bodies querying them pause. */
     public View historicalView(int x,int y,int z,Map<PackageCollisionCache.Section,Long> versions){return view(x,y,z,true,Map.copyOf(versions));}
     private View view(int originSectionX,int originSectionY,int originSectionZ,boolean coarseEmpty,Map<PackageCollisionCache.Section,Long> versions) {
-        if(!validOrigin(originSectionX) || !validOrigin(originSectionY) || !validOrigin(originSectionZ))
-            throw new IllegalArgumentException("World origin outside signed block coordinates");
+        if(!validOrigin(originSectionX)||!validOrigin(originSectionY)||!validOrigin(originSectionZ))throw new IllegalArgumentException("World origin outside signed block coordinates");
         open();if(viewOpen)throw new IllegalStateException("Nested world view");collect();
-        Bank bank=null;
-        // Reuse the same immutable table even while previous commands still read it. Its
-        // replacement fence covers both submissions; unchanged worlds need no new bank.
-        for(Bank candidate:banks)if(!candidate.leased && candidate.version==serial
+        Bank bank=null;Map<PackageCollisionCache.Section,TableRow> rows=null;
+        for(Bank candidate:banks)if(!candidate.leased&&candidate.version==serial
                 &&(versions==null||candidate.historyVersion==historySerial)&&candidate.coarse==coarseEmpty&&Objects.equals(candidate.versions,versions)){bank=candidate;break;}
-        if(bank==null)for(Bank candidate:banks)if(candidate.fence==0 && !candidate.leased){bank=candidate;break;}
-        if(bank!=null) {
-            if(bank.version!=serial || versions!=null&&bank.historyVersion!=historySerial||bank.coarse!=coarseEmpty||!Objects.equals(bank.versions,versions)) {
+        if(bank==null){
+            rows=tableRows(coarseEmpty,versions);
+            // Identical mapped bytes can be read again while the old submission is in flight.
+            // Unresident requests/retention changes alone must not consume another table bank.
+            for(Bank candidate:banks)if(!candidate.leased&&rows.equals(candidate.rows)){bank=candidate;break;}
+            if(bank==null)for(Bank candidate:banks)if(candidate.fence==0&&!candidate.leased){bank=candidate;break;}
+        }
+        if(bank!=null){
+            if(rows!=null&&!rows.equals(bank.rows)){
                 empty(bank.mapped);bank.references.clear();
-                for(Entry entry:entries.values())if(entry.visible>=0&&(versions==null||Objects.equals(versions.get(entry.section),entry.visibleRevision))) {
-                    var s=entry.section;int row=hash(s.x(),s.y(),s.z(),tableSize-1);
+                for(var item:rows.entrySet()){
+                    var key=item.getKey();var value=item.getValue();int row=hash(key.x(),key.y(),key.z(),tableSize-1);
                     while(bank.mapped.getInt(row*HEAD_BYTES+12)!=-1)row=(row+1)&(tableSize-1);
                     int p=row*HEAD_BYTES;
-                    bank.mapped.putInt(p,s.x()).putInt(p+4,s.y()).putInt(p+8,s.z()).putInt(p+12,entry.visible)
-                            .putLong(p+16,entry.visibleRevision).putInt(p+24,1).putInt(p+28,coarseEmpty && entry.visibleEmpty?1:0);
-                    bank.references.set(entry.visible);
+                    bank.mapped.putInt(p,key.x()).putInt(p+4,key.y()).putInt(p+8,key.z()).putInt(p+12,value.slot)
+                            .putLong(p+16,value.revision).putInt(p+24,value.active).putInt(p+28,value.flags);
+                    if(value.slot>=0)bank.references.set(value.slot);
                 }
-                if(versions!=null)for(var row:historical.entrySet()) {
-                    var reference=row.getKey();var slot=row.getValue();
-                    if(!retainedHistory.contains(reference)||!Objects.equals(versions.get(reference.section()),reference.revision()))continue;
-                    Entry live=entries.get(reference.section());if(live!=null&&live.visible>=0&&live.visibleRevision==reference.revision())continue;
-                    var s=reference.section();int at=hash(s.x(),s.y(),s.z(),tableSize-1);
-                    while(bank.mapped.getInt(at*HEAD_BYTES+12)!=-1)at=(at+1)&(tableSize-1);
-                    int p=at*HEAD_BYTES;
-                    bank.mapped.putInt(p,s.x()).putInt(p+4,s.y()).putInt(p+8,s.z()).putInt(p+12,slot.slot())
-                            .putLong(p+16,reference.revision()).putInt(p+24,1).putInt(p+28,coarseEmpty&&slot.empty()?1:0);
-                    bank.references.set(slot.slot());
-                }
-                // A known resident with an unavailable requested revision has a
-                // metadata-only row. It never points at current data as a fallback.
-                if(versions!=null)for(Entry entry:entries.values()) {
-                    Long wanted=versions.get(entry.section);if(wanted==null||entry.visible<0||wanted==entry.visibleRevision)continue;
-                    var reference=new GeometryRevision(entry.section,wanted);
-                    if(retainedHistory.contains(reference)&&historical.containsKey(reference))continue;
-                    int wait=historicalUploads.containsKey(reference)||entry.cells!=null&&entry.snapshot!=null&&entry.snapshot.revision()==wanted?2:
-                            entry.revision==wanted&&entry.snapshot==null?1:3;
-                    var s=entry.section;int row=hash(s.x(),s.y(),s.z(),tableSize-1);
-                    while(bank.mapped.getInt(row*HEAD_BYTES+12)!=-1)row=(row+1)&(tableSize-1);
-                    int p=row*HEAD_BYTES;
-                    bank.mapped.putInt(p,s.x()).putInt(p+4,s.y()).putInt(p+8,s.z()).putInt(p+12,-2)
-                            .putLong(p+16,wanted).putInt(p+24,0).putInt(p+28,wait);
-                }
-                bank.version=serial;bank.historyVersion=historySerial;bank.coarse=coarseEmpty;bank.versions=versions;bank.tableToken=++tableTokens;
+                bank.rows=rows;bank.tableToken=++tableTokens;
             }
-            bank.leased=true;
-        } else skippedViews++;
+            bank.version=serial;bank.historyVersion=historySerial;bank.coarse=coarseEmpty;bank.versions=versions;bank.leased=true;
+        }else skippedViews++;
         viewOpen=true;return new View(bank,serial,originSectionX,originSectionY,originSectionZ);
     }
     public final class View implements AutoCloseable {
@@ -377,6 +402,25 @@ public final class PackageCollisionGpu implements AutoCloseable {
                 }
             }
         }
+    }
+    /** Numeric progress at log time, not a reconstruction of a deferred freeze event. */
+    public String describeUpload(PackageCollisionCache.Section section,long required) {
+        open();var reference=new GeometryRevision(section,required);
+        Entry entry=entries.get(section);
+        if(retainedHistory.contains(reference)&&historical.containsKey(reference))return " observedUploadRevision="+required+" observedUpload=historical-complete";
+        if(entry!=null&&entry.visibleRevision==required)return " observedUploadRevision="+required+" observedUpload=complete";
+        Entry upload=historicalUploads.get(reference);if(upload==null)upload=entry;
+        if(upload==null)return " observedUpload=unresident";
+        if(upload==entry&&upload.visibleRevision==upload.revision)return " observedUploadRevision="+upload.revision+" observedUpload=complete-other-revision";
+        if(upload.snapshot==null)return " observedUploadRevision="+upload.revision+" observedUpload=capture";
+        var patch=upload.snapshot.gpuPatch(upload.visibleIdentity,upload.visibleRevision);if(patch==null)patch=upload.snapshot.gpuPatch();String gate="dictionary-or-full-capture";
+        if(patch!=null){
+            gate=upload.visibleRevision!=patch.baseRevision()?"base-revision":upload.visibleIdentity!=patch.baseIdentity()?"base-snapshot":
+                    retainedHistory.contains(new GeometryRevision(section,upload.visibleRevision))?"history":"eligible";
+            if(gate.equals("eligible"))for(Bank bank:banks)if((bank.leased||bank.fence!=0)&&bank.references.get(upload.visible)){gate="gpu-reader";break;}
+        }
+        return " observedUploadRevision="+upload.revision+" observedUpload=copy observedUploadBytes="+upload.progress+"/"+
+                (CELL_BYTES+upload.snapshot.gpuShapeCount()*32)+" observedPatchBytes="+(patch==null?-1:patch.bytes())+" observedPatchGate="+gate;
     }
     /** Cheap shared-budget accounting; percentile sorting belongs only in diagnostics. */
     public long uploadedBytes(){open();return uploadedBytes;}

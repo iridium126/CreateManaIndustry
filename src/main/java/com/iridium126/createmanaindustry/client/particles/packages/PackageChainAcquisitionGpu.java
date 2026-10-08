@@ -119,6 +119,10 @@ public final class PackageChainAcquisitionGpu implements AutoCloseable {
         if(b.identity().id()!=result.id() || b.identity().generation()!=result.generation() || b.track()!=result.track())return null;
         return new PackageChainInteraction(epoch,b.identity(),b.leaseEpoch(),b.revision(),b.track(),b.trackRevision(),transaction,result.progress());
     }
+    /** Replay connection-scoped headers before the first incremental packet after a GPU restart. */
+    public void restoreTracks(List<ClientboundChainPackagePacket.Track> headers) {
+        for(var header:headers)receive(new ClientboundChainPackagePacket(ClientboundChainPackagePacket.TRACK,dimension,epoch,header,null,null,0,0,0));
+    }
     /** Main/render-thread packet receipt has no GL mutations. Ordered transport keeps track
      * indices append-only; a conflicting header requires a fresh world resource namespace. */
     public boolean receive(ClientboundChainPackagePacket packet) {

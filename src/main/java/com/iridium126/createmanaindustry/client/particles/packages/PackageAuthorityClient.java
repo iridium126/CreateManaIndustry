@@ -24,6 +24,14 @@ public final class PackageAuthorityClient {
     };
     private static boolean closing;
     private static int advertised;
+    private static Object chainConnection;
+    private static final Map<net.minecraft.resources.ResourceLocation,PackageChainTableCache> chainTables=new HashMap<>();
+    private static PackageChainTableCache chainTable(net.minecraft.resources.ResourceLocation dimension) {
+        Object connection=Minecraft.getInstance().getConnection();
+        if(connection!=chainConnection){chainConnection=connection;chainTables.clear();}
+        return chainTables.computeIfAbsent(dimension,key->new PackageChainTableCache());
+    }
+    static java.util.List<ClientboundChainPackagePacket.Track> chainTable(net.minecraft.resources.ResourceLocation dimension,long epoch){return chainTable(dimension).table(epoch);}
     private static final class Encoding {
         static final PackageDeltaJournal.Encoder SHARED=new PackageDeltaJournal.Encoder(java.util.concurrent.Executors.newFixedThreadPool(2,task->{
             Thread thread=new Thread(task,"CMI package delta encoder");thread.setDaemon(true);return thread;
@@ -255,6 +263,20 @@ public final class PackageAuthorityClient {
     public static void receiveChain(ClientboundChainPackagePacket packet) {
         var level=Minecraft.getInstance().level;
         if(level==null || !level.dimension().location().equals(packet.dimension()))return;
+        var table=chainTable(packet.dimension());
+        if(packet.action()==ClientboundChainPackagePacket.TRACK) {
+            try{if(!table.track(packet.epoch(),packet.track()))return;}
+            catch(IllegalStateException failure){
+                table.close(packet.epoch());
+                com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] chain header receipt failed",failure);
+                closeAll("Chain header receipt failed: "+failure.getMessage(),true);return;
+            }
+        }else if(packet.action()==ClientboundChainPackagePacket.CLOSE)table.close(packet.epoch());
+        else if(!table.current(packet.epoch())){
+            if(packet.action()==ClientboundChainPackagePacket.OFFER&&Minecraft.getInstance().getConnection()!=null)
+                PacketDistributor.sendToServer(ServerboundChainPackagePacket.control(ServerboundChainPackagePacket.RELEASE,packet.epoch(),packet.baseline(),0));
+            return;
+        }
         if(PackageWorldRuntime.enqueueChain(packet))return;
         if(packet.action()==ClientboundChainPackagePacket.OFFER && Minecraft.getInstance().getConnection()!=null)
             PacketDistributor.sendToServer(ServerboundChainPackagePacket.control(ServerboundChainPackagePacket.RELEASE,packet.epoch(),packet.baseline(),0));

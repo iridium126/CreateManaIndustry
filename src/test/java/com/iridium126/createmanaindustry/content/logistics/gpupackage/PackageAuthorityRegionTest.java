@@ -171,6 +171,43 @@ class PackageAuthorityRegionTest {
         @Override public void released(PackageAuthorityRegion.Baseline baseline){releases++;}
     }
     private static PackageAuthorityRegion region(long tick){return new PackageAuthorityRegion(REGION,OWNER,10,1,tick);}
+    @Test void sameOwnerCrossesZeroAndFurtherSectionsWithoutReacquisition() {
+        var anchor=new PackageRegion(-1,0,0);
+        var r=new PackageAuthorityRegion(anchor,OWNER,10,1,0,()->20,position->true);
+        var t=new Target(910,-.25,0);t.current=new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(-.25,5,5,20,0,0,0),0);
+        var b=acquire(r,t,0);var contents=t.contents;
+        for(int step=1;step<=80;step++) {
+            var next=new PackageLease.Pose(-.25+step,5,5,20,0,0,0);
+            var q=PackageDeltaCodec.quantize(next,anchor.originX(),0,0,0);
+            assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,step,step,
+                    List.of(new PackageDeltaCodec.Entry(b.index(),15,q)),4,0,step));
+            var current=r.baseline(t.id);assertNotNull(current);assertEquals(b.index(),current.index());
+            assertEquals(b.leaseEpoch(),current.leaseEpoch());assertEquals(0,t.releases);
+            assertEquals(next,t.current.pose());assertSame(contents,t.contents);
+        }
+        assertEquals(PackageAuthorityRegion.Result.STALE,r.deltaStepped(new UUID(99,9),10,1,81,81,List.of(),4,0,81));
+    }
+    @Test void destinationOwnerChangeStillCommitsThenReleasesRetainedLease() {
+        boolean[] covered={true};var anchor=new PackageRegion(-1,0,0);
+        var r=new PackageAuthorityRegion(anchor,OWNER,10,1,0,()->20,position->covered[0]);
+        var t=new Target(911,-.25,0);t.current=new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(-.25,5,5,20,0,0,0),0);
+        var b=acquire(r,t,0);
+        for(int step=1;step<=2;step++) {
+            covered[0]=step==1;var next=new PackageLease.Pose(-.25+step,5,5,20,0,0,0);
+            var q=PackageDeltaCodec.quantize(next,anchor.originX(),0,0,0);
+            assertEquals(PackageAuthorityRegion.Result.ACCEPTED,r.deltaStepped(OWNER,10,1,step,step,
+                    List.of(new PackageDeltaCodec.Entry(b.index(),15,q)),4,0,step));
+            assertEquals(next,t.current.pose());assertEquals(step-1,t.releases);
+        }
+        assertNull(r.baseline(t.id));
+    }
+    @Test void continuationDoesNotAdmitOutsideAcquisitionRegion() {
+        var r=new PackageAuthorityRegion(REGION,OWNER,10,1,0,()->20,position->true);
+        assertNull(r.offer(new Target(912,-.25,0),0));
+        var t=new Target(913,.25,0);var offered=r.offer(t,0);assertNotNull(offered);
+        t.current=new PackageAuthorityRegion.Snapshot(pose(-.25),0);
+        assertNull(r.prepared(OWNER,10,offered.index(),t.id,offered.leaseEpoch(),offered.revision(),0));
+    }
     @Test void fallingAcrossAuthorityRegionCommitsBeforeMigrationAndKeepsInventory() {
         var source=new PackageAuthorityRegion(new PackageRegion(0,1,0),OWNER,10,1,0);
         var t=new Target(501,5,0);t.current=new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(5,64.25,5,0,-60,0,0),0);

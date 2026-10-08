@@ -23,6 +23,7 @@ allprojects {
             if (project.hasProperty('packageMovingAdvance')) args '--moving-advance-only'
             if (project.hasProperty('packageJournalFairness')) args '--journal-fairness-only'
             if (project.hasProperty('packageWorldHistory')) args '--world-history-only'
+            if (project.hasProperty('packageZeroBoundary')) args '--zero-boundary-only'
             if (project.hasProperty('packageUploadFairness')) args '--upload-fairness-only'
             if (project.hasProperty('packageBenchmark')) args '--benchmark'
             if (project.hasProperty('packageDeltaPipelineBenchmark')) args '--delta-pipeline-benchmark'

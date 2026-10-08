@@ -140,7 +140,7 @@ public final class PackageWorldRuntime {
         if(current==runtime && runtime.chainInteraction!=null)runtime.chainInteraction.tick();
         if(current==runtime && runtime.freeInteraction!=null)runtime.freeInteraction.tick();
         if(current==runtime && runtime.forceCapture!=null && !mc.isPaused()) {
-            try{runtime.forceCapture.prepare(runtime.ox,runtime.oy,runtime.oz,runtime.regions.keySet());}
+            try{runtime.forceCapture.prepare(runtime.ox,runtime.oy,runtime.oz,PackageCollisionRuntime.forLevel(runtime.level).forceRegions(runtime.regions.keySet()));}
             catch(RuntimeException | LinkageError error){runtime.failure="Package force tick capture failed: "+error.getMessage();}
         }
     }
@@ -173,7 +173,7 @@ public final class PackageWorldRuntime {
             if(chainFrames!=null)chainFrames.beginFrame(renderFrame);
             if(!regions.isEmpty()||!packets.isEmpty()||PackageAuthorityClient.activePackages()>0){
                 if(forceCapture==null){forceCapture=new PackageForceClient(level);forceGpu=new PackageForceGpu();}
-                forceCapture.prepare(ox,oy,oz,regions.keySet());
+                forceCapture.prepare(ox,oy,oz,PackageCollisionRuntime.forLevel(level).forceRegions(regions.keySet()));
             }
             if(freeInteraction!=null)freeInteraction.prepare();
             if(chainCheckpoints!=null) {
@@ -197,7 +197,7 @@ public final class PackageWorldRuntime {
             if(!drainChains(sources))return true;
             // An OFFER may add interest within this frame. An empty/old-region capture cannot
             // authorize acquisition; invalidate it and retry before pumping readiness.
-            if(forceCapture!=null)forceCapture.prepare(ox,oy,oz,regions.keySet());
+            if(forceCapture!=null)forceCapture.prepare(ox,oy,oz,PackageCollisionRuntime.forLevel(level).forceRegions(regions.keySet()));
             if(chainAcquisition!=null) {
                 var nativeOwnership=PackageChainClientOwnership.INSTANCE;nativeOwnership.prepare();
                 chainAcquisition.pump(64,this::chainCovered);nativeOwnership.publishRenderMembership();chainChannel.pump(256);
@@ -322,7 +322,7 @@ public final class PackageWorldRuntime {
         try{freezeDiagnostics.poll(event->{
             CreateManaIndustry.LOGGER.debug("[CMI packages] free package frozen reason={} stage={} stillFrozen={} dimension={} id={} generation={} lease={} body={} index={} revision={} step={} center={},{},{} halfHeight={} velocity={},{},{} {}",
                     event.reason(),event.stage(),event.stillFrozen(),level.dimension().location(),event.id(),event.generation(),event.lease(),event.body(),event.index(),event.revision(),event.step(),
-                    event.x()+ox,event.y()+oy,event.z()+oz,event.halfHeight(),event.vx(),event.vy(),event.vz(),event.context());
+                    event.x()+ox,event.y()+oy,event.z()+oz,event.halfHeight(),event.vx(),event.vy(),event.vz(),event.context()+PackageCollisionRuntime.forLevel(level).freezeCaptureContext(event));
         },summary->{
             long now=System.nanoTime();
             if((summary.frozen()>0&&now>=nextFreezeSummary)||(summary.frozen()==0&&lastFrozen>0)){
@@ -388,14 +388,21 @@ public final class PackageWorldRuntime {
         for(int n=0;n<PACKETS_PER_FRAME && !chainPackets.isEmpty();n++) {
             var packet=chainPackets.removeFirst();
             if(chainAcquisition!=null && packet.epoch()!=chainAcquisition.epoch()) {
+                if(packet.epoch()<chainAcquisition.epoch())continue;
                 if(packet.action()!=ClientboundChainPackagePacket.TRACK)continue;
                 PackageAuthorityClient.closeAll("Chain authority namespace changed",true);return false;
             }
             if(packet.action()==ClientboundChainPackagePacket.CLOSE) {
-                if(chainAcquisition!=null){PackageAuthorityClient.closeAll("Chain authority closed by server",false);return false;}
+                if(chainAcquisition!=null){PackageAuthorityClient.closeAll("Chain authority closed by server",true);return false;}
                 continue;
             }
-            if(chainAcquisition==null && packet.action()==ClientboundChainPackagePacket.TRACK)openChains(packet.epoch(),sources);
+            if(chainAcquisition==null && (packet.action()==ClientboundChainPackagePacket.TRACK||packet.action()==ClientboundChainPackagePacket.OFFER)) {
+                var bootstrap=PackageAuthorityClient.chainTable(packet.dimension(),packet.epoch());
+                if(bootstrap.isEmpty()||bootstrap.getFirst().index()!=0)continue;
+                openChains(packet.epoch(),sources);
+                for(var track:bootstrap)PackageChainClientOwnership.INSTANCE.track(track);
+                chainAcquisition.restoreTracks(bootstrap);
+            }
             if(chainAcquisition==null){if(packet.action()==ClientboundChainPackagePacket.OFFER)refuseChain(packet);continue;}
             if(packet.action()==ClientboundChainPackagePacket.TRACK)PackageChainClientOwnership.INSTANCE.track(packet.track());
             if(packet.action()==ClientboundChainPackagePacket.RELEASED)PackageChainClientOwnership.INSTANCE.terminalNotice(packet);

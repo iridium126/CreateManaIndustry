@@ -67,6 +67,7 @@ public final class PackageAuthorityRegion {
     private boolean closed;
     private String lastDeltaRejection="none";
     private final java.util.function.DoubleSupplier tickRate;
+    private final java.util.function.Predicate<PackageLease.Pose> continueOutsideRegion;
     private int historyTicks=20;
     public int historyTicks(){return historyTicks=Math.max(historyTicks,PackageTickTiming.historyTicks(tickRate.getAsDouble()));}
 
@@ -74,7 +75,15 @@ public final class PackageAuthorityRegion {
         this(region,owner,epoch,revision,tick,PackageTickTiming.DEFAULT_RATE);
     }
     public PackageAuthorityRegion(PackageRegion region,UUID owner,long epoch,long revision,long tick,java.util.function.DoubleSupplier tickRate) {
+        this(region,owner,epoch,revision,tick,tickRate,pose->false);
+    }
+    /** The server may retain an active lease outside its acquisition region when its owner
+     * still covers the destination. Admission and wire coordinates keep their original origin. */
+    public PackageAuthorityRegion(PackageRegion region,UUID owner,long epoch,long revision,long tick,
+                                  java.util.function.DoubleSupplier tickRate,
+                                  java.util.function.Predicate<PackageLease.Pose> continueOutsideRegion) {
         this.region=Objects.requireNonNull(region);this.owner=Objects.requireNonNull(owner);
+        this.continueOutsideRegion=Objects.requireNonNull(continueOutsideRegion);
         if(epoch<=0 || revision<=0)throw new IllegalArgumentException("Region epoch/revision");
         this.epoch=epoch;this.revision=revision;receipt=tick;
         this.tickRate=Objects.requireNonNull(tickRate);
@@ -234,10 +243,9 @@ public final class PackageAuthorityRegion {
                 entry.acknowledged=quantized[i];entry.flags=next[i].flags();
                 entry.committedSpeed=entry.acknowledgedSpeed=speeds[i];
                 entry.motionUsed=(entry.motionTick==tick?entry.motionUsed:0)+moved;entry.motionTick=tick;if(simulationStep>0)entry.simulationStep=simulationStep;
-                // Commit the bounded crossing before retiring this region's authority.
-                // Discovery can now acquire the same record in its destination region.
-                // Releasing an uncommitted crossing would replay the old side forever.
-                if(!region.contains(next[i].pose()))release(entry);
+                // A spatial boundary alone does not require the acquisition handshake again.
+                // Genuine owner/subscription changes still commit before retiring the lease.
+                if(!region.contains(next[i].pose())&&!continueOutsideRegion.test(next[i].pose()))release(entry);
             }
             // Publish resolved server poses directly; relative modes need no wrapper entries
             // and observers need no second per-record merge.

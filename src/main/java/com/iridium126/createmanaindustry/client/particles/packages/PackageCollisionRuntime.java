@@ -126,7 +126,12 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         if(snapshot!=null && gpu!=null && !gpu.covered(section,snapshot.revision()))return gpu.offer(section,snapshot);
         return true;
     }
-    /** Replace the protected section set only from a completed scan of the current atlas table. */
+    /** Keep force capture interested in occupied regions as well as acquisition anchors. */
+    public java.util.List<com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion> forceRegions(
+            java.util.Collection<com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion> anchors) {
+        owner();return cache.forceRegions(anchors);
+    }
+    /** Replace protection only from a completed scan of the current atlas table. */
     public void beginPackageUsage(long tableVersion) {
         owner();if(gpu!=null && gpu.beginPackageUsage(tableVersion))cache.clearPackageUsage();
     }
@@ -146,6 +151,11 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         return true;
     }
     public PackageCollisionCache.Snapshot snapshot(PackageCollisionCache.Section section){owner();return cache.snapshot(section);}
+    public String freezeCaptureContext(PackageFreezeReport.Event event){
+        owner();return event.reason()==PackageFreezeReport.Reason.SECTION_VERSION?
+                " "+cache.describeCapture(new PackageCollisionCache.Section(event.a(),event.b(),event.c()),event.requiredWorldRevision())
+                        +(gpu==null?" observedUpload=unallocated":gpu.describeUpload(new PackageCollisionCache.Section(event.a(),event.b(),event.c()),event.requiredWorldRevision())):"";
+    }
     /** Sweeps need the extra one-cell guard for neighbouring overhanging shapes. */
     public boolean gpuCovered(AABB sweptBounds) {
         owner();if(gpu==null || !gpuError.isEmpty() || !movingAvailable || !movingCache.posesReady() || movingGpu==null || !movingGpu.covered(movingCache.entries(),sweptBounds))return false;
@@ -361,6 +371,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
     }
     @Override public void captureLight(long budget){owner();if(lightRequested)lights.tick(lightSource,budget);}
     @Override public void captureMoving(long budget){owner();movingCache.tick(budget);}
+    @Override public void captureMovingGeometry(long budget){owner();movingCache.continueGeometry(budget);}
     @Override public void captureWorld(long budget){owner();cache.tick(source,budget);}
     @Override public void discoverMoving(long deadline) {
         owner();
@@ -405,7 +416,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
     private static void chunkChanged(ChunkEvent event) {
         if(current!=null && event.getLevel()==current.level) {
             var position=event.getChunk().getPos();
-            if(current.collisionRequested){current.cache.invalidateChunk(position.x,position.z);
+            if(current.collisionRequested){current.cache.invalidateChunk(position.x,position.z,event instanceof ChunkEvent.Load?PackageCollisionCache.Invalidation.CHUNK_LOAD:PackageCollisionCache.Invalidation.CHUNK_UNLOAD);
                 if(current.movingSources!=null)current.movingSources.chunkChanged(position.x,position.z);}
             if(current.lightRequested)current.lights.invalidateColumn(position.x,position.z);
         }

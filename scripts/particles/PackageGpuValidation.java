@@ -727,9 +727,18 @@ public class PackageGpuValidation {
             var freeMeta=BufferUtils.createByteBuffer(80);freeMeta.putLong(0,400001).putLong(8,500001).putInt(20,0).putInt(24,-1).putInt(28,PackagePoolGpu.HIDDEN);
             pool.appendMetadata(freeMeta,1);
             var trackPacket=new ClientboundChainPackagePacket(ClientboundChainPackagePacket.TRACK,offer.dimension(),19,track,null,null,0,0,0);
+            var header1=new ClientboundChainPackagePacket.Track(1,track.conveyor(),track.connection(),geometry,track.nodes());
+            var header2=new ClientboundChainPackagePacket.Track(2,track.conveyor(),track.connection(),geometry,track.nodes());
+            var incremental=new ClientboundChainPackagePacket(ClientboundChainPackagePacket.TRACK,offer.dimension(),19,header2,null,null,0,0,0);
+            rejected=false;try{acquisition.receive(incremental);}catch(IllegalStateException expected){rejected=true;}
+            check(rejected,"incomplete chain bootstrap fabricated missing track headers");
+            acquisition.restoreTracks(List.of(track,header1,header2));
+            check(acquisition.receive(incremental),"replacement GPU did not accept the latest incremental header after replay");
+            var preservedFree=readBuffer(physics.freeStateBuffer(),64);
+            check(preservedFree.getFloat(0)==10&&preservedFree.getFloat(4)==10&&preservedFree.getFloat(8)==10,"chain table replay changed a free package");
             check(acquisition.receive(trackPacket) && acquisition.receive(trackPacket),"chain geometry duplicate not idempotent");
             acquisition.receive(offer);acquisition.receive(offer);check(acquisition.pendingCount()==1,"duplicate chain offer allocated twice");
-            acquisition.pump(64,(o,c)->false);check(physics.chainCount()==0 && tracks.trackCount()==1 && tracks.nodeCount()==2,"chain resource preparation froze native simulation");
+            acquisition.pump(64,(o,c)->false);check(physics.chainCount()==0 && tracks.trackCount()==3 && tracks.nodeCount()==6,"chain resource preparation froze native simulation");
             acquisition.pump(64,(o,c)->true);
             check(physics.chainCount()==1 && tracks.count()==1 && pool.metadataCount()==2,"chain acquisition did not share ordinary pool");
             chainAcquisitionFrame(physics,pool,acquisition,particles,counter,1,true);
@@ -2154,7 +2163,24 @@ public class PackageGpuValidation {
             uploadWorld(atlas);check(atlas.covered(section,huge.revision()),"occupied detailed collider did not finish after background reservation");
         }
     }
+    static void historicalTableDemandChurn(){
+        var known=new PackageCollisionCache.Section(0,0,0);var air=snapshot((s,c)->WORLD_AIR);
+        try(var atlas=new PackageCollisionGpu(8,1)){
+            atlas.offer(known,air);uploadWorld(atlas);long first=0;
+            for(int i=0;i<12;i++){
+                var distant=new PackageCollisionCache.Section(20+i,0,0);
+                var desired=Map.of(known,air.revision(),distant,100L+i);
+                atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(known,air.revision()),new PackageCollisionGpu.GeometryRevision(distant,100L+i)));
+                try(var view=atlas.historicalView(0,0,0,desired)){
+                    check(view.ready(),"unchanged resident geometry lost a historical table bank");
+                    if(i==0)first=view.version();
+                    else check(view.version()==first,"unresident lookahead demand replaced an identical GPU collision table");
+                }
+            }
+        }
+    }
     static void historyChangesPreserveLiveUsage(){
+        historicalTableDemandChurn();
         var air=snapshot((s,c)->WORLD_AIR);var a=new PackageCollisionCache.Section(0,0,0);
         var b=new PackageCollisionCache.Section(1,0,0);var c=new PackageCollisionCache.Section(2,0,0);
         try(var atlas=new PackageCollisionGpu(2,1)) {
@@ -2171,7 +2197,183 @@ public class PackageGpuValidation {
             check(atlas.beginPackageUsage(token),"history consumption invalidated a current occupancy scan");
         }
     }
+    static void sparseWorldUploadDeferredProgress(){
+        var section=new PackageCollisionCache.Section(0,0,0);int changed=8|8<<4|8<<8;
+        var cache=new PackageCollisionCache(Runnable::run,1,()->0L);cache.request(section);
+        cache.tick((s,c)->WORLD_AIR,1);cache.tick((s,c)->WORLD_AIR,0);var base=cache.snapshot(section);
+        var solid=shape(1,.6f);cache.invalidateChangedBlock(8,8,8,(s,c)->c==changed?solid:WORLD_AIR);
+        cache.tick((s,c)->c==changed?solid:WORLD_AIR,1);cache.tick((s,c)->WORLD_AIR,0);var updated=cache.snapshot(section);
+        try(var atlas=new PackageCollisionGpu(1,1)){
+            atlas.offer(section,base);uploadWorld(atlas);GL11.glFinish();atlas.offer(section,updated);
+            atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(section,base.revision())));
+            check(atlas.describeUpload(section,updated.revision()).contains("observedPatchGate=history"),"history patch blocker missing");
+            long before=atlas.uploadedBytes();atlas.pump(47,Long.MAX_VALUE);
+            check(!atlas.covered(section,updated.revision())&&atlas.covered(section,base.revision()),"partial copy exposed a new revision");
+            check(atlas.describeUpload(section,updated.revision()).contains("observedUploadBytes=47/65568"),"pending byte progress missing");
+            atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(section,updated.revision())));
+            atlas.pump(48,Long.MAX_VALUE);
+            check(atlas.covered(section,updated.revision())&&atlas.uploadedBytes()-before==95,"completed old input did not permit promotion to a 48-byte patch");
+            check(atlas.stats().pending()==0&&atlas.stats().retired()==0,"sparse promotion leaked a staging or retired slot");
+            check(atlas.describeUpload(section,updated.revision()).contains("observedUpload=complete"),"sparse completion progress missing");
+        }
+    }
+    static void pendingLocalVersionRecovery(){
+        var section=new PackageCollisionCache.Section(0,4,0);int cell=2|14<<4|13<<8;
+        var tasks=new ArrayDeque<Runnable>();var time=new java.util.concurrent.atomic.AtomicLong();boolean[] cold={false};
+        var cache=new PackageCollisionCache(tasks::add,1,()->cold[0]?time.getAndAdd(600_000):time.get());cache.request(section);
+        cache.tick((s,c)->WORLD_AIR,1);tasks.remove().run();cache.tick((s,c)->WORLD_AIR,0);var baseline=cache.snapshot(section);
+        try(var atlas=new PackageCollisionGpu(1,1);var physics=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)){
+            atlas.offer(section,baseline);uploadWorld(atlas);GL11.glFinish();
+            cache.listener(new PackageCollisionCache.Listener(){
+                public void invalidated(PackageCollisionCache.Section key,long revision){atlas.invalidate(key,revision);}
+                public void published(PackageCollisionCache.Section key,PackageCollisionCache.Snapshot value){atlas.offer(key,value);}
+            });
+            cold[0]=true;var first=shape(.25f,.6f);cache.invalidateChangedBlock(2,77,14,(s,c)->c==cell?first:WORLD_AIR);
+            check(cache.snapshot(section)==null,"cold local budget fixture did not revoke incomplete data");
+            cold[0]=false;var latest=shape(.5f,.8f);cache.invalidateChangedBlock(2,77,14,(s,c)->c==cell?latest:WORLD_AIR);
+            long wanted=cache.versions().get(section);int[] reads={0};
+            cache.tick((s,c)->{reads[0]++;return c==cell?latest:WORLD_AIR;},10_000);
+            check(cache.snapshot(section)!=null&&cache.snapshot(section).revision()==wanted,"capture-in-progress blocked exact local revision recovery");
+            check(tasks.isEmpty()&&reads[0]==1,"local rescue scheduled a worker or recaptured the section");
+            atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(section,wanted)));
+            long before=atlas.uploadedBytes();atlas.pump(48,Long.MAX_VALUE);
+            check(atlas.covered(section,wanted)&&atlas.uploadedBytes()-before==48,"rescued local revision did not upload within its 48-byte patch");
+            var body=bodies(1);body(body,0,8,70,8,1);physics.upload(body,1);
+            try(var view=atlas.historicalView(0,0,0,Map.of(section,wanted))){physics.stepWorld(.05f,view);}
+            var state=read(physics);check(state.getFloat(60)>=0&&state.getFloat(4)<70,"GPU package froze on a rescued local version");
+        }
+    }
+    static void continuousLocalVersionProgress(){
+        var first=new PackageCollisionCache.Section(-1,4,0);var second=new PackageCollisionCache.Section(-1,4,1);
+        int a=11|14<<4|13<<8,b=11|3<<4|13<<8;var tasks=new ArrayDeque<Runnable>();
+        var cache=new PackageCollisionCache(tasks::add,2,()->0L);cache.request(first);cache.request(second);
+        cache.tick((s,c)->WORLD_AIR,1);while(!tasks.isEmpty())tasks.remove().run();cache.tick((s,c)->WORLD_AIR,0);
+        var oldA=cache.snapshot(first);var oldB=cache.snapshot(second);
+        try(var atlas=new PackageCollisionGpu(2,8);var physics=new PackagePhysicsGpu(2,2,PackageGpuValidation::source)){
+            atlas.offer(first,oldA);atlas.offer(second,oldB);uploadWorld(atlas);GL11.glFinish();
+            cache.listener(new PackageCollisionCache.Listener(){
+                public void invalidated(PackageCollisionCache.Section section,long revision){atlas.invalidate(section,revision);}
+                public void published(PackageCollisionCache.Section section,PackageCollisionCache.Snapshot snapshot){atlas.offer(section,snapshot);}
+            });
+            for(int i=1;i<=7;i++){
+                var value=shape(i/10f,.6f);cache.invalidateChangedBlock(-5,77,14,(s,c)->s.equals(first)&&c==a?value:WORLD_AIR);
+                check(cache.snapshot(first)!=null&&tasks.isEmpty(),"local change still waited for section capture/worker");
+            }
+            for(int i=1;i<=2;i++){
+                var value=shape(i/4f,.6f);cache.invalidateChangedBlock(-5,77,19,(s,c)->s.equals(second)&&c==b?value:WORLD_AIR);
+                check(cache.snapshot(second)!=null&&tasks.isEmpty(),"second local section still waited for worker");
+            }
+            var latestA=cache.snapshot(first);var latestB=cache.snapshot(second);
+            check(latestA.gpuPatch(oldA.gpuIdentity(),oldA.revision())!=null&&latestB.gpuPatch(oldB.gpuIdentity(),oldB.revision())!=null,
+                    "continuous local notifications lost the still-visible GPU baseline");
+            atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(first,latestA.revision()),new PackageCollisionGpu.GeometryRevision(second,latestB.revision())));
+            long before=atlas.uploadedBytes();atlas.pump(512,Long.MAX_VALUE);
+            check(atlas.covered(first,latestA.revision())&&atlas.covered(second,latestB.revision()),"local revisions exceeded one small upload budget");
+            check(atlas.uploadedBytes()-before==320,"continuous local notifications retransmitted complete sections");
+            var bodies=bodies(2);body(bodies,0,-8,70,8,1);body(bodies,1,-8,70,24,1);physics.upload(bodies,2);
+            try(var view=atlas.historicalView(0,0,0,Map.of(first,latestA.revision(),second,latestB.revision()))){physics.stepWorld(.05f,view);}
+            var state=read(physics);check(state.getFloat(60)>=0&&state.getFloat(64+60)>=0,"local revisions froze unrelated package positions in the two sections");
+            check(state.getFloat(4)<70&&state.getFloat(64+4)<70,"local revision snapshots lost physical progress");
+            cache.tick((s,c)->{throw new AssertionError("local snapshot recaptured the world");},1);
+        }
+    }
+    static void sparseWorldUploadIdentityProgress(){
+        var section=new PackageCollisionCache.Section(0,0,0);int changed=8|8<<4|8<<8;
+        var cache=new PackageCollisionCache(Runnable::run,1,()->0L);cache.request(section);
+        cache.tick((s,c)->WORLD_AIR,1);cache.tick((s,c)->WORLD_AIR,0);var base=cache.snapshot(section);
+        cache.invalidateChangedBlock(8,8,8,(s,c)->c==changed?shape(1,.6f):WORLD_AIR);
+        cache.tick((s,c)->c==changed?shape(1,.6f):WORLD_AIR,1);cache.tick((s,c)->WORLD_AIR,0);var updated=cache.snapshot(section);
+        var foreign=snapshot((s,c)->c==0?shape(.5f,.8f):WORLD_AIR);
+        check(foreign.revision()==base.revision()&&foreign.gpuIdentity()!=base.gpuIdentity(),"same-revision snapshot identity fixture");
+        try(var atlas=new PackageCollisionGpu(1,1)){
+            atlas.offer(section,foreign);uploadWorld(atlas);GL11.glFinish();atlas.offer(section,updated);
+            check(atlas.describeUpload(section,updated.revision()).contains("observedPatchGate=base-snapshot"),"foreign baseline identity blocker missing");
+            long before=atlas.uploadedBytes();atlas.pump(48,Long.MAX_VALUE);
+            check(!atlas.covered(section,updated.revision()),"matching revision accepted a patch based on different captured bytes");
+            uploadWorld(atlas);check(atlas.covered(section,updated.revision())&&atlas.uploadedBytes()-before==65568,"foreign baseline did not use complete replacement");
+        }
+    }
+    static void sparseWorldUploadProgress(){
+        pendingLocalVersionRecovery();continuousLocalVersionProgress();sparseWorldUploadIdentityProgress();sparseWorldUploadDeferredProgress();
+        var section=new PackageCollisionCache.Section(0,0,0);int changed=8|8<<4|8<<8;
+        ByteBuffer[] fullResult=new ByteBuffer[2];
+        for(boolean local:new boolean[]{false,true})for(boolean keepHistory:new boolean[]{false,true}){
+            var cache=new PackageCollisionCache(Runnable::run,1,()->0L);cache.request(section);
+            cache.tick((s,c)->WORLD_AIR,1);cache.tick((s,c)->WORLD_AIR,0);var base=cache.snapshot(section);
+            var solid=shape(1,.6f);
+            if(local)cache.invalidateChangedBlock(8,8,8,(s,c)->c==changed?solid:WORLD_AIR);else cache.invalidate(section);
+            cache.tick((s,c)->c==changed?solid:WORLD_AIR,1);cache.tick((s,c)->WORLD_AIR,0);var updated=cache.snapshot(section);
+            check(local?updated.gpuPatch()!=null:updated.gpuPatch()==null,"sparse patch baseline qualification");
+            try(var atlas=new PackageCollisionGpu(1,1);var gpu=new PackagePhysicsGpu(2,2,PackageGpuValidation::source)){
+                atlas.offer(section,base);uploadWorld(atlas);GL11.glFinish();
+                if(keepHistory)atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(section,base.revision())));
+                atlas.offer(section,updated);
+                try(var lease=atlas.view(0,0,0)){
+                    boolean blocked=false;try{atlas.pump(48,Long.MAX_VALUE);}catch(IllegalStateException expected){blocked=true;}
+                    check(blocked&&lease.ready()&&atlas.covered(section,base.revision()),"upload mutated a leased world view");
+                }
+                GL11.glFinish();long before=atlas.uploadedBytes();atlas.pump(48,Long.MAX_VALUE);
+                boolean fast=local&&!keepHistory;
+                check(atlas.covered(section,updated.revision())==fast,"sparse upload readiness ignored history or byte budget");
+                check(atlas.uploadedBytes()-before==48,"sparse or staged upload exceeded its byte allowance");
+                if(!fast)check(atlas.covered(section,base.revision()),"partial replacement overwrote the visible baseline");
+                uploadWorld(atlas);
+                check(atlas.uploadedBytes()-before==(fast?48:65568),"a local compatible change retransmitted its entire section");
+                var input=bodies(2);body(input,0,8.5f,10,8.5f,1);body(input,1,5.5f,10,5.5f,1);gpu.upload(input,2);
+                for(int i=0;i<8;i++)try(var view=atlas.historicalView(0,0,0,Map.of(section,updated.revision()))){gpu.stepWorld(.05f,view);}
+                var live=read(gpu);
+                if(local)check(live.equals(fullResult[keepHistory?1:0]),"sparse and full uploads produced different GPU body states");else fullResult[keepHistory?1:0]=live;
+                check(live.getFloat(60)>=0&&live.getFloat(4)>=9.4f,"patched cell lost its new collision shape or froze");
+                check(live.getFloat(64+60)>=0&&live.getFloat(64+4)<9,"untouched cell did not remain air after a sparse update");
+                if(keepHistory){
+                    gpu.upload(input,2);for(int i=0;i<8;i++)try(var view=atlas.historicalView(0,0,0,Map.of(section,base.revision()))){gpu.stepWorld(.05f,view);}
+                    var old=read(gpu);check(old.getFloat(60)>=0&&old.getFloat(4)<9,"new shape leaked into the retained old revision");
+                }
+            }
+        }
+    }
+    static void worldCapturePriorityProgress(){
+        var clock=new java.util.concurrent.atomic.AtomicLong();
+        var live=new PackageCollisionCache.Section(0,0,0);var unrelated=new PackageCollisionCache.Section(2,0,0);
+        var cache=new PackageCollisionCache(Runnable::run,34,clock::get);cache.request(live);cache.request(unrelated);
+        cache.tick((s,c)->WORLD_AIR,1);cache.tick((s,c)->WORLD_AIR,0);long unrelatedRevision=cache.snapshot(unrelated).revision();
+        try(var atlas=new PackageCollisionGpu(3,1);var gpu=new PackagePhysicsGpu(2,2,PackageGpuValidation::source);
+            var prefetch=new PackageWorldPrefetchGpu(91,PackageGpuValidation::source)){
+            atlas.offer(live,cache.snapshot(live));atlas.offer(unrelated,cache.snapshot(unrelated));uploadWorld(atlas);
+            var input=bodies(2);body(input,0,8,8,8,1);body(input,1,40,8,8,1);gpu.upload(input,2);
+            var usage=new PackageCollisionRequests.Usage(){
+                public void begin(long token){if(atlas.beginPackageUsage(token))cache.clearPackageUsage();}
+                public void row(long token,int row){var section=atlas.touchPackageUsage(token,row);if(section!=null)cache.protectPackageUsage(section);}
+            };
+            try(var view=atlas.view(0,0,0)){check(prefetch.capture(gpu.stateBuffer(),2,.05f,view),"live capture priority usage scan not submitted");}
+            GL11.glFinish();prefetch.poll(s->{},usage);
+            cache.listener(new PackageCollisionCache.Listener(){
+                public void invalidated(PackageCollisionCache.Section section,long revision){atlas.invalidate(section,revision);}
+                public void published(PackageCollisionCache.Section section,PackageCollisionCache.Snapshot snapshot){if(section.equals(live))atlas.offer(section,snapshot);}
+            });
+            // Deliberately put the invalidated live section behind 32 background requests.
+            for(int i=0;i<32;i++)cache.request(new PackageCollisionCache.Section(20+i,0,0));
+            cache.invalidate(live);long required=cache.versions().get(live);
+            var versions=Map.of(live,required,unrelated,unrelatedRevision);
+            atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(live,required),new PackageCollisionGpu.GeometryRevision(unrelated,unrelatedRevision)));
+            try(var view=atlas.historicalView(0,0,0,versions)){gpu.stepWorld(.05f,view);}
+            var waiting=read(gpu);
+            check(waiting.getFloat(60)<0&&waiting.getFloat(4)==8,"missing exact capture did not pause only the affected package");
+            check(waiting.getFloat(64+60)>=0&&waiting.getFloat(64+4)<8,"another resident section froze behind live capture");
+            int[] backgroundReads={0};PackageCollisionCache.Source source=(s,c)->{clock.incrementAndGet();if(!s.equals(live))backgroundReads[0]++;return WORLD_AIR;};
+            cache.tick(source,4096);cache.tick(source,4096);cache.tick(source,0);
+            check(cache.snapshot(live)!=null,"GPU-used section did not finish ahead of background captures");
+            check(backgroundReads[0]>0&&cache.readyCount()<cache.size(),"priority lost background progress or completed the entire fixture early");
+            check(clock.get()==8192,"live capture priority raised the CPU time allowance");
+            check(cache.describeCapture(live,required).contains("captureCause=EXPLICIT"),"GPU-required version lost its invalidation origin");
+            uploadWorld(atlas);try(var view=atlas.historicalView(0,0,0,versions)){gpu.stepWorld(.05f,view);}
+            var recovered=read(gpu);
+            check(recovered.getFloat(60)>=0&&recovered.getFloat(4)<8,"affected GPU package did not resume after exact capture/upload");
+            check(recovered.getFloat(64+60)>=0&&recovered.getFloat(64+4)<waiting.getFloat(64+4),"unrelated GPU package lost progress during capture recovery");
+        }
+    }
     static void worldVersionDiagnostics(){
+        sparseWorldUploadProgress();worldCapturePriorityProgress();
         var section=new PackageCollisionCache.Section(0,0,0);var collision=new PackageCollisionCache.Section(8,0,0);var air=snapshot((s,c)->WORLD_AIR);
         long wanted=(2L<<32)|0xfffffff0L;
         for(int origin:new int[]{0,8})try(var atlas=new PackageCollisionGpu(2,1);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)) {
@@ -2407,7 +2609,43 @@ public class PackageGpuValidation {
             }
         }
     }
+    static void sameOwnerZeroBoundaryProgress(){
+        var air=snapshot((s,i)->WORLD_AIR);var owner=new UUID(7,9);
+        for(int sign:new int[]{-1,1}) {
+            var target=new ChannelTarget(0);
+            float start=-sign*.25f;
+            target.state=new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(start,8,5,sign*16,0,0,0),0);
+            var anchor=PackageRegion.at(target.state.pose());
+            var server=new PackageAuthorityRegion(anchor,owner,70,1,0,()->20,pose->true);
+            var offer=server.offer(target,0);
+            var baseline=server.prepared(owner,70,offer.index(),target.identity,offer.leaseEpoch(),offer.revision(),0);
+            check(server.finalReady(owner,70,baseline.index(),target.identity,baseline.leaseEpoch(),baseline.revision(),0),"zero boundary admission");
+            try(var atlas=new PackageCollisionGpu(125,1);var gpu=new PackagePhysicsGpu(2,2,PackageGpuValidation::source)){
+                for(int x=-2;x<=2;x++)for(int y=-2;y<=2;y++)for(int z=-2;z<=2;z++)
+                    atlas.offer(new PackageCollisionCache.Section(x,y,z),air);
+                uploadWorld(atlas);var b=bodies(2);body(b,0,start,8.5f,5,1);b.putFloat(16,sign*16);
+                body(b,1,8,8.5f,8,1);b.putFloat(80,sign*8);gpu.upload(b,2);
+                float previous=start,control=8;
+                for(int step=1;step<=12;step++){
+                    try(var view=atlas.view(0,0,0)){gpu.stepWorldMoving(view,PackagePhysicsGpu.ITERATIONS,List.of());}
+                    var r=read(gpu);float next=r.getFloat(0),other=r.getFloat(64);
+                    check(sign*(next-previous)>0&&sign*(other-control)>0,"suspended package stopped at X=0 while its peer moved");
+                    check(r.getFloat(60)>=0&&r.getFloat(124)>=0,"resident zero seam generated a collision freeze");
+                    var pose=new PackageLease.Pose(next,r.getFloat(4)-.5,r.getFloat(8),r.getFloat(16),r.getFloat(20),r.getFloat(24),r.getFloat(44));
+                    var q=PackageDeltaCodec.quantize(pose,anchor.originX(),anchor.originY(),anchor.originZ(),0);
+                    check(server.deltaStepped(owner,70,1,step,step,List.of(new PackageDeltaCodec.Entry(baseline.index(),15,q)),4,0,step)
+                            ==PackageAuthorityRegion.Result.ACCEPTED,"server rejected zero-boundary motion");
+                    var retained=server.baseline(target.identity);
+                    check(target.releases==0&&retained!=null&&retained.leaseEpoch()==baseline.leaseEpoch()
+                            &&retained.index()==baseline.index(),"X=0 released a same-owner package without a collision marker");
+                    previous=next;control=other;
+                }
+                check(sign*previous>0,"fixture never crossed X=0");
+            }
+        }
+    }
     static void sectionSeamProgress() {
+        sameOwnerZeroBoundaryProgress();
         var air=snapshot((s,i)->WORLD_AIR);
         var floor=snapshot((s,i)->i>>>8==0?shape(1,.6f):WORLD_AIR);
         for(int axis:new int[]{1,0,2})for(int direction:new int[]{-1,1}) {
@@ -6493,6 +6731,7 @@ public class PackageGpuValidation {
             if(Arrays.asList(args).contains("--known-contact-only")){knownContactProgress();check(GL11.glGetError()==GL11.GL_NO_ERROR,"known contact GL error");System.out.println("Package known contacts GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--freeze-diagnostics-only")){freezeDiagnostics();check(GL11.glGetError()==GL11.GL_NO_ERROR,"freeze diagnostic GL error");System.out.println("Package freeze diagnostics GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--upload-fairness-only")){uploadFairnessProgress();check(GL11.glGetError()==GL11.GL_NO_ERROR,"upload fairness GL error");System.out.println("Package upload fairness GPU: "+checks+" assertions passed");return;}
+            if(Arrays.asList(args).contains("--zero-boundary-only")){sameOwnerZeroBoundaryProgress();check(GL11.glGetError()==GL11.GL_NO_ERROR,"zero boundary GL error");System.out.println("Package zero boundary GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--world-history-only")){historyChangesPreserveLiveUsage();worldVersionDiagnostics();supersededWorldUploadProgress();retainedWorldGeometryProgress();historicalGeometryIsolation();worldUploadVersions();worldAtlasLru();check(GL11.glGetError()==GL11.GL_NO_ERROR,"world history GL error");System.out.println("Package world history GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--journal-fairness-only")){environmentCaptureFairness();environmentRegression();environmentThroughput();check(GL11.glGetError()==GL11.GL_NO_ERROR,"journal fairness GL error");System.out.println("Package journal fairness GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--moving-advance-only")){rotatingCornerProgress();rotatingGrazingProgress();movingAdvanceSafety();check(GL11.glGetError()==GL11.GL_NO_ERROR,"moving advance GL error");System.out.println("Package moving advance GPU: "+checks+" assertions passed");return;}
