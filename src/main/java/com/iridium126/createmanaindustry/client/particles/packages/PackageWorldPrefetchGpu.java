@@ -80,7 +80,7 @@ public final class PackageWorldPrefetchGpu implements AutoCloseable {
             GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,8,stack.ints((int)tableVersion,(int)(tableVersion>>>32)));
         }
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        GL43.glDispatchCompute((count+63)/64,1,1);
+        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         if(!ring.submit(requests,epoch,sequence)) {skipped++;return false;}
         sequence++;submitted+=PackageCollisionRequests.BYTES;return true;

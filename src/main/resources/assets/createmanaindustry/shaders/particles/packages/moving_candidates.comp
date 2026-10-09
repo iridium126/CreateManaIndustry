@@ -1,0 +1,20 @@
+#pragma cmi_include packages/state.glsl
+#pragma cmi_include packages/moving.glsl
+#pragma cmi_include packages/moving_support.glsl
+layout(std430,binding=12) readonly buffer MovingHistory {vec4 movingHistory[];};
+uniform uint uCandidateOffset;
+layout(local_size_x=64) in;
+shared uint localCount,base;
+void main(){
+    uint i=packageBodyIndex(),lane=gl_LocalInvocationID.x,rank=0u;bool selected=false;
+    if(lane==0u)localCount=0u;barrier();
+    if(i<uCount){
+        Body b=src[i];uint support=floatBitsToUint(movingSupport[i].w)&MOVING_ID_MASK;
+        vec3 initial=movingHistory[2u*i].xyz;
+        // Existing support still receives friction reset / carried-velocity conversion.
+        selected=!uMovingReady||support!=0u||movingCoarse(min(initial,b.positionMass.xyz)-b.extentYaw.xyz,max(initial,b.positionMass.xyz)+b.extentYaw.xyz);
+        if(selected)rank=atomicAdd(localCount,1u);
+    }
+    barrier();if(lane==0u)base=atomicAdd(links[3u*uCandidateOffset/2u+4u],localCount);barrier();
+    if(selected)links[uCandidateOffset+base+rank]=i;
+}

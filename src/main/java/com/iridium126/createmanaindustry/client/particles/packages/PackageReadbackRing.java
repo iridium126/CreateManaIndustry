@@ -61,6 +61,8 @@ public final class PackageReadbackRing implements AutoCloseable {
     }
     /** A full transport journal can refuse consumption. Keep that completed slot until a later poll. */
     public int pollAvailable(long epoch,Predicate<Snapshot> consumer) {
+        long profiling=PackageCpuDiagnostics.begin(PackageCpuDiagnostics.Phase.READBACK);
+        try {
         open();int consumed=0;
         while(pending>0) {
             Slot slot=slots[(next-pending+SLOTS)%SLOTS];
@@ -74,13 +76,14 @@ public final class PackageReadbackRing implements AutoCloseable {
             // journal must not cause the same <=1MiB GPU download on every subsequent frame.
             if(!slot.copied) {
                 scratch.clear().limit(slot.length);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,slot.buffer);
-                GL15.glGetBufferSubData(GL31.GL_COPY_READ_BUFFER,0,scratch);slot.copied=true;
+                GL15.glGetBufferSubData(GL31.GL_COPY_READ_BUFFER,0,scratch);slot.copied=true;PackageCpuDiagnostics.downloaded(slot.length);
             }
             if(!consumer.test(new Snapshot(slot.epoch,slot.sequence,slot.submittedNanos,scratch.asReadOnlyBuffer().order(scratch.order()))))break;
             retire(slot);
             consumed++;
         }
         return consumed;
+        }finally{PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.READBACK,profiling);}
     }
     private void retire(Slot slot){GL32.glDeleteSync(slot.fence);slot.fence=0;slot.copied=false;pending--;}
     public void invalidate() {

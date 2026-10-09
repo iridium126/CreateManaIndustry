@@ -83,7 +83,7 @@ public final class PackageChainCheckpointGpu implements AutoCloseable {
                 stack.ints(input.bodies(),input.chains(),input.metadata(),input.admission(),0,output,input.history()));}
         GL20.glUseProgram(program);GL30.glUniform1ui(countLocation,input.count());
         GL30.glUniform1ui(bodyLocation,input.bodyCount());GL30.glUniform1ui(capacityLocation,input.capacity());
-        GL43.glDispatchCompute((input.count()+63)/64,1,1);
+        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((input.count()+63)/64,1,1);}
         int length=input.count()*PackagePoseQueryGpu.RESULT_BYTES;
         if(transfer==Transfer.DEVICE_COPY) {
             GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);

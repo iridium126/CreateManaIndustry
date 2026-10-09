@@ -19,6 +19,10 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
     private final PackageObserverGpu observers;
     private final int freeCapacity,chainCapacity,observerCapacity,totalCapacity,maxPackages;
     private final int[] bodies=new int[2],chains=new int[2],history=new int[2];
+    private final long[] bankFreeVersion={-1,-1},bankChainVersion={-1,-1},bankObserverVersion={-1,-1};
+    private long publicationCopyBytes;
+    public long publicationCopyBytes(){open();return publicationCopyBytes;}
+    public long freeStateVersion(){open();return freeVersion;}
     private int published=-1;
     private int publishedBodyCount;
     private long version,publishedVersion=-1;
@@ -152,16 +156,24 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
         if(published>=0 && publishedVersion==version)return;
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         int next=published<0?0:published^1;
-        copy(free.stateBuffer(),bodies[next],0,free.count(),PackagePhysicsGpu.BODY_BYTES);
-        copy(free.historyBuffer(),history[next],0,free.count(),32);
+        publicationCopyBytes=0;
+        if(bankFreeVersion[next]!=freeVersion){
+            copy(free.stateBuffer(),bodies[next],0,free.count(),PackagePhysicsGpu.BODY_BYTES);
+            copy(free.historyBuffer(),history[next],0,free.count(),32);
+            publicationCopyBytes+=(long)free.count()*96;bankFreeVersion[next]=freeVersion;
+        }
         long chainOffset=freeCapacity;
-        copy(chain.stateBuffer(),bodies[next],chainOffset,chain.count(),PackagePhysicsGpu.BODY_BYTES);
-        copy(chain.chainBuffer(),chains[next],chainOffset,chain.count(),PackagePhysicsGpu.CHAIN_BYTES);
-        copy(chain.historyBuffer(),history[next],chainOffset,chain.count(),32);
-        if(observerCount()>0) {
+        if(bankChainVersion[next]!=chainVersion){
+            copy(chain.stateBuffer(),bodies[next],chainOffset,chain.count(),PackagePhysicsGpu.BODY_BYTES);
+            copy(chain.chainBuffer(),chains[next],chainOffset,chain.count(),PackagePhysicsGpu.CHAIN_BYTES);
+            copy(chain.historyBuffer(),history[next],chainOffset,chain.count(),32);
+            publicationCopyBytes+=(long)chain.count()*160;bankChainVersion[next]=chainVersion;
+        }
+        if(observerCount()>0&&bankObserverVersion[next]!=observerVersion) {
             long offset=(long)freeCapacity+chainCapacity;
             copy(observers.bodyBuffer(),bodies[next],offset,observerCount(),PackageObserverGpu.BODY_BYTES);
             copy(observers.historyBuffer(),history[next],offset,observerCount(),PackageObserverGpu.HISTORY_BYTES);
+            publicationCopyBytes+=(long)observerCount()*96;bankObserverVersion[next]=observerVersion;
         }
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         published=next;publishedVersion=version;publishedFreeVersion=freeVersion;publishedChainVersion=chainVersion;publishedBodyCount=bodyCount();

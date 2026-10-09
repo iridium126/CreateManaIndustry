@@ -23,7 +23,7 @@ public final class ParticleDiagnostics {
     private long start, allocatedStart, cpuNanos, allocatedBytes, uploads, calls, draws, readbackLag;
     private long lastUploads, lastCalls, lastDraws, lastReadbackLag;
     private volatile boolean enabled;
-    public void enabled(boolean enabled) { this.enabled = enabled; }
+    public void enabled(boolean enabled) { this.enabled = enabled; com.iridium126.createmanaindustry.client.particles.packages.PackageCpuDiagnostics.enabled(enabled); }
     public boolean enabled() { return enabled; }
     public void begin() {
         if (!enabled) return;
@@ -76,13 +76,14 @@ public final class ParticleDiagnostics {
         cpu[cursor]=cpuNanos/1e6; allocations[cursor]=allocatedBytes;
         cursor=(cursor+1)%SAMPLES;samples=Math.min(SAMPLES,samples+1);
         lastUploads=uploads;lastCalls=calls;lastDraws=draws;lastReadbackLag=readbackLag;
+        com.iridium126.createmanaindustry.client.particles.packages.PackageCpuDiagnostics.frame();
     }
     public String report() {
         if(samples==0)return "Particle profiling: " + (enabled?"collecting":"off") + "; /cmi particle profile on";
         double[] sorted=Arrays.copyOf(cpu,samples);Arrays.sort(sorted);
         double meanAllocation=Arrays.stream(allocations,0,samples).average().orElse(0);
         return String.format(Locale.ROOT,"CPU submit p50=%.3f ms p95=%.3f ms; allocation=%.0f B/frame; tracked uploads=%d B; tracked GL calls=%d (draw submissions=%d); readback lag=%d generations; GPU latest=%s",
-                sorted[samples/2],sorted[Math.min(samples-1,(int)(samples*.95))],meanAllocation,lastUploads,lastCalls,lastDraws,lastReadbackLag,gpu);
+                sorted[samples/2],sorted[Math.min(samples-1,(int)(samples*.95))],meanAllocation,lastUploads,lastCalls,lastDraws,lastReadbackLag,gpu)+"\n"+com.iridium126.createmanaindustry.client.particles.packages.PackageCpuDiagnostics.report();
     }
     public void close() {
         for(Frame f:frames) {

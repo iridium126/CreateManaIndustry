@@ -30,7 +30,7 @@ void considerCandidate(Body b,uint i,bool fast,vec3 start,vec3 motion,uint j,
 }
 
 void main() {
-    uint i=gl_GlobalInvocationID.x;
+    uint i=packageBodyIndex();
     if(i>=uCount)return;
     Body b=src[i];
     if(b.positionMass.w<=0.0 || b.previousSleep.w<0.0) { dst[i]=b;return; }

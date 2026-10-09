@@ -192,7 +192,7 @@ public final class PackageChainTrackGpu implements AutoCloseable {
         open();if(count==0)return;GL20.glUseProgram(programs[0]);
         try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(metadata,events,chainBuffer,bodyBuffer,tracks,nodes));}
         ui(0,0,count);ui(0,1,trackCount);ui(0,2,nodeCount);ui(0,3,(int)nextStep++);
-        GL43.glDispatchCompute((count+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
     public Capture capture(int maxRecords) {
         open();if(maxRecords<0 || maxRecords>capacity)throw new IllegalArgumentException("Chain capture capacity");
@@ -202,8 +202,8 @@ public final class PackageChainTrackGpu implements AutoCloseable {
         GL20.glUseProgram(programs[1]);
         try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(events,flights,capture.headerBuffer,capture.recordBuffer));}
         ui(1,0,count);ui(1,4,maxRecords);ui(1,5,capture.stamp);
-        if(count>0)GL43.glDispatchCompute((count+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        GL20.glUseProgram(programs[2]);ui(2,4,maxRecords);GL43.glDispatchCompute(1,1,1);
+        if(count>0){PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        GL20.glUseProgram(programs[2]);ui(2,4,maxRecords);{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute(1,1,1);}
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         captures[bank]=capture;return capture;
     }
@@ -232,7 +232,7 @@ public final class PackageChainTrackGpu implements AutoCloseable {
         GL20.glUseProgram(programs[3]);
         try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(metadata,events,flights,buffer,header==0?headers[0]:header));}
         ui(3,0,count);ui(3,5,stamp);ui(3,6,n);ui(3,7,cancel?1:0);ui(3,8,header==0?0:1);ui(3,9,first);
-        GL43.glDispatchCompute((n+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((n+63)/64,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
     /** Transport owns immutable records or has copied them into its bounded journal before release. */
     public void finish(Capture capture) {

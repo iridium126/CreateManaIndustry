@@ -4,7 +4,7 @@ layout(std430,binding=7) buffer FastCells { SweepCell fastCells[]; };
 layout(std430,binding=8) buffer LongSweepBodies { uint longBodyCount; uint longBodies[]; };
 layout(local_size_x=64) in;
 void main(){
-    uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
+    uint i=packageBodyIndex();if(i>=uCount)return;
     Body b=src[i];if(b.positionMass.w<=0.0||b.previousSleep.w<0.0)return;
     vec3 motion=b.positionMass.xyz-b.previousSleep.xyz;
     if(all(lessThanEqual(abs(motion),max(b.extentYaw.xyz,vec3(1e-5)))))return;

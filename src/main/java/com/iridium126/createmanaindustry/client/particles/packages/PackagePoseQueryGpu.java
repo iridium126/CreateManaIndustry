@@ -99,10 +99,10 @@ public final class PackagePoseQueryGpu implements AutoCloseable {
         GL20.glUniform3f(locations[0][3],ray.x,ray.y,ray.z);GL20.glUniform3f(locations[0][4],ray.dx,ray.dy,ray.dz);
         GL30.glUniform1ui(locations[0][7],type);GL30.glUniform1ui(locations[0][8],bodyLimit);GL20.glUniform1f(locations[0][9],partial);
         GL30.glUniform1ui(locations[0][10],input.attachments>0?1:0);
-        if(count>0){GL43.glDispatchCompute(count,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
+        if(count>0){{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute(count,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
         use(1,input);GL30.glUniform1ui(locations[1][5],count);
         GL30.glUniform1ui(locations[1][7],type);GL20.glUniform3f(locations[1][3],ray.x,ray.y,ray.z);GL20.glUniform3f(locations[1][4],ray.dx,ray.dy,ray.dz);
-        GL20.glUniform1f(locations[1][9],partial);GL43.glDispatchCompute(1,1,1);
+        GL20.glUniform1f(locations[1][9],partial);{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute(1,1,1);}
         return capture(bank,submission,Kind.PICK,tag,input,List.of(),1);
     }
     public boolean poses(Input input,List<Request> requests,long submission,Object tag) {
@@ -118,7 +118,7 @@ public final class PackagePoseQueryGpu implements AutoCloseable {
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,uploads[bank]);
         GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,scratch);
         bind(input,uploads[bank],outputs[bank]);use(2,input);GL30.glUniform1ui(locations[2][6],copy.size());
-        GL43.glDispatchCompute((copy.size()+63)/64,1,1);
+        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((copy.size()+63)/64,1,1);}
         return capture(bank,submission,Kind.POSES,tag,input,copy,copy.size());
     }
     private void validate(Input input,long submission) {

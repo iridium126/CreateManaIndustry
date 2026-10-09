@@ -3,7 +3,7 @@
 layout(local_size_x=64) in;
 shared uint edgeCount[64];
 void main() {
-    uint i=gl_GlobalInvocationID.x,lane=gl_LocalInvocationID.x;
+    uint i=packageBodyIndex(),lane=gl_LocalInvocationID.x;
     uint parent=END;float separation=0,minimumY=0,velocityY=0;
     if(i<uCount) {
         Body b=src[i];minimumY=b.positionMass.y;velocityY=b.positionMass.w==0?0:b.velocityGround.y;

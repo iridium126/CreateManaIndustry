@@ -6,6 +6,7 @@ struct Body {
     vec4 extentYaw; // half extents.xyz, yaw in degrees
     vec4 previousSleep; // previous centre.xyz; -1 invalid, -2 prepared, -3 retired, -4 collision-frozen
 };
+uint packageBodyIndex();
 #pragma cmi_include packages/freeze_state.glsl
 void freezePackage(inout Body body,vec3 stablePosition,uint reason,uint stage,ivec4 detail) {
     recordPackageFreeze(body,stablePosition,reason,stage,detail);
@@ -25,6 +26,33 @@ layout(std430,binding=1) writeonly buffer OutputBodies { Body dst[]; };
 layout(std430,binding=2) buffer Heads { uint heads[]; };
 layout(std430,binding=3) buffer Links { uint links[]; };
 uniform uint uCount;
+#ifdef CMI_ACTIVE_BODIES
+uniform uint uActiveCount,uActiveOffset;
+#endif
+uint packageActiveCount(){
+#ifdef CMI_MOVING_CANDIDATES
+    return links[3u*uActiveOffset/2u+4u];
+#elif defined(CMI_ACTIVE_BODIES)
+    return uActiveCount;
+#else
+    return uCount;
+#endif
+}
+uint packageActiveBody(uint invocation){
+#ifdef CMI_MOVING_CANDIDATES
+    uint count=packageActiveCount();if(invocation>=count)return uCount;
+    if(links[3u*uActiveOffset/2u+5u]!=0u)return uActiveCount==uCount?invocation:links[uActiveOffset/2u+invocation];
+    return links[uActiveOffset+invocation];
+#elif defined(CMI_ACTIVE_BODIES)
+    // The dense path reaches the original kernel bounds check without an extra per-lane check.
+    if(uActiveCount==uCount)return invocation;
+    return invocation<uActiveCount?links[uActiveOffset+invocation]:uCount;
+#else
+    return invocation;
+#endif
+}
+uint packageBodyIndex(){return packageActiveBody(gl_GlobalInvocationID.x);}
+
 uniform uint uTableMask;
 uniform float uCellSize;
 uniform uint uCandidateBudget;

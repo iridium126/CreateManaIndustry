@@ -35,6 +35,7 @@ public final class PackageWorldRuntime {
     private final ArrayDeque<ClientboundChainPackagePacket> chainPackets=new ArrayDeque<>();
     private final Map<PackageRegion,PackageFreeAcquisitionGpu> regions=new HashMap<>();
     private final PackageSimulationClock clock=new PackageSimulationClock();
+    private final PackagePrefetchSchedule prefetchSchedule=new PackagePrefetchSchedule();
     private final PackageSimulationClock chainClock=new PackageSimulationClock();
     private ClientLevel level;
     private Object shaderBoundary;
@@ -149,6 +150,8 @@ public final class PackageWorldRuntime {
      * particle engine's GL binding cache, including on shutdown or failed initialization. */
     public boolean prepare(Supplier<PackagePoolGpu> poolFactory,Function<String,String> sources,boolean preview) {
         RenderSystem.assertOnRenderThread();
+        long runtimeProfiling=PackageCpuDiagnostics.begin(PackageCpuDiagnostics.Phase.PREPARE);
+        try {
         var mc=Minecraft.getInstance();var connection=mc.getConnection();long now=System.nanoTime();
         Object nextShaderBoundary=CreateManaIndustry.IRIS_ACTIVE
                 ? com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.pipelineBoundary() : null;
@@ -168,6 +171,8 @@ public final class PackageWorldRuntime {
         if(!enabled || now<retryAfter || physics==null&&!shaderReady)return false;
         try {
             if(physics==null)initialize(mc.level,poolFactory,sources);
+            long pollProfiling=PackageCpuDiagnostics.begin(PackageCpuDiagnostics.Phase.POLL);
+            try {
             pollFreezeDiagnostics();
             renderFrame=Math.incrementExact(renderFrame);
             if(chainFrames!=null)chainFrames.beginFrame(renderFrame);
@@ -192,6 +197,7 @@ public final class PackageWorldRuntime {
             // Lightweight observer streams prepare baselines and
             // retirement before authority acquisition can use the same shared reservation.
             if(lightObservers!=null)lightObservers.prepare(System.nanoTime());
+            }finally{PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.POLL,pollProfiling);}
             if(failure!=null)throw new IllegalStateException(failure);
             if(!drain(sources))return true;
             if(!drainChains(sources))return true;
@@ -209,14 +215,17 @@ public final class PackageWorldRuntime {
             int freeActive=PackageAuthorityClient.activePackages(),chainActive=chainAcquisition==null?0:chainAcquisition.simulationCount();
             if(freeActive==0)PackageCollisionRuntime.releasePackageUsage(level);
             int active=freeActive+chainActive;
-            if(freeActive==0)clock.reset();
+            if(freeActive==0){clock.reset();prefetchSchedule.reset();}
             if(chainActive==0)chainClock.reset();
             // Coverage discovery uses the current resident atlas, independently of
             // whether the next immutable physics tick is ready. Historical views
             // intentionally omit later requests and must not drive cache demand.
             if(freeActive>0&&worldPrefetch!=null){
                 try(var world=PackageCollisionRuntime.forLevel(level).view((int)(ox/16),(int)(oy/16),(int)(oz/16))){
-                    worldPrefetch.capture(physics.freeStateBuffer(),physics.freeCount(),.5f,.05f,world);
+                    long prefetchNow=System.nanoTime(),poseVersion=physics.freeStateVersion(),worldVersion=world.version(),inputVersion=PackageClientInputs.current(level).last();
+                    if(prefetchSchedule.due(prefetchNow,poseVersion,worldVersion,inputVersion)
+                            &&worldPrefetch.capture(physics.freeStateBuffer(),physics.freeCount(),.5f,.05f,world))
+                        prefetchSchedule.submitted(prefetchNow,poseVersion,worldVersion,inputVersion);
                 }
             }
             // Initialization and acquisition can be expensive. Start an acquired body's clock
@@ -236,15 +245,21 @@ public final class PackageWorldRuntime {
                 long tick=clock.nextTick();var collision=PackageCollisionRuntime.forLevel(level);
                 if(!forceCapture.ready(tick)){waitingInput=forceCapture.contains(tick)?"force worker":"force history";break;}
                 if(!collision.hasMovingHistory(tick)||!collision.hasStaticHistory(tick)){waitingInput="collision history";break;}
+                long viewProfiling=PackageCpuDiagnostics.begin(PackageCpuDiagnostics.Phase.VIEW);
                 try(var world=collision.historicalView(tick,(int)(ox/16),(int)(oy/16),(int)(oz/16));
                     var moving=collision.movingView(tick,(int)(ox/16),(int)(oy/16),(int)(oz/16))){
                     if(!world.ready()||!moving.ready()){waitingInput=!world.ready()?"static geometry/version":"moving pose bank";break;}
                     try(var forces=forceGpu.tryView(forceCapture.snapshot(tick),tick,forceCapture.snapshotIdentity(tick))){
                         if(forces==null){waitingInput="force upload bank";break;}
-                        physics.applyFreeForces(forces,.05f,world);
-                        physics.stepFreeMoving(world,PackagePhysicsGpu.ITERATIONS,moving.views());
+                        PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.VIEW,viewProfiling);viewProfiling=0;
+                        long solverProfiling=PackageCpuDiagnostics.begin(PackageCpuDiagnostics.Phase.SOLVER);
+                        try {physics.applyFreeForces(forces,.05f,world);
+                        physics.stepFreeMoving(world,PackagePhysicsGpu.ITERATIONS,moving.views());}
+                        finally{PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.SOLVER,solverProfiling);}
+                        PackageCpuDiagnostics.step(moving.views().size());
                     }
                 }
+                finally{PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.VIEW,viewProfiling);}
                 clock.commit(tick);forceCapture.consumed(tick);collision.staticGeometryConsumed(tick);
             }
             if(clock.historyGap()){
@@ -261,7 +276,10 @@ public final class PackageWorldRuntime {
             if(chainClock.historyGap())chainClock.rebase(simulationNow,availableInput);
             if(physics.environment()!=null)physics.environment().capture(physics.freeCount());
             captureFreezeDiagnostics();
-            physics.publish();physics.source(pool,(float)ox,(float)oy,(float)oz);
+            long publishProfiling=PackageCpuDiagnostics.begin(PackageCpuDiagnostics.Phase.PUBLISH);
+            try{physics.publish();physics.source(pool,(float)ox,(float)oy,(float)oz);}
+            finally{PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.PUBLISH,publishProfiling);}
+            PackageCpuDiagnostics.context(physics.freeLiveCount(),physics.freeCount(),waitingInput);
             if(chainFrames!=null)chainFrames.prepare(pool);
             pool.lightSource(PackageCollisionRuntime.forLevel(level).lightGpu());
             interpolation=freeActive>0?clock.interpolation():chainClock.interpolation();
@@ -287,6 +305,7 @@ public final class PackageWorldRuntime {
             // Initialization can fail before the runtime has been attached globally.
             dispose(failure);return true;
         }
+        }finally{PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.PREPARE,runtimeProfiling);}
     }
     private void initialize(ClientLevel nextLevel,Supplier<PackagePoolGpu> poolFactory,Function<String,String> sources) {
         var baked=PackageModelCache.bake();

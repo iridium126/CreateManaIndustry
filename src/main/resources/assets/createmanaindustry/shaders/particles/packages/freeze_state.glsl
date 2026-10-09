@@ -17,7 +17,7 @@ uniform uvec2 uFreezeStep;
 void recordPackageFreeze(Body b,vec3 position,uint reason,uint stage,ivec4 detail) {
 #if defined(CMI_FREEZE_DIAGNOSTICS) && !defined(CMI_NO_FREEZE_DIAGNOSTICS)
     if(!uFreezeDiagnostics)return;
-    uint i=gl_GlobalInvocationID.x;
+    uint i=packageBodyIndex();
     freezeStates[i].meta.x=reason|(stage<<16u)|0x80000000u;
     freezeStates[i].meta.zw=uFreezeStep;
     freezeStates[i].detail=detail;
@@ -29,13 +29,13 @@ void clearPackageFreeze() {
     // Keep the last failure until sampled, including a freeze that recovered
     // between diagnostic captures. Do not reset the repeat-suppression latch here.
 #if defined(CMI_FREEZE_DIAGNOSTICS) && !defined(CMI_NO_FREEZE_DIAGNOSTICS)
-    if(uFreezeDiagnostics)freezeStates[gl_GlobalInvocationID.x].meta.x&=0x7fffffffu;
+    if(uFreezeDiagnostics)freezeStates[packageBodyIndex()].meta.x&=0x7fffffffu;
 #endif
 }
 void recordWorldFreezeVersion(uvec2 revision,uint wait) {
 #if defined(CMI_FREEZE_DIAGNOSTICS) && !defined(CMI_NO_FREEZE_DIAGNOSTICS)
     if(uFreezeDiagnostics){
-        uint i=gl_GlobalInvocationID.x;
+        uint i=packageBodyIndex();
         freezeStates[i].velocity.w=revision.x;
         freezeStates[i].meta.x|=(wait&127u)<<24u;
     }

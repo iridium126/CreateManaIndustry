@@ -77,7 +77,7 @@ public final class PackageEnvironmentGpu implements AutoCloseable {
         GL30.glUniform1ui(GL20.glGetUniformLocation(stepProgram,"uCoalesceTicks"),coalesceTicks);
         world.bind(new int[]{GL20.glGetUniformLocation(stepProgram,"uWorldReady"),GL20.glGetUniformLocation(stepProgram,"uWorldOriginSection"),
             GL20.glGetUniformLocation(stepProgram,"uWorldTableMask"),GL20.glGetUniformLocation(stepProgram,"uWorldSlotWords"),GL20.glGetUniformLocation(stepProgram,"uWorldShapeCapacity")},0,true);
-        GL43.glDispatchCompute((count+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
     public boolean capture(int count){
         open();if(count==0||ring.pending()==PackageReadbackRing.SLOTS)return false;
@@ -91,9 +91,9 @@ public final class PackageEnvironmentGpu implements AutoCloseable {
         // Unreported suffixes take the bounded queue first. Retransmits fill spare
         // slots, so lost/delayed ACKs remain recoverable without starving new journals.
         GL20.glUniform1i(fresh,1);
-        GL43.glDispatchCompute((count+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL20.glUniform1i(fresh,0);
-        GL43.glDispatchCompute((count+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         return ring.submit(output,1,sequence++);
     }
     public void poll(Consumer<ByteBuffer> consumer){
@@ -108,7 +108,7 @@ public final class PackageEnvironmentGpu implements AutoCloseable {
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);GL20.glUseProgram(ackProgram);bind(GL20.glGetUniformLocation(ackProgram,"uEnvironmentReady"));
         GL30.glUniform1ui(GL20.glGetUniformLocation(ackProgram,"uBody"),body);GL30.glUniform1ui(GL20.glGetUniformLocation(ackProgram,"uThrough"),(int)through);
         GL30.glUniform1ui(GL20.glGetUniformLocation(ackProgram,"uFire"),fire);GL30.glUniform1ui(GL20.glGetUniformLocation(ackProgram,"uPermissions"),permissions);
-        GL20.glUniform1f(GL20.glGetUniformLocation(ackProgram,"uHealth"),health);GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        GL20.glUniform1f(GL20.glGetUniformLocation(ackProgram,"uHealth"),health);{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute(1,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
     public int pending(){return ring.pending();}
     public long bytes(){return (long)capacity*(HEADER_BYTES+HISTORY*SAMPLE_BYTES+4)+OUTPUT_BYTES*(1+PackageReadbackRing.SLOTS);}

@@ -1,0 +1,10 @@
+layout(local_size_x=1) in;
+layout(std430,binding=6) buffer SleepControl {uvec4 sleepCommand;uvec4 sleepStats;};
+uniform uint uActiveCount;uniform bool uWake;
+void main(){
+    sleepStats.y=uWake||sleepStats.x!=uActiveCount||uActiveCount==0u?0u:min(sleepStats.y+1u,16u);
+    bool asleep=sleepStats.y>=16u;
+    sleepCommand=uvec4(asleep?0u:(uActiveCount+63u)/64u,1u,1u,0u);
+    if(asleep)sleepStats.z++;
+    sleepStats.x=0u;sleepStats.w=uActiveCount;
+}

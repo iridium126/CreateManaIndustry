@@ -188,7 +188,7 @@ public final class PackageObserverGpu implements AutoCloseable {
         int format=compact?1:0;
         if(locations[program][6]>=0 && uniformCompact[program]!=format){GL30.glUniform1ui(locations[program][6],format);uniformCompact[program]=format;}
     }
-    private static void dispatch(int count){if(count>0){GL43.glDispatchCompute((count+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}}
+    private static void dispatch(int count){if(count>0){{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}}
     private static void clear(int buffer){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
         GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(ByteBuffer)null);}
     private static void time(float time){if(!Float.isFinite(time) || time<0)throw new IllegalArgumentException("Observer clock");}

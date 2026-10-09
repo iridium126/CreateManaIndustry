@@ -10,6 +10,8 @@ public final class PackageFreezeDiagnosticsGpu implements AutoCloseable {
     private final int states,output,program;
     private final PackageReadbackRing ring;
     private final int capacity;
+    private static final String[] CAPTURE_UNIFORMS={"uFreezeDiagnostics","uFreezeStep","uEnvironmentReady","uCount","uEventCapacity","uScanOffset"};
+    private final int[] captureLocations=new int[CAPTURE_UNIFORMS.length];
     private long step,sequence,nextCapture;
     private int offset;
     private boolean closed;
@@ -31,6 +33,7 @@ public final class PackageFreezeDiagnosticsGpu implements AutoCloseable {
             readback=new PackageReadbackRing(PackageFreezeReport.BYTES);
         }catch(RuntimeException failure){if(readback!=null)readback.close();for(int id:new int[]{state,out})if(id!=0)GL15.glDeleteBuffers(id);if(linked!=0)GL20.glDeleteProgram(linked);throw failure;}
         states=state;output=out;program=linked;ring=readback;
+        for(int i=0;i<captureLocations.length;i++)captureLocations[i]=GL20.glGetUniformLocation(program,CAPTURE_UNIFORMS[i]);
     }
     private static int buffer(int bytes){
         if(bytes<=0||bytes>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))throw new IllegalArgumentException("Freeze storage size");
@@ -60,14 +63,14 @@ public final class PackageFreezeDiagnosticsGpu implements AutoCloseable {
         if(closed||count<0||count>capacity)throw new IllegalStateException("Freeze capture range/state");
         if(count==0||now<nextCapture||ring.pending()==PackageReadbackRing.SLOTS)return false;
         clear(output,PackageFreezeReport.EVENT_OFFSET);GL20.glUseProgram(program);
-        bind(GL20.glGetUniformLocation(program,"uFreezeDiagnostics"),GL20.glGetUniformLocation(program,"uFreezeStep"));
+        bind(captureLocations[0],captureLocations[1]);
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,bodies);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,output);
-        int envReady=GL20.glGetUniformLocation(program,"uEnvironmentReady");
+        int envReady=captureLocations[2];
         if(environment==null)GL20.glUniform1i(envReady,0);else environment.bind(envReady);
-        GL30.glUniform1ui(GL20.glGetUniformLocation(program,"uCount"),count);
-        GL30.glUniform1ui(GL20.glGetUniformLocation(program,"uEventCapacity"),PackageFreezeReport.MAX_EVENTS);
-        GL30.glUniform1ui(GL20.glGetUniformLocation(program,"uScanOffset"),offset%count);
-        GL43.glDispatchCompute((count+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        GL30.glUniform1ui(captureLocations[3],count);
+        GL30.glUniform1ui(captureLocations[4],PackageFreezeReport.MAX_EVENTS);
+        GL30.glUniform1ui(captureLocations[5],offset%count);
+        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         if(!ring.submit(output,1,sequence++))return false;
         offset=(offset+PackageFreezeReport.MAX_EVENTS)%count;nextCapture=now+1_000_000_000L;return true;
     }

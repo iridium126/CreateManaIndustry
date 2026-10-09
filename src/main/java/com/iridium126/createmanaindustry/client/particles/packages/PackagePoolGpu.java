@@ -366,7 +366,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,10,frameBuffer==0?metadata:frameBuffer);
         }
         use(0);dispatch(stagedCount);
-        use(1);GL43.glDispatchCompute(1,1,1);barrier();
+        use(1);{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute(1,1,1);}barrier();
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,3,nativeBounds[staged]);
         if(fusedImportCount && prepareBasicDraw) {
             try(var stack=MemoryStack.stackPush()) {
@@ -394,7 +394,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             use(p);GL20.glUniform3f(locations[p][6],cameraX,cameraY,cameraZ);
             GL20.glUniform4fv(locations[p][7],frustum);
             if(locations[p][26]>=0)GL20.glUniform1f(locations[p][26],mainRangeSquared);
-            if(p==4){GL43.glDispatchCompute(1,1,1);barrier();}else dispatch(stagedCount);
+            if(p==4){{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute(1,1,1);}barrier();}else dispatch(stagedCount);
         }
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
     }
@@ -413,7 +413,7 @@ public final class PackagePoolGpu implements AutoCloseable {
         GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(ByteBuffer)null);
     }
     private static void barrier(){GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
-    private static void dispatch(int count){if(count>0){GL43.glDispatchCompute((count+63)/64,1,1);barrier();}}
+    private static void dispatch(int count){if(count>0){{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}barrier();}}
     public void commit(){ensureOpen();if(staged<0)throw new IllegalStateException("No package submission");long next=Math.incrementExact(publication);committed=staged;staged=-1;publication=next;}
     public void abort(){sealFrames();staged=-1;}
     public void invalidate(){committed=staged=-1;for(var pass:drawPasses)if(pass!=null)pass.publication=-1;}
@@ -493,7 +493,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             if(locations[p][22]>=0)GL20.glUniform1f(locations[p][22],viewScale);
             if(locations[p][23]>=0)GL30.glUniform1ui(locations[p][23],chainVisibility==null?0:1);
             if(locations[p][26]>=0)GL20.glUniform1f(locations[p][26],kind==DrawPass.GBUFFER?mainRangeSquared:-1);
-            if(p==10){GL43.glDispatchCompute(1,1,1);barrier();}else dispatch(count);
+            if(p==10){{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute(1,1,1);}barrier();}else dispatch(count);
         }
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
         pass.pool=pool;pass.publication=publication;return true;
@@ -596,7 +596,7 @@ public final class PackagePoolGpu implements AutoCloseable {
             GL30.glUniform1ui(locations[7][18],lightFeedback==null?0:1);
             if(lightFeedback!=null)lightFeedback.begin();dispatch(candidateCounts[committed]);
             if(lightFeedback!=null){GL20.glUseProgram(programs[8]);GL30.glUniform1ui(locations[8][0],candidateCounts[committed]);
-                GL43.glDispatchCompute(PackageLightRequests.BUCKETS/64,1,1);barrier();lightFeedback.capture();}
+                {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute(PackageLightRequests.BUCKETS/64,1,1);}barrier();lightFeedback.capture();}
         }
     }
     private void ensureOpen(){if(closed)throw new IllegalStateException("Package pool closed");}

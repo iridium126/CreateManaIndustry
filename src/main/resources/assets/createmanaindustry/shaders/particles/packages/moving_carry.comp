@@ -1,3 +1,4 @@
+#define CMI_BODY_INPLACE 1
 #pragma cmi_include packages/state.glsl
 #pragma cmi_include packages/world_collision.glsl
 #pragma cmi_include packages/moving.glsl
@@ -25,7 +26,7 @@ bool sweepCarryWorld(Body b,vec3 start,vec3 shift,out vec3 carried) {
     return true;
 }
 void main() {
-    uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;Body b=src[i];vec4 support=movingSupport[i];
+    uint i=packageBodyIndex();if(i>=uCount)return;Body b=src[i];vec4 support=movingSupport[i];
     support.w=uintBitsToFloat(floatBitsToUint(support.w)&~MOVING_FRICTION_DONE);movingSupport[i]=support;
     if(uMovingReady&&movingGeometryReady()&&b.positionMass.w>0.&&b.previousSleep.w>=0.&&(floatBitsToUint(support.w)&MOVING_ID_MASK)==movingIdentity()) {
         vec3 foot=b.positionMass.xyz-vec3(0,b.extentYaw.y,0);
@@ -35,5 +36,5 @@ void main() {
         else {b.positionMass.xyz+=carried;b.velocityGround.xyz-=support.xyz;
             movingSupport[i]=vec4(carried*20.,uintBitsToFloat(movingIdentity()|MOVING_CARRIED));}
     }
-    dst[i]=b;
+    src[i]=b;
 }

@@ -83,7 +83,7 @@ public final class PackageChainFramesGpu implements AutoCloseable {
         GL42.glMemoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(chosen.parents,origins,chosen.frames));}
         GL20.glUseProgram(program);GL30.glUniform1ui(countLocation,count);GL30.glUniform1ui(parentsLocation,parentCount);
-        if(count>0){GL43.glDispatchCompute((count+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
+        if(count>0){{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
         chosen.leased=true;return new View(chosen,count);
     }
     public final class View implements AutoCloseable {

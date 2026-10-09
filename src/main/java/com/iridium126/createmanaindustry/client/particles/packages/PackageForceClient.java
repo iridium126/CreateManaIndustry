@@ -85,6 +85,8 @@ public final class PackageForceClient implements AutoCloseable {
     private static void removeNozzle(NozzleBlockEntity nozzle){for(var sources:worlds.values())sources.airflow.remove(nozzle);}
     /** Called once per tick from the client world runtime, never from a worker. No package scan. */
     public void prepare(double ox,double oy,double oz,Collection<PackageRegion> activeRegions){
+        long profiling=PackageCpuDiagnostics.begin(PackageCpuDiagnostics.Phase.CAPTURE);
+        try {
         if(closed)throw new IllegalStateException("Package force client closed");
         long worldTick=level.getGameTime();var input=PackageClientInputs.current(level);long tick=input.last();
         snapshots.tickRate(level.tickRateManager().tickrate());
@@ -115,6 +117,7 @@ public final class PackageForceClient implements AutoCloseable {
         for(var source:sources.airflow.values())captured.add(source.source);
         if(captured.size()>PackageForceScene.MAX_SOURCES)throw new IllegalStateException("Package force source capacity; restoring Create");
         snapshots.captureRange(input.first(),tick,captured,ox,oy,oz,worker);
+        }finally{PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.CAPTURE,profiling);}
     }
     private static boolean eligibleEntity(Entity e) {
         if(e instanceof PackageEntity||!e.isAlive()||e.isRemoved()||e.noPhysics||e.isSpectator()||!e.isPushable()

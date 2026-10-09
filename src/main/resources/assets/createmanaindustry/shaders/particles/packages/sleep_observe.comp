@@ -1,0 +1,16 @@
+#pragma cmi_include packages/state.glsl
+layout(std430,binding=6) buffer SleepControl {uvec4 sleepCommand;uvec4 sleepStats;};
+layout(local_size_x=64) in;
+shared uint quiet[64];
+void main(){
+    uint i=packageBodyIndex(),lane=gl_LocalInvocationID.x;uint resting=0u;
+    if(i<uCount){
+        Body b=src[i];if(sleepStats.y>=15u)dst[i]=b;
+        // Sustained rest within solver precision; synchronize before the first skipped step.
+        resting=b.previousSleep.w>=0.0&&(b.positionMass.w==0.0||
+            (all(lessThanEqual(abs(b.velocityGround.xyz),vec3(1e-6)))&&all(lessThanEqual(abs(b.positionMass.xyz-b.previousSleep.xyz),vec3(1e-5)))))?1u:0u;
+    }
+    quiet[lane]=resting;barrier();
+    for(uint stride=32u;stride>0u;stride>>=1u){if(lane<stride)quiet[lane]+=quiet[lane+stride];barrier();}
+    if(lane==0u&&quiet[0]>0u)atomicAdd(sleepStats.x,quiet[0]);
+}

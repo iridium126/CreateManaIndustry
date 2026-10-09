@@ -81,7 +81,7 @@ public final class ClientConfig {
         PACKAGE_GPU_AUTHORITY = BUILDER.comment("Experimental Create package authority opt-in. Requires matching server opt-in and complete GPU collision/render resources; visual validation is pending. Further bandwidth optimization is deferred.")
                 .define("packageGpuAuthority", false);
         PACKAGE_MAIN_THREAD_BUDGET_MS = BUILDER
-                .comment("Maximum client main-thread time per tick for each GPU package processing pass, in milliseconds.")
+                .comment("Soft client-frame allowance shared by geometry capture and atlas upload, in milliseconds. Capture reserves half for upload; force/world reads and solver submission are measured separately.")
                 .defineInRange("packageMainThreadBudgetMs", 10.0, 0.25, 50.0);
         PACKAGE_COLLISION_MAX_SECTIONS = BUILDER
                 .comment("Maximum resident GPU package collision sections for this client. Independent of other players; changes apply on re-entering the world. Clamped to the device SSBO limit; light capacity is separate.")

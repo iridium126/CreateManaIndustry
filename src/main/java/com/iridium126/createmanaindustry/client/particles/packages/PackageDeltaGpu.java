@@ -206,9 +206,9 @@ public final class PackageDeltaGpu implements AutoCloseable {
         var capture=new Capture(bank,(int)nextStamp++,headers[bank],records[bank],outputCapacity);captures[bank]=capture;
         clear(headers[bank]);
         bind(0,capture,bodyBuffer);ui(0,3,bodyCount);GL20.glUniform3f(locations[0][4],ox,oy,oz);
-        if(count>0)GL43.glDispatchCompute((count+63)/64,1,1);
+        if(count>0){PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        bind(1,capture,bodyBuffer);GL43.glDispatchCompute(1,1,1);
+        bind(1,capture,bodyBuffer);{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute(1,1,1);}
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         return capture;
     }
@@ -243,12 +243,12 @@ public final class PackageDeltaGpu implements AutoCloseable {
             throw new IllegalArgumentException("Package GPU journal ACK range");
         if(n==0)return;
         var input=new Capture(-1,stamp,headers[0],source,n);bind(2,input,0);ui(2,5,n);ui(2,6,mode);ui(2,7,firstRecord);
-        GL43.glDispatchCompute((n+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((n+63)/64,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
     /** Transport failure: release flights without advancing any baseline. Events will be emitted again. */
     public void cancel(Capture capture) {
         owned(capture);bind(2,capture,0);ui(2,5,-1);ui(2,6,1);ui(2,7,0);
-        if(capture.capacity>0)GL43.glDispatchCompute((capture.capacity+63)/64,1,1);
+        if(capture.capacity>0){PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((capture.capacity+63)/64,1,1);}
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);finish(capture);
     }
     /** Caller must have enqueued all GPU copies, or copied records into its bounded ACK journal first. */

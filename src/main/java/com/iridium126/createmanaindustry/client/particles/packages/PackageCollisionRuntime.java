@@ -27,6 +27,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
     private final int configuredSections;
     private int allocatedSections;
     private final ExecutorService workers;
+    private final PackageFrameBudget frameBudget=new PackageFrameBudget();
     private final PackageCollisionCache cache;
     private final PackageWorldCollisionSource source;
     private final PackageLightCache lights;
@@ -214,6 +215,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
     public static boolean pumpGpu() {
         if(current==null || !current.gpuRequested)return false;owner();
         if(Minecraft.getInstance().level!=current.level){closeCurrent();return true;}
+        long uploadStarted=System.nanoTime(),profiling=PackageCpuDiagnostics.begin(PackageCpuDiagnostics.Phase.UPLOAD);
         try {
             if(current.collisionRequested && current.gpu==null) {
                 current.allocatedSections=PackageCollisionGpu.deviceCapacity(current.configuredSections,PackageCollisionGpu.DEFAULT_SHAPES,
@@ -231,11 +233,13 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
             if(current.lightRequested && current.lightGpu==null){current.lightGpu=new PackageLightGpu(MAX_SECTIONS);current.lights.forEachRequested(current.lightGpu::reserve);current.lights.snapshots().forEach(current.lightGpu::offer);}
             // A chain-only workload needs light data, not the collision atlas or moving-world scan.
             if(!current.collisionRequested) {
-                if(current.lightGpu!=null)current.lightGpu.pump(PackageCollisionGpu.DEFAULT_UPLOAD_BYTES,ClientConfig.packageMainThreadBudgetNanos());
+                current.frameBudget.consumed(System.nanoTime()-uploadStarted);
+                if(current.lightGpu!=null)current.lightGpu.pump(PackageCollisionGpu.DEFAULT_UPLOAD_BYTES,current.frameBudget.upload(ClientConfig.packageMainThreadBudgetNanos()));
                 return true;
             }
+            current.frameBudget.consumed(System.nanoTime()-uploadStarted);
             PackageCollisionUploadSchedule.pump(current,current.uploadMovingFirst,current.lightPriority==0,current.lightGpu!=null,
-                    PackageCollisionGpu.DEFAULT_UPLOAD_BYTES,ClientConfig.packageMainThreadBudgetNanos(),System::nanoTime);
+                    PackageCollisionGpu.DEFAULT_UPLOAD_BYTES,current.frameBudget.upload(ClientConfig.packageMainThreadBudgetNanos()),System::nanoTime);
             current.uploadMovingFirst=!current.uploadMovingFirst;
         }catch(RuntimeException failure) {
             current.gpuError=failure.getClass().getSimpleName()+": "+failure.getMessage();current.gpuRequested=false;
@@ -243,7 +247,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
             if(current.movingGpu!=null){current.movingGpu.close();current.movingGpu=null;}
             if(current.lightGpu!=null){current.lightGpu.close();current.lightGpu=null;}
             CreateManaIndustry.LOGGER.error("[CMI packages] collision GPU upload failed; coverage revoked",failure);
-        }
+        }finally{current.frameBudget.nextFrame();PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.UPLOAD,profiling);}
         return true;
     }
     private static int[] sections(AABB bounds) {
@@ -332,9 +336,11 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         if(current==null)return;
         if(Minecraft.getInstance().level!=current.level){closeCurrent();return;}
         if(!current.gpuRequested)return;
+        long captureStart=System.nanoTime(),profiling=PackageCpuDiagnostics.begin(PackageCpuDiagnostics.Phase.CAPTURE);
+        try {
         if(!current.collisionRequested) {
             if(!current.lightRequested)return;
-            long started=System.nanoTime(),budget=ClientConfig.packageMainThreadBudgetNanos();
+            long started=System.nanoTime(),budget=current.frameBudget.capture(ClientConfig.packageMainThreadBudgetNanos());
             var dirty=current.dirtyLightColumns.iterator();
             while(dirty.hasNext() && System.nanoTime()-started<budget) {
                 long column=dirty.next();current.dirtyLightColumns.remove(column);
@@ -344,7 +350,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
             return;
         }
         if(current.movingSources==null){current.movingSources=new PackageMovingCollisionSources(current.level);current.movingSources.onInvalidated(current.movingCache::invalidate);}
-        long budget=ClientConfig.packageMainThreadBudgetNanos();
+        long budget=current.frameBudget.capture(ClientConfig.packageMainThreadBudgetNanos());
         PackageCollisionCaptureSchedule.tick(current,current.captureMovingFirst,current.lightPriority==0,budget,System::nanoTime);
         current.historyTicks=Math.max(current.historyTicks,com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageTickTiming.historyTicks(current.level.tickRateManager().tickrate()));
         current.movingCache.tickRate(current.level.tickRateManager().tickrate());
@@ -354,6 +360,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         current.geometryHistory.capture(input.first(),input.last(),versions,current.historyTicks);
         current.captureMovingFirst=!current.captureMovingFirst;
         current.lightPriority=(current.lightPriority+1)%3;
+        }finally{current.frameBudget.consumed(System.nanoTime()-captureStart);PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.CAPTURE,profiling);}
     }
     @Override public long uploaded(PackageCollisionUploadSchedule.Atlas atlas){
         owner();return switch(atlas){case WORLD->gpu.uploadedBytes();case MOVING->movingGpu.uploadedBytes();case LIGHT->lightGpu==null?0:lightGpu.uploadedBytes();};
