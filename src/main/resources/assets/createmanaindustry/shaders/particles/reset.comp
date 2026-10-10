@@ -1,4 +1,5 @@
 layout(local_size_x = 1) in;
+#pragma cmi_include chunks/population_write.glsl
 
 // INDIRECT_COMMANDS commands x INDIRECT_STRIDE bytes at a uniform stride
 // (DrawElementsIndirectCommand layout; arrays commands read only the first
@@ -30,6 +31,9 @@ layout(std430, binding = BIND_HIT) buffer HitBuf {
 } hitOut;
 
 void main() {
+    if(uPopulationWriteEnabled){populationWrite.modelCount=0u;populationWrite.stormCount=0u;
+        populationWrite.live=0u;populationWrite.valid=0u;populationWrite.generation=uPopulationWriteGeneration;
+        populationWrite.modelCapacity=uPopulationModelCapacity;populationWrite.stormCapacity=uPopulationStormCapacity;}
     counter.writeSlot = 0u;
     counter.spare = 0u;
     counter.translucentCensus = 0u;

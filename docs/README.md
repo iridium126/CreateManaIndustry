@@ -16,6 +16,7 @@
 | [gpu-hex-shared-takeover-2026-10-10.md](gpu-hex-shared-takeover-2026-10-10.md) | Hex 世界/阴影/玩家预览/施法 UI 独立 GPU 后端、预算、基准与用户验收 | 🟡 |
 | [gpu-package-model-pool-decision-2026-10-10.md](gpu-package-model-pool-decision-2026-10-10.md) | 包裹/MODEL 分池决策、当前版本实测与 MODEL 活动索引查询对照 | 🟡 |
 | [gpu-hex-cleanup-model-efficiency-2026-10-10.md](gpu-hex-cleanup-model-efficiency-2026-10-10.md) | 旧 Hex 清理、保留实体行为的 MODEL/Storm GPU 优化路线与物理优先项 | 🟡 |
+| [gpu-model-population-and-hit-fix-2026-10-10.md](gpu-model-population-and-hit-fix-2026-10-10.md) | 同代 MODEL/STORM 索引、精确命中、延迟点击验证与本地效果稳定身份 | 🟡 |
 | [gpu-packages.md](gpu-packages.md) | GPU 包裹当前实现总览与运行边界 | 🟡 |
 | [gpu-light-package-records.md](gpu-light-package-records.md) | 自由包裹记录、物理历史、环境与库存事务 | 🟡 |
 | [gpu-package-observers.md](gpu-package-observers.md) | GPU 包裹观察者协议和姿态流 | 🟡 |

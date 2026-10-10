@@ -166,30 +166,19 @@ public class ModelShadowGpuValidation {
     }
     /** Query-side probe only: a static fixture supplies the current-generation index.
      * It excludes building/updating that index and does not move simulation records. */
-    static String indexedSource(String name){String text=source(name);
-        if(name.equals("model_shadow_prepare.comp")){
-            check(text.contains("min(alive,uCapacity)"),"prepare probe source drift");
-            return "layout(std430,binding=5) readonly buffer ActiveModelIndex {uint modelCount;uint pad0,pad1,pad2;uint modelSlots[];};\n"+text.replace("min(alive,uCapacity)","min(modelCount,uCapacity)");
-        }
-        if(name.equals("model_shadow_collect.comp")){
-            String original="uint i=gl_GlobalInvocationID.x;if(i>=min(alive,uCapacity))return;";
-            check(text.contains(original),"collect probe source drift");
-            return "layout(std430,binding=5) readonly buffer ActiveModelIndex {uint modelCount;uint pad0,pad1,pad2;uint modelSlots[];};\n"+text.replace(original,"uint rank=gl_GlobalInvocationID.x;if(rank>=min(modelCount,uCapacity))return;uint i=modelSlots[rank];if(i>=min(alive,uCapacity))return;");
-        }return text;
-    }
     static void indexProbe()throws Exception {
         var rows=new ArrayList<String>();var raw=new ArrayList<String>();rows.add("total_live,model_live,mode,run,gpu_p50_ms,gpu_p95_ms,cpu_submit_p50_ms,cpu_submit_p95_ms,index_bytes");raw.add("total_live,model_live,mode,run,sample,gpu_ms,cpu_submit_ms");
         var boundary=new ParticleComputeState();float[] waves=new float[16],targets=new float[16],tiers=new float[4];
         for(int[] scenario:new int[][]{{100000,100},{100000,10000},{2000000,100},{2000000,10000},{2000000,2000000}}){
-            int n=Math.min(scenario[0],effectiveLimit()),m=Math.min(scenario[1],n),stride=n/m;var data=bytes(n*64);var list=bytes(16+m*4);list.putInt(0,m);
+            int n=Math.min(scenario[0],effectiveLimit()),m=Math.min(scenario[1],n),stride=n/m;var data=bytes(n*64);var list=bytes(32+m*4);list.putInt(0,m).putInt(8,n).putInt(12,1).putInt(16,1).putInt(24,m);
             for(int i=0;i<n;i++){particle(data,i,i%16-8,2,i/16%16-8,1,1);data.putInt(i*64+60,1);}
-            for(int i=0;i<m;i++){int slot=i*stride;data.putInt(slot*64+60,0);list.putInt(16+i*4,slot);}
+            for(int i=0;i<m;i++){int slot=i*stride;data.putInt(slot*64+60,0);list.putInt(32+i*4,slot);}
             var h=bytes(ParticleBuffers.VEC4_PER_EMITTER*32);h.put(headers(2,.3f,false,false)).put(headers(0,.3f,false,false)).flip();
             int pool=buffer(data),emit=buffer(h),counter=buffer(bytes(16).putInt(0,n)),index=buffer(list);var culling=new PackageDrawCulling();culling.clear();
-            try{for(String mode:new String[]{"full_pool","prebuilt_index"})try(var gpu=new ModelShadowGpu(n,mode.equals("full_pool")?ModelShadowGpuValidation::source:ModelShadowGpuValidation::indexedSource)){
+            try{for(String mode:new String[]{"full_pool","prebuilt_index"})try(var gpu=new ModelShadowGpu(n,ModelShadowGpuValidation::source)){
                 // Prior fixture programs may have been deleted while still current.
                 GL20.glUseProgram(0);
-                Runnable submit=()->{boundary.capture();try{if(mode.equals("prebuilt_index"))GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,5,index);gpu.prepare(pool,emit,counter,culling,0,0,0,.35f,.6f,1,0,waves,targets,tiers);}finally{boundary.restore();}};
+                Runnable submit=()->{boundary.capture();try{gpu.prepare(pool,emit,counter,culling,0,0,0,.35f,.6f,1,0,waves,targets,tiers,mode.equals("prebuilt_index")?index:0,1);}finally{boundary.restore();}};
                 for(int run=1;run<=3;run++){
                     long deadline=System.nanoTime()+1_000_000_000L;int warm=0;while(warm++<30||System.nanoTime()<deadline){submit.run();GL11.glFinish();}
                     int samples=120,timer=GL15.glGenQueries();double[] gt=new double[samples],ct=new double[samples];

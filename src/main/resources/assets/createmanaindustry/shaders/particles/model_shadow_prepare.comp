@@ -1,8 +1,9 @@
 layout(local_size_x=1) in;
+#pragma cmi_include chunks/population_read.glsl
 layout(std430,binding=2) readonly buffer Counter {uint alive;};
 layout(std430,binding=4) buffer Commands {uint cmd[];};
 uniform uint uCapacity;
 void main(){
     for(uint i=0u;i<INDIRECT_UINTS;i++)cmd[i]=0u;
-    cmd[INDIRECT_UINTS]=(min(alive,uCapacity)+63u)/64u;cmd[INDIRECT_UINTS+1]=1u;cmd[INDIRECT_UINTS+2]=1u;
+    cmd[INDIRECT_UINTS]=(cmiPopulationCount(min(alive,uCapacity),false)+63u)/64u;cmd[INDIRECT_UINTS+1]=1u;cmd[INDIRECT_UINTS+2]=1u;
 }

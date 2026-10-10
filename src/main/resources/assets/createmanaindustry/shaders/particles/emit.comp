@@ -32,11 +32,12 @@ layout(local_size_x = 64) in;
 //   a: origin.xyz, count              (offsets 0..3)
 //   b: emitterId, seed, prefixOffset (exclusive), originRef (offsets 4..7)
 //   c: lightPacked, memberIdxBase (storm style 3), memberKey (combat styles:
-//      memberIdx+1 -> identity-map source resolution, 0 = legacy originRef),
+//      memberIdx+1 -> storm map, -1 -> raw local token in originRef),
 //      0 (offsets 8..11)
 layout(std430, binding = BIND_POOL_WRITE) buffer ParticleWrite { vec4 data[]; } writeBuf;
 // Read pool: combat styles resolve originRef against the committed pool.
 layout(std430, binding = BIND_POOL_READ) readonly buffer ParticleRead { vec4 data[]; } readBuf;
+layout(std430,binding=BIND_PREV_COUNTER) readonly buffer CombatPrevious {uint live;} combatPrevious;
 layout(std430, binding = BIND_COUNTER) buffer CounterBuf { uint writeSlot; uint spare; uint translucentCensus; } counter;
 layout(std430, binding = BIND_EMITCMD) readonly buffer EmitCmdBuf { float entries[]; } emitCmd;
 layout(std430, binding = BIND_EMITTER) readonly buffer EmitterBuf { vec4 u[]; } emitters;
@@ -60,6 +61,7 @@ uniform float uStormConvRate;  // d(convPhase)/dt — drives the target-velocity
 
 // the analytic spawn needs the storm chunk only (cmiTyphoonHome) — no pose math
 #pragma cmi_include chunks/particle_identity.glsl
+#pragma cmi_include chunks/population_read.glsl
 #pragma cmi_include chunks/allay_storm.glsl
 
 float hash1(float p) {
@@ -357,8 +359,7 @@ void main() {
         // map (rebuilt by update.comp this same dispatch, so the resolved
         // slot always matches the read pool being spawned into): immune to
         // recompaction between the hit snapshot and multi-frame tracking
-        // rides, and to stale snapshots under GPU fence lag. 0 = the legacy
-        // pool-index path (non-storm MODEL debug particles). An absent entry
+        // rides. Local sources use a raw stable token, never a saved pool slot. An absent entry
         // (member not in this generation's pool: not yet spawned, LRU-evicted
         // or identity beyond capacity) DROPS the spawn instead of resolving
         // onto whatever now occupies a stale slot.
@@ -372,6 +373,20 @@ void main() {
             if (slot == 0u)
                 return;
             srcIdx = slot - 1u;
+        } else if(memberKey<-.5){
+            uint wanted=floatBitsToUint(originRef);srcIdx=0xffffffffu;
+            uint liveCount=min(combatPrevious.live,uCapacity);
+            // The role header describes the exact committed prefix, not reserved capacity.
+            if(uPopulationReadEnabled&&populationRead.valid==1u&&populationRead.generation==uPopulationGeneration)liveCount=populationRead.live;
+            for(uint rank=0u;rank<cmiPopulationCount(liveCount,false);rank++){
+                uint candidate=cmiPopulationSlot(rank,liveCount,false);
+                if(candidate<liveCount&&wanted!=0u&&identities.token[uIdentityReadBase+candidate]==wanted){
+                    uint sourceHeader=floatBitsToUint(readBuf.data[candidate*4u+3u].w)*VEC4_PER_EMITTER;
+                    if(emitters.u[sourceHeader+7u].x>=1.5&&emitters.u[sourceHeader+7u].x<2.5&&emitters.u[sourceHeader+18u].x<.5)srcIdx=candidate;
+                    break;
+                }
+            }
+            if(srcIdx==0xffffffffu||!cmiCombatApproved(wanted,readBuf.data[srcIdx*4u+2u].w))return;
         } else {
             if (originRef < 1.0)
                 return; // malformed combat command: drop, never fall to classic

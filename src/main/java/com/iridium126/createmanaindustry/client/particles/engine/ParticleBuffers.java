@@ -186,6 +186,9 @@ public final class ParticleBuffers {
      * buf0. Dual-writing keeps both buffers structurally same-generation.
      */
     public static final int CARRIERSINK_BB = 23;
+    public static final int POPULATION_READ_BB=24,POPULATION_WRITE_BB=25;
+    public static final int POPULATION_HEADER_BYTES=32,MODEL_INDEX_LIMIT=262144,STORM_INDEX_LIMIT=131072;
+    public static final int MODEL_DISPATCH=3,STORM_DISPATCH=4,DISPATCH_COMMANDS=5;
     /** Entries per wave-contact readback (the touches in ONE frame; tiny). */
     public static final int WAVECONTACT_CAP = 4 * 4096;
     /** Floats per wave-contact entry: memberIdx, waveId, pos.xyz. */
@@ -224,9 +227,10 @@ public final class ParticleBuffers {
     public static final int DAMAGE_QUEUE_CAP = 64;
     /**
      * CPU-side layout of the damage queue upload: an std430 uvec4 header
-     * (x = entry count) followed by 32-byte entries of 8 words each:
-     * (key, damage, kbVecX, kbVecZ, lightPacked, flags, identityTokenBits, reserved). {@code key} is the
-     * POOL INDEX for legacy local damage (non-storm MODEL debug particles,
+     * (x = entry count) followed by 64-byte entries of 16 words each:
+     * key/damage/knockback/light/flags/token/validation, then click eye/reach/look/ray-present.
+     * {@code key} is the
+     * diagnostic POOL INDEX for local damage (matched only by stable token and click ray,
      * client-authoritative) or the MEMBER INDEX for storm damage; flags bit 0
      * selects the interpretation and bit 1 carries the server-decided death
      * bit (storm path only — a client must never decide a storm member's
@@ -236,7 +240,7 @@ public final class ParticleBuffers {
      * same lighting.
      */
     public static final int DAMAGE_HEADER_BYTES = 16;
-    public static final int DAMAGE_ENTRY_BYTES = 32;
+    public static final int DAMAGE_ENTRY_BYTES = 64;
     /** Damage-entry flags: key is a storm MEMBER index (vs pool index). */
     public static final int DAMAGE_FLAG_MEMBER = 1;
     /** Damage-entry flags: server-authoritative death — force the corpse. */
@@ -311,6 +315,9 @@ public final class ParticleBuffers {
     public static final float BAND_NEAR = 1.0f;
 
     private final int[] particleSSBOs = new int[2];
+    private final int[] populationSSBOs=new int[2];
+    private final long[] populationGenerations={-1,-1};
+    private int modelIndexCapacity,stormIndexCapacity;
     private final int[] emitSSBOs = new int[EMIT_RING_SIZE];
     private final int[] counterSSBOs = new int[COUNTER_RING];
     private final int[] sortSSBOs = new int[4];
@@ -330,6 +337,8 @@ public final class ParticleBuffers {
     }
     public static final int IDENTITY_BB = 31;
     private int identitySSBO = -1;
+    private int damageApprovalCount;
+    public void damageApprovalCount(int count){damageApprovalCount=Math.max(0,Math.min(DAMAGE_QUEUE_CAP,count));}
     public static final int DISPATCH_BB = 29;
     public static final int WAVE_STAMP_BB = 30;
     private int waveStampSSBO = -1;
@@ -414,13 +423,15 @@ public final class ParticleBuffers {
             return false;
         }
         this.capacity = cap;
-        this.identitySSBO = createBuffer(4L + cap * 8L, null);
+        this.identitySSBO = createBuffer(4L + cap * 8L+8L*DAMAGE_QUEUE_CAP, null);
         GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
                 GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_INT, (java.nio.IntBuffer) null);
         this.waveStampSSBO = createBuffer((long) cap * 16, null);
         this.maxEmitters = maxEmitters;
         this.emitterUploads = new ParticleEmitterUploads(maxEmitters);
-        this.dispatchSSBO = createBuffer(3L * DISPATCH_BYTES, null);
+        this.dispatchSSBO = createBuffer((long)DISPATCH_COMMANDS * DISPATCH_BYTES, null);
+        modelIndexCapacity=Math.min(cap,MODEL_INDEX_LIMIT);stormIndexCapacity=Math.min(cap,STORM_INDEX_LIMIT);
+        for(int i=0;i<2;i++)populationSSBOs[i]=createBuffer(POPULATION_HEADER_BYTES+4L*(modelIndexCapacity+stormIndexCapacity),null);
 
         this.vao = GL30.glGenVertexArrays();
         for (int i = 0; i < 2; i++) {
@@ -589,7 +600,23 @@ public final class ParticleBuffers {
     }
 
     /** Call after a full frame: the freshly written buffer becomes the next read source. */
-    public void beginComputeFrame() { beginBindings(); selectRenderFrame(1 - this.readIndex); }
+    public void beginComputeFrame() { beginBindings(); selectRenderFrame(1 - this.readIndex);populationGenerations[1-readIndex]=-1; }
+    public void commitPopulation(long generation){populationGenerations[readIndex]=generation;}
+    public int populationBufferId(long generation){return populationGenerations[readIndex]==generation?populationSSBOs[readIndex]:0;}
+    public long populationStorageBytes(){return populationSSBOs[0]>0?2L*(POPULATION_HEADER_BYTES+4L*(modelIndexCapacity+stormIndexCapacity)):0;}
+    public void bindPopulationRead(int program){bindPopulationRead(program,false,Math.max(0,populationGenerations[readIndex]));}
+    public void bindPopulationRead(int program,boolean current,long generation){
+        int index=current?1-readIndex:readIndex;bindBase(GL43.GL_SHADER_STORAGE_BUFFER,POPULATION_READ_BB,populationSSBOs[index]);
+        org.lwjgl.opengl.GL41.glProgramUniform1i(program,CMIParticleEngine.loc(program,"uPopulationReadEnabled"),current||populationGenerations[index]>=0?1:0);
+        org.lwjgl.opengl.GL41.glProgramUniform2ui(program,CMIParticleEngine.loc(program,"uPopulationGeneration"),(int)generation,(int)(generation>>>32));
+    }
+    public void bindPopulationWrite(int program,long generation){
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER,POPULATION_WRITE_BB,populationSSBOs[1-readIndex]);
+        org.lwjgl.opengl.GL41.glProgramUniform1i(program,CMIParticleEngine.loc(program,"uPopulationWriteEnabled"),1);
+        org.lwjgl.opengl.GL41.glProgramUniform2ui(program,CMIParticleEngine.loc(program,"uPopulationWriteGeneration"),(int)generation,(int)(generation>>>32));
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,CMIParticleEngine.loc(program,"uPopulationModelCapacity"),modelIndexCapacity);
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,CMIParticleEngine.loc(program,"uPopulationStormCapacity"),stormIndexCapacity);
+    }
     public void restoreCommittedFrame() { bindingScope = false; selectRenderFrame(this.readIndex); }
     private void selectRenderFrame(int index) {
         this.renderIndex = index;
@@ -904,6 +931,7 @@ public final class ParticleBuffers {
      */
     public void invalidateIdentities() {
         this.identityEpoch++;
+        java.util.Arrays.fill(populationGenerations,-1);
         if (this.waveStampSSBO > 0) {
             org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
             GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.waveStampSSBO);
@@ -1063,8 +1091,10 @@ public final class ParticleBuffers {
 
     public void bindIdentities(int program) {
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER, IDENTITY_BB, this.identitySSBO);
-        CMIParticleEngine.setUIntUniform(program, "uIdentityReadBase", this.readIndex * this.capacity);
-        CMIParticleEngine.setUIntUniform(program, "uIdentityWriteBase", (1 - this.readIndex) * this.capacity);
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,CMIParticleEngine.loc(program,"uIdentityReadBase"),readIndex*capacity);
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,CMIParticleEngine.loc(program,"uIdentityWriteBase"),(1-readIndex)*capacity);
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,CMIParticleEngine.loc(program,"uIdentityCapacity"),capacity);
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,CMIParticleEngine.loc(program,"uDamageApprovalCount"),damageApprovalCount);
     }
 
     public void bindDispatch() {
@@ -1168,6 +1198,8 @@ public final class ParticleBuffers {
         for (int id : this.particleSSBOs)
             if (id > 0)
                 GL15.glDeleteBuffers(id);
+        for(int id:populationSSBOs)if(id>0)GL15.glDeleteBuffers(id);
+        java.util.Arrays.fill(populationSSBOs,0);java.util.Arrays.fill(populationGenerations,-1);
         for (int id : this.emitSSBOs)
             if (id > 0)
                 GL15.glDeleteBuffers(id);

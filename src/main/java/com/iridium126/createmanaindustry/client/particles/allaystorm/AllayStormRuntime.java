@@ -731,6 +731,7 @@ public final class AllayStormRuntime {
 
     /** Full hit-snapshot drop (pool reset): keys + HP + member identity. */
     public void dropHitSnapshots() {
+        this.hitToken=0;
         this.hitKeySnapshot = ParticleBuffers.HIT_MISS;
         this.crosshairHitKey = ParticleBuffers.HIT_MISS;
         this.hitHpBits = 0;
@@ -743,6 +744,7 @@ public final class AllayStormRuntime {
      * poll regardless.
      */
     public void dropHitKeys() {
+        this.hitToken=0;
         this.hitKeySnapshot = ParticleBuffers.HIT_MISS;
         this.crosshairHitKey = ParticleBuffers.HIT_MISS;
     }
@@ -873,10 +875,11 @@ public final class AllayStormRuntime {
         engine.gpu().bindEmitters(5);
         engine.gpu().bindPlayers();
         engine.gpu().bindStormPos();
+        engine.gpu().bindPopulationRead(sp,true,engine.currentGeneration()+1);
         Vec3 a = this.center;
         CMIParticleEngine.setFloatUniform(sp, "uAnchor", (float) a.x, (float) a.y, (float) a.z);
         CMIParticleEngine.setIntUniform(sp, "uPlayerCount", this.lastPlayerCount);
-        engine.gpu().dispatch(1);
+        engine.gpu().dispatch(ParticleBuffers.STORM_DISPATCH);
         org.lwjgl.opengl.GL42.glMemoryBarrier(
                 org.lwjgl.opengl.GL43.GL_SHADER_STORAGE_BARRIER_BIT | org.lwjgl.opengl.GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
         this.stormPosPending = true;
@@ -1273,13 +1276,14 @@ public final class AllayStormRuntime {
         engine.gpu().bindCounter(3, slot);
         engine.gpu().bindEmitters(5);
         engine.gpu().bindWaveContact();
+        engine.gpu().bindPopulationRead(wc,true,engine.currentGeneration()+1);
         Vec3 aim = mc.player.position().add(0.0, 0.5, 0.0);
         CMIParticleEngine.setFloatUniform(wc, "uLocalPlayerPos",
                 (float) aim.x, (float) aim.y, (float) aim.z);
         CMIParticleEngine.setFloatUniform(wc, "uTimeSec", this.timeSec);
         CMIParticleEngine.setVec4ArrayUniform(wc, "uWave", this.waveUniform);
         CMIParticleEngine.setVec4ArrayUniform(wc, "uWaveTarget", this.waveTargetUniform);
-        engine.gpu().dispatch(1);
+        engine.gpu().dispatch(ParticleBuffers.STORM_DISPATCH);
         org.lwjgl.opengl.GL42.glMemoryBarrier(
                 org.lwjgl.opengl.GL43.GL_SHADER_STORAGE_BARRIER_BIT
                         | org.lwjgl.opengl.GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);

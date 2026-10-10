@@ -24,6 +24,7 @@ layout(std430, binding = BIND_EMITTER) readonly buffer EmitterBuf { vec4 u[]; } 
 layout(std430, binding = BIND_HIT) buffer HitBuf { uvec4 pair; } hitOut;
 
 uniform int uMetaSlot; // == particle capacity: the reserved tail slot index
+uniform bool uHitResolved;
 
 #pragma cmi_include chunks/particle_identity.glsl
 void main() {
@@ -41,7 +42,9 @@ void main() {
     // readable under this frame's fence -- no extra dispatch or sync.
     uvec4 h = hitOut.pair;
     if (h.x != 0xFFFFFFFFu) {
-        uint idx = h.x & 0x3FFFFFu;
+        uint idx = uHitResolved?h.z:h.x & 0x3FFFFFu;
+        if(idx>=min(counter.writeSlot,uint(pool.data.length())/VEC4_PER_PARTICLE)){hitOut.pair=uvec4(0xffffffffu,0u,0xffffffffu,0u);return;}
+        if(uHitResolved)hitOut.pair.x=(uint(min(uintBitsToFloat(h.x),31.99)*32.0)<<22u)|(idx&0x3fffffu);
         vec4 wp0 = pool.data[idx * 4u];
         vec4 wp3 = pool.data[idx * 4u + 3u];
         hitOut.pair.y = floatBitsToUint(wp3.y);

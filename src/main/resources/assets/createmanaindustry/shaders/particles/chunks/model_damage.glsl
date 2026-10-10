@@ -26,6 +26,7 @@
                     continue;
             } else {
                 if (isStorm || floatBitsToUint(damageQ.entries[ob + 6u]) == 0u
+                        || floatBitsToUint(damageQ.entries[ob+7u])==2u
                         || identities.token[uIdentityReadBase + idx] != floatBitsToUint(damageQ.entries[ob + 6u]))
                     continue;
             }

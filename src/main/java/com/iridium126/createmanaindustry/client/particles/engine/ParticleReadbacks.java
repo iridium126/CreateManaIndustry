@@ -13,6 +13,7 @@ final class ParticleReadbacks {
         int buffer;
         long fence, generation, epoch, gameTime;
         boolean positions, waves;
+        ParticleHitRay hitRay;
         final ByteBuffer data = BufferUtils.createByteBuffer(BYTES);
     }
     private final Slot[] slots = {new Slot(), new Slot(), new Slot(), new Slot()};

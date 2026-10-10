@@ -1,0 +1,42 @@
+layout(local_size_x=64) in;
+layout(std430,binding=BIND_POOL_READ) readonly buffer Pool {vec4 data[];} pool;
+layout(std430,binding=BIND_PREV_COUNTER) readonly buffer Counter {uint live;} previous;
+layout(std430,binding=BIND_EMITTER) readonly buffer Emitters {vec4 u[];} emitters;
+layout(std430,binding=BIND_DAMAGE) buffer Damage {uvec4 header;float entries[];} damage;
+#pragma cmi_include chunks/particle_identity.glsl
+#pragma cmi_include chunks/population_read.glsl
+#pragma cmi_include chunks/model_ray.glsl
+shared uint nearest;
+shared uint winner;
+void main(){
+    uint entry=gl_WorkGroupID.x,lane=gl_LocalInvocationID.x;if(entry>=min(damage.header.x,uint(DAMAGE_QUEUE_CAP)))return;
+    uint off=entry*DAMAGE_ENTRY_WORDS,token=floatBitsToUint(damage.entries[off+6u]);
+    bool local=mod(damage.entries[off+5u],2.0)<.5;
+    if(lane==0u){identities.token[2u*uIdentityCapacity+2u*entry]=local?token:0u;
+        identities.token[2u*uIdentityCapacity+2u*entry+1u]=0u;nearest=0xffffffffu;winner=0xffffffffu;}
+    // Entries without a click ray are internal member-keyed or test/debug commands.
+    if(!local||floatBitsToUint(damage.entries[off+15u])==0u)return;
+    barrier();
+    uint liveCount=min(previous.live,uint(pool.data.length())/VEC4_PER_PARTICLE);
+    vec3 eye=vec3(damage.entries[off+8u],damage.entries[off+9u],damage.entries[off+10u]);
+    vec3 look=vec3(damage.entries[off+12u],damage.entries[off+13u],damage.entries[off+14u]);
+    float reach=damage.entries[off+11u];
+    uint localDistance=0xffffffffu,localSlot=0xffffffffu;
+    for(uint rank=lane;rank<cmiPopulationCount(liveCount,false);rank+=64u){
+        uint slot=cmiPopulationSlot(rank,liveCount,false);if(slot>=liveCount)continue;
+        vec4 p0=pool.data[slot*4u],p3=pool.data[slot*4u+3u];uint hb=floatBitsToUint(p3.w)*VEC4_PER_EMITTER;
+        if(hb+18u>=uint(emitters.u.length()))continue;
+        uint distance=cmiModelRayDistance(p0,p3,hb,eye,look,reach);
+        if(distance<localDistance||(distance==localDistance&&slot<localSlot)){localDistance=distance;localSlot=slot;}
+    }
+    atomicMin(nearest,localDistance);
+    barrier();
+    if(localDistance!=0xffffffffu&&localDistance==nearest)atomicMin(winner,localSlot);
+    barrier();
+    if(lane==0u){uint accepted=0u;
+        if(winner!=0xffffffffu){uint slot=winner,hb=floatBitsToUint(pool.data[slot*4u+3u].w)*VEC4_PER_EMITTER;
+            if(emitters.u[hb+18u].x<.5&&token!=0u&&identities.token[uIdentityReadBase+slot]==token)accepted=token;}
+        damage.entries[off+7u]=uintBitsToFloat(accepted==0u?2u:1u);
+        identities.token[2u*uIdentityCapacity+2u*entry+1u]=accepted;
+    }
+}

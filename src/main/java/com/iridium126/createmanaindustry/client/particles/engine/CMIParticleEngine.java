@@ -279,8 +279,8 @@ public final class CMIParticleEngine {
      * emit.comp resolves the source allay's CURRENT pool position, so the
      * stars track the knockback like vanilla. Storm sources carry their MEMBER
      * identity and resolve through the identity map (rebuild per dispatch) —
-     * immune to pool recompaction; non-storm sources keep the pool index and
-     * inherit its one-frame-shift exposure. Storm stop / clear invalidate the
+     * immune to pool recompaction; non-storm sources resolve their stable token through
+     * the committed MODEL population and validated hit approval. Storm stop / clear invalidate the
      * window immediately (cleared map = absent entries = spawns dropped).
      */
     private static final class TrackingBurst {
@@ -288,7 +288,7 @@ public final class CMIParticleEngine {
         static final double RATE = 25.0 / DURATION; // accepted particles per second
 
         final int emitId;
-        final int sourceIdx;
+        final int localToken;
         /** Storm member identity (-1 = non-storm source); carries the ride across pool recompaction. */
         final int memberIdx;
         final float light;
@@ -296,16 +296,16 @@ public final class CMIParticleEngine {
         double elapsed = 0;
         double acc = 0;
 
-        TrackingBurst(int emitId, int sourceIdx, int memberIdx, float light) {
+        TrackingBurst(int emitId, int localToken, int memberIdx, float light) {
             this.emitId = emitId;
-            this.sourceIdx = sourceIdx;
+            this.localToken = localToken;
             this.memberIdx = memberIdx;
             this.light = light;
         }
     }
 
     /** One-shot combat burst (damage-indicator hearts), drained next compute. */
-    private record CombatBurst(int emitId, int sourceIdx, int memberIdx, float light, int count) {
+    private record CombatBurst(int emitId, int localToken, int memberIdx, float light, int count) {
     }
 
     /** One-shot Hexcasting conjure spray (spawnStyle 4), drained next compute. */
@@ -421,6 +421,13 @@ public final class CMIParticleEngine {
      */
     private final ParticleReadbacks readbacks = new ParticleReadbacks();
     private long committedGeneration;
+    private ParticleHitRay submittedHitRay,lastHitRay;
+    private long lastHitGeneration=-1;
+    private ParticleHitRay currentHitRay(){
+        var mc=Minecraft.getInstance();if(mc.player==null)return null;var eye=mc.player.getEyePosition();var cam=mc.gameRenderer.getMainCamera();
+        var look=Vec3.directionFromRotation(cam.getXRot(),cam.getYRot());return new ParticleHitRay((float)eye.x,(float)eye.y,(float)eye.z,(float)look.x,(float)look.y,(float)look.z,(float)mc.player.entityInteractionRange());
+    }
+    private boolean hitRayCurrent(){return lastHitRay!=null&&committedGeneration-lastHitGeneration<=4&&lastHitRay.matches(currentHitRay());}
     private long lastCreationGeneration;
     private boolean poolMayBeAlive;
     private boolean frameIdle;
@@ -1261,9 +1268,9 @@ public final class CMIParticleEngine {
             this.emitCounts[entryCount] = cb.count();
             this.emitOrigins[entryCount] = Vec3.ZERO;
             this.emitTranslucent[entryCount] = false; // combat specs are OPAQUE
-            this.emitOriginRef[entryCount] = (float) (cb.sourceIdx() + 1);
+            this.emitOriginRef[entryCount] = Float.intBitsToFloat(cb.localToken());
             this.emitLight[entryCount] = cb.light();
-            this.emitMemberKey[entryCount] = cb.memberIdx() + 1; // 0 = non-storm source
+            this.emitMemberKey[entryCount] = cb.memberIdx()>=0?cb.memberIdx()+1:-1;
             this.emitRingSpawn[entryCount] = false;
             totalSpawn += cb.count();
             entryCount++;
@@ -1283,9 +1290,9 @@ public final class CMIParticleEngine {
                     this.emitCounts[entryCount] = n;
                     this.emitOrigins[entryCount] = Vec3.ZERO;
                     this.emitTranslucent[entryCount] = false;
-                    this.emitOriginRef[entryCount] = (float) (t.sourceIdx + 1);
+                    this.emitOriginRef[entryCount] = Float.intBitsToFloat(t.localToken);
                     this.emitLight[entryCount] = t.light;
-                    this.emitMemberKey[entryCount] = t.memberIdx + 1; // 0 = non-storm source
+                    this.emitMemberKey[entryCount] = t.memberIdx>=0?t.memberIdx+1:-1;
                     this.emitRingSpawn[entryCount] = false;
                     totalSpawn += n;
                     entryCount++;
@@ -1493,6 +1500,7 @@ public final class CMIParticleEngine {
         // the next enqueueDamage throw IndexOutOfBoundsException (and an
         // un-restored position would skip the header in the upload).
         if (this.dmgPending || this.dmgClearNext) {
+            this.gpu.damageApprovalCount(dmgPending?dmgCount:0);
             int bytes = this.dmgPending
                     ? ParticleBuffers.DAMAGE_HEADER_BYTES + this.dmgCount * ParticleBuffers.DAMAGE_ENTRY_BYTES
                     : ParticleBuffers.DAMAGE_HEADER_BYTES;
@@ -1528,8 +1536,11 @@ public final class CMIParticleEngine {
             this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING, this.lastGoodSlot);
             this.gpu.bindCounter(3, slot);
             this.gpu.bindIndirect(2);
+            this.gpu.bindPopulationRead(this.programs.prepareDispatch());
+            this.gpu.bindPopulationWrite(this.programs.prepareDispatch(),committedGeneration+1);
             ParticleDispatch.prepare(this.programs, 0);
             GL20.glUseProgram(this.programs.reset());
+            this.gpu.bindPopulationWrite(this.programs.reset(),committedGeneration+1);
             this.gpu.bindIndirect(2);
             this.gpu.bindCounter(3, slot);
             // reset.comp also re-arms the hit query to MISS -- EVERY binding a
@@ -1539,6 +1550,13 @@ public final class CMIParticleEngine {
             this.gpu.bindHit();
             GL43.glDispatchCompute(1, 1, 1);
             GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+
+            if(dmgPending&&dmgCount>0){
+                int validation=programs.damagePrepare();GL20.glUseProgram(validation);
+                gpu.bindParticleRead(0);gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,lastGoodSlot);
+                gpu.bindEmitters(5);gpu.bindDamage();gpu.bindIdentities(validation);gpu.bindPopulationRead(validation);
+                GL43.glDispatchCompute(dmgCount,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+            }
 
             // Boids spatial hash (storm swarms): built from the SAME committed
             // read pool + prev-counter slot update.comp consumes below. Gated to
@@ -1557,7 +1575,8 @@ public final class CMIParticleEngine {
                 this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING, this.lastGoodSlot);
                 this.gpu.bindEmitters(5);
                 this.gpu.bindGrid();
-                this.gpu.dispatch(0);
+                this.gpu.bindPopulationRead(this.programs.grid());
+                this.gpu.dispatch(ParticleBuffers.STORM_DISPATCH);
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             }
             ParticleDiagnostics.INSTANCE.mark("update");
@@ -1616,6 +1635,7 @@ public final class CMIParticleEngine {
             if (entryCount > 0) {
                 GL20.glUseProgram(this.programs.emit());
             this.gpu.bindIdentities(this.programs.emit());
+                this.gpu.bindPopulationRead(this.programs.emit());
                 this.gpu.bindParticleWrite(1);
                 // combat spawn styles resolve their originRef against the
                 // committed read pool (the target allay's live position)
@@ -1684,7 +1704,7 @@ public final class CMIParticleEngine {
             ParticleDispatch.prepare(this.programs, 1,packageStaged);
             int aliveEstimate = cap; // Draw counts and dispatch bounds live on the GPU.
             this.frameAliveEstimate = aliveEstimate; // draw-phase handoff
-            if (aliveEstimate > 0 || entryCount > 0) {
+            {
                 int sortUpper = cap;
 
                 // keygen: additive -> orderAdd[8], opaque sprites -> orderOpaque[15],
@@ -1692,6 +1712,7 @@ public final class CMIParticleEngine {
                 // ALPHA sprites -> sortData[7] upper partition (type bit 1)
                 int kg = this.programs.keygen();
                 GL20.glUseProgram(kg);
+                this.gpu.bindPopulationWrite(kg,committedGeneration+1);
                 this.gpu.bindParticleWrite(0);
                 this.gpu.bindIndirect(2);
                 this.gpu.bindCounter(3, slot);
@@ -1727,6 +1748,8 @@ public final class CMIParticleEngine {
                         | GL42.GL_COMMAND_BARRIER_BIT);
 
             ParticleDiagnostics.INSTANCE.mark("sort");
+                this.gpu.bindPopulationRead(this.programs.prepareDispatch(),true,committedGeneration+1);
+                this.gpu.bindPopulationWrite(this.programs.prepareDispatch(),committedGeneration+1);
                 ParticleDispatch.prepare(this.programs, 2);
                 if (sorted) {
                     // Actual visible item count and threshold selection are GPU-owned.
@@ -1778,6 +1801,7 @@ public final class CMIParticleEngine {
             // (nearest allay under the crosshair + its HP) rides this frame's
             // fence back to the CPU, so a click never stalls the pipeline.
             ParticleDiagnostics.INSTANCE.mark("queries");
+            submittedHitRay=null;
             dispatchHitQuery(camera, slot, cap);
 
             // 6c. Authority-client readback: storm members within melee reach
@@ -1831,6 +1855,7 @@ public final class CMIParticleEngine {
                     ParticleBuffers.SORTWRITE_BINDING,
                     finalPerm >= 0 ? finalPerm : this.gpu.sortBuffer(0));
             setIntUniform(this.programs.capture(), "uMetaSlot", this.gpu.metaSlotIndex());
+            setIntUniform(this.programs.capture(),"uHitResolved",1);
             GL43.glDispatchCompute(1, 1, 1);
             GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_COMMAND_BARRIER_BIT
                     | GL42.GL_TEXTURE_FETCH_BARRIER_BIT | GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
@@ -1889,6 +1914,7 @@ public final class CMIParticleEngine {
             this.dmgCount = 0;
             this.frameArmed = true;
             this.committedGeneration++;
+            this.gpu.commitPopulation(this.committedGeneration);
             if (createsParticles) {
                 this.lastCreationGeneration = this.committedGeneration;
                 this.poolMayBeAlive = true;
@@ -1897,6 +1923,7 @@ public final class CMIParticleEngine {
             if (snapshot != null) {
                 snapshot.generation = this.committedGeneration;
                 snapshot.epoch = this.gpu.identityEpoch();
+                snapshot.hitRay=submittedHitRay;
                 snapshot.positions = this.storm.positionSnapshotPending();
                 snapshot.waves = this.storm.waveSnapshotPending();
                 snapshot.gameTime = this.storm.positionSnapshotTime();
@@ -2259,12 +2286,17 @@ public final class CMIParticleEngine {
         this.gpu.bindCounter(3, slot);
         this.gpu.bindEmitters(5);
         this.gpu.bindHit();
+        this.gpu.bindPopulationRead(hg,true,committedGeneration+1);
         Vec3 eye = player.getEyePosition();
         Vec3 look = Vec3.directionFromRotation(camera.getXRot(), camera.getYRot());
+        submittedHitRay=new ParticleHitRay((float)eye.x,(float)eye.y,(float)eye.z,(float)look.x,(float)look.y,(float)look.z,(float)player.entityInteractionRange());
         setFloatUniform(hg, "uEye", (float) eye.x, (float) eye.y, (float) eye.z);
         setFloatUniform(hg, "uLook", (float) look.x, (float) look.y, (float) look.z);
         setFloatUniform(hg, "uReach", (float) player.entityInteractionRange());
-        this.gpu.dispatch(1);
+        setIntUniform(hg,"uHitResolve",0);
+        this.gpu.dispatch(ParticleBuffers.MODEL_DISPATCH);
+        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        setIntUniform(hg,"uHitResolve",1);this.gpu.dispatch(ParticleBuffers.MODEL_DISPATCH);
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
 
@@ -2303,7 +2335,7 @@ public final class CMIParticleEngine {
      */
     public void injectCrosshairPick(Minecraft mc) {
         if (!this.available() || !ClientConfig.particleEnabled
-                || this.storm.crosshairHitKey() == ParticleBuffers.HIT_MISS)
+                || this.storm.crosshairHitKey() == ParticleBuffers.HIT_MISS || !hitRayCurrent())
             return;
         if (mc.level == null || mc.player == null || mc.player.isSpectator()
                 || mc.getCameraEntity() != mc.player)
@@ -2379,12 +2411,13 @@ public final class CMIParticleEngine {
         if (!available() || !ClientConfig.particleEnabled)
             return false;
         int key = this.storm.hitKeySnapshot();
-        if (key == ParticleBuffers.HIT_MISS)
+        if (key == ParticleBuffers.HIT_MISS || !hitRayCurrent())
             return false;
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
         if (mc.level == null || player == null || player.isSpectator())
             return false;
+        if(mc.hitResult instanceof EntityHitResult entityHit&&entityHit.getEntity()!=proxyTarget)return false;
         int idx = key & ((1 << ParticleBuffers.HIT_KEY_INDEX_BITS) - 1);
         float t = (key >>> ParticleBuffers.HIT_KEY_INDEX_BITS) / 32.0F;
         if (idx >= this.gpu.capacity())
@@ -2400,7 +2433,9 @@ public final class CMIParticleEngine {
         if (clip.getType() != HitResult.Type.MISS
                 && clip.getLocation().distanceToSqr(eye) < eye.distanceToSqr(hitPos) - 1.0E-4)
             return false; // a block is closer than the allay: wall between
-        boolean attacked = syntheticAttack(mc, player, idx, hitPos, this.storm.hitMemberIdx());
+        int member=this.storm.hitMemberIdx(),token=this.storm.hitToken();
+        if(member<0&&token==0)return false;
+        boolean attacked = syntheticAttack(mc, player, idx, hitPos,member,token,this.storm.hitHp());
         if (attacked)
             // consume-once: never let one snapshot fire twice between fence
             // refreshes (two rapid clicks must not double-hit one allay)
@@ -2427,7 +2462,7 @@ public final class CMIParticleEngine {
      * there); no invulnerability frames (snapshot-paced hits are the boss
      * design).
      */
-    private boolean syntheticAttack(Minecraft mc, LocalPlayer player, int idx, Vec3 hitPos, int memberIdx) {
+    private boolean syntheticAttack(Minecraft mc, LocalPlayer player, int idx, Vec3 hitPos, int memberIdx,int token,float hpSnapshot) {
         Allay target = proxyFor(mc.level);
         ItemStack weapon = player.getWeaponItem();
         DamageSource source = player.damageSources().playerAttack(player);
@@ -2498,17 +2533,17 @@ public final class CMIParticleEngine {
         if (crit) {
             int cid = ensureCombatEmitter(CombatSpecs.CRIT);
             if (cid >= 0)
-                this.trackings.add(new TrackingBurst(cid, idx, memberIdx, light));
+                this.trackings.add(new TrackingBurst(cid, token, memberIdx, light));
         }
         if (magic) {
             int mid = ensureCombatEmitter(CombatSpecs.MAGIC);
             if (mid >= 0)
-                this.trackings.add(new TrackingBurst(mid, idx, memberIdx, light));
+                this.trackings.add(new TrackingBurst(mid, token, memberIdx, light));
         }
         if (hearts > 0) {
             int hid = ensureCombatEmitter(CombatSpecs.HEART);
             if (hid >= 0)
-                this.combatBursts.add(new CombatBurst(hid, idx, memberIdx, light, hearts));
+                this.combatBursts.add(new CombatBurst(hid, token, memberIdx, light, hearts));
         }
 
         // vanilla knockback (LivingEntity.knockback, airborne target: y is
@@ -2523,7 +2558,6 @@ public final class CMIParticleEngine {
 
         // target sound chosen from the SNAPSHOT hp (at most one frame old;
         // regen drift is a few tenths of an HP at worst)
-        float hpSnapshot = this.storm.hitHp();
         boolean lethal = hpSnapshot - total <= 0.0F;
         mc.level.playLocalSound(hitPos.x, hitPos.y, hitPos.z,
                 lethal ? SoundEvents.ALLAY_DEATH : SoundEvents.ALLAY_HURT,
@@ -2554,7 +2588,14 @@ public final class CMIParticleEngine {
                             hitPos.z - this.storm.center().z));
         } else {
             // legacy local-authority path (non-storm MODEL debug particles)
-            enqueueDamageEntry(idx, total, kbVecX, kbVecZ, light, 0f);
+            Vec3 look=Vec3.directionFromRotation(mc.gameRenderer.getMainCamera().getXRot(),mc.gameRenderer.getMainCamera().getYRot());
+            float reach=(float)player.entityInteractionRange();Vec3 eye=player.getEyePosition();
+            // Do not clamp to the proxy's quantized distance (it can lie just before the actual AABB).
+            HitResult nearer=mc.crosshairPickEntity==target?vanillaPickResult:mc.hitResult;
+            if(nearer!=null&&nearer.getType()!=HitResult.Type.MISS)reach=Math.min(reach,(float)eye.distanceTo(nearer.getLocation()));
+            var wall=mc.level.clip(new ClipContext(eye,eye.add(look.scale(reach)),ClipContext.Block.COLLIDER,ClipContext.Fluid.NONE,player));
+            if(wall.getType()!=HitResult.Type.MISS)reach=Math.min(reach,(float)eye.distanceTo(wall.getLocation()));
+            enqueueDamageEntry(idx,total,kbVecX,kbVecZ,light,0f,token,eye,look,reach);
         }
         player.swing(InteractionHand.MAIN_HAND);
         player.resetAttackStrengthTicker();
@@ -2674,6 +2715,9 @@ public final class CMIParticleEngine {
      * like the hit did.
      */
     public void enqueueDamageEntry(int key, float damage, float kbVecX, float kbVecZ, float light, float flags) {
+        enqueueDamageEntry(key,damage,kbVecX,kbVecZ,light,flags,0,null,null,0);
+    }
+    private void enqueueDamageEntry(int key,float damage,float kbVecX,float kbVecZ,float light,float flags,int token,Vec3 eye,Vec3 look,float reach){
         if (this.dmgCount >= ParticleBuffers.DAMAGE_QUEUE_CAP)
             return;
         if (this.dmgTmp.limit() != this.dmgTmp.capacity())
@@ -2685,8 +2729,11 @@ public final class CMIParticleEngine {
         this.dmgTmp.putFloat(off + 12, kbVecZ);
         this.dmgTmp.putFloat(off + 16, light);
         this.dmgTmp.putFloat(off + 20, flags);
-        this.dmgTmp.putInt(off + 24, this.storm.hitToken());
+        this.dmgTmp.putInt(off + 24, token);
         this.dmgTmp.putInt(off + 28, 0);
+        for(int word=8;word<16;word++)dmgTmp.putInt(off+word*4,0);
+        if(eye!=null){dmgTmp.putFloat(off+32,(float)eye.x).putFloat(off+36,(float)eye.y).putFloat(off+40,(float)eye.z).putFloat(off+44,reach);
+            dmgTmp.putFloat(off+48,(float)look.x).putFloat(off+52,(float)look.y).putFloat(off+56,(float)look.z).putInt(off+60,1);}
         this.dmgCount++;
         this.dmgPending = true;
     }
@@ -2708,6 +2755,7 @@ public final class CMIParticleEngine {
                 // Only an empty snapshot covering every subsequent creation proves idle.
                 this.poolMayBeAlive = this.liveDisplay > 0 || snapshot.generation < this.lastCreationGeneration;
                 int member = data.getInt(24);
+                lastHitRay=snapshot.hitRay;lastHitGeneration=snapshot.generation;
                 // Local MODEL damage uses the stable token; pool indices are never reused as identity.
                 this.storm.onHitReadback(data.getInt(16), data.getInt(20), member, data.getInt(28));
                 if (snapshot.positions) this.storm.acceptPositionSnapshot(snapshot.gameTime,
@@ -2828,17 +2876,17 @@ public final class CMIParticleEngine {
         if (crit) {
             int cid = ensureCombatEmitter(CombatSpecs.CRIT);
             if (cid >= 0)
-                this.trackings.add(new TrackingBurst(cid, -1, memberIdx, light));
+                this.trackings.add(new TrackingBurst(cid, 0, memberIdx, light));
         }
         if (magic) {
             int mid = ensureCombatEmitter(CombatSpecs.MAGIC);
             if (mid >= 0)
-                this.trackings.add(new TrackingBurst(mid, -1, memberIdx, light));
+                this.trackings.add(new TrackingBurst(mid, 0, memberIdx, light));
         }
         if (hearts > 0) {
             int hid = ensureCombatEmitter(CombatSpecs.HEART);
             if (hid >= 0)
-                this.combatBursts.add(new CombatBurst(hid, -1, memberIdx, light, hearts));
+                this.combatBursts.add(new CombatBurst(hid, 0, memberIdx, light, hearts));
         }
     }
 

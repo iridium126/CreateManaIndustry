@@ -54,7 +54,7 @@ layout(std430, binding = BIND_PREV_COUNTER) readonly buffer PrevCounterBuf { uin
 //     hp to 0 unconditionally. Entries landing on a corpse are idempotent.
 layout(std430, binding = BIND_DAMAGE) readonly buffer DamageBuf {
     uvec4 header;      // x = entry count (y..z unused)
-    float entries[];   // stride 6: (key, damage, kbVecX, kbVecZ, lightPacked, flags)
+    float entries[];   // 16 words: payload + stable token/validation + click ray
 } damageQ;
 
 layout(binding = 0) uniform sampler3D uCollision;

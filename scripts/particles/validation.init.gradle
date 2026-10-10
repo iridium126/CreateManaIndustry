@@ -35,6 +35,13 @@ allprojects {
             if (project.hasProperty('modelIndexProbe')) args '--index-probe'
             workingDir = project.projectDir
         }
+        tasks.register('validateModelPopulationGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/ModelPopulationGpuValidation.java'
+            if (project.hasProperty('modelPopulationBenchmark')) args '--benchmark'
+            workingDir = project.projectDir
+        }
         tasks.register('validatePackageGpu', JavaExec) {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin

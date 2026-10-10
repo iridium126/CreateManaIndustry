@@ -73,6 +73,7 @@ uniform vec4 uFrustum[6]; // normalized planes, distances vs camera-relative poi
 #pragma cmi_include chunks/model_carrier.glsl
 
 #pragma cmi_include chunks/frustum_culling.glsl
+#pragma cmi_include chunks/population_write.glsl
 
 bool sphereVisible(vec3 rel, float r) {
     for (int i = 0; i < 6; i++) {
@@ -114,6 +115,8 @@ void main() {
     // header's storm slot 18.x selects the constant 1.0 multiplier for them.
     float matId = emitters.u[hb + 7u].x;
     bool storm = emitters.u[hb + 18u].x > 0.5;
+    // Capture ALL MODEL records before camera/distance culling, including corpses.
+    if(matId>=1.5&&matId<2.5)cmiPopulationRecord(g,storm);
     float keySize = max(emitters.u[hb + 5u].z, emitters.u[hb + 5u].w) * (storm ? 1.0 : p0.w);
     float radius = matId >= 1.5 && matId < 2.5 ? keySize * 1.5 : keySize;
 

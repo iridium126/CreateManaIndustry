@@ -14,6 +14,7 @@
 // No per-frame clearing of the next[] half is needed -- every traversed slot
 // was written earlier in THIS dispatch (heads were zeroed from the CPU).
 layout(local_size_x = 64) in;
+#pragma cmi_include chunks/population_read.glsl
 
 const float CELL_SIZE = 2.5;
 
@@ -26,9 +27,9 @@ layout(std430, binding = BIND_GRID) buffer GridBuf {
 } grid;
 
 void main() {
-    uint idx = gl_GlobalInvocationID.x;
-    if (idx >= min(prevCounter.live, uint(readBuf.data.length()) / VEC4_PER_PARTICLE))
-        return;
+    uint liveCount=min(prevCounter.live,uint(readBuf.data.length())/VEC4_PER_PARTICLE),rank=gl_GlobalInvocationID.x;
+    if(rank>=cmiPopulationCount(liveCount,true))return;
+    uint idx=cmiPopulationSlot(rank,liveCount,true);if(idx>=liveCount)return;
 
     uint base = idx * 4u;
     uint eid = floatBitsToUint(readBuf.data[base + 3u].w);

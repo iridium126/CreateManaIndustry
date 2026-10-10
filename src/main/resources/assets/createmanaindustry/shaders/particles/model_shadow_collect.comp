@@ -1,4 +1,5 @@
 layout(local_size_x=64) in;
+#pragma cmi_include chunks/population_read.glsl
 layout(std430,binding=0) readonly buffer Pool {vec4 particles[];};
 layout(std430,binding=1) readonly buffer Emitters {vec4 headers[];};
 layout(std430,binding=2) readonly buffer Counter {uint alive;};
@@ -13,7 +14,8 @@ uniform vec4 uFrustum[13];uniform uint uFrustumCount;
 #pragma cmi_include chunks/model_size.glsl
 #pragma cmi_include chunks/model_carrier.glsl
 void main(){
-    uint i=gl_GlobalInvocationID.x;if(i>=min(alive,uCapacity))return;
+    uint liveCount=min(alive,uCapacity),rank=gl_GlobalInvocationID.x;if(rank>=cmiPopulationCount(liveCount,false))return;
+    uint i=cmiPopulationSlot(rank,liveCount,false);if(i>=liveCount)return;
     vec4 p0=particles[4u*i],p3=particles[4u*i+3u];uint header=floatBitsToUint(p3.w)*VEC4_PER_EMITTER;
     if(header+18u>=uint(headers.length()))return;
     float material=headers[header+7u].x;if(material<1.5||material>=2.5)return;

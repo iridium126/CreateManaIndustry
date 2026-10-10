@@ -1,0 +1,9 @@
+Java: 573 tests, zero failures/errors/skips.
+Final generic particle GPU: 89146 assertions; population/hit/cosmetics/grid/readback: 1015 assertions.
+Package GPU: 14675334; package Iris: 26733; MODEL Iris: 4133200; shared Hex Iris: 5290 assertions.
+Final delivery build: BUILD SUCCESSFUL; embedded payload resources verified.
+Role maintenance + shadow benchmark raw data includes fixed fixture submission/error checks; not a whole Minecraft frame.
+Default role storage: 3145792 bytes, with GPU dense/overflow/generation-mismatch fallback.
+All MODEL HP/regeneration/damage/corpse/permanent lifecycle preserved.
+In-game reproduction/visual acceptance belongs to user and remains pending.
+JAR SHA256: 8CE468A5D775C1A12EC587ED3F83A965E438265178F33591612F8B876851AED2

@@ -198,6 +198,9 @@ public class HexPatternGpuValidation {
         gpu.beginComputeFrame();int scratch=gpu.sortBuffer(0);check(scratch!=committed,"compute overwrote committed sort storage");
         gpu.restoreCommittedFrame();check(gpu.sortBuffer(0)==committed,"abort published scratch render buffers");
         gpu.beginComputeFrame();gpu.swap();gpu.restoreCommittedFrame();check(gpu.sortBuffer(0)==scratch,"commit did not promote render storage");
+        gpu.commitPopulation(10);int role=gpu.populationBufferId(10);check(role>0,"role publication missing");
+        gpu.beginComputeFrame();gpu.restoreCommittedFrame();check(gpu.populationBufferId(10)==role,"abort discarded committed role index");
+        gpu.beginComputeFrame();gpu.swap();check(gpu.populationBufferId(10)==0,"pool swap exposed old-generation roles");gpu.commitPopulation(11);check(gpu.populationBufferId(11)>0,"next role generation did not publish");
         Class<?> ringClass=Class.forName("com.iridium126.createmanaindustry.client.particles.engine.ParticleReadbacks");
         Constructor<?> ctor=ringClass.getDeclaredConstructor();ctor.setAccessible(true);Object ring=ctor.newInstance();
         Object[] slots=new Object[4];

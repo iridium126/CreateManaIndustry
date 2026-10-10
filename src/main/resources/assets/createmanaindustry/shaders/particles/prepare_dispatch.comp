@@ -3,7 +3,9 @@ layout(local_size_x = 1) in;
 layout(std430, binding = BIND_PREV_COUNTER) readonly buffer Previous { uint live; } previous;
 layout(std430, binding = BIND_COUNTER) buffer Current { uint requested; uint spare; uint census; uint items; } current;
 layout(std430, binding = BIND_INDIRECT) buffer Draw { uint cmd[INDIRECT_UINTS]; } draw;
-layout(std430, binding = BIND_DISPATCH) writeonly buffer Dispatch { uint args[9]; } dispatchOut;
+layout(std430, binding = BIND_DISPATCH) writeonly buffer Dispatch { uint args[]; } dispatchOut;
+#pragma cmi_include chunks/population_read.glsl
+#pragma cmi_include chunks/population_write.glsl
 uniform uint uCapacity;
 uniform uint uPhase;
 uniform uint uPackageStaged;
@@ -16,10 +18,16 @@ void main() {
     } else {
         n = min(current.items, uCapacity);
         draw.cmd[IDX_CNT_CARRIER] = min(draw.cmd[IDX_CNT_CARRIER], CARRIER_CAP);
+        if(uPopulationWriteEnabled){populationWrite.live=min(current.requested,uCapacity);populationWrite.valid=1u;memoryBarrierBuffer();}
     }
     uint base = uPhase * 3u;
     uint blockSize = uPhase == 2u && n >= SORT_GROUP_THRESHOLD ? 1024u : 64u;
     dispatchOut.args[base] = (n + blockSize - 1u) / blockSize;
     dispatchOut.args[base + 1u] = 1u;
     dispatchOut.args[base + 2u] = 1u;
+    if(dispatchOut.args.length()>=15&&(uPhase==0u||uPhase==2u)){
+        uint liveCount=uPhase==0u?min(previous.live,uCapacity):min(current.requested,uCapacity);
+        dispatchOut.args[9]=(cmiPopulationCount(liveCount,false)+63u)/64u;dispatchOut.args[10]=1u;dispatchOut.args[11]=1u;
+        dispatchOut.args[12]=(cmiPopulationCount(liveCount,true)+63u)/64u;dispatchOut.args[13]=1u;dispatchOut.args[14]=1u;
+    }
 }

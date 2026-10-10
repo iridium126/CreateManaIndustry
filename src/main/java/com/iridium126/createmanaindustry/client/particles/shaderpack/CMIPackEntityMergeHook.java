@@ -176,7 +176,7 @@ public final class CMIPackEntityMergeHook {
                 engine.addExternalGpuMs(SHADOW_PREP_TIMING.poll());
                 SHADOW_PREP_TIMING.begin(ClientConfig.particleAutoThrottle||com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled());
                 try{var p=camera.getPosition();MODEL_SHADOW.prepare(gpu.particleReadBufferId(),gpu.emitterBufferId(),engine.committedCounterBuffer(),SHADOW_CULLING,
-                        (float)p.x,(float)p.y,(float)p.z,EntityType.ALLAY.getWidth(),EntityType.ALLAY.getHeight(),(float)net.minecraft.world.entity.Entity.getViewScale(),engine.timeSec(),engine.stormWaveUniform(),engine.stormWaveTargetUniform(),engine.stormWaveTierUniform());}
+                        (float)p.x,(float)p.y,(float)p.z,EntityType.ALLAY.getWidth(),EntityType.ALLAY.getHeight(),(float)net.minecraft.world.entity.Entity.getViewScale(),engine.timeSec(),engine.stormWaveUniform(),engine.stormWaveTargetUniform(),engine.stormWaveTierUniform(),gpu.populationBufferId(engine.currentGeneration()),engine.currentGeneration());}
                 finally{SHADOW_PREP_TIMING.end();}
                 gpu.bindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleReadBufferId(),MODEL_SHADOW.instances());gpu.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,MODEL_SHADOW.commands());
                 ShaderInstance shader=COMPILER.shadowShader();boolean applied=false;

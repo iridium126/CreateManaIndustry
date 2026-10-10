@@ -9,6 +9,7 @@ import org.lwjgl.system.MemoryStack;
 public final class ModelShadowGpu implements AutoCloseable {
     private final int capacity,meta;private int instances,commands;private final int[] programs=new int[3];
     private final int[][] locations=new int[3][14];private boolean closed;
+    private final int[][] populationLocations=new int[3][2];
     private static final String[] NAMES={"uCapacity","uCarrierBase","uNativeSize","uEntityViewScale","uCamera","uFrustum","uFrustumCount","uCullBounds","uTimeSec","uWave","uWaveTarget","uWaveTier","uMetaSlot","uCutout"};
     public ModelShadowGpu(int capacity,Function<String,String> source){
         if(capacity<1)throw new IllegalArgumentException("Model shadow capacity");this.capacity=capacity;meta=capacity+ParticleBuffers.CARRIER_CAP;
@@ -16,6 +17,7 @@ public final class ModelShadowGpu implements AutoCloseable {
             instances=allocate((long)(meta+1)*8);commands=allocate((ParticleBuffers.INDIRECT_UINTS+4L)*4);
             for(int p=0;p<3;p++){
                 programs[p]=compile(ParticlePrograms.commonPrelude()+source.apply("model_shadow_"+new String[]{"prepare","collect","finish"}[p]+".comp"));
+                populationLocations[p][0]=GL20.glGetUniformLocation(programs[p],"uPopulationReadEnabled");populationLocations[p][1]=GL20.glGetUniformLocation(programs[p],"uPopulationGeneration");
                 for(int i=0;i<NAMES.length;i++)locations[p][i]=GL20.glGetUniformLocation(programs[p],NAMES[i]);
                 GL41.glProgramUniform1ui(programs[p],locations[p][0],capacity);GL41.glProgramUniform1ui(programs[p],locations[p][1],capacity);GL41.glProgramUniform1ui(programs[p],locations[p][12],meta);
             }
@@ -33,7 +35,13 @@ public final class ModelShadowGpu implements AutoCloseable {
         program=GL20.glCreateProgram();GL20.glAttachShader(program,shader);GL20.glLinkProgram(program);if(GL20.glGetProgrami(program,GL20.GL_LINK_STATUS)==0)throw new IllegalStateException(GL20.glGetProgramInfoLog(program));return program;
         }catch(RuntimeException error){if(program!=0)GL20.glDeleteProgram(program);throw error;}finally{GL20.glDeleteShader(shader);}}
     public void prepare(int pool,int emitters,int counter,PackageDrawCulling culling,float x,float y,float z,float width,float height,float viewScale,float time,float[] waves,float[] targets,float[] tiers){
+        prepare(pool,emitters,counter,culling,x,y,z,width,height,viewScale,time,waves,targets,tiers,0,0);
+    }
+    public void prepare(int pool,int emitters,int counter,PackageDrawCulling culling,float x,float y,float z,float width,float height,float viewScale,float time,float[] waves,float[] targets,float[] tiers,int population,long generation){
         if(closed)throw new IllegalStateException("Model shadows closed");if(culling.count<0||culling.count>13)throw new IllegalArgumentException("Shadow planes");
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.POPULATION_READ_BB,population);
+        for(int i=0;i<programs.length;i++){if(populationLocations[i][0]>=0)GL41.glProgramUniform1i(programs[i],populationLocations[i][0],population>0?1:0);
+            if(populationLocations[i][1]>=0)GL41.glProgramUniform2ui(programs[i],populationLocations[i][1],(int)generation,(int)(generation>>>32));}
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT);
         try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(pool,emitters,counter,instances,commands));}
         GL20.glUseProgram(programs[0]);GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT);
