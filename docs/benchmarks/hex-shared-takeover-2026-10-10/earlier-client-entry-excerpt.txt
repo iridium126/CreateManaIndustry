@@ -1,0 +1,11 @@
+[18:20:31] [Render thread/DEBUG] [mixin/]: Mixing hexcasting.HexWorldFrameMixin from createmanaindustry.mixins.json into net.minecraft.client.renderer.GameRenderer
+[18:20:31] [Render thread/DEBUG] [mixin/]: Mixing hexcasting.HexEntityContextMixin from createmanaindustry.mixins.json into net.minecraft.client.renderer.LevelRenderer
+[18:20:37] [Render thread/DEBUG] [mixin/]: Mixing hexcasting.HexPlayerRenderContextMixin from createmanaindustry.mixins.json into net.minecraft.client.renderer.entity.player.PlayerRenderer
+[18:20:38] [Render thread/DEBUG] [mixin/]: Mixing iris.HexShadowRenderMixin from createmanaindustry.mixins.json into net.irisshaders.iris.shadows.ShadowRenderer
+[18:38:35] [Render thread/DEBUG] [Veil/]: Shader cmi_hex_shadow detected uniform: vec3 cameraPosition
+[18:38:35] [Render thread/DEBUG] [Veil/]: Shader cmi_hex_shadow detected sampler: samplerBuffer cmi_HexInstances
+[18:38:35] [Render thread/DEBUG] [Veil/]: Shader cmi_hex_shadow detected sampler: samplerBuffer cmi_HexPoints
+[18:38:35] [Render thread/DEBUG] [Veil/]: Shader cmi_hex_shadow detected uniform: mat4 shadowModelView
+[18:38:35] [Render thread/DEBUG] [Veil/]: Shader cmi_hex_shadow detected uniform: mat4 shadowModelViewInverse
+[18:38:35] [Render thread/DEBUG] [Veil/]: Shader cmi_hex_shadow detected sampler: sampler2D tex
+[18:39:33] [Render thread/DEBUG] [mixin/]: Mixing hexcasting.HexSpellUiMixin from createmanaindustry.mixins.json into at.petrak.hexcasting.client.gui.GuiSpellcasting

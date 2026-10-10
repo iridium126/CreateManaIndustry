@@ -1,0 +1,13 @@
+Code base: c3e752e with workspace implementation changes; no commit/staging performed.
+Java: 571 tests, 0 failures/errors/skips.
+General particle GPU: 135778 assertions.
+Package GPU: 14675334 assertions.
+Package Iris GPU: 26733 assertions.
+MODEL shadow Iris GPU: 4133200 assertions.
+Final shared Hex Iris GPU: 5290 assertions (includes blend/overlap framebuffer and state fixtures).
+Shared Hex simple + long benchmark: 215582 assertions; all requested loads prepared without fallback.
+Final delivery build and shared Hex Iris validation: BUILD SUCCESSFUL.
+hex-final-validation.log.gz: all Java/particle/package/MODEL/shared-Iris checks passed; subsequent benchmark launcher failed on repeated render-thread initialization. Fixed in validation script and rerun successfully in hex-final-benchmark.log.gz.
+Earlier client excerpt predates final shadow timing/state fixes and is not final visual acceptance.
+In-game visual acceptance: assigned to user; pending.
+JAR SHA256: C9199934FA48B71A3A4030451A1A7EA4D13BB187694455A1AACAA474E6D140CF

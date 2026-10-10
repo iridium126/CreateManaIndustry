@@ -79,11 +79,12 @@ public final class ParticleDiagnostics {
         com.iridium126.createmanaindustry.client.particles.packages.PackageCpuDiagnostics.frame();
     }
     public String report() {
-        if(samples==0)return "Particle profiling: " + (enabled?"collecting":"off") + "; /cmi particle profile on";
+        String hex=com.iridium126.createmanaindustry.CreateManaIndustry.HEX_ACTIVE?"\n"+com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.status():"";
+        if(samples==0)return "Particle profiling: " + (enabled?"collecting":"off") + "; /cmi particle profile on"+hex;
         double[] sorted=Arrays.copyOf(cpu,samples);Arrays.sort(sorted);
         double meanAllocation=Arrays.stream(allocations,0,samples).average().orElse(0);
         return String.format(Locale.ROOT,"CPU submit p50=%.3f ms p95=%.3f ms; allocation=%.0f B/frame; tracked uploads=%d B; tracked GL calls=%d (draw submissions=%d); readback lag=%d generations; GPU latest=%s",
-                sorted[samples/2],sorted[Math.min(samples-1,(int)(samples*.95))],meanAllocation,lastUploads,lastCalls,lastDraws,lastReadbackLag,gpu)+"\n"+com.iridium126.createmanaindustry.client.particles.packages.PackageCpuDiagnostics.report();
+                sorted[samples/2],sorted[Math.min(samples-1,(int)(samples*.95))],meanAllocation,lastUploads,lastCalls,lastDraws,lastReadbackLag,gpu)+"\n"+com.iridium126.createmanaindustry.client.particles.packages.PackageCpuDiagnostics.report()+hex;
     }
     public void close() {
         for(Frame f:frames) {

@@ -754,6 +754,7 @@ public final class CMIParticleEngine {
 
     /** Called on resource reload so shaders recompile next frame. */
     public void requestProgramRebuild() {
+        if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.requestReload();
         if(CreateManaIndustry.IRISVEIL_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.invalidateShadow();
         if(CreateManaIndustry.IRIS_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.reload();
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Package resources reloaded",true);
@@ -765,6 +766,7 @@ public final class CMIParticleEngine {
 
     /** Frees all GPU resources on client shutdown. Safe when never initialised. */
     public void close() {
+        if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.close();
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle engine closed",false);
         try {
             if(CreateManaIndustry.IRIS_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.close();
@@ -1424,18 +1426,7 @@ public final class CMIParticleEngine {
         // selects its meaning per command, so a dropped entry here would pair
         // surviving commands with stale slots' metadata (wrong member identity,
         // blacked-out combat light, hex flags leaking across types).
-        if (CreateManaIndustry.HEX_ACTIVE) {
-            this.hexPatternBuffers.ensure();
-            if (this.hexPatterns == null)
-                this.hexPatterns = new HexPatternRuntime(this.hexPatternBuffers);
-        }
-        if (this.hexPatterns != null) {
-            int patternBudget = cap;
-            this.hexEmitter = ensureEmitter(this.hexPatternSpec);
-            this.hexSlots = this.hexPatterns.prepare(deltaTracker, camera, patternBudget,
-                    ClientConfig.hexPatternRedirect && this.programs.hexReady() && this.hexEmitter >= 0);
-            this.hexCount = this.hexPatterns.count();
-        }
+        this.hexCount=this.hexSlots=0; // Orbit/UI instances now belong to the independent Hex backend.
         if(this.packageParticles!=null && this.packageParticles.hasInput())
             this.packageEmitter=ensureEmitter(this.packageSpec);
         int free = Math.max(0, cap - this.hexCount);
@@ -1585,9 +1576,6 @@ public final class CMIParticleEngine {
                 this.gpu.dispatch(0);
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             }
-
-            if (this.hexPatterns != null)
-                this.hexPatternBuffers.begin();
             ParticleDiagnostics.INSTANCE.mark("update");
             GL20.glUseProgram(this.programs.update());
             this.gpu.bindIdentities(this.programs.update());
@@ -1641,14 +1629,6 @@ public final class CMIParticleEngine {
             // untouched storm members would survive on a never-rebuilt grid.
 
             ParticleDiagnostics.INSTANCE.mark("emit");
-            if (this.hexCount > 0 && this.programs.hexReady()) {
-                int hp = this.programs.hexReconcile();
-                GL20.glUseProgram(hp);
-
-                setUIntUniform(hp, "uEmitter", this.hexEmitter);
-                GL43.glDispatchCompute((this.hexSlots + 63) / 64, 1, 1);
-                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-            }
             if (entryCount > 0) {
                 GL20.glUseProgram(this.programs.emit());
             this.gpu.bindIdentities(this.programs.emit());
@@ -1809,15 +1789,6 @@ public final class CMIParticleEngine {
                 }
             }
             this.frameFinalPerm = finalPerm; // draw-phase handoff (-1 = fast path)
-            if (this.hexCount > 0 && finalPerm >= 0 && this.programs.hexReady()) {
-                GL20.glUseProgram(this.programs.hexPrepare());
-                this.gpu.bindParticleWrite(ParticleBuffers.PARTICLE_BB_WRITE);
-                this.gpu.bindSort(ParticleBuffers.SORTREAD_BINDING, finalPerm);
-                this.hexPatternBuffers.bind();
-                GL43.glDispatchCompute(this.hexCount, 1, 1);
-                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_COMMAND_BARRIER_BIT);
-            }
-
             // 6b. Continuous crosshair hit query (player melee targeting): one
             // tiny dispatch over the freshly written pool; the 8-byte result
             // (nearest allay under the crosshair + its HP) rides this frame's
@@ -2044,9 +2015,9 @@ public final class CMIParticleEngine {
                     if (CMIParticleEngine.this.frameSorted) {
                         ParticleDiagnostics.INSTANCE.mark("draw_alpha");
                         drawPass(2, view, projectionMatrix, camera);
-                        ParticleDiagnostics.INSTANCE.mark("draw_hex");
-                        drawHexPatterns(view, projectionMatrix, camera);
                     }
+                    ParticleDiagnostics.INSTANCE.mark("draw_hex");
+                    if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.drawWorld();
                     ParticleDiagnostics.INSTANCE.mark("draw_additive");
                     drawPass(0, view, projectionMatrix, camera);
                     ParticleDiagnostics.INSTANCE.mark("draw_cleanup");
@@ -2930,6 +2901,7 @@ public final class CMIParticleEngine {
      * so freshly arrived storm state of the new level is never wiped by this.
      */
     public void onLevelChanged() {
+        if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.requestReload();
         if (this.hexPatterns != null) this.hexPatterns.reset();
         this.hexCount = this.hexSlots = 0;
         if (this.initialized) {

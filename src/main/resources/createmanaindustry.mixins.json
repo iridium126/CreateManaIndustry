@@ -129,7 +129,12 @@
     "iris.MixinProgramDirectives",
     "hexcasting.HexSprayRedirectMixin",
     "hexcasting.HexConjureParticleRedirectMixin",
-    "hexcasting.HexPatternRedirectMixin"
+    "hexcasting.HexPatternRedirectMixin",
+    "hexcasting.HexWorldFrameMixin",
+    "hexcasting.HexEntityContextMixin",
+    "hexcasting.HexPlayerRenderContextMixin",
+    "hexcasting.HexSpellUiMixin",
+    "iris.HexShadowRenderMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -40,7 +40,7 @@ public class MixinProgramSamplers {
         Set<Integer> units = new HashSet<>(reservedTextureUnits);
         // MERGED_SAMPLER_UNIT_BASE is a compile-time constant, so referencing it
         // here neither loads the compiler class nor risks drift between the two.
-        for (int i = 0; i < (CreateManaIndustry.IRISVEIL_ACTIVE ? 4 : 3); i++)
+        for (int i = 0; i < (CreateManaIndustry.IRISVEIL_ACTIVE ? 4 : PackageSamplerReservation.units()); i++)
             units.add(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE + i);
         return units;
     }

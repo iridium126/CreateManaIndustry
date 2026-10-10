@@ -8,11 +8,11 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Cancel only when this world's current compute generation accepted the whole stack. */
+/** Only the matching world/shadow/preview pass may replace a native casting-stack call. */
 @Mixin(targets = "at.petrak.hexcasting.api.client.ClientRenderHelper", remap = false)
 public abstract class HexPatternRedirectMixin {
     @Inject(method = "renderCastingStack", at = @At("HEAD"), cancellable = true)
     private static void cmi$gpuPatterns(PoseStack pose, Player player, float partialTick, CallbackInfo ci) {
-        if (CMIParticleEngine.INSTANCE.redirectsHexPatterns(player)) ci.cancel();
+        if (com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.castingStack(pose,player,partialTick)) ci.cancel();
     }
 }

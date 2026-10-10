@@ -12,6 +12,21 @@ allprojects {
             if (project.hasProperty('particleBenchmark')) args '--benchmark'
             workingDir = project.projectDir
         }
+        tasks.register('compileHexNativeHarness', JavaCompile) {
+            dependsOn tasks.named('classes')
+            classpath = configurations.compileClasspath
+            source = fileTree('scripts/particles/hex-harness') { include '**/*.java' }
+            destinationDirectory = layout.buildDirectory.dir('hex-native-harness')
+            options.release = 21
+        }
+        tasks.register('validateHexSharedGpu', JavaExec) {
+            dependsOn tasks.named('classes'), 'compileHexNativeHarness'
+            classpath = files(layout.buildDirectory.dir('hex-native-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/HexSharedGpuValidation.java'
+            if (project.hasProperty('hexSharedBenchmark')) args '--benchmark'
+            if (project.hasProperty('hexSharedLongBenchmark')) args '--long-benchmark'
+            workingDir = project.projectDir
+        }
         tasks.register('validateModelShadowGpu', JavaExec) {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
@@ -117,6 +132,15 @@ allprojects {
             mainClass = 'scripts/particles/PackageGpuValidation.java'
             args '--shaderpack-only', '--iris-transform'
             if (project.hasProperty('packageGlDebug')) args '--gl-debug'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateHexSharedIrisGpu', JavaExec) {
+            dependsOn tasks.named('classes'), tasks.named('extractPackageIrisTransformer'), 'compilePackageIrisHarness', 'compileHexNativeHarness'
+            classpath = files(layout.buildDirectory.dir('hex-native-harness'), layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter {
+                !it.name.startsWith('glsl-transformer-')
+            } + files(packageIrisTransformer)
+            mainClass = 'scripts/particles/HexSharedGpuValidation.java'
+            args '--iris'
             workingDir = project.projectDir
         }
         tasks.register('validateModelShadowIrisGpu', JavaExec) {

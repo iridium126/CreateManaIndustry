@@ -151,11 +151,13 @@ public class CreateManaIndustryClient {
         // deliberately no second ALLVR terrain draw here; Iris therefore sees
         // the same pass/framebuffer/material path as ordinary Sodium sections.
         if (stage == RenderLevelStageEvent.Stage.AFTER_SKY) {
+            if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.prepareWorld();
             CMIParticleEngine.INSTANCE.beginFrame(event.getCamera(),
                     event.getModelViewMatrix(), event.getProjectionMatrix(), event.getPartialTick());
         } else if (stage == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             CMIParticleEngine.INSTANCE.endFrame(event.getCamera(),
                     event.getModelViewMatrix(), event.getProjectionMatrix());
+            if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.drawWorld();
         }
     }
 

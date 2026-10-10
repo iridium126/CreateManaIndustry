@@ -1,0 +1,30 @@
+layout(local_size_x=64) in;
+layout(std430,binding=0) readonly buffer Sources {vec4 v[];} hexResource;
+layout(std430,binding=1) buffer Points {vec4 p[];};
+struct Job {uvec4 range;dvec2 clock;vec4 style;uvec4 nodes;vec4 tail;};
+layout(std430,binding=2) readonly buffer Jobs {Job jobs[];};
+#pragma cmi_include chunks/hex_noise.glsl
+void main(){
+    Job job=jobs[gl_WorkGroupID.x];uint lane=gl_LocalInvocationID.x,n=job.range.y,base=job.range.z;
+    for(uint i=lane;i<n;i+=64u){vec4 ends=hexResource.v[job.range.x+2u*i],spec=hexResource.v[job.range.x+2u*i+1u];
+        if(job.nodes.y!=0u&&i>=job.nodes.z){
+            if(spec.w>0.0){ends.xy=job.tail.xy;ends.zw=job.tail.zw;
+                if(job.nodes.w!=0u)ends.xy+=(ends.zw-ends.xy)*uintBitsToFloat(job.nodes.w);
+                spec.z=length(ends.zw-ends.xy)/job.style.y*job.style.w;
+            }else ends=job.tail.zwzw;
+        }
+        if(job.nodes.y!=0u&&job.nodes.w!=0u&&i+1u==job.nodes.z)ends=vec4(job.tail.xy+(job.tail.zw-job.tail.xy)*uintBitsToFloat(job.nodes.w),job.tail.xy+(job.tail.zw-job.tail.xy)*uintBitsToFloat(job.nodes.w));
+        vec2 pos=ends.xy+(ends.zw-ends.xy)*spec.y;
+        if(spec.w>0.0){double progress=double(spec.w)/double(job.style.y+1.0);
+            double minor=hexNoise(dvec3(double(spec.x),double(spec.w),double(job.style.z)))*double(job.style.x);
+            float angle=float(3.0lf*hexNoise(dvec3(double(spec.x)+progress+minor-job.clock.y,1337,job.clock.x))*6.283185307179586lf);
+            float radius=float(hexNoise(dvec3(double(spec.x)+progress-job.clock.y,69420,job.clock.x))*double(spec.z)*min(1.0lf,8.0lf*(.5lf-abs(.5lf-progress))));
+            pos+=radius*vec2(cos(angle),sin(angle));}
+        p[base+i]=vec4(pos,0,0);
+    }
+    for(uint i=lane;i<job.range.w;i+=64u)p[base+n+i]=hexResource.v[job.nodes.x+i];
+    memoryBarrierBuffer();barrier();
+    for(uint i=lane+1u;i+1u<n;i+=64u){vec2 a=p[base+i].xy-p[base+i-1u].xy,b=p[base+i+1u].xy-p[base+i].xy;
+        float angle=dot(a,a)*dot(b,b)<1e-12?0.0:atan(a.x*b.y-a.y*b.x,dot(a,b));
+        p[base+i].zw=vec2(angle,sin(angle)/(1.0+cos(angle)));}
+}

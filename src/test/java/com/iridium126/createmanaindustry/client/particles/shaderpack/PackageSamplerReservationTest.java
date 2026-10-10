@@ -4,6 +4,12 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PackageSamplerReservationTest {
+    @Test void hexAndPackageReservationsRestoreTheirOwnCounts(){
+        assertEquals(0,PackageSamplerReservation.units());try(var hex=PackageSamplerReservation.open(2)){
+            assertEquals(2,PackageSamplerReservation.units());try(var packages=PackageSamplerReservation.open()){assertEquals(3,PackageSamplerReservation.units());try(var smaller=PackageSamplerReservation.open(2)){assertEquals(3,PackageSamplerReservation.units());}}
+            assertEquals(2,PackageSamplerReservation.units());
+        }assertEquals(0,PackageSamplerReservation.units());assertThrows(IllegalArgumentException.class,()->PackageSamplerReservation.open(0));
+    }
     @Test void nestedCompileAndFailureRestoreNativeSamplerBudget() {
         assertFalse(PackageSamplerReservation.active());
         try(var outer=PackageSamplerReservation.open()) {
