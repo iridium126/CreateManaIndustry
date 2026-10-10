@@ -67,7 +67,7 @@ public final class ParticleBuffers {
      * (held item, instances from the carrier region), model translucent
      * segment, ALPHA blended billboards.
      */
-    public static final int INDIRECT_COMMANDS = 7;
+    public static final int INDIRECT_COMMANDS = 6;
     /**
      * Uniform byte stride of every indirect command. ELEMENT commands
      * ({@code glDrawElementsIndirect}, commands 2/3) read the full
@@ -82,15 +82,15 @@ public final class ParticleBuffers {
     public static final int RADIX_PASSES = 1;
     public static final int SORT_GROUP_THRESHOLD = 65536;
     /**
-     * Radix bin count. The sort key is 10 bits: bit {@link #SORT_TYPE_SHIFT}
+     * Radix bin count. The sort key is 9 bits: bit {@link #SORT_TYPE_SHIFT}
      * selects the translucent item type (0 = MODEL, 1 = ALPHA sprite) and the
-     * low byte carries the inverted log depth band; type 2 is HEX_PATTERN. Binning over all 9 bits
+     * low byte carries the inverted log depth band. Binning over all 9 bits
      * makes the scatter place each type in its own CONTIGUOUS partition --
      * MODEL items at [0, N_model), ALPHA items at [N_model, N_total) -- so
      * every translucent draw command gets an exact instanceCount and no
      * vertex invocations are wasted filtering foreign-type items.
      */
-    public static final int RADIX_BINS = 1024;
+    public static final int RADIX_BINS = 512;
 
     // The binding constants below are the SINGLE SOURCE OF TRUTH for the
     // GLSL side too: ParticlePrograms#commonPrelude generates #define lines
@@ -293,7 +293,6 @@ public final class ParticleBuffers {
     public static final int IDX_CNT_GHOST = cmdField(4, 1);
     /** instanceCount of cmd5 — ALPHA blended billboards. EXACT sprite-item count (the upper partition). */
     public static final int IDX_CNT_ALPHA = cmdField(5, 1);
-    public static final int IDX_CNT_PATTERN = cmdField(6, 1);
 
     /**
      * Depth-band count of the sort key's LOW BYTE (one counting-sort pass).

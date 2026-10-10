@@ -89,7 +89,6 @@ public final class ParticlePrograms {
         sb.append("#define IDX_CNT_MODELOP ").append(ParticleBuffers.IDX_CNT_MODELOP).append('\n');
         sb.append("#define IDX_CNT_CARRIER ").append(ParticleBuffers.IDX_CNT_CARRIER).append('\n');
         sb.append("#define IDX_CNT_GHOST ").append(ParticleBuffers.IDX_CNT_GHOST).append('\n');
-        sb.append("#define IDX_CNT_PATTERN ").append(ParticleBuffers.IDX_CNT_PATTERN).append('\n');
         sb.append("#define IDX_CNT_ALPHA ").append(ParticleBuffers.IDX_CNT_ALPHA).append('\n');
         sb.append("#define VEC4_PER_PARTICLE ").append(ParticleBuffers.VEC4_PER_PARTICLE).append("u\n");
         sb.append("#define VEC4_PER_EMITTER ").append(ParticleBuffers.VEC4_PER_EMITTER).append("u\n");
@@ -131,14 +130,6 @@ public final class ParticlePrograms {
         // see HeldItemGeometry (the pack merged source declares it as a const
         // instead — #defines do not survive the AST transplant)
         sb.append("#define CMI_HELD_DISPLAY ").append(HeldItemGeometry.displayMatrixGLSL()).append('\n');
-        sb.append("#define BIND_HEX_INPUT ").append(HexPatternBuffers.INPUT_BIND).append('\n');
-        sb.append("#define BIND_HEX_LIVE ").append(HexPatternBuffers.LIVE_BIND).append('\n');
-        sb.append("#define BIND_HEX_RESOURCE ").append(HexPatternBuffers.RESOURCE_BIND).append('\n');
-        sb.append("#define BIND_HEX_COMMAND ").append(HexPatternBuffers.COMMAND_BIND).append('\n');
-        sb.append("#define BIND_HEX_POINT ").append(HexPatternBuffers.POINT_BIND).append('\n');
-        sb.append("#define CMI_HEX_META_ROWS ").append(HexPatternBuffers.META_ROWS).append("u\n");
-        sb.append("#define CMI_HEX_ANCHORS ").append(HexPatternBuffers.ANCHOR_BASE).append("u\n");
-        sb.append("#define CMI_HEX_VERTEX_STRIDE ").append(HexPatternBuffers.VERTEX_STRIDE).append("u\n");
         sb.append("#define DAMAGE_ENTRY_WORDS ").append(ParticleBuffers.DAMAGE_ENTRY_BYTES / 4).append("u\n");
         for (var material : com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Material.values())
             sb.append("#define CMI_MATERIAL_").append(material.name()).append(' ').append(material.index()).append("u\n");
@@ -162,7 +153,6 @@ public final class ParticlePrograms {
     private int waveContact;    // dive-wave contact self-report detection (storm waves)
     private int render;          // additive billboards (soft circle)
     private int texturedRender;  // textured sprite billboards: uMode 0 blended / 1 OPAQUE cutout
-    private int hexReconcile, hexPrepare, hexRender;
     private int modelRender;     // instanced allay models via one merged multi-draw
 
     private volatile boolean dirty = true;
@@ -204,10 +194,7 @@ public final class ParticlePrograms {
             candidate.render = graphics.apply(GLSL_DIR + "additive.vsh", GLSL_DIR + "additive.fsh");
             candidate.texturedRender = graphics.apply(GLSL_DIR + "textured.vsh", GLSL_DIR + "textured.fsh");
             candidate.modelRender = graphics.apply(GLSL_DIR + "model.vsh", GLSL_DIR + "model.fsh");
-            candidate.hexReconcile = compute.applyAsInt(GLSL_DIR + "hex_reconcile.comp");
-            candidate.hexPrepare = compute.applyAsInt(GLSL_DIR + "hex_prepare.comp");
-            candidate.hexRender = graphics.apply(GLSL_DIR + "hex_pattern.vsh", GLSL_DIR + "hex_pattern.fsh");
-            if (!candidate.ready() || !candidate.hexReady()) {
+            if (!candidate.ready()) {
                 LOGGER.error("[CMI particles] shader reload failed; retaining previous program set");
                 return false;
             }
@@ -229,9 +216,6 @@ public final class ParticlePrograms {
             this.render = candidate.render; candidate.render = 0;
             this.texturedRender = candidate.texturedRender; candidate.texturedRender = 0;
             this.modelRender = candidate.modelRender; candidate.modelRender = 0;
-            this.hexReconcile = candidate.hexReconcile; candidate.hexReconcile = 0;
-            this.hexPrepare = candidate.hexPrepare; candidate.hexPrepare = 0;
-            this.hexRender = candidate.hexRender; candidate.hexRender = 0;
             return true;
         } finally {
             candidate.delete();
@@ -239,7 +223,7 @@ public final class ParticlePrograms {
     }
 
     public void configureStatic(int capacity) {
-        for (int p : new int[] {prepareDispatch, update, emit, blockEmit, hexReconcile}) {
+        for (int p : new int[] {prepareDispatch, update, emit, blockEmit}) {
             int location = GL20.glGetUniformLocation(p, "uCapacity");
             if (location >= 0) org.lwjgl.opengl.GL41.glProgramUniform1ui(p, location, capacity);
         }
@@ -252,11 +236,6 @@ public final class ParticlePrograms {
                 && this.radixScatter != 0 && this.capture != 0 && this.grid != 0
                 && this.hit != 0 && this.stormPos != 0 && this.waveContact != 0;
     }
-
-    public boolean hexReady() { return hexReconcile != 0 && hexPrepare != 0 && hexRender != 0; }
-    public int hexReconcile() { return hexReconcile; }
-    public int hexPrepare() { return hexPrepare; }
-    public int hexRender() { return hexRender; }
 
     public int reset() {
         return this.reset;
@@ -473,7 +452,7 @@ public final class ParticlePrograms {
                 this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
                 this.grid, this.hit, this.stormPos, this.waveContact,
-                this.render, this.texturedRender, this.modelRender, this.hexReconcile, this.hexPrepare, this.hexRender }) {
+                this.render, this.texturedRender, this.modelRender }) {
             if (p != 0)
                 GL20.glDeleteProgram(p);
         }
@@ -481,6 +460,5 @@ public final class ParticlePrograms {
         this.radixHist = this.radixScan = this.radixScatter = this.capture = 0;
         this.grid = this.hit = this.stormPos = this.waveContact = 0;
         this.render = this.texturedRender = this.modelRender = 0;
-        this.hexReconcile = this.hexPrepare = this.hexRender = 0;
     }
 }

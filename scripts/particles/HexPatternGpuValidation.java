@@ -5,9 +5,9 @@ import java.util.*;
 import org.lwjgl.*;
 import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.*;
-import at.petrak.hexcasting.api.addldata.ADPigment;
-import at.petrak.hexcasting.api.pigment.ColorProvider;
-import net.minecraft.world.phys.Vec3;
+
+
+
 
 /** Real-driver checks. Run with the project's runtime classpath and LWJGL natives. */
 public class HexPatternGpuValidation {
@@ -63,108 +63,6 @@ public class HexPatternGpuValidation {
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_BUFFER_UPDATE_BARRIER_BIT | GL42.GL_COMMAND_BARRIER_BIT);
         check(GL11.glGetError() == GL11.GL_NO_ERROR, "GL dispatch error");
     }
-    static void colors() throws Exception {
-        String kernel = source("chunks/hex_pattern.glsl") + "\nlayout(local_size_x=64) in;\nlayout(std430,binding=29) writeonly buffer Result{vec4 c[];};\nvoid main(){uint i=gl_GlobalInvocationID.x;if(i<64u)c[i]=hexPatternColor(i);}";
-        int program = link(stageText("pigment parity", GL43.GL_COMPUTE_SHADER, kernel));
-        ByteBuffer inputs = bytes((20481+1)*16), resources = bytes(64*16), out = bytes(64*16);
-        int inputBuffer = buffer(24,inputs), resourceBuffer = buffer(26,resources), result = buffer(29,out);
-        buffer(25,bytes(4096*4));
-        int[][] palettes = {{0xffab65eb},{0xff000000},{0xff101010},{0xff54398a,0xffcfa0f3,0xfffecbe6,0xffcfa0f3,0xffe77c56},
-            {0xffeb92ea,0xffffffff,0xff6ac2e4},{0xff123456,0xffabcdef},{0xff302f30,0xff000000}};
-        float[] times = {0,0.25f,399.99f,400,600,10000,1000000,10000000};
-        Random random = new Random(28);
-        Vec3[] positions = new Vec3[64];
-        for (int i=0;i<64;i++) positions[i]=new Vec3((float)(random.nextDouble()*6-3),(float)(random.nextDouble()*6-3),(float)(random.nextDouble()*6-3));
-        for (int[] palette : palettes) for (float divisor : new float[]{0,400,600}) for (float time : times) {
-            for (int i=0;i<palette.length;i++) {
-                int c=palette[i]; resources.putFloat(i*16,(c>>16)&255).putFloat(i*16+4,(c>>8)&255).putFloat(i*16+8,c&255);
-            }
-            inputs.putFloat(8,time);
-            ColorProvider provider = new ColorProvider() {
-                protected int getRawColor(float t, Vec3 pos) {
-                    return divisor == 0 ? palette[0] : ADPigment.morphBetweenColors(palette,new Vec3(0.1,0.1,0.1),t/divisor,pos);
-                }
-            };
-            for(int i=0;i<64;i++) {
-                int b=(1+i*5)*16; Vec3 pos=positions[i];
-                inputs.putFloat(b+16,i+1);
-                inputs.putFloat(b+32,(float)pos.x).putFloat(b+36,(float)pos.y).putFloat(b+40,(float)pos.z);
-                inputs.putInt(b+48,0).putInt(b+52,palette.length).putFloat(b+56,divisor);
-            }
-            upload(inputBuffer,inputs);upload(resourceBuffer,resources);dispatch(program,1);
-            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,result);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,out);
-            for(int i=0;i<64;i++) {
-                int expected=provider.getColor(time,positions[i]);
-                for(int channel=0;channel<3;channel++) {
-                    int actual=Math.round(out.getFloat(i*16+channel*4)*255);
-                    int wanted=(expected >> (16-channel*8))&255;
-                    check(Math.abs(actual-wanted)<=1,"pigment mismatch time="+time+" divisor="+divisor+" got="+actual+" expected="+wanted);
-                }
-                float alpha=i+1<=60 ? (float)Math.floor((i+1)/60f*255)/255 : 1;
-                check(Math.abs(alpha-out.getFloat(i*16+12))<0.00001,"fade alpha mismatch");
-            }
-        }
-        // Already corrected third-party sample: black must stay black, without another minimum-luminance pass.
-        for(int i=0;i<64;i++) inputs.putFloat((1+i*5)*16+56,-1).putInt((1+i*5)*16+44,0xff000000);
-        upload(inputBuffer,inputs);dispatch(program,1);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,result);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,out);
-        check(out.getFloat(0)==0 && out.getFloat(4)==0 && out.getFloat(8)==0,"fallback corrected twice");
-        System.out.println("GPU pigment parity: built-in palette formulas, dark colors, long times, fades and fallback passed");
-    }
-    static void poolAndSort() throws Exception {
-        ByteBuffer inputs=bytes((20481+1)*16), resources=bytes(16), live=bytes(4096*4);
-        inputs.putFloat(0,3);
-        for(int i=0;i<3;i++) {
-            int b=(1+i*5)*16;
-            inputs.putInt(b,4096+i).putFloat(b+16,100).putFloat(b+28,3.5f);
-            inputs.putFloat(b+56,-1).putInt(b+44,0xffabcdef);
-        }
-        inputs.putFloat(20481*16,10).putFloat(20481*16+4,20).putFloat(20481*16+8,30);
-        int inputBuffer=buffer(24,inputs), liveBuffer=buffer(25,live);buffer(26,resources);
-        ByteBuffer particleData=bytes(4*64), counter=bytes(16);
-        int output=buffer(1,particleData), counterBuffer=buffer(3,counter);
-        int reconcile=compute("hex_reconcile.comp");
-        GL20.glUseProgram(reconcile);GL30.glUniform1ui(GL20.glGetUniformLocation(reconcile,"uCapacity"),4);GL30.glUniform1ui(GL20.glGetUniformLocation(reconcile,"uEmitter"),0);
-        dispatch(reconcile,1);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,counterBuffer);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,counter);
-        check(counter.getInt(0)==3,"one particle per holder");
-        dispatch(reconcile,1);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,counterBuffer);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,counter);
-        check(counter.getInt(0)==3,"reconcile duplicated existing holder");
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,output);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,particleData);
-        for(int i=0;i<3;i++) check(particleData.getFloat(i*64)==10 && particleData.getFloat(i*64+4)==20,"anchor at emission");
-        // Reuse metadata slot 1 with another generation; old particle must disappear.
-        inputs.putInt((1+5)*16,8193).putFloat(20481*16,40);
-        upload(inputBuffer,inputs);
-        int inputPool=buffer(0,particleData);
-        counter.putInt(0,0);upload(counterBuffer,counter);upload(liveBuffer,bytes(4096*4));
-        ByteBuffer emitter=bytes(20*16);emitter.putFloat(7*16,4);buffer(5,emitter);
-        ByteBuffer previous=bytes(16);previous.putInt(0,3);buffer(14,previous);
-        for(int binding:new int[]{11,13,16,18,19,21}) buffer(binding,bytes(65536));
-        int update=compute("update.comp");GL20.glUseProgram(update);
-        GL30.glUniform1ui(GL20.glGetUniformLocation(update,"uCapacity"),4);
-        GL30.glUniform1ui(GL20.glGetUniformLocation(update,"uKillEmit"),-1);
-        GL20.glUniform1f(GL20.glGetUniformLocation(update,"uDt"),0.05f);
-        dispatch(update,1);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,counterBuffer);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,counter);
-        check(counter.getInt(0)==2,"stale generation survived compaction");
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,output);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,particleData);
-        Set<Integer> handles=new HashSet<>();
-        for(int i=0;i<2;i++) {handles.add(particleData.getInt(i*64+56));check(particleData.getFloat(i*64)==40,"anchor update lagged");}
-        check(handles.equals(Set.of(4096,4098)),"handle changed during pool compaction");
-        dispatch(reconcile,1);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,counterBuffer);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,counter);
-        check(counter.getInt(0)==3,"new generation was not emitted");
-        ByteBuffer indirect=bytes(7*20);indirect.putInt(21*4,2).putInt(26*4,2).putInt(31*4,2);buffer(2,indirect);
-        ByteBuffer unsorted=bytes(6*8);int[] keys={530,50,280,512,10,260};
-        for(int i=0;i<6;i++)unsorted.putInt(i*8,keys[i]).putInt(i*8+4,i);
-        buffer(6,unsorted);int sortResult=buffer(7,bytes(48));buffer(9,bytes(1024*4));buffer(10,bytes(1024*4+4));
-        dispatch(compute("radix_hist.comp"),1);dispatch(compute("radix_scan.comp"),1);dispatch(compute("radix_scatter.comp"),1);
-        ByteBuffer sorted=bytes(48);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,sortResult);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,sorted);
-        Arrays.sort(keys);for(int i=0;i<6;i++)check(keys[i]==sorted.getInt(i*8),"three-way depth partition corrupt");
-        System.out.println("Pool reconciliation, generation rejection, compaction, anchors and three-way sort passed");
-    }
-
     static void read(int id, ByteBuffer data) {
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);
         data.clear(); GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,data);
@@ -174,7 +72,7 @@ public class HexPatternGpuValidation {
     }
     static void dispatchBounds() throws Exception {
         int program=compute("prepare_dispatch.comp");
-        ByteBuffer previous=bytes(16), current=bytes(16), commands=bytes(140), args=bytes(36);
+        ByteBuffer previous=bytes(16), current=bytes(16), commands=bytes(com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.INDIRECT_UINTS*4), args=bytes(36);
         int prev=buffer(14,previous), cur=buffer(3,current), cmd=buffer(2,commands), out=buffer(29,args);
         uint(program,"uCapacity",129);
         for(int n:new int[]{0,1,63,64,65,128,129,130,1000000}) {
@@ -240,7 +138,7 @@ public class HexPatternGpuValidation {
         uint(update,"uCapacity",cap);uint(update,"uKillEmit",-1);dispatch(update,1);read(counter,counts);
         check(counts.getInt(0)>=cap,"death chain failed to fill pool");read(output,pool);
         for(int i=cap*64;i<pool.capacity();i+=4)check(pool.getInt(i)==0x5a5a5a5a,"death chain exceeded capacity");
-        ByteBuffer commands=bytes(140), args=bytes(36);int indirect=buffer(2,commands), dispatchBuffer=buffer(29,args);
+        ByteBuffer commands=bytes(com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.INDIRECT_UINTS*4), args=bytes(36);int indirect=buffer(2,commands), dispatchBuffer=buffer(29,args);
         uint(prepare,"uCapacity",cap);uint(prepare,"uPhase",1);dispatch(prepare,1);read(counter,counts);read(dispatchBuffer,args);
         check(counts.getInt(0)==cap && args.getInt(12)==2,"GPU death chain omitted from next dispatch");
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,output);
@@ -374,7 +272,7 @@ public class HexPatternGpuValidation {
                 }
                 gpu.uploadDirtyEmitters();gpu.bindCounter(3,0);int counter=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,3);upload(counter,bytes(16).putInt(0,count));
                 gpu.bindIndirect(2);int commands=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,2);
-                var cmd=bytes(140);for(int command:new int[]{0,1,5})cmd.putInt(command*20,6);upload(commands,cmd);
+                var cmd=bytes(com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.INDIRECT_UINTS*4);for(int command:new int[]{0,1,5})cmd.putInt(command*20,6);upload(commands,cmd);
                 gpu.bindParticleWrite(0);gpu.bindEmitters(5);gpu.bindSort(7,gpu.sortBuffer(0));gpu.bindSort(13,gpu.sortBuffer(1));gpu.bindOrderAdd();gpu.bindOrderOpaque();
                 uint(keygen,"uUpper",1000);uint(keygen,"uCarrierBase",1000);uint(keygen,"uPackageStaged",0);
                 float[] identity=new org.joml.Matrix4f().get(new float[16]);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(keygen,"uView"),false,identity);
@@ -382,7 +280,7 @@ public class HexPatternGpuValidation {
                 GL20.glUniform4fv(GL20.glGetUniformLocation(keygen,"uFrustum"),new float[]{1,0,0,1,-1,0,0,1,0,1,0,1,0,-1,0,1,0,0,1,1,0,0,-1,1});dispatch(keygen,1);
                 read(commands,cmd);for(int mode=0;mode<3;mode++)check(cmd.getInt(new int[]{4,104,24}[mode])==(culled?0:scene<3?(scene==mode?1:0):1+(mode==0&&!models?1:0)),"visible billboard command / scene "+scene+" mode "+mode);
                 check(cmd.getInt(44)==(models&&!culled?1:0),"MODEL main cull count");
-                int permutation=gpu.sortBuffer(1);gpu.bindSort(6,gpu.sortBuffer(0));gpu.bindSort(7,permutation);buffer(9,bytes(1024*4));buffer(10,bytes(1024*4+4));
+                int permutation=gpu.sortBuffer(1);gpu.bindSort(6,gpu.sortBuffer(0));gpu.bindSort(7,permutation);buffer(9,bytes(com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.RADIX_BINS*4));buffer(10,bytes(com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.RADIX_BINS*4+4));
                 dispatch(hist,1);dispatch(scan,1);dispatch(scatter,1);
                 gpu.swap();gpu.restoreCommittedFrame();if(early)boundary.restore();
                 // Simulate the ordinary package/light pass overwriting all draw slots,
@@ -414,27 +312,16 @@ public class HexPatternGpuValidation {
                 boolean lit=false;for(int i=0;i<image.capacity();i+=4)lit|=(image.get(i)&255)>20;check(lit==(models&&!culled),"MODEL fallback pixels missing");
                 check(GL11.glGetError()==GL11.GL_NO_ERROR,"MODEL draw GL error");
             }
-            int hex=link(stage("hex_pattern.vsh",GL20.GL_VERTEX_SHADER),stage("hex_pattern.fsh",GL20.GL_FRAGMENT_SHADER));
-            var input=bytes(96).putInt(24,2);var live=bytes((4096+8)*4).putInt(0,1).putFloat(4096*4,1).putFloat((4096+2)*4,1);
-            var points=bytes(32).putFloat(0,-.3f).putFloat(16,.3f);var pool=bytes(64).putFloat(32,1).putFloat(36,.5f).putFloat(40,.25f).putFloat(44,1);
-            int[] hexInputs={buffer(24,input),buffer(25,live),buffer(28,points),buffer(1,pool),buffer(27,bytes(16).putInt(0,204).putInt(4,1))};
-            try {
-                GL20.glUseProgram(hex);float[] identity=new org.joml.Matrix4f().get(new float[16]);
-                GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(hex,"ModelViewMat"),false,identity);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(hex,"ProjMat"),false,identity);
-                gpu.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,hexInputs[4]);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);GL43.glMultiDrawArraysIndirect(GL11.GL_TRIANGLES,0,1,16);
-                var pixel=bytes(4);GL11.glReadPixels(32,32,1,1,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixel);check((pixel.get(0)&255)>30,"Hex pattern actual pixel missing");
-                check(GL11.glGetError()==GL11.GL_NO_ERROR,"Hex pattern draw GL error");
-                int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
-                for(int binding:new int[]{16,24,27,31})GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,binding,foreign,alignment,64);
-                boundary.capture();gpu.unbindShaders();boundary.restore();
-                for(int binding:new int[]{16,24,27,31})check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,binding)==foreign&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,binding)==alignment&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,binding)==64,"early compute lost high SSBO range "+binding);
-            } finally {for(int id:hexInputs)GL15.glDeleteBuffers(id);GL20.glDeleteProgram(hex);}
+            int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
+            for(int binding:new int[]{16,24,27,31})GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,binding,foreign,alignment,64);
+            boundary.capture();gpu.unbindShaders();boundary.restore();
+            for(int binding:new int[]{16,24,27,31})check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,binding)==foreign&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,binding)==alignment&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,binding)==64,"early compute lost high SSBO range "+binding);
         } finally {
             GL20.glUseProgram(0);gpu.unbindShaders();gpu.free();GL15.glDeleteBuffers(foreign);
             for(int p:new int[]{additive,textured,model,keygen,hist,scan,scatter})GL20.glDeleteProgram(p);
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(framebuffer);GL11.glDeleteTextures(color);GL11.glDeleteTextures(white);
         }
-        System.out.println("Actual additive/ALPHA/OPAQUE/MODEL pixels: late draws, early state restoration, mixed/empty/offscreen scenes, Hex pixels and foreign package/high-SSBO bindings passed");
+        System.out.println("Actual additive/ALPHA/OPAQUE/MODEL pixels: late draws, early state restoration, mixed/empty/offscreen scenes and foreign package/high-SSBO bindings passed");
     }
 
     static void waveRetention() throws Exception {
@@ -543,12 +430,12 @@ public class HexPatternGpuValidation {
         StringBuilder report=new StringBuilder("count,distribution,variant,trial,gpu_ms,cpu_submit_ms\n");
         int[] sizes=benchmark?new int[]{0,10000,100000,1000000,2000000}:new int[]{0,1,63,64,65,1023,1024,1025,4097};
         for(int n:sizes) for(int distribution=0;distribution<2;distribution++) {
-            ByteBuffer commands=bytes(140);commands.putInt(21*4,n);
+            ByteBuffer commands=bytes(com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.INDIRECT_UINTS*4);commands.putInt(21*4,n);
             ByteBuffer input=bytes(Math.max(1,n)*8), result=bytes((n+1)*8);
             Random random=new Random(28);
-            for(int i=0;i<n;i++) input.putInt(i*8,distribution==0?random.nextInt(768):42).putInt(i*8+4,i);
+            for(int i=0;i<n;i++) input.putInt(i*8,distribution==0?random.nextInt(com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.RADIX_BINS):42).putInt(i*8+4,i);
             result.putInt(n*8,0x5a5a5a5a);
-            int cmd=buffer(2,commands), src=buffer(6,input), dst=buffer(7,result), hist=buffer(9,bytes(4096)), offs=buffer(10,bytes(4100));
+            int cmd=buffer(2,commands), src=buffer(6,input), dst=buffer(7,result), hist=buffer(9,bytes(com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.RADIX_BINS*4)), offs=buffer(10,bytes(com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.RADIX_BINS*4+4));
             for(int variant=0;variant<2;variant++) {
                 int block=variant==0 || n<65536?64:1024;
                 int groups=(n+block-1)/block;
@@ -583,53 +470,6 @@ public class HexPatternGpuValidation {
         if(benchmark)Files.writeString(Path.of("build/particle-sort-benchmark.csv"),report);
         System.out.println("Baseline and grouped sort order, payload, tail and capacity tests passed");
     }
-    @SuppressWarnings("unchecked")
-    static void geometry() throws Exception {
-        Class<?> shapeClass=Class.forName("com.iridium126.createmanaindustry.client.particles.engine.HexPatternRuntime$Shape");
-        Constructor<?> constructor=shapeClass.getDeclaredConstructors()[0];constructor.setAccessible(true);
-        Field pointsField=shapeClass.getDeclaredField("points");pointsField.setAccessible(true);
-        Field countField=shapeClass.getDeclaredField("vertexCount");countField.setAccessible(true);
-        int program=compute("hex_prepare.comp");
-        for(String signature:List.of("", "qwe", "wwwww", "qqqqqqqq", "qweadqwead")) {
-            var pattern=at.petrak.hexcasting.api.casting.math.HexPattern.fromAngleString(signature,at.petrak.hexcasting.api.casting.math.HexDir.values()[0],false);
-            Object shape=constructor.newInstance(pattern);
-            List<float[]> descriptors=(List<float[]>)pointsField.get(shape);
-            int vertices=countField.getInt(shape);
-            ByteBuffer resources=bytes((256+descriptors.size()*2)*16);
-            Random random=new Random(9001);random.nextDouble();random.nextDouble();random.nextDouble();
-            int[] perm=new int[256];for(int i=0;i<256;i++)perm[i]=i;
-            for(int i=0;i<256;i++){int j=i+random.nextInt(256-i),v=perm[i];perm[i]=perm[j];perm[j]=v;}
-            for(int i:perm)resources.putFloat(i).putFloat(0).putFloat(0).putFloat(0);
-            for(float[] d:descriptors)for(float f:d)resources.putFloat(f);resources.flip();buffer(26,resources);
-            ByteBuffer inputs=bytes((20481+1)*16);inputs.putFloat(0,1).putInt(16,4096).putInt(20,256).putInt(24,descriptors.size());
-            inputs.putFloat(32,100).putInt(84,vertices);int inputBuffer=buffer(24,inputs);
-            ByteBuffer pool=bytes(64);pool.putInt(56,4096);buffer(1,pool);
-            ByteBuffer sorted=bytes(8);buffer(6,sorted);
-            ByteBuffer indirect=bytes(140);indirect.putInt(31*4,1);buffer(2,indirect);
-            int commands=buffer(27,bytes(16)), result=buffer(28,bytes(descriptors.size()*16));buffer(25,bytes(4096*9*4));
-            var center=pattern.getCenter(1f);float dx=0,dy=0;
-            for(var point:pattern.toLines(1f,net.minecraft.world.phys.Vec2.ZERO)){dx=Math.max(dx,Math.abs(point.x-center.x));dy=Math.max(dy,Math.abs(point.y-center.y));}
-            float scale=Math.min(3.8f,Math.min(6.4f/dx,6.4f/dy));
-            var bare=new ArrayList<>(pattern.toLines(scale,pattern.getCenter(scale).negated()));
-            for(int i=0;i<bare.size();i++)bare.set(i,new net.minecraft.world.phys.Vec2(bare.get(i).x,-bare.get(i).y));
-            for(int seed:new int[]{1,12345,1234567890,-1234567890})for(int ticks:new int[]{0,100,10000,10000000}) {
-                inputs.putInt(40,seed).putFloat(12,ticks);upload(inputBuffer,inputs);
-                at.petrak.hexcasting.client.ClientTickCounter.ticksInGame=ticks;
-                at.petrak.hexcasting.client.ClientTickCounter.partialTicks=0;
-                var expected=at.petrak.hexcasting.client.render.RenderLib.makeZappy(bare,at.petrak.hexcasting.client.render.RenderLib.findDupIndices(pattern.positions()),5,0.65f,0.1f,0.2f,0f,1f,seed);
-                check(expected.size()==descriptors.size(),"duplicate-path topology mismatch");
-                dispatch(program,1);
-                ByteBuffer actual=bytes(descriptors.size()*16);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,result);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,actual);
-                for(int i=0;i<expected.size();i++) {
-                    double error=Math.hypot(expected.get(i).x-actual.getFloat(i*16),expected.get(i).y-actual.getFloat(i*16+4));
-                    check(error<0.002,"zappy mismatch "+signature+" seed="+seed+" tick="+ticks+" point="+i+" error="+error);
-                }
-                ByteBuffer command=bytes(16);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,commands);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,command);
-                check(command.getInt(0)==vertices && command.getInt(4)==1,"variable geometry indirect command");
-            }
-        }
-        System.out.println("GPU zappy points match Hex RenderLib across seeds, times and overlapping paths");
-    }
     public static void main(String[] args) throws Exception {
         var materialTypes = com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Material.values();
         for (var material : materialTypes) {
@@ -659,15 +499,12 @@ public class HexPatternGpuValidation {
         System.out.println("OpenGL: "+GL11.glGetString(GL11.GL_VERSION));
         Class<?> programs=Class.forName("com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms");
         Field field=programs.getDeclaredField("PRELUDE");field.setAccessible(true);prelude=(String)field.get(null);
-        for(String shader:List.of("prepare_dispatch.comp","gridbuild.comp","hit.comp","stormpos.comp","wavecontact.comp","block_emit.comp","capture.comp","update.comp","emit.comp","keygen.comp","reset.comp","radix_hist.comp","radix_scan.comp","radix_scatter.comp","hex_reconcile.comp","hex_prepare.comp")) {
+        for(String shader:List.of("prepare_dispatch.comp","gridbuild.comp","hit.comp","stormpos.comp","wavecontact.comp","block_emit.comp","capture.comp","update.comp","emit.comp","keygen.comp","reset.comp","radix_hist.comp","radix_scan.comp","radix_scatter.comp")) {
             GL20.glDeleteProgram(compute(shader));System.out.println("Compiled "+shader);
         }
-        for(String shader:List.of("hex_pattern","additive","model","textured"))
+        for(String shader:List.of("additive","model","textured"))
             GL20.glDeleteProgram(link(stage(shader+".vsh",GL20.GL_VERTEX_SHADER),stage(shader+".fsh",GL20.GL_FRAGMENT_SHADER)));
         buffer(31,bytes(4+2*4096*4));
-        colors();
-        poolAndSort();
-        geometry();
         dispatchBounds();
         capacity();
         deathChainAndRebirth();

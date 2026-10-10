@@ -21,12 +21,13 @@ public class ModelShadowGpuValidation {
     static void prepare(ModelShadowGpu gpu,int pool,int emit,int count,PackageDrawCulling cull){gpu.prepare(pool,emit,count,cull,0,0,0,.35f,.6f,1,0,new float[16],new float[16],new float[4]);}
     static int models(ModelShadowGpu gpu){return read(gpu.commands(),(ParticleBuffers.INDIRECT_UINTS+4)*4).getInt(ParticleBuffers.IDX_CNT_MODELOP*4);}
     static ByteBuffer sentinel(int n){var b=bytes(n);for(int i=0;i<n;i++)b.put(i,(byte)(i*31+17));return b;}
-    static void guardedOutputs(ModelShadowGpu gpu){put(gpu.instances(),sentinel((gpu.capacity()+ParticleBuffers.CARRIER_CAP+1)*8+64));put(gpu.commands(),sentinel(156+64));}
+    static int commandBytes(){return (ParticleBuffers.INDIRECT_UINTS+4)*4;}
+    static void guardedOutputs(ModelShadowGpu gpu){put(gpu.instances(),sentinel((gpu.capacity()+ParticleBuffers.CARRIER_CAP+1)*8+64));put(gpu.commands(),sentinel(commandBytes()+64));}
     static void outputGuards(ModelShadowGpu gpu){
         int end=(gpu.capacity()+ParticleBuffers.CARRIER_CAP+1)*8;
-        var list=read(gpu.instances(),end+64);var cmd=read(gpu.commands(),220);
+        var list=read(gpu.instances(),end+64);var cmd=read(gpu.commands(),commandBytes()+64);
         for(int i=end;i<end+64;i++)check(list.get(i)==(byte)(i*31+17),"instance buffer sentinel overwritten");
-        for(int i=152;i<220;i++)check(cmd.get(i)==(byte)(i*31+17),"command buffer sentinel overwritten");
+        for(int i=commandBytes()-4;i<commandBytes()+64;i++)check(cmd.get(i)==(byte)(i*31+17),"command buffer sentinel overwritten");
     }
     static int effectiveLimit(){return (int)Math.min(Math.min(4_000_000L,GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE)/64L),GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)*64L);}
     static void validation(){
@@ -60,12 +61,12 @@ public class ModelShadowGpuValidation {
                 c.clear();c.set(new float[][]{{1,0,0,10},{-1,0,0,10},{0,1,0,10},{0,-1,0,10},{0,0,1,-1},{0,0,-1,10}},6);prepare(gpu,pool,emit,count,c);check(models(gpu)==2,"six-plane MODEL shadow frustum");
                 var planes=new float[13][4];for(int i=0;i<13;i++)planes[i][3]=1000;planes[12][0]=1;planes[12][3]=-10;c.clear();c.set(planes,13);prepare(gpu,pool,emit,count,c);check(models(gpu)==1,"thirteenth plane ignored");
                 put(emit,headers(1,.3f,true,false));c.clear();prepare(gpu,pool,emit,count,c);check(models(gpu)==0,"sprite casts MODEL shadow");
-                put(emit,headers(2,.3f,true,true));prepare(gpu,pool,emit,count,c);check(models(gpu)==2,"storm identity used as size or header carrier");check(read(gpu.commands(),156).getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==0,"storm inactive wave carried item");
+                put(emit,headers(2,.3f,true,true));prepare(gpu,pool,emit,count,c);check(models(gpu)==2,"storm identity used as size or header carrier");check(read(gpu.commands(),commandBytes()).getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==0,"storm inactive wave carried item");
                 float[] wave=new float[16],target=new float[16],tier=new float[4];wave[1]=1;wave[2]=-1;wave[3]=1;target[3]=1;tier[0]=1;
                 gpu.prepare(pool,emit,count,c,0,0,0,.35f,.6f,1,0,wave,target,tier);
-                check(read(gpu.commands(),156).getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==2,"storm active wave carrier list");
+                check(read(gpu.commands(),commandBytes()).getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==2,"storm active wave carrier list");
                 particle(data,0,0,0,5,1,-1);put(pool,data);gpu.prepare(pool,emit,count,c,0,0,0,.35f,.6f,1,0,wave,target,tier);
-                check(read(gpu.commands(),156).getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==1,"storm corpse retained held item");
+                check(read(gpu.commands(),commandBytes()).getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==1,"storm corpse retained held item");
                 put(emit,headers(2,.3f,true,false));particle(data,0,0,0,5,1,-1);put(pool,data);prepare(gpu,pool,emit,count,c);check(models(gpu)==3,"corpse size semantics diverged");
             }finally{for(int id:new int[]{pool,emit,count})GL15.glDeleteBuffers(id);}
         }
@@ -163,10 +164,49 @@ public class ModelShadowGpuValidation {
         }
         Files.write(Path.of("build/model-shadow-benchmark.csv"),rows);Files.write(Path.of("build/model-shadow-benchmark-raw.csv"),raw);
     }
+    /** Query-side probe only: a static fixture supplies the current-generation index.
+     * It excludes building/updating that index and does not move simulation records. */
+    static String indexedSource(String name){String text=source(name);
+        if(name.equals("model_shadow_prepare.comp")){
+            check(text.contains("min(alive,uCapacity)"),"prepare probe source drift");
+            return "layout(std430,binding=5) readonly buffer ActiveModelIndex {uint modelCount;uint pad0,pad1,pad2;uint modelSlots[];};\n"+text.replace("min(alive,uCapacity)","min(modelCount,uCapacity)");
+        }
+        if(name.equals("model_shadow_collect.comp")){
+            String original="uint i=gl_GlobalInvocationID.x;if(i>=min(alive,uCapacity))return;";
+            check(text.contains(original),"collect probe source drift");
+            return "layout(std430,binding=5) readonly buffer ActiveModelIndex {uint modelCount;uint pad0,pad1,pad2;uint modelSlots[];};\n"+text.replace(original,"uint rank=gl_GlobalInvocationID.x;if(rank>=min(modelCount,uCapacity))return;uint i=modelSlots[rank];if(i>=min(alive,uCapacity))return;");
+        }return text;
+    }
+    static void indexProbe()throws Exception {
+        var rows=new ArrayList<String>();var raw=new ArrayList<String>();rows.add("total_live,model_live,mode,run,gpu_p50_ms,gpu_p95_ms,cpu_submit_p50_ms,cpu_submit_p95_ms,index_bytes");raw.add("total_live,model_live,mode,run,sample,gpu_ms,cpu_submit_ms");
+        var boundary=new ParticleComputeState();float[] waves=new float[16],targets=new float[16],tiers=new float[4];
+        for(int[] scenario:new int[][]{{100000,100},{100000,10000},{2000000,100},{2000000,10000},{2000000,2000000}}){
+            int n=Math.min(scenario[0],effectiveLimit()),m=Math.min(scenario[1],n),stride=n/m;var data=bytes(n*64);var list=bytes(16+m*4);list.putInt(0,m);
+            for(int i=0;i<n;i++){particle(data,i,i%16-8,2,i/16%16-8,1,1);data.putInt(i*64+60,1);}
+            for(int i=0;i<m;i++){int slot=i*stride;data.putInt(slot*64+60,0);list.putInt(16+i*4,slot);}
+            var h=bytes(ParticleBuffers.VEC4_PER_EMITTER*32);h.put(headers(2,.3f,false,false)).put(headers(0,.3f,false,false)).flip();
+            int pool=buffer(data),emit=buffer(h),counter=buffer(bytes(16).putInt(0,n)),index=buffer(list);var culling=new PackageDrawCulling();culling.clear();
+            try{for(String mode:new String[]{"full_pool","prebuilt_index"})try(var gpu=new ModelShadowGpu(n,mode.equals("full_pool")?ModelShadowGpuValidation::source:ModelShadowGpuValidation::indexedSource)){
+                // Prior fixture programs may have been deleted while still current.
+                GL20.glUseProgram(0);
+                Runnable submit=()->{boundary.capture();try{if(mode.equals("prebuilt_index"))GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,5,index);gpu.prepare(pool,emit,counter,culling,0,0,0,.35f,.6f,1,0,waves,targets,tiers);}finally{boundary.restore();}};
+                for(int run=1;run<=3;run++){
+                    long deadline=System.nanoTime()+1_000_000_000L;int warm=0;while(warm++<30||System.nanoTime()<deadline){submit.run();GL11.glFinish();}
+                    int samples=120,timer=GL15.glGenQueries();double[] gt=new double[samples],ct=new double[samples];
+                    try{for(int i=0;i<samples;i++){GL15.glBeginQuery(GL33.GL_TIME_ELAPSED,timer);long start=System.nanoTime();submit.run();ct[i]=(System.nanoTime()-start)/1e6;GL15.glEndQuery(GL33.GL_TIME_ELAPSED);gt[i]=GL33.glGetQueryObjectui64(timer,GL15.GL_QUERY_RESULT)/1e6;raw.add(n+","+m+","+mode+","+run+","+i+","+gt[i]+","+ct[i]);}}
+                    finally{GL15.glDeleteQueries(timer);}
+                    check(models(gpu)==m,"probe lost MODEL records");var out=read(gpu.instances(),m*8);var seen=new BitSet(n);
+                    for(int i=0;i<m;i++){int slot=out.getInt(i*8+4)>>>2;check(slot<n&&slot%stride==0&&slot/stride<m&&!seen.get(slot),"probe changed visible MODEL identity");seen.set(slot);}
+                    String row=n+","+m+","+mode+","+run+","+percentile(gt,.5)+","+percentile(gt,.95)+","+percentile(ct,.5)+","+percentile(ct,.95)+","+list.capacity();rows.add(row);System.out.println(row);
+                }
+            }}finally{for(int id:new int[]{pool,emit,counter,index})GL15.glDeleteBuffers(id);}
+        }
+        Files.write(Path.of("build/model-index-probe.csv"),rows);Files.write(Path.of("build/model-index-probe-samples.csv"),raw);
+    }
     public static void main(String[] args)throws Exception {
         var callback=GLFWErrorCallback.createPrint(System.err);callback.set();check(GLFW.glfwInit(),"GLFW init");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
         long window=GLFW.glfwCreateWindow(64,64,"Model shadow validation",0,0);check(window!=0,"GL context");
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));validation();sizeBoundaries();stateBoundary();if(Arrays.asList(args).contains("--iris-transform"))mergedVertices();if(Arrays.asList(args).contains("--benchmark"))benchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"shadow GL error");System.out.println("MODEL shadow GPU: "+checks+" assertions passed");}
+        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));validation();sizeBoundaries();stateBoundary();if(Arrays.asList(args).contains("--iris-transform"))mergedVertices();if(Arrays.asList(args).contains("--benchmark"))benchmark();if(Arrays.asList(args).contains("--index-probe"))indexProbe();check(GL11.glGetError()==GL11.GL_NO_ERROR,"shadow GL error");System.out.println("MODEL shadow GPU: "+checks+" assertions passed");}
         finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();callback.free();}
     }
 }

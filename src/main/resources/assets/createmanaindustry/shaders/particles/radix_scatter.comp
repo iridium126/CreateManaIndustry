@@ -11,7 +11,7 @@ shared uint bases[RADIX_BINS];
 shared uint ranks[1024];
 void main() {
     uint lane = gl_LocalInvocationID.x;
-    uint count = indirect.cmd[IDX_CNT_GHOST] + indirect.cmd[IDX_CNT_ALPHA] + indirect.cmd[IDX_CNT_PATTERN];
+    uint count = indirect.cmd[IDX_CNT_GHOST] + indirect.cmd[IDX_CNT_ALPHA];
     uint start = gl_WorkGroupID.x * 1024u;
     if (count < SORT_GROUP_THRESHOLD) {
         uint g = gl_GlobalInvocationID.x;

@@ -144,8 +144,6 @@ public final class CMIParticleEngine {
      * their latest samples are summed as the throttle input.
      */
     private static final int TIMER_RING = 4;
-    private final HexPatternBuffers hexPatternBuffers = new HexPatternBuffers();
-    private HexPatternRuntime hexPatterns;
     private PackagePoolGpu packageParticles;
     private final PackagePreviewRuntime packagePreview=new PackagePreviewRuntime();
     private final java.util.function.Supplier<PackagePoolGpu> packagePoolFactory=this::packageParticles;
@@ -184,15 +182,6 @@ public final class CMIParticleEngine {
         pending.add(new PackagePreviewRequest(count,origin,forward));
     }
     public String packagePreviewStatus() { return packagePreviewStatus; }
-    private int hexSlots, hexCount, hexEmitter = -1;
-    private final EmitterSpec hexPatternSpec = EmitterSpec.builder()
-            .type(ParticleTypes.standard(ParticleTypes.Material.HEX_PATTERN)).life(1, 1).sizeOverLife(1, 1, 1).build();
-
-    public boolean redirectsHexPatterns(net.minecraft.world.entity.player.Player player) {
-        return ClientConfig.particleEnabled && ClientConfig.hexPatternRedirect && frameArmed
-                && programs.hexReady() && hexPatterns != null && hexPatterns.redirected(player);
-    }
-
 
     /** One-shot burst request posted from a client thread. */
     private final List<Burst> frameBursts = new ArrayList<>();
@@ -761,7 +750,6 @@ public final class CMIParticleEngine {
         this.programs.requestRebuild();
         this.packageShadersDirty=true;
         this.pending.add(new PackagePreviewRequest(0,Vec3.ZERO,new Vec3(0,0,1)));
-        if (this.hexPatterns != null) this.hexPatterns.reset();
     }
 
     /** Frees all GPU resources on client shutdown. Safe when never initialised. */
@@ -774,9 +762,6 @@ public final class CMIParticleEngine {
             this.packagePreview.close();
             if(this.packageParticles!=null)this.packageParticles.close();
             this.packageParticles=null;
-            this.hexPatternBuffers.free();
-            this.hexPatterns = null;
-            this.hexSlots = this.hexCount = 0;
             this.blockEmitters.free();
             this.readbacks.close();
             this.gpu.free();
@@ -1425,11 +1410,10 @@ public final class CMIParticleEngine {
         // metadata (light/memberBase/memberKey/ringSpawn or hex vel/params)
         // selects its meaning per command, so a dropped entry here would pair
         // surviving commands with stale slots' metadata (wrong member identity,
-        // blacked-out combat light, hex flags leaking across types).
-        this.hexCount=this.hexSlots=0; // Orbit/UI instances now belong to the independent Hex backend.
+        // blacked-out combat light, emitter flags leaking across types).
         if(this.packageParticles!=null && this.packageParticles.hasInput())
             this.packageEmitter=ensureEmitter(this.packageSpec);
-        int free = Math.max(0, cap - this.hexCount);
+        int free = cap;
         if (totalSpawn > free) {
             double k = free <= 0 ? 0 : (double) free / totalSpawn;
             totalSpawn = 0;
@@ -1520,7 +1504,7 @@ public final class CMIParticleEngine {
         }
 
         // Every material submits indirect draws. Empty GPU counts perform no particle work.
-        boolean createsParticles = totalSpawn > 0 || this.hexCount > 0 || blockSpawnBound > 0
+        boolean createsParticles = totalSpawn > 0 || blockSpawnBound > 0
                 || (this.packageParticles!=null && this.packageParticles.hasInput() && this.packageEmitter>=0);
         if (!this.poolMayBeAlive && !createsParticles) {
             this.frameIdle = true;
@@ -2101,29 +2085,6 @@ public final class CMIParticleEngine {
                     (float)position.z,packagePartialTick);
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             gpu.beginBindings();
-        }
-
-        private void drawHexPatterns(Matrix4fc view, Matrix4fc projection, Camera camera) {
-            if (hexCount == 0 || !programs.hexReady()) return;
-            int program = programs.hexRender();
-            GL20.glUseProgram(program);
-            gpu.bindNewestPool(ParticleBuffers.PARTICLE_BB_WRITE);
-            hexPatternBuffers.bind();
-            gpu.bindVao();
-            setMat4Uniform(program, "ModelViewMat", view);
-            setMat4Uniform(program, "ProjMat", projection);
-            Vec3 position = camera.getPosition();
-            setFloatUniform(program, "uCamPos", (float) position.x, (float) position.y, (float) position.z);
-            RenderSystem.enableDepthTest();
-            RenderSystem.disableCull();
-            RenderSystem.enableBlend();
-            RenderSystem.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            RenderSystem.depthMask(true);
-            hexPatternBuffers.draw(hexCount);
-            GL20.glUseProgram(0);
-            GL30.glBindVertexArray(0);
-            RenderSystem.enableCull();
-            RenderSystem.disableBlend();
         }
 
         /**
@@ -2902,8 +2863,6 @@ public final class CMIParticleEngine {
      */
     public void onLevelChanged() {
         if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.requestReload();
-        if (this.hexPatterns != null) this.hexPatterns.reset();
-        this.hexCount = this.hexSlots = 0;
         if (this.initialized) {
             dropAll();
             this.collisionBake.reset();
@@ -2945,8 +2904,7 @@ public final class CMIParticleEngine {
 
     /** Whether a spec's particles feed the combined translucent sort (ALPHA or MODEL). */
     public static boolean isTranslucent(EmitterSpec spec) {
-        return spec.type.material() == ParticleTypes.Material.ALPHA || spec.type.material() == ParticleTypes.Material.MODEL
-                || spec.type.material() == ParticleTypes.Material.HEX_PATTERN;
+        return spec.type.material() == ParticleTypes.Material.ALPHA || spec.type.material() == ParticleTypes.Material.MODEL;
     }
 
     // ------------------------------------------------------------------

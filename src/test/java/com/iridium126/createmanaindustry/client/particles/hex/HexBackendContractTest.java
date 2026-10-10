@@ -8,6 +8,13 @@ import static org.junit.jupiter.api.Assertions.*;
 class HexBackendContractTest {
     static ClassNode type(String name)throws Exception{try(var in=HexBackendContractTest.class.getClassLoader().getResourceAsStream(name+".class")){assertNotNull(in,name);var c=new ClassNode();new ClassReader(in).accept(c,0);return c;}}
     @Test void configuredBudgetAndAccounting(){assertEquals(16,ClientConfig.hexPatternGpuBudgetMiB);var b=new HexGpuBudget(16L<<20);assertTrue(b.reserve(100));assertFalse(b.reserve(16L<<20));assertEquals(100,b.used());b.release(100);assertEquals(0,b.used());assertThrows(IllegalStateException.class,()->b.release(1));}
+    @Test void legacyPatternResourcesAreAbsentAndParticleAbiIsStable(){
+        var loader=getClass().getClassLoader();for(String name:List.of("HexPatternRuntime","HexPatternBuffers","HexPigmentColors"))assertNull(loader.getResource("com/iridium126/createmanaindustry/client/particles/engine/"+name+".class"));
+        for(String name:List.of("hex_reconcile.comp","hex_prepare.comp","hex_pattern.vsh","hex_pattern.fsh","chunks/hex_pattern.glsl","chunks/hex_pattern_state.glsl","chunks/hex_update.glsl"))assertNull(loader.getResource("assets/createmanaindustry/shaders/particles/"+name),name);
+        assertNotNull(loader.getResource("assets/createmanaindustry/shaders/particles/hex_shared_prepare.comp"));
+        assertEquals(512,com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.RADIX_BINS);assertEquals(6,com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.INDIRECT_COMMANDS);
+        var material=com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Material.PACKAGE;assertEquals(5,material.index());assertEquals(6,com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.standard(material).id());
+    }
     @Test void uiLayoutChangesDoNotRebuildGeometry(){var layout=new HexUiLayout();var style=new HexShape.Style(10,2.5f,.1f,.2f,.2f,1);
         var points=List.of(new net.minecraft.world.phys.Vec2(100,100),new net.minecraft.world.phys.Vec2(110,100),new net.minecraft.world.phys.Vec2(110,110));assertTrue(layout.update(points,Set.of(),style,true));var shape=layout.shape;
         assertFalse(layout.update(List.of(new net.minecraft.world.phys.Vec2(200,300),new net.minecraft.world.phys.Vec2(220,300),new net.minecraft.world.phys.Vec2(220,320)),Set.of(),style,true));assertSame(shape,layout.shape);assertEquals(20,layout.scale);

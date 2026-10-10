@@ -58,12 +58,6 @@ class ParticleRenderLifecycleContractTest {
             }
             assertTrue(cleared,"Previous frame arbitration survived an aborted draw: "+flag);
         }
-        var hex=method(draws,"drawHexPatterns");int select=-1,uniform=-1,draw=-1;
-        for(int i=0;i<hex.instructions.size();i++)if(hex.instructions.get(i) instanceof MethodInsnNode call) {
-            if(select<0&&call.owner.equals("org/lwjgl/opengl/GL20")&&call.name.equals("glUseProgram"))select=i;
-            if(uniform<0&&call.name.equals("setMat4Uniform"))uniform=i;
-            if(call.owner.equals(ENGINE+"HexPatternBuffers")&&call.name.equals("draw"))draw=i;
-        }
-        assertTrue(select>=0&&uniform>select&&draw>uniform,"Hex must activate its shader before uniforms and indirect drawing");
+        assertFalse(draws.methods.stream().anyMatch(m->m.name.equals("drawHexPatterns")),"Legacy pool Hex renderer returned");
     }
 }

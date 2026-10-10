@@ -157,8 +157,6 @@ vec2 cmiGauss2(float s) {
 
 #pragma cmi_include chunks/death_spawn.glsl
 
-#pragma cmi_include chunks/hex_pattern_state.glsl
-
 #pragma cmi_types update
 
 void main() {
@@ -184,7 +182,6 @@ void main() {
     // Replacing the previous frame's records avoids lifetime/death-chain integration
     // and makes common-pool compaction independent of persistent package identities.
     if (uint(emitters.u[hb + 7u].x + .5) == CMI_MATERIAL_PACKAGE) return;
-#pragma cmi_include chunks/hex_update.glsl
 
     // Header rows 18 and 7 are each read ONCE here. Row 18's storm gate is
     // consulted three more times below (damage scan, storm steering,

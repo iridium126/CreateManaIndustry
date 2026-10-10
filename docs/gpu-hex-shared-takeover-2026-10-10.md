@@ -105,4 +105,4 @@
 - `mixin/hexcasting/HexWorldFrameMixin/HexEntityContextMixin/HexPlayerRenderContextMixin/HexSpellUiMixin/HexPatternRedirectMixin`、`mixin/iris/HexShadowRenderMixin`。
 - `hex_shared_prepare.comp`、`chunks/hex_shared_vertex.glsl`、`hex_shared.vsh/fsh`。
 
-旧 Hex pool 资源与 shader 仍供既有回归/ABI 兼容使用；生产 prepare/update/reconcile/draw 已迁出，并有 bytecode 检查阻止重新进入通用池。普通粒子、包裹物理、网络协议和 MODEL 阴影实现保持各自职责。
+后续清理已移除旧 Hex pool Java、shader、SSBO 声明、旧材质/类型及回归夹具；普通透明排序恢复为 MODEL/ALPHA 两分区、512 桶、六条 indirect command。PACKAGE material=5/type=6 及其他现有类型编号保持稳定。`validateHexGpu` 现在依赖共享 Hex 后端验证；资源缺席检查防止旧实现重新进入产物。普通 conjure/spray 的 HexSpecs 与共享噪声仍保留。详见 [清理结果和 GPU 优化路线](gpu-hex-cleanup-model-efficiency-2026-10-10.md)。

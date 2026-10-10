@@ -9,7 +9,7 @@ shared uint mixed;
 shared uint uniformBase;
 void main() {
     uint lane = gl_LocalInvocationID.x;
-    uint count = indirect.cmd[IDX_CNT_GHOST] + indirect.cmd[IDX_CNT_ALPHA] + indirect.cmd[IDX_CNT_PATTERN];
+    uint count = indirect.cmd[IDX_CNT_GHOST] + indirect.cmd[IDX_CNT_ALPHA];
     if (count < SORT_GROUP_THRESHOLD) {
         uint g = gl_GlobalInvocationID.x;
         if (g < count) {

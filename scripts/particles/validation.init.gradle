@@ -6,7 +6,7 @@ allprojects {
         // The current workspace's independent Hex JIT sources import Kotlin directly.
         tasks.named('compileJava') { classpath += kotlin }
         tasks.register('validateHexGpu', JavaExec) {
-            dependsOn tasks.named('classes')
+            dependsOn tasks.named('classes'), 'validateHexSharedGpu'
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/HexPatternGpuValidation.java'
             if (project.hasProperty('particleBenchmark')) args '--benchmark'
@@ -32,6 +32,7 @@ allprojects {
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/ModelShadowGpuValidation.java'
             if (project.hasProperty('modelShadowBenchmark')) args '--benchmark'
+            if (project.hasProperty('modelIndexProbe')) args '--index-probe'
             workingDir = project.projectDir
         }
         tasks.register('validatePackageGpu', JavaExec) {

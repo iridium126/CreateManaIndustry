@@ -1,4 +1,4 @@
-// Parallel exclusive prefix sum for MODEL, ALPHA and HEX_PATTERN depth bins.
+// Parallel exclusive prefix sum for MODEL and ALPHA depth bins.
 layout(local_size_x = RADIX_BINS) in;
 layout(std430, binding = BIND_HIST) readonly buffer HistBuf { uint h[RADIX_BINS]; } hist;
 layout(std430, binding = BIND_OFFSETS) writeonly buffer OffsBuf { uint o[RADIX_BINS]; } offs;

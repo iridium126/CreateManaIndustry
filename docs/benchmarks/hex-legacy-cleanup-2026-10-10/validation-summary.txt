@@ -1,0 +1,9 @@
+Java: 572 tests; zero failures/errors/skips.
+Shared Hex GPU: 5287 assertions; shared Hex Iris: 5290 assertions.
+General particle GPU: 89135 assertions; legacy-only tests removed, preserved behaviors validated.
+Large 512-bin sort/reference test: 37320776 assertions, up to 2000000 items.
+Package GPU: 14675334; native Iris package: 26733; native Iris MODEL: 4133200 assertions.
+Final build: successful; embedded distribution payload has no legacy Hex pattern files.
+MODEL movement analysis preserves HP, regeneration, damage, corpse and permanent lifecycle for every MODEL.
+Runtime MODEL indexes/kernel split and package physics changes: not implemented in this cleanup.
+Final JAR SHA256: DC5342E3234667431CB4F785FC8E0501CB9961F3098EB3B034A02F9A87694FC9
