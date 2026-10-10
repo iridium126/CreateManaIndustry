@@ -52,6 +52,8 @@ public final class ParticlePrograms {
      */
     private static final String PRELUDE = buildPrelude();
 
+    public static String commonPrelude(){return PRELUDE;}
+
     private static String buildPrelude() {
         StringBuilder sb = new StringBuilder(768);
         sb.append("// ==== CMI particle engine common constants ====\n");

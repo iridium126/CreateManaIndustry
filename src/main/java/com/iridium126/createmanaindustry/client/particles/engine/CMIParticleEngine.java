@@ -118,15 +118,11 @@ import org.lwjgl.system.MemoryStack;
  * readback and uploads near-player position snapshots at the configured Hz.
  * Positions never flow server→client for simulation; only sparse corrections.
  * <p>
- * The frame is SPLIT across two {@code RenderLevelStageEvent} stages of the
- * same {@code renderLevel} pass: {@link #beginFrame} at AFTER_SKY runs every
- * compute dispatch (integrate/emit/cull/sort/capture) and commits a generation;
- * the shader-pack merge hook consumes that commit mid-renderLevel so merged
- * programs cull against THIS frame's camera; {@link #endFrame} at AFTER_LEVEL
- * then submits all draw passes from the committed pool. This removes the
- * previous one-generation entry lag for pack-path MODEL particles; the Iris
- * shadow track (which runs before renderSky, ahead of any stage event) keeps
- * reading the prior generation by design.
+ * A main renderLevel scope owns one preparation attempt. Iris prepares after
+ * pipeline setup and before shadows; AFTER_SKY reuses that commit (or prepares
+ * normally when integration is inactive). Shadow and gbuffer consumers read
+ * the same current generation. AFTER_LEVEL submits the remaining draws and
+ * closes timing. A failed preparation cannot retry or expose stale shadows.
  */
 public final class CMIParticleEngine {
 
@@ -484,9 +480,8 @@ public final class CMIParticleEngine {
     /**
      * Diagnostics for /cmi particle shaderpack status: how many frames old the sort
      * permutation a pack hook last consumed was. 0 = the merged programs drew
-     * THIS frame's cull/sort result; >= 1 = stale generation (shadow track by
-     * design — Iris renders shadows before renderSky, ahead of every
-     * level-stage event).
+     * THIS frame's cull/sort result; >= 1 = stale generation. MODEL shadows
+     * use an independent current-generation list, reported separately.
      */
     public volatile String shaderPackPermStatus = "n/a";
     public volatile String shaderPackErrorStatus = "";
@@ -759,6 +754,7 @@ public final class CMIParticleEngine {
 
     /** Called on resource reload so shaders recompile next frame. */
     public void requestProgramRebuild() {
+        if(CreateManaIndustry.IRISVEIL_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.invalidateShadow();
         if(CreateManaIndustry.IRIS_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.reload();
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Package resources reloaded",true);
         this.programs.requestRebuild();
@@ -772,6 +768,7 @@ public final class CMIParticleEngine {
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle engine closed",false);
         try {
             if(CreateManaIndustry.IRIS_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.close();
+            if(CreateManaIndustry.IRISVEIL_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.invalidateShadow();
             this.packagePreview.close();
             if(this.packageParticles!=null)this.packageParticles.close();
             this.packageParticles=null;
@@ -819,8 +816,8 @@ public final class CMIParticleEngine {
     /**
      * Frames elapsed since the newest committed sort permutation was generated
      * (diagnostic surface for {@code /cmi particle shaderpack status}; -1 before the
-     * first sorted frame commits). Split-frame expectation: 0 for every
-     * gbuffer-phase consumer, >= 1 only on the shadow track by design.
+     * first sorted frame commits). Every successful gbuffer consumer expects 0;
+     * MODEL shadows use their own list and same-generation metadata.
      */
     public int lastFinalPermAgeFrames() {
         if (this.lastFinalPermId < 0)
@@ -861,28 +858,82 @@ public final class CMIParticleEngine {
     }
 
     // ------------------------------------------------------------------
-    // Frame hooks — RenderLevelStageEvent, SPLIT across two stages:
-    //   AFTER_SKY   -> beginFrame  (compute: integrate/cull/sort/commit)
-    //   AFTER_LEVEL -> endFrame    (draws: every billboard/model pass)
-    //
-    // The shader-pack merge hook fires mid-renderLevel (after regular
-    // entities, before block entities) — strictly BETWEEN these two stages in
-    // the same frame — so the committed permutation it binds was built against
-    // THIS frame's camera: fast view rotation no longer shows entering MODEL
-    // particles one generation late. Draws stay at AFTER_LEVEL because a
-    // gbuffer-phase slot would leave sprites behind solid terrain depth.
-    // Iris's shadow track runs BEFORE renderSky, ahead of every level-stage
-    // event, so it keeps consuming the previous generation by design
-    // (documented leave-open item, reported via shaderPackPermStatus).
+    // Frame hooks: optional pre-shadow preparation, AFTER_SKY reuse/fallback,
+    // AFTER_LEVEL drawing and timing. The main camera scope supplies immutable
+    // matrices and one frame token; nested/auxiliary calls cannot advance it.
     // ------------------------------------------------------------------
 
-    /**
-     * Phase C of the split frame. Drains requests, maintains collision bakes,
-     * integrates particles, emits newcomers, runs keygen (+ the translucent
-     * counting sort when needed), captures the census, arms the counter fence
-     * and swaps the pool — committing a fresh generation. Nothing is drawn.
-     */
+    private final ParticleFrameLatch levelFrame = new ParticleFrameLatch();
+    private final ParticleComputeState earlyComputeState = new ParticleComputeState();
+    private final org.joml.Matrix4f levelView = new org.joml.Matrix4f();
+    private final org.joml.Matrix4f levelProjection = new org.joml.Matrix4f();
+    private Camera levelCamera;
+    private DeltaTracker levelDelta;
+    private net.minecraft.client.multiplayer.ClientLevel frameLevel;
+
+    public void enterLevelFrame(Camera camera, Matrix4fc view, Matrix4fc projection, DeltaTracker delta) {
+        var mc = Minecraft.getInstance();
+        boolean main = camera == mc.gameRenderer.getMainCamera() && mc.level != null;
+        if (levelFrame.enter(main)) {
+            levelCamera = camera;
+            levelDelta = delta;
+            frameLevel = mc.level;
+            levelView.set(view);
+            levelProjection.set(projection);
+            frameAttempted = frameArmed = false;
+        }
+    }
+
+    public void leaveLevelFrame() {
+        boolean primary = levelFrame.primary();
+        try {
+            if (primary && frameAttempted) {
+                ParticleDiagnostics.INSTANCE.resumeCpu();
+                ParticleDiagnostics.INSTANCE.end();
+            }
+        } finally {
+            if (primary) {
+                frameAttempted = frameArmed = false;
+                levelCamera = null;
+                levelDelta = null;
+                frameLevel = null;
+            }
+            levelFrame.leave();
+        }
+    }
+
+    public long renderFrameToken(){return levelFrame.token();}
+    public boolean currentFrameReady(){return levelFrame.ready()&&frameLevel==Minecraft.getInstance().level;}
+    public long currentGeneration(){return committedGeneration;}
+    public int committedCounterBuffer(){return gpu.counterBufferId(lastGoodSlot);}
+    /** Called after Iris pipeline setup but before any shadow camera/state is installed. */
+    public boolean prepareCurrentFrame(){
+        if(!levelFrame.primary()||frameLevel!=Minecraft.getInstance().level)return false;
+        if(!ClientConfig.shaderPackIntegration||!dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse())return false;
+        if(!levelFrame.claim())return levelFrame.ready();
+        try {
+            earlyComputeState.capture();
+            try {
+                computeFrame(levelCamera, levelView, levelProjection, levelDelta);
+            } finally {
+                earlyComputeState.restore();
+            }
+        } catch (RuntimeException | LinkageError failure) {
+            frameArmed = false;
+            CreateManaIndustry.LOGGER.warn("[CMI particles] pre-shadow preparation failed", failure);
+        }
+        levelFrame.complete(frameArmed);
+        return levelFrame.ready();
+    }
     public void beginFrame(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix, DeltaTracker deltaTracker) {
+        if(camera!=Minecraft.getInstance().gameRenderer.getMainCamera())return;
+        if(levelFrame.active()){
+            if(!levelFrame.claim())return;
+            computeFrame(levelCamera,levelView,levelProjection,levelDelta);levelFrame.complete(frameArmed);return;
+        }
+        computeFrame(camera,view,projectionMatrix,deltaTracker);
+    }
+    private void computeFrame(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix, DeltaTracker deltaTracker) {
         this.frameAttempted = false;
         this.frameArmed = false;
         if (this.disabled)
@@ -942,6 +993,7 @@ public final class CMIParticleEngine {
         try {
             runCompute(camera, view, projectionMatrix, deltaTracker);
         } catch (RuntimeException | LinkageError e) {
+            this.frameArmed = false;
             com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle frame failed",true);
             long now = System.currentTimeMillis();
             if (now - this.lastErrorTime > 5000) {
@@ -962,6 +1014,7 @@ public final class CMIParticleEngine {
      * phase attempted, so throttle continuity survives aborted frames.
      */
     public void endFrame(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix) {
+        if(camera!=Minecraft.getInstance().gameRenderer.getMainCamera()||levelFrame.active()&&!levelFrame.primary())return;
         if (this.disabled || !ClientConfig.particleEnabled || !this.initialized || !this.frameAttempted)
             return;
         long drawStartNanos = System.nanoTime();
@@ -1853,8 +1906,8 @@ public final class CMIParticleEngine {
             // only when the frame fully committed (finalPerm is -1 on the fast
             // path, leaving the previous generation's binding in place). The
             // simFrame stamp beside it feeds the consumption-age diagnostic:
-            // hooks run later in this SAME frame report age 0; the shadow track
-            // (before renderSky, i.e. before any stage event) reports >= 1.
+            // hooks in this frame report age 0. MODEL shadows build a separate
+            // list directly from this same committed pool and exact counter.
             if (finalPerm >= 0) {
                 this.lastFinalPermId = finalPerm;
                 this.lastFinalPermFrameSim = this.simFrame;

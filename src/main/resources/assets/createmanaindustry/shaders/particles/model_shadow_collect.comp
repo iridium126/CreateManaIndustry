@@ -1,0 +1,35 @@
+layout(local_size_x=64) in;
+layout(std430,binding=0) readonly buffer Pool {vec4 particles[];};
+layout(std430,binding=1) readonly buffer Emitters {vec4 headers[];};
+layout(std430,binding=2) readonly buffer Counter {uint alive;};
+layout(std430,binding=3) buffer Instances {uvec2 items[];};
+layout(std430,binding=4) buffer Commands {uint cmd[];};
+uniform uint uCapacity,uCarrierBase;
+uniform vec3 uCamera;
+uniform vec2 uNativeSize,uCullBounds;
+uniform float uEntityViewScale;
+uniform vec4 uFrustum[13];uniform uint uFrustumCount;
+#pragma cmi_include chunks/frustum_culling.glsl
+#pragma cmi_include chunks/model_size.glsl
+#pragma cmi_include chunks/model_carrier.glsl
+void main(){
+    uint i=gl_GlobalInvocationID.x;if(i>=min(alive,uCapacity))return;
+    vec4 p0=particles[4u*i],p3=particles[4u*i+3u];uint header=floatBitsToUint(p3.w)*VEC4_PER_EMITTER;
+    if(header+18u>=uint(headers.length()))return;
+    float material=headers[header+7u].x;if(material<1.5||material>=2.5)return;
+    bool storm=headers[header+18u].x>.5;
+    float size=cmiModelSize(p0,p3,headers[header+5u].z,headers[header+5u].w,headers[header+6u].x,storm);
+    float scale=2.0*size/MODEL_ABOVE_FEET;vec2 dimensions=uNativeSize*scale;
+    if(!(dimensions.x>0.0&&dimensions.y>0.0))return;
+    vec3 center=p0.xyz-uCamera;float distance=max(dimensions.x,dimensions.y)*64.0*uEntityViewScale;
+    if(!(dot(center,center)<distance*distance))return;
+    vec3 lo=center-vec3(dimensions.x*.5+.5,.5,dimensions.x*.5+.5);
+    vec3 hi=center+vec3(dimensions.x*.5+.5,dimensions.y+.5,dimensions.x*.5+.5);
+    if(uCullBounds.x>=0.0&&(any(greaterThan(lo,vec3(uCullBounds.x)))||any(lessThan(hi,vec3(-uCullBounds.x)))))return;
+    bool safe=uCullBounds.y>=0.0&&!any(greaterThan(lo,vec3(uCullBounds.y)))&&!any(lessThan(hi,vec3(-uCullBounds.y)));
+    if(!safe)for(uint plane=0u;plane<uFrustumCount;plane++)if(cmiOutsideBox(uFrustum[plane],lo,hi))return;
+    uint row=atomicAdd(cmd[IDX_CNT_MODELOP],1u);items[row]=uvec2(0u,i<<2u);
+    if(cmiModelCarrier(storm,p3.y,p3.z,headers[header+17u].z)){
+        uint carrier=atomicAdd(cmd[IDX_CNT_CARRIER],1u);if(carrier<CARRIER_CAP)items[uCarrierBase+carrier]=uvec2(0u,i<<2u);
+    }
+}

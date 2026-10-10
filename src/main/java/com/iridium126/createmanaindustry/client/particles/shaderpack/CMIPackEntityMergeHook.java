@@ -21,6 +21,16 @@ import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL33;
+import org.lwjgl.opengl.GL40;
+import net.minecraft.client.Camera;
+import net.minecraft.client.renderer.culling.Frustum;
+import net.minecraft.world.entity.EntityType;
+import com.iridium126.createmanaindustry.client.particles.engine.ModelShadowGpu;
+import com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms;
+import com.iridium126.createmanaindustry.client.particles.engine.ParticleComputeState;
+import com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling;
+import com.iridium126.createmanaindustry.client.particles.packages.PackageDrawTelemetry;
+import com.iridium126.createmanaindustry.client.particles.packages.PackageRenderState;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -67,6 +77,12 @@ public final class CMIPackEntityMergeHook {
     private static final Map<Integer, Map<String, Integer>> UNIFORMS = new HashMap<>();
     private static boolean rebuildListenerRegistered = false;
 
+    private static ModelShadowGpu MODEL_SHADOW;
+    private static final PackageDrawCulling SHADOW_CULLING=new PackageDrawCulling();
+    private static final PackageDrawTelemetry SHADOW_PREP_TIMING=new PackageDrawTelemetry();
+    private static ParticleComputeState shadowComputeState;
+    private static PackageRenderState shadowDrawState;
+    public static void invalidateShadow(){if(MODEL_SHADOW!=null)MODEL_SHADOW.close();MODEL_SHADOW=null;SHADOW_PREP_TIMING.close();}
     private CMIPackEntityMergeHook() {}
 
     // ------------------------------------------------------------------
@@ -80,7 +96,7 @@ public final class CMIPackEntityMergeHook {
             if (!ClientConfig.shaderPackIntegration
                     || !IrisVeilCompat.isShaderPackInUse()
                     || !engine.available()
-                    || engine.liveCount() <= 0)
+                    || !engine.packageMainFrameReady())
                 return;
 
             if (!ensureCompiledWithListener())
@@ -135,80 +151,50 @@ public final class CMIPackEntityMergeHook {
      * <p>Fully contained: any failure here only means no particle shadows this
      * frame -- the gbuffer path and the plain fallback are untouched.
      */
-    public static void renderShadow() {
-        CMIParticleEngine engine = CMIParticleEngine.INSTANCE;
-        try {
-            if (!ClientConfig.shaderPackIntegration
-                    || !IrisVeilCompat.isShaderPackInUse()
-                    || !engine.available()
-                    || engine.liveCount() <= 0)
-                return;
-
-            if (!ensureCompiledWithListener()) {
-                engine.shaderPackShadowStatus = "merge failed";
-                return;
+    public static void renderShadow(Camera camera,Frustum frustum) {
+        CMIParticleEngine engine=CMIParticleEngine.INSTANCE;
+        if(!engine.currentFrameReady()){engine.shaderPackShadowStatus="current frame unavailable";return;}
+        if(!ClientConfig.shaderPackIntegration||!IrisVeilCompat.isShaderPackInUse()||!engine.available())return;
+        try{
+            if(!PackageShadowPolicy.copy(frustum,SHADOW_CULLING)){engine.shaderPackShadowStatus="unsupported shadow frustum: "+(frustum==null?"null":frustum.getClass().getName());return;}
+            if(shadowComputeState==null){shadowComputeState=new ParticleComputeState();shadowDrawState=new PackageRenderState();}
+            shadowComputeState.capture();
+            try {
+            shadowDrawState.capture();
+            var captured=CapturedRenderingState.INSTANCE;
+            float alpha=captured.getCurrentAlphaTest();
+            boolean tessellation=net.irisshaders.iris.vertices.ImmediateState.usingTessellation;
+            int srcRgb=GL11.glGetInteger(org.lwjgl.opengl.GL14.GL_BLEND_SRC_RGB),dstRgb=GL11.glGetInteger(org.lwjgl.opengl.GL14.GL_BLEND_DST_RGB);
+            int srcAlpha=GL11.glGetInteger(org.lwjgl.opengl.GL14.GL_BLEND_SRC_ALPHA),dstAlpha=GL11.glGetInteger(org.lwjgl.opengl.GL14.GL_BLEND_DST_ALPHA);
+            boolean depth=GL11.glIsEnabled(GL11.GL_DEPTH_TEST),blend=GL11.glIsEnabled(GL11.GL_BLEND),cull=GL11.glIsEnabled(GL11.GL_CULL_FACE),depthMask=GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
+            try{
+                // First-use shader construction belongs inside the same boundary as drawing.
+                if(!ensureCompiledWithListener()){engine.shaderPackShadowStatus="merge failed";return;}
+                if(!COMPILER.shadowReady()){engine.shaderPackShadowStatus="no shadow track";return;}
+                var gpu=engine.gpuBuffers();
+                if(MODEL_SHADOW==null||MODEL_SHADOW.capacity()!=gpu.capacity()){invalidateShadow();MODEL_SHADOW=new ModelShadowGpu(gpu.capacity(),ParticlePrograms::loadParticlePlain);}
+                engine.addExternalGpuMs(SHADOW_PREP_TIMING.poll());
+                SHADOW_PREP_TIMING.begin(ClientConfig.particleAutoThrottle||com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled());
+                try{var p=camera.getPosition();MODEL_SHADOW.prepare(gpu.particleReadBufferId(),gpu.emitterBufferId(),engine.committedCounterBuffer(),SHADOW_CULLING,
+                        (float)p.x,(float)p.y,(float)p.z,EntityType.ALLAY.getWidth(),EntityType.ALLAY.getHeight(),(float)net.minecraft.world.entity.Entity.getViewScale(),engine.timeSec(),engine.stormWaveUniform(),engine.stormWaveTargetUniform(),engine.stormWaveTierUniform());}
+                finally{SHADOW_PREP_TIMING.end();}
+                gpu.bindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleReadBufferId(),MODEL_SHADOW.instances());gpu.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,MODEL_SHADOW.commands());
+                ShaderInstance shader=COMPILER.shadowShader();boolean applied=false;
+                try{
+                    applied=true;shader.apply();uploadShadowUniforms(shader.getId(),engine);setInt(shader.getId(),"cmi_ShadowPass",1);
+                    RenderSystem.enableDepthTest();RenderSystem.disableBlend();RenderSystem.depthMask(true);RenderSystem.enableCull();bindAtlas(engine,COMPILER.shadowGtextureUnit());
+                    uploadSegmentMode(shader.getId(),engine,0);gpu.drawModelCutout();uploadSegmentMode(shader.getId(),engine,2);gpu.drawModelCarrier();uploadSegmentMode(shader.getId(),engine,0);gpu.drawModelGhost();
+                }finally{if(applied)shader.clear();}
+                engine.shaderPackShadowStatus="active (frame="+engine.renderFrameToken()+", generation="+engine.currentGeneration()+", age=0, storage="+MODEL_SHADOW.bytes()+"B; "+SHADOW_PREP_TIMING.report()+")";
+            }finally{
+                if(depth)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();if(blend)RenderSystem.enableBlend();else RenderSystem.disableBlend();if(cull)RenderSystem.enableCull();else RenderSystem.disableCull();RenderSystem.depthMask(depthMask);
+                captured.setCurrentAlphaTest(alpha);
+                net.irisshaders.iris.vertices.ImmediateState.usingTessellation=tessellation;
+                RenderSystem.blendFuncSeparate(srcRgb,dstRgb,srcAlpha,dstAlpha);
+                shadowDrawState.restore();
             }
-            if (!COMPILER.shadowReady()) {
-                engine.shaderPackShadowStatus = "no shadow track";
-                return;
-            }
-
-            drawShadow(engine);
-            engine.shaderPackShadowStatus = "active";
-            // The shadow track deliberately consumes the previous generation:
-            // Iris renders shadows before renderSky, ahead of every level-stage
-            // event (including the AFTER_SKY compute commit). Age >= 1 here is
-            // the documented exception, surfaced so regressions are observable.
-            engine.shaderPackPermStatus = "shadow permutation age " + engine.lastFinalPermAgeFrames()
-                    + "f (>=1 expected: shadows precede AFTER_SKY compute)";
-        } catch (RuntimeException | LinkageError e) {
-            CreateManaIndustry.LOGGER.warn("[CMI particles] shadow-track draw failed", e);
-            engine.shaderPackShadowStatus = "draw failed";
-        }
-    }
-
-    /**
-     * Both segments go through the ONE merged shadow program (no ghost blend
-     * pinning here -- a shadow map is depth-led): skipping the ghost geometry
-     * would make cloaks/wings stop casting shadows.
-     */
-    private static void drawShadow(CMIParticleEngine engine) {
-        var gpu = engine.gpuBuffers();
-        boolean cullWasEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE);
-
-        bindSharedResources(engine, gpu);
-        gpu.bindDrawIndirect();
-
-        ShaderInstance shader = COMPILER.shadowShader();
-        shader.apply();
-        uploadShadowUniforms(shader.getId(), engine);
-        // Depth-led pass: draw order is irrelevant here (every visible instance
-        // contributes its depth exactly once either way), so every segment keeps
-        // forward reads (mode 0); the carrier segment only needs mode 2 to
-        // switch its instance source to the carrier region.
-        uploadSegmentMode(shader.getId(), engine, 0);
-        RenderSystem.enableDepthTest();
-        GL11.glEnable(GL11.GL_CULL_FACE);
-        RenderSystem.disableBlend();
-        RenderSystem.depthMask(true);
-        bindAtlas(engine, COMPILER.shadowGtextureUnit());
-        gpu.drawModelCutout();
-        uploadSegmentMode(shader.getId(), engine, 2);
-        gpu.drawModelCarrier();
-        uploadSegmentMode(shader.getId(), engine, 0);
-        gpu.drawModelGhost();
-        shader.clear();
-
-        RenderSystem.depthMask(true);
-        GL30.glBindVertexArray(0);
-        GL20.glUseProgram(0);
-        gpu.unbindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE);
-        RenderSystem.activeTexture(GL13.GL_TEXTURE0);
-
-        // ShadowRenderer deliberately renders its terrain with cull disabled
-        // and keeps that state for later sections; restore what we found.
-        if (!cullWasEnabled)
-            GL11.glDisable(GL11.GL_CULL_FACE);
+            } finally {shadowComputeState.restore();}
+        }catch(RuntimeException|LinkageError error){engine.shaderPackShadowStatus="draw failed";CreateManaIndustry.LOGGER.warn("[CMI particles] current-frame model shadow failed",error);}
     }
 
     /**
@@ -382,6 +368,7 @@ public final class CMIPackEntityMergeHook {
     }
 
     private static void uploadCmiUniforms(int progId, CMIParticleEngine engine) {
+        setInt(progId,"cmi_ShadowPass",0);
         var camPos = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
         setFloat3(progId, "cmi_CameraPos", (float) camPos.x, (float) camPos.y, (float) camPos.z);
         setFloat(progId, "cmi_FadeDist", (float) ClientConfig.particleFadeDistance);

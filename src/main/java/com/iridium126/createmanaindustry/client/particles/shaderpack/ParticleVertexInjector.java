@@ -91,7 +91,7 @@ public final class ParticleVertexInjector {
     );
 
     private static final Pattern VERSION_PATTERN =
-        Pattern.compile("^.*#version\\s+(\\d+)(\\s+\\w+)?", Pattern.DOTALL);
+        Pattern.compile("^.*#version[ \t]+(\\d+)([ \t]+(?:core|compatibility|es))?", Pattern.DOTALL);
 
     private final SingleASTTransformer<PatchParams> transformer;
     private final SingleASTTransformer<PatchParams> cmiTransformer;

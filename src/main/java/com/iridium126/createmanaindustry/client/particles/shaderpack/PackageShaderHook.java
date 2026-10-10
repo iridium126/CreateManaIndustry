@@ -86,10 +86,11 @@ public final class PackageShaderHook {
     public static void renderShadow(Camera camera,Frustum frustum,boolean entities,boolean blockEntities,
             List<BlockEntity> visibleBlockEntities,boolean hasEntityFrustum,double blockEntityDistance) {
         var engine=CMIParticleEngine.INSTANCE;var pool=engine.packageParticlesForDraw();
+        if(!engine.currentFrameReady()){shadowStatus="current frame unavailable";return;}
         if(pool==null || pool.admissionCount()==0 || (!entities && !blockEntities) || !ClientConfig.shaderPackIntegration || reloadRequested)return;
         try {
             if(!prepare() || COMPILER.shadow()==null){shadowStatus="program unavailable";return;}
-            if(!PackageShadowPolicy.copy(frustum,CULLING))throw new IllegalStateException("Unsupported Iris shadow frustum");
+            if(!PackageShadowPolicy.copy(frustum,CULLING)){shadowStatus="unsupported shadow frustum: "+(frustum==null?"null":frustum.getClass().getName());return;}
             int words=(pool.packageCapacity()+31)>>>5;
             if(CHAIN_VISIBILITY_MASK.length!=words)CHAIN_VISIBILITY_MASK=new int[words];
             VISIBLE_CONVEYORS.clear();
@@ -102,7 +103,7 @@ public final class PackageShaderHook {
             }finally{VISIBLE_CONVEYORS.clear();}
             VIEW.set(ShadowRenderer.MODELVIEW);PROJECTION.set(ShadowRenderer.PROJECTION);
             timedDraw(SHADOW_TIMING,engine,pool,PackagePoolGpu.DrawPass.SHADOW,COMPILER.shadow(),camera,entities,blockEntities,CHAIN_VISIBILITY_MASK);
-            shadowStatus="active (previous generation)";
+            shadowStatus="active (current frame="+engine.renderFrameToken()+", generation="+engine.currentGeneration()+", age=0)";
         }catch(RuntimeException|LinkageError failure){fail(failure);}
     }
     private static void fail(Throwable failure) {

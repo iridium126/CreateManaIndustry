@@ -62,7 +62,6 @@ layout(std430, binding = BIND_ORDER_OPAQUE) buffer OrderOpaqueW { uint order[]; 
 uniform uint uPackageStaged; // counter.spare is the pre-package boundary until capture
 uniform uint uUpper;      // physical capacity; dispatch size comes from the GPU live count
 uniform uint uCarrierBase; // fixed sort-buffer base of the held-item carrier region
-uniform float uWaveTier[4]; // held-sword material id per wave slot (carrier sweep)
 uniform vec3 uCamPos;
 uniform mat4 uView;
 uniform float uDepthLogRange; // log2(power-of-two far bound), calculated once on CPU
@@ -71,7 +70,7 @@ uniform vec4 uFrustum[6]; // normalized planes, distances vs camera-relative poi
 
 // the carrier sweep needs the shared claim predicate + the wave uniforms it
 // reads (uTimeSec / uWave / uWaveTarget live in the chunk)
-#pragma cmi_include chunks/allay_storm.glsl
+#pragma cmi_include chunks/model_carrier.glsl
 
 #pragma cmi_include chunks/frustum_culling.glsl
 
@@ -172,17 +171,7 @@ void main() {
         // behind the frustum test, so an off-screen carrier drops its sword
         // with its body. Overflow clamps the command's instanceCount back to
         // CARRIER_CAP (silent drop, see ParticleBuffers.CARRIER_CAP).
-        bool carrier;
-        if (storm) {
-            carrier = false;
-            if (p3.y > 0.0) {
-                int k = cmiStormWaveClaim(p3.z);
-                if (k >= 0 && uWaveTier[k] > 0.5)
-                    carrier = true;
-            }
-        } else {
-            carrier = emitters.u[hb + 17u].z > 0.5;
-        }
+        bool carrier=cmiModelCarrier(storm,p3.y,p3.z,emitters.u[hb+17u].z);
         if (carrier) {
             uint cpos = atomicAdd(indirect.cmd[IDX_CNT_CARRIER], 1u);
             if (cpos < CARRIER_CAP) {

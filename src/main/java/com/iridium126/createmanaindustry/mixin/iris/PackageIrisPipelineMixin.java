@@ -25,6 +25,10 @@ public abstract class PackageIrisPipelineMixin implements CMIPackageIrisPipeline
     @Shadow private boolean destroyed;
     @Inject(method="<init>",at=@At("TAIL"))
     private void cmi$capturePackagePrograms(ProgramSet set,CallbackInfo ci){cmi$packageProgramSet=set;}
+    @Inject(method="renderShadows",at=@At("HEAD"))
+    private void cmi$prepareCurrentParticleFrame(net.irisshaders.iris.mixin.LevelRendererAccessor renderer,net.minecraft.client.Camera camera,CallbackInfo ci){
+        com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine.INSTANCE.prepareCurrentFrame();
+    }
     @Override public ProgramSet cmi$packageProgramSet(){return cmi$packageProgramSet;}
     @Override public boolean cmi$packageHasShadows(){return !destroyed && shadowRenderTargets!=null;}
     @Override public void cmi$discardPackageShader(ShaderInstance shader) {

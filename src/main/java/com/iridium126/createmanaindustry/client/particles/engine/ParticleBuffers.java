@@ -661,6 +661,7 @@ public final class ParticleBuffers {
 
     /** Internal package pass uses the current submission's resources, before swap. */
     int particleWriteBufferId() { return this.particleSSBOs[1-this.readIndex]; }
+    public int emitterBufferId(){return this.emitterSSBO;}
     int counterBufferId(int slot) { return this.counterSSBOs[slot % COUNTER_RING]; }
 
     // ---- merged-program TBO views (shader-pack path) --------------------

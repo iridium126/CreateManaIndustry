@@ -12,6 +12,13 @@ allprojects {
             if (project.hasProperty('particleBenchmark')) args '--benchmark'
             workingDir = project.projectDir
         }
+        tasks.register('validateModelShadowGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/ModelShadowGpuValidation.java'
+            if (project.hasProperty('modelShadowBenchmark')) args '--benchmark'
+            workingDir = project.projectDir
+        }
         tasks.register('validatePackageGpu', JavaExec) {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
@@ -110,6 +117,15 @@ allprojects {
             mainClass = 'scripts/particles/PackageGpuValidation.java'
             args '--shaderpack-only', '--iris-transform'
             if (project.hasProperty('packageGlDebug')) args '--gl-debug'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateModelShadowIrisGpu', JavaExec) {
+            dependsOn tasks.named('classes'), tasks.named('extractPackageIrisTransformer'), 'compilePackageIrisHarness'
+            classpath = files(layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter {
+                !it.name.startsWith('glsl-transformer-')
+            } + files(packageIrisTransformer)
+            mainClass = 'scripts/particles/ModelShadowGpuValidation.java'
+            args '--iris-transform'
             workingDir = project.projectDir
         }
         tasks.register('compilePackageIrisHarness', JavaCompile) {

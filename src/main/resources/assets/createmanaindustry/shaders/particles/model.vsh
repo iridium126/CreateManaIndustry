@@ -1,3 +1,4 @@
+#pragma cmi_include chunks/model_size.glsl
 // MODEL particle vertex shader: instanced vanilla-allay rendering. Body
 // instances read the MODEL PARTITION of the type-partitioned sort array --
 // sorted keys place all MODEL items (sort-type 0) at [0, N_model), so both
@@ -114,7 +115,7 @@ void main() {
     // STORM members carry their identity (memberIdx+1) in p0.w, not a size
     // multiplier -- the header's storm slot 18.x selects the constant 1.0.
     float pmul = emitters.u[hb + 18u].x > 0.5 ? 1.0 : p0.w;
-    float size = mix(sizeStart, sizeEnd, pow(life, sizeEase)) * pmul;
+    float size = cmiModelSize(p0,p3,sizeStart,sizeEnd,sizeEase,emitters.u[hb+18u].x>.5);
     // above-feet body height = 2*size blocks exactly: MODEL_ABOVE_FEET is the
     // rest-pose model's above-feet height in blocks, derived from the bake
     // (AllayModelGeometry) -- the old hardcoded 0.625 was ~5.5% too tall.

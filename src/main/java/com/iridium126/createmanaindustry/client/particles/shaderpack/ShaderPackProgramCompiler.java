@@ -99,6 +99,9 @@ public final class ShaderPackProgramCompiler {
      * so pack samplers can never collide with them; unbound after every draw. */
     public static final int MERGED_SAMPLER_UNIT_BASE = 10;
 
+    private final java.util.function.Function<String,String> mergedSources;
+    public ShaderPackProgramCompiler(){this(ParticlePrograms::loadParticlePlain);}
+    public ShaderPackProgramCompiler(java.util.function.Function<String,String> sources){mergedSources=java.util.Objects.requireNonNull(sources);}
     private static final String SHADER_NAME = "cmi_model_entities";
     private static final String GHOST_SHADER_NAME = "cmi_model_entities_ghost";
     private static final String SHADOW_SHADER_NAME = "cmi_model_shadow";
@@ -597,7 +600,7 @@ public final class ShaderPackProgramCompiler {
         if (this.mergedVertexSource != null && this.mergedSourceOverlay == withEntityColor)
             return this.mergedVertexSource;
 
-        String chunk = ParticlePrograms.loadPlain("shaders/particles/chunks/allay_pose.glsl");
+        String chunk = mergedSources.apply("chunks/allay_pose.glsl");
         if (chunk.isEmpty())
             throw new IllegalStateException("cannot load chunks/allay_pose.glsl");
 
@@ -635,6 +638,7 @@ public final class ShaderPackProgramCompiler {
         sb.append("""
                 uniform vec3 cmi_CameraPos;
                 uniform float cmi_FadeDist;
+                uniform bool cmi_ShadowPass;
 
                 // Sort-buffer metadata tail slot (index == capacity +
                 // CARRIER_CAP, see ParticleBuffers allocation). capture.comp
@@ -678,6 +682,7 @@ public final class ShaderPackProgramCompiler {
             // EntityPatcher: (overlayColor.rgb, 1 - overlayColor.a).
             sb.append("out vec4 entityColor;\n\n");
         }
+        sb.append(mergedSources.apply("chunks/model_size.glsl")).append('\n');
         sb.append(chunk).append('\n');
         sb.append("""
                 void main() {
@@ -724,7 +729,7 @@ public final class ShaderPackProgramCompiler {
                     uint hb = eid * VEC4_PER_EMITTER;
 
                     // per-instance fade early-out: collapse offscreen consistently per triangle
-                    gone = gone || distance(p0.xyz, cmi_CameraPos) > cmi_FadeDist + 24.0;
+                    gone = gone || (!cmi_ShadowPass && distance(p0.xyz, cmi_CameraPos) > cmi_FadeDist + 24.0);
 
                     float sizeStart = gone ? 0.0 : texelFetch(cmi_Emitters, int(hb + 5u)).z;
                     float sizeEnd = gone ? 0.0 : texelFetch(cmi_Emitters, int(hb + 5u)).w;
@@ -732,7 +737,7 @@ public final class ShaderPackProgramCompiler {
                     // storm members carry their IDENTITY in p0.w — the header's
                     // storm slot 18.x selects the constant 1.0 multiplier
                     float pmul = texelFetch(cmi_Emitters, int(hb + 18u)).x > 0.5 ? 1.0 : p0.w;
-                    float size = mix(sizeStart, sizeEnd, pow(life, sizeEase)) * pmul;
+                    float size = cmiModelSize(p0,p3,sizeStart,sizeEnd,sizeEase,texelFetch(cmi_Emitters,int(hb+18u)).x>.5);
                     float scale = (2.0 * size) / MODEL_ABOVE_FEET;
 
                     int anim = int(texelFetch(cmi_Emitters, int(hb + 17u)).x);

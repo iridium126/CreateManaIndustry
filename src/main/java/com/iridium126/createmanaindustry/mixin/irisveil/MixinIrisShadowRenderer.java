@@ -4,6 +4,9 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook;
 
 import net.irisshaders.iris.shadows.ShadowRenderer;
+import net.irisshaders.iris.shadows.frustum.FrustumHolder;
+import net.irisshaders.iris.mixin.LevelRendererAccessor;
+import net.minecraft.client.Camera;
 
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -39,15 +42,17 @@ abstract class MixinIrisShadowRenderer {
     @Shadow
     private boolean shouldRenderEntities;
 
+    @Shadow private FrustumHolder entityFrustumHolder;
+
     @Inject(method = "renderShadows",
             at = @At(value = "INVOKE_STRING",
                     target = "Lnet/minecraft/util/profiling/ProfilerFiller;popPush(Ljava/lang/String;)V",
                     args = "ldc=draw entities"))
-    private void createmanaindustry$drawShadowModels(CallbackInfo ci) {
+    private void createmanaindustry$drawShadowModels(LevelRendererAccessor renderer,Camera camera,CallbackInfo ci) {
         if (!CreateManaIndustry.IRISVEIL_ACTIVE)
             return;
         if (!this.shouldRenderEntities)
             return; // pack disabled entity shadows: native allays cast none either
-        CMIPackEntityMergeHook.renderShadow();
+        CMIPackEntityMergeHook.renderShadow(camera,entityFrustumHolder.getFrustum());
     }
 }

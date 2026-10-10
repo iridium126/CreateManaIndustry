@@ -1,0 +1,63 @@
+Calculating task graph as no cached configuration is available for tasks: validateModelShadowIrisGpu validateModelShadowGpu
+> Task :cloneVoxy SKIPPED
+> Task :prepareVoxy SKIPPED
+> Task :activateVoxy SKIPPED
+> Task :buildVoxy SKIPPED
+> Task :cacheVoxy SKIPPED
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :extractSableCompanion UP-TO-DATE
+> Task :extractSodiumCoreJar UP-TO-DATE
+> Task :compileJava UP-TO-DATE
+> Task :generateModMetadata UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :compilePackageIrisHarness UP-TO-DATE
+> Task :extractPackageIrisTransformer UP-TO-DATE
+
+> Task :validateModelShadowIrisGpu
+NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2 / 4.5.0 NVIDIA 581.15
+MODEL effective maximum capacity: 4000000
+WARN StatusConsoleListener Advanced terminal features are not available in this environment
+MODEL shadow GPU: 4133200 assertions passed
+
+> Task :validateModelShadowGpu
+NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2 / 4.5.0 NVIDIA 581.15
+MODEL effective maximum capacity: 4000000
+WARN StatusConsoleListener Advanced terminal features are not available in this environment
+prepare,10000,10000,1,0.019456,0.026624,6.0E-4,0.0014,211236
+prepare,10000,10000,2,0.018432,0.026624,6.0E-4,0.0013,211236
+prepare,10000,10000,3,0.019456,0.026624,5.0E-4,0.0012,211236
+state_boundary,10000,10000,1,0.019456,0.37888,0.0491,0.0558,211236
+state_boundary,10000,10000,2,0.018432,0.026624,0.0084,0.0133,211236
+state_boundary,10000,10000,3,0.019456,0.026624,0.0085,0.015,211236
+prepare,65536,65536,1,0.023552,0.027648,0.0041,0.0099,655524
+prepare,65536,65536,2,0.024576,0.029696,0.0041,0.0095,655524
+prepare,65536,65536,3,0.024576,0.033792,0.0041,0.0105,655524
+state_boundary,65536,65536,1,0.024576,0.031744,0.0085,0.0153,655524
+state_boundary,65536,65536,2,0.024576,0.027648,0.0084,0.0143,655524
+state_boundary,65536,65536,3,0.023552,0.027648,0.0084,0.0142,655524
+prepare,131072,131072,1,0.028672,0.03584,0.0041,0.0094,1179812
+prepare,131072,131072,2,0.027648,0.03072,0.0042,0.0099,1179812
+prepare,131072,131072,3,0.028672,0.036864,0.0041,0.0091,1179812
+state_boundary,131072,131072,1,0.028672,0.031744,0.0084,0.0141,1179812
+state_boundary,131072,131072,2,0.027648,0.031744,0.0084,0.0143,1179812
+state_boundary,131072,131072,3,0.028672,0.03584,0.0084,0.0143,1179812
+prepare,2000000,2000000,1,0.601088,0.607232,0.0042,0.0098,16131236
+prepare,2000000,2000000,2,0.601088,0.607232,0.0041,0.0094,16131236
+prepare,2000000,2000000,3,0.602112,0.611328,0.0041,0.0093,16131236
+state_boundary,2000000,2000000,1,0.607232,0.612352,0.0084,0.014,16131236
+state_boundary,2000000,2000000,2,0.601088,0.607232,0.0085,0.0152,16131236
+state_boundary,2000000,2000000,3,0.601088,0.607232,0.0084,0.014,16131236
+MODEL shadow GPU: 4133212 assertions passed
+
+[Incubating] Problems report is available at: file:///D:/MAINFILE/MCMOD/CreateManaIndustry-1.21.1-Neoforge-branch/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.2.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 48s
+10 actionable tasks: 2 executed, 8 up-to-date
+Configuration cache entry stored.

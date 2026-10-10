@@ -61,4 +61,17 @@ class PackageIrisContractTest {
         var set=read(IRIS+"shaderpack/programs/ProgramSet");
         assertTrue(set.methods.stream().anyMatch(m->m.name.equals("<init>") && m.desc.equals("(L"+IRIS+"shaderpack/include/AbsolutePackPath;Ljava/util/function/Function;L"+IRIS+"shaderpack/properties/ShaderProperties;L"+IRIS+"shaderpack/ShaderPack;)V")));
     }
+    @Test void currentFrameWrapperMatchesMainCallAndPipelinePrecedesShadowCamera() throws IOException {
+        var game=read("net/minecraft/client/renderer/GameRenderer");
+        var render=game.methods.stream().filter(m->m.name.equals("renderLevel")&&m.desc.equals("(Lnet/minecraft/client/DeltaTracker;)V")).findFirst().orElseThrow();
+        String descriptor="(Lnet/minecraft/client/DeltaTracker;ZLnet/minecraft/client/Camera;Lnet/minecraft/client/renderer/GameRenderer;Lnet/minecraft/client/renderer/LightTexture;Lorg/joml/Matrix4f;Lorg/joml/Matrix4f;)V";
+        int calls=0;for(var instruction:render.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals("net/minecraft/client/renderer/LevelRenderer")&&call.name.equals("renderLevel")){assertEquals(descriptor,call.desc);calls++;}
+        assertEquals(1,calls,"Frame wrapper would match multiple main render calls");
+        var pipeline=read(IRIS+"pipeline/IrisRenderingPipeline");var shadows=pipeline.methods.stream().filter(m->m.name.equals("renderShadows")).findFirst().orElseThrow();
+        assertEquals("(L"+IRIS+"mixin/LevelRendererAccessor;Lnet/minecraft/client/Camera;)V",shadows.desc);
+        assertTrue(java.util.Arrays.stream(shadows.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode call&&call.owner.equals(IRIS+"shadows/ShadowRenderer")&&call.name.equals("renderShadows")));
+        var callback=read("com/iridium126/createmanaindustry/mixin/irisveil/MixinIrisShadowRenderer");
+        assertTrue(callback.methods.stream().anyMatch(m->m.name.equals("createmanaindustry$drawShadowModels")&&m.desc.equals("(L"+IRIS+"mixin/LevelRendererAccessor;Lnet/minecraft/client/Camera;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V")));
+    }
+
 }

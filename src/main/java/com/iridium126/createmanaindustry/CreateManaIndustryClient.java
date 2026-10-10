@@ -136,13 +136,10 @@ public class CreateManaIndustryClient {
     }
 
     /**
-     * GPU particle engine split-frame hooks. The compute half runs at
-     * AFTER_SKY — the earliest level-stage event of the pass — so its keygen
-     * culls against THIS frame's camera before anything else renders; the
-     * shader-pack merge hook fires mid-renderLevel, between AFTER_SKY and
-     * AFTER_LEVEL, and thereby consumes a current-frame permutation (fixes the
-     * one-frame entry lag of MODEL particles under fast view rotation). Every
-     * draw call stays at AFTER_LEVEL reading the just-committed pool.
+     * GPU particle frame hooks. Iris prepares before shadows when integration
+     * is active; AFTER_SKY reuses that commit or performs the normal preparation.
+     * The entity merge consumes it mid-renderLevel. AFTER_LEVEL submits the
+     * remaining draws and closes timing for the same main-camera scope.
      */
     @SubscribeEvent
     private static void onRenderLevelStage(RenderLevelStageEvent event) {

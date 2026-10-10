@@ -1,0 +1,9 @@
+layout(local_size_x=1) in;
+layout(std430,binding=3) buffer Instances {uvec2 items[];};
+layout(std430,binding=4) buffer Commands {uint cmd[];};
+uniform uint uMetaSlot,uCutout,uOpaque,uTotal;
+void main(){
+    uint models=cmd[IDX_CNT_MODELOP];cmd[IDX_CNT_GHOST]=models;cmd[IDX_CNT_CARRIER]=min(cmd[IDX_CNT_CARRIER],uint(CARRIER_CAP));
+    cmd[10]=uCutout;cmd[15]=uOpaque-uCutout;cmd[17]=uCutout;cmd[20]=uTotal-uOpaque;cmd[22]=uOpaque;
+    items[uMetaSlot]=uvec2(models,0u);
+}
