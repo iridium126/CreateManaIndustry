@@ -1079,6 +1079,32 @@ public final class ParticleBuffers {
         GL43.glDispatchComputeIndirect((long) command * DISPATCH_BYTES);
     }
 
+    /** Complete inputs for a billboard pass; do not depend on another material's bindings. */
+    public void bindBillboardDrawInputs(int mode, int permutation) {
+        if (mode < 0 || mode > 2) throw new IllegalArgumentException("Billboard mode");
+        bindNewestPool(PARTICLE_BB_WRITE);
+        bindEmitters(EMITTER_BB);
+        if (mode == 0) bindOrderAdd();
+        else {
+            bindSort(SORTWRITE_BINDING, permutation);
+            bindOrderOpaque(); // Keep both statically declared textured inputs valid.
+        }
+        // ALPHA reads its partition start from this same generation's commands.
+        bindIndirect(INDIRECT_BB);
+        bindVao();
+        bindDrawIndirect();
+    }
+
+    /** MODEL body, ghost and carrier share the main permutation, never the shadow list. */
+    public void bindModelDrawInputs(int permutation) {
+        bindNewestPool(PARTICLE_BB_WRITE);
+        bindEmitters(EMITTER_BB);
+        bindSort(SORTWRITE_BINDING, permutation);
+        bindModelGeo();
+        bindVao();
+        bindDrawIndirect();
+    }
+
     public void bindDrawIndirect() {
         GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, this.indirectSSBO);
     }

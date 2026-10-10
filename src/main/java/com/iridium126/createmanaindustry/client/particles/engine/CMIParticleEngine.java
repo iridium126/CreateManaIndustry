@@ -871,17 +871,22 @@ public final class CMIParticleEngine {
     private DeltaTracker levelDelta;
     private net.minecraft.client.multiplayer.ClientLevel frameLevel;
 
-    public void enterLevelFrame(Camera camera, Matrix4fc view, Matrix4fc projection, DeltaTracker delta) {
+    public void enterLevelFrame(boolean mainRenderer) {
         var mc = Minecraft.getInstance();
-        boolean main = camera == mc.gameRenderer.getMainCamera() && mc.level != null;
-        if (levelFrame.enter(main)) {
-            levelCamera = camera;
-            levelDelta = delta;
+        if (levelFrame.enter(mainRenderer && mc.level != null)) {
+            levelCamera = null;
+            levelDelta = null;
             frameLevel = mc.level;
-            levelView.set(view);
-            levelProjection.set(projection);
             frameAttempted = frameArmed = false;
         }
+    }
+
+    public void captureLevelFrame(Camera camera, Matrix4fc view, Matrix4fc projection, DeltaTracker delta) {
+        if (!levelFrame.primary() || camera != Minecraft.getInstance().gameRenderer.getMainCamera()) return;
+        levelCamera = camera;
+        levelDelta = delta;
+        levelView.set(view);
+        levelProjection.set(projection);
     }
 
     public void leaveLevelFrame() {
@@ -908,7 +913,7 @@ public final class CMIParticleEngine {
     public int committedCounterBuffer(){return gpu.counterBufferId(lastGoodSlot);}
     /** Called after Iris pipeline setup but before any shadow camera/state is installed. */
     public boolean prepareCurrentFrame(){
-        if(!levelFrame.primary()||frameLevel!=Minecraft.getInstance().level)return false;
+        if(!levelFrame.primary()||levelCamera==null||frameLevel!=Minecraft.getInstance().level)return false;
         if(!ClientConfig.shaderPackIntegration||!dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse())return false;
         if(!levelFrame.claim())return levelFrame.ready();
         try {
@@ -1107,6 +1112,8 @@ public final class CMIParticleEngine {
         this.frameSorted = false;
         this.frameFinalPerm = -1;
 
+        // Arbitration belongs to this frame even if the preceding late draw threw.
+        this.hookModelsDrawn=false;
         this.hookPackagesDrawn=false;
 
         int slot = (this.lastGoodSlot + 1) % ParticleBuffers.COUNTER_RING;
@@ -2000,8 +2007,8 @@ public final class CMIParticleEngine {
      * independent, so position costs nothing but lets ghost depth occlude glow
      * behind cloaks.
      * <p>
-     * Every draw reads the pool the compute phase just committed (write side,
-     * unswapped until next frame's AFTER_SKY), plus the promotion of
+     * Every draw reads the pool the compute phase just committed (read side,
+     * after the successful swap), plus the promotion of
      * {@code lastFinalPermId} that happened at compute-tail — on pack frames
      * the merge hook already drew the MODEL segments against THAT permutation
      * earlier this frame; its latch makes us skip our own drawModels so the
@@ -2022,14 +2029,6 @@ public final class CMIParticleEngine {
                 // keeping bindings correct for a valid buffer anyway.
                 if (CMIParticleEngine.this.frameAliveEstimate > 0 || CMIParticleEngine.this.frameEntryCount > 0
                         || (CMIParticleEngine.this.packageParticles!=null && CMIParticleEngine.this.packageParticles.admissionCount()>0)) {
-                    // Bind the FINAL sorted permutation up front: both translucent
-                    // draws (model ghost segment here, ALPHA sprites below) read their
-                    // own contiguous partition of it. On the fast path nothing reads
-                    // it, but the programs statically declare the sort SSBO, so keep a
-                    // valid buffer bound regardless.
-                    CMIParticleEngine.this.gpu.bindSort(ParticleBuffers.SORTWRITE_BINDING,
-                            CMIParticleEngine.this.frameSorted ? CMIParticleEngine.this.frameFinalPerm : CMIParticleEngine.this.gpu.sortBuffer(0));
-                    CMIParticleEngine.this.gpu.bindOrderOpaque();
                     ParticleDiagnostics.INSTANCE.mark("draw_opaque");
                     drawPass(1, view, projectionMatrix, camera);
                     ParticleDiagnostics.INSTANCE.mark("draw_packages");
@@ -2048,7 +2047,6 @@ public final class CMIParticleEngine {
                         ParticleDiagnostics.INSTANCE.mark("draw_hex");
                         drawHexPatterns(view, projectionMatrix, camera);
                     }
-                    CMIParticleEngine.this.gpu.bindOrderAdd();
                     ParticleDiagnostics.INSTANCE.mark("draw_additive");
                     drawPass(0, view, projectionMatrix, camera);
                     ParticleDiagnostics.INSTANCE.mark("draw_cleanup");
@@ -2151,6 +2149,8 @@ public final class CMIParticleEngine {
             RenderSystem.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             RenderSystem.depthMask(true);
             hexPatternBuffers.draw(hexCount);
+            GL20.glUseProgram(0);
+            GL30.glBindVertexArray(0);
             RenderSystem.enableCull();
             RenderSystem.disableBlend();
         }
@@ -2167,19 +2167,7 @@ public final class CMIParticleEngine {
             if (prog == 0)
                 return;
             GL20.glUseProgram(prog);
-            // Draw the NEWEST committed generation. Two mistakes have lived on this
-            // line across the frame split — learn them both: (1) generation — after
-            // the AFTER_SKY swap the fresh data lives on the read side, binding the
-            // stale write side flickered the swarm; (2) binding POINT — the render
-            // vsh block declares PARTICLE_BB_WRITE (misleadingly named "fresh
-            // data"), so the buffer must attach AT THAT point even though its side
-            // is the post-swap read one; attaching it at binding 0 left the
-            // declared slot empty and made every L0 allay invisible. The pack path
-            // was immune to both: its TBO view always pinned particleReadBufferId().
-            CMIParticleEngine.this.gpu.bindNewestPool(ParticleBuffers.PARTICLE_BB_WRITE);
-            CMIParticleEngine.this.gpu.bindEmitters(5);
-            CMIParticleEngine.this.gpu.bindModelGeo(); // unbindShaders() clears binding 12 every frame
-            CMIParticleEngine.this.gpu.bindVao();
+            CMIParticleEngine.this.gpu.bindModelDrawInputs(mainPermutation());
 
             setMat4Uniform(prog, "ModelViewMat", view);
             setMat4Uniform(prog, "ProjMat", projectionMatrix);
@@ -2241,12 +2229,7 @@ public final class CMIParticleEngine {
             if (prog == 0)
                 return;
             GL20.glUseProgram(prog);
-            // Newest committed generation at the binding POINT the vsh declares
-            // (PARTICLE_BB_WRITE); generation and point selection rationale lives
-            // on the drawModels twin of this line.
-            CMIParticleEngine.this.gpu.bindNewestPool(ParticleBuffers.PARTICLE_BB_WRITE);
-            CMIParticleEngine.this.gpu.bindEmitters(5);
-            CMIParticleEngine.this.gpu.bindVao();
+            CMIParticleEngine.this.gpu.bindBillboardDrawInputs(mode, mainPermutation());
 
             setMat4Uniform(prog, "ModelViewMat", view);
             setMat4Uniform(prog, "ProjMat", projectionMatrix);
@@ -2297,12 +2280,6 @@ public final class CMIParticleEngine {
                 RenderSystem.depthMask(false);
             }
 
-            // textured.vsh declares the indirect SSBO unconditionally (mode 0 reads
-            // the ALPHA partition start from cmd[IDX_CNT_MODELOP]), while the
-            // compute phase's finally unbinds every SSBO base -- keep the declared
-            // binding valid in BOTH modes.
-            CMIParticleEngine.this.gpu.bindIndirect(ParticleBuffers.INDIRECT_BB);
-            CMIParticleEngine.this.gpu.bindDrawIndirect();
             if (mode == 0)
                 CMIParticleEngine.this.gpu.drawIndirect(0);
             else if (mode == 1)
@@ -2315,6 +2292,10 @@ public final class CMIParticleEngine {
             RenderSystem.disableBlend();
             GL20.glUseProgram(0);
             GL30.glBindVertexArray(0);
+        }
+
+        private int mainPermutation() {
+            return frameSorted ? frameFinalPerm : gpu.sortBuffer(0);
         }
 
         // ------------------------------------------------------------------

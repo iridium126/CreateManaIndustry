@@ -1,0 +1,101 @@
+Calculating task graph as no cached configuration is available for tasks: build validateHexGpu validatePackageIrisGpu validateModelShadowIrisGpu
+> Task :cloneVoxy SKIPPED
+> Task :prepareVoxy SKIPPED
+> Task :activateVoxy SKIPPED
+> Task :buildVoxy SKIPPED
+> Task :cacheVoxy SKIPPED
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :extractSableCompanion UP-TO-DATE
+> Task :extractSodiumCoreJar UP-TO-DATE
+
+> Task :compileJava
+注: D:\MAINFILE\MCMOD\CreateManaIndustry-1.21.1-Neoforge-branch\src\main\java\com\iridium126\createmanaindustry\client\particles\engine\CMIParticleEngine.java使用或覆盖了已过时的 API。
+注: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+
+> Task :compileBootstrapJava UP-TO-DATE
+> Task :processBootstrapResources UP-TO-DATE
+> Task :bootstrapClasses UP-TO-DATE
+> Task :bootstrapJarJar NO-SOURCE
+> Task :bootstrapJar UP-TO-DATE
+> Task :generateModMetadata UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes
+> Task :jarJar NO-SOURCE
+> Task :jar
+> Task :distributionJar
+> Task :assemble
+> Task :compileTestJava UP-TO-DATE
+> Task :processTestResources NO-SOURCE
+> Task :testClasses UP-TO-DATE
+> Task :test
+
+> Task :validatePackageSableAbsent
+Package Sable absent: direct bridge gate passed without Sable/companion
+
+> Task :check
+> Task :build
+
+> Task :validateHexGpu
+Driver: NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2
+OpenGL: 4.5.0 NVIDIA 581.15
+WARN StatusConsoleListener Advanced terminal features are not available in this environment
+Compiled prepare_dispatch.comp
+Compiled gridbuild.comp
+Compiled hit.comp
+Compiled stormpos.comp
+Compiled wavecontact.comp
+Compiled block_emit.comp
+Compiled capture.comp
+Compiled update.comp
+Compiled emit.comp
+Compiled keygen.comp
+Compiled reset.comp
+Compiled radix_hist.comp
+Compiled radix_scan.comp
+Compiled radix_scatter.comp
+Compiled hex_reconcile.comp
+Compiled hex_prepare.comp
+GPU pigment parity: built-in palette formulas, dark colors, long times, fades and fallback passed
+Pool reconciliation, generation rejection, compaction, anchors and three-way sort passed
+GPU zappy points match Hex RenderLib across seeds, times and overlapping paths
+GPU dispatch bounds: empty, tails, saturation and carrier capacity passed
+Real emit/update capacity and sentinel tests passed
+Death-chain saturation, indirect coverage, all-dead and rebirth passed
+Delayed local MODEL damage follows stable identity, not stale pool index
+Four-slot backpressure, immutable snapshots, reset and render-generation rollback passed
+Wave contacts persist across eight delayed frames and are reported once
+Actual additive/ALPHA/OPAQUE/MODEL pixels: late draws, early state restoration, mixed/empty/offscreen scenes, Hex pixels and foreign package/high-SSBO bindings passed
+[14:05:04] [main/ERROR] [co.ir.cr.cl.pa.en.ParticlePrograms/]: [CMI particles] shader reload failed; retaining previous program set
+Atomic reload keeps old programs on failure and frees rejected candidates
+Baseline and grouped sort order, payload, tail and capacity tests passed
+PASS: 135778 assertions
+
+> Task :compilePackageIrisHarness UP-TO-DATE
+> Task :extractPackageIrisTransformer UP-TO-DATE
+
+> Task :validatePackageIrisGpu
+scripts\particles\PackageGpuValidation.java:4941: 警告: [deprecation] RegistryFriendlyByteBuf中的RegistryFriendlyByteBuf(ByteBuf,RegistryAccess)已过时
+        var bytes=new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(),net.minecraft.core.RegistryAccess.EMPTY);
+                  ^
+1 个警告
+NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2 / 4.5.0 NVIDIA 581.15
+WARN StatusConsoleListener Advanced terminal features are not available in this environment
+Package shaderpack GPU: 26733 assertions passed
+
+> Task :validateModelShadowIrisGpu
+NVIDIA GeForce RTX 4070 Laptop GPU/PCIe/SSE2 / 4.5.0 NVIDIA 581.15
+MODEL effective maximum capacity: 4000000
+WARN StatusConsoleListener Advanced terminal features are not available in this environment
+MODEL shadow GPU: 4133200 assertions passed
+
+[Incubating] Problems report is available at: file:///D:/MAINFILE/MCMOD/CreateManaIndustry-1.21.1-Neoforge-branch/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.2.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 1m
+19 actionable tasks: 8 executed, 11 up-to-date
+Configuration cache entry stored.

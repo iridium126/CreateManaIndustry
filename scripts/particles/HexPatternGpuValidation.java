@@ -330,6 +330,113 @@ public class HexPatternGpuValidation {
         System.out.println("Four-slot backpressure, immutable snapshots, reset and render-generation rollback passed");
     }
 
+    static void particleVisibility() throws Exception {
+        var gpu=new com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers();
+        check(gpu.init(1000,8),"visibility buffer init");
+        Class<?> geometry=Class.forName("com.iridium126.createmanaindustry.client.particles.engine.AllayModelGeometry");
+        Field vertices=geometry.getDeclaredField("VERTICES"),indices=geometry.getDeclaredField("INDICES"),body=geometry.getDeclaredField("BODY_OPAQUE_INDEX_COUNT"),opaque=geometry.getDeclaredField("OPAQUE_INDEX_COUNT");
+        for(Field f:new Field[]{vertices,indices,body,opaque})f.setAccessible(true);
+        gpu.uploadModelGeometry((float[])vertices.get(null),(int[])indices.get(null),body.getInt(null),opaque.getInt(null));
+        int additive=link(stage("additive.vsh",GL20.GL_VERTEX_SHADER),stage("additive.fsh",GL20.GL_FRAGMENT_SHADER));
+        int textured=link(stage("textured.vsh",GL20.GL_VERTEX_SHADER),stage("textured.fsh",GL20.GL_FRAGMENT_SHADER));
+        int model=link(stage("model.vsh",GL20.GL_VERTEX_SHADER),stage("model.fsh",GL20.GL_FRAGMENT_SHADER));
+        int keygen=compute("keygen.comp"),hist=compute("radix_hist.comp"),scan=compute("radix_scan.comp"),scatter=compute("radix_scatter.comp");
+        int framebuffer=GL30.glGenFramebuffers(),color=GL11.glGenTextures(),white=GL11.glGenTextures();
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,framebuffer);GL11.glBindTexture(GL11.GL_TEXTURE_2D,color);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,GL11.GL_RGBA8,64,64,0,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,(ByteBuffer)null);
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL11.GL_TEXTURE_2D,color,0);
+        check(GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER)==GL30.GL_FRAMEBUFFER_COMPLETE,"visibility framebuffer");
+        GL13.glActiveTexture(GL13.GL_TEXTURE1);GL11.glBindTexture(GL11.GL_TEXTURE_2D,white);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,GL11.GL_RGBA8,1,1,0,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,bytes(4).putInt(0,-1));
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MIN_FILTER,GL11.GL_NEAREST);GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MAG_FILTER,GL11.GL_NEAREST);
+        GL11.glViewport(0,0,64,64);GL11.glDisable(GL11.GL_DEPTH_TEST);GL11.glDisable(GL11.GL_CULL_FACE);GL11.glDisable(GL11.GL_BLEND);
+        var foreign=buffer(0,bytes(65536));var boundary=new com.iridium126.createmanaindustry.client.particles.engine.ParticleComputeState();
+        com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
+        try {
+            // All tests draw after the pool has swapped and foreign state was restored.
+            // Include each billboard alone, mixed with MODEL, and an all-culled frame.
+            for(int scene=0;scene<7;scene++)for(boolean early:new boolean[]{false,true}) {
+                boolean models=scene==3;boolean culled=scene==5||scene==6;int count=scene==6?0:scene<3?1:4;
+                gpu.beginBindings();
+                for(int binding=0;binding<16;binding++)GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,foreign);
+                if(early)boundary.capture();
+                gpu.beginComputeFrame();
+                var pool=bytes(count*64);
+                for(int i=0;i<count;i++){
+                    int material=scene<3?new int[]{0,1,3}[scene]:new int[]{0,1,3,models?2:0}[i];
+                    pool.putFloat(i*64,culled?5:0).putFloat(i*64+12,1).putFloat(i*64+32,1).putFloat(i*64+36,1).putFloat(i*64+40,1).putFloat(i*64+44,1);
+                    pool.putFloat(i*64+48,1).putFloat(i*64+52,10).putFloat(i*64+56,.123f).putInt(i*64+60,material);
+                }
+                gpu.bindParticleWrite(1);upload(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,1),pool);
+                for(int material=0;material<4;material++) {
+                    var h=new float[80];h[5*4+2]=h[5*4+3]=.4f;h[6*4]=1;h[6*4+2]=1;h[6*4+3]=1;h[7*4]=material;
+                    h[8*4]=h[8*4+1]=h[8*4+2]=h[8*4+3]=1;h[16*4+1]=1;gpu.setEmitterHeader(material,h);
+                }
+                gpu.uploadDirtyEmitters();gpu.bindCounter(3,0);int counter=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,3);upload(counter,bytes(16).putInt(0,count));
+                gpu.bindIndirect(2);int commands=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,2);
+                var cmd=bytes(140);for(int command:new int[]{0,1,5})cmd.putInt(command*20,6);upload(commands,cmd);
+                gpu.bindParticleWrite(0);gpu.bindEmitters(5);gpu.bindSort(7,gpu.sortBuffer(0));gpu.bindSort(13,gpu.sortBuffer(1));gpu.bindOrderAdd();gpu.bindOrderOpaque();
+                uint(keygen,"uUpper",1000);uint(keygen,"uCarrierBase",1000);uint(keygen,"uPackageStaged",0);
+                float[] identity=new org.joml.Matrix4f().get(new float[16]);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(keygen,"uView"),false,identity);
+                GL20.glUniform1f(GL20.glGetUniformLocation(keygen,"uDepthLogRange"),8);GL20.glUniform1f(GL20.glGetUniformLocation(keygen,"uMaxDepth"),256);
+                GL20.glUniform4fv(GL20.glGetUniformLocation(keygen,"uFrustum"),new float[]{1,0,0,1,-1,0,0,1,0,1,0,1,0,-1,0,1,0,0,1,1,0,0,-1,1});dispatch(keygen,1);
+                read(commands,cmd);for(int mode=0;mode<3;mode++)check(cmd.getInt(new int[]{4,104,24}[mode])==(culled?0:scene<3?(scene==mode?1:0):1+(mode==0&&!models?1:0)),"visible billboard command / scene "+scene+" mode "+mode);
+                check(cmd.getInt(44)==(models&&!culled?1:0),"MODEL main cull count");
+                int permutation=gpu.sortBuffer(1);gpu.bindSort(6,gpu.sortBuffer(0));gpu.bindSort(7,permutation);buffer(9,bytes(1024*4));buffer(10,bytes(1024*4+4));
+                dispatch(hist,1);dispatch(scan,1);dispatch(scatter,1);
+                gpu.swap();gpu.restoreCommittedFrame();if(early)boundary.restore();
+                // Simulate the ordinary package/light pass overwriting all draw slots,
+                // including sort slot 7; this must not affect the next material.
+                for(int mode=0;mode<3;mode++) {
+                    for(int binding=0;binding<16;binding++)GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,foreign);
+                    gpu.beginBindings();gpu.bindBillboardDrawInputs(mode,permutation);
+                    int program=mode==0?additive:textured;GL20.glUseProgram(program);
+                    GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program,"ModelViewMat"),false,identity);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program,"ProjMat"),false,identity);
+                    GL20.glUniform3f(GL20.glGetUniformLocation(program,"uCamRight"),1,0,0);GL20.glUniform3f(GL20.glGetUniformLocation(program,"uCamUp"),0,1,0);
+                    GL20.glUniform1f(GL20.glGetUniformLocation(program,"uFadeDist"),100);GL20.glUniform1f(GL20.glGetUniformLocation(program,"uGlow"),1);
+                    GL20.glUniform1f(GL20.glGetUniformLocation(program,"uAtlasCols"),1);GL20.glUniform1f(GL20.glGetUniformLocation(program,"uAtlasRows"),1);
+                    GL20.glUniform1i(GL20.glGetUniformLocation(program,"uMode"),mode==1?1:0);GL20.glUniform1i(GL20.glGetUniformLocation(program,"uSprite"),1);
+                    GL13.glActiveTexture(GL13.GL_TEXTURE1);GL11.glBindTexture(GL11.GL_TEXTURE_2D,white);
+                    GL11.glClearColor(0,0,0,0);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);gpu.drawIndirect(new int[]{0,1,5}[mode]);
+                    var pixel=bytes(4);GL11.glReadPixels(32,32,1,1,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixel);
+                    check((pixel.get(0)&255)>30==(cmd.getInt(new int[]{4,24,104}[mode])>0),"billboard pixel missing / scene "+scene+" early="+early+" mode="+mode);
+                    check(GL11.glGetError()==GL11.GL_NO_ERROR,"billboard draw GL error");
+                }
+                for(int binding=0;binding<16;binding++)GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,foreign);
+                gpu.beginBindings();gpu.bindModelDrawInputs(permutation);
+                check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,7)==permutation,"MODEL inherited package or shadow sort list");
+                check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,1)==gpu.particleReadBufferId(),"MODEL used stale pool");
+                GL20.glUseProgram(model);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(model,"ModelViewMat"),false,identity);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(model,"ProjMat"),false,identity);
+                GL20.glUniform1f(GL20.glGetUniformLocation(model,"uFadeDist"),100);GL20.glUniform1i(GL20.glGetUniformLocation(model,"uSprite"),1);uint(model,"uCarrierBase",1000);
+                // Preserve the geometry counts installed by uploadModelGeometry in the real model command.
+                cmd.putInt(40,body.getInt(null));cmd.putInt(60,opaque.getInt(null)-body.getInt(null)).putInt(68,body.getInt(null));cmd.putInt(80,((int[])indices.get(null)).length-opaque.getInt(null)).putInt(88,opaque.getInt(null));upload(commands,cmd);
+                GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);gpu.drawModelSegments();var image=bytes(64*64*4);GL11.glReadPixels(0,0,64,64,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,image);
+                boolean lit=false;for(int i=0;i<image.capacity();i+=4)lit|=(image.get(i)&255)>20;check(lit==(models&&!culled),"MODEL fallback pixels missing");
+                check(GL11.glGetError()==GL11.GL_NO_ERROR,"MODEL draw GL error");
+            }
+            int hex=link(stage("hex_pattern.vsh",GL20.GL_VERTEX_SHADER),stage("hex_pattern.fsh",GL20.GL_FRAGMENT_SHADER));
+            var input=bytes(96).putInt(24,2);var live=bytes((4096+8)*4).putInt(0,1).putFloat(4096*4,1).putFloat((4096+2)*4,1);
+            var points=bytes(32).putFloat(0,-.3f).putFloat(16,.3f);var pool=bytes(64).putFloat(32,1).putFloat(36,.5f).putFloat(40,.25f).putFloat(44,1);
+            int[] hexInputs={buffer(24,input),buffer(25,live),buffer(28,points),buffer(1,pool),buffer(27,bytes(16).putInt(0,204).putInt(4,1))};
+            try {
+                GL20.glUseProgram(hex);float[] identity=new org.joml.Matrix4f().get(new float[16]);
+                GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(hex,"ModelViewMat"),false,identity);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(hex,"ProjMat"),false,identity);
+                gpu.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,hexInputs[4]);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);GL43.glMultiDrawArraysIndirect(GL11.GL_TRIANGLES,0,1,16);
+                var pixel=bytes(4);GL11.glReadPixels(32,32,1,1,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixel);check((pixel.get(0)&255)>30,"Hex pattern actual pixel missing");
+                check(GL11.glGetError()==GL11.GL_NO_ERROR,"Hex pattern draw GL error");
+                int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
+                for(int binding:new int[]{16,24,27,31})GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,binding,foreign,alignment,64);
+                boundary.capture();gpu.unbindShaders();boundary.restore();
+                for(int binding:new int[]{16,24,27,31})check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,binding)==foreign&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,binding)==alignment&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,binding)==64,"early compute lost high SSBO range "+binding);
+            } finally {for(int id:hexInputs)GL15.glDeleteBuffers(id);GL20.glDeleteProgram(hex);}
+        } finally {
+            GL20.glUseProgram(0);gpu.unbindShaders();gpu.free();GL15.glDeleteBuffers(foreign);
+            for(int p:new int[]{additive,textured,model,keygen,hist,scan,scatter})GL20.glDeleteProgram(p);
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(framebuffer);GL11.glDeleteTextures(color);GL11.glDeleteTextures(white);
+        }
+        System.out.println("Actual additive/ALPHA/OPAQUE/MODEL pixels: late draws, early state restoration, mixed/empty/offscreen scenes, Hex pixels and foreign package/high-SSBO bindings passed");
+    }
+
     static void waveRetention() throws Exception {
         int cap=65;
         ByteBuffer particles=bytes(cap*64), header=bytes(320), counts=bytes(16), events=bytes(4+16384*20), stamps=bytes(cap*16);
@@ -567,6 +674,7 @@ public class HexPatternGpuValidation {
         stableDamage();
         ringAndRollback();
         waveRetention();
+        particleVisibility();
         atomicReload();
         sorting(Arrays.asList(args).contains("--benchmark"));
         if(Arrays.asList(args).contains("--benchmark"))submissionBenchmark();
