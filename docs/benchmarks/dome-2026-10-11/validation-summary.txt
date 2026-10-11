@@ -1,0 +1,14 @@
+# 天穹合围：验证与固定输入基准
+
+Java: {'tests': 596, 'failures': 0, 'errors': 0, 'skipped': 0}
+Dome GPU: 8,755,139 assertions (benchmark adds bookkeeping assertions).
+Starfall GPU: 1,207,030; MODEL population: 1,015; particle GPU: 89,153.
+MODEL/Iris: 4,133,216; package GPU: 14,675,334; package/Iris: 26,733.
+Shared Hex: 5,287; Shared Hex/Iris: 5,290.
+Nonzero SSBO ranges 26/27/28 and TBO unit 14 restore; native/Iris STARFALL/DOME poses agree.
+Hardware: NVIDIA RTX 4070 Laptop, driver 581.15, OpenGL 4.5.
+60 runs, 3 warmup rounds per scenario/mode, 120 measured samples each: 7,200 samples.
+
+## 200 万混合池：三轮 P95 中位数（ms）
+
+JAR SHA256: d9cfae82f1472eaca1ef847c9a7a40ae29b349dada9f5fee17507d3e0ff247f8

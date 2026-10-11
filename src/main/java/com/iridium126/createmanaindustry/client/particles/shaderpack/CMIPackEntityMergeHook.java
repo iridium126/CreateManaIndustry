@@ -172,10 +172,10 @@ public final class CMIPackEntityMergeHook {
                 if(!ensureCompiledWithListener()){engine.shaderPackShadowStatus="merge failed";return;}
                 if(!COMPILER.shadowReady()){engine.shaderPackShadowStatus="no shadow track";return;}
                 var gpu=engine.gpuBuffers();
-                if(MODEL_SHADOW==null||MODEL_SHADOW.capacity()!=gpu.capacity()){invalidateShadow();MODEL_SHADOW=new ModelShadowGpu(gpu.capacity(),ParticlePrograms::loadParticlePlain);}
+                if(MODEL_SHADOW==null||MODEL_SHADOW.capacity()!=gpu.capacity()||MODEL_SHADOW.carrierCapacity()!=gpu.carrierCapacity()){invalidateShadow();MODEL_SHADOW=new ModelShadowGpu(gpu.capacity(),gpu.carrierCapacity(),ParticlePrograms::loadParticlePlain);}
                 engine.addExternalGpuMs(SHADOW_PREP_TIMING.poll());
                 SHADOW_PREP_TIMING.begin(ClientConfig.particleAutoThrottle||com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled());
-                try{var p=camera.getPosition();MODEL_SHADOW.prepare(gpu.particleReadBufferId(),gpu.emitterBufferId(),engine.committedCounterBuffer(),SHADOW_CULLING,
+                try{MODEL_SHADOW.starfall(engine.starfallGpu().committedBuffer());var p=camera.getPosition();MODEL_SHADOW.prepare(gpu.particleReadBufferId(),gpu.emitterBufferId(),engine.committedCounterBuffer(),SHADOW_CULLING,
                         (float)p.x,(float)p.y,(float)p.z,EntityType.ALLAY.getWidth(),EntityType.ALLAY.getHeight(),(float)net.minecraft.world.entity.Entity.getViewScale(),engine.timeSec(),engine.stormWaveUniform(),engine.stormWaveTargetUniform(),engine.stormWaveTierUniform(),gpu.populationBufferId(engine.currentGeneration()),engine.currentGeneration());}
                 finally{SHADOW_PREP_TIMING.end();}
                 gpu.bindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleReadBufferId(),MODEL_SHADOW.instances());gpu.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,MODEL_SHADOW.commands());
@@ -229,6 +229,8 @@ public final class CMIPackEntityMergeHook {
         setMat(progId, "shadowModelViewInverse", new Matrix4f(modelView).invert());
         setFloat3(progId, "cameraPosition", (float) camPos.x, (float) camPos.y, (float) camPos.z);
         setSamplers(progId);
+        engine.starfallGpu().bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
+        setInt(progId,"uStarfallEnabled",engine.starfallGpu().committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         uploadStormItemUniforms(progId, engine);
     }
 
@@ -373,6 +375,8 @@ public final class CMIPackEntityMergeHook {
         setFloat3(progId, "cmi_CameraPos", (float) camPos.x, (float) camPos.y, (float) camPos.z);
         setFloat(progId, "cmi_FadeDist", (float) ClientConfig.particleFadeDistance);
         setFloat(progId, "uTimeSec", engine.timeSec());
+        engine.starfallGpu().bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
+        setInt(progId,"uStarfallEnabled",engine.starfallGpu().committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         uploadStormItemUniforms(progId, engine);
     }
 

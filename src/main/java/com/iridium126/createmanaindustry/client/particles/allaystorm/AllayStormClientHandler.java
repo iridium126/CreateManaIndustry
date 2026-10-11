@@ -64,9 +64,7 @@ public final class AllayStormClientHandler {
     /** {@link ClientboundStormWavePacket}: dive-wave launch / abort event. */
     public static void onWave(
             com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket packet) {
-        CMIParticleEngine.INSTANCE.applyWave(packet.waveId(), packet.abort(), packet.waveSeed(),
-                packet.fraction(), packet.targetEntityId(), packet.path(),
-                packet.assembleSec(), packet.diveUntilSec(), packet.swordTier());
+        CMIParticleEngine.INSTANCE.applyWave(packet);
     }
 
     /** The client's shared simulation clock (game ticks; the engine mod-masks). */

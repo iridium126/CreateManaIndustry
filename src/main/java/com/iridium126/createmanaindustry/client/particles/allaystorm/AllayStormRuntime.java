@@ -1020,241 +1020,93 @@ public final class AllayStormRuntime {
     public static final int MAX_WAVE_PATH = 6;
 
     private static final class WaveClient {
-        boolean alive;
-        int slotIdx = -1;
-        int waveId;
-        int waveSeed;
-        float fraction;
-        float assembleSec;
-        float diveUntilSec;
-        /** Held-sword material id (EmitterSpec.HeldItem order; 0 = none) —
-         * frozen with the wave from the server's stormWaveDamage mapping. */
-        int swordTier;
-        int targetEntityId;
-        /** Smoothed corridor waypoints, flat WORLD xyz (decoded from anchor-relative shorts). */
-        final double[] path = new double[MAX_WAVE_PATH * 3];
-        int pathCount;
-        /** Server-confirmed contact dedupe: one report per member per wave. */
-        final IntOpenHashSet reported = new IntOpenHashSet();
-        // pinned shaft anchor + re-pin hysteresis (see refreshWaves)
-        int shaftAx = Integer.MIN_VALUE;
-        int shaftAy;
-        int shaftAz;
+        boolean alive;int slotIdx=-1,waveId,targetEntityId;long epoch;
+        com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket packet;
+        final IntOpenHashSet reported=new IntOpenHashSet();int ringCommittedMask,ringScheduledMask,columnSoundMask;boolean startSound,lockSound;
     }
-
-    private final WaveClient[] waveSlots = new WaveClient[MAX_WAVES];
-    /** Set by the compute phase's wave-contact dispatch; consumed at fence poll. */
-    private boolean waveContactPending = false;
-
-    // uniform staging, rebuilt every refreshWaves (uploaded with the update dispatch
-    // AND consumed by the MODEL render path — the held-sword carrier predicate
-    // and tier selection read the same slots the steering does)
-    private final float[] waveUniform = new float[MAX_WAVES * 4]; // {seed, fraction, assemble, diveUntil}
-    private final float[] waveTargetUniform = new float[MAX_WAVES * 4]; // {pos.xyz, waveId}
-    private final float[] wavePathUniform = new float[MAX_WAVES * MAX_WAVE_PATH * 4]; // {xyz, valid}
-    private final float[] waveTierUniform = new float[MAX_WAVES]; // held-sword id per slot
-
-    public float[] waveUniform() {
-        return this.waveUniform;
+    private final WaveClient[] waveSlots=new WaveClient[MAX_WAVES];
+    private final com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[] starfallSnapshots=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[MAX_WAVES];
+    private final StarfallGpuBuffers starfallGpu=new StarfallGpuBuffers();
+    private boolean starfallDirty=true,waveContactPending;
+    private final float[] waveUniform=new float[16],waveTargetUniform=new float[16],wavePathUniform=new float[96],waveTierUniform=new float[4];
+    public float[] waveUniform(){return waveUniform;}public float[] waveTargetUniform(){return waveTargetUniform;}public float[] wavePathUniform(){return wavePathUniform;}public float[] waveTierUniform(){return waveTierUniform;}
+    public StarfallGpuBuffers starfallGpu(){return starfallGpu;}
+    public boolean anyWaveActive(){for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort())return true;return false;}
+    private boolean locallyRelevant(WaveClient w){
+        var me=Minecraft.getInstance().player;if(me==null||w==null||!w.alive||w.packet.abort())return false;
+        var p=w.packet;if(!p.dome())return w.targetEntityId==me.getId();
+        if(!p.locked())return false;double dx=me.getX()-p.centerX(),dz=me.getZ()-p.centerZ(),r=p.crownRadius()+4;
+        return dx*dx+dz*dz<=r*r&&me.getY()>=p.centerY()-3&&me.getY()<=p.centerY()+p.crownRadius()+4;
     }
-
-    public float[] waveTargetUniform() {
-        return this.waveTargetUniform;
-    }
-
-    public float[] wavePathUniform() {
-        return this.wavePathUniform;
-    }
-
-    public float[] waveTierUniform() {
-        return this.waveTierUniform;
-    }
-
-    /** True while at least one live wave exists (engine gates the contact dispatch). */
-    public boolean anyWaveActive() {
-        for (WaveClient w : this.waveSlots)
-            if (w != null && w.alive)
-                return true;
-        return false;
-    }
-
-    /**
-     * True when a live wave targets THIS client's local player — the only case
-     * where the wave-contact dispatch has anything to detect (the shader tests
-     * proximity to the local player's aim point only).
-     */
-    public boolean anyWaveTargetingLocalPlayer() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null)
-            return false;
-        int me = mc.player.getId();
-        for (WaveClient w : this.waveSlots)
-            if (w != null && w.alive && w.targetEntityId == me)
-                return true;
-        return false;
-    }
-
-    /**
-     * Applies one {@code ClientboundStormWavePacket} (render thread — packet
-     * handlers enqueueWork there). Launch: claims a free slot and decodes the
-     * corridor from anchor-relative 1/16-block shorts against the RAW block
-     * anchor (the same reconstruction frame the server packed with; anchor
-     * skew across clients is sub-2-block and cosmetically absorbed by the
-     * servo). Abort: frees the slot — members fall back to their typhoon home
-     * points through the same servo, so no explicit dispersal exists.
-     */
-    public void applyWave(int waveId, boolean abort, int waveSeed, float fraction,
-            int targetEntityId, float[] pathRel, float assembleSec, float diveUntilSec,
-            int swordTier) {
-        WaveClient w = findWaveById(waveId);
-        if (abort) {
-            if (w != null)
-                freeWaveSlot(w);
-            return;
+    public boolean anyWaveTargetingLocalPlayer(){for(var w:waveSlots)if(locallyRelevant(w))return true;return false;}
+    public void applyWave(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket p){
+        if(!stormActive||p.epoch()!=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.epoch(stormCreatedAtGameTime,stormSeed))return;
+        WaveClient w=findWaveById(p.waveId());
+        if(p.abort()){
+            if(w==null)return;var old=w.packet;
+            float now=old.startSec()+com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,old.startSec());
+            w.packet=old.copy(3,6,now,now+.25f,old.members());
+            starfallDirty=true;return;
         }
-        if (!this.stormActive)
-            return; // a wave for a storm this client never activated
-        if (w == null) {
-            w = acquireWaveSlot();
-            if (w == null)
-                return; // > MAX_WAVES concurrent: protocol violation, drop
-        }
-        w.alive = true;
-        w.waveId = waveId;
-        w.waveSeed = waveSeed & AllayStormSpec.SEED_MASK_CLIENT;
-        w.fraction = fraction;
-        w.assembleSec = assembleSec;
-        w.diveUntilSec = diveUntilSec;
-        w.swordTier = swordTier;
-        w.targetEntityId = targetEntityId;
-        w.pathCount = Math.min(pathRel == null ? 0 : pathRel.length / 3, MAX_WAVE_PATH);
-        for (int i = 0; i < w.pathCount; i++) {
-            w.path[i * 3] = this.stormAnchor.x + pathRel[i * 3];
-            w.path[i * 3 + 1] = this.stormAnchor.y + pathRel[i * 3 + 1];
-            w.path[i * 3 + 2] = this.stormAnchor.z + pathRel[i * 3 + 2];
-        }
-        w.reported.clear();
-        w.shaftAx = Integer.MIN_VALUE; // re-pin the shaft for the new wave
+        if(w==null){if(p.event()!=0)return;for(int slot=0;slot<4;slot++)if(waveSlots[slot]==null||!waveSlots[slot].alive){w=new WaveClient();w.slotIdx=slot;waveSlots[slot]=w;break;}if(w==null)return;}
+        if(w.packet!=null&&w.packet.locked()&&p.event()==1)return;
+        int[] members=p.members().length==0&&w.packet!=null?w.packet.members():p.members();
+        w.packet=p.copy(p.locked()?2:p.event(),p.phase(),p.lockSec(),p.diveUntilSec(),members);
+        w.alive=true;w.waveId=p.waveId();w.epoch=p.epoch();w.targetEntityId=p.targetEntityId();starfallDirty=true;
     }
-
-    private WaveClient findWaveById(int waveId) {
-        for (WaveClient w : this.waveSlots)
-            if (w != null && w.alive && w.waveId == waveId)
-                return w;
-        return null;
-    }
-
-    private WaveClient acquireWaveSlot() {
-        for (int i = 0; i < this.waveSlots.length; i++) {
-            WaveClient w = this.waveSlots[i];
-            if (w == null) {
-                w = new WaveClient();
-                w.slotIdx = i;
-                this.waveSlots[i] = w;
-                return w;
-            }
-            if (!w.alive)
-                return w;
-        }
-        return null;
-    }
-
-    private void freeWaveSlot(WaveClient w) {
-        w.alive = false;
-        w.reported.clear();
-    }
-
-    /** Full wave teardown (generation restart / range exit / storm over / engine reset). */
-    public void clearWaveState() {
-        for (int i = 0; i < this.waveSlots.length; i++)
-            this.waveSlots[i] = null;
-        this.waveContactPending = false;
-    }
-
-    /**
-     * Per-frame wave upkeep (render thread, before the update dispatch):
-     * expires deadline-passed waves and targets that left the client's world
-     * (the server aborts them independently — this is self-healing), keeps
-     * each wave's collision SHAFT baked with its re-pin hysteresis, and
-     * rebuilds the three uniform arrays the update/wavecontact programs
-     * consume. Cheap no-op on stormless frames.
-     */
-    public void refreshWaves() {
-        if (!this.stormActive) {
-            clearWaveState();
-            return;
-        }
-        java.util.Arrays.fill(this.waveUniform, 0f);
-        java.util.Arrays.fill(this.waveTargetUniform, 0f);
-        java.util.Arrays.fill(this.wavePathUniform, 0f);
-        java.util.Arrays.fill(this.waveTierUniform, 0f);
-        Minecraft mc = Minecraft.getInstance();
-        for (WaveClient w : this.waveSlots) {
-            if (w == null || !w.alive)
-                continue;
-            if (this.timeSec > w.diveUntilSec) {
-                freeWaveSlot(w);
-                continue;
-            }
-            Entity target = mc.level == null ? null : mc.level.getEntity(w.targetEntityId);
-            if (target == null) {
-                freeWaveSlot(w); // server aborts independently; members ease home
-                continue;
-            }
-            double px = target.getX();
-            double py = target.getY();
-            double pz = target.getZ();
-            // Shaft: one bake slice whose XZ center is the target and whose Y
-            // band starts at its feet (docs/allay-storm-ai.md §6). Re-pinning
-            // the anchor allocates a new slot build, so it only happens when
-            // the player leaves the inner 16x16 (or climbs out of the band);
-            // every other frame the pinned anchor cell is just touched for LRU
-            // recency. Anchor Y rides floor(feetY) — the band must not detach
-            // from the player downward.
-            int ax = floorInt(px) - 24;
-            int ay = floorInt(py);
-            int az = floorInt(pz) - 24;
-            if (w.shaftAx == Integer.MIN_VALUE
-                    || Math.abs(px - (w.shaftAx + 24)) > 8.0
-                    || Math.abs(pz - (w.shaftAz + 24)) > 8.0
-                    || py < w.shaftAy + 0.5 || py > w.shaftAy + 8.0) {
-                engine.collisionBake().ensureColumn(px, py, pz);
-                w.shaftAx = ax;
-                w.shaftAy = ay;
-                w.shaftAz = az;
-            } else {
-                engine.collisionBake().ensureAnchorCell(w.shaftAx, w.shaftAy, w.shaftAz);
-            }
-            // uniform staging (slot 4-vec4 groups; path 6-vec4 groups)
-            int s = w.slotIdx * 4;
-            this.waveUniform[s] = (float) w.waveSeed;
-            this.waveUniform[s + 1] = w.fraction;
-            this.waveUniform[s + 2] = w.assembleSec;
-            this.waveUniform[s + 3] = w.diveUntilSec;
-            this.waveTargetUniform[s] = (float) px;
-            this.waveTargetUniform[s + 1] = (float) (py + 0.5);
-            this.waveTargetUniform[s + 2] = (float) pz;
-            this.waveTargetUniform[s + 3] = (float) w.waveId;
-            this.waveTierUniform[w.slotIdx] = (float) w.swordTier;
-            int pb = w.slotIdx * MAX_WAVE_PATH * 4;
-            for (int i = 0; i < MAX_WAVE_PATH; i++) {
-                int o = pb + i * 4;
-                if (i < w.pathCount) {
-                    this.wavePathUniform[o] = (float) w.path[i * 3];
-                    this.wavePathUniform[o + 1] = (float) w.path[i * 3 + 1];
-                    this.wavePathUniform[o + 2] = (float) w.path[i * 3 + 2];
-                    this.wavePathUniform[o + 3] = 1f;
-                } else {
-                    this.wavePathUniform[o + 3] = 0f;
+    private WaveClient findWaveById(int id){for(var w:waveSlots)if(w!=null&&w.alive&&w.waveId==id)return w;return null;}
+    public void clearWaveState(){java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);waveContactPending=false;starfallDirty=true;starfallGpu.invalidate();}
+    public void refreshWaves(){
+        java.util.Arrays.fill(waveUniform,0);java.util.Arrays.fill(waveTargetUniform,0);java.util.Arrays.fill(waveTierUniform,0);
+        int soundBudget=2;
+        for(int slot=0;slot<4;slot++){
+            var w=waveSlots[slot];if(w==null||!w.alive){starfallSnapshots[slot]=null;continue;}
+            if(com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,w.packet.diveUntilSec())>0){w.alive=false;starfallDirty=true;starfallSnapshots[slot]=null;continue;}
+            w.ringScheduledMask=0;var p=w.packet;starfallSnapshots[slot]=p;
+            var mc=Minecraft.getInstance();
+            if(!p.abort()&&mc.level!=null){
+                float startAge=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.startSec());
+                if(!w.startSound&&startAge>=0){w.startSound=true;if(startAge<.5&&soundBudget>0){soundBudget--;mc.level.playLocalSound(p.crownX(),p.crownY(),p.crownZ(),net.minecraft.sounds.SoundEvents.ALLAY_AMBIENT_WITH_ITEM,net.minecraft.sounds.SoundSource.HOSTILE,.4f,.7f,false);}}
+                if(p.event()==2){float lockAge=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.lockSec());if(!w.lockSound){w.lockSound=true;if(lockAge<.5&&soundBudget>0){soundBudget--;mc.level.playLocalSound(p.dome()?p.centerX():p.landings()[0],p.dome()?p.centerY()+p.crownRadius():p.landings()[1],p.dome()?p.centerZ():p.landings()[2],net.minecraft.sounds.SoundEvents.AMETHYST_BLOCK_CHIME,net.minecraft.sounds.SoundSource.HOSTILE,.45f,1.1f,false);}}
+                    for(int c=0;c<(p.dome()?6:p.columns());c++){float phaseStart=p.dome()?com.iridium126.createmanaindustry.content.allaystorm.AllayDome.warningStart(p.lockSec(),p.crownRadius(),c):p.lockSec()+1+c*.35f;float age=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,phaseStart);int bit=1<<c;if((w.columnSoundMask&bit)==0&&age>=0){w.columnSoundMask|=bit;if(age<.2&&soundBudget>0){soundBudget--;int k=c*4;mc.level.playLocalSound(p.dome()?p.centerX():p.landings()[k],p.dome()?p.centerY()+6:p.landings()[k+1]+6,p.dome()?p.centerZ():p.landings()[k+2],net.minecraft.sounds.SoundEvents.PLAYER_ATTACK_SWEEP,net.minecraft.sounds.SoundSource.HOSTILE,.3f,1+c*.01f,false);}}}
                 }
             }
+int b=slot*4;waveUniform[b]=p.waveSeed();waveUniform[b+2]=p.startSec();waveUniform[b+3]=p.diveUntilSec();waveTargetUniform[b+3]=p.waveId();waveTierUniform[slot]=p.swordTier();
+            if(p.dome()){engine.collisionBake().ensureColumn(p.centerX(),p.centerY()-.5,p.centerZ());}
+            else if(p.event()==2){engine.collisionBake().ensureColumn(p.landings()[0],p.landings()[1]-.5,p.landings()[2]);}
+            else {int end=p.path().length-3;engine.collisionBake().ensureColumn(p.path()[end],p.path()[end+1]-10,p.path()[end+2]);}
+        }
+        if(starfallDirty){starfallGpu.rebuild(starfallSnapshots);starfallDirty=false;}
+    }
+    private static final com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec STARFALL_RING_SPEC=
+        com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.builder().speed(0,0).life(180,180).sizeOverLife(.27,.27,1).gravity(0,0,0).drag(0).glow(1).color(.3f,.8f,1,1).type(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.standard(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Material.ADDITIVE)).build();
+    public void scheduleRings(EmitSchedule schedule){
+        int emitter=-1;for(var w:waveSlots){if(w==null||!w.alive||w.ringCommittedMask==(w.packet.columns()==32?-1:(1<<w.packet.columns())-1)||w.packet.event()!=2||w.packet.dome())continue;
+            if(emitter<0){emitter=engine.ensureEmitter(STARFALL_RING_SPEC);if(emitter<0)return;float[] h=STARFALL_RING_SPEC.packed().clone();h[17*4+1]=7;engine.gpu().setEmitterHeader(emitter,h);}
+            for(int c=0;c<w.packet.columns()&&schedule.entryCount<schedule.emitIds.length;c++){
+                if((w.ringCommittedMask&(1<<c))!=0)continue;w.ringScheduledMask|=1<<c;
+                int i=schedule.entryCount++;schedule.emitIds[i]=emitter;schedule.emitCounts[i]=128;schedule.emitOrigins[i]=Vec3.ZERO;schedule.emitTranslucent[i]=false;
+                schedule.emitOriginRef[i]=0;schedule.emitLight[i]=w.waveId;schedule.emitMemberBase[i]=w.slotIdx;schedule.emitMemberKey[i]=c;schedule.emitRingSpawn[i]=true;schedule.totalSpawn+=128;
+            }
         }
     }
-
-    private static int floorInt(double v) {
-        int i = (int) v;
-        return v < i ? i - 1 : i;
+    public String starfallStatus(){
+        int stars=0,domes=0,starMembers=0,domeMembers=0,columns=0;StringBuilder stages=new StringBuilder(),fallbacks=new StringBuilder();
+        for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort()){
+            var p=w.packet;
+            if(p.dome()){domes++;domeMembers+=p.members().length;int g=com.iridium126.createmanaindustry.content.allaystorm.AllayDome.closingPetal(timeSec,p.lockSec(),p.crownRadius());
+                float age=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.lockSec());
+                int petal=(int)Math.floor(age/(1.5f+com.iridium126.createmanaindustry.content.allaystorm.AllayDome.closeSeconds(p.crownRadius())));
+                String stage=!p.locked()?(com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.assembleSec())<0?"assemble":"approach"):petal>=6?"return":g<0?"warning-"+(petal+1):"closing-"+(g+1);
+                stages.append('#').append(w.waveId).append(':').append(stage).append(' ');
+            }else{stars++;starMembers+=p.members().length;columns+=p.columns();}
+            if(p.fallbackReason()!=0)fallbacks.append('#').append(w.waveId).append(':').append(p.fallbackReason()==1?"too-few":"terrain").append(' ');
+        }
+        return "Starfall: waves="+stars+", columns="+columns+", members="+starMembers+"; Dome: waves="+domes+", members="+domeMembers+", phases="+stages+", fallback="+fallbacks+", domainBytes="+starfallGpu.bytes()+", uploadedBytes="+starfallGpu.uploadedBytes();
     }
+    public int carrierCount(){int count=0;for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort())count+=w.packet.members().length;return count;}
+    public boolean ringsRequested(){for(var w:waveSlots)if(w!=null&&w.alive&&w.ringCommittedMask!=(w.packet.columns()==32?-1:(1<<w.packet.columns())-1)&&w.packet.event()==2&&!w.packet.dome())return true;return false;}
+    public void commitStarfall(){starfallGpu.commit();for(var w:waveSlots)if(w!=null&&w.alive&&w.packet.event()==2&&!w.packet.dome())w.ringCommittedMask|=w.ringScheduledMask;}
 
     /**
      * Wave-contact detection dispatch (render thread, after the stormpos
@@ -1276,7 +1128,10 @@ public final class AllayStormRuntime {
         engine.gpu().bindCounter(3, slot);
         engine.gpu().bindEmitters(5);
         engine.gpu().bindWaveContact();
+        starfallGpu.bind(wc,true);
         engine.gpu().bindPopulationRead(wc,true,engine.currentGeneration()+1);
+        int localMask=0;for(int i=0;i<4;i++){var w=waveSlots[i];if(locallyRelevant(w))localMask|=1<<i;}
+        CMIParticleEngine.setUIntUniform(wc,"uLocalWaveMask",localMask);
         Vec3 aim = mc.player.position().add(0.0, 0.5, 0.0);
         CMIParticleEngine.setFloatUniform(wc, "uLocalPlayerPos",
                 (float) aim.x, (float) aim.y, (float) aim.z);
@@ -1300,16 +1155,9 @@ public final class AllayStormRuntime {
     public void acceptWaveSnapshot(float[] entries) {
         if (entries == null)
             return;
-        Vec3 c = this.center;
-        for (int o = 0; o + 4 < entries.length; o += 5) {
-            int memberIdx = Math.round(entries[o]);
-            int waveId = Math.round(entries[o + 1]);
-            WaveClient w = findWaveById(waveId);
-            if (w == null || !w.reported.add(memberIdx))
-                continue;
-            PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(waveId, memberIdx,
-                    (float) (entries[o + 2] - c.x), (float) (entries[o + 3] - c.y),
-                    (float) (entries[o + 4] - c.z)));
+        for(int o=0;o+5<entries.length;o+=6){int member=Math.round(entries[o]),id=Math.round(entries[o+1]);WaveClient w=findWaveById(id);
+            if(w==null||!w.reported.add(member))continue;
+            PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(id,w.epoch,entries[o+5],member,entries[o+2],entries[o+3],entries[o+4]));
         }
     }
 

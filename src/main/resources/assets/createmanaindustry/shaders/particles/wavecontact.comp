@@ -22,6 +22,8 @@ layout(std430, binding = BIND_WAVECONTACT) buffer WaveContactBuf { uint count; f
 
 layout(std430, binding = BIND_WAVE_STAMP) buffer WaveStamps { uint wave[]; } stamps;
 
+layout(std430,binding=28) readonly buffer StarStateWrite {uint words[];} state;
+uniform uint uLocalWaveMask;
 uniform vec3 uLocalPlayerPos; // local player aim point (feet + 0.5), world space
 // uTimeSec / uWave / uWaveTarget are declared by chunks/allay_storm.glsl
 // (included below) next to the membership function that reads them
@@ -51,30 +53,34 @@ void main() {
     // update may latch pursuit completion in this very frame. Reporting is
     // independently deduplicated by (member, wave), including latched members.
     for (uint k = 0u; k < 4u; k++) {
+        if(uStarfallEnabled&&uLocalWaveMask!=0u&&(uLocalWaveMask&(1u<<k))==0u)continue;
         vec4 wt = uWaveTarget[k];
         if (wt.w < 0.5)
             continue; // slot inactive
         vec4 w = uWave[k];
-        if (uTimeSec < w.z || uTimeSec > w.w)
+        if (!uStarfallEnabled && (uTimeSec < w.z || uTimeSec > w.w))
             continue; // outside the wave window
-        if (!cmiStormWaveMember(p3.z, w.x, w.y))
+        if (uStarfallEnabled ? cmiStarClaim(p0.w,uTimeSec)!=int(k) || cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)!=4. : !cmiStormWaveMember(p3.z, w.x, w.y))
             continue;
         vec3 d = p0.xyz - uLocalPlayerPos;
         if (dot(d, d) > CONTACT_R * CONTACT_R)
             continue;
         uint member = (uint(p0.w + 0.5) & MEMBER_IDX_MASK) - 1u;
+        if(uStarfallEnabled&&(member>=131072u||state.words[member*2u]!=uint(wt.w)||state.words[member*2u+1u]!=4u||(!cmiDome(cmiStarBase(k))&&state.words[262400u+k*32u+((cmiStarAssignment(p0.w)>>3u)&31u)]!=128u)))continue;
         uint stampIndex = member * 4u + k;
         if (stampIndex >= uint(stamps.wave.length()) || stamps.wave[stampIndex] == uint(wt.w)) continue;
         uint slot = atomicAdd(result.count, 1u);
         if (slot >= WAVECONTACT_CAP)
             return;
         stamps.wave[stampIndex] = uint(wt.w);
-        uint o = slot * 5u;
+        uint stride=uStarfallEnabled?6u:5u;
+        uint o = slot * stride;
         result.entries[o + 0u] = float(uint(p0.w + 0.5) & MEMBER_IDX_MASK) - 1.0; // memberIdx
         result.entries[o + 1u] = wt.w;       // waveId (float-exact counter value)
         result.entries[o + 2u] = p0.x;
         result.entries[o + 3u] = p0.y;
         result.entries[o + 4u] = p0.z;
+        if(uStarfallEnabled)result.entries[o+5u]=uTimeSec;
         return; // one report per member thread
     }
 }

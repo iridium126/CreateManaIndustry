@@ -1,3 +1,5 @@
+layout(std430,binding=28) buffer StarStateWrite {uint words[];} starState;
+uniform uint uCarrierLimit;
 // Partition pass for the draw permutations -- runs EVERY frame (it is also the
 // fast path's cull pass). Three buckets:
 //   - ADDITIVE particles    -> orderAdd[]   (dense uint permutation, unsorted)
@@ -106,6 +108,11 @@ void main() {
     uint eid = floatBitsToUint(p3.w);
     uint hb = eid * VEC4_PER_EMITTER;
     if (uint(emitters.u[hb + 7u].x + .5) == CMI_MATERIAL_PACKAGE) return;
+    if(uStarfallEnabled&&emitters.u[hb+17u].y>6.5&&emitters.u[hb+17u].y<7.5){
+        vec4 tint=pool.data[base+2u];uint tag=floatBitsToUint(p3.z),slot=tag&3u,column=(tag>>2u)&31u;
+        if(floatBitsToUint(tint.x)==cmiStarWord(0u)&&uint(cmiStarVec(cmiStarBase(slot)).x+.5)==(tag>>7u))atomicAdd(starState.words[262400u+slot*32u+column],1u);
+    }
+
 
     // conservative bound of the billboard's half-extent (size interpolates
     // between the keyframes; p0.w is the per-particle multiplier). MODEL
@@ -169,10 +176,10 @@ void main() {
         // behind the frustum test, so an off-screen carrier drops its sword
         // with its body. Overflow clamps the command's instanceCount back to
         // CARRIER_CAP (silent drop, see ParticleBuffers.CARRIER_CAP).
-        bool carrier=cmiModelCarrier(storm,p3.y,p3.z,emitters.u[hb+17u].z);
+        bool carrier=cmiModelCarrier(storm,p3.y,p3.z,p0.w,emitters.u[hb+17u].z);
         if (carrier) {
             uint cpos = atomicAdd(indirect.cmd[IDX_CNT_CARRIER], 1u);
-            if (cpos < CARRIER_CAP) {
+            if (cpos < (uCarrierLimit==0u?uint(CARRIER_CAP):uCarrierLimit)) {
                 // dual-write: whichever buffer the draw phase commits (buf0 on
                 // the fast path, buf1 after the radix scatter) carries the
                 // same-generation carrier region

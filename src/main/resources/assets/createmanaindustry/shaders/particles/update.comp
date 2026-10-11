@@ -135,6 +135,8 @@ const int   STORM_MAX_VISITS = 256;
 
 // storm steering needs no pose math — the pose-free storm chunk provides
 // cmiHash1, the wave rolls/claim and cmiTyphoonHome
+layout(std430,binding=27) readonly buffer StarStateRead {uint words[];} starStateRead;
+layout(std430,binding=28) buffer StarStateWrite {uint words[];} starStateWrite;
 #pragma cmi_include chunks/particle_identity.glsl
 #pragma cmi_include chunks/allay_storm.glsl
 
@@ -188,6 +190,12 @@ void main() {
     // correction block) and row 7's y/z (collide mode, flutter) much later —
     // hoisting the vec4 loads keeps every consumer on one SSBO read instead
     // of depending on the compiler to CSE across the early-return ladder.
+    if(emitters.u[hb+17u].y>6.5&&emitters.u[hb+17u].y<7.5){
+        float fade=uStarfallEnabled&&floatBitsToUint(p2.x)==cmiStarWord(0u)?cmiStarMarkerFade(floatBitsToUint(p3.z),uTimeSec):-1.;
+        if(fade<0.){p2.w=max(0.,p2.w-uDt/.25);}else p2.w=min(p2.w,fade);
+        if(p2.w<=0.)return;uint slot=atomicAdd(counter.writeSlot,1u);if(slot>=uCapacity)return;
+        uint wb=slot*4u;writeBuf.data[wb]=p0;writeBuf.data[wb+1u]=p1;writeBuf.data[wb+2u]=p2;writeBuf.data[wb+3u]=vec4(p3.x+uDt,p3.yzw);return;
+    }
     vec4 stormA = emitters.u[hb + 18u]; // x storm gate (0 none | 2 vortex), y radius, z reserved (was wander), w maxSpeed
     vec4 matMotion = emitters.u[hb + 7u]; // x matId, y collide mode, z flutter
     // identity map write (see the buffer declaration). Header-flag gate

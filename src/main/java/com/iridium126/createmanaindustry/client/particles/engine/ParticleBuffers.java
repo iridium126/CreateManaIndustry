@@ -192,7 +192,7 @@ public final class ParticleBuffers {
     /** Entries per wave-contact readback (the touches in ONE frame; tiny). */
     public static final int WAVECONTACT_CAP = 4 * 4096;
     /** Floats per wave-contact entry: memberIdx, waveId, pos.xyz. */
-    public static final int WAVECONTACT_ENTRY_FLOATS = 5;
+    public static final int WAVECONTACT_ENTRY_FLOATS = 6;
     /**
      * Storm-member identity packing in p0.w: bits 0..17 hold memberIdx+1
      * (max 131072 = 2^17, so bit 17 IS used), and the next free bit —
@@ -207,18 +207,10 @@ public final class ParticleBuffers {
     public static final int MEMBER_LATCH_BIT = 1 << MEMBER_IDX_BITS;
     /** Players fed to the storm repulsion / readback passes. */
     public static final int MAX_STORM_PLAYERS = 16;
-    /**
-     * Capacity of the held-item CARRIER region appended to the tail of each
-     * sort buffer (see the sort-buffer allocation below): the worst legal
-     * wave-squad population — {@code AllayStormRuntime.MAX_WAVES} (4)
-     * concurrent waves x the stormWaveMaxSize config HARD maximum (4096) —
-     * with no debug margin. Overflow (only reachable by extreme non-storm
-     * debug emitters competing with max-config waves) drops the offending
-     * instance's held item for the frame, same silent-drop convention as
-     * STORMPOS_CAP / WAVECONTACT_CAP. Entries are 8 B each, so the region
-     * costs 128 KiB per sort buffer.
-     */
+    /** Base ordinary-MODEL carrier allowance. Active starfall rosters grow the tail on demand. */
     public static final int CARRIER_CAP = 4 * 4096;
+    private int carrierCapacity=CARRIER_CAP;
+    public int carrierCapacity(){return carrierCapacity;}
     /** Entries per authority readback snapshot (nearest-to-players cap). */
     public static final int STORMPOS_CAP = 256;
     /** Floats per readback entry: memberIdx, pad, pos.xyz, vel.xyz. */
@@ -426,7 +418,7 @@ public final class ParticleBuffers {
         this.identitySSBO = createBuffer(4L + cap * 8L+8L*DAMAGE_QUEUE_CAP, null);
         GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
                 GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_INT, (java.nio.IntBuffer) null);
-        this.waveStampSSBO = createBuffer((long) cap * 16, null);
+        this.waveStampSSBO = -1; // stable Storm identities, allocated only on first contact query
         this.maxEmitters = maxEmitters;
         this.emitterUploads = new ParticleEmitterUploads(maxEmitters);
         this.dispatchSSBO = createBuffer((long)DISPATCH_COMMANDS * DISPATCH_BYTES, null);
@@ -574,6 +566,16 @@ public final class ParticleBuffers {
      * Derived from the live capacity so the uniform can never drift from the
      * allocation.
      */
+    public void ensureCarrierCapacity(int participants){
+        int required=CARRIER_CAP+Math.min(131072,Math.max(0,participants));if(required<=carrierCapacity)return;
+        int grown=Math.min(CARRIER_CAP+131072,Math.max(required,carrierCapacity+carrierCapacity/2));
+        long oldBytes=(capacity+(long)carrierCapacity+1)*8,newBytes=(capacity+(long)grown+1)*8;
+        int scratch=GL15.glGenBuffers();GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,scratch);GL15.glBufferData(GL31.GL_COPY_WRITE_BUFFER,oldBytes,GL15.GL_STREAM_COPY);
+        try{for(int buffer:sortSSBOs){GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,buffer);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,scratch);GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,oldBytes);
+            GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,buffer);GL15.glBufferData(GL31.GL_COPY_WRITE_BUFFER,newBytes,GL15.GL_DYNAMIC_DRAW);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,scratch);
+            GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,oldBytes-8);GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,oldBytes-8,newBytes-8,8);
+        }}finally{GL15.glDeleteBuffers(scratch);}carrierCapacity=grown;
+    }
     public int carrierBase() {
         return this.capacity;
     }
@@ -584,7 +586,7 @@ public final class ParticleBuffers {
      * sits BEHIND the carrier region.
      */
     public int metaSlotIndex() {
-        return this.capacity + CARRIER_CAP;
+        return this.capacity + carrierCapacity;
     }
 
     public int maxEmitters() {
@@ -937,8 +939,8 @@ public final class ParticleBuffers {
             GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.waveStampSSBO);
             GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
                     GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_INT, (java.nio.IntBuffer) null);
-            clearWaveContactCount();
         }
+        if(waveContactSSBO>0)clearWaveContactCount();
         clearMemberMap();
     }
 
@@ -959,6 +961,7 @@ public final class ParticleBuffers {
 
     /** Binds the wave-contact staging buffer at its fixed binding. */
     public void bindWaveContact() {
+        if(waveStampSSBO<0){waveStampSSBO=createBuffer(131072L*16,null);GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(java.nio.IntBuffer)null);clearWaveContactCount();}
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER, WAVE_STAMP_BB, this.waveStampSSBO);
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER, WAVECONTACT_BB, this.waveContactSSBO);
     }

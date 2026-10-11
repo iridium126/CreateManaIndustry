@@ -46,6 +46,10 @@
         // frame therefore latches MEMBER_LATCH_BIT into p0.w (survives pool
         // compaction; cleared only by a new storm generation killing the
         // pool), and a latched member never engages again.
+        if(uStarfallEnabled){
+            uint phase=0u;waveEngaged=cmiStarSteering(p0.w,p3.z,pos,target,spMaxV,target,vT,phase);
+            uint member=cmiStarMember(p0.w);if(member<131072u){uint a=cmiStarAssignment(p0.w),id=a==0u?0u:uint(cmiStarVec(cmiStarBase((a>>1u)&3u)).x+.5);if(id!=0u&&starStateRead.words[member*2u]==id)phase=max(phase,starStateRead.words[member*2u+1u]);starStateWrite.words[member*2u]=id;starStateWrite.words[member*2u+1u]=phase;}
+        }else {
         if ((uint(p0.w + 0.5) & MEMBER_LATCH_BIT) == 0u) {
         for (uint k = 0u; k < 4u && !waveEngaged; k++) {
             vec4 wt = uWaveTarget[k];
@@ -69,6 +73,7 @@
         }
         }
 
+        }
         // separation + player repulsion, world space.
         // Same visit budget as the boids sweep had.
         vec3 sepW = vec3(0.0);
@@ -169,6 +174,9 @@
                     float k = (hitC ? 24.0 : 8.0) * ramp;
                     vel += (target - pos) * min(k * uDt, 0.5);
                     vel += (cB.xyz - vel) * min(2.5 * uDt, 0.35);
+                    // Network correction follows the servo; it must obey the same motion cap.
+                    float cap=max(stormA.w,.5),speed=length(vel);
+                    if(speed>cap)vel*=cap/speed;
                 }
             }
         }

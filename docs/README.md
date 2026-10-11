@@ -12,6 +12,8 @@
 
 | 文档 | 内容 | 状态 |
 | --- | --- | --- |
+| [gpu-dome-2026-10-11.md](gpu-dome-2026-10-11.md) | 天穹合围实现、区域伤害、协议 3 与离屏验证 | 🟡 |
+| [gpu-starfall-2026-10-11.md](gpu-starfall-2026-10-11.md) | 星冠落阵、128 粒子圆环、同代身份阶段、Iris 与性能证据 | 🟡 |
 | [particle-engine-dev.md](particle-engine-dev.md) | GPU 粒子池、发射器、排序、碰撞、Hexcasting 与 shaderpack | 🟡 |
 | [gpu-hex-shared-takeover-2026-10-10.md](gpu-hex-shared-takeover-2026-10-10.md) | Hex 世界/阴影/玩家预览/施法 UI 独立 GPU 后端、预算、基准与用户验收 | 🟡 |
 | [gpu-package-model-pool-decision-2026-10-10.md](gpu-package-model-pool-decision-2026-10-10.md) | 包裹/MODEL 分池决策、当前版本实测与 MODEL 活动索引查询对照 | 🟡 |

@@ -93,12 +93,14 @@ public class ModelShadowGpuValidation {
         com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
         var state=new ParticleComputeState();int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
         int foreign=buffer(bytes(alignment+64)),vao=GL30.glGenVertexArrays(),pbo=buffer(bytes(64));GL30.glBindVertexArray(vao);
-        GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,15,foreign,alignment,64);GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,foreign);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,foreign);
+        for(int binding:new int[]{15,26,27,28})GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,binding,foreign,alignment,64);int attackTexture=GL11.glGenTextures();GL13.glActiveTexture(GL13.GL_TEXTURE14);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,attackTexture);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_R32UI,foreign);GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,foreign);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,foreign);
         GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER,pbo);GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH,17);GL13.glActiveTexture(GL13.GL_TEXTURE18);
-        state.capture();check(GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE)==GL13.GL_TEXTURE0,"lazy compute initialization uses foreign texture unit");GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,15,0);GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,0);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,0);GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER,0);GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH,0);GL30.glBindVertexArray(0);state.restore();
+        state.capture();check(GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE)==GL13.GL_TEXTURE0,"lazy compute initialization uses foreign texture unit");for(int binding:new int[]{15,26,27,28})GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,0);GL13.glActiveTexture(GL13.GL_TEXTURE14);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,0);GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,0);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,0);GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER,0);GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH,0);GL30.glBindVertexArray(0);state.restore();
         check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,15)==foreign&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,15)==alignment&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,15)==64,"compute state lost SSBO range");
         check(GL11.glGetInteger(GL43.GL_DISPATCH_INDIRECT_BUFFER_BINDING)==foreign&&GL11.glGetInteger(GL31.GL_COPY_READ_BUFFER)==foreign,"compute state lost indirect/copy binding");
         check(GL11.glGetInteger(GL21.GL_PIXEL_UNPACK_BUFFER_BINDING)==pbo&&GL11.glGetInteger(GL11.GL_UNPACK_ROW_LENGTH)==17,"compute state lost unpack state");check(GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING)==vao&&GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE)==GL13.GL_TEXTURE18,"compute state lost VAO/active texture");
+        for(int binding:new int[]{26,27,28})check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,binding)==foreign&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,binding)==alignment&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,binding)==64,"attack state lost SSBO range "+binding);
+        GL13.glActiveTexture(GL13.GL_TEXTURE14);check(GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER)==attackTexture,"attack TBO state not restored");GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,0);GL11.glDeleteTextures(attackTexture);GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER,0);GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH,0);GL15.glDeleteBuffers(foreign);GL15.glDeleteBuffers(pbo);GL30.glDeleteVertexArrays(vao);
     }
     static int vertexProgram(String vertex){
@@ -140,6 +142,24 @@ public class ModelShadowGpuValidation {
             for(int shadow=0;shadow<2;shadow++){
                 GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_ShadowPass"),shadow);GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL30.glBeginTransformFeedback(GL11.GL_POINTS);GL31.glDrawArraysInstanced(GL11.GL_POINTS,0,1,1);GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);
                 var out=read(buffers[4],16);check(shadow==0?out.getFloat(8)>1e8:Math.abs(out.getFloat(0)-150)<5&&Math.abs(out.getFloat(8))<5,"shadow fade bypass/main fade changed");
+            }
+            // Active starfall: the TBO-injected MODEL and native SSBO MODEL must produce the same pose.
+            for(int attackKind:new int[]{0,1})try(var star=new com.iridium126.createmanaindustry.client.particles.allaystorm.StarfallGpuBuffers()){
+                GL13.glActiveTexture(GL13.GL_TEXTURE0);
+                var event=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket(1,37,2,1,1,5,1,1,0,4,10,60,0,12,0,4,new int[]{0},new float[]{0,12,0,0,10,0},new float[]{0,.5f,0,3.5f});
+                if(attackKind==1){int[] roster=java.util.stream.IntStream.range(0,768).toArray();
+                    event=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket(1,37,2,1,1,5,7,4096,0,4,10,120,0,40,0,8,roster,new float[]{0,40,0,0,8,0},new float[28],1,4,com.iridium126.createmanaindustry.content.allaystorm.AllayDome.groups(768),0,0,0,0,1,10,0);
+                }
+                star.rebuild(new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[]{event,null,null,null});star.prepare(1);star.commit();star.bindTexture(14);
+                particle.putFloat(12,1).putFloat(20,-6).putFloat(52,20);put(buffers[1],particle);put(buffers[2],headers(2,.3f,false,true));
+                GL20.glUseProgram(program);GL20.glUniform1i(GL20.glGetUniformLocation(program,"uStarfallEnabled"),1);GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_Starfall"),14);GL20.glUniform1f(GL20.glGetUniformLocation(program,"uTimeSec"),12);GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_ShadowPass"),1);
+                GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL30.glBeginTransformFeedback(GL11.GL_POINTS);GL31.glDrawArraysInstanced(GL11.GL_POINTS,0,1,1);GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);var merged=read(buffers[4],16);
+                int nativeProgram=vertexProgram("#version 450 core\n"+ParticlePrograms.commonPrelude()+source("model.vsh"));
+                try{GL20.glUseProgram(nativeProgram);star.bind(nativeProgram,false);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,buffers[1]);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,5,buffers[2]);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,7,buffers[3]);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,12,buffers[0]);
+                    float[] identity=new org.joml.Matrix4f().get(new float[16]);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(nativeProgram,"ModelViewMat"),false,identity);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(nativeProgram,"ProjMat"),false,identity);GL20.glUniform1f(GL20.glGetUniformLocation(nativeProgram,"uTimeSec"),12);GL20.glUniform1f(GL20.glGetUniformLocation(nativeProgram,"uFadeDist"),1000);
+                    GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL30.glBeginTransformFeedback(GL11.GL_POINTS);GL31.glDrawArraysInstanced(GL11.GL_POINTS,0,1,1);GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);var nativePose=read(buffers[4],16);
+                    for(int component=0;component<4;component++)check(Math.abs(merged.getFloat(component*4)-nativePose.getFloat(component*4))<.0001,"attack native/Iris pose mismatch kind="+attackKind);
+                }finally{CMIParticleEngine.clearUniformProgram(nativeProgram);GL20.glDeleteProgram(nativeProgram);}
             }
             // Resource/source rebuild must produce both overlay variants with the same shadow flag.
             int overlay=vertexProgram(injector.patch(pack,(String)build.invoke(compiler,true),"MODEL overlay validation"));GL20.glDeleteProgram(overlay);

@@ -1,3 +1,5 @@
+uniform bool uStarfallEnabled;
+layout(std430,binding=28) buffer StarStateWrite {uint words[];} starState;
 layout(local_size_x = 1) in;
 #pragma cmi_include chunks/population_write.glsl
 
@@ -31,6 +33,7 @@ layout(std430, binding = BIND_HIT) buffer HitBuf {
 } hitOut;
 
 void main() {
+    if(uStarfallEnabled)for(uint i=0u;i<128u;i++)starState.words[262400u+i]=0u;
     if(uPopulationWriteEnabled){populationWrite.modelCount=0u;populationWrite.stormCount=0u;
         populationWrite.live=0u;populationWrite.valid=0u;populationWrite.generation=uPopulationWriteGeneration;
         populationWrite.modelCapacity=uPopulationModelCapacity;populationWrite.stormCapacity=uPopulationStormCapacity;}

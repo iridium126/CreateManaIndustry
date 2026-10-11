@@ -134,8 +134,9 @@ public final class ServerConfig {
     private static ModConfigSpec.IntValue STORM_MAX_COUNT;
     private static ModConfigSpec.DoubleValue STORM_GROWTH_PER_SECOND;
     private static ModConfigSpec.DoubleValue STORM_WAVE_INTERVAL;
-    private static ModConfigSpec.DoubleValue STORM_WAVE_FRACTION;
-    private static ModConfigSpec.IntValue STORM_WAVE_MAX_SIZE;
+    private static ModConfigSpec.IntValue STORM_STARFALL_STEP, STORM_STARFALL_COLUMNS, STORM_STARFALL_MEMBERS;
+    private static ModConfigSpec.DoubleValue STORM_DOME_CHANCE, STORM_DOME_FRACTION;
+    private static ModConfigSpec.IntValue STORM_DOME_MAX;
     private static ModConfigSpec.DoubleValue STORM_WAVE_DAMAGE;
     private static ModConfigSpec.DoubleValue STORM_WAVE_RANGE;
     private static ModConfigSpec.IntValue STORM_CHASE_Y;
@@ -291,16 +292,16 @@ public final class ServerConfig {
                 .comment("Members the storm generates per second while below stormMaxCount (growth runs on the server tick regardless of whether any player is in range). New members spawn on a ring just outside the visible envelope and fly to their storm positions. 0 disables growth (storms spawn at their initial count and never grow).")
                 .defineInRange("stormGrowthPerSecond", 20.0, 0.0, 2048.0);
         STORM_WAVE_INTERVAL = BUILDER
-                .comment("Seconds between dive-wave launches per player. Each player's cooldown fires independently; a wave launches only when the target is eligible (active, under open sky, within stormWaveRange of the chased center) and fewer than 4 waves are running. Waves are the storm's only offense: squad members break formation, follow a server-computed corridor to the target and deal stormWaveDamage on contact (self-reported by the target's client, server-validated).")
+                .comment("Seconds between starfall launches per player. Each player's cooldown fires independently; a wave launches only when the target is eligible (active, under open sky, within stormWaveRange of the chased center) and fewer than 4 waves are running. Waves are the storm's only offense: squad members break formation, follow a server-computed corridor to the target and deal stormWaveDamage on contact (self-reported by the target's client, server-validated).")
                 .defineInRange("stormWaveInterval", 60.0, 5.0, 600.0);
-        STORM_WAVE_FRACTION = BUILDER
-                .comment("Squad size of a dive wave as a fraction of the ALIVE member population (membership is a deterministic per-member hash against this fraction, identical on every client and re-derivable server-side). Population attrition visibly shrinks the waves — the population IS the boss health bar.")
-                .defineInRange("stormWaveFraction", 0.10, 0.001, 1.0);
-        STORM_WAVE_MAX_SIZE = BUILDER
-                .comment("Absolute cap on a dive-wave squad size (the fraction is clamped so alive * fraction never exceeds this). Bounds the separation-force cost of a converged dive.")
-                .defineInRange("stormWaveMaxSize", 256, 1, 4096);
+        STORM_DOME_CHANCE = BUILDER.comment("Dome attack probability; otherwise starfall. 天穹合围概率，其余使用星冠。").defineInRange("stormDomeChance", .20, 0, 1);
+        STORM_DOME_FRACTION = BUILDER.comment("Living members requested by a dome; below 768 falls back to starfall. 天穹参战比例，不足 768 回退星冠。").defineInRange("stormDomeMemberFraction", .20, 0, 1);
+        STORM_DOME_MAX = BUILDER.comment("Maximum dome members, shared reservations with starfall. 天穹人数上限，与星冠共用预留。").defineInRange("stormDomeMaxMembers", 16384, 768, 24576);
+        STORM_STARFALL_STEP = BUILDER.comment("Alive storm members per starfall column; at least one column while alive.").defineInRange("stormStarfallMembersPerColumnStep",4096,1,131072);
+        STORM_STARFALL_COLUMNS = BUILDER.comment("Maximum columns per starfall wave.").defineInRange("stormStarfallMaxColumns",16,1,32);
+        STORM_STARFALL_MEMBERS = BUILDER.comment("Exact members per column; only unreserved living members can join.").defineInRange("stormStarfallMembersPerColumn",512,1,4096);
         STORM_WAVE_DAMAGE = BUILDER
-                .comment("Damage per dive-wave contact. Fixed (no variance). Routed through player.hurt with the createmanaindustry:storm_peck damage type, so vanilla invulnerability frames, armor, absorption and totems all apply — concurrent divers cannot burst through the 10-tick i-frame window.")
+                .comment("Damage per starfall contact. Fixed (no variance). Routed through player.hurt with the createmanaindustry:storm_peck damage type, so vanilla invulnerability frames, armor, absorption and totems all apply — concurrent divers cannot burst through the 10-tick i-frame window.")
                 .defineInRange("stormWaveDamage", 7.0, 0.0, 40.0);
         STORM_WAVE_RANGE = BUILDER
                 .comment("Maximum distance from the chased center for a player to be eligible as a wave target (keeps dives inside the client visibility envelope so every active client can render the attack).")
@@ -550,8 +551,9 @@ public final class ServerConfig {
     public static int stormMaxCount = 65536;
     public static double stormGrowthPerSecond = 20.0;
     public static double stormWaveInterval = 60.0;
-    public static double stormWaveFraction = 0.10;
-    public static int stormWaveMaxSize = 256;
+    public static double stormDomeChance=.20, stormDomeMemberFraction=.20;
+    public static int stormDomeMaxMembers=16384;
+    public static int stormStarfallMembersPerColumnStep=4096, stormStarfallMaxColumns=16, stormStarfallMembersPerColumn=512;
     public static double stormWaveDamage = 7.0;
     public static double stormWaveRange = 96.0;
     public static int stormChaseY = 128;
@@ -646,8 +648,12 @@ public final class ServerConfig {
             stormMaxCount = STORM_MAX_COUNT.get();
             stormGrowthPerSecond = STORM_GROWTH_PER_SECOND.get();
             stormWaveInterval = STORM_WAVE_INTERVAL.get();
-            stormWaveFraction = STORM_WAVE_FRACTION.get();
-            stormWaveMaxSize = STORM_WAVE_MAX_SIZE.get();
+            stormDomeChance=STORM_DOME_CHANCE.get();
+            stormDomeMemberFraction=STORM_DOME_FRACTION.get();
+            stormDomeMaxMembers=STORM_DOME_MAX.get();
+            stormStarfallMembersPerColumnStep=STORM_STARFALL_STEP.get();
+            stormStarfallMaxColumns=STORM_STARFALL_COLUMNS.get();
+            stormStarfallMembersPerColumn=STORM_STARFALL_MEMBERS.get();
             stormWaveDamage = STORM_WAVE_DAMAGE.get();
             stormWaveRange = STORM_WAVE_RANGE.get();
             stormChaseY = STORM_CHASE_Y.get();

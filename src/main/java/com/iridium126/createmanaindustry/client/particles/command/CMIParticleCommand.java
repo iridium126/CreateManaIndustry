@@ -303,6 +303,7 @@ public final class CMIParticleCommand {
                 + "  gpu=" + String.format("%.2f", e.emaMs()) + "ms (budget " + e.budgetMs() + "ms)");
         tell(ctx,"Package preview: "+e.packagePreviewStatus()+"; live includes admitted package slots (asynchronous GPU snapshot).");
         tell(ctx,"Package shaderpack: "+e.packageShaderStatus());
+        tell(ctx,e.starfallStatus());
         return Command.SINGLE_SUCCESS;
     }
 

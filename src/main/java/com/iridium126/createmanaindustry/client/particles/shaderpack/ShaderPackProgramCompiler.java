@@ -95,9 +95,10 @@ import org.lwjgl.opengl.GL20;
 public final class ShaderPackProgramCompiler {
 
     /** Texture units the merged programs' TBO samplers are pinned to. Reserved
-     * inside Iris's sampler allocator by mixin/irisveil/MixinProgramSamplers,
+     * inside Iris's sampler allocator by mixin/iris/MixinProgramSamplers,
      * so pack samplers can never collide with them; unbound after every draw. */
     public static final int MERGED_SAMPLER_UNIT_BASE = 10;
+    public static final int MERGED_SAMPLER_UNIT_COUNT = 5;
 
     private final java.util.function.Function<String,String> mergedSources;
     public ShaderPackProgramCompiler(){this(ParticlePrograms::loadParticlePlain);}
@@ -601,6 +602,7 @@ public final class ShaderPackProgramCompiler {
             return this.mergedVertexSource;
 
         String chunk = mergedSources.apply("chunks/allay_pose.glsl");
+        chunk=chunk.replaceAll("(?s)#ifdef CMI_STARFALL_TBO\\s*(.*?)#else.*?#endif","$1");
         if (chunk.isEmpty())
             throw new IllegalStateException("cannot load chunks/allay_pose.glsl");
 
@@ -763,13 +765,14 @@ public final class ShaderPackProgramCompiler {
                     // item invocations for every non-carrier instance are gone.
                     float carryRamp = 0.0;
                     float itemId = 0.0;
+                    if(uStarfallEnabled&&!corpse&&stormA.x>.5){int claim=cmiStarClaim(p0.w,uTimeSec);if(claim>=0)carryRamp=cmiAttackCarry(p0.w,uTimeSec);}
                     if (pid == 7 && !gone) {
                         float waveTier = 0.0;
                         if (!corpse && stormA.x > 0.5) {
-                            int k = cmiStormWaveClaim(p3.z);
+                            int k = cmiStormWaveClaim(p3.z,p0.w);
                             if (k >= 0) {
-                                carryRamp = cmiStormCarryRamp(uTimeSec, uWave[k].z, uWave[k].w);
-                                waveTier = uWaveTier[k];
+                                carryRamp = uStarfallEnabled?cmiAttackCarry(p0.w,uTimeSec):cmiStormCarryRamp(uTimeSec, uWave[k].z, uWave[k].w);
+                                waveTier = uStarfallEnabled?cmiStarTier(k):uWaveTier[k];
                             }
                         }
                         // held-item id: a wave claim overrides the header slot
@@ -789,7 +792,7 @@ public final class ShaderPackProgramCompiler {
                         anim = 3;
                     float sinceDeath = corpse ? -p3.y : 0.0;
                     float yaw;
-                    mat4 M = gone ? mat4(1.0) : cmiAllayPartTransform(p3.x, p3.z, p1.xyz, anim, pid, yaw, carryRamp);
+                    mat4 M = gone ? mat4(1.0) : cmiAllayStarPartTransform(p3.x, p3.z, p1.xyz, anim, pid, yaw, carryRamp, !corpse && stormA.x > .5);
 
                     vec3 local = gone ? vec3(0.0) : vec3(texelFetch(cmi_Geo, int(vb)).x, texelFetch(cmi_Geo, int(vb + 1u)).x, texelFetch(cmi_Geo, int(vb + 2u)).x);
                     vec2 uv = gone ? vec2(0.5) : vec2(texelFetch(cmi_Geo, int(vb + 3u)).x, texelFetch(cmi_Geo, int(vb + 4u)).x);

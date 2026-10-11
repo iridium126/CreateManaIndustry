@@ -7,18 +7,20 @@ import org.lwjgl.system.MemoryStack;
 
 /** Shadow-only permutations/commands. Reads the committed pool, never modifies main draw data. */
 public final class ModelShadowGpu implements AutoCloseable {
-    private final int capacity,meta;private int instances,commands;private final int[] programs=new int[3];
+    private final int capacity,meta,carrierCapacity;private int instances,commands;private final int[] programs=new int[3];
     private final int[][] locations=new int[3][14];private boolean closed;
     private final int[][] populationLocations=new int[3][2];
     private static final String[] NAMES={"uCapacity","uCarrierBase","uNativeSize","uEntityViewScale","uCamera","uFrustum","uFrustumCount","uCullBounds","uTimeSec","uWave","uWaveTarget","uWaveTier","uMetaSlot","uCutout"};
-    public ModelShadowGpu(int capacity,Function<String,String> source){
-        if(capacity<1)throw new IllegalArgumentException("Model shadow capacity");this.capacity=capacity;meta=capacity+ParticleBuffers.CARRIER_CAP;
+    public ModelShadowGpu(int capacity,Function<String,String> source){this(capacity,ParticleBuffers.CARRIER_CAP,source);}
+    public ModelShadowGpu(int capacity,int carrierCapacity,Function<String,String> source){
+        if(capacity<1)throw new IllegalArgumentException("Model shadow capacity");this.capacity=capacity;this.carrierCapacity=carrierCapacity;meta=capacity+carrierCapacity;
         try{
             instances=allocate((long)(meta+1)*8);commands=allocate((ParticleBuffers.INDIRECT_UINTS+4L)*4);
             for(int p=0;p<3;p++){
                 programs[p]=compile(ParticlePrograms.commonPrelude()+source.apply("model_shadow_"+new String[]{"prepare","collect","finish"}[p]+".comp"));
                 populationLocations[p][0]=GL20.glGetUniformLocation(programs[p],"uPopulationReadEnabled");populationLocations[p][1]=GL20.glGetUniformLocation(programs[p],"uPopulationGeneration");
                 for(int i=0;i<NAMES.length;i++)locations[p][i]=GL20.glGetUniformLocation(programs[p],NAMES[i]);
+                GL41.glProgramUniform1ui(programs[p],GL20.glGetUniformLocation(programs[p],"uCarrierLimit"),carrierCapacity);
                 GL41.glProgramUniform1ui(programs[p],locations[p][0],capacity);GL41.glProgramUniform1ui(programs[p],locations[p][1],capacity);GL41.glProgramUniform1ui(programs[p],locations[p][12],meta);
             }
             int finish=programs[2];GL41.glProgramUniform1ui(finish,GL20.glGetUniformLocation(finish,"uCutout"),AllayModelGeometry.BODY_OPAQUE_INDEX_COUNT);
@@ -51,7 +53,9 @@ public final class ModelShadowGpu implements AutoCloseable {
         GL43.glDispatchComputeIndirect(ParticleBuffers.INDIRECT_UINTS*4L);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL20.glUseProgram(programs[2]);GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT);
     }
+    public void starfall(int buffer){GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,26,buffer);for(int p:programs)GL41.glProgramUniform1i(p,CMIParticleEngine.loc(p,"uStarfallEnabled"),buffer>0?1:0);}
+    public int carrierCapacity(){return carrierCapacity;}
     public int instances(){return instances;}public int commands(){return commands;}public int capacity(){return capacity;}
     public long bytes(){return (long)(meta+1)*8+(ParticleBuffers.INDIRECT_UINTS+4L)*4;}
-    @Override public void close(){if(closed)return;closed=true;for(int p:programs)if(p!=0)GL20.glDeleteProgram(p);if(instances!=0)GL15.glDeleteBuffers(instances);if(commands!=0)GL15.glDeleteBuffers(commands);}
+    @Override public void close(){if(closed)return;closed=true;for(int p:programs)if(p!=0){CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}if(instances!=0)GL15.glDeleteBuffers(instances);if(commands!=0)GL15.glDeleteBuffers(commands);}
 }

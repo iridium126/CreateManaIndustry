@@ -37,10 +37,10 @@
 | S→C | `ClientboundStormCenterPacket` | 当前追击中心/配置化 chase Y |
 | S→C | `ClientboundStormDamagePacket` | 按 member index 广播伤害、死亡/战斗视觉 |
 | S→C | `ClientboundStormPositionsPacket` | authority 的稀疏位置校正 |
-| S→C | `ClientboundStormWavePacket` | 波次 seed、目标和路径参数 |
+| S→C | `ClientboundStormWavePacket` | 星冠名单、目标、路径、阶段时间和锁定落点 |
 | C→S | `ServerboundStormPositionsPacket` | authority client 的位置快照 |
 | C→S | `ServerboundStormHitPacket` | 客户端 GPU hit readback 的伤害事件 |
-| C→S | `ServerboundStormWaveContactPacket` | 本地玩家与 dive member 的接触报告 |
+| C→S | `ServerboundStormWaveContactPacket` | 本地目标与当前下降成员的接触报告 |
 
 包处理必须在主线程执行；收到的 storm/member index、count、HP、坐标范围和玩家归属都要校验。客户端报告只提供候选事实，服务端再次验证距离、状态、冷却和 invulnerability frame。
 
@@ -58,7 +58,7 @@ storm 作为每个 `ServerLevel` 的 attachment 保存。持久化字段包括 a
 
 服务端文件为 `config/createmanaindustry-server.toml`，相关键：
 
-`allay_storm.stormCorrectionHz`、`stormMaxCount`、`stormGrowthPerSecond`、`stormWaveInterval`、`stormWaveFraction`、`stormWaveMaxSize`、`stormWaveDamage`、`stormWaveRange`、`stormChaseY`。
+`allay_storm.stormCorrectionHz`、`stormMaxCount`、`stormGrowthPerSecond`、`stormWaveInterval`、`stormStarfallMembersPerColumnStep`、`stormStarfallMaxColumns`、`stormStarfallMembersPerColumn`、`stormWaveDamage`、`stormWaveRange`、`stormChaseY`、`stormDomeChance`、`stormDomeMemberFraction`、`stormDomeMaxMembers`。
 
 命令（权限 2）：
 
@@ -77,4 +77,16 @@ storm 作为每个 `ServerLevel` 的 attachment 保存。持久化字段包括 a
 - 高延迟/丢包下位置平滑，不出现旧 storm 或重复成员。
 - GPU 不可用时命令和网络状态仍安全，且不会阻塞服务端 tick。
 
-AI 和 dive-wave 路径见 [allay-storm-ai.md](allay-storm-ai.md)；GPU 模型粒子见 [particle-engine-dev.md](particle-engine-dev.md)。
+星冠落阵 AI 和路径见 [allay-storm-ai.md](allay-storm-ai.md)；GPU 模型粒子见 [particle-engine-dev.md](particle-engine-dev.md)。
+
+## 星冠 / 天穹协议（2026-10-11）
+
+核心网络注册版本从 2 升至 3，服务端与客户端需同时更新。波次包仍使用 `storm_wave`，事件分为 START / UPDATE / LOCK / ABORT；开始和新观察者快照包含完整、按显式组边界排序的身份名单，目标/路径更新与锁定仅发送紧凑参数，不重发名单。
+
+世界坐标为 float 绝对坐标；名单为有界 VarInt 身份数组，路径最多 6 点、星柱最多 32 柱、每柱最多 4096 人，校验有限数、尺寸与重复身份。代标识由持久化创建时间和 storm seed 共同生成，同 tick 重建也不共享旧事件。客户端锁定后拒绝滞后的 UPDATE。包内显式携带攻击类型和阶段；天穹使用六瓣加顶冠七组、中心、朝向、顺逆时针和同步时刻，观察者不从星冠落点数组猜测锁定状态。
+
+`storm_wave_contact` 现在包含 wave ID、64 位代标识、采样秒数、member index 和绝对 contact.xyz；不再以移动中心重构接触坐标。服务端使用有界 41 tick 位置历史接受最多两秒延迟，星冠仅对自身目标结算，天穹对冻结区域内所有接触玩家结算；按受击玩家、波次、成员去重，通过校验后才执行伤害。天穹只接受当前收拢瓣，不使用星冠圆环的准入条件。其他位置/伤害/近战包的原有坐标约定保持原样。
+
+GPU 成员归属表与参数使用双 bank，身份阶段使用同代双 bank；compute/native 使用 SSBO，Iris 模型使用同 backing 的 TBO。圆环还有客户端资源代令牌，旧圆环即使碰巧与新攻击 wave ID/slot 相同也只会淡出。帧准备失败不发布新代。天穹复用同一域，未增加固定 buffer 或 sampler；实现与证据见 [天穹合围](gpu-dome-2026-10-11.md)。
+
+客户端激活仍由现有服务端扫描维护。除风暴中心范围外，锁定天穹的固定区域也能激活/维持附近观察者；原目标离开、风暴中心移走后，区域快照和接触上报仍有效。没有新增世界监听器。

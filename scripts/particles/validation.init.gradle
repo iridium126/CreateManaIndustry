@@ -35,6 +35,28 @@ allprojects {
             if (project.hasProperty('modelIndexProbe')) args '--index-probe'
             workingDir = project.projectDir
         }
+        tasks.register('compileStarfallHarness', JavaCompile) {
+            dependsOn tasks.named('classes')
+            source = files('scripts/particles/ModelPopulationGpuValidation.java', 'scripts/particles/StarfallGpuValidation.java', 'scripts/particles/DomeGpuValidation.java')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            destinationDirectory = layout.buildDirectory.dir('starfall-harness')
+            options.release = 21
+        }
+        tasks.register('validateStarfallGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'StarfallGpuValidation'
+            if (project.hasProperty('starfallBenchmark')) args '--benchmark'
+            if (project.hasProperty('starfallRingBenchmark')) args '--ring-benchmark'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateDomeGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'DomeGpuValidation'
+            if (project.hasProperty('domeBenchmark')) args '--benchmark'
+            workingDir = project.projectDir
+        }
         tasks.register('validateModelPopulationGpu', JavaExec) {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin

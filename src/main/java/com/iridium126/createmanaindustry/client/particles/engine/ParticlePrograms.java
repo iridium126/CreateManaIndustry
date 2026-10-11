@@ -154,6 +154,8 @@ public final class ParticlePrograms {
     private int damagePrepare;
     public int damagePrepare(){return damagePrepare;}
     private int stormPos;       // authority readback: near-player members (storm sync)
+    private int ringReserve;
+    public int ringReserve(){return ringReserve;}
     private int waveContact;    // dive-wave contact self-report detection (storm waves)
     private int render;          // additive billboards (soft circle)
     private int texturedRender;  // textured sprite billboards: uMode 0 blended / 1 OPAQUE cutout
@@ -195,6 +197,7 @@ public final class ParticlePrograms {
             candidate.hit = compute.applyAsInt(GLSL_DIR + "hit.comp");
             candidate.damagePrepare=compute.applyAsInt(GLSL_DIR+"damage_prepare.comp");
             candidate.stormPos = compute.applyAsInt(GLSL_DIR + "stormpos.comp");
+            candidate.ringReserve=compute.applyAsInt(GLSL_DIR+"starfall_ring_reserve.comp");
             candidate.waveContact = compute.applyAsInt(GLSL_DIR + "wavecontact.comp");
             candidate.render = graphics.apply(GLSL_DIR + "additive.vsh", GLSL_DIR + "additive.fsh");
             candidate.texturedRender = graphics.apply(GLSL_DIR + "textured.vsh", GLSL_DIR + "textured.fsh");
@@ -218,6 +221,7 @@ public final class ParticlePrograms {
             this.hit = candidate.hit; candidate.hit = 0;
             this.damagePrepare=candidate.damagePrepare;candidate.damagePrepare=0;
             this.stormPos = candidate.stormPos; candidate.stormPos = 0;
+            this.ringReserve=candidate.ringReserve;candidate.ringReserve=0;
             this.waveContact = candidate.waveContact; candidate.waveContact = 0;
             this.render = candidate.render; candidate.render = 0;
             this.texturedRender = candidate.texturedRender; candidate.texturedRender = 0;
@@ -240,7 +244,7 @@ public final class ParticlePrograms {
                 && this.texturedRender != 0 && this.modelRender != 0
                 && this.keygen != 0 && this.radixHist != 0 && this.radixScan != 0
                 && this.radixScatter != 0 && this.capture != 0 && this.grid != 0
-                && this.hit != 0 && this.damagePrepare!=0 && this.stormPos != 0 && this.waveContact != 0;
+                && this.hit != 0 && this.damagePrepare!=0 && this.stormPos != 0 && this.waveContact != 0 && this.ringReserve!=0;
     }
 
     public int reset() {
@@ -457,14 +461,13 @@ public final class ParticlePrograms {
         for (int p : new int[] {
                 this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
-                this.grid, this.hit, this.damagePrepare,this.stormPos, this.waveContact,
+                this.grid, this.hit, this.damagePrepare,this.stormPos, this.waveContact, this.ringReserve,
                 this.render, this.texturedRender, this.modelRender }) {
-            if (p != 0)
-                GL20.glDeleteProgram(p);
+            if (p != 0){CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}
         }
         this.prepareDispatch = this.reset = this.update = this.emit = this.blockEmit = this.keygen = 0;
         this.radixHist = this.radixScan = this.radixScatter = this.capture = 0;
-        this.grid = this.hit = this.damagePrepare = this.stormPos = this.waveContact = 0;
+        this.grid = this.hit = this.damagePrepare = this.stormPos = this.waveContact = this.ringReserve = 0;
         this.render = this.texturedRender = this.modelRender = 0;
     }
 }

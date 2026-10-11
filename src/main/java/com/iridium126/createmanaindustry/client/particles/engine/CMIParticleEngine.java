@@ -673,12 +673,9 @@ public final class CMIParticleEngine {
      * Applies one dive-wave event (launch or abort) — semantics on
      * {@link AllayStormRuntime#applyWave}.
      */
-    public void applyWave(int waveId, boolean abort, int waveSeed, float fraction,
-            int targetEntityId, float[] path, float assembleSec, float diveUntilSec,
-            int swordTier) {
-        this.storm.applyWave(waveId, abort, waveSeed, fraction, targetEntityId, path,
-                assembleSec, diveUntilSec, swordTier);
-    }
+    public void applyWave(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket packet){this.storm.applyWave(packet);}
+    public String starfallStatus(){return storm.starfallStatus();}
+    public com.iridium126.createmanaindustry.client.particles.allaystorm.StarfallGpuBuffers starfallGpu(){return storm.starfallGpu();}
 
     /**
      * Dive-wave uniform staging for the MODEL render path (the held-sword
@@ -761,6 +758,7 @@ public final class CMIParticleEngine {
 
     /** Frees all GPU resources on client shutdown. Safe when never initialised. */
     public void close() {
+        this.storm.starfallGpu().close();
         if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.close();
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle engine closed",false);
         try {
@@ -791,6 +789,7 @@ public final class CMIParticleEngine {
         this.cancelledStreamIds.clear();
         this.hexSprays.clear();
         this.hexParticles.clear();
+        this.storm.starfallGpu().invalidate();
         resetPoolState();
         this.uniformLocations.clear();
         this.initialized = false;
@@ -1053,6 +1052,7 @@ public final class CMIParticleEngine {
         this.streams.clear();
         this.cancelledStreamIds.clear();
         this.gpu.clearParticles();
+        this.storm.starfallGpu().invalidate();
         resetPoolState();
         this.storm.resetStormState();
         this.streamCount = 0;
@@ -1155,7 +1155,8 @@ public final class CMIParticleEngine {
             this.hexSprays.clear();
             this.hexParticles.clear();
             this.gpu.clearParticles();
-            resetPoolState();
+            this.storm.starfallGpu().invalidate();
+        resetPoolState();
             this.storm.resetStormState();
         }
 
@@ -1233,6 +1234,7 @@ public final class CMIParticleEngine {
         // dive waves: expire dead slots, keep the target shafts baked (with
         // hysteresis), rebuild the wave uniform staging for both consumers
         this.storm.refreshWaves();
+        this.storm.scheduleRings(schedule);
         int entryCount = schedule.entryCount;
         int totalSpawn = schedule.totalSpawn;
 
@@ -1427,6 +1429,7 @@ public final class CMIParticleEngine {
             int w = 0;
             for (int i = 0; i < entryCount; i++) {
                 int n = Math.max(0, (int) (this.emitCounts[i] * k));
+                if(this.storm.ringsRequested()&&this.emitRingSpawn[i]&&this.emitCounts[i]==128&&this.emitLight[i]>0&&this.emitMemberKey[i]>=0&&!this.emitHex[i])n=n>=128?128:0;
                 if (n > 0) {
                     this.emitIds[w] = this.emitIds[i];
                     this.emitCounts[w] = n;
@@ -1530,6 +1533,8 @@ public final class CMIParticleEngine {
         try {
             if (this.computeTimer.begin())
                 queryActive = true;
+            this.gpu.ensureCarrierCapacity(this.storm.carrierCount());
+            if(this.storm.active()||this.storm.starfallGpu().bytes()>0)this.storm.starfallGpu().prepare(this.committedGeneration+1);
             ParticleDiagnostics.INSTANCE.mark("reset_grid");
             this.gpu.beginComputeFrame();
             this.gpu.bindDispatch();
@@ -1538,9 +1543,11 @@ public final class CMIParticleEngine {
             this.gpu.bindIndirect(2);
             this.gpu.bindPopulationRead(this.programs.prepareDispatch());
             this.gpu.bindPopulationWrite(this.programs.prepareDispatch(),committedGeneration+1);
+            org.lwjgl.opengl.GL41.glProgramUniform1ui(this.programs.prepareDispatch(),loc(this.programs.prepareDispatch(),"uCarrierLimit"),this.gpu.carrierCapacity());
             ParticleDispatch.prepare(this.programs, 0);
             GL20.glUseProgram(this.programs.reset());
             this.gpu.bindPopulationWrite(this.programs.reset(),committedGeneration+1);
+            this.storm.starfallGpu().bind(this.programs.reset(),true);
             this.gpu.bindIndirect(2);
             this.gpu.bindCounter(3, slot);
             // reset.comp also re-arms the hit query to MISS -- EVERY binding a
@@ -1621,6 +1628,7 @@ public final class CMIParticleEngine {
             setFloatUniform(this.programs.update(), "uStormConvPhase", this.storm.convPhase());
             setFloatUniform(this.programs.update(), "uStormConvRate", this.storm.convRate());
             // dive-wave squads (staging rebuilt by refreshWaves above)
+            this.storm.starfallGpu().bind(this.programs.update(),true);
             setVec4ArrayUniform(this.programs.update(), "uWave", this.storm.waveUniform());
             setVec4ArrayUniform(this.programs.update(), "uWaveTarget", this.storm.waveTargetUniform());
             setVec4ArrayUniform(this.programs.update(), "uWavePath", this.storm.wavePathUniform());
@@ -1633,7 +1641,15 @@ public final class CMIParticleEngine {
 
             ParticleDiagnostics.INSTANCE.mark("emit");
             if (entryCount > 0) {
+                if(this.storm.ringsRequested()){
+                    int reserve=this.programs.ringReserve();GL20.glUseProgram(reserve);this.storm.starfallGpu().bind(reserve,true);
+                    this.gpu.bindCounter(3,slot);this.gpu.bindEmitBuffer(4,ringId);this.gpu.bindEmitters(5);
+                    setUIntUniform(reserve,"uEmitCount",entryCount);setUIntUniform(reserve,"uCapacity",cap);setFloatUniform(reserve,"uTimeSec",this.timeSec());
+                    GL43.glDispatchCompute((entryCount+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                }
                 GL20.glUseProgram(this.programs.emit());
+                this.storm.starfallGpu().bind(this.programs.emit(),true);
+                setFloatUniform(this.programs.emit(),"uTimeSec",this.timeSec());
             this.gpu.bindIdentities(this.programs.emit());
                 this.gpu.bindPopulationRead(this.programs.emit());
                 this.gpu.bindParticleWrite(1);
@@ -1730,7 +1746,9 @@ public final class CMIParticleEngine {
                 // (identical arrays update.comp steers and the render paths
                 // pick tiers with — one predicate, one staging)
                 setUIntUniform(kg, "uCarrierBase", this.gpu.carrierBase());
+                setUIntUniform(kg,"uCarrierLimit",this.gpu.carrierCapacity());
                 setFloatUniform(kg, "uTimeSec", this.timeSec());
+                this.storm.starfallGpu().bind(kg,true);
                 setVec4ArrayUniform(kg, "uWave", this.storm.waveUniform());
                 setVec4ArrayUniform(kg, "uWaveTarget", this.storm.waveTargetUniform());
                 setFloatArrayUniform(kg, "uWaveTier", this.storm.waveTierUniform());
@@ -1915,6 +1933,7 @@ public final class CMIParticleEngine {
             this.frameArmed = true;
             this.committedGeneration++;
             this.gpu.commitPopulation(this.committedGeneration);
+            this.storm.commitStarfall();
             if (createsParticles) {
                 this.lastCreationGeneration = this.committedGeneration;
                 this.poolMayBeAlive = true;
@@ -1936,6 +1955,7 @@ public final class CMIParticleEngine {
                 }
             }
         } finally {
+            this.storm.starfallGpu().abort();
             if (queryActive) {
                 // Mid-phase failure: end the partial bracket so the query object
                 // stays reusable, and leave the ring cursor alone — the slot is
@@ -2126,6 +2146,8 @@ public final class CMIParticleEngine {
             if (prog == 0)
                 return;
             GL20.glUseProgram(prog);
+            CMIParticleEngine.this.storm.starfallGpu().bind(prog,false);
+            setFloatUniform(prog,"uTimeSec",CMIParticleEngine.this.timeSec());
             CMIParticleEngine.this.gpu.bindModelDrawInputs(mainPermutation());
 
             setMat4Uniform(prog, "ModelViewMat", view);
@@ -2167,6 +2189,7 @@ public final class CMIParticleEngine {
          * (zeroed staging); the UV table is a constant of the atlas layout.
          */
         private void uploadStormItemUniforms(int prog) {
+            CMIParticleEngine.this.storm.starfallGpu().bind(prog,false);
             setVec4ArrayUniform(prog, "uWave", CMIParticleEngine.this.storm.waveUniform());
             setVec4ArrayUniform(prog, "uWaveTarget", CMIParticleEngine.this.storm.waveTargetUniform());
             setFloatArrayUniform(prog, "uWaveTier", CMIParticleEngine.this.storm.waveTierUniform());
@@ -2188,6 +2211,8 @@ public final class CMIParticleEngine {
             if (prog == 0)
                 return;
             GL20.glUseProgram(prog);
+            CMIParticleEngine.this.storm.starfallGpu().bind(prog,false);
+            setFloatUniform(prog,"uTimeSec",CMIParticleEngine.this.timeSec());
             CMIParticleEngine.this.gpu.bindBillboardDrawInputs(mode, mainPermutation());
 
             setMat4Uniform(prog, "ModelViewMat", view);
@@ -2981,6 +3006,7 @@ public final class CMIParticleEngine {
         return this.initialized;
     }
 
+    public static void clearUniformProgram(int program){INSTANCE.uniformLocations.remove(program);}
     public static int loc(int prog, String name) {
         return INSTANCE.uniformLocations
                 .computeIfAbsent(prog, p -> new HashMap<>())

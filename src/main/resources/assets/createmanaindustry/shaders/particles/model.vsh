@@ -143,13 +143,14 @@ void main() {
     // instance no longer exist at all.
     float carryRamp = 0.0;
     float itemId = 0.0;
+    if(uStarfallEnabled&&!corpse&&stormA.x>.5){int claim=cmiStarClaim(p0.w,uTimeSec);if(claim>=0)carryRamp=cmiAttackCarry(p0.w,uTimeSec);}
     if (pid == 7) {
         float waveTier = 0.0;
         if (!corpse && stormA.x > 0.5) {
-            int k = cmiStormWaveClaim(p3.z);
+            int k = cmiStormWaveClaim(p3.z,p0.w);
             if (k >= 0) {
-                carryRamp = cmiStormCarryRamp(uTimeSec, uWave[k].z, uWave[k].w);
-                waveTier = uWaveTier[k];
+                carryRamp = uStarfallEnabled?cmiAttackCarry(p0.w,uTimeSec):cmiStormCarryRamp(uTimeSec, uWave[k].z, uWave[k].w);
+                waveTier = uStarfallEnabled?cmiStarTier(k):uWaveTier[k];
             }
         }
         // held-item id: a wave claim OVERRIDES the emitter header slot (storm
@@ -173,7 +174,7 @@ void main() {
         anim = 3;
     float sinceDeath = corpse ? -p3.y : 0.0;
     float yaw;
-    mat4 M = cmiAllayPartTransform(p3.x, p3.z, p1.xyz, anim, pid, yaw, carryRamp);
+    mat4 M = cmiAllayStarPartTransform(p3.x, p3.z, p1.xyz, anim, pid, yaw, carryRamp, !corpse && stormA.x > .5);
 
     // ---- vertex transform to world ----
     vec3 local = vec3(geo.v[vb], geo.v[vb + 1u], geo.v[vb + 2u]);

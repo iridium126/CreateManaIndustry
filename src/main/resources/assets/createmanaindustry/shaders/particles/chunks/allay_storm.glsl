@@ -1,3 +1,4 @@
+#pragma cmi_include chunks/starfall.glsl
 // ==== CMI shared allay-storm math (pose-free) ====
 // Storm-shared layer split out of chunks/allay_pose.glsl so compute passes
 // that need ONLY the wave/typhoon math (keygen's carrier sweep, update's
@@ -223,3 +224,5 @@ void cmiTyphoonHome(float ms, float radiusR, float omegaNow, float rotPhase, flo
     if (spd > maxSpeed)
         vel = vel * (maxSpeed / spd);
 }
+
+int cmiStormWaveClaim(float seed,float identity){return uStarfallEnabled?cmiStarClaim(identity,uTimeSec):cmiStormWaveClaim(seed);}

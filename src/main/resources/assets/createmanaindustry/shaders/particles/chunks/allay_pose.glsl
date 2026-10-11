@@ -235,3 +235,8 @@ mat4 cmiAllayPartTransform(float ageSec, float seed, vec3 vel, int anim, int pid
     }
     return bodyM * cmiPart(vec3(0.5, 0.0, 0.6), wingXR, CMI_PI / 4.0 - f1, 0.0);
 }
+
+mat4 cmiAllayStarPartTransform(float age,float seed,vec3 velocity,int animation,int part,out float yaw,float carry,bool starAttack){
+ mat4 transform=cmiAllayPartTransform(age,seed,velocity,animation,part,yaw,carry);
+ if(starAttack&&uStarfallEnabled){mat4 center=mat4(1.);center[3].y=23.5;mat4 inverseCenter=mat4(1.);inverseCenter[3].y=-23.5;transform=center*cmiRotX(clamp(-velocity.y*.08,-.45,.45)*carry)*inverseCenter*transform;}return transform;
+}
