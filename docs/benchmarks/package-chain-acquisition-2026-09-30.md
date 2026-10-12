@@ -1,5 +1,7 @@
 # 锁链包裹客户端接线验证（2026-09-30）
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 本次完成客户端 chain upload/acquisition、世界时钟/传输/成功提交接线，以及原生成员和 Renderer/Flywheel 子集桥接。它是接管计划的阶段进度，不是目标性能验收；CHAIN_READY 仍关闭，正常锁链由 Create 继续管理。
 
 设备与真实 GL 验证：RTX 4070 Laptop GPU，OpenGL 4.5，NVIDIA 581.15。使用现有 `validation.init.gradle`，无 shaderpack；不在实际 Minecraft 场景中运行该驱动验证。

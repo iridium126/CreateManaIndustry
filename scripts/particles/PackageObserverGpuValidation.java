@@ -470,7 +470,7 @@ public final class PackageObserverGpuValidation {
                     rows.add(row);System.out.println(row);
                 }finally{GL15.glDeleteQueries(query);}
             }
-        Files.write(Path.of("build/package-observer-gpu.csv"),rows);Files.write(Path.of("build/package-observer-gpu-samples.csv"),samples);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-observer-gpu.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-observer-gpu-samples.csv"),samples);
     }
     public static void main(String[] args) throws Exception {
         var callback=GLFWErrorCallback.createPrint(System.err);callback.set();check(GLFW.glfwInit(),"GLFW");

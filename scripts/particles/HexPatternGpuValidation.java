@@ -420,7 +420,7 @@ public class HexPatternGpuValidation {
             if(trial>=0)report.append("unbind,").append(variant).append(',').append(trial).append(',').append(time)
                     .append(",0,").append(variant==0?29:1).append('\n');
         }
-        Files.writeString(Path.of("build/particle-submit-benchmark.csv"),report);
+        Files.writeString(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/particle-submit-benchmark.csv"),report);
         System.out.print(report);GL15.glDeleteBuffers(legacy);gpu.free();
     }
     static void sorting(boolean benchmark) throws Exception {
@@ -470,7 +470,7 @@ public class HexPatternGpuValidation {
             for(int id:new int[]{cmd,src,dst,hist,offs})GL15.glDeleteBuffers(id);
         }
         for(int[] set:programs)for(int id:set)GL20.glDeleteProgram(id);
-        if(benchmark)Files.writeString(Path.of("build/particle-sort-benchmark.csv"),report);
+        if(benchmark)Files.writeString(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/particle-sort-benchmark.csv"),report);
         System.out.println("Baseline and grouped sort order, payload, tail and capacity tests passed");
     }
     public static void main(String[] args) throws Exception {

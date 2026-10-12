@@ -1,5 +1,7 @@
 # 包裹与 MODEL 是否拆池：实测决策（2026-10-10）
 
+历史决策记录。其后已接入同代 MODEL/STORM 活动索引，当前实现见 [MODEL 契约](gpu-model-rendering.md)。下文的待实施建议表示当时状态。
+
 结论：以降低渲染线程 CPU 负载为优先，当前不建议把包裹和 MODEL 各自复制成一套完整普通粒子池。包裹保留独立物理域，独立渲染提交域作为大规模或包裹-only 场景的候选；MODEL 保留共池模拟，优先考虑同代活动索引及其多查询复用，并保留密集扫描回退。
 
 这次没有修改生产模拟或绘制路径。新增 MODEL 索引查询对照仅存在于验证程序，尚未部署活动索引。Hex 实例已经迁出通用池，参考回答中“Hex 实例仍经过通用池”的描述已过时。
@@ -101,4 +103,4 @@ MODEL 下面的原路径数据为全部 MODEL 可见、全部非 storm carrier �
 
 汇总、压缩逐次样本和成功日志位于 [benchmarks/pool-split-analysis-2026-10-10](benchmarks/pool-split-analysis-2026-10-10/)。生产代码未改；验证脚本提供可复现索引查询原型，不是运行时开关。
 
-其他依据：[包裹剔除/融合](benchmarks/package-cull-pipeline-2026-10-05.md)、[物理与 CPU 分项优化](benchmarks/package-priority-optimization-2026-10-09.md)、[MODEL 当前帧阴影](gpu-package-model-current-frame-shadows-2026-10-09.md)、[Hex 独立后端](gpu-hex-shared-takeover-2026-10-10.md)。
+其他依据：[包裹剔除/融合](benchmarks/package-cull-pipeline-2026-10-05.md)、[物理与 CPU 分项优化](benchmarks/package-priority-optimization-2026-10-09.md)、[MODEL 当前帧阴影](gpu-model-rendering.md)、[Hex 独立后端](gpu-hex-shared-takeover-2026-10-10.md)。

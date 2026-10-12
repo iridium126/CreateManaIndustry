@@ -1,51 +1,20 @@
-// Isolated real Create/NeoForge output tests; fixtures never enter the published mod JAR.
+// Real Create machine output and native recovery tests.
 gradle.projectsEvaluated {
     def p = gradle.rootProject
-    def owo = p.file('run/mods/owo-lib-neoforge-0.13.0-alpha.15+1.21.jar')
-    if (!owo.isFile()) {
-        def cached = p.fileTree(new File(gradle.gradleUserHomeDir, 'caches/modules-2/files-2.1/codeberg.master_bw3.trickster/owo-lib-neoforge/0.13.0-alpha.15+1.21')) {
-            include '**/owo-lib-neoforge-0.13.0-alpha.15+1.21.jar'
-        }.files
-        if (cached.size() == 1) owo = cached.first()
-    }
-    if (!owo.isFile()) throw new GradleException('GameTest runtime requires the existing local owo-lib fixture')
-    p.dependencies.add('localRuntime', p.files(owo))
-    def resources = p.layout.buildDirectory.dir('package-output-test-resources').get().asFile
-    p.sourceSets.main.java.srcDir(p.file('src/test/gametest/packages/java'))
+    p.apply from: p.file('scripts/testing/common.gradle')
     def recovery = p.hasProperty('packageRecoveryGameTest')
-    p.sourceSets.main.java.exclude(recovery ? '**/PackageOutputGameTests.java' : '**/PackageRecoveryGameTests.java')
-    p.sourceSets.main.resources.srcDir(resources)
-    def fixture = p.tasks.register('packageOutputGameTestFixture') {
-        inputs.property('recoveryMode', recovery)
-        outputs.dir(resources)
-        doLast {
-            def defaults = p.file('build/package-output-test-run/defaultconfigs/createmanaindustry-server.toml')
-            defaults.parentFile.mkdirs()
-            defaults.text = '[gpuPackages]\nauthorityEnabled = ' + (!recovery) + '\n'
-            def target = new File(resources, 'data/createmanaindustry/structure/package_output_test.nbt')
-            target.parentFile.mkdirs()
-            target.withOutputStream { file ->
-                def out = new DataOutputStream(new java.util.zip.GZIPOutputStream(file))
-                out.writeByte(10); out.writeUTF('')
-                out.writeByte(3); out.writeUTF('DataVersion'); out.writeInt(3955)
-                out.writeByte(9); out.writeUTF('size'); out.writeByte(3); out.writeInt(3)
-                3.times { out.writeInt(1) }
-                out.writeByte(9); out.writeUTF('palette'); out.writeByte(10); out.writeInt(1)
-                out.writeByte(8); out.writeUTF('Name'); out.writeUTF('minecraft:air'); out.writeByte(0)
-                ['blocks', 'entities'].each { name -> out.writeByte(9); out.writeUTF(name); out.writeByte(10); out.writeInt(0) }
-                out.writeByte(0); out.close()
-            }
-        }
-    }
-    p.tasks.named('processResources').configure { dependsOn(fixture) }
-    p.neoForge.runs.gameTestServer.gameDirectory = p.file('build/package-output-test-run')
+    def suite = p.configureCmiGameTests(name: 'packages', sources: 'src/test/gametest/packages/java',
+            structure: 'package_output_test')
+    suite.java.exclude(recovery ? '**/PackageOutputGameTests.java' : '**/PackageRecoveryGameTests.java')
+    def runDir = p.file('build/gametest/packages')
+    def defaults = new File(runDir, 'defaultconfigs/createmanaindustry-server.toml')
+    def config = new File(runDir, 'world/serverconfig/createmanaindustry-server.toml')
     p.tasks.named('runGameTestServer', JavaExec).configure {
-        maxHeapSize = '3g'
         doFirst {
-            // This isolated test world may have been created by the opposite mode's last run.
-            def config = p.file('build/package-output-test-run/world/serverconfig/createmanaindustry-server.toml')
-            config.parentFile.mkdirs()
-            config.text = '[gpuPackages]\nauthorityEnabled = ' + (!recovery) + '\n'
+            for (target in [defaults, config]) {
+                target.parentFile.mkdirs()
+                target.text = '[gpuPackages]\nauthorityEnabled = ' + (!recovery) + '\n'
+            }
         }
     }
 }

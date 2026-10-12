@@ -129,7 +129,7 @@ python scripts/markov/prepare-gametest.py
 ```
 
 覆盖真实注册表/配置解码、逐体素方块与坐标映射、叶片距离、替换为桦木、石头阻挡后的完整回滚预检、
-水中拒绝和高度越界拒绝。测试存档只使用 `build/markov-test-run`，测试类不进入正常构建。
+水中拒绝和高度越界拒绝。测试存档只使用 `build/gametest/markov`，测试类不进入正常构建。
 
 参考版本 `42aaf24bcf54ae164fba49c0a59348297904a676`；模型 SHA256：
 `2105d7aa16fc830e90b149419b1250f4577d57421dff632e6cd295853f15392e`。

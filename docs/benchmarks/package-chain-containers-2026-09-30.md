@@ -1,5 +1,7 @@
 # 锁链包裹容器 CPU 遍历对照（2026-09-30）
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 本次减少 Create 对已接管包裹的重复遍历。完整列表仍保存原包裹对象、顺序及数量，供容量、保存、拾取和掉落使用；tick、坐标更新和摆动更新使用独立的 Create 子集。此报告只测量容器遍历，不证明真实物流接管、GPU 物理或整帧性能通过。
 
 ## 方法
@@ -38,9 +40,9 @@ Windows、本机 JDK 21；CPU 标识为 `AMD64 Family 25 Model 97 Stepping 2, Au
 .\gradlew.bat benchmarkPackageChainContainers --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
 ```
 
-- [最终摘要，90 条测量](package-chain-containers-2026-09-30.csv)
-- [最终逐次样本，270000 条，gzip](package-chain-containers-samples-2026-09-30.csv.gz)
-- [已弃用链表原型摘要](package-chain-containers-linked-before-2026-09-30.csv)
+- 最终摘要，90 条测量（本地运行结果）
+- 最终逐次样本，270000 条，gzip（本地运行结果）
+- 已弃用链表原型摘要（本地运行结果）
 - [GPU 活动锁链内核对照](package-chain-tracks-2026-09-30.md)
 
 GPU 内核报告测量另一条独立组件路径。两份报告都不包含完整真实物流系统，不能将组件时间相加后宣布达到 131072 活动包裹整帧 p95 ≤16.7ms。

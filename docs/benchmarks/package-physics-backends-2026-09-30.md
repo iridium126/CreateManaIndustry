@@ -1,5 +1,7 @@
 # 包裹接触后端对照（2026-09-30）
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 **后续状态（2026-10-01）：** 当前 `PackageWorldRuntime` 通过 `stepFreeMoving` 使用 support4 compute；131072 错位持续推力场景三轮质量检查通过，GPU p95 为 5.565–5.603ms，见[当前世界堆叠基准](package-world-stack-2026-10-01.md)。本页 PhysX 与 compute 数字来自不同的计时路径，不能直接当作精确倍率；PhysX 在该规模仍有接触质量失败，且其 4/16 轮完成步远慢于 compute kernel，**没有显示足以接入生产的性能或精度优势**。因此 NVIDIA PhysX 不进入本版运行时，也不增加以 PhysX 能力选举 authority 的协议；所有支持环境沿用 OpenGL compute，未有 PhysX 的环境自然走同一 compute 管线。若后续版本的同口径基准证明 PhysX 有优势，再引入能力协商与后端选择。
 
 同机为 RTX 4070 Laptop GPU（8 GiB），NVIDIA 581.15/OpenGL 4.5，CUDA driver API 13000，Windows x64。通过 `scripts/particles/build-physx.ps1` 在项目缓存中获取官方 ovphysx 0.6.3、匹配的 OVStage 0.2.0.377349；PhysX SDK 为 5.11.0。仅独立基准链接 native SDK，模组运行时依赖没有增加。初次尝试将 `.refs/PhysX` 的独立 host 源码链接官方 GPU DLL，首次模拟发生 native 访问异常；这两个二进制不再混用。
@@ -29,4 +31,4 @@ compute 列是 OpenGL GPU timer 的物理 pass 时间，完成步 p95 另列在�
 .\scripts\particles\benchmark-physx.ps1 -Counts 0,1,63,64,65 -Frequencies 20 -Backends gpu -Warmup 5 -Samples 2 -Trials 1 -Output build/package-physx-boundaries
 ```
 
-原始数据：[compute 汇总](package-backend-compute-2026-09-30.csv)、[compute 样本](package-backend-compute-samples-2026-09-30.csv.gz)、[PhysX 汇总](package-backend-physx-2026-09-30.csv)、[PhysX 样本](package-backend-physx-samples-2026-09-30.csv.gz)。PhysX 边界 0/1/63/64/65 均通过一次实际 GPU 模拟与读回；后续加入输出缓冲 64B 哨兵并重复测试，均未越界。native 质量探针还对这些规模及 129 项与朴素全对检查交叉验证。Gradle 构建通过，160 个 Java 测试 0 失败，Sable 缺失运行检查通过；Hex 及游戏内视觉没有在本轮重测。
+原始数据：compute 汇总（本地运行结果）、compute 样本（本地运行结果）、PhysX 汇总（本地运行结果）、PhysX 样本（本地运行结果）。PhysX 边界 0/1/63/64/65 均通过一次实际 GPU 模拟与读回；后续加入输出缓冲 64B 哨兵并重复测试，均未越界。native 质量探针还对这些规模及 129 项与朴素全对检查交叉验证。Gradle 构建通过，160 个 Java 测试 0 失败，Sable 缺失运行检查通过；Hex 及游戏内视觉没有在本轮重测。

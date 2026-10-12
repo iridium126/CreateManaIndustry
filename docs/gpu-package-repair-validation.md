@@ -1,52 +1,34 @@
-# GPU 包裹测试与证据
+# GPU 包裹验证矩阵
 
-更新：2026-10-06。当前行为见[实现总览](gpu-packages.md)和[轻量记录契约](gpu-light-package-records.md)。每个修复批次保留结构化测试摘要，完整诊断输出放在忽略的 `build` 目录。
+状态：具备 JVM、真实 OpenGL、实际 Create/NeoForge GameTest 及可选模组缺席检查。历史运行通过不等于当前修改已验证；本次结果以实际日志及报告为准。
 
-## 最新验证
+## 回归职责
 
-客户端碰撞 section 容量与服务端关闭接管后的原生恢复已实施，见[配置与恢复记录](gpu-package-capacity-recovery-2026-10-06.md)及[测试摘要](benchmarks/package-capacity-recovery-2026-10-06/tests.json)。499 项单元测试、13,615,504 项完整 GPU 断言、7 项真实 Create/NeoForge GameTest 和正式构建通过；支持分批双向切换、失败重试及区块自然加载恢复，发布 JAR 不含夹具。
-
-复杂邻接 section 中从分散网风场向 Sable 风场水平跨界的停顿路径已修复，见[共享预算与组合回归记录](gpu-package-mixed-section-pause-fix-2026-10-06.md)。结构发现现在先于可选光照工作，避免光照耗尽预算后留下不可回放的结构历史空缺；全驻留的 contraption／Sable／分散网组合 GPU 场景连续跨界。493 项单元测试、13,615,496 项完整 GPU 断言和正式构建通过，尚未复测用户原存档画面。
-
-Sable 结构内无喷嘴竖直鼓风机的跨 section 停顿已修复，见[上行预取修复记录](gpu-package-sable-vertical-fan-section-fix-2026-10-06.md)。预取现在同时覆盖持续上行范围和重力轨迹，避免慢速上升时遗漏上方 section；旧路径的边界冻结已在真实 GPU 夹具中复现。491 项单元测试、13,615,418 项完整 GPU 断言、122 项预取断言及正式构建通过，尚未复测用户原存档画面。
-
-存在 Create 机械结构时跨 section 的预算耗尽停顿已修复，见[原因与回归记录](gpu-package-section-moving-pause-fix-2026-10-05.md)。静态采集耗尽剩余预算后仍采样当前机械结构姿态，避免不可回放的输入历史缺口。491 项单元测试、13,615,386 项完整包裹 GPU 断言和正式构建通过；包含三轴双向跨边界、平台携带和自由运动对照，尚未复测用户原存档画面。
-
-光影可见性与用户日志修复见[专项记录](gpu-package-shader-log-fix-2026-10-04.md)：480 项单元测试，主相机/阴影绘制 568,781 项、环境反馈/光照 886,165 项、Iris 26,730 项 GPU 断言，6 项真实 GameTest 通过。主相机按 Create 所属传动轮的离屏和距离规则准许 GPU 包裹，兼容 Sodium 集合替换及 Sable 局部相机；同时修复突发捕获追赶、静止稀疏姿态的接触校验并补齐日志原因。该批次没有性能基准或原存档画面验证。
-
-10 月 4 日审查的六项问题已按建议顺序修复，见[审查与修复记录](gpu-package-review-2026-10-04.md)。保留[验证摘要及基准索引](benchmarks/package-review-fixes-2026-10-04/tests.json)：全部 478 项单元测试、12,297,727 项完整 GPU 断言通过；光照/观察者/Iris 分别通过 886,165 / 3,548,729 / 26,730 项断言；6 项真实 Create/NeoForge GameTest 通过。正式构建成功，发布 JAR 不含 GameTest 夹具。131072 包裹的同环境修复前后基准均通过质量检查，p95 区间重叠，未观察到新增性能退化；不代表整帧或 200 tick/s 满容量达标。权威协议升级为 `gpu-packages-13`，两端需同时升级。
-
-## 10 月 3 日验证
-
-200 tick/s 客户端采集修复已通过单元测试、GPU 回归、隔离 Create/NeoForge GameTest 和正式构建。保留[测试摘要](benchmarks/package-client-cadence-2026-10-03/tests.json)及[用户日志复现摘录](benchmarks/package-client-cadence-2026-10-03/reproduction-excerpt.log)。修复原因和剩余实机限制见[客户端采集修复记录](gpu-package-client-cadence-fix.md)。
-
-| 检查 | 结果 |
-| --- | --- |
-| 单元测试 | 446 项通过，无失败、错误或跳过 |
-| 完整包裹 GPU 回归 | 12,266,419 项断言通过 |
-| 光照 / 观察者 / Iris GPU 回归 | 886,165 / 3,548,729 / 20,586 项断言通过 |
-| 实际 Create/NeoForge GameTest | 4 项通过 |
-| 正式构建 | 成功；发布 JAR 不含 GameTest 夹具 |
-
-设备为 Java 21、NVIDIA GeForce RTX 4070 Laptop GPU、OpenGL 4.5、驱动 581.15。上述组件测试未替代原存档联机、整帧耗时和 131072 包裹在 200 tick/s 下的性能实测。
-
-## 历史修复批次
-
-以下历史批次只保留测试摘要和能说明回归触发条件的日志；构建、GPU 逐项输出与完整 GameTest 日志已清理。
-
-| 范围 | 主要覆盖 | 验证记录 |
+| 验证层 | 主要行为 | 入口 |
 | --- | --- | --- |
-| Section 穿越与面光照 | 418 项单元测试；高速相对扫掠、相邻体素切触、覆盖重试及普通/Iris 亮度 | [摘要](benchmarks/package-section-light-fix-2026-10-02/tests.json) |
-| 机器出口与材质摩擦 | 424 项单元测试；溜槽/传送带真实输出、初速度、机器分离与每步摩擦 | [摘要](benchmarks/package-machine-output-2026-10-02/tests.json) |
-| 环境事件与区域切换 | 426 项单元测试、2 项 GameTest；接触坐标转换、其他区域模拟不中断及安全复用 | [摘要](benchmarks/package-exit-confirmation-2026-10-03/tests.json) |
-| 连续输出 | 429 项单元测试、3 项 GameTest；连续传送带接管、低 TPS 历史计时及几何稳定 | [摘要](benchmarks/package-continuous-output-2026-10-03/tests.json)、[旧时钟复现](benchmarks/package-continuous-output-2026-10-03/old-clock-repro.log) |
-| 200 tick/s 首轮 | 437 项单元测试、4 项 GameTest；该轮未覆盖真实客户端采集频率 | [摘要](benchmarks/package-200-tick-rate-2026-10-03/tests.json)、[旧时钟复现](benchmarks/package-200-tick-rate-2026-10-03/old-clock-200tps-repro.log) |
+| JVM | 生命周期、身份、租约、ACK、编解码、库存事务、时钟、版本与预算 | `gradlew test` |
+| 真实 GPU | 碰撞/CCD、支撑、移动姿态、历史版本、局部上传、槽位安全复用 | `validatePackageGpu` |
+| GPU 光照/观察者 | 有界反馈、完整/紧凑姿态、乱序、旧身份、银行/fence 和回收 | `validatePackageLightGpu validatePackageObserverGpu` |
+| Iris | 实际 shader transformer、主相机/阴影、状态边界和姿态一致性 | `validatePackageIrisGpu` |
+| Create GameTest | 溜槽/传送带/漏斗实际输出、物品与生命状态、重复接管和恢复 | `runGameTestServer` 配合 packages 初始化脚本 |
+| 可选依赖缺席 | Sable 未安装时桥接不解析相关运行时 | `validatePackageSableAbsent` |
+| benchmark | 稀疏/密集/驱动场景、网络与暂停成本、索引选型 | 对应 `benchmark*` 或 benchmark 参数 |
 
-## 复现
+## 按改动选择验证
+
+碰撞、历史与采集改动先运行对应 JVM 测试，再运行 GPU 子集；物理/协议共享路径发生变化时运行完整 GPU 套件。库存和机器交互需要实际 GameTest；Iris 代码需要实际 transformer 及游戏内画面验证。
 
 ```powershell
-.\gradlew.bat -I scripts/particles/validation.init.gradle build validatePackageGpu validatePackageLightGpu validatePackageObserverGpu validatePackageIrisGpu --offline --console=plain
-.\gradlew.bat -I scripts/particles/validation.init.gradle -I scripts/particles/package-output-gametest.init.gradle runGameTestServer --offline --console=plain
+.\gradlew.bat test assemble --offline
+python scripts/benchmarks/run.py validatePackageGpu --offline
+python scripts/benchmarks/run.py validatePackageLightGpu validatePackageObserverGpu validatePackageIrisGpu --offline
+.\gradlew.bat validatePackageSableAbsent --offline
+.\gradlew.bat runGameTestServer -I scripts/particles/package-output-gametest.init.gradle --offline --no-configuration-cache
+.\gradlew.bat runGameTestServer -I scripts/particles/package-output-gametest.init.gradle -PpackageRecoveryGameTest --offline --no-configuration-cache
 ```
 
-索引性能选择及完整原始 CSV 见[空间索引比较](benchmarks/package-index-2026-10-02/comparison.md)。三种索引均以相同修复物理验收，最终只在生产保留 `linked`。
+## 验收边界
+
+独立 GPU 断言不能证明真实多人库存守恒、驱动差异、原存档行为或整帧性能。部分场景有大量逐体断言，断言总数不等于独立场景数量。实际游戏仍需覆盖多人订阅迁移、机器阻塞/部分接收、断线与资源重建、跨维度、配置切换、完整 tick/帧耗时和 shaderpack 画面。
+
+当前语义见 [轻量记录](gpu-light-package-records.md)、[碰撞与历史](gpu-package-collision.md)、[观察者](gpu-package-observers.md) 和 [性能诊断](gpu-package-performance.md)。原始结果不进入 Git，复现及保留规则见 [性能结果规则](benchmarks/README.md)。全部套件和依赖准备见 [测试入口](testing.md)。

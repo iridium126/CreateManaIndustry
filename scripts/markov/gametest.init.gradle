@@ -1,7 +1,6 @@
-// Isolated integration tests; not included in the published mod.
+// Prepare resources with scripts/markov/prepare-gametest.py first.
 gradle.projectsEvaluated {
-    def project = gradle.rootProject
-    project.sourceSets.main.java.srcDir(project.file('src/test/gametest/markov/java'))
-    project.sourceSets.main.resources.srcDir(project.file('build/markov-test-resources'))
-    project.neoForge.runs.gameTestServer.gameDirectory = project.file('build/markov-test-run')
+    def p = gradle.rootProject
+    p.apply from: p.file('scripts/testing/common.gradle')
+    p.configureCmiGameTests(name: 'markov', sources: 'src/test/gametest/markov/java', resources: 'build/markov-test-resources')
 }

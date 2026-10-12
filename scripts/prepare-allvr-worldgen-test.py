@@ -3,7 +3,6 @@ import argparse
 import gzip
 import json
 from pathlib import Path
-import shutil
 import struct
 import zipfile
 
@@ -13,7 +12,7 @@ args = parser.parse_args()
 repo = Path(__file__).resolve().parents[1]
 mode = 'terralith' if args.terralith else 'vanilla'
 root = repo / 'build' / ('allvr-worldgen-test-resources-' + mode)
-run = repo / 'build' / ('allvr-worldgen-test-run-' + mode)
+run = repo / 'build/gametest' / ('worldgen-' + mode)
 
 
 def string(text):
@@ -53,8 +52,4 @@ preset = root / 'data/minecraft/worldgen/world_preset/flat.json'
 preset.parent.mkdir(parents=True, exist_ok=True)
 preset.write_text(json.dumps({'dimensions': {'minecraft:overworld': flat, 'createmanaindustry:allay_dimension': allay}}))
 
-# This dependency is maintained in run/mods rather than Gradle by this repository.
-for library in (repo / 'run/mods').glob('owo-lib-neoforge-*.jar'):
-    (run / 'mods').mkdir(parents=True, exist_ok=True)
-    shutil.copy2(library, run / 'mods' / library.name)
-print(f'Prepared {mode}: {run}')
+print(f'Prepared {mode} resources: {root}; GameTest directory: {run}')

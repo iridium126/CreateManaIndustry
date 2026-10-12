@@ -1,5 +1,7 @@
 # 权威包裹原生下行停发与交还（2026-10-01）
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 新增 `gpu-packages-6` 的 `VISIBLE_READY=9`，仅由客户端成功可见 admission 的回调、发布匹配的 ACTIVE 所有权之后发送。服务端验证连接、区域 owner/epoch、稳定身份/generation、候选索引、lease epoch、最终基线 revision 与当前有效 GPU lease。资源准备和 FINAL_READY 不触发停发；提前、退休、超时及重新接管前的迟到确认均被拒绝。此消息只确认渲染接管，不提交物品或玩法操作。
 
 `PackageNativeDownlinkMixin` 包装实际 `ChunkMap$TrackedEntity.broadcast` 的每个 `ServerPlayerConnection.send`，仅过滤该实体的原生 Pos/PosRot/Rot、Teleport 和 velocity 包。其他观察者、metadata、contents、lifecycle 和交互消息仍原样发送；不取消全局广播，不改变 `ServerEntity` 的共享 `VecDeltaCodec`。状态绑定当前 tracker 和连接对象，断线后的同 UUID 新连接不能复用。常见的单 owner 用一个引用保存，无逐实体哈希表；只有并存的旧 owner 迁移才惰性分配附加 identity set。重新配对/退出跟踪清理对应记录，不扫描所有包裹。
@@ -27,7 +29,7 @@
 
 单客户端、阈值 256：原生重复 owner 位置下行为 0；上行 39045106B、ACK 4319B、一次可见确认 7978880B。旧保留原生流的 relative 位置组件为 72797945B / 2.157071。新 component 降到 1.393492，但还没有覆盖其余 OFFER/PREPARED/FINAL/ACTIVE、能力/心跳、订阅/迁移、物品、受力源、互动/恢复、velocity/rotation/native teleport、bundler、实际连接和传输；不能认定总带宽已通过 1.5 倍。
 
-所有 96 组路由案例为 93 个 INCOMPLETE、3 个 OVER_BUDGET、0 个 PASS；其中 cadence=3 仅保留先前内部比较，不是默认发送频率。未执行真实 GPU 的 fixture 不计活动包裹时间，不用大量 Create 回退、关闭接管或假设压缩节省认定通过。原始数据见 [CSV](package-native-downlink-2026-10-01.csv)。可见确认当前仍逐包裹发送，其控制开销需纳入冷启动/迁移窗口；完整网络采集和控制批处理仍有待完成。
+所有 96 组路由案例为 93 个 INCOMPLETE、3 个 OVER_BUDGET、0 个 PASS；其中 cadence=3 仅保留先前内部比较，不是默认发送频率。未执行真实 GPU 的 fixture 不计活动包裹时间，不用大量 Create 回退、关闭接管或假设压缩节省认定通过。原始数据见 CSV（本地运行结果）。可见确认当前仍逐包裹发送，其控制开销需纳入冷启动/迁移窗口；完整网络采集和控制批处理仍有待完成。
 
 生产门禁保持关闭。后续客户端检查需要覆盖多人中一名 authority 与其他 observer、拾取/伤害/机器交还、region/world/资源重载、断线和同 UUID 重连、从视距退出再进入及协议 v5 对端。整帧/server tick/网络 RTT 不由此序列化微基准推断。
 

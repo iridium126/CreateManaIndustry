@@ -1,6 +1,6 @@
 # GPU 包裹观察者内部契约
 
-更新：2026-10-03。生产只使用轻量记录姿态流。原生实体观察 adapter、命令/patch 队列、双精度侧缓冲、shader 变体和仅成员订阅日志已删除。旧 `SUBSCRIBE_NATIVE=2` 与 `MEMBERSHIP_ONLY=8` 输入拒绝；普通订阅和完整姿态编码保持现有 wire 格式。协商版本为 `gpu-package-observers-5`，权威为 `gpu-packages-12`。
+生产只使用轻量记录姿态流。原生实体观察 adapter、命令/patch 队列、双精度侧缓冲、shader 变体和仅成员订阅日志已删除。旧 `SUBSCRIBE_NATIVE=2` 与 `MEMBERSHIP_ONLY=8` 输入拒绝；普通订阅和完整姿态编码保持现有 wire 格式。协商版本为 `gpu-package-observers-5`，权威为 `gpu-packages-13`。
 
 ## 服务端记录与调度
 

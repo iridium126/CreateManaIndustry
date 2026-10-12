@@ -1,5 +1,7 @@
 # GPU world-section prefetch benchmark (2026-10-01)
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 ## Setup
 
 Measured on an NVIDIA GeForce RTX 4070 Laptop GPU, OpenGL 4.5, NVIDIA driver 581.15. Each size used 30 warm-up submissions followed by three runs of 60 samples. Sizes were 10,000, 65,536 and 131,072 free-body records. Bodies were distributed through a small, fully resident synthetic 3×3×3 section fixture; the .5-second swept bounds remained covered, so this measures the scan and asynchronous usage/handback feedback without emitting missing-section requests. It does not measure Minecraft world capture, dense contacts, package drawing, network work, or full-frame time.

@@ -1,6 +1,8 @@
 # GPU 自由包裹逐项优化（2026-10-09）
 
-按 [CPU 开销分析](../gpu-package-render-thread-cpu-analysis-2026-10-08.md) 的六项顺序推进。物理提交仍由渲染线程拥有，GPU 姿态没有转为 CPU 求解或逐体读回。
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
+按 [CPU 开销分析](../gpu-package-performance.md) 的六项顺序推进。物理提交仍由渲染线程拥有，GPU 姿态没有转为 CPU 求解或逐体读回。
 
 ## 六项实现
 
@@ -52,7 +54,7 @@ NVIDIA GeForce RTX 4070 Laptop GPU，OpenGL 4.5，NVIDIA 581.15。基线是本�
 
 活动/candidate links 为每预留槽位增加 8 B（131,072 个槽位为 1 MiB），另有 32 B candidate header 和最多 32 B sleep control；CPU 活动上传 scratch 为每预留槽位 4 B。小存活场景继续回收 hash scratch；不把 GPU 时间收益表述为全部内存收益。
 
-汇总：[修改前](package-priority-before-2026-10-09.csv)、[修改后](package-priority-after-2026-10-09.csv)。逐步样本：[修改前](package-priority-before-samples-2026-10-09.csv.gz)、[修改后](package-priority-after-samples-2026-10-09.csv.gz)。
+汇总：修改前（本地运行结果）、修改后（本地运行结果）。逐步样本：修改前（本地运行结果）、修改后（本地运行结果）。
 
 ## 验证和使用
 

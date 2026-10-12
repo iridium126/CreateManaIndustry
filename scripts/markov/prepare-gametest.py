@@ -2,7 +2,6 @@
 from pathlib import Path
 import gzip
 import struct
-import shutil
 
 repo = Path(__file__).resolve().parents[2]
 def string(s):
@@ -19,8 +18,4 @@ nbt = tag(10, '', tag(3, 'DataVersion', struct.pack('>i', 3955))
 target = repo / 'build/markov-test-resources/data/createmanaindustry/structure/markov_test.nbt'
 target.parent.mkdir(parents=True, exist_ok=True)
 target.write_bytes(gzip.compress(nbt))
-mods = repo / 'build/markov-test-run/mods'
-mods.mkdir(parents=True, exist_ok=True)
-for library in (repo / 'run/mods').glob('owo-lib-neoforge-*.jar'):
-    shutil.copy2(library, mods / library.name)
-print('Prepared isolated MarkovJunior GameTests')
+print(f'Prepared isolated MarkovJunior GameTest structure: {target}')

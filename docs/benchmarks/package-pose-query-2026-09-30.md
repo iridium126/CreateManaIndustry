@@ -1,5 +1,7 @@
 # 包裹 GPU 姿态查询与交还（2026-09-30）
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 实现了 GPU 射线命中归约、按完整身份读取小批量前后姿态，以及正常链包退休时的实际交还接线。CHAIN_READY 仍关闭：实际拾取输入和服务端精确身份事务、紧急关闭姿态、移动光照、观察客户端、Iris/阴影等未完成。这不是 131072 活动包裹整帧验收。
 
 Sable 继续使用精确 `compileOnly "maven.modrinth:T9PomCSv:U678xqle"` 与直接 API；本轮未改变 Sable 采集门禁、线程预算或可选加载策略。
@@ -36,7 +38,7 @@ GPU timer 覆盖 kernel、barrier、有效结果 copy 和 fence 提交；CPU sub
 
 短 kernel 接近 timer 的 1.024µs 步长，微小差异不得用于选择算法。131072 命中的三组 GPU p95 均为 0.046080ms；256 项姿态 p95 为 0.023552/0.023552/0.026624ms。总帧率、真实事件延迟、服务端 tick 和网络带宽均未在此测量。
 
-原始数据：[汇总](package-pose-query-2026-09-30.csv)、[全部 3240 个测量样本](package-pose-query-samples-2026-09-30.csv.gz)。复现入口：
+原始数据：汇总（本地运行结果）、全部 3240 个测量样本（本地运行结果）。复现入口：
 
 ```powershell
 .\gradlew.bat validatePackageGpu -PpackageQueryBenchmark --offline --no-configuration-cache -I scripts/particles/validation.init.gradle

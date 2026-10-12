@@ -1,5 +1,7 @@
 # GPU 自由包裹低占用物理优化（2026-10-08）
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 本轮优化 `PackagePhysicsGpu` 的碰撞临时哈希表，改善大量预留槽位、少量实际包裹时的固定 GPU 成本。使用真实 NVIDIA GeForce RTX 4070 Laptop GPU、OpenGL 4.5、驱动 581.15 的隐藏 GLFW context 测量。自由包裹池固定预留 131,072 个槽位。
 
 ## 定位与实现
@@ -28,7 +30,7 @@
 
 后三档使用与原实现相同的表大小，结果基本持平。CPU 提交 P95 约 0.001–0.004 ms，未据此声称有稳定改善。低占用时两个 scratch 表从 4.5 MiB 减至 2.25 MiB，每个求解器减少 2.25 MiB；基准步中的清空写入量从约 7 MiB 减至约 3.5 MiB。
 
-汇总 CSV：[修改前](package-sparse-physics-before-2026-10-08.csv)、[修改后](package-sparse-physics-after-2026-10-08.csv)。原始逐步样本：[修改前](package-sparse-physics-before-samples-2026-10-08.csv.gz)、[修改后](package-sparse-physics-after-samples-2026-10-08.csv.gz)。
+汇总 CSV：修改前（本地运行结果）、修改后（本地运行结果）。原始逐步样本：修改前（本地运行结果）、修改后（本地运行结果）。
 
 ## 验证与复现
 

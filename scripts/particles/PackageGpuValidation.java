@@ -375,7 +375,7 @@ public class PackageGpuValidation {
                 }}finally{GL15.glDeleteQueries(timer);}
             }
         }
-        Files.write(Path.of("build/package-forces-benchmark.csv"),rows);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-forces-benchmark.csv"),rows);
     }
     static void framedForces(){
         double plotX=20480000.37,plotY=2147483600.25,plotZ=-20480000.22,ox=30000000,oy=80,oz=-30000000;
@@ -569,7 +569,7 @@ public class PackageGpuValidation {
                         check(quality.getInt(12)==0&&quality.getInt(16)==0&&quality.getFloat(4)<.002&&quality.getFloat(24)<1e-4,"priority benchmark retained penetration or invalid state");
                     }
                     rows.add(n+","+scenario+","+run+","+percentile(times,.5)+","+percentile(times,.95)+","+percentile(cpu,.5)+","+percentile(cpu,.95));
-                    System.out.println(rows.getLast());Files.write(Path.of("build/package-priority-benchmark.csv"),rows);Files.write(Path.of("build/package-priority-benchmark-samples.csv"),samples);
+                    System.out.println(rows.getLast());Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-priority-benchmark.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-priority-benchmark-samples.csv"),samples);
                 }
             }
         }
@@ -1262,7 +1262,7 @@ public class PackageGpuValidation {
                         String row=count+","+transfer+","+run+","+percentile(gpu,.5)+","+percentile(gpu,.95)+","+percentile(submit,.5)+","+percentile(submit,.95)
                                 +","+percentile(poll,.5)+","+percentile(poll,.95)+","+percentile(decode,.5)+","+percentile(decode,.95)
                                 +","+(long)count*128+","+checkpoint.storageBytes();rows.add(row);System.out.println(row);
-                        Files.write(Path.of("build/package-chain-checkpoint.csv"),rows);Files.write(Path.of("build/package-chain-checkpoint-samples.csv"),samples);
+                        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-chain-checkpoint.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-chain-checkpoint-samples.csv"),samples);
                     }
                 }finally{GL15.glDeleteQueries(timer);}
             }
@@ -1316,8 +1316,8 @@ public class PackageGpuValidation {
                     check(bytes==(gather?256:1)*PackagePoseQueryGpu.RESULT_BYTES,"query benchmark downloaded excess data");
                     String row=count+","+mode+","+run+","+percentile(gpu,.5)+","+percentile(gpu,.95)+","+percentile(cpu,.5)+","+percentile(cpu,.95)
                             +","+percentile(decode,.5)+","+percentile(decode,.95)+","+bytes;
-                    rows.add(row);System.out.println(row);Files.write(Path.of("build/package-pose-query.csv"),rows);
-                    Files.write(Path.of("build/package-pose-query-samples.csv"),samples);
+                    rows.add(row);System.out.println(row);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-pose-query.csv"),rows);
+                    Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-pose-query-samples.csv"),samples);
                 }
             }finally{GL15.glDeleteBuffers(bodies);GL15.glDeleteBuffers(chains);GL15.glDeleteBuffers(metadata);GL15.glDeleteBuffers(admitted);GL15.glDeleteBuffers(previous);GL15.glDeleteQueries(timer);}
         }
@@ -1491,8 +1491,8 @@ public class PackageGpuValidation {
                     check(after.getFloat(p+60)>=0 && Float.isFinite(after.getFloat(p+4)) && distance>.0001,"chain benchmark silent fallback/static work");
                 }
                 String row=n+","+mode+","+run+","+percentile(timing,.5)+","+percentile(timing,.95)+","+percentile(cpu,.5)+","+percentile(cpu,.95);
-                rows.add(row);System.out.println(row);Files.write(Path.of("build/package-chain-tracks.csv"),rows);
-                Files.write(Path.of("build/package-chain-tracks-samples.csv"),samples);
+                rows.add(row);System.out.println(row);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-chain-tracks.csv"),rows);
+                Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-chain-tracks-samples.csv"),samples);
             }
         }
     }
@@ -1808,8 +1808,8 @@ public class PackageGpuValidation {
                             +","+percentile(gpu[3],.5)+","+percentile(gpu[3],.95)
                             +","+percentile(cpu,.5)+","+percentile(cpu,.95);
                     rows.add(row);System.out.println(row);
-                    Files.write(Path.of("build/package-mixed-benchmark.csv"),rows);
-                    Files.write(Path.of("build/package-mixed-benchmark-samples.csv"),samples);
+                    Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-mixed-benchmark.csv"),rows);
+                    Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-mixed-benchmark-samples.csv"),samples);
                 }
             }
         }
@@ -2129,8 +2129,8 @@ public class PackageGpuValidation {
                     var row=n+",staggered_driven,support4_linked,"+run+","+percentile(times,.5)+","+percentile(times,.95)+","+percentile(cpu,.5)+","+percentile(cpu,.95)
                             +","+stats.getInt(0)+","+overlap+","+ground+","+fallbacks+","+moving+","+(quality?1:0);
                     rows.add(row);System.out.println(row);
-                    Files.write(Path.of("build/package-dynamic-ccd-benchmark.csv"),rows);
-                    Files.write(Path.of("build/package-dynamic-ccd-benchmark-samples.csv"),samples);
+                    Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-dynamic-ccd-benchmark.csv"),rows);
+                    Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-dynamic-ccd-benchmark-samples.csv"),samples);
                 }
             }
         }
@@ -3764,8 +3764,8 @@ public class PackageGpuValidation {
                             String row=count+","+run+","+percentile(gpuMs,.5)+","+percentile(gpuMs,.95)+","+percentile(captureMs,.5)+","+
                                     percentile(captureMs,.95)+","+percentile(pollMs,.5)+","+percentile(pollMs,.95);
                             rows.add(row);System.out.println(row);
-                            Files.write(Path.of("build/package-world-prefetch-benchmark.csv"),rows);
-                            Files.write(Path.of("build/package-world-prefetch-benchmark-samples.csv"),samples);
+                            Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-world-prefetch-benchmark.csv"),rows);
+                            Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-world-prefetch-benchmark-samples.csv"),samples);
                         }
                     }
                 }
@@ -5798,7 +5798,7 @@ public class PackageGpuValidation {
                             check(total==expected,"cull pipeline benchmark changed visible work");
                             String row=n+","+visibility+","+mode+","+run+","+percentile(gpu,.5)+","+percentile(gpu,.95)+","+percentile(cpu,.5)+","+percentile(cpu,.95)+","+total;
                             rows.add(row);System.out.println(row);
-                            Files.write(Path.of("build/package-cull-pipeline.csv"),rows);Files.write(Path.of("build/package-cull-pipeline-samples.csv"),samples);
+                            Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-cull-pipeline.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-cull-pipeline-samples.csv"),samples);
                         }
                     }finally{GL15.glDeleteQueries(timer);}
                 }
@@ -5842,7 +5842,7 @@ public class PackageGpuValidation {
                         check(count==n+n/2,"draw benchmark dropped/cpu-fell-back packages");
                         String row=n+","+mode+","+run+","+percentile(gpu,.5)+","+percentile(gpu,.95)+","+percentile(cpu,.5)+","+percentile(cpu,.95)+","+count;
                         String file=irisBoundary?"package-iris-boundary":"package-draw-pass";
-                        rows.add(row);System.out.println(row);Files.write(Path.of("build/"+file+".csv"),rows);Files.write(Path.of("build/"+file+"-samples.csv"),samples);
+                        rows.add(row);System.out.println(row);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/"+file+".csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/"+file+"-samples.csv"),samples);
                     }
                 }finally{GL15.glDeleteQueries(timer);}
             }
@@ -6163,8 +6163,8 @@ public class PackageGpuValidation {
                 }
                 var row=capacity+","+n+","+run+","+percentile(times,.5)+","+percentile(times,.95)+","+percentile(cpu,.5)+","+percentile(cpu,.95);
                 rows.add(row);System.out.println(row);
-                Files.write(Path.of("build/package-sparse-physics-benchmark.csv"),rows);
-                Files.write(Path.of("build/package-sparse-physics-benchmark-samples.csv"),samples);
+                Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-sparse-physics-benchmark.csv"),rows);
+                Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-sparse-physics-benchmark-samples.csv"),samples);
             }
         }
     }
@@ -6189,7 +6189,7 @@ public class PackageGpuValidation {
                 }
             }
         }
-        Files.write(Path.of("build/package-gpu-kernels.csv"),rows);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-gpu-kernels.csv"),rows);
         for(String row:rows)System.out.println(row);
     }
     static double percentile(double[] values,double fraction) {
@@ -6266,7 +6266,7 @@ public class PackageGpuValidation {
                 }
             }
         }
-        Files.write(Path.of("build/package-world-kernels.csv"),rows);Files.write(Path.of("build/package-world-kernel-samples.csv"),samples);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-world-kernels.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-world-kernel-samples.csv"),samples);
     }
     static void stackBenchmark() throws Exception {
         var rows=new ArrayList<String>();var samples=new ArrayList<String>();
@@ -6307,7 +6307,7 @@ public class PackageGpuValidation {
                         var row=n+","+scenario+","+policy+","+run+","+percentile(times,.5)+","+percentile(times,.95)+","+percentile(cpu,.5)+","+percentile(cpu,.95)
                                 +","+(support?32L*n+32:0)+","+stats.getInt(0)+","+stats.getInt(8)+","+stats.getFloat(4)+","+terrain+","+stats.getInt(12)+","+stats.getInt(20)+","+(quality?1:0);
                         rows.add(row);System.out.println(row);
-                        Files.write(Path.of("build/package-stack-kernels.csv"),rows);Files.write(Path.of("build/package-stack-kernel-samples.csv"),samples);
+                        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-stack-kernels.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-stack-kernel-samples.csv"),samples);
                     }
                 }
             }
@@ -6377,7 +6377,7 @@ public class PackageGpuValidation {
                 }
             }finally{GL15.glDeleteBuffers(state);}
         }
-        Files.write(Path.of("build/package-gpu-deltas.csv"),rows);for(String row:rows)System.out.println(row);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-gpu-deltas.csv"),rows);for(String row:rows)System.out.println(row);
     }
     static volatile com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket benchmarkPacket;
     static void predictionKernelBenchmark() throws Exception {
@@ -6413,7 +6413,7 @@ public class PackageGpuValidation {
                 }
             }finally{GL15.glDeleteBuffers(state);}
         }
-        Files.write(Path.of("build/package-prediction-kernels.csv"),rows);Files.write(Path.of("build/package-prediction-kernel-samples.csv"),samples);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-prediction-kernels.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-prediction-kernel-samples.csv"),samples);
         for(var row:rows)System.out.println(row);
     }
     static final class PipelineTransport implements PackageDeltaChannel.Transport {
@@ -6526,7 +6526,7 @@ public class PackageGpuValidation {
             }
         }
         String stem=predictionComparison?"package-delta-predicted-pipeline":wireComparison?"package-delta-batch-pipeline":"package-delta-pipeline";
-        Files.write(Path.of("build/"+stem+".csv"),summaries);Files.write(Path.of("build/"+stem+"-samples.csv"),samples);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/"+stem+".csv"),summaries);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/"+stem+"-samples.csv"),samples);
     }
 
     static PackageMovingGeometry.Pose movingPose(double x,double y,double z,double angle,double sx,double sy,double sz) {
@@ -6787,7 +6787,7 @@ public class PackageGpuValidation {
                 }
             }
         }
-        Files.write(Path.of("build/package-moving-kernels.csv"),rows);Files.write(Path.of("build/package-moving-kernel-samples.csv"),samples);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-moving-kernels.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-moving-kernel-samples.csv"),samples);
     }
 
 
@@ -6901,7 +6901,7 @@ public class PackageGpuValidation {
                     boolean quality=fallbacks==0&&nonfinite==0&&valid==n&&overlap<.002&&ground<1e-4&&moving>n*.99;
                     var row=backend+","+n+",staggered_driven,"+hz+",4,"+run+","+percentile(wall,.5)+","+percentile(wall,.95)+","+percentile(timing,.5)+","+percentile(timing,.95)+","+percentile(cpu,.5)+","+percentile(cpu,.95)+","+overlap+","+ground+","+pairs+","+moving+","+nonfinite+","+fallbacks+","+(quality?1:0);
                     rows.add(row);System.out.println(row);
-                    Files.write(Path.of("build/package-backend-compute.csv"),rows);Files.write(Path.of("build/package-backend-compute-samples.csv"),raw);
+                    Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-backend-compute.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-backend-compute-samples.csv"),raw);
                 }
             }
         }

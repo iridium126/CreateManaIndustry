@@ -1,5 +1,7 @@
 # 包裹空间索引与密集工作预算对照
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 2026-09-29，RTX 4070 Laptop GPU，OpenGL 4.5，NVIDIA 581.15。合成物理组件，**不含 Minecraft、绘制、网络、世界采集或服务端 tick**。真实接管门禁和所有新实验的默认选择仍关闭；本轮不能用于 131072 实际包裹整帧验收。
 
 ## 本轮实现
@@ -65,10 +67,10 @@ CPU 提交 p50/p95（ms），同一持续推力场景：
 
 先前连续方案使用 uniform 分支与逐 body 的预算 guard，之后改为编译期变体/逐单元预算并扩大表，再增加计数方案，最后融合计数接触预算。全部原始结果保留：
 
-- 最终：[81组摘要](package-range-kernels-2026-09-29.csv)、[3240个逐次样本](package-range-kernel-samples-2026-09-29.csv.gz)。
-- uniform/逐body版本：[摘要](package-range-uniform-kernels-2026-09-29.csv)、[样本](package-range-uniform-kernel-samples-2026-09-29.csv.gz)，54组/2160样本；较小索引表，不能与最终版本做内存等价比较。
-- 编译期/逐单元版本：[摘要](package-range-cell-budget-kernels-2026-09-29.csv)、[样本](package-range-cell-budget-kernel-samples-2026-09-29.csv.gz)，54组/2160样本。
-- 计数独立guard版本：[摘要](package-range-guard-pass-kernels-2026-09-29.csv)、[样本](package-range-guard-pass-kernel-samples-2026-09-29.csv.gz)，81组/3240样本。
+- 最终：81组摘要（本地运行结果）、3240个逐次样本（本地运行结果）。
+- uniform/逐body版本：摘要（本地运行结果）、样本（本地运行结果），54组/2160样本；较小索引表，不能与最终版本做内存等价比较。
+- 编译期/逐单元版本：摘要（本地运行结果）、样本（本地运行结果），54组/2160样本。
+- 计数独立guard版本：摘要（本地运行结果）、样本（本地运行结果），81组/3240样本。
 
 不同批次原链式131072活动 p95 中位数约5.78–6.27ms，存在明显机器状态/测量波动。不能把跨批次绝对耗时变化归因为某一次小改动；最终决策使用同轮交错对照，未把融合guard描述为已确认的跨版本提速。
 

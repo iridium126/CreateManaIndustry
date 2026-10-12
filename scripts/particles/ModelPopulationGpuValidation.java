@@ -93,7 +93,7 @@ public class ModelPopulationGpuValidation {
                 }
             }
         }}}finally{GL20.glUseProgram(0);GL20.glDeleteProgram(liveProgram);}
-        Files.write(Path.of("build/model-population-benchmark.csv"),rows);Files.write(Path.of("build/model-population-benchmark-samples.csv"),raw);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-population-benchmark.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-population-benchmark-samples.csv"),raw);
     }
     public static void main(String[] args)throws Exception{GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"MODEL population validation",0,0);try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));lists();attack();stormQueries();if(Arrays.asList(args).contains("--benchmark"))benchmark();check(GL11.glGetError()==0,"final GL error");System.out.println("MODEL population GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}}
 }

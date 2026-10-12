@@ -168,7 +168,7 @@ public class PackageLightGpuValidation {
                 }finally{GL15.glDeleteQueries(query);for(int b:buffers)GL15.glDeleteBuffers(b);}
             }
         }
-        Files.write(Path.of("build/package-light-feedback.csv"),result);Files.write(Path.of("build/package-light-feedback-samples.csv"),samples);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-light-feedback.csv"),result);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-light-feedback-samples.csv"),samples);
     }
     static final List<String> rows=new ArrayList<>(),raw=new ArrayList<>();
     static double percentile(double[] values,double fraction){var sorted=values.clone();Arrays.sort(sorted);return sorted[(int)Math.ceil(sorted.length*fraction)-1];}
@@ -194,7 +194,7 @@ public class PackageLightGpuValidation {
             int shader=GL20.glCreateShader(GL43.GL_COMPUTE_SHADER);try{GL20.glShaderSource(shader,"#version 450 core\n"+source);GL20.glCompileShader(shader);check(GL20.glGetShaderi(shader,GL20.GL_COMPILE_STATUS)!=0,GL20.glGetShaderInfoLog(shader));program=GL20.glCreateProgram();GL20.glAttachShader(program,shader);GL20.glLinkProgram(program);check(GL20.glGetProgrami(program,GL20.GL_LINK_STATUS)!=0,GL20.glGetProgramInfoLog(program));}finally{GL20.glDeleteShader(shader);}
             locations=Arrays.stream(new String[]{"uCount","uCapacity","uLightTableSize","uLightDataOffset","uPartialTick"}).mapToInt(name->GL20.glGetUniformLocation(program,name)).toArray();
             rows.add("count,run,gpu_p50_ms,gpu_p95_ms,submit_p50_ms,submit_p95_ms");raw.add("count,run,sample,gpu_ms,submit_ms");boolean benchmark=Arrays.asList(args).contains("--benchmark");validate(benchmark);feedback(Arrays.asList(args).contains("--feedback-benchmark"));
-            if(benchmark){Files.write(Path.of("build/package-light-sampling.csv"),rows);Files.write(Path.of("build/package-light-sampling-samples.csv"),raw);}
+            if(benchmark){Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-light-sampling.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-light-sampling-samples.csv"),raw);}
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"GL error");System.out.println("Package light GPU: "+checks+" assertions passed");
         }finally{if(program!=0)GL20.glDeleteProgram(program);GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();callback.free();}
     }

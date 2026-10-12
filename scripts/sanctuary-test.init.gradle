@@ -1,6 +1,6 @@
+// Prepare resources with prepare-allvr-worldgen-test.py first.
 gradle.projectsEvaluated {
-    def project = gradle.rootProject
-    project.sourceSets.main.java.srcDir(project.file('src/test/gametest/sanctuary/java'))
-    project.sourceSets.main.resources.srcDir(project.file('build/allvr-worldgen-test-resources-vanilla'))
-    project.neoForge.runs.gameTestServer.gameDirectory = project.file('build/sanctuary-test-run')
+    def p = gradle.rootProject
+    p.apply from: p.file('scripts/testing/common.gradle')
+    p.configureCmiGameTests(name: 'sanctuary', sources: 'src/test/gametest/sanctuary/java', resources: 'build/allvr-worldgen-test-resources-vanilla')
 }

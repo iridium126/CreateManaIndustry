@@ -79,6 +79,6 @@ public final class PackageControlBenchmark {
                 }
             }
         }
-        Files.write(Path.of("build/package-control-benchmark.csv"),csv);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-control-benchmark.csv"),csv);
     }
 }

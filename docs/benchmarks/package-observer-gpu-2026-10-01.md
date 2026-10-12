@@ -1,5 +1,7 @@
 # 包裹观察者 GPU 合并与呈现微基准（2026-10-01）
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 ## 结论及边界
 
 观察者的整数基线合并、运动预测、校正及共享包裹池发布已由真实 GPU 验证。新增紧凑变化记录把每条上传从 128 字节降至 64 字节，不在 Java 中合并或计算姿态，也不增加展开 dispatch 或缓冲。131072 个成员全部持续运动和改变位置时，三次测量的 GPU p95 为 **1.585–1.995ms**，相同最终程序的完整记录路径为 **3.269–3.446ms**；CPU GL 提交 p95 为 **0.986–1.174ms**，完整路径为 **1.519–2.698ms**。目标规模的收益超过本次三次重复之间的差异，紧凑入口可供后续 controller 使用。10000 的 GPU p95 范围重叠，不声称所有负载均有明显 GPU 加速。
@@ -18,9 +20,9 @@ RTX 4070 Laptop GPU，NVIDIA 581.15，OpenGL 4.5，JDK 21.0.8；隐藏 GLFW cont
 
 CPU prepare 单独测量修改复用命令缓冲的整数位置、序号及 receipt，不含网络 packet 解码、成员索引维护或模型处理。CPU submit 是计时区域的 GL 调用成本；GPU 使用 TIME_ELAPSED query。离线工具在计时区间外同步获取结果和校验缓冲，生产代码不等待 query、worker 或未完成 fence。本报告不含实际栅格化、光照、Iris/阴影、碰撞、玩家交互、库存回调或 GPU 反馈的计时。
 
-- [最终汇总](package-observer-gpu-2026-10-01.csv)、[最终逐样本](package-observer-gpu-samples-2026-10-01.csv.gz)。
-- [紧凑路径前的四槽完整记录汇总](package-observer-gpu-expanded-ring-before-2026-10-01.csv)、[逐样本](package-observer-gpu-expanded-ring-before-samples-2026-10-01.csv.gz)。
-- [早期单上传缓冲汇总](package-observer-gpu-single-upload-before-2026-10-01.csv)、[逐样本](package-observer-gpu-single-upload-before-samples-2026-10-01.csv.gz)。
+- 最终汇总（本地运行结果）、最终逐样本（本地运行结果）。
+- 紧凑路径前的四槽完整记录汇总（本地运行结果）、逐样本（本地运行结果）。
+- 早期单上传缓冲汇总（本地运行结果）、逐样本（本地运行结果）。
 
 上传改四槽主要保证不覆盖 GPU 仍借用的数据；前后 GPU 范围相近，不为 ring 单独声称明显性能收益。完整和紧凑路径在最终版本内比较，均经过相同预热和实际 shader；未以此前单缓冲版本作为严格提速比例分母。
 

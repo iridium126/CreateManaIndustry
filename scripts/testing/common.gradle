@@ -1,0 +1,74 @@
+// Shared, opt-in GameTest source set and fixture setup. Applied by suite init scripts.
+if (!extensions.extraProperties.has('configureCmiGameTests')) {
+    ext.configureCmiGameTests = { Map options ->
+        if (extensions.extraProperties.has('cmiGameTestSuite')) {
+            throw new GradleException('Select one GameTest suite per run')
+        }
+        ext.cmiGameTestSuite = options.name
+        def suite = sourceSets.create('gameTest')
+        suite.java.setSrcDirs([file(options.sources)])
+        suite.compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        suite.runtimeClasspath += sourceSets.main.runtimeClasspath
+        ext.cmiGameTestSources = suite
+
+        // ModDev supports a run-specific classpath and multiple source sets per mod.
+        // Neither the normal jar nor processResources includes this source set.
+        neoForge.mods.getByName(mod_id.toString()).sourceSet(suite)
+        neoForge.runs.gameTestServer.sourceSet.set(suite)
+        def runDir = file(options.runDir ?: "build/gametest/${options.name}")
+        neoForge.runs.gameTestServer.gameDirectory.set(runDir)
+        tasks.named('runGameTestServer', JavaExec).configure {
+            dependsOn(tasks.named(suite.classesTaskName))
+            maxHeapSize = '3g'
+        }
+        tasks.named('copyTricksterToRunMods', Copy).configure {
+            into(new File(runDir, 'mods'))
+            enabled = options.trickster != false
+        }
+
+        if (options.owo != false) {
+            def owo = file('run/mods/owo-lib-neoforge-0.13.0-alpha.15+1.21.jar')
+            if (!owo.isFile()) {
+                def cached = fileTree(new File(gradle.gradleUserHomeDir,
+                        'caches/modules-2/files-2.1/codeberg.master_bw3.trickster/owo-lib-neoforge/0.13.0-alpha.15+1.21')) {
+                    include '**/owo-lib-neoforge-0.13.0-alpha.15+1.21.jar'
+                }.files
+                if (cached.size() == 1) owo = cached.first()
+            }
+            if (!owo.isFile()) throw new GradleException('GameTest requires the local or cached owo-lib fixture')
+            dependencies.add('localRuntime', files(owo))
+        }
+
+        if (options.resources) suite.resources.srcDir(file(options.resources))
+        if (options.structure) {
+            def structure = options.structure
+            def size = options.size ?: 1
+            def resources = file("build/gametest/${options.name}-resources")
+            suite.resources.srcDir(resources)
+            def fixture = tasks.register('gameTestFixtures') {
+                inputs.property('structure', structure)
+                inputs.property('size', size)
+                outputs.dir(resources)
+                doLast {
+                    def target = new File(resources, "data/createmanaindustry/structure/${structure}.nbt")
+                    target.parentFile.mkdirs()
+                    target.withOutputStream { file ->
+                        def out = new DataOutputStream(new java.util.zip.GZIPOutputStream(file))
+                        out.writeByte(10); out.writeUTF('')
+                        out.writeByte(3); out.writeUTF('DataVersion'); out.writeInt(3955)
+                        out.writeByte(9); out.writeUTF('size'); out.writeByte(3); out.writeInt(3)
+                        3.times { out.writeInt(size) }
+                        out.writeByte(9); out.writeUTF('palette'); out.writeByte(10); out.writeInt(1)
+                        out.writeByte(8); out.writeUTF('Name'); out.writeUTF('minecraft:air'); out.writeByte(0)
+                        ['blocks', 'entities'].each { name ->
+                            out.writeByte(9); out.writeUTF(name); out.writeByte(10); out.writeInt(0)
+                        }
+                        out.writeByte(0); out.close()
+                    }
+                }
+            }
+            tasks.named(suite.processResourcesTaskName).configure { dependsOn(fixture) }
+        }
+        return suite
+    }
+}

@@ -1,41 +1,12 @@
-// Isolated conversion tests. Use -PconversionAbsent=hexcasting or trickster for absence probes.
+// Use -PconversionAbsent=hexcasting or trickster for absence probes.
 gradle.projectsEvaluated {
     def p = gradle.rootProject
     def absent = p.findProperty('conversionAbsent') ?: 'none'
     if (!(absent in ['none', 'hexcasting', 'trickster'])) throw new GradleException('Unknown conversionAbsent mod')
-    def runDir = p.file("build/conversion-${absent}-test-run")
-    def owo = p.file('run/mods/owo-lib-neoforge-0.13.0-alpha.15+1.21.jar')
-    if (!owo.isFile()) throw new GradleException('Conversion tests require the existing local owo-lib fixture')
-    p.dependencies.add('localRuntime', p.files(owo))
-    p.sourceSets.main.java.srcDir(p.file(absent == 'none'
-            ? 'src/test/gametest/conversion/java' : 'src/test/gametest/conversion-absent/java'))
+    p.apply from: p.file('scripts/testing/common.gradle')
+    p.configureCmiGameTests(name: "conversion-${absent}",
+            sources: absent == 'none' ? 'src/test/gametest/conversion/java' : 'src/test/gametest/conversion-absent/java',
+            structure: 'conversion_test', trickster: absent != 'trickster')
     if (absent == 'hexcasting') p.configurations.runtimeClasspath.exclude(group: 'hexcasting')
-    p.tasks.named('copyTricksterToRunMods', Copy).configure {
-        into(new File(runDir, 'mods'))
-        enabled = absent != 'trickster'
-    }
-    def resources = p.layout.buildDirectory.dir("conversion-${absent}-test-resources").get().asFile
-    p.sourceSets.main.resources.srcDir(resources)
-    def fixtures = p.tasks.register('conversionTestFixtures') {
-        outputs.dir(resources)
-        doLast {
-            def target = new File(resources, 'data/createmanaindustry/structure/conversion_test.nbt')
-            target.parentFile.mkdirs()
-            target.withOutputStream { file ->
-                def out = new DataOutputStream(new java.util.zip.GZIPOutputStream(file))
-                out.writeByte(10); out.writeUTF('')
-                out.writeByte(3); out.writeUTF('DataVersion'); out.writeInt(3955)
-                out.writeByte(9); out.writeUTF('size'); out.writeByte(3); out.writeInt(3)
-                3.times { out.writeInt(1) }
-                out.writeByte(9); out.writeUTF('palette'); out.writeByte(10); out.writeInt(1)
-                out.writeByte(8); out.writeUTF('Name'); out.writeUTF('minecraft:air'); out.writeByte(0)
-                ['blocks', 'entities'].each { name -> out.writeByte(9); out.writeUTF(name); out.writeByte(10); out.writeInt(0) }
-                out.writeByte(0); out.close()
-            }
-        }
-    }
-    p.tasks.named('processResources').configure { dependsOn(fixtures) }
-    p.neoForge.runs.gameTestServer.gameDirectory = runDir
     p.neoForge.runs.gameTestServer.systemProperty('conversion.absent', absent)
-    p.tasks.named('runGameTestServer', JavaExec).configure { maxHeapSize = '3g' }
 }

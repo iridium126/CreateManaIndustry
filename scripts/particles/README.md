@@ -37,11 +37,20 @@ For seeded sorting and CPU submission microbenchmarks (three warmed trials):
 .\gradlew.bat validateHexGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle -PparticleBenchmark
 ```
 
-Outputs: `build/particle-sort-benchmark.csv` and
-`build/particle-submit-benchmark.csv`. Variant 0 is the reference implementation,
+Outputs: `build/benchmarks/current/particle-sort-benchmark.csv` and
+`build/benchmarks/current/particle-submit-benchmark.csv`. Variant 0 is the reference implementation,
 variant 1 is production. Sorting distribution 0 mixes 768 keys; 1 uses one key.
 The normal task covers small workgroup boundaries; benchmark mode covers 0,
 10,000, 100,000, 1,000,000 and 2,000,000 entries. Run both after algorithm changes.
 These isolated measurements do not establish whole-game FPS improvements.
 See [measurement report](../../docs/particle-engine-performance.md) for results,
 memory costs, coverage and remaining in-game acceptance work.
+
+## Result management
+
+Use `python scripts/benchmarks/run.py <task> <Gradle flags>` to capture the command,
+exit status, actual driver log and samples in an independent `build/benchmarks/`
+directory. Direct Gradle runs default to `build/benchmarks/current/`; override
+with `-PbenchmarkOutput=build/benchmarks/<experiment>`. Historical raw data,
+logs and screenshots are not tracked. See [result policy](../../docs/benchmarks/README.md)
+and the [test matrix](../../docs/testing.md).
