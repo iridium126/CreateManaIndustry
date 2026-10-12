@@ -9,7 +9,6 @@ import dev.enjarai.trickster.spell.SpellContext;
 import dev.enjarai.trickster.spell.execution.source.BlockSpellSource;
 import dev.enjarai.trickster.spell.fragment.FragmentType;
 import dev.enjarai.trickster.spell.fragment.NumberFragment;
-import dev.enjarai.trickster.spell.fragment.VoidFragment;
 import dev.enjarai.trickster.spell.mana.ManaPool;
 import dev.enjarai.trickster.spell.trick.Trick;
 import dev.enjarai.trickster.spell.type.Signature;
@@ -17,10 +16,10 @@ import net.fabricmc.fabric.api.transfer.v1.transaction.Transaction;
 
 public final class ManaToMediaTrick extends Trick<ManaToMediaTrick> {
     public ManaToMediaTrick() {
-        super(Pattern.of(3, 1, 4, 2), Signature.of(FragmentType.NUMBER, ManaToMediaTrick::run, FragmentType.VOID));
+        super(Pattern.of(3, 0, 4, 2), Signature.of(FragmentType.NUMBER, ManaToMediaTrick::run, FragmentType.NUMBER));
     }
 
-    public VoidFragment run(SpellContext ctx, NumberFragment number) {
+    public NumberFragment run(SpellContext ctx, NumberFragment number) {
         ResourceConversionMath.Amounts amounts;
         try {
             amounts = ResourceConversionMath.manaToMedia(number.number(),
@@ -38,7 +37,7 @@ public final class ManaToMediaTrick extends Trick<ManaToMediaTrick> {
                     ctx.useScaledMana(number.number(), transaction);
                     transaction.commit();
                 }
-                return VoidFragment.INSTANCE;
+                return new NumberFragment((double) amounts.output() / 10000.0);
             }
             var player = ctx.source().getPlayer().orElseThrow(() -> new ResourceConversionBlunder("no_player"));
             ResourceConversionInventory.checkMediaCapacity(player, amounts.output());
@@ -53,6 +52,6 @@ public final class ManaToMediaTrick extends Trick<ManaToMediaTrick> {
         } catch (ResourceConversionException e) {
             throw new ResourceConversionBlunder(e.reason());
         }
-        return VoidFragment.INSTANCE;
+        return new NumberFragment((double) amounts.output() / 10000.0);
     }
 }

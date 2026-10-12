@@ -84,15 +84,20 @@ public final class ResourceConversionGameTests {
                     0, TreeList.empty(), false, false, 0, new CompoundTag()), new Env(player));
             var result = vm.queueExecuteAndWrapIota(new PatternIota(entry.prototype()), helper.getLevel());
             helper.assertTrue(result.getResolutionType().getSuccess(), "Forward VM operation failed");
-            helper.assertTrue(vm.getImage().getStack().isEmpty(), "Forward operation produced output");
+            var forwardStack = vm.getImage().getStack();
+            helper.assertTrue(forwardStack.size() == 1
+                            && forwardStack.get(0) instanceof DoubleIota output
+                            && Math.abs(output.getDouble() - 64.0) < 0.0001,
+                    "Forward operation did not return the stored mana points");
             helper.assertTrue(media(inventory.getItem(0)) == 0, "Forward cost was not 10000 media");
             helper.assertTrue(mana(inventory.getItem(1), helper) == 64000, "Forward output was not 64000 internal mana");
             var trick = Tricks.lookup(Pattern.of(3, 1, 4, 2));
             helper.assertTrue(trick instanceof ManaToMediaTrick
                     && Tricks.REGISTRY.getKey(trick).equals(CreateManaIndustry.modLoc("mana_to_media")),
                     "Wrong Trickster pattern resolution");
-            helper.assertTrue(trick.activate(context(player), List.of(new NumberFragment(64))) == VoidFragment.INSTANCE,
-                    "Reverse operation did not return VOID");
+            var reverseOutput = trick.activate(context(player), List.of(new NumberFragment(64)));
+            helper.assertTrue(reverseOutput instanceof NumberFragment amount && Math.abs(amount.number() - 1.0) < 0.0001,
+                    "Reverse operation did not return media in 10000-unit display values");
             helper.assertTrue(mana(inventory.getItem(1), helper) == 0, "Reverse cost scaled incorrectly");
             helper.assertTrue(media(inventory.getItem(0)) == 10000, "Reverse output scaled incorrectly");
             var reloadedBattery = ItemStack.parseOptional(helper.getLevel().registryAccess(),

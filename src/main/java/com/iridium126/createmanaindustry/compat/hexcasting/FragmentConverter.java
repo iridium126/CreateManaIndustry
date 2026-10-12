@@ -30,8 +30,8 @@ import org.joml.Vector3d;
  * <li>hex → trickster: primitives map natively; anything else is wrapped in
  * {@link IotaFragment} (stored losslessly).</li>
  * <li>trickster → hex: {@link IotaFragment} unwraps; primitives map natively;
- * anything else is wrapped in a {@link TrickIota} (via a single-glyph
- * {@link SpellPart}).</li>
+ * an existing {@link SpellPart} is preserved in a {@link TrickIota}; anything
+ * else is wrapped in a single-glyph {@link SpellPart} and {@link TrickIota}.</li>
  * </ul>
  */
 public final class FragmentConverter {
@@ -83,8 +83,8 @@ public final class FragmentConverter {
     }
 
     /**
-     * Converts a trickster fragment to a hex iota. Returns {@code null} for a
-     * void fragment — "no result".
+     * Converts a trickster fragment to a hex iota. Returns {@code null} for
+     * a null input or a void fragment.
      */
     @Nullable
     public static Iota fragmentToIota(Fragment fragment) {
@@ -111,6 +111,9 @@ public final class FragmentConverter {
                 iotas.add(converted != null ? converted : new NullIota());
             }
             return new ListIota(iotas);
+        }
+        if (fragment instanceof SpellPart spell) {
+            return new TrickIota(spell);
         }
         return new TrickIota(new SpellPart(fragment));
     }

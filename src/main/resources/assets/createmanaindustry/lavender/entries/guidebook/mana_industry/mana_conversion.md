@@ -20,7 +20,8 @@ A ploy for exchanging traditional mana for the media used by Hex Casting.
 
 Converts the given amount of mana from the caster's reserves into media.
 When cast by a player, stores the media in rechargeable items in the player's
-inventory, including armor and the offhand. Returns nothing.
+inventory, including armor and the offhand. Returns the media yield in units of 10000 media,
+so a result of 1 means 10000 media.
 
 The entire yield must fit. Missing storage or insufficient room causes a blunder;
 no mana is consumed and no media is stored.
@@ -49,7 +50,7 @@ For an amount **y** of mana, the media yield is `y / R × 10000`, where:
 
 Here, **mspt** is the execution time in milliseconds of the last completed server
 tick, excluding the wait for the next tick. At 25 ms, an amount of 64 mana
-produces 10000 media.
+produces 10000 media and returns 1.
 
 Amounts must be finite and positive. Mana is rounded down to thousandths and
 media to whole units. A cost or yield rounded to zero causes a blunder.

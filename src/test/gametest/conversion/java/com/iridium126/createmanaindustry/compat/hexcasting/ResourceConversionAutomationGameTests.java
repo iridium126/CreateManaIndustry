@@ -117,7 +117,11 @@ public final class ResourceConversionAutomationGameTests {
             holder(helper, circle.north()).createmanaindustry$setKnot(knot(0, 64000));
             var result = OpMediaToMana.INSTANCE.execute(List.of(new DoubleIota(1)), env);
             helper.assertTrue(env.extractMedia(result.getCost(), false) == 0, "Circle payment failed");
-            result.getEffect().cast(env);
+            var returnedImage = result.getEffect().cast(env, new at.petrak.hexcasting.api.casting.eval.vm.CastingImage());
+            helper.assertTrue(returnedImage != null && returnedImage.getStack().size() == 1
+                            && returnedImage.getStack().get(0) instanceof DoubleIota output
+                            && Math.abs(output.getDouble() - 64.0) < 0.0001,
+                    "Circle conversion did not return the mana stored in reached slates");
             helper.assertTrue(mana(holder(helper, circle.north()).createmanaindustry$getKnot(), helper) == 64000
                     && mana(player.getInventory().getItem(0), helper) == 0,
                     "Bound circle used the player's inventory");
@@ -184,7 +188,9 @@ public final class ResourceConversionAutomationGameTests {
             helper.assertTrue(ConstructMediaStorage.getMedia(construct) == ConstructMediaStorage.MAX_CAPACITY - 9999
                     && mana(construct.getItem(0), helper) == 64000, "Capacity failure changed the construct reserves");
             ConstructMediaStorage.setStoredMedia(construct, ConstructMediaStorage.MAX_CAPACITY - 10000);
-            trick.run(context(helper, construct), new NumberFragment(64));
+            var constructOutput = trick.run(context(helper, construct), new NumberFragment(64));
+            helper.assertTrue(Math.abs(constructOutput.number() - 1.0) < 0.0001,
+                    "Construct conversion did not return media in 10000-unit display values");
             helper.assertTrue(ConstructMediaStorage.getMedia(construct) == ConstructMediaStorage.MAX_CAPACITY
                     && mana(construct.getItem(0), helper) == 0, "Exact-capacity conversion overflowed or failed");
         });

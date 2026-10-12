@@ -1,7 +1,9 @@
 package com.iridium126.createmanaindustry.compat.hexcasting;
 
+import at.petrak.hexcasting.api.casting.RenderedSpell;
 import at.petrak.hexcasting.api.casting.castables.SpellAction;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
+import at.petrak.hexcasting.api.casting.eval.vm.CastingImage;
 import at.petrak.hexcasting.api.casting.eval.env.CircleCastEnv;
 import com.iridium126.createmanaindustry.compat.hexcasting.circle.SlateKnotInventory;
 import at.petrak.hexcasting.api.casting.iota.DoubleIota;
@@ -46,9 +48,22 @@ public final class OpMediaToMana implements SpellAction {
                 throw new MishapResourceConversion("no_player");
             }
             Runnable afterCast = sync;
-            return new Result(castingEnv -> {
-                plan.apply();
-                afterCast.run();
+            double manaOutput = (double) amounts.output() / ManaPool.MANA_SCALE;
+            return new Result(new RenderedSpell() {
+                @Override
+                public void cast(CastingEnvironment castingEnv) {
+                    plan.apply();
+                    afterCast.run();
+                }
+
+                @Override
+                public CastingImage cast(CastingEnvironment castingEnv, CastingImage image) {
+                    cast(castingEnv);
+                    return image.copy(
+                            image.getStack().appended(new DoubleIota(manaOutput)),
+                            image.getParenCount(), image.getParenthesized(), image.getEscapeNext(),
+                            image.getSimulateNext(), image.getOpsConsumed(), image.getUserData());
+                }
             }, amounts.cost(), List.of(), 1L);
         } catch (ResourceConversionException e) {
             throw new MishapResourceConversion(e.reason());

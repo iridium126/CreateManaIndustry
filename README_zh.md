@@ -2,160 +2,102 @@
 
 [English](./README.md)
 
-一款 **机械动力（Create）** 的 NeoForge 附属模组，在动能（旋转力）与魔法模组之间架起桥梁：将应力转化为魔力，将流体雾化为体积雾场，自动化施法物品生产等——全部通过机械动力的工业体系实现。
+机械动力：魔法工业是一款面向 **Minecraft 1.21.1** 与 **NeoForge** 的机械动力附属模组。它增加了机械设备、魔法流体处理，以及连接动能与魔法系统的模组联动。项目还包含仍在开发中的 GPU 渲染、物流与超高维度系统。
 
 ## 特性
 
-### 核心机制
+### 机械设备、流体与配方
 
-- **动力注魔台**（Kinetic Mana Generator）——消耗机械动力旋转应力产生魔力，为置于法术组构台或充能阵列中的 Trickster 晶结充能。每 RPM 应力消耗可通过面板上的滑动框实时调节。
-- **动力雾化器**（Kinetic Atomizer）——将泵入的流体雾化为体积雾场，半径随转速变化。雾场浓度随距离衰减；重叠雾场取最大浓度。雾化配方的前置条件。
-- **冷凝管**（Condenser）——当冷却液沿管轴流经时，从雾场中冷凝回收流体，注入下方的动力排泄口。效率随冷却液流动和雾场浓度变化。冷却液由冰冲压制得。
-- **悦灵燃烧室**（Allay Burner）——类烈焰人燃烧室的加热源，以捕获的悦灵为核心：燃烧紫水晶类材料或液态媒质获得燃烧时间，可像唱片机一样插入唱片播放，燃烧时向四周排放液态灵魂雾场。为工作盆配方新增 `allayheated`（悦灵加热）热需求。
-- **雾场系统**（Mist field）——服务端按维度维护的 `ConcurrentHashMap` 空间数据存储。浓度基于欧几里得距离实时计算，重叠雾场采用最强源解析。定时排放支持配方副产物。
+- **动力注魔台**将机械动力应力转化为魔力，可用方块上的滑动框调整每 RPM 的应力消耗，为法术组构台与充能阵列中的晶结充能。
+- **动力雾化器**将管道输入的支持流体转化为雾场。雾场半径随转速变化，浓度随距离衰减；自定义配方可以要求雾场，也可以排放雾作为副产物。
+- **冷凝管**通过独立冷却液管路，从附近雾场中回收对应流体，并将产物流入下方的动力排液口。
+- **悦灵燃烧室**以被捕获的悦灵为核心，是机械动力的加热源；可燃烧紫水晶类材料或液态媒质，支持唱片播放，并在燃烧时排放液态灵魂雾。工作盆配方可指定 `allayheated` 热需求。
+- 新增液态魔力、液态媒质、液态魔源、液态灵魂、冷却液、熔融玫瑰石英与熔融海晶石英。流体可由机械动力管道和储罐运输；可选魔法模组会提供对应的资源桥接。
+- 新增加热冲压、雾化冲压/搅拌、汽化与汽相沉积配方，涵盖紫水晶制媒质、紫水晶和玫瑰石英镀层板等流程。
+- 内置的加热搅拌配方会将 250 mB 液态媒质转为 125 mB 液态魔力；加热雾化搅拌配方会将 250 mB 液态魔力转为液态媒质雾。冰可通过冲压制成冷却液。
+- 新增可连接成组的熔盐燃料罐，以及燃料棒多方块结构。
 
-### 流体系统
+### 咒法学（Hexcasting）
 
-- **液态魔力**（Liquid Mana）——全亮度发光流体，存储魔力；兼容机械动力管道与储罐网络。由 `manaPerBucket` 配置。
-- **液态媒质**（Liquid Media）——浅紫色发光流体，存储咒法学媒质（1 桶 = `mediaPerBucket` 媒质单位，默认 400,000）。机械动力与咒法学能量系统之间的桥接流体。
-- **媒质转换**——加热搅拌将液态媒质按 1:1 转为液态魔力。雾化器把支持的流体转为雾；冷凝管通过独立的冷却液管路和下方动力排泄口回收雾所对应的流体。
+安装咒法学后，可用机械动力自动生产杂件（Cypher）、缀品（Trinket）、造物（Artifact）与媒质之瓶：机械手写入图案，注液器注入液态媒质，动力冲压机完成定型并保留物品数据。媒质之瓶也可通过机械动力流体网络填充和抽取。
 
-### 配方类型
+其他联动包括：为非卓越法术动态添加石板切石配方；读取置于置物台或置物板上物品中的 Iota；点燃烈焰人和悦灵燃烧室；以及查询法术环内玩家等功能。服务端还提供可配置的 Hex JIT，对频繁执行的调用点进行编译；默认模式为 `AUTO`，可在服务端配置中调整。
 
-- **加热冲压**（Heated Compacting）——为动力冲压机新增的加热盆配方。将紫水晶粉/碎片/充能紫水晶转化为液态媒质（输出量根据配置文件动态重算）。
-- **雾化冲压**（Mist Compacting）——需要或产生雾副产物的冲压配方。
-- **雾化搅拌**（Mist Mixing）——带雾条件与排放的搅拌配方（时长、半径、量按配方可配）。
+游戏内指南以帕秋莉手册提供，包含英文与简体中文文本。
 
-### Trickster 集成
+### Trickster、Bits 'n' Bobs 与 Ars Nouveau
 
-- **Trickster 戏法：** `temporary_kinetic_stress`（动力应力戏法）——消耗魔力，在指定时长内向任意动能方块实体施加临时应力与转速，大小与时长可配置。
-- **晶结流水线**——绿宝石经机械手装上玻璃成为未完成晶结，再由注液器反复灌注液态魔力，达到需求后成为完整晶结。对完整晶结冲压会使其开裂。未完成晶结支持绿宝石、虹彩、钻石、回响、星辰种类。
-- **Display Link 目标**——将文本写入法术组构台与模块化法术组构台的参数中。支持独立参数或核心+参数对。
-- **机械臂支持**——机械臂可向 Trickster 充能阵列、法术组构台与模块化法术组构台插入/提取晶结物品。
-- **动力法术核心**（Kinetics Spell Core）——附着到模块化法术组构台上，将其与齿轮链网络（Bits 'n' Bobs）链接，将动能状态暴露为 Trickster 数据供法术逻辑调用。
+- Trickster 联动增加晶结装配与灌注、机械臂对晶结和法术构装台的操作、显示链接器目标、临时动能应力戏法，以及媒质/魔力转换戏法。
+- **动力法术核心**可将机械动力与 Create: Bits 'n' Bobs 的齿轮链应力提供给 Trickster 法术核心。
+- Ars Nouveau 联动提供液态魔源和源质罐流体处理。魔源浆果相关配方仅在安装 Ars Nouveau 时生效。
 
-### 咒法学集成
+### 实验性系统
 
-- **施法物品自动化流水线**——全自动化生产杂件（Cypher）、缀品（Trinket）与造物（Artifact）：
-  1. 机械手 + 含 Iota 物品 → 将图案写入崭新施法物品
-  2. 注液器 + 液态媒质 → 填充媒质至配置上限
-  3. 动力冲压机 → 定型为完整咒法学物品，所有图案、媒质与颜料完整转移
-- **媒质之瓶序列装配**——机械手 + 玻璃瓶 + 远古卷轴（制作试剂瓶图案）→ 注液器注入液态媒质 → 动力冲压机定型为媒质之瓶。最终容量由实际填充的媒质量决定。
-- **自定义咒法学图案**——`从方块读取 Iota`（Read Iota from Block，图案：`wqwqwqwqwqwaw`，0 媒质消耗）。从置于机械动力置物台或置物板上的含 Iota 物品中读取 Iota。
-- **自定义咒法学图案**——`点燃燃烧室`（Light Burner，图案：`qwawq`）。消耗一个向量（方块坐标）与一个数字（燃烧时间，秒），点燃该处的机械动力烈焰人燃烧室或悦灵燃烧室并增加对应燃烧时间。媒质按秒计费，费率与燃烧器自身的媒质消耗速率一致，经济上与倒入液态媒质完全等价。内部没有烈焰人的空燃烧室与炽热（SEETHING）/创造模式燃烧器不会被改动。
-- **石板图案切石**——为所有非卓越法术的咒法学图案动态注册切石配方。将空白石板放入切石机即可直接印制任意图案。
-- **媒质之瓶流体能力**——定型后的媒质之瓶可通过机械动力流体管道填充/抽取液态媒质，在自动化系统中作为媒质缓冲器。
-- **Patchouli 手册条目**——在咒法学的"Hexbook"中新增 7 个条目，覆盖全部集成功能，提供完整的中英文翻译。
+以下系统已包含在代码中，但尚未视为完成全面游戏内验证。[开发文档索引](./docs/README.md)列出了实现说明与已知缺口。
 
-### 视觉与网络
-
-- **体积雾场渲染**——雾场通过 Veil 着色器后处理渲染为半透明彩色体积（Veil 可选但推荐安装）。
-- **网络同步**——雾场状态通过自定义数据包同步到客户端，实现实时渲染更新。
+- **ALLVR 悦灵维度**新增自定义维度：标准高度范围内使用常规地形，范围之外使用 Cube 存储。维度渲染、方块实体同步和部分原版 tick 行为仍在开发中；客户端必须安装 Sodium。
+- **悦灵风暴**是由服务端管理状态、客户端 GPU 驱动的群体遭遇，平衡与行为仍需实战验证。管理员可用以下命令控制（需要 2 级权限）：
+  - `/cmi particle allaystorm [count]` 开启。
+  - `/cmi particle allaystorm stop` 停止。
+- **GPU 粒子引擎**用于高数量级粒子、模型粒子与咒法学特效。客户端配置提供帧耗时预算和自动限流；支持着色包集成，具体兼容性取决于渲染器版本。
+- **GPU 机械动力包裹模拟**是可选实验功能，默认关闭，且需要客户端与服务端使用匹配设置。
 
 ## 依赖
 
-### 必需
-- [NeoForge](https://neoforged.net)（1.21.1，21.1+）
-- [机械动力（Create）](https://createmod.net)（6.0.10+）
+需要 Java 21。
 
-### 可选
-- [Trickster](https://modrinth.com/mod/trickster)（2.0.0-beta.56+）——晶结自动化、动力法术核心、Display Link 目标、应力戏法
-- [咒法学（Hexcasting）](https://modrinth.com/mod/hexcasting)（0.12.0-devel-pre-35+）——施法物品流水线、媒质之瓶、自定义图案、石板切石
-- [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs)（2.1.9-beta+）——齿轮链集成
-- [Veil](https://modrinth.com/mod/veil)（4.1.4+）——体积雾场着色器渲染
+| 依赖 | 要求 |
+|---|---|
+| Minecraft | 1.21.1 |
+| NeoForge | 21.1.236 或更高版本 |
+| 机械动力（Create） | 6.0.10 或更高版本 |
+| Sodium | 每个客户端均需 0.8.13；专用服务器不需要 |
+
+以下模组均为可选依赖；安装后会启用对应联动：
+
+| 模组 | 最低版本 | 联动内容 |
+|---|---:|---|
+| [Trickster](https://modrinth.com/mod/trickster) | 2.0.0-beta.56 | 晶结、法术、构装台与动能链接 |
+| [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs) | 2.1.9-beta | 动力法术核心的齿轮链数据 |
+| [Hexcasting](https://modrinth.com/mod/hexcasting) | 0.12.0-devel-pre-53 | 施法物品自动化、媒质存储与自定义动作 |
+| [Veil](https://modrinth.com/mod/veil) | 4.1.4 | 体积雾及相关渲染效果 |
+| [Ars Nouveau](https://modrinth.com/mod/ars-nouveau) | 5.13.0 | 液态魔源与源质罐处理 |
 
 ## 配置
 
-配置按端拆分。游戏数值位于**服务端配置**（`createmanaindustry-server.toml`），会同步给连接进来的客户端，以服务端为准；渲染选项位于**客户端配置**（`createmanaindustry-client.toml`）。
+NeoForge 会在配置目录中生成 `createmanaindustry-server.toml` 与 `createmanaindustry-client.toml`。玩法与平衡参数位于服务端配置，渲染和粒子选项位于客户端配置。每个配置项都带有说明注释。
 
-### 服务端 — `createmanaindustry-server.toml`
+常用服务端配置：
 
-**fluid** — 流体转换比率：
+| 配置项 | 默认值 | 用途 |
+|---|---:|---|
+| `fluid.manaPerBucket` | 2048 | 一桶液态魔力所代表的魔力值 |
+| `fluid.mediaPerBucket` | 400000 | 一桶液态媒质所代表的媒质值 |
+| `kinetics.manaPerStress` | 0.001 | 每 tick 每单位应力产生的魔力 |
+| `mist.mistMaxRadius` | 16 | 雾化器的最大雾场半径（格） |
+| `mist.mistFluidPerTick` | 8 | 256 RPM 时雾化器的基础流体消耗（mB/tick） |
+| `mist.condenseEfficiency` | 5.0 | 每浓度单位每 tick 的冷凝基础产量（mB） |
+| `fuel_tank.fuelTankCapacity` | 8 | 每个燃料罐方块的容量（桶） |
+| `hexcasting.jit.mode` | `AUTO` | Hex JIT 模式：`OFF`、`PROFILE` 或 `AUTO` |
 
-| 键 | 默认值 | 说明 |
-|---|---|---|
-| `manaPerBucket` | 2048 | 一桶液态魔力所含的魔力值 |
-| `mediaPerBucket` | 400000 | 一桶液态媒质所含的媒质值 |
-| `sourcePerBucket` | 1000 | 一桶液态魔源所含的魔源值 |
-
-**kinetics** — 动能转魔力：
-
-| 键 | 默认值 | 说明 |
-|---|---|---|
-| `manaPerStress` | 0.001 | 每 tick 每应力单位产生的魔力量 |
-| `kineticStressTrickManaMultiplier` | 2.0 | 临时应力戏法的魔力消耗倍率 |
-
-**mist** — 体积雾场行为：
-
-| 键 | 默认值 | 说明 |
-|---|---|---|
-| `mistMaxRadius` | 16 | 雾化器最大雾场半径（格） |
-| `mistFluidPerTick` | 8 | 256 RPM 时每 tick 的基础流体消耗 |
-| `mistBaseConcentration` | 1.0 | 距离 0 处的雾场浓度 |
-| `condenseEfficiency` | 5.0 | 每浓度单位每 tick 冷凝的基准流体量（mB） |
-
-**allay_burner** — 悦灵燃烧室燃料与雾：
-
-| 键 | 默认值 | 说明 |
-|---|---|---|
-| `mediaConsumedPerTick` | 50 | 燃烧时每 tick 消耗的媒质（决定燃料燃烧时长与"点燃燃烧室"图案的花费） |
-| `allayBurnerMistRadius` | 4 | 液态灵魂雾场半径 |
-| `allayBurnerMistPerTick` | 1 | 每 tick 增加的液态灵魂雾容量 |
-
-**hexcasting** — 未完成物品媒质容量：
-
-| 键 | 默认值 | 说明 |
-|---|---|---|
-| `cypherMaxMedia` | 6400000 | 未完成杂件的最大媒质容量 |
-| `trinketMaxMedia` | 64000000 | 未完成缀品的最大媒质容量 |
-| `artifactMaxMedia` | 640000000 | 未完成造物的最大媒质容量 |
-| `batteryMaxMedia` | 640000000 | 未完成媒质之瓶的最大媒质容量 |
-
-动力学方块的**应力**值（`impact`/`capacity` 两节）也位于该文件。
-
-### 客户端 — `createmanaindustry-client.toml`
-
-**rendering** — 体积雾渲染：
-
-| 键 | 默认值 | 说明 |
-|---|---|---|
-| `mistGlowStrength` | 0.5 | 体积雾发光的全局倍率 |
-| `mistDebugShadow` | false | 调试：以雾色可视化 Tyndall 阴影贴图采样 |
+服务端配置还包括悦灵燃烧室燃料、燃料棒结构限制、Hexcasting 物品容量和悦灵风暴行为。客户端配置控制雾场辉光、GPU 粒子上限与限流、咒法学粒子重定向和 ALLVR LOD。GPU 包裹权威模拟在客户端和服务端均默认关闭。
 
 ## 构建
+
+使用 Java 21，执行：
 
 ```bash
 ./gradlew build
 ```
 
-构建会在 `build/libs/` 生成单个 `createmanaindustry-<版本>.jar` 安装包。
-手动安装只需将该 jar 放入 `mods/`，其中已经包含 Trickster 的早期补丁服务。
-包内本体通过独立的模组发现入口加载，避免被启动层服务占用。
-开发启动仍从源码加载本体，并自动使用 `build/internal/` 中的补丁服务包。
+Windows 下执行 `.\gradlew.bat build`。可安装的模组文件生成于 `build/libs/createmanaindustry-0.2.6.jar`。开发运行使用的 bootstrap 专用 jar 位于 `build/internal/`，不需要作为独立文件安装。
 
-安装了 Connector 时，Create Mana Industry 会在 Connector 扫描 Fabric 模组之前自动修补 Trickster。
-目前仅支持 Trickster `2.0.0-beta.56`，并要求目标 `KeyBindingMixin.class` 与已验证版本一致
-（SHA-256：`47a8849c8056c8f7776d3aa83cd359247ebf1b640a2994dd8f230c8ab6af7769`）。
-补丁将三个受影响的按键拦截方法改为调用 NeoForge 的 `KeyMappingLookup` API，
-保留上下文按键优先级，并释放被覆盖的普通按键。
-同时为区块固定功能的 `worldPinTick` 注入指定完整的 `ChunkPos` 方法描述符，
-避免匹配到 NeoForge 新增的 `BlockPos` 重载。原始 `ServerWorldMixin.class` 必须符合
-SHA-256：`2ba126372f77660835ad7d363098c7ec01accb44eb9b536d9589d7d97a3e27c7`。
-只识别当前补丁；旧补丁标记会保持原样，不会自动升级。
-其他方法和资源文件会保留。
-在玩家环境中，此操作会直接修改 `mods` 文件夹中的 Trickster jar，并在同目录保存原文件，文件名追加 `.backup`。
-在本项目的 ModDevGradle 开发环境中，Gradle 会在 `runClient`、`runServer`、`runGameTestServer` 或 `runData` 启动前，将专用开发依赖 `tricksterLocalRuntime` 中的 Trickster jar 复制到 `run/mods`。该配置不会将缓存 jar 加入运行时模组候选；补丁服务只扫描 `mods` 文件夹，并在同目录保存原 jar，文件名追加 `.backup`。
-只修改资源文件（例如汉化文本）且两个目标 Mixin 类未变的 jar 也受支持。
-如需还原，请先关闭游戏，再将备份复制覆盖到已修补的 jar，并保留原 `.jar` 文件名，然后删除备份文件。
-其他 Trickster 版本、目标类被修改的 jar，或同时存在多个 Trickster jar 时均不会修改，并会在日志中说明原因；
-在这些情况下，原有的 Connector 启动报错仍可能出现。如果目标 jar 所在目录不可写，补丁会跳过并记录警告。
+安装 Connector 时，内置的早期启动服务会识别并修补经过验证的 Trickster `2.0.0-beta.56`，确保在 Connector 扫描 Fabric 模组前完成处理。服务会校验目标类哈希，将原文件以 `.jar.backup` 后缀保存在旁边；不认识或已修改过的 jar 会保持原样。在开发运行中，Gradle 会在启动前把 Trickster 依赖复制到 `run/mods/`，供同一服务处理。
 
 ## 开发文档
 
-完整开发文档索引（GPU 粒子、ALLVR、Allay Storm、shaderpack 集成、持久化与未关闭评审项）见
-[docs/README.md](./docs/README.md)。GPU 粒子引擎（`/cmi particle` 调试命令与自托管着色器）见
-[docs/particle-engine-dev.md](./docs/particle-engine-dev.md)。
+开发文档索引、实现状态和已知缺口见 [docs/README.md](./docs/README.md)，内容涵盖 GPU 粒子与包裹、ALLVR、悦灵风暴和着色包集成。
 
-## 许可
+## 许可证
 
 MIT License

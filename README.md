@@ -2,226 +2,147 @@
 
 [中文](./README_zh.md)
 
-A NeoForge addon for **Create** that bridges kinetic (rotational) power with magical
-mods: convert stress into mana, atomize fluids into volumetric mist, automate
-spell-casting item production, and more — all through Create's mechanical systems.
+Create: Mana Industry is a NeoForge addon for **Minecraft 1.21.1** and **Create**. It adds Create
+machinery, magical fluids, and integrations for moving resources between kinetic and magic systems.
+The project also includes experimental GPU rendering, logistics, and an expanded-height dimension;
+those systems are still under active development.
 
 ## Features
 
-### Core Mechanics
+### Create machines, fluids, and recipes
 
-- **Kinetic Mana Generator** — consumes Create rotational stress to produce mana,
-  charging Trickster knots placed in Spell Constructs or Charging Arrays.
-  Stress-per-RPM is adjustable via an in-world scroll box.
-- **Kinetic Atomizer** — atomizes piped fluids into a volumetric mist field whose
-  radius scales with speed. Mist concentration decays with distance; overlapping
-  fields combine. Required for mist-based recipes.
-- **Condenser** — condenses mist back into liquid when Coolant flows through it,
-  injecting the recovered fluid into a Create Item Drain below. Efficiency
-  scales with coolant flow and mist concentration. Press ice to make Coolant.
-- **Allay Burner** — a blaze-burner-style heat source centered on a captured
-  allay. It burns amethyst materials and Liquid Media for burn time, mirrors a
-  Jukebox's record slot, and emits a Liquid Soul mist field while burning.
-  Adds the `allayheated` heat requirement for basin recipes.
-- **Mist field system** — a server-side spatial data store (per-dimension
-  `ConcurrentHashMap`) for atomizer mist fields. Concentration is computed
-  on-the-fly via Euclidean distance, with dominant-source resolution for
-  overlapping fields. Timed emissions support recipe byproducts.
+- **Kinetic Mana Generator** converts Create stress into mana; its stress-per-RPM setting can be
+  adjusted with the in-world scroll box. With Trickster installed, it can charge knots in compatible
+  constructs and charging arrays.
+- **Kinetic Atomizer** turns supported piped fluids into a spatial mist field. The field radius
+  scales with rotational speed, and concentration falls with distance. Custom recipes can require
+  mist or emit it as a byproduct.
+- **Condenser** uses a separate Coolant line to recover fluid from nearby mist and sends the result
+  to an Item Drain below.
+- **Allay Burner** is a Create heat source built around a captured allay and fueled by amethyst
+  materials or Liquid Media. It supports records and releases Liquid Soul mist while burning; basins
+  can request its `allayheated` heat level.
+- Adds Liquid Mana, Liquid Media, Liquid Source, Liquid Soul, Coolant, Molten Rose Quartz, and
+  Molten Prismarine Quartz. Create pipes and tanks can move the fluids; optional magic-mod
+  integrations add their respective resource bridges.
+- Adds heated compacting, mist compacting/mixing, vaporizing, and vapor-deposition processing.
+  Recipes cover amethyst-to-media conversion, quartz processing, and sheets coated with amethyst and
+  rose quartz.
+- The included heated mixing recipe converts 250 mB of Liquid Media into 125 mB of Liquid Mana. A
+  superheated mist recipe turns 250 mB of Liquid Mana into a Liquid Media mist emission. Ice can be
+  compacted into Coolant.
+- Adds connected Molten Salt Fuel Tanks and the fuel-rod multiblock structure.
 
-### Fluid System
+### Hexcasting
 
-- **Liquid Mana** — a full-bright fluid that stores mana; compatible with
-  Create's pipe and tank networks. Configured via `manaPerBucket`.
-- **Liquid Media** — a pink, glowing fluid that stores Hexcasting media
-  (1 bucket = `mediaPerBucket` media units, default 400,000). Bridge fluid
-  between Create and Hexcasting energy systems.
-- **Media conversion** — Heated Mixing converts Liquid Media into Liquid Mana
-  at 1:1. Atomizers turn supported fluids into mist; Condensers recover the
-  mist's fluid with a separate Coolant circuit and an Item Drain below.
+With Hexcasting installed, Create can automate Cypher, Trinket, Artifact, and Media Battery
+production: a Deployer writes patterns, a Spout adds Liquid Media, and a Mechanical Press finalizes
+the item while preserving its data. Media Batteries can also be filled and drained through Create
+fluid networks.
 
-### Recipe Types
+Other integrations include slate stonecutting recipes for non-great-spell patterns, actions for
+reading an Iota from an item on a Depot or Placard and lighting Blaze Burners or Allay Burners, plus
+querying players in spell circles. A configurable server-side Hex JIT compiles hot call
+sites; its default mode is `AUTO` and can be changed in the server config.
 
-- **Heated Compacting** — heated basin recipe for the Mechanical Press.
-  Converts amethyst dust/shards/charged amethyst into Liquid Media (output
-  dynamically recalculated from config values).
-- **Mist Compacting** — press recipe that requires or produces mist byproducts.
-- **Mist Mixing** — mixer recipe with mist conditions and emissions
-  (duration, radius, amount configurable per recipe).
+The in-game guide content is packaged as Patchouli entries with English and Simplified Chinese
+localization.
 
-### Trickster Integration
+### Trickster, Bits 'n' Bobs, and Ars Nouveau
 
-- **Trickster trick:** `temporary_kinetic_stress` — temporarily applies stress
-  and speed to any kinetic block entity at a mana cost, with configurable
-  magnitude and duration.
-- **Sequenced assembly** — craft Trickster knots via Create's assembly line:
-  Emerald + Glass under a Deployer → incomplete knot → repeated Spout filling
-  with Liquid Mana → intact knot. Pressing an intact knot makes a cracked knot.
-  Supports emerald, prismatic, diamond, echo, and astral knots.
-- **Display Link targets** — write text into Spell Construct and Modular
-  Spell Construct arguments. Individual arguments or core+argument pairs.
-- **Mechanical Arm support** — arms can insert/extract knot items from
-  Trickster Charging Arrays, Spell Constructs, and Modular Spell Constructs.
-- **Kinetics Spell Core** — attach to a Modular Spell Construct to link it
-  with cogwheel-chain networks (Bits 'n' Bobs), exposing kinetic stats as
-  Trickster data for spell logic.
+- Trickster adds knot assembly and filling, mechanical-arm interaction with knots and constructs,
+  Display Link targets, a temporary kinetic-stress trick, and mana/media exchange tricks.
+- The Kinetics Spell Core exposes cogwheel-chain stress from Create: Bits 'n' Bobs to Trickster
+  spells.
+- Ars Nouveau integration provides Liquid Source support and source-jar fluid handling. Source
+  Berry recipes are available only when Ars Nouveau is installed.
 
-### Hexcasting Integration
+### Experimental systems
 
-- **Automated casting item pipeline** — fully automate Cypher, Trinket, and
-  Artifact production:
-  1. Deployer + Iota-holding item → writes patterns onto the item
-  2. Spout + Liquid Media → fills media up to config-defined capacity
-  3. Mechanical Press → finalizes into the complete Hexcasting item,
-     transferring all patterns, media, and pigment intact
-- **Media battery assembly** — Deployer + Glass Bottle + Large Scroll
-  (Craft Battery op_id) → fills with Liquid Media → Press → Phial of Media.
-  Final capacity matches the filled media amount.
-- **Custom Hexcasting action** — `Read Iota from Block`
-  (pattern: `wqwqwqwqwqwaw`, 0 media). Reads an Iota from an
-  Iota-holding item resting on a Create Depot or Placard.
-- **Custom Hexcasting action** — `Light Burner`
-  (pattern: `qwawq`). Consumes a vector (block position) and a number
-  (burn time in seconds) to light the Create Blaze Burner or the Allay
-  Burner at that position and add the given burn time. Media is charged
-  per second at the burner's own burn rate, so the spell is economically
-  equivalent to pouring in Liquid Media. Empty burners (no blaze inside)
-  and SEETHING/creative burners are left untouched.
-- **Slate pattern stonecutting** — dynamically registers stonecutter recipes
-  for every non-great-spell Hexcasting action. Place a blank Slate in a
-  Stonecutter to apply any pattern.
-- **Media battery fluid handler** — finalized batteries support fill/drain
-  via Create Fluid Pipes, enabling use as media buffers in automation.
-- **Patchouli guide entries** — 7 entries added to Hexcasting's "Hexbook"
-  covering all integration features, with full English and Chinese
-  localization.
+These systems are present in the codebase but are not yet considered fully game-verified. The
+[development index](./docs/README.md) links to implementation notes and known gaps.
 
-### Visual & Network
-
-- **Volumetric mist rendering** — mist fields render as semi-transparent
-  colored volumes using Veil shader post-processing (Veil optional but
-  recommended).
-- **Network sync** — mist field state synced to clients via custom packets
-  for real-time rendering updates.
+- **ALLVR Allay Dimension** adds a custom dimension with standard-height terrain and cube storage
+  above and below it. Dimension rendering, block-entity synchronization, and some vanilla tick
+  behavior remain in development. Sodium is required on clients.
+- **Allay Storm** is a persistent, server-managed GPU swarm encounter. Operators can start it with
+  `/cmi particle allaystorm [count]` and stop it with `/cmi particle allaystorm stop`; the command
+  requires permission level 2. Encounter balance and behavior still need in-game validation.
+- **GPU particle engine** handles high-volume particles, model particles, and Hexcasting effects.
+  Client settings include a frame budget and automatic emission throttling. Shader-pack integration
+  is available, with compatibility depending on the installed renderer versions.
+- **GPU Create package simulation** is an opt-in experiment. It is disabled by default and requires
+  matching client and server settings.
 
 ## Dependencies
 
-### Required
-- [NeoForge](https://neoforged.net) (1.21.1, 21.1+)
-- [Create](https://createmod.net) (6.0.10+)
+Java 21 is required.
 
-### Optional
-- [Trickster](https://modrinth.com/mod/trickster) (2.0.0-beta.56+) — knot automation, kinetic spell core, Display Link targets, stress trick
-- [Hexcasting](https://modrinth.com/mod/hexcasting) (0.12.0-devel-pre-35+) — casting item pipeline, media batteries, custom hex action, slate stonecutting
-- [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs) (2.1.9-beta+) — cogwheel chain integration
-- [Veil](https://modrinth.com/mod/veil) (4.1.4+) — volumetric mist shader rendering
+| Dependency | Requirement |
+|---|---|
+| Minecraft | 1.21.1 |
+| NeoForge | 21.1.236 or newer |
+| Create | 6.0.10 or newer |
+| Sodium | 0.8.13 on every client; not needed on a dedicated server |
+
+The following mods are optional. Their integration is enabled when the mod is installed:
+
+| Mod | Minimum version | Integration |
+|---|---:|---|
+| [Trickster](https://modrinth.com/mod/trickster) | 2.0.0-beta.56 | Knots, spells, constructs, and kinetic links |
+| [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs) | 2.1.9-beta | Cogwheel-chain data for the Kinetics Spell Core |
+| [Hexcasting](https://modrinth.com/mod/hexcasting) | 0.12.0-devel-pre-53 | Casting-item automation, media storage, and custom actions |
+| HexParse | 1.21.1-1.11.2.pre53 | Adapters for integration-specific Hexcasting data |
+| [Veil](https://modrinth.com/mod/veil) | 4.1.4 | Volumetric mist and related rendering effects |
+| [Ars Nouveau](https://modrinth.com/mod/ars-nouveau) | 5.13.0 | Liquid Source and source-jar handling |
 
 ## Configuration
 
-Configs are split by side. Gameplay values live in the **server config**
-(`createmanaindustry-server.toml`) and are synced to connecting clients, so a
-server's values win for everyone; rendering options live in the **client
-config** (`createmanaindustry-client.toml`).
+NeoForge creates `createmanaindustry-server.toml` and `createmanaindustry-client.toml` in the config
+directory. Gameplay and balance values are server-side; rendering and particle controls are
+client-side. Each file includes comments for every setting.
 
-### Server — `createmanaindustry-server.toml`
+Common server settings:
 
-**fluid** — fluid conversion ratios:
+| Setting | Default | Purpose |
+|---|---:|---|
+| `fluid.manaPerBucket` | 2048 | Mana represented by one bucket of Liquid Mana |
+| `fluid.mediaPerBucket` | 400000 | Media represented by one bucket of Liquid Media |
+| `kinetics.manaPerStress` | 0.001 | Mana produced per stress unit per tick |
+| `mist.mistMaxRadius` | 16 | Maximum atomizer mist radius in blocks |
+| `mist.mistFluidPerTick` | 8 | Base atomizer fluid use at 256 RPM, in mB/tick |
+| `mist.condenseEfficiency` | 5.0 | Condenser base output per concentration unit, in mB/tick |
+| `fuel_tank.fuelTankCapacity` | 8 | Buckets stored per fuel-tank block |
+| `hexcasting.jit.mode` | `AUTO` | Hex JIT mode: `OFF`, `PROFILE`, or `AUTO` |
 
-| Key | Default | Description |
-|---|---|---|
-| `manaPerBucket` | 2048 | Mana in one bucket of Liquid Mana |
-| `mediaPerBucket` | 400000 | Media in one bucket of Liquid Media |
-| `sourcePerBucket` | 1000 | Source in one bucket of Liquid Source |
-
-**kinetics** — kinetic-to-mana conversion:
-
-| Key | Default | Description |
-|---|---|---|
-| `manaPerStress` | 0.001 | Mana per stress unit per tick |
-| `kineticStressTrickManaMultiplier` | 2.0 | Mana cost multiplier for the temporary stress trick |
-
-**mist** — volumetric mist field behaviour:
-
-| Key | Default | Description |
-|---|---|---|
-| `mistMaxRadius` | 16 | Max atomizer mist radius in blocks |
-| `mistFluidPerTick` | 8 | Base fluid consumption per tick at 256 RPM |
-| `mistBaseConcentration` | 1.0 | Concentration at distance 0 |
-| `condenseEfficiency` | 5.0 | Base mB/tick condensed per concentration unit |
-
-**allay_burner** — Allay Burner fuel and mist:
-
-| Key | Default | Description |
-|---|---|---|
-| `mediaConsumedPerTick` | 50 | Media consumed per tick while burning (drives fuel burn duration and the Light Burner spell's cost) |
-| `allayBurnerMistRadius` | 4 | Radius of the Liquid Soul mist field |
-| `allayBurnerMistPerTick` | 1 | Liquid Soul mist capacity added per tick |
-
-**hexcasting** — incomplete item media capacities:
-
-| Key | Default | Description |
-|---|---|---|
-| `cypherMaxMedia` | 6400000 | Max media for incomplete cyphers |
-| `trinketMaxMedia` | 64000000 | Max media for incomplete trinkets |
-| `artifactMaxMedia` | 640000000 | Max media for incomplete artifacts |
-| `batteryMaxMedia` | 640000000 | Max media for incomplete media batteries |
-
-The kinetic blocks' **stress** values (`impact` / `capacity` sections) also live in this file.
-
-### Client — `createmanaindustry-client.toml`
-
-**rendering** — volumetric mist rendering:
-
-| Key | Default | Description |
-|---|---|---|
-| `mistGlowStrength` | 0.5 | Global multiplier for volumetric mist glow |
-| `mistDebugShadow` | false | DEBUG: visualize Tyndall shadow-map sampling as mist color |
+The server file also has settings for Allay Burner fuel, fuel-rod structure limits, Hexcasting item
+capacities, and Allay Storm behavior. The client file controls mist glow, GPU particle limits and
+throttling, Hexcasting particle redirects, and ALLVR LOD. GPU package authority is disabled by
+default on both sides.
 
 ## Build
+
+Use Java 21 and run:
 
 ```bash
 ./gradlew build
 ```
 
-The build produces a single installable `createmanaindustry-<version>.jar`
-in `build/libs/`. Put this jar in `mods/`; the early Trickster patch service is
-included. The main mod is embedded and discovered separately, keeping it out of
-ModLauncher's service layer. Development runs load main from its source set and
-automatically add the bootstrap-only jar from `build/internal/`.
+On Windows, run `.\gradlew.bat build`. The installable mod jar is written to
+`build/libs/createmanaindustry-0.2.6.jar`. The bootstrap-only jar used by development launches is
+kept under `build/internal/` and is not a separate player-installation file.
 
-When Connector is installed, Create Mana Industry automatically patches the
-Trickster jar before Connector scans Fabric mods. This is currently restricted
-to Trickster `2.0.0-beta.56` and the verified `KeyBindingMixin.class`
-(SHA-256 `47a8849c8056c8f7776d3aa83cd359247ebf1b640a2994dd8f230c8ab6af7769`).
-The patch replaces the three affected keybinding wrappers with handlers for
-NeoForge's `KeyMappingLookup` API, preserving contextual key priority and
-clearing competing bindings. It also gives the chunk-pinning `worldPinTick`
-injection an explicit `ChunkPos` target descriptor, avoiding NeoForge's added
-`BlockPos` overload. The original `ServerWorldMixin.class` must match SHA-256
-`2ba126372f77660835ad7d363098c7ec01accb44eb9b536d9589d7d97a3e27c7`.
-Only the current patch is recognized; older patch markers are left unchanged.
-Other methods and resources are preserved. In a player installation, the Trickster jar in `mods/` is
-modified in place, and the original is saved beside it with the suffix
-`.jar.backup`. In this project's ModDevGradle development runs, a Gradle task
-copies the Trickster development dependency into `run/mods/` before
-`runClient`, `runServer`, `runGameTestServer`, or `runData`; the patch service
-scans that folder and saves its backup beside the copied jar. The dependency is
-kept out of `runtimeClasspath`, so Connector sees the copied jar from `mods/`
-instead of another candidate from Gradle's cache.
-Resource-only changes such as translations are supported as long as
-both target mixin classes are unchanged. To restore the original, close the game,
-copy the backup over the patched jar while keeping the original `.jar` filename,
-then remove the backup.
-Other Trickster versions, changed target classes, and ambiguous multiple-jar
-installations are left untouched and reported in the log; the original
-Connector startup error may still occur in those cases. If the target jar's
-directory cannot be written, the patch is skipped and a warning is logged.
+When Connector is installed, the bundled early startup service recognizes and patches the verified
+Trickster `2.0.0-beta.56` jar before Connector scans Fabric mods. It checks the target class hashes,
+saves the original beside the jar as `.jar.backup`, and leaves unrecognized or modified jars
+untouched. In development runs, Gradle copies the Trickster dependency into `run/mods/` before
+launch so the same service can process it there.
 
-## Development Documentation
+## Development documentation
 
-The complete development-documentation index (GPU particles, ALLVR, Allay
-Storm, shaderpack integration, persistence, and open review items) is in
-[docs/README.md](./docs/README.md). The GPU particle engine details are in
-[docs/particle-engine-dev.md](./docs/particle-engine-dev.md).
+See [docs/README.md](./docs/README.md) for the development-documentation index, implementation
+status, and known gaps. It covers GPU particles and packages, ALLVR, Allay Storm, and shader-pack
+integration.
 
 ## License
 
