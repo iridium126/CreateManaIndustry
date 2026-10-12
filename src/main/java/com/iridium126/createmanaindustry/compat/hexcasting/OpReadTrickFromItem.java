@@ -44,6 +44,7 @@ public class OpReadTrickFromItem implements ConstMediaAction {
         SpellPart spell = FragmentComponent.getSpellPart(held.stack())
                 .orElseThrow(() -> MishapBadOffhandItem.of(held.stack(), "trick"));
 
-        return List.of(new TrickIota(spell));
+        Iota converted = FragmentConverter.fragmentToIota(spell);
+        return List.of(converted != null ? converted : new TrickIota(spell));
     }
 }

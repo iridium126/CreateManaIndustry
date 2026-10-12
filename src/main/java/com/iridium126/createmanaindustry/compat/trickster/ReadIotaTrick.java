@@ -2,6 +2,8 @@ package com.iridium126.createmanaindustry.compat.trickster;
 
 import java.util.Optional;
 
+import com.iridium126.createmanaindustry.compat.hexcasting.FragmentConverter;
+
 import at.petrak.hexcasting.api.casting.iota.Iota;
 import at.petrak.hexcasting.xplat.IXplatAbstractions;
 import dev.enjarai.trickster.spell.Fragment;
@@ -21,8 +23,9 @@ import net.minecraft.world.item.ItemStack;
 
 /**
  * Trickster trick: reads a Hexcasting {@link Iota} from an iota-holding item
- * in the given slot (defaulting to the caster's other hand) and produces an
- * {@link IotaFragment}. Modeled on Trickster's own {@code ReadSpellTrick}.
+ * in the given slot (defaulting to the caster's other hand) and converts it to
+ * the corresponding Trickster fragment, falling back to {@link IotaFragment}
+ * when needed. Modeled on Trickster's own {@code ReadSpellTrick}.
  * <p>
  * PLACEHOLDER pattern {@code (6, 7, 4, 1, 0, 3, 4, 5, 2, 1)} — verified statically
  * against all vendored Trickster patterns; confirm in-game (a registry
@@ -55,13 +58,14 @@ public class ReadIotaTrick extends Trick<ReadIotaTrick> {
             throw new InvalidItemBlunder();
         }
 
-        byte[] bytes;
         try {
-            bytes = IotaFragment.serializeIota(iota);
-        } catch (RuntimeException e) {
-            // Iota not serializable (e.g. oversized — degrades to garbage) — treat as invalid item.
-            throw new InvalidItemBlunder();
+            return Optional.of(FragmentConverter.iotaToFragment(iota));
+        } catch (RuntimeException conversionFailure) {
+            try {
+                return Optional.of(new IotaFragment(IotaFragment.serializeIota(iota)));
+            } catch (RuntimeException serializationFailure) {
+                throw new InvalidItemBlunder();
+            }
         }
-        return Optional.of(new IotaFragment(bytes));
     }
 }

@@ -7,9 +7,10 @@
 }
 ```
 
-Create: Mana Industry registers three tricks of its own. The first lets
+Create: Mana Industry registers four tricks of its own when Hexcasting is installed. The first lets
 you spend mana to *push* kinetic machinery around; the other two are the
-front door to the [Hexcasting Bridge](^createmanaindustry:mana_industry/hexcasting_bridge).
+front door to the [Hexcasting Bridge](^createmanaindustry:mana_industry/hexcasting_bridge),
+and the fourth converts mana into media.
 
 ;;;;;
 
@@ -40,3 +41,5 @@ Construct spends media stored in the construct; casting as a player spends
 media from your inventory. See the
 [Hexcasting Bridge](^createmanaindustry:mana_industry/hexcasting_bridge)
 for the full picture.
+
+The [Ploy of the Transmuter](^createmanaindustry:mana_industry/mana_conversion) exchanges traditional mana for Hex Casting media.

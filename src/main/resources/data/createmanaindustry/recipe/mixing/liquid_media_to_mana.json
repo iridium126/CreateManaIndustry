@@ -3,7 +3,7 @@
   "ingredients": [
     {
       "type": "neoforge:single",
-      "amount": 125,
+      "amount": 250,
       "fluid": "createmanaindustry:liquid_media"
     }
   ],

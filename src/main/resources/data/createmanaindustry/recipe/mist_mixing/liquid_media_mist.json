@@ -4,7 +4,7 @@
     {
       "type": "neoforge:single",
       "fluid": "createmanaindustry:liquid_mana",
-      "amount": 125
+      "amount": 250
     }
   ],
   "results": [],

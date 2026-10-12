@@ -7,7 +7,7 @@
 }
 ```
 
-机械动力：魔法工业注册了三个原创戏法。第一个让你花费魔力去*推动*动能机械；另外两个则是通往[咒法学之桥](^createmanaindustry:mana_industry/hexcasting_bridge)的大门。
+安装咒法学时，机械动力：魔法工业注册四个原创戏法。第一个让你花费魔力去*推动*动能机械；随后两个是通往[咒法学之桥](^createmanaindustry:mana_industry/hexcasting_bridge)的大门；第四个将魔力转换为媒质。
 
 ;;;;;
 
@@ -26,3 +26,5 @@
 <|trick@trickster:templates|trick-id=createmanaindustry:eval_iota|>
 
 **执行 Iota**——执行[Iota 片段](^createmanaindustry:mana_industry/hexcasting_bridge)中存储的咒法学法术，其余参数作为其初始栈。在法术组构台内施放时消耗组构台存储的媒质；以玩家身份施放时消耗你物品栏中的媒质。完整机制见[咒法学之桥](^createmanaindustry:mana_industry/hexcasting_bridge)。
+
+[转化者之戏法](^createmanaindustry:mana_industry/mana_conversion)可将传统魔力交换为咒法学的媒质。

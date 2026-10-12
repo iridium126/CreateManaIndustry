@@ -9,8 +9,8 @@ import dev.enjarai.trickster.spell.trick.Tricks;
 import net.minecraft.core.Registry;
 
 /**
- * Registers the {@link IotaFragment} fragment type and the {@code read_iota}
- * trick. Both reference Hexcasting classes, so this class must only be loaded
+ * Registers the {@link IotaFragment} fragment type and the Hexcasting bridge
+ * tricks. These reference Hexcasting classes, so this class must only be loaded
  * from the {@code HEX_ACTIVE && TRICKSTER_ACTIVE} gate in
  * {@link CreateManaIndustry}.
  * <p>
@@ -43,8 +43,9 @@ public final class CMITricksterIotaRegister {
                     new FragmentType<>(IotaFragment.class, IotaFragment.ENDEC, OptionalInt.of(0xb879ff)));
             Registry.register(Tricks.REGISTRY, CreateManaIndustry.modLoc("read_iota"), new ReadIotaTrick());
             Registry.register(Tricks.REGISTRY, CreateManaIndustry.modLoc("eval_iota"), new EvalIotaTrick());
+            Registry.register(Tricks.REGISTRY, CreateManaIndustry.modLoc("mana_to_media"), new ManaToMediaTrick());
             registered = true;
-            CreateManaIndustry.LOGGER.info("Registered Trickster iota fragment type and read_iota trick");
+            CreateManaIndustry.LOGGER.info("Registered Trickster iota fragment type and Hexcasting bridge tricks");
         } catch (Throwable t) {
             CreateManaIndustry.LOGGER.warn("Failed to register Trickster iota compat", t);
         }
