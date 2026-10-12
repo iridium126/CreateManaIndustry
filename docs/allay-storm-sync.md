@@ -58,7 +58,7 @@ storm 作为每个 `ServerLevel` 的 attachment 保存。持久化字段包括 a
 
 服务端文件为 `config/createmanaindustry-server.toml`，相关键：
 
-`allay_storm.stormCorrectionHz`、`stormMaxCount`、`stormGrowthPerSecond`、`stormWaveInterval`、`stormStarfallMembersPerColumnStep`、`stormStarfallMaxColumns`、`stormStarfallMembersPerColumn`、`stormWaveDamage`、`stormWaveRange`、`stormChaseY`、`stormDomeChance`、`stormDomeMemberFraction`、`stormDomeMaxMembers`。
+`allay_storm.stormCorrectionHz`、`stormMaxCount`、`stormGrowthPerSecond`、`stormWaveInterval`、`stormStarfallMembersPerColumnStep`、`stormStarfallMaxColumns`、`stormStarfallMembersPerColumn`、`stormWaveDamage`、`stormWaveRange`、`stormChaseY`、`stormDomeChance`、`stormDomeMemberFraction`、`stormDomeMaxMembers`、`stormHelixChance`、`stormHelixMemberFraction`、`stormHelixMaxMembers`、`stormHelixThrustSpeed`。
 
 命令（权限 2）：
 
@@ -79,9 +79,9 @@ storm 作为每个 `ServerLevel` 的 attachment 保存。持久化字段包括 a
 
 星冠落阵 AI 和路径见 [allay-storm-ai.md](allay-storm-ai.md)；GPU 模型粒子见 [particle-engine-dev.md](particle-engine-dev.md)。
 
-## 星冠 / 天穹协议（2026-10-11）
+## 星冠 / 天穹 / 双螺旋协议（2026-10-11）
 
-核心网络注册版本从 2 升至 3，服务端与客户端需同时更新。波次包仍使用 `storm_wave`，事件分为 START / UPDATE / LOCK / ABORT；开始和新观察者快照包含完整、按显式组边界排序的身份名单，目标/路径更新与锁定仅发送紧凑参数，不重发名单。
+核心网络注册版本从 3 升至 4，服务端与客户端需同时更新。波次包仍使用 `storm_wave`，事件分为 START / UPDATE / LOCK / ABORT；开始和新观察者快照包含完整、按显式组边界排序的身份名单，目标/路径更新与锁定仅发送紧凑参数，不重发名单。
 
 世界坐标为 float 绝对坐标；名单为有界 VarInt 身份数组，路径最多 6 点、星柱最多 32 柱、每柱最多 4096 人，校验有限数、尺寸与重复身份。代标识由持久化创建时间和 storm seed 共同生成，同 tick 重建也不共享旧事件。客户端锁定后拒绝滞后的 UPDATE。包内显式携带攻击类型和阶段；天穹使用六瓣加顶冠七组、中心、朝向、顺逆时针和同步时刻，观察者不从星冠落点数组猜测锁定状态。
 
@@ -90,3 +90,5 @@ storm 作为每个 `ServerLevel` 的 attachment 保存。持久化字段包括 a
 GPU 成员归属表与参数使用双 bank，身份阶段使用同代双 bank；compute/native 使用 SSBO，Iris 模型使用同 backing 的 TBO。圆环还有客户端资源代令牌，旧圆环即使碰巧与新攻击 wave ID/slot 相同也只会淡出。帧准备失败不发布新代。天穹复用同一域，未增加固定 buffer 或 sampler；实现与证据见 [天穹合围](gpu-dome-2026-10-11.md)。
 
 客户端激活仍由现有服务端扫描维护。除风暴中心范围外，锁定天穹的固定区域也能激活/维持附近观察者；原目标离开、风暴中心移走后，区域快照和接触上报仍有效。没有新增世界监听器。
+
+HELIX=2 使用两组真实臂名单、冻结曲线和 48 点弧长表；开始/观察者补同步带名单，锁定后不更新路线。区域激活与按玩家去重也覆盖 HELIX，接触包坐标为实际扫掠交点、时间为插值采样时刻。ABORT 携带原因，碰撞未就绪或逃生搬离不伤害。数据域维持 312 words/波次及原 SSBO/TBO 绑定；就绪变化仅更新 4 字节 header。见 [双螺旋记录](gpu-helix-2026-10-11.md)。

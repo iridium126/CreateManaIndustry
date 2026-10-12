@@ -1831,7 +1831,7 @@ public final class CMIParticleEngine {
             this.storm.dispatchStormPosReadback(slot, cap, stormUpper);
             // 6d. Wave-contact detection: only while a wave targets the LOCAL
             // player; the staging buffer rides the same frame fence back.
-            this.storm.dispatchWaveContactReadback(slot, stormUpper);
+            this.storm.dispatchWaveContactReadback(slot, stormUpper,dt);
 
             // 7. Census capture + commit markers. NO DRAW SUBMISSION happens in
             //    this phase any more — the old "Draw" section moved to runDraws

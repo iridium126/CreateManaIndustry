@@ -119,9 +119,11 @@ vec3 cmiStarRoute(uint b,float fraction){
  for(uint i=1u;i<6u;i++){vec4 point=cmiStarVec(b+32u+i*4u);if(point.w<.5)break;float len=distance(prev,point.xyz);if(seek<=len)return mix(prev,point.xyz,seek/max(len,1e-5));seek-=len;prev=point.xyz;}return prev;
 }
 #pragma cmi_include chunks/dome_navigation.glsl
+#pragma cmi_include chunks/helix_navigation.glsl
 vec3 cmiStarPoint(uint assignment,float seed,float time,vec3 home){
  uint slot=(assignment>>1u)&3u,col=(assignment>>3u)&31u,rank=assignment>>8u,b=cmiStarBase(slot);
  time=cmiStarTime(b,time);vec4 meta=cmiStarVec(b),t=cmiStarVec(b+4u),crown=cmiStarVec(b+8u),aim=cmiStarVec(b+12u),landing=cmiStarLanding(b,col),column=cmiStarColumn(b,col);
+ if(cmiHelix(b))return cmiHelixPoint(assignment,seed,time,home);
  if(cmiDome(b))return cmiDomePoint(assignment,seed,time,home);
  float angle=6.2831853*(float(col)/max(meta.z,1.))+aim.w*.0001;
  vec3 crownOffset=vec3(cos(angle)*crown.w,sin(angle)*crown.w*.258819,sin(angle)*crown.w*.965926);

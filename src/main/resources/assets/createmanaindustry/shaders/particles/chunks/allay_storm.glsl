@@ -37,11 +37,16 @@ uniform vec4  uWave[4];      // x waveSeed, y fraction, z assembleSec, w diveUnt
 uniform vec4  uWaveTarget[4]; // xyz live target aim point (feet + 0.5), w waveId (0 = inactive slot)
 
 // NAMED single-mul statements only — see the discipline note above.
-float cmiHash1(float p) {
-    p = fract(p * 0.1031);
-    p *= p + 33.33;
-    p *= p + p;
-    return fract(p);
+precise float cmiHash1(float p) {
+    // fract(mul) otherwise contracts the subtraction into FMA on some drivers.
+    precise float scaled=p*0.1031;
+    precise float fraction=scaled-floor(scaled);
+    precise float factor=fraction+33.33;
+    precise float product=fraction*factor;
+    precise float doubled=product+product;
+    precise float cubic=product*doubled;
+    precise float result=cubic-floor(cubic);
+    return result;
 }
 
 // ---- storm wave squads (server-launched dive waves) ------------------------
@@ -155,7 +160,7 @@ void cmiTyphoonHome(float ms, float radiusR, float omegaNow, float rotPhase, flo
     // arm index (0..5) + gaussian angular jitter, sigma = 0.2 * arm spacing
     // (2pi/6 = 1.04719755; sigma = 0.2094 rad — arm gaps drop to ~4% of the
     // arm-core density)
-    float hArm = ms * 5.7;
+    precise float hArm = ms * 5.7;
     float armAngle = floor(cmiHash1(hArm) * 6.0) * 1.04719755;
     float hG = ms * 9.1;
     float gu1 = max(cmiHash1(hG), 1e-6);

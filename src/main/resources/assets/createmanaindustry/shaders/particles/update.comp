@@ -250,11 +250,13 @@ void main() {
 
 #pragma cmi_include chunks/storm_motion.glsl
 
+    bool cmiContactSweepValid=true;
 #pragma cmi_include chunks/collision_sweep.glsl
 
     if (!swept)
         pos += vel * uDt;
     age += uDt;
+    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&cmiHelix(cmiStarBase((a>>1u)&3u))){float limit=cmiAttackSpeed(p0.w,uTimeSec,max(stormA.w,.5))*uDt+.01;if(!cmiContactSweepValid||distance(pos,p0.xyz)>limit)starStateWrite.words[member*2u+1u]|=0x80000000u;}}
 
     // DIE_ON_GROUND (cherry): vanilla removes the particle in the same tick it
     // touches ground — BEFORE the frame renders, so the landing position is

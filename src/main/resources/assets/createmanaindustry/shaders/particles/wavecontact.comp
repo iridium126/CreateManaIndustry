@@ -23,6 +23,10 @@ layout(std430, binding = BIND_WAVECONTACT) buffer WaveContactBuf { uint count; f
 layout(std430, binding = BIND_WAVE_STAMP) buffer WaveStamps { uint wave[]; } stamps;
 
 layout(std430,binding=28) readonly buffer StarStateWrite {uint words[];} state;
+layout(std430,binding=BIND_POOL_READ) readonly buffer PreviousParticles {vec4 data[];} previous;
+layout(std430,binding=BIND_PREV_COUNTER) readonly buffer PreviousCount {uint live;} previousCount;
+layout(std430,binding=BIND_MEMBERMAP) readonly buffer Members {float slots[];} memberMap;
+uniform float uDt;
 uniform uint uLocalWaveMask;
 uniform vec3 uLocalPlayerPos; // local player aim point (feet + 0.5), world space
 // uTimeSec / uWave / uWaveTarget are declared by chunks/allay_storm.glsl
@@ -62,11 +66,23 @@ void main() {
             continue; // outside the wave window
         if (uStarfallEnabled ? cmiStarClaim(p0.w,uTimeSec)!=int(k) || cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)!=4. : !cmiStormWaveMember(p3.z, w.x, w.y))
             continue;
-        vec3 d = p0.xyz - uLocalPlayerPos;
+        uint member = (uint(p0.w + 0.5) & MEMBER_IDX_MASK) - 1u;
+        vec3 contact=p0.xyz;float hitTime=uTimeSec;
+        if(uStarfallEnabled&&cmiHelix(cmiStarBase(k))){
+            uint b=cmiStarBase(k);if((cmiStarWord(1u)&(1u<<k))==0u||member>=uint(memberMap.slots.length())||(state.words[member*2u+1u]&0x80000000u)!=0u)continue;
+            uint old= floatBitsToUint(memberMap.slots[member]);if(old==0u||old>previousCount.live||old>uint(previous.data.length())/4u)continue;
+            vec4 before=previous.data[(old-1u)*4u],beforeLife=previous.data[(old-1u)*4u+3u];
+            if(cmiStarMember(before.w)!=member||beforeLife.y<=0.||floatBitsToUint(beforeLife.w)!=eid)continue;
+            vec3 segment=p0.xyz-before.xyz;float distance2=dot(segment,segment),limit=cmiHelixInfo(b).w*uDt+.01;
+            if(distance2>limit*limit)continue;
+            float alpha=distance2>1e-8?clamp(dot(uLocalPlayerPos-before.xyz,segment)/distance2,0.,1.):1.;
+            contact=before.xyz+alpha*segment;hitTime=uTimeSec-uDt*(1.-alpha);
+            if(cmiHelixPhase(b,cmiStarTime(b,hitTime))!=4.)continue;
+        }
+        vec3 d = contact - uLocalPlayerPos;
         if (dot(d, d) > CONTACT_R * CONTACT_R)
             continue;
-        uint member = (uint(p0.w + 0.5) & MEMBER_IDX_MASK) - 1u;
-        if(uStarfallEnabled&&(member>=131072u||state.words[member*2u]!=uint(wt.w)||state.words[member*2u+1u]!=4u||(!cmiDome(cmiStarBase(k))&&state.words[262400u+k*32u+((cmiStarAssignment(p0.w)>>3u)&31u)]!=128u)))continue;
+        if(uStarfallEnabled&&(member>=131072u||state.words[member*2u]!=uint(wt.w)||(state.words[member*2u+1u]&255u)!=4u||(cmiStarVec(cmiStarBase(k)+20u).x<.5&&state.words[262400u+k*32u+((cmiStarAssignment(p0.w)>>3u)&31u)]!=128u)))continue;
         uint stampIndex = member * 4u + k;
         if (stampIndex >= uint(stamps.wave.length()) || stamps.wave[stampIndex] == uint(wt.w)) continue;
         uint slot = atomicAdd(result.count, 1u);
@@ -77,10 +93,10 @@ void main() {
         uint o = slot * stride;
         result.entries[o + 0u] = float(uint(p0.w + 0.5) & MEMBER_IDX_MASK) - 1.0; // memberIdx
         result.entries[o + 1u] = wt.w;       // waveId (float-exact counter value)
-        result.entries[o + 2u] = p0.x;
-        result.entries[o + 3u] = p0.y;
-        result.entries[o + 4u] = p0.z;
-        if(uStarfallEnabled)result.entries[o+5u]=uTimeSec;
+        result.entries[o + 2u] = contact.x;
+        result.entries[o + 3u] = contact.y;
+        result.entries[o + 4u] = contact.z;
+        if(uStarfallEnabled)result.entries[o+5u]=hitTime;
         return; // one report per member thread
     }
 }

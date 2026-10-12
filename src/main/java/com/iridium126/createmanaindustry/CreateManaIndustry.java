@@ -167,7 +167,7 @@ public class CreateManaIndustry {
     }
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(MODID).versioned("3");
+        PayloadRegistrar registrar = event.registrar(MODID).versioned("4");
         registrar.playToClient(
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket.TYPE,
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket.STREAM_CODEC,

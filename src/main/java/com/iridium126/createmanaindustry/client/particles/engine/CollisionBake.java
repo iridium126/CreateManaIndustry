@@ -70,6 +70,7 @@ public final class CollisionBake {
         final int az;
         boolean dirty = true;
         long lastBuilt = Long.MIN_VALUE;
+        long pinnedUntil=Long.MIN_VALUE;
 
         Slot(int slice, int ax, int ay, int az) {
             this.slice = slice;
@@ -219,6 +220,7 @@ public final class CollisionBake {
             slots.put(key, s);
             metaDirty = true;
         }
+        var level=Minecraft.getInstance().level;if(level!=null)s.pinnedUntil=level.getGameTime()+2;
         return s.slice + 1;
     }
 
@@ -457,12 +459,23 @@ public final class CollisionBake {
     private void evictLru() {
         // LinkedHashMap accessOrder=true: iterator order = LRU -> MRU.
         var it = slots.entrySet().iterator();
-        if (it.hasNext()) {
+        long now=Minecraft.getInstance().level==null?Long.MAX_VALUE:Minecraft.getInstance().level.getGameTime();
+        while (it.hasNext()) {
             var e = it.next();
+            if(e.getValue().pinnedUntil>=now)continue;
             it.remove();
             occupied[e.getValue().slice] = false;
             metaDirty = true;
+            break;
         }
+    }
+    /** Bounded moving attack window; all current-frame users retain their slices. */
+    public boolean helixWindow(double x,double y,double z,boolean prefetch){
+        int ax=floor(x/4)*4-CENTER_XZ,ay=floor(y/4)*4-CENTER_Y,az=floor(z/4)*4-CENTER_XZ;
+        Anchor key=new Anchor(ax,ay,az);Slot slot=slots.get(key);
+        if(prefetch&&slot==null){boolean free=false;for(boolean used:occupied)if(!used){free=true;break;}if(!free)return false;}
+        if(ensureAnchorCell(ax,ay,az)==0)return false;
+        slot=slots.get(key);return slot!=null&&!slot.dirty&&slot.lastBuilt!=Long.MIN_VALUE;
     }
 
     private boolean createTexture() {

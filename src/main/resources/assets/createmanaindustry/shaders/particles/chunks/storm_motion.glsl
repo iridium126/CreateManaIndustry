@@ -18,7 +18,7 @@
     if (!corpse && stormA.x > 0.5) {
         // ----- typhoon: world-frame servo onto the circulating arm home point
         vec3 anchor = emitters.u[hb + 19u].xyz;
-        float spMaxV = max(stormA.w, 0.5);
+        float spMaxV = cmiAttackSpeed(p0.w,uTimeSec,max(stormA.w, 0.5));
         // Shared home-point function (chunks/allay_pose.glsl) — the SAME
         // function emit.comp spawns with, so the two call sites cannot
         // diverge and the spawn state IS this servo's equilibrium. The
@@ -48,7 +48,7 @@
         // pool), and a latched member never engages again.
         if(uStarfallEnabled){
             uint phase=0u;waveEngaged=cmiStarSteering(p0.w,p3.z,pos,target,spMaxV,target,vT,phase);
-            uint member=cmiStarMember(p0.w);if(member<131072u){uint a=cmiStarAssignment(p0.w),id=a==0u?0u:uint(cmiStarVec(cmiStarBase((a>>1u)&3u)).x+.5);if(id!=0u&&starStateRead.words[member*2u]==id)phase=max(phase,starStateRead.words[member*2u+1u]);starStateWrite.words[member*2u]=id;starStateWrite.words[member*2u+1u]=phase;}
+            uint member=cmiStarMember(p0.w);if(member<131072u){uint a=cmiStarAssignment(p0.w),id=a==0u?0u:uint(cmiStarVec(cmiStarBase((a>>1u)&3u)).x+.5);if(id!=0u&&starStateRead.words[member*2u]==id)phase=max(phase,starStateRead.words[member*2u+1u]&255u);starStateWrite.words[member*2u]=id;starStateWrite.words[member*2u+1u]=phase;}
         }else {
         if ((uint(p0.w + 0.5) & MEMBER_LATCH_BIT) == 0u) {
         for (uint k = 0u; k < 4u && !waveEngaged; k++) {
@@ -106,6 +106,7 @@
             }
         }
         sepW *= STORM_W_SEP;
+        if(waveEngaged&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),b=cmiStarBase((a>>1u)&3u);if(cmiHelix(b))sepW*=.35;}
         vec3 repW = vec3(0.0);
         // every synced player repels (all-client-consistent force set).
         // Squared-distance gate: the sqrt and the normalize
@@ -124,7 +125,7 @@
         }
         // whisker cone bends the engaged steering around obstacles (player
         // roofs/walls) instead of stalling against them
-        if (waveEngaged && uCollisionOn == 1) {
+        if (waveEngaged && uCollisionOn == 1 && !(uStarfallEnabled&&cmiHelix(cmiStarBase((cmiStarAssignment(p0.w)>>1u)&3u))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.)) {
             vec3 toT = target - pos;
             float dT = length(toT);
             if (dT > 1e-4) {
@@ -175,7 +176,7 @@
                     vel += (target - pos) * min(k * uDt, 0.5);
                     vel += (cB.xyz - vel) * min(2.5 * uDt, 0.35);
                     // Network correction follows the servo; it must obey the same motion cap.
-                    float cap=max(stormA.w,.5),speed=length(vel);
+                    float cap=cmiAttackSpeed(p0.w,uTimeSec,max(stormA.w,.5)),speed=length(vel);
                     if(speed>cap)vel*=cap/speed;
                 }
             }

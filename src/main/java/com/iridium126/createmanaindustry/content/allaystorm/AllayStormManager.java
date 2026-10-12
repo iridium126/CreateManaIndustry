@@ -154,6 +154,8 @@ public final class AllayStormManager {
         final AllayDome.Contacts reported=new AllayDome.Contacts();
         int kind=AllayDome.STARFALL, fallbackReason, checkedPetal=-1, currentPhase=1; int[] groupEnds;
         float centerX,centerY,centerZ,orientation,centerSec; int direction=1;
+        int abortReason;
+        AllayHelix.Flight helix; AllayHelix.Selection helixRoster; long lastObstacleTick;
         final it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap memberColumns=new it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap();
         final float start,assemble,crownX,crownY,crownZ; float radius;
         float lock,end; float[] route,landings; boolean locked; long lastAimTick,lastRouteTick;
@@ -284,12 +286,12 @@ public final class AllayStormManager {
                 it.remove();
                 rt.waveByTarget.remove(w.target);
             } else if ((invalid && AllayDome.targetRequired(w.kind,w.locked)) || !data.active) {
-                broadcastWave(level,rt,ClientboundStormWavePacket.abort(w.id,w.epoch));
+                broadcastWave(level,rt,ClientboundStormWavePacket.abort(w.id,w.epoch,w.kind==StormAttack.HELIX?6:0));
                 releaseWave(rt,w);
                 it.remove();
                 rt.waveByTarget.remove(w.target);
-            } else if(!(w.kind==AllayDome.DOME?advanceDome(level,rt,w,tp,now,nowSec):advanceStarfall(level,rt,w,tp,now,nowSec))) {
-                broadcastWave(level,rt,ClientboundStormWavePacket.abort(w.id,w.epoch));releaseWave(rt,w);it.remove();rt.waveByTarget.remove(w.target);
+            } else if(!(w.kind==StormAttack.HELIX?advanceHelix(level,rt,w,tp,now,nowSec):w.kind==AllayDome.DOME?advanceDome(level,rt,w,tp,now,nowSec):advanceStarfall(level,rt,w,tp,now,nowSec))) {
+                broadcastWave(level,rt,ClientboundStormWavePacket.abort(w.id,w.epoch,w.abortReason));releaseWave(rt,w);it.remove();rt.waveByTarget.remove(w.target);
             }
         }
 
@@ -336,7 +338,14 @@ public final class AllayStormManager {
     private static void launchWave(ServerLevel level,Runtime rt,AllayStormData data,ServerPlayer target,long now,int alive){
         Track track=rt.tracks.get(target.getUUID());if(track==null)return;
         int seed=level.random.nextInt(1<<24),fallback=AllayDome.NO_FALLBACK;
-        if(AllayDome.choose(level.random.nextDouble(),ServerConfig.stormDomeChance)){
+        int kind=StormAttack.choose(level.random.nextDouble(),ServerConfig.stormDomeChance,ServerConfig.stormHelixChance);
+        if(kind==StormAttack.HELIX){
+            int quota=StormAttack.quota(alive,ServerConfig.stormHelixMemberFraction,ServerConfig.stormHelixMaxMembers);
+            var roster=AllayHelix.select(data.count,data.dead,rt.waveReserved,quota,data.stormSeed,seed);
+            if(roster.members().length>=512){if(launchHelix(level,rt,data,target,now,seed,roster,track))return;fallback=4;}
+            else fallback=3;
+        }
+        if(kind==StormAttack.DOME){
             int quota=AllayDome.quota(alive,ServerConfig.stormDomeMemberFraction,ServerConfig.stormDomeMaxMembers);
             int[] roster=AllayDome.select(data.count,data.dead,rt.waveReserved,quota,seed);
             if(roster.length>=AllayDome.MIN_MEMBERS){
@@ -357,7 +366,83 @@ public final class AllayStormManager {
         broadcastWave(level,rt,wavePacket(wave,AllayStarfall.START,true,target.getId()));
     }
     private static ClientboundStormWavePacket wavePacket(Wave w,int event,boolean roster,int targetId){
-        return new ClientboundStormWavePacket(w.id,w.epoch,event,w.seed,targetId,w.tier,w.columns,w.perColumn,w.start,w.assemble,w.lock,w.end,w.crownX,w.crownY,w.crownZ,w.radius,roster?w.members:new int[0],w.route.clone(),w.landings.clone(),w.kind,w.currentPhase,w.groupEnds.clone(),w.centerX,w.centerY,w.centerZ,w.orientation,w.direction,w.centerSec,w.fallbackReason);
+        return new ClientboundStormWavePacket(w.id,w.epoch,event,w.seed,targetId,w.tier,w.columns,w.perColumn,w.start,w.assemble,w.lock,w.end,w.crownX,w.crownY,w.crownZ,w.radius,roster?w.members:new int[0],w.route.clone(),w.landings.clone(),w.kind,w.currentPhase,w.groupEnds.clone(),w.centerX,w.centerY,w.centerZ,w.orientation,w.direction,w.centerSec,w.fallbackReason,w.helix);
+    }
+
+
+    private static boolean launchHelix(ServerLevel level,Runtime rt,AllayStormData data,ServerPlayer target,long tick,int seed,AllayHelix.Selection roster,Track track){
+        float length=AllayHelix.length(roster.members().length),radius=AllayHelix.radius(roster.members().length);
+        double dx=target.getX()-rt.chaseX,dz=target.getZ()-rt.chaseZ,normal=Math.hypot(dx,dz);
+        if(normal<1){double a=(seed&65535)*Math.PI*2/65536;dx=Math.cos(a);dz=Math.sin(a);normal=1;}
+        float angle=(float)Math.atan2(dz,dx),x=(float)(target.getX()-24*dx/normal),z=(float)(target.getZ()-24*dz/normal),y=(float)target.getY()+radius+.8f;
+        AllayHelix.Flight flight;
+        try{flight=helixRoute(level,roster,x,y,z,angle,target,0,0);}catch(IllegalArgumentException e){return false;}
+        if(!helixClear(level,flight,0,flight.arcLength()))return false;
+        Vec3 from=new Vec3(rt.chaseX,ServerConfig.stormChaseY+8,rt.chaseZ);
+        float[] route=starfallRoute(level,from,new Vec3(x,y,z));
+        int id=++rt.waveIdCounter;if(id>=1<<24)rt.waveIdCounter=id=1;
+        Wave w=new Wave(id,seed,target.getUUID(),AllayStarfall.epoch(data.createdAtGameTime,data.stormSeed),tick,
+                new AllayStarfall.Selection(2,4096,roster.members()),swordTier((float)ServerConfig.stormWaveDamage),clockSeconds(tick),
+                (float)from.x,(float)from.y-8,(float)from.z,AllayStormData.vortexRadius(data.count),route);
+        w.kind=StormAttack.HELIX;w.helixRoster=roster;w.radius=radius;w.groupEnds=roster.ends();w.orientation=angle;w.centerX=x;w.centerY=y;w.centerZ=z;w.centerSec=clockSeconds(tick);
+        float charge=w.assemble+AllayStarfall.pathSeconds(route)+length/6+1;
+        w.lock=charge+AllayHelix.CHARGE_MIN;w.helix=flight.schedule(charge,w.lock+AllayHelix.WARNING);
+        w.end=w.helix.finish()+2+AllayStarfall.pathSeconds(route)+length/6+10;
+        w.memberColumns.clear();for(int rank=0;rank<w.members.length;rank++)w.memberColumns.put(w.members[rank],rank<w.groupEnds[0]?0:1);
+        for(int member:w.members)rt.waveReserved.set(member);
+        track.lastWaveLaunchGameTime=tick;rt.waves.add(w);rt.waveByTarget.put(w.target,w);
+        broadcastWave(level,rt,wavePacket(w,AllayStarfall.START,true,target.getId()));return true;
+    }
+    private static AllayHelix.Flight helixRoute(ServerLevel level,AllayHelix.Selection roster,float x,float y,float z,float angle,ServerPlayer target,float charge,float thrust){
+        float length=AllayHelix.length(roster.members().length),r=AllayHelix.radius(roster.members().length);
+        Vec3 tip=new Vec3(x,y,z),goal=target.position().add(0,r+.8,0),forward=new Vec3(Math.cos(angle),0,Math.sin(angle));
+        float[] corridor=starfallRoute(level,tip,goal);Vec3 middle=tip.lerp(goal,.5);
+        if(corridor.length>6){int at=(corridor.length/6)*3;middle=new Vec3(corridor[at],corridor[at+1],corridor[at+2]);}
+        Vec3 out=goal.subtract(middle);out=new Vec3(out.x,0,out.z).normalize();if(out.lengthSqr()<.1)out=forward;
+        Vec3[] controls={tip.subtract(forward.scale(length)),tip,middle,goal,goal.add(out.scale(12)),goal.add(out.scale(12+length))};
+        float[] packed=new float[18];for(int i=0;i<6;i++){packed[i*3]=(float)controls[i].x;packed[i*3+1]=(float)controls[i].y;packed[i*3+2]=(float)controls[i].z;}
+        return AllayHelix.flight(roster,packed,(float)ServerConfig.stormHelixThrustSpeed,charge,thrust);
+    }
+    private static boolean helixClear(ServerLevel level,AllayHelix.Flight flight,float from,float until){
+        return AllayHelix.clearTube(flight,from,until,(x,y,z,r)->{
+            for(int sx=-1;sx<=1;sx+=2)for(int sz=-1;sz<=1;sz+=2)if(!level.hasChunkAt(BlockPos.containing(x+sx*r,y,z+sz*r)))return false;
+            if(!level.noCollision(new net.minecraft.world.phys.AABB(x-r,y-r,z-r,x+r,y+r+.6,z+r)))return false;
+            return !level.getFluidState(BlockPos.containing(x,y-r-.1,z)).is(net.minecraft.tags.FluidTags.LAVA);
+        });
+    }
+    private static boolean advanceHelix(ServerLevel level,Runtime rt,Wave w,ServerPlayer target,long tick,float clock){
+        float now=w.start+AllayStarfall.elapsed(clock,w.start);
+        if(!w.locked){
+            if(target==null||!level.canSeeSky(target.blockPosition())){w.abortReason=6;return false;}
+            if(tick-w.lastAimTick>=10){
+                float seconds=(tick-w.lastAimTick)/20f;w.lastAimTick=tick;
+                float desired=(float)Math.atan2(target.getZ()-w.centerZ,target.getX()-w.centerX);
+                float difference=(float)Math.atan2(Math.sin(desired-w.orientation),Math.cos(desired-w.orientation));
+                float slew=Math.min((float)Math.toRadians(20),4/(w.helix.length()+w.radius+.6f))*seconds;
+                w.orientation+=Math.max(-slew,Math.min(slew,difference));
+                // Slow translation is horizontal only; final geometry revalidates the complete tube.
+                double gx=target.getX()-24*Math.cos(w.orientation),gz=target.getZ()-24*Math.sin(w.orientation);
+                double dx=gx-w.centerX,dz=gz-w.centerZ,distance=Math.hypot(dx,dz),move=Math.min(distance,2*seconds);
+                if(distance>1e-5){w.centerX+=dx/distance*move;w.centerZ+=dz/distance*move;}w.centerSec=now;
+                w.currentPhase=now<w.assemble?1:2;
+                broadcastWave(level,rt,wavePacket(w,AllayStarfall.UPDATE,false,target.getId()));
+            }
+            if(now<w.helix.charge()+AllayHelix.CHARGE_MIN)return true;
+            float desired=(float)Math.atan2(target.getZ()-w.centerZ,target.getX()-w.centerX);
+            double error=Math.abs(Math.atan2(Math.sin(desired-w.orientation),Math.cos(desired-w.orientation)));
+            if(error>Math.toRadians(12)){if(now>=w.helix.charge()+AllayHelix.CHARGE_MAX){w.abortReason=7;return false;}return true;}
+            AllayHelix.Flight locked;
+            try{locked=helixRoute(level,w.helixRoster,w.centerX,w.centerY,w.centerZ,w.orientation,target,w.helix.charge(),now+AllayHelix.WARNING);}catch(IllegalArgumentException e){w.abortReason=8;return false;}
+            if(!helixClear(level,locked,0,locked.arcLength())){w.abortReason=8;return false;}
+            w.helix=locked;w.lock=now;w.locked=true;w.currentPhase=3;
+            w.end=locked.finish()+2+AllayStarfall.pathSeconds(w.route)+locked.length()/6+10;
+            broadcastWave(level,rt,wavePacket(w,AllayStarfall.LOCK,false,target.getId()));
+        }
+        w.currentPhase=AllayHelix.phase(now,w.assemble,w.lock,true,w.helix);
+        if(w.currentPhase==4&&tick-w.lastObstacleTick>=5){
+            w.lastObstacleTick=tick;float arc=AllayHelix.progress(w.helix,now);
+            if(!helixClear(level,w.helix,Math.max(0,arc-w.helix.length()),Math.min(w.helix.arcLength(),arc+w.helix.speed()))){w.abortReason=5;return false;}
+        }return true;
     }
 
     private static boolean launchDome(ServerLevel level,Runtime rt,AllayStormData data,ServerPlayer target,long tick,int seed,int[] roster,Track track){
@@ -653,6 +738,8 @@ public final class AllayStormManager {
             double domeSq=Double.POSITIVE_INFINITY;
             for(Wave w:rt.waves)if(w.kind==AllayDome.DOME&&w.locked)domeSq=Math.min(domeSq,
                     AllayDome.distanceSquared(player.getX(),player.getY(),player.getZ(),w.centerX,w.centerY,w.centerZ,w.radius));
+            for(Wave w:rt.waves)if(w.kind==StormAttack.HELIX&&w.locked)domeSq=Math.min(domeSq,
+                    Math.pow(Math.max(0,Math.sqrt(AllayHelix.distanceSquared(w.helix,player.getX(),player.getY(),player.getZ()))-w.radius),2));
             if (t == null || !t.active) {
                 if (distSq <= activateSq || domeSq<=120*120)
                     activate(level, rt, data, player);
@@ -679,7 +766,7 @@ public final class AllayStormManager {
         // its interpolation would sit at the (block-quantized) ACTIVATE anchor
         // for up to one interval while the typhoon drifts on
         sendCenter(level, rt);
-        for(Wave w:rt.waves){ServerPlayer target=level.getServer().getPlayerList().getPlayer(w.target);if(target!=null||w.kind==AllayDome.DOME&&w.locked)PacketDistributor.sendToPlayer(player,wavePacket(w,AllayStarfall.START,true,target==null?-1:target.getId()));}
+        for(Wave w:rt.waves){ServerPlayer target=level.getServer().getPlayerList().getPlayer(w.target);if(target!=null||StormAttack.regional(w.kind)&&w.locked)PacketDistributor.sendToPlayer(player,wavePacket(w,AllayStarfall.START,true,target==null?-1:target.getId()));}
     }
 
     private static void deactivate(ServerLevel level, Runtime rt, AllayStormData data, ServerPlayer player) {
@@ -966,7 +1053,17 @@ public final class AllayStormManager {
         int col=w.memberColumns.get(idx);if(col<0)return;
         Vec3 contact=new Vec3(packet.relX(),packet.relY(),packet.relZ());
         if(!Double.isFinite(contact.x)||!Double.isFinite(contact.y)||!Double.isFinite(contact.z))return;
-        if(w.kind==AllayDome.DOME){
+        if(w.kind==StormAttack.HELIX){
+            if(AllayHelix.phase(sample,w.assemble,w.lock,w.locked,w.helix)!=4)return;
+            double reach=w.radius+2.4;
+            if(AllayHelix.distanceSquared(w.helix,contact.x,contact.y,contact.z)>reach*reach)return;
+            float[] local=new float[3];float arc=AllayHelix.progress(w.helix,sample);
+            // Reports must lie on the currently moving gun, not anywhere on the frozen corridor.
+            double nearest=Double.POSITIVE_INFINITY;
+            for(int step=0;step<=16;step++){float at=Math.max(0,arc-w.helix.length()*step/16);AllayHelix.point(w.helix.controls(),AllayHelix.parameter(w.helix,at),local,0);
+                double dx=contact.x-local[0],dy=contact.y-local[1],dz=contact.z-local[2];nearest=Math.min(nearest,dx*dx+dy*dy+dz*dz);}
+            if(nearest>reach*reach)return;
+        }else if(w.kind==AllayDome.DOME){
             if(col==AllayDome.CROWN||AllayDome.closingPetal(sample,w.lock,w.radius)!=col)return;
             double dx=contact.x-w.centerX,dz=contact.z-w.centerZ;
             if(dx*dx+dz*dz>(w.radius+2)*(w.radius+2)||contact.y<w.centerY-1||contact.y>w.centerY+w.radius+2)return;

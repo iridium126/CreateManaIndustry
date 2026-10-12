@@ -136,7 +136,8 @@ public final class ServerConfig {
     private static ModConfigSpec.DoubleValue STORM_WAVE_INTERVAL;
     private static ModConfigSpec.IntValue STORM_STARFALL_STEP, STORM_STARFALL_COLUMNS, STORM_STARFALL_MEMBERS;
     private static ModConfigSpec.DoubleValue STORM_DOME_CHANCE, STORM_DOME_FRACTION;
-    private static ModConfigSpec.IntValue STORM_DOME_MAX;
+    private static ModConfigSpec.IntValue STORM_DOME_MAX, STORM_HELIX_MAX;
+    private static ModConfigSpec.DoubleValue STORM_HELIX_CHANCE, STORM_HELIX_FRACTION, STORM_HELIX_SPEED;
     private static ModConfigSpec.DoubleValue STORM_WAVE_DAMAGE;
     private static ModConfigSpec.DoubleValue STORM_WAVE_RANGE;
     private static ModConfigSpec.IntValue STORM_CHASE_Y;
@@ -294,6 +295,10 @@ public final class ServerConfig {
         STORM_WAVE_INTERVAL = BUILDER
                 .comment("Seconds between starfall launches per player. Each player's cooldown fires independently; a wave launches only when the target is eligible (active, under open sky, within stormWaveRange of the chased center) and fewer than 4 waves are running. Waves are the storm's only offense: squad members break formation, follow a server-computed corridor to the target and deal stormWaveDamage on contact (self-reported by the target's client, server-validated).")
                 .defineInRange("stormWaveInterval", 60.0, 5.0, 600.0);
+        STORM_HELIX_CHANCE=BUILDER.comment("Helix chance; dome+helix above 1 is normalized. 双螺旋概率，与天穹合计超1按比例归一。").defineInRange("stormHelixChance",.20,0,1);
+        STORM_HELIX_FRACTION=BUILDER.comment("Living members taken from two opposite real arms. 双螺旋参战存活比例。").defineInRange("stormHelixMemberFraction",.10,0,1);
+        STORM_HELIX_MAX=BUILDER.comment("Maximum helix members; fewer than 512 falls back to starfall. 双螺旋人数上限。").defineInRange("stormHelixMaxMembers",8192,512,16384);
+        STORM_HELIX_SPEED=BUILDER.comment("Helix thrust member speed cap only; other phases stay at 6. 仅双螺旋贯击阶段的速度上限。").defineInRange("stormHelixThrustSpeed",12.0,6,18);
         STORM_DOME_CHANCE = BUILDER.comment("Dome attack probability; otherwise starfall. 天穹合围概率，其余使用星冠。").defineInRange("stormDomeChance", .20, 0, 1);
         STORM_DOME_FRACTION = BUILDER.comment("Living members requested by a dome; below 768 falls back to starfall. 天穹参战比例，不足 768 回退星冠。").defineInRange("stormDomeMemberFraction", .20, 0, 1);
         STORM_DOME_MAX = BUILDER.comment("Maximum dome members, shared reservations with starfall. 天穹人数上限，与星冠共用预留。").defineInRange("stormDomeMaxMembers", 16384, 768, 24576);
@@ -551,6 +556,8 @@ public final class ServerConfig {
     public static int stormMaxCount = 65536;
     public static double stormGrowthPerSecond = 20.0;
     public static double stormWaveInterval = 60.0;
+    public static double stormHelixChance=.20, stormHelixMemberFraction=.10, stormHelixThrustSpeed=12;
+    public static int stormHelixMaxMembers=8192;
     public static double stormDomeChance=.20, stormDomeMemberFraction=.20;
     public static int stormDomeMaxMembers=16384;
     public static int stormStarfallMembersPerColumnStep=4096, stormStarfallMaxColumns=16, stormStarfallMembersPerColumn=512;
@@ -648,6 +655,7 @@ public final class ServerConfig {
             stormMaxCount = STORM_MAX_COUNT.get();
             stormGrowthPerSecond = STORM_GROWTH_PER_SECOND.get();
             stormWaveInterval = STORM_WAVE_INTERVAL.get();
+            stormHelixChance=STORM_HELIX_CHANCE.get();stormHelixMemberFraction=STORM_HELIX_FRACTION.get();stormHelixMaxMembers=STORM_HELIX_MAX.get();stormHelixThrustSpeed=STORM_HELIX_SPEED.get();
             stormDomeChance=STORM_DOME_CHANCE.get();
             stormDomeMemberFraction=STORM_DOME_FRACTION.get();
             stormDomeMaxMembers=STORM_DOME_MAX.get();

@@ -564,9 +564,17 @@
   "createmanaindustry.configuration.stormStarfallMaxColumns.tooltip": "每波星冠落阵的最大星柱数；默认16，最大32。",
   "createmanaindustry.configuration.stormStarfallMembersPerColumn.tooltip": "每柱精确预留的存活成员人数；不足时减少规模，不占用其他波次成员。默认512。",
   "createmanaindustry.configuration.stormDomeChance": "天穹合围概率",
-  "createmanaindustry.configuration.stormDomeChance.tooltip": "每次攻击独立抽签。默认20%天穹、80%星冠，可连续选中同一种；人数不足或地形不适合回退星冠。",
+  "createmanaindustry.configuration.stormDomeChance.tooltip": "每次攻击独立抽签。默认20%天穹、20%双螺旋、60%星冠；特殊攻击概率合计超1时按比例归一。",
   "createmanaindustry.configuration.stormDomeMemberFraction": "天穹参战存活成员比例",
   "createmanaindustry.configuration.stormDomeMemberFraction.tooltip": "按存活人数精确选择未预留成员，少于768人回退星冠。默认20%；顶冠约10%，其余分配六瓣。",
   "createmanaindustry.configuration.stormDomeMaxMembers": "天穹参战人数上限",
-  "createmanaindustry.configuration.stormDomeMaxMembers.tooltip": "每波天穹人数上限，768–24576，默认16384。与星冠共用四波次和成员预留。"
+  "createmanaindustry.configuration.stormDomeMaxMembers.tooltip": "每波天穹人数上限，768–24576，默认16384。与星冠共用四波次和成员预留。",
+  "createmanaindustry.configuration.stormHelixChance": "双螺旋贯击概率",
+  "createmanaindustry.configuration.stormHelixChance.tooltip": "默认20%。天穹与双螺旋概率合计超过1时按比例归一，星冠使用剩余概率。",
+  "createmanaindustry.configuration.stormHelixMemberFraction": "双螺旋参战存活成员比例",
+  "createmanaindustry.configuration.stormHelixMemberFraction.tooltip": "默认10%。从两条相对的真实风暴臂选择未预留存活成员，途中死亡不补员。",
+  "createmanaindustry.configuration.stormHelixMaxMembers": "双螺旋参战人数上限",
+  "createmanaindustry.configuration.stormHelixMaxMembers.tooltip": "默认8192，范围512–16384；每股至少256人。不足或路线不安全回退星冠。",
+  "createmanaindustry.configuration.stormHelixThrustSpeed": "双螺旋贯击速度上限",
+  "createmanaindustry.configuration.stormHelixThrustSpeed.tooltip": "默认12格/秒，范围6–18；仅贯击阶段提高上限，弯曲路线按曲率降速，其他阶段保持6格/秒。"
 }

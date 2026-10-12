@@ -58,6 +58,7 @@
             // per frame; the scans only run on genuine embeds.
             bool insideSolid = solidAt(pos, mOrigin, slice);
             if (insideSolid) {
+                cmiContactSweepValid=false;
                 vec3 escDir = vec3(0.0);
                 float escDist = 0.0;
                 if (dot(vel, vel) > 1e-6) {

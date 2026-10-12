@@ -240,3 +240,13 @@ mat4 cmiAllayStarPartTransform(float age,float seed,vec3 velocity,int animation,
  mat4 transform=cmiAllayPartTransform(age,seed,velocity,animation,part,yaw,carry);
  if(starAttack&&uStarfallEnabled){mat4 center=mat4(1.);center[3].y=23.5;mat4 inverseCenter=mat4(1.);inverseCenter[3].y=-23.5;transform=center*cmiRotX(clamp(-velocity.y*.08,-.45,.45)*carry)*inverseCenter*transform;}return transform;
 }
+mat4 cmiAllayAttackPartTransform(float age,float seed,float identity,vec3 velocity,int animation,int part,out float yaw,float carry,bool attack){
+ int slot=attack&&uStarfallEnabled?cmiStarClaim(identity,uTimeSec):-1;
+ bool helix=slot>=0&&cmiHelix(cmiStarBase(uint(slot)));
+ if(helix)animation=0;
+ mat4 transform=cmiAllayStarPartTransform(age,seed,velocity,animation,part,yaw,carry,attack);
+ if(helix&&carry>0.){uint b=cmiStarBase(uint(slot));float time=cmiStarTime(b,uTimeSec);
+  if(cmiHelixPhase(b,time)!=4.||length(velocity.xz)<.05){float angle=cmiHelixHeading(b,time);yaw=atan(-cos(angle),sin(angle));}
+  mat4 center=mat4(1.);center[3].y=23.5;mat4 inverseCenter=mat4(1.);inverseCenter[3].y=-23.5;transform=center*cmiRotX(.3*carry)*inverseCenter*transform;
+ }return transform;
+}

@@ -13,7 +13,7 @@ public final class AllayDome {
     public static final int NO_FALLBACK=0, TOO_FEW=1, TERRAIN=2;
     private AllayDome() {}
     public static boolean choose(double random,double chance){return random<Math.max(0,Math.min(1,chance));}
-    public static boolean targetRequired(int kind,boolean locked){return kind!=DOME||!locked;}
+    public static boolean targetRequired(int kind,boolean locked){return StormAttack.targetRequired(kind,locked);}
     /** Distance to the locked attack cylinder, independent of the moving storm anchor. */
     public static double distanceSquared(double x,double y,double z,double cx,double cy,double cz,float radius){
         double dx=x-cx,dz=z-cz,horizontal=Math.max(0,Math.sqrt(dx*dx+dz*dz)-radius);

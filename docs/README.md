@@ -12,6 +12,7 @@
 
 | 文档 | 内容 | 状态 |
 | --- | --- | --- |
+| [gpu-helix-2026-10-11.md](gpu-helix-2026-10-11.md) | 双螺旋贯击、协议 4、区域扫掠与离屏验证 | 🟡 |
 | [gpu-dome-2026-10-11.md](gpu-dome-2026-10-11.md) | 天穹合围实现、区域伤害、协议 3 与离屏验证 | 🟡 |
 | [gpu-starfall-2026-10-11.md](gpu-starfall-2026-10-11.md) | 星冠落阵、128 粒子圆环、同代身份阶段、Iris 与性能证据 | 🟡 |
 | [particle-engine-dev.md](particle-engine-dev.md) | GPU 粒子池、发射器、排序、碰撞、Hexcasting 与 shaderpack | 🟡 |

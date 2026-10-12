@@ -564,9 +564,17 @@
   "createmanaindustry.configuration.stormStarfallMaxColumns.tooltip": "Maximum columns per starfall wave. Default 16, maximum 32.",
   "createmanaindustry.configuration.stormStarfallMembersPerColumn.tooltip": "Living members reserved per column; shortages reduce the wave and concurrent rosters never overlap. Default 512.",
   "createmanaindustry.configuration.stormDomeChance": "Dome Attack Chance",
-  "createmanaindustry.configuration.stormDomeChance.tooltip": "Independent choice per attack: default 20% dome, 80% starfall. Consecutive kinds are allowed. Short rosters or unsuitable terrain fall back to starfall.",
+  "createmanaindustry.configuration.stormDomeChance.tooltip": "Independent choice per attack: default 20% dome, 20% helix, 60% starfall. Combined special chances above 1 are normalized.",
   "createmanaindustry.configuration.stormDomeMemberFraction": "Living Members in a Dome",
   "createmanaindustry.configuration.stormDomeMemberFraction.tooltip": "Exact fraction of living, unreserved members; fewer than 768 falls back to starfall. Default 20%. About 10% form the crown; six petals share the remainder.",
   "createmanaindustry.configuration.stormDomeMaxMembers": "Maximum Dome Members",
-  "createmanaindustry.configuration.stormDomeMaxMembers.tooltip": "Per-dome roster limit, 768–24576, default 16384. Shares four wave slots and member reservations with starfall."
+  "createmanaindustry.configuration.stormDomeMaxMembers.tooltip": "Per-dome roster limit, 768–24576, default 16384. Shares four wave slots and member reservations with starfall.",
+  "createmanaindustry.configuration.stormHelixChance": "Helix Attack Chance",
+  "createmanaindustry.configuration.stormHelixChance.tooltip": "Default 20%. Dome and helix probabilities above a combined 1 are normalized; starfall uses the remainder.",
+  "createmanaindustry.configuration.stormHelixMemberFraction": "Living Members in a Helix",
+  "createmanaindustry.configuration.stormHelixMemberFraction.tooltip": "Default 10%. Select unreserved living members from two opposite real storm arms; deaths are not replaced.",
+  "createmanaindustry.configuration.stormHelixMaxMembers": "Maximum Helix Members",
+  "createmanaindustry.configuration.stormHelixMaxMembers.tooltip": "Default 8192, range 512–16384, at least 256 per stream. Short rosters or unsafe paths fall back to starfall.",
+  "createmanaindustry.configuration.stormHelixThrustSpeed": "Helix Thrust Member Speed Cap",
+  "createmanaindustry.configuration.stormHelixThrustSpeed.tooltip": "Default 12 blocks/s, range 6–18. Only thrust increases the cap; curves reduce center speed, other stages stay at 6."
 }

@@ -211,17 +211,17 @@ void main() {
         //     entirely for ~94% of seeds — every member derived the SAME
         //     identity, spawned stacked at one spot, and the d^2 > 1e-8
         //     separation guard then locked the clump permanently.
-        float s0 = cmiHash1(uStormSeed + 31.7);  // [0,1), one value per storm
-        float shift = s0 * 97.0;
-        float t = float(memberIdx) * 0.6123;
-        float p = t + 0.7;
-        float q = p + shift;                     // spans ~[0.7, 80360] -> ~8285 folds
-        float hA = cmiHash1(q);
-        float q2 = q * 7.31;                     // second pass, decorrelated input
-        float hB = cmiHash1(q2);
-        float mA = hA * 0.618;
-        float mB = hB * 0.382;
-        float mseed = mA + mB;                   // [0,1); 2048 members: exact, 131072: ~95% distinct
+        precise float s0 = cmiHash1(uStormSeed + 31.7);  // [0,1), one value per storm
+        precise float shift = s0 * 97.0;
+        precise float t = float(memberIdx) * 0.6123;
+        precise float p = t + 0.7;
+        precise float q = p + shift;                     // spans ~[0.7, 80360] -> ~8285 folds
+        precise float hA = cmiHash1(q);
+        precise float q2 = q * 7.31;                     // second pass, decorrelated input
+        precise float hB = cmiHash1(q2);
+        precise float mA = hA * 0.618;
+        precise float mB = hB * 0.382;
+        precise float mseed = mA + mB;                   // [0,1); 2048 members: exact, 131072: ~95% distinct
         float stormR = max(stormA.y, 2.0);
         float spMax = max(stormA.w, 0.5);
         // Home point: cmiTyphoonHome is the SAME function update.comp's

@@ -1,0 +1,21 @@
+# 双螺旋贯击：验证与固定输入基准
+
+Java: {'tests': 605, 'failures': 0, 'errors': 0, 'skipped': 0}
+MODEL population GPU: 1015 assertions passed
+Helix GPU: 6879381 assertions passed
+Starfall GPU: 1207030 assertions passed
+Shared Hex GPU: 5287 assertions passed
+Shared Hex GPU: 5290 assertions passed
+Dome GPU: 8755139 assertions passed
+MODEL shadow GPU: 4133222 assertions passed
+Package shaderpack GPU: 26733 assertions passed
+PASS: 89153 assertions
+Package GPU: 14675334 assertions passed
+Helix GPU: 6934061 assertions passed
+MODEL shadow GPU: 4133222 assertions passed
+
+CPU/GPU 原生六臂：131072 身份 × 3 seed 对照通过。
+当前帧 MODEL/Iris 三种攻击姿态、非零 SSBO 26–28 range/TBO 14、池压缩身份与扫掠安全通过。
+GPU: RTX 4070 Laptop / NVIDIA 581.15 / OpenGL 4.5.
+48 runs: 4 participant counts × 2 pool sizes × 2 attack modes × 3 rounds. 5760 measured samples.
+JAR SHA256: 0b845f541af8ab4a76578339615bf7f5d89b344a469af401293a9f017627cc01
