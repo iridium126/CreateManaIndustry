@@ -43,6 +43,7 @@
     "hexcasting.RecipeManagerMixin",
     "hexcasting.BlockEntitySlateKnotMixin",
     "trickster.TricksterSpellConstructSyncMixin",
+    "trickster.SimpleManaPoolEqualityMixin",
     "trickster.SpellContextMixin",
     "hextrick.ConstructBlockEntityMediaMixin",
     "bnb.CogwheelChainMixin",

@@ -1,0 +1,33 @@
+// Run with: ./gradlew runGameTestServer -I scripts/trickster/gametest.init.gradle
+gradle.projectsEvaluated {
+    def p = gradle.rootProject
+    def runDir = p.file('build/trickster-stock-test-run')
+    def owo = p.file('run/mods/owo-lib-neoforge-0.13.0-alpha.15+1.21.jar')
+    if (!owo.isFile()) throw new GradleException('Trickster tests require the existing local owo-lib fixture')
+    p.dependencies.add('localRuntime', p.files(owo))
+    p.sourceSets.main.java.srcDir(p.file('src/test/gametest/trickster/java'))
+    p.tasks.named('copyTricksterToRunMods', Copy).configure { into(new File(runDir, 'mods')) }
+    def resources = p.layout.buildDirectory.dir('trickster-stock-test-resources').get().asFile
+    p.sourceSets.main.resources.srcDir(resources)
+    def fixtures = p.tasks.register('tricksterStockTestFixtures') {
+        outputs.dir(resources)
+        doLast {
+            def target = new File(resources, 'data/createmanaindustry/structure/trickster_stock_test.nbt')
+            target.parentFile.mkdirs()
+            target.withOutputStream { file ->
+                def out = new DataOutputStream(new java.util.zip.GZIPOutputStream(file))
+                out.writeByte(10); out.writeUTF('')
+                out.writeByte(3); out.writeUTF('DataVersion'); out.writeInt(3955)
+                out.writeByte(9); out.writeUTF('size'); out.writeByte(3); out.writeInt(3)
+                3.times { out.writeInt(3) }
+                out.writeByte(9); out.writeUTF('palette'); out.writeByte(10); out.writeInt(1)
+                out.writeByte(8); out.writeUTF('Name'); out.writeUTF('minecraft:air'); out.writeByte(0)
+                ['blocks', 'entities'].each { name -> out.writeByte(9); out.writeUTF(name); out.writeByte(10); out.writeInt(0) }
+                out.writeByte(0); out.close()
+            }
+        }
+    }
+    p.tasks.named('processResources').configure { dependsOn(fixtures) }
+    p.neoForge.runs.gameTestServer.gameDirectory = runDir
+    p.tasks.named('runGameTestServer', JavaExec).configure { maxHeapSize = '3g' }
+}
