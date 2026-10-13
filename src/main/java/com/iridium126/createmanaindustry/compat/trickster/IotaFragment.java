@@ -80,7 +80,7 @@ public final class IotaFragment implements Fragment {
 
     @Override
     public FragmentType<?> type() {
-        return CMITricksterIotaRegister.iotaFragmentType();
+        return CMITricksterFragmentTypes.IOTA;
     }
 
     @Override

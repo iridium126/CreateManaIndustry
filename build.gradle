@@ -263,6 +263,7 @@ configurations {
     compileOnly.extendsFrom sodiumDistribution
     // Modrinth's POM does not expose Sable's nested companion API.
     sableDistribution
+    cardinalComponentsDistribution
 }
 
 // Sodium's named implementation jar is cached outside build/ so a normal
@@ -299,6 +300,18 @@ def extractSableCompanion = tasks.register("extractSableCompanion") {
     }
 }
 def sableCompanionFiles = files(sableCompanionJar).builtBy(extractSableCompanion)
+
+// SpellSource's component signature uses CCA's base API, nested in its bundle.
+// Expose that existing optional runtime dependency for compilation only.
+def cardinalBaseJar = layout.buildDirectory.file('optional-api/cardinal-components-base.jar')
+def cardinalArtifacts = configurations.cardinalComponentsDistribution
+def extractCardinalBase = tasks.register('extractCardinalBase', Copy) {
+    from({ zipTree(cardinalArtifacts.singleFile).matching { include 'META-INF/jars/cardinal-components-base-*.jar' } })
+    into(layout.buildDirectory.dir('optional-api'))
+    eachFile { path = 'cardinal-components-base.jar' }
+    includeEmptyDirs = false
+}
+def cardinalBaseFiles = files(cardinalBaseJar).builtBy(extractCardinalBase)
 
 // Build Voxy from the upstream multiversion branch and keep the resulting jar
 // outside build/ so a normal `clean` does not throw away this relatively
@@ -608,6 +621,8 @@ dependencies {
     runtimeOnly "curse.maven:cicada-989574:7068950"
     runtimeOnly "curse.maven:lavender-api-962916:6107175"
     runtimeOnly "curse.maven:cardinal-components-api-318449:7250871"
+    cardinalComponentsDistribution "curse.maven:cardinal-components-api-318449:7250871"
+    compileOnly cardinalBaseFiles
 }
 
 def copyTricksterToRunMods = tasks.register("copyTricksterToRunMods", Copy) {

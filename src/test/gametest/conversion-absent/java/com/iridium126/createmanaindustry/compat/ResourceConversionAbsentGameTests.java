@@ -25,6 +25,13 @@ public final class ResourceConversionAbsentGameTests {
                         "Hex conversion was registered without both mods");
                 helper.assertTrue(!registry.containsKey(CreateManaIndustry.modLoc("mana_to_media")),
                         "Trick conversion was registered without both mods");
+                helper.assertTrue(!registry.containsKey(CreateManaIndustry.modLoc("read_iota"))
+                                && !registry.containsKey(CreateManaIndustry.modLoc("eval_iota")),
+                        "Hex bridge tricks were registered without both mods");
+                if (registryId.equals("trickster:trick")) {
+                    helper.assertTrue(registry.containsKey(CreateManaIndustry.modLoc("temporary_kinetic_stress")),
+                            "Independent kinetic trick is missing when Hexcasting is absent");
+                }
             }
         }
         helper.succeed();

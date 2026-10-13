@@ -50,8 +50,8 @@ public final class SlateKnotInventory implements Container {
 
     @Override
     public boolean isEmpty() {
-        for (SlateKnotSlot slot : slots) {
-            if (!slot.holder().createmanaindustry$getKnot().isEmpty()) {
+        for (int slot = 0; slot < slots.size(); slot++) {
+            if (!getItem(slot).isEmpty()) {
                 return false;
             }
         }
@@ -60,7 +60,7 @@ public final class SlateKnotInventory implements Container {
 
     @Override
     public ItemStack getItem(int slot) {
-        if (!isValidSlot(slot)) {
+        if (!isLiveSlot(slot)) {
             return ItemStack.EMPTY;
         }
         return slots.get(slot).holder().createmanaindustry$getKnot();
@@ -68,7 +68,7 @@ public final class SlateKnotInventory implements Container {
 
     @Override
     public ItemStack removeItem(int slot, int amount) {
-        if (!isValidSlot(slot) || amount <= 0) {
+        if (!isLiveSlot(slot) || amount <= 0) {
             return ItemStack.EMPTY;
         }
         ItemStack stack = getItem(slot);
@@ -85,7 +85,7 @@ public final class SlateKnotInventory implements Container {
 
     @Override
     public ItemStack removeItemNoUpdate(int slot) {
-        if (!isValidSlot(slot)) {
+        if (!isLiveSlot(slot)) {
             return ItemStack.EMPTY;
         }
         ItemStack stack = getItem(slot);
@@ -95,7 +95,7 @@ public final class SlateKnotInventory implements Container {
 
     @Override
     public void setItem(int slot, ItemStack stack) {
-        if (!isValidSlot(slot)) {
+        if (!isLiveSlot(slot)) {
             return;
         }
         slots.get(slot).holder().createmanaindustry$setKnot(stack);
@@ -114,14 +114,15 @@ public final class SlateKnotInventory implements Container {
 
     @Override
     public void clearContent() {
-        for (SlateKnotSlot slot : slots) {
-            slot.holder().createmanaindustry$setKnot(ItemStack.EMPTY);
+        for (int slot = 0; slot < slots.size(); slot++) {
+            if (isLiveSlot(slot)) slots.get(slot).holder().createmanaindustry$setKnot(ItemStack.EMPTY);
         }
         syncChangedSlots();
     }
 
     public void syncChangedSlots() {
         for (int i = 0; i < slots.size(); i++) {
+            if (!isLiveSlot(i)) continue;
             ItemStack current = slots.get(i).holder().createmanaindustry$getKnot();
             if (!ItemStack.matches(syncedStacks.get(i), current)) {
                 sync(slots.get(i).blockEntity());
@@ -130,8 +131,11 @@ public final class SlateKnotInventory implements Container {
         }
     }
 
-    private boolean isValidSlot(int slot) {
-        return slot >= 0 && slot < slots.size();
+    private boolean isLiveSlot(int slot) {
+        if (slot < 0 || slot >= slots.size()) return false;
+        BlockEntity block = slots.get(slot).blockEntity();
+        return !block.isRemoved() && level.hasChunkAt(block.getBlockPos())
+                && level.getBlockEntity(block.getBlockPos()) == block;
     }
 
     private void sync(BlockEntity blockEntity) {

@@ -49,7 +49,7 @@ public class EvalIotaTrick extends Trick<EvalIotaTrick> {
 
     public EvalIotaTrick() {
         super(Pattern.of(3, 6, 7, 8, 5, 4, 3, 0, 1, 4, 7, 3),
-                Signature.of(CMITricksterIotaRegister.iotaFragmentType(), ArgType.ANY.variadicOfArg(),
+                Signature.of(CMITricksterFragmentTypes.IOTA, ArgType.ANY.variadicOfArg(),
                         EvalIotaTrick::run, RetType.ANY.optionalOfRet()));
     }
 

@@ -236,7 +236,7 @@ public final class ResourceConversionAutomationGameTests {
     }
 
     private static SpellPart spell(double amount) {
-        return new SpellPart(new PatternGlyph(3, 1, 4, 2), List.of(new SpellPart(new NumberFragment(amount))));
+        return new SpellPart(new PatternGlyph(3, 0, 4, 2), List.of(new SpellPart(new NumberFragment(amount))));
     }
 
     private static CastingImage input() {

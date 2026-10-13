@@ -11,6 +11,7 @@ import dev.enjarai.trickster.spell.mana.MutableManaPool;
 import dev.enjarai.trickster.spell.mana.SimpleManaPool;
 import dev.enjarai.trickster.spell.mana.storage.ManaStorage;
 import dev.enjarai.trickster.spell.mana.storage.ManaVariant;
+import dev.enjarai.trickster.spell.mana.storage.PoolManaStorage;
 import dev.enjarai.trickster.spell.mana.type.Manae;
 import io.wispforest.endec.StructEndec;
 import io.wispforest.endec.impl.StructEndecBuilder;
@@ -18,6 +19,7 @@ import net.fabricmc.fabric.api.transfer.v1.context.ContainerItemContext;
 import net.fabricmc.fabric.api.transfer.v1.item.InventoryStorage;
 import net.fabricmc.fabric.api.transfer.v1.storage.Storage;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleSlotStorage;
+import net.fabricmc.fabric.api.transfer.v1.storage.base.CombinedStorage;
 import net.fabricmc.fabric.api.transfer.v1.transaction.Transaction;
 import net.minecraft.core.Registry;
 import net.minecraft.world.level.Level;
@@ -25,7 +27,7 @@ import net.minecraft.world.level.Level;
 /**
  * A {@link MutableManaPool} backed by the knot items slotted into a hex
  * circle's reached slates ({@link SlateKnotInventory}). Injected into the
- * {@code ExecutionState} pool override so a {@code execute_trick} cast in a
+ * {@code ExecutionState} pool override so a TrickIota evaluated in a
  * circle draws mana from the slate knots — on the first run AND on
  * HANDED_OFF continuation ticks (the pool lives in the state).
  * <p>
@@ -36,9 +38,9 @@ import net.minecraft.world.level.Level;
 public class CircleSlateManaPool implements MutableManaPool {
 
     public static final StructEndec<CircleSlateManaPool> ENDEC = StructEndecBuilder.of(
-            ManaPool.LONG_OR_OLD_FLOAT_ENDEC.fieldOf("mana", pool -> pool.mana),
-            ManaPool.LONG_OR_OLD_FLOAT_ENDEC.fieldOf("max_mana", pool -> pool.maxMana),
-            ManaVariant.ENDEC.optionalFieldOf("variant", pool -> pool.variant, ManaVariant.of(Manae.TRADITIONAL)),
+            ManaPool.LONG_OR_OLD_FLOAT_ENDEC.fieldOf("mana", pool -> pool.get(pool.level)),
+            ManaPool.LONG_OR_OLD_FLOAT_ENDEC.fieldOf("max_mana", pool -> pool.getMax(pool.level)),
+            ManaVariant.ENDEC.optionalFieldOf("variant", pool -> pool.getVariant(pool.level), ManaVariant.of(Manae.TRADITIONAL)),
             CircleSlateManaPool::new);
 
     public static final ManaPoolType<CircleSlateManaPool> TYPE = Registry.register(
@@ -87,6 +89,16 @@ public class CircleSlateManaPool implements MutableManaPool {
             }
         }
         return result;
+    }
+
+    /**
+     * Live knot storages already participate in Fabric transactions. Expose
+     * them directly instead of wrapping this live pool in PoolManaStorage,
+     * whose snapshot restore calls set() during transaction close callbacks.
+     * Decoded snapshots are ordinary detached pools and retain that wrapper.
+     */
+    public Storage<ManaVariant> storage(Level world) {
+        return inventory == null ? new PoolManaStorage(this, world) : new CombinedStorage<>(views);
     }
 
     @Override

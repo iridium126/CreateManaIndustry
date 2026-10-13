@@ -17,11 +17,11 @@
     },
     {
       "type": "hexcasting:pattern",
-      "op_id": "createmanaindustry:execute_trick",
-      "anchor": "createmanaindustry:execute_trick",
-      "input": "trick",
+      "op_id": "hexcasting:eval",
+      "anchor": "trick_eval",
+      "input": "[list], trick",
       "output": "any",
-      "text": "hexcasting.page.createmanaindustry.trickster_patterns.execute_trick"
+      "text": "hexcasting.page.createmanaindustry.trickster_patterns.eval"
     },
     "hexcasting.page.createmanaindustry.trickster_patterns.trick_iota",
     {

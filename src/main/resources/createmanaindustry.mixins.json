@@ -46,6 +46,7 @@
     "trickster.SimpleManaPoolEqualityMixin",
     "trickster.SpellContextMixin",
     "hextrick.ConstructBlockEntityMediaMixin",
+    "hextrick.ExecutionStateCircleManaMixin",
     "bnb.CogwheelChainMixin",
     "bnb.CogwheelChainCandidateMixin",
     "bnb.CogwheelChainTypeMixin",

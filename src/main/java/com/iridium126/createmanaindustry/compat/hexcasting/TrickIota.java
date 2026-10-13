@@ -1,11 +1,23 @@
 package com.iridium126.createmanaindustry.compat.hexcasting;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.MapCodec;
 
+import at.petrak.hexcasting.api.casting.eval.CastResult;
+import at.petrak.hexcasting.api.casting.eval.ResolvedPatternType;
+import at.petrak.hexcasting.api.casting.eval.vm.CastingImage;
+import at.petrak.hexcasting.api.casting.eval.vm.CastingVM;
+import at.petrak.hexcasting.api.casting.eval.vm.SpellContinuation;
 import at.petrak.hexcasting.api.casting.iota.Iota;
 import at.petrak.hexcasting.api.casting.iota.IotaType;
+import at.petrak.hexcasting.api.casting.iota.ListIota;
+import at.petrak.hexcasting.api.utils.TreeList;
+import at.petrak.hexcasting.common.lib.hex.HexEvalSounds;
 import dev.enjarai.trickster.spell.Fragment;
 import dev.enjarai.trickster.spell.SpellPart;
 import net.minecraft.ChatFormatting;
@@ -14,6 +26,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.server.level.ServerLevel;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Hexcasting iota that stores a full Trickster {@link SpellPart} spell
@@ -38,6 +52,42 @@ public class TrickIota extends Iota {
 
     public SpellPart getSpell() {
         return spell;
+    }
+
+    @Override
+    public boolean executable() {
+        return true;
+    }
+
+    /**
+     * Runs the stored spell, consuming an optional argument list at the top of
+     * the VM stack. Hermes has already removed this iota before calling here,
+     * so its input order is {@code [arguments], trick, Hermes}. This also works
+     * when the iota is executed unescaped inside a Hex list.
+     */
+    @Override
+    public @NotNull CastResult execute(CastingVM vm, ServerLevel world, SpellContinuation continuation) {
+        CastingImage image = vm.getImage();
+        TreeList<Iota> stack = image.getStack();
+        List<Iota> params = new ArrayList<>();
+        if (!stack.isEmpty() && stack.last() instanceof ListIota list) {
+            params.addAll(list.getList());
+            stack = stack.init();
+        }
+
+        SpellExecutionBridge.SpellExecutionResult execution = SpellExecutionBridge.tryExecute(spell, params, vm.getEnv());
+        if (execution.status() == SpellExecutionBridge.SpellExecutionStatus.COMPLETED) {
+            if (execution.result() != null) {
+                stack = stack.appended(execution.result());
+            }
+        } else if (execution.status() == SpellExecutionBridge.SpellExecutionStatus.FAILED) {
+            CreateManaIndustry.LOGGER.warn("Failed to execute Trickster spell fragment");
+        }
+
+        CastingImage nextImage = image.copy(stack, image.getParenCount(), image.getParenthesized(),
+                image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed() + 1, image.getUserData());
+        return new CastResult(this, continuation, nextImage, List.of(),
+                ResolvedPatternType.EVALUATED, HexEvalSounds.NORMAL_EXECUTE.get());
     }
 
     @Override

@@ -4,7 +4,7 @@ import org.slf4j.Logger;
 
 import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexActions;
 import com.iridium126.createmanaindustry.compat.hexcasting.CMISlatePatternRecipes;
-import com.iridium126.createmanaindustry.compat.trickster.KineticStressTrickRegister;
+import com.iridium126.createmanaindustry.compat.trickster.CMITricks;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlock;
@@ -115,7 +115,7 @@ public class CreateManaIndustry {
         modEventBus.addListener(CreateManaIndustry::registerDefaultsAfterRegistration);
 
         if (TRICKSTER_ACTIVE) {
-            KineticStressTrickRegister.register();
+            CMITricks.register();
         }
         if (HEX_ACTIVE) {
             CMIHexActions.register(modEventBus);

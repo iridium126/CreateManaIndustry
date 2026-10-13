@@ -91,7 +91,7 @@ public final class ResourceConversionGameTests {
                     "Forward operation did not return the stored mana points");
             helper.assertTrue(media(inventory.getItem(0)) == 0, "Forward cost was not 10000 media");
             helper.assertTrue(mana(inventory.getItem(1), helper) == 64000, "Forward output was not 64000 internal mana");
-            var trick = Tricks.lookup(Pattern.of(3, 1, 4, 2));
+            var trick = Tricks.lookup(Pattern.of(3, 0, 4, 2));
             helper.assertTrue(trick instanceof ManaToMediaTrick
                     && Tricks.REGISTRY.getKey(trick).equals(CreateManaIndustry.modLoc("mana_to_media")),
                     "Wrong Trickster pattern resolution");
