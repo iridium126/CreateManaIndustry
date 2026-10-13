@@ -1,14 +1,19 @@
 ```json
 {
   "title": "The Hexcasting Bridge",
-  "icon": "createmanaindustry:kinetics_spell_core",
+  "icon": "trickster:amethyst_knot",
   "parent": "createmanaindustry:mana_industry",
-  "ordinal": 60
+  "ordinal": 60,
+  "fabric:load_conditions": {
+    "condition": "fabric:all_mods_loaded",
+    "values": [
+      "hexcasting",
+      "trickster"
+    ]
+  }
 }
 ```
 
-The Great Language and the Hexes of **Hex Casting** speak in different tongues.
-This section covers the translators built by Create: Mana Industry — carrying
-spells, iotas, and media back and forth between the two schools.
+Hex Casting and the Great Language each have their own data and fuel. This section introduces reading and executing fragments and iotas, followed by the media reserve used by Spell Constructs.
 
-*Requires the Hex Casting mod to be installed.*
+For resource exchange, see [Mana and Media](^createmanaindustry:mana_industry/mana_conversion).

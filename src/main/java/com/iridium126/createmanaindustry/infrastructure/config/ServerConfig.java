@@ -98,6 +98,8 @@ public final class ServerConfig {
 
     private static ModConfigSpec.IntValue MANA_PER_BUCKET;
     private static ModConfigSpec.IntValue MEDIA_PER_BUCKET;
+    private static ModConfigSpec.IntValue ANIMA_PER_BUCKET;
+    private static ModConfigSpec.DoubleValue BATTERY_ANIMA_CAPACITY_RATIO;
     private static ModConfigSpec.IntValue SOURCE_PER_BUCKET;
 
     // ---- kinetics ----------------------------------------------------------
@@ -213,6 +215,10 @@ public final class ServerConfig {
                 .defineInRange("mainThreadBudgetMs",10.0,0.25,50.0);
         BUILDER.pop();
         BUILDER.comment("Fluid conversion ratios — how much mana/media/source one bucket holds.").push("fluid");
+        ANIMA_PER_BUCKET = BUILDER.comment("Anima contained in 1000 mB of Liquid Soul. 每桶液态灵魂所含的 Anima。")
+                .defineInRange("animaPerBucket", 32, 1, 1000000);
+        BATTERY_ANIMA_CAPACITY_RATIO = BUILDER.comment("Battery Anima capacity per dust-equivalent of its actual maximum media. 电池每份紫水晶粉等价容量可储存的 Anima。")
+                .defineInRange("batteryAnimaCapacityRatio", 0.1, 0.0, 1000.0);
         MANA_PER_BUCKET = BUILDER
                 .comment("The amount of mana contained in one bucket (1000mB) of Liquid Mana.")
                 .defineInRange("manaPerBucket", 2048, 2048, 81920);
@@ -539,6 +545,8 @@ public final class ServerConfig {
     public static double manaPerStress = 0.001;
     public static int manaPerBucket = 2048;
     public static int mediaPerBucket = 400000;
+    public static int animaPerBucket = 32;
+    public static double batteryAnimaCapacityRatio = 0.1;
     public static int mediaConsumedPerTick = 50;
     public static int sourcePerBucket = 1000;
     public static double kineticStressTrickManaMultiplier = 2.0;
@@ -636,6 +644,8 @@ public final class ServerConfig {
             manaPerStress = MANA_PER_STRESS.get();
             manaPerBucket = MANA_PER_BUCKET.get();
             mediaPerBucket = MEDIA_PER_BUCKET.get();
+            animaPerBucket = ANIMA_PER_BUCKET.get();
+            batteryAnimaCapacityRatio = BATTERY_ANIMA_CAPACITY_RATIO.get();
             mediaConsumedPerTick = MEDIA_CONSUMED_PER_TICK.get();
             sourcePerBucket = SOURCE_PER_BUCKET.get();
             kineticStressTrickManaMultiplier = KINETIC_STRESS_TRICK_MANA_MULTIPLIER.get();

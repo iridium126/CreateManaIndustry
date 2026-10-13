@@ -23,6 +23,7 @@ public final class CMITricks {
         if (CreateManaIndustry.HEX_ACTIVE) {
             CMITricksterFragmentTypes.register();
             Hexcasting.register();
+            com.iridium126.createmanaindustry.compat.trickster.GreatTricks.register();
         }
     }
 

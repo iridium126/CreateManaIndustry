@@ -1,45 +1,30 @@
 ```json
 {
-  "title": "New Tricks",
+  "title": "Industrial Ploys",
   "icon": "trickster:amethyst_knot",
-  "category": "createmanaindustry:mana_industry",
-  "ordinal": 4
+  "ordinal": 7,
+  "additional_search_terms": [
+    "动力应力戏法",
+    "temporary_kinetic_stress"
+  ],
+  "category": "createmanaindustry:mana_industry"
 }
 ```
 
-Create: Mana Industry registers four tricks of its own when Hexcasting is installed. The first lets
-you spend mana to *push* kinetic machinery around; the other two are the
-front door to the [Hexcasting Bridge](^createmanaindustry:mana_industry/hexcasting_bridge),
-and the fourth converts mana into media.
+These ploys put mana to work in kinetic machinery. They require Trickster and Create, without requiring Hex Casting. The [reading and execution tricks](^createmanaindustry:mana_industry/hexcasting_bridge/iota_bridge) used for the Hexcasting bridge are listed separately.
 
 ;;;;;
 
-<|trick@trickster:templates|trick-id=createmanaindustry:temporary_kinetic_stress|>
+<|ploy@trickster:templates|trick-id=createmanaindustry:temporary_kinetic_stress,cost=0.008 × |speed| × ticks G|>
 
-**Kinetic Stress Ploy** — temporarily applies stress and rotational speed
-to any kinetic machine, as if a source had just been attached. The stress
-magnitude is `|speed| × 4`; when the duration runs out the machine returns
-to its previous state. Costs `manaPerStress × stress × duration × 2` mana,
-and returns the target position.
+Temporarily provides rotational speed and a stress source to the kinetic block at the given position. Returns the target Vector.
+
+Inputs are **position, speed, duration in Ticks**, in that order. A negative speed reverses rotation. Duration is rounded down and must remain positive; zero speed is invalid.
 
 ;;;;;
 
-<|trick@trickster:templates|trick-id=createmanaindustry:read_iota|>
+<|page-title@lavender:book_components|title=Duration and Cost|>
 
-**Read Iota** — reads a Hex Casting iota from an item holding one, within
-16 blocks, producing an *Iota Fragment*. The slot argument is optional and
-defaults to the other hand.
+The default cost is **0.008 × absolute speed × duration in Ticks G**. A speed of 32 for 20 Ticks costs 5.12 G. The server can adjust the stress conversion rate and cost multiplier.
 
-;;;;;
-
-<|trick@trickster:templates|trick-id=createmanaindustry:eval_iota|>
-
-**Eval Iota** — executes the Hex Casting spell stored inside an
-[Iota Fragment](^createmanaindustry:mana_industry/hexcasting_bridge), with
-the remaining arguments as its initial stack. Casting inside a Spell
-Construct spends media stored in the construct; casting as a player spends
-media from your inventory. See the
-[Hexcasting Bridge](^createmanaindustry:mana_industry/hexcasting_bridge)
-for the full picture.
-
-The [Ploy of the Transmuter](^createmanaindustry:mana_industry/mana_conversion) exchanges traditional mana for Hex Casting media.
+When the duration expires, the temporary source is removed and ordinary kinetic connections take over again. The target must be a loaded kinetic block.

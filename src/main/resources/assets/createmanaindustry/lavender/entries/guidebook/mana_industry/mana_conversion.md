@@ -1,60 +1,47 @@
 ```json
 {
-  "title": "Media Conversion",
+  "title": "Mana and Media",
   "icon": "hexcasting:battery",
-  "category": "createmanaindustry:mana_industry",
-  "ordinal": 5,
+  "ordinal": 8,
   "fabric:load_conditions": {
     "condition": "fabric:all_mods_loaded",
-    "values": ["hexcasting", "trickster"]
+    "values": [
+      "hexcasting",
+      "trickster"
+    ]
   },
-  "additional_search_terms": ["Ploy of the Transmuter", "Mana to Media"]
+  "additional_search_terms": [
+    "转化者之戏法",
+    "mana_to_media"
+  ],
+  "category": "createmanaindustry:mana_industry"
 }
 ```
 
-A ploy for exchanging traditional mana for the media used by Hex Casting.
+Traditional mana and Hex Casting media can be exchanged. The [Ploy of the Transmuter](^createmanaindustry:mana_industry/mana_conversion#1) turns mana into media. Hex Casting's **Knotweaver's Gambit** performs the reverse exchange.
+
+Requires Hex Casting.
 
 ;;;;;
 
 <|trick@trickster:templates|trick-id=createmanaindustry:mana_to_media|>
 
-Converts the given amount of mana from the caster's reserves into media.
-When cast by a player, stores the media in rechargeable items in the player's
-inventory, including armor and the offhand. Returns the media yield in units of 10000 media,
-so a result of 1 means 10000 media.
+Accepts a positive Number of gandalfs to spend. Returns the media produced, measured in amethyst-dust equivalents.
 
-The entire yield must fit. Missing storage or insufficient room causes a blunder;
-no mana is consumed and no media is stored.
+For a player, the output is stored in rechargeable media containers in the inventory. Prepare a Media Battery or another suitable container with enough room before casting.
 
 ;;;;;
 
-<|page-title@lavender:book_components|title=Casting from Constructs|>
+<|page-title@lavender:book_components|title=The Exchange Rate|>
 
-A [Spell Construct](^trickster:items/infrastructure/spell_construct) draws the
-mana from its inserted [Knot](^trickster:items/mana/knots) and stores the media
-in its own reserve. This reserve also supplies Hexes cast through
-[Eval Iota](^createmanaindustry:mana_industry/tricks).
+The rate follows the server's time spent processing each Tick. A busier world gives less media for each gandalf, and more mana in the reverse exchange.
 
-[Modular Spell Constructs](^trickster:items/infrastructure/modular_spell_construct)
-use the same reserve for all four cores. If the reserve is full or the knot
-cannot supply the requested mana, the conversion fails without changing either
-reserve.
+Missing containers or insufficient room cause a blunder. There must be room for the complete output; neither a partial deposit nor an advance mana debit is made.
 
 ;;;;;
 
-<|page-title@lavender:book_components|title=Exchange Rate|>
+<|page-title@lavender:book_components|title=Construct Casting|>
 
-For an amount **y** of mana, the media yield is `y / R × 10000`, where:
+In either type of Spell Construct, the inserted Knot provides mana and the output enters the [construct's media reserve](^createmanaindustry:mana_industry/hexcasting_bridge/construct_media). All four cores share that reserve.
 
-`R = 25.6 + 76.8 / (1 + exp(-0.1 × (mspt - 25)))`
-
-Here, **mspt** is the execution time in milliseconds of the last completed server
-tick, excluding the wait for the next tick. At 25 ms, an amount of 64 mana
-produces 10000 media and returns 1.
-
-Amounts must be finite and positive. Mana is rounded down to thousandths and
-media to whole units. A cost or yield rounded to zero causes a blunder.
-
-The reverse exchange is available through Hex Casting's **Knotweaver's Gambit**.
-At the same rate, its input of 1 consumes 10000 media and stores 64 mana in knots.
-Both mods must be installed.
+If the Knot cannot pay, or the reserve cannot hold the output, both balances remain unchanged.

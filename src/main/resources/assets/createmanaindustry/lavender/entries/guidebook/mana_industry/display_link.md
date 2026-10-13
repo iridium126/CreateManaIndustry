@@ -1,31 +1,31 @@
 ```json
 {
-  "title": "Display Link Arguments",
+  "title": "Display Links and Arguments",
   "icon": "create:display_link",
-  "category": "createmanaindustry:mana_industry",
   "ordinal": 5,
-  "associated_items": ["create:display_link"]
+  "associated_items": [
+    "create:display_link"
+  ],
+  "category": "createmanaindustry:mana_industry"
 }
 ```
 
-A Create **Display Link** aimed at a
-[Spell Construct](^trickster:items/infrastructure/spell_construct) writes
-its text straight into the construct's *spell arguments* — the first eight
-lines become arguments one through eight. For a
-[Modular Spell Construct](^trickster:items/infrastructure/modular_spell_construct)
-each of the four executor slots gets its own eight-line argument block.
+A Display Link can send a machine reading to a [Spell Construct](^trickster:items/infrastructure/spell_construct) as a spell argument.
+
+Select the construct as the display target, then place the link on the block providing the reading. Choose its source content and the argument position to write. A simple construct accepts up to eight arguments.
 
 ;;;;;
 
-The stored text is written into the executing spell's arguments on every
-tick, replacing them as `String Fragments` — missing lines become
-`Void Fragments`, so a spell reading its arguments always sees the current
-display state. This turns the humble Display Link into a *live
-configuration panel* for running spells: toggle numbers, labels, or whole
-strings without touching the spell itself.
+<|page-title@lavender:book_components|title=Text, Not Numbers|>
+
+Display Links write **String fragments**. A count displayed as "32" arrives as the String "32", rather than a Number. Parse the text before using it in arithmetic.
+
+One written position may contain several lines. Unwritten positions retain their original arguments; empty positions added to reach a later argument are void.
 
 ;;;;;
 
-Combine it with the [Kinetics Spell Core](^createmanaindustry:mana_industry/kinetics_spell_core):
-a chain-driven modular construct can re-read its arguments constantly,
-letting a row of Display Links drive a fully automated spell factory.
+<|page-title@lavender:book_components|title=Reading Again|>
+
+Updates also reach an already-running spell. A long spell can repeatedly read an argument and respond to inventory counts or other machine readings.
+
+A [Modular Spell Construct](^trickster:items/infrastructure/modular_spell_construct) has eight argument positions for each of its four cores. Choose both the intended core and argument when configuring the link.

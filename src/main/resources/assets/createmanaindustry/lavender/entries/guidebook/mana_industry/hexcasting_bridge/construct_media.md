@@ -1,32 +1,39 @@
 ```json
 {
-  "title": "Construct Media Storage",
+  "title": "Media in Constructs",
   "icon": "createmanaindustry:liquid_media_bucket",
   "category": "createmanaindustry:mana_industry/hexcasting_bridge",
   "ordinal": 1,
-  "required_advancements": ["hexcasting:root"],
-  "associated_items": ["createmanaindustry:liquid_media_bucket"]
+  "fabric:load_conditions": {
+    "condition": "fabric:all_mods_loaded",
+    "values": [
+      "hexcasting",
+      "trickster"
+    ]
+  },
+  "associated_items": [
+    "trickster:spell_construct",
+    "trickster:modular_spell_construct"
+  ]
 }
 ```
 
-A [Spell Construct](^trickster:items/infrastructure/spell_construct) can be
-fed Hex Casting *media* directly. Items holding media — charged amethyst,
-media batteries, and the like — inserted into the construct are absorbed
-into its internal media storage instead of a regular inventory slot,
-alongside any Knot you seat for Trickster mana.
+A Spell Construct can hold a separate media reserve for [Hex Casting execution](^createmanaindustry:mana_industry/hexcasting_bridge/iota_bridge). This reserve and the central Knot supply different resources: having mana does not imply having media.
+
+All four cores in a Modular Spell Construct share the same media reserve.
 
 ;;;;;
 
-The stored media powers Hex casting performed *by the construct*: the
-**Eval Iota** trick spends it to run Hex spells, and the Hex pattern
-**Execute Trick** running inside a construct draws from the same pool. An
-inserted creative unlocker provides infinite media. Media is persisted with
-the construct's data, so a construct keeps its fuel between chunk loads.
+<|page-title@lavender:book_components|title=Adding Media|>
+
+Insert media items eligible for battery construction, such as Amethyst Dust, Amethyst Shards or Charged Amethyst. Hoppers and other item transport can supply them automatically.
+
+An ordinary Media Battery can fuel a player, but cannot be emptied into this reserve. Casting the [Ploy of the Transmuter](^createmanaindustry:mana_industry/mana_conversion) from the construct is another way to replenish it.
 
 ;;;;;
 
-Automation is straightforward: hoppers and mechanical arms can feed media
-items into the construct, and media batteries hold a buffer of
-[Liquid Media](^createmanaindustry:mana_industry/hexcasting_bridge/construct_media)
-ready to be converted — the same tank that fills casting items on the Hex
-side.
+<|page-title@lavender:book_components|title=Persistence|>
+
+The reserve is saved with the construct; unloading its chunk does not empty its fuel. It provides neither a player's inventory nor an offhand item, so spells must still satisfy their own requirements.
+
+In creative mode, inserting a Creative Unlocker makes this media reserve unlimited.

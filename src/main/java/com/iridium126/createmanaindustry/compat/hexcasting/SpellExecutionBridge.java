@@ -118,6 +118,8 @@ public final class SpellExecutionBridge {
             if (manager.isPresent() && manager.get().queue(executor).isPresent()) {
                 return SpellExecutionResult.handedOff();
             }
+            com.iridium126.createmanaindustry.compat.trickster.CastChains.release(
+                    ((com.iridium126.createmanaindustry.compat.trickster.ExecutorChainAccess)(Object)executor).cmi$executorChain(), executor);
             return SpellExecutionResult.failed();
         } catch (Throwable t) {
             CreateManaIndustry.LOGGER.warn("Failed to execute Trickster spell fragment", t);

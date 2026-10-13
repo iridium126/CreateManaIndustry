@@ -1,39 +1,56 @@
 ```json
 {
-  "title": "The Iota Bridge",
+  "title": "Fragments and Iotas",
   "icon": "trickster:amethyst_knot",
   "category": "createmanaindustry:mana_industry/hexcasting_bridge",
   "ordinal": 0,
-  "required_advancements": ["hexcasting:root"],
-  "associated_items": ["createmanaindustry:incomplete_cypher"]
+  "fabric:load_conditions": {
+    "condition": "fabric:all_mods_loaded",
+    "values": [
+      "hexcasting",
+      "trickster"
+    ]
+  },
+  "additional_search_terms": [
+    "读取Iota",
+    "运行Iota",
+    "iota"
+  ]
 }
 ```
 
-Hex Casting stores data in *iotas*; Trickster works in *fragments*. The
-bridge translates between them losslessly in both directions. On the
-Trickster side, an **Iota Fragment** (`createmanaindustry:iota`) wraps a
-complete Hex iota, serialised to NBT and gzip-compressed — nothing is lost
-in transit, and its glyph displays exactly as Hex Casting would render it.
+Hex Casting represents information as **iotas**; the Great Language uses **fragments**. Numbers, Vectors, Booleans and Lists can convert directly to their corresponding fragments. Other iotas are carried by an **Iota Fragment**.
+
+Both Hex Casting null and garbage become void on the Trickster side. The two systems' empty values are not identical.
 
 ;;;;;
 
-On the Hex side, a **Trick Iota** wraps a complete Trickster *SpellPart*
-tree, serialised with Trickster's own compressed spell format. Both carry
-their contents losslessly, so a spell can travel: read it into a Trick
-Iota, hand it to a Trickster, have it modified and returned, and execute it
-again as if it never left.
+<|trick@trickster:templates|trick-id=createmanaindustry:read_iota|>
+
+Reads an iota from an item in the given Slot and returns its corresponding fragment. Omitting the Slot selects the other hand.
+
+The reading range is **16 blocks**. An item without a readable iota causes a blunder, rather than producing an empty spell.
 
 ;;;;;
 
-The entry points mirror each other:
+<|trick@trickster:templates|trick-id=createmanaindustry:eval_iota|>
 
-- **Trickster → Hex**: [Read Iota](^createmanaindustry:mana_industry/tricks)
-  pulls an iota from a held item; **Eval Iota** executes the Hex spell
-  inside it.
-- **Hex → Trickster**: the *Read Trick From Item* pattern (`qqqqqa`) reads
-  a spell from a held knot into a Trick Iota; *Execute Trick*
-  (`wdwewawqwqw`) runs it — even inside a spell circle, drawing Trickster
-  mana from slate knots.
+Accepts an **Iota Fragment** containing an executable pattern or Hex list. The remaining inputs become the initial Hex Casting stack.
 
-Both patterns are documented in the Hex Casting book under *Create: Mana
-Industry → The Trickster's Art*.
+On success, returns the top of that stack, or the empty value corresponding to null if the stack is empty. A failed execution returns void. Hex Casting's media supply pays the cost.
+
+;;;;;
+
+<|page-title@lavender:book_components|title=The Casting Environment|>
+
+Player casting uses the player's media items and permits overcasting when the ordinary conditions are met. No staff needs to be held.
+
+Construct casting uses the [internal media reserve](^createmanaindustry:mana_industry/hexcasting_bridge/construct_media), with a 32-block ambit centred on the construct. Operations requiring a player or held item still require one.
+
+;;;;;
+
+<|page-title@lavender:book_components|title=Sending a Trick to Hex Casting|>
+
+Hex Casting's **Unknotting** reads a Trickster spell into a Trick Iota, carrying its entire spell tree. **Hermes' Gambit** can then run it.
+
+Place the argument List below the Trick Iota. A spell completed within one Tick can return its result to the stack; a spell handed off for later execution does not. See the Hex Casting book's Trickster Patterns entry.

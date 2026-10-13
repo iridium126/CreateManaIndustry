@@ -1,12 +1,9 @@
 ```json
 {
   "title": "Mana Industry",
-  "icon": "createmanaindustry:kinetic_mana_generator",
+  "icon": "createmanaindustry:allay_burner",
   "ordinal": 50
 }
 ```
 
-Create: Mana Industry bridges the industrial might of **Create** with the
-Great Language of Trickster — turning *stress* into charged Knots, spinning
-gear chains into spell cores, and plumbing liquid Mana through your
-production lines.
+This chapter records industrial uses of the Great Language. Begin with Knot production and charging, then let spells read machines and drive production lines. With Hex Casting installed, it also covers exchanges between the two languages and Great Tricks powered by soul.

@@ -8,7 +8,7 @@ import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
- * Client-only rendering config ({@code createmanaindustry-client.toml}).
+ * Client-only rendering and spell drawing config ({@code createmanaindustry-client.toml}).
  * <p>
  * Not loaded on dedicated servers; these values are only read from client-side
  * render code ({@code MistClientHandler}, {@code MistIrisHook}).
@@ -23,6 +23,7 @@ public final class ClientConfig {
     private static ModConfigSpec.DoubleValue MIST_GLOW_STRENGTH;
     private static ModConfigSpec.BooleanValue MIST_DEBUG_SHADOW;
     private static ModConfigSpec.DoubleValue FUEL_ROD_BLOOM_RING_STRENGTH;
+    private static ModConfigSpec.DoubleValue GRID_SNAP_THRESHOLD;
 
     // ---- particles -------------------------------------------------------
 
@@ -54,6 +55,12 @@ public final class ClientConfig {
         FUEL_ROD_BLOOM_RING_STRENGTH = BUILDER
                 .comment("Bloom ring strength multiplier.")
                 .defineInRange("fuelRodBloomRingStrength", 1.0, 0.0, 100.0);
+        BUILDER.pop();
+
+        BUILDER.comment("Great-trick spell drawing options.").push("greatTricks");
+        GRID_SNAP_THRESHOLD = BUILDER
+                .comment("Fraction of one grid spacing to travel before snapping to the next dot. Capture radius is (1 - value) times grid spacing; 0.75 leaves the final 25%. 点阵吸附阈值：默认走过点间距的 75% 才吸附，捕获半径为剩余的 25%。")
+                .defineInRange("gridSnapThreshold", 0.75, 0.0, 1.0);
         BUILDER.pop();
 
         BUILDER.comment("GPU particle engine options.").push("particles");
@@ -103,6 +110,7 @@ public final class ClientConfig {
     public static double mistGlowStrength = 0.5;
     public static boolean mistDebugShadow = false;
     public static double fuelRodBloomRingStrength = 1.0;
+    public static double gridSnapThreshold = 0.75;
     public static boolean particleEnabled = true;
     public static int particleMaxCount = 2_000_000;
     public static double particleBudgetMs = 15.0;
@@ -126,6 +134,7 @@ public final class ClientConfig {
             mistGlowStrength = MIST_GLOW_STRENGTH.get();
             mistDebugShadow = MIST_DEBUG_SHADOW.get();
             fuelRodBloomRingStrength = FUEL_ROD_BLOOM_RING_STRENGTH.get();
+            gridSnapThreshold = GRID_SNAP_THRESHOLD.get();
             particleEnabled = PARTICLE_ENABLED.get();
             particleMaxCount = PARTICLE_MAX_COUNT.get();
             particleBudgetMs = PARTICLE_BUDGET_MS.get();

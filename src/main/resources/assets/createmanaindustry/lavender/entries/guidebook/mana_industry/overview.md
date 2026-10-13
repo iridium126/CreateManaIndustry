@@ -2,24 +2,27 @@
 {
   "title": "Overview",
   "icon": "createmanaindustry:allay_burner",
-  "category": "createmanaindustry:mana_industry",
   "ordinal": 0,
-  "associated_items": ["createmanaindustry:allay_burner"]
+  "category": "createmanaindustry:mana_industry"
 }
 ```
 
-Create: Mana Industry turns the *Great Language* into an industrial concern.
-Every mechanic in this section runs on familiar Create infrastructure —
-*stress*, gear chains, fluid pipes, mechanical arms — and pays out in
-charged Knots, spell-casting machinery, and Trickster mana.
+This chapter supplements the Great Language with industrial techniques. Start with [Knot production](^createmanaindustry:mana_industry/incomplete_knots), or turn directly to the device or trick you need. Mana is measured in gandalfs, abbreviated G, as elsewhere in this book.
 
 ;;;;;
 
-What this mod adds for Trickster players:
+<|page-title@lavender:book_components|title=Mana on the Production Line|>
 
-- [Kinetic Mana Generator](^createmanaindustry:mana_industry/charging_knots) — convert stress into charged Knots
-- [Kinetics Spell Core](^createmanaindustry:mana_industry/kinetics_spell_core) — chain-driven spell execution
-- [Incomplete Knots](^createmanaindustry:mana_industry/incomplete_knots) — automated Knot fabrication from Liquid Mana
-- [Kinetic Stress Ploy](^createmanaindustry:mana_industry/tricks) — temporary stress on any kinetic machine
-- [Display Link integration](^createmanaindustry:mana_industry/display_link) — write spell arguments with text
-- [The Hexcasting Bridge](^createmanaindustry:mana_industry/hexcasting_bridge) — spells and iotas across both schools
+[Liquid Mana](^createmanaindustry:mana_industry/liquid_mana) can be bottled, supplied to Knots, or used to make new ones. The [Kinetic Mana Generator](^createmanaindustry:mana_industry/charging_knots) provides another source. Mechanical Arms can deliver the finished Knots to Charging Arrays and Spell Constructs.
+
+;;;;;
+
+<|page-title@lavender:book_components|title=Machinery and Spells|>
+
+A [Kinetics Spell Core](^createmanaindustry:mana_industry/kinetics_spell_core) uses a cogwheel chain to increase its execution budget. [Display Links](^createmanaindustry:mana_industry/display_link) feed machine readings into spell arguments. An [industrial ploy](^createmanaindustry:mana_industry/tricks) can also drive kinetic blocks temporarily.
+
+;;;;;
+
+<|page-title@lavender:book_components|title=Another Language|>
+
+With Hex Casting installed, [fragments and iotas](^createmanaindustry:mana_industry/hexcasting_bridge/iota_bridge) can travel between the two systems, and spells can call one another. [Great Tricks](^createmanaindustry:mana_industry/great_tricks) use a hexagonal lattice and draw their power from [Anima](^createmanaindustry:mana_industry/anima).
