@@ -6,7 +6,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import com.iridium126.createmanaindustry.compat.trickster.ConstructMediaStorage;
+import com.iridium126.createmanaindustry.compat.trickster.construct.ConstructMediaStorage;
 
 import dev.enjarai.trickster.block.ModularSpellConstructBlockEntity;
 import dev.enjarai.trickster.block.SpellConstructBlockEntity;

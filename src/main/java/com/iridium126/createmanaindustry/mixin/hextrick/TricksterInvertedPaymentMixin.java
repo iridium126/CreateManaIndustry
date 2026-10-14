@@ -1,6 +1,9 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.*;
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
+import com.iridium126.createmanaindustry.compat.trickster.casting.ChainState;
+import com.iridium126.createmanaindustry.compat.trickster.casting.InvertedPayments;
+
 import dev.enjarai.trickster.spell.SpellContext;
 import dev.enjarai.trickster.spell.exception.blunder.*;
 import dev.enjarai.trickster.spell.mana.ManaPool;

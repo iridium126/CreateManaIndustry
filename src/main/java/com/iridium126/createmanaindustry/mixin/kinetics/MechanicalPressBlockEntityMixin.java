@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.iridium126.createmanaindustry.CMIRecipeTypes;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.compat.trickster.TricksterManaAccess;
+import com.iridium126.createmanaindustry.compat.trickster.mana.TricksterManaAccess;
 import com.iridium126.createmanaindustry.content.recipes.HexItemDataTransfer;
 import com.simibubi.create.content.kinetics.press.MechanicalPressBlockEntity;
 import com.simibubi.create.foundation.recipe.RecipeApplier;

@@ -1,5 +1,11 @@
 package com.iridium126.createmanaindustry.compat.trickster;
 
+import com.iridium126.createmanaindustry.compat.trickster.trick.EvalIotaTrick;
+import com.iridium126.createmanaindustry.compat.trickster.trick.ManaToMediaTrick;
+import com.iridium126.createmanaindustry.compat.trickster.trick.ReadIotaTrick;
+import com.iridium126.createmanaindustry.compat.trickster.trick.ReadPotionEffectsTrick;
+import com.iridium126.createmanaindustry.compat.trickster.trick.TemporaryKineticStressTrick;
+
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import dev.enjarai.trickster.spell.trick.Trick;
 import dev.enjarai.trickster.spell.trick.Tricks;
@@ -25,7 +31,7 @@ public final class CMITricks {
         if (CreateManaIndustry.HEX_ACTIVE) {
             CMITricksterFragmentTypes.register();
             Hexcasting.register();
-            com.iridium126.createmanaindustry.compat.trickster.GreatTricks.register();
+            com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatTricks.register();
         }
     }
 

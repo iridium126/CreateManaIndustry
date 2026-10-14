@@ -1,5 +1,16 @@
 package com.iridium126.createmanaindustry.compat.trickster;
 
+import com.iridium126.createmanaindustry.compat.trickster.anima.BatteryAnima;
+import com.iridium126.createmanaindustry.compat.trickster.blunder.SharedFateBlunder;
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChain;
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
+import com.iridium126.createmanaindustry.compat.trickster.casting.ExecutorChainAccess;
+import com.iridium126.createmanaindustry.compat.trickster.fragment.GreatTrickGlyph;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatPattern;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatTricks;
+import com.iridium126.createmanaindustry.compat.trickster.sharedfate.SharedFateManager;
+import com.iridium126.createmanaindustry.compat.trickster.sharedfate.SharedFateMishaps;
+
 import at.petrak.hexcasting.api.casting.eval.env.StaffCastEnv;
 import at.petrak.hexcasting.api.casting.eval.vm.*;
 import at.petrak.hexcasting.api.casting.mishaps.*;

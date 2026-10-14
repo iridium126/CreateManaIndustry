@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.client.greattrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.GreatPattern;
-import com.iridium126.createmanaindustry.compat.trickster.GreatTrickGlyph;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatPattern;
+import com.iridium126.createmanaindustry.compat.trickster.fragment.GreatTrickGlyph;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.enjarai.trickster.Trickster;

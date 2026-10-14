@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator;
 import java.util.List;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.compat.trickster.TricksterManaAccess;
+import com.iridium126.createmanaindustry.compat.trickster.mana.TricksterManaAccess;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.simibubi.create.content.kinetics.simpleRelays.SimpleKineticBlockEntity;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;

@@ -25,7 +25,7 @@ public final class OpApplyYsmModel implements SpellAction {
         if (!(args.get(0) instanceof EntityIota entity) || !(entity.getEntity(env.getWorld()) instanceof ServerPlayer target))
             throw MishapInvalidIota.ofType(args.get(0), 0, "entity.player");
         LivingEntity caster = env.getCastingEntity();
-        if (target != caster && !com.iridium126.createmanaindustry.compat.trickster.CastChains.nameExempt(
+        if (target != caster && !com.iridium126.createmanaindustry.compat.trickster.casting.CastChains.nameExempt(
                 env.getWorld().getServer(), target.getUUID())) {
             if (caster == null) throw new MishapOthersName(target);
             var otherHandStack = caster.getItemInHand(env.getOtherHand());

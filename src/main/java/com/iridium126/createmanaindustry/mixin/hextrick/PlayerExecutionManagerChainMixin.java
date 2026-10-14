@@ -1,6 +1,8 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.*;
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
+import com.iridium126.createmanaindustry.compat.trickster.casting.ExecutorChainAccess;
+
 import dev.enjarai.trickster.spell.SpellExecutor;
 import dev.enjarai.trickster.spell.execution.PlayerSpellExecutionManager;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;

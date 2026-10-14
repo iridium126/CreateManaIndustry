@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.mixin.hextrick;
 
 import at.petrak.hexcasting.api.casting.iota.*;
 import at.petrak.hexcasting.api.casting.mishaps.MishapOthersName;
-import com.iridium126.createmanaindustry.compat.trickster.CastChains;
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
 import java.util.ArrayDeque;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;

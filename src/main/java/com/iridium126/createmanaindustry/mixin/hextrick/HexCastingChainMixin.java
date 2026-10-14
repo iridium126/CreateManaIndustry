@@ -1,10 +1,13 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChain;
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
+import com.iridium126.createmanaindustry.compat.trickster.sharedfate.SharedFateMishaps;
+
 import at.petrak.hexcasting.api.casting.eval.*;
 import at.petrak.hexcasting.api.casting.eval.env.StaffCastEnv;
 import at.petrak.hexcasting.api.casting.eval.vm.CastingVM;
 import at.petrak.hexcasting.api.casting.iota.Iota;
-import com.iridium126.createmanaindustry.compat.trickster.*;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import net.minecraft.server.level.ServerLevel;

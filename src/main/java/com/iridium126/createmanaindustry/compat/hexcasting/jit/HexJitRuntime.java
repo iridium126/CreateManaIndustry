@@ -55,7 +55,7 @@ public final class HexJitRuntime {
     }
 
     public static boolean enabled() {
-        if (com.iridium126.createmanaindustry.compat.trickster.CastChains.inverted()) return false;
+        if (com.iridium126.createmanaindustry.compat.trickster.casting.CastChains.inverted()) return false;
         return ServerConfig.hexJitMode != ServerConfig.HexJitMode.OFF && Thread.currentThread() == owner && JitCompatibility.ready();
     }
     /** Fast-path callers have already checked AUTO mode and their feature-specific compatibility gate. */

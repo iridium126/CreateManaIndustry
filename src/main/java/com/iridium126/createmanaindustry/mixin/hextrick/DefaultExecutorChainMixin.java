@@ -1,6 +1,11 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.*;
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChain;
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
+import com.iridium126.createmanaindustry.compat.trickster.casting.ChainState;
+import com.iridium126.createmanaindustry.compat.trickster.casting.ExecutorChainAccess;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatTricks;
+
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import dev.enjarai.trickster.spell.Fragment;

@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.compat.hexcasting;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.iridium126.createmanaindustry.compat.trickster.IotaFragment;
+import com.iridium126.createmanaindustry.compat.trickster.fragment.IotaFragment;
 
 import at.petrak.hexcasting.api.casting.iota.BooleanIota;
 import at.petrak.hexcasting.api.casting.iota.DoubleIota;

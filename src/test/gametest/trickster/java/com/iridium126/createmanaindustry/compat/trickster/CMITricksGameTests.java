@@ -1,5 +1,9 @@
 package com.iridium126.createmanaindustry.compat.trickster;
 
+import com.iridium126.createmanaindustry.compat.trickster.blunder.InvalidKineticStressBlunder;
+import com.iridium126.createmanaindustry.compat.trickster.blunder.InvalidKineticTargetBlunder;
+import com.iridium126.createmanaindustry.compat.trickster.fragment.IotaFragment;
+
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.content.kinetics.temporarykinetics.TemporaryKinetics;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;

@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.GreatMode;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatMode;
 import dev.enjarai.trickster.screen.ScrollAndQuillScreenHandler.InitialData;
 import io.wispforest.endec.*;
 import io.wispforest.endec.impl.StructEndecBuilder;

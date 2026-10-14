@@ -1,9 +1,9 @@
 package com.iridium126.createmanaindustry.client.greattrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.AnimaMath;
-import com.iridium126.createmanaindustry.compat.trickster.GreatTrick;
-import com.iridium126.createmanaindustry.compat.trickster.GreatTrickGlyph;
-import com.iridium126.createmanaindustry.compat.trickster.GreatTricks;
+import com.iridium126.createmanaindustry.compat.trickster.anima.AnimaMath;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatTrick;
+import com.iridium126.createmanaindustry.compat.trickster.fragment.GreatTrickGlyph;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatTricks;
 import io.wispforest.owo.ui.component.Components;
 import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.core.Color;

@@ -1,8 +1,8 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
 import at.petrak.hexcasting.api.casting.eval.vm.CastingImage;
-import com.iridium126.createmanaindustry.compat.trickster.CastChain;
-import com.iridium126.createmanaindustry.compat.trickster.CastChains;
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChain;
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
 import net.minecraft.server.level.ServerPlayer;
 import org.spongepowered.asm.mixin.*;
 import org.spongepowered.asm.mixin.injection.*;

@@ -1,5 +1,8 @@
 package com.iridium126.createmanaindustry.compat.trickster;
 
+import com.iridium126.createmanaindustry.compat.trickster.construct.ConstructCastEnv;
+import com.iridium126.createmanaindustry.compat.trickster.construct.ConstructMediaStorage;
+
 import at.petrak.hexcasting.api.casting.circles.CircleExecutionState;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
 import at.petrak.hexcasting.api.casting.eval.env.CircleCastEnv;

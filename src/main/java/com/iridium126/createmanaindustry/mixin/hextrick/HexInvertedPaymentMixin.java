@@ -1,7 +1,9 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
+import com.iridium126.createmanaindustry.compat.trickster.casting.InvertedPayments;
+
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
-import com.iridium126.createmanaindustry.compat.trickster.*;
 import com.llamalad7.mixinextras.injector.wrapoperation.*;
 import net.minecraft.server.level.ServerPlayer;
 import org.spongepowered.asm.mixin.Mixin;

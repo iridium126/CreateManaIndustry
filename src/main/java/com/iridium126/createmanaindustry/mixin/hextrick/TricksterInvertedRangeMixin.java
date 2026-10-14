@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.CastChains;
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
 import com.llamalad7.mixinextras.injector.wrapoperation.*;
 import dev.enjarai.trickster.spell.execution.source.SpellSource;
 import org.joml.Vector3dc;

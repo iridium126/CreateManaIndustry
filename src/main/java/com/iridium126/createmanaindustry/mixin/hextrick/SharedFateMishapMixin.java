@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.mixin.hextrick;
 
 import at.petrak.hexcasting.api.casting.eval.vm.CastingVM;
 import at.petrak.hexcasting.api.casting.mishaps.Mishap;
-import com.iridium126.createmanaindustry.compat.trickster.SharedFateMishaps;
+import com.iridium126.createmanaindustry.compat.trickster.sharedfate.SharedFateMishaps;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import org.spongepowered.asm.mixin.*;

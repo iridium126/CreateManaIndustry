@@ -346,7 +346,7 @@ public final class ExecutionScope implements AutoCloseable {
         if (scope != null) scope.compiled = true;
     }
     public static ExecutionScope current() {
-        if (com.iridium126.createmanaindustry.compat.trickster.CastChains.inverted()) return null;
+        if (com.iridium126.createmanaindustry.compat.trickster.casting.CastChains.inverted()) return null;
         return HexJitRuntime.onServerThread() ? serverCurrent : OTHER_THREADS.get();
     }
     /** Flush resources before changing how subsequent instructions pay or check their reach. */
@@ -361,7 +361,7 @@ public final class ExecutionScope implements AutoCloseable {
     }
     /** The caller has already established that it is on HexJit's server thread. */
     public static ExecutionScope currentOnServerThread() {
-        return com.iridium126.createmanaindustry.compat.trickster.CastChains.inverted() ? null : serverCurrent;
+        return com.iridium126.createmanaindustry.compat.trickster.casting.CastChains.inverted() ? null : serverCurrent;
     }
     public static long lastMotionPushes() { return lastMotionPushes; }
     public static long lastMotionWrites() { return lastMotionWrites; }

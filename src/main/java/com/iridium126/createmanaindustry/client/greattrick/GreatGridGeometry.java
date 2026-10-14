@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.client.greattrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.GreatPattern;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatPattern;
 
 /** Shared drawing/snap coordinates, independent of GUI scale and Minecraft renderer initialization. */
 public final class GreatGridGeometry {

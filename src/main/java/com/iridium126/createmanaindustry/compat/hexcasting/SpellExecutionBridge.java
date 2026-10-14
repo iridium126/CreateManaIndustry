@@ -7,7 +7,7 @@ import java.util.Optional;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.compat.hexcasting.circle.CircleSlateManaPool;
 import com.iridium126.createmanaindustry.compat.hexcasting.circle.SlateKnotInventory;
-import com.iridium126.createmanaindustry.compat.trickster.ConstructCastEnv;
+import com.iridium126.createmanaindustry.compat.trickster.construct.ConstructCastEnv;
 
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
 import at.petrak.hexcasting.api.casting.eval.env.CircleCastEnv;
@@ -118,8 +118,8 @@ public final class SpellExecutionBridge {
             if (manager.isPresent() && manager.get().queue(executor).isPresent()) {
                 return SpellExecutionResult.handedOff();
             }
-            com.iridium126.createmanaindustry.compat.trickster.CastChains.release(
-                    ((com.iridium126.createmanaindustry.compat.trickster.ExecutorChainAccess)(Object)executor).cmi$executorChain(), executor);
+            com.iridium126.createmanaindustry.compat.trickster.casting.CastChains.release(
+                    ((com.iridium126.createmanaindustry.compat.trickster.casting.ExecutorChainAccess)(Object)executor).cmi$executorChain(), executor);
             return SpellExecutionResult.failed();
         } catch (Throwable t) {
             CreateManaIndustry.LOGGER.warn("Failed to execute Trickster spell fragment", t);

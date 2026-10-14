@@ -21,8 +21,8 @@ import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 
 import com.hollingsworth.arsnouveau.api.source.AbstractSourceMachine;
 import com.iridium126.createmanaindustry.compat.ars.SourceJarFluidHandler;
-import com.iridium126.createmanaindustry.compat.trickster.ConstructMediaItemHandler;
-import com.iridium126.createmanaindustry.compat.trickster.TricksterKnotUtils;
+import com.iridium126.createmanaindustry.compat.trickster.construct.ConstructMediaItemHandler;
+import com.iridium126.createmanaindustry.compat.trickster.mana.TricksterKnotUtils;
 
 public final class CMICapabilities {
     private CMICapabilities() {}

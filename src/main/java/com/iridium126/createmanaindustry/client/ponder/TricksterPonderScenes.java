@@ -7,7 +7,7 @@ import com.iridium126.createmanaindustry.CMIItems;
 import com.iridium126.createmanaindustry.CMIComponents;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.recipes.KnotFillingLogic;
-import com.iridium126.createmanaindustry.compat.trickster.TricksterManaAccess;
+import com.iridium126.createmanaindustry.compat.trickster.mana.TricksterManaAccess;
 import com.iridium126.createmanaindustry.content.display.SpellConstructDisplayArguments;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlockEntity;
 import com.simibubi.create.AllBlocks;

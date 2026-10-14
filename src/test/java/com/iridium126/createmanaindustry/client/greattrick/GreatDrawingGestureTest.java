@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.client.greattrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.GreatPattern;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatPattern;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;

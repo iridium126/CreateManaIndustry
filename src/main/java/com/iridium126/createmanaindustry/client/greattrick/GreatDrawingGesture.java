@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.client.greattrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.GreatPattern;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatPattern;
 import java.util.List;
 
 /** Supports Trickster's click/move/click gesture and press/drag/release without panning the soup. */

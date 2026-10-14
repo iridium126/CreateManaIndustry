@@ -25,9 +25,9 @@ public class FillingBySpoutHexMixin {
     @Inject(method = "getRequiredAmountForItem", at = @At("HEAD"), cancellable = true)
     private static void createmanaindustry$overrideIncompleteHexItemFluidAmount(Level world, ItemStack stack,
             FluidStack availableFluid, CallbackInfoReturnable<Integer> cir) {
-        if (com.iridium126.createmanaindustry.compat.trickster.BatteryAnima.isBattery(stack)
+        if (com.iridium126.createmanaindustry.compat.trickster.anima.BatteryAnima.isBattery(stack)
                 && !availableFluid.isEmpty() && availableFluid.getFluid().isSame(com.iridium126.createmanaindustry.CMIFluids.LIQUID_SOUL.get())) {
-            cir.setReturnValue(com.iridium126.createmanaindustry.compat.trickster.BatteryAnima.required(stack, availableFluid));
+            cir.setReturnValue(com.iridium126.createmanaindustry.compat.trickster.anima.BatteryAnima.required(stack, availableFluid));
             return;
         }
         if (!HexItemFillingLogic.isRecognised(stack))
@@ -43,9 +43,9 @@ public class FillingBySpoutHexMixin {
     @Inject(method = "fillItem", at = @At("HEAD"), cancellable = true)
     private static void createmanaindustry$fillIncompleteHexItem(Level level, int requiredAmount, ItemStack stack,
             FluidStack availableFluid, CallbackInfoReturnable<ItemStack> cir) {
-        if (com.iridium126.createmanaindustry.compat.trickster.BatteryAnima.isBattery(stack)
+        if (com.iridium126.createmanaindustry.compat.trickster.anima.BatteryAnima.isBattery(stack)
                 && !availableFluid.isEmpty() && availableFluid.getFluid().isSame(com.iridium126.createmanaindustry.CMIFluids.LIQUID_SOUL.get())) {
-            ItemStack charged = com.iridium126.createmanaindustry.compat.trickster.BatteryAnima.fill(stack, requiredAmount, availableFluid);
+            ItemStack charged = com.iridium126.createmanaindustry.compat.trickster.anima.BatteryAnima.fill(stack, requiredAmount, availableFluid);
             if (!charged.isEmpty()) { availableFluid.shrink(requiredAmount); stack.shrink(1); }
             cir.setReturnValue(charged);
             return;

@@ -1,7 +1,9 @@
 package com.iridium126.createmanaindustry.client.greattrick;
 
+import com.iridium126.createmanaindustry.compat.trickster.anima.AnimaMath;
+import com.iridium126.createmanaindustry.compat.trickster.anima.BatteryAnima;
+
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.compat.trickster.*;
 import net.minecraft.network.chat.Component;
 import net.minecraft.ChatFormatting;
 import net.neoforged.api.distmarker.Dist;

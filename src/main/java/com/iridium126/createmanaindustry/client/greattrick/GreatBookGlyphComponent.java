@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.client.greattrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.GreatTrickGlyph;
+import com.iridium126.createmanaindustry.compat.trickster.fragment.GreatTrickGlyph;
 import dev.enjarai.trickster.render.CircleRenderer;
 import dev.enjarai.trickster.screen.owo.GlyphComponent;
 import dev.enjarai.trickster.spell.Pattern;

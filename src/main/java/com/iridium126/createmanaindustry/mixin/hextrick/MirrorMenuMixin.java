@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
 import at.petrak.hexcasting.common.items.ItemStaff;
-import com.iridium126.createmanaindustry.compat.trickster.GreatMode;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatMode;
 import dev.enjarai.trickster.item.EvaluationMirrorItem;
 import dev.enjarai.trickster.screen.ScrollAndQuillScreenHandler;
 import dev.enjarai.trickster.screen.ScrollAndQuillScreenHandler.InitialData;

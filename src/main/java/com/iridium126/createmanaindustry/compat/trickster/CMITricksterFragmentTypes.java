@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.compat.trickster;
 
+import com.iridium126.createmanaindustry.compat.trickster.fragment.IotaFragment;
+
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import dev.enjarai.trickster.spell.fragment.FragmentType;
 import java.util.OptionalInt;

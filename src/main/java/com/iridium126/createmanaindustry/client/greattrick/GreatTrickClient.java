@@ -1,6 +1,8 @@
 package com.iridium126.createmanaindustry.client.greattrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.*;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatMode;
+import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatTricks;
+
 import dev.enjarai.trickster.render.fragment.FragmentRenderer;
 import dev.enjarai.trickster.screen.ScrollAndQuillScreen;
 import net.minecraft.client.Minecraft;

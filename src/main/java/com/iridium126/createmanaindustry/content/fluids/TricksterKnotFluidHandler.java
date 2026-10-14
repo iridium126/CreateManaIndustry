@@ -1,8 +1,8 @@
 package com.iridium126.createmanaindustry.content.fluids;
 
 import com.iridium126.createmanaindustry.CMIFluids;
-import com.iridium126.createmanaindustry.compat.trickster.TricksterKnotUtils;
-import com.iridium126.createmanaindustry.compat.trickster.TricksterManaAccess;
+import com.iridium126.createmanaindustry.compat.trickster.mana.TricksterKnotUtils;
+import com.iridium126.createmanaindustry.compat.trickster.mana.TricksterManaAccess;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;

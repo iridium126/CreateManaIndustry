@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
-import com.iridium126.createmanaindustry.compat.trickster.CastChains;
+import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.*;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
