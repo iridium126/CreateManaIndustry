@@ -11,7 +11,6 @@ import com.iridium126.createmanaindustry.content.kinetics.bnb.BnBKineticsCoreNod
 
 import net.minecraft.world.level.block.Block;
 
-import com.kipti.bnb.content.kinetics.cogwheel_chain.types.CogwheelChainType;
 
 /**
  * Lets modular spell constructs satisfy every chain type's cogwheel predicate,

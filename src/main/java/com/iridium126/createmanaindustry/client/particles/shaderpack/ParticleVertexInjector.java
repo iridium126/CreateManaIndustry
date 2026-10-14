@@ -5,7 +5,6 @@ import io.github.douira.glsl_transformer.ast.node.TranslationUnit;
 import io.github.douira.glsl_transformer.ast.node.Version;
 import io.github.douira.glsl_transformer.ast.node.declaration.TypeAndInitDeclaration;
 import io.github.douira.glsl_transformer.ast.node.expression.Expression;
-import io.github.douira.glsl_transformer.ast.node.expression.unary.FunctionCallExpression;
 import io.github.douira.glsl_transformer.ast.node.external_declaration.DeclarationExternalDeclaration;
 import io.github.douira.glsl_transformer.ast.node.external_declaration.ExternalDeclaration;
 import io.github.douira.glsl_transformer.ast.node.statement.CompoundStatement;
@@ -166,7 +165,7 @@ public final class ParticleVertexInjector {
     private void transform(TranslationUnit packTree, Root packRoot, PatchParams params) {
         // Step 1: parse our program as a separate tree
         TranslationUnit cmiTree = cmiTransformer.parseSeparateTranslationUnit(params.cmiVertexSource);
-        var cmiRoot = cmiTree.getRoot();
+        cmiTree.getRoot();
 
         // Step 2: splice our declarations in front of the pack's (main excluded,
         // injected below; names colliding with the pack's are skipped defensively

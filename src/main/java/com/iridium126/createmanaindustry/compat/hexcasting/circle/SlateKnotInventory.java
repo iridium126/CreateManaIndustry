@@ -131,6 +131,8 @@ public final class SlateKnotInventory implements Container {
         }
     }
 
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     private boolean isLiveSlot(int slot) {
         if (slot < 0 || slot >= slots.size()) return false;
         BlockEntity block = slots.get(slot).blockEntity();

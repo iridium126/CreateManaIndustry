@@ -47,6 +47,7 @@ import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
  * NBT keys ({@code Material}/{@code Item}), validation, {@code getModelData}
  * and creative handling strictly mirror Create's implementation.
  */
+@SuppressWarnings("unchecked") // Preserve Create's concrete controller return type and its generic interface bridge.
 public class FuelTankBlockEntity extends CopycatBlockEntity
 		implements IHaveGoggleInformation, IMultiBlockEntityContainer.Fluid {
 
@@ -400,7 +401,6 @@ public class FuelTankBlockEntity extends CopycatBlockEntity
 		updateConnectivity = false;
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public FuelTankBlockEntity getControllerBE() {
 		if (isController() || !hasLevel())

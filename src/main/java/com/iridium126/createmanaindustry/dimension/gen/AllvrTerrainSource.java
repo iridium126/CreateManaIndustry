@@ -229,6 +229,7 @@ final class AllvrTerrainSource {
         }
     }
 
+    @SuppressWarnings("deprecation") // Preserve custom generator overrides of biome generation settings.
     private net.minecraft.world.level.biome.BiomeGenerationSettings carverSettings(ChunkPos origin) {
         long key = origin.toLong();
         synchronized (cacheLock) {

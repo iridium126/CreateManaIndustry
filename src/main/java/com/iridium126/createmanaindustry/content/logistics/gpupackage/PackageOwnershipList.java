@@ -143,6 +143,7 @@ public final class PackageOwnershipList<E> extends AbstractSequentialList<E> {
     private CreateMirror currentMirror(){if(mirrorVersion!=createModCount)mirror.rebuild();return mirror;}
     /** The native ArrayList iterator keeps the hot consumer loop identical to Create. Rebuild
      * only the Create subset after membership changes, never the GPU-owned population. */
+    @SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
     private final class CreateMirror extends ArrayList<E> {
         void invalidate(){modCount++;}
         void rebuild() {

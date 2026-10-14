@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.mixin.hexcasting;
 
-import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.world.entity.player.Player;
 import org.spongepowered.asm.mixin.Mixin;

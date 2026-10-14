@@ -74,6 +74,8 @@ public final class BlockSpellExecutionManager implements SpellExecutionManager {
     }
     @Override public void killAll() { JOBS.remove(owner); }
 
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     private static boolean valid(BlockEntity block, ServerLevel level) {
         return !block.isRemoved() && block.getLevel() == level && level.hasChunkAt(block.getBlockPos())
                 && level.getBlockEntity(block.getBlockPos()) == block;

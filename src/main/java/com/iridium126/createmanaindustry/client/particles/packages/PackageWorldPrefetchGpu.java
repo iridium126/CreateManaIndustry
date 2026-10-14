@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
-import java.nio.ByteBuffer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.lwjgl.opengl.*;

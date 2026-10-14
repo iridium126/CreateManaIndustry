@@ -4,7 +4,6 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
@@ -88,7 +87,7 @@ public final class AllvrCube {
      * (cubes are outside the vanilla {@code Level#tickBlockEntities} loop, whose
      * per-chunk {@code TickingTracker} we deliberately do not touch).
      */
-    private final Int2ObjectOpenHashMap<BlockEntityTicker> tickers = new Int2ObjectOpenHashMap<>();
+    private final Int2ObjectOpenHashMap<BlockEntityTicker<?>> tickers = new Int2ObjectOpenHashMap<>();
 
     public AllvrCube(AllvrCubePos pos, Registry<Biome> biomeRegistry) {
         this.pos = pos;
@@ -318,6 +317,8 @@ public final class AllvrCube {
      * {@code EntityBlock} state creates one. The ticker is bound to the
      * written state in every kept/created case.
      */
+    // Mirror vanilla block-entity state updates without replacing the existing entity.
+    @SuppressWarnings("deprecation")
     public void updateBlockEntity(Level level, BlockPos pos, BlockState newState) {
         int cell = localIndex(pos);
         BlockEntity existing = this.blockEntities.get(cell);
@@ -375,7 +376,7 @@ public final class AllvrCube {
      * snapshot because tickers may add/remove BEs mid-tick (vanilla defers its
      * removals through a queue for the same reason).
      */
-    @SuppressWarnings({"unchecked", "rawtypes"})
+    @SuppressWarnings("unchecked")
     public void tickBlockEntities(Level level) {
         if (this.blockEntities.isEmpty()) {
             return;
@@ -385,7 +386,7 @@ public final class AllvrCube {
             if (be == null || be.isRemoved()) {
                 continue;
             }
-            BlockEntityTicker ticker = this.tickers.get(cell);
+            BlockEntityTicker<BlockEntity> ticker = (BlockEntityTicker<BlockEntity>) this.tickers.get(cell);
             if (ticker == null) {
                 continue;
             }

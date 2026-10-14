@@ -633,6 +633,7 @@ public final class AllvrClientCubeCache {
     }
 
     /** Client-side equivalent of Level#setBlockEntity for cube positions. */
+    @SuppressWarnings("deprecation") // Mirror vanilla state updates while retaining the existing block entity.
     public static void setBlockEntity(BlockEntity blockEntity) {
         ClientLevel clientLevel = level;
         if (clientLevel == null || clientLevel.dimension() != AllvrDimensions.ALLAY_LEVEL) {

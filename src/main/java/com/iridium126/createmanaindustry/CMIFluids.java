@@ -220,6 +220,7 @@ public class CMIFluids {
         }
 
         @Override
+        @SuppressWarnings({"removal", "all"}) // javac flags the override; ECJ flags the otherwise unused suppression.
         public void initializeClient(Consumer<IClientFluidTypeExtensions> consumer) {
             consumer.accept(new IClientFluidTypeExtensions() {
                 @Override

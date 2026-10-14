@@ -7,6 +7,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.DecoderException;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.neoforged.neoforge.network.connection.ConnectionType;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +16,7 @@ class PackagePacketTest {
     private static final PackageAuthorityRegion.Baseline BASELINE=new PackageAuthorityRegion.Baseline(65536,
             new PackageLease.Identity(0x1234567800000001L,0x2345678900000001L),0x3456789000000001L,9,
             new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(-12798,1280002,-62,1,-2,3,-89),1));
-    private static RegistryFriendlyByteBuf buffer(){return new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY);}
+    private static RegistryFriendlyByteBuf buffer(){return new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY, ConnectionType.OTHER);}
     @Test void v3BatchActionKeepsEnvelopeIdentityAndLosslessDecodedFields() {
         var entries=java.util.List.of(new PackageDeltaCodec.Entry(65536,15,new PackageDeltaCodec.Quantized(Integer.MIN_VALUE,5,Integer.MAX_VALUE,
                 Short.MIN_VALUE,Short.MAX_VALUE,(short)3,(short)-99,3)),new PackageDeltaCodec.Entry(65537,16,

@@ -185,7 +185,7 @@ public final class ShaderPackProgramCompiler {
      */
     public boolean ensureCompiled() {
         WorldRenderingPipeline pipeline = Iris.getPipelineManager().getPipelineNullable();
-        if (!(pipeline instanceof IrisRenderingPipeline irisPipeline))
+        if (!(pipeline instanceof IrisRenderingPipeline))
             return false;
         // Sticky per-pipeline state: ready -> reuse, failed -> stay failed until
         // the pipeline INSTANCE changes (pack switch / reload). Prevents re-running

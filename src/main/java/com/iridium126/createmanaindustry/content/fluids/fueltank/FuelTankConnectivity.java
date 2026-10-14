@@ -1439,7 +1439,7 @@ public final class FuelTankConnectivity {
 			basinMaxY[b] = Math.max(basinMaxY[b], arr[i].getY());
 		}
 		@SuppressWarnings("unchecked")
-		Set<Integer>[] nbors = new Set[basinCount];
+		Set<Integer>[] nbors = (Set<Integer>[]) new Set<?>[basinCount];
 		for (int i = 0; i < basinCount; i++)
 			nbors[i] = new HashSet<>();
 		for (int i = 0; i < n; i++) {
@@ -1630,7 +1630,7 @@ public final class FuelTankConnectivity {
 
 		// adjacency
 		@SuppressWarnings("unchecked")
-		Set<Integer>[] adj = new Set[finalCount];
+		Set<Integer>[] adj = (Set<Integer>[]) new Set<?>[finalCount];
 		for (int i = 0; i < finalCount; i++)
 			adj[i] = new HashSet<>();
 		for (int i = 0; i < n; i++) {
@@ -1833,7 +1833,7 @@ public final class FuelTankConnectivity {
 			// rebuild adjacency
 			int n = data.basins.size();
 			@SuppressWarnings("unchecked")
-			Set<Integer>[] adj = new Set[n];
+			Set<Integer>[] adj = (Set<Integer>[]) new Set<?>[n];
 			for (int i = 0; i < n; i++)
 				adj[i] = new HashSet<>();
 			for (int i = 0; i < n; i++) {

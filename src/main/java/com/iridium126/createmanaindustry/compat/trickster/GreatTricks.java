@@ -84,6 +84,7 @@ public final class GreatTricks {
         for (GreatTrick trick : REGISTRY) if (trick.pattern().equals(pattern)) return trick;
         return null;
     }
+    @SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
     public static class AnimaBlunder extends WrappableBlunder {
         private final long cost;
         public AnimaBlunder() { this(4000); }

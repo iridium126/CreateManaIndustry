@@ -1640,6 +1640,8 @@ public final class ExecutionScope implements AutoCloseable {
         }
     }
 
+    // Ancestor scopes are borrowed; the caller closes each execution scope.
+    @SuppressWarnings("resource")
     private MotionState motionState() {
         MotionState state = motions;
         if (state == null) {

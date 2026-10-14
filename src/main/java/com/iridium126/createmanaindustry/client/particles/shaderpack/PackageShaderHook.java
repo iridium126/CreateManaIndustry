@@ -17,7 +17,7 @@ import net.irisshaders.iris.vertices.ImmediateState;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.culling.Frustum;
-import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.joml.*;
 import org.lwjgl.opengl.*;
@@ -132,7 +132,7 @@ public final class PackageShaderHook {
             if(!pool.preparePass(pass,pool.committedPoolBuffer(),CULLING.planes,CULLING.count,CULLING.distance,CULLING.safe,
                     (float)position.x,(float)position.y,(float)position.z,chainVisibility))return;
             boolean sampled=pool.bindPassTbos(pass,PackageShaderCompiler.SAMPLER_BASE,engine.packageInterpolation());
-            RenderSystem.setShaderTexture(0,TextureAtlas.LOCATION_BLOCKS);
+            RenderSystem.setShaderTexture(0,InventoryMenu.BLOCK_ATLAS);
             RenderSystem.setShaderTexture(2,mc.getTextureManager().getTexture(mc.gameRenderer.lightTexture().lightTextureLocation).getId());
             var shader=program.shader();shader.MODEL_VIEW_MATRIX.set(VIEW);if(shader.PROJECTION_MATRIX!=null)shader.PROJECTION_MATRIX.set(PROJECTION);
             int packageId=WorldRenderingSettings.INSTANCE.getEntityIds()==null?0:WorldRenderingSettings.INSTANCE.getEntityIds().getInt(PACKAGE_ID);

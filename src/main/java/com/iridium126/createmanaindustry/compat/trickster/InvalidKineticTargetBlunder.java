@@ -7,6 +7,7 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
 
+@SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
 public class InvalidKineticTargetBlunder extends WrappableBlunder {
     private final BlockPos pos;
 

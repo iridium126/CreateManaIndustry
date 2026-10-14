@@ -7,6 +7,7 @@ import io.netty.handler.codec.DecoderException;
 import java.util.Arrays;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.neoforged.neoforge.network.connection.ConnectionType;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
@@ -14,7 +15,7 @@ class PackageAckPacketTest {
     static final ResourceLocation DIM=ResourceLocation.parse("minecraft:overworld");
     static final PackageRegion REGION=new PackageRegion(-200,33554432,-1);
     static final long EPOCH=0x1234567800000001L,REVISION=0x2345678900000001L;
-    static RegistryFriendlyByteBuf buffer(){return new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY);}
+    static RegistryFriendlyByteBuf buffer(){return new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY, ConnectionType.OTHER);}
     static void header(RegistryFriendlyByteBuf b){b.writeResourceLocation(DIM);ServerboundPackagePacket.writeRegion(b,REGION);b.writeVarLong(EPOCH);b.writeVarLong(REVISION);}
     @Test void fullEnvelopeSparseRunsAndLongMaximumRoundTrip() {
         var ranges=new PackageAckRanges(0xffffffffL,0x100000000L,Long.MAX_VALUE-2,Long.MAX_VALUE);
@@ -34,7 +35,7 @@ class PackageAckPacketTest {
         byte[] encoded;
         try{ClientboundPackageAckPacket.STREAM_CODEC.encode(bytes,packet);encoded=new byte[bytes.readableBytes()];bytes.readBytes(encoded);}finally{bytes.release();}
         for(int i=0;i<encoded.length;i++) {
-            var truncated=new RegistryFriendlyByteBuf(Unpooled.wrappedBuffer(Arrays.copyOf(encoded,i)),RegistryAccess.EMPTY);
+            var truncated=new RegistryFriendlyByteBuf(Unpooled.wrappedBuffer(Arrays.copyOf(encoded,i)), RegistryAccess.EMPTY, ConnectionType.OTHER);
             try{assertThrows(DecoderException.class,()->ClientboundPackageAckPacket.STREAM_CODEC.decode(truncated));}finally{truncated.release();}
         }
     }

@@ -12,7 +12,6 @@ import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import at.petrak.hexcasting.api.casting.ParticleSpray;
 import at.petrak.hexcasting.common.msgs.MsgCastParticleS2C;
 import net.minecraft.client.Minecraft;
-import net.minecraft.world.phys.Vec3;
 
 /**
  * Redirects Hexcasting's cast/conjure particle sprays to the GPU particle

@@ -63,6 +63,7 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
     @Inject(method = "tick", at = @At(value = "INVOKE",
         target = "Lnet/minecraft/world/level/entity/EntityTickList;forEach(Ljava/util/function/Consumer;)V"))
     private void allvr$syncCubeEntityTicking(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         ServerLevel self = (ServerLevel) (Object) this;
         if (self.dimension() == AllvrDimensions.ALLAY_LEVEL) {
             this.allvr$syncEntityTicking();
@@ -80,6 +81,7 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
     private boolean allvr$allowLoadedCubeEntityTicking(DistanceManager distanceManager, long chunkPos,
                                                          Operation<Boolean> original,
                                                          @Local(argsOnly = true) Entity entity) {
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         ServerLevel self = (ServerLevel) (Object) this;
         if (self.dimension() == AllvrDimensions.ALLAY_LEVEL
             && !AllvrDimensionLimits.isVanillaY(entity.blockPosition().getY())

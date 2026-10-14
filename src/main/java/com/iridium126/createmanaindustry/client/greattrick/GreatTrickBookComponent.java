@@ -4,7 +4,6 @@ import com.iridium126.createmanaindustry.compat.trickster.AnimaMath;
 import com.iridium126.createmanaindustry.compat.trickster.GreatTrick;
 import com.iridium126.createmanaindustry.compat.trickster.GreatTrickGlyph;
 import com.iridium126.createmanaindustry.compat.trickster.GreatTricks;
-import dev.enjarai.trickster.spell.fragment.FragmentType;
 import io.wispforest.owo.ui.component.Components;
 import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.core.Color;

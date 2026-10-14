@@ -6,6 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import org.jetbrains.annotations.Nullable;
 
+@SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
 public final class ResourceConversionBlunder extends WrappableBlunder {
     private final String reason;
 

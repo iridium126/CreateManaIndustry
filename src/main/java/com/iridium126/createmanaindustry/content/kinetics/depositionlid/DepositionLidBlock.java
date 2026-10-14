@@ -31,6 +31,7 @@ public class DepositionLidBlock extends TrainTrapdoorBlock implements IBE<Deposi
     }
 
     /** Creative pick-block returns a framed glass trapdoor (this block has no item). */
+    @SuppressWarnings({"deprecation", "all"}) // javac flags the override; ECJ flags the otherwise unused suppression.
     @Override
     public ItemStack getCloneItemStack(LevelReader level, BlockPos pos, BlockState state) {
         return new ItemStack(AllBlocks.FRAMED_GLASS_TRAPDOOR.get());

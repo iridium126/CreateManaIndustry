@@ -15,6 +15,7 @@ import net.minecraft.world.phys.Vec3;
  * Thrown when a Depot or Placard at the target position does not hold an
  * {@link at.petrak.hexcasting.api.item.IotaHolderItem}.
  */
+@SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
 public class MishapInvalidBlockOrItem extends Mishap {
 
     public enum Reason {

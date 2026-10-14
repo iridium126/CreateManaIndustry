@@ -353,7 +353,7 @@ public final class ServerConfig {
                 .defineInRange("tickRandomTickIProb", 1365, 600, 2100);
         HEX_TICK_ACCELERATE_DENY_LIST = BUILDER
                 .comment("Block IDs that Tick Acceleration cannot advance.")
-                .defineList("accelerateDenyList", List.of("hexcasting:impetus_look", "create:deployer"),
+                .defineList("accelerateDenyList", List.of("hexcasting:impetus_look", "create:deployer"), null,
                         ServerConfig::isValidResourceLocation);
         BUILDER.pop();
         BUILDER.comment("Server-side Hex JIT controls. These tune execution only; compiled calls preserve Hexcasting action semantics.").push("jit");

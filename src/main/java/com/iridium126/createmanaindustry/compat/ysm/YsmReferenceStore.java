@@ -2,12 +2,10 @@ package com.iridium126.createmanaindustry.compat.ysm;
 
 import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
 
-import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry.*;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometryIO;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmModelSnapshot;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmPortableGeometryCodec;
-import com.iridium126.createmanaindustry.compat.ysm.model.YsmPlaintextModel;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
 import java.io.*;
 import java.nio.file.*;
@@ -715,6 +713,8 @@ public final class YsmReferenceStore implements AutoCloseable {
         return objects.resolve(key.substring(0, 2)).resolve(key + ".bin");
     }
 
+    // Retain byte-array hashing for future in-memory object ingestion.
+    @SuppressWarnings("unused")
     private static String hash(byte[] bytes) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
         catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }

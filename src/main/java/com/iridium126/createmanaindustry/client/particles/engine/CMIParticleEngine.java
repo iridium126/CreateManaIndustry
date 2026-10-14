@@ -129,6 +129,8 @@ public final class CMIParticleEngine {
     public static final CMIParticleEngine INSTANCE = new CMIParticleEngine();
 
     private static final int MAX_EMITTERS = 128;
+    // Reserved headroom for future emitter admission limits.
+    @SuppressWarnings("unused")
     private static final int SAFETY_MARGIN = 2048;
     /**
      * Width of the distance fade ramp past the configured fade distance
@@ -2131,7 +2133,7 @@ public final class CMIParticleEngine {
             RenderSystem.enableCull();
             GL13.glActiveTexture(GL13.GL_TEXTURE1);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D,Minecraft.getInstance().getTextureManager()
-                    .getTexture(net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS).getId());
+                    .getTexture(net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS).getId());
             LightTexture light=Minecraft.getInstance().gameRenderer.lightTexture();
             GL13.glActiveTexture(GL13.GL_TEXTURE2);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D,Minecraft.getInstance().getTextureManager()

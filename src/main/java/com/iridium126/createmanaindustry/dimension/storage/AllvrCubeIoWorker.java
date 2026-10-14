@@ -106,7 +106,11 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
 
     private static final class PendingWrite {
         final AllvrCubePos pos;
+        // Retain snapshot versions for future durable-write bookkeeping.
+        @SuppressWarnings("unused")
         final long version;
+        // Retain snapshot versions for future durable-write bookkeeping.
+        @SuppressWarnings("unused")
         final long lightVersion;
         final CompoundTag tag;
         final CompletableFuture<Void> durable = new CompletableFuture<>();

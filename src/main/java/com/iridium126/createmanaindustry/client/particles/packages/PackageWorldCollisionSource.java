@@ -14,6 +14,8 @@ public final class PackageWorldCollisionSource implements PackageCollisionCache.
     private final Level level;
     private final BlockPos.MutableBlockPos position=new BlockPos.MutableBlockPos();
     public PackageWorldCollisionSource(Level level){this.level=java.util.Objects.requireNonNull(level);}
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     @Override public PackageCollisionCache.Cell capture(PackageCollisionCache.Section section,int index) {
         if(Thread.currentThread()!=owner)throw new IllegalStateException("World capture off owner thread");
         position.set((section.x()<<4)+(index&15),(section.y()<<4)+(index>>>8),(section.z()<<4)+((index>>>4)&15));

@@ -40,6 +40,7 @@ public final class PackageObserverFeed<M> {
         }
         public long stateTick(int index){return stateTicks.get(index);}
     }
+    @SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
     public static final class LaggedException extends IllegalStateException {
         private LaggedException(){super("Observer journal overwritten; a fresh stream baseline is required");}
     }
@@ -76,7 +77,7 @@ public final class PackageObserverFeed<M> {
     private int subscribers;
 
     public PackageObserverFeed(){this(DEFAULT_LOG_CAPACITY);}
-    @SuppressWarnings("unchecked") public PackageObserverFeed(int capacity) {
+    public PackageObserverFeed(int capacity) {
         if(capacity<1)throw new IllegalArgumentException("Observer journal capacity");
         logCapacity=capacity;
         acceptedScratch=new PackageDeltaCodec.Quantized[PackageDeltaCodec.MAX_ENTRIES];

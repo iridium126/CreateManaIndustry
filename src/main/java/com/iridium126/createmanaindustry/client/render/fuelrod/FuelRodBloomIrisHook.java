@@ -21,7 +21,6 @@ import top.leonx.irisveil.compat.veil.VeilCompatRegistry;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL30;
-import com.iridium126.createmanaindustry.client.render.mist.MistIrisHook;
 
 /**
  * Draws the fuel rod bloom shader inside the Iris gbuffer while a shader pack

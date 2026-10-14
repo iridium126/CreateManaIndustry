@@ -9,6 +9,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.DyeColor;
 import com.iridium126.createmanaindustry.compat.ysm.YsmChatMessages;
 
+@SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
 public final class MishapYsm extends Mishap {
     private final String reason;
     public MishapYsm(String reason) { this.reason = reason; }

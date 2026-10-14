@@ -224,7 +224,6 @@ public final class IotaStackValidation {
         if (cache != null && cache.cacheSharedSegments && prefix.length == tree.cmi$getLen1()) {
             int cachedUnits = cache.cachePrefix(prefix);
             if (cachedUnits > 0) {
-                if (1 >= HexIotaTypes.MAX_SERIALIZATION_DEPTH && cachedUnits > 0) return true;
                 totalSize += cachedUnits;
             } else {
                 for (Object value : prefix) {

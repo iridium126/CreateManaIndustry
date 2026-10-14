@@ -30,6 +30,7 @@ public class MoltenFluidType extends FluidType {
         this.flowingTexture = flowingTexture;
     }
 
+    @SuppressWarnings({"removal", "all"}) // javac flags the override; ECJ flags the otherwise unused suppression.
     @Override
     public void initializeClient(Consumer<IClientFluidTypeExtensions> consumer) {
         consumer.accept(new IClientFluidTypeExtensions() {

@@ -6,7 +6,6 @@ import java.util.function.Function;
 import org.joml.Matrix4f;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
-import com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms;
 
 /** Shared vertex-pulling cache. Source uploads are immutable; generated points are GPU-only. */
 public final class HexGpuBackend implements AutoCloseable {
@@ -23,10 +22,14 @@ public final class HexGpuBackend implements AutoCloseable {
     }
     private record Key(HexShape shape,long seed,long time,int x,int y) {}
     private static final class UploadedShape {
+        // Retain the uploaded source for future cache lifecycle handling.
+        @SuppressWarnings("unused")
         final HexShape shape;final int offset,bytes;int refs;
         UploadedShape(HexShape shape,int offset){this.shape=shape;this.offset=offset;bytes=shape.sources.remaining();}
     }
     private static final class Geometry {
+        // Retain the geometry identity for future cache invalidation.
+        @SuppressWarnings("unused")
         final Key key;final UploadedShape source;final int point,pointBytes;int pins;boolean generated;long last;
         Geometry(Key key,UploadedShape source,int point){this.key=key;this.source=source;this.point=point;pointBytes=(key.shape.points+key.shape.nodes)*16;source.refs++;}
     }

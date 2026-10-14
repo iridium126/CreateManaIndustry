@@ -10,6 +10,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.DecoderException;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.neoforged.neoforge.network.connection.ConnectionType;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
@@ -22,14 +23,14 @@ class PackageObserverPacketTest {
             assertThrows(DecoderException.class,()->ServerboundPackageObserverPacket.STREAM_CODEC.decode(bytes));
             bytes.clear();var valid=new ClientboundPackageObserverPacket(DIM,REGION,10,1,20,0,3,List.of(member(0)),List.of());
             ClientboundPackageObserverPacket.STREAM_CODEC.encode(bytes,valid);
-            var cursor=new RegistryFriendlyByteBuf(bytes.duplicate(),RegistryAccess.EMPTY);cursor.readResourceLocation();ServerboundPackagePacket.readRegion(cursor);
+        var cursor=new RegistryFriendlyByteBuf(bytes.duplicate(),RegistryAccess.EMPTY,ConnectionType.OTHER);cursor.readResourceLocation();ServerboundPackagePacket.readRegion(cursor);
             for(int i=0;i<4;i++)cursor.readVarLong();bytes.setByte(cursor.readerIndex(),11);
             assertThrows(DecoderException.class,()->ClientboundPackageObserverPacket.STREAM_CODEC.decode(bytes));
         }finally{bytes.release();}
     }
     private static final ResourceLocation DIM=ResourceLocation.parse("minecraft:overworld");
     private static final PackageRegion REGION=new PackageRegion(-200,33554432,-1);
-    private static RegistryFriendlyByteBuf buffer(){return new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY);}
+    private static RegistryFriendlyByteBuf buffer(){return new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY, ConnectionType.OTHER);}
     private static PackageObserverFeed.Member<ClientboundPackageObserverPacket.Visual> member(int index) {
         var q=new PackageDeltaCodec.Quantized(123456,-234567,345678,(short)1234,(short)-2345,(short)3456,(short)-12345,3);
         var v=new ClientboundPackageObserverPacket.Visual(index,new UUID(12345678,index),ResourceLocation.parse("create:cardboard_package_10x8"),1,.75f);

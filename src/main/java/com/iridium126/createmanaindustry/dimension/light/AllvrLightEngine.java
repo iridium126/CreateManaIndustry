@@ -280,6 +280,8 @@ public final class AllvrLightEngine {
         }
     }
 
+    // Retain the registration helper for future light lifecycle integration.
+    @SuppressWarnings("unused")
     private void registerCube(AllvrCube cube) {
         shardForCube(cube, true).registerCube(cube);
     }
@@ -464,6 +466,8 @@ public final class AllvrLightEngine {
         return AllvrDimensionLimits.isInBounds(pos);
     }
 
+    // Retain the padding-section check for future light boundary handling.
+    @SuppressWarnings("unused")
     private static boolean isSupportedLocalSection(SectionPos section) {
         // Keep one padding section available on each side for the vanilla
         // sky engine. The actual cube sections are always inside this range.

@@ -12,7 +12,6 @@ import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundS
 
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import net.minecraft.client.Minecraft;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 
@@ -944,7 +943,7 @@ public final class AllayStormRuntime {
                 // Drain in ~60 frames regardless of population (see javadoc).
                 // The storm spec is FIXED (always MODEL) — resolve its
                 // translucency once, outside the scheduling loop.
-                boolean translucent = engine.isTranslucent(AllayStormSpec.SPEC);
+                boolean translucent = CMIParticleEngine.isTranslucent(AllayStormSpec.SPEC);
                 int budget = Math.min(this.pendingStormSpawns,
                         Math.max(ParticleBuffers.MAX_EMIT_COMMANDS,
                                 (this.pendingStormSpawns + 59) / 60));

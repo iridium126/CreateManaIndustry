@@ -1,7 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.iris;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.shaderpack.HexIrisHook;
-import com.iridium126.createmanaindustry.client.particles.hex.HexPatternService;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import net.irisshaders.iris.shadows.ShadowRenderer;

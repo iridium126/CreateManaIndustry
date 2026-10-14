@@ -5,6 +5,7 @@ import dev.enjarai.trickster.spell.exception.blunder.WrappableBlunder;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 
+@SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
 public final class SharedFateBlunder extends WrappableBlunder {
     private final String reason;
     public SharedFateBlunder(String reason) { this.reason = reason; }

@@ -10,7 +10,6 @@ import com.simibubi.create.content.logistics.chute.AbstractChuteBlock;
 import com.simibubi.create.content.logistics.funnel.*;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 import com.simibubi.create.content.kinetics.belt.behaviour.DirectBeltInputBehaviour;
-import com.simibubi.create.foundation.blockEntity.behaviour.filtering.FilteringBehaviour;
 import java.util.List;
 import net.minecraft.core.*;
 import net.minecraft.server.level.*;
@@ -102,6 +101,8 @@ public final class PackageLightGameplay {
     static boolean environmentValid(ServerLevel level,PackageLightStore.Entry entry,PackageRegion region,PackageEnvironmentEvent.Sample sample){
         return environmentRejection(level,entry,region,sample)==null;
     }
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     static String environmentRejection(ServerLevel level,PackageLightStore.Entry entry,PackageRegion region,PackageEnvironmentEvent.Sample sample){
         var p=new Vec3(region.originX()+sample.px(),region.originY()+sample.py(),region.originZ()+sample.pz());
         if(sample.contact()==0)return null;

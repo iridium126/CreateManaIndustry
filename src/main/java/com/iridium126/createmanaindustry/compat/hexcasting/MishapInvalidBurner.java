@@ -15,6 +15,7 @@ import net.minecraft.world.phys.Vec3;
  * Allay Burner. Unlike {@link MishapInvalidBlockOrItem}, the stack is left
  * untouched (no {@code GarbageIota} is appended).
  */
+@SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
 public class MishapInvalidBurner extends Mishap {
 
     private final Vec3 position;

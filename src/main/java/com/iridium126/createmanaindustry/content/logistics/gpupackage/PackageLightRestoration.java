@@ -33,6 +33,8 @@ final class PackageLightRestoration {
     }
     private static ListTag doubles(double...values){var list=new ListTag();for(double value:values)list.add(DoubleTag.valueOf(value));return list;}
 
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     static PackageEntity restore(ServerLevel level,PackageLightStore.Entry entry) {
         if(ServerConfig.packageGpuAuthority||!level.hasChunkAt(net.minecraft.core.BlockPos.containing(entry.position())))return null;
         var existing=level.getEntity(entry.uuid);

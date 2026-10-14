@@ -49,6 +49,7 @@ public final class ParticleDiagnostics {
         if (!enabled) return;
         start = System.nanoTime(); allocatedStart = allocated();
     }
+    @SuppressWarnings("deprecation") // Preserve getId() overrides on custom Thread subclasses.
     private long allocated() {
         return memory != null && memory.isThreadAllocatedMemorySupported() && memory.isThreadAllocatedMemoryEnabled()
                 ? memory.getThreadAllocatedBytes(Thread.currentThread().getId()) : 0;

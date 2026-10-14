@@ -11,6 +11,7 @@ import java.io.IOException;
  * (plan §6/§8.8). Repair is manual — an admin removes or replaces the
  * region record.
  */
+@SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
 public class AllvrCubeCorruptedException extends IOException {
 
     public AllvrCubeCorruptedException(String message) {

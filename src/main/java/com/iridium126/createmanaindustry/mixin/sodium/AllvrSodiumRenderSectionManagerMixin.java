@@ -13,7 +13,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge;
 import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumSectionLifecycle;
 import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumSectionSource;
-import com.iridium126.createmanaindustry.client.dimension.render.sodium.SodiumApi_0813_1211;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager;
@@ -25,7 +24,6 @@ import net.caffeinemc.mods.sodium.client.render.chunk.data.BuiltSectionInfo;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import net.caffeinemc.mods.sodium.client.render.viewport.CameraTransform;
 import net.caffeinemc.mods.sodium.client.gl.device.CommandList;
-import net.caffeinemc.mods.sodium.client.world.LevelSlice;
 import net.caffeinemc.mods.sodium.client.world.cloned.ChunkRenderContext;
 import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
 import net.minecraft.client.multiplayer.ClientLevel;

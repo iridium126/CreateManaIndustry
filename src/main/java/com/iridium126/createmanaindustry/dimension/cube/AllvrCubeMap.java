@@ -28,7 +28,6 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -437,6 +436,8 @@ public final class AllvrCubeMap {
      * positions, while retaining vanilla's state/type validation and BE
      * lifecycle bookkeeping.
      */
+    // Mirror vanilla block-entity state updates without replacing the existing entity.
+    @SuppressWarnings("deprecation")
     public void setBlockEntity(BlockEntity blockEntity) {
         BlockPos pos = blockEntity.getBlockPos().immutable();
         if (!AllvrDimensionLimits.isInBounds(pos)) {
@@ -853,7 +854,7 @@ public final class AllvrCubeMap {
             boolean needed = isNeededByAnyPlayer(pending, players);
             if (!needed && pendingPersistedLoads.remove(entry.getKey(), entry.getValue())) {
                 entry.getValue().cancel(false);
-                loadCooldown.remove(entry.getKey());
+                loadCooldown.remove(entry.getKey().longValue());
             }
         }
     }

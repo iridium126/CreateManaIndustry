@@ -4,7 +4,6 @@ package com.iridium126.createmanaindustry.compat.ysm.internal.algorithms;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
-import java.util.Arrays;
 
 public abstract class ChaCha20Base {
     protected static final int[] SIGMA = toIntArray(new byte[]{101, 120, 112, 97, 110, 100, 32, 51, 50, 45, 98, 121, 116, 101, 32, 107});

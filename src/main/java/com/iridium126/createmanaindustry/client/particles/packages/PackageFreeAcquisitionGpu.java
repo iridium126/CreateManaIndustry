@@ -35,6 +35,8 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         ClientboundPackagePacket checkpoint,active;
         Phase phase=Phase.RESOURCES,capturedPhase;
         int body=-1,candidate=-1,delta=-1;
+        // Retain acquisition ownership state for future lifecycle handling.
+        @SuppressWarnings("unused")
         boolean queued,captured,terminal,owned;long environmentAck,capturedSubmission,capturedCommit,visibleSince,retireBarrier,environmentBarrier,retireFence;
         Entry(ClientboundPackagePacket offer){this.offer=checkpoint=offer;}
     }

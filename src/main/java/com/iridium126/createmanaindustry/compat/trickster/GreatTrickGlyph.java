@@ -29,6 +29,7 @@ public record GreatTrickGlyph(GreatPattern pattern) implements Fragment {
         if (trick == null) throw new UnknownGreatTrick();
         return trick.activate(ctx, args);
     }
+    @SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
     private static final class UnknownGreatTrick extends WrappableBlunder {
         public MutableComponent createMessage(TrickContext ctx) { return Component.translatable("createmanaindustry.great_trick.unknown"); }
     }

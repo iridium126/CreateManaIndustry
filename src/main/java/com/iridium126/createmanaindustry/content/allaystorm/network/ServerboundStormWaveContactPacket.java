@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.content.allaystorm.network;
 
-import com.iridium126.createmanaindustry.CreateManaIndustry;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -41,6 +40,8 @@ public record ServerboundStormWaveContactPacket(
         buffer.writeFloat(p.relZ);
     }
 
+    // Retain the coordinate helper for future contact packet formats.
+    @SuppressWarnings("unused")
     private static short quant(double rel) {
         double q = rel * 16.0;
         return (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, Math.round(q)));

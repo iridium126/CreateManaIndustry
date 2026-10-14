@@ -41,6 +41,7 @@ public abstract class AllvrClientEntityTickingMixin {
 
     @Inject(method = "tickEntities", at = @At("HEAD"))
     private void allvr$startLoadedCubeEntityChunks(CallbackInfo ci) {
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         ClientLevel level = (ClientLevel) (Object) this;
         if (level.dimension() != AllvrDimensions.ALLAY_LEVEL) {
             return;

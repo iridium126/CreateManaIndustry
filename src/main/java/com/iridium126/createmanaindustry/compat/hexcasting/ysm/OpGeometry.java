@@ -34,7 +34,7 @@ public record OpGeometry(boolean setter) implements ConstMediaAction {
             throw new MishapInvalidGeometry(failure.getMessage());
         }
 
-        String property = PROPERTIES.get(propertyIndex);
+        PROPERTIES.get(propertyIndex); // Preserve the property lookup and its validation.
         if (!supports(propertyIndex, target)) {
             boolean cubeProperty = propertyIndex <= 1 || propertyIndex == 5 || propertyIndex == 7;
             throw new MishapInvalidIota(target, getArgc() - 1,
