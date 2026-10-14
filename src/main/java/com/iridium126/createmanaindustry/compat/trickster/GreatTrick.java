@@ -11,5 +11,7 @@ public abstract class GreatTrick {
     protected GreatTrick(GreatPattern pattern, long animaCost) { this.pattern=pattern; this.animaCost=animaCost; }
     public GreatPattern pattern() { return pattern; }
     public long animaCost() { return animaCost; }
+    public List<dev.enjarai.trickster.spell.fragment.FragmentType<?>> inputTypes() { return List.of(); }
+    public dev.enjarai.trickster.spell.fragment.FragmentType<?> outputType() { return dev.enjarai.trickster.spell.fragment.FragmentType.VOID; }
     public abstract Fragment activate(SpellContext context, List<Fragment> arguments);
 }

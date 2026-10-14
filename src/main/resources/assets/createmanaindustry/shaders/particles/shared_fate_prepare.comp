@@ -1,0 +1,65 @@
+layout(local_size_x=64) in;
+layout(std430,binding=0) readonly buffer Inputs{vec4 entries[];} inputData;
+layout(std430,binding=1) buffer Jobs{vec4 entries[];} jobs;
+layout(std430,binding=2) readonly buffer PreviousState{vec4 entries[];} previous;
+layout(std430,binding=3) buffer NextState{vec4 entries[];} nextState;
+uniform uint uCount;
+uniform float uTime,uFadeDistance,uViewportHeight;
+uniform mat4 uView,uProjection;
+uniform vec4 uFrustum[6];
+#pragma cmi_include chunks/shared_fate.glsl
+
+bool cmiFateVisible(vec3 a,vec3 b){
+    vec3 low=min(a,b)-vec3(2.5),high=max(a,b)+vec3(2.5);
+    for(int i=0;i<6;i++){
+        vec4 plane=uFrustum[i];vec3 extreme=mix(low,high,greaterThanEqual(plane.xyz,vec3(0.0)));
+        if(dot(plane.xyz,extreme)+plane.w<0.0)return false;
+    }
+    vec3 delta=b-a;float size=dot(delta,delta),t=size<1e-10?0.0:clamp(-dot(a,delta)/size,0.0,1.0);
+    return length(a+delta*t)<uFadeDistance+27.0;
+}
+void main(){
+    uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
+        uint ib=i*5u,jb=i*5u;
+        uvec4 identity=floatBitsToUint(inputData.entries[ib+3u]);uint sb=identity.x*5u;
+        vec3 a=inputData.entries[ib].xyz+vec3(0.0,inputData.entries[ib].w*.55,0.0);
+        vec3 b=inputData.entries[ib+1u].xyz+vec3(0.0,inputData.entries[ib+1u].w*.55,0.0);
+        vec4 phase=inputData.entries[ib+2u],oldA=previous.entries[sb],oldB=previous.entries[sb+1u];
+        bool known=floatBitsToUint(oldB.w)==identity.y,stopping=phase.z>.5;
+        float elapsed=stopping?max(0.0,uTime-phase.y):0.0;
+        float freezeGlow=known?previous.entries[sb+2u].y:cmiFateGlow(phase.y,phase.x,identity.z!=0u);
+        float shimmerTime=uTime;
+        uint previousSamples=known?uint(previous.entries[sb+2u].z+.5):0u;
+        if(stopping&&known){
+            a=oldA.xyz+inputData.entries[ib+4u].xyz;b=oldB.xyz+inputData.entries[ib+4u].xyz;
+            if(previous.entries[sb+2u].x<.5){freezeGlow=oldA.w;shimmerTime=previous.entries[sb+4u].x;}
+            else shimmerTime=previous.entries[sb+4u].y;
+        }
+        float glow=stopping?freezeGlow*(1.0-smoothstep(0.0,.8,elapsed)):cmiFateGlow(uTime,phase.x,identity.z!=0u);
+        vec3 coefficient=stopping&&known?previous.entries[sb+3u].xyz:cmiFateCoefficients(a,b);
+        float arc=0.0,pixels=0.0,start=1.0,end=0.0;vec3 last=a;vec4 lastClip=uProjection*uView*vec4(a,1.0);
+        for(int step=1;step<=16;step++){
+            vec3 p=cmiFateCurve(a,b,coefficient,float(step)/16.0);
+            vec4 clip=uProjection*uView*vec4(p,1.0);
+            if(cmiFateVisible(last,p)){
+                start=min(start,float(step-1)/16.0);end=max(end,float(step)/16.0);arc+=length(p-last);
+                if(clip.w>.05&&lastClip.w>.05)pixels+=min(10000.0,length(clip.xy/clip.w-lastClip.xy/lastClip.w)*uViewportHeight*.5);
+            }
+            last=p;lastClip=clip;
+        }
+        float depth=max(1.0,-(uView*vec4(mix(a,b,.5),1.0)).z);
+        float spritePixels=max(1.1,.025*abs(uProjection[1][1])*uViewportHeight/(2.0*depth));
+        uint samples=uint(clamp(ceil(min(arc*64.0,max(16.0,pixels/max(.55,spritePixels*.45)))),16.0,8192.0));
+        if(stopping&&known){samples=previousSamples;start=previous.entries[sb+3u].w;end=previous.entries[sb+4u].z;}
+        uint allocated=end>start&&cmiFateVisible(a,b)&&elapsed<.8?samples:0u;
+        jobs.entries[jb]=vec4(a,0.0);
+        jobs.entries[jb+1u]=vec4(b,uintBitsToFloat(allocated));
+        jobs.entries[jb+2u]=vec4(coefficient,float(samples));
+        jobs.entries[jb+3u]=vec4(glow,elapsed,phase.w,shimmerTime);
+        jobs.entries[jb+4u]=vec4(start,end,0.0,0.0);
+        nextState.entries[sb]=vec4(a,glow);
+        nextState.entries[sb+1u]=vec4(b,uintBitsToFloat(identity.y));
+        nextState.entries[sb+2u]=vec4(stopping?1.0:0.0,freezeGlow,float(samples),0.0);
+        nextState.entries[sb+3u]=vec4(coefficient,start);
+        nextState.entries[sb+4u]=vec4(uTime,shimmerTime,end,0.0);
+}

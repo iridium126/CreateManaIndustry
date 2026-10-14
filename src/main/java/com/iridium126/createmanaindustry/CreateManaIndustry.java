@@ -169,6 +169,10 @@ public class CreateManaIndustry {
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar(MODID).versioned("4");
         registrar.playToClient(
+                com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.TYPE,
+                com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket::handle);
+        registrar.playToClient(
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket.TYPE,
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket.STREAM_CODEC,
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket::handle);

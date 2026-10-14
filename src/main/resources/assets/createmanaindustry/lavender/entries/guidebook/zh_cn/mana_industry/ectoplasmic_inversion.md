@@ -20,9 +20,9 @@
 }
 ```
 
-[卓越戏法](^createmanaindustry:mana_industry/great_tricks)。没有输入，返回 void；每次消耗 **4 Anima**。
+[卓越戏法](^createmanaindustry:mana_industry/great_tricks)。没有输入，返回布尔片段，表示切换后反转是否开启；每次消耗 **4 Anima**。
 
-在同一施法链中，施放一次开启反转，再施放一次解除。解除也需要支付灵魂。余额不足时，原有开关状态不会改变。
+在同一施法链中，施放一次开启反转并返回 `true`，再施放一次解除并返回 `false`。解除也需要支付灵魂。余额不足时，原有开关状态不会改变。
 
 ;;;;;
 

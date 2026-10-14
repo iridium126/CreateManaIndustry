@@ -1,0 +1,32 @@
+layout(local_size_x=64) in;
+layout(std430,binding=0) readonly buffer Inputs{vec4 entries[];} inputData;
+layout(std430,binding=1) readonly buffer Jobs{vec4 entries[];} jobs;
+layout(std430,binding=5) buffer OutputPool{vec4 data[];} particles;
+uniform uint uEmitter;
+uniform float uTime,uViewportHeight;
+uniform mat4 uView,uProjection;
+#pragma cmi_include chunks/shared_fate.glsl
+void main(){
+    uint link=gl_WorkGroupID.x,jb=link*5u;vec4 jobA=jobs.entries[jb],jobB=jobs.entries[jb+1u];
+    uint count=floatBitsToUint(jobB.w),offset=floatBitsToUint(jobA.w);vec4 coefficients=jobs.entries[jb+2u],style=jobs.entries[jb+3u];
+    bool stopping=inputData.entries[link*5u+2u].z>.5;float seed=style.z;
+    for(uint sampleIndex=gl_LocalInvocationID.x;sampleIndex<count;sampleIndex+=64u){
+        float t=mix(jobs.entries[jb+4u].x,jobs.entries[jb+4u].y,(float(sampleIndex)+.5)/max(1.0,coefficients.w)),key=seed+float(sampleIndex)*1.37;
+        vec3 position=cmiFateCurve(jobA.xyz,jobB.xyz,coefficients.xyz,t);
+        position+=vec3(cmiFateHash(key),cmiFateHash(key+2.0),cmiFateHash(key+4.0))*.002-vec3(.001);
+        if(stopping)position+=vec3((cmiFateHash(key+11.0)-.5)*.16,.05+cmiFateHash(key+13.0)*.08,
+                (cmiFateHash(key+17.0)-.5)*.16)*style.y;
+        vec3 color=vec3(184.0,228.0,255.0)/255.0;
+        float highlight=cmiFateHash(key+21.0)<.05?1.2+.2*sin(style.w*1.5+key):1.0;
+        if(highlight>1.01)color=vec3(232.0,247.0,255.0)/255.0;
+        float depth=max(.1,-(uView*vec4(position,1.0)).z);
+        float diameter=max(.025,2.2*depth/(max(.01,abs(uProjection[1][1]))*uViewportHeight));
+        if(stopping)diameter*=1.0-.35*smoothstep(0.0,.8,style.y);
+        uint base=(offset+sampleIndex)*4u;
+        particles.data[base]=vec4(position,diameter);
+        particles.data[base+1u]=vec4(0.0,0.0,0.0,cmiFateHash(key+7.0)*6.2831853);
+        particles.data[base+2u]=vec4(color,style.x*highlight);
+        // Zero life: visible this frame (life uses a safe denominator), discarded next update.
+        particles.data[base+3u]=vec4(0.0,0.0,key,uintBitsToFloat(uEmitter));
+    }
+}

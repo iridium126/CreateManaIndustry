@@ -20,9 +20,9 @@
 }
 ```
 
-A [Great Trick](^createmanaindustry:mana_industry/great_tricks). Takes no inputs and returns void. Each casting costs **4 Anima**.
+A [Great Trick](^createmanaindustry:mana_industry/great_tricks). Takes no inputs and returns a Boolean fragment indicating whether inversion is active after the cast. Each casting costs **4 Anima**.
 
-Within one casting chain, cast once to enable inversion and again to disable it. Disabling also costs soul. An insufficient balance leaves the switch unchanged.
+Within one casting chain, cast once to enable inversion and return `true`, then cast again to disable it and return `false`. Disabling also costs soul. An insufficient balance leaves the switch unchanged.
 
 ;;;;;
 

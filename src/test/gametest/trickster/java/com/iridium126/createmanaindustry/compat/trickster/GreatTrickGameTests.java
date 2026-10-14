@@ -35,6 +35,23 @@ public final class GreatTrickGameTests {
     }
     private static SpellPart inversion() {return new SpellPart(new GreatTrickGlyph(GreatPattern.INVERSION));}
     @GameTest(template="trickster_stock_test")
+    public static void inversionReturnsBooleanForItsNewState(GameTestHelper helper) {
+        var player=player(helper);player.getInventory().setItem(0,battery(8000));
+        Object owner=new Object();var chain=CastChains.attach(new CastChain(),player,owner);
+        try(var ignored=CastChains.enter(chain)) {
+            var source=new PlayerSpellSource(player);
+            Fragment enabled=new DefaultSpellExecutor(inversion(),List.of()).run(source).orElseThrow();
+            helper.assertTrue(enabled instanceof dev.enjarai.trickster.spell.fragment.BooleanFragment && enabled.asBoolean(),
+                    "First inversion did not return BooleanFragment true");
+            helper.assertTrue(chain.inverted()&&BatteryAnima.available(player)==4000,"Enabling state or Anima cost changed");
+            Fragment disabled=new DefaultSpellExecutor(inversion(),List.of()).run(source).orElseThrow();
+            helper.assertTrue(disabled instanceof dev.enjarai.trickster.spell.fragment.BooleanFragment && !disabled.asBoolean(),
+                    "Second inversion did not return BooleanFragment false");
+            helper.assertTrue(!chain.inverted()&&BatteryAnima.available(player)==0,"Disabling state or Anima cost changed");
+            helper.succeed();
+        } finally {CastChains.release(chain,owner);}
+    }
+    @GameTest(template="trickster_stock_test")
     public static void clearingStaffSessionRemovesItsNameExemption(GameTestHelper helper) {
         var player=player(helper);Object owner=new Object();var chain=CastChains.attach(new CastChain(),player,owner);
         chain.retain(chain);chain.toggle();CastChains.release(chain,owner);

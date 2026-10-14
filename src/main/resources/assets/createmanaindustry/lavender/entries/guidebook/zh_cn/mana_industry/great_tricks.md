@@ -36,4 +36,4 @@
 
 卓越戏法可与普通戏法组成同一棵法术树。卓越戏法界面保留普通节点的显示与执行；要重绘普通图案，应先回到普通界面。
 
-执行已保存的卓越戏法不要求持续双持，但施法者仍须是玩家。当前可用的卓越戏法为[灵质反转](^createmanaindustry:mana_industry/ectoplasmic_inversion)。
+执行已保存的卓越戏法不要求持续双持，但施法者仍须是玩家。当前可用的卓越戏法有[灵质反转](^createmanaindustry:mana_industry/ectoplasmic_inversion)与[同命](^createmanaindustry:mana_industry/shared_fate)。

@@ -32,7 +32,13 @@ public final class GreatTrickBookComponent extends FlowLayout {
                 .margins(Insets.of(2, 2, 0, 0))
                 .sizing(Sizing.fill(100), Sizing.content()));
         child(new GreatBookGlyphComponent(glyph));
-        child(Components.label(Component.literal("→ ").append(FragmentType.VOID.asText())
+        var signature = Component.empty();
+        for (var input : trick.inputTypes()) {
+            if (!signature.getSiblings().isEmpty()) signature.append(", ");
+            signature.append(input.asText());
+        }
+        signature.append(" → ").append(trick.outputType().asText());
+        child(Components.label(signature
                         .withStyle(style -> style.withColor(ChatFormatting.DARK_GRAY).withFont(Minecraft.UNIFORM_FONT)))
                 .horizontalSizing(Sizing.fill(100))
                 .margins(Insets.of(0, 5, 3, 3)));

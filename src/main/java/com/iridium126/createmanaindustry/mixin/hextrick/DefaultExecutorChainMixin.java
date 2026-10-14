@@ -41,6 +41,7 @@ public abstract class DefaultExecutorChainMixin implements ExecutorChainAccess {
     }
     @Inject(method = "type", at = @At("HEAD"), cancellable = true)
     private void cmi$persist(CallbackInfoReturnable<SpellExecutorType<?>> cir) {
-        if (((ChainState)state).cmi$getChain().player() != null) cir.setReturnValue(GreatTricks.CHAIN_EXECUTOR);
+        CastChain chain = ((ChainState)state).cmi$getChain();
+        if (chain.player() != null) cir.setReturnValue(chain.fateTargets().isEmpty() ? GreatTricks.CHAIN_EXECUTOR : GreatTricks.FATE_EXECUTOR);
     }
 }

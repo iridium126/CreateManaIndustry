@@ -133,7 +133,8 @@ void main() {
     if (matId >= 0.5 && matId < 2.5)
         atomicAdd(counter.translucentCensus, 1u);
 
-    if (!sphereVisible(p0.xyz - uCamPos, radius))
+    bool sharedFate = abs(emitters.u[hb + 17u].y - 8.0) < .25;
+    if (!sphereVisible(sharedFate ? p0.xyz : p0.xyz - uCamPos, radius))
         return;
 
     if (matId < 0.5) {

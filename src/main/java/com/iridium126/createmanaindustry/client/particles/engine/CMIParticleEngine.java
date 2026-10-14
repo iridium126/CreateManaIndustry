@@ -320,6 +320,7 @@ public final class CMIParticleEngine {
 
     private final List<HexSpray> hexSprays = new ArrayList<>();
     private final List<HexParticle> hexParticles = new ArrayList<>();
+    private final SharedFateGpu sharedFate = new SharedFateGpu();
 
     /**
      * Client-side Hexcasting conjure spray (spawnStyle 4): the vanilla
@@ -747,6 +748,7 @@ public final class CMIParticleEngine {
 
     /** Called on resource reload so shaders recompile next frame. */
     public void requestProgramRebuild() {
+        this.sharedFate.close();
         if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.requestReload();
         if(CreateManaIndustry.IRISVEIL_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.invalidateShadow();
         if(CreateManaIndustry.IRIS_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.reload();
@@ -758,6 +760,8 @@ public final class CMIParticleEngine {
 
     /** Frees all GPU resources on client shutdown. Safe when never initialised. */
     public void close() {
+        this.sharedFate.close();
+        com.iridium126.createmanaindustry.client.greattrick.SharedFateClient.clear();
         this.storm.starfallGpu().close();
         if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.close();
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle engine closed",false);
@@ -1069,6 +1073,7 @@ public final class CMIParticleEngine {
     }
 
     private void resetPoolState() {
+        this.sharedFate.reset();
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle identities reset",true);
         this.packagePreview.close();
         this.packagePreviewStatus="off";
@@ -1515,7 +1520,8 @@ public final class CMIParticleEngine {
         }
 
         // Every material submits indirect draws. Empty GPU counts perform no particle work.
-        boolean createsParticles = totalSpawn > 0 || blockSpawnBound > 0
+        boolean fateActive = this.sharedFate.prepare(camera.getPosition(), deltaTracker.getGameTimeDeltaPartialTick(false));
+        boolean createsParticles = totalSpawn > 0 || blockSpawnBound > 0 || fateActive
                 || (this.packageParticles!=null && this.packageParticles.hasInput() && this.packageEmitter>=0);
         if (!this.poolMayBeAlive && !createsParticles) {
             this.frameIdle = true;
@@ -1698,6 +1704,11 @@ public final class CMIParticleEngine {
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
             }
 
+            if (fateActive) {
+                this.sharedFate.generate(this.gpu, this, slot, view, projectionMatrix, this.frustumPlanes, (float)this.scale);
+                this.gpu.beginBindings();
+                this.gpu.bindDispatch();
+            }
             if(this.packageParticles!=null && this.packageParticles.needsStage()) {
                 ParticleDiagnostics.INSTANCE.mark("package_import_group");
                 Vec3 packageCamera=camera.getPosition();
@@ -1896,6 +1907,7 @@ public final class CMIParticleEngine {
             // the last fully-written pool as the next read source, and
             // the finally below restores the post-phase GL state instead.
             this.gpu.swap();
+            this.sharedFate.commit();
             if(packageStaged) {
                 this.packageParticles.commit();
                 com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.committed(Integer.toUnsignedLong(this.simFrame));

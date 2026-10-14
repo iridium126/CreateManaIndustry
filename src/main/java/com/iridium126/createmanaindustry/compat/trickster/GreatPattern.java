@@ -9,6 +9,7 @@ public record GreatPattern(List<Edge> edges) {
     public static final int[] R = {-2,-2,-2,-1,-1,-1,-1,0,0,0,0,0,1,1,1,1,2,2,2};
     public static final GreatPattern EMPTY = new GreatPattern(List.of());
     public static final GreatPattern INVERSION = fromPath(List.of(0,4,9,14,18,15,11,10,9,8,7,3,0));
+    public static final GreatPattern SHARED_FATE = fromPath(List.of(9,4,3,7,12,13,9,5,6,11,15,14,9));
 
     public GreatPattern {
         var unique = new TreeSet<Edge>();

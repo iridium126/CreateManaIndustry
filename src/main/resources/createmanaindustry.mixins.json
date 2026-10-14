@@ -52,6 +52,8 @@
     "hextrick.PlayerExecutionManagerChainMixin",
     "hextrick.WrappedExecutionManagerChainMixin",
     "hextrick.HexCastingChainMixin",
+    "hextrick.SharedFateVmMixin",
+    "hextrick.SharedFateMishapMixin",
     "hextrick.StaffResetChainMixin",
     "hextrick.HexInvertedRangeMixin",
     "hextrick.HexInvertedPaymentMixin",

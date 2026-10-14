@@ -152,11 +152,13 @@ void main() {
 
     // The level stage model-view on NeoForge is the camera rotation only
     // (geometry is camera-relative), so subtract the camera position here.
-    vec4 clip = ProjMat * ModelViewMat * vec4(worldPos - uCamPos, 1.0);
+    bool sharedFate = abs(emitters.u[hb + 17u].y - 8.0) < .25;
+    vec3 relativePos = sharedFate ? worldPos : worldPos - uCamPos;
+    vec4 clip = ProjMat * ModelViewMat * vec4(relativePos, 1.0);
     gl_Position = clip;
 
     vUv = corner + 0.5;
-    vDist = length(worldPos - uCamPos);
+    vDist = length(relativePos);
     // alpha: per-particle intensity × keyframe alpha × lifetime fade × emitter glow
     // (additive allows >1.0 here; brightness is trimmed per-emitter in the headers)
     // Direct style uses the sign of p2.w for its per-particle gravity bit.
