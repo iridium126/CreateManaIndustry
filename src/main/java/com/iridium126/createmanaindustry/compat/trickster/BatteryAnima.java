@@ -8,6 +8,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
+import java.util.*;
 
 public final class BatteryAnima {
     private BatteryAnima() {}
@@ -53,5 +54,39 @@ public final class BatteryAnima {
         }
         player.getInventory().setChanged();
         return true;
+    }
+    /** Reserve atomically before native effect callbacks; undo only this debit on failure. */
+    public static Optional<Receipt> reserve(ServerPlayer player, long amount) {
+        if (amount < 0 || available(player) < amount) return Optional.empty();
+        var debits = new ArrayList<Debit>();
+        for (int slot=0; amount>0 && slot<player.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (!isBattery(stack)) continue;
+            long used = Math.min(get(stack), amount);
+            if (used > 0) {
+                stack.set(CMIComponents.ANIMA.get(), get(stack)-used);
+                debits.add(new Debit(stack, used));
+                amount -= used;
+            }
+        }
+        player.getInventory().setChanged();
+        return Optional.of(new Receipt(player, debits));
+    }
+    private record Debit(ItemStack stack, long amount) {}
+    public static final class Receipt implements AutoCloseable {
+        private final ServerPlayer player;
+        private final List<Debit> debits;
+        private boolean finished;
+        private Receipt(ServerPlayer player, List<Debit> debits) { this.player=player; this.debits=List.copyOf(debits); }
+        public void commit() {
+            if (finished) throw new IllegalStateException("Anima receipt already closed");
+            finished=true;
+        }
+        public void close() {
+            if (finished) return;
+            finished=true;
+            for (Debit debit:debits) debit.stack().set(CMIComponents.ANIMA.get(), Math.addExact(get(debit.stack()), debit.amount()));
+            player.getInventory().setChanged();
+        }
     }
 }

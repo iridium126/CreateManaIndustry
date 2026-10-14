@@ -31,6 +31,11 @@ public final class ResourceConversionAbsentGameTests {
                 if (registryId.equals("trickster:trick")) {
                     helper.assertTrue(registry.containsKey(CreateManaIndustry.modLoc("temporary_kinetic_stress")),
                             "Independent kinetic trick is missing when Hexcasting is absent");
+                    helper.assertTrue(registry.containsKey(CreateManaIndustry.modLoc("read_potion_effects")),
+                            "Independent potion query is missing when Hexcasting is absent");
+                    var fragments=BuiltInRegistries.REGISTRY.get(ResourceLocation.parse("trickster:fragment_type"));
+                    helper.assertTrue(fragments!=null&&fragments.containsKey(CreateManaIndustry.modLoc("potion")),
+                            "Independent potion fragment is missing without Hexcasting");
                 }
             }
         }

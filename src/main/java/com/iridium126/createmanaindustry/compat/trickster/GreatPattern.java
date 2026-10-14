@@ -10,6 +10,7 @@ public record GreatPattern(List<Edge> edges) {
     public static final GreatPattern EMPTY = new GreatPattern(List.of());
     public static final GreatPattern INVERSION = fromPath(List.of(0,4,9,14,18,15,11,10,9,8,7,3,0));
     public static final GreatPattern SHARED_FATE = fromPath(List.of(9,4,3,7,12,13,9,5,6,11,15,14,9));
+    public static final GreatPattern TINCTURE_SHAPING = fromPath(List.of(0,2,5,6,11,15,18,16,12,7,3,4,0));
 
     public GreatPattern {
         var unique = new TreeSet<Edge>();

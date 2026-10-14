@@ -58,6 +58,9 @@ public final class GreatTricks {
                 }
             });
 
+    public static final GreatTrick TINCTURE_SHAPING = Registry.register(REGISTRY,
+            CreateManaIndustry.modLoc("tincture_shaping"), new TinctureShapingTrick());
+
     // A new executor type adds state without changing the byte layout of existing saved executors.
     private static final StructEndec<DefaultSpellExecutor> CHAIN_ENDEC = StructEndecBuilder.of(
             DefaultSpellExecutor.ENDEC.flatFieldOf(e -> e),

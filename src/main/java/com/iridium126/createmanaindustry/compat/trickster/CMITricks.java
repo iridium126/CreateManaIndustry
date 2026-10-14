@@ -9,6 +9,8 @@ import net.minecraft.core.Registry;
 public final class CMITricks {
     public static final TemporaryKineticStressTrick TEMPORARY_KINETIC_STRESS =
             register("temporary_kinetic_stress", new TemporaryKineticStressTrick());
+    public static final ReadPotionEffectsTrick READ_POTION_EFFECTS =
+            register("read_potion_effects", new ReadPotionEffectsTrick());
 
     private CMITricks() {}
 
