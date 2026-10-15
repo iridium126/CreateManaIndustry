@@ -1,22 +1,18 @@
 package com.iridium126.createmanaindustry.compat.trickster.greattrick;
 
 import com.iridium126.createmanaindustry.compat.trickster.anima.AnimaMath;
-import com.iridium126.createmanaindustry.compat.trickster.anima.BatteryAnima;
-import com.iridium126.createmanaindustry.compat.trickster.blunder.SharedFateBlunder;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChain;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
-import com.iridium126.createmanaindustry.compat.trickster.casting.ChainState;
 import com.iridium126.createmanaindustry.compat.trickster.casting.ExecutorChainAccess;
 import com.iridium126.createmanaindustry.compat.trickster.fragment.GreatTrickGlyph;
 import com.iridium126.createmanaindustry.compat.trickster.sharedfate.SharedFateManager;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import dev.enjarai.trickster.spell.*;
+import dev.enjarai.trickster.spell.TrickContext;
 import dev.enjarai.trickster.spell.execution.executor.DefaultSpellExecutor;
 import dev.enjarai.trickster.spell.execution.executor.SpellExecutorType;
 import dev.enjarai.trickster.spell.fragment.FragmentType;
-import dev.enjarai.trickster.spell.fragment.BooleanFragment;
-import dev.enjarai.trickster.spell.exception.blunder.*;
+import dev.enjarai.trickster.spell.exception.blunder.WrappableBlunder;
 import net.fabricmc.fabric.api.event.registry.FabricRegistryBuilder;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceKey;
@@ -32,44 +28,14 @@ public final class GreatTricks {
             ResourceKey.<GreatTrick>createRegistryKey(CreateManaIndustry.modLoc("great_trick"))).buildAndRegister();
     public static final FragmentType<GreatTrickGlyph> GLYPH = Registry.register(FragmentType.REGISTRY,
             CreateManaIndustry.modLoc("great_trick"), new FragmentType<>(GreatTrickGlyph.class, GreatTrickGlyph.ENDEC, OptionalInt.of(0x4da6ff)));
-    public static final GreatTrick INVERSION = Registry.register(REGISTRY, CreateManaIndustry.modLoc("ectoplasmic_inversion"),
-            new GreatTrick(GreatPattern.INVERSION, 4000) {
-                public FragmentType<?> outputType() { return FragmentType.BOOLEAN; }
-                public Fragment activate(SpellContext ctx, List<Fragment> args) {
-                    var player = ctx.source().getPlayer().orElseThrow(NoPlayerBlunder::new);
-                    if (!args.isEmpty()) throw new InvalidInputsBlunder();
-                    if (!BatteryAnima.consume(player, animaCost())) throw new AnimaBlunder();
-                    ChainState state = (ChainState)ctx.state();
-                    CastChain chain = CastChains.current() != null ? CastChains.current() : state.cmi$getChain();
-                    state.cmi$setChain(chain);
-                    state.cmi$markResourceUse();
-                    com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope.resourceTransition();
-                    chain.toggle();
-                    SharedFateManager.refresh(player.getServer());
-                    com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime.invalidate("ectoplasmic inversion toggled");
-                    return BooleanFragment.of(chain.inverted());
-                }
-            });
+    public static final GreatTrick INVERSION = register("ectoplasmic_inversion", new EctoplasmicInversionTrick());
+    public static final GreatTrick SHARED_FATE = register("shared_fate", new SharedFateTrick());
+    public static final GreatTrick TINCTURE_SHAPING = register("tincture_shaping", new TinctureShapingTrick());
+    public static final GreatTrick PARTITION = register("partition", new PartitionTrick());
 
-    public static final GreatTrick SHARED_FATE = Registry.register(REGISTRY, CreateManaIndustry.modLoc("shared_fate"),
-            new GreatTrick(GreatPattern.SHARED_FATE, 32000) {
-                public List<FragmentType<?>> inputTypes() { return List.of(FragmentType.ENTITY); }
-                public FragmentType<?> outputType() { return FragmentType.ENTITY; }
-                public Fragment activate(SpellContext ctx, List<Fragment> args) {
-                    var player = ctx.source().getPlayer().orElseThrow(NoPlayerBlunder::new);
-                    if (args.size() != 1 || !(args.getFirst() instanceof dev.enjarai.trickster.spell.fragment.EntityFragment target))
-                        throw new InvalidInputsBlunder();
-                    var entity = target.getEntity(ctx).orElseThrow(() -> new SharedFateBlunder("missing"));
-                    CastChain chain = CastChains.current() != null ? CastChains.current() : ((ChainState)ctx.state()).cmi$getChain();
-                    SharedFateManager.bind(player, entity, chain, animaCost());
-                    ((ChainState)ctx.state()).cmi$markResourceUse();
-                    com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope.resourceTransition();
-                    return target;
-                }
-            });
-
-    public static final GreatTrick TINCTURE_SHAPING = Registry.register(REGISTRY,
-            CreateManaIndustry.modLoc("tincture_shaping"), new TinctureShapingTrick());
+    private static <T extends GreatTrick> T register(String path, T trick) {
+        return Registry.register(REGISTRY, CreateManaIndustry.modLoc(path), trick);
+    }
 
     // A new executor type adds state without changing the byte layout of existing saved executors.
     private static final StructEndec<DefaultSpellExecutor> CHAIN_ENDEC = StructEndecBuilder.of(
@@ -91,8 +57,17 @@ public final class GreatTricks {
             });
     public static final SpellExecutorType<DefaultSpellExecutor> FATE_EXECUTOR = Registry.register(SpellExecutorType.REGISTRY,
             CreateManaIndustry.modLoc("shared_fate_default"), new SpellExecutorType<>(FATE_ENDEC, DefaultSpellExecutor.NET_ENDEC));
+    private static final StructEndec<DefaultSpellExecutor> PARTITION_ENDEC = StructEndecBuilder.of(
+            FATE_ENDEC.flatFieldOf(e -> e),
+            Endec.STRING.optionalFieldOf("cmi_partition", e -> { var p=((ExecutorChainAccess)(Object)e).cmi$executorChain().partition(); return p==null?"":p.encode(); }, ""),
+            (executor, saved) -> {
+                if(!saved.isEmpty()) ((ExecutorChainAccess)(Object)executor).cmi$executorChain().partition(com.iridium126.createmanaindustry.compat.trickster.partition.SavedPartition.decode(saved));
+                return executor;
+            });
+    public static final SpellExecutorType<DefaultSpellExecutor> PARTITION_EXECUTOR = Registry.register(SpellExecutorType.REGISTRY,
+            CreateManaIndustry.modLoc("partition_default"), new SpellExecutorType<>(PARTITION_ENDEC, DefaultSpellExecutor.NET_ENDEC));
     private GreatTricks() {}
-    public static void register() { CastChains.register(); SharedFateManager.register(); }
+    public static void register() { CastChains.register(); SharedFateManager.register(); com.iridium126.createmanaindustry.compat.trickster.partition.PartitionManager.register(); }
     public static GreatTrick lookup(GreatPattern pattern) {
         for (GreatTrick trick : REGISTRY) if (trick.pattern().equals(pattern)) return trick;
         return null;

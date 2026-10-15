@@ -172,6 +172,9 @@ public class CreateManaIndustry {
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.TYPE,
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.STREAM_CODEC,
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket::handle);
+        registrar.playToClient(com.iridium126.createmanaindustry.compat.trickster.net.ClientboundPartitionPacket.TYPE,
+                com.iridium126.createmanaindustry.compat.trickster.net.ClientboundPartitionPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.compat.trickster.net.ClientboundPartitionPacket::handle);
         registrar.playToClient(
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket.TYPE,
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket.STREAM_CODEC,

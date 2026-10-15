@@ -30,13 +30,14 @@ public final class CastChains {
         var chains = LIVE.computeIfAbsent(player.getServer(), key -> new HashMap<>());
         CastChain canonical = chains.computeIfAbsent(chain.id(), key -> chain);
         canonical.retain(owner);
+        com.iridium126.createmanaindustry.compat.trickster.partition.PartitionManager.resume(canonical, player);
         SharedFateManager.resume(canonical, player);
         return canonical;
     }
     public static void release(CastChain chain, Object owner) {
         if (chain == null) return;
         chain.release(owner);
-        if (!chain.live()) SharedFateManager.endChain(chain);
+        if (!chain.live()) { com.iridium126.createmanaindustry.compat.trickster.partition.PartitionManager.end(chain); SharedFateManager.endChain(chain); }
         LIVE.values().forEach(chains -> chains.values().removeIf(c -> c == chain && !c.live()));
     }
     public static void resetStaff(ServerPlayer player, String encoded) {
@@ -63,7 +64,7 @@ public final class CastChains {
                 var chains = LIVE.get(player.getServer());
                 if (chains != null) chains.values().removeIf(c -> {
                     if (!player.getUUID().equals(c.player())) return false;
-                    c.restoreFateTargets(List.of());c.suspend(); return true;
+                    com.iridium126.createmanaindustry.compat.trickster.partition.PartitionManager.end(c); c.restoreFateTargets(List.of());c.suspend(); return true;
                 });
             }
         });
@@ -74,7 +75,7 @@ public final class CastChains {
                 var chains = LIVE.get(player.getServer());
                 if (chains != null) chains.values().removeIf(c -> {
                     if (!player.getUUID().equals(c.player())) return false;
-                    c.suspend(); return true;
+                    com.iridium126.createmanaindustry.compat.trickster.partition.PartitionManager.suspend(c); c.suspend(); return true;
                 });
             }
         });

@@ -11,6 +11,9 @@ public final class CastChain {
     private final Set<Object> owners = Collections.newSetFromMap(new IdentityHashMap<>());
     public CastChain() { this(UUID.randomUUID(), null, false); }
     private CastChain(UUID id, UUID player, boolean inverted) { this.id=id; this.player=player; this.inverted=inverted; }
+    private com.iridium126.createmanaindustry.compat.trickster.partition.SavedPartition partition;
+    public com.iridium126.createmanaindustry.compat.trickster.partition.SavedPartition partition() { return partition; }
+    public void partition(com.iridium126.createmanaindustry.compat.trickster.partition.SavedPartition value) { partition=value; }
     public UUID id() { return id; }
     public UUID player() { return player; }
     public boolean inverted() { return inverted; }

@@ -13,6 +13,7 @@ public abstract class ConverterInvertedRangeMixin {
     private double cmi$range(Vector3d from,Vector3dc to,Operation<Double> original,
             dev.enjarai.trickster.spell.SpellContext ctx,dev.enjarai.trickster.spell.fragment.storage.SlotFragment slot) {
         double distance=original.call(from,to);
+        if(com.iridium126.createmanaindustry.compat.trickster.partition.PartitionManager.crosses(ctx.source().getWorld(),com.iridium126.createmanaindustry.compat.trickster.partition.PartitionFees.vec(from),com.iridium126.createmanaindustry.compat.trickster.partition.PartitionFees.vec(to)))distance=Double.POSITIVE_INFINITY;
         return ctx.source().getPlayer().map(p -> CastChains.invertedFor(p.getUUID())).orElse(false)
                 ? (distance<=16?Math.nextUp(16D):16D):distance;
     }

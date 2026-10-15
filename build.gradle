@@ -615,8 +615,6 @@ dependencies {
         compileOnly(project(path: ":loom-remap", configuration: "namedTrickster"))
     }
     compileOnly "io.vavr:vavr:0.10.4"
-    // Resolve Fabric environment annotations on the named optional APIs at compile time.
-    compileOnly("net.fabricmc:fabric-loader:0.16.14") { transitive = false }
     // Braid widgets used by the optional nineteen-dot mirror surface; already supplied at runtime.
     compileOnly("codeberg.master_bw3.trickster:owo-lib-neoforge:0.13.0-alpha.15+1.21@jar") { transitive = false }
     // Endec API for custom FragmentType endecs (runtime endec is bundled in owo-lib, required by trickster)

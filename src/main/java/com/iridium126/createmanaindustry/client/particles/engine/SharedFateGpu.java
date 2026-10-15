@@ -13,7 +13,7 @@ import java.util.List;
 /** Parallel curves, ordered reservations and parallel emission into the existing conjure/Iris draw path. */
 public final class SharedFateGpu implements AutoCloseable {
     private static final EmitterSpec SPEC=sharedSpec();
-    private static EmitterSpec sharedSpec(){
+    static EmitterSpec sharedSpec(){
         var spec=EmitterSpec.builder().shape(EmitterShape.POINT).speed(0,0).life(1,1)
                 .sizeOverLife(1,1,1).colors(new float[]{1,1,1,1}).glow(1)
                 .type(ParticleTypes.standard(ParticleTypes.Material.ADDITIVE)).build();
@@ -102,7 +102,7 @@ public final class SharedFateGpu implements AutoCloseable {
     public void commit(){if(!staged)return;staged=false;int previous=read;read=write;write=previous;frames.forEach(f->f.wire().lastCamera=camera);}
     public void reset(){staged=false;frames=List.of();if(read!=0)zero(read);if(write!=0)zero(write);}
     private void initialize(){if(prepare!=0)return;try{prepare=compile("shared_fate_prepare.comp");reserve=compile("shared_fate_reserve.comp");emit=compile("shared_fate_emit.comp");}catch(RuntimeException failure){close();throw failure;}}
-    private static int compile(String path){
+    static int compile(String path){
         int shader=GL20.glCreateShader(GL43.GL_COMPUTE_SHADER),program=0;
         try{
             GL20.glShaderSource(shader,"#version 450 core\n"+ParticlePrograms.loadParticlePlain(path));GL20.glCompileShader(shader);

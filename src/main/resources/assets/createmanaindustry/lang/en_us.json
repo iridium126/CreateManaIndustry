@@ -611,5 +611,14 @@
   "createmanaindustry.configuration.stormHelixMaxMembers": "Maximum Helix Members",
   "createmanaindustry.configuration.stormHelixMaxMembers.tooltip": "Default 8192, range 512–16384, at least 256 per stream. Short rosters or unsafe paths fall back to starfall.",
   "createmanaindustry.configuration.stormHelixThrustSpeed": "Helix Thrust Member Speed Cap",
-  "createmanaindustry.configuration.stormHelixThrustSpeed.tooltip": "Default 12 blocks/s, range 6–18. Only thrust increases the cap; curves reduce center speed, other stages stay at 6."
+  "createmanaindustry.configuration.stormHelixThrustSpeed.tooltip": "Default 12 blocks/s, range 6–18. Only thrust increases the cap; curves reduce center speed, other stages stay at 6.",
+  "createmanaindustry.great_trick.partition": "Partition",
+  "createmanaindustry.partition.cost": "1 Anima per block",
+  "createmanaindustry.partition.infinite_cost": "The target is in another partition. Its infinite distance cannot be paid.",
+  "createmanaindustry.partition.restore_failed": "Partition could not be restored: its boundary conflicts with another partition or its coordinates are no longer valid. The spell continues.",
+  "createmanaindustry.configuration.partitionMovementExemptEntities": "Partition movement exemptions",
+  "createmanaindustry.configuration.partitionMovementExemptEntities.tooltip": "Entity registry IDs exempt from movement barriers. Passengers travel with exempt vehicles. Spell range and costs remain restricted.",
+  "createmanaindustry.configuration.partitionMaxParticles": "Partition GPU sample budget",
+  "createmanaindustry.configuration.partitionMaxParticles.tooltip": "Maximum GPU samples for Partition edges and membranes. Reducing or disabling visuals does not remove barriers.",
+  "createmanaindustry.great_trick.costs_anima": "Costs Anima"
 }

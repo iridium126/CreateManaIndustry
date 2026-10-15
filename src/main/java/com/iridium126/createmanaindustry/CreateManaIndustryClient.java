@@ -132,6 +132,7 @@ public class CreateManaIndustryClient {
             com.iridium126.createmanaindustry.client.greattrick.GreatTrickClient.register();
         if (CreateManaIndustry.HEX_ACTIVE && CreateManaIndustry.TRICKSTER_ACTIVE)
             com.iridium126.createmanaindustry.client.greattrick.SharedFateClient.install();
+            com.iridium126.createmanaindustry.client.greattrick.PartitionClient.install();
         if (CreateManaIndustry.HEX_ACTIVE && CreateManaIndustry.TRICKSTER_ACTIVE)
             InlineClientAPI.INSTANCE.addRenderer(InlineTrickRenderer.INSTANCE);
         if (CreateManaIndustry.HEX_ACTIVE && net.neoforged.fml.ModList.get().isLoaded("yes_steve_model")

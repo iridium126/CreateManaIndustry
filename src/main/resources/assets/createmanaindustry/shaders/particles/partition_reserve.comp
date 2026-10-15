@@ -1,0 +1,19 @@
+layout(local_size_x=1) in;
+layout(std430,binding=1) buffer Jobs {vec4 data[];} jobs;
+layout(std430,binding=4) buffer Counter {uint count;};
+uniform uint uCount,uCapacity,uBudget;
+void main(){
+    uint remaining=min(uBudget,uCapacity-min(count,uCapacity));
+    // Reserve near domains in order, edges before membranes, with an independent per-domain cap.
+    for(uint domain=0u;domain<uCount;domain++){
+        uint available=min(remaining,65536u);
+        for(uint part=0u;part<18u;part++){
+            uint base=(domain*18u+part)*4u,wanted=floatBitsToUint(jobs.data[base].w);
+            // Split the remaining membrane budget proportionally across faces, not just its first face.
+            uint share=part<12u?available:available/(18u-part);
+            uint granted=min(wanted,share);
+            jobs.data[base+1u].w=uintBitsToFloat(count);jobs.data[base+2u].w=uintBitsToFloat(granted);
+            count+=granted;available-=granted;remaining-=granted;
+        }
+    }
+}

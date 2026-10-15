@@ -37,3 +37,5 @@ The edges identify a trick, rather than the starting point or direction. Remove 
 Great Tricks and ordinary tricks can occupy the same spell tree. The Great Trick editor preserves ordinary nodes for display and execution. Return to the ordinary editor to redraw their patterns.
 
 A saved Great Trick does not require the two items to remain held, but still requires a player caster. Available Great Tricks include [Ectoplasmic Inversion](^createmanaindustry:mana_industry/ectoplasmic_inversion), [Shared Fate](^createmanaindustry:mana_industry/shared_fate) and [Tincture Shaping](^createmanaindustry:mana_industry/tincture_shaping).
+
+[Partition](^createmanaindustry:mana_industry/partition) divides space for the duration of its casting chain, with a cost of one Anima per enclosed block.

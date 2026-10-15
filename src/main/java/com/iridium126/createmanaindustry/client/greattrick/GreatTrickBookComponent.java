@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.client.greattrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.anima.AnimaMath;
 import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatTrick;
 import com.iridium126.createmanaindustry.compat.trickster.fragment.GreatTrickGlyph;
 import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatTricks;
@@ -41,13 +40,8 @@ public final class GreatTrickBookComponent extends FlowLayout {
                         .withStyle(style -> style.withColor(ChatFormatting.DARK_GRAY).withFont(Minecraft.UNIFORM_FONT)))
                 .horizontalSizing(Sizing.fill(100))
                 .margins(Insets.of(0, 5, 3, 3)));
-        child(Components.label(Component.translatable("createmanaindustry.great_trick.book_cost",
-                        AnimaMath.format(trick.animaCost())))
-                .color(Color.ofFormatting(ChatFormatting.DARK_GRAY))
-                .horizontalTextAlignment(HorizontalAlignment.CENTER)
-                .horizontalSizing(Sizing.fill(100))
-                .margins(Insets.of(0, 5, 0, 0)));
-        child(Components.texture(bookTexture, 54, 183, 109, 3, 512, 256).blend(true));
+        child(new AnimaCostComponent(trick, bookTexture));
+        allowOverflow(true);
     }
 
     public static GreatTrickBookComponent parse(Element element) {

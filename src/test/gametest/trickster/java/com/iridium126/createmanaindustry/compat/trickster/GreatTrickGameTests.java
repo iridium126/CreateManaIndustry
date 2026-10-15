@@ -45,6 +45,25 @@ public final class GreatTrickGameTests {
     }
     private static SpellPart inversion() {return new SpellPart(new GreatTrickGlyph(GreatPattern.INVERSION));}
     @GameTest(template="trickster_stock_test")
+    public static void greatTrickRegistryKeepsSavedIdsPatternsAndCosts(GameTestHelper helper) {
+        var tricks=List.of(GreatTricks.INVERSION,GreatTricks.SHARED_FATE,GreatTricks.TINCTURE_SHAPING,GreatTricks.PARTITION);
+        var ids=List.of("ectoplasmic_inversion","shared_fate","tincture_shaping","partition");
+        var patterns=List.of(GreatPattern.INVERSION,GreatPattern.SHARED_FATE,GreatPattern.TINCTURE_SHAPING,GreatPattern.PARTITION);
+        for(int i=0;i<tricks.size();i++) {
+            var trick=tricks.get(i);
+            helper.assertTrue(ResourceLocation.fromNamespaceAndPath("createmanaindustry",ids.get(i)).equals(GreatTricks.REGISTRY.getKey(trick)),"Saved great-trick ID changed");
+            helper.assertTrue(GreatTricks.lookup(patterns.get(i))==trick,"Pattern registration changed");
+            helper.assertTrue(!trick.getClass().isAnonymousClass(),"Great trick still uses an anonymous implementation");
+            var glyph=new GreatTrickGlyph(patterns.get(i));
+            helper.assertTrue(Fragment.fromBytes(glyph.toBytes()).equals(glyph),"Saved glyph changed after registration refactor");
+        }
+        helper.assertTrue(GreatTricks.INVERSION.estimateAnimaCost(List.of()).orElseThrow()==4000,"Inversion cost changed");
+        helper.assertTrue(GreatTricks.SHARED_FATE.estimateAnimaCost(List.of()).orElseThrow()==32000,"Shared Fate cost changed");
+        helper.assertTrue(GreatTricks.TINCTURE_SHAPING.estimateAnimaCost(List.of()).orElseThrow()==32000,"Shaping cost changed");
+        helper.assertTrue(GreatTricks.PARTITION.estimateAnimaCost(List.of()).isEmpty(),"Partition lost dynamic pricing");
+        helper.succeed();
+    }
+    @GameTest(template="trickster_stock_test")
     public static void inversionReturnsBooleanForItsNewState(GameTestHelper helper) {
         var player=player(helper);player.getInventory().setItem(0,battery(8000));
         Object owner=new Object();var chain=CastChains.attach(new CastChain(),player,owner);

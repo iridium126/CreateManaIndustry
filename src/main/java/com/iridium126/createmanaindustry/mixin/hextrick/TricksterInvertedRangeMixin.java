@@ -21,6 +21,7 @@ public abstract class TricksterInvertedRangeMixin {
             at = @At(value = "INVOKE", target = "Ldev/enjarai/trickster/spell/execution/source/SpellSource;distanceTo(Lorg/joml/Vector3dc;)D"))
     private static double cmi$range(SpellSource source, Vector3dc target, Operation<Double> original) {
         double distance = original.call(source, target);
+        if(com.iridium126.createmanaindustry.compat.trickster.partition.PartitionManager.crosses(source.getWorld(),com.iridium126.createmanaindustry.compat.trickster.partition.PartitionFees.vec(source.getPos()),com.iridium126.createmanaindustry.compat.trickster.partition.PartitionFees.vec(target)))distance=Double.POSITIVE_INFINITY;
         return source.getPlayer().map(p -> CastChains.invertedFor(p.getUUID())).orElse(false)
                 ? (distance <= 16 ? Math.nextUp(16D) : 16D) : distance;
     }

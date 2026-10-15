@@ -609,5 +609,14 @@
   "createmanaindustry.configuration.stormHelixMaxMembers": "双螺旋参战人数上限",
   "createmanaindustry.configuration.stormHelixMaxMembers.tooltip": "默认8192，范围512–16384；每股至少256人。不足或路线不安全回退星冠。",
   "createmanaindustry.configuration.stormHelixThrustSpeed": "双螺旋贯击速度上限",
-  "createmanaindustry.configuration.stormHelixThrustSpeed.tooltip": "默认12格/秒，范围6–18；仅贯击阶段提高上限，弯曲路线按曲率降速，其他阶段保持6格/秒。"
+  "createmanaindustry.configuration.stormHelixThrustSpeed.tooltip": "默认12格/秒，范围6–18；仅贯击阶段提高上限，弯曲路线按曲率降速，其他阶段保持6格/秒。",
+  "createmanaindustry.great_trick.partition": "分域",
+  "createmanaindustry.partition.cost": "每方块 1 Anima",
+  "createmanaindustry.partition.infinite_cost": "目标位于另一分域，所需距离为无穷，无法支付此费用。",
+  "createmanaindustry.partition.restore_failed": "分域无法恢复：边界已与其他分域冲突，或坐标不再有效。法术继续执行。",
+  "createmanaindustry.configuration.partitionMovementExemptEntities": "分域移动豁免实体",
+  "createmanaindustry.configuration.partitionMovementExemptEntities.tooltip": "按实体注册 ID 指定分域移动豁免；乘客随豁免载具通行。施法范围及费用不受豁免。",
+  "createmanaindustry.configuration.partitionMaxParticles": "分域 GPU 粒子预算",
+  "createmanaindustry.configuration.partitionMaxParticles.tooltip": "分域边框及薄幕的 GPU 样本上限；降低或关闭不影响逻辑边界。",
+  "createmanaindustry.great_trick.costs_anima": "消耗 Anima"
 }

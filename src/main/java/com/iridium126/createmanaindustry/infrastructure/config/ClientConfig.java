@@ -30,6 +30,7 @@ public final class ClientConfig {
     private static ModConfigSpec.BooleanValue PARTICLE_ENABLED;
     private static ModConfigSpec.IntValue PARTICLE_MAX_COUNT;
     private static ModConfigSpec.IntValue SAME_FATE_MAX_PARTICLES;
+    private static ModConfigSpec.IntValue PARTITION_MAX_PARTICLES;
     private static ModConfigSpec.DoubleValue PARTICLE_BUDGET_MS;
     private static ModConfigSpec.BooleanValue PARTICLE_AUTO_THROTTLE;
     private static ModConfigSpec.IntValue PARTICLE_FADE_DISTANCE;
@@ -71,6 +72,7 @@ public final class ClientConfig {
         PARTICLE_MAX_COUNT = BUILDER
                 .comment("Maximum live particles allocated.")
                 .defineInRange("maxParticles", 2_000_000, 1_000, 4_000_000);
+        PARTITION_MAX_PARTICLES = BUILDER.comment("Maximum GPU conjure samples for Partition membranes and edges.").defineInRange("partitionMaxParticles",131072,0,1048576);
         SAME_FATE_MAX_PARTICLES = BUILDER.comment("Maximum GPU conjure samples for Shared Fate, within the existing shared particle capacity.")
                 .defineInRange("sameFateMaxParticles", 131072, 256, 1048576);
         PARTICLE_BUDGET_MS = BUILDER
@@ -116,6 +118,7 @@ public final class ClientConfig {
     public static double gridSnapThreshold = 0.75;
     public static boolean particleEnabled = true;
     public static int particleMaxCount = 2_000_000;
+    public static int partitionMaxParticles = 131072;
     public static int sameFateMaxParticles = 131072;
     public static double particleBudgetMs = 15.0;
     public static boolean particleAutoThrottle = true;
@@ -141,6 +144,7 @@ public final class ClientConfig {
             gridSnapThreshold = GRID_SNAP_THRESHOLD.get();
             particleEnabled = PARTICLE_ENABLED.get();
             particleMaxCount = PARTICLE_MAX_COUNT.get();
+            partitionMaxParticles = PARTITION_MAX_PARTICLES.get();
             sameFateMaxParticles = SAME_FATE_MAX_PARTICLES.get();
             particleBudgetMs = PARTICLE_BUDGET_MS.get();
             particleAutoThrottle = PARTICLE_AUTO_THROTTLE.get();

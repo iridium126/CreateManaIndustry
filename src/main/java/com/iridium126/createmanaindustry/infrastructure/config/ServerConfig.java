@@ -98,6 +98,8 @@ public final class ServerConfig {
 
     private static ModConfigSpec.IntValue MANA_PER_BUCKET;
     private static ModConfigSpec.IntValue MEDIA_PER_BUCKET;
+    private static ModConfigSpec.ConfigValue<List<? extends String>> PARTITION_MOVEMENT_EXEMPT;
+    public static volatile List<? extends String> partitionMovementExemptEntities=List.of("create:contraption","create:stationary_contraption","create:gantry_contraption","create:carriage_contraption");
     private static ModConfigSpec.IntValue ANIMA_PER_BUCKET;
     private static ModConfigSpec.DoubleValue BATTERY_ANIMA_CAPACITY_RATIO;
     private static ModConfigSpec.IntValue SOURCE_PER_BUCKET;
@@ -215,6 +217,7 @@ public final class ServerConfig {
                 .defineInRange("mainThreadBudgetMs",10.0,0.25,50.0);
         BUILDER.pop();
         BUILDER.comment("Fluid conversion ratios — how much mana/media/source one bucket holds.").push("fluid");
+        PARTITION_MOVEMENT_EXEMPT = BUILDER.comment("Entity IDs exempt from Partition movement barriers only. Their passengers travel with them.").defineListAllowEmpty("partitionMovementExemptEntities", List.of("create:contraption","create:stationary_contraption","create:gantry_contraption","create:carriage_contraption"), () -> "minecraft:boat", value -> value instanceof String text && ResourceLocation.tryParse(text)!=null);
         ANIMA_PER_BUCKET = BUILDER.comment("Anima contained in 1000 mB of Liquid Soul. 每桶液态灵魂所含的 Anima。")
                 .defineInRange("animaPerBucket", 32, 1, 1000000);
         BATTERY_ANIMA_CAPACITY_RATIO = BUILDER.comment("Battery Anima capacity per dust-equivalent of its actual maximum media. 电池每份紫水晶粉等价容量可储存的 Anima。")
@@ -644,6 +647,7 @@ public final class ServerConfig {
             manaPerStress = MANA_PER_STRESS.get();
             manaPerBucket = MANA_PER_BUCKET.get();
             mediaPerBucket = MEDIA_PER_BUCKET.get();
+            partitionMovementExemptEntities = List.copyOf(PARTITION_MOVEMENT_EXEMPT.get());
             animaPerBucket = ANIMA_PER_BUCKET.get();
             batteryAnimaCapacityRatio = BATTERY_ANIMA_CAPACITY_RATIO.get();
             mediaConsumedPerTick = MEDIA_CONSUMED_PER_TICK.get();

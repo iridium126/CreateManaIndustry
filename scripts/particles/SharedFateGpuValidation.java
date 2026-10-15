@@ -232,12 +232,113 @@ public class SharedFateGpuValidation {
             for(int b:new int[]{input,jobs,previous,next,dummy})GL15.glDeleteBuffers(b);
         }
     }
+    static void partitionDrawHandoff() throws Exception {
+        var prelude=ParticlePrograms.class.getDeclaredField("PRELUDE");prelude.setAccessible(true);String prefix=(String)prelude.get(null);
+        int prepare=program("partition_prepare.comp",GL43.GL_COMPUTE_SHADER,"");
+        int reserve=program("partition_reserve.comp",GL43.GL_COMPUTE_SHADER,"");
+        int emit=program("partition_emit.comp",GL43.GL_COMPUTE_SHADER,"");
+        int publish=program("prepare_dispatch.comp",GL43.GL_COMPUTE_SHADER,prefix);
+        int keygen=program("keygen.comp",GL43.GL_COMPUTE_SHADER,prefix),draw=graphics(prefix);
+        int input=buffer(64),jobs=buffer(18*64),previous=buffer(80),next=buffer(80),dummy=buffer(64);
+        int framebuffer=GL30.glGenFramebuffers(),color=GL11.glGenTextures();var pool=new ParticleBuffers();
+        try {
+            check(pool.init(4096,2),"draw handoff native pool");pool.beginComputeFrame();pool.clearParticles();
+            pool.bindCounter(ParticleBuffers.COUNTER_BB,0);int counter=boundBuffer(ParticleBuffers.COUNTER_BB);put(counter,bytes(16));
+            pool.bindParticleWrite(ParticleBuffers.PARTICLE_BB_READ);int output=boundBuffer(ParticleBuffers.PARTICLE_BB_READ);
+            pool.bindDispatch();int dispatchBuffer=boundBuffer(ParticleBuffers.DISPATCH_BB);
+            pool.bindIndirect(ParticleBuffers.INDIRECT_BB);int indirect=boundBuffer(ParticleBuffers.INDIRECT_BB);
+            pool.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,1);
+            var field=SharedFateGpu.class.getDeclaredField("SPEC");field.setAccessible(true);
+            pool.setEmitterHeader(0,((com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec)field.get(null)).packed());
+            pool.uploadDirtyEmitters();
+            Matrix4f view=new Matrix4f(),projection=new Matrix4f().perspective((float)Math.toRadians(70),1,.05f,256);
+            for(int p:new int[]{prepare,emit}) {
+                matrix(p,"uView",view);matrix(p,"uProjection",projection);f(p,"uViewportHeight",64);f(p,"uTime",1);
+            }
+            put(input,bytes(64).putFloat(0,-1).putFloat(4,-1).putFloat(8,-11).putFloat(16,1).putFloat(20,1).putFloat(24,-9).putFloat(32,1).putFloat(36,-1));
+            bind(0,input);bind(1,jobs);bind(2,previous);bind(3,next);bind(4,counter);bind(5,output);
+            ui(prepare,"uCount",1);f(prepare,"uFadeDistance",256);
+            GL41.glProgramUniform4fv(prepare,GL20.glGetUniformLocation(prepare,"uFrustum"),new float[24]);
+            dispatch(prepare,1);ui(reserve,"uCount",1);ui(reserve,"uCapacity",pool.capacity());ui(reserve,"uBudget",4096);
+            dispatch(reserve,1);ui(emit,"uEmitter",0);f(emit,"uFadeDistance",256);dispatch(emit,18);
+            int live=read(counter,16).getInt(0);check(live>0,"wire kernels generated particles before publication");
+            ui(publish,"uPhase",1);ui(publish,"uCapacity",pool.capacity());ui(publish,"uPackageStaged",0);
+            pool.beginBindings();pool.bindDispatchInputs(0,1);dispatch(publish,1);
+            GL42.glMemoryBarrier(GL42.GL_COMMAND_BARRIER_BIT);
+            check(read(dispatchBuffer,36).getInt(12)==(live+63)/64,"restored handoff publishes every generated wire sample");
+            check(boundBuffer(ParticleBuffers.COUNTER_BB)==counter&&boundBuffer(ParticleBuffers.INDIRECT_BB)==indirect,
+                    "publication restored the native counter and indirect inputs");
+            pool.bindParticleWrite(ParticleBuffers.PARTICLE_BB_READ);pool.bindEmitters(ParticleBuffers.EMITTER_BB);
+            pool.bindOrderAdd();pool.bindOrderOpaque();pool.bindSort(ParticleBuffers.SORTWRITE_BINDING,pool.sortBuffer(0));pool.bindCarrierSink();bind(28,dummy);
+            ui(keygen,"uUpper",pool.capacity());ui(keygen,"uPackageStaged",0);matrix(keygen,"uView",view);
+            GL41.glProgramUniform4fv(keygen,GL20.glGetUniformLocation(keygen,"uFrustum"),new float[24]);
+            GL20.glUseProgram(keygen);pool.dispatch(1);
+            GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT);
+            check(read(indirect,ParticleBuffers.INDIRECT_UINTS*4).getInt(ParticleBuffers.IDX_CNT_ADD*4)==live,
+                    "all wire samples reach the additive draw permutation");
+            pool.swap();
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,framebuffer);GL11.glBindTexture(GL11.GL_TEXTURE_2D,color);
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,GL11.GL_RGBA8,64,64,0,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,(ByteBuffer)null);
+            GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL11.GL_TEXTURE_2D,color,0);
+            check(GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER)==GL30.GL_FRAMEBUFFER_COMPLETE,"wire visibility framebuffer");
+            GL11.glViewport(0,0,64,64);GL11.glDisable(GL11.GL_DEPTH_TEST);GL11.glDisable(GL11.GL_CULL_FACE);
+            GL11.glEnable(GL11.GL_BLEND);GL11.glBlendFunc(GL11.GL_ONE,GL11.GL_ONE);GL11.glClearColor(0,0,0,0);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+            matrix(draw,"ModelViewMat",view);matrix(draw,"ProjMat",projection);f(draw,"uFadeDist",256);f(draw,"uGlow",1);
+            GL41.glProgramUniform3f(draw,GL20.glGetUniformLocation(draw,"uCamRight"),1,0,0);
+            GL41.glProgramUniform3f(draw,GL20.glGetUniformLocation(draw,"uCamUp"),0,1,0);
+            pool.bindBillboardDrawInputs(0,pool.sortBuffer(0));GL20.glUseProgram(draw);
+            GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,0L);
+            var pixels=bytes(64*64*4);GL11.glReadPixels(0,0,64,64,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);
+            int lit=0;for(int i=0;i<64*64;i++)if((pixels.get(i*4)&255)+(pixels.get(i*4+1)&255)+(pixels.get(i*4+2)&255)>0)lit++;
+            check(lit>10,"published wire draws visible pixels, not just valid compute records");
+            System.out.println("Partition handoff: "+live+" samples, "+lit+" visible pixels");
+        } finally {
+            pool.free();GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(framebuffer);GL11.glDeleteTextures(color);
+            for(int p:new int[]{prepare,reserve,emit,publish,keygen,draw})GL20.glDeleteProgram(p);
+            for(int b:new int[]{input,jobs,previous,next,dummy})GL15.glDeleteBuffers(b);
+        }
+    }
+    static void partitionKernels(){
+        preparation=reservation=0;
+        int prepare=program("partition_prepare.comp",GL43.GL_COMPUTE_SHADER,"");
+        int reserve=program("partition_reserve.comp",GL43.GL_COMPUTE_SHADER,"");
+        int emit=program("partition_emit.comp",GL43.GL_COMPUTE_SHADER,"");
+        int input=buffer(128),jobs=buffer(36*64),counter=buffer(16),pool=buffer(8193*64);
+        try{
+            bind(0,input);bind(1,jobs);bind(4,counter);bind(5,pool);
+            ui(prepare,"uCount",1);ui(reserve,"uCount",1);ui(reserve,"uCapacity",8192);ui(reserve,"uBudget",8192);
+            ui(emit,"uEmitter",0);f(prepare,"uFadeDistance",256);f(emit,"uFadeDistance",256);
+            matrix(emit,"uView",new Matrix4f());matrix(emit,"uProjection",new Matrix4f());f(emit,"uViewportHeight",10000);
+            GL41.glProgramUniform4fv(prepare,GL20.glGetUniformLocation(prepare,"uFrustum"),new float[24]);
+            var data=bytes(128).putFloat(0,-1).putFloat(4,-1).putFloat(8,-11).putFloat(16,1).putFloat(20,1).putFloat(24,-9).putFloat(32,.1f).putFloat(36,-1).putFloat(40,1);
+            put(input,data);dispatch(prepare,1);dispatch(reserve,1);dispatch(emit,18);
+            int count=read(counter,16).getInt(0);check(count>1000&&count<=8192,"partition edge and membrane allocation");
+            var result=read(pool,8193*64);float forming=result.getFloat(44);
+            int edges=0,faces=0;for(int i=0;i<count;i++){
+                for(int k=0;k<15;k++)check(Float.isFinite(result.getFloat(i*64+k*4)),"finite partition sample");
+                float size=result.getFloat(i*64+12);if(size<.05)edges++;else faces++;
+            }
+            check(edges>0&&faces>0,"partition emits faces and edges");check(result.getFloat(8192*64)==0,"partition pool sentinel untouched");
+            // Ending while forming starts from exactly the current glow, then fades.
+            data.putFloat(36,0);put(input,data);put(counter,bytes(16));dispatch(prepare,1);dispatch(reserve,1);dispatch(emit,18);
+            check(Math.abs(read(pool,64).getFloat(44)-forming)<1e-5,"partition interrupted condensation has no brightness jump");
+            data.putFloat(32,.5f).putFloat(36,.4f);put(input,data);put(counter,bytes(16));dispatch(prepare,1);dispatch(reserve,1);dispatch(emit,18);
+            check(read(pool,64).getFloat(44)<forming,"partition dissipates from current brightness");
+            data.putFloat(36,.81f);put(input,data);put(counter,bytes(16));dispatch(prepare,1);dispatch(reserve,1);
+            check(read(counter,16).getInt(0)==0,"expired partition consumes no GPU slots");
+            data.putFloat(36,-1);for(int i=0;i<64;i++)data.put(64+i,data.get(i));put(input,data);put(counter,bytes(16));
+            ui(prepare,"uCount",2);ui(reserve,"uCount",2);ui(reserve,"uBudget",37);dispatch(prepare,1);dispatch(reserve,1);dispatch(emit,36);
+            check(read(counter,16).getInt(0)==37,"partition global budget respected across domains");
+            put(counter,bytes(16).putInt(0,8190));ui(reserve,"uBudget",8192);dispatch(prepare,1);dispatch(reserve,1);dispatch(emit,36);
+            check(read(counter,16).getInt(0)==8192,"partition shared pool capacity respected");
+        }finally{for(int p:new int[]{prepare,reserve,emit})GL20.glDeleteProgram(p);for(int b:new int[]{input,jobs,counter,pool})GL15.glDeleteBuffers(b);}
+    }
     public static void main(String[] args) throws Exception {
         GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW initialization");
         GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
         long window=GLFW.glfwCreateWindow(64,64,"Shared Fate shader validation",0,0);
         try{check(window!=0,"hidden GPU context");GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
-            System.out.println(GL11.glGetString(GL11.GL_RENDERER));lateHeaders();math();kernels();batches();drawHandoff();check(GL11.glGetError()==0,"no GL error");
+            System.out.println(GL11.glGetString(GL11.GL_RENDERER));lateHeaders();math();kernels();batches();drawHandoff();partitionKernels();partitionDrawHandoff();check(GL11.glGetError()==0,"no GL error");
             System.out.println("Shared Fate GPU: "+checks+" assertions passed");
         }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
     }

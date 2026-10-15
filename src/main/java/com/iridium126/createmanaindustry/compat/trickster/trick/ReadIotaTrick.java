@@ -45,6 +45,8 @@ public class ReadIotaTrick extends Trick<ReadIotaTrick> {
                 .orElseThrow(NoPlayerBlunder::new);
 
         double range = ctx.source().getPos().distance(slot.getSourceOrCasterPos(ctx));
+        if(com.iridium126.createmanaindustry.compat.trickster.partition.PartitionManager.crosses(ctx.source().getWorld(),com.iridium126.createmanaindustry.compat.trickster.partition.PartitionFees.vec(ctx.source().getPos()),com.iridium126.createmanaindustry.compat.trickster.partition.PartitionFees.vec(slot.getSourceOrCasterPos(ctx))))range=Double.POSITIVE_INFINITY;
+        if(ctx.source().getPlayer().map(p -> com.iridium126.createmanaindustry.compat.trickster.casting.CastChains.invertedFor(p.getUUID())).orElse(false))range=range<=16?Math.nextUp(16D):16D;
         if (range > 16) {
             throw new OutOfRangeBlunder(16.0, range);
         }

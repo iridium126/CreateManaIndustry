@@ -11,6 +11,8 @@ import net.minecraft.world.phys.Vec3;
 public abstract class HexInvertedRangeMixin {
     @Inject(method = "isVecInRange", at = @At("RETURN"), cancellable = true)
     private void cmi$invert(Vec3 pos, CallbackInfoReturnable<Boolean> cir) {
+        CastingEnvironment env=(CastingEnvironment)(Object)this;
+        if(com.iridium126.createmanaindustry.compat.trickster.partition.PartitionManager.crosses(env.getWorld(), env.mishapSprayPos(), pos))cir.setReturnValue(false);
         if (((CastingEnvironment)(Object)this).getCastingEntity() instanceof net.minecraft.server.level.ServerPlayer player
                 && CastChains.invertedFor(player.getUUID())) cir.setReturnValue(!cir.getReturnValue());
     }
