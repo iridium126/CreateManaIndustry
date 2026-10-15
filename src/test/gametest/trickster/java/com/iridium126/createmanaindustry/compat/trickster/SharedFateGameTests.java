@@ -52,6 +52,127 @@ public final class SharedFateGameTests {
         player.getInventory().setItem(0,battery);return player;
     }
     private static CastChain chain(ServerPlayer player,Object owner){return CastChains.attach(new CastChain(),player,owner);}
+    private static SpellPart binding(Entity target) {
+        return new SpellPart(new GreatTrickGlyph(GreatPattern.SHARED_FATE),List.of(new SpellPart(EntityFragment.from(target))));
+    }
+    private static SpellPart delayedBinding(Entity target) {
+        return delayed(binding(target));
+    }
+    private static SpellPart delayed(SpellPart binding) {
+        var delay=new SpellPart(new PatternGlyph(dev.enjarai.trickster.spell.trick.Tricks.DELAY_EXECUTION.getPattern()),
+                List.of(new SpellPart(new NumberFragment(20))));
+        return new SpellPart(new PatternGlyph(),List.of(binding,delay));
+    }
+    @GameTest(template="trickster_stock_test")
+    public static void hexEntityArgumentBindsAndReturnsNativeEntityIota(GameTestHelper helper) {
+        var caster=player(helper,false);var target=helper.spawn(EntityType.COW,new BlockPos(1,1,1));
+        var bind=new SpellPart(new GreatTrickGlyph(GreatPattern.SHARED_FATE),List.of(new SpellPart(
+                new PatternGlyph(dev.enjarai.trickster.spell.trick.Tricks.LOAD_ARGUMENT_1.getPattern()))));
+        var image=new CastingImage();
+        image=image.copy(at.petrak.hexcasting.api.utils.TreeList.from(List.of(new at.petrak.hexcasting.api.casting.iota.ListIota(
+                        List.of(new at.petrak.hexcasting.api.casting.iota.EntityIota(target))))),
+                0,at.petrak.hexcasting.api.utils.TreeList.empty(),false,false,0,image.getUserData());
+        var vm=new CastingVM(image,new StaffCastEnv(caster,InteractionHand.MAIN_HAND));long balance=BatteryAnima.available(caster);
+        try {
+            vm.queueExecuteAndWrapIota(new com.iridium126.createmanaindustry.compat.hexcasting.TrickIota(bind),helper.getLevel());
+            helper.assertTrue(BatteryAnima.available(caster)==balance-32000,"Valid Hex entity argument did not reach Shared Fate's Entity signature");
+            helper.assertTrue(vm.getImage().getStack().last() instanceof at.petrak.hexcasting.api.casting.iota.EntityIota entity
+                    && entity.getEntityId().equals(target.getUUID())&&!entity.isPlayer(),"Shared Fate returned a wrapped spell instead of the target EntityIota");
+            helper.assertTrue(SharedFateManager.outgoing(caster.getServer(),caster.getUUID()).equals(List.of(target.getUUID())),"Hex entity argument created no binding");
+            incident(caster,halfHealth());
+            helper.assertTrue(target.getHealth()==target.getMaxHealth()/2,"Hex argument binding did not transmit mishap");
+            helper.succeed();
+        } finally {CastChains.resetStaff(caster,vm.getImage().getUserData().getString("cmi_cast_chain"));}
+    }
+    @GameTest(template="trickster_stock_test")
+    public static void mirrorCanBindEntityReadFromHexFocus(GameTestHelper helper) {
+        var caster=player(helper,false);var target=helper.spawn(EntityType.COW,new BlockPos(1,1,1));
+        // Load a saved focus: direct component setters reflect on Hex's client-only Font signature.
+        var saved=new net.minecraft.nbt.CompoundTag();saved.putString("id","hexcasting:focus");saved.putInt("count",1);
+        var components=new net.minecraft.nbt.CompoundTag();
+        components.put("hexcasting:iota",at.petrak.hexcasting.api.casting.iota.IotaType.TYPED_CODEC.encodeStart(
+                net.minecraft.nbt.NbtOps.INSTANCE,new at.petrak.hexcasting.api.casting.iota.EntityIota(target)).getOrThrow());
+        saved.put("components",components);
+        var focus=ItemStack.parseOptional(helper.getLevel().registryAccess(),saved);
+        caster.setItemInHand(InteractionHand.OFF_HAND,focus);
+        var bind=new SpellPart(new GreatTrickGlyph(GreatPattern.SHARED_FATE),List.of(new SpellPart(
+                new PatternGlyph(CMITricks.Hexcasting.READ_IOTA.getPattern()))));
+        var manager=new WrappedSpellExecutionManager(new PlayerSpellExecutionManager(5));
+        var source=new PlayerSpellSource(caster,manager);long balance=BatteryAnima.available(caster);
+        var context=new SpellContext(new ExecutionState(List.of()),source,new TickData());
+        var read=CMITricks.Hexcasting.READ_IOTA.run(context,Optional.empty()).orElseThrow();
+        helper.assertTrue(read instanceof EntityFragment entity&&entity.uuid().equals(target.getUUID()),"Focus reader did not produce native EntityFragment");
+        manager.setSpell(delayed(bind));
+        manager.tick(source,(slot,executor)->{},(slot,executor,result)->{},(slot,executor)->{});
+        helper.assertTrue(BatteryAnima.available(caster)==balance-32000,"Reading entity iota in the mirror did not produce EntityFragment");
+        helper.runAfterDelay(2,()->{
+            try {
+                helper.assertTrue(SharedFateManager.outgoing(caster.getServer(),caster.getUUID()).equals(List.of(target.getUUID())),"Mirror created no active binding from its read entity");
+                incident(caster,halfHealth());helper.assertTrue(target.getHealth()==target.getMaxHealth()/2,"Mirror read binding did not transmit mishap");
+                helper.succeed();
+            } finally {manager.killAll();}
+        });
+    }
+    @GameTest(template="trickster_stock_test")
+    public static void mirrorQueuedSpellKeepsBindingAcrossTicksAndReplaysMishap(GameTestHelper helper) {
+        var caster=player(helper,false);var target=helper.spawn(EntityType.COW,new BlockPos(1,1,1));
+        var manager=new PlayerSpellExecutionManager(5);var source=new PlayerSpellSource(caster,manager);
+        long balance=BatteryAnima.available(caster);
+        manager.queueAndCast(source,delayedBinding(target),List.of(),Optional.empty());
+        helper.assertTrue(BatteryAnima.available(caster)==balance-32000,"Mirror did not charge the successful binding");
+        helper.runAfterDelay(2,()->{
+            try {
+                helper.assertTrue(SharedFateManager.outgoing(caster.getServer(),caster.getUUID()).equals(List.of(target.getUUID())),
+                        "Mirror binding disappeared before its long spell finished");
+                incident(caster,halfHealth());
+                helper.assertTrue(target.getHealth()==target.getMaxHealth()/2,"Mirror binding did not replay the actual mishap");
+                manager.killAll();
+                helper.assertTrue(SharedFateManager.outgoing(caster.getServer(),caster.getUUID()).isEmpty(),"Cancelled mirror spell retained binding");
+                helper.succeed();
+            } finally {manager.killAll();}
+        });
+    }
+    @GameTest(template="trickster_stock_test")
+    public static void staffTrickIotaKeepsBindingForNextVmAndReplaysRealDivisionMishap(GameTestHelper helper) {
+        var caster=player(helper,false);var target=helper.spawn(EntityType.COW,new BlockPos(1,1,1));
+        var vm=new CastingVM(new CastingImage(),new StaffCastEnv(caster,InteractionHand.MAIN_HAND));
+        var result=vm.queueExecuteAndWrapIota(new com.iridium126.createmanaindustry.compat.hexcasting.TrickIota(binding(target)),helper.getLevel());
+        helper.assertTrue(result.getResolutionType().getSuccess()&&!result.isStackClear(),"Valid staff TrickIota failed");
+        var xplat=at.petrak.hexcasting.xplat.IXplatAbstractions.INSTANCE;
+        xplat.setStaffcastImage(caster,vm.getImage());
+        helper.runAfterDelay(2,()->{
+            try {
+                helper.assertTrue(SharedFateManager.outgoing(caster.getServer(),caster.getUUID()).equals(List.of(target.getUUID())),
+                        "Staff binding disappeared between drawn patterns");
+                var resumed=xplat.getStaffcastVM(caster,InteractionHand.MAIN_HAND);
+                var image=resumed.getImage();
+                resumed.setImage(image.copy(at.petrak.hexcasting.api.utils.TreeList.from(List.of(
+                        new at.petrak.hexcasting.api.casting.iota.DoubleIota(1),new at.petrak.hexcasting.api.casting.iota.DoubleIota(0))),
+                        0,at.petrak.hexcasting.api.utils.TreeList.empty(),false,false,0,image.getUserData()));
+                resumed.queueExecuteAndWrapIota(new at.petrak.hexcasting.api.casting.iota.PatternIota(
+                        at.petrak.hexcasting.common.lib.hex.HexActions.DIV_CROSS.value().prototype()),helper.getLevel());
+                helper.assertTrue(target.getHealth()==target.getMaxHealth()/2,"Staff binding did not replay the VM's division mishap");
+                helper.succeed();
+            } finally {xplat.setStaffcastImage(caster,null);}
+        });
+    }
+    @GameTest(template="trickster_stock_test")
+    public static void handedOffTrickIotaKeepsBindingWhenStaffStackClears(GameTestHelper helper) {
+        var caster=player(helper,false);var target=helper.spawn(EntityType.COW,new BlockPos(1,1,1));
+        var source=new PlayerSpellSource(caster);var manager=source.getExecutionManager().orElseThrow();manager.killAll();
+        var vm=new CastingVM(new CastingImage(),new StaffCastEnv(caster,InteractionHand.MAIN_HAND));
+        var result=vm.queueExecuteAndWrapIota(new com.iridium126.createmanaindustry.compat.hexcasting.TrickIota(delayedBinding(target)),helper.getLevel());
+        helper.assertTrue(result.getResolutionType().getSuccess()&&result.isStackClear(),"Long TrickIota did not hand off");
+        helper.runAfterDelay(2,()->{
+            try {
+                helper.assertTrue(SharedFateManager.outgoing(caster.getServer(),caster.getUUID()).equals(List.of(target.getUUID())),
+                        "Clearing staff stack prematurely ended the handed-off spell's binding");
+                incident(caster,halfHealth());
+                helper.assertTrue(target.getHealth()==target.getMaxHealth()/2,"Handed-off binding did not replay mishap");
+                helper.succeed();
+            } finally {manager.killAll();}
+        });
+    }
     @GameTest(template="trickster_stock_test")
     public static void fullMishapPrimitivesUseRecipientAttributesAndOriginalContext(GameTestHelper helper) {
         var a=player(helper,false);var b=player(helper,true);var cow=helper.spawn(EntityType.COW,new BlockPos(1,1,1));

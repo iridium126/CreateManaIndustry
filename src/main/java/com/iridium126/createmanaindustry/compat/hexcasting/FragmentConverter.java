@@ -7,6 +7,7 @@ import com.iridium126.createmanaindustry.compat.trickster.fragment.IotaFragment;
 
 import at.petrak.hexcasting.api.casting.iota.BooleanIota;
 import at.petrak.hexcasting.api.casting.iota.DoubleIota;
+import at.petrak.hexcasting.api.casting.iota.EntityIota;
 import at.petrak.hexcasting.api.casting.iota.GarbageIota;
 import at.petrak.hexcasting.api.casting.iota.Iota;
 import at.petrak.hexcasting.api.casting.iota.ListIota;
@@ -15,21 +16,25 @@ import at.petrak.hexcasting.api.casting.iota.Vec3Iota;
 import dev.enjarai.trickster.spell.Fragment;
 import dev.enjarai.trickster.spell.SpellPart;
 import dev.enjarai.trickster.spell.fragment.BooleanFragment;
+import dev.enjarai.trickster.spell.fragment.EntityFragment;
 import dev.enjarai.trickster.spell.fragment.ListFragment;
 import dev.enjarai.trickster.spell.fragment.NumberFragment;
 import dev.enjarai.trickster.spell.fragment.VectorFragment;
 import dev.enjarai.trickster.spell.fragment.VoidFragment;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
 
 /**
- * Lossless conversions between Hexcasting iotas and Trickster fragments,
+ * Conversions between Hexcasting iotas and Trickster fragments,
  * leveraging CMI's own round-trip fragments:
  * <ul>
- * <li>hex → trickster: primitives map natively; anything else is wrapped in
+ * <li>hex → trickster: primitives and entities map natively; anything else is wrapped in
  * {@link IotaFragment} (stored losslessly).</li>
- * <li>trickster → hex: {@link IotaFragment} unwraps; primitives map natively;
+ * <li>trickster → hex: {@link IotaFragment} unwraps; primitives and entities map natively;
  * an existing {@link SpellPart} is preserved in a {@link TrickIota}; anything
  * else is wrapped in a single-glyph {@link SpellPart} and {@link TrickIota}.</li>
  * </ul>
@@ -53,6 +58,11 @@ public final class FragmentConverter {
         }
         if (iota instanceof BooleanIota b) {
             return BooleanFragment.of(b.getBool());
+        }
+        if (iota instanceof EntityIota entity) {
+            Component name = entity.getEntityName();
+            return new EntityFragment(entity.getEntityId(), name == null
+                    ? Component.translatable("hexcasting.spelldata.entity.whoknows") : name.copy());
         }
         if (iota instanceof Vec3Iota v) {
             try {
@@ -88,6 +98,12 @@ public final class FragmentConverter {
      */
     @Nullable
     public static Iota fragmentToIota(Fragment fragment) {
+        return fragmentToIota(fragment, null);
+    }
+
+    /** Resolve an entity's player flag in the casting world, including inside lists. */
+    @Nullable
+    public static Iota fragmentToIota(Fragment fragment, @Nullable ServerLevel world) {
         if (fragment == null || fragment instanceof VoidFragment) {
             return null;
         }
@@ -100,6 +116,11 @@ public final class FragmentConverter {
         if (fragment instanceof BooleanFragment bool) {
             return new BooleanIota(bool.asBoolean());
         }
+        if (fragment instanceof EntityFragment entity) {
+            var resolved = world == null ? null : world.getEntity(entity.uuid());
+            // EntityFragment has no saved player flag. Unknown names must retain true-name protection.
+            return new EntityIota(entity.uuid(), entity.name().copy(), resolved == null || resolved instanceof Player);
+        }
         if (fragment instanceof VectorFragment vector) {
             var vec = vector.vector();
             return new Vec3Iota(new Vec3(vec.x(), vec.y(), vec.z()));
@@ -107,7 +128,7 @@ public final class FragmentConverter {
         if (fragment instanceof ListFragment list) {
             List<Iota> iotas = new ArrayList<>();
             for (Fragment sub : list.fragments()) {
-                Iota converted = fragmentToIota(sub);
+                Iota converted = fragmentToIota(sub, world);
                 iotas.add(converted != null ? converted : new NullIota());
             }
             return new ListIota(iotas);

@@ -73,6 +73,9 @@ public final class SharedFateGpu implements AutoCloseable {
     public void generate(ParticleBuffers pool,CMIParticleEngine engine,int counterSlot,Matrix4fc view,Matrix4fc projection,float[] frustum,float throttle) {
         if(frames.isEmpty())return;
         int emitter=engine.ensureEmitter(SPEC);if(emitter<0)return;
+        // This late allocation happens after the engine's normal header upload.
+        // Keygen and the draw passes must see its conjure size/style on this frame too.
+        pool.uploadDirtyEmitters();
         // Preserve offscreen slots and only promote poses after the whole owner frame commits.
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,read);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,write);
         GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,(long)stateCapacity*80);

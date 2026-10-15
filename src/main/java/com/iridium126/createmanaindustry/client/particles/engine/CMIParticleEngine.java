@@ -1730,6 +1730,9 @@ public final class CMIParticleEngine {
             //    counts, so update/emit never touch the indirect buffer.
             int finalPerm = -1;
             ParticleDiagnostics.INSTANCE.mark("keygen");
+            // Shared Fate and package compute passes reuse the counter/indirect SSBO slots.
+            // Publish from the actual particle counters, never their temporary state buffers.
+            this.gpu.bindDispatchInputs(slot, this.lastGoodSlot);
             ParticleDispatch.prepare(this.programs, 1,packageStaged);
             int aliveEstimate = cap; // Draw counts and dispatch bounds live on the GPU.
             this.frameAliveEstimate = aliveEstimate; // draw-phase handoff

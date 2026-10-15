@@ -1104,6 +1104,14 @@ public final class ParticleBuffers {
         GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER, this.dispatchSSBO);
     }
 
+    /** Phase publication owns these inputs, even after external compute passes reuse their bindings. */
+    public void bindDispatchInputs(int currentSlot, int previousSlot) {
+        bindDispatch();
+        bindIndirect(INDIRECT_BB);
+        bindCounter(COUNTER_BB, currentSlot);
+        bindPrevCounter(PREVCOUNTER_BINDING, previousSlot);
+    }
+
     /** 0: committed pool, 1: current pool, 2: visible translucent items. */
     public void dispatch(int command) {
         ParticleDiagnostics.INSTANCE.call();

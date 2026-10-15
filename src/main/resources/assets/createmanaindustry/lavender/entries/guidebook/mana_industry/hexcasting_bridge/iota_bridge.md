@@ -19,7 +19,7 @@
 }
 ```
 
-Hex Casting represents information as **iotas**; the Great Language uses **fragments**. Numbers, Vectors, Booleans and Lists can convert directly to their corresponding fragments. Other iotas are carried by an **Iota Fragment**.
+Hex Casting represents information as **iotas**; the Great Language uses **fragments**. Numbers, Vectors, Booleans, Entities and Lists can convert directly to their corresponding fragments. Other iotas are carried by an **Iota Fragment**.
 
 Both Hex Casting null and garbage become void on the Trickster side. The two systems' empty values are not identical.
 

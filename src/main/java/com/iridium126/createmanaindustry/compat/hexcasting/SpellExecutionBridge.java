@@ -111,7 +111,7 @@ public final class SpellExecutionBridge {
 
             Optional<Fragment> result = executor.run(source);
             if (result.isPresent()) {
-                return SpellExecutionResult.completed(FragmentConverter.fragmentToIota(result.get()));
+                return SpellExecutionResult.completed(FragmentConverter.fragmentToIota(result.get(),env.getWorld()));
             }
 
             Optional<SpellExecutionManager> manager = source.getExecutionManager();

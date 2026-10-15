@@ -87,7 +87,7 @@ public class EvalIotaTrick extends Trick<EvalIotaTrick> {
         // Remaining arguments become the initial hex stack.
         List<Iota> initialStack = new ArrayList<>();
         for (Fragment arg : args) {
-            Iota converted = FragmentConverter.fragmentToIota(arg);
+            Iota converted = FragmentConverter.fragmentToIota(arg,level);
             initialStack.add(converted != null ? converted : new NullIota());
         }
 

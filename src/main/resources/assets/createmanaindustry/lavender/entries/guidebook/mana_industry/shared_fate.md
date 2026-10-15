@@ -36,6 +36,8 @@ You may bind several entities. Pale blue threads mark the bindings for observers
 
 A broken binding does not return when the target comes back. Long-running spells retain their targets when saved, and check them again when execution resumes without charging again.
 
+Running Shared Fate alone from an evaluation mirror ends its chain as soon as it returns, releasing the binding. Keep that spell delayed or running to maintain the thread. When called through a TrickIota with a staff, the binding can remain in the staff session until its state is cleared or reset.
+
 ;;;;;
 
 <|page-title@lavender:book_components|title=One Direction|>
