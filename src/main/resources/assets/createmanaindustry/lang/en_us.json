@@ -20,7 +20,7 @@
   "createmanaindustry.shared_fate.error.range": "The target is outside your Hex Casting ambit.",
   "createmanaindustry.shared_fate.error.duplicate": "You already share your fate with this target.",
   "createmanaindustry.shared_fate.error.cycle": "Sharing your fate would close a cycle.",
-  "createmanaindustry.anima.tooltip": "Soul: %s / %s Anima",
+  "createmanaindustry.anima.tooltip": "%s/%s (%s)",
   "trickster.fragment.createmanaindustry.great_trick": "Great Trick",
   "biome.createmanaindustry.crystal_bloom_plains": "Crystal Bloom Plains",
   "block.createmanaindustry.allay_burner": "Allay Burner",
@@ -620,5 +620,6 @@
   "createmanaindustry.configuration.partitionMovementExemptEntities.tooltip": "Entity registry IDs exempt from movement barriers. Passengers travel with exempt vehicles. Spell range and costs remain restricted.",
   "createmanaindustry.configuration.partitionMaxParticles": "Partition GPU sample budget",
   "createmanaindustry.configuration.partitionMaxParticles.tooltip": "Maximum GPU samples for Partition edges and membranes. Reducing or disabling visuals does not remove barriers.",
-  "createmanaindustry.great_trick.costs_anima": "Costs Anima"
+  "createmanaindustry.great_trick.costs_anima": "Costs Anima",
+  "createmanaindustry.anima.amount": "%s Anima"
 }

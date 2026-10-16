@@ -22,6 +22,11 @@ out vec4 fragColor;
 #pragma cmi_include chunks/hex_shape.glsl
 
 void main() {
+    if(vHex>1.5){
+        float x=abs(vUv.y*2.0-1.0);
+        float profile=exp(-4.0*x*x)*(1.0-smoothstep(.7,1.0,x));
+        fragColor=vec4(vColor*vAlpha*profile*uGlow*(1.0-smoothstep(uFadeDist,uFadeDist+24.0,vDist)),0.0);return;
+    }
     float alpha;
     if (vHex > 0.5) {
         alpha = vAlpha * hexCloudShape(vUv);

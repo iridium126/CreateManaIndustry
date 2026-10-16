@@ -2240,6 +2240,7 @@ public final class CMIParticleEngine {
             CMIParticleEngine.this.storm.starfallGpu().bind(prog,false);
             setFloatUniform(prog,"uTimeSec",CMIParticleEngine.this.timeSec());
             CMIParticleEngine.this.gpu.bindBillboardDrawInputs(mode, mainPermutation());
+            CMIParticleEngine.this.sharedFate.bindDrawInputs();
 
             setMat4Uniform(prog, "ModelViewMat", view);
             setMat4Uniform(prog, "ProjMat", projectionMatrix);

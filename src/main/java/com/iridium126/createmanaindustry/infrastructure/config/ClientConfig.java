@@ -73,7 +73,7 @@ public final class ClientConfig {
                 .comment("Maximum live particles allocated.")
                 .defineInRange("maxParticles", 2_000_000, 1_000, 4_000_000);
         PARTITION_MAX_PARTICLES = BUILDER.comment("Maximum GPU conjure samples for Partition membranes and edges.").defineInRange("partitionMaxParticles",131072,0,1048576);
-        SAME_FATE_MAX_PARTICLES = BUILDER.comment("Maximum GPU conjure samples for Shared Fate, within the existing shared particle capacity.")
+        SAME_FATE_MAX_PARTICLES = BUILDER.comment("Maximum Shared Fate render records (ribbon body/glow segments, stars and dissolution particles), within the shared GPU pool.")
                 .defineInRange("sameFateMaxParticles", 131072, 256, 1048576);
         PARTICLE_BUDGET_MS = BUILDER
                 .comment("Frame-time budget (ms) for particles.")

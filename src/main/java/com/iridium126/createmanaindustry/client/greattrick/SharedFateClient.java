@@ -9,6 +9,7 @@ import java.util.*;
 
 /** Lifecycle and unique endpoint snapshots only. The GPU owns every intermediate point. */
 public final class SharedFateClient {
+    public static final float DISSOLVE_SECONDS=1.2f;
     private static final long EPOCH=System.nanoTime();
     private static ClientLevel world;
     private static final Map<UUID,Wire> WIRES=new LinkedHashMap<>();
@@ -22,7 +23,7 @@ public final class SharedFateClient {
         public final float born;public final boolean animate;
         public float stopped=-1;
         public Vec3 lastCamera;
-        private Pose lastA,lastB;
+        private int priorityBand=-1;
         Wire(Link link) {
             id=link.id();caster=link.caster();target=link.target();
             slot=FREE.isEmpty()?nextSlot++:FREE.removeFirst();generation=++SharedFateClient.generation;
@@ -30,13 +31,16 @@ public final class SharedFateClient {
         }
     }
     private static final class Endpoint {
-        Pose previous,current;float updated;
+        Pose previous,current,lastTracked;float updated,trackedUpdated=-1;
         Endpoint(Pose pose){previous=current=pose;updated=now();}
         void set(Pose pose){previous=current;current=pose;updated=now();}
         Pose resolve(float partial) {
             var entity=Minecraft.getInstance().level.getEntity(current.entityId());
-            if(entity!=null&&entity.getUUID().equals(current.entity()))
-                return new Pose(current.entity(),current.entityId(),entity.getPosition(partial),entity.getBbHeight());
+            if(entity!=null&&entity.getUUID().equals(current.entity())){
+                trackedUpdated=updated;
+                return lastTracked=new Pose(current.entity(),current.entityId(),entity.getPosition(partial),entity.getBbHeight());
+            }
+            if(lastTracked!=null&&updated<=trackedUpdated)return lastTracked;
             double t=Math.max(0,Math.min(1,(now()-updated)/0.1));
             return new Pose(current.entity(),current.entityId(),previous.position().lerp(current.position(),t),
                     (float)(previous.height()+(current.height()-previous.height())*t));
@@ -61,7 +65,7 @@ public final class SharedFateClient {
     }
     private static void expireWires(){
         var expired=WIRES.values().iterator();float time=now();
-        while(expired.hasNext()){Wire wire=expired.next();if(wire.stopped>=0&&time-wire.stopped>=0.8f){FREE.addLast(wire.slot);expired.remove();}}
+        while(expired.hasNext()){Wire wire=expired.next();if(wire.stopped>=0&&time-wire.stopped>=DISSOLVE_SECONDS){FREE.addLast(wire.slot);expired.remove();}}
     }
     public static void receive(ClientboundSharedFatePacket packet) {
         var level=Minecraft.getInstance().level;
@@ -78,7 +82,9 @@ public final class SharedFateClient {
                 if(existing!=null&&existing.stopped<0)continue;
                 if(existing!=null)FREE.addLast(existing.slot);
                 WIRES.put(link.id(),new Wire(link));
-            }else if(link.action()==ClientboundSharedFatePacket.REMOVE&&existing!=null&&existing.stopped<0)existing.stopped=now();
+            }else if(link.action()==ClientboundSharedFatePacket.REMOVE&&existing!=null&&existing.stopped<0){
+                existing.stopped=now();
+            }
         }
     }
     private static void switchWorld(ClientLevel level) {
@@ -93,13 +99,13 @@ public final class SharedFateClient {
         var resolved=new HashMap<UUID,Pose>();var frames=new ArrayList<Frame>();
         for(Wire wire:WIRES.values()) {
             Endpoint ea=POSES.get(wire.caster),eb=POSES.get(wire.target);if(ea==null||eb==null)continue;
-            Pose a=wire.stopped>=0?(wire.lastA==null?ea.current:wire.lastA):resolved.computeIfAbsent(wire.caster,id->ea.resolve(partial));
-            Pose b=wire.stopped>=0?(wire.lastB==null?eb.current:wire.lastB):resolved.computeIfAbsent(wire.target,id->eb.resolve(partial));
-            if(wire.stopped<0){wire.lastA=a;wire.lastB=b;}
+            Pose a=resolved.computeIfAbsent(wire.caster,id->ea.resolve(partial));
+            Pose b=resolved.computeIfAbsent(wire.target,id->eb.resolve(partial));
             if(distanceSquared(camera,a.position(),b.position())>(distance+27)*(distance+27))continue;
+            wire.priorityBand=SharedFatePriority.band(wire.priorityBand,Math.sqrt(distanceSquared(camera,a.position(),b.position())));
             frames.add(new Frame(wire,a,b));
         }
-        frames.sort(Comparator.comparingDouble(f->distanceSquared(camera,f.a.position(),f.b.position())));
+        frames.sort(Comparator.<Frame>comparingInt(f->f.wire.priorityBand).thenComparing(f->f.wire.id));
         return frames.size()>maxLinks?List.copyOf(frames.subList(0,maxLinks)):frames;
     }
     public static int slots(){return nextSlot;}

@@ -58,6 +58,8 @@ vec2 quadCorner(int v) {
     }
 }
 
+#pragma cmi_include chunks/shared_fate_draw.glsl
+
 void main() {
     uint inst = orderAdd.order[gl_InstanceID];
     uint base = inst * 4u;
@@ -69,6 +71,7 @@ void main() {
     float life = clamp(p3.x / max(p3.y, 1e-5), 0.0, 1.0);
     uint eid = floatBitsToUint(p3.w);
     uint hb = eid * VEC4_PER_EMITTER;
+    if(abs(emitters.u[hb+17u].y-9.0)<.25){cmiDrawFateRibbon(p1,true,quadCorner(gl_VertexID));return;}
 
     // size over lifetime (analytic curve, eased)
     float sizeStart = emitters.u[hb + 5u].z;

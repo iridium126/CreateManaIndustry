@@ -8,9 +8,10 @@ uniform float uTime,uFadeDistance,uViewportHeight;
 uniform mat4 uView,uProjection;
 uniform vec4 uFrustum[6];
 #pragma cmi_include chunks/shared_fate.glsl
-
+#pragma cmi_include chunks/shared_fate_sampling.glsl
+#pragma cmi_include chunks/shared_fate_ribbon.glsl
 bool cmiFateVisible(vec3 a,vec3 b){
-    vec3 low=min(a,b)-vec3(2.5),high=max(a,b)+vec3(2.5);
+    vec3 low=min(a,b)-vec3(2.9),high=max(a,b)+vec3(2.9);
     for(int i=0;i<6;i++){
         vec4 plane=uFrustum[i];vec3 extreme=mix(low,high,greaterThanEqual(plane.xyz,vec3(0.0)));
         if(dot(plane.xyz,extreme)+plane.w<0.0)return false;
@@ -20,46 +21,75 @@ bool cmiFateVisible(vec3 a,vec3 b){
 }
 void main(){
     uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
-        uint ib=i*5u,jb=i*5u;
-        uvec4 identity=floatBitsToUint(inputData.entries[ib+3u]);uint sb=identity.x*5u;
-        vec3 a=inputData.entries[ib].xyz+vec3(0.0,inputData.entries[ib].w*.55,0.0);
-        vec3 b=inputData.entries[ib+1u].xyz+vec3(0.0,inputData.entries[ib+1u].w*.55,0.0);
-        vec4 phase=inputData.entries[ib+2u],oldA=previous.entries[sb],oldB=previous.entries[sb+1u];
-        bool known=floatBitsToUint(oldB.w)==identity.y,stopping=phase.z>.5;
-        float elapsed=stopping?max(0.0,uTime-phase.y):0.0;
-        float freezeGlow=known?previous.entries[sb+2u].y:cmiFateGlow(phase.y,phase.x,identity.z!=0u);
-        float shimmerTime=uTime;
-        uint previousSamples=known?uint(previous.entries[sb+2u].z+.5):0u;
-        if(stopping&&known){
-            a=oldA.xyz+inputData.entries[ib+4u].xyz;b=oldB.xyz+inputData.entries[ib+4u].xyz;
-            if(previous.entries[sb+2u].x<.5){freezeGlow=oldA.w;shimmerTime=previous.entries[sb+4u].x;}
-            else shimmerTime=previous.entries[sb+4u].y;
+    uint ib=i*5u,jb=i*CMI_FATE_VECTORS;
+    uvec4 identity=floatBitsToUint(inputData.entries[ib+3u]);uint sb=identity.x*CMI_FATE_VECTORS;
+    vec3 a=inputData.entries[ib].xyz+vec3(0.0,inputData.entries[ib].w*.55,0.0);
+    vec3 b=inputData.entries[ib+1u].xyz+vec3(0.0,inputData.entries[ib+1u].w*.55,0.0);
+    vec4 phase=inputData.entries[ib+2u],oldA=previous.entries[sb],oldB=previous.entries[sb+1u];
+    bool known=floatBitsToUint(oldB.w)==identity.y,stopping=phase.z>.5;
+    float dt=known?clamp(uTime-previous.entries[sb+4u].x,0.0,.1):0.0;
+    float elapsed=stopping?max(0.0,uTime-phase.y):0.0;
+    float freezeGlow=stopping&&known?(previous.entries[sb+2u].w>.5?previous.entries[sb+23u].w:previous.entries[sb+3u].x*.45):cmiFateGlow(phase.y,phase.x,identity.z!=0u);
+    float glow=stopping?freezeGlow*(1.0-smoothstep(0.0,1.2,elapsed)):cmiFateGlow(uTime,phase.x,identity.z!=0u);
+    vec3 coefficient=cmiFateCoefficients(a,b);
+    float lengths[33];lengths[0]=0.0;
+    float bend=0.0;vec3 penultimate=a;
+    float pixels=0.0,start=1e30,end=-1.0,nearestDepth=1e30,farthestDepth=.1;vec3 last=a;vec4 lastClip=uProjection*uView*vec4(a,1.0);
+    float viewportWidth=uViewportHeight*abs(uProjection[1][1])/max(.00001,abs(uProjection[0][0]));
+    vec2 clipPadding=(.14+(stopping?.65*elapsed:0.0))*vec2(abs(uProjection[0][0]),abs(uProjection[1][1]));
+    for(int step=1;step<=32;step++){
+        vec3 p=cmiFateCurve(a,b,coefficient,float(step)/32.0);
+        vec4 clip=uProjection*uView*vec4(p,1.0);float segment=length(p-last),enter,leave;
+        lengths[step]=lengths[step-1]+segment;
+        if(cmiFateVisible(last,p)&&cmiFateClipExpanded(lastClip,clip,clipPadding,enter,leave)){
+            start=min(start,lengths[step-1]+segment*enter);end=max(end,lengths[step-1]+segment*leave);
+            vec4 c0=mix(lastClip,clip,enter),c1=mix(lastClip,clip,leave);
+            float d0=max(.05,-(uView*vec4(mix(last,p,enter),1.0)).z),d1=max(.05,-(uView*vec4(mix(last,p,leave),1.0)).z);
+            nearestDepth=min(nearestDepth,min(d0,d1));farthestDepth=max(farthestDepth,max(d0,d1));
+            pixels+=length((c1.xy/c1.w-c0.xy/c0.w)*vec2(viewportWidth,uViewportHeight)*.5);
         }
-        float glow=stopping?freezeGlow*(1.0-smoothstep(0.0,.8,elapsed)):cmiFateGlow(uTime,phase.x,identity.z!=0u);
-        vec3 coefficient=stopping&&known?previous.entries[sb+3u].xyz:cmiFateCoefficients(a,b);
-        float arc=0.0,pixels=0.0,start=1.0,end=0.0;vec3 last=a;vec4 lastClip=uProjection*uView*vec4(a,1.0);
-        for(int step=1;step<=16;step++){
-            vec3 p=cmiFateCurve(a,b,coefficient,float(step)/16.0);
-            vec4 clip=uProjection*uView*vec4(p,1.0);
-            if(cmiFateVisible(last,p)){
-                start=min(start,float(step-1)/16.0);end=max(end,float(step)/16.0);arc+=length(p-last);
-                if(clip.w>.05&&lastClip.w>.05)pixels+=min(10000.0,length(clip.xy/clip.w-lastClip.xy/lastClip.w)*uViewportHeight*.5);
-            }
-            last=p;lastClip=clip;
-        }
-        float depth=max(1.0,-(uView*vec4(mix(a,b,.5),1.0)).z);
-        float spritePixels=max(1.1,.025*abs(uProjection[1][1])*uViewportHeight/(2.0*depth));
-        uint samples=uint(clamp(ceil(min(arc*64.0,max(16.0,pixels/max(.55,spritePixels*.45)))),16.0,8192.0));
-        if(stopping&&known){samples=previousSamples;start=previous.entries[sb+3u].w;end=previous.entries[sb+4u].z;}
-        uint allocated=end>start&&cmiFateVisible(a,b)&&elapsed<.8?samples:0u;
-        jobs.entries[jb]=vec4(a,0.0);
-        jobs.entries[jb+1u]=vec4(b,uintBitsToFloat(allocated));
-        jobs.entries[jb+2u]=vec4(coefficient,float(samples));
-        jobs.entries[jb+3u]=vec4(glow,elapsed,phase.w,shimmerTime);
-        jobs.entries[jb+4u]=vec4(start,end,0.0,0.0);
-        nextState.entries[sb]=vec4(a,glow);
-        nextState.entries[sb+1u]=vec4(b,uintBitsToFloat(identity.y));
-        nextState.entries[sb+2u]=vec4(stopping?1.0:0.0,freezeGlow,float(samples),0.0);
-        nextState.entries[sb+3u]=vec4(coefficient,start);
-        nextState.entries[sb+4u]=vec4(uTime,shimmerTime,end,0.0);
+        if(step>1)bend=max(bend,length(last-(penultimate+p)*.5));
+        penultimate=last;last=p;lastClip=clip;
+    }
+    bool visible=end>=start&&cmiFateVisible(a,b);
+    float wholeArc=max(.001,lengths[32]),visibleArc=visible?max(.001,end-start):.001;
+    float windowStart=visible?clamp(start/wholeArc,0.0,1.0):0.0,windowEnd=visible?clamp(end/wholeArc,0.0,1.0):1.0;
+    if(lengths[32]<.00001&&visible){windowStart=0.0;windowEnd=1.0;}
+    vec3 reference=cmiFateDirection(b-a,known?previous.entries[sb+6u].xyz:vec3(0,1,0));
+    vec3 basis=known?cmiFateTransport(previous.entries[sb+5u].xyz,previous.entries[sb+6u].xyz,reference):cmiFateBasis(reference);
+    float desiredLevel=clamp(ceil(log2(max(16.0,wholeArc*8.0))),4.0,9.0);
+    // Conservative midpoint bound: catenary bend + helix angular curvature + endpoint taper.
+    // Reuse the visibility samples instead of evaluating hundreds of full helices per link.
+    float pixelScale=abs(uProjection[1][1])*uViewportHeight/(2.0*max(.05,nearestDepth));
+    for(int refinement=0;refinement<6;refinement++){
+        float n=exp2(desiredLevel),angle=min(3.14159265,wholeArc*1.570796327/n);
+        float error=pixelScale*(bend*pow(32.0/n,2.0)+.05*(1.0-cos(angle))+.007*pow(3.14159265/n,.65));
+        if(error<=.5||desiredLevel>=9.0)break;desiredLevel+=1.0;
+    }
+    float level=known?cmiFateSmoothLevel(previous.entries[sb+8u].x,desiredLevel,dt):desiredLevel;
+    uint segments=uint(exp2(ceil(level-.00001))+.5);
+    float stopArc=stopping&&known?(previous.entries[sb+2u].w>.5?previous.entries[sb+4u].w:previous.entries[sb+7u].w):wholeArc;
+    uint stars=uint(min(1024.0,ceil(wholeArc*32.0)));
+    uint fragments=stopping&&identity.w!=0u?uint(min(2048.0,ceil(stopArc*64.0))):0u;
+    // Keep snapshots updated even offscreen; detached particles may still enter the frustum.
+    bool enabledLink=elapsed<1.2&&(visible||stopping);
+    jobs.entries[jb]=vec4(a,0);jobs.entries[jb+1u]=vec4(b,uintBitsToFloat(enabledLink?1u:0u));
+    jobs.entries[jb+2u]=vec4(coefficient,float(segments));
+    jobs.entries[jb+3u]=vec4(glow/.45,elapsed,phase.w,uTime);
+    jobs.entries[jb+4u]=vec4(windowStart,windowEnd,known?previous.entries[sb+3u].w:uTime,stopArc);
+    jobs.entries[jb+5u]=vec4(basis,known?previous.entries[sb+5u].w:1.0);
+    jobs.entries[jb+6u]=vec4(reference,float(segments));
+    jobs.entries[jb+7u]=vec4(float(stars),float(fragments),float(segments),wholeArc);
+    jobs.entries[jb+8u]=vec4(level,desiredLevel,dt,visible?1.0:0.0);
+    jobs.entries[jb+9u]=vec4(0,uintBitsToFloat(identity.w),known?1.0:0.0,0);
+    jobs.entries[jb+19u]=vec4(0);
+    jobs.entries[jb+20u]=vec4(known?oldA.xyz+inputData.entries[ib+4u].xyz:a,known?previous.entries[sb+3u].w:uTime);
+    jobs.entries[jb+21u]=vec4(known?oldB.xyz+inputData.entries[ib+4u].xyz:b,known?previous.entries[sb+7u].w:wholeArc);
+    jobs.entries[jb+22u]=vec4(known?previous.entries[sb+5u].xyz:basis,0);
+    jobs.entries[jb+23u]=vec4(known?previous.entries[sb+2u].xyz:coefficient,freezeGlow);
+    for(int k=0;k<=32;k++)jobs.entries[jb+10u+uint(k/4)][k%4]=lengths[k];
+    for(uint k=0u;k<CMI_FATE_VECTORS;k++)nextState.entries[sb+k]=jobs.entries[jb+k];
+    nextState.entries[sb].w=glow;nextState.entries[sb+1u].w=uintBitsToFloat(identity.y);
+    // The coefficient stays in xyz; w records whether condensation has been interrupted.
+    nextState.entries[sb+2u].w=stopping?1.0:0.0;
 }

@@ -20,7 +20,7 @@
   "createmanaindustry.shared_fate.error.range": "目标位于你的咒术施法范围之外。",
   "createmanaindustry.shared_fate.error.duplicate": "你已与此目标同命。",
   "createmanaindustry.shared_fate.error.cycle": "此次同命将使命运首尾相接。",
-  "createmanaindustry.anima.tooltip": "灵魂：%s / %s Anima",
+  "createmanaindustry.anima.tooltip": "%s/%s（%s）",
   "trickster.fragment.createmanaindustry.great_trick": "卓越戏法",
   "biome.createmanaindustry.crystal_bloom_plains": "淬晶花海",
   "block.createmanaindustry.allay_burner": "悦灵燃烧室",
@@ -618,5 +618,6 @@
   "createmanaindustry.configuration.partitionMovementExemptEntities.tooltip": "按实体注册 ID 指定分域移动豁免；乘客随豁免载具通行。施法范围及费用不受豁免。",
   "createmanaindustry.configuration.partitionMaxParticles": "分域 GPU 粒子预算",
   "createmanaindustry.configuration.partitionMaxParticles.tooltip": "分域边框及薄幕的 GPU 样本上限；降低或关闭不影响逻辑边界。",
-  "createmanaindustry.great_trick.costs_anima": "消耗 Anima"
+  "createmanaindustry.great_trick.costs_anima": "消耗 Anima",
+  "createmanaindustry.anima.amount": "%s Anima"
 }
