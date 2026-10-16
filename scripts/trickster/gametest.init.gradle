@@ -1,0 +1,6 @@
+// Isolated Trickster stock regression tests.
+gradle.projectsEvaluated {
+    def p = gradle.rootProject
+    p.apply from: p.file('scripts/testing/common.gradle')
+    p.configureCmiGameTests(name: 'trickster', sources: 'src/test/gametest/trickster/java', structure: 'trickster_stock_test', size: 3)
+}

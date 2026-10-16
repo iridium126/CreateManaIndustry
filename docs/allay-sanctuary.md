@@ -82,8 +82,6 @@
 ./gradlew.bat test --tests '*AllvrSanctuaryTest' --offline
 
 python scripts/prepare-allvr-worldgen-test.py
-New-Item -ItemType Directory -Force build/sanctuary-test-run/mods | Out-Null
-Get-ChildItem -LiteralPath run/mods -Filter 'owo-lib-neoforge-*.jar' | Copy-Item -Destination build/sanctuary-test-run/mods
 ./gradlew.bat -I scripts/sanctuary-test.init.gradle runGameTestServer --offline
 
 ./gradlew.bat build --offline

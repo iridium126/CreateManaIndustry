@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.content.allaystorm;
 
-import java.util.Arrays;
 import java.util.BitSet;
 
 /** Identity selection and the immutable arc-length flight shared with the GPU. */

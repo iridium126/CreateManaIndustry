@@ -16,7 +16,7 @@ import dev.enjarai.trickster.spell.execution.source.SpellSource;
  * {@code source.getManaStorage()}.
  * <p>
  * Normally both return the same storage, so behavior is unchanged; when CMI
- * injects a pool override ({@code execute_trick} in a hex circle), the check
+ * injects a pool override (a TrickIota evaluated in a hex circle), the check
  * and the actual spend now read the same slate-knot pool. The target method
  * descriptors contain no Minecraft classes (ManaVariant/Storage are
  * mod/fabric names), so they are mapping-independent.

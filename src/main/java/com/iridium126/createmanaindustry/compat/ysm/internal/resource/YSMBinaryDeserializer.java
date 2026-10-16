@@ -132,7 +132,7 @@ public class YSMBinaryDeserializer implements AutoCloseable{
             if (tex != null) tex.hash = textureHash;
         }
 
-        String unkString = reader.readString();
+        reader.readString(); // Consume the unused legacy string to preserve the reader position.
 
     }
 
@@ -295,7 +295,7 @@ public class YSMBinaryDeserializer implements AutoCloseable{
             for (int i = 0; i < subEntityTotalCount; ++i) {
                 parseSubEntity("SubEntity", i);
             }
-            int footerFlag = reader.readVarInt(); // always 00
+            reader.readVarInt(); // Consume the footer flag (always 00).
         } else {
             int vehiclesTotalCount = reader.readCount();
             for (int i = 0; i < vehiclesTotalCount; ++i) parseSubEntity("vehicle", i);

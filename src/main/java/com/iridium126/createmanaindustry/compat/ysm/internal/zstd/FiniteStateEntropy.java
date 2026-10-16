@@ -155,6 +155,7 @@ final class FiniteStateEntropy
         return compress(outputBase, outputAddress, outputSize, input, ARRAY_BYTE_BASE_OFFSET, inputSize, table);
     }
 
+    @SuppressWarnings("unused") // Preserve the word-width-dependent compression branch for future ports.
     public static int compress(Object outputBase, long outputAddress, int outputSize, Object inputBase, long inputAddress, int inputSize, FseCompressionTable table)
     {
         checkArgument(outputSize >= SIZE_OF_LONG, "Output buffer too small");

@@ -20,7 +20,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class TreeListAppendCacheMixin {
     @Inject(method = "appended(Ljava/lang/Object;)Lat/petrak/hexcasting/api/utils/TreeList;",
             at = @At("RETURN"))
-    private void cmi$rememberTickStackAppend(Object element, CallbackInfoReturnable<TreeList> callback) {
+    private void cmi$rememberTickStackAppend(Object element, CallbackInfoReturnable<TreeList<?>> callback) {
         if (!ServerConfig.hexJitCacheTickStackPop) return;
         ExecutionScope.recordTickStackAppendOnServerThread(
                 (TreeList<?>) (Object) this, callback.getReturnValue());

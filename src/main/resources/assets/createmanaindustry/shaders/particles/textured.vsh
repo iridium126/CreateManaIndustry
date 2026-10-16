@@ -32,6 +32,7 @@ out vec2 vUv;      // atlas-space UV
 out vec3 vColor;
 out float vAlpha;
 out float vDist;
+flat out float vHex;
 
 float hash1(float p) {
     p = fract(p * 0.1031);
@@ -51,7 +52,10 @@ vec2 quadCorner(int v) {
     }
 }
 
+#pragma cmi_include chunks/shared_fate_draw.glsl
+
 void main() {
+    vHex=0.0;
     // resolve this instance's particle: blended mode walks the combined
     // translucent sort array (payload = particleIndex<<2 | itemType, type 0 =
     // sprite); opaque mode walks the dense unsorted permutation
@@ -78,6 +82,7 @@ void main() {
     float life = clamp(p3.x / max(p3.y, 1e-5), 0.0, 1.0);
     uint eid = floatBitsToUint(p3.w);
     uint hb = eid * VEC4_PER_EMITTER;
+    if(abs(emitters.u[hb+17u].y-9.0)<.25){cmiDrawFateRibbon(p1,false,quadCorner(gl_VertexID));return;}
 
     float sizeStart = emitters.u[hb + 5u].z;
     float sizeEnd = emitters.u[hb + 5u].w;
@@ -94,6 +99,17 @@ void main() {
     float growIn = emitters.u[hb + 16u].z;
     float spriteAnim = emitters.u[hb + 16u].w;
     float colorMode = emitters.u[hb + 17u].x;
+    // Direct conjure ALPHA: untextured hex shape, frozen RGB and independent opacity.
+    // Style 8 positions are already camera-relative, as in the additive conjure path.
+    if(abs(colorMode-5.0)<.25){
+        vec2 corner=quadCorner(gl_VertexID)-.5;
+        float angle=p1.w;vec2 roll=vec2(cos(angle)*corner.x-sin(angle)*corner.y,sin(angle)*corner.x+cos(angle)*corner.y);
+        vec3 position=p0.xyz+uCamRight*(roll.x*size)+uCamUp*(roll.y*size);
+        vec3 relative=abs(emitters.u[hb+17u].y-8.0)<.25?position:position-uCamPos;
+        gl_Position=ProjMat*ModelViewMat*vec4(relative,1.0);
+        vUv=corner+.5;vDist=length(relative);vHex=1.0;vColor=p2.rgb;
+        vAlpha=clamp(abs(p2.w)*emitters.u[hb+6u].w,0.0,1.0);return;
+    }
     float lightMode = emitters.u[hb + 17u].z;
     float frameBase = emitters.u[hb + 17u].w;
     if (growIn > 0.5)

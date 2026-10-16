@@ -1,5 +1,7 @@
 # 天穹合围：验证与固定输入基准
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](../README.md)。
+
 Java: {'tests': 596, 'failures': 0, 'errors': 0, 'skipped': 0}
 Dome GPU: 8,755,139 assertions (benchmark adds bookkeeping assertions).
 Starfall GPU: 1,207,030; MODEL population: 1,015; particle GPU: 89,153.
@@ -31,7 +33,7 @@ Hardware: NVIDIA RTX 4070 Laptop, driver 581.15, OpenGL 4.5.
 ```powershell
 .\gradlew.bat build -I scripts/particles/validation.init.gradle validateHexGpu validateModelPopulationGpu validateDomeGpu validateStarfallGpu validateModelShadowIrisGpu validatePackageIrisGpu validateHexSharedIrisGpu validatePackageGpu
 .\gradlew.bat -I scripts/particles/validation.init.gradle validateDomeGpu -PdomeBenchmark
-python scripts/particles/archive_dome_results.py
+python scripts/benchmarks/run.py validateDomeGpu -PdomeBenchmark
 ```
 
 JAR: build\libs\createmanaindustry-0.2.6.jar

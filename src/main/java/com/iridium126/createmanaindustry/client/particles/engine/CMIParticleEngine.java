@@ -129,6 +129,8 @@ public final class CMIParticleEngine {
     public static final CMIParticleEngine INSTANCE = new CMIParticleEngine();
 
     private static final int MAX_EMITTERS = 128;
+    // Reserved headroom for future emitter admission limits.
+    @SuppressWarnings("unused")
     private static final int SAFETY_MARGIN = 2048;
     /**
      * Width of the distance fade ramp past the configured fade distance
@@ -320,6 +322,8 @@ public final class CMIParticleEngine {
 
     private final List<HexSpray> hexSprays = new ArrayList<>();
     private final List<HexParticle> hexParticles = new ArrayList<>();
+    private final SharedFateGpu sharedFate = new SharedFateGpu();
+    private final PartitionGpu partition = new PartitionGpu();
 
     /**
      * Client-side Hexcasting conjure spray (spawnStyle 4): the vanilla
@@ -747,6 +751,8 @@ public final class CMIParticleEngine {
 
     /** Called on resource reload so shaders recompile next frame. */
     public void requestProgramRebuild() {
+        this.sharedFate.close();
+        this.partition.close();
         if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.requestReload();
         if(CreateManaIndustry.IRISVEIL_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.invalidateShadow();
         if(CreateManaIndustry.IRIS_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.reload();
@@ -758,6 +764,9 @@ public final class CMIParticleEngine {
 
     /** Frees all GPU resources on client shutdown. Safe when never initialised. */
     public void close() {
+        this.sharedFate.close();
+        this.partition.close();
+        com.iridium126.createmanaindustry.client.greattrick.SharedFateClient.clear();
         this.storm.starfallGpu().close();
         if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.close();
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle engine closed",false);
@@ -1069,6 +1078,8 @@ public final class CMIParticleEngine {
     }
 
     private void resetPoolState() {
+        this.sharedFate.reset();
+        this.partition.reset();
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle identities reset",true);
         this.packagePreview.close();
         this.packagePreviewStatus="off";
@@ -1515,7 +1526,9 @@ public final class CMIParticleEngine {
         }
 
         // Every material submits indirect draws. Empty GPU counts perform no particle work.
-        boolean createsParticles = totalSpawn > 0 || blockSpawnBound > 0
+        boolean fateActive = this.sharedFate.prepare(camera.getPosition(), deltaTracker.getGameTimeDeltaPartialTick(false));
+        boolean partitionActive = this.partition.prepare(camera.getPosition());
+        boolean createsParticles = totalSpawn > 0 || blockSpawnBound > 0 || fateActive || partitionActive
                 || (this.packageParticles!=null && this.packageParticles.hasInput() && this.packageEmitter>=0);
         if (!this.poolMayBeAlive && !createsParticles) {
             this.frameIdle = true;
@@ -1698,6 +1711,15 @@ public final class CMIParticleEngine {
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
             }
 
+            if (fateActive) {
+                this.sharedFate.generate(this.gpu, this, slot, view, projectionMatrix, this.frustumPlanes, (float)this.scale);
+                this.gpu.beginBindings();
+                this.gpu.bindDispatch();
+            }
+            if(partitionActive) {
+                this.partition.generate(this.gpu,this,slot,view,projectionMatrix,this.frustumPlanes,(float)this.scale);
+                this.gpu.beginBindings();
+            }
             if(this.packageParticles!=null && this.packageParticles.needsStage()) {
                 ParticleDiagnostics.INSTANCE.mark("package_import_group");
                 Vec3 packageCamera=camera.getPosition();
@@ -1717,6 +1739,9 @@ public final class CMIParticleEngine {
             //    counts, so update/emit never touch the indirect buffer.
             int finalPerm = -1;
             ParticleDiagnostics.INSTANCE.mark("keygen");
+            // Shared Fate and package compute passes reuse the counter/indirect SSBO slots.
+            // Publish from the actual particle counters, never their temporary state buffers.
+            this.gpu.bindDispatchInputs(slot, this.lastGoodSlot);
             ParticleDispatch.prepare(this.programs, 1,packageStaged);
             int aliveEstimate = cap; // Draw counts and dispatch bounds live on the GPU.
             this.frameAliveEstimate = aliveEstimate; // draw-phase handoff
@@ -1896,6 +1921,7 @@ public final class CMIParticleEngine {
             // the last fully-written pool as the next read source, and
             // the finally below restores the post-phase GL state instead.
             this.gpu.swap();
+            this.sharedFate.commit();
             if(packageStaged) {
                 this.packageParticles.commit();
                 com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.committed(Integer.toUnsignedLong(this.simFrame));
@@ -2119,7 +2145,7 @@ public final class CMIParticleEngine {
             RenderSystem.enableCull();
             GL13.glActiveTexture(GL13.GL_TEXTURE1);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D,Minecraft.getInstance().getTextureManager()
-                    .getTexture(net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS).getId());
+                    .getTexture(net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS).getId());
             LightTexture light=Minecraft.getInstance().gameRenderer.lightTexture();
             GL13.glActiveTexture(GL13.GL_TEXTURE2);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D,Minecraft.getInstance().getTextureManager()
@@ -2214,6 +2240,7 @@ public final class CMIParticleEngine {
             CMIParticleEngine.this.storm.starfallGpu().bind(prog,false);
             setFloatUniform(prog,"uTimeSec",CMIParticleEngine.this.timeSec());
             CMIParticleEngine.this.gpu.bindBillboardDrawInputs(mode, mainPermutation());
+            CMIParticleEngine.this.sharedFate.bindDrawInputs();
 
             setMat4Uniform(prog, "ModelViewMat", view);
             setMat4Uniform(prog, "ProjMat", projectionMatrix);

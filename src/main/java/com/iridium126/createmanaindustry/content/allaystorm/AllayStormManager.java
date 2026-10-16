@@ -21,7 +21,6 @@ import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundS
 import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormPositionsPacket;
 import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket;
 
-import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
@@ -32,7 +31,6 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.stats.Stats;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.damagesource.DamageSource;
-import net.minecraft.world.damagesource.DamageType;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.animal.allay.Allay;
 import net.minecraft.world.item.ItemStack;
@@ -403,6 +401,8 @@ public final class AllayStormManager {
         float[] packed=new float[18];for(int i=0;i<6;i++){packed[i*3]=(float)controls[i].x;packed[i*3+1]=(float)controls[i].y;packed[i*3+2]=(float)controls[i].z;}
         return AllayHelix.flight(roster,packed,(float)ServerConfig.stormHelixThrustSpeed,charge,thrust);
     }
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     private static boolean helixClear(ServerLevel level,AllayHelix.Flight flight,float from,float until){
         return AllayHelix.clearTube(flight,from,until,(x,y,z,r)->{
             for(int sx=-1;sx<=1;sx+=2)for(int sz=-1;sz<=1;sz+=2)if(!level.hasChunkAt(BlockPos.containing(x+sx*r,y,z+sz*r)))return false;
@@ -467,6 +467,8 @@ public final class AllayStormManager {
     private static int ground(ServerLevel level,double x,double z){
         return level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,(int)Math.floor(x),(int)Math.floor(z));
     }
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     private static boolean domeTerrain(ServerLevel level,float x,float y,float z,float radius,float orientation,boolean coverage){
         if(!level.canSeeSky(BlockPos.containing(x,y,z)))return false;
         if(coverage){

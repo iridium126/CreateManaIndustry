@@ -4,7 +4,7 @@ import java.util.List;
 
 import org.jetbrains.annotations.Nullable;
 
-import com.iridium126.createmanaindustry.compat.trickster.TricksterDisplaySync;
+import com.iridium126.createmanaindustry.compat.trickster.construct.TricksterDisplaySync;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.MutableComponent;

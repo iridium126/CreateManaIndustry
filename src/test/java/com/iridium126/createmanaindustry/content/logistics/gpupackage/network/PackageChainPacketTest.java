@@ -8,6 +8,7 @@ import java.util.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.neoforged.neoforge.network.connection.ConnectionType;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
@@ -16,7 +17,7 @@ class PackageChainPacketTest {
     private static final long EPOCH=0x100000005L;
     private static final PackageChainAuthority.Baseline BASE=new PackageChainAuthority.Baseline(100001,new PackageLease.Identity(0x200000009L,0x30000000bL),
             3,5,65535,0x40000000dL,new PackageChainAuthority.State(359.1234f,999999,new PackageLease.Pose(-20000,2049.375,30,0,0,0,-170)),0x80000003);
-    private static RegistryFriendlyByteBuf buffer(){return new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY);}
+    private static RegistryFriendlyByteBuf buffer(){return new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY, ConnectionType.OTHER);}
     @Test void sharedTrackRoundTripPreservesLongRevisionNodesAndReverseDirection() {
         var geometry=PackageChainTrack.loop(new BlockPos(-123,2048,456),-180,0,3,BASE.trackRevision());
         var nodes=List.of(new ClientboundChainPackagePacket.Node(2,1),new ClientboundChainPackagePacket.Node(5,2),new ClientboundChainPackagePacket.Node(359,1));

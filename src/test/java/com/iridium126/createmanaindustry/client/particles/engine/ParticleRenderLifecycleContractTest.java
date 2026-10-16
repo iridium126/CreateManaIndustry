@@ -60,4 +60,31 @@ class ParticleRenderLifecycleContractTest {
         }
         assertFalse(draws.methods.stream().anyMatch(m->m.name.equals("drawHexPatterns")),"Legacy pool Hex renderer returned");
     }
+    @Test void lateSharedFateHeaderIsUploadedBeforeItsFirstGpuDispatch() throws IOException {
+        var generate=method(read(ENGINE+"SharedFateGpu"),"generate");
+        int allocation=-1,upload=-1,dispatch=-1;
+        for(int i=0;i<generate.instructions.size();i++) {
+            if(!(generate.instructions.get(i) instanceof MethodInsnNode call))continue;
+            if(call.owner.equals(ENGINE+"CMIParticleEngine")&&call.name.equals("ensureEmitter"))allocation=i;
+            if(call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("uploadDirtyEmitters"))upload=i;
+            if(call.owner.equals("org/lwjgl/opengl/GL43")&&call.name.equals("glDispatchCompute")){dispatch=i;break;}
+        }
+        assertTrue(allocation>=0&&upload>allocation&&dispatch>upload,
+                "Shared Fate allocates after the ordinary header upload; its first frame must upload the new header before dispatch");
+    }
+    @Test void sharedFateRestoresPhaseInputsBeforePublishingItsDrawWork() throws IOException {
+        var compute=method(read(ENGINE+"CMIParticleEngine"),"runCompute");
+        int shared=-1,restore=-1,publication=-1;
+        for(int i=0;i<compute.instructions.size();i++) {
+            if(!(compute.instructions.get(i) instanceof MethodInsnNode call))continue;
+            if(call.owner.equals(ENGINE+"SharedFateGpu")&&call.name.equals("generate"))shared=i;
+            if(shared>=0&&call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("bindDispatchInputs"))restore=i;
+            if(shared>=0&&call.owner.equals(ENGINE+"ParticleDispatch")&&call.name.equals("prepare")){publication=i;break;}
+        }
+        assertTrue(shared>=0&&restore>shared&&publication>restore,
+                "Publishing with Shared Fate's SSBOs still bound reads wire positions as particle counts and can dispatch zero draw work");
+        var binding=method(read(ENGINE+"ParticleBuffers"),"bindDispatchInputs");
+        for(String input:new String[]{"bindDispatch","bindIndirect","bindCounter","bindPrevCounter"})
+            assertTrue(calls(binding,ENGINE+"ParticleBuffers",input),"Phase publication omitted "+input);
+    }
 }

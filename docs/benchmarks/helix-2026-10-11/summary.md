@@ -1,5 +1,7 @@
 # 双螺旋贯击：验证与固定输入基准
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](../README.md)。
+
 Java: {'tests': 605, 'failures': 0, 'errors': 0, 'skipped': 0}
 MODEL population GPU: 1015 assertions passed
 Helix GPU: 6879381 assertions passed
@@ -41,7 +43,7 @@ ThreadMXBean 单次 Windows 分辨率不足，零样本不能解释成无实际 
 ```powershell
 .\gradlew.bat build -I scripts/particles/validation.init.gradle validateHexGpu validateModelPopulationGpu validateHelixGpu validateDomeGpu validateStarfallGpu validateModelShadowIrisGpu validatePackageIrisGpu validateHexSharedIrisGpu validatePackageGpu
 .\gradlew.bat -I scripts/particles/validation.init.gradle validateHelixGpu -PhelixBenchmark
-python scripts/particles/archive_helix_results.py
+python scripts/benchmarks/run.py validateHelixGpu -PhelixBenchmark
 ```
 
 JAR: build\libs\createmanaindustry-0.2.6.jar

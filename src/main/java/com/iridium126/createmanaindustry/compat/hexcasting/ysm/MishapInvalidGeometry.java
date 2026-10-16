@@ -10,6 +10,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.DyeColor;
 
 /** Reports a geometry constraint failure without presenting it as an Iota type mismatch. */
+@SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
 public final class MishapInvalidGeometry extends Mishap {
     private final String reason;
 

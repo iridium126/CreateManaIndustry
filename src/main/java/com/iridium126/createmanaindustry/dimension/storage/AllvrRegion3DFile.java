@@ -3,7 +3,6 @@ package com.iridium126.createmanaindustry.dimension.storage;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
@@ -46,7 +45,11 @@ public final class AllvrRegion3DFile implements AutoCloseable {
     private static final int HEADER_BYTES = AllvrStorageFormat.HEADER_SECTORS * AllvrStorageFormat.SECTOR_BYTES;
     private static final int SLOTS = AllvrStorageFormat.SLOTS;
     private static final int SLOT_ENTRY_BYTES = AllvrStorageFormat.SLOT_ENTRY_BYTES;
+    // Retain the on-disk slot table layout constants for future format work.
+    @SuppressWarnings("unused")
     private static final int SLOT_TABLE_OFFSET = 32;
+    // Retain the on-disk slot table layout constants for future format work.
+    @SuppressWarnings("unused")
     private static final int SLOT_TABLE_BYTES = SLOTS * SLOT_ENTRY_BYTES;
 
     private final FileChannel channel;

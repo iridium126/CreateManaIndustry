@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.content.kinetics.depositionlid;
 
-import com.simibubi.create.content.decoration.TrainTrapdoorBlock;
 import com.simibubi.create.content.decoration.TrapdoorCTBehaviour;
 
 import net.minecraft.core.BlockPos;

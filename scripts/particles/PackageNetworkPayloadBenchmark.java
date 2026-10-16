@@ -55,6 +55,6 @@ public final class PackageNetworkPayloadBenchmark {
                 }
             }finally{out.release();}
         }
-        Files.write(Path.of("build/package-network-payloads.csv"),rows);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-network-payloads.csv"),rows);
     }
 }

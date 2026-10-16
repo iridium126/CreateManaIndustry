@@ -5,7 +5,7 @@ import java.util.Map;
 import com.iridium126.createmanaindustry.CMIComponents;
 import com.iridium126.createmanaindustry.CMIFluids;
 import com.iridium126.createmanaindustry.CMIItems;
-import com.iridium126.createmanaindustry.compat.trickster.TricksterManaAccess;
+import com.iridium126.createmanaindustry.compat.trickster.mana.TricksterManaAccess;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.fluids.CMIFluidConversions;
 

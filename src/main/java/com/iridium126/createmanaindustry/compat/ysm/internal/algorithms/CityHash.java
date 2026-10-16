@@ -321,7 +321,7 @@ public class CityHash {
 
     private long loadUnaligned64(final byte[] byteArray, final int start) {
         long result = 0;
-        OrderIter orderIter = new OrderIter(8, this.IS_BIG_EDIAN);
+        OrderIter orderIter = new OrderIter(8, CityHash.IS_BIG_EDIAN);
         while (orderIter.hasNext()) {
             int next = orderIter.next();
             long value = (byteArray[next + start] & 0xffL) << (next * 8);
@@ -332,7 +332,7 @@ public class CityHash {
 
     private int loadUnaligned32(final byte[] byteArray, final int start) {
         int result = 0;
-        OrderIter orderIter = new OrderIter(4, this.IS_BIG_EDIAN);
+        OrderIter orderIter = new OrderIter(4, CityHash.IS_BIG_EDIAN);
         while (orderIter.hasNext()) {
             int next = orderIter.next();
             int value = (byteArray[next + start] & 0xff) << (next * 8);

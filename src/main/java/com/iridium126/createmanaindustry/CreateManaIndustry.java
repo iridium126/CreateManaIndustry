@@ -4,7 +4,7 @@ import org.slf4j.Logger;
 
 import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexActions;
 import com.iridium126.createmanaindustry.compat.hexcasting.CMISlatePatternRecipes;
-import com.iridium126.createmanaindustry.compat.trickster.KineticStressTrickRegister;
+import com.iridium126.createmanaindustry.compat.trickster.CMITricks;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlock;
@@ -115,7 +115,7 @@ public class CreateManaIndustry {
         modEventBus.addListener(CreateManaIndustry::registerDefaultsAfterRegistration);
 
         if (TRICKSTER_ACTIVE) {
-            KineticStressTrickRegister.register();
+            CMITricks.register();
         }
         if (HEX_ACTIVE) {
             CMIHexActions.register(modEventBus);
@@ -168,6 +168,13 @@ public class CreateManaIndustry {
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar(MODID).versioned("4");
+        registrar.playToClient(
+                com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.TYPE,
+                com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket::handle);
+        registrar.playToClient(com.iridium126.createmanaindustry.compat.trickster.net.ClientboundPartitionPacket.TYPE,
+                com.iridium126.createmanaindustry.compat.trickster.net.ClientboundPartitionPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.compat.trickster.net.ClientboundPartitionPacket::handle);
         registrar.playToClient(
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket.TYPE,
                 com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket.STREAM_CODEC,

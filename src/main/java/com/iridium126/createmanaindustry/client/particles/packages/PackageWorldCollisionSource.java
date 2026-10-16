@@ -25,11 +25,17 @@ public final class PackageWorldCollisionSource implements PackageCollisionCache.
     public PackageWorldCollisionSource(Level level){this.level=java.util.Objects.requireNonNull(level);}
     @Override public boolean empty(PackageCollisionCache.Section section) {
         if(Thread.currentThread()!=owner)throw new IllegalStateException("World capture off owner thread");
+        // Outside Allvr's native band, column sections cannot describe cube contents.
+        // Fall back to the position-aware capture path until a cube snapshot is available.
+        if(level.dimension()==com.iridium126.createmanaindustry.dimension.AllvrDimensions.ALLAY_LEVEL
+                &&!com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaSection(section.y()))return false;
         var chunk=level.getChunkSource().getChunk(section.x(),section.z(),net.minecraft.world.level.chunk.status.ChunkStatus.FULL,false);
         if(chunk==null)return false;
         int index=chunk.getSectionIndexFromSectionY(section.y());
         return index<0||index>=chunk.getSections().length||chunk.getSections()[index].hasOnlyAir();
     }
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     @Override public PackageCollisionCache.Cell capture(PackageCollisionCache.Section section,int index) {
         if(Thread.currentThread()!=owner)throw new IllegalStateException("World capture off owner thread");
         position.set((section.x()<<4)+(index&15),(section.y()<<4)+(index>>>8),(section.z()<<4)+((index>>>4)&15));

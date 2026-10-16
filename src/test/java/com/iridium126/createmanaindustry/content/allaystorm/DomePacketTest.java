@@ -4,6 +4,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.DecoderException;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.neoforged.neoforge.network.connection.ConnectionType;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 class DomePacketTest {
@@ -11,7 +12,7 @@ class DomePacketTest {
   return new ClientboundStormWavePacket(9,77,event,43,12,5,7,4096,0,5,10,90,0,120,0,8,roster,new float[]{0,120,0,2,72,3},new float[28],1,phase,groups,2,64,3,.27f,-1,8,0);
  }
  static ClientboundStormWavePacket roundtrip(ClientboundStormWavePacket p){
-  var b=new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY);
+  var b=new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY, ConnectionType.OTHER);
   try{ClientboundStormWavePacket.STREAM_CODEC.encode(b,p);var q=ClientboundStormWavePacket.STREAM_CODEC.decode(b);assertFalse(b.isReadable());return q;}finally{b.release();}
  }
  @Test void explicitPhaseAndSevenGroups(){

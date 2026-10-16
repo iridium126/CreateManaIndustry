@@ -18,8 +18,8 @@ import at.petrak.hexcasting.api.utils.TreeList;
 import at.petrak.hexcasting.common.lib.HexDataComponents;
 import at.petrak.hexcasting.common.lib.HexItems;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.compat.trickster.ManaToMediaTrick;
-import com.iridium126.createmanaindustry.compat.trickster.ResourceConversionBlunder;
+import com.iridium126.createmanaindustry.compat.trickster.trick.ManaToMediaTrick;
+import com.iridium126.createmanaindustry.compat.trickster.blunder.ResourceConversionBlunder;
 import com.mojang.authlib.GameProfile;
 import dev.enjarai.trickster.item.ModItems;
 import dev.enjarai.trickster.item.component.ManaComponent;
@@ -91,7 +91,7 @@ public final class ResourceConversionGameTests {
                     "Forward operation did not return the stored mana points");
             helper.assertTrue(media(inventory.getItem(0)) == 0, "Forward cost was not 10000 media");
             helper.assertTrue(mana(inventory.getItem(1), helper) == 64000, "Forward output was not 64000 internal mana");
-            var trick = Tricks.lookup(Pattern.of(3, 1, 4, 2));
+            var trick = Tricks.lookup(Pattern.of(3, 0, 4, 2));
             helper.assertTrue(trick instanceof ManaToMediaTrick
                     && Tricks.REGISTRY.getKey(trick).equals(CreateManaIndustry.modLoc("mana_to_media")),
                     "Wrong Trickster pattern resolution");

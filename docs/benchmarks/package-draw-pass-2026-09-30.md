@@ -1,5 +1,7 @@
 # 包裹材质分组与独立阴影命令
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 后续顶点注入与编译桥接已推进，见[Iris 顶点验证](package-shaderpack-vertices-2026-09-30.md)。以下性能数据及未接入 hook 的限制仍适用。
 
 ## 实现范围
@@ -32,7 +34,7 @@ GPU p95（ms，三轮）：
 
 独立材质分组在需要不同 shaderpack 程序时才使用，两个材质各一次 multi-draw；普通路径不增加 pass。两个 pass 都被创建时，额外 instance storage 约 4MiB（131072×16B×2），command storage 为 64×maxMeshes 字节，cursors 比之前多 4×maxMeshes 字节。TBO 不复制底层存储。实际驱动显存、GL 调用总数及分配量尚未独立测量。
 
-数据：[汇总](package-draw-pass-2026-09-30.csv)、[3240 次采样](package-draw-pass-samples-2026-09-30.csv.gz)。没有整帧、服务端 tick 或真实 shaderpack 的前后性能报告。
+数据：汇总（本地运行结果）、3240 次采样（本地运行结果）。没有整帧、服务端 tick 或真实 shaderpack 的前后性能报告。
 
 ## 正确性验证
 

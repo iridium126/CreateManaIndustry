@@ -2,7 +2,6 @@ package com.iridium126.createmanaindustry.compat.hexcasting;
 
 import com.iridium126.createmanaindustry.compat.hexcasting.circle.CircleSlateManaPool;
 import com.iridium126.createmanaindustry.compat.hexcasting.circle.SlateKnotInteraction;
-import com.iridium126.createmanaindustry.compat.trickster.CMITricksterIotaRegister;
 import com.samsthenerd.inline.api.InlineAPI;
 import net.neoforged.bus.api.IEventBus;
 
@@ -12,10 +11,10 @@ public final class HexTricksBootstrap {
         CMIHexIotaTypes.register(modEventBus);
         InlineAPI.INSTANCE.addDataType(InlineTrickData.InlineTrickDataType.INSTANCE);
         CMIHexTrickActions.register(modEventBus);
-        CMITricksterIotaRegister.register();
         ConversionTickTime.register();
         SlateKnotInteraction.register();
         CircleSlateManaPool.ensureTypeRegistered();
+        BlockSpellExecutionManager.register();
     }
     private HexTricksBootstrap() {}
 }

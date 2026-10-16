@@ -1,9 +1,9 @@
 ```json
 {
   "title": "魔法工业",
-  "icon": "createmanaindustry:kinetic_mana_generator",
+  "icon": "createmanaindustry:allay_burner",
   "ordinal": 50
 }
 ```
 
-机械动力：魔法工业将**机械动力**的工业之力与戏法师的法术相连——将*应力*转化为充能的晶结、让齿轮链驱动法术核心、让液态魔力贯通你的生产线。
+本分类记录伟大语言与机械动力之间的新用法。你可以从晶结制造与充能开始，继而让法术读取机器、驱动产线。安装咒法学后，还能学习两种语言间的互通，以及以灵魂施放的卓越戏法。

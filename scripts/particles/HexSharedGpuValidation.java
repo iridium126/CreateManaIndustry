@@ -132,7 +132,7 @@ public class HexSharedGpuValidation {
                 }
             }
         }finally{GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(fbo);GL11.glDeleteTextures(texture);}
-        String stem=longPatterns?"build/hex-shared-long-benchmark":"build/hex-shared-benchmark";Files.write(Path.of(stem+".csv"),rows);Files.write(Path.of(stem+"-samples.csv"),rawRows);
+        String stem=longPatterns?System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/hex-shared-long-benchmark":System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/hex-shared-benchmark";Files.write(Path.of(stem+".csv"),rows);Files.write(Path.of(stem+"-samples.csv"),rawRows);
     }
     static void budget(){
         try(var gpu=new HexGpuBackend(1L<<20,HexSharedGpuValidation::source)){

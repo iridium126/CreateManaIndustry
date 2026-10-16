@@ -2,7 +2,6 @@ package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
 import at.petrak.hexcasting.api.casting.eval.vm.FrameEvaluate;
 import at.petrak.hexcasting.api.casting.eval.vm.SpellContinuation;
-import at.petrak.hexcasting.api.utils.TreeList;
 
 /** Mutable loop-frame cache attached to an immutable Hexcasting TreeList. */
 public interface TreeListLoopCacheAccess {

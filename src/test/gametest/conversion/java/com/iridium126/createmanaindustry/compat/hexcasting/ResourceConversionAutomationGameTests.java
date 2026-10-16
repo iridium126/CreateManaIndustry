@@ -9,9 +9,9 @@ import at.petrak.hexcasting.common.blocks.circles.BlockEntitySlate;
 import at.petrak.hexcasting.common.blocks.circles.BlockSlate;
 import at.petrak.hexcasting.common.lib.HexBlocks;
 import com.iridium126.createmanaindustry.compat.hexcasting.circle.SlateKnotHolder;
-import com.iridium126.createmanaindustry.compat.trickster.ConstructMediaStorage;
-import com.iridium126.createmanaindustry.compat.trickster.ManaToMediaTrick;
-import com.iridium126.createmanaindustry.compat.trickster.ResourceConversionBlunder;
+import com.iridium126.createmanaindustry.compat.trickster.construct.ConstructMediaStorage;
+import com.iridium126.createmanaindustry.compat.trickster.trick.ManaToMediaTrick;
+import com.iridium126.createmanaindustry.compat.trickster.blunder.ResourceConversionBlunder;
 import com.mojang.authlib.GameProfile;
 import dev.enjarai.trickster.block.ModBlocks;
 import dev.enjarai.trickster.block.ModularSpellConstructBlockEntity;
@@ -236,7 +236,7 @@ public final class ResourceConversionAutomationGameTests {
     }
 
     private static SpellPart spell(double amount) {
-        return new SpellPart(new PatternGlyph(3, 1, 4, 2), List.of(new SpellPart(new NumberFragment(amount))));
+        return new SpellPart(new PatternGlyph(3, 0, 4, 2), List.of(new SpellPart(new NumberFragment(amount))));
     }
 
     private static CastingImage input() {

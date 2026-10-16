@@ -36,7 +36,7 @@
 
 CPU 微基准预热 5000 次，三组各 5000 次：128 个 header 中一个改变，上传从 40960 B 降至 320 B，提交中位数从 0.002585 ms 降至 0.000336 ms；解绑从 29 次 GL 调用降至 1 次，0.000855 ms 降至 0.000041 ms。绝对节省为微秒级；该场景不代表所有帧的 CPU 收益。
 
-原始数据：[排序 CSV](benchmarks/particle-sort-2026-09-28.csv)、[CPU 提交 CSV](benchmarks/particle-submit-2026-09-28.csv)。CSV 中 variant 0 是旧实现，1 是新实现；distribution 0 是混合，1 是单桶。未进行跨驱动或跨 GPU 推断。
+原始数据：排序 CSV（本地运行结果）、CPU 提交 CSV（本地运行结果）。CSV 中 variant 0 是旧实现，1 是新实现；distribution 0 是混合，1 是单桶。未进行跨驱动或跨 GPU 推断。
 
 ## 正确性证据
 

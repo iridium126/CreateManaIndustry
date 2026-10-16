@@ -86,9 +86,9 @@ bool sphereVisible(vec3 rel, float r) {
     return true;
 }
 
-uint depthKey(vec3 worldPos) {
+uint depthKey(vec3 position,bool relative) {
     // view-space depth: negative z is in front of the camera
-    vec4 vs = uView * vec4(worldPos - uCamPos, 1.0);
+    vec4 vs = uView * vec4(relative?position:position-uCamPos, 1.0);
     float depth = clamp(-vs.z, BAND_NEAR, uMaxDepth);
     float t = log2(depth / BAND_NEAR) / uDepthLogRange;
     uint band = min(DEPTH_BANDS - 1u, uint(t * float(DEPTH_BANDS)));
@@ -133,7 +133,8 @@ void main() {
     if (matId >= 0.5 && matId < 2.5)
         atomicAdd(counter.translucentCensus, 1u);
 
-    if (!sphereVisible(p0.xyz - uCamPos, radius))
+    bool sharedFate = (abs(emitters.u[hb + 17u].y - 8.0) < .25 || abs(emitters.u[hb + 17u].y - 9.0) < .25);
+    if (!sphereVisible(sharedFate ? p0.xyz : p0.xyz - uCamPos, radius))
         return;
 
     if (matId < 0.5) {
@@ -150,7 +151,7 @@ void main() {
         // cursor only compacts the initial array; the scatter decides final
         // placement from the key's type bit. cmd5 gets its exact count.
         uint slot = atomicAdd(counter.sortItems, 1u);
-        sortOut.kv[slot] = uvec2((1u << SORT_KEY_TYPE_SHIFT) | depthKey(p0.xyz),
+        sortOut.kv[slot] = uvec2((1u << SORT_KEY_TYPE_SHIFT) | depthKey(p0.xyz,sharedFate),
                                  (g << 2) | 1u);
         atomicAdd(indirect.cmd[IDX_CNT_ALPHA], 1u);
     } else {
@@ -158,7 +159,7 @@ void main() {
         // this same partition (only their element ranges differ), so both
         // count fields receive N_model; textured.vsh also reads IDX_CNT_MODELOP
         // as its partition start offset.
-        uint dkey = depthKey(p0.xyz);
+        uint dkey = depthKey(p0.xyz,sharedFate);
         uint slot = atomicAdd(counter.sortItems, 1u);
         sortOut.kv[slot] = uvec2(dkey, (g << 2) | 0u);
         atomicAdd(indirect.cmd[IDX_CNT_GHOST], 1u);

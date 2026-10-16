@@ -1,5 +1,7 @@
 # 共享锁链轨道及节点事件微基准（2026-09-30）
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 硬件为 NVIDIA GeForce RTX 4070 Laptop GPU，OpenGL 4.5，驱动 581.15。固定 16 条共享循环轨道、90 度/秒、0.875 方块半径、固定初始相位；各组至少预热一秒和 30 个物理步，测量 120 步，重复三次。物理步为 0.05 秒，基准按最快速度执行，不是以现实 20 Hz 或 60 FPS 提交游戏帧。
 
 `legacy_loop` 是原有每包裹链路记录的运动、摆动和插值历史。`shared_loop` 增加共享轨道、稳定事件身份、节点状态检查、事件筛选和 ACK。`shared_ports` 每轨道另有四个可预告端口。两个 shared 组使用 GPU 对整批候选作**模拟服务端 ACK**，保留所有包裹的推进；没有执行库存、地址匹配、路由或网络。测量结束逐一验证每个对象的有限状态、未回退标记和实际位置变化，禁止静止或退休对象替代活动负载。
@@ -34,6 +36,6 @@ shared 路径执行了 legacy 没有的可靠事件流程，成本更高。此�
 .\gradlew.bat benchmarkPackageChain --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
 ```
 
-[三次测量汇总 CSV](package-chain-tracks-2026-09-30.csv) · [全部 3240 个样本](package-chain-tracks-samples-2026-09-30.csv.gz)
+三次测量汇总 CSV（本地运行结果） · 全部 3240 个样本（本地运行结果）
 
 PhysX 的自由包裹后端对照见[独立报告](package-physics-backends-2026-09-30.md)；本次链上微基准未将 PhysX 作为同语义链路/节点后端。

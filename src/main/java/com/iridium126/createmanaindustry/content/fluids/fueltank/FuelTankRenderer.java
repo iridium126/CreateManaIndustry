@@ -21,7 +21,7 @@ import net.createmod.catnip.render.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
-import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -326,7 +326,7 @@ public class FuelTankRenderer extends SafeBlockEntityRenderer<FuelTankBlockEntit
 		if (still == null)
 			return;
 		TextureAtlasSprite texture = Minecraft.getInstance()
-			.getTextureAtlas(TextureAtlas.LOCATION_BLOCKS)
+			.getTextureAtlas(InventoryMenu.BLOCK_ATLAS)
 			.apply(still);
 		int color = ext.getTintColor(fluid);
 		int blockLightIn = (light >> 4) & 0xF;

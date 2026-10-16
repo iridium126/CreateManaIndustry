@@ -5,7 +5,7 @@ param(
     [ValidateSet('gpu','cpu')][string[]]$Backends = @('gpu','cpu'),
     [ValidateSet('tgs','pgs')][string]$Solver = 'tgs',
     [int]$Warmup = 50, [int]$Samples = 40, [int]$Trials = 3,
-    [string]$Output = 'build/package-backend-physx'
+    [string]$Output = 'build/benchmarks/current/package-backend-physx'
 )
 $ErrorActionPreference = 'Stop'
 $taskRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))

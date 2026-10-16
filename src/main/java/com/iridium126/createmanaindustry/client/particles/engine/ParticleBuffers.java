@@ -10,7 +10,6 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL15;
-import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL31;
 import org.lwjgl.opengl.GL32;
@@ -1103,6 +1102,14 @@ public final class ParticleBuffers {
     public void bindDispatch() {
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER, DISPATCH_BB, this.dispatchSSBO);
         GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER, this.dispatchSSBO);
+    }
+
+    /** Phase publication owns these inputs, even after external compute passes reuse their bindings. */
+    public void bindDispatchInputs(int currentSlot, int previousSlot) {
+        bindDispatch();
+        bindIndirect(INDIRECT_BB);
+        bindCounter(COUNTER_BB, currentSlot);
+        bindPrevCounter(PREVCOUNTER_BINDING, previousSlot);
     }
 
     /** 0: committed pool, 1: current pool, 2: visible translucent items. */

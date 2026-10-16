@@ -149,11 +149,11 @@ public final class PackageBatchNetworkBenchmark {
                 }
             }
         }finally{out.release();for(var probe:probes)probe.close();}
-        Files.write(Path.of("build/package-batch-network.csv"),rows);
-        Files.write(Path.of("build/package-predicted-network.csv"),predictedRows);
-        if(framing)Files.write(Path.of("build/package-network-framing.csv"),frameRows);
-        if(framing)Files.write(Path.of("build/package-predicted-network-framing.csv"),predictedFrameRows);
-        if(framing)Files.write(Path.of("build/package-network-acceptance.csv"),acceptanceRows);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-batch-network.csv"),rows);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-predicted-network.csv"),predictedRows);
+        if(framing)Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-network-framing.csv"),frameRows);
+        if(framing)Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-predicted-network-framing.csv"),predictedFrameRows);
+        if(framing)Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-network-acceptance.csv"),acceptanceRows);
     }
 
     /** Actual current PLAY IDs, custom-payload identifier/codec and Minecraft zlib/frame handlers.

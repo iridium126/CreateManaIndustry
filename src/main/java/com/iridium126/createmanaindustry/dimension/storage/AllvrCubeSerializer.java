@@ -80,7 +80,6 @@ public final class AllvrCubeSerializer {
      * carries the captured mutation version so the worker can do
      * latest-wins bookkeeping.
      */
-    @SuppressWarnings("unchecked")
     public static AllvrCubeSnapshot snapshot(AllvrCube cube, ServerLevel level,
                                              AllvrLightEngine lightEngine) {
         CompoundTag root = new CompoundTag();

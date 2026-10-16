@@ -539,6 +539,8 @@ public final class FastHexOPMediaPool {
         private void candidateSources(List<ADMediaHolder> sources) { candidateSources = sources; }
         private List<ADMediaHolder> simulatedSources() { return simulatedSources; }
         private void simulatedSources(List<ADMediaHolder> sources) { simulatedSources = sources; }
+        // Retain the simulated cost accessor for future media diagnostics.
+        @SuppressWarnings("unused")
         private long simulatedSourceCost() { return simulatedSourceCost; }
         private void simulatedSourceCost(long cost) { simulatedSourceCost = cost; }
         private boolean recordingSimulation() { return recordingSimulation; }

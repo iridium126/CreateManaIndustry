@@ -36,6 +36,7 @@ public abstract class AllvrLevelMixin {
 
     /** Routes vanilla gameplay light queries to the cube engine. */
     public int getBrightness(LightLayer type, BlockPos pos) {
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         Level self = (Level) (Object) this;
         AllvrCubeMap map = AllvrDimensionLimits.isVanillaY(pos.getY()) ? null : allvr$map();
         if (map != null) {
@@ -53,6 +54,7 @@ public abstract class AllvrLevelMixin {
 
     /** Keeps LevelReader#getRawBrightness on the same source as getBrightness. */
     public int getRawBrightness(BlockPos pos, int amount) {
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         Level self = (Level) (Object) this;
         AllvrCubeMap map = AllvrDimensionLimits.isVanillaY(pos.getY()) ? null : allvr$map();
         if (map != null) {
@@ -70,6 +72,7 @@ public abstract class AllvrLevelMixin {
 
     /** Use native chunk biome palettes in the central band and cube palettes outside it. */
     public net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> getNoiseBiome(int x, int y, int z) {
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         Level self = (Level) (Object) this;
         if (self.dimension() == AllvrDimensions.ALLAY_LEVEL && !AllvrDimensionLimits.isVanillaY(y * 4)) {
             if (self.isClientSide) {
@@ -96,6 +99,7 @@ public abstract class AllvrLevelMixin {
 
     @Unique
     private AllvrCubeMap allvr$map() {
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         Level self = (Level) (Object) this;
         if (self.isClientSide || self.dimension() != AllvrDimensions.ALLAY_LEVEL) {
             return null;
@@ -106,6 +110,7 @@ public abstract class AllvrLevelMixin {
     /** Returns null when this is not a cube-backed Allay position. */
     @Unique
     private Boolean allvr$isCubeLoaded(BlockPos pos) {
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         Level self = (Level) (Object) this;
         if (self.dimension() != AllvrDimensions.ALLAY_LEVEL
             || AllvrDimensionLimits.isVanillaY(pos.getY())) {
@@ -121,6 +126,7 @@ public abstract class AllvrLevelMixin {
     /** Preserve LevelReader's native X/Z-only hasChunk query. */
     @Unique
     private boolean allvr$nativeHasChunk(int chunkX, int chunkZ) {
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         Level self = (Level) (Object) this;
         return self.getChunkSource().hasChunk(chunkX, chunkZ);
     }
@@ -150,6 +156,7 @@ public abstract class AllvrLevelMixin {
     @Unique
     private boolean allvr$hasChunksAt(int fromX, int fromY, int fromZ,
                                       int toX, int toY, int toZ) {
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         Level self = (Level) (Object) this;
         int minX = Math.min(fromX, toX), maxX = Math.max(fromX, toX);
         int minY = Math.min(fromY, toY), maxY = Math.max(fromY, toY);
@@ -208,6 +215,7 @@ public abstract class AllvrLevelMixin {
 
     /** X/Z-only LevelReader overload. */
     public boolean hasChunkAt(int x, int z) {
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         Level self = (Level) (Object) this;
         if (self.isClientSide && self.dimension() == AllvrDimensions.ALLAY_LEVEL) {
             Boolean cubeLoaded = com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook
@@ -290,6 +298,7 @@ public abstract class AllvrLevelMixin {
             map.scheduleFluidTick(pos, fluid, delay, priority);
             return;
         }
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         Level self = (Level) (Object) this;
         self.getFluidTicks().schedule(new ScheduledTick<>(fluid, pos,
             self.getGameTime() + Math.max(0, delay), priority, self.nextSubTickCount()));

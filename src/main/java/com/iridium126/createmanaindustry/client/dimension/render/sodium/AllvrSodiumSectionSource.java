@@ -415,7 +415,6 @@ public final class AllvrSodiumSectionSource {
         @SuppressWarnings("unchecked")
         PalettedContainerRO<Holder<Biome>> biomes =
             (PalettedContainerRO<Holder<Biome>>) (PalettedContainer<?>) source.getBiomes();
-        @SuppressWarnings("unchecked")
         PalettedContainer<Holder<Biome>> biomeCopy =
             ((PalettedContainer<Holder<Biome>>) biomes).copy();
         @SuppressWarnings("unchecked")

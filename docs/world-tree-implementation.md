@@ -91,8 +91,6 @@ Java 在 `-Xmx512m` 下完成，生成加三阶段完整哈希约 18–22 秒（
 
 # 隔离游戏测试，不使用玩家存档
 python scripts/prepare-allvr-worldgen-test.py
-New-Item -ItemType Directory -Force build/epic-redwood-test-run/mods | Out-Null
-Get-ChildItem -LiteralPath run/mods -Filter 'owo-lib-neoforge-*.jar' | Copy-Item -Destination build/epic-redwood-test-run/mods
 ./gradlew.bat -I scripts/epic-redwood-test.init.gradle runGameTestServer --offline
 ```
 

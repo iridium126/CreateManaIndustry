@@ -26,6 +26,13 @@ public final class CMIComponents {
                     .networkSynchronized(ByteBufCodecs.FLOAT)
                     .build());
 
+    /** Thousandths of Anima; independent of Hexcasting's media components. */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Long>> ANIMA =
+            REGISTER.register("anima", () -> DataComponentType.<Long>builder()
+                    .persistent(Codec.LONG)
+                    .networkSynchronized(ByteBufCodecs.VAR_LONG)
+                    .build());
+
     private CMIComponents() {}
 
     public static void register(IEventBus bus) {

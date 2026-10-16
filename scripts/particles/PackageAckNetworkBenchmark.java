@@ -34,7 +34,7 @@ public final class PackageAckNetworkBenchmark {
                 rows.add(row);System.out.println(row);
             }
         }finally{out.release();}
-        Files.write(Path.of("build/package-ack-network.csv"),rows);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-ack-network.csv"),rows);
     }
     static int encode(RegistryFriendlyByteBuf out,PackageRegion region,long epoch,PackageAckRanges ranges) {
         var packet=new ClientboundPackageAckPacket(DIM,region,epoch,1,ranges);out.clear();ClientboundPackageAckPacket.STREAM_CODEC.encode(out,packet);int bytes=out.readableBytes();

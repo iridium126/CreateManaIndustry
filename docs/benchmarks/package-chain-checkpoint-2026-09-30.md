@@ -1,5 +1,7 @@
 # 锁链包裹客户端紧急检查点
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 ## 本轮结果
 
 新增成功帧之后的 GPU 全量姿态整理及独立四槽 persistent READ/coherent staging。客户端保存 materialize、断线、关闭及资源重载优先恢复最近已完成检查点，普通退休交还仍使用精确退休查询。这是客户端姿态恢复组件；服务端 pendulum 恢复、观察客户端校正及实际游戏生命周期尚未验收，CHAIN_READY 仍关闭。
@@ -36,7 +38,7 @@
 
 131072 时每次捕获 16MiB；按 20Hz 连续物理变化相当于 320MiB/s 的本地传输。默认明确申请 80MiB GL storage（四个 16MiB staging 加一个 scratch），DIRECT 64MiB。实际显存/驱动映射 backing 未独立测量。此成本属于新增恢复保证，不能宣称相比原来无检查点的路径降低 GPU 总时间；后续仍有紧凑格式与脏片段传输的优化空间。
 
-原始数据：[最终汇总](package-chain-checkpoint-2026-09-30.csv)、[2160 次最终采样](package-chain-checkpoint-samples-2026-09-30.csv.gz)、[初次试测](package-chain-checkpoint-pilot-2026-09-30.csv)、[初次采样](package-chain-checkpoint-pilot-samples-2026-09-30.csv.gz)。未验证 131072 活动包裹整帧 p95、服务器 tick、网络带宽或全量 native handback 时间。
+原始数据：最终汇总（本地运行结果）、2160 次最终采样（本地运行结果）、初次试测（本地运行结果）、初次采样（本地运行结果）。未验证 131072 活动包裹整帧 p95、服务器 tick、网络带宽或全量 native handback 时间。
 
 ## 验证与重现
 

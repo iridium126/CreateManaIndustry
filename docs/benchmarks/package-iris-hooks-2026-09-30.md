@@ -1,5 +1,7 @@
 # 包裹 Iris 主渲染、阴影与状态边界
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 本次将 `PackageShaderCompiler` 接入实际主渲染和阴影注入点。此前的顶点/编译桥接记录保留在 [顶点报告](package-shaderpack-vertices-2026-09-30.md)。代码和独立 GPU 验证已完成，真实客户端 Mixin 应用、光影视觉及整帧性能仍未验收。
 
 ## 渲染与生命周期
@@ -42,7 +44,7 @@
 
 10000 阶段 CPU 明显高于后续阶段，可能受 JVM 热身/阶段顺序影响；没有排除或用后续结果替代它，也不声称所有负载都达到 .01ms。13 平面与六平面的 GPU 差异在本次量化噪声内。状态边界测量包含 capture/restore 和 preparePass，不包含 shader.apply、采样光照、实际 raster、shaderpack composites 或完整游戏帧；未证明 131072 活动包裹整帧 p95 ≤16.7ms。
 
-[逐轮汇总](package-iris-boundary-2026-09-30.csv)，[原始样本](package-iris-boundary-samples-2026-09-30.csv.gz)。
+逐轮汇总（本地运行结果），原始样本（本地运行结果）。
 
 ```powershell
 .\gradlew.bat validatePackageIrisGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle

@@ -8,7 +8,7 @@ import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
- * Client-only rendering config ({@code createmanaindustry-client.toml}).
+ * Client-only rendering and spell drawing config ({@code createmanaindustry-client.toml}).
  * <p>
  * Not loaded on dedicated servers; these values are only read from client-side
  * render code ({@code MistClientHandler}, {@code MistIrisHook}).
@@ -23,11 +23,14 @@ public final class ClientConfig {
     private static ModConfigSpec.DoubleValue MIST_GLOW_STRENGTH;
     private static ModConfigSpec.BooleanValue MIST_DEBUG_SHADOW;
     private static ModConfigSpec.DoubleValue FUEL_ROD_BLOOM_RING_STRENGTH;
+    private static ModConfigSpec.DoubleValue GRID_SNAP_THRESHOLD;
 
     // ---- particles -------------------------------------------------------
 
     private static ModConfigSpec.BooleanValue PARTICLE_ENABLED;
     private static ModConfigSpec.IntValue PARTICLE_MAX_COUNT;
+    private static ModConfigSpec.IntValue SAME_FATE_MAX_PARTICLES;
+    private static ModConfigSpec.IntValue PARTITION_MAX_PARTICLES;
     private static ModConfigSpec.DoubleValue PARTICLE_BUDGET_MS;
     private static ModConfigSpec.BooleanValue PARTICLE_AUTO_THROTTLE;
     private static ModConfigSpec.IntValue PARTICLE_FADE_DISTANCE;
@@ -56,6 +59,12 @@ public final class ClientConfig {
                 .defineInRange("fuelRodBloomRingStrength", 1.0, 0.0, 100.0);
         BUILDER.pop();
 
+        BUILDER.comment("Great-trick spell drawing options.").push("greatTricks");
+        GRID_SNAP_THRESHOLD = BUILDER
+                .comment("Fraction of one grid spacing to travel before snapping to the next dot. Capture radius is (1 - value) times grid spacing; 0.75 leaves the final 25%. 点阵吸附阈值：默认走过点间距的 75% 才吸附，捕获半径为剩余的 25%。")
+                .defineInRange("gridSnapThreshold", 0.75, 0.0, 1.0);
+        BUILDER.pop();
+
         BUILDER.comment("GPU particle engine options.").push("particles");
         PARTICLE_ENABLED = BUILDER
                 .comment("Master switch for GPU particles.")
@@ -63,6 +72,9 @@ public final class ClientConfig {
         PARTICLE_MAX_COUNT = BUILDER
                 .comment("Maximum live particles allocated.")
                 .defineInRange("maxParticles", 2_000_000, 1_000, 4_000_000);
+        PARTITION_MAX_PARTICLES = BUILDER.comment("Maximum GPU conjure samples for Partition membranes and edges.").defineInRange("partitionMaxParticles",131072,0,1048576);
+        SAME_FATE_MAX_PARTICLES = BUILDER.comment("Maximum Shared Fate render records (ribbon body/glow segments, stars and dissolution particles), within the shared GPU pool.")
+                .defineInRange("sameFateMaxParticles", 131072, 256, 1048576);
         PARTICLE_BUDGET_MS = BUILDER
                 .comment("Frame-time budget (ms) for particles.")
                 .defineInRange("frameBudgetMs", 15.0, 1.0, 50.0);
@@ -103,8 +115,11 @@ public final class ClientConfig {
     public static double mistGlowStrength = 0.5;
     public static boolean mistDebugShadow = false;
     public static double fuelRodBloomRingStrength = 1.0;
+    public static double gridSnapThreshold = 0.75;
     public static boolean particleEnabled = true;
     public static int particleMaxCount = 2_000_000;
+    public static int partitionMaxParticles = 131072;
+    public static int sameFateMaxParticles = 131072;
     public static double particleBudgetMs = 15.0;
     public static boolean particleAutoThrottle = true;
     public static int particleFadeDistance = 96;
@@ -126,8 +141,11 @@ public final class ClientConfig {
             mistGlowStrength = MIST_GLOW_STRENGTH.get();
             mistDebugShadow = MIST_DEBUG_SHADOW.get();
             fuelRodBloomRingStrength = FUEL_ROD_BLOOM_RING_STRENGTH.get();
+            gridSnapThreshold = GRID_SNAP_THRESHOLD.get();
             particleEnabled = PARTICLE_ENABLED.get();
             particleMaxCount = PARTICLE_MAX_COUNT.get();
+            partitionMaxParticles = PARTITION_MAX_PARTICLES.get();
+            sameFateMaxParticles = SAME_FATE_MAX_PARTICLES.get();
             particleBudgetMs = PARTICLE_BUDGET_MS.get();
             particleAutoThrottle = PARTICLE_AUTO_THROTTLE.get();
             particleFadeDistance = PARTICLE_FADE_DISTANCE.get();

@@ -60,6 +60,8 @@ public final class PackageChainFrameScene implements AutoCloseable {
         var d=nativeOrigin.subtract(group.anchor);gpu.append(track.index(),group.index,d.x,d.y,d.z);tracks.put(track.index(),track);
         return nativeOrigin;
     }
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     private Parent resolve(ClientboundChainPackagePacket.Track track) {
         if(track.parent()==null||bridge==null||!level.hasChunkAt(track.conveyor()))return null;
         var found=bridge.find(level,track.conveyor());
@@ -111,6 +113,8 @@ public final class PackageChainFrameScene implements AutoCloseable {
         var replacement=new Group(group.index,group.anchor,current,group.representative,parent);
         groups.put(parent,replacement);ordered.set(group.index,replacement);captures.remove(group.index);
     }
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     private PackageChainGpuFrame capture(Group requested) {
         var cached=captures.get(requested.index);if(cached!=null)return cached;
         var group=ordered.get(requested.index);

@@ -10,11 +10,19 @@ import com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderS
 /** Standalone archived three-index comparison. Never included in the mod JAR. */
 public final class PackageGpuValidation {
     static boolean smoke;
-    static Path directory=Path.of("build/package-index-comparison");
+    static Path directory=Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-index-comparison");
     static int checks;
 
     static String source(String name) {
         return ParticleShaderSource.loadParticle(name,path->{
+            // Environment kernels and all of their includes must come from the same
+            // current production tree; archived types omit newer freeze diagnostics.
+            if(name.startsWith("packages/environment")) {
+                try {
+                    return Files.readString(Path.of(System.getProperty("cmi.index.productionResources", "build/resources/main"),
+                            "assets/createmanaindustry", path), java.nio.charset.StandardCharsets.UTF_8);
+                } catch(java.io.IOException e) { throw new java.io.UncheckedIOException(e); }
+            }
             // Match ResourceManager's namespace-relative lookup in the processed runtime resources.
             try(var stream=PackagePoolGpu.class.getClassLoader().getResourceAsStream("assets/createmanaindustry/"+path)) {
                 if(stream==null)throw new IllegalArgumentException("Missing runtime resource: "+path);
@@ -246,7 +254,7 @@ public final class PackageGpuValidation {
                                 env.poll(bytes->{throw new AssertionError("Benchmark unexpected environment event: n="+n+" scene="+scenario+" mode="+mode+" contact="+bytes.getInt(76)+" identity="+bytes.getLong(0)+" fire="+bytes.getInt(32)+" health="+bytes.getFloat(48));});
                                 if(sample>=0){var stats=probe.inspect(gpu,1.5f);int effective=stats.getInt(28)-stats.getInt(12)-stats.getInt(16);
                                     minimum=Math.min(minimum,effective);nonfinite=Math.max(nonfinite,stats.getInt(16));overlap=Math.max(overlap,stats.getFloat(4));penetration=Math.max(penetration,stats.getFloat(24));
-                                    if(stats.getFloat(4)>=.002&&!Files.exists(Path.of("build/package-"+n+"-"+scenario+"-failure.bin")))Files.write(Path.of("build/package-"+n+"-"+scenario+"-failure.bin"),readBytes(gpu));
+                                    if(stats.getFloat(4)>=.002&&!Files.exists(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-"+n+"-"+scenario+"-failure.bin")))Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-"+n+"-"+scenario+"-failure.bin"),readBytes(gpu));
                                     quality&=effective==n&&stats.getFloat(4)<.002&&stats.getFloat(24)<1e-4&&(!driven&&!fast||stats.getInt(20)>n*.99);
                                     samples.add(n+","+scenario+","+index+","+run+","+sample+","+times[sample]+","+cpu[sample]+","+effective+","+stats.getInt(20)+","+stats.getFloat(4)+","+stats.getFloat(24)+","+stats.getInt(16));
                                 }

@@ -58,6 +58,8 @@ public final class PackageObserverGpuController implements AutoCloseable {
     private final Int2ObjectOpenHashMap<Entry> overlay=new Int2ObjectOpenHashMap<>();
     private final Set<PackageLease.Identity> addingIdentities=new HashSet<>();
     private Arrival pending;private Stream pendingStream;
+    // Retain the introduction counter for future observer diagnostics.
+    @SuppressWarnings("unused")
     private int queuedRecords,introduced,slots,fullCount,compactCount,phase;
     private long operation,lastCommitted=-1;
     private String failure;
@@ -109,9 +111,9 @@ public final class PackageObserverGpuController implements AutoCloseable {
         }catch(RuntimeException error){fail("Observer controller failed: "+error.getMessage());return 0;}
     }
     private boolean stage(Arrival arrival,long now) {
-        var p=arrival.packet();var stream=streams.get(p.region());boolean reset=(p.flags()&p.RESET)!=0;
+        var p=arrival.packet();var stream=streams.get(p.region());boolean reset=(p.flags()&ClientboundPackageObserverPacket.RESET)!=0;
         if(stream!=null && p.stream()<stream.id)return false;
-        if((p.flags()&p.CLOSE)!=0) {
+        if((p.flags()&ClientboundPackageObserverPacket.CLOSE)!=0) {
             if(stream==null || stream.closed || p.stream()!=stream.id || p.epoch()!=stream.epoch || p.revision()!=stream.revision)return false;
             clock.observe(p.serverTick(),arrival.receivedNanos(),arrival.oneWayNanos());
             retire(stream,clock.now(now));return false;
@@ -124,7 +126,7 @@ public final class PackageObserverGpuController implements AutoCloseable {
             stream=new Stream(p);streams.put(p.region(),stream);
         }else {
             if(stream==null || p.stream()!=stream.id || p.epoch()!=stream.epoch || p.revision()!=stream.revision
-                    || p.sequence()!=stream.sequence+1 || stream.complete && (p.flags()&p.COMPLETE)==0)
+                    || p.sequence()!=stream.sequence+1 || stream.complete && (p.flags()&ClientboundPackageObserverPacket.COMPLETE)==0)
                 throw new IllegalArgumentException("Observer envelope gap/namespace mismatch");
             clock.observe(p.serverTick(),arrival.receivedNanos(),arrival.oneWayNanos());
         }
@@ -174,7 +176,7 @@ public final class PackageObserverGpuController implements AutoCloseable {
                 if(entry.local>=0)lifecycle.retired(entry.member.identity(),entry.local);}
             changes[i]=null;
         }
-        stream.sequence=p.sequence();stream.complete=(p.flags()&p.COMPLETE)!=0;pending=null;pendingStream=null;
+        stream.sequence=p.sequence();stream.complete=(p.flags()&ClientboundPackageObserverPacket.COMPLETE)!=0;pending=null;pendingStream=null;
         overlay.clear();addingIdentities.clear();
     }
     private void retire(Stream stream,float time) {

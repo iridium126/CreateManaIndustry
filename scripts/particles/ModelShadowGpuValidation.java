@@ -120,8 +120,8 @@ public class ModelShadowGpuValidation {
         var nativeStages=net.irisshaders.iris.pipeline.transform.TransformPatcher.patchVanilla("cmi_model_validation",patched,null,null,null,
                 "#version 120\nvarying vec4 probeColor;void main(){gl_FragColor=probeColor;}",net.irisshaders.iris.gl.blending.AlphaTests.ONE_TENTH_ALPHA,false,true,
                 new net.irisshaders.iris.gl.state.ShaderAttributeInputs(true,true,false,true,true),new it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap<>());
-        Files.writeString(Path.of("build/model-shadow-merged.vert"),patched);
-        Files.writeString(Path.of("build/model-shadow-iris.vert"),nativeStages.get(net.irisshaders.iris.pipeline.transform.PatchShaderType.VERTEX));
+        Files.writeString(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-shadow-merged.vert"),patched);
+        Files.writeString(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-shadow-iris.vert"),nativeStages.get(net.irisshaders.iris.pipeline.transform.PatchShaderType.VERTEX));
         int linked=GL20.glCreateProgram();var shaders=new ArrayList<Integer>();
         try{for(var kind:new net.irisshaders.iris.pipeline.transform.PatchShaderType[]{net.irisshaders.iris.pipeline.transform.PatchShaderType.VERTEX,net.irisshaders.iris.pipeline.transform.PatchShaderType.FRAGMENT}){
             int shader=GL20.glCreateShader(kind==net.irisshaders.iris.pipeline.transform.PatchShaderType.VERTEX?GL20.GL_VERTEX_SHADER:GL20.GL_FRAGMENT_SHADER);shaders.add(shader);
@@ -188,7 +188,7 @@ public class ModelShadowGpuValidation {
                 check(models(gpu)==n,"benchmark incomplete work");for(int sample=0;sample<120;sample++)raw.add(mode+","+n+","+run+","+sample+","+gt[sample]+","+ct[sample]);String row=mode+","+n+","+n+","+run+","+percentile(gt,.5)+","+percentile(gt,.95)+","+percentile(ct,.5)+","+percentile(ct,.95)+","+gpu.bytes();rows.add(row);System.out.println(row);
             }}finally{for(int id:new int[]{pool,emit,count})GL15.glDeleteBuffers(id);}
         }
-        Files.write(Path.of("build/model-shadow-benchmark.csv"),rows);Files.write(Path.of("build/model-shadow-benchmark-raw.csv"),raw);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-shadow-benchmark.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-shadow-benchmark-raw.csv"),raw);
     }
     /** Query-side probe only: a static fixture supplies the current-generation index.
      * It excludes building/updating that index and does not move simulation records. */
@@ -216,7 +216,7 @@ public class ModelShadowGpuValidation {
                 }
             }}finally{for(int id:new int[]{pool,emit,counter,index})GL15.glDeleteBuffers(id);}
         }
-        Files.write(Path.of("build/model-index-probe.csv"),rows);Files.write(Path.of("build/model-index-probe-samples.csv"),raw);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-index-probe.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-index-probe-samples.csv"),raw);
     }
     public static void main(String[] args)throws Exception {
         var callback=GLFWErrorCallback.createPrint(System.err);callback.set();check(GLFW.glfwInit(),"GLFW init");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);

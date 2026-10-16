@@ -38,6 +38,8 @@ public final class AllayStormWaves {
     // ---- hash chains (float-exact GLSL ports) --------------------------------
 
     /** GLSL {@code fract}: x - floor(x), exact for the magnitudes used here. */
+    // Retain the wave math helper for future wave profiles.
+    @SuppressWarnings("unused")
     private static float fract(float x) {
         return x - (float) Math.floor(x);
     }

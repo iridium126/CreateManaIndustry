@@ -55,7 +55,7 @@ public final class HexParseCompatGameTests {
                 "createmanaindustry:light_burner",
                 "createmanaindustry:players_in_circle"));
         if (ModList.get().isLoaded("trickster")) actionIds.addAll(List.of(
-                "createmanaindustry:read_trick_from_item", "createmanaindustry:execute_trick"));
+                "createmanaindustry:read_trick_from_item"));
         if (ModList.get().isLoaded("yes_steve_model")) actionIds.addAll(List.of(
                 "createmanaindustry:ysm_cube_create", "createmanaindustry:ysm_group_create",
                 "createmanaindustry:ysm_geometry_get", "createmanaindustry:ysm_geometry_set",

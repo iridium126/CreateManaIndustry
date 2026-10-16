@@ -18,6 +18,7 @@ public abstract class GlowingVineLevelMixin {
             at = @At("TAIL"))
     private void cmi$trackGlowingVine(BlockPos pos, BlockState state, int flags, int recursionLeft,
             CallbackInfoReturnable<Boolean> cir) {
+        @SuppressWarnings("resource") // Borrowed world; Minecraft owns its lifetime.
         Level level = (Level) (Object) this;
         if (cir.getReturnValueZ() && level instanceof ClientLevel clientLevel) {
             BlockParticleEmitterClient.onBlockChanged(clientLevel, pos);

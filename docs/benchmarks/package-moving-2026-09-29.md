@@ -1,5 +1,7 @@
 # 动态结构包裹物理测量（2026-09-29）
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 本轮实现 Create contraption 与可选 Sable sub level 的碰撞数据入口，以及显式实验 GPU 接触管线。**真实 Create 包裹接管门禁仍关闭；没有完成游戏整帧、实际 Sable ABI、视觉或多人验收。** 以下使用合成结构和真实 NVIDIA 驱动，不代表实际 Create/Sable 场景已达到目标。
 
 ## 方法
@@ -24,7 +26,7 @@
 
 一次几何上传分别为 48B / 768B，运动过程中不重新烘焙。每个平台姿态 bank 为 256B、四槽；包裹承载 sidecar 为 16B/body，131072 个增加 2MiB，仍只占一个通用粒子槽位。姿态与附加缓冲不进入 shaderpack 的 64B 粒子读取协议。
 
-原始汇总：[27 行 CSV](package-moving-kernels-2026-09-29.csv)。原始样本：[810 行 CSV](package-moving-kernel-samples-2026-09-29.csv.gz)。
+原始汇总：27 行 CSV（本地运行结果）。原始样本：810 行 CSV（本地运行结果）。
 
 ## 正确性及修复
 

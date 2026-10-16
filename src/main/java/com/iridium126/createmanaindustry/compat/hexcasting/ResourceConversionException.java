@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.compat.hexcasting;
 
 /** Internal preflight failure, translated into the casting engine's own accident. */
+@SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
 public final class ResourceConversionException extends RuntimeException {
     private final String reason;
 

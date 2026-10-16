@@ -1,5 +1,7 @@
 # GPU 光照覆盖反馈与请求合并（2026-09-30）
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 本轮接通缺失光照的 GPU 反馈、分区预取和已确认亮度保留；完整 Create 包裹计划仍未完成。之前的 [采样报告](package-light-sampling-2026-09-30.md) 描述本轮以前的组件状态。
 
 ## 实现
@@ -41,7 +43,7 @@ RTX 4070 Laptop GPU，NVIDIA 581.15，OpenGL 4.5。固定数据，10000/65536/13
 
 分散缺区三轮 p50 均减少 .009216ms，p95 减少约 17–19%；已覆盖与密集缺区差异接近 1µs 计时粒度，因此不宣称这两类提速。65536 分散缺区 p95 相差约 1µs，未认为有收益。默认版本的 131072 提交 CPU p95 为 .0050–.0060ms，仍只是此 fixture 的缓存 uniform/绑定、dispatch/copy/fence 开销。
 
-[原始汇总](package-light-feedback-global-before-2026-09-30.csv)、[原始 3240 样本](package-light-feedback-global-before-samples-2026-09-30.csv.gz)、[默认汇总](package-light-feedback-grouped-2026-09-30.csv)、[默认 3240 样本](package-light-feedback-grouped-samples-2026-09-30.csv.gz)。原始版本在 shader 中保留为编译期基准分支，生产不启用；没有运行时逐粒子 Java 行为。
+原始汇总（本地运行结果）、原始 3240 样本（本地运行结果）、默认汇总（本地运行结果）、默认 3240 样本（本地运行结果）。原始版本在 shader 中保留为编译期基准分支，生产不启用；没有运行时逐粒子 Java 行为。
 
 131072 配置增加 2MiB missing sidecar、4KiB winners、4112B 输出、约 16KiB staging ring 与 4112B CPU 读回暂存。保留之前的 .5MiB 光照结果缓冲及四个 atlas。新增反馈最大每成功提交 4112B，实际持续提交频率/显存/主线程采集 p95 还需在游戏中测量。
 

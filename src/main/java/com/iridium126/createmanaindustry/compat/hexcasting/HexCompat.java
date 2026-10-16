@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.compat.hexcasting;
 
-import com.iridium126.createmanaindustry.CreateManaIndustry;
 
 import at.petrak.hexcasting.api.item.MediaHolderItem;
 import at.petrak.hexcasting.api.mod.HexConfig;

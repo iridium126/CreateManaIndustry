@@ -49,7 +49,7 @@ public final class PackageChainContainerBenchmark {
                 measure(count,scenario,partition.ownedCount()==0?"fallback_array_list":"partition_create_view",repeat,submitted,summaries,samples);
             }
         }
-        Files.write(Path.of("build/package-chain-containers.csv"),summaries);
-        Files.write(Path.of("build/package-chain-containers-samples.csv"),samples);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-chain-containers.csv"),summaries);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-chain-containers-samples.csv"),samples);
     }
 }

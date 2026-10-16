@@ -41,7 +41,12 @@ public final class HexPatternService {
     private record Replay(Player player,float partial,Matrix4f pose) {}
     private static final class UiCache {final List<HexUiLayout> layouts=new ArrayList<>();final List<HexGpuBackend.Draw> draws=new ArrayList<>();}
     private static final class UiBatch {
-        final Object owner;final GuiGraphics graphics;final UiCache cache;final List<HexGpuBackend.Draw> draws=new ArrayList<>();final List<Runnable> nativeDraws=new ArrayList<>();
+        // Retain the UI owner and graphics context for future batch integration.
+        @SuppressWarnings("unused")
+        final Object owner;
+        @SuppressWarnings("unused") // Retain the graphics context for future batch integration.
+        final GuiGraphics graphics;
+        final UiCache cache;final List<HexGpuBackend.Draw> draws=new ArrayList<>();final List<Runnable> nativeDraws=new ArrayList<>();
         final Matrix4f view=new Matrix4f(RenderSystem.getModelViewMatrix()),projection=new Matrix4f(RenderSystem.getProjectionMatrix());
         int index,patternIndex;boolean failed,flushed;HexMetrics.Scope capture;
         UiBatch(Object owner,GuiGraphics graphics){this.owner=owner;this.graphics=graphics;cache=uiCaches.computeIfAbsent(owner,k->new UiCache());}

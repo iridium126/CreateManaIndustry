@@ -1,5 +1,7 @@
 # 自由包裹外部受力（2026-10-01）
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 新增常规实体推挤及 Create `AirCurrent` 鼓风机受力 GPU pass，接入 `PackageWorldRuntime` 的 20Hz 自由域。锁链和观察者域不执行此 pass，通用粒子 64B ABI 不变。它只修改包裹速度；随后既有 GPU 预测、扫掠及 Jacobi 接触处理运动和碰撞。没有把其他实体的模拟或玩法回调迁到客户端。
 
 `PackageForceClient` 通过每个活动 64 格包裹区域的 `ClientLevel` 实体空间查询收集非包裹来源，区域外扩 2 格并按对象身份去重，不遍历整维度实体表。Sable 风机先投影到世界姿态，再按活动区域筛选；远处实体和风机不会进入 4096 力源容量。client owner 线程每 tick 复制相关实体边界、位置、睡眠/碰撞条件及 Create 已计算的气流边界、方向、距离和速度。后台只读取这些不可变值，构建无栈 BVH；render 线程只消费已完成 future，不等待 worker。初始力源未准备前不得确认接管，快照陈旧超过一 tick、相关力源超过 4096 项或全部上传 bank 忙时明确交还 Create。空间查询已做单元及真实 GPU 回归；实际游戏中的主线程采集 p95/分配量尚未测量。
@@ -26,7 +28,7 @@ BVH 节点 32B，力源 64B；仅临时 pass 使用 binding 4。实体树按空�
 | 4095 实体 + 1 气流 | 0.1198–0.1290ms | 0.0308–0.0398ms | 1.3177–1.5179ms | 524256B |
 | 64 道重叠相反气流 | 0.3318–0.3379ms | 0.0080–0.0119ms | 0.0131–0.0159ms | 8160B |
 
-原始[三次测量 CSV](package-forces-2026-10-01.csv)包含 10000、65536、131072 和所有场景。该微基准没有原生 Create 主线程前后对照，不能认定整帧 p95≤16.7ms、服务器 tick≤50ms 或视觉不可分辨已达标。
+原始三次测量 CSV（本地运行结果）包含 10000、65536、131072 和所有场景。该微基准没有原生 Create 主线程前后对照，不能认定整帧 p95≤16.7ms、服务器 tick≤50ms 或视觉不可分辨已达标。
 
 ```powershell
 .\gradlew.bat validatePackageGpu -PpackageForcesOnly --offline --no-configuration-cache -I scripts/particles/validation.init.gradle

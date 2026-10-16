@@ -58,6 +58,8 @@ vec2 quadCorner(int v) {
     }
 }
 
+#pragma cmi_include chunks/shared_fate_draw.glsl
+
 void main() {
     uint inst = orderAdd.order[gl_InstanceID];
     uint base = inst * 4u;
@@ -69,6 +71,7 @@ void main() {
     float life = clamp(p3.x / max(p3.y, 1e-5), 0.0, 1.0);
     uint eid = floatBitsToUint(p3.w);
     uint hb = eid * VEC4_PER_EMITTER;
+    if(abs(emitters.u[hb+17u].y-9.0)<.25){cmiDrawFateRibbon(p1,true,quadCorner(gl_VertexID));return;}
 
     // size over lifetime (analytic curve, eased)
     float sizeStart = emitters.u[hb + 5u].z;
@@ -152,11 +155,13 @@ void main() {
 
     // The level stage model-view on NeoForge is the camera rotation only
     // (geometry is camera-relative), so subtract the camera position here.
-    vec4 clip = ProjMat * ModelViewMat * vec4(worldPos - uCamPos, 1.0);
+    bool sharedFate = abs(emitters.u[hb + 17u].y - 8.0) < .25;
+    vec3 relativePos = sharedFate ? worldPos : worldPos - uCamPos;
+    vec4 clip = ProjMat * ModelViewMat * vec4(relativePos, 1.0);
     gl_Position = clip;
 
     vUv = corner + 0.5;
-    vDist = length(worldPos - uCamPos);
+    vDist = length(relativePos);
     // alpha: per-particle intensity × keyframe alpha × lifetime fade × emitter glow
     // (additive allows >1.0 here; brightness is trimmed per-emitter in the headers)
     // Direct style uses the sign of p2.w for its per-particle gravity bit.

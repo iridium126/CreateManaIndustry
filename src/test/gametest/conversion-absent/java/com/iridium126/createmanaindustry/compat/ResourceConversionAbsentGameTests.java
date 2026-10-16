@@ -25,6 +25,18 @@ public final class ResourceConversionAbsentGameTests {
                         "Hex conversion was registered without both mods");
                 helper.assertTrue(!registry.containsKey(CreateManaIndustry.modLoc("mana_to_media")),
                         "Trick conversion was registered without both mods");
+                helper.assertTrue(!registry.containsKey(CreateManaIndustry.modLoc("read_iota"))
+                                && !registry.containsKey(CreateManaIndustry.modLoc("eval_iota")),
+                        "Hex bridge tricks were registered without both mods");
+                if (registryId.equals("trickster:trick")) {
+                    helper.assertTrue(registry.containsKey(CreateManaIndustry.modLoc("temporary_kinetic_stress")),
+                            "Independent kinetic trick is missing when Hexcasting is absent");
+                    helper.assertTrue(registry.containsKey(CreateManaIndustry.modLoc("read_potion_effects")),
+                            "Independent potion query is missing when Hexcasting is absent");
+                    var fragments=BuiltInRegistries.REGISTRY.get(ResourceLocation.parse("trickster:fragment_type"));
+                    helper.assertTrue(fragments!=null&&fragments.containsKey(CreateManaIndustry.modLoc("potion")),
+                            "Independent potion fragment is missing without Hexcasting");
+                }
             }
         }
         helper.succeed();

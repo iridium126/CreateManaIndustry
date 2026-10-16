@@ -6,13 +6,10 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.*;
 import com.simibubi.create.content.logistics.box.PackageEntity;
-import com.simibubi.create.content.logistics.box.PackageItem;
 import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorBlockEntity;
 import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorPackage;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
@@ -74,7 +71,10 @@ public final class PackageAuthorityManager {
         final ArrayDeque<PackageAckRanges.Builder> spareAcks=new ArrayDeque<>();
         final ArrayList<PackageDeltaCodec.Entry> deltaScratch=new ArrayList<>(512);
         final PackageAuthorityRegion.DeltaWorkspace deltaWorkspace=new PackageAuthorityRegion.DeltaWorkspace();
+        // Retain shutdown state for future authority lifecycle handling.
+        @SuppressWarnings("unused")
         boolean closing;
+        @SuppressWarnings("deprecation") // Keep the Y-aware Allvr cube availability check.
         Runtime(ServerLevel level){this.level=level;light=PackageLightStore.get(level);long maximum=0;for(var entry:light.entries()){maximum=Math.max(maximum,entry.identity.id());if(level.hasChunkAt(net.minecraft.core.BlockPos.containing(entry.position()))){activate(this,entry);if(!gpuMode)restoration.put(entry.identity,entry);}}if(maximum>0)PackageIdentityData.get(level).observe(maximum);}
     }
     private static final class EntityTarget implements PackageAuthorityRegion.Target {
@@ -86,11 +86,15 @@ public final class PackageAuthorityManager {
         final Runtime runtime;
         final PackageLease.Identity identity;
         PackageAuthorityRegion region;
+        // Retain the entity checkpoint for future recovery.
+        @SuppressWarnings("unused")
         PackageAuthorityRegion.Snapshot checkpoint;
         long retry,environmentWritten,environmentSimulationStep,environmentOriginStep,environmentOriginTick;
         EntityTarget(Runtime runtime,PackageLightStore.Entry entry){this.runtime=runtime;light=entry;identity=entry.identity;uuid=entry.uuid;model=entry.model;width=entry.width;height=entry.height;}
         @Override public PackageLease.Identity identity(){return identity;}
         @Override public PackageAuthorityRegion.Snapshot snapshot(){return light.state();}
+        // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+        @SuppressWarnings("deprecation")
         @Override public boolean eligible(){return runtime.level.hasChunkAt(net.minecraft.core.BlockPos.containing(light.position()));}
         @Override public void apply(PackageAuthorityRegion.Snapshot state){runtime.light.update(light,state);runtime.changed.add(this);checkpoint=state;queueVoid(runtime,this);}
         @Override public void released(PackageAuthorityRegion.Baseline baseline) {
@@ -163,6 +167,8 @@ public final class PackageAuthorityManager {
             var rt=WORLDS.get(level);if(rt!=null&&rt.nativePackages.remove(entity.getUUID(),entity))rt.nativeCapture.remove(entity.getUUID());
         }
     }
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     private static void switchMode(Runtime rt) {
         boolean enabled=ServerConfig.packageGpuAuthority;if(enabled==rt.gpuMode)return;
         rt.gpuMode=enabled;
@@ -189,6 +195,8 @@ public final class PackageAuthorityManager {
             }catch(RuntimeException failure){rt.nativeCapture.add(uuid);CreateManaIndustry.LOGGER.warn("[CMI packages] native capture deferred for {}",uuid,failure);}
         }
     }
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     private static void pumpRestoration(Runtime rt) {
         long deadline=System.nanoTime()+ServerConfig.packageMainThreadBudgetNanos();int budget=PackageChainAuthorityManager.migrationPending(rt.level)?32:64;
         while(budget-->0&&!rt.restoration.isEmpty()&&System.nanoTime()<deadline&&claimMigration(rt.level)){
@@ -609,6 +617,8 @@ public final class PackageAuthorityManager {
     }
     @SubscribeEvent public static void lightChunkLoaded(ChunkEvent.Load event){if(event.getLevel() instanceof ServerLevel level){var pos=event.getChunk().getPos();level.getServer().execute(()->{var rt=WORLDS.get(level);if(rt!=null)rt.chunkChanges.put(pos,true);});}}
     @SubscribeEvent public static void lightChunkUnloaded(ChunkEvent.Unload event){if(event.getLevel() instanceof ServerLevel level){var pos=event.getChunk().getPos();level.getServer().execute(()->{var rt=WORLDS.get(level);if(rt!=null)rt.chunkChanges.put(pos,false);});}}
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     private static void pumpChunkChanges(Runtime rt){
         long deadline=System.nanoTime()+ServerConfig.packageMainThreadBudgetNanos();
         for(int n=0;n<64&&System.nanoTime()<deadline;n++){
@@ -641,6 +651,8 @@ public final class PackageAuthorityManager {
     }
     private static ClientboundLightPackagePacket.Row visual(PackageLightStore.Entry entry){return new ClientboundLightPackagePacket.Row(entry.identity,false,entry.model,entry.width,entry.height,entry.state().pose());}
     private static void sendLight(ServerPlayer player,List<ClientboundLightPackagePacket.Row> rows){try{for(int i=0;i<rows.size();i+=128)PacketDistributor.sendToPlayer(player,new ClientboundLightPackagePacket(player.serverLevel().dimension().location(),rows.subList(i,Math.min(i+128,rows.size()))));}catch(RuntimeException disconnected){CreateManaIndustry.LOGGER.debug("[CMI packages] lightweight visual delivery unavailable",disconnected);}}
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     private static void publishLight(Runtime rt){
         long tick=rt.level.getGameTime();
         for(var player:rt.level.players()) {

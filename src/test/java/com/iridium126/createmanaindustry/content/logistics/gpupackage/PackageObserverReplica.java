@@ -69,7 +69,7 @@ public final class PackageObserverReplica<M> {
         if(size>capacity || (reset?0:introduced.size())+additions.size()>capacity)return Result.RESYNC;
         if(reset){members.clear();identities.clear();introduced.clear();}
         for(var entry:next.entrySet()) {
-            if(entry.getValue()==null)members.remove(entry.getKey());else members.put(entry.getKey(),entry.getValue());
+            if(entry.getValue()==null)members.remove(entry.getKey().intValue());else members.put(entry.getKey().intValue(),entry.getValue());
         }
         for(var entry:identityOverlay.entrySet()) {
             if(entry.getValue()==null)identities.remove(entry.getKey());else identities.put(entry.getKey(),entry.getValue());

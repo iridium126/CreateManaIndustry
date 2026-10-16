@@ -20,8 +20,8 @@ import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * Adds a single knot-item slot to HexCasting's {@link BlockEntitySlate},
- * persisted under the {@code cmi_knot} NBT key. Circle spells executed via
- * {@code execute_trick} draw mana from these slate knots (see
+ * persisted under the {@code cmi_knot} NBT key. TrickIotas evaluated in circles
+ * draw mana from these slate knots (see
  * {@code CircleSlateManaPool}).
  */
 @Mixin(value = BlockEntitySlate.class, remap = false)

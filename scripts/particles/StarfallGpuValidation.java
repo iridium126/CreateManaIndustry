@@ -49,7 +49,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
   GL11.glViewport(0,0,128,128);GL11.glClearColor(0,0,0,0);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);GL11.glEnable(GL11.GL_BLEND);GL11.glBlendFunc(GL11.GL_ONE,GL11.GL_ONE);GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES,0,6,128);
   var pixels=bytes(128*128*4);GL11.glReadPixels(0,0,128,128,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);int lit=0;var image=new java.awt.image.BufferedImage(128,128,java.awt.image.BufferedImage.TYPE_INT_RGB);
   for(int y=0;y<128;y++)for(int x=0;x<128;x++){int o=(y*128+x)*4,r=pixels.get(o)&255,g=pixels.get(o+1)&255,b=pixels.get(o+2)&255;if(b>8)lit++;image.setRGB(x,127-y,(r<<16)|(g<<8)|b);}
-  check(lit>100,"ring missing from framebuffer");check((pixels.get((64*128+64)*4+2)&255)==0,"ring filled center");javax.imageio.ImageIO.write(image,"png",Path.of("build/starfall-ring-framebuffer.png").toFile());int currentState=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var census=bytes(StarfallGpuBuffers.STATE_WORDS*4).putInt(262400*4,127);put(currentState,census);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES,0,6,128);GL11.glReadPixels(0,0,128,128,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);for(int i=2;i<pixels.capacity();i+=4)check(pixels.get(i)==0,"partial circle rendered");census.putInt(262400*4,128);put(currentState,census);
+  check(lit>100,"ring missing from framebuffer");check((pixels.get((64*128+64)*4+2)&255)==0,"ring filled center");javax.imageio.ImageIO.write(image,"png",Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-ring-framebuffer.png").toFile());int currentState=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var census=bytes(StarfallGpuBuffers.STATE_WORDS*4).putInt(262400*4,127);put(currentState,census);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES,0,6,128);GL11.glReadPixels(0,0,128,128,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);for(int i=2;i<pixels.capacity();i+=4)check(pixels.get(i)==0,"partial circle rendered");census.putInt(262400*4,128);put(currentState,census);
   GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL11.glDisable(GL11.GL_BLEND);GL11.glDeleteTextures(tex);GL30.glDeleteFramebuffers(fb);GL15.glDeleteBuffers(order);GL30.glDeleteVertexArrays(vao);{CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}GL20.glDeleteShader(vs);GL20.glDeleteShader(fs);GL20.glUseProgram(0);
  }
  static void contacts(){int p=compile("wavecontact.comp");try(var gpu=new StarfallGpuBuffers()){
@@ -115,7 +115,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
     GL15.glDeleteQueries(updateQuery);GL15.glDeleteQueries(shadowQuery);for(int id:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(id);for(int p:new int[]{build,update}){CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}
    }
   }
-  Files.write(Path.of("build/starfall-benchmark.csv"),rows);Files.write(Path.of("build/starfall-benchmark-samples.csv"),raw);
+  Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-benchmark.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-benchmark-samples.csv"),raw);
  }
  static void benchmarkRings()throws Exception{
   var rows=new ArrayList<String>();rows.add("columns,particles,run,birth_gpu_p50_ms,birth_gpu_p95_ms,draw_gpu_p50_ms,draw_gpu_p95_ms,cpu_wall_p50_ms,cpu_wall_p95_ms,allocated_bytes_p50,command_bytes");
@@ -140,7 +140,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
     }GL15.glDeleteQueries(birth);GL15.glDeleteQueries(draw);
    }finally{for(int id:new int[]{pool,counter,commands,indices})GL15.glDeleteBuffers(id);}
   }}finally{GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL11.glDisable(GL11.GL_BLEND);GL11.glDeleteTextures(tex);GL30.glDeleteFramebuffers(fb);GL30.glDeleteVertexArrays(vao);GL15.glDeleteBuffers(header);for(int p:new int[]{reserve,emit,render}){CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}GL20.glDeleteShader(vs);GL20.glDeleteShader(fs);}
-  Files.write(Path.of("build/starfall-ring-benchmark.csv"),rows);
+  Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-ring-benchmark.csv"),rows);
  }
  public static void main(String[] args)throws Exception{GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(128,128,"Starfall GPU validation",0,0);
   try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));rings();contacts();formations();if(Arrays.asList(args).contains("--benchmark"))benchmarkStarfall();if(Arrays.asList(args).contains("--ring-benchmark"))benchmarkRings();check(GL11.glGetError()==0,"final GL state");System.out.println("Starfall GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}

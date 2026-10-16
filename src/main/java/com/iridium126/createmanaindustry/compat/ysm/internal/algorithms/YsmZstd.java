@@ -3,7 +3,6 @@ package com.iridium126.createmanaindustry.compat.ysm.internal.algorithms;
 import java.io.*;
 import java.nio.*;
 import com.iridium126.createmanaindustry.compat.ysm.internal.zstd.ZstdInputStream;
-import com.iridium126.createmanaindustry.compat.ysm.internal.security.YsmCrypt;
 public final class YsmZstd {
     public static byte[] decompress(byte[] data) throws IOException {
         try (var in = new ZstdInputStream(new ByteArrayInputStream(wash(data.clone())))) {
@@ -32,7 +31,6 @@ public final class YsmZstd {
             int b0 = data[offset] & 0xFF;
             int b1 = data[offset + 1] & 0xFF;
             int b2 = data[offset + 2] & 0xFF;
-            int cBlockHeader = b0 | (b1 << 8) | (b2 << 16);
             int lastBlock = (b0 >> 7) & 1;
             int blockTypeYSM = (b0 >> 5) & 3;
 
@@ -65,9 +63,7 @@ public final class YsmZstd {
 
     private static int calculateFrameHeaderSize(byte fhd) {
         int size = 1;
-        int fcsFieldSize = fhd & 3;
         boolean singleSegment = ((fhd >> 5) & 1) == 1;
-        int dictIdFlag = (fhd >> 0) & 3;
 
         int dictIdSize = 0;
         int dictIdBits = fhd & 3;

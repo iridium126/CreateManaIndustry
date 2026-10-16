@@ -38,6 +38,6 @@ public class PackagePauseBenchmark {
             for(var target:targets)if(target.releases!=1||target.snapshot()!=target.saved)throw new AssertionError("Inventory lifecycle lost or duplicated");
             summary.add(operation+","+run+","+COUNT+","+pause/1e6+","+percentile(retirement,.5)+","+percentile(retirement,.95)+","+percentile(acquisition,.5)+","+percentile(acquisition,.95)+","+BATCH+",0");
         }
-        var directory=Path.of("docs/benchmarks/package-pause-2026-10-02");Files.createDirectories(directory);Files.write(directory.resolve("samples.csv"),raw);Files.write(directory.resolve("summary.csv"),summary);summary.forEach(System.out::println);
+        var directory=Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current"), "package-pause");Files.createDirectories(directory);Files.write(directory.resolve("samples.csv"),raw);Files.write(directory.resolve("summary.csv"),summary);summary.forEach(System.out::println);
     }
 }

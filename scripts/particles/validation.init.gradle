@@ -3,6 +3,38 @@ allprojects {
     afterEvaluate {
         def kotlin = configurations.create('hexGpuValidationKotlin')
         dependencies.add(kotlin.name, 'org.jetbrains.kotlin:kotlin-stdlib:2.3.0')
+        def benchmarkDir = file(findProperty('benchmarkOutput') ?: 'build/benchmarks/current')
+        tasks.withType(JavaExec).configureEach {
+            if (name.startsWith('validate') || name.startsWith('benchmark')) {
+                systemProperty 'cmi.benchmark.output', benchmarkDir.absolutePath
+                def metadataFile
+                doFirst {
+                    benchmarkDir.mkdirs()
+                    metadataFile = new File(benchmarkDir, name + '-' + java.util.UUID.randomUUID() + '-metadata.json')
+                    def gitText = { List<String> command ->
+                        def process = new ProcessBuilder(command).directory(rootDir).redirectErrorStream(true).start()
+                        def output = process.inputStream.getText('UTF-8').trim()
+                        process.waitFor() == 0 ? output : 'unavailable'
+                    }
+                    def metadata = [task: name, arguments: args, properties: project.gradle.startParameter.projectProperties,
+                            startedAt: java.time.Instant.now().toString(),
+                            commit: gitText(['git', 'rev-parse', 'HEAD']),
+                            workingTree: gitText(['git', 'status', '--porcelain']),
+                            javaVersion: javaLauncher.get().metadata.languageVersion.toString(),
+                            javaRuntimeVersion: javaLauncher.get().metadata.javaRuntimeVersion,
+                            javaVendor: javaLauncher.get().metadata.vendor,
+                            os: System.getProperty('os.name'), arch: System.getProperty('os.arch'),
+                            completed: false]
+                    metadataFile.setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(metadata)) + '\n', 'UTF-8')
+                }
+                doLast {
+                    def metadata = new groovy.json.JsonSlurper().parse(metadataFile, 'UTF-8')
+                    metadata.completed = true
+                    metadata.finishedAt = java.time.Instant.now().toString()
+                    metadataFile.setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(metadata)) + '\n', 'UTF-8')
+                }
+            }
+        }
         // The current workspace's independent Hex JIT sources import Kotlin directly.
         tasks.named('compileJava') { classpath += kotlin }
         tasks.register('validateHexGpu', JavaExec) {
@@ -10,6 +42,12 @@ allprojects {
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/HexPatternGpuValidation.java'
             if (project.hasProperty('particleBenchmark')) args '--benchmark'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateSharedFateGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/SharedFateGpuValidation.java'
             workingDir = project.projectDir
         }
         tasks.register('compileHexNativeHarness', JavaCompile) {
@@ -135,6 +173,7 @@ allprojects {
             into layout.buildDirectory.dir('package-index-reference-resources')
         }
         tasks.register('benchmarkPackageIndexes', JavaExec) {
+            systemProperty 'cmi.index.productionResources', layout.buildDirectory.dir('resources/main').get().asFile.absolutePath
             dependsOn tasks.named('compilePackageIndexComparison'), tasks.named('copyPackageIndexReferenceResources')
             classpath = files(layout.buildDirectory.dir('package-index-reference'), layout.buildDirectory.dir('package-index-reference-resources')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'PackageGpuValidation'

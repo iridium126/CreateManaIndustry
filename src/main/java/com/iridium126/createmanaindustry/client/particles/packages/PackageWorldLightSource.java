@@ -12,6 +12,8 @@ public final class PackageWorldLightSource implements PackageLightCache.Source {
     private final BlockPos.MutableBlockPos position=new BlockPos.MutableBlockPos();
     public PackageWorldLightSource(ClientLevel level){this.level=level;}
     private void owner(){if(Thread.currentThread()!=owner)throw new IllegalStateException("World light capture off client thread");}
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     @Override public byte[] copy(PackageCollisionCache.Section section) {
         owner();position.set(section.x()*16,section.y()*16,section.z()*16);
         if(!level.hasChunkAt(position))return null;
@@ -25,6 +27,8 @@ public final class PackageWorldLightSource implements PackageLightCache.Source {
         if(sky!=null)System.arraycopy(sky.copy().getData(),0,data,2048,2048);
         return data;
     }
+    // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
+    @SuppressWarnings("deprecation")
     @Override public int sample(PackageCollisionCache.Section section,int index) {
         owner();position.set(section.x()*16+(index&15),section.y()*16+(index>>>8),section.z()*16+((index>>>4)&15));
         if(!level.hasChunkAt(position))return -1;

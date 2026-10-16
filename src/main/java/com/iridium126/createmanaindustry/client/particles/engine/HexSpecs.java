@@ -10,7 +10,6 @@ import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 import at.petrak.hexcasting.api.addldata.ADPigment;
 import at.petrak.hexcasting.api.pigment.ColorProvider;
 import at.petrak.hexcasting.client.ClientTickCounter;
-import net.minecraft.util.FastColor;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 

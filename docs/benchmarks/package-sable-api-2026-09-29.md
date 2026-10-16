@@ -1,5 +1,7 @@
 # Sable 直接 API 迁移与验证（2026-09-29）
 
+> 历史测量结论；原始运行产物不随仓库保存。重新测量与结果管理见 [性能结果规则](README.md)。
+
 Create 包裹动态碰撞入口现在使用指定依赖 `compileOnly "maven.modrinth:T9PomCSv:U678xqle"`，实际 Sable 2.0.5 发布 JAR。已移除 Sable 的 `Class.forName`、`Method.invoke` 和动态符号表。所有子世界、plot、已加载 chunk、特殊形状、回调分类和嵌套 Create 姿态访问均为直接 Java 类型调用。
 
 Modrinth POM 未声明内嵌 companion。构建从同一发布 JAR 的 `META-INF/jarjar/sable-companion-common-1.21.1-1.6.0.jar` 解包编译 API，缓存由输入 JAR 和输出文件决定，无需额外下载或提交副本。只使用 compileOnly；测试单独加入 companion 数学运行依赖。产物检查未发现 `dev/ryanhcode/sable` 类或 Sable 内嵌依赖，CMI JAR 只包含自己的适配代码。

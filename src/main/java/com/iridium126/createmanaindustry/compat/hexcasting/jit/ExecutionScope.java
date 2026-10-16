@@ -346,10 +346,23 @@ public final class ExecutionScope implements AutoCloseable {
         if (scope != null) scope.compiled = true;
     }
     public static ExecutionScope current() {
+        if ((com.iridium126.createmanaindustry.compat.trickster.casting.CastChains.inverted() || com.iridium126.createmanaindustry.compat.trickster.partition.PartitionManager.currentWorldActive())) return null;
         return HexJitRuntime.onServerThread() ? serverCurrent : OTHER_THREADS.get();
     }
+    /** Flush resources before changing how subsequent instructions pay or check their reach. */
+    public static void resourceTransition() {
+        ExecutionScope scope = HexJitRuntime.onServerThread() ? serverCurrent : OTHER_THREADS.get();
+        if (scope != null) {
+            scope.flushTickCounterWrites();
+            scope.flushDeferredPersonalMediaWrites();
+            scope.invalidateTickRangeCheck();
+            FastHexOPMediaPool.endCast(scope);
+        }
+    }
     /** The caller has already established that it is on HexJit's server thread. */
-    public static ExecutionScope currentOnServerThread() { return serverCurrent; }
+    public static ExecutionScope currentOnServerThread() {
+        return (com.iridium126.createmanaindustry.compat.trickster.casting.CastChains.inverted() || com.iridium126.createmanaindustry.compat.trickster.partition.PartitionManager.currentWorldActive()) ? null : serverCurrent;
+    }
     public static long lastMotionPushes() { return lastMotionPushes; }
     public static long lastMotionWrites() { return lastMotionWrites; }
     public void addMotionEffect(boolean value) { addMotionEffect = value; }
@@ -1627,6 +1640,8 @@ public final class ExecutionScope implements AutoCloseable {
         }
     }
 
+    // Ancestor scopes are borrowed; the caller closes each execution scope.
+    @SuppressWarnings("resource")
     private MotionState motionState() {
         MotionState state = motions;
         if (state == null) {

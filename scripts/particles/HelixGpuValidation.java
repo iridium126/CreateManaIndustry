@@ -67,7 +67,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
   for(int i=0;i<count;i++){min=Math.min(min,rows.getFloat(i*48));max=Math.max(max,rows.getFloat(i*48));}
   for(int i=0;i<rows.capacity()/4;i++)centered.putInt(i*4,rows.getInt(i*4));
   for(int i=0;i<count;i++)centered.putFloat(i*48,rows.getFloat(i*48)-(min+max)*.5f);
-  renderDome(centered,count);Files.move(Path.of("build/dome-geometry-framebuffer.png"),Path.of("build/helix-geometry-framebuffer.png"),StandardCopyOption.REPLACE_EXISTING);
+  renderDome(centered,count);Files.move(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/dome-geometry-framebuffer.png"),Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/helix-geometry-framebuffer.png"),StandardCopyOption.REPLACE_EXISTING);
  }
  public static void main(String[] args)throws Exception{
   GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(512,384,"Helix GPU validation",0,0);
@@ -171,7 +171,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
     GL15.glDeleteQueries(contactQuery);GL15.glDeleteBuffers(contactsOut);GL15.glDeleteBuffers(stamps);GL15.glDeleteQueries(cullQuery);GL15.glDeleteQueries(updateQuery);GL15.glDeleteQueries(shadowQuery);for(int id:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(id);for(int p:new int[]{build,update,contact}){CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}for(int p:new int[]{q.reset,q.keygen,q.prepare})CMIParticleEngine.clearUniformProgram(p);
    }
   }
-  Files.write(Path.of("build/helix-benchmark.csv"),rows);Files.write(Path.of("build/helix-benchmark-samples.csv"),raw);
+  Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/helix-benchmark.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/helix-benchmark-samples.csv"),raw);
  }
 
 }

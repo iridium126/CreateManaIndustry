@@ -8,6 +8,7 @@ import at.petrak.hexcasting.api.utils.TreeList;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.DyeColor;
 
+@SuppressWarnings("serial") // Preserve the existing implicit serialization ID.
 public final class MishapResourceConversion extends Mishap {
     private final String reason;
 

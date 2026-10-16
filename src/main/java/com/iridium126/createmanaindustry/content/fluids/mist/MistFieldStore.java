@@ -667,7 +667,11 @@ public final class MistFieldStore {
      * refreshed (see {@link #RESERVATION_TTL}).
      */
     private static final class MistReservation {
+        // Retain the reservation payload for future inspection and accounting.
+        @SuppressWarnings("unused")
         final ResourceLocation fluidId;
+        // Retain the reservation payload for future inspection and accounting.
+        @SuppressWarnings("unused")
         final int amount;
         long expiryTick;
         final Map<BlockPos, Long> split;

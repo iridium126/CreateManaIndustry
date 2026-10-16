@@ -86,6 +86,6 @@ public final class PackageObserverBenchmark {
                     +","+percentile(total,.95)+","+(allocated/(double)n)+","+(wire/(double)n)+","+(batches/(double)n)+","+scenario.baselineWire+","+(scenario.baselineCpu/1e6);
             summaries.add(row);System.out.println(row);
         }
-        Files.write(Path.of("build/package-observers.csv"),summaries);Files.write(Path.of("build/package-observers-samples.csv"),samples);
+        Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-observers.csv"),summaries);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-observers-samples.csv"),samples);
     }
 }
