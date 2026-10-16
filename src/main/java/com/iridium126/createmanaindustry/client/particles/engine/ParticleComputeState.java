@@ -6,6 +6,10 @@ import com.mojang.blaze3d.systems.RenderSystem;
 
 /** Compute/initialization boundary. No framebuffer, viewport or blend/depth writes. */
 public final class ParticleComputeState {
+    // Render-thread stack: resource retirement is rare, so validate saved names
+    // at that boundary rather than issuing glIs* queries on every frame restore.
+    private static ParticleComputeState activeBoundary;
+    private ParticleComputeState parent;
     private static final int UNITS=16, BINDINGS=ParticleBuffers.IDENTITY_BB+1;
     private final int units;
     private final int[] targets,bindings;
@@ -35,10 +39,28 @@ public final class ParticleComputeState {
         for(int i=0;i<units;i++){if(i<UNITS)renderTextures[i]=RenderSystem.getShaderTexture(i);GL13.glActiveTexture(GL13.GL_TEXTURE0+i);for(int j=0;j<bindings.length;j++)textures[i][j]=GL11.glGetInteger(bindings[j]);}
         // Lazy atlas/TBO initialization binds on the active unit. Confine it to
         // our saved unit 0 even when Iris entered on a higher pack sampler unit.
-        open=true;GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        open=true;parent=activeBoundary;activeBoundary=this;GL13.glActiveTexture(GL13.GL_TEXTURE0);
+    }
+    /** Call after deleting resources, before their GL names can be reused. */
+    public static void resourcesRetired(){
+        for(var state=activeBoundary;state!=null;state=state.parent)state.forgetDeletedResources();
+    }
+    private static int liveBuffer(int id){return id==0||GL15.glIsBuffer(id)?id:0;}
+    private static int liveTexture(int id){return id==0||GL11.glIsTexture(id)?id:0;}
+    private void forgetDeletedResources(){
+        for(int i=0;i<BINDINGS;i++)ssbo[i]=liveBuffer(ssbo[i]);
+        array=liveBuffer(array);element=liveBuffer(element);storage=liveBuffer(storage);draw=liveBuffer(draw);
+        dispatch=liveBuffer(dispatch);read=liveBuffer(read);write=liveBuffer(write);textureBuffer=liveBuffer(textureBuffer);unpackBuffer=liveBuffer(unpackBuffer);
+        if(vao!=0&&!GL30.glIsVertexArray(vao))vao=0;
+        if(program!=0&&(!GL20.glIsProgram(program)||GL20.glGetProgrami(program,GL20.GL_DELETE_STATUS)!=0))program=0;
+        for(int i=0;i<units;i++)for(int j=0;j<targets.length;j++)textures[i][j]=liveTexture(textures[i][j]);
+        for(int i=0;i<UNITS;i++)renderTextures[i]=liveTexture(renderTextures[i]);
     }
     public void restore(){
         if(!open)return;open=false;
+        if(activeBoundary==this)activeBoundary=parent;
+        else for(var state=activeBoundary;state!=null;state=state.parent)if(state.parent==this){state.parent=parent;break;}
+        parent=null;
         try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(ssbo));}
         for(int i=0;i<BINDINGS;i++)if(ssbo[i]!=0&&sizes[i]>0)GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,i,ssbo[i],offsets[i],sizes[i]);
         GL30.glBindVertexArray(vao);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,array);if(vao!=0)GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER,element);

@@ -38,7 +38,10 @@ void main(){
         state.contact.x=int(uMotionFrozen);state.contact.z=floatBitsToInt(uMotionFall);state.position.xyz=uMotionStuck;state.timeline.x=uMotionAge;environmentSamples[at]=state;
         if(uFallMirrorReady)motionMirror[uFallMirrorOffset+uBody]=floatBitsToUint(uMotionFall);
     }
-    e.lease.w=uThrough;e.control.x=fire;e.control.y=terminal?1u:0u;e.control.w=uPermissions;e.state.x=health;
+    // An older pure-material batch can be acknowledged after a later callback
+    // has created a dependent wait. Only the ACK covering that suffix releases it.
+    bool awaitingConfirmation=e.control.y==2u&&uThrough<e.lease.z;
+    e.lease.w=uThrough;e.control.x=fire;e.control.y=terminal?1u:awaitingConfirmation?2u:0u;e.control.w=uPermissions;e.state.x=health;
     environment[uBody]=e;
 }
 

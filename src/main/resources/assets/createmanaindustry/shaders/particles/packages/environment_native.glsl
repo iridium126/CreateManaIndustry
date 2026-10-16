@@ -19,6 +19,10 @@ bool nativeEnvironmentStep(inout Body b,inout PackageEnvironment e,uint i,uint e
     // health or inventory require a canonical server result before dependent motion continues.
     bool wait=(effects&((1u<<29u)|(1u<<30u)))!=0u;
     if(wait||int(e.control.x)>0||(e.control.w&24u)!=0u||(contact.x>=140&&age%40u==0u)){
+        // This can be sampled before another predict dispatch. Record the cause
+        // now without rewinding the completed move or losing its previous pose.
+        recordPackageFreeze(b,b.positionMass.xyz,FREEZE_ENV_CONFIRMATION,FREEZE_ENVIRONMENT,
+                ivec4(e.lease.z-e.lease.w,e.lease.z,e.lease.w,floatBitsToUint(e.state.x)));
         e.control.y=2u;b.previousSleep.w=PACKAGE_COLLISION_FROZEN;
     }
     return true;

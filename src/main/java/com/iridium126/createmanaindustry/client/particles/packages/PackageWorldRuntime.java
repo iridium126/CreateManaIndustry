@@ -506,25 +506,31 @@ public final class PackageWorldRuntime {
     /** AuthorityClient closes admission and delta rings FIRST, then calls this from every exit path. */
     public static void revoked(String reason){if(current!=null)current.dispose(reason);}
     private void dispose(String reason) {
-        if(current==this)current=null;
-        if(forceCapture!=null)forceCapture.close();forceCapture=null;
-        if(forceGpu!=null)forceGpu.close();forceGpu=null;
-        if(lightObservers!=null)lightObservers.close();lightObservers=null;
-        if(chainInteraction!=null)chainInteraction.close();chainInteraction=null;
-        if(freeInteraction!=null)freeInteraction.close();freeInteraction=null;
-        PackageChainClientOwnership.INSTANCE.close();
-        if(chainCheckpoints!=null)chainCheckpoints.close();chainCheckpoints=null;checkpointVersion=-1;checkpointCount=-1;
-        if(chainAcquisition!=null)chainAcquisition.close();chainAcquisition=null;
-        if(chainQueries!=null)chainQueries.close();chainQueries=null;
-        if(chainChannel!=null)chainChannel.close();else if(chainTracks!=null)chainTracks.close();chainChannel=null;chainTracks=null;
-        if(pool!=null)pool.chainFrames(0,0);
-        if(chainFrames!=null)chainFrames.close();chainFrames=null;
-        packets.clear();chainPackets.clear();regions.clear();clock.reset();chainClock.reset();styles=Map.of();level=null;shaderBoundary=null;interpolation=1;
-        if(pool!=null){pool.chainInterpolation(Float.NaN);pool.reset();}pool=null;
-        if(worldPrefetch!=null)worldPrefetch.close();worldPrefetch=null;
-        if(physics!=null)physics.close();physics=null;
-        freezeDiagnostics=null;nextFreezeSummary=0;lastFrozen=0;
-        failure=null;status=reason;retryAfter=System.nanoTime()+5_000_000_000L;
-        statusRegions=statusBodies=statusActive=-1;
+        try {
+            if(current==this)current=null;
+            if(forceCapture!=null)forceCapture.close();forceCapture=null;
+            if(forceGpu!=null)forceGpu.close();forceGpu=null;
+            if(lightObservers!=null)lightObservers.close();lightObservers=null;
+            if(chainInteraction!=null)chainInteraction.close();chainInteraction=null;
+            if(freeInteraction!=null)freeInteraction.close();freeInteraction=null;
+            PackageChainClientOwnership.INSTANCE.close();
+            if(chainCheckpoints!=null)chainCheckpoints.close();chainCheckpoints=null;checkpointVersion=-1;checkpointCount=-1;
+            if(chainAcquisition!=null)chainAcquisition.close();chainAcquisition=null;
+            if(chainQueries!=null)chainQueries.close();chainQueries=null;
+            if(chainChannel!=null)chainChannel.close();else if(chainTracks!=null)chainTracks.close();chainChannel=null;chainTracks=null;
+            if(pool!=null)pool.chainFrames(0,0);
+            if(chainFrames!=null)chainFrames.close();chainFrames=null;
+            packets.clear();chainPackets.clear();regions.clear();clock.reset();chainClock.reset();styles=Map.of();level=null;shaderBoundary=null;interpolation=1;
+            if(pool!=null){pool.chainInterpolation(Float.NaN);pool.reset();}pool=null;
+            if(worldPrefetch!=null)worldPrefetch.close();worldPrefetch=null;
+            if(physics!=null)physics.close();physics=null;
+            freezeDiagnostics=null;nextFreezeSummary=0;lastFrozen=0;
+            failure=null;status=reason;retryAfter=System.nanoTime()+5_000_000_000L;
+            statusRegions=statusBodies=statusActive=-1;
+        } finally {
+            // Revocation can run inside a captured pre-shadow compute boundary.
+            // Discard deleted names now, before another subsystem can reuse them.
+            com.iridium126.createmanaindustry.client.particles.engine.ParticleComputeState.resourcesRetired();
+        }
     }
 }

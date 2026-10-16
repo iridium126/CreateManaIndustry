@@ -3602,7 +3602,112 @@ public class PackageGpuValidation {
             check(read(gpu).getFloat(60)==PackagePhysicsGpu.COLLISION_FROZEN,"support lift crossed unsupported world coverage");
         }
     }
+    static void nativeConfirmationDiagnostics() {
+        for(int mode=0;mode<3;mode++)try(var world=new PackageCollisionGpu(1,1);
+                var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source);
+                var reference=new PackagePhysicsGpu(1,2,name->"#define CMI_NO_FREEZE_DIAGNOSTICS\n"+source(name))) {
+            int material=mode==0?16:mode==1?1:0,fire=mode==2?40:-20;
+            var scene=snapshot((s,i)->new PackageCollisionCache.Cell(List.of(),.6f,material<<16));
+            world.offer(new PackageCollisionCache.Section(0,0,0),scene);uploadWorld(world);
+            var env=gpu.enableEnvironment(PackageGpuValidation::source);
+            var referenceEnv=reference.enableEnvironment(name->"#define CMI_NO_FREEZE_DIAGNOSTICS\n"+source(name));
+            var diagnostics=gpu.enableFreezeDiagnostics(PackageGpuValidation::source);
+            var input=bodies(1);body(input,0,8.5f,8.5f,8.5f,1);input.putFloat(16,1.25f).putFloat(20,-2.5f);
+            gpu.upload(input,1);reference.upload(input,1);
+            for(var journal:List.of(env,referenceEnv)){
+                journal.reset(0,901,2,3,4,5,fire,5,7);
+                journal.resetMotion(0,mode==1?139:0,0,0,0,0,39);
+            }
+            try(var view=world.view(0,0,0)){env.step(gpu.stateBuffer(),1,view);referenceEnv.step(reference.stateBuffer(),1,view);}
+            var actual=read(gpu);var expected=read(reference);
+            for(int offset=0;offset<64;offset+=4)check(actual.getInt(offset)==expected.getInt(offset),"native freeze diagnostics changed physics mode="+mode+" offset="+offset);
+            var events=new ArrayList<PackageFreezeReport.Event>();var summaries=new ArrayList<PackageFreezeReport.Summary>();
+            check(diagnostics.capture(gpu.stateBuffer(),1,env,0),"native confirmation capture");GL11.glFinish();diagnostics.poll(events::add,summaries::add);
+            check(events.size()==1&&events.getFirst().reason()==PackageFreezeReport.Reason.ENV_CONFIRMATION,
+                    "native wait was reported as UNKNOWN before the next predict mode="+mode+" events="+events);
+            var first=events.getFirst();
+            check(first.stage().equals("environment")&&first.stillFrozen()&&first.id()==901&&first.lease()==3,"native wait lost origin/lifecycle");
+            check(first.a()==1&&first.b()==1&&first.c()==0&&first.d()==Float.floatToIntBits(5),"native wait lost pending journal details");
+            if(mode==1)continue; // Powder needs another 40 body ticks before a damage confirmation.
+            var correction=new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(8.5,8,8.5,1.25f,-2.5f,0,0),0);
+            for(int cycle=1;cycle<=3;cycle++){
+                float health=cycle==3?4.7f:5;
+                var motion=new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentMotion(0,0,0,0,0,30,39+cycle);
+                env.acknowledge(0,cycle,fire,health,7,gpu.stateBuffer(),correction,motion,0,0,0,.5f);
+                check(read(gpu).getFloat(60)>=0&&readBuffer(env.headerBuffer(),64).getInt(36)==0,"native confirmation did not resume on ACK");
+                // Capture between ACK and the next callback as well as directly after the
+                // callback; a completed short wait must not reset same-cause suppression.
+                events.clear();summaries.clear();
+                diagnostics.capture(gpu.stateBuffer(),1,env,(cycle*2L-1)*1000000000L);GL11.glFinish();diagnostics.poll(events::add,summaries::add);
+                check(events.isEmpty()&&summaries.getFirst().frozen()==0,"completed native wait re-emitted details");
+                try(var view=world.view(0,0,0)){env.step(gpu.stateBuffer(),1,view);}
+                diagnostics.capture(gpu.stateBuffer(),1,env,cycle*2000000000L);GL11.glFinish();diagnostics.poll(events::add,summaries::add);
+                check(summaries.getLast().frozen()==1,"suppression erased native wait aggregate");
+                if(cycle<3)check(events.isEmpty(),"advancing native ACK serials emitted repeated details mode="+mode);
+                else check(events.size()==1&&events.getFirst().reason()==PackageFreezeReport.Reason.ENV_CONFIRMATION
+                        &&events.getFirst().b()==4&&events.getFirst().c()==3&&events.getFirst().d()==Float.floatToIntBits(health),"changed native wait health/context was hidden");
+            }
+            if(mode==0){
+                var motion=new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentMotion(0,0,0,0,0,30,43);
+                env.acknowledge(0,4,fire,4.7f,7,gpu.stateBuffer(),correction,motion,0,0,0,.5f);
+                // A pure material record may already be in flight when the next
+                // callback creates a server-dependent suffix on this same body.
+                world.offer(new PackageCollisionCache.Section(0,0,0),snapshot((s,i)->new PackageCollisionCache.Cell(List.of(),.6f,3<<16)));uploadWorld(world);
+                try(var view=world.view(0,0,0)){env.step(gpu.stateBuffer(),1,view);}
+                check(readBuffer(env.headerBuffer(),64).getInt(36)==0,"pure material unexpectedly required a result");
+                world.offer(new PackageCollisionCache.Section(0,0,0),scene);uploadWorld(world);
+                try(var view=world.view(0,0,0)){env.step(gpu.stateBuffer(),1,view);}
+                events.clear();summaries.clear();
+                diagnostics.capture(gpu.stateBuffer(),1,env,8000000000L);GL11.glFinish();diagnostics.poll(events::add,summaries::add);
+                check(events.size()==1&&events.getFirst().a()==2&&events.getFirst().b()==6&&events.getFirst().c()==4,"changed native backlog was hidden");
+                var waiting=read(gpu);
+                env.acknowledge(0,5,fire,4.7f,7,gpu.stateBuffer(),correction,motion,0,0,0,.5f);
+                check(readBuffer(env.headerBuffer(),64).getInt(36)==2,"prefix ACK released a still unconfirmed native callback");
+                try(var view=world.view(0,0,0)){env.step(gpu.stateBuffer(),1,view);}
+                check(readBuffer(env.headerBuffer(),64).getInt(24)==6,"body advanced past an unconfirmed native callback");
+                actual=read(gpu);for(int offset=0;offset<64;offset+=4)check(actual.getInt(offset)==waiting.getInt(offset),"prefix ACK changed waiting body motion");
+                env.acknowledge(0,6,fire,4.7f,7,gpu.stateBuffer(),correction,motion,0,0,0,.5f);
+                check(read(gpu).getFloat(60)>=0&&readBuffer(env.headerBuffer(),64).getInt(36)==0,"exact native suffix ACK did not resume body");
+                gpu.upload(input,1);env.reset(0,902,3,4,4,6,fire,5,7);env.resetMotion(0,0,0,0,0,0,0);
+                try(var view=world.view(0,0,0)){env.step(gpu.stateBuffer(),1,view);}
+                events.clear();summaries.clear();
+                diagnostics.capture(gpu.stateBuffer(),1,env,9000000000L);GL11.glFinish();diagnostics.poll(events::add,summaries::add);
+                check(events.size()==1&&events.getFirst().id()==902&&events.getFirst().lease()==4,"new native lifecycle retained confirmation suppression");
+            }
+        }
+    }
+    static void packageRetirementStateBoundary() {
+        com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
+        GL20.glUseProgram(0);GL30.glBindVertexArray(0);
+        int live=GL15.glGenBuffers(),retiring=GL15.glGenBuffers();
+        int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
+        for(int buffer:new int[]{live,retiring}){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,alignment+64,GL15.GL_DYNAMIC_COPY);}
+        var boundary=new com.iridium126.createmanaindustry.client.particles.engine.ParticleComputeState();
+        try {
+            GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,3,live,alignment,64);
+            GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,13,retiring,alignment,64);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,14,retiring);
+            for(int target:new int[]{GL15.GL_ARRAY_BUFFER,GL40.GL_DRAW_INDIRECT_BUFFER,GL43.GL_DISPATCH_INDIRECT_BUFFER,GL31.GL_COPY_READ_BUFFER,GL31.GL_TEXTURE_BUFFER,GL21.GL_PIXEL_UNPACK_BUFFER})GL15.glBindBuffer(target,retiring);
+            GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,live);
+            check(GL11.glGetError()==GL11.GL_NO_ERROR,"retirement state fixture setup");
+            boundary.capture();GL15.glDeleteBuffers(retiring);
+            com.iridium126.createmanaindustry.client.particles.engine.ParticleComputeState.resourcesRetired();
+            boundary.restore();
+            check(GL11.glGetError()==GL11.GL_NO_ERROR,"authority retirement restored a deleted buffer (GL_INVALID_OPERATION)");
+            check(!GL15.glIsBuffer(retiring),"state restore recreated a retired buffer name");
+            check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,13)==0&&GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,14)==0,"retired indexed bindings were retained");
+            check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,3)==live&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,3)==alignment&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,3)==64,"retirement lost surviving foreign SSBO range");
+            check(GL11.glGetInteger(GL31.GL_COPY_READ_BUFFER)==0&&GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER)==live,"retirement lost surviving copy binding");
+        } finally {
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,3,0);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,13,0);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,14,0);
+            for(int target:new int[]{GL15.GL_ARRAY_BUFFER,GL43.GL_SHADER_STORAGE_BUFFER,GL40.GL_DRAW_INDIRECT_BUFFER,GL43.GL_DISPATCH_INDIRECT_BUFFER,GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,GL31.GL_TEXTURE_BUFFER,GL21.GL_PIXEL_UNPACK_BUFFER})GL15.glBindBuffer(target,0);
+            GL15.glDeleteBuffers(live);GL15.glDeleteBuffers(retiring);
+        }
+    }
     static void freezeDiagnostics() {
+        packageRetirementStateBoundary();
+        nativeConfirmationDiagnostics();
         var air=snapshot((s,i)->WORLD_AIR);var key=new PackageCollisionCache.Section(100,200,-100);
         var unsupported=snapshot((s,i)->i==(8|8<<4|7<<8)?new PackageCollisionCache.Cell(List.of(),.6f,8):WORLD_AIR);
         var events=new ArrayList<PackageFreezeReport.Event>();var summaries=new ArrayList<PackageFreezeReport.Summary>();

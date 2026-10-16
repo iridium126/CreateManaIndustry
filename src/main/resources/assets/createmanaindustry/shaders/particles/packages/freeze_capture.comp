@@ -16,8 +16,15 @@ void main(){
     // Suppress the same reason/context even if the retry occurs in another stage.
     uint code=((reason*0x9e3779b9u)^(uint(state.detail.x)*73856093u)^(uint(state.detail.y)*19349663u)
             ^(uint(state.detail.z)*83492791u)^(uint(state.detail.w)*0x85ebca6bu))|1u;
+    // Successful per-tick transactions advance both serials. They are not a new
+    // blocking cause. Keep the pending count/health in the key and the complete
+    // counters in the event; summaries still count every currently waiting body.
+    bool confirmation=reason==FREEZE_ENV_CONFIRMATION;
+    if(confirmation)code=((reason*0x9e3779b9u)^(uint(state.detail.x)*73856093u)^(uint(state.detail.w)*0x85ebca6bu))|1u;
     if(reason==FREEZE_SECTION_VERSION)code=(code^(state.velocity.w*0x9e3779b9u)^((state.meta.x>>24u)&127u))|1u;
-    if(code==state.meta.y){if(!frozen)freezeStates[i].meta.xy=uvec2(0);return;}
+    // Retain only the confirmation latch across a completed short wait. A new
+    // cause overwrites it; lifecycle reset clears it before a body is reused.
+    if(code==state.meta.y){if(!frozen&&!confirmation)freezeStates[i].meta.xy=uvec2(0);return;}
     uint slot=atomicAdd(totals.x,1u);if(slot>=uEventCapacity)return;
     if(state.meta.x==0u){state.position=vec4(b.positionMass.xyz,b.extentYaw.y);state.velocity=floatBitsToUint(b.velocityGround);state.meta.zw=uFreezeStep;}
     PackageEnvironment e;
@@ -25,5 +32,5 @@ void main(){
     if(uEnvironmentReady){e=environment[i];identity=e.identity;lease=e.lease;selection.y=e.control.z;selection.zw=floatBitsToUint(e.state.zw);}
     events[slot]=FreezeEvent(state,identity,lease,selection,uvec4(frozen?1u:0u,0,0,0));
     freezeStates[i].meta.y=code; // Overflow remains unreported and is retried later.
-    if(!frozen)freezeStates[i].meta.xy=uvec2(0);
+    if(!frozen&&!confirmation)freezeStates[i].meta.xy=uvec2(0);
 }
