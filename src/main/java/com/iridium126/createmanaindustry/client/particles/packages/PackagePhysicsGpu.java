@@ -24,7 +24,8 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     private final int[][] uploadedFloatBits=new int[NAMES.length][UNIFORMS.length];
     private final boolean[][] uploadedFloat=new boolean[NAMES.length][UNIFORMS.length];
     private final boolean[] boundWorldUniforms=new boolean[NAMES.length];
-    private boolean stepBindings;private int boundState=-1,boundProgram,boundIndirect=-1;
+    private final boolean[] environmentStorage=new boolean[NAMES.length];
+    private boolean stepBindings,environmentBound;private int boundState=-1,boundProgram,boundIndirect=-1;
     private final int[] uploadedActiveCounts=new int[NAMES.length];
     private final ByteBuffer activeUpload;
     private boolean activeDirty=true,sleepWake=true,sleepMode;
@@ -48,8 +49,16 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     private int fastCells,longBodies;
     private PackageEnvironmentGpu environment;
     private PackageFreezeDiagnosticsGpu freezeDiagnostics;
-    public PackageEnvironmentGpu enableEnvironment(Function<String,String> sources){ensureOpen();if(environment==null){environment=new PackageEnvironmentGpu(capacity,sources);environment.freezeDiagnostics(freezeDiagnostics);}return environment;}
+    public PackageEnvironmentGpu enableEnvironment(Function<String,String> sources){ensureOpen();if(environment==null){
+        environment=new PackageEnvironmentGpu(capacity,sources);environment.motionMirror(links,capacity*3+8);environment.freezeDiagnostics(freezeDiagnostics);
+        for(int i=0;i<programs.length;i++)GL41.glProgramUniform1i(programs[i],locations[i][26],1);
+    }return environment;}
     public PackageEnvironmentGpu environment(){return environment;}
+    /** World-restart NeoForge rule; upload once rather than query configuration per body/tick. */
+    public void climbingBounds(boolean fullBounds){
+        ensureOpen();for(int program:programs)GL41.glProgramUniform1i(program,GL20.glGetUniformLocation(program,"uFullBoundingBoxLadders"),fullBounds?1:0);
+        if(environment!=null)environment.climbingBounds(fullBounds);
+    }
     public PackageFreezeDiagnosticsGpu enableFreezeDiagnostics(Function<String,String> sources){ensureOpen();if(freezeDiagnostics==null){freezeDiagnostics=new PackageFreezeDiagnosticsGpu(capacity,sources);if(environment!=null)environment.freezeDiagnostics(freezeDiagnostics);}return freezeDiagnostics;}
     public void disableFreezeDiagnostics(){if(environment!=null)environment.freezeDiagnostics(null);if(freezeDiagnostics!=null)freezeDiagnostics.close();freezeDiagnostics=null;}
     private final java.util.Map<Integer,Long> movingFrames=new java.util.HashMap<>();
@@ -100,6 +109,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
             boolean diagnosticSupported=PackageFreezeDiagnosticsGpu.supported();
             for(int i=0;i<programs.length;i++) {
                 programs[i]=compile("#define CMI_ACTIVE_BODIES\n"+((i==13||i==14)?"#define CMI_MOVING_CANDIDATES\n":"")+(diagnosticSupported?"#define CMI_FREEZE_DIAGNOSTICS\n":"")+sources.apply("packages/"+NAMES[i]+".comp"));
+                environmentStorage[i]=referencesStorage(programs[i],"EnvironmentStates")||referencesStorage(programs[i],"EnvironmentSamples");
                 for(int j=0;j<UNIFORMS.length;j++)locations[i][j]=UNIFORMS[j]==null?-1:GL20.glGetUniformLocation(programs[i],UNIFORMS[j]);
                 GL41.glProgramUniform1ui(programs[i],locations[i][1],tableSize-1);
                 GL41.glProgramUniform1ui(programs[i],locations[i][32],(i==13||i==14)?capacity*2:capacity);
@@ -109,7 +119,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
             }
             GL41.glProgramUniform1ui(programs[19],locations[19][15],DYNAMIC_SWEEP_BUDGET);
             states[0]=buffer((long)capacity*BODY_BYTES);states[1]=buffer((long)capacity*BODY_BYTES);
-            heads=buffer((long)indexSize*4);links=buffer((long)capacity*12+32);chains=buffer((long)capacity*CHAIN_BYTES);
+            heads=buffer((long)indexSize*4);links=buffer((long)capacity*16+32);chains=buffer((long)capacity*CHAIN_BYTES);
             history=buffer((long)capacity*32);fastCells=buffer((long)indexSize*32);
             longBodies=buffer((long)(capacity+1)*4);
         } catch(RuntimeException failure) { close();throw failure; }
@@ -123,6 +133,13 @@ public final class PackagePhysicsGpu implements AutoCloseable {
                 throw new IllegalStateException("Package buffer storage allocation failed: "+bytes);
             return id;
         } catch(RuntimeException failure){GL15.glDeleteBuffers(id);throw failure;}
+    }
+    private static boolean referencesStorage(int program,String name){
+        int block=GL43.glGetProgramResourceIndex(program,GL43.GL_SHADER_STORAGE_BLOCK,name);if(block==GL43.GL_INVALID_INDEX)return false;
+        try(var stack=MemoryStack.stackPush()){
+            var value=stack.mallocInt(1);GL43.glGetProgramResourceiv(program,GL43.GL_SHADER_STORAGE_BLOCK,block,stack.ints(GL43.GL_REFERENCED_BY_COMPUTE_SHADER),null,value);
+            return value.get(0)!=0;
+        }
     }
     private static int compile(String source) {
         if(source==null || source.isBlank())throw new IllegalArgumentException("Missing package shader");
@@ -310,7 +327,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     private void step(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations){step(dt,world,supportProjection,iterations,java.util.List.of());}
     private void step(float dt,PackageCollisionGpu.View world,boolean supportProjection,int iterations,java.util.List<PackageMovingCollisionGpu.View> moving){
         ensureStep(dt);if(count==0)return;
-        prepareActive();stepBindings=true;boundState=-1;boundIndirect=-1;
+        prepareActive();stepBindings=true;environmentBound=false;boundState=-1;boundIndirect=-1;
         try {
         java.util.Arrays.fill(boundWorldUniforms,false);
         if(freezeDiagnostics!=null)freezeDiagnostics.nextStep();
@@ -387,7 +404,7 @@ public final class PackagePhysicsGpu implements AutoCloseable {
             }
         }
         movingContacts(world,moving,false,true);
-        if(environment!=null&&world!=null)environment.step(states[current],count,world);
+        if(environment!=null&&world!=null)environment.step(states[current],count,world,true);
         if(sleepMode){bind(23);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,sleepControl);
             GL43.glDispatchCompute((liveCount+63)/64,1,1);PackageCpuDiagnostics.dispatch();GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
         sleepWake=false;lastSleepEligible=sleepMode;sleepForceInput=false;
@@ -520,7 +537,11 @@ public final class PackagePhysicsGpu implements AutoCloseable {
             boundState=current;
         }
         setCountUniform(index);
-        if(locations[index][26]>=0){if(environment!=null)environment.bind(locations[index][26]);else GL20.glUniform1i(locations[index][26],0);}
+        // Readiness changes only when this solver attaches its journal. Constraint
+        // kernels use the Links mirror and do not need either journal SSBO binding.
+        if(environment!=null&&environmentStorage[index]&&(!stepBindings||!environmentBound)){
+            environment.bindStorage();environmentBound=true;
+        }
         if(locations[index][28]>=0){if(freezeDiagnostics!=null)freezeDiagnostics.bind(locations[index][28],locations[index][29]);else GL20.glUniform1i(locations[index][28],0);}
     }
     private void setCountUniform(int index) {

@@ -13,12 +13,15 @@ import java.util.UUID;
 
 /** Initial item validation and lossless native state at the explicit server-disable boundary. */
 @Mixin(PackageEntity.class)
-public abstract class PackageEntityAuthorityMixin implements PackageInitialEntityAccess {
+public abstract class PackageEntityAuthorityMixin extends net.minecraft.world.entity.LivingEntity implements PackageInitialEntityAccess {
+    protected PackageEntityAuthorityMixin(net.minecraft.world.entity.EntityType<? extends net.minecraft.world.entity.LivingEntity> type,net.minecraft.world.level.Level level){super(type,level);}
     @Shadow protected abstract void verifyInitialEntity();
     @Unique private UUID cmi$tossedById;
     @Override public boolean cmi$validInitialEntity(){verifyInitialEntity();return !((PackageEntity)(Object)this).isRemoved();}
     @Override public UUID cmi$tossedBy(){var player=((PackageEntity)(Object)this).tossedBy.get();return player==null?cmi$tossedById:player.getUUID();}
     @Override public void cmi$tossedBy(UUID uuid){cmi$tossedById=uuid;var self=(PackageEntity)(Object)this;self.tossedBy=new java.lang.ref.WeakReference<>(uuid==null?null:self.level().getPlayerByUUID(uuid));}
+    @Override public net.minecraft.world.phys.Vec3 cmi$stuckMultiplier(){return stuckSpeedMultiplier;}
+    @Override public void cmi$stuckMultiplier(net.minecraft.world.phys.Vec3 multiplier){stuckSpeedMultiplier=multiplier;}
     @Inject(method="addAdditionalSaveData",at=@At("TAIL"))
     private void cmi$saveNativeState(CompoundTag tag,CallbackInfo ci){
         tag.putInt("CMIPackageInsertionDelay",((PackageEntity)(Object)this).insertionDelay);

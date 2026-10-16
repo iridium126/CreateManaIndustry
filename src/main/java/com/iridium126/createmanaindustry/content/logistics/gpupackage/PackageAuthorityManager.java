@@ -486,8 +486,10 @@ public final class PackageAuthorityManager {
                     peer.environmentRecords++;
                     var sample=event.samples().get(n);
                     var contactPose=new PackageLease.Pose(region.region().originX()+sample.px(),region.region().originY()+sample.py()-target.light.height*.5,region.region().originZ()+sample.pz(),0,0,0,0);
-                    String rejection=sample.ticks()>region.historyTicks()?"duration exceeds history":
-                            sample.step()-sample.ticks()<target.environmentSimulationStep?"overlapping simulation interval":
+                    String rejection=sample.duration()>region.historyTicks()?"duration exceeds history":
+                            sample.step()-sample.duration()<target.environmentSimulationStep?"overlapping simulation interval":
+                            sample.contact()==PackageEnvironmentEvent.NATIVE_BATCH&&((long)sample.ticks()<=target.light.environmentMotion.age()
+                                    ||(long)sample.ticks()-target.light.environmentMotion.age()>sample.step()-target.environmentSimulationStep)?"invalid package logical age":
                             target.environmentOriginStep>0&&sample.step()-target.environmentOriginStep>tick-target.environmentOriginTick+region.historyTicks()?"future simulation interval":
                             !region.environmentReachable(event.identity(),sample.step(),tick,contactPose)?"contact outside pose reach":
                             PackageLightGameplay.environmentRejection(rt.level,target.light,region.region(),sample);
@@ -501,8 +503,10 @@ public final class PackageAuthorityManager {
                     if(PackageLightGameplay.environmentStep(rt.level,target.light,packet.region(),sample))break;
                 }
                 if(rt.identities.get(event.identity())!=target)return;
+                boolean correction=event.samples().getLast().contact()==PackageEnvironmentEvent.NATIVE_BATCH;
+                var environmentBaseline=correction?new PackageAuthorityRegion.Baseline(baseline.index(),baseline.identity(),baseline.leaseEpoch(),baseline.revision(),target.light.state()):baseline;
                 PacketDistributor.sendToPlayer(player,new ClientboundPackagePacket(ClientboundPackagePacket.ENVIRONMENT_ACK,rt.level.dimension().location(),region.region(),region.epoch(),region.revision(),
-                        target.environmentWritten,baseline,-1,null,null,0,0,target.light.fireTicks,target.light.health,PackageLightGameplay.environmentPermissions(rt.level,target.light)));
+                        target.environmentWritten,environmentBaseline,-1,null,null,0,0,target.light.fireTicks,target.light.health,PackageLightGameplay.environmentPermissions(rt.level,target.light),target.light.environmentMotion(),correction));
             }catch(IllegalArgumentException invalid){CreateManaIndustry.LOGGER.debug("[CMI packages] invalid environment event",invalid);}
             finally{peer.environmentNanos+=Math.max(0,System.nanoTime()-started);}
             return;
@@ -562,7 +566,7 @@ public final class PackageAuthorityManager {
         ServerPlayer owner=level.getServer().getPlayerList().getPlayer(region.owner());if(owner==null)return;
         PacketDistributor.sendToPlayer(owner,new ClientboundPackagePacket(action,level.dimension().location(),region.region(),region.epoch(),
                 region.revision(),0,baseline,-1,target.uuid,target.model,target.width,target.height,
-                target.light==null?0:target.light.fireTicks,target.light==null?5:target.light.health,target.light==null?7:PackageLightGameplay.environmentPermissions(level,target.light)));
+                target.light==null?0:target.light.fireTicks,target.light==null?5:target.light.health,target.light==null?7:PackageLightGameplay.environmentPermissions(level,target.light),target.light==null?PackageEnvironmentMotion.EMPTY:target.light.environmentMotion()));
     }
     private static void release(EntityTarget target,long tick) {
         var region=target.region;if(region==null)return;
@@ -626,7 +630,7 @@ public final class PackageAuthorityManager {
     static void transferLight(ServerLevel source,ServerLevel destination,PackageLightStore.Entry entry,PackageLease.Pose pose){
         var arrival=net.minecraft.core.BlockPos.containing(pose.x(),pose.y(),pose.z());destination.getChunkSource().addRegionTicket(net.minecraft.server.level.TicketType.PORTAL,new net.minecraft.world.level.ChunkPos(arrival),3,arrival);
         if(source==destination){pauseForTransfer(source,entry);entry.portalCooldown=300;entry.portalUpdatedTick=source.getGameTime();updateLight(source,entry,new PackageAuthorityRegion.Snapshot(pose,0));return;}
-        var rt=runtime(destination);var identity=new PackageLease.Identity(PackageIdentityData.get(destination).identity(),entry.identity.generation());var next=new PackageLightStore.Entry(identity,entry.uuid,entry.model,entry.width,entry.height,-1,entry.data,new PackageAuthorityRegion.Snapshot(pose,0));next.health=entry.health;next.fireTicks=entry.fireTicks;next.tossedBy=entry.tossedBy;next.portalCooldown=300;next.portalUpdatedTick=destination.getGameTime();rt.light.put(next);consumeLight(source,entry);var target=new EntityTarget(rt,next);rt.identities.put(identity,target);rt.discovery.put(identity,target);addLight(rt,target);rt.changed.add(target);}
+        var rt=runtime(destination);var identity=new PackageLease.Identity(PackageIdentityData.get(destination).identity(),entry.identity.generation());var next=new PackageLightStore.Entry(identity,entry.uuid,entry.model,entry.width,entry.height,-1,entry.data,new PackageAuthorityRegion.Snapshot(pose,0));next.health=entry.health;next.fireTicks=entry.fireTicks;next.environmentMotion=entry.environmentMotion;next.witherTicks=entry.witherTicks;next.witherEffect=PackageLightWither.copy(entry.witherEffect);next.insertionDelay=entry.insertionDelay;next.tossedBy=entry.tossedBy;next.portalCooldown=300;next.portalUpdatedTick=destination.getGameTime();rt.light.put(next);consumeLight(source,entry);var target=new EntityTarget(rt,next);rt.identities.put(identity,target);rt.discovery.put(identity,target);addLight(rt,target);rt.changed.add(target);}
     static PackageLightStore.Entry light(ServerLevel level,PackageLease.Identity identity){var t=runtime(level).identities.get(identity);return t==null?null:t.light;}
     static void updateLight(ServerLevel level,PackageLightStore.Entry entry,PackageAuthorityRegion.Snapshot state){var t=runtime(level).identities.get(entry.identity);if(t!=null&&t.light==entry)t.apply(state);}
     static void pauseForTransfer(ServerLevel level,PackageLightStore.Entry entry){var t=runtime(level).identities.get(entry.identity);if(t!=null){release(t,level.getGameTime());t.retry=level.getGameTime();}}

@@ -12,7 +12,7 @@ public final class PackageFreezeReport {
     public enum Reason {
         UNKNOWN,WORLD_NOT_READY,SECTION_MISSING,WORLD_UNSUPPORTED,WORLD_METADATA,WORLD_BOUNDS,WORLD_OPPOSING,
         MOVING_POSE,MOVING_GEOMETRY,MOVING_BUDGET,MOVING_BVH,MOVING_SWEEP,MOVING_UNSUPPORTED,
-        SUPPORT_ANCESTOR,SUPPORT_HEIGHT,SUPPORT_CEILING,ENV_BACKPRESSURE,ENV_WATER,ENV_HEALTH,SECTION_VERSION;
+        SUPPORT_ANCESTOR,SUPPORT_HEIGHT,SUPPORT_CEILING,ENV_BACKPRESSURE,ENV_WATER,ENV_HEALTH,SECTION_VERSION,ENV_CONFIRMATION;
         public static Reason from(int code){return code>=0&&code<values().length?values()[code]:UNKNOWN;}
     }
     public record Event(Reason reason,String stage,long step,boolean stillFrozen,int body,long id,long generation,long lease,int index,long revision,
@@ -32,7 +32,7 @@ public final class PackageFreezeReport {
                     (reason==Reason.MOVING_SWEEP?" iterationLimit="+c+" time="+Float.intBitsToFloat(d):"");
             case SUPPORT_ANCESTOR,SUPPORT_HEIGHT,SUPPORT_CEILING -> "ancestor="+Integer.toUnsignedString(a)+
                     " separation="+Float.intBitsToFloat(b)+" height="+Float.intBitsToFloat(c)+" supportVy="+Float.intBitsToFloat(d);
-            case ENV_BACKPRESSURE,ENV_WATER,ENV_HEALTH -> "pending="+Integer.toUnsignedString(a)+
+            case ENV_BACKPRESSURE,ENV_WATER,ENV_HEALTH,ENV_CONFIRMATION -> "pending="+Integer.toUnsignedString(a)+
                     " written="+Integer.toUnsignedString(b)+" acknowledged="+Integer.toUnsignedString(c)+" health="+Float.intBitsToFloat(d);
             default -> "detail="+a+","+b+","+c+","+d;
         };}

@@ -231,10 +231,12 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         var entry=entries.get(packet.baseline().index());
         if(entry==null||entry.terminal||entry.phase!=Phase.ACTIVE||!sameIdentity(entry,packet)
                 ||entry.checkpoint.baseline().leaseEpoch()!=packet.baseline().leaseEpoch()||entry.checkpoint.baseline().revision()!=packet.baseline().revision()||packet.sequence()<=entry.environmentAck)return;
-        entry.environmentAck=packet.sequence();if(physics.environment()!=null)physics.environment().acknowledge(entry.body,packet.sequence(),packet.fireTicks(),packet.health(),packet.environmentPermissions());
+        entry.environmentAck=packet.sequence();if(physics.environment()!=null)physics.environment().acknowledge(entry.body,packet.sequence(),packet.fireTicks(),packet.health(),packet.environmentPermissions(),physics.freeStateBuffer(),packet.environmentCorrection()?packet.baseline().snapshot():null,packet.environmentMotion(),ox,oy,oz,entry.offer.height()*.5f);
+        if(packet.environmentCorrection())physics.environmentCorrected();
     }
     private void encode(Entry entry,int bodyIndex) {
         if(physics.environment()!=null){var b=entry.checkpoint.baseline();physics.environment().reset(bodyIndex,b.identity().id(),b.identity().generation(),b.leaseEpoch(),b.index(),b.revision(),entry.checkpoint.fireTicks(),entry.checkpoint.health(),entry.checkpoint.environmentPermissions());entry.environmentAck=0;}
+        if(physics.environment()!=null){var motion=entry.checkpoint.environmentMotion();physics.environment().resetMotion(bodyIndex,motion.frozenTicks(),motion.fallDistance(),motion.stuckX(),motion.stuckY(),motion.stuckZ(),motion.age());}
         PackageFreeUpload.prepared(entry.offer,entry.checkpoint,styles.get(entry.offer.model()),bodyIndex,light.applyAsInt(entry.offer),ox,oy,oz,
                 body,metadata,delta,baseline);
     }

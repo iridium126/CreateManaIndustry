@@ -2,21 +2,41 @@
 layout(local_size_x=1) in;
 uniform uint uBody,uThrough,uFire,uPermissions;
 uniform float uHealth;
+struct AckBody {vec4 positionMass;vec4 velocityGround;vec4 extentYaw;vec4 previousSleep;};
+layout(std430,binding=0) buffer AckBodies {AckBody ackBodies[];};
+uniform bool uCorrectBody;
+uniform vec4 uCorrectPosition,uCorrectVelocity;
+uniform uint uMotionFrozen,uMotionAge;
+uniform float uMotionFall;
+uniform vec3 uMotionStuck;
+layout(std430,binding=3) buffer MotionMirror {uint motionMirror[];};
+uniform bool uFallMirrorReady;
+uniform uint uFallMirrorOffset;
 void main(){
     PackageEnvironment e=environment[uBody];
     if(e.control.z==0u||uThrough<=e.lease.w||uThrough>e.lease.z||e.lease.z-uThrough>PACKAGE_ENV_HISTORY)return;
     uint fire=uFire;float health=uHealth;bool terminal=false;
     // Rebase on the server result, then replay only the still unconfirmed suffix.
     for(uint serial=uThrough;serial<e.lease.z;serial++){
-        uint offset=uBody*PACKAGE_ENV_HISTORY+serial%PACKAGE_ENV_HISTORY;
+        uint offset=uBody*PACKAGE_ENV_STRIDE+serial%PACKAGE_ENV_HISTORY;
         PackageEnvironmentSample record=environmentSamples[offset];uint flags=uint(record.contact.w);
+        // Native batches with a server-dependent result cannot have a speculative suffix.
+        // Pure material batches do not modify fire/health and therefore need no replay here.
+        if(flags==32u)continue;
         uint ticks=max(1u,floatBitsToUint(record.position.w));
         for(uint tick=0u;tick<ticks;tick++){
-            if(fire>0u){if((uPermissions&4u)!=0u&&fire%20u==0u)health-=.15;fire--;}
-            if((flags&uPermissions&6u)!=0u){if(fire==0u)fire=100u;else health-=.15;if(flags==2u)fire=max(fire,300u);}
+            if(int(fire)>0){if((uPermissions&4u)!=0u&&fire%20u==0u)health-=.15;fire--;}
+            if((flags&uPermissions&6u)!=0u){if(int(fire)<=0)fire=100u;else health-=.15;if(flags==2u)fire=max(fire,300u);}
             health=max(health,0.0);terminal=terminal||(flags&uPermissions&1u)!=0u||health<=.5;
         }
         record.timeline.z=fire;record.timeline.w=floatBitsToUint(health);environmentSamples[offset]=record;
+    }
+    if(uCorrectBody&&uThrough==e.lease.z&&e.control.y==2u){
+        AckBody b=ackBodies[uBody];b.positionMass.xyz=uCorrectPosition.xyz;b.extentYaw.w=uCorrectPosition.w;
+        b.velocityGround=uCorrectVelocity;b.previousSleep=vec4(uCorrectPosition.xyz,0.);ackBodies[uBody]=b;
+        uint at=environmentWorkspace(uBody);PackageEnvironmentSample state=environmentSamples[at];
+        state.contact.x=int(uMotionFrozen);state.contact.z=floatBitsToInt(uMotionFall);state.position.xyz=uMotionStuck;state.timeline.x=uMotionAge;environmentSamples[at]=state;
+        if(uFallMirrorReady)motionMirror[uFallMirrorOffset+uBody]=floatBitsToUint(uMotionFall);
     }
     e.lease.w=uThrough;e.control.x=fire;e.control.y=terminal?1u:0u;e.control.w=uPermissions;e.state.x=health;
     environment[uBody]=e;

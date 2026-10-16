@@ -11,6 +11,12 @@ import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 class PackagePacketTest {
+    @Test void environmentCorrectionRoundTripsMotionAndSignedFireCooldown(){
+        var motion=new PackageEnvironmentMotion(120,3.5f,.25f,.05f,.25f,7,1839);
+        var packet=new ClientboundPackagePacket(ClientboundPackagePacket.ENVIRONMENT_ACK,ResourceLocation.withDefaultNamespace("overworld"),REGION,7,9,11,BASELINE,0,null,null,0,0,-20,4.7f,24,motion,true);
+        var bytes=buffer();try{ClientboundPackagePacket.STREAM_CODEC.encode(bytes,packet);var decoded=ClientboundPackagePacket.STREAM_CODEC.decode(bytes);
+            assertEquals(packet,decoded);assertEquals(0,bytes.readableBytes());}finally{bytes.release();}
+    }
     private static final PackageRegion REGION=new PackageRegion(-200,20000,-1);
     private static final PackageAuthorityRegion.Baseline BASELINE=new PackageAuthorityRegion.Baseline(65536,
             new PackageLease.Identity(0x1234567800000001L,0x2345678900000001L),0x3456789000000001L,9,

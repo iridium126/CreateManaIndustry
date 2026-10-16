@@ -203,8 +203,13 @@ public final class PackageMovingCollisionSources {
 
         /** Geometry coordinates stay in the captured source frame; contextual block queries may use another frame. */
         final List<PackageMovingGeometry.Box> shapes(BlockState state, LevelReader world, BlockPos pos, BlockPos contextPos) {
-            boolean unsupported = state.is(Blocks.MOVING_PISTON) || state.is(Blocks.POWDER_SNOW)
-                    || state.is(Blocks.SCAFFOLDING) || !state.getFluidState().isEmpty() || state.is(Blocks.FIRE);
+            boolean create=key().kind()==0;
+            // ContraptionCollider uses the empty collision context and does not invoke the
+            // static block's inside callbacks. Snow/scaffolding/fluid retain those exact shapes.
+            boolean unsupported = state.is(Blocks.MOVING_PISTON) || !create&&(state.is(Blocks.POWDER_SNOW)
+                    || state.is(Blocks.SCAFFOLDING) || !state.getFluidState().isEmpty() || state.is(Blocks.FIRE));
+            int material=create?(state.getBlock() instanceof net.minecraft.world.level.block.SlimeBlock?256:
+                    state.getBlock() instanceof net.minecraft.world.level.block.BedBlock?512:0):0;
             // Optional Sable impact callbacks describe what a moving body does after
             // contact; they do not mean the block's collision geometry is unknown.
             // Tagging those blocks UNSUPPORTED makes the GPU freeze on contact.
@@ -221,7 +226,7 @@ public final class PackageMovingCollisionSources {
                 collisionShape(state, world, contextPos).forAllBoxes((a, b, c, d, e, f) -> {
                     if (a < d && b < e && c < f) result.add(new PackageMovingGeometry.Box(
                             (float) (pos.getX() - ox + a), (float) (pos.getY() - oy + b), (float) (pos.getZ() - oz + c),
-                            (float) (pos.getX() - ox + d), (float) (pos.getY() - oy + e), (float) (pos.getZ() - oz + f), friction, 0));
+                            (float) (pos.getX() - ox + d), (float) (pos.getY() - oy + e), (float) (pos.getZ() - oz + f), friction, material));
                 });
             }
             return result;

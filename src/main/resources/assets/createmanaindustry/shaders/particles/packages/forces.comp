@@ -44,11 +44,14 @@ bool nozzleRayBlocked(vec3 from,vec3 to,ivec3 nozzleBlock) {
             if(slot==-2||any(notEqual(section,cached))) {
                 cached=section;slot=worldSlot(section,clearSection);
             }
-            if(slot<0)return true;
+            if(slot<0&&slot!=WORLD_EMPTY)return true;
             if(!clearSection) {
                 vec3 cellLo=max(segmentLo,vec3(cell)),cellHi=min(segmentHi,vec3(cell+1));
                 uvec4 metadata;uint base;
                 if(!worldCell(cell,cellLo,cellHi,cached,slot,metadata,base))return true;
+                uint material=(metadata.w>>16u)&255u;
+                if(material==1u)metadata.y=0u;
+                else if(material==2u)metadata.y=min(metadata.y,5u);
                 for(uint shape=0u;shape<metadata.y;shape++) {
                     vec3 boxLo,boxHi;worldBox(base,metadata.x+shape,cell,boxLo,boxHi);
                     if(any(lessThanEqual(boxHi,boxLo)))continue;

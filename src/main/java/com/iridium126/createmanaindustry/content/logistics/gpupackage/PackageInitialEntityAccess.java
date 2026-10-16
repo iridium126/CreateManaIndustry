@@ -5,4 +5,6 @@ public interface PackageInitialEntityAccess {
     boolean cmi$validInitialEntity();
     java.util.UUID cmi$tossedBy();
     void cmi$tossedBy(java.util.UUID uuid);
+    net.minecraft.world.phys.Vec3 cmi$stuckMultiplier();
+    void cmi$stuckMultiplier(net.minecraft.world.phys.Vec3 multiplier);
 }

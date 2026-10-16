@@ -325,6 +325,7 @@ public final class PackageWorldRuntime {
         ox=Math.floor(position.x/16)*16;oy=Math.floor(position.y/16)*16;oz=Math.floor(position.z/16)*16;
         physics=new PackageMixedPhysicsGpu(capacity,chainProtocol?capacity:0,capacity,2,sources);
         physics.enableEnvironment(sources);
+        physics.climbingBounds(net.neoforged.neoforge.common.NeoForgeConfig.SERVER.fullBoundingBoxLadders.get());
         try{freezeDiagnostics=physics.enableFreezeDiagnostics(sources);}
         catch(RuntimeException diagnosticFailure){CreateManaIndustry.LOGGER.warn("[CMI packages] freeze diagnostics unavailable; physics continues",diagnosticFailure);}
         worldPrefetch=new PackageWorldPrefetchGpu(resourceEpochs.incrementAndGet(),sources);

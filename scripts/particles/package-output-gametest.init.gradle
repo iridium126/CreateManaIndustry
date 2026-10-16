@@ -14,11 +14,14 @@ gradle.projectsEvaluated {
     p.sourceSets.main.java.srcDir(p.file('src/test/gametest/packages/java'))
     def recovery = p.hasProperty('packageRecoveryGameTest')
     p.sourceSets.main.java.exclude(recovery ? '**/PackageOutputGameTests.java' : '**/PackageRecoveryGameTests.java')
+    if(recovery)p.sourceSets.main.java.exclude('**/PackageEnvironmentGameTests.java')
     p.sourceSets.main.resources.srcDir(resources)
     def fixture = p.tasks.register('packageOutputGameTestFixture') {
         inputs.property('recoveryMode', recovery)
+        inputs.file(p.file('docs/package-environment-native-inventory.json'))
         outputs.dir(resources)
         doLast {
+            p.copy { from(p.file('docs/package-environment-native-inventory.json')); into(resources) }
             def defaults = p.file('build/package-output-test-run/defaultconfigs/createmanaindustry-server.toml')
             defaults.parentFile.mkdirs()
             defaults.text = '[gpuPackages]\nauthorityEnabled = ' + (!recovery) + '\n'

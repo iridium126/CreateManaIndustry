@@ -7,6 +7,20 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 class PackageCollisionCacheTest {
+    @Test void provenEmptySectionPublishesWithoutCellCaptureOrWorkerAllocation() {
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageCollisionCache(tasks::add,2,()->0L);
+        var source=new PackageCollisionCache.Source(){
+            public boolean empty(PackageCollisionCache.Section section){return true;}
+            public PackageCollisionCache.Cell capture(PackageCollisionCache.Section section,int index){throw new AssertionError("empty section sampled a cell");}
+        };
+        cache.request(SECTION);cache.tick(source,1);
+        var first=cache.snapshot(SECTION);assertNotNull(first);assertTrue(first.gpuEmpty());assertTrue(tasks.isEmpty());
+        var other=new PackageCollisionCache.Section(1,0,0);cache.request(other);cache.tick(source,1);
+        assertNotEquals(first.gpuIdentity(),cache.snapshot(other).gpuIdentity());
+        assertEquals(0,first.shapeStart(3000));assertEquals(.6f,first.friction(3000));
+        cache.invalidate(SECTION);assertNull(cache.snapshot(SECTION));cache.tick(source,1);
+        assertTrue(cache.snapshot(SECTION).revision()>first.revision());
+    }
     @Test void forceInterestFollowsOccupiedSectionsAcrossNegativeAndPositiveRegionBoundaries() {
         var cache=new PackageCollisionCache(Runnable::run,8,()->0L);
         var sections=List.of(new PackageCollisionCache.Section(-1,0,0),new PackageCollisionCache.Section(0,0,0),

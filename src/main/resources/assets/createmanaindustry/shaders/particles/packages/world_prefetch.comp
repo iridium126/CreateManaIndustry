@@ -22,7 +22,7 @@ int worldRow(ivec3 key) {
     for(uint probe=0u;probe<=uWorldTableMask;probe++) {
         WorldSection section=worldSections[row];
         if(section.keySlot.w==-1)return -1;
-        if(all(equal(section.keySlot.xyz,key)))return section.keySlot.w>=0 && section.revisionActive.z==1u?int(row):-1;
+        if(all(equal(section.keySlot.xyz,key)))return (section.keySlot.w>=0||section.keySlot.w==-4) && section.revisionActive.z==1u?int(row):-1;
         row=(row+1u)&uWorldTableMask;
     }
     return -1;

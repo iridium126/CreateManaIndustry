@@ -1,0 +1,1515 @@
+{
+  "status": "NOT_ACCEPTED_AS_COMPLETE_PARITY",
+  "profiles": {
+    "geometry": {
+      "stage": "capture / GPU CCD",
+      "gpu": "Shared immutable voxel shapes and friction; contextual cases use explicit material selection",
+      "server": "No inside/step/fall transaction",
+      "cases": [
+        "worldShapes",
+        "worldSweepsAndMaterials",
+        "everyRegisteredMinecraftAndCreateBlockHasAuditedDeclarations",
+        "emptySectionFastPathKeepsCollisionlessEnvironment"
+      ]
+    },
+    "inside-damage": {
+      "stage": "base tick; ordered X/Y/Z inside; post-move timers",
+      "gpu": "Contact mask and deterministic material motion; pause for authoritative damage",
+      "server": "PackageEntity hurt eligibility/order and world callbacks",
+      "cases": [
+        "nativeInsideDamageMatchesPackageEntity",
+        "nativeEnvironmentJournalRegression"
+      ]
+    },
+    "motion": {
+      "stage": "before move / landing / ordered inside / speed factor",
+      "gpu": "Conditional shape, stuck multiplier, climbing, bounce and slide",
+      "server": "Freeze damage, block mutation and timer confirmation",
+      "cases": [
+        "materialMotionRegression",
+        "nativeEnvironmentJournalRegression",
+        "openTrapdoorsHonorNeoForgeLadderExtensions",
+        "climbingCollisionUsesNativePostMoveStage"
+      ]
+    },
+    "machine": {
+      "stage": "landing before step/inside; block-entity scheduled processing",
+      "gpu": "Verified final contact mask and local confirmation barrier",
+      "server": "Native inventory operations, centering, insertion delay and record identity",
+      "cases": [
+        "crushingControllerOwnsRecordAndRejectsConcurrentInventory",
+        "PackageOutputGameTests",
+        "crushingInsideStuckMultiplierSurvivesStoppedWheels"
+      ]
+    },
+    "trigger": {
+      "stage": "inside/step and native delayed block rechecks",
+      "gpu": "Actual final contact mask; no swept inside triggering",
+      "server": "Native scheduled pressure/tripwire calls or explicit block mutation",
+      "cases": [
+        "pressurePlateScheduledChecksIncludeAndReleaseRecords",
+        "waterloggedOrdinaryBlocksAndOrderedDripleafCallback"
+      ]
+    },
+    "portal": {
+      "stage": "inside marks contact; subsequent base tick processes portal",
+      "gpu": "Contact and local barrier",
+      "server": "Dimension/portal transaction; native delay and intersection criteria still need complete differential cases",
+      "cases": [
+        "portalContactDefersTransitionRefreshesCooldownAndPersists"
+      ]
+    },
+    "native-base": {
+      "stage": "PackageEntity / Entity / LivingEntity tick and movement",
+      "gpu": "Lifecycle motion state and sparse reliable journal",
+      "server": "Eligibility, terminal removal, damage/world transactions",
+      "cases": [
+        "nativeInsideDamageMatchesPackageEntity",
+        "waterloggedScaffoldingDestroysEvenInvulnerablePackages",
+        "nativeEnvironmentJournalRegression",
+        "witherAmplifiersHiddenStackAndInfinitePhaseMatchNativeTicks"
+      ]
+    },
+    "no-op": {
+      "stage": "Native callback/query predicate fails for PackageEntity",
+      "gpu": "Ordinary geometry; WATERLOGGED remains an explicit independent effect",
+      "server": "No entity-type-specific action for a package",
+      "cases": [
+        "everyRegisteredMinecraftAndCreateBlockHasAuditedDeclarations",
+        "itemArrowBoatAndRavagerOnlyCallbacksAreNoOpsForPackages"
+      ]
+    },
+    "existing-adapter": {
+      "stage": "Existing force/output/interaction subsystem",
+      "gpu": "Existing GPU forces and frame transforms",
+      "server": "Existing sparse queryLight/consumeLight record path",
+      "cases": [
+        "PackageOutputGameTests",
+        "externalForces",
+        "framedForces"
+      ]
+    },
+    "pending": {
+      "stage": "Native active query or moving interaction",
+      "gpu": "Existing generic collision only; semantic adapter not accepted",
+      "server": "Outstanding native record adapter / complete differential verification",
+      "cases": []
+    }
+  },
+  "sources": {
+    "com/simibubi/create/api/behaviour/interaction/MovingInteractionBehaviour.java": {
+      "profile": "pending",
+      "condition": "Enumerated moving collision interface, not a static inside callback.",
+      "entries": [
+        "handleEntityCollision"
+      ],
+      "entity_queries": [],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/contraptions/Contraption.java": {
+      "profile": "pending",
+      "condition": "Assembly queries include living seat passengers and contraption entities; record passenger migration outstanding.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/contraptions/ContraptionCollider.java": {
+      "profile": "pending",
+      "condition": "Empty-context geometry and slime/bed bounce are adapted; moving interactors, climbing/sliding and exact motion eligibility remain incomplete.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/contraptions/actors/contraptionControls/ContraptionControlsBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/contraptions/actors/plough/PloughMovementBehaviour.java": {
+      "profile": "pending",
+      "condition": "Moving actor item/entity interactions require explicit audit.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/contraptions/actors/psi/PortableStorageInterfaceBlockEntity.java": {
+      "profile": "no-op",
+      "condition": "Query targets contraption entities.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/contraptions/actors/seat/SeatBlock.java": {
+      "profile": "pending",
+      "condition": "PackageEntity is LivingEntity and may mount a seat, subject to tags/config and occupancy. Record mounting is not implemented.",
+      "entries": [
+        "fallOn",
+        "getCollisionShape",
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [
+        "getEntities",
+        "getEntitiesOfClass"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/contraptions/actors/seat/SeatInteractionBehaviour.java": {
+      "profile": "pending",
+      "condition": "Moving seat pickup needs identity-preserving passenger support.",
+      "entries": [
+        "handleEntityCollision"
+      ],
+      "entity_queries": [],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/contraptions/actors/trainControls/ControlsBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/contraptions/bearing/SailBlock.java": {
+      "profile": "motion",
+      "condition": "Non-frame sails bounce LivingEntity packages with native .26 coefficient; frames retain ordinary motion. GPU landing case covers native multiplier; native world callback matrix still incomplete.",
+      "entries": [
+        "fallOn",
+        "getCollisionShape",
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [],
+      "verification": "partial"
+    },
+    "com/simibubi/create/content/contraptions/chassis/StickerBlock.java": {
+      "profile": "motion",
+      "condition": "UP delegates slime bounce/slowdown and slime landing/running particles; other orientations retain ordinary motion. Bounce adapted; particle callbacks still pending.",
+      "entries": [
+        "addLandingEffects",
+        "addRunningEffects",
+        "fallOn",
+        "stepOn",
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [],
+      "verification": "partial"
+    },
+    "com/simibubi/create/content/contraptions/glue/SuperGlueEntity.java": {
+      "profile": "no-op",
+      "condition": "Query targets SuperGlueEntity.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/contraptions/glue/SuperGlueSelectionHandler.java": {
+      "profile": "no-op",
+      "condition": "Client selection targets glue/contraption types.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/contraptions/mounted/CartAssemblerBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/contraptions/mounted/MountedContraption.java": {
+      "profile": "no-op",
+      "condition": "Assembly query targets minecarts.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/decoration/MetalScaffoldingBlock.java": {
+      "profile": "motion",
+      "condition": "NeoForge isScaffolding is true for every state, including BOTTOM. BOTTOM retains native half geometry; CLIMBABLE tags control climbing independently of scaffolding geometry. GPU uses full-bounds configuration, horizontal-collision boost, and separate BOTTOM/CLIMBABLE parameter bits. Full native scaffolding differential matrix remains pending.",
+      "entries": [
+        "getCollisionShape",
+        "isScaffolding"
+      ],
+      "entity_queries": [],
+      "verification": "partial"
+    },
+    "com/simibubi/create/content/decoration/copycat/CopycatBlock.java": {
+      "profile": "motion",
+      "condition": "Friction and fallOn delegate to material, while inside/step/bounce do not. Captured geometry/friction and delegated fall effects are adapted; sounds/landing and sprint particles still need native dispatch.",
+      "entries": [
+        "addLandingEffects",
+        "addRunningEffects",
+        "canEntityDestroy",
+        "fallOn",
+        "getFriction",
+        "getSoundType"
+      ],
+      "entity_queries": [],
+      "verification": "partial"
+    },
+    "com/simibubi/create/content/equipment/blueprint/BlueprintEntity.java": {
+      "profile": "no-op",
+      "condition": "Placement obstruction query may include packages; pending separate placement semantics.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/equipment/sandPaper/SandPaperItem.java": {
+      "profile": "no-op",
+      "condition": "In-world polish lookup requires ItemEntity.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/fluids/drain/ItemDrainBlock.java": {
+      "profile": "no-op",
+      "condition": "Landing processing requires ItemEntity.",
+      "entries": [
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/fluids/tank/FluidTankBlock.java": {
+      "profile": "pending",
+      "condition": "SilenceTankSound persistent data selects muted native sound type. There is no package-specific inside transaction; movement sound dispatch remains pending.",
+      "entries": [
+        "getCollisionShape",
+        "getSoundType"
+      ],
+      "entity_queries": [],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/kinetics/base/BlockBreakingMovementBehaviour.java": {
+      "profile": "no-op",
+      "condition": "Block break item lookup requires ItemEntity; damaging moving actors require further audit.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/kinetics/belt/BeltBlock.java": {
+      "profile": "machine",
+      "condition": "Package center and downward insertion; transport entity branches must retain native filters.",
+      "entries": [
+        "entityInside",
+        "getCollisionShape",
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/kinetics/belt/BeltShapes.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/kinetics/belt/transport/BeltMovementHandler.java": {
+      "profile": "pending",
+      "condition": "Active entity transport and tunnel membership need native record differential cases.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/kinetics/chainConveyor/ChainConveyorBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/kinetics/crusher/CrushingWheelBlock.java": {
+      "profile": "machine",
+      "condition": "Grounded top contact and axis-dependent motion; controller starts separate processing.",
+      "entries": [
+        "entityInside",
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/kinetics/crusher/CrushingWheelControllerBlock.java": {
+      "profile": "machine",
+      "condition": "VALID controllers claim exact record identity through native-equivalent occupancy predicates. An owned package receives .05 along the processing axis and .25 on other axes, with fall distance reset; this remains active when speed becomes zero. Native axis/stopped-wheel, inventory exclusion, death and release cases pass. Remaining full machine lifecycle/combination matrix is pending.",
+      "entries": [
+        "addRunningEffects",
+        "entityInside",
+        "getCollisionShape",
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [
+        "processingEntity",
+        "startCrushing"
+      ],
+      "verification": "partial"
+    },
+    "com/simibubi/create/content/kinetics/crusher/CrushingWheelControllerBlockEntity.java": {
+      "profile": "machine",
+      "condition": "Keep occupied identity across ticks/save; mutually exclude item inventory, crush and release on native next boundary.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities",
+        "processingEntity",
+        "startCrushing"
+      ],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/kinetics/deployer/DeployerBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/kinetics/deployer/DeployerHandler.java": {
+      "profile": "pending",
+      "condition": "Entity attack/use can target a package; fake-player result/ordering adapter outstanding.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/kinetics/drill/DrillBlock.java": {
+      "profile": "machine",
+      "condition": "Nonzero speed and deflated .1 bounds; Create drill damage.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/kinetics/fan/AirCurrent.java": {
+      "profile": "existing-adapter",
+      "condition": "Existing sparse force-source and processing record hooks; full item-effect ordering still needs differential coverage.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/kinetics/fan/NozzleBlockEntity.java": {
+      "profile": "existing-adapter",
+      "condition": "Existing record spatial lookup and nozzle force integration.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/kinetics/millstone/MillstoneBlock.java": {
+      "profile": "no-op",
+      "condition": "Landing processing requires ItemEntity.",
+      "entries": [
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/kinetics/press/PressingBehaviour.java": {
+      "profile": "pending",
+      "condition": "Item recipe branch is ItemEntity-only; active living-entity damage still needs audit.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities",
+        "getEntitiesOfClass"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/kinetics/saw/SawBlock.java": {
+      "profile": "machine",
+      "condition": "Nonzero speed and deflated .1 bounds hurts; landing item-recipe branch requires ItemEntity.",
+      "entries": [
+        "entityInside",
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/kinetics/turntable/TurntableBlock.java": {
+      "profile": "machine",
+      "condition": "Grounded, nonascending, above half-height; rotate yaw and clear ground.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/kinetics/waterwheel/WaterWheelStructuralBlock.java": {
+      "profile": "pending",
+      "condition": "Suppresses default landing particles by returning true. It does not modify health/motion; native landing-particle dispatch is not yet reproduced.",
+      "entries": [
+        "addLandingEffects"
+      ],
+      "entity_queries": [],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/logistics/box/PackageEntity.java": {
+      "profile": "native-base",
+      "condition": "Package overrides include direct water removal independent of hurt immunity, item damage eligibility before insertion/fall/invulnerability checks, fixed fire damage and initial entity handling. Native tests cover damage order, waterlogging, body-age freezing, Wither duration/amplifier/hidden stack and portal deferred processing. Full fluid/base-tick, riding and movement-event matrix remains pending.",
+      "entries": [],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/logistics/box/PackageItem.java": {
+      "profile": "existing-adapter",
+      "condition": "Existing package placement/query and pickup record handling.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/logistics/chute/AbstractChuteBlock.java": {
+      "profile": "machine",
+      "condition": "Native landing target, input direction UP, insertion delay and chute advancement.",
+      "entries": [
+        "getCollisionShape",
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/logistics/chute/ChuteBlockEntity.java": {
+      "profile": "no-op",
+      "condition": "Lookup targets ItemEntity; package insertion is handled by landing.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/logistics/chute/ChuteShapes.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/logistics/depot/DepotBlock.java": {
+      "profile": "machine",
+      "condition": "SharedDepot landing behavior; native center then DOWN insertion.",
+      "entries": [
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/logistics/depot/EjectorBlock.java": {
+      "profile": "machine",
+      "condition": "Centering/insertion and upward record nudge are adapted. activateDeferred deliberately excludes PackageEntity from direct entity launch. Friction is 1 while block entity is LAUNCHING, captured at snapshot time; dynamic invalidation and full machine differential cases remain pending.",
+      "entries": [
+        "fallOn",
+        "getFriction",
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [],
+      "verification": "partial"
+    },
+    "com/simibubi/create/content/logistics/depot/EjectorBlockEntity.java": {
+      "profile": "pending",
+      "condition": "Active launch and nudge queries can affect a package; record adapter outstanding.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/logistics/factoryBoard/FactoryPanelBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/logistics/funnel/BeltFunnelBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/logistics/funnel/FunnelBlock.java": {
+      "profile": "machine",
+      "condition": "Nonpowered/nonextracting, correct opening side/filter; center and insert.",
+      "entries": [
+        "entityInside",
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/logistics/funnel/FunnelBlockEntity.java": {
+      "profile": "existing-adapter",
+      "condition": "Existing queryLight extraction path.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/logistics/funnel/FunnelMovementBehaviour.java": {
+      "profile": "existing-adapter",
+      "condition": "Existing moving funnel record transaction path.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities",
+        "getEntitiesOfClass"
+      ],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/logistics/stockTicker/StockKeeperRequestScreen.java": {
+      "profile": "no-op",
+      "condition": "Client stock-keeper screen lookup targets stock keeper.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/logistics/stockTicker/StockTickerBlockEntity.java": {
+      "profile": "no-op",
+      "condition": "Lookup targets stock keeper.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/logistics/tableCloth/TableClothBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/logistics/vault/ItemVaultBlock.java": {
+      "profile": "pending",
+      "condition": "SilenceVaultSound persistent data selects muted native sound type. There is no package-specific inside effect; movement sound dispatch remains pending.",
+      "entries": [
+        "getSoundType"
+      ],
+      "entity_queries": [],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/processing/basin/BasinBlock.java": {
+      "profile": "no-op",
+      "condition": "Landing processing requires ItemEntity.",
+      "entries": [
+        "getCollisionShape",
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/processing/burner/BlazeBurnerBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/processing/burner/LitBlazeBurnerBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/redstone/displayLink/source/EntityNameDisplaySource.java": {
+      "profile": "pending",
+      "condition": "Entity-name display queries may include record packages.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/schematics/table/SchematicTableBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/trains/entity/TrainRelocator.java": {
+      "profile": "no-op",
+      "condition": "Train contraption lookup excludes packages.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/content/trains/station/StationBlock.java": {
+      "profile": "machine",
+      "condition": "SharedDepot landing callback and dynamic input behavior.",
+      "entries": [
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "com/simibubi/create/content/trains/track/FakeTrackBlock.java": {
+      "profile": "pending",
+      "condition": "Suppresses landing and sprint particles by returning true; no direct motion, inventory or damage transaction. Movement particle parity remains pending.",
+      "entries": [
+        "addLandingEffects",
+        "addRunningEffects"
+      ],
+      "entity_queries": [],
+      "verification": "pending"
+    },
+    "com/simibubi/create/content/trains/track/TrackBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/foundation/blockEntity/behaviour/animatedContainer/AnimatedContainerBehaviour.java": {
+      "profile": "no-op",
+      "condition": "Opening lookup targets players.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/foundation/mixin/client/EntityContraptionInteractionMixin.java": {
+      "profile": "no-op",
+      "condition": "Client entity/contraption interaction; moving semantics require separate audit.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/foundation/virtualWorld/VirtualRenderWorld.java": {
+      "profile": "no-op",
+      "condition": "Render-only world query returns its render entity view.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/impl/effect/LavaEffectHandler.java": {
+      "profile": "pending",
+      "condition": "Fan processing active entity effects on PackageEntity require record effect adapter audit.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/impl/effect/MilkEffectHandler.java": {
+      "profile": "pending",
+      "condition": "Active effect removal can affect PackageEntity.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/impl/effect/PotionEffectHandler.java": {
+      "profile": "pending",
+      "condition": "Active potion effect application can affect PackageEntity.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/impl/effect/TeaEffectHandler.java": {
+      "profile": "pending",
+      "condition": "Active effect application requires explicit eligibility audit.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/impl/effect/WaterEffectHandler.java": {
+      "profile": "pending",
+      "condition": "Active water processing/removal needs Create package override verification.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "pending"
+    },
+    "com/simibubi/create/infrastructure/command/CouplingCommand.java": {
+      "profile": "no-op",
+      "condition": "Command lookup is not a block environmental callback.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "com/simibubi/create/infrastructure/gametest/CreateGameTestHelper.java": {
+      "profile": "no-op",
+      "condition": "Reference test-only helper, no production block action.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/entity/Entity.java": {
+      "profile": "native-base",
+      "condition": "Base fire/fluid/rain/portal/move callback ordering and shared flags. Lava pre-move overlap and shared environment columns are still incomplete.",
+      "entries": [],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/entity/LivingEntity.java": {
+      "profile": "native-base",
+      "condition": "Inherited travel, freezing, effects, suffocation and vibration semantics; full differential tick scenarios are outstanding.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/BambooStalkBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/BaseFireBlock.java": {
+      "profile": "inside-damage",
+      "condition": "Fire increments/ignition before PackageEntity fixed .15 damage; fire resistance and invulnerability remain separate.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/BasePressurePlateBlock.java": {
+      "profile": "trigger",
+      "condition": "Assignable entity class includes living PackageEntity; native scheduled hold/release preserves existing entities.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [
+        "getEntitiesOfClass",
+        "getEntityCount"
+      ],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/BedBlock.java": {
+      "profile": "motion",
+      "condition": "LivingEntity downward bounce .66; fall damage is ignored by PackageEntity.",
+      "entries": [
+        "fallOn",
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/BeehiveBlock.java": {
+      "profile": "no-op",
+      "condition": "Entity lookup targets players for anger logic.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/BellBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/BigDripleafBlock.java": {
+      "profile": "trigger",
+      "condition": "Grounded feet >.6875, no power, tilt NONE -> UNSTABLE and scheduled 10 ticks, before package water removal.",
+      "entries": [
+        "entityInside",
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/Block.java": {
+      "profile": "native-base",
+      "condition": "Default landing clears vertical motion; speed factor/friction captured. Entity push-up queries during world changes need more coverage.",
+      "entries": [
+        "fallOn",
+        "getFriction",
+        "getJumpFactor",
+        "getSpeedFactor",
+        "stepOn",
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/BubbleColumnBlock.java": {
+      "profile": "motion",
+      "condition": "Above-air versus inside bubble impulse and limits; fluid pushing/extinguish chronology remains unaccepted.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/ButtonBlock.java": {
+      "profile": "no-op",
+      "condition": "Active lookup and inside activation require AbstractArrow.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/CactusBlock.java": {
+      "profile": "inside-damage",
+      "condition": "Every actual inside callback uses cactus damage.",
+      "entries": [
+        "entityInside",
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/CampfireBlock.java": {
+      "profile": "inside-damage",
+      "condition": "Lit and non-Frost-Walker LivingEntity branch; waterlogged package callback runs afterwards.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/CarvedPumpkinBlock.java": {
+      "profile": "no-op",
+      "condition": "Spawned golem criteria query targets players.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/ChestBlock.java": {
+      "profile": "no-op",
+      "condition": "Container openers query targets players.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/ComparatorBlock.java": {
+      "profile": "no-op",
+      "condition": "Item-frame query does not include packages.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/ComposterBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/CrafterBlock.java": {
+      "profile": "no-op",
+      "condition": "Container/player query does not include packages.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/CropBlock.java": {
+      "profile": "no-op",
+      "condition": "Trampling requires Ravager.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/CrossCollisionBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/DecoratedPotBlock.java": {
+      "profile": "pending",
+      "condition": "CRACKED selects native step/landing sound type; no package-specific inside damage or mutation. Native movement sounds are not yet fully reproduced.",
+      "entries": [
+        "getSoundType"
+      ],
+      "entity_queries": [],
+      "verification": "pending"
+    },
+    "net/minecraft/world/level/block/DetectorRailBlock.java": {
+      "profile": "no-op",
+      "condition": "Active query targets AbstractMinecart.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/EndGatewayBlock.java": {
+      "profile": "portal",
+      "condition": "Inside marks pending portal contact; the following base tick handles transition, existing contact cooldown refreshes to 300, and End portal uses native shape intersection. Gateway contact/block cooldown, deferred target pose and pending save/load have native differential cases; complete Nether dimension exit/removed-portal matrix remains pending.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "partial"
+    },
+    "net/minecraft/world/level/block/EndPortalBlock.java": {
+      "profile": "portal",
+      "condition": "Inside marks pending portal contact; the following base tick handles transition, existing contact cooldown refreshes to 300, and End portal uses native shape intersection. Gateway contact/block cooldown, deferred target pose and pending save/load have native differential cases; complete Nether dimension exit/removed-portal matrix remains pending.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "partial"
+    },
+    "net/minecraft/world/level/block/FarmBlock.java": {
+      "profile": "trigger",
+      "condition": "LivingEntity chance, mobGriefing, volume >.512 and farmland conversion; NeoForge entity hook equivalence remains unverified.",
+      "entries": [
+        "fallOn"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/FenceGateBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/FrogspawnBlock.java": {
+      "profile": "no-op",
+      "condition": "Inside destruction requires FallingBlockEntity.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/GrindstoneBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/HayBlock.java": {
+      "profile": "no-op",
+      "condition": "Fall damage multiplier has no effect because PackageEntity ignores IS_FALL.",
+      "entries": [
+        "fallOn"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/HoneyBlock.java": {
+      "profile": "motion",
+      "condition": "Edge slide below .9375, vy<-.08 native units; speed .4. Advancement predicates require players.",
+      "entries": [
+        "entityInside",
+        "fallOn",
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/HopperBlock.java": {
+      "profile": "no-op",
+      "condition": "entityInside item suction requires ItemEntity.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/LavaCauldronBlock.java": {
+      "profile": "inside-damage",
+      "condition": "Feet below .9375 and bbox.maxY above .25, then lavaHurt.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/LayeredCauldronBlock.java": {
+      "profile": "inside-damage",
+      "condition": "Burning and content intersection; clear fire, mayInteract, lower fill / powder-to-water conversion.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/LecternBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/LiquidBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/MagmaBlock.java": {
+      "profile": "inside-damage",
+      "condition": "Grounded step hot-floor damage; packages have no Frost Walker equipment.",
+      "entries": [
+        "stepOn"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/MudBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/NetherPortalBlock.java": {
+      "profile": "portal",
+      "condition": "Inside marks pending portal contact; the following base tick handles transition, existing contact cooldown refreshes to 300, and End portal uses native shape intersection. Gateway contact/block cooldown, deferred target pose and pending save/load have native differential cases; complete Nether dimension exit/removed-portal matrix remains pending.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "partial"
+    },
+    "net/minecraft/world/level/block/PitcherCropBlock.java": {
+      "profile": "no-op",
+      "condition": "Trampling requires Ravager.",
+      "entries": [
+        "entityInside",
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/PointedDripstoneBlock.java": {
+      "profile": "no-op",
+      "condition": "fallOn damage is tagged IS_FALL and ignored by packages.",
+      "entries": [
+        "fallOn"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/PowderSnowBlock.java": {
+      "profile": "motion",
+      "condition": "Fall-distance and walkable-tag collision; feet-only stuck; inside flag, freeze and fire/world effects.",
+      "entries": [
+        "entityInside",
+        "fallOn",
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/PressurePlateBlock.java": {
+      "profile": "trigger",
+      "condition": "Native sensitivity class and local BasePressurePlate count.",
+      "entries": [],
+      "entity_queries": [
+        "getEntityCount"
+      ],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/RedStoneOreBlock.java": {
+      "profile": "trigger",
+      "condition": "stepOn particles and LIT mutation.",
+      "entries": [
+        "stepOn"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/ScaffoldingBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/SculkSensorBlock.java": {
+      "profile": "trigger",
+      "condition": "Native step vibration scheduling; entity context identity remains an outstanding difference.",
+      "entries": [
+        "stepOn"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/SculkShriekerBlock.java": {
+      "profile": "no-op",
+      "condition": "Step shrieker requires player/projectile player owner.",
+      "entries": [
+        "getCollisionShape",
+        "stepOn"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/SlimeBlock.java": {
+      "profile": "motion",
+      "condition": "LivingEntity bounce 1; low vertical velocity step slowdown.",
+      "entries": [
+        "fallOn",
+        "stepOn",
+        "updateEntityAfterFallOn"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/SnowLayerBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/SoulSandBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/SweetBerryBushBlock.java": {
+      "profile": "inside-damage",
+      "condition": "Stuck always; age>0 and horizontal old-position delta >=.003 damages packages.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/TntBlock.java": {
+      "profile": "no-op",
+      "condition": "onCaughtFire is invoked by fire/world/projectile logic, not by a burning PackageEntity moving through TNT. Keep native world ignition; packages do not synthesize this callback.",
+      "entries": [
+        "onCaughtFire"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/TrapDoorBlock.java": {
+      "profile": "motion",
+      "condition": "Closed trapdoors cannot be climbed. Open trapdoors delegate to the below-block makesOpenTrapdoorAboveClimbable extension; vanilla and Create LadderBlock subclasses require matching FACING. GPU implements full-bounds ladder configuration and post-move horizontal-collision boost; registry/extension cases and both configuration modes have native phase tests.",
+      "entries": [
+        "isLadder"
+      ],
+      "entity_queries": [],
+      "verification": "partial"
+    },
+    "net/minecraft/world/level/block/TripWireBlock.java": {
+      "profile": "trigger",
+      "condition": "Native shape bounds, power/source update and 10-tick release/recheck.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/TurtleEggBlock.java": {
+      "profile": "trigger",
+      "condition": "LivingEntity may break eggs with mobGriefing; landing denominator 3, stepping 100.",
+      "entries": [
+        "fallOn",
+        "stepOn"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/WallBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/WallHangingSignBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/WaterlilyBlock.java": {
+      "profile": "no-op",
+      "condition": "Inside destruction requires Boat.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/WebBlock.java": {
+      "profile": "motion",
+      "condition": "Ordered next-move stuck multiplier (.25,.05,.25).",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/WeightedPressurePlateBlock.java": {
+      "profile": "trigger",
+      "condition": "Record count is added to original entity count before weighted signal conversion.",
+      "entries": [],
+      "entity_queries": [
+        "getEntityCount"
+      ],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/WitherRoseBlock.java": {
+      "profile": "inside-damage",
+      "condition": "Nonpeaceful, noninvulnerable living entity receives 40-tick wither; inherited active effects need further cases.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/minecraft/world/level/block/WitherSkullBlock.java": {
+      "profile": "no-op",
+      "condition": "Spawn criteria query targets players.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/entity/BeaconBlockEntity.java": {
+      "profile": "no-op",
+      "condition": "Effect queries target players.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/entity/BellBlockEntity.java": {
+      "profile": "no-op",
+      "condition": "Bell raid notification/glow requires raid entity type, not packages.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/entity/ConduitBlockEntity.java": {
+      "profile": "no-op",
+      "condition": "Damage/effects target enemy or player types; package does not meet either predicate.",
+      "entries": [],
+      "entity_queries": [
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/entity/ContainerOpenersCounter.java": {
+      "profile": "no-op",
+      "condition": "Player-only opening count.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/entity/HopperBlockEntity.java": {
+      "profile": "no-op",
+      "condition": "Suction lookup requires ItemEntity; container entity lookup excludes PackageEntity.",
+      "entries": [
+        "entityInside"
+      ],
+      "entity_queries": [
+        "getEntities",
+        "getEntitiesOfClass"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/entity/ShulkerBoxBlockEntity.java": {
+      "profile": "pending",
+      "condition": "Opening lid pushes generic entities; no record push adapter yet.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "pending"
+    },
+    "net/minecraft/world/level/block/entity/trialspawner/PlayerDetector.java": {
+      "profile": "no-op",
+      "condition": "Player-only detection.",
+      "entries": [],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/piston/MovingPistonBlock.java": {
+      "profile": "geometry",
+      "condition": "Capture the native empty-context voxel shape and friction; state geometry is enumerated separately from inside effects.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [],
+      "verification": "reviewed-needs-negative-differential"
+    },
+    "net/minecraft/world/level/block/piston/PistonMovingBlockEntity.java": {
+      "profile": "pending",
+      "condition": "Native piston/honey/slime entity motion requires record-aware geometry and timed displacement adapter.",
+      "entries": [
+        "getCollisionShape"
+      ],
+      "entity_queries": [
+        "getEntities"
+      ],
+      "verification": "pending"
+    },
+    "net/minecraft/world/level/block/state/BlockBehaviour.java": {
+      "profile": "native-base",
+      "condition": "Inherited default callbacks and collision; every registered Minecraft/Create subclass is enumerated.",
+      "entries": [
+        "entityInside",
+        "getCollisionShape",
+        "getSoundType"
+      ],
+      "entity_queries": [],
+      "verification": "implemented-partial"
+    },
+    "net/neoforged/neoforge/common/extensions/IBlockExtension.java": {
+      "profile": "native-base",
+      "condition": "NeoForge defaults define CLIMBABLE tags, matching LadderBlock under open trapdoors, vanilla scaffolding, FIRE/LAVA burning, fences/walls vertical collision and fixed friction. PackageEntity does not invoke boss-only destruction or cause TNT ignition by mere contact. Full sound/particle overrides and contextual collision still need differential acceptance. isEmpty defaults to the three vanilla air blocks, so NeoForge hasOnlyAir retains Create air-marked crusher controllers; registry acceptance rejects custom empty overrides.",
+      "entries": [
+        "addLandingEffects",
+        "addRunningEffects",
+        "canEntityDestroy",
+        "collisionExtendsVertically",
+        "getFriction",
+        "getSoundType",
+        "isBurning",
+        "isEmpty",
+        "isLadder",
+        "isScaffolding",
+        "makesOpenTrapdoorAboveClimbable",
+        "onCaughtFire"
+      ],
+      "entity_queries": [],
+      "verification": "partial"
+    }
+  }
+}

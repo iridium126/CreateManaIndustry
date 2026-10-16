@@ -190,7 +190,9 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
     public int freeCount(){open();return free.count();}
     /** Current render-thread solver state for the asynchronous collision prefetch pass. */
     public int freeStateBuffer(){open();return free.stateBuffer();}
+    public void environmentCorrected(){open();free.externalGpuMutation();freeVersion++;}
     public PackageEnvironmentGpu enableEnvironment(Function<String,String> sources){open();return free.enableEnvironment(sources);}
+    public void climbingBounds(boolean fullBounds){open();free.climbingBounds(fullBounds);}
     public PackageEnvironmentGpu environment(){open();return free.environment();}
     public PackageFreezeDiagnosticsGpu enableFreezeDiagnostics(Function<String,String> sources){open();return free.enableFreezeDiagnostics(sources);}
     public void disableFreezeDiagnostics(){open();free.disableFreezeDiagnostics();}

@@ -71,8 +71,13 @@ allprojects {
             if (project.hasProperty('modelPopulationBenchmark')) args '--benchmark'
             workingDir = project.projectDir
         }
+        tasks.register('validatePackageEnvironmentAudit', Exec) {
+            dependsOn 'createMinecraftArtifacts'
+            workingDir = project.projectDir
+            commandLine 'python', 'scripts/particles/audit_package_environment.py', '--check'
+        }
         tasks.register('validatePackageGpu', JavaExec) {
-            dependsOn tasks.named('classes')
+            dependsOn tasks.named('classes'), 'validatePackageEnvironmentAudit'
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/PackageGpuValidation.java'
             if (project.hasProperty('packageRepairOnly')) args '--repair-only'
@@ -82,6 +87,8 @@ allprojects {
             if (project.hasProperty('packageMovingAdvance')) args '--moving-advance-only'
             if (project.hasProperty('packageJournalFairness')) args '--journal-fairness-only'
             if (project.hasProperty('packageWorldHistory')) args '--world-history-only'
+            if (project.hasProperty('packageEmptySections')) args '--empty-sections-only'
+            if (project.hasProperty('packageMaterials')) args '--materials-only'
             if (project.hasProperty('packageZeroBoundary')) args '--zero-boundary-only'
             if (project.hasProperty('packageUploadFairness')) args '--upload-fairness-only'
             if (project.hasProperty('packageBenchmark')) args '--benchmark'

@@ -37,6 +37,7 @@ public final class PackageRecoveryGameTests {
             var p=Vec3.atCenterOf(helper.absolutePos(new BlockPos(2,6,2)));
             var entry=capture(level,p,"CMI restore contents");spawned.add(entry.uuid);
             entry.health=2.75f;entry.fireTicks=87;entry.portalCooldown=123;entry.insertionDelay=9;entry.tossedBy=UUID.randomUUID();
+            entry.environmentMotion=new PackageEnvironmentMotion(116,3.5f,.25f,.05f,.25f,9,1839);entry.witherTicks=17;
             var remainder=box("CMI authoritative remainder");entry.replaceBox(level,remainder);
             var pose=new PackageLease.Pose(p.x+1.5,p.y+2,p.z-.25,1024,-32,8,-90);
             PackageAuthorityManager.updateLight(level,entry,new PackageAuthorityRegion.Snapshot(pose,PackageAuthorityRegion.GROUNDED));
@@ -56,6 +57,9 @@ public final class PackageRecoveryGameTests {
             helper.assertTrue(restored.getYRot()==-90&&restored.onGround(),"Yaw or grounded flag lost");
             helper.assertTrue(restored.getHealth()==2.75f&&restored.getRemainingFireTicks()==87&&restored.getPortalCooldown()==123,"Environment state lost");
             helper.assertTrue(restored.insertionDelay==9&&entry.tossedBy.equals(((PackageInitialEntityAccess)restored).cmi$tossedBy()),"Insertion/thrower state lost");
+            helper.assertTrue(restored.getTicksFrozen()==116&&restored.fallDistance==3.5f&&restored.tickCount==1839,"Frozen/fall/tick phase lost on restoration");
+            helper.assertTrue(((PackageInitialEntityAccess)restored).cmi$stuckMultiplier().equals(new Vec3(.25f,.05f,.25f)),"Pending stuck multiplier lost on restoration");
+            helper.assertTrue(restored.getEffect(net.minecraft.world.effect.MobEffects.WITHER).getDuration()==17,"Active wither duration lost on restoration");
             helper.assertTrue(ItemStack.matches(remainder,restored.box),"Restored original box instead of actual remainder");
             var saved=new CompoundTag();restored.saveWithoutId(saved);
             var reloaded=new PackageEntity(level,0,0,0);reloaded.load(saved);
@@ -70,6 +74,7 @@ public final class PackageRecoveryGameTests {
             var recaptured=store.byUuid(entry.uuid);
             helper.assertTrue(recaptured!=null&&recaptured.identity.generation()>entry.identity.generation()&&level.getEntity(entry.uuid)==null,"Re-enable did not establish a new lightweight lifecycle");
             helper.assertTrue(ItemStack.matches(remainder,recaptured.box(level))&&recaptured.tossedBy.equals(entry.tossedBy),"Re-enable changed restored inventory/thrower");
+            helper.assertTrue(recaptured.environmentMotion.equals(entry.environmentMotion)&&recaptured.witherTicks==17,"Re-enable lost deterministic environment state");
             helper.assertTrue(store.byUuid(ordinary.getUUID())!=null,"Existing native package was not migrated on enable");
             var canceled=capture(level,p.add(0,0,4),"CMI canceled admission");spawned.add(canceled.uuid);
             Consumer<EntityJoinLevelEvent> reject=event->{if(!ServerConfig.packageGpuAuthority&&event.getEntity().getUUID().equals(canceled.uuid))event.setCanceled(true);};
@@ -89,11 +94,24 @@ public final class PackageRecoveryGameTests {
             var coldData=new CompoundTag();coldData.put("Box",box("CMI startup restore").save(level.registryAccess()));
             var cold=new PackageLightStore.Entry(new PackageLease.Identity(PackageIdentityData.get(level).identity(),1),UUID.randomUUID(),entry.model,entry.width,entry.height,-1,coldData,new PackageAuthorityRegion.Snapshot(new PackageLease.Pose(p.x+8,p.y,p.z,1,0,0,0),0));
             var coldStore=new PackageLightStore();coldStore.put(cold);
+            var archive=coldStore.save(new CompoundTag(),level.registryAccess());var oldRow=archive.getList("Packages",net.minecraft.nbt.Tag.TAG_COMPOUND).getCompound(0);
+            oldRow.remove("EnvironmentMotion");oldRow.remove("WitherTicks");oldRow.remove("PendingPortal");
+            var legacy=PackageLightStore.load(archive,level.registryAccess()).byIdentity(cold.identity);
+            helper.assertTrue(legacy.environmentMotion.equals(PackageEnvironmentMotion.EMPTY)&&legacy.witherTicks==0&&legacy.pendingPortal==null,"Legacy record defaults changed");
+            var legacyData=oldRow.getCompound("Data");legacyData.putInt("TicksFrozen",43);legacyData.putFloat("FallDistance",2.25f);legacyData.putShort("Fire",(short)-13);
+            var legacyWither=new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.WITHER,-1,2);
+            var effects=new net.minecraft.nbt.ListTag();effects.add(legacyWither.save());legacyData.put("active_effects",effects);
+            var migrated=PackageLightStore.load(archive,level.registryAccess()).byIdentity(cold.identity);
+            helper.assertTrue(migrated.environmentMotion.frozenTicks()==43&&migrated.environmentMotion.fallDistance()==2.25f&&migrated.fireTicks==-13,
+                    "Legacy native frozen/fall/fire state was discarded");
+            helper.assertTrue(migrated.witherEffect!=null&&migrated.witherEffect.save().equals(legacyWither.save()),"Legacy native Wither duration/amplifier lost");
+            cold.pendingPortal=BlockPos.containing(p);cold.pendingPortalType=3;cold.pendingPortalAge=0;
             var loaded=PackageLightStore.load(coldStore.save(new CompoundTag(),level.registryAccess()),level.registryAccess()).byIdentity(cold.identity);
             store.put(loaded);spawned.add(loaded.uuid);
             // Recreate the world adapter with persisted records and authority already disabled.
             PackageAuthorityManager.onUnload(new LevelEvent.Unload(level));pulse(level);
             helper.assertTrue(store.byIdentity(loaded.identity)==null&&level.getEntity(loaded.uuid) instanceof PackageEntity,"Disabled startup did not recover a persisted record");
+            helper.assertTrue(((PackageEntity)level.getEntity(loaded.uuid)).portalProcess!=null,"Pending portal process lost on disabled startup restoration");
 
             var unloadedPose=new PackageLease.Pose(1_000_008,p.y,1_000_008,0,0,0,0);
             helper.assertTrue(!level.hasChunkAt(BlockPos.containing(unloadedPose.x(),unloadedPose.y(),unloadedPose.z())),"Far fixture chunk is already loaded");

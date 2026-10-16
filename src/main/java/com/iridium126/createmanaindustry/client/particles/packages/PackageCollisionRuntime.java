@@ -226,6 +226,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
             }
             if(current.collisionRequested) {
                 current.gpu.retainHistory(current.geometryHistory.retained());
+                current.gpu.nextFrame();
                 if(current.movingGpu==null)current.movingGpu=new PackageMovingCollisionGpu();
                 current.movingGpu.tickRate(current.level.tickRateManager().tickrate());
                 current.movingGpu.sync(current.movingCache.entries(),current.movingCache.retainedGeometry());
@@ -319,8 +320,8 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         return sorted[Math.max(0,(int)Math.ceil(discoveryCount*q)-1)];
     }
     private static String gpuReport(PackageCollisionGpu.Stats stats) {
-        return String.format(java.util.Locale.ROOT,"GPU %d/%d ready, pending=%d retired=%d, uploads=%d B; upload p50/p95=%.3f/%.3f ms, overruns=%d; LRU evictions=%d; shape/capacity rejects=%d/%d, skipped views=%d",
-                stats.ready(),stats.residents(),stats.pending(),stats.retired(),stats.uploadedBytes(),stats.p50Nanos()/1e6,stats.p95Nanos()/1e6,stats.overruns(),stats.evictions(),stats.shapeRejections(),stats.capacityRejections(),stats.skippedViews());
+        return String.format(java.util.Locale.ROOT,"GPU ready=%d dense=%d empty=%d history=%d, pending=%d retired=%d, uploads=%d B; upload p50/p95=%.3f/%.3f ms, overruns=%d; LRU evictions=%d; shape/capacity rejects=%d/%d, skipped views=%d",
+                stats.ready(),stats.residents(),stats.emptyCoverage(),stats.historicalVersions(),stats.pending(),stats.retired(),stats.uploadedBytes(),stats.p50Nanos()/1e6,stats.p95Nanos()/1e6,stats.overruns(),stats.evictions(),stats.shapeRejections(),stats.capacityRejections(),stats.skippedViews());
     }
     public static void closeCurrent() {
         owner();if(current==null)return;
@@ -361,6 +362,9 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         current.captureMovingFirst=!current.captureMovingFirst;
         current.lightPriority=(current.lightPriority+1)%3;
         }finally{current.frameBudget.consumed(System.nanoTime()-captureStart);PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.CAPTURE,profiling);}
+    }
+    @SubscribeEvent public static void tagsUpdated(net.neoforged.neoforge.event.TagsUpdatedEvent event){
+        if(current!=null&&event.getUpdateCause()==net.neoforged.neoforge.event.TagsUpdatedEvent.UpdateCause.CLIENT_PACKET_RECEIVED){owner();current.cache.invalidateAll();}
     }
     @Override public long uploaded(PackageCollisionUploadSchedule.Atlas atlas){
         owner();return switch(atlas){case WORLD->gpu.uploadedBytes();case MOVING->movingGpu.uploadedBytes();case LIGHT->lightGpu==null?0:lightGpu.uploadedBytes();};

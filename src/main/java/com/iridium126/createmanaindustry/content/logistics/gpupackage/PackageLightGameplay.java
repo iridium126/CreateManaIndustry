@@ -31,6 +31,14 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 @EventBusSubscriber(modid=CreateManaIndustry.MODID)
 public final class PackageLightGameplay {
     private PackageLightGameplay() {}
+    public static void nudgeEjector(ServerLevel level,BlockPos at){
+        for(var entry:PackageAuthorityManager.queryLight(level,new AABB(at).inflate(-1/16.,0,-1/16.))){
+            var p=entry.state().pose();
+            PackageAuthorityManager.updateLight(level,entry,new PackageAuthorityRegion.Snapshot(
+                    new PackageLease.Pose(p.x(),p.y()+.125,p.z(),p.vx(),p.vy(),p.vz(),p.yaw()),entry.state().flags()));
+            PackageAuthorityManager.pauseForTransfer(level,entry);
+        }
+    }
     static boolean belowVoid(double feetY,int minBuildHeight){return feetY<(double)minBuildHeight-64;}
     public static void interact(ServerboundLightPackageInteraction request,IPayloadContext context) {
         if(!(context.player() instanceof ServerPlayer player)||player.isSpectator())return;
@@ -92,7 +100,8 @@ public final class PackageLightGameplay {
         }
     }
     static int environmentPermissions(ServerLevel level,PackageLightStore.Entry entry){
-        if(entry.data.getBoolean("Invulnerable"))return 0;var box=entry.box(level);int flags=0;
+        int flags=(entry.witherTicks!=0?8:0)|(entry.pendingPortal!=null?16:0);
+        if(entry.data.getBoolean("Invulnerable"))return flags;var box=entry.box(level);
         if(box.getItem().canBeHurtBy(box,level.damageSources().drown()))flags|=1;
         if(!box.has(net.minecraft.core.component.DataComponents.FIRE_RESISTANT)){
             if(box.getItem().canBeHurtBy(box,level.damageSources().lava()))flags|=2;
@@ -103,6 +112,7 @@ public final class PackageLightGameplay {
         return environmentRejection(level,entry,region,sample)==null;
     }
     static String environmentRejection(ServerLevel level,PackageLightStore.Entry entry,PackageRegion region,PackageEnvironmentEvent.Sample sample){
+        if(sample.contact()==PackageEnvironmentEvent.NATIVE_BATCH)return PackageLightNativeEnvironment.rejection(level,entry,region,sample);
         var p=new Vec3(region.originX()+sample.px(),region.originY()+sample.py(),region.originZ()+sample.pz());
         if(sample.contact()==0)return null;
         var block=sample.block(region);if(!level.hasChunkAt(block))return "contact chunk unavailable";
@@ -123,6 +133,7 @@ public final class PackageLightGameplay {
         return valid?null:"contact block type changed";
     }
     static boolean environmentStep(ServerLevel level,PackageLightStore.Entry entry,PackageRegion region,PackageEnvironmentEvent.Sample sample){
+        if(sample.contact()==PackageEnvironmentEvent.NATIVE_BATCH)return PackageLightNativeEnvironment.step(level,entry,region,sample);
         int allowed=environmentPermissions(level,entry);
         boolean destroyed=false;
         for(int tick=0;tick<sample.ticks()&&!destroyed;tick++){
@@ -154,8 +165,36 @@ public final class PackageLightGameplay {
         if(damageAllowed&&entry.fireTicks%20==0)entry.health-=.15f;
         entry.fireTicks--;return damageAllowed&&entry.health<=.5f;
     }
+    static void portalContact(ServerLevel level,PackageLightStore.Entry entry,BlockPos at,net.minecraft.world.level.block.state.BlockState state){
+        int type=state.is(Blocks.NETHER_PORTAL)?1:state.is(Blocks.END_PORTAL)?2:state.is(Blocks.END_GATEWAY)?3:0;if(type==0)return;
+        if(type==2&&!net.minecraft.world.phys.shapes.Shapes.joinIsNotEmpty(
+                net.minecraft.world.phys.shapes.Shapes.create(entry.bounds().move(-at.getX(),-at.getY(),-at.getZ())),state.getShape(level,at),net.minecraft.world.phys.shapes.BooleanOp.AND))return;
+        if(type==3){
+            if(!(level.getBlockEntity(at) instanceof net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity gateway)||gateway.isCoolingDown())return;
+            net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity.triggerCooldown(level,at,state,gateway);
+        }
+        // Entity.setAsInsidePortal refreshes an existing cooldown; contact only arms
+        // PortalProcessor. The transition occurs at the following Entity.baseTick.
+        if(entry.portalCooldown>0){entry.portalCooldown=300;entry.portalUpdatedTick=level.getGameTime();return;}
+        entry.pendingPortal=at.immutable();entry.pendingPortalType=type;entry.pendingPortalAge=entry.environmentMotion.age();
+        entry.pendingPortalZ=type==1&&state.getValue(NetherPortalBlock.AXIS)==Direction.Axis.Z;
+    }
+    static boolean advancePortal(ServerLevel level,PackageLightStore.Entry entry,int age,long elapsed){
+        entry.portalCooldown=(int)Math.max(0,entry.portalCooldown-Math.min(Integer.MAX_VALUE,elapsed));entry.portalUpdatedTick=level.getGameTime();
+        if(entry.pendingPortal==null||age<=entry.pendingPortalAge)return false;
+        var at=entry.pendingPortal;int type=entry.pendingPortalType;boolean axisZ=entry.pendingPortalZ;
+        entry.pendingPortal=null;entry.pendingPortalType=0;entry.portalCooldown=300;
+        var before=entry.state();
+        if(type==1)portal(level,entry,at,Blocks.NETHER_PORTAL.defaultBlockState().setValue(NetherPortalBlock.AXIS,axisZ?Direction.Axis.Z:Direction.Axis.X));
+        else if(type==2)endPortal(level,entry);
+        else if(type==3&&level.getBlockEntity(at) instanceof net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity gateway){
+            var destination=gateway.getPortalPosition(level,at);
+            if(destination!=null){var p=entry.state().pose();PackageAuthorityManager.transferLight(level,level,entry,new PackageLease.Pose(destination.x,destination.y,destination.z,p.vx(),p.vy(),p.vz(),p.yaw()));}
+        }
+        return PackageAuthorityManager.light(level,entry.identity)!=entry||!entry.state().equals(before);
+    }
     private static void portal(ServerLevel source,PackageLightStore.Entry entry,BlockPos sourcePos,net.minecraft.world.level.block.state.BlockState state) {
-        var key=source.dimension()==net.minecraft.world.level.Level.NETHER?net.minecraft.world.level.Level.OVERWORLD:net.minecraft.world.level.Level.NETHER;var target=source.getServer().getLevel(key);if(target==null)return;
+        var key=source.dimension()==net.minecraft.world.level.Level.NETHER?net.minecraft.world.level.Level.OVERWORLD:net.minecraft.world.level.Level.NETHER;var target=source.getServer().getLevel(key);if(target==null||!source.getServer().isLevelEnabled(target))return;
         var p=entry.state().pose();double scale=net.minecraft.world.level.dimension.DimensionType.getTeleportationScale(source.dimensionType(),target.dimensionType());var position=target.getWorldBorder().clampToBounds(p.x()*scale,p.y(),p.z()*scale);target.getChunk(position);
         var found=target.getPortalForcer().findClosestPortalPosition(position,key==net.minecraft.world.level.Level.NETHER,target.getWorldBorder());
         if(found.isEmpty()){var created=target.getPortalForcer().createPortal(position,state.getValue(NetherPortalBlock.AXIS));if(created.isEmpty())return;found=java.util.Optional.of(created.get().minCorner);}
@@ -170,7 +209,7 @@ public final class PackageLightGameplay {
         PackageAuthorityManager.transferLight(source,target,entry,new PackageLease.Pose(positionOut.x,positionOut.y,positionOut.z,vx,p.vy(),vz,yaw));
     }
     private static void endPortal(ServerLevel source,PackageLightStore.Entry entry) {
-        var key=source.dimension()==net.minecraft.world.level.Level.END?net.minecraft.world.level.Level.OVERWORLD:net.minecraft.world.level.Level.END;var target=source.getServer().getLevel(key);if(target==null)return;
+        var key=source.dimension()==net.minecraft.world.level.Level.END?net.minecraft.world.level.Level.OVERWORLD:net.minecraft.world.level.Level.END;var target=source.getServer().getLevel(key);if(target==null||!source.getServer().isLevelEnabled(target))return;
         var pos=key==net.minecraft.world.level.Level.END?ServerLevel.END_SPAWN_POINT:target.getSharedSpawnPos();target.getChunk(pos);
         var p=entry.state().pose();float yaw=p.yaw();if(key==net.minecraft.world.level.Level.END){net.minecraft.world.level.levelgen.feature.EndPlatformFeature.createEndPlatform(target,pos.below(),true);yaw=Direction.WEST.toYRot();}else pos=target.getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,pos);
         PackageAuthorityManager.transferLight(source,target,entry,new PackageLease.Pose(pos.getX()+.5,pos.getY(),pos.getZ()+.5,p.vx(),p.vy(),p.vz(),yaw));

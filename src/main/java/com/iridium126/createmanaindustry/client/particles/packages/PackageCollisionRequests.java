@@ -6,7 +6,7 @@ import java.util.function.Consumer;
 
 /** Bounded numeric requests produced by the GPU before a free package reaches uncaptured world. */
 public final class PackageCollisionRequests {
-    public static final int MAX_REQUESTS=4096,MAX_TOUCH_WORDS=128,MAX_BODIES=131072,HEADER_BYTES=16;
+    public static final int MAX_REQUESTS=4096,MAX_TOUCH_WORDS=(PackageCollisionGpu.MAX_COVERAGE*2+31)/32,MAX_BODIES=131072,HEADER_BYTES=16;
     public static final int TOUCH_OFFSET=HEADER_BYTES+MAX_REQUESTS*16,TOUCH_BYTES=MAX_TOUCH_WORDS*4;
     public static final int BYTES=TOUCH_OFFSET+TOUCH_BYTES;
     public interface Usage {

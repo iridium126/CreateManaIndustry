@@ -1,4 +1,5 @@
 import java.nio.*;
+import com.iridium126.createmanaindustry.client.particles.packages.PackageCpuDiagnostics;
 import java.nio.file.*;
 import java.util.*;
 import org.lwjgl.*;
@@ -1845,6 +1846,210 @@ public class PackageGpuValidation {
             check(r.getFloat((n-1)*64+60)>=0&&r.getFloat((n-1)*64+4)<3,"resolved dense contact did not fall after support removal");
         }
     }
+    static void materialMotionRegression()throws Exception{
+        var air=snapshot((s,i)->WORLD_AIR);
+        for(int kind:new int[]{1,3,4,257}){
+            boolean aboveFeet=kind==257;int metadata=(kind&255)<<16;
+            var scene=snapshot((s,i)->!aboveFeet||i>>>8==9?new PackageCollisionCache.Cell(List.of(),.6f,metadata):WORLD_AIR);
+            try(var world=new PackageCollisionGpu(1,1);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)){
+                world.offer(new PackageCollisionCache.Section(0,0,0),scene);uploadWorld(world);
+                var env=gpu.enableEnvironment(PackageGpuValidation::source);env.reset(0,1,1,1,0,5,7);env.resetMotion(0,0,9,0,0,0);
+                var input=bodies(1);body(input,0,8.5f,8.75f,8.5f,1);input.putFloat(48,8.5f).putFloat(52,8.75f).putFloat(56,8.5f);gpu.upload(input,1);
+                try(var view=world.view(0,0,0)){env.step(gpu.stateBuffer(),1,view);}
+                check(env.capture(1),"stuck fall reset journal capture");GL11.glFinish();int[] observed={0};
+                env.poll(raw->{var event=com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent.decode(raw);observed[0]++;
+                    check(event.samples().getFirst().fallDistance()==(aboveFeet?9:0),"makeStuckInBlock fall reset / feet-only powder condition differs "+kind);});
+                check(observed[0]==1,"stuck fall reset journal missing");
+            }
+        }
+        for(int kind:new int[]{0,9,2|(4<<8),1|(3<<8),9|(8<<16)})for(boolean fullBounds:new boolean[]{false,true}){
+            boolean aboveFeet=(kind&(8<<16))!=0;int metadata=(kind&65535)<<16;
+            var climbingScene=snapshot((s,i)->(i&15)==9?shape(1,.6f):!aboveFeet||i>>>8==8?
+                    new PackageCollisionCache.Cell(List.of(),.6f,metadata):WORLD_AIR);
+            try(var world=new PackageCollisionGpu(1,1);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)){
+                world.offer(new PackageCollisionCache.Section(0,0,0),climbingScene);uploadWorld(world);
+                var env=gpu.enableEnvironment(PackageGpuValidation::source);gpu.climbingBounds(fullBounds);env.reset(0,1,1,1,0,5,7);env.resetMotion(0,0,0,0,0,0);
+                var input=bodies(1);body(input,0,8.45f,8,8,1);input.putFloat(16,20).putFloat(20,aboveFeet?-20:0);gpu.upload(input,1);
+                try(var view=world.view(0,0,0)){gpu.stepWorld(.05f,view);}
+                var result=read(gpu);boolean climbs=(kind==9||kind==(1|(3<<8))||aboveFeet&&fullBounds);
+                check(result.getFloat(60)>=0,"climbing collision paused a supported material");
+                check(climbs?Math.abs(result.getFloat(20)-4)<1e-5:result.getFloat(20)<0,
+                        "post-move climbing boost differs kind="+kind+" fullBounds="+fullBounds+" vy="+result.getFloat(20));
+                // The per-move collision flag must not survive a later unconstrained move.
+                body(input,0,7.5f,8,8,1);input.putFloat(16,0).putFloat(20,0);gpu.upload(input,1);
+                try(var view=world.view(0,0,0)){gpu.stepWorld(.05f,view);}
+                check(read(gpu).getFloat(20)<=0,"climbing retained a stale horizontal collision kind="+kind+" fullBounds="+fullBounds);
+            }
+        }
+        for(int material:new int[]{3,4,9}){
+            var scene=snapshot((s,i)->new PackageCollisionCache.Cell(List.of(),.6f,material<<16));
+            try(var world=new PackageCollisionGpu(1,1);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)){
+                world.offer(new PackageCollisionCache.Section(0,0,0),scene);uploadWorld(world);
+                var env=gpu.enableEnvironment(PackageGpuValidation::source);env.reset(0,1,1,1,0,5,7);
+                var b=bodies(1);body(b,0,8,8,8,1);b.putFloat(16,20).putFloat(20,-20);gpu.upload(b,1);
+                try(var view=world.view(0,0,0)){
+                    gpu.stepWorld(.05f,view);var first=read(gpu);float x=first.getFloat(0),y=first.getFloat(4);
+                    gpu.stepWorld(.05f,view);var second=read(gpu);
+                    check(second.getFloat(60)>=0,"special material froze supported motion "+material);
+                    if(material==9)check(Math.abs(first.getFloat(16)-3)<1e-5&&Math.abs(first.getFloat(20)+3)<1e-5,"climbable velocity bounds differ from LivingEntity");
+                    else {float scale=material==3?.25f:.8f;
+                        check(Math.abs(second.getFloat(0)-x-.98f*.98f*scale)<1e-5,"stuck multiplier did not apply to the following move "+material);
+                        check(second.getFloat(4)<y&&second.getFloat(20)==0,"stuck motion did not clear retained velocity "+material);}
+                }
+            }
+        }
+        for(int material:new int[]{1,6,7,45}){
+            var scene=snapshot((s,i)->i>>>8==0?new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,material==1?.9f:1,1)),.6f,material<<16):WORLD_AIR);
+            try(var world=new PackageCollisionGpu(1,1);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)){
+                world.offer(new PackageCollisionCache.Section(0,0,0),scene);world.offer(new PackageCollisionCache.Section(0,-1,0),air);uploadWorld(world);
+                var env=gpu.enableEnvironment(PackageGpuValidation::source);env.reset(0,1,1,1,0,5,7);env.resetMotion(0,0,3,0,0,0);
+                var b=bodies(1);body(b,0,8,2,8,1);b.putFloat(20,-30);gpu.upload(b,1);
+                try(var view=world.view(0,0,0)){gpu.stepWorld(.05f,view);}
+                var state=read(gpu);check(state.getFloat(60)>=0,"material landing froze "+material);
+                if(material==1)check(Math.abs(state.getFloat(4)-1.4f)<1e-4,"powder snow falling collision did not use the 0.9 block surface");
+                else {float factor=material==6?1:material==7?.66f:.26f;
+                    check(Math.abs(state.getFloat(20)-30.968f*factor)<1e-3,"LivingEntity package bounce coefficient differs "+material);}
+            }
+        }
+        List<PackageCollisionCache.Box> scaffold=List.of(new PackageCollisionCache.Box(0,.875f,0,1,1,1),
+                new PackageCollisionCache.Box(0,0,0,.125f,1,.125f),new PackageCollisionCache.Box(0,0,.875f,.125f,1,1),
+                new PackageCollisionCache.Box(.875f,0,0,1,1,.125f),new PackageCollisionCache.Box(.875f,0,.875f,1,1,1),
+                new PackageCollisionCache.Box(0,0,0,1,.125f,1));
+        var scene=snapshot((s,i)->i>>>8==0?new PackageCollisionCache.Cell(scaffold,.6f,2<<16):WORLD_AIR);
+        for(boolean rising:new boolean[]{false,true})try(var world=new PackageCollisionGpu(1,6);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)){
+            world.offer(new PackageCollisionCache.Section(0,0,0),scene);world.offer(new PackageCollisionCache.Section(0,-1,0),air);uploadWorld(world);
+            gpu.enableEnvironment(PackageGpuValidation::source).reset(0,1,1,1,0,5,7);
+            var b=bodies(1);body(b,0,8,rising?.5f:2,8,1);b.putFloat(20,rising?30:-30);gpu.upload(b,1);
+            try(var view=world.view(0,0,0)){gpu.stepWorld(.05f,view);}var state=read(gpu);
+            check(state.getFloat(60)>=0,"scaffolding froze an ordinary package");
+            check(rising?state.getFloat(4)>1.5:Math.abs(state.getFloat(4)-1.5f)<1e-4,"scaffolding did not distinguish rising from landing");
+        }
+    }
+    static void nativeEnvironmentJournalRegression()throws Exception{
+        var air=snapshot((s,i)->WORLD_AIR);
+        var powder=snapshot((s,i)->new PackageCollisionCache.Cell(List.of(),.6f,1<<16));
+        try(var world=new PackageCollisionGpu(1,1);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)){
+            var section=new PackageCollisionCache.Section(0,0,0);world.offer(section,air);
+            var env=gpu.enableEnvironment(PackageGpuValidation::source);env.reset(0,91,7,3,0,1,-20,5,7);env.resetMotion(0,139,0,0,0,0,1739);
+            var body=bodies(1);body(body,0,8.5f,8.5f,8.5f,1);gpu.upload(body,1);
+            // Air ages the body without producing journal traffic.
+            env.resetMotion(0,0,0,0,0,0,1739);
+            try(var view=world.view(0,0,0)){for(int i=0;i<100;i++)env.step(gpu.stateBuffer(),1,view);}
+            check(readBuffer(env.headerBuffer(),64).getInt(24)==0,"ordinary air emitted native readback");
+            var field=PackageEnvironmentGpu.class.getDeclaredField("samples");field.setAccessible(true);int samples=field.getInt(env);
+            check(readBuffer(samples,PackageEnvironmentGpu.SAMPLE_STRIDE*48).getInt(20*48+16)==1839,"native clock stopped in air");
+            world.forget(section);world.offer(section,powder);uploadWorld(world);env.resetMotion(0,139,0,0,0,0,1839);
+            try(var view=world.view(0,0,0)){env.step(gpu.stateBuffer(),1,view);}
+            check(readBuffer(env.headerBuffer(),64).getInt(36)==2,"freeze threshold did not await the server result");
+            check(env.capture(1),"native batch capture failed");GL11.glFinish();int[] events={0};
+            env.poll(raw->{var event=com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent.decode(raw);
+                var sample=event.samples().getFirst();events[0]++;check(sample.contact()==32&&sample.ticks()==1840&&sample.duration()==1,"native batch lost body age or duration");
+                check((sample.effects()&0x7ffffff)==1,"native batch did not retain exact inside-cell mask");});
+            check(events[0]==1,"native batch duplicated or disappeared");
+            var pose=new PackageLease.Pose(8.75,8.25,8.5,2,3,4,90);
+            var motion=new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentMotion(140,2,.9f,1.5f,.9f,7,1840);
+            env.acknowledge(0,1,-20,4.7f,7,gpu.stateBuffer(),new PackageAuthorityRegion.Snapshot(pose,0),motion,0,0,0,.5f);
+            var result=read(gpu);check(result.getFloat(0)==8.75f&&result.getFloat(4)==8.75f&&result.getFloat(20)==3,"canonical native ACK did not correct dependent motion");
+            check(readBuffer(env.headerBuffer(),64).getInt(36)==0,"canonical native ACK did not unblock body");
+            var state=readBuffer(samples,PackageEnvironmentGpu.SAMPLE_STRIDE*48);
+            check(state.getInt(20*48)==140&&state.getInt(20*48+16)==1840&&state.getFloat(20*48+8)==2,"ACK lost deterministic timers");
+            env.retire(0);state=readBuffer(samples,PackageEnvironmentGpu.SAMPLE_STRIDE*48);
+            for(int offset=0;offset<state.capacity();offset+=4)check(state.getInt(offset)==0,"recycled body retained native state");
+        }
+        for(int flags:new int[]{0,256,512}){
+            var platform=new MovingSource(0,0,0,1,1,1);platform.boxes=List.of(new PackageMovingGeometry.Box(0,0,0,1,1,1,.6f,flags));
+            platform.previous=platform.current=movingPose(4,0,4,0,1,1,1);var cache=movingCache(platform);
+            try(var moving=new PackageMovingCollisionGpu();var world=new PackageCollisionGpu(27,1);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)){
+                cubeWorld(world,air,air,0,0,0);var body=bodies(1);body(body,0,4.5f,2,4.5f,1);body.putFloat(20,-30);gpu.upload(body,1);
+                movingStep(gpu,world,moving,cache);var result=read(gpu);
+                check(result.getFloat(60)>=0,"supported Create moving material froze");
+                check(flags==0?Math.abs(result.getFloat(20))<1e-4:result.getFloat(20)>0,"Create moving bounce did not apply native multiplier "+flags+" y="+result.getFloat(4)+" vy="+result.getFloat(20));
+            }
+        }
+    }
+    // Explicit validation only: query actual GL buffer sizes without production telemetry.
+    static long atlasStorageBytes(Object atlas) {
+        try {
+            var type=atlas.getClass();long bytes=0;
+            var data=type.getDeclaredField("data");data.setAccessible(true);
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,data.getInt(atlas));
+            bytes+=GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE);
+            var banks=type.getDeclaredField("banks");banks.setAccessible(true);
+            for(var bank:(Object[])banks.get(atlas)){
+                var buffer=bank.getClass().getDeclaredField("buffer");buffer.setAccessible(true);
+                GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer.getInt(bank));
+                bytes+=GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE);
+            }
+            if(atlas instanceof PackageCollisionGpu){
+                var retired=type.getDeclaredField("oldData");retired.setAccessible(true);
+                for(var old:(Iterable<?>)retired.get(atlas)){
+                    var buffer=old.getClass().getDeclaredField("buffer");buffer.setAccessible(true);
+                    GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer.getInt(old));
+                    bytes+=GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE);
+                }
+            }
+            return bytes;
+        } catch(ReflectiveOperationException e){throw new IllegalStateException("Atlas validation reflection failed",e);}
+    }
+    static void environmentStorageBenchmark() throws Exception {
+        var root=Path.of("build/package-environment-baseline/assets/createmanaindustry");
+        java.util.function.Function<String,String> baselineSources=name->ParticleShaderSource.loadParticle(name,path->{
+            try{return Files.readString(root.resolve(path));}catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}
+        });
+        var summary=new ArrayList<String>();var samples=new ArrayList<String>();
+        summary.add("scene,count,run,variant,gpu_p50_ms,gpu_p95_ms,cpu_p50_ms,cpu_p95_ms,atlas_bytes,total_buffer_bytes,uploaded_bytes,dispatches,environment_journal_bytes");
+        samples.add("scene,count,run,variant,sample,gpu_ms,cpu_ms");
+        var air=snapshot((s,i)->WORLD_AIR);var floor=snapshot((s,i)->i>>>8==0?shape(1,.6f):WORLD_AIR);
+        for(String scene:List.of("air","floor"))for(int n:new int[]{1024,8192})for(int run=0;run<5;run++){
+            // Alternate order to reduce warm-driver/clock bias.
+            for(int order=0;order<2;order++){
+                boolean baseline=(run+order)%2==0;String suffix=baseline?"Baseline":"";
+                Class<?> atlasType=Class.forName("com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionGpu"+suffix);
+                Class<?> physicsType=Class.forName("com.iridium126.createmanaindustry.client.particles.packages.PackagePhysicsGpu"+suffix);
+                Object atlas=atlasType.getConstructor(int.class,int.class).newInstance(256,1024);
+                Object physics=physicsType.getConstructor(int.class,float.class,java.util.function.Function.class,boolean.class).newInstance(n,2f,baseline?baselineSources:(java.util.function.Function<String,String>)PackageGpuValidation::source,false);
+                var offer=atlasType.getMethod("offer",PackageCollisionCache.Section.class,PackageCollisionCache.Snapshot.class);
+                var pump=atlasType.getMethod("pump",int.class,long.class);
+                var stats=atlasType.getMethod("stats");var viewMethod=atlasType.getMethod("view",int.class,int.class,int.class);
+                var viewType=Class.forName(atlasType.getName()+"$View");
+                var step=physicsType.getMethod("stepWorld",float.class,viewType,boolean.class,int.class);
+                var upload=physicsType.getMethod("upload",ByteBuffer.class,int.class);
+                try{
+                    int nx=n==1024?32:128,nz=(n+nx-1)/nx;
+                    int lastX=(int)Math.floor((3.5+(nx-1)*1.375)/16),lastZ=(int)Math.floor((3.5+(nz-1)*1.375)/16);
+                    for(int x=-1;x<=lastX;x++)for(int z=-1;z<=lastZ;z++)offer.invoke(atlas,new PackageCollisionCache.Section(x,0,z),scene.equals("floor")?floor:air);
+                    while((int)stats.invoke(atlas).getClass().getMethod("pending").invoke(stats.invoke(atlas))>0)pump.invoke(atlas,262144,Long.MAX_VALUE);
+                    GL11.glFinish();pump.invoke(atlas,262144,Long.MAX_VALUE);
+                    Object env=physicsType.getMethod("enableEnvironment",java.util.function.Function.class).invoke(physics,baseline?baselineSources:(java.util.function.Function<String,String>)PackageGpuValidation::source);
+                    var headers=bodies(n);for(int i=0;i<n;i++){int p=i*64;headers.putLong(p,i+1).putLong(p+8,1).putLong(p+16,1).putInt(p+40,i+1).putInt(p+44,7).putFloat(p+48,5).putLong(p+56,1);}
+                    env.getClass().getMethod("upload",ByteBuffer.class,int.class).invoke(env,headers,n);
+                    if(!baseline)for(int i=0;i<n;i++)((PackageEnvironmentGpu)env).resetMotion(i,0,0,0,0,0);
+                    var input=bodies(n);for(int i=0;i<n;i++)body(input,i,2+i%nx*1.375f,scene.equals("floor")?1.5f:8,2+i/nx*1.375f,1);
+                    double[] gpuTimes=new double[40],cpuTimes=new double[40];int timer=GL15.glGenQueries(),dispatches=0;
+                    var counter=PackageCpuDiagnostics.class.getDeclaredField("dispatches");counter.setAccessible(true);
+                    // Five warm-up rounds of 20 logical steps precede the 40 measured samples.
+                    try{for(int sample=-100;sample<40;sample++){
+                        upload.invoke(physics,input,n);PackageCpuDiagnostics.enabled(true);GL15.glBeginQuery(GL33.GL_TIME_ELAPSED,timer);long started=System.nanoTime();
+                        try(var view=(AutoCloseable)viewMethod.invoke(atlas,0,0,0)){step.invoke(physics,.05f,view,true,4);}
+                        double cpu=(System.nanoTime()-started)/1e6;GL15.glEndQuery(GL33.GL_TIME_ELAPSED);
+                        double gpu=GL33.glGetQueryObjectui64(timer,GL15.GL_QUERY_RESULT)/1e6;
+                        dispatches=counter.getInt(null);PackageCpuDiagnostics.enabled(false);
+                        if(sample>=0){gpuTimes[sample]=gpu;cpuTimes[sample]=cpu;samples.add(scene+","+n+","+run+","+suffix+","+sample+","+gpu+","+cpu);}
+                    }}finally{GL15.glDeleteQueries(timer);}
+                    long memory=atlasStorageBytes(atlas);
+                    Object result=stats.invoke(atlas);long uploaded=(long)result.getClass().getMethod("uploadedBytes").invoke(result);
+                    int header=(int)env.getClass().getMethod("headerBuffer").invoke(env);var journal=readBuffer(header,n*64);long journalBytes=0;
+                    for(int i=0;i<n;i++)journalBytes+=Integer.toUnsignedLong(journal.getInt(i*64+24)-journal.getInt(i*64+28))*48;
+                    check(journalBytes==0,"ordinary benchmark unexpectedly generated environment readback");
+                    Arrays.sort(gpuTimes);Arrays.sort(cpuTimes);
+                    long allBuffers=memory+(long)physicsType.getMethod("storageBytes").invoke(physics);
+                    summary.add(scene+","+n+","+run+","+(baseline?"baseline":"current")+","+gpuTimes[19]+","+gpuTimes[37]+","+cpuTimes[19]+","+cpuTimes[37]+","+memory+","+allBuffers+","+uploaded+","+dispatches+","+journalBytes);
+                }finally{((AutoCloseable)physics).close();((AutoCloseable)atlas).close();}
+            }
+        }
+        Files.write(Path.of("build/package-environment-benchmark.csv"),summary);Files.write(Path.of("build/package-environment-benchmark-samples.csv"),samples);
+        System.out.println("Package environment benchmark: "+(summary.size()-1)+" five-trial comparisons written");
+    }
     static void environmentRegression(){
         var air=snapshot((section,i)->WORLD_AIR);
         // Reproduce a dense-pile correction moving the final centre far beyond a valid
@@ -2155,7 +2360,7 @@ public class PackageGpuValidation {
         uploadWorld(atlas);
     }
     static void worldUploadVersions() {
-        var air=snapshot((s,i)->WORLD_AIR);var section=new PackageCollisionCache.Section(0,0,0);
+        var air=snapshot((s,i)->i==0?shape(1,.6f):WORLD_AIR);var section=new PackageCollisionCache.Section(0,0,0);
         try(var atlas=new PackageCollisionGpu(1,1,()->0L)) {
             check(atlas.offer(section,air),"world offer rejected");atlas.pump(1024,1);
             check(!atlas.covered(section,air.revision()),"partial GPU upload published coverage");
@@ -2189,7 +2394,7 @@ public class PackageGpuValidation {
         }
     }
     static void worldAtlasLru() {
-        var air=snapshot((s,i)->WORLD_AIR);
+        var air=snapshot((s,i)->i==0?shape(1,.6f):WORLD_AIR);
         var a=new PackageCollisionCache.Section(0,0,0);var b=new PackageCollisionCache.Section(1,0,0);
         var c=new PackageCollisionCache.Section(2,0,0);
         try(var atlas=new PackageCollisionGpu(2,1)) {
@@ -2210,7 +2415,7 @@ public class PackageGpuValidation {
             long version;try(var view=atlas.view(0,0,0)){version=view.version();}
             check(atlas.beginPackageUsage(version),"current table rejected its own package usage set");
             check(a.equals(atlas.touchPackageUsage(version,0)),"active row A failed to resolve");
-            check(b.equals(atlas.touchPackageUsage(version,5)),"active row B failed to resolve");
+            check(b.equals(atlas.touchPackageUsage(version,73856093&(PackageCollisionGpu.MAX_COVERAGE*2-1))),"active row B failed to resolve");
             check(!atlas.beginPackageUsage(version-1),"stale usage feedback replaced the current active set");
             check(!atlas.offer(c,air),"new geometry evicted a section occupied by active packages");
             check(atlas.stats().capacityRejections()==1&&atlas.covered(a,air.revision())&&atlas.covered(b,air.revision()),
@@ -2220,6 +2425,58 @@ public class PackageGpuValidation {
             uploadWorld(atlas);
             check(atlas.covered(a,air.revision())&&!atlas.covered(b,air.revision())&&atlas.covered(c,air.revision()),
                     "released LRU set recycled the wrong section");
+        }
+    }
+    static void emptySectionCoverage() {
+        var section=new PackageCollisionCache.Section(0,0,0);
+        var cache=new PackageCollisionCache(Runnable::run,1,()->0L);cache.request(section);
+        cache.tick((s,i)->WORLD_AIR,1);cache.tick((s,i)->WORLD_AIR,1);var empty1=cache.snapshot(section);
+        cache.invalidate(section);cache.tick((s,i)->i>>>8==0?shape(1,.6f):WORLD_AIR,1);
+        cache.tick((s,i)->WORLD_AIR,1);var solid=cache.snapshot(section);
+        cache.invalidate(section);cache.tick((s,i)->WORLD_AIR,1);cache.tick((s,i)->WORLD_AIR,1);var empty2=cache.snapshot(section);
+        try(var atlas=new PackageCollisionGpu(1,1);var gpu=new PackagePhysicsGpu(1,2,PackageGpuValidation::source)) {
+            long baseline=atlasStorageBytes(atlas);
+            for(int x=0;x<513;x++)check(atlas.offer(new PackageCollisionCache.Section(x,0,0),empty1),"empty coverage admission "+x);
+            check(atlas.stats().emptyCoverage()==513&&atlas.stats().residents()==0&&atlas.stats().pending()==0,"empty section consumed residency or upload work");
+            check(atlas.stats().uploadedBytes()==0&&atlasStorageBytes(atlas)==baseline,"empty coverage allocated geometry storage");
+            atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(section,empty1.revision())));
+            check(atlas.offer(section,solid),"one dense section rejected behind empty coverage");uploadWorld(atlas);
+            check(atlas.stats().residents()==1&&atlas.stats().emptyCoverage()==512&&atlas.stats().evictions()==0,"dense residency counted empty sections");
+            var b=bodies(1);body(b,0,8,8,8,1);gpu.upload(b,1);
+            try(var view=atlas.historicalView(0,0,0,Map.of(section,empty1.revision()))){gpu.stepWorld(.05f,view);}
+            check(read(gpu).getFloat(60)>=0,"empty history was lost on dense publication");
+            atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(section,solid.revision())));
+            check(atlas.offer(section,empty2),"dense to empty publication failed");
+            check(atlas.covered(section,empty2.revision())&&atlas.stats().residents()==0,"empty replacement retained dense residency");
+            gpu.upload(b,1);try(var view=atlas.historicalView(0,0,0,Map.of(section,solid.revision()))){gpu.stepWorld(.05f,view);}
+            check(read(gpu).getFloat(60)>=0,"dense history was lost on empty publication");
+            // With coarse bypass disabled, mixed queries must still synthesize empty cells without touching SSBO data.
+            gpu.upload(b,1);try(var view=atlas.view(0,0,0,false)){gpu.stepWorld(.05f,view);}
+            check(read(gpu).getFloat(60)>=0,"empty sentinel was treated as unavailable geometry");
+            long version;try(var view=atlas.view(0,0,0)){version=view.version();}
+            check(atlas.beginPackageUsage(version)&&section.equals(atlas.touchPackageUsage(version,0)),"empty usage row did not protect CPU coverage");
+            atlas.retainHistory(Set.of());GL11.glFinish();
+            for(int frame=0;frame<130;frame++){atlas.nextFrame();atlas.pump(262144,Long.MAX_VALUE);}
+            GL11.glFinish();atlas.pump(262144,Long.MAX_VALUE);
+            check(atlasStorageBytes(atlas)==baseline,"empty atlas did not release dense storage after hysteresis");
+            atlas.clear();check(!atlas.covered(section),"clear retained empty coverage");
+            var emptyCache=new PackageCollisionCache(Runnable::run,1,()->0L);
+            var emptySource=new PackageCollisionCache.Source(){
+                public boolean empty(PackageCollisionCache.Section ignored){return true;}
+                public PackageCollisionCache.Cell capture(PackageCollisionCache.Section ignored,int index){throw new AssertionError("empty history captured cells");}
+            };
+            emptyCache.request(section);emptyCache.tick(emptySource,1);
+            for(int edit=0;edit<PackageCollisionGpu.MAX_COVERAGE*3;edit++){
+                emptyCache.invalidate(section);emptyCache.tick(emptySource,1);check(atlas.offerHistorical(section,emptyCache.snapshot(section)),"empty history metadata admission failed");
+            }
+            check(atlas.stats().historicalVersions()<=PackageCollisionGpu.MAX_COVERAGE,"unretained empty history grew beyond its metadata bound");
+            var reference=new PackageCollisionGpu.GeometryRevision(section,emptyCache.snapshot(section).revision());atlas.retainHistory(Set.of(reference));
+            try(var view=atlas.historicalView(0,0,0,Map.of(section,reference.revision()))){check(view.ready(),"retained empty history lost its table");}
+            check(atlas.stats().historicalVersions()==1,"empty history pruning lost retention or kept unreferenced versions");
+            atlas.retainHistory(Set.of());check(atlas.stats().historicalVersions()==0,"released empty input retained history metadata");
+            var oversized=new HashMap<PackageCollisionCache.Section,Long>();for(int x=0;x<=PackageCollisionGpu.MAX_COVERAGE;x++)oversized.put(new PackageCollisionCache.Section(x,0,0),1L);
+            boolean rejected=false;try(var ignored=atlas.historicalView(0,0,0,oversized)){}catch(IllegalArgumentException expected){rejected=true;}
+            check(rejected,"oversized historical coverage bypassed metadata limit");
         }
     }
     static void worldShapes() {
@@ -2342,7 +2599,7 @@ public class PackageGpuValidation {
     }
     static void historyChangesPreserveLiveUsage(){
         historicalTableDemandChurn();
-        var air=snapshot((s,c)->WORLD_AIR);var a=new PackageCollisionCache.Section(0,0,0);
+        var air=snapshot((s,c)->c==0?shape(1,.6f):WORLD_AIR);var a=new PackageCollisionCache.Section(0,0,0);
         var b=new PackageCollisionCache.Section(1,0,0);var c=new PackageCollisionCache.Section(2,0,0);
         try(var atlas=new PackageCollisionGpu(2,1)) {
             atlas.offer(a,air);atlas.offer(b,air);uploadWorld(atlas);long token;
@@ -2367,13 +2624,11 @@ public class PackageGpuValidation {
         try(var atlas=new PackageCollisionGpu(1,1)){
             atlas.offer(section,base);uploadWorld(atlas);GL11.glFinish();atlas.offer(section,updated);
             atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(section,base.revision())));
-            check(atlas.describeUpload(section,updated.revision()).contains("observedPatchGate=history"),"history patch blocker missing");
-            long before=atlas.uploadedBytes();atlas.pump(47,Long.MAX_VALUE);
+            long before=atlas.uploadedBytes();atlas.pump(47,Long.MAX_VALUE);GL11.glFinish();atlas.pump(47,Long.MAX_VALUE);
             check(!atlas.covered(section,updated.revision())&&atlas.covered(section,base.revision()),"partial copy exposed a new revision");
-            check(atlas.describeUpload(section,updated.revision()).contains("observedUploadBytes=47/65568"),"pending byte progress missing");
             atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(section,updated.revision())));
-            atlas.pump(48,Long.MAX_VALUE);
-            check(atlas.covered(section,updated.revision())&&atlas.uploadedBytes()-before==95,"completed old input did not permit promotion to a 48-byte patch");
+            uploadWorld(atlas);
+            check(atlas.covered(section,updated.revision())&&atlas.uploadedBytes()-before==65568,"empty to dense promotion did not upload its complete first payload");
             check(atlas.stats().pending()==0&&atlas.stats().retired()==0,"sparse promotion leaked a staging or retired slot");
             check(atlas.describeUpload(section,updated.revision()).contains("observedUpload=complete"),"sparse completion progress missing");
         }
@@ -2398,7 +2653,8 @@ public class PackageGpuValidation {
             check(tasks.isEmpty()&&reads[0]==1,"local rescue scheduled a worker or recaptured the section");
             atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(section,wanted)));
             long before=atlas.uploadedBytes();atlas.pump(48,Long.MAX_VALUE);
-            check(atlas.covered(section,wanted)&&atlas.uploadedBytes()-before==48,"rescued local revision did not upload within its 48-byte patch");
+            uploadWorld(atlas);
+            check(atlas.covered(section,wanted)&&atlas.uploadedBytes()-before==65568,"rescued first dense payload did not finish");
             var body=bodies(1);body(body,0,8,70,8,1);physics.upload(body,1);
             try(var view=atlas.historicalView(0,0,0,Map.of(section,wanted))){physics.stepWorld(.05f,view);}
             var state=read(physics);check(state.getFloat(60)>=0&&state.getFloat(4)<70,"GPU package froze on a rescued local version");
@@ -2429,8 +2685,9 @@ public class PackageGpuValidation {
                     "continuous local notifications lost the still-visible GPU baseline");
             atlas.retainHistory(Set.of(new PackageCollisionGpu.GeometryRevision(first,latestA.revision()),new PackageCollisionGpu.GeometryRevision(second,latestB.revision())));
             long before=atlas.uploadedBytes();atlas.pump(512,Long.MAX_VALUE);
+            uploadWorld(atlas);
             check(atlas.covered(first,latestA.revision())&&atlas.covered(second,latestB.revision()),"local revisions exceeded one small upload budget");
-            check(atlas.uploadedBytes()-before==320,"continuous local notifications retransmitted complete sections");
+            check(atlas.uploadedBytes()-before==2L*PackageCollisionGpu.CELL_BYTES+(latestA.gpuShapeCount()+latestB.gpuShapeCount())*32L,"first dense local payload upload size");
             var bodies=bodies(2);body(bodies,0,-8,70,8,1);body(bodies,1,-8,70,24,1);physics.upload(bodies,2);
             try(var view=atlas.historicalView(0,0,0,Map.of(first,latestA.revision(),second,latestB.revision()))){physics.stepWorld(.05f,view);}
             var state=read(physics);check(state.getFloat(60)>=0&&state.getFloat(64+60)>=0,"local revisions froze unrelated package positions in the two sections");
@@ -2474,7 +2731,7 @@ public class PackageGpuValidation {
                     check(blocked&&lease.ready()&&atlas.covered(section,base.revision()),"upload mutated a leased world view");
                 }
                 GL11.glFinish();long before=atlas.uploadedBytes();atlas.pump(48,Long.MAX_VALUE);
-                boolean fast=local&&!keepHistory;
+                boolean fast=local&&!keepHistory&&!base.gpuEmpty();
                 check(atlas.covered(section,updated.revision())==fast,"sparse upload readiness ignored history or byte budget");
                 check(atlas.uploadedBytes()-before==48,"sparse or staged upload exceeded its byte allowance");
                 if(!fast)check(atlas.covered(section,base.revision()),"partial replacement overwrote the visible baseline");
@@ -2571,7 +2828,7 @@ public class PackageGpuValidation {
             var state=read(gpu);check(state.getFloat(60)>=0&&state.getFloat(4)>=4.499f,"referenced partially uploaded revision was discarded by newer input invalidation="+invalidation);
             gpu.upload(bodies,1);try(var view=atlas.historicalView(0,0,0,Map.of(section,third.revision()))){gpu.stepWorld(.05f,view);}
             check(read(gpu).getFloat(60)>=0&&read(gpu).getFloat(4)<4,"latest air revision was replaced by superseded historical solid data");
-            check(atlas.uploadedBytes()==3L*PackageCollisionGpu.CELL_BYTES+32,"preserved partial upload was recopied or lost");
+            check(atlas.uploadedBytes()==PackageCollisionGpu.CELL_BYTES+32L,"preserved dense partial upload was recopied or empty versions consumed payload");
         }
     }
     static void retainedWorldGeometryProgress(){
@@ -2597,7 +2854,7 @@ public class PackageGpuValidation {
             check(read(gpu).getFloat(4)>=4.499f,"live scene reused obsolete historical air geometry");
             cache.invalidate(section);for(int i=0;i<3;i++)cache.tick((s,cell)->WORLD_AIR,1);var latest=cache.snapshot(section);
             atlas.offer(section,latest);atlas.pump(262144,Long.MAX_VALUE);
-            check(atlas.stats().pending()==1&&!atlas.covered(section,latest.revision()),"full two-slot history silently overwrote a retained version");
+            check(atlas.stats().pending()==0&&atlas.covered(section,latest.revision()),"metadata-only empty replacement waited for a historical data slot");
             atlas.retainHistory(Set.of(second));GL11.glFinish();uploadWorld(atlas);
             check(atlas.covered(section,latest.revision()),"released history did not allow a pending replacement to upload");
             gpu.upload(bodies,1);try(var view=atlas.historicalView(0,0,0,Map.of(section,changed.revision()))){gpu.stepWorld(.05f,view);}
@@ -6927,13 +7184,16 @@ public class PackageGpuValidation {
                 GL43.glDebugMessageControl(GL43.GL_DONT_CARE,GL43.GL_DEBUG_TYPE_ERROR,GL43.GL_DONT_CARE,(IntBuffer)null,true);
             }
             System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));
+            if(Arrays.asList(args).contains("--environment-benchmark-only")){environmentStorageBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"environment benchmark GL error");return;}
             if(Arrays.asList(args).contains("--priority-benchmark")){priorityOptimizationBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"priority benchmark GL error");return;}
             if(Arrays.asList(args).contains("--priority-only")){priorityOptimizationRegression();check(GL11.glGetError()==GL11.GL_NO_ERROR,"priority optimization GL error");System.out.println("Package priority GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--known-contact-only")){knownContactProgress();check(GL11.glGetError()==GL11.GL_NO_ERROR,"known contact GL error");System.out.println("Package known contacts GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--freeze-diagnostics-only")){freezeDiagnostics();check(GL11.glGetError()==GL11.GL_NO_ERROR,"freeze diagnostic GL error");System.out.println("Package freeze diagnostics GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--upload-fairness-only")){uploadFairnessProgress();check(GL11.glGetError()==GL11.GL_NO_ERROR,"upload fairness GL error");System.out.println("Package upload fairness GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--zero-boundary-only")){sameOwnerZeroBoundaryProgress();check(GL11.glGetError()==GL11.GL_NO_ERROR,"zero boundary GL error");System.out.println("Package zero boundary GPU: "+checks+" assertions passed");return;}
-            if(Arrays.asList(args).contains("--world-history-only")){historyChangesPreserveLiveUsage();worldVersionDiagnostics();supersededWorldUploadProgress();retainedWorldGeometryProgress();historicalGeometryIsolation();worldUploadVersions();worldAtlasLru();check(GL11.glGetError()==GL11.GL_NO_ERROR,"world history GL error");System.out.println("Package world history GPU: "+checks+" assertions passed");return;}
+            if(Arrays.asList(args).contains("--empty-sections-only")){emptySectionCoverage();worldMissingAndInvalidated();worldFullCapacity();check(GL11.glGetError()==GL11.GL_NO_ERROR,"empty sections GL error");System.out.println("Package empty sections GPU: "+checks+" assertions passed");return;}
+            if(Arrays.asList(args).contains("--world-history-only")){emptySectionCoverage();historyChangesPreserveLiveUsage();worldVersionDiagnostics();supersededWorldUploadProgress();retainedWorldGeometryProgress();historicalGeometryIsolation();worldUploadVersions();worldAtlasLru();check(GL11.glGetError()==GL11.GL_NO_ERROR,"world history GL error");System.out.println("Package world history GPU: "+checks+" assertions passed");return;}
+            if(Arrays.asList(args).contains("--materials-only")){materialMotionRegression();nativeEnvironmentJournalRegression();check(GL11.glGetError()==GL11.GL_NO_ERROR,"material motion GL error");System.out.println("Package material motion GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--journal-fairness-only")){environmentCaptureFairness();environmentRegression();environmentThroughput();check(GL11.glGetError()==GL11.GL_NO_ERROR,"journal fairness GL error");System.out.println("Package journal fairness GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--moving-advance-only")){rotatingCornerProgress();rotatingGrazingProgress();movingAdvanceSafety();check(GL11.glGetError()==GL11.GL_NO_ERROR,"moving advance GL error");System.out.println("Package moving advance GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--complex-free-only")) {
@@ -6948,7 +7208,7 @@ public class PackageGpuValidation {
                 worldPrefetchBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"world prefetch benchmark GL error");return;
             }
             if(Arrays.asList(args).contains("--repair-only")){
-                continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();delayedMachineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();movingSectionSeamProgress();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();complexResidentNozzleProgress();rotatingCornerProgress();rotatingGrazingProgress();movingAdvanceSafety();sableNozzleResidentSectionProgress();denseResidentVerticalSectionProgress();sectionDemandAndPause();fallingSectionConfirmations();packageFaceLighting();asymmetricSweepRegression();environmentRegression();environmentThroughput();environmentCaptureFairness();recycledFreeAcquisitions();recycledChainAcquisitions();uploadFairnessProgress();historyChangesPreserveLiveUsage();worldVersionDiagnostics();supersededWorldUploadProgress();retainedWorldGeometryProgress();historicalGeometryIsolation();localBudgetRetry();freezeDiagnostics();knownContactProgress();
+                emptySectionCoverage();materialMotionRegression();nativeEnvironmentJournalRegression();continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();delayedMachineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();movingSectionSeamProgress();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();complexResidentNozzleProgress();rotatingCornerProgress();rotatingGrazingProgress();movingAdvanceSafety();sableNozzleResidentSectionProgress();denseResidentVerticalSectionProgress();sectionDemandAndPause();fallingSectionConfirmations();packageFaceLighting();asymmetricSweepRegression();environmentRegression();environmentThroughput();environmentCaptureFairness();recycledFreeAcquisitions();recycledChainAcquisitions();uploadFairnessProgress();historyChangesPreserveLiveUsage();worldVersionDiagnostics();supersededWorldUploadProgress();retainedWorldGeometryProgress();historicalGeometryIsolation();localBudgetRetry();freezeDiagnostics();knownContactProgress();
                 check(GL11.glGetError()==GL11.GL_NO_ERROR,"repair regression GL error");System.out.println("Package repair GPU: "+checks+" assertions passed");return;
             }
             if(Arrays.asList(args).contains("--sparse-physics-benchmark")){sparsePhysicsBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"sparse physics benchmark GL error");System.out.println("Package sparse physics benchmark: "+checks+" assertions passed");return;}
@@ -6973,7 +7233,7 @@ public class PackageGpuValidation {
             if(Arrays.asList(args).contains("--forces-only")){sourceContract();externalForces();nozzleForces();framedForces();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();if(Arrays.asList(args).contains("--forces-benchmark"))forceBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"force GL error");System.out.println("Package forces GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--chain-only")){sourceContract();chainReference();trackedChains();chainEventChannels();chainAcquisitions();check(GL11.glGetError()==GL11.GL_NO_ERROR,"chain GL error");System.out.println("Package chain GPU: "+checks+" assertions passed");return;}
             priorityOptimizationRegression();sparseIndexLifecycle();movingContacts();movingReference();movingLifecycle();movingFriction();movingSectionSeamProgress();movingCapacity();if(Arrays.asList(args).contains("--moving-benchmark"))movingBenchmark();if(Arrays.asList(args).contains("--moving-only")){check(GL11.glGetError()==GL11.GL_NO_ERROR,"moving GL error");System.out.println("Package moving GPU: "+checks+" assertions passed");return;}
-            continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();delayedMachineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();movingSectionSeamProgress();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();complexResidentNozzleProgress();rotatingCornerProgress();rotatingGrazingProgress();movingAdvanceSafety();sableNozzleResidentSectionProgress();denseResidentVerticalSectionProgress();sectionDemandAndPause();fallingSectionConfirmations();asymmetricSweepRegression();environmentRegression();environmentThroughput();environmentCaptureFairness();recycledFreeAcquisitions();recycledChainAcquisitions();uploadFairnessProgress();historyChangesPreserveLiveUsage();worldVersionDiagnostics();supersededWorldUploadProgress();retainedWorldGeometryProgress();historicalGeometryIsolation();localBudgetRetry();freezeDiagnostics();knownContactProgress();sourceContract();externalForces();framedForces();chainParentFrames();mergedPackageVertices();poseQueries();freePoseQueries();parallelFreeChainQueries();chainCheckpoints();boundaries();contact();sweep();dynamicPackageSweep();worldUploadVersions();independentlyConfiguredCollisionAtlases();worldAtlasLru();worldShapes();worldSweepsAndMaterials();historicalGeometryIsolation();worldMissingAndInvalidated();worldFullCapacity();worldRigidSupportAndReplacement();supportProjection();contactProbeReference();supportContactCases();worldEntryFace();supportSustainedMotion();chain();chainReference();trackedChains();chainEventChannels();chainAcquisitions();incrementalPhysics();preparedPhysics();mixedPhysics();mixedFullReservation();readbacks();pool();preparedDrawPasses();shadowCullingAndBoundary();packageDrawTelemetry();render();previewLoad();poseParity();deltas();deltaIncrementalIdentity();deltaPreparedBaselines();acquisitions();batchedAcquisitions();deltaOverflowAndIdentity();deltaQuantizationLimits();deltaYawTies();deltaRelativeBaselines();deltaPredictedMotion();channelRoundTrip();channelBatchAckHoles();channelLifecycle();channelImmutableAndPartialTransport();if(Arrays.asList(args).contains("--benchmark")){benchmark();deltaBenchmark();}
+            emptySectionCoverage();materialMotionRegression();nativeEnvironmentJournalRegression();continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();delayedMachineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();movingSectionSeamProgress();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();complexResidentNozzleProgress();rotatingCornerProgress();rotatingGrazingProgress();movingAdvanceSafety();sableNozzleResidentSectionProgress();denseResidentVerticalSectionProgress();sectionDemandAndPause();fallingSectionConfirmations();asymmetricSweepRegression();environmentRegression();environmentThroughput();environmentCaptureFairness();recycledFreeAcquisitions();recycledChainAcquisitions();uploadFairnessProgress();historyChangesPreserveLiveUsage();worldVersionDiagnostics();supersededWorldUploadProgress();retainedWorldGeometryProgress();historicalGeometryIsolation();localBudgetRetry();freezeDiagnostics();knownContactProgress();sourceContract();externalForces();framedForces();chainParentFrames();mergedPackageVertices();poseQueries();freePoseQueries();parallelFreeChainQueries();chainCheckpoints();boundaries();contact();sweep();dynamicPackageSweep();worldUploadVersions();independentlyConfiguredCollisionAtlases();worldAtlasLru();worldShapes();worldSweepsAndMaterials();historicalGeometryIsolation();worldMissingAndInvalidated();worldFullCapacity();worldRigidSupportAndReplacement();supportProjection();contactProbeReference();supportContactCases();worldEntryFace();supportSustainedMotion();chain();chainReference();trackedChains();chainEventChannels();chainAcquisitions();incrementalPhysics();preparedPhysics();mixedPhysics();mixedFullReservation();readbacks();pool();preparedDrawPasses();shadowCullingAndBoundary();packageDrawTelemetry();render();previewLoad();poseParity();deltas();deltaIncrementalIdentity();deltaPreparedBaselines();acquisitions();batchedAcquisitions();deltaOverflowAndIdentity();deltaQuantizationLimits();deltaYawTies();deltaRelativeBaselines();deltaPredictedMotion();channelRoundTrip();channelBatchAckHoles();channelLifecycle();channelImmutableAndPartialTransport();if(Arrays.asList(args).contains("--benchmark")){benchmark();deltaBenchmark();}
             if(Arrays.asList(args).contains("--delta-pipeline-benchmark"))pipelineBenchmark();
             if(Arrays.asList(args).contains("--delta-batch-pipeline-benchmark"))pipelineBenchmark(true);
             if(Arrays.asList(args).contains("--world-benchmark"))worldBenchmark();

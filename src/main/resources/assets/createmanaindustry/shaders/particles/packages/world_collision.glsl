@@ -1,4 +1,5 @@
 #pragma cmi_include packages/sweep.glsl
+#pragma cmi_include packages/environment_state.glsl
 struct WorldSection { ivec4 keySlot; uvec4 revisionActive; };
 layout(std430,binding=4) readonly buffer WorldSections { WorldSection worldSections[]; };
 layout(std430,binding=5) readonly buffer WorldData { uint worldData[]; };
@@ -6,10 +7,13 @@ uniform bool uWorldReady;
 uniform ivec3 uWorldOriginSection;
 uniform uint uWorldTableMask,uWorldSlotWords,uWorldShapeCapacity;
 uniform float uDt;
+// Query result: UNKNOWN, WAITING for an exact revision, EMPTY, or a DATA slot >=0.
+const int WORLD_UNKNOWN=-1,WORLD_WAITING=-3,WORLD_EMPTY=-4;
 uint worldFailure=FREEZE_WORLD_BOUNDS;
 ivec4 worldFailureDetail=ivec4(0);
 uvec2 worldFailureRevision=uvec2(0),worldLookupRevision=uvec2(0);
 uint worldFailureWait=0u,worldLookupWait=0u;
+uint worldLookupFlags=0u;
 bool worldFailureAt(uint reason,ivec4 detail){worldFailure=reason;worldFailureDetail=detail;worldFailureRevision=uvec2(0);worldFailureWait=0u;return false;}
 void freezeForWorldCollision(inout Body body,vec3 position,uint stage){
     freezePackage(body,position,worldFailure,stage,worldFailureDetail);
@@ -18,25 +22,32 @@ void freezeForWorldCollision(inout Body body,vec3 position,uint stage){
 
 int worldSlot(ivec3 key,out bool clear) {
     clear=false;
-    if(!uWorldReady)return -1;
+    if(!uWorldReady)return WORLD_UNKNOWN;
     uvec3 c=uvec3(key);uint row=((c.x*73856093u)^(c.y*19349663u)^(c.z*83492791u))&uWorldTableMask;
     for(uint probe=0u;probe<=uWorldTableMask;probe++) {
         WorldSection section=worldSections[row];
-        if(section.keySlot.w==-1)return -1;
+        if(section.keySlot.w==-1)return WORLD_UNKNOWN;
         if(all(equal(section.keySlot.xyz,key))){
-            if(section.keySlot.w==-2){worldLookupRevision=section.revisionActive.xy;worldLookupWait=section.revisionActive.w;return -3;}
-            clear=section.revisionActive.w==1u;return section.revisionActive.z==1u?section.keySlot.w:-1;
+            if(section.keySlot.w==-2){worldLookupRevision=section.revisionActive.xy;worldLookupWait=section.revisionActive.w;return WORLD_WAITING;}
+            worldLookupFlags=section.revisionActive.w;clear=(worldLookupFlags&1u)!=0u;return section.revisionActive.z==1u?section.keySlot.w:-1;
         }
         row=(row+1u)&uWorldTableMask;
     }
-    return -1;
+    return WORLD_UNKNOWN;
 }
 int worldSlot(ivec3 key){bool clear;return worldSlot(key,clear);}
+bool worldHasNoMaterials(ivec3 first,ivec3 last) {
+    ivec3 lo=(first>>4)+uWorldOriginSection,hi=(last>>4)+uWorldOriginSection;
+    for(int x=lo.x;x<=hi.x;x++)for(int y=lo.y;y<=hi.y;y++)for(int z=lo.z;z<=hi.z;z++){
+        int slot=worldSlot(ivec3(x,y,z));if((slot<0&&slot!=WORLD_EMPTY)||(worldLookupFlags&4u)!=0u)return false;
+    }
+    return true;
+}
 // Exact immutable metadata, rather than an assumption about an uncaptured section.
 bool clearWorld(ivec3 first,ivec3 last) {
     ivec3 lo=(first>>4)+uWorldOriginSection,hi=(last>>4)+uWorldOriginSection;
     for(int z=lo.z;z<=hi.z;z++)for(int y=lo.y;y<=hi.y;y++)for(int x=lo.x;x<=hi.x;x++) {
-        bool clear;if(worldSlot(ivec3(x,y,z),clear)<0 || !clear)return false;
+        bool clear;int slot=worldSlot(ivec3(x,y,z),clear);if((slot<0&&slot!=WORLD_EMPTY) || !clear)return false;
     }
     return true;
 }
@@ -53,8 +64,9 @@ bool worldBounds(vec3 lo,vec3 hi,out ivec3 first,out ivec3 last) {
 bool worldCell(ivec3 block,vec3 lo,vec3 hi,inout ivec3 cached,inout int slot,out uvec4 cell,out uint base) {
     ivec3 section=(block>>4)+uWorldOriginSection;
     if(slot==-2 || any(notEqual(section,cached))){cached=section;slot=worldSlot(section);}
+    if(slot==WORLD_EMPTY){cell=uvec4(0u,0u,floatBitsToUint(.6),0u);base=0u;return true;}
     if(slot<0){
-        if(slot==-3){worldFailureAt(FREEZE_SECTION_VERSION,ivec4(section,int(worldLookupRevision.y)));worldFailureRevision=worldLookupRevision;worldFailureWait=worldLookupWait;return false;}
+        if(slot==WORLD_WAITING){worldFailureAt(FREEZE_SECTION_VERSION,ivec4(section,int(worldLookupRevision.y)));worldFailureRevision=worldLookupRevision;worldFailureWait=worldLookupWait;return false;}
         return worldFailureAt(FREEZE_SECTION_MISSING,ivec4(section,0));
     }
     uint index=uint((block.x&15)|((block.z&15)<<4)|((block.y&15)<<8));
@@ -63,10 +75,44 @@ bool worldCell(ivec3 block,vec3 lo,vec3 hi,inout ivec3 cached,inout int slot,out
     ivec3 absoluteBlock=block+(uWorldOriginSection<<4);
     if(cell.y>uWorldShapeCapacity || cell.x>uWorldShapeCapacity-cell.y)return worldFailureAt(FREEZE_WORLD_METADATA,ivec4(absoluteBlock,1));
     float friction=uintBitsToFloat(cell.z);
-    if(isnan(friction) || isinf(friction) || friction<0.0 || (cell.w&~0xff3fu)!=0u)return worldFailureAt(FREEZE_WORLD_METADATA,ivec4(absoluteBlock,2));
+    if(isnan(friction) || isinf(friction) || friction<0.0 || (cell.w&0xc0u)!=0u || ((cell.w>>16u)&255u)>45u)return worldFailureAt(FREEZE_WORLD_METADATA,ivec4(absoluteBlock,2));
     // Unsupported contexts include overhanging/dynamic shapes. Unsupported cells pause only on actual overlap; fluid/fire are environment inputs.
     bool supported=(cell.w&8u)==0u || any(lessThanEqual(hi,vec3(block))) || any(greaterThanEqual(lo,vec3(block)+1.0));
     return supported?true:worldFailureAt(FREEZE_WORLD_UNSUPPORTED,ivec4(absoluteBlock,int(cell.w)));
+}
+// Entity-dependent shapes are selected from immutable potential geometry using this body's state.
+uint environmentMirrorIndex(uint i){
+#ifdef CMI_ACTIVE_BODIES
+    // The small collision mirror shares Links; constraints must not reference a ninth SSBO.
+    uint capacity=uActiveOffset;
+#ifdef CMI_MOVING_CANDIDATES
+    capacity/=2u;
+#endif
+    return capacity*3u+8u+i;
+#else
+    return 0u;
+#endif
+}
+float environmentFallDistance(uint i){
+#ifdef CMI_ACTIVE_BODIES
+    return uEnvironmentReady?uintBitsToFloat(links[environmentMirrorIndex(i)]):0.;
+#else
+    return 0.;
+#endif
+}
+bool worldBodyCell(Body b,ivec3 block,vec3 lo,vec3 hi,inout ivec3 cached,inout int slot,out uvec4 cell,out uint base) {
+    if(!worldCell(block,lo,hi,cached,slot,cell,base))return false;
+    uint material=(cell.w>>16u)&255u;float feet=b.previousSleep.y-b.extentYaw.y;
+    if(material==1u&&environmentFallDistance(packageBodyIndex())<=2.5){
+        if(((cell.w>>24u)&1u)!=0u&&feet>float(block.y)+1.-1e-5&&cell.y>1u){cell.x++;cell.y=1u;}
+        else cell.y=0u;
+    } else if(material==1u)cell.y=min(cell.y,1u);
+    else if(material==2u){
+        if(feet>float(block.y)+1.-1e-5)cell.y=min(cell.y,5u);
+        else if((cell.w&(1u<<24u))!=0u&&feet>float(block.y)-1e-5){cell.x+=5u;cell.y=1u;}
+        else cell.y=0u;
+    }
+    return true;
 }
 void worldBox(uint base,uint shape,ivec3 block,out vec3 lo,out vec3 hi) {
     uint p=base+16384u+shape*8u;
@@ -104,7 +150,7 @@ bool sweepWorldSegment(Body b,vec3 p,vec3 motion,inout float closest,inout vec3 
     if(clearWorld(first,last))return true;
     for(int z=first.z;z<=last.z;z++)for(int y=first.y;y<=last.y;y++)for(int x=first.x;x<=last.x;x++) {
         ivec3 block=ivec3(x,y,z);uvec4 cell;uint base;
-        if(!worldCell(block,lo,hi,cached,slot,cell,base))return false;
+        if(!worldBodyCell(b,block,lo,hi,cached,slot,cell,base))return false;
         for(uint j=0u;j<cell.y;j++) {
             vec3 boxLo,boxHi;worldBox(base,cell.x+j,block,boxLo,boxHi);
             if(any(lessThanEqual(boxHi,boxLo)))continue;
@@ -161,7 +207,7 @@ bool clearWorldPosition(Body b) {
     if(clearWorld(first,last))return true;
     for(int z=first.z;z<=last.z;z++)for(int y=first.y;y<=last.y;y++)for(int x=first.x;x<=last.x;x++) {
         ivec3 block=ivec3(x,y,z);uvec4 cell;uint base;
-        if(!worldCell(block,lo,hi,cached,slot,cell,base))return false;
+        if(!worldBodyCell(b,block,lo,hi,cached,slot,cell,base))return false;
         for(uint j=0u;j<cell.y;j++) {
             vec3 a,c;worldBox(base,cell.x+j,block,a,c);
             if(any(lessThanEqual(c,a)))continue;
@@ -191,7 +237,7 @@ bool resolveOpposingWorld(Body b,ivec3 first,ivec3 last,out vec3 correction,
     correction=vec3(0);friction=-1.;
     for(int z=first.z;z<=last.z;z++)for(int y=first.y;y<=last.y;y++)for(int x=first.x;x<=last.x;x++) {
         ivec3 block=ivec3(x,y,z);uvec4 cell;uint base;
-        if(!worldCell(block,lo,hi,cached,slot,cell,base))return false;
+        if(!worldBodyCell(b,block,lo,hi,cached,slot,cell,base))return false;
         for(uint j=0u;j<cell.y;j++) {
             vec3 a,c;worldBox(base,cell.x+j,block,a,c);
             if(any(lessThanEqual(c,a))||!all(greaterThan(min(hi,c)-max(lo,a),vec3(0))))continue;
@@ -224,7 +270,7 @@ bool solveWorld(Body b,out vec3 correction,inout vec3 velocity,inout bool ground
     if(clearWorld(first,last))return true;
     for(int z=first.z;z<=last.z;z++)for(int y=first.y;y<=last.y;y++)for(int x=first.x;x<=last.x;x++) {
         ivec3 block=ivec3(x,y,z);uvec4 cell;uint base;
-        if(!worldCell(block,lo,hi,cached,slot,cell,base))return false;
+        if(!worldBodyCell(b,block,lo,hi,cached,slot,cell,base))return false;
         for(uint j=0u;j<cell.y;j++) {
             vec3 boxLo,boxHi;worldBox(base,cell.x+j,block,boxLo,boxHi);
             if(any(lessThanEqual(boxHi,boxLo)))continue;

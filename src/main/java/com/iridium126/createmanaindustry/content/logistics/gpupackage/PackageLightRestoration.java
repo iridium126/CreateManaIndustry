@@ -25,7 +25,8 @@ final class PackageLightRestoration {
         var rotation=new ListTag();rotation.add(FloatTag.valueOf(p.yaw()));
         rotation.add(FloatTag.valueOf(tag.getList("Rotation",Tag.TAG_FLOAT).size()>1?tag.getList("Rotation",Tag.TAG_FLOAT).getFloat(1):0));
         tag.put("Rotation",rotation);tag.putBoolean("OnGround",(entry.state().flags()&PackageAuthorityRegion.GROUNDED)!=0);
-        tag.putFloat("Health",entry.health);tag.putShort("Fire",(short)Math.clamp(entry.fireTicks,0,Short.MAX_VALUE));
+        tag.putFloat("Health",entry.health);tag.putShort("Fire",(short)Math.clamp(entry.fireTicks,-20,Short.MAX_VALUE));
+        tag.putInt("TicksFrozen",entry.environmentMotion.frozenTicks());tag.putFloat("FallDistance",entry.environmentMotion.fallDistance());
         tag.putInt("PortalCooldown",entry.portalCooldown);
         tag.putInt("CMIPackageInsertionDelay",entry.insertionDelay);
         if(entry.tossedBy!=null)tag.putUUID("CMIPackageTossedBy",entry.tossedBy);else tag.remove("CMIPackageTossedBy");
@@ -45,7 +46,14 @@ final class PackageLightRestoration {
         entity.setYRot(p.yaw());entity.setYHeadRot(p.yaw());entity.setYBodyRot(p.yaw());entity.yRotO=p.yaw();
         entity.setOnGround((entry.state().flags()&PackageAuthorityRegion.GROUNDED)!=0);
         entity.setHealth(entry.health);entity.setRemainingFireTicks(entry.fireTicks);entity.setPortalCooldown(entry.portalCooldown);
-        entity.insertionDelay=entry.insertionDelay;((PackageInitialEntityAccess)entity).cmi$tossedBy(entry.tossedBy);
+        entity.removeEffect(net.minecraft.world.effect.MobEffects.WITHER);
+        var wither=PackageLightWither.current(entry);if(wither!=null)entity.addEffect(PackageLightWither.copy(wither));
+        entity.tickCount=entry.environmentMotion.age();entity.insertionDelay=entry.insertionDelay;((PackageInitialEntityAccess)entity).cmi$tossedBy(entry.tossedBy);
+        var motion=entry.environmentMotion;((PackageInitialEntityAccess)entity).cmi$stuckMultiplier(new net.minecraft.world.phys.Vec3(motion.stuckX(),motion.stuckY(),motion.stuckZ()));
+        if(entry.pendingPortal!=null){
+            var portal=entry.pendingPortalType==1?net.minecraft.world.level.block.Blocks.NETHER_PORTAL:entry.pendingPortalType==2?net.minecraft.world.level.block.Blocks.END_PORTAL:net.minecraft.world.level.block.Blocks.END_GATEWAY;
+            entity.portalProcess=new net.minecraft.world.entity.PortalProcessor((net.minecraft.world.level.block.Portal)portal,entry.pendingPortal);
+        }
         var persistent=entity.getPersistentData();persistent.putLong("CMIGpuPackageId",entry.identity.id());persistent.putLong("CMIGpuPackageGeneration",entry.identity.generation());
         JOINING.put(entity,entry);
         try{return level.addFreshEntity(entity)&&!entity.isRemoved()&&level.getEntity(entry.uuid)==entity?entity:null;}

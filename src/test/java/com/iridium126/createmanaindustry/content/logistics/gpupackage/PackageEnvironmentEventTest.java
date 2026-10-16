@@ -4,6 +4,18 @@ import java.nio.*;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 class PackageEnvironmentEventTest {
+    @Test void nativeBatchRetainsMotionMaskAndRebasesOnlyPosition(){
+        var raw=event();raw.putInt(24,3);int at=64;
+        raw.putInt(at,Float.floatToRawIntBits(-12.5f)).putInt(at+4,Float.floatToRawIntBits(3)).putInt(at+8,Float.floatToRawIntBits(14))
+                .putInt(at+12,32).putInt(at+24,(1<<26)|(1<<27)|(1<<29)|(1<<30)|(1<<31)).putFloat(at+28,12).putInt(at+44,1);
+        var region=new PackageRegion(-10,2,7);var sample=PackageEnvironmentEvent.decode(PackageEnvironmentEvent.regionPayload(raw,64,128,256,region)).samples().getFirst();
+        assertEquals(-12.5f,sample.vx());assertEquals(3,sample.vy());assertEquals(14,sample.vz());assertEquals(12,sample.fallDistance());
+        assertEquals((1<<26)|(1<<27)|(1<<29)|(1<<30)|(1<<31),sample.effects());
+        raw.putInt(at+44,18239);var aged=PackageEnvironmentEvent.decode(raw.array()).samples().getFirst();
+        assertEquals(18239,aged.ticks());assertEquals(1,aged.duration());
+        assertEquals(65,region.originX()+sample.px());assertEquals(130,region.originY()+sample.py());assertEquals(259,region.originZ()+sample.pz());
+        raw.putInt(at,Float.floatToRawIntBits(Float.NaN));assertThrows(IllegalArgumentException.class,()->PackageEnvironmentEvent.decode(raw.array()));
+    }
     @Test void coalescedRunsPreserveDurationAndRejectOverlapOrOversizedRuns(){
         var b=event();b.putInt(24,3).putLong(64+16,140).putInt(64+44,40);
         var sample=PackageEnvironmentEvent.decode(b.array()).samples().getFirst();assertEquals(40,sample.ticks());assertEquals(140,sample.step());

@@ -52,8 +52,23 @@ public final class PackageCollisionCache {
     @FunctionalInterface public interface Source {
         /** Owner-thread only. null means unavailable/unsupported; never interpreted as air. */
         Cell capture(Section section, int localIndex);
+        /** Positive proof from an already loaded section, never from a missing chunk. */
+        default boolean empty(Section section) { return false; }
     }
     public static final class Snapshot {
+        private static final int[] EMPTY_OFFSETS=new int[BLOCKS+1],EMPTY_FLAGS=new int[BLOCKS];
+        private static final float[] EMPTY_BOXES=new float[0],EMPTY_FRICTION=new float[BLOCKS];
+        private static final java.nio.ByteBuffer EMPTY_CELLS=java.nio.ByteBuffer.allocateDirect(BLOCKS*16).order(java.nio.ByteOrder.nativeOrder());
+        private static final java.nio.ByteBuffer EMPTY_GPU_BOXES=java.nio.ByteBuffer.allocateDirect(0).order(java.nio.ByteOrder.nativeOrder());
+        private static final Cell AIR=new Cell(List.of(),.6f,0);
+        static {
+            java.util.Arrays.fill(EMPTY_FRICTION,.6f);
+            for(int i=0;i<BLOCKS;i++)EMPTY_CELLS.putFloat(i*16+8,.6f);
+        }
+        private static Snapshot empty(long revision) {
+            return new Snapshot(revision,EMPTY_OFFSETS,EMPTY_FLAGS,EMPTY_BOXES,EMPTY_FRICTION,
+                    EMPTY_CELLS,EMPTY_GPU_BOXES,0,true,List.of(),false,0);
+        }
         /** A byte-exact prefix proof; it retains no preceding snapshot. */
         public record GpuPatch(long baseRevision,long baseIdentity,int baseShapes,java.util.List<Integer> cells,int bytes) {
             public GpuPatch {cells=java.util.List.copyOf(cells);}
@@ -66,6 +81,7 @@ public final class PackageCollisionCache {
         private final java.nio.ByteBuffer gpuCells,gpuBoxes;
         private final int gpuShapeCount;
         private final boolean gpuEmpty;
+        private final int environmentSummary;
         private final java.util.List<GpuPatch> gpuPatches;
         private final boolean localUpdate;
         private Snapshot(long revision, int[] offsets, int[] flags, float[] boxes, float[] friction,
@@ -73,6 +89,8 @@ public final class PackageCollisionCache {
             this.revision=revision; this.offsets=offsets; this.flags=flags; this.boxes=boxes; this.friction=friction;
             this.gpuCells=gpuCells;this.gpuBoxes=gpuBoxes;this.gpuShapeCount=gpuShapeCount;
             this.gpuEmpty=gpuEmpty;
+            int summary=0;if(!gpuEmpty)for(int value:flags){if((value&0x37)!=0)summary|=2;if((value&0xff0000)!=0)summary|=4;}
+            environmentSummary=summary;
             this.gpuPatches=java.util.List.copyOf(gpuPatches);this.localUpdate=localUpdate;
             this.bakeNanos=bakeNanos;
         }
@@ -104,6 +122,7 @@ public final class PackageCollisionCache {
         public int gpuShapeCount(){return gpuShapeCount;}
         /** Only a fully captured, flag-free empty section can use the GPU coarse fast path. */
         public boolean gpuEmpty(){return gpuEmpty;}
+        public int environmentSummary(){return environmentSummary;}
         public GpuPatch gpuPatch(){return gpuPatches.isEmpty()?null:gpuPatches.getFirst();}
         public GpuPatch gpuPatch(long identity,long version){for(var patch:gpuPatches)if(patch.baseIdentity==identity&&patch.baseRevision==version)return patch;return null;}
         public java.nio.ByteBuffer gpuCells(){return gpuCells.asReadOnlyBuffer().order(java.nio.ByteOrder.nativeOrder());}
@@ -111,6 +130,7 @@ public final class PackageCollisionCache {
         /** Exact local coordinates come from the immutable dictionary, not from
          * subtracting cell coordinates from already rounded translated floats. */
         private Cell capturedCell(int cell) {
+            if(offsets==EMPTY_OFFSETS)return AIR;
             if(gpuShapeCount<0)return null;
             int at=cell*16,first=gpuCells.getInt(at),count=gpuCells.getInt(at+4);
             if(count!=offsets[cell+1]-offsets[cell])return null;
@@ -197,6 +217,7 @@ public final class PackageCollisionCache {
     public void invalidate(Section section) {
         invalidate(section,Invalidation.EXPLICIT,section.x,section.y,section.z);
     }
+    public void invalidateAll(){owner();for(Section section:new java.util.ArrayList<>(sections.keySet()))invalidate(section);}
     private void invalidate(Section section,Invalidation cause,int x,int y,int z) {
         owner(); Work work=sections.get(section); if(work==null)return;
         if(cause!=Invalidation.BLOCK)work.localFallback="full-context";
@@ -498,6 +519,10 @@ public final class PackageCollisionCache {
                 if(w.future!=null) { w.rescueCells=null;enqueue(section,w);queue.addLast(queued);continue; }
             }
             if(w.published!=null){w.rescueCells=null;continue;}
+            if(w.cursor==0&&source.empty(section)) {
+                w.published=Snapshot.empty(w.revision);w.baseline=null;w.dirtyCells=null;w.rescueCells=null;w.cells=null;
+                listener.published(section,w.published);continue;
+            }
             if(w.cells==null)w.cells=new Cell[BLOCKS];
             // Small batches keep one hot section from monopolizing the capture budget.
             int before=w.cursor;
@@ -554,6 +579,10 @@ public final class PackageCollisionCache {
         int count=0,combinedFlags=0;
         for(int i=0;i<BLOCKS;i++){offsets[i]=count;count=Math.addExact(count,cells[i].shapes.size());combinedFlags|=cells[i].flags;}
         offsets[BLOCKS]=count; float[] boxes=new float[Math.multiplyExact(count,6)]; int p=0;
+        if(count==0&&combinedFlags==0) {
+            boolean ordinary=true;for(Cell cell:cells)if(Float.floatToIntBits(cell.friction)!=Float.floatToIntBits(.6f)){ordinary=false;break;}
+            if(ordinary)return Snapshot.empty(revision);
+        }
         for(int i=0;i<BLOCKS;i++) {
             Cell c=cells[i]; friction[i]=c.friction;flags[i]=c.flags;
             int x=i&15,y=i>>>8,z=(i>>>4)&15;
