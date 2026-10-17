@@ -60,24 +60,58 @@ class ParticleRenderLifecycleContractTest {
         }
         assertFalse(draws.methods.stream().anyMatch(m->m.name.equals("drawHexPatterns")),"Legacy pool Hex renderer returned");
     }
+    @Test void aPublicationCanOnlyFollowAllResourceCommits() throws IOException {
+        String coordinator="com/iridium126/createmanaindustry/client/gpu/frame/GpuFrameCoordinator";
+        var compute=method(read(ENGINE+"CMIParticleEngine"),"runCompute");
+        var phases=new ArrayList<String>();int swap=-1,population=-1,storm=-1,publish=-1,arm=-1;
+        for(int i=0;i<compute.instructions.size();i++){
+            var instruction=compute.instructions.get(i);
+            if(instruction instanceof MethodInsnNode call){
+                if(call.owner.equals(coordinator)){
+                    if(!call.name.equals("abort"))phases.add(call.name);
+                    if(call.name.equals("publish"))publish=i;
+                }
+                if(call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("swap"))swap=i;
+                if(call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("commitPopulation"))population=i;
+                if(call.owner.endsWith("/AllayStormRuntime")&&call.name.equals("commitStarfall"))storm=i;
+            }
+            if(instruction instanceof FieldInsnNode field&&field.name.equals("frameArmed")&&field.getOpcode()==org.objectweb.asm.Opcodes.PUTFIELD){
+                var value=instruction.getPrevious();while(value!=null&&value.getOpcode()<0)value=value.getPrevious();
+                if(value!=null&&value.getOpcode()==org.objectweb.asm.Opcodes.ICONST_1)arm=i;
+            }
+        }
+        assertEquals(java.util.List.of("begin","simulate","generate","cullSort","publish"),phases);
+        assertTrue(swap>=0&&population>swap&&storm>population&&publish>storm&&arm>publish,
+                "A draw must not observe independently promoted resource generations");
+        var engine=read(ENGINE+"CMIParticleEngine");
+        assertTrue(calls(method(engine,"currentFrameReady"),coordinator,"publication"));
+        assertTrue(calls(method(engine,"committedCounterBuffer"),coordinator,"publication"));
+        for(String entry:new String[]{"computeFrame","prepareCurrentFrame","close"})
+            assertTrue(calls(method(engine,entry),coordinator,"abort"),"Failed/retired frame retained publication: "+entry);
+    }
+
     @Test void lateSharedFateHeaderIsUploadedBeforeItsFirstGpuDispatch() throws IOException {
-        var generate=method(read(ENGINE+"SharedFateGpu"),"generate");
+        var generate=method(read("com/iridium126/createmanaindustry/client/greattrick/sharedfate/SharedFateGpu"),"generate");
         int allocation=-1,upload=-1,dispatch=-1;
         for(int i=0;i<generate.instructions.size();i++) {
             if(!(generate.instructions.get(i) instanceof MethodInsnNode call))continue;
-            if(call.owner.equals(ENGINE+"CMIParticleEngine")&&call.name.equals("ensureEmitter"))allocation=i;
-            if(call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("uploadDirtyEmitters"))upload=i;
+            if(call.owner.equals(ENGINE+"ParticleAppendTarget")&&call.name.equals("emitter"))allocation=i;
+            if(call.owner.equals(ENGINE+"ParticleAppendTarget")&&call.name.equals("flushHeaders"))upload=i;
             if(call.owner.equals("org/lwjgl/opengl/GL43")&&call.name.equals("glDispatchCompute")){dispatch=i;break;}
         }
         assertTrue(allocation>=0&&upload>allocation&&dispatch>upload,
                 "Shared Fate allocates after the ordinary header upload; its first frame must upload the new header before dispatch");
+        assertTrue(calls(method(read(ENGINE+"ParticleAppendTarget"),"flushHeaders"),ENGINE+"ParticleBuffers","uploadDirtyEmitters"));
+        var output=method(read(ENGINE+"ParticleAppendTarget"),"bind");
+        assertTrue(calls(output,ENGINE+"ParticleBuffers","bindCounter"));
+        assertTrue(calls(output,ENGINE+"ParticleBuffers","bindParticleWrite"));
     }
     @Test void sharedFateRestoresPhaseInputsBeforePublishingItsDrawWork() throws IOException {
         var compute=method(read(ENGINE+"CMIParticleEngine"),"runCompute");
         int shared=-1,restore=-1,publication=-1;
         for(int i=0;i<compute.instructions.size();i++) {
             if(!(compute.instructions.get(i) instanceof MethodInsnNode call))continue;
-            if(call.owner.equals(ENGINE+"SharedFateGpu")&&call.name.equals("generate"))shared=i;
+            if(call.owner.equals("com/iridium126/createmanaindustry/client/greattrick/sharedfate/SharedFateGpu")&&call.name.equals("generate"))shared=i;
             if(shared>=0&&call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("bindDispatchInputs"))restore=i;
             if(shared>=0&&call.owner.equals(ENGINE+"ParticleDispatch")&&call.name.equals("prepare")){publication=i;break;}
         }

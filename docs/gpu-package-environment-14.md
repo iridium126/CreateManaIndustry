@@ -1,6 +1,6 @@
 # GPU 自由包裹：空 section 与环境批次（协议 14）
 
-当前实现状态：**空 section 的独立覆盖与惰性 atlas 已实现；环境行为是分阶段适配，尚未通过“全部对齐”验收。** 原版参考为 `.refs/Create` 6.0.11、Minecraft 1.21.1 / NeoForge 21.1.236。当前实际依赖和 GameTest 使用 Create 6.0.10；本次没有改动依赖或扩大 Mixin 的版本许可。
+当前实现状态：**空 section 的独立覆盖与惰性 atlas 已实现；环境行为是分阶段适配，尚未通过“全部对齐”验收。** 当前行为与差分基线为实际依赖 Create 6.0.10、Minecraft 1.21.1 / NeoForge 21.1.236。审计读取实际解析 JAR 的 Git-Hash 对应源码提交，`.refs/Create` 工作树的 6.0.11 仅供参考；未改动依赖或扩大 Mixin 版本许可。
 
 ## 空 section
 
@@ -31,7 +31,7 @@ Create 移动结构使用原生空碰撞上下文采集，不额外执行静态 
 
 ## 权威协议与存档
 
-权威协议升级为 `gpu-packages-14`，观察协议保持 `gpu-package-observers-5`。服务端与权威客户端须一起升级。
+本页保留协议 14 引入的单事件字段与环境布局；当前权威通道已因[区域合包](gpu-package-protocol-15.md)升级为 `gpu-packages-15`，观察协议保持 `gpu-package-observers-5`。服务端与权威客户端须一起升级。
 
 环境样本仍为 48 字节，事件仍为 1024 字节、最多 20 个样本。新增 `contact=32` 的字段含义如下；旧合成测试使用的 0 / 1 / 2 / 4 / 8 / 16 类型保留旧解码规则。
 
@@ -44,9 +44,23 @@ Create 移动结构使用原生空碰撞上下文采集，不额外执行静态 
 | position.xyz | 包裹中心，使用权威 region 原点 |
 | position.w | 包裹自身逻辑 age 的原始位；原生批次 duration 固定为 1，不按 age 进行重放或预算计费 |
 
-环境 sidecar 每包裹从 20×48 增至 21×48 字节，额外 48 字节保存运动状态。131072 容量下 samples SSBO 为 126 MiB，仍低于 128 MiB 的单块限制。额外 sidecar 不进入网络事件。落距另以每包裹 4 字节镜像保存在已有 Links 绑定中，约束 kernel 保持最多 8 个 SSBO。环境 uniform 位置在构造时缓存；同一物理步内不重复绑定环境 SSBO。
+环境 samples SSBO 现在使用具名 `PackageEnvironmentLayout`：每个身份保留 48 B 运动工作区和一个 48 B 内联历史样本，其余 19 个历史槽按需取得一页。固定元数据包含分配器、待处理位图和空闲页栈，不增加 SSBO 绑定。首次分配最多 512 页；异步捕获头报告缺页需求后按二次幂扩容并 GPU copy，旧存储保留到 fence 完成。131072 容量的该缓冲初始实际申请 16 MiB，全页池高水位申请 128 MiB，逻辑布局不超过单块 128 MiB 限制；这些是离线缓冲字节，不能作为实际显存驻留量。当前物理存储只增长，页会回收复用，不主动收缩。
+
+首条未确认历史可以保存在内联槽；继续模拟前必须取得历史页。页不足只阻塞该包裹，其他包裹仍可推进。部分 ACK 保留页及剩余历史；完整 ACK 或生命周期退役才归还页，运动状态纠正保留页映射。页的分配和回收位于分开的 dispatch，使用 SSBO barrier 排序。额外工作区和页映射不进入网络事件。落距另以每包裹 4 字节镜像保存在已有 Links 绑定中，约束 kernel 保持最多 8 个 SSBO。环境 uniform 位置在构造时缓存；同一物理步内不重复绑定环境 SSBO。
+
+环境待处理身份以位图保存在 samples 存储的分配器与空闲栈之间，不占用额外 SSBO 绑定。每 128 个身份使用一个 48 B 存储记录的 contact 区；首次生成未确认 journal 时置位，累计 ACK 覆盖全部后清除。捕获只遍历位图命中的身份，先新记录后重传，并按字轮转；退役清除旧位，捕获仍校验 header，不会导出旧生命周期。全量生命周期上传保守播种前缀，首次捕获剔除空位。131072 容量的位图为 48 KiB；内部布局变化不改变 wire。
+
+捕获槽保持不可变：环境 kernel 直接写入四槽环的空闲存储，省去最大输出区的额外 GPU copy。共享 `GpuReadbackBuffer` 使用 coherent 持久只读映射；只有零等待 fence 轮询确认完成后，才读取 16 B 头并复制有效记录到 CPU 暂存区。头四个 uint 分别为尝试输出数、缺页身份数、捕获时页容量和空闲页数；CPU 由此计算增长需求，不逐身份维护镜像。空输出只读 16 B。传输背压保留已读槽，重试不重复读取；满环不启动捕获。
+
+缺页数在第一遍捕获中累积到设备端分配器的独立 scratch 字段，第二遍经 dispatch barrier 后一次取出并清零，写入快照头。避免对持久映射头逐字原子累加，正常路径不增加 dispatch、上传、读回或 clear 命令。若捕获提交被中断，下次可用捕获前清除残留统计；它不确认、删除或修改历史记录。精确统计专项覆盖字／工作组尾部、终止与确认等待排除、重复重传、四槽饱和和残留清理。
+
+快照持有独立字节，不保留原历史页引用；GPU 捕获在 ACK／退役／扩容之前由 barrier 排序，后续回收不能改写在途快照。消费回调抛出异常时，不推进该槽的完成屏障，保留原快照供重试。公共缓冲删除前通知所有活动计算／绘制状态快照清除旧 GL 名称，避免退休名称被重新绑定或误指向复用后的新对象。以上实现的是固定 20 样本窗口的存储分页；逐行为身份与阶段的有序效果 journal 仍待实施，不能据此标记第三批完成。
 
 OFFER / FINAL / ENVIRONMENT_ACK 携带冻结、落距、陷入乘数、插入延迟和 age。火焰计数保留原生负冷却值（最低 -20）。原生 ACK 可以带权威姿态和运动状态；只在当前最新且正在等待服务端结果的生命周期上纠正，迟到 ACK 不重写已继续运行的运动。
+
+环境 ACK 的 wire 字段保持不变。客户端每帧使用独立预算处理最多 512 条 ACK，再处理最多 64 条控制消息；控制预算不再顺带消费 ACK。GPU 用有界 128 B 行列表执行，一次 dispatch 处理独立 body，同 body 的多条记录通过前向链依次执行，保留后缀重放、负火焰冷却、权限和依赖结果等待规则。应用时除 CPU 校验外，再核验完整 identity / generation / lease / index / revision，排队后槽复用也不能改写新生命周期。ACK GPU 存储首次非空提交时才创建，空队列不上传、不 dispatch。
+
+环境归属由 acquisition 在分配和释放 body 时增量登记；捕获记录只查该索引，并继续校验完整生命周期，不逐事件扫描区域。替换一个区域只移除其自身的归属；关闭／退役不会清除其他区域的映射。跨事件网络合包已按权威区域接入，见[协议 15](gpu-package-protocol-15.md)；有序分页 journal 及完整网络／世界事务验收仍未完成。
 
 先前纯材料批次的部分 ACK 可以推进累计确认序号，但如果其后已经产生依赖服务端结果的事务，必须保留该包裹的确认等待；只有覆盖当前等待后缀的 ACK 才能恢复模拟。部分 ACK 不改写等待中的姿态，也不能让包裹再推进一个环境 tick。
 
@@ -76,6 +90,7 @@ OFFER / FINAL / ENVIRONMENT_ACK 携带冻结、落距、陷入乘数、插入延
 ## 复现
 
 ```powershell
+.\gradlew.bat preparePackageNativeAudit --offline --no-configuration-cache
 python scripts/particles/audit_package_environment.py --check
 .\gradlew.bat test validatePackageGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle -PpackageRepairOnly
 .\gradlew.bat runGameTestServer --offline --no-configuration-cache -I scripts/particles/package-output-gametest.init.gradle -I scripts/particles/validation.init.gradle
@@ -83,4 +98,4 @@ python scripts/particles/prepare_package_baseline.py
 .\gradlew.bat validatePackageGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle -I scripts/particles/environment-benchmark.init.gradle
 ```
 
-GPU 专项开关：`packageEmptySections`、`packageMaterials`、`packageWorldHistory`、`packageUploadFairness`。GameTest 夹具不进入发布 source set，须通过专用 init script 启用。
+GPU 专项开关：`packageEmptySections`、`packageMaterials`、`packageWorldHistory`、`packageUploadFairness`、`packageHistoryPages`。分页专项覆盖一页争用与局部背压、部分 ACK、20 槽环绕、不可变在途快照、旧生命周期 ACK、有效历史扩容及 131072 个唯一页；当前性能限制和最终联合回归状态见[运行时续作报告](benchmarks/gpu-runtime-architecture.md)。GameTest 夹具不进入发布 source set，须通过专用 init script 启用。

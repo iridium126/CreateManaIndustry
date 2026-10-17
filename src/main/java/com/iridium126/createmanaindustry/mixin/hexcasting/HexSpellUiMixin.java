@@ -1,5 +1,5 @@
 package com.iridium126.createmanaindustry.mixin.hexcasting;
-import com.iridium126.createmanaindustry.client.particles.hex.HexPatternService;
+import com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.*;
 import net.minecraft.client.gui.GuiGraphics;

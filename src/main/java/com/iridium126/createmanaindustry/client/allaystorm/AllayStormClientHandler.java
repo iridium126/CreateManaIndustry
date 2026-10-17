@@ -1,0 +1,75 @@
+package com.iridium126.createmanaindustry.client.allaystorm;
+
+import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormCenterPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormDamagePacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormPositionsPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormStatePacket;
+
+import net.minecraft.world.phys.Vec3;
+
+/**
+ * Client receiver for the Allay Storm network protocol. Payload handlers run
+ * on the render thread ({@code enqueueWork} — the Minecraft main thread IS
+ * the render thread), which is the thread every storm state lives on, so the
+ * engine calls below are direct rather than queued.
+ * <p>
+ * Storm state and policy belong to {@link AllayStormRuntime}; the engine facade unwraps no protocol state. This adapter unwraps
+ * packet fields (quantized values arrive pre-scaled by the codecs) and
+ * forwards. It also decodes the dead-member bitmap into the Storm domain's mirror
+ * on ACTIVATE (identity/counts are then a pure client-side derivation).
+ */
+public final class AllayStormClientHandler {
+
+    private AllayStormClientHandler() {
+    }
+
+    /** {@link ClientboundStormStatePacket}: lifecycle + authority flips. */
+    public static void onState(ClientboundStormStatePacket packet) {
+        CMIParticleEngine e = CMIParticleEngine.INSTANCE;
+        Vec3 anchor = new Vec3(packet.anchor().getX(), packet.anchor().getY(), packet.anchor().getZ());
+        e.applyStormState(packet.action(), packet.authority(), packet.correctionHz(),
+                anchor, packet.count(), packet.stormSeed(), packet.creationRadius(),
+                packet.finalRadius(), packet.growthPerSecond(), packet.createdAt(),
+                packet.deadBitmap());
+    }
+
+    /** {@link ClientboundStormDamagePacket}: authoritative damage + hit correction. */
+    public static void onDamage(ClientboundStormDamagePacket packet) {
+        CMIParticleEngine e = CMIParticleEngine.INSTANCE;
+        Vec3 rel = new Vec3(packet.relX(), packet.relY(), packet.relZ());
+        e.applyStormDamage(packet.memberIdx(), packet.damage(), packet.kbX(), packet.kbZ(),
+                packet.light(), packet.died(), rel, gameClock());
+        // Combat visuals relay: everyone EXCEPT the attacker spawns the crit /
+        // enchanted stars + damage hearts from the broadcast (vanilla parity —
+        // the attacker drew its own instantly at click time and skips here to
+        // avoid a double burst).
+        var local = net.minecraft.client.Minecraft.getInstance().player;
+        if (local == null || local.getId() != packet.attackerId())
+            e.spawnCombatVisuals(packet.memberIdx(), packet.light(),
+                    packet.crit(), packet.magic(), packet.hearts());
+    }
+
+    /** {@link ClientboundStormPositionsPacket}: relayed authority snapshot. */
+    public static void onPositions(ClientboundStormPositionsPacket packet) {
+        CMIParticleEngine.INSTANCE.applyCorrections(packet.entries(), packet.gameTime());
+    }
+
+    /** {@link ClientboundStormCenterPacket}: continuous chased-center + growth snapshot. */
+    public static void onCenter(ClientboundStormCenterPacket packet) {
+        CMIParticleEngine.INSTANCE.applyStormCenter(packet.x(), packet.y(), packet.z(),
+                packet.velX(), packet.velZ(), packet.count(), packet.gameTime());
+    }
+
+    /** {@link ClientboundStormWavePacket}: dive-wave launch / abort event. */
+    public static void onWave(
+            com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket packet) {
+        CMIParticleEngine.INSTANCE.applyWave(packet);
+    }
+
+    /** The client's shared simulation clock (game ticks; the engine mod-masks). */
+    private static long gameClock() {
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        return mc.level == null ? 0L : mc.level.getGameTime();
+    }
+}

@@ -5,7 +5,7 @@ import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.*;
 import org.joml.Matrix4f;
 import com.iridium126.createmanaindustry.client.particles.engine.*;
-import com.iridium126.createmanaindustry.client.particles.allaystorm.*;
+import com.iridium126.createmanaindustry.client.allaystorm.*;
 import com.iridium126.createmanaindustry.content.allaystorm.*;
 import com.iridium126.createmanaindustry.content.allaystorm.network.*;
 /** Actual production kernels, bank lifecycle and framebuffer checks, without a running game. */

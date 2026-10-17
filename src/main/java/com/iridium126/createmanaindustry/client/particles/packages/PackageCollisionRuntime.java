@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
@@ -219,7 +221,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         try {
             if(current.collisionRequested && current.gpu==null) {
                 current.allocatedSections=PackageCollisionGpu.deviceCapacity(current.configuredSections,PackageCollisionGpu.DEFAULT_SHAPES,
-                        org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE));
+                        GpuCapabilities.current().storageBlockBytes());
                 if(current.allocatedSections==0)throw new IllegalStateException("Device cannot fit one package collision section");
                 current.gpu=new PackageCollisionGpu(current.allocatedSections,PackageCollisionGpu.DEFAULT_SHAPES);
                 current.cache.forEachReady(current.gpu::offer);

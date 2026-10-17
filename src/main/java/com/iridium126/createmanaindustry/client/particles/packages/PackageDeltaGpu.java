@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.HashSet;
@@ -49,8 +51,8 @@ public final class PackageDeltaGpu implements AutoCloseable {
     /** Predict wire POSITION using the last exactly acknowledged displacement. Requires relative
      * batch encoding; publication timing/physics/quantization and raw record ABI are unchanged. */
     public PackageDeltaGpu(int capacity,Function<String,String> sources,boolean relativePositions,boolean predictedPositions) {
-        if(capacity<=0 || capacity>131072 || (capacity+63)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)
-                || (long)capacity*RECORD_BYTES>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))
+        if(capacity<=0 || capacity>131072 || (capacity+63)/64>GpuCapabilities.current().computeGroupsX()
+                || (long)capacity*RECORD_BYTES>GpuCapabilities.current().storageBlockBytes())
             throw new IllegalArgumentException("Package delta capacity/device limits");
         if(predictedPositions && !relativePositions)throw new IllegalArgumentException("Predicted package positions require relative encoding");
         this.capacity=capacity;candidateBodies=new int[capacity];this.relativePositions=relativePositions;this.predictedPositions=predictedPositions;

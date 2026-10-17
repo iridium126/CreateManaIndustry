@@ -34,6 +34,9 @@ public final class PackageWorldRuntime {
     private final PackageTransitionInbox packets=new PackageTransitionInbox();
     private final ArrayDeque<ClientboundChainPackagePacket> chainPackets=new ArrayDeque<>();
     private final Map<PackageRegion,PackageFreeAcquisitionGpu> regions=new HashMap<>();
+    private final it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<PackageFreeAcquisitionGpu> environmentOwners=new it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<>();
+    private final PackageEnvironmentUplink environmentUplink=new PackageEnvironmentUplink(MAX_REGIONS,packet->PacketDistributor.sendToServer(packet));
+    private final com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry prepareTiming=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry();
     private final PackageSimulationClock clock=new PackageSimulationClock();
     private final PackagePrefetchSchedule prefetchSchedule=new PackagePrefetchSchedule();
     private final PackageSimulationClock chainClock=new PackageSimulationClock();
@@ -121,6 +124,7 @@ public final class PackageWorldRuntime {
     public static boolean forceReady(){var r=current;return r!=null&&r.forceCapture!=null&&r.forceCapture.ready();}
     public static void chainInteraction(ClientboundChainInteractionPacket packet){var runtime=current;if(runtime!=null && runtime.chainInteraction!=null)runtime.chainInteraction.acknowledge(packet);}
     public static String status(){var runtime=current;return runtime==null?"off":runtime.status
+            +(com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled()?"; prepare "+runtime.prepareTiming.report():"")
             +(runtime.chainInteraction==null?"":"; pickup ACK round trip="+runtime.chainInteraction.networkNanos()/1_000_000.0+"ms")
             +(runtime.pool==null?"":"; light "+runtime.pool.lightFeedbackReport())
             +(runtime.chainCheckpoints==null?"":"; chain checkpoint bytes="+runtime.chainCheckpoints.readbackBytes()+", pending="+runtime.chainCheckpoints.pending()
@@ -151,6 +155,8 @@ public final class PackageWorldRuntime {
     public boolean prepare(Supplier<PackagePoolGpu> poolFactory,Function<String,String> sources,boolean preview) {
         RenderSystem.assertOnRenderThread();
         long runtimeProfiling=PackageCpuDiagnostics.begin(PackageCpuDiagnostics.Phase.PREPARE);
+        boolean measure=com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled();
+        if(measure)prepareTiming.poll();prepareTiming.begin(measure);
         try {
         var mc=Minecraft.getInstance();var connection=mc.getConnection();long now=System.nanoTime();
         Object nextShaderBoundary=CreateManaIndustry.IRIS_ACTIVE
@@ -184,14 +190,18 @@ public final class PackageWorldRuntime {
             if(chainCheckpoints!=null) {
                 chainCheckpoints.poll();
             }
-            if(physics.environment()!=null)physics.environment().poll(bytes->{
+            if(physics.environment()!=null){
+            long feedbackProfiling=PackageCpuDiagnostics.begin(PackageCpuDiagnostics.Phase.FEEDBACK);
+            try {physics.environment().poll(bytes->{
                 int body=bytes.getInt(52);long id=bytes.getLong(0),generation=bytes.getLong(8),lease=bytes.getLong(16);
-                for(var acquisition:regions.values()){
-                    var offer=acquisition.environmentOffer(body,id,generation,lease,bytes.getInt(40)-1,bytes.getLong(56));if(offer==null)continue;
-                    var payload=com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent.regionPayload(bytes,(int)ox,(int)oy,(int)oz,offer.region());
-                    PacketDistributor.sendToServer(new ServerboundPackagePacket(ServerboundPackagePacket.ENVIRONMENT,0,offer.region(),offer.epoch(),0,null,0,offer.regionRevision(),0,payload));break;
+                int index=bytes.getInt(40)-1;long revision=bytes.getLong(56);
+                var owner=environmentOwners.get(body);
+                ClientboundPackagePacket offer=owner==null?null:owner.environmentOffer(body,id,generation,lease,index,revision);
+                if(offer!=null){
+                    environmentUplink.append(bytes,(int)ox,(int)oy,(int)oz,offer.region(),offer.epoch(),offer.regionRevision());
                 }
-            });
+            });environmentUplink.flush();}finally{environmentUplink.clear();PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.FEEDBACK,feedbackProfiling);}
+            }
             pool.pollLightRequests(requestLight);
             if(worldPrefetch!=null)worldPrefetch.poll(requestCollision,collisionUsage);
             // Lightweight observer streams prepare baselines and
@@ -305,7 +315,7 @@ public final class PackageWorldRuntime {
             // Initialization can fail before the runtime has been attached globally.
             dispose(failure);return true;
         }
-        }finally{PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.PREPARE,runtimeProfiling);}
+        }finally{prepareTiming.end();PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.PREPARE,runtimeProfiling);}
     }
     private void initialize(ClientLevel nextLevel,Supplier<PackagePoolGpu> poolFactory,Function<String,String> sources) {
         var baked=PackageModelCache.bake();
@@ -365,12 +375,20 @@ public final class PackageWorldRuntime {
     private boolean drain(Function<String,String> sources) {
         // ACKs have their own bounded budget; hundreds of active journals must
         // not wait behind a 64-record admission quota and fill while waiting.
-        for(int n=0;n<PackageEnvironmentGpu.MAX_EVENTS;n++){
-            var ack=packets.pollAcknowledgement();if(ack==null)break;var acquisition=regions.get(ack.region());
-            if(acquisition!=null&&ack.epoch()==acquisition.epoch()&&ack.regionRevision()==acquisition.revision())acquisition.receive(ack);
+        var environment=physics.environment();var acknowledgement=packets.pollAcknowledgement();
+        if(acknowledgement!=null){
+            if(environment!=null)environment.beginAcknowledgements();
+            try {
+                for(int n=0;acknowledgement!=null;n++){
+                    var acquisition=regions.get(acknowledgement.region());
+                    if(acquisition!=null&&acknowledgement.epoch()==acquisition.epoch()&&acknowledgement.regionRevision()==acquisition.revision())acquisition.receive(acknowledgement);
+                    if(n+1==PackageEnvironmentGpu.MAX_EVENTS)break;
+                    acknowledgement=packets.pollAcknowledgement();
+                }
+            }finally{if(environment!=null)environment.endAcknowledgements();}
         }
-        for(int n=0;n<PACKETS_PER_FRAME && !packets.isEmpty();n++) {
-            var packet=packets.removeFirst();var acquisition=regions.get(packet.region());
+        for(int n=0;n<PACKETS_PER_FRAME;n++) {
+            var packet=packets.pollControl();if(packet==null)break;var acquisition=regions.get(packet.region());
             if(lightObservers!=null&&(packet.action()==ClientboundPackagePacket.OFFER||packet.action()==ClientboundPackagePacket.RELEASED))
                 lightObservers.authority(packet);
             if(acquisition!=null && (packet.epoch()!=acquisition.epoch() || packet.regionRevision()!=acquisition.revision())) {
@@ -392,6 +410,8 @@ public final class PackageWorldRuntime {
                             ox,oy,oz,physics,pool,detector,styles,this::light,reason->failure=reason);
 
                 }catch(RuntimeException error){detector.close();throw error;}
+                var owner=acquisition;
+                owner.bodyOwnership(body->environmentOwners.put(body,owner),body->environmentOwners.remove(body,owner));
                 regions.put(packet.region(),acquisition);
             }
             if(acquisition!=null)acquisition.receive(packet);else if(packet.baseline()!=null)refuse(packet);
@@ -508,6 +528,7 @@ public final class PackageWorldRuntime {
     private void dispose(String reason) {
         try {
             if(current==this)current=null;
+            prepareTiming.close();
             if(forceCapture!=null)forceCapture.close();forceCapture=null;
             if(forceGpu!=null)forceGpu.close();forceGpu=null;
             if(lightObservers!=null)lightObservers.close();lightObservers=null;
@@ -520,7 +541,7 @@ public final class PackageWorldRuntime {
             if(chainChannel!=null)chainChannel.close();else if(chainTracks!=null)chainTracks.close();chainChannel=null;chainTracks=null;
             if(pool!=null)pool.chainFrames(0,0);
             if(chainFrames!=null)chainFrames.close();chainFrames=null;
-            packets.clear();chainPackets.clear();regions.clear();clock.reset();chainClock.reset();styles=Map.of();level=null;shaderBoundary=null;interpolation=1;
+            packets.clear();chainPackets.clear();environmentUplink.clear();environmentOwners.clear();regions.clear();clock.reset();chainClock.reset();styles=Map.of();level=null;shaderBoundary=null;interpolation=1;
             if(pool!=null){pool.chainInterpolation(Float.NaN);pool.reset();}pool=null;
             if(worldPrefetch!=null)worldPrefetch.close();worldPrefetch=null;
             if(physics!=null)physics.close();physics=null;

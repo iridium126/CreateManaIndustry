@@ -14,39 +14,16 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Engine-private emitter specs for Hexcasting's custom conjure particles
- * (spawnStyle 4/5) — faithful GPU ports of {@code ConjureParticle} plus
- * {@code ParticleSpray}:
- * additive fullbright hexagonal soft-glow billboards, linear alpha fade from
- * 0.3, exact exponential shrink (quadSize ×= 0.96/tick), fixed random roll,
- * no collision, friction 0.96 → drag, gravity field −0.01 → upward drift,
- * lifetime 64/((r+3)·0.25) ticks, quadSize [0.1, 0.2) × 0.9.
- * <p>
- * All motion constants are CONTINUOUS-CONVERSION equivalents of the vanilla
- * 20 Hz tick physics (cherry/combat precedent). The pigment COLOR rides the
- * emitter header's 8 keyframe slots interpreted as a WHEEL by colorMode 4
- * (additive.vsh): colors are sampled from the caster's real
- * {@link ColorProvider} at spray time over 8 directions spanning the fixed
- * gradient axis — the vanilla handler freezes each particle's color at its
- * spawn instant, so within one spray direction is the only live dimension,
- * and consecutive sprays differ because their samples run at a later time.
- * The minimum-luminance correction rides along inside {@code getColor}.
- * <p>
- * Reserved header slots (storm owns 18/19; specs stay position-free):
- * <pre>
- *  17.x  colorMode 4: keyframes = pigment wheel (spray spec)
- *  17.y  spawnStyle 4: hex spray — emit command c slots carry
- *        {vel.xyz b/s, intBitsToFloat(fuzz16 | spread16<<16)}
- *  17.x  colorMode 5: direct ARGB color (direct spec)
- *  17.y  spawnStyle 5: direct conjure particle — c slots carry
- *        {vel.xyz b/s, intBitsToFloat(rgb | gravityFlag)}
- * </pre>
+ * Hex particle behavior headers. Native spray palettes are transient command parameters;
+ * direct and spray particles retain spawn-time RGB. Motion uses ParticleEngine's tick clock.
+ * Header 17.x selects RGB rendering and 17.y distinguishes spray (4) and direct input (5).
+ * Sampled-wheel helpers remain for the existing command API, never native provider approximation.
  */
 public final class HexSpecs {
 
     // ---- header slot indices (float offsets into the 20-vec4 header) ----
-    public static final int HDR_COLOR_MODE = 17 * 4 + 0;
-    public static final int HDR_SPAWN_STYLE = 17 * 4 + 1;
+    public static final int HDR_COLOR_MODE = com.iridium126.createmanaindustry.client.particles.emitter.ParticleLayout.HEADER_ANIMATION_COLOR;
+    public static final int HDR_SPAWN_STYLE = com.iridium126.createmanaindustry.client.particles.emitter.ParticleLayout.HEADER_SPAWN_STYLE;
 
     // ---- colorMode values (header 17.x) ----
     public static final float COLOR_NONE = 0f;
@@ -74,16 +51,16 @@ public final class HexSpecs {
      * value is +0.04·0.01·400 = +0.16 b/s².
      */
     private static final double CONJURE_GRAVITY = 0.16;
-    /** quadSize mean: SingleQuadParticle default [0.1, 0.2) × 0.9 → 0.135 (the emit-path [2/3, 4/3] p0.w range spans [0.09, 0.18) exactly). */
-    private static final double CONJURE_SIZE = 0.135;
-    /** ConjureParticle lifetime 256/(r+3) ticks (= 64/((r+3)·0.25)) → (3.2, 4.267] s (continuous, no integer-tick cast — poof precedent). */
+    /** The billboard uses full width; native quadSize is a half width with mean .135. */
+    private static final double CONJURE_SIZE = 0.27;
+    /** Range descriptor; emission takes the native integer-tick lifetime before converting to seconds. */
     private static final double CONJURE_LIFE_MIN = 256.0 / 4.0 / 20.0;
     private static final double CONJURE_LIFE_MAX = 256.0 / 3.0 / 20.0;
 
     /** Shared position-independent spec for direct {@code conjure_particle} calls. */
     private static final EmitterSpec DIRECT_SPEC = EmitterSpec.builder()
             .shape(EmitterShape.POINT)
-            .speed(0, 0) // velocity comes from the direct particle command
+            .speed(0, 0).shaderColorMode(5).spawnStyle(5) // direct particle command
             .life(CONJURE_LIFE_MIN, CONJURE_LIFE_MAX)
             .sizeOverLife(CONJURE_SIZE, CONJURE_SIZE, 1.0)
             // Direct particles carry their per-particle gravity bit in the
@@ -96,6 +73,14 @@ public final class HexSpecs {
             .colors(new float[] { 1f, 1f, 1f, 1f, 1f, 1f, 1f, 1f })
             .glow(1.0)
             .build();
+
+    private static final EmitterSpec SPRAY_SPEC = EmitterSpec.builder()
+            .shape(EmitterShape.POINT).speed(0,0).shaderColorMode(5).spawnStyle(4).life(CONJURE_LIFE_MIN,CONJURE_LIFE_MAX)
+            .sizeOverLife(CONJURE_SIZE,CONJURE_SIZE,1).drag(CONJURE_DRAG)
+            .type(ParticleTypes.standard(ParticleTypes.Material.ADDITIVE))
+            .collide(EmitterSpec.CollideMode.NONE).colors(new float[]{1,1,1,1}).glow(1).build();
+    public static EmitterSpec spraySpec(){return SPRAY_SPEC;}
+    public static float[] packedSprayHeader(){float[] h=packedDirectHeader(SPRAY_SPEC);h[HDR_SPAWN_STYLE]=STYLE_HEX_SPRAY;return h;}
 
     /** Returns the one deduplicated emitter spec used by direct particles. */
     public static EmitterSpec directSpec() {

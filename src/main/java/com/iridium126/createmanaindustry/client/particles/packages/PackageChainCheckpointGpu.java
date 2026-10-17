@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Objects;
@@ -30,8 +32,8 @@ public final class PackageChainCheckpointGpu implements AutoCloseable {
     /** Transfer choice is exposed for the opt-in same-driver benchmark, not a user protocol. */
     public PackageChainCheckpointGpu(int capacity,long epoch,Function<String,String> sources,Transfer transfer) {
         long size=(long)capacity*PackagePoseQueryGpu.RESULT_BYTES;
-        if(capacity<1 || capacity>131072 || epoch<=0 || size>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE)
-                || (capacity+63)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0))
+        if(capacity<1 || capacity>131072 || epoch<=0 || size>GpuCapabilities.current().storageBlockBytes()
+                || (capacity+63)/64>GpuCapabilities.current().computeGroupsX())
             throw new IllegalArgumentException("Chain checkpoint capacity/epoch/device limits");
         this.capacity=capacity;this.epoch=epoch;this.transfer=Objects.requireNonNull(transfer);
         try {

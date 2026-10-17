@@ -54,7 +54,7 @@
 
 body、pool、delta、journal 和观察槽位均可回收，内部跟踪精确生命周期。退役 admission、旧 flight、编码任务、读回引用以及 GPU fence 全部结束后才允许复用。重写身份及映射，清除姿态历史、承载、光照、残差、环境状态与检查点资格；缩减末尾空闲范围，不移动其他活动索引。旧 ACK、环境事件、检查点和旧提交代的交互结果均被拒绝。
 
-记录显示仍由 `PackageLightClient` 和 GPU 观察流提供。GPU 暂停时显示最后确认状态；库存不进入显示下行。当前权威协议为 `gpu-packages-14`，观察协议为 `gpu-package-observers-5`；新增环境持续步数字段要求服务端和权威客户端同时升级，旧自由权威客户端不能取得新版本权威。
+记录显示仍由 `PackageLightClient` 和 GPU 观察流提供。GPU 暂停时显示最后确认状态；库存不进入显示下行。当前权威协议为 `gpu-packages-15`，观察协议为 `gpu-package-observers-5`；环境区域合包要求服务端和权威客户端同时升级，旧自由权威客户端不能取得新版本权威。
 
 锁链没有 GPU 权威时继续由服务器 tick 推进进度和端口、连接及库存事务。服务端跳过 Create 的逐包裹 `updateBoxWorldPositions`；只在查询、端口交接、保存和脱落需要时计算逻辑位置，不计算摆动、渲染前后姿态、光照或剔除。GPU/CPU 迁移使用确认进度及事务序号，旧交接结果不重复执行。锁链脱落后生成的自由包裹立即转换为轻量记录。
 
@@ -66,3 +66,5 @@ body、pool、delta、journal 和观察槽位均可回收，内部跟踪精确�
 
 
 空 section 独立覆盖、原生环境批次与当前未完成的行为验收范围见 [协议 14 环境实现说明](gpu-package-environment-14.md)。
+
+权威环境区域合包的布局、生命周期及未完成项见[协议 15](gpu-package-protocol-15.md)。

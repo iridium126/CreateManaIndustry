@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.HashMap;
@@ -30,7 +32,7 @@ public final class PackageLightGpu implements AutoCloseable {
         if(capacity<1 || capacity>1024)throw new IllegalArgumentException("Light GPU sections");
         this.capacity=capacity;tableSize=Integer.highestOneBit(capacity*2-1)<<1;dataOffset=tableSize*16;
         table=new Resident[tableSize];long bytes=dataOffset+(long)capacity*PackageLightCache.BYTES;
-        if(bytes>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))throw new IllegalArgumentException("Light atlas exceeds device limit");
+        if(bytes>GpuCapabilities.current().storageBlockBytes())throw new IllegalArgumentException("Light atlas exceeds device limit");
         try {
             for(int i=0;i<BANKS;i++) {
                 var bank=banks[i]=new Bank();bank.buffer=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,bank.buffer);

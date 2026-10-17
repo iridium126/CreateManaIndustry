@@ -1937,7 +1937,7 @@ public class PackageGpuValidation {
             try(var view=world.view(0,0,0)){for(int i=0;i<100;i++)env.step(gpu.stateBuffer(),1,view);}
             check(readBuffer(env.headerBuffer(),64).getInt(24)==0,"ordinary air emitted native readback");
             var field=PackageEnvironmentGpu.class.getDeclaredField("samples");field.setAccessible(true);int samples=field.getInt(env);
-            check(readBuffer(samples,PackageEnvironmentGpu.SAMPLE_STRIDE*48).getInt(20*48+16)==1839,"native clock stopped in air");
+            check(readBuffer(samples,48).getInt(16)==1839,"native clock stopped in air");
             world.forget(section);world.offer(section,powder);uploadWorld(world);env.resetMotion(0,139,0,0,0,0,1839);
             try(var view=world.view(0,0,0)){env.step(gpu.stateBuffer(),1,view);}
             check(readBuffer(env.headerBuffer(),64).getInt(36)==2,"freeze threshold did not await the server result");
@@ -1951,9 +1951,9 @@ public class PackageGpuValidation {
             env.acknowledge(0,1,-20,4.7f,7,gpu.stateBuffer(),new PackageAuthorityRegion.Snapshot(pose,0),motion,0,0,0,.5f);
             var result=read(gpu);check(result.getFloat(0)==8.75f&&result.getFloat(4)==8.75f&&result.getFloat(20)==3,"canonical native ACK did not correct dependent motion");
             check(readBuffer(env.headerBuffer(),64).getInt(36)==0,"canonical native ACK did not unblock body");
-            var state=readBuffer(samples,PackageEnvironmentGpu.SAMPLE_STRIDE*48);
-            check(state.getInt(20*48)==140&&state.getInt(20*48+16)==1840&&state.getFloat(20*48+8)==2,"ACK lost deterministic timers");
-            env.retire(0);state=readBuffer(samples,PackageEnvironmentGpu.SAMPLE_STRIDE*48);
+            var state=readBuffer(samples,48);
+            check(state.getInt(0)==140&&state.getInt(16)==1840&&state.getFloat(8)==2,"ACK lost deterministic timers");
+            env.retire(0);state=readBuffer(samples,48);
             for(int offset=0;offset<state.capacity();offset+=4)check(state.getInt(offset)==0,"recycled body retained native state");
         }
         for(int flags:new int[]{0,256,512}){
@@ -1991,8 +1991,101 @@ public class PackageGpuValidation {
             return bytes;
         } catch(ReflectiveOperationException e){throw new IllegalStateException("Atlas validation reflection failed",e);}
     }
+    static void environmentAcknowledgementBenchmark()throws Exception {
+        var root=Path.of(System.getProperty("cmi.package.environmentBaseline","build/package-environment-baseline"),"assets/createmanaindustry");
+        java.util.function.Function<String,String> oldSources=name->ParticleShaderSource.loadParticle(name,path->{
+            try{return Files.readString(root.resolve(path));}catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}
+        });
+        var summary=new ArrayList<String>();var raw=new ArrayList<String>();
+        summary.add("count,trial,variant,gpu_p50_ms,gpu_p95_ms,gpu_p99_ms,cpu_p50_ms,cpu_p95_ms,cpu_p99_ms,dispatches");
+        raw.add("count,trial,variant,sample,gpu_ms,cpu_ms,dispatches");
+        var counter=PackageCpuDiagnostics.class.getDeclaredField("dispatches");counter.setAccessible(true);
+        for(int count:new int[]{0,1,17,512,513})for(int trial=0;trial<5;trial++)for(int order=0;order<2;order++){
+            boolean baseline=(trial+order)%2==0;String label=baseline?"baseline":"current";int capacity=Math.max(1,count);
+            Class<?> type=Class.forName("com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentGpu"+(baseline?"Baseline":""));
+            var env=(AutoCloseable)type.getConstructor(int.class,java.util.function.Function.class).newInstance(capacity,baseline?oldSources:(java.util.function.Function<String,String>)PackageGpuValidation::source);
+            var upload=type.getMethod("upload",ByteBuffer.class,int.class);
+            var ack=java.lang.invoke.MethodHandles.lookup().unreflect(type.getMethod("acknowledge",int.class,long.class,int.class,float.class,int.class)).bindTo(env);
+            var headers=BufferUtils.createByteBuffer(capacity*64);
+            for(int i=0;i<count;i++)headers.putLong(i*64,i+1).putLong(i*64+8,1).putLong(i*64+16,1)
+                    .putInt(i*64+24,1).putInt(i*64+40,i+1).putInt(i*64+44,7).putFloat(i*64+48,5).putLong(i*64+56,1);
+            double[] gpu=new double[40],cpu=new double[40];int timer=GL15.glGenQueries(),dispatches=0;
+            try{
+                for(int sample=-100;sample<40;sample++){
+                    upload.invoke(env,headers,capacity);GL11.glFinish(); // Fixture setup is outside both timers.
+                    PackageCpuDiagnostics.enabled(true);GL15.glBeginQuery(GL33.GL_TIME_ELAPSED,timer);long begin=System.nanoTime();
+                    if(baseline){for(int i=0;i<count;i++)try{ack.invokeExact(i,1L,0,5f,7);}catch(Throwable error){throw new IllegalStateException(error);}}
+                    else if(count>0){
+                        var current=(PackageEnvironmentGpu)env;current.beginAcknowledgements();
+                        for(int i=0;i<count;i++)current.acknowledge(i,1,0,5,7,0,null,null,0,0,0,0,i+1,1,1,i,1);
+                        current.endAcknowledgements();
+                    }
+                    double submitted=(System.nanoTime()-begin)/1e6;GL15.glEndQuery(GL33.GL_TIME_ELAPSED);
+                    double elapsed=GL33.glGetQueryObjectui64(timer,GL15.GL_QUERY_RESULT)/1e6;
+                    dispatches=counter.getInt(null);PackageCpuDiagnostics.enabled(false);
+                    int header=(int)type.getMethod("headerBuffer").invoke(env);var result=readBuffer(header,capacity*64);
+                    for(int i=0;i<count;i++)check(result.getInt(i*64+28)==1&&result.getFloat(i*64+48)==5,"ACK benchmark lost work");
+                    check(dispatches==(baseline?count:(count+511)/512),"ACK benchmark dispatch count");
+                    if(sample>=0){gpu[sample]=elapsed;cpu[sample]=submitted;raw.add(count+","+trial+","+label+","+sample+","+elapsed+","+submitted+","+dispatches);}
+                }
+                Arrays.sort(gpu);Arrays.sort(cpu);summary.add(count+","+trial+","+label+","+gpu[19]+","+gpu[37]+","+gpu[39]+","+cpu[19]+","+cpu[37]+","+cpu[39]+","+dispatches);
+            }finally{GL15.glDeleteQueries(timer);env.close();PackageCpuDiagnostics.enabled(false);}
+        }
+        Files.write(Path.of("build/package-environment-ack.csv"),summary);Files.write(Path.of("build/package-environment-ack-samples.csv"),raw);
+        System.out.println("Environment ACK benchmark: five trials of five warm-up rounds; "+(summary.size()-1)+" comparisons written");
+    }
+
+    static void environmentFeedbackBenchmark()throws Exception {
+        var root=Path.of(System.getProperty("cmi.package.environmentBaseline","build/package-environment-baseline"),"assets/createmanaindustry");
+        java.util.function.Function<String,String> oldSources=name->ParticleShaderSource.loadParticle(name,path->{
+            try{return Files.readString(root.resolve(path));}catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}
+        });
+        var summary=new ArrayList<String>();var raw=new ArrayList<String>();
+        summary.add("count,active,trial,variant,gpu_p50_ms,gpu_p95_ms,submit_p50_ms,poll_p50_ms,poll_p95_ms,download_bytes");
+        raw.add("count,active,trial,variant,sample,gpu_ms,submit_ms,poll_ms,download_bytes");
+        for(int count:new int[]{8192,131072})for(int active:new int[]{0,17,512})for(int trial=0;trial<5;trial++)for(int order=0;order<2;order++){
+            boolean baseline=(trial+order)%2==0;String label=baseline?"baseline":"current";
+            Class<?> type=Class.forName("com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentGpu"+(baseline?"Baseline":""));
+            var env=(AutoCloseable)type.getConstructor(int.class,java.util.function.Function.class).newInstance(count,baseline?oldSources:(java.util.function.Function<String,String>)PackageGpuValidation::source);
+            int timer=GL15.glGenQueries();
+            try {
+                var headers=BufferUtils.createByteBuffer(count*64);
+                for(int k=0;k<active;k++){int body=active==1?0:k*(count-1)/(active-1),b=body*64;
+                    headers.putLong(b,body+1).putLong(b+8,1).putLong(b+16,1).putInt(b+24,1).putInt(b+40,body+1).putInt(b+44,7).putFloat(b+48,5).putLong(b+56,1);
+                }
+                type.getMethod("upload",ByteBuffer.class,int.class).invoke(env,headers,count);
+                var capture=type.getMethod("capture",int.class);var poll=type.getMethod("poll",java.util.function.Consumer.class);
+                var downloaded=PackageCpuDiagnostics.class.getDeclaredField("downloads");downloaded.setAccessible(true);
+                double[] gpu=new double[40],submit=new double[40],read=new double[40];long downloadedBytes=0;int[] seen={0};var identities=new BitSet(count);
+                java.util.function.Consumer<ByteBuffer> validate=record->{int body=record.getInt(52);
+                    check(body>=0&&body<count&&!identities.get(body)&&record.getLong(0)==body+1L&&record.getLong(8)==1&&record.getLong(16)==1
+                            &&record.getInt(24)==1&&record.getInt(28)==0&&record.getInt(40)==body+1&&record.getLong(56)==1,
+                            "environment feedback benchmark changed lifecycle/sequence or duplicated a body");
+                    identities.set(body);seen[0]++;};
+                check((boolean)capture.invoke(env,count),"environment feedback preflight capture");GL11.glFinish();poll.invoke(env,validate);
+                check(seen[0]==active,"environment feedback preflight omitted an identity");
+                java.util.function.Consumer<ByteBuffer> consume=record->seen[0]++;
+                for(int sample=-100;sample<40;sample++) {
+                    PackageCpuDiagnostics.enabled(true);seen[0]=0;
+                    GL15.glBeginQuery(GL33.GL_TIME_ELAPSED,timer);long begin=System.nanoTime();
+                    check((boolean)capture.invoke(env,count),"environment feedback benchmark lost capture responsibility");
+                    double submitted=(System.nanoTime()-begin)/1e6;GL15.glEndQuery(GL33.GL_TIME_ELAPSED);
+                    double elapsed=GL33.glGetQueryObjectui64(timer,GL15.GL_QUERY_RESULT)/1e6;
+                    begin=System.nanoTime();poll.invoke(env,consume);double polled=(System.nanoTime()-begin)/1e6;
+                    check(seen[0]==active,"environment feedback benchmark lost/duplicated records");
+                    downloadedBytes=downloaded.getLong(null);PackageCpuDiagnostics.enabled(false);
+                    if(sample>=0){gpu[sample]=elapsed;submit[sample]=submitted;read[sample]=polled;raw.add(count+","+active+","+trial+","+label+","+sample+","+elapsed+","+submitted+","+polled+","+downloadedBytes);}
+                }
+                Arrays.sort(gpu);Arrays.sort(submit);Arrays.sort(read);
+                summary.add(count+","+active+","+trial+","+label+","+gpu[19]+","+gpu[37]+","+submit[19]+","+read[19]+","+read[37]+","+downloadedBytes);
+            } finally {GL15.glDeleteQueries(timer);env.close();PackageCpuDiagnostics.enabled(false);}
+        }
+        Files.write(Path.of("build/package-environment-feedback.csv"),summary);Files.write(Path.of("build/package-environment-feedback-samples.csv"),raw);
+        System.out.println("Environment feedback benchmark: five trials of five warm-up rounds; "+(summary.size()-1)+" comparisons written");
+    }
+
     static void environmentStorageBenchmark() throws Exception {
-        var root=Path.of("build/package-environment-baseline/assets/createmanaindustry");
+        var root=Path.of(System.getProperty("cmi.package.environmentBaseline","build/package-environment-baseline"),"assets/createmanaindustry");
         java.util.function.Function<String,String> baselineSources=name->ParticleShaderSource.loadParticle(name,path->{
             try{return Files.readString(root.resolve(path));}catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}
         });
@@ -2023,7 +2116,11 @@ public class PackageGpuValidation {
                     Object env=physicsType.getMethod("enableEnvironment",java.util.function.Function.class).invoke(physics,baseline?baselineSources:(java.util.function.Function<String,String>)PackageGpuValidation::source);
                     var headers=bodies(n);for(int i=0;i<n;i++){int p=i*64;headers.putLong(p,i+1).putLong(p+8,1).putLong(p+16,1).putInt(p+40,i+1).putInt(p+44,7).putFloat(p+48,5).putLong(p+56,1);}
                     env.getClass().getMethod("upload",ByteBuffer.class,int.class).invoke(env,headers,n);
-                    if(!baseline)for(int i=0;i<n;i++)((PackageEnvironmentGpu)env).resetMotion(i,0,0,0,0,0);
+                    // The staged baseline already has native motion. Give both implementations
+                    // the same checkpoint; older HEAD references legitimately lack this API.
+                    try{var resetMotion=env.getClass().getMethod("resetMotion",int.class,int.class,float.class,float.class,float.class,float.class);
+                        for(int i=0;i<n;i++)resetMotion.invoke(env,i,0,0f,0f,0f,0f);
+                    }catch(NoSuchMethodException absent){if(!baseline)throw absent;}
                     var input=bodies(n);for(int i=0;i<n;i++)body(input,i,2+i%nx*1.375f,scene.equals("floor")?1.5f:8,2+i/nx*1.375f,1);
                     double[] gpuTimes=new double[40],cpuTimes=new double[40];int timer=GL15.glGenQueries(),dispatches=0;
                     var counter=PackageCpuDiagnostics.class.getDeclaredField("dispatches");counter.setAccessible(true);
@@ -2181,6 +2278,278 @@ public class PackageGpuValidation {
         }
         crossingPackageSweeps();
     }
+    static void batchedEnvironmentAcknowledgements(){
+        int count=513;var headers=BufferUtils.createByteBuffer(count*64);
+        for(int i=0;i<count;i++)headers.putLong(i*64,i+1).putLong(i*64+8,2).putLong(i*64+16,3)
+                .putInt(i*64+24,20).putInt(i*64+36,i%2==0?2:0).putInt(i*64+40,i+1).putInt(i*64+44,7).putFloat(i*64+48,5).putLong(i*64+56,4);
+        try(var sequential=new PackageEnvironmentGpu(count,PackageGpuValidation::source);var batch=new PackageEnvironmentGpu(count,PackageGpuValidation::source)){
+            sequential.upload(headers,count);batch.upload(headers,count);batch.beginAcknowledgements();
+            for(int through:new int[]{4,3,10,20})for(int i=0;i<count;i++){
+                sequential.acknowledge(i,through,100+through,4.5f,7,0,null,null,0,0,0,0,i+1,2,3,i,4);
+                batch.acknowledge(i,through,100+through,4.5f,7,0,null,null,0,0,0,0,i+1,2,3,i,4);
+            }
+            batch.endAcknowledgements();
+            var expected=readBuffer(sequential.headerBuffer(),count*64);var actual=readBuffer(batch.headerBuffer(),count*64);
+            for(int at=0;at<count*64;at+=4)check(expected.getInt(at)==actual.getInt(at),"batched ACK changed replay result at "+at);
+            // All lifecycle fields, including high words, are checked at GPU application time.
+            for(int field=0;field<10;field++){
+                batch.upload(headers,count);
+                long id=field==0?2:field==7?0x100000001L:1,generation=field==1?3:field==8?0x100000002L:2,lease=field==2?4:field==9?0x100000003L:3,revision=field==4?5:field==5?0x100000004L:4;
+                int index=field==3?1:0;
+                batch.beginAcknowledgements();batch.acknowledge(0,1,90,1,0,0,null,null,0,0,0,0,id,generation,lease,index,revision);
+                if(field==6){batch.retire(0);batch.reset(0,10000,2,3,0,4,0,5,7);}
+                batch.endAcknowledgements();actual=readBuffer(batch.headerBuffer(),64);
+                check(actual.getInt(28)==0&&actual.getFloat(48)==5,"stale batched lifecycle ACK applied: "+field);
+            }
+            // A long chain must have one GPU writer, even when older ACKs arrive between newer ones.
+            batch.upload(headers,count);batch.beginAcknowledgements();
+            for(int i=0;i<512;i++)batch.acknowledge(0,1+i%20,90,4,7,0,null,null,0,0,0,0,1,2,3,0,4);
+            batch.endAcknowledgements();actual=readBuffer(batch.headerBuffer(),64);
+            check(actual.getInt(28)==20&&actual.getInt(32)==90&&actual.getFloat(48)==4,"same-body ACK chain lost order");
+            batch.beginAcknowledgements();batch.endAcknowledgements();
+        }
+        // Correction rows must initialize body, velocity and private motion state independently.
+        try(var env=new PackageEnvironmentGpu(2,PackageGpuValidation::source)){
+            var h=BufferUtils.createByteBuffer(128);
+            for(int i=0;i<2;i++)h.putLong(i*64,i+1).putLong(i*64+8,2).putLong(i*64+16,3).putInt(i*64+24,1)
+                    .putInt(i*64+36,2).putInt(i*64+40,i+1).putInt(i*64+44,7).putFloat(i*64+48,5).putLong(i*64+56,4);
+            env.upload(h,2);int state=buffer(bodies(2));
+            try{
+                var pose=new PackageLease.Pose(103,205,307,.1f,.2f,.3f,45);
+                var correction=new PackageAuthorityRegion.Snapshot(pose,1);
+                var motion=new com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentMotion(71,2,.25f,.5f,.75f,30,17);
+                env.beginAcknowledgements();
+                env.acknowledge(0,1,-20,4.7f,31,state,correction,motion,100,200,300,.5f,1,2,3,0,4);
+                env.acknowledge(1,1,0,5,7,0,null,null,0,0,0,0,2,2,3,1,4);env.endAcknowledgements();
+                var actual=readBuffer(state,128);check(actual.getFloat(0)==3&&actual.getFloat(4)==5.5f&&actual.getFloat(8)==7&&actual.getFloat(44)==45,"batched correction pose");
+                check(actual.getFloat(16)==.1f&&actual.getFloat(28)==1,"batched correction velocity/ground");
+                var result=readBuffer(env.headerBuffer(),128);check(result.getInt(36)==0&&result.getInt(44)==31&&result.getInt(92)==1,"batched independent correction result");
+                int samples=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,14);var motionBytes=readBuffer(samples,48);
+                check(motionBytes.getInt(0)==71&&motionBytes.getFloat(8)==2&&motionBytes.getInt(16)==17&&motionBytes.getFloat(32)==.25f,"batched correction motion workspace");
+            }finally{GL15.glDeleteBuffers(state);}
+        }
+        System.out.println("Batched environment ACKs: 512/513 boundary, interleaved/long chains, lifecycle reuse and correction passed");
+    }
+
+    static int environmentStorage(PackageEnvironmentGpu env)throws Exception {
+        var field=PackageEnvironmentGpu.class.getDeclaredField("samples");field.setAccessible(true);return field.getInt(env);
+    }
+    static void growingBufferRetirementBoundary() {
+        if(!com.mojang.blaze3d.systems.RenderSystem.isOnRenderThread())com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
+        var compute=new com.iridium126.createmanaindustry.client.particles.engine.ParticleComputeState();
+        var draw=new com.iridium126.createmanaindustry.client.particles.packages.PackageRenderState();
+        int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT),live=buffer(BufferUtils.createByteBuffer(alignment+64)),replacement=0;
+        int writer=com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute("growth retirement visibility",
+                "#version 450 core\nlayout(local_size_x=1)in;layout(std430,binding=0)buffer Data{uint words[];};void main(){words[0]=0x12345678u;}");
+        try(var growing=new com.iridium126.createmanaindustry.client.gpu.buffer.GpuGrowingBuffer()) {
+            int old=growing.ensure(alignment+64);GL20.glUseProgram(writer);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,old);GL43.glDispatchCompute(1,1,1);
+            GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,3,live,alignment,64);
+            GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,8,old,alignment,64);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,14,old);
+            GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,old);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,live);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,old);
+            compute.capture();draw.capture();
+            int next=growing.ensure(growing.capacityBytes()*2);
+            GL11.glFinish();growing.poll();
+            replacement=GL15.glGenBuffers();GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,replacement);GL15.glBufferData(GL15.GL_ARRAY_BUFFER,64,GL15.GL_DYNAMIC_COPY);
+            draw.restore();check(GL11.glGetError()==GL11.GL_NO_ERROR&&GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,8)==0,"draw boundary restored a retired or reused buffer name");
+            compute.restore();
+            check(GL11.glGetError()==GL11.GL_NO_ERROR&&GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,14)==0,"compute boundary restored a retired or reused buffer name");
+            check(GL11.glGetInteger(GL31.GL_COPY_READ_BUFFER)==0&&GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER)==live&&GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING)==0,"retirement lost surviving generic buffer bindings");
+            check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,3)==live&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,3)==alignment&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,3)==64,"retirement lost a live foreign range");
+            check(readBuffer(next,4).getInt(0)==0x12345678,"growth copied stale shader-written data");
+        }finally {
+            draw.restore();compute.restore();GL20.glUseProgram(0);GL20.glDeleteProgram(writer);GL15.glDeleteBuffers(live);if(replacement!=0)GL15.glDeleteBuffers(replacement);
+            for(int binding:new int[]{0,3,8,14})GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,0);
+            GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,0);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,0);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,0);
+        }
+    }
+    static void pagedEnvironmentHistory()throws Exception {
+        growingBufferRetirementBoundary();
+        captureDemandStatistics();
+        var air=snapshot((s,i)->WORLD_AIR);
+        var web=snapshot((s,i)->(i&15)==4||(i&15)==8?new PackageCollisionCache.Cell(List.of(),.6f,3<<16):WORLD_AIR);
+        var layout=new com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentLayout(3);
+        try(var world=new PackageCollisionGpu(27,1);var gpu=new PackagePhysicsGpu(3,2,PackageGpuValidation::source)) {
+            cubeWorld(world,air,web,0,0,0);
+            var attach=PackagePhysicsGpu.class.getDeclaredMethod("enableEnvironment",java.util.function.Function.class,int.class);attach.setAccessible(true);
+            var env=(PackageEnvironmentGpu)attach.invoke(gpu,(java.util.function.Function<String,String>)PackageGpuValidation::source,1);
+            var input=bodies(3);for(int i=0;i<3;i++){body(input,i,4.5f+i*4,8.5f,4.5f,1);env.reset(i,i+1,1,1,0,5,7);env.resetMotion(i,0,0,0,0,0);}
+            gpu.upload(input,3);
+            try(var view=world.view(0,0,0)) {
+                gpu.stepWorld(.05f,view);var first=read(gpu);
+                gpu.stepWorld(.05f,view);var second=read(gpu);var headers=readBuffer(env.headerBuffer(),3*64);
+                var state=readBuffer(environmentStorage(env),layout.pageSample()*48);
+                int winner=state.getInt(20)!=0?0:1,loser=winner^1;
+                check(state.getInt(winner*48+20)==1&&state.getInt(loser*48+20)==0,"one page was shared or unavailable");
+                check(headers.getInt(winner*64+24)==2&&headers.getInt(loser*64+24)==1,"page pressure overwrote an inline record");
+                check(second.getFloat(loser*64+60)==PackagePhysicsGpu.COLLISION_FROZEN&&second.getFloat(loser*64+4)==first.getFloat(loser*64+4),"page shortage advanced the blocked body's motion");
+                check(second.getFloat(128+4)<first.getFloat(128+4)&&second.getFloat(128+60)>=0,"page shortage stopped an unrelated body");
+                check(env.capture(3),"inline/page immutable capture");
+                env.acknowledge(winner,1,0,5,7);
+                env.resetMotion(winner,0,0,0,0,0,2);
+                check(readBuffer(environmentStorage(env),layout.pageSample()*48).getInt(winner*48+20)==1,"partial ACK/timer restore released a live page");
+                for(int tick=0;tick<22;tick++)gpu.stepWorld(.05f,view);
+                headers=readBuffer(env.headerBuffer(),192);long through=Integer.toUnsignedLong(headers.getInt(winner*64+24));
+                check(through==21&&headers.getInt(winner*64+28)==1,"bounded page did not preserve its 20-record suffix");
+                check(env.capture(3),"full suffix immutable capture");
+                env.acknowledge(winner,through,0,5,7);
+                gpu.stepWorld(.05f,view);
+                state=readBuffer(environmentStorage(env),layout.pageSample()*48);headers=readBuffer(env.headerBuffer(),192);
+                check(state.getInt(winner*48+20)==0&&state.getInt(loser*48+20)==1&&headers.getInt(loser*64+24)==2,"confirmed page was not reassigned to the waiting body");
+                check(state.getInt(layout.allocatorSample()*48)==0,"reassigned page remained free");
+                env.reset(winner,900+winner,2,2,0,5,7);env.resetMotion(winner,0,0,0,0,0);
+                gpu.stepWorld(.05f,view);
+                env.acknowledge(winner,1,0,5,7,0,null,null,0,0,0,0,winner+1,1,1,0,1);
+                headers=readBuffer(env.headerBuffer(),192);
+                check(headers.getLong(winner*64)==900+winner&&headers.getInt(winner*64+24)==1&&headers.getInt(winner*64+28)==0,"late ACK changed the replacement lifecycle");
+                GL11.glFinish();var captures=new ArrayList<com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent>();
+                boolean refused=false;try{env.poll(bytes->{throw new IllegalStateException("fixture consumer refused capture");});}catch(IllegalStateException expected){refused=true;}
+                check(refused&&!env.drained(0),"failed capture consumer advanced the retirement barrier");
+                env.poll(bytes->captures.add(com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent.decode(bytes)));
+                check(env.drained(env.barrier()),"successful retry did not complete the capture barrier");
+                final int oldWinner=winner+1;
+                var old=captures.stream().filter(e->e.identity().id()==oldWinner&&e.through()==2).findFirst().orElseThrow();
+                check(old.samples().size()==2&&old.samples().getFirst().ticks()==1&&old.samples().getLast().ticks()==2,"page reuse modified a pending capture");
+                var full=captures.stream().filter(e->e.identity().id()==oldWinner&&e.through()==21).findFirst().orElseThrow();
+                check(full.samples().size()==20&&full.samples().getFirst().ticks()==2&&full.samples().getLast().ticks()==21,"partial ACK/wrap lost history order");
+                env.retire(loser);state=readBuffer(environmentStorage(env),layout.pageSample()*48);
+                check(state.getInt(layout.allocatorSample()*48)==1&&state.getInt(loser*48+20)==0,"retirement did not return its page once");
+                env.retire(loser);check(readBuffer(environmentStorage(env),layout.pageSample()*48).getInt(layout.allocatorSample()*48)==1,"duplicate retirement returned a page twice");
+            }
+        }
+        pagedEnvironmentGrowth();
+        System.out.println("Paged environment: local pressure, suffix ordering, wrap, late ACK, capture retention, growth and slot reuse passed");
+    }
+    static void captureDemandStatistics()throws Exception {
+        int capacity=2050;var layout=new com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentLayout(capacity);
+        int[] indices={0,1,31,32,127,128,2047,2048,2049};
+        try(var env=new PackageEnvironmentGpu(capacity,0,PackageGpuValidation::source)) {
+            var headers=BufferUtils.createByteBuffer(capacity*64);
+            for(int n=0;n<indices.length;n++){int body=indices[n],at=body*64;
+                headers.putLong(at,body+1).putLong(at+8,1).putLong(at+16,1).putInt(at+24,1).putInt(at+36,n%3)
+                        .putInt(at+40,body+1).putInt(at+44,7).putFloat(at+48,5).putLong(at+56,1);}
+            env.upload(headers,capacity);
+            // Simulate an interrupted scratch accumulation. It is not an ACK or history reset.
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,environmentStorage(env));
+            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(long)layout.allocatorSample()*48+4,new int[]{999});
+            var dirty=PackageEnvironmentGpu.class.getDeclaredField("captureDemandDirty");dirty.setAccessible(true);dirty.setBoolean(env,true);
+            for(int capture=0;capture<PackageReadbackRing.SLOTS;capture++)check(env.capture(capacity),"demand immutable capture saturation");
+            check(!env.capture(capacity),"demand test overwrote a full capture ring");
+            GL11.glFinish();
+            check(readBuffer(environmentStorage(env),layout.pageSample()*48).getInt(layout.allocatorSample()*48+4)==0,"device capture demand was not drained");
+            var field=PackageEnvironmentGpu.class.getDeclaredField("ring");field.setAccessible(true);var ring=(PackageReadbackRing)field.get(env);int[] snapshots={0};
+            ring.poll(1,snapshot->{var bytes=snapshot.bytes();snapshots[0]++;
+                check(bytes.getInt(0)==indices.length&&bytes.getInt(4)==3&&bytes.getInt(8)==0&&bytes.getInt(12)==0,"fresh/retransmit capture changed exact page demand");
+                var seen=new BitSet(capacity);
+                for(int n=0;n<indices.length;n++){int at=16+n*1024,body=bytes.getInt(at+52);
+                    check(!seen.get(body)&&bytes.getLong(at)==body+1L,"page demand changed or duplicated a captured lifecycle");seen.set(body);}
+                for(int body:indices)check(seen.get(body),"page demand omitted an identity");
+            });
+            check(snapshots[0]==PackageReadbackRing.SLOTS,"page demand did not preserve every immutable capture");
+        }
+    }
+    static void pagedEnvironmentGrowth()throws Exception {
+        int count=1025,capacity=2049;
+        var layout=new com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentLayout(capacity);
+        var web=snapshot((s,i)->new PackageCollisionCache.Cell(List.of(),.6f,3<<16));
+        try(var world=new PackageCollisionGpu(27,1);var env=new PackageEnvironmentGpu(capacity,count,PackageGpuValidation::source)) {
+            cubeWorld(world,web,web,0,0,0);var headers=BufferUtils.createByteBuffer(count*64);var bodies=bodies(count);
+            for(int i=0;i<count;i++){body(bodies,i,5.5f,8.5f,5.5f,1);headers.putLong(i*64,i+1).putLong(i*64+8,1).putLong(i*64+16,1).putInt(i*64+40,i+1).putInt(i*64+44,7).putFloat(i*64+48,5).putLong(i*64+56,1);}
+            env.upload(headers,count);int input=buffer(bodies),original=environmentStorage(env);
+            try(var view=world.view(0,0,0)) {
+                env.step(input,count,view);check(env.capture(count),"growth initial capture");
+                env.step(input,count,view);
+                var before=readBuffer(environmentStorage(env),layout.pageSample()*48);
+                int owners=0;for(int i=0;i<count;i++)if(before.getInt(i*48+20)!=0)owners++;
+                check(owners==512,"bootstrap pages were not uniquely assigned");
+                GL11.glFinish();var seen=new BitSet();env.poll(bytes->seen.set(bytes.getInt(52)));
+                for(int round=0;round<8&&seen.cardinality()<count;round++){
+                    check(env.capture(count),"growth capture");GL11.glFinish();env.poll(bytes->seen.set(bytes.getInt(52)));
+                }
+                check(seen.cardinality()==count,"growth demand starved an identity");
+                int grown=environmentStorage(env);check(grown!=original,"fixture did not exercise physical GPU copy growth");
+                var after=readBuffer(grown,layout.pageSample()*48);
+                for(int i=0;i<count;i++)for(int word=0;word<48;word+=4)check(before.getInt(i*48+word)==after.getInt(i*48+word),"growth changed a workspace/page owner");
+                env.step(input,count,view);after=readBuffer(environmentStorage(env),layout.pageSample()*48);
+                var pages=new BitSet();for(int i=0;i<count;i++){int page=after.getInt(i*48+20);check(page>0&&page<=count&&!pages.get(page),"page allocator duplicated/reused a live page");pages.set(page);}
+                check(after.getInt(layout.allocatorSample()*48)==0,"allocated pages remained on the free stack");
+                check(env.capture(count),"growth data capture");GL11.glFinish();var suffixes=new BitSet();
+                env.poll(bytes->{var event=com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageEnvironmentEvent.decode(bytes);suffixes.set(bytes.getInt(52));
+                    check(event.first()==0&&event.samples().getFirst().ticks()==1&&event.samples().size()==event.through(),"growth lost an inline/paged prefix");
+                    int age=0;for(var sample:event.samples())check(sample.ticks()==++age,"growth reordered native ages");});
+                headers=readBuffer(env.headerBuffer(),count*64);env.beginAcknowledgements();
+                for(int i=0;i<count;i++)env.acknowledge(i,Integer.toUnsignedLong(headers.getInt(i*64+24)),0,5,7,0,null,null,0,0,0,0,i+1,1,1,i,1);
+                env.endAcknowledgements();after=readBuffer(environmentStorage(env),layout.pageSample()*48);
+                check(after.getInt(layout.allocatorSample()*48)==count,"confirmed pages were leaked or returned twice");
+                for(int i=0;i<count;i++)check(after.getInt(i*48+20)==0,"complete ACK retained an owned page");
+                env.upload(headers,count);after=readBuffer(environmentStorage(env),layout.pageSample()*48);
+                check(after.getInt(layout.allocatorSample()*48)==count,"full lifecycle upload duplicated the free stack");
+                check(GL11.glGetError()==GL11.GL_NO_ERROR,"paged environment growth GL error");
+            }finally{GL15.glDeleteBuffers(input);}
+        }
+    }
+    static void pagedEnvironmentMaximum()throws Exception {
+        int count=131072;var layout=new com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentLayout(count);
+        var web=snapshot((s,i)->new PackageCollisionCache.Cell(List.of(),.6f,3<<16));
+        try(var world=new PackageCollisionGpu(1,1);var env=new PackageEnvironmentGpu(count,PackageGpuValidation::source)) {
+            check(world.offer(new PackageCollisionCache.Section(0,0,0),web),"maximum page world");uploadWorld(world);
+            var headers=BufferUtils.createByteBuffer(count*64);var bodies=bodies(count);
+            for(int i=0;i<count;i++){body(bodies,i,5.5f,8.5f,5.5f,1);headers.putLong(i*64,i+1).putLong(i*64+8,1).putLong(i*64+16,1).putInt(i*64+40,i+1).putInt(i*64+44,7).putFloat(i*64+48,5).putLong(i*64+56,1);}
+            env.upload(headers,count);int input=buffer(bodies);
+            try(var view=world.view(0,0,0)) {
+                int initial=environmentStorage(env);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,initial);
+                long initialBytes=GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE);
+                check(initialBytes==16L*1024*1024,"maximum body capacity allocated dense history at initialization");
+                env.step(input,count,view);check(env.capture(count),"maximum page demand capture");GL11.glFinish();env.poll(bytes->{});
+                env.step(input,count,view);
+                var state=readBuffer(environmentStorage(env),layout.pageSample()*48);var pages=new BitSet();
+                for(int i=0;i<count;i++){int page=state.getInt(i*48+20);check(page>0&&page<=count&&!pages.get(page),"maximum history page alias at body "+i);pages.set(page);}
+                check(state.getInt(layout.allocatorSample()*48)==0,"maximum population left available pages");
+                headers=readBuffer(env.headerBuffer(),count*64);env.beginAcknowledgements();
+                for(int i=0;i<count;i++){check(headers.getInt(i*64+24)==2,"maximum demand lost a logical event");env.acknowledge(i,2,0,5,7,0,null,null,0,0,0,0,i+1,1,1,i,1);}
+                env.endAcknowledgements();state=readBuffer(environmentStorage(env),layout.pageSample()*48);
+                check(state.getInt(layout.allocatorSample()*48)==count,"maximum ACK list leaked or duplicated pages");
+                for(int i=0;i<count;i++)check(state.getInt(i*48+20)==0,"maximum ACK retained a stale owner");
+                GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,environmentStorage(env));
+                check(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)==128L*1024*1024,"full history escaped the minimum SSBO limit");
+                check(GL11.glGetError()==GL11.GL_NO_ERROR,"maximum history page GL error");
+            }finally{GL15.glDeleteBuffers(input);}
+        }
+        System.out.println("131072 history owners: unique pages, complete ACK return, bounded initial/full storage passed");
+    }
+    static void sparseEnvironmentPending()throws Exception {
+        int count=1025;int[] slots={0,31,32,63,127,128,1024};
+        var air=snapshot((section,i)->WORLD_AIR);
+        try(var world=new PackageCollisionGpu(27,1);var env=new PackageEnvironmentGpu(count,PackageGpuValidation::source)) {
+            cubeWorld(world,air,air,0,0,0);var bodies=bodies(count);
+            for(int slot:slots){body(bodies,slot,5,8,5,1);env.reset(slot,slot+1,1,1,1,5,7);}
+            var samplesField=PackageEnvironmentGpu.class.getDeclaredField("samples");samplesField.setAccessible(true);
+            int samples=samplesField.getInt(env),pendingStart=new com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentLayout(count).pendingSample()*48;
+            int pendingBytes=((count+127)/128)*48,state=buffer(bodies);
+            try {
+                try(var view=world.view(0,0,0)){env.step(state,count,view);}
+                var bits=readBuffer(samples,pendingStart+pendingBytes);
+                var expected=new BitSet();for(int slot:slots)expected.set(slot);
+                for(int slot=0;slot<count;slot++){
+                    int word=slot/32,at=pendingStart+(word/4)*48+(word%4)*4;
+                    check(((bits.getInt(at)>>>slot%32)&1)==(expected.get(slot)?1:0),"pending identity bit aliases another body");
+                }
+                check(env.capture(count),"sparse pending capture");GL11.glFinish();var seen=new BitSet();
+                env.poll(bytes->{int body=bytes.getInt(52);check(expected.get(body)&&!seen.get(body),"sparse pending capture contains unrelated/duplicate body");seen.set(body);env.acknowledge(body,Integer.toUnsignedLong(bytes.getInt(24)),0,5,7);});
+                check(seen.equals(expected),"sparse pending boundary body was lost");
+                samples=samplesField.getInt(env);bits=readBuffer(samples,pendingStart+pendingBytes);
+                for(int word=0;word<(count+31)/32;word++)check(bits.getInt(pendingStart+(word/4)*48+(word%4)*4)==0,"completed ACK retained pending identity");
+                // Retire without an ACK, then reuse the same bit for a new lifecycle.
+                env.reset(31,2000,2,2,1,5,7);try(var view=world.view(0,0,0)){env.step(state,count,view);}
+                env.retire(31);check(env.capture(count),"retired pending capture");GL11.glFinish();int[] events={0};env.poll(bytes->events[0]++);
+                check(events[0]==0,"retired pending bit exported the previous lifecycle");
+                env.reset(31,3000,3,3,1,5,7);try(var view=world.view(0,0,0)){env.step(state,count,view);}
+                check(env.capture(count),"recycled pending capture");GL11.glFinish();env.poll(bytes->{check(bytes.getLong(0)==3000,"recycled pending bit used old identity");events[0]++;});
+                check(events[0]==1,"recycled pending bit was not re-armed");
+            }finally{GL15.glDeleteBuffers(state);}
+        }
+        System.out.println("Sparse environment pending set: word/tail boundaries, ACK pruning, retire and reuse passed");
+    }
+
     static void environmentCaptureFairness(){
         int count=4096;var air=snapshot((s,i)->WORLD_AIR);
         var machine=snapshot((s,i)->i>>>8==0?new PackageCollisionCache.Cell(List.of(new PackageCollisionCache.Box(0,0,0,1,1,1)),.6f,16):WORLD_AIR);
@@ -3677,7 +4046,7 @@ public class PackageGpuValidation {
         }
     }
     static void packageRetirementStateBoundary() {
-        com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
+        if(!com.mojang.blaze3d.systems.RenderSystem.isOnRenderThread())com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
         GL20.glUseProgram(0);GL30.glBindVertexArray(0);
         int live=GL15.glGenBuffers(),retiring=GL15.glGenBuffers();
         int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
@@ -4453,7 +4822,39 @@ public class PackageGpuValidation {
             data.putInt(4,12).putInt(8,13);putBuffer(source,data);
             check(ring.submit(source,4,8,2,2),"cached scratch blocked new snapshot");GL11.glFinish();
             check(ring.poll(2,s->check(s.bytes().getInt(0)==12 && s.bytes().getInt(4)==13,"new snapshot reused old scratch"))==1,"cached slot failed to retire");
+        }
+        // Capture kernels can write into a free immutable bank directly, without a maximum-size copy.
+        try(var ring=new PackageReadbackRing(16)) {
+            var banks=new HashSet<Integer>();
+            for(int i=0;i<4;i++) {
+                int target=ring.writableCaptureBuffer();check(target>0&&banks.add(target),"direct capture reused an in-flight bank");
+                GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,target);
+                try(var stack=org.lwjgl.system.MemoryStack.stackPush()){
+                    GL43.glClearBufferSubData(GL31.GL_COPY_WRITE_BUFFER,GL30.GL_R32UI,0,16,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(i+70));
+                }
+                check(ring.submit(target,1,i),"direct capture submit failed");
+            }
+            check(ring.writableCaptureBuffer()==0,"direct capture did not apply four-bank backpressure");
+            GL11.glFinish();check(ring.poll(1,snapshot->{for(int at=0;at<16;at+=4)check(snapshot.bytes().getInt(at)==snapshot.sequence()+70,"direct capture changed before consumption");})==4,"direct captures did not drain");
+            check(ring.writableCaptureBuffer()>0,"direct capture did not recover after drain");
+        }
+        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,source);
+        GL15.glBufferData(GL31.GL_COPY_READ_BUFFER,80,GL15.GL_DYNAMIC_DRAW);
+        try(var ring=new PackageReadbackRing(80)) {
+            for(int n:new int[]{0,1,2,99}) {
+                ByteBuffer capture=BufferUtils.createByteBuffer(80).putInt(0,n).putInt(16,123).putInt(48,456);
+                putBuffer(source,capture);
+                check(ring.submitCounted(source,16,32,2,1,n),"counted capture rejected");
+                putBuffer(source,BufferUtils.createByteBuffer(80));GL11.glFinish();
+                for(int retry=0;retry<4;retry++)check(ring.pollAvailable(1,snapshot->{
+                    check(snapshot.bytes().remaining()==16+Math.min(n,2)*32,"counted capture downloaded unused capacity");
+                    if(n>0)check(snapshot.bytes().getInt(16)==123,"immutable counted body overwritten");
+                    return false;
+                })==0,"counted capture consumed through backpressure");
+                check(ring.poll(1,snapshot->check(snapshot.bytes().getInt(0)==n,"counted header overwritten"))==1,"counted capture did not resume");
+            }
         }finally{GL15.glDeleteBuffers(source);}
+
     }
     static int buffer(ByteBuffer bytes) {
         int id=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);
@@ -4915,6 +5316,8 @@ public class PackageGpuValidation {
                 public boolean send(long e,long r,long sequence,ByteBuffer bytes){throw new AssertionError("Revoked namespace sent an old worker result");}
                 public void failed(String reason){throw new AssertionError(reason);}
             })) {
+            var owners=new HashMap<Integer,Object>();var unrelatedOwner=new Object();owners.put(0,unrelatedOwner);
+            acquisition.bodyOwnership(body->check(owners.put(body,acquisition)==null,"duplicate body ownership"),body->check(owners.remove(body,acquisition),"body owner removed twice"));
             acquisition.attachChannel(channel);cubeWorld(world,air,air,0,0,0);var env=physics.enableEnvironment(PackageGpuValidation::source);
             var unrelated=bodies(1);body(unrelated,0,12,12,12,1);unrelated.putFloat(16,1);physics.uploadFree(unrelated,1);
             var ranges=BufferUtils.createByteBuffer(16);ranges.putInt(4,3).putFloat(8,1);pool.uploadMeshes(BufferUtils.createByteBuffer(3*48),ranges,1);
@@ -4924,7 +5327,7 @@ public class PackageGpuValidation {
                 for(int i=0;i<count;i++)acquisition.receive(acquisitionPacket(template,action,100+i,900001+i,19,phase==0?1:2));
                 acquisition.pump(256,(o,c)->true);acquisitionFrame(physics,pool,acquisition,particles,counter,0,0,0,frame++,true);GL11.glFinish();acquisition.pump(256,(o,c)->true);
             }
-            check(acquisition.activeCount()==count,"regional fixture failed admission");
+            check(acquisition.activeCount()==count&&owners.size()==count+1,"regional fixture failed admission/owner registration");
             try(var view=world.view(0,0,0)){physics.stepFreeWorld(.05f,view,true,4);}
             acquisitionFrame(physics,pool,acquisition,particles,counter,0,0,0,frame++,true);
             check(acquisition.captureCommitted(channel,frame-1),"regional fixture did not capture old flights");
@@ -4944,6 +5347,7 @@ public class PackageGpuValidation {
                 else env.poll(raw->{throw new AssertionError("Air fixture reported an environment event");});
             }
             check(acquisition.replacementReady()&&released[0]==count&&physics.freeLiveCount()==1,"regional retirement leaked/duplicated lifecycle members");
+            check(owners.size()==1&&owners.get(0)==unrelatedOwner,"regional retirement lost unrelated ownership or leaked old owners");
             acquisition.close();channel.close();check(!channel.acknowledge(19,23,0),"old ACK entered a closed namespace");
             int reused=physics.nextFreeBody();check(reused==1,"retirement failed to preserve the unrelated body's stable slot");
             var replacement=bodies(1);body(replacement,0,7,8,9,1);physics.writeFree(reused,replacement,bodies(1));
@@ -7299,7 +7703,10 @@ public class PackageGpuValidation {
             if(Arrays.asList(args).contains("--empty-sections-only")){emptySectionCoverage();worldMissingAndInvalidated();worldFullCapacity();check(GL11.glGetError()==GL11.GL_NO_ERROR,"empty sections GL error");System.out.println("Package empty sections GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--world-history-only")){emptySectionCoverage();historyChangesPreserveLiveUsage();worldVersionDiagnostics();supersededWorldUploadProgress();retainedWorldGeometryProgress();historicalGeometryIsolation();worldUploadVersions();worldAtlasLru();check(GL11.glGetError()==GL11.GL_NO_ERROR,"world history GL error");System.out.println("Package world history GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--materials-only")){materialMotionRegression();nativeEnvironmentJournalRegression();check(GL11.glGetError()==GL11.GL_NO_ERROR,"material motion GL error");System.out.println("Package material motion GPU: "+checks+" assertions passed");return;}
-            if(Arrays.asList(args).contains("--journal-fairness-only")){environmentCaptureFairness();environmentRegression();environmentThroughput();check(GL11.glGetError()==GL11.GL_NO_ERROR,"journal fairness GL error");System.out.println("Package journal fairness GPU: "+checks+" assertions passed");return;}
+            if(Arrays.asList(args).contains("--environment-ack-benchmark-only")){batchedEnvironmentAcknowledgements();environmentAcknowledgementBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"environment ACK benchmark GL error");return;}
+            if(Arrays.asList(args).contains("--environment-feedback-benchmark-only")){readbacks();environmentFeedbackBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"environment feedback benchmark GL error");return;}
+            if(Arrays.asList(args).contains("--history-pages-only")){pagedEnvironmentHistory();pagedEnvironmentMaximum();check(GL11.glGetError()==GL11.GL_NO_ERROR,"history pages GL error");System.out.println("Package history pages GPU: "+checks+" assertions passed");return;}
+            if(Arrays.asList(args).contains("--journal-fairness-only")){readbacks();batchedEnvironmentAcknowledgements();pagedEnvironmentHistory();sparseEnvironmentPending();environmentCaptureFairness();environmentRegression();environmentThroughput();check(GL11.glGetError()==GL11.GL_NO_ERROR,"journal fairness GL error");System.out.println("Package journal fairness GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--moving-advance-only")){rotatingCornerProgress();rotatingGrazingProgress();movingAdvanceSafety();check(GL11.glGetError()==GL11.GL_NO_ERROR,"moving advance GL error");System.out.println("Package moving advance GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--complex-free-only")) {
                 complexResidentNozzleProgress();rotatingCornerProgress();rotatingGrazingProgress();movingAdvanceSafety();check(GL11.glGetError()==GL11.GL_NO_ERROR,"complex free GL error");
@@ -7313,7 +7720,7 @@ public class PackageGpuValidation {
                 worldPrefetchBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"world prefetch benchmark GL error");return;
             }
             if(Arrays.asList(args).contains("--repair-only")){
-                emptySectionCoverage();materialMotionRegression();nativeEnvironmentJournalRegression();continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();delayedMachineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();movingSectionSeamProgress();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();complexResidentNozzleProgress();rotatingCornerProgress();rotatingGrazingProgress();movingAdvanceSafety();sableNozzleResidentSectionProgress();denseResidentVerticalSectionProgress();sectionDemandAndPause();fallingSectionConfirmations();packageFaceLighting();asymmetricSweepRegression();environmentRegression();environmentThroughput();environmentCaptureFairness();recycledFreeAcquisitions();recycledChainAcquisitions();uploadFairnessProgress();historyChangesPreserveLiveUsage();worldVersionDiagnostics();supersededWorldUploadProgress();retainedWorldGeometryProgress();historicalGeometryIsolation();localBudgetRetry();freezeDiagnostics();knownContactProgress();
+                readbacks();batchedEnvironmentAcknowledgements();pagedEnvironmentHistory();emptySectionCoverage();materialMotionRegression();nativeEnvironmentJournalRegression();continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();delayedMachineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();movingSectionSeamProgress();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();complexResidentNozzleProgress();rotatingCornerProgress();rotatingGrazingProgress();movingAdvanceSafety();sableNozzleResidentSectionProgress();denseResidentVerticalSectionProgress();sectionDemandAndPause();fallingSectionConfirmations();packageFaceLighting();asymmetricSweepRegression();environmentRegression();environmentThroughput();sparseEnvironmentPending();environmentCaptureFairness();recycledFreeAcquisitions();recycledChainAcquisitions();uploadFairnessProgress();historyChangesPreserveLiveUsage();worldVersionDiagnostics();supersededWorldUploadProgress();retainedWorldGeometryProgress();historicalGeometryIsolation();localBudgetRetry();freezeDiagnostics();knownContactProgress();
                 check(GL11.glGetError()==GL11.GL_NO_ERROR,"repair regression GL error");System.out.println("Package repair GPU: "+checks+" assertions passed");return;
             }
             if(Arrays.asList(args).contains("--sparse-physics-benchmark")){sparsePhysicsBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"sparse physics benchmark GL error");System.out.println("Package sparse physics benchmark: "+checks+" assertions passed");return;}
@@ -7338,7 +7745,7 @@ public class PackageGpuValidation {
             if(Arrays.asList(args).contains("--forces-only")){sourceContract();externalForces();nozzleForces();framedForces();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();if(Arrays.asList(args).contains("--forces-benchmark"))forceBenchmark();check(GL11.glGetError()==GL11.GL_NO_ERROR,"force GL error");System.out.println("Package forces GPU: "+checks+" assertions passed");return;}
             if(Arrays.asList(args).contains("--chain-only")){sourceContract();chainReference();trackedChains();chainEventChannels();chainAcquisitions();check(GL11.glGetError()==GL11.GL_NO_ERROR,"chain GL error");System.out.println("Package chain GPU: "+checks+" assertions passed");return;}
             priorityOptimizationRegression();sparseIndexLifecycle();movingContacts();movingReference();movingLifecycle();movingFriction();movingSectionSeamProgress();movingCapacity();if(Arrays.asList(args).contains("--moving-benchmark"))movingBenchmark();if(Arrays.asList(args).contains("--moving-only")){check(GL11.glGetError()==GL11.GL_NO_ERROR,"moving GL error");System.out.println("Package moving GPU: "+checks+" assertions passed");return;}
-            emptySectionCoverage();materialMotionRegression();nativeEnvironmentJournalRegression();continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();delayedMachineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();movingSectionSeamProgress();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();complexResidentNozzleProgress();rotatingCornerProgress();rotatingGrazingProgress();movingAdvanceSafety();sableNozzleResidentSectionProgress();denseResidentVerticalSectionProgress();sectionDemandAndPause();fallingSectionConfirmations();asymmetricSweepRegression();environmentRegression();environmentThroughput();environmentCaptureFairness();recycledFreeAcquisitions();recycledChainAcquisitions();uploadFairnessProgress();historyChangesPreserveLiveUsage();worldVersionDiagnostics();supersededWorldUploadProgress();retainedWorldGeometryProgress();historicalGeometryIsolation();localBudgetRetry();freezeDiagnostics();knownContactProgress();sourceContract();externalForces();framedForces();chainParentFrames();mergedPackageVertices();poseQueries();freePoseQueries();parallelFreeChainQueries();chainCheckpoints();boundaries();contact();sweep();dynamicPackageSweep();worldUploadVersions();independentlyConfiguredCollisionAtlases();worldAtlasLru();worldShapes();worldSweepsAndMaterials();historicalGeometryIsolation();worldMissingAndInvalidated();worldFullCapacity();worldRigidSupportAndReplacement();supportProjection();contactProbeReference();supportContactCases();worldEntryFace();supportSustainedMotion();chain();chainReference();trackedChains();chainEventChannels();chainAcquisitions();incrementalPhysics();preparedPhysics();mixedPhysics();mixedFullReservation();readbacks();pool();preparedDrawPasses();shadowCullingAndBoundary();packageDrawTelemetry();render();previewLoad();poseParity();deltas();deltaIncrementalIdentity();deltaPreparedBaselines();acquisitions();batchedAcquisitions();deltaOverflowAndIdentity();deltaQuantizationLimits();deltaYawTies();deltaRelativeBaselines();deltaPredictedMotion();channelRoundTrip();channelBatchAckHoles();channelLifecycle();channelImmutableAndPartialTransport();if(Arrays.asList(args).contains("--benchmark")){benchmark();deltaBenchmark();}
+            emptySectionCoverage();materialMotionRegression();nativeEnvironmentJournalRegression();continuousFreeAcquisitions();machineOutputProgress();machineEnvironmentConfirmations();delayedMachineEnvironmentConfirmations();regionalRetirementIsolation();worldFrictionOncePerStep();sectionSeamProgress();movingSectionSeamProgress();sableVerticalFanSectionProgress();complexHorizontalSectionProgress();complexResidentNozzleProgress();rotatingCornerProgress();rotatingGrazingProgress();movingAdvanceSafety();sableNozzleResidentSectionProgress();denseResidentVerticalSectionProgress();sectionDemandAndPause();fallingSectionConfirmations();asymmetricSweepRegression();environmentRegression();environmentThroughput();sparseEnvironmentPending();environmentCaptureFairness();recycledFreeAcquisitions();recycledChainAcquisitions();uploadFairnessProgress();historyChangesPreserveLiveUsage();worldVersionDiagnostics();supersededWorldUploadProgress();retainedWorldGeometryProgress();historicalGeometryIsolation();localBudgetRetry();freezeDiagnostics();knownContactProgress();sourceContract();externalForces();framedForces();chainParentFrames();mergedPackageVertices();poseQueries();freePoseQueries();parallelFreeChainQueries();chainCheckpoints();boundaries();contact();sweep();dynamicPackageSweep();worldUploadVersions();independentlyConfiguredCollisionAtlases();worldAtlasLru();worldShapes();worldSweepsAndMaterials();historicalGeometryIsolation();worldMissingAndInvalidated();worldFullCapacity();worldRigidSupportAndReplacement();supportProjection();contactProbeReference();supportContactCases();worldEntryFace();supportSustainedMotion();chain();chainReference();trackedChains();chainEventChannels();chainAcquisitions();incrementalPhysics();preparedPhysics();mixedPhysics();mixedFullReservation();readbacks();pool();preparedDrawPasses();shadowCullingAndBoundary();packageDrawTelemetry();render();previewLoad();poseParity();deltas();deltaIncrementalIdentity();deltaPreparedBaselines();acquisitions();batchedAcquisitions();deltaOverflowAndIdentity();deltaQuantizationLimits();deltaYawTies();deltaRelativeBaselines();deltaPredictedMotion();channelRoundTrip();channelBatchAckHoles();channelLifecycle();channelImmutableAndPartialTransport();if(Arrays.asList(args).contains("--benchmark")){benchmark();deltaBenchmark();}
             if(Arrays.asList(args).contains("--delta-pipeline-benchmark"))pipelineBenchmark();
             if(Arrays.asList(args).contains("--delta-batch-pipeline-benchmark"))pipelineBenchmark(true);
             if(Arrays.asList(args).contains("--world-benchmark"))worldBenchmark();

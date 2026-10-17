@@ -5,8 +5,10 @@ deliberately separate from gameplay acceptance (an inventory is not a parity pro
 """
 import argparse
 import hashlib
+import io
 import json
 import re
+import subprocess
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -37,13 +39,35 @@ def inventory():
         # NeoForge adds default block callbacks outside Minecraft's class tree.
         path = "net/neoforged/neoforge/common/extensions/IBlockExtension.java"
         sources[path] = archive.read(path).decode("utf-8")
-    create = ROOT / ".refs/Create/src/main/java"
-    if not create.is_dir():
-        raise SystemExit("Missing .refs/Create reference source")
-    for path in create.rglob("*.java"):
-        text = path.read_text(encoding="utf-8")
-        if declarations(text) or QUERIES.search(text) or path.name == "PackageEntity.java":
-            sources[path.relative_to(create).as_posix()] = text
+    metadata_path = ROOT / "build/package-native/resolved-create.json"
+    if not metadata_path.is_file():
+        raise SystemExit("Run preparePackageNativeAudit to identify the resolved Create binary first")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    binary = Path(metadata["binary"])
+    binary_hash = hashlib.sha256(binary.read_bytes()).hexdigest()
+    if binary_hash != metadata["sha256"]:
+        raise SystemExit("Resolved Create binary changed; rerun preparePackageNativeAudit")
+    with ZipFile(binary) as jar:
+        manifest = jar.read("META-INF/MANIFEST.MF").decode("utf-8")
+    def manifest_value(name):
+        match = re.search(r"(?m)^" + re.escape(name) + r":\s*([^\r\n]+)", manifest)
+        if not match:
+            raise SystemExit("Create binary is missing " + name)
+        return match.group(1).strip()
+    create_version = manifest_value("Implementation-Version")
+    create_commit = manifest_value("Git-Hash")
+    if create_version != "6.0.10" or not re.fullmatch(r"[0-9a-f]{40}", create_commit):
+        raise SystemExit("Unaudited Create version/commit: " + create_version)
+    # Read the immutable commit recorded by the actual jar, not the checkout's HEAD.
+    archive = subprocess.run(["git", "-C", str(ROOT / ".refs/Create"), "archive", "--format=zip",
+                              create_commit, "src/main/java"], capture_output=True, check=True)
+    with ZipFile(io.BytesIO(archive.stdout)) as create:
+        for path in sorted(create.namelist()):
+            if not path.endswith(".java"):
+                continue
+            text = create.read(path).decode("utf-8")
+            if declarations(text) or QUERIES.search(text) or path.endswith("/PackageEntity.java"):
+                sources[path.removeprefix("src/main/java/")] = text
     entries = []
     for path, text in sorted(sources.items()):
         methods = declarations(text)
@@ -52,7 +76,8 @@ def inventory():
             continue
         entries.append({"source": path, "entries": methods, "entity_queries": queries,
                         "sha256": hashlib.sha256(text.encode()).hexdigest()})
-    return {"minecraft": "1.21.1", "reference_create": "6.0.11", "sources": entries}
+    return {"minecraft": "1.21.1", "reference_create": create_version,
+            "create_commit": create_commit, "create_binary_sha256": binary_hash, "sources": entries}
 
 
 def main():

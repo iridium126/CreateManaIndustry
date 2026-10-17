@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Objects;
@@ -27,8 +29,8 @@ public final class PackageChainFramesGpu implements AutoCloseable {
         this(capacity,sources,fence->GL32.glClientWaitSync(fence,GL32.GL_SYNC_FLUSH_COMMANDS_BIT,0));
     }
     public PackageChainFramesGpu(int capacity,Function<String,String> sources,LongToIntFunction poll) {
-        if(capacity<1||capacity>131072||(capacity+63)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)
-                ||(long)capacity*FRAME_BYTES>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))throw new IllegalArgumentException("Chain frame device/capacity");
+        if(capacity<1||capacity>131072||(capacity+63)/64>GpuCapabilities.current().computeGroupsX()
+                ||(long)capacity*FRAME_BYTES>GpuCapabilities.current().storageBlockBytes())throw new IllegalArgumentException("Chain frame device/capacity");
         this.capacity=capacity;this.poll=Objects.requireNonNull(poll);
         try {
             rebuild(sources);origins=GL15.glGenBuffers();mappedOrigins=map(origins,capacity*ORIGIN_BYTES);

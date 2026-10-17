@@ -3,9 +3,10 @@ package com.iridium126.createmanaindustry.client.particles.engine;
 import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryStack;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferRetirement;
 
 /** Compute/initialization boundary. No framebuffer, viewport or blend/depth writes. */
-public final class ParticleComputeState {
+public final class ParticleComputeState implements GpuBufferRetirement.Snapshot {
     // Render-thread stack: resource retirement is rare, so validate saved names
     // at that boundary rather than issuing glIs* queries on every frame restore.
     private static ParticleComputeState activeBoundary;
@@ -39,7 +40,7 @@ public final class ParticleComputeState {
         for(int i=0;i<units;i++){if(i<UNITS)renderTextures[i]=RenderSystem.getShaderTexture(i);GL13.glActiveTexture(GL13.GL_TEXTURE0+i);for(int j=0;j<bindings.length;j++)textures[i][j]=GL11.glGetInteger(bindings[j]);}
         // Lazy atlas/TBO initialization binds on the active unit. Confine it to
         // our saved unit 0 even when Iris entered on a higher pack sampler unit.
-        open=true;parent=activeBoundary;activeBoundary=this;GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        GpuBufferRetirement.capture(this);open=true;parent=activeBoundary;activeBoundary=this;GL13.glActiveTexture(GL13.GL_TEXTURE0);
     }
     /** Call after deleting resources, before their GL names can be reused. */
     public static void resourcesRetired(){
@@ -47,6 +48,11 @@ public final class ParticleComputeState {
     }
     private static int liveBuffer(int id){return id==0||GL15.glIsBuffer(id)?id:0;}
     private static int liveTexture(int id){return id==0||GL11.glIsTexture(id)?id:0;}
+    @Override public void forgetBuffer(int id){
+        for(int i=0;i<BINDINGS;i++)if(ssbo[i]==id){ssbo[i]=0;offsets[i]=sizes[i]=0;}
+        if(array==id)array=0;if(element==id)element=0;if(storage==id)storage=0;if(draw==id)draw=0;
+        if(dispatch==id)dispatch=0;if(read==id)read=0;if(write==id)write=0;if(textureBuffer==id)textureBuffer=0;if(unpackBuffer==id)unpackBuffer=0;
+    }
     private void forgetDeletedResources(){
         for(int i=0;i<BINDINGS;i++)ssbo[i]=liveBuffer(ssbo[i]);
         array=liveBuffer(array);element=liveBuffer(element);storage=liveBuffer(storage);draw=liveBuffer(draw);
@@ -58,6 +64,7 @@ public final class ParticleComputeState {
     }
     public void restore(){
         if(!open)return;open=false;
+        GpuBufferRetirement.restore(this);
         if(activeBoundary==this)activeBoundary=parent;
         else for(var state=activeBoundary;state!=null;state=state.parent)if(state.parent==this){state.parent=parent;break;}
         parent=null;

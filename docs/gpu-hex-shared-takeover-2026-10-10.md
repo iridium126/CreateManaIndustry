@@ -98,7 +98,7 @@
 
 ## 代码入口
 
-- `client/particles/hex/HexPatternService`：帧与 pass 凭据、缓存、收集、原生回退。
+- `client/hex/pattern/HexPatternService`：帧与 pass 凭据、缓存、收集、原生回退。
 - `HexGpuBackend/HexShape/HexUiLayout`：资源预算、bank/LRU、不可变拓扑、WIP 与布局复用。
 - `HexPassState/HexMetrics`：GL/RenderSystem 边界与可选测量。
 - `client/particles/shaderpack/HexIrisHook`：Iris-only 原生 shader 合并和独立阴影。

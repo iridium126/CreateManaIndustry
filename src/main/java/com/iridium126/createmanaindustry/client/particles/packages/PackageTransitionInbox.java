@@ -28,6 +28,8 @@ public final class PackageTransitionInbox {
     }
     public boolean isEmpty(){return controls.isEmpty()&&acknowledgements.isEmpty();}
     public int size(){return controls.size()+acknowledgements.size();}
+    /** A separate admission budget must never drain extra ACKs as single dispatches. */
+    public ClientboundPackagePacket pollControl(){return controls.pollFirst();}
     public ClientboundPackagePacket pollAcknowledgement(){
         if(acknowledgements.isEmpty())return null;
         var iterator=acknowledgements.entrySet().iterator();var packet=iterator.next().getValue();iterator.remove();return packet;

@@ -1,24 +1,32 @@
 #pragma cmi_include packages/environment_state.glsl
-layout(local_size_x=1) in;
-uniform uint uBody,uThrough,uFire,uPermissions;
-uniform float uHealth;
+layout(local_size_x=64) in;
+// 128-byte rows; only heads run. Linked rows for the same body replay in arrival order.
+struct EnvironmentAck {uvec4 selector;uvec4 identity;uvec4 lifetime;uvec4 control;vec4 result;vec4 position;vec4 velocity;vec4 stuck;};
+layout(std430,binding=1) readonly buffer EnvironmentAcks {EnvironmentAck acknowledgements[];};
+uniform uint uCount;
 struct AckBody {vec4 positionMass;vec4 velocityGround;vec4 extentYaw;vec4 previousSleep;};
 layout(std430,binding=0) buffer AckBodies {AckBody ackBodies[];};
-uniform bool uCorrectBody;
-uniform vec4 uCorrectPosition,uCorrectVelocity;
-uniform uint uMotionFrozen,uMotionAge;
-uniform float uMotionFall;
-uniform vec3 uMotionStuck;
 layout(std430,binding=3) buffer MotionMirror {uint motionMirror[];};
 uniform bool uFallMirrorReady;
 uniform uint uFallMirrorOffset;
-void main(){
+void applyAck(EnvironmentAck ack){
+    uint uBody=ack.selector.x,uThrough=ack.selector.y,uFire=ack.selector.z,uPermissions=ack.selector.w;
+    if(uBody>=uint(environment.length()))return;
     PackageEnvironment e=environment[uBody];
+    if((ack.control.y&1u)!=0u&&(any(notEqual(e.identity,ack.identity))
+        ||any(notEqual(e.lease.xy,ack.lifetime.xy))||e.control.z!=ack.lifetime.z
+        ||any(notEqual(floatBitsToUint(e.state.zw),uvec2(ack.lifetime.w,ack.control.x)))))return;
+    float uHealth=ack.result.x;
+    bool uCorrectBody=(ack.control.y&2u)!=0u;
+    vec4 uCorrectPosition=ack.position,uCorrectVelocity=ack.velocity;
+    float uMotionFall=ack.result.y;
+    uint uMotionFrozen=floatBitsToUint(ack.result.z),uMotionAge=floatBitsToUint(ack.result.w);
+    vec3 uMotionStuck=ack.stuck.xyz;
     if(e.control.z==0u||uThrough<=e.lease.w||uThrough>e.lease.z||e.lease.z-uThrough>PACKAGE_ENV_HISTORY)return;
     uint fire=uFire;float health=uHealth;bool terminal=false;
     // Rebase on the server result, then replay only the still unconfirmed suffix.
     for(uint serial=uThrough;serial<e.lease.z;serial++){
-        uint offset=uBody*PACKAGE_ENV_STRIDE+serial%PACKAGE_ENV_HISTORY;
+        uint offset=environmentRecord(uBody,serial);
         PackageEnvironmentSample record=environmentSamples[offset];uint flags=uint(record.contact.w);
         // Native batches with a server-dependent result cannot have a speculative suffix.
         // Pure material batches do not modify fire/health and therefore need no replay here.
@@ -43,5 +51,18 @@ void main(){
     bool awaitingConfirmation=e.control.y==2u&&uThrough<e.lease.z;
     e.lease.w=uThrough;e.control.x=fire;e.control.y=terminal?1u:awaitingConfirmation?2u:0u;e.control.w=uPermissions;e.state.x=health;
     environment[uBody]=e;
+    if(e.lease.z==e.lease.w){clearEnvironmentPending(uBody);releaseEnvironmentPage(uBody);}
 }
 
+
+void main(){
+    uint row=gl_GlobalInvocationID.x;
+    if(row>=uCount||(acknowledgements[row].control.y&4u)==0u)return;
+    // CPU supplies forward-only bounded chains. The bounds also guard corrupted input.
+    for(uint visited=0u;visited<uCount;visited++){
+        EnvironmentAck ack=acknowledgements[row];applyAck(ack);
+        uint next=ack.control.z;
+        if(next==0u||next<=row+1u||next>uCount)return;
+        row=next-1u;
+    }
+}

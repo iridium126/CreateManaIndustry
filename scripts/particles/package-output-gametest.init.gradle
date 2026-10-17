@@ -8,6 +8,7 @@ gradle.projectsEvaluated {
     suite.java.exclude(recovery ? '**/PackageOutputGameTests.java' : '**/PackageRecoveryGameTests.java')
     if (recovery) suite.java.exclude('**/PackageEnvironmentGameTests.java')
     def audit = p.tasks.register('packageEnvironmentAuditFixture', Copy) {
+        dependsOn 'preparePackageNativeAudit'
         from(p.file('docs/package-environment-native-inventory.json'))
         into(p.layout.buildDirectory.dir('gametest/packages-audit-resources'))
     }

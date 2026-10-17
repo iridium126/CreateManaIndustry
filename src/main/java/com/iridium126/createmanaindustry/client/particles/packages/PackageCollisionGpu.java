@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
@@ -102,7 +104,7 @@ public final class PackageCollisionGpu implements AutoCloseable {
         slotRevisions=new GeometryRevision[capacity*2];
         tableSize=MAX_COVERAGE*2;slotBytes=CELL_BYTES+shapes*32;
         long bytes=(long)slotBytes*capacity*2;
-        if(bytes>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE) || bytes>Integer.MAX_VALUE)
+        if(bytes>GpuCapabilities.current().storageBlockBytes() || bytes>Integer.MAX_VALUE)
             throw new IllegalArgumentException("World atlas exceeds device SSBO limit");
         try {
             data=GL15.glGenBuffers();mappedData=map(data,16);

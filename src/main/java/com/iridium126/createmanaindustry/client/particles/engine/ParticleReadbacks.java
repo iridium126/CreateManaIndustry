@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
 import java.nio.ByteBuffer;
+import com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
 
@@ -11,6 +12,7 @@ final class ParticleReadbacks {
     static final int BYTES = WAVE_OFFSET + 4 + ParticleBuffers.WAVECONTACT_CAP * ParticleBuffers.WAVECONTACT_ENTRY_FLOATS * 4;
     static final class Slot {
         int buffer;
+        GpuReadbackBuffer storage;
         long fence, generation, epoch, gameTime;
         boolean positions, waves;
         ParticleHitRay hitRay;
@@ -20,9 +22,8 @@ final class ParticleReadbacks {
     Slot freeSlot() {
         for (Slot slot : slots) if (slot.fence == 0) {
             if (slot.buffer == 0) {
-                slot.buffer = GL15.glGenBuffers();
-                GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER, slot.buffer);
-                GL15.glBufferData(GL31.GL_COPY_WRITE_BUFFER, BYTES, GL15.GL_STREAM_READ);
+                slot.storage = new GpuReadbackBuffer(BYTES);
+                slot.buffer = slot.storage.id();
                 GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER, 0);
             }
             return slot;
@@ -40,11 +41,10 @@ final class ParticleReadbacks {
             release(oldest);
             throw new IllegalStateException("Particle readback fence failed; failed slot retired");
         }
-        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER, oldest.buffer);
         oldest.data.clear();
         oldest.data.limit(oldest.waves ? BYTES : oldest.positions ? WAVE_OFFSET : STORM_OFFSET);
-        GL15.glGetBufferSubData(GL31.GL_COPY_READ_BUFFER, 0, oldest.data);
-        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER, 0);
+        oldest.storage.readCompleted(0,oldest.data.remaining(),oldest.data);
+        oldest.data.position(0);
         return oldest;
     }
     void release(Slot slot) {
@@ -57,7 +57,7 @@ final class ParticleReadbacks {
     void close() {
         clear();
         for (Slot slot : slots) if (slot.buffer != 0) {
-            GL15.glDeleteBuffers(slot.buffer); slot.buffer = 0;
+            slot.storage.close(); slot.storage=null; slot.buffer = 0;
         }
     }
     static float[] entries(ByteBuffer data, int offset, int capacity, int stride) {

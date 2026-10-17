@@ -192,7 +192,7 @@ public class CreateManaIndustry {
                 ClientboundMistSyncPacket.STREAM_CODEC,
                 ClientboundMistSyncPacket::handle);
         // Tick-rate-aware authority requires matching clients; incompatible clients cannot lease records.
-        PayloadRegistrar packageRegistrar=event.registrar("gpu-packages-14").optional();
+        PayloadRegistrar packageRegistrar=event.registrar("gpu-packages-15").optional();
         packageRegistrar.playToClient(com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundLightPackagePacket.TYPE,com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundLightPackagePacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundLightPackagePacket::handle);
         packageRegistrar.playToServer(com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundLightPackageInteraction.TYPE,com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundLightPackageInteraction.STREAM_CODEC,com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundLightPackageInteraction::handle);
         packageRegistrar.playToServer(

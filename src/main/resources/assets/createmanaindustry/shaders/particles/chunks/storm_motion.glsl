@@ -158,10 +158,9 @@
     // p0.w (1.0) is indistinguishable from a non-storm MODEL multiplier
     if (!corpse && stormA.x > 0.5) {
         uint memberIdx = (uint(p0.w + 0.5) & MEMBER_IDX_MASK) - 1u;
-        // correction slots are sized by the POOL capacity (2 vec4 per member);
-        // an identity beyond it can never have a slot, so skip instead of
-        // addressing outside the buffer
-        if (memberIdx < uCapacity) {
+        // Identity capacity is independent of the shared pool. Minimal bindings
+        // are valid when no correction storage has been requested.
+        if (memberIdx < uint(correction.c.length()) / 2u) {
             uint ci = memberIdx * 2u;
             vec4 cA = correction.c[ci];
             vec4 cB = correction.c[ci + 1u];

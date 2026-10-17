@@ -11,7 +11,9 @@ import org.lwjgl.opengl.GL43;
 public final class BlockEmitterTable {
     public static final int CAPACITY = 262140;
     private static final int WORDS = 8;
-    private final FloatBuffer staging = BufferUtils.createFloatBuffer(CAPACITY * WORDS);
+    private FloatBuffer staging = BufferUtils.createFloatBuffer(0);
+    private final com.iridium126.createmanaindustry.client.gpu.buffer.GpuGrowingBuffer storage =
+            new com.iridium126.createmanaindustry.client.gpu.buffer.GpuGrowingBuffer();
     private final BitSet dirty = new BitSet();
     private final BitSet occupied = new BitSet();
     private int highWater;
@@ -22,6 +24,7 @@ public final class BlockEmitterTable {
     public int add(float x, float y, float z, float rate, int spec, float radius) {
         int slot = occupied.nextClearBit(nextFree);
         if (slot >= CAPACITY) return -1;
+        ensureStaging(slot + 1);
         occupied.set(slot);
         nextFree = slot + 1;
         highWater = Math.max(highWater, slot + 1);
@@ -47,6 +50,14 @@ public final class BlockEmitterTable {
     public int size() { return occupied.cardinality(); }
     public int dispatchSize() { return highWater; }
 
+    private void ensureStaging(int records) {
+        if (records <= staging.capacity() / WORDS) return;
+        int capacity = Math.min(CAPACITY, Math.max(16, Integer.highestOneBit(records - 1) * 2));
+        FloatBuffer next = BufferUtils.createFloatBuffer(capacity * WORDS);
+        next.put(staging.clear()).clear();
+        staging = next;
+    }
+
     /** Conservative spawn bound, without a GPU readback or per-emitter CPU loop. */
     public int spawnBound(float dt, double scale, int capacity) {
         if (dt <= 0 || scale <= 0 || highWater == 0) return 0;
@@ -57,14 +68,9 @@ public final class BlockEmitterTable {
     }
 
     public void uploadAndBind() {
-        if (buffer == 0) {
-            buffer = GL15.glGenBuffers();
-            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, buffer);
-            GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER, (long) CAPACITY * WORDS * 4, GL15.GL_DYNAMIC_DRAW);
-            dirty.set(0, highWater);
-        } else {
-            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, buffer);
-        }
+        // GPU copy preserves accumulated fractional phases, including clean source rows.
+        buffer = storage.ensure((long) highWater * WORDS * 4);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, buffer);
         // Contiguous edits become one upload; unchanged GPU phase words survive.
         for (int start = dirty.nextSetBit(0); start >= 0 && start < highWater;) {
             int end = Math.min(highWater, dirty.nextClearBit(start));
@@ -88,8 +94,9 @@ public final class BlockEmitterTable {
     }
 
     public void free() {
-        if (buffer != 0) GL15.glDeleteBuffers(buffer);
+        storage.close();
         buffer = 0;
         clear();
+        staging = BufferUtils.createFloatBuffer(0);
     }
 }

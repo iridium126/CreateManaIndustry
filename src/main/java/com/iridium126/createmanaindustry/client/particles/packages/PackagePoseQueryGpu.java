@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
@@ -65,7 +67,7 @@ public final class PackagePoseQueryGpu implements AutoCloseable {
     private long nextSequence,capturedBytes;
     private boolean closed;
     public PackagePoseQueryGpu(int capacity,long epoch,Function<String,String> sources) {
-        if(capacity<1 || capacity>131072 || epoch<=0 || (capacity+63)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0))
+        if(capacity<1 || capacity>131072 || epoch<=0 || (capacity+63)/64>GpuCapabilities.current().computeGroupsX())
             throw new IllegalArgumentException("Package query capacity/epoch");
         this.capacity=capacity;this.epoch=epoch;PackageReadbackRing next=null;
         try {

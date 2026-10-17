@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 
@@ -31,10 +33,10 @@ import org.lwjgl.opengl.GL43;
  */
 public final class ParticleBuffers {
 
-    public static final int VEC4_PER_PARTICLE = 4;  // 4 vec4 = 16 floats
+    public static final int VEC4_PER_PARTICLE = com.iridium126.createmanaindustry.client.particles.emitter.ParticleLayout.PARTICLE_VEC4;  // 4 vec4 = 16 floats
     /** Bytes per particle in the double-buffered particle SSBOs (4 vec4 × 4 floats × 4 B). */
-    public static final int BYTES_PER_PARTICLE = VEC4_PER_PARTICLE * 4 * 4; // 64 B
-    public static final int MAX_EMIT_COMMANDS = 256;
+    public static final int BYTES_PER_PARTICLE = com.iridium126.createmanaindustry.client.particles.emitter.ParticleLayout.PARTICLE_BYTES; // 64 B
+    public static final int MAX_EMIT_COMMANDS = com.iridium126.createmanaindustry.client.particles.emitter.EmitCommandWriter.LIMIT;
     /**
      * Floats per emit command: a(origin.xyz, count) + b(emitterId, seed,
      * prefixOffset, originRef) + c(lightPacked, 0, 0, 0). {@code originRef} is
@@ -43,7 +45,9 @@ public final class ParticleBuffers {
      * {@code lightPacked} = blockLight + 16·skyLight sampled at spawn; combat
      * particles carry it in p2.w for the lightmap sample in textured.vsh.
      */
-    public static final int EMIT_ENTRY_FLOATS = 12;
+    public static final int EMIT_ENTRY_FLOATS = com.iridium126.createmanaindustry.client.particles.emitter.EmitCommandWriter.WORDS;
+    public static final int EMIT_PARAMETER_FLOATS = com.iridium126.createmanaindustry.client.particles.emitter.EmitCommandWriter.PARAMETER_WORDS;
+    public static final int EMIT_STORAGE_FLOATS = MAX_EMIT_COMMANDS * (EMIT_ENTRY_FLOATS + EMIT_PARAMETER_FLOATS);
     /**
      * Emit-command ring depth. Deliberately aligned with {@link #COUNTER_RING}
      * (4): unlike the counter ring this ring uses ordered glBufferSubData writes when reusing
@@ -349,9 +353,9 @@ public final class ParticleBuffers {
     private int damageSSBO = -1;
     private int hitSSBO = -1;
     private int playersSSBO = -1;
-    private int correctionSSBO = -1;
+    private final com.iridium126.createmanaindustry.client.allaystorm.StormIdentityBuffers stormIdentities = new com.iridium126.createmanaindustry.client.allaystorm.StormIdentityBuffers();
     private int stormPosSSBO = -1;
-    private int memberMapSSBO = -1;
+
     private int waveContactSSBO = -1;
     /** Static element indices for the MODEL sub-draws (bound into the VAO). */
     private int modelIndexBuffer = -1;
@@ -372,8 +376,6 @@ public final class ParticleBuffers {
     /** Zeroes the whole radix histogram (RADIX_BINS x uint = 2 KiB). */
     private final ByteBuffer zero2048 = BufferUtils.createByteBuffer(RADIX_BINS * 4);
     /** Matches the "major.minor" prefix of a GL_VERSION string. */
-    private static final java.util.regex.Pattern GL_VERSION_PATTERN =
-            java.util.regex.Pattern.compile("(\\d+)\\.(\\d+)");
 
     /** Staging for per-frame player positions (MAX_STORM_PLAYERS vec4). */
     private final FloatBuffer playersTmp = BufferUtils.createFloatBuffer(MAX_STORM_PLAYERS * 4);
@@ -385,32 +387,14 @@ public final class ParticleBuffers {
      * provide a usable SSBO capacity or the max-width it supports is tiny.
      */
     public boolean init(int maxParticles, int maxEmitters) {
-        // The pipeline needs OpenGL 4.5 (compute shaders + robust SSBOs). On an
-        // older context the SSBO-size query below would just return 0/garbage —
-        // fail with a clear message instead so the engine disables cleanly.
-        String glVersion = GL11.glGetString(GL11.GL_VERSION);
-        if (glVersion != null) {
-            java.util.regex.Matcher m = GL_VERSION_PATTERN.matcher(glVersion);
-            if (m.find()) {
-                int major = Integer.parseInt(m.group(1));
-                int minor = Integer.parseInt(m.group(2));
-                if (major < 4 || (major == 4 && minor < 5)) {
-                    CreateManaIndustry.LOGGER.warn(
-                            "[CMI particles] OpenGL {}.{} found, compute shaders need 4.5+; engine disabled", major, minor);
-                    return false;
-                }
-            }
-        }
-        int maxSSBO = GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE);
-        int maxGroups = GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0);
-        if (GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS) <= IDENTITY_BB)
+        var limits=GpuCapabilities.current();
+        if(!limits.supportsCompute(IDENTITY_BB,1,64)) {
+            CreateManaIndustry.LOGGER.warn("[CMI particles] Device does not support the particle compute pipeline; engine disabled");
             return false;
-        int cap = (int) Math.min(Math.min((long) maxParticles, Math.max(0, maxSSBO / BYTES_PER_PARTICLE)),
-                (long) maxGroups * 64);
-        if (cap < 1000) {
-            CreateManaIndustry.LOGGER.warn(
-                    "[CMI particles] SSBO max size {} B too small for a usable particle pool (started {}); engine disabled",
-                    maxSSBO, cap);
+        }
+        int cap=limits.elementCapacity(maxParticles,BYTES_PER_PARTICLE,64);
+        if(cap<1000) {
+            CreateManaIndustry.LOGGER.warn("[CMI particles] Device capacity too small for a usable particle pool; engine disabled");
             return false;
         }
         this.capacity = cap;
@@ -429,7 +413,7 @@ public final class ParticleBuffers {
             this.particleSSBOs[i] = createBuffer(cap * (long) BYTES_PER_PARTICLE, null);
         }
         for (int i = 0; i < EMIT_RING_SIZE; i++) {
-            this.emitSSBOs[i] = createBuffer((long) MAX_EMIT_COMMANDS * EMIT_ENTRY_FLOATS * 4, null);
+            this.emitSSBOs[i] = createBuffer((long) EMIT_STORAGE_FLOATS * 4, null);
         }
         this.emitterSSBO = createBuffer((long) maxEmitters * VEC4_PER_EMITTER * 4 * 4, null);
         for (int i = 0; i < 2; i++) {
@@ -489,13 +473,13 @@ public final class ParticleBuffers {
         GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
         // Storm player-repulsion source (vec4 per player, up to 16).
         this.playersSSBO = createBuffer(MAX_STORM_PLAYERS * 16L, null);
-        // Storm correction slots: 2 vec4 per pool slot, indexed by member id.
-        this.correctionSSBO = createBuffer((long) cap * 32L, null);
+        // Minimal legal bindings until Storm identities are actually used.
+        this.stormIdentities.initialize();
         // Authority readback staging: uint count + capped entry floats.
         this.stormPosSSBO = createBuffer(
                 4L + (long) STORMPOS_CAP * STORMPOS_ENTRY_FLOATS * 4L, null);
         // Storm member identity -> pool-slot map (see MEMBERMAP_BB).
-        this.memberMapSSBO = createBuffer((long) cap * 4L, null);
+
         // Wave-contact self-report staging: uint count + capped entry floats.
         this.waveContactSSBO = createBuffer(
                 4L + (long) WAVECONTACT_CAP * WAVECONTACT_ENTRY_FLOATS * 4L, null);
@@ -689,6 +673,7 @@ public final class ParticleBuffers {
     /** Internal package pass uses the current submission's resources, before swap. */
     int particleWriteBufferId() { return this.particleSSBOs[1-this.readIndex]; }
     public int emitterBufferId(){return this.emitterSSBO;}
+    int indirectBufferId(){return this.indirectSSBO;}
     int counterBufferId(int slot) { return this.counterSSBOs[slot % COUNTER_RING]; }
 
     // ---- merged-program TBO views (shader-pack path) --------------------
@@ -884,7 +869,7 @@ public final class ParticleBuffers {
 
     /** Binds the storm correction-slot buffer at its fixed binding. */
     public void bindCorrections() {
-        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, CORRECTION_BB, this.correctionSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, CORRECTION_BB, this.stormIdentities.corrections());
     }
 
     /**
@@ -899,8 +884,7 @@ public final class ParticleBuffers {
         this.correctionTmp.put(tx).put(ty).put(tz).put(arrival);
         this.correctionTmp.put(vx).put(vy).put(vz).put(scale);
         this.correctionTmp.flip();
-        GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.correctionSSBO);
-        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, memberIdx * 32L, this.correctionTmp);
+        this.stormIdentities.write(memberIdx, this.correctionTmp);
     }
 
     /** Binds the authority readback staging buffer at its fixed binding. */
@@ -920,7 +904,7 @@ public final class ParticleBuffers {
 
     /** Binds the storm member identity map at its fixed binding. */
     public void bindMemberMap() {
-        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, MEMBERMAP_BB, this.memberMapSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, MEMBERMAP_BB, this.stormIdentities.members());
     }
 
     /**
@@ -944,19 +928,12 @@ public final class ParticleBuffers {
     }
 
     /** Per-frame map maintenance must not invalidate asynchronous snapshots or event stamps. */
-    public void clearMemberMap() {
-        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-        if (this.memberMapSSBO <= 0 || this.capacity <= 0)
-            return;
-        try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
-            java.nio.IntBuffer zero = stack.mallocInt(1);
-            zero.put(0).flip();
-            GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.memberMapSSBO);
-            GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
-                    0, (long) this.capacity * 4L, GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_INT, zero);
-        }
-    }
+    public void clearMemberMap() { this.stormIdentities.clearMembers(); }
 
+    public void ensureStormIdentities() {
+        this.stormIdentities.ensureMembers();
+        beginBindings();
+    }
 
     /** Binds the wave-contact staging buffer at its fixed binding. */
     public void bindWaveContact() {
@@ -1242,12 +1219,10 @@ public final class ParticleBuffers {
             GL15.glDeleteBuffers(this.hitSSBO);
         if (this.playersSSBO > 0)
             GL15.glDeleteBuffers(this.playersSSBO);
-        if (this.correctionSSBO > 0)
-            GL15.glDeleteBuffers(this.correctionSSBO);
+        this.stormIdentities.close();
         if (this.stormPosSSBO > 0)
             GL15.glDeleteBuffers(this.stormPosSSBO);
-        if (this.memberMapSSBO > 0)
-            GL15.glDeleteBuffers(this.memberMapSSBO);
+
         if (this.waveContactSSBO > 0)
             GL15.glDeleteBuffers(this.waveContactSSBO);
         for (int[] t : this.mergedTbos)
@@ -1263,8 +1238,8 @@ public final class ParticleBuffers {
         for (int[] t : this.mergedTbos) java.util.Arrays.fill(t, -1);
         this.emitterSSBO = this.indirectSSBO = this.orderAddSSBO = this.orderOpaqueSSBO = -1;
         this.modelGeoSSBO = this.histSSBO = this.offsetSSBO = this.bakeMetaSSBO = -1;
-        this.gridSSBO = this.damageSSBO = this.hitSSBO = this.playersSSBO = this.correctionSSBO = -1;
-        this.stormPosSSBO = this.memberMapSSBO = this.waveContactSSBO = this.modelIndexBuffer = this.vao = -1;
+        this.gridSSBO = this.damageSSBO = this.hitSSBO = this.playersSSBO = -1;
+        this.stormPosSSBO = this.waveContactSSBO = this.modelIndexBuffer = this.vao = -1;
         this.capacity = this.maxEmitters = this.readIndex = this.ringIndex = this.renderIndex = 0;
         this.emitterUploads = null;
         this.bindingScope = false;

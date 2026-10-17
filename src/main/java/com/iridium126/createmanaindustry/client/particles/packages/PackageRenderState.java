@@ -2,9 +2,10 @@ package com.iridium126.createmanaindustry.client.particles.packages;
 
 import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryStack;
+import com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferRetirement;
 
 /** Reused package-pass boundary. Restores the GL state touched by package draws. Never waits. */
-public final class PackageRenderState {
+public final class PackageRenderState implements GpuBufferRetirement.Snapshot {
     private final int[] ssbo=new int[12],tbo=new int[3],textures=new int[3];
     private final long[] offsets=new long[12],sizes=new long[12];
     private final int[][] blend;
@@ -38,10 +39,15 @@ public final class PackageRenderState {
             blend[i][2]=GL30.glGetIntegeri(GL14.GL_BLEND_SRC_ALPHA,i);blend[i][3]=GL30.glGetIntegeri(GL14.GL_BLEND_DST_ALPHA,i);
             blend[i][4]=GL30.glGetIntegeri(GL20.GL_BLEND_EQUATION_RGB,i);blend[i][5]=GL30.glGetIntegeri(GL20.GL_BLEND_EQUATION_ALPHA,i);
         }
-        open=true;
+        GpuBufferRetirement.capture(this);open=true;
+    }
+    @Override public void forgetBuffer(int id){
+        for(int i=0;i<ssbo.length;i++)if(ssbo[i]==id){ssbo[i]=0;offsets[i]=sizes[i]=0;}
+        if(array==id)array=0;if(indirect==id)indirect=0;if(storage==id)storage=0;
     }
     public void restore() {
         if(!open)return;open=false;
+        GpuBufferRetirement.restore(this);
         try(var stack=MemoryStack.stackPush()) {
             // Base bindings report SIZE=0: they follow future buffer resizes.
             // Passing these to BindBuffersRange is invalid and would lose that

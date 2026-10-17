@@ -12,6 +12,8 @@ uniform mat4 ProjMat;
 uniform vec3 uCamPos;
 uniform vec3 uCamRight;
 uniform vec3 uCamUp;
+uniform bool uHexTickReady;
+uniform float uHexPartialTick;
 
 layout(std430, binding = BIND_POOL_WRITE) readonly buffer ParticleRead { vec4 data[]; } particles; // freshly written pool
 layout(std430, binding = BIND_EMITTER) readonly buffer EmitterBuf { vec4 u[]; } emitters;
@@ -71,6 +73,10 @@ void main() {
     float life = clamp(p3.x / max(p3.y, 1e-5), 0.0, 1.0);
     uint eid = floatBitsToUint(p3.w);
     uint hb = eid * VEC4_PER_EMITTER;
+    float spawnStyle=emitters.u[hb+17u].y;
+    bool nativeHex=spawnStyle>3.5&&spawnStyle<5.5;
+    float hexAge=floor(p3.x*20.+.0001);
+    if(nativeHex)life=clamp(hexAge/max(1.,round(p3.y*20.)),0.,1.);
     if(abs(emitters.u[hb+17u].y-9.0)<.25){cmiDrawFateRibbon(p1,true,quadCorner(gl_VertexID));return;}
 
     // size over lifetime (analytic curve, eased)
@@ -116,14 +122,14 @@ void main() {
         col = wheel.rgb;
         keyA = wheel.a;
         hexShape = 1.0;
-        size *= exp(-0.816432 * p3.x);
+        size *= nativeHex?pow(.96,hexAge):exp(-0.816432 * p3.x);
     } else if (colorMode > 4.5) {
         // Direct conjure_particle freezes its ARGB color at construction time;
         // the original alpha byte is intentionally ignored by Hexcasting.
         col = p2.rgb;
         keyA = 0.3;
         hexShape = 1.0;
-        size *= exp(-0.816432 * p3.x);
+        size *= nativeHex?pow(.96,hexAge):exp(-0.816432 * p3.x);
     } else if (colorMode > 3.5) {
         vec3 v = p1.xyz;
         float vlen = length(v);
@@ -134,7 +140,7 @@ void main() {
         col = wheel.rgb;
         keyA = wheel.a;
         hexShape = 1.0;
-        size *= exp(-0.816432 * p3.x);
+        size *= nativeHex?pow(.96,hexAge):exp(-0.816432 * p3.x);
     }
     // Style 4 uses white keyframes multiplied by p2.rgb; style 5 already put
     // its direct RGB in col and must not square the color.
@@ -151,7 +157,9 @@ void main() {
     float ang = p1.w;
     vec2 roll = vec2(cos(ang) * corner.x - sin(ang) * corner.y,
                      sin(ang) * corner.x + cos(ang) * corner.y);
-    vec3 worldPos = p0.xyz + uCamRight * (roll.x * size) + uCamUp * (roll.y * size);
+    vec3 center=p0.xyz;
+    if(nativeHex&&hexAge>0.){vec3 previousMove=p1.xyz*(.05/.96);if(p1.y==0.)previousMove.xz/=1.1;center-=previousMove*(1.-(uHexTickReady?uHexPartialTick:fract(p3.x*20.+.0001)));}
+    vec3 worldPos = center + uCamRight * (roll.x * size) + uCamUp * (roll.y * size);
 
     // The level stage model-view on NeoForge is the camera rotation only
     // (geometry is camera-relative), so subtract the camera position here.

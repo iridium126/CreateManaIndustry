@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.function.Function;
@@ -66,7 +68,7 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
         free=nextFree;chain=nextChain;observers=nextObservers;
     }
     private static int buffer(long bytes) {
-        if(bytes>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))
+        if(bytes>GpuCapabilities.current().storageBlockBytes())
             throw new IllegalArgumentException("Mixed package buffer exceeds device limit");
         int id=GL15.glGenBuffers();if(id==0)throw new IllegalStateException("Mixed package buffer allocation failed");
         try {

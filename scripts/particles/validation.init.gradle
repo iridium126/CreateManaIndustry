@@ -16,8 +16,33 @@ allprojects {
                         def output = process.inputStream.getText('UTF-8').trim()
                         process.waitFor() == 0 ? output : 'unavailable'
                     }
+                    def fingerprint = { files ->
+                        def digest=java.security.MessageDigest.getInstance('SHA-256')
+                        files.files.findAll { it.isFile() }.sort { a,b -> a.path <=> b.path }.each { input ->
+                            digest.update(rootDir.toPath().relativize(input.toPath()).toString().replace('\\','/').getBytes('UTF-8'))
+                            digest.update((byte)0)
+                            input.withInputStream { stream ->
+                                byte[] block=new byte[16384];int length
+                                while((length=stream.read(block))!=-1)digest.update(block,0,length)
+                            }
+                        }
+                        java.util.HexFormat.of().formatHex(digest.digest())
+                    }
+                    def gpuJava=fileTree('src/main/java') {
+                        include '**/client/gpu/**','**/client/particles/**','**/client/allaystorm/**','**/client/greattrick/**','**/client/hex/**','**/mixin/hexcasting/**'
+                    }
+                    def gpuShaders=fileTree('src/main/resources/assets/createmanaindustry/shaders')
+                    def packageServerJava=fileTree('src/main/java') { include '**/content/logistics/gpupackage/**' }
+                    def validationSources=fileTree('scripts/particles') { include '**/*.java','**/*.gradle','**/*.py' }
                     def metadata = [task: name, arguments: args, properties: project.gradle.startParameter.projectProperties,
                             startedAt: java.time.Instant.now().toString(),
+                            gpuJavaSha256: fingerprint(gpuJava), shaderSha256: fingerprint(gpuShaders),
+                            packageServerJavaSha256: fingerprint(packageServerJava),
+                            validationSha256: fingerprint(validationSources),
+                            baselineSha256: file((findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') + '/java').exists()
+                                    ? fingerprint(fileTree(findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') { include 'java/*.java','assets/**/*' }) : null,
+                            baselineIdentity: file((findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') + '/commit.txt').exists()
+                                    ? file((findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') + '/commit.txt').getText('UTF-8').trim() : null,
                             commit: gitText(['git', 'rev-parse', 'HEAD']),
                             workingTree: gitText(['git', 'status', '--porcelain']),
                             javaVersion: javaLauncher.get().metadata.languageVersion.toString(),
@@ -110,7 +135,7 @@ allprojects {
             workingDir = project.projectDir
         }
         tasks.register('validatePackageEnvironmentAudit', Exec) {
-            dependsOn 'createMinecraftArtifacts'
+            dependsOn 'createMinecraftArtifacts', 'preparePackageNativeAudit'
             workingDir = project.projectDir
             commandLine 'python', 'scripts/particles/audit_package_environment.py', '--check'
         }
@@ -124,6 +149,7 @@ allprojects {
             if (project.hasProperty('packageComplexFreeOnly')) args '--complex-free-only'
             if (project.hasProperty('packageMovingAdvance')) args '--moving-advance-only'
             if (project.hasProperty('packageJournalFairness')) args '--journal-fairness-only'
+            if (project.hasProperty('packageHistoryPages')) args '--history-pages-only'
             if (project.hasProperty('packageWorldHistory')) args '--world-history-only'
             if (project.hasProperty('packageEmptySections')) args '--empty-sections-only'
             if (project.hasProperty('packageMaterials')) args '--materials-only'
@@ -290,6 +316,13 @@ allprojects {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/PackageControlBenchmark.java'
+            jvmArgs '-Xms512m', '-Xmx2g'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkPackageEnvironmentUplink', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/PackageEnvironmentUplinkBenchmark.java'
             jvmArgs '-Xms512m', '-Xmx2g'
             workingDir = project.projectDir
         }

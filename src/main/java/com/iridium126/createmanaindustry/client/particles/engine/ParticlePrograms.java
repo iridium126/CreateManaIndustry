@@ -8,9 +8,7 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
-import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
-import org.lwjgl.opengl.GL43;
 
 /**
  * Self-hosted GLSL programs for the particle engine, compiled with raw LWJGL
@@ -313,71 +311,27 @@ public final class ParticlePrograms {
     // GL helpers
     // ------------------------------------------------------------------
 
-    /** Compiles a single compute shader into a standalone compute program. */
     private static int compileCompute(String path) {
-        String src = load(path);
-        if (src == null)
-            return 0;
-        int shader = compileStage(VERSION + PRELUDE + src, GL43.GL_COMPUTE_SHADER);
-        if (shader == 0)
-            return 0;
-        int prog = GL20.glCreateProgram();
-        GL20.glAttachShader(prog, shader);
-        GL20.glLinkProgram(prog);
-        GL20.glDeleteShader(shader);
-        if (GL20.glGetProgrami(prog, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-            LOGGER.error("[CMI particles] compute link failed ({}): {}", path,
-                    GL20.glGetProgramInfoLog(prog));
-            GL20.glDeleteProgram(prog);
+        String source=load(path);
+        if(source==null)return 0;
+        try {
+            return com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute(path,VERSION+PRELUDE+source);
+        } catch(RuntimeException failure) {
+            LOGGER.error("[CMI particles] compute program failed ({})",path,failure);
             return 0;
         }
-        return prog;
     }
 
-    private static int link(String vshPath, String fshPath) {
-        String vs = load(vshPath);
-        String fs = load(fshPath);
-        if (vs == null || fs == null)
-            return 0;
-        int vsh = compileStage(VERSION + PRELUDE + vs, GL20.GL_VERTEX_SHADER);
-        int fsh = compileStage(VERSION + PRELUDE + fs, GL20.GL_FRAGMENT_SHADER);
-        if (vsh == 0 || fsh == 0) {
-            if (vsh != 0)
-                GL20.glDeleteShader(vsh);
-            if (fsh != 0)
-                GL20.glDeleteShader(fsh);
+    private static int link(String vertexPath,String fragmentPath) {
+        String vertex=load(vertexPath),fragment=load(fragmentPath);
+        if(vertex==null||fragment==null)return 0;
+        try {
+            return com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.graphics(vertexPath,
+                    VERSION+PRELUDE+vertex,VERSION+PRELUDE+fragment);
+        } catch(RuntimeException failure) {
+            LOGGER.error("[CMI particles] render program failed ({})",vertexPath,failure);
             return 0;
         }
-        int prog = GL20.glCreateProgram();
-        GL20.glAttachShader(prog, vsh);
-        GL20.glAttachShader(prog, fsh);
-        GL20.glLinkProgram(prog);
-        GL20.glDeleteShader(vsh);
-        GL20.glDeleteShader(fsh);
-        if (GL20.glGetProgrami(prog, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-            LOGGER.error("[CMI particles] render link failed ({}): {}", vshPath,
-                    GL20.glGetProgramInfoLog(prog));
-            GL20.glDeleteProgram(prog);
-            return 0;
-        }
-        return prog;
-    }
-
-    private static int compileStage(String source, int type) {
-        int shader = GL20.glCreateShader(type);
-        if (shader == 0) {
-            LOGGER.error("[CMI particles] glCreateShader({}) returned 0", type);
-            return 0;
-        }
-        GL20.glShaderSource(shader, source);
-        GL20.glCompileShader(shader);
-        if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-            LOGGER.error("[CMI particles] shader compile failed (type {}): {}", type,
-                    GL20.glGetShaderInfoLog(shader));
-            GL20.glDeleteShader(shader);
-            return 0;
-        }
-        return shader;
     }
 
     /**

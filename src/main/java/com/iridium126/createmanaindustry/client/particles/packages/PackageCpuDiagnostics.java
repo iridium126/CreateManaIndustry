@@ -6,7 +6,7 @@ import java.util.Locale;
 
 /** Opt-in render/client-thread metrics. Phase totals are inclusive and flushed per rendered frame. */
 public final class PackageCpuDiagnostics {
-    public enum Phase { CAPTURE, UPLOAD, PREPARE, POLL, VIEW, SOLVER, READBACK, PUBLISH }
+    public enum Phase { CAPTURE, UPLOAD, PREPARE, POLL, FEEDBACK, VIEW, SOLVER, READBACK, PUBLISH }
     private static final int SAMPLES=240;
     private static final java.lang.management.ThreadMXBean thread=ManagementFactory.getThreadMXBean();
     private static final com.sun.management.ThreadMXBean memory=thread instanceof com.sun.management.ThreadMXBean m?m:null;

@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling;
 import java.util.function.Function;
 import org.lwjgl.opengl.*;
@@ -28,7 +30,7 @@ public final class ModelShadowGpu implements AutoCloseable {
             GL41.glProgramUniform1ui(finish,GL20.glGetUniformLocation(finish,"uTotal"),AllayModelGeometry.INDICES.length);
         }catch(RuntimeException error){close();throw error;}
     }
-    private static int allocate(long bytes){if(bytes>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))throw new IllegalArgumentException("Shadow buffer device limit");
+    private static int allocate(long bytes){if(bytes>GpuCapabilities.current().storageBlockBytes())throw new IllegalArgumentException("Shadow buffer device limit");
         int id=GL15.glGenBuffers();try{GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);
             if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)throw new IllegalStateException("Shadow storage allocation");return id;
         }catch(RuntimeException error){GL15.glDeleteBuffers(id);throw error;}}

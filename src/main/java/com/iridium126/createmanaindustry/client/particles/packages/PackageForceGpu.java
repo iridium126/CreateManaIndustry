@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.*;
 import java.util.function.LongToIntFunction;
 import org.lwjgl.opengl.*;
@@ -17,7 +19,7 @@ public final class PackageForceGpu implements AutoCloseable {
     public PackageForceGpu(){this(f->GL32.glClientWaitSync(f,GL32.GL_SYNC_FLUSH_COMMANDS_BIT,0));}
     public PackageForceGpu(LongToIntFunction poll){
         this.poll=java.util.Objects.requireNonNull(poll);
-        try{if(BYTES>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))throw new IllegalStateException("Force device capacity");
+        try{if(BYTES>GpuCapabilities.current().storageBlockBytes())throw new IllegalStateException("Force device capacity");
             for(int i=0;i<4;i++){Bank b=new Bank();banks[i]=b;b.buffer=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,b.buffer);
                 GL44.glBufferStorage(GL43.GL_SHADER_STORAGE_BUFFER,BYTES,FLAGS);b.mapped=GL30.glMapBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,0,BYTES,FLAGS);
                 if(b.mapped==null)throw new IllegalStateException("Package force upload mapping");}}

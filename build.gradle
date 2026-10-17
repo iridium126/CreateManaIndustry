@@ -764,3 +764,20 @@ def validatePackageSableAbsent = tasks.register('validatePackageSableAbsent', Ja
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
 }
 tasks.named('check') { dependsOn(validatePackageSableAbsent) }
+
+// Audit exactly the Create jar resolved for this build, including its source commit.
+tasks.register('preparePackageNativeAudit') {
+    group = 'verification'
+    doLast {
+        def resolved = configurations.compileClasspath.resolvedConfiguration.resolvedArtifacts.findAll {
+            it.moduleVersion.id.group == 'curse.maven' && it.name == 'create-328085'
+        }
+        if (resolved.size() != 1) throw new GradleException('Expected exactly one resolved Create binary')
+        def artifact = resolved.first()
+        def output = layout.buildDirectory.file('package-native/resolved-create.json').get().asFile
+        output.parentFile.mkdirs()
+        def digest = java.security.MessageDigest.getInstance('SHA-256').digest(artifact.file.bytes).encodeHex().toString()
+        output.setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([
+                coordinate: artifact.moduleVersion.id.toString(), binary: artifact.file.absolutePath, sha256: digest])) + '\n', 'UTF-8')
+    }
+}

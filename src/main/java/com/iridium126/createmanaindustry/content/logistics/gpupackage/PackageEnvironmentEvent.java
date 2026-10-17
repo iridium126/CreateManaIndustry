@@ -10,8 +10,15 @@ public record PackageEnvironmentEvent(PackageLease.Identity identity,long lease,
     /** GPU block and body coordinates share the physics origin. Both wire coordinates must
      * share the authority region origin; the server adds that origin exactly once. */
     public static byte[] regionPayload(ByteBuffer raw,int ox,int oy,int oz,PackageRegion region) {
+        var copy=ByteBuffer.allocate(1024);
+        writeRegionPayload(raw,ox,oy,oz,region,copy);
+        return copy.array();
+    }
+    /** Write to caller-owned contiguous staging without retaining or mutating the borrowed event. */
+    public static void writeRegionPayload(ByteBuffer raw,int ox,int oy,int oz,PackageRegion region,ByteBuffer destination) {
         if(raw.remaining()!=1024)throw new IllegalArgumentException("Environment event length");
-        var copy=ByteBuffer.allocate(1024).order(ByteOrder.LITTLE_ENDIAN);copy.put(raw.duplicate());
+        if(destination.remaining()<1024)throw new IllegalArgumentException("Environment event output capacity");
+        var copy=destination.slice(destination.position(),1024).order(ByteOrder.LITTLE_ENDIAN);copy.put(raw.duplicate());
         long count=Integer.toUnsignedLong(copy.getInt(24))-Integer.toUnsignedLong(copy.getInt(28));
         if(count<1||count>20)throw new IllegalArgumentException("Environment event window");
         int dx=Math.toIntExact((long)ox-(long)region.originX()),dy=Math.toIntExact((long)oy-(long)region.originY()),dz=Math.toIntExact((long)oz-(long)region.originZ());
@@ -22,7 +29,7 @@ public record PackageEnvironmentEvent(PackageLease.Identity identity,long lease,
             copy.putFloat(p+36,(float)((double)copy.getFloat(p+36)+dy));
             copy.putFloat(p+40,(float)((double)copy.getFloat(p+40)+dz));
         }
-        return copy.array();
+        destination.position(destination.position()+1024);
     }
     public record Sample(long step,int contact,int x,int y,int z,float px,float py,float pz,int fireTicks,float health,int ticks) {
         public int effects(){return contact==NATIVE_BATCH?fireTicks:0;}

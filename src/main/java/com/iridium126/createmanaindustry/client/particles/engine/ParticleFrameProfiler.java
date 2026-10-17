@@ -5,7 +5,7 @@ package com.iridium126.createmanaindustry.client.particles.engine;
  * controller: when the EMA of the GPU engine's measured frame cost climbs
  * above the budget, the emission scale decays; when it drops well under
  * budget it ramps back up toward 1. The recorded cost is the GPU-side
- * elapsed time of a frame (GL_TIME_ELAPSED query ring, a few frames lagged)
+ * elapsed time of a frame (asynchronous timestamp pairs, a few frames lagged)
  * — falling back to CPU submit time only before the first query completes.
  */
 public final class ParticleFrameProfiler {

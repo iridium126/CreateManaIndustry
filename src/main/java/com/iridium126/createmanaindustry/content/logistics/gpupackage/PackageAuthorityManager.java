@@ -480,43 +480,17 @@ public final class PackageAuthorityManager {
             if(packet.revision()!=region.revision())return;
             long budget=ServerConfig.packageMainThreadBudgetNanos();if(peer.environmentNanos>=budget)return;
             long started=System.nanoTime(),deadline=started+(budget-peer.environmentNanos);
+            long packetTiming=PackageTransactionDiagnostics.begin();
             try{
-                var event=PackageEnvironmentEvent.decode(packet.changesView());var target=rt.identities.get(event.identity());
-                if(target==null||target.light==null||target.region!=region)return;
-                var baseline=region.baseline(event.identity());
-                if(baseline==null||baseline.leaseEpoch()!=event.lease()||baseline.index()!=event.index()||baseline.revision()!=event.revision()||!region.simulated(event.identity(),tick))return;
-                if(event.first()>target.environmentWritten)return;
-                for(int n=0;n<event.samples().size();n++){
-                    long serial=event.first()+n+1;if(serial<=target.environmentWritten)continue;
-                    // Confirm the successful prefix. The retained GPU journal retries
-                    // the suffix; duplicate retransmissions consume no sample budget.
-                    if(peer.environmentRecords>=MAX_ENVIRONMENT_SAMPLES_PER_TICK||System.nanoTime()>=deadline)break;
-                    peer.environmentRecords++;
-                    var sample=event.samples().get(n);
-                    var contactPose=new PackageLease.Pose(region.region().originX()+sample.px(),region.region().originY()+sample.py()-target.light.height*.5,region.region().originZ()+sample.pz(),0,0,0,0);
-                    String rejection=sample.duration()>region.historyTicks()?"duration exceeds history":
-                            sample.step()-sample.duration()<target.environmentSimulationStep?"overlapping simulation interval":
-                            sample.contact()==PackageEnvironmentEvent.NATIVE_BATCH&&((long)sample.ticks()<=target.light.environmentMotion.age()
-                                    ||(long)sample.ticks()-target.light.environmentMotion.age()>sample.step()-target.environmentSimulationStep)?"invalid package logical age":
-                            target.environmentOriginStep>0&&sample.step()-target.environmentOriginStep>tick-target.environmentOriginTick+region.historyTicks()?"future simulation interval":
-                            !region.environmentReachable(event.identity(),sample.step(),tick,contactPose)?"contact outside pose reach":
-                            PackageLightGameplay.environmentRejection(rt.level,target.light,region.region(),sample);
-                    if(rejection!=null){
-                        CreateManaIndustry.LOGGER.debug("[CMI packages] rejected environment reason={} identity={} step={} ticks={} previousStep={} poseStep={} historyTicks={} contact={} block={} pose={},{},{} committed={} dimensions={}x{} region={}",
-                                rejection,event.identity(),sample.step(),sample.ticks(),target.environmentSimulationStep,region.confirmedSimulationStep(event.identity()),region.historyTicks(),sample.contact(),sample.block(region.region()),sample.px(),sample.py(),sample.pz(),baseline.snapshot().pose(),target.light.width,target.light.height,region.region());
-                        region.release(event.identity());return;
-                    }
-                    if(target.environmentOriginStep==0){target.environmentOriginStep=sample.step();target.environmentOriginTick=tick;}
-                    target.environmentWritten=serial;target.environmentSimulationStep=sample.step();
-                    if(PackageLightGameplay.environmentStep(rt.level,target.light,packet.region(),sample))break;
-                }
-                if(rt.identities.get(event.identity())!=target)return;
-                boolean correction=event.samples().getLast().contact()==PackageEnvironmentEvent.NATIVE_BATCH;
-                var environmentBaseline=correction?new PackageAuthorityRegion.Baseline(baseline.index(),baseline.identity(),baseline.leaseEpoch(),baseline.revision(),target.light.state()):baseline;
-                PacketDistributor.sendToPlayer(player,new ClientboundPackagePacket(ClientboundPackagePacket.ENVIRONMENT_ACK,rt.level.dimension().location(),region.region(),region.epoch(),region.revision(),
-                        target.environmentWritten,environmentBaseline,-1,null,null,0,0,target.light.fireTicks,target.light.health,PackageLightGameplay.environmentPermissions(rt.level,target.light),target.light.environmentMotion(),correction));
+                // No transaction may run before every record, including the tail,
+                // passes syntax validation. Stale lifecycles only skip their own event.
+                long decoding=PackageTransactionDiagnostics.begin();
+                List<PackageEnvironmentEvent> events;
+                try{events=PackageEnvironmentBatchCodec.decode(packet.changesView());}
+                finally{PackageTransactionDiagnostics.end(PackageTransactionDiagnostics.Phase.DECODE,decoding);}
+                for(var event:events)receiveEnvironmentEvent(rt,peer,region,player,event,tick,deadline);
             }catch(IllegalArgumentException invalid){CreateManaIndustry.LOGGER.debug("[CMI packages] invalid environment event",invalid);}
-            finally{peer.environmentNanos+=Math.max(0,System.nanoTime()-started);}
+            finally{peer.environmentNanos+=Math.max(0,System.nanoTime()-started);PackageTransactionDiagnostics.end(PackageTransactionDiagnostics.Phase.ENVIRONMENT_PACKET,packetTiming);}
             return;
         }
         if(ServerboundPackagePacket.deltaAction(packet.action())) {
@@ -604,7 +578,54 @@ public final class PackageAuthorityManager {
     @SubscribeEvent public static void onUnload(LevelEvent.Unload event) {
         if(event.getLevel() instanceof ServerLevel level){Runtime rt=WORLDS.get(level);if(rt!=null){rt.unloading=true;close(rt);WORLDS.remove(level);}}
     }
-    @SubscribeEvent public static void onStopped(ServerStoppedEvent event){WORLDS.clear();}
+    private static void receiveEnvironmentEvent(Runtime rt,Peer peer,PackageAuthorityRegion region,ServerPlayer player,
+            PackageEnvironmentEvent event,long tick,long deadline) {
+        var target=rt.identities.get(event.identity());
+        if(target==null||target.light==null||target.region!=region)return;
+        var baseline=region.baseline(event.identity());
+        if(baseline==null||baseline.leaseEpoch()!=event.lease()||baseline.index()!=event.index()||baseline.revision()!=event.revision()||!region.simulated(event.identity(),tick))return;
+        if(event.first()>target.environmentWritten)return;
+        for(int n=0;n<event.samples().size();n++){
+            long serial=event.first()+n+1;if(serial<=target.environmentWritten)continue;
+            // Confirm the successful prefix. The retained GPU journal retries
+            // the suffix; duplicate retransmissions consume no sample budget.
+            if(peer.environmentRecords>=MAX_ENVIRONMENT_SAMPLES_PER_TICK||System.nanoTime()>=deadline)break;
+            peer.environmentRecords++;
+            var sample=event.samples().get(n);
+            long validating=PackageTransactionDiagnostics.begin();
+            String rejection;
+            try {
+                var contactPose=new PackageLease.Pose(region.region().originX()+sample.px(),region.region().originY()+sample.py()-target.light.height*.5,region.region().originZ()+sample.pz(),0,0,0,0);
+                rejection=sample.duration()>region.historyTicks()?"duration exceeds history":
+                        sample.step()-sample.duration()<target.environmentSimulationStep?"overlapping simulation interval":
+                        sample.contact()==PackageEnvironmentEvent.NATIVE_BATCH&&((long)sample.ticks()<=target.light.environmentMotion.age()
+                                ||(long)sample.ticks()-target.light.environmentMotion.age()>sample.step()-target.environmentSimulationStep)?"invalid package logical age":
+                        target.environmentOriginStep>0&&sample.step()-target.environmentOriginStep>tick-target.environmentOriginTick+region.historyTicks()?"future simulation interval":
+                        !region.environmentReachable(event.identity(),sample.step(),tick,contactPose)?"contact outside pose reach":
+                        PackageLightGameplay.environmentRejection(rt.level,target.light,region.region(),sample);
+            }finally{PackageTransactionDiagnostics.end(PackageTransactionDiagnostics.Phase.VALIDATE,validating);}
+            if(rejection!=null){
+                CreateManaIndustry.LOGGER.debug("[CMI packages] rejected environment reason={} identity={} step={} ticks={} previousStep={} poseStep={} historyTicks={} contact={} block={} pose={},{},{} committed={} dimensions={}x{} region={}",
+                        rejection,event.identity(),sample.step(),sample.ticks(),target.environmentSimulationStep,region.confirmedSimulationStep(event.identity()),region.historyTicks(),sample.contact(),sample.block(region.region()),sample.px(),sample.py(),sample.pz(),baseline.snapshot().pose(),target.light.width,target.light.height,region.region());
+                region.release(event.identity());return;
+            }
+            if(target.environmentOriginStep==0){target.environmentOriginStep=sample.step();target.environmentOriginTick=tick;}
+            target.environmentWritten=serial;target.environmentSimulationStep=sample.step();
+            long applying=PackageTransactionDiagnostics.begin();
+            try{if(PackageLightGameplay.environmentStep(rt.level,target.light,region.region(),sample))break;}
+            finally{PackageTransactionDiagnostics.end(PackageTransactionDiagnostics.Phase.APPLY,applying);}
+        }
+        if(rt.identities.get(event.identity())!=target)return;
+        boolean correction=event.samples().getLast().contact()==PackageEnvironmentEvent.NATIVE_BATCH;
+        var environmentBaseline=correction?new PackageAuthorityRegion.Baseline(baseline.index(),baseline.identity(),baseline.leaseEpoch(),baseline.revision(),target.light.state()):baseline;
+        PacketDistributor.sendToPlayer(player,new ClientboundPackagePacket(ClientboundPackagePacket.ENVIRONMENT_ACK,rt.level.dimension().location(),region.region(),region.epoch(),region.revision(),
+                target.environmentWritten,environmentBaseline,-1,null,null,0,0,target.light.fireTicks,target.light.health,PackageLightGameplay.environmentPermissions(rt.level,target.light),target.light.environmentMotion(),correction));
+    }
+
+    @SubscribeEvent public static void onStopped(ServerStoppedEvent event){
+        if(Boolean.getBoolean("cmi.profilePackageTransactions"))CreateManaIndustry.LOGGER.info("{}",PackageTransactionDiagnostics.report());
+        PackageTransactionDiagnostics.clear();WORLDS.clear();
+    }
     private static void activate(Runtime rt,PackageLightStore.Entry entry){if(rt.identities.containsKey(entry.identity))return;var target=new EntityTarget(rt,entry);rt.identities.put(entry.identity,target);rt.discovery.put(entry.identity,target);addLight(rt,target);queueVoid(rt,target);}
     private static void queueVoid(Runtime rt,EntityTarget target){if(PackageLightGameplay.belowVoid(target.light.state().pose().y(),rt.level.getMinBuildHeight()))rt.voidPackages.add(target);else rt.voidPackages.remove(target);}
     /** Event-driven lifecycle work; never scans or simulates the package population. */

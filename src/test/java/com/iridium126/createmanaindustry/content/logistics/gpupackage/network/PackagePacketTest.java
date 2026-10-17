@@ -12,6 +12,19 @@ import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 class PackagePacketTest {
+    @Test void environmentBatchRoundTripsAtTheNetworkBoundAndRejectsPartialRows() {
+        byte[] payload=new byte[PackageEnvironmentBatchCodec.MAX_BYTES];
+        for(int i=0;i<payload.length;i++)payload[i]=(byte)(i*31);
+        var packet=new ServerboundPackagePacket(ServerboundPackagePacket.ENVIRONMENT,0,REGION,7,0,null,0,9,0,payload);
+        payload[0]++;
+        var bytes=buffer();try {
+            ServerboundPackagePacket.STREAM_CODEC.encode(bytes,packet);var decoded=ServerboundPackagePacket.STREAM_CODEC.decode(bytes);
+            assertEquals(REGION,decoded.region());assertEquals(7,decoded.epoch());assertEquals(9,decoded.revision());
+            assertArrayEquals(packet.changes(),decoded.changes());assertEquals(0,bytes.readableBytes());
+            for(int size:new int[]{0,1,1023,1025,24577})
+                assertThrows(IllegalArgumentException.class,()->new ServerboundPackagePacket(ServerboundPackagePacket.ENVIRONMENT,0,REGION,7,0,null,0,9,0,new byte[size]));
+        }finally{bytes.release();}
+    }
     @Test void environmentCorrectionRoundTripsMotionAndSignedFireCooldown(){
         var motion=new PackageEnvironmentMotion(120,3.5f,.25f,.05f,.25f,7,1839);
         var packet=new ClientboundPackagePacket(ClientboundPackagePacket.ENVIRONMENT_ACK,ResourceLocation.withDefaultNamespace("overworld"),REGION,7,9,11,BASELINE,0,null,null,0,0,-20,4.7f,24,motion,true);

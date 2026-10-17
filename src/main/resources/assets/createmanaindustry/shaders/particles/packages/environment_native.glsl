@@ -10,7 +10,7 @@ bool nativeEnvironmentStep(inout Body b,inout PackageEnvironment e,uint i,uint e
     // Ordinary air/ground performs no environment readback or server work.
     if(!nativeMaterial&&!timed)return true;
     uint written=e.lease.z;
-    environmentSamples[i*PACKAGE_ENV_STRIDE+written%PACKAGE_ENV_HISTORY]=PackageEnvironmentSample(
+    environmentSamples[environmentRecord(i,written)]=PackageEnvironmentSample(
         ivec4(floatBitsToInt(b.velocityGround.xyz),32),uvec4(uSimulationStep,effects,floatBitsToUint(max(landedDistance,intBitsToFloat(contact.z)))),
         vec4(b.positionMass.xyz,uintBitsToFloat(age)));
     e.lease.z++;

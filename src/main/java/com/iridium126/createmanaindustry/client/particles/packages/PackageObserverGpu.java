@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.ByteBuffer;
 import java.util.function.Function;
 import java.util.function.BooleanSupplier;
@@ -43,8 +45,8 @@ public final class PackageObserverGpu implements AutoCloseable {
         if(capacity<1 || capacity>131072)throw new IllegalArgumentException("Observer GPU capacity");
         this.capacity=capacity;
         this.consumeCompleted=java.util.Objects.requireNonNull(consumeCompleted);
-        if((capacity+63)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)
-                || (long)capacity*STATE_BYTES>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))
+        if((capacity+63)/64>GpuCapabilities.current().computeGroupsX()
+                || (long)capacity*STATE_BYTES>GpuCapabilities.current().storageBlockBytes())
             throw new IllegalArgumentException("Observer GPU device limits");
         try {
             replacePrograms(sources);

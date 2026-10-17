@@ -12,6 +12,8 @@
 
 | 文档 | 内容 | 状态 |
 | --- | --- | --- |
+| [gpu-runtime-architecture-plan.md](gpu-runtime-architecture-plan.md) | GPU 引擎全部现有功能的架构、优化方向、分批实施状态及验收边界 | 🚧 |
+| [gpu-runtime-client-acceptance.md](gpu-runtime-client-acceptance.md) | 用户执行的隔离客户端启动、全功能检查清单与性能反馈格式 | 🚧 |
 | [gpu-helix-2026-10-11.md](gpu-helix-2026-10-11.md) | 双螺旋贯击、协议 4、区域扫掠与离屏验证 | 🟡 |
 | [gpu-dome-2026-10-11.md](gpu-dome-2026-10-11.md) | 天穹合围实现、区域伤害、协议 3 与离屏验证 | 🟡 |
 | [gpu-starfall-2026-10-11.md](gpu-starfall-2026-10-11.md) | 星冠落阵、128 粒子圆环、同代身份阶段、Iris 与性能证据 | 🟡 |
@@ -21,6 +23,7 @@
 | [gpu-hex-cleanup-model-efficiency-2026-10-10.md](gpu-hex-cleanup-model-efficiency-2026-10-10.md) | 旧 Hex 清理、保留实体行为的 MODEL/Storm GPU 优化路线与物理优先项 | 🟡 |
 | [gpu-model-rendering.md](gpu-model-rendering.md) | 当前帧/晚阶段绘制、独立阴影、同代活动索引与精确交互 | 🟡 |
 | [gpu-packages.md](gpu-packages.md) | GPU 包裹当前实现总览与运行边界 | 🟡 |
+| [gpu-package-protocol-15.md](gpu-package-protocol-15.md) | 权威环境区域合包、生命周期及未完成的 journal 边界 | 🚧 |
 | [gpu-light-package-records.md](gpu-light-package-records.md) | 自由包裹记录、物理历史、环境与库存事务 | 🟡 |
 | [gpu-package-observers.md](gpu-package-observers.md) | GPU 包裹观察者协议和姿态流 | 🟡 |
 | [gpu-chain-authority.md](gpu-chain-authority.md) / [gpu-package-chain-frames.md](gpu-package-chain-frames.md) | 锁链权威、事务及父姿态坐标边界 | 🟡 |

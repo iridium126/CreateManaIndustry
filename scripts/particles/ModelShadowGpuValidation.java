@@ -144,7 +144,7 @@ public class ModelShadowGpuValidation {
                 var out=read(buffers[4],16);check(shadow==0?out.getFloat(8)>1e8:Math.abs(out.getFloat(0)-150)<5&&Math.abs(out.getFloat(8))<5,"shadow fade bypass/main fade changed");
             }
             // Active starfall: the TBO-injected MODEL and native SSBO MODEL must produce the same pose.
-            for(int attackKind:new int[]{0,1,2})try(var star=new com.iridium126.createmanaindustry.client.particles.allaystorm.StarfallGpuBuffers()){
+            for(int attackKind:new int[]{0,1,2})try(var star=new com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers()){
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
                 var event=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket(1,37,2,1,1,5,1,1,0,4,10,60,0,12,0,4,new int[]{0},new float[]{0,12,0,0,10,0},new float[]{0,.5f,0,3.5f});
                 if(attackKind==1){int[] roster=java.util.stream.IntStream.range(0,768).toArray();

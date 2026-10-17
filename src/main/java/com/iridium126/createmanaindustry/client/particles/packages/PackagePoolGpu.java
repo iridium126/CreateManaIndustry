@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.HashSet;
@@ -74,14 +76,14 @@ public final class PackagePoolGpu implements AutoCloseable {
 
     public PackagePoolGpu(int capacity,int maxMeshes,Function<String,String> sources) {
         if(capacity<=0 || maxMeshes<=0 || maxMeshes>4096)throw new IllegalArgumentException("Package pool limits");
-        supportsFusedImport=GL11.glGetInteger(GL43.GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS)>=14;
+        supportsFusedImport=GpuCapabilities.current().computeStorageBlocks()>=14;
         this.capacity=capacity;this.packageCapacity=Math.min(capacity,131072);this.maxMeshes=maxMeshes;
         chainVisibilityUpload=BufferUtils.createIntBuffer((packageCapacity+31)/32);
         cachedChainVisibility=new int[(packageCapacity+31)/32];
-        textureUnits=GL11.glGetInteger(GL20.GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);textureTexels=GL11.glGetInteger(GL31.GL_MAX_TEXTURE_BUFFER_SIZE);
+        textureUnits=GpuCapabilities.current().textureUnits();textureTexels=GpuCapabilities.current().textureBufferTexels();
         candidateFlags=new byte[packageCapacity];candidateBodies=new int[packageCapacity];java.util.Arrays.fill(candidateBodies,-1);
-        if((packageCapacity+63L)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)
-                || (long)packageCapacity*ATTACHMENT_BYTES>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))
+        if((packageCapacity+63L)/64>GpuCapabilities.current().computeGroupsX()
+                || (long)packageCapacity*ATTACHMENT_BYTES>GpuCapabilities.current().storageBlockBytes())
             throw new IllegalArgumentException("Package attachment exceeds device limits");
         try {
             rebuild(sources);

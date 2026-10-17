@@ -80,7 +80,7 @@ public final class ParticleDiagnostics {
         com.iridium126.createmanaindustry.client.particles.packages.PackageCpuDiagnostics.frame();
     }
     public String report() {
-        String hex=com.iridium126.createmanaindustry.CreateManaIndustry.HEX_ACTIVE?"\n"+com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.status():"";
+        String hex=com.iridium126.createmanaindustry.CreateManaIndustry.HEX_ACTIVE?"\n"+com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.status():"";
         if(samples==0)return "Particle profiling: " + (enabled?"collecting":"off") + "; /cmi particle profile on"+hex;
         double[] sorted=Arrays.copyOf(cpu,samples);Arrays.sort(sorted);
         double meanAllocation=Arrays.stream(allocations,0,samples).average().orElse(0);

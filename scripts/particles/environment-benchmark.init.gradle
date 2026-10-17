@@ -1,7 +1,7 @@
 // Opt-in only. Baseline sources/resources are generated in build/ by prepare_package_baseline.py.
 gradle.projectsEvaluated {
     def p=gradle.rootProject
-    def baseline=p.layout.buildDirectory.dir('package-environment-baseline')
+    def baseline=p.layout.dir(p.provider { p.file(p.findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') })
     def compile=p.tasks.register('compilePackageEnvironmentBaseline', JavaCompile) {
         dependsOn(p.tasks.named('classes'))
         source=p.fileTree(baseline.map { it.dir('java') }) { include '*.java' }
@@ -13,6 +13,7 @@ gradle.projectsEvaluated {
     p.tasks.named('validatePackageGpu', JavaExec).configure {
         dependsOn(compile)
         classpath+=p.files(baseline.map { it.dir('classes') })
-        args '--environment-benchmark-only'
+        systemProperty 'cmi.package.environmentBaseline', baseline.get().asFile.absolutePath
+        args p.hasProperty('packageEnvironmentAckBenchmark') ? '--environment-ack-benchmark-only' : p.hasProperty('packageEnvironmentFeedbackBenchmark') ? '--environment-feedback-benchmark-only' : '--environment-benchmark-only'
     }
 }

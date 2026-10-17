@@ -1511,5 +1511,25 @@
       "entity_queries": [],
       "verification": "partial"
     }
+  },
+  "transport": {
+    "authority_protocol": "gpu-packages-15",
+    "observer_protocol": "gpu-package-observers-5",
+    "environment_records_per_packet": 24,
+    "verification": "partial",
+    "tests": [
+      "PackageEnvironmentBatchCodecTest",
+      "PackageEnvironmentUplinkTest",
+      "PackagePacketTest",
+      "packageDrawTelemetry",
+      "PackageEnvironmentLayoutTest",
+      "pagedEnvironmentHistory",
+      "pagedEnvironmentGrowth",
+      "pagedEnvironmentMaximum",
+      "growingBufferRetirementBoundary",
+      "captureDemandStatistics"
+    ],
+    "history_storage": "Implemented inline sample plus demand-grown 19-slot pages, local pressure, complete-ACK reclamation and immutable captures. Real GLSL covers 131072 unique owners, live-history growth and exact device-side demand statistics. Combined regression passed; device accumulation removed the saturated capture p50 regression. Tail latency, growth maintenance and full network/frame performance remain unverified.",
+    "remaining": "Real multi-client network/transaction timing, ordered per-behavior effect journal, final paged-storage integration/performance acceptance and complete native differential acceptance remain unverified."
   }
 }

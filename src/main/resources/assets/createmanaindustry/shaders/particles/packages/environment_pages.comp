@@ -1,0 +1,18 @@
+#pragma cmi_include packages/environment_state.glsl
+layout(local_size_x=64) in;
+uniform uint uCount,uFirst,uBody;
+uniform int uPageAction;
+void main(){
+    uint n=gl_GlobalInvocationID.x;
+    if(uPageAction==0){
+        if(n>=uCount)return;
+        // Growth is a push-only phase, ordered before all allocating kernels.
+        uint slot=uint(atomicAdd(environmentSamples[environmentAllocator()].contact.x,1));
+        writeEnvironmentFreePage(slot,uFirst+n+1u);
+        if(n==0u)environmentSamples[environmentAllocator()].contact.z=int(uFirst+uCount);
+    }else if(n==0u&&uBody<uint(environment.length())){
+        releaseEnvironmentPage(uBody);clearEnvironmentPending(uBody);
+        environmentSamples[environmentWorkspace(uBody)]=PackageEnvironmentSample(ivec4(0),uvec4(0),vec4(0));
+        environmentSamples[environmentInline(uBody)]=PackageEnvironmentSample(ivec4(0),uvec4(0),vec4(0));
+    }
+}

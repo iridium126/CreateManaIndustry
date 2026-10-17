@@ -4,7 +4,7 @@ import java.util.*;
 import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.*;
 import com.iridium126.createmanaindustry.client.particles.engine.*;
-import com.iridium126.createmanaindustry.client.particles.allaystorm.*;
+import com.iridium126.createmanaindustry.client.allaystorm.*;
 import com.iridium126.createmanaindustry.content.allaystorm.*;
 import com.iridium126.createmanaindustry.content.allaystorm.network.*;
 

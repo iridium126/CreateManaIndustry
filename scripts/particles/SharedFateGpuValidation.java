@@ -1,3 +1,4 @@
+import com.iridium126.createmanaindustry.client.greattrick.sharedfate.SharedFateGpu;
 import java.nio.*;
 import org.lwjgl.*;
 import org.lwjgl.glfw.*;

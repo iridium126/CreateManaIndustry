@@ -13,7 +13,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.client.particles.allaystorm.AllayStormRuntime;
+import com.iridium126.createmanaindustry.client.greattrick.sharedfate.SharedFateGpu;
+import com.iridium126.createmanaindustry.client.greattrick.partition.PartitionGpu;
+import com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
 import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 import com.iridium126.createmanaindustry.client.particles.packages.PackagePoolGpu;
@@ -140,10 +142,9 @@ public final class CMIParticleEngine {
     /** Counting-sort passes over the 8-bit depth-band key (one, by design). */
     private static final int RADIX_SHIFTS[] = { 0 };
     /**
-     * GL_TIME_ELAPSED query ring depth — each ring reads a 3-frame-old sample,
-     * never blocking. The split frame runs TWO rings ({@link #computeTimer}
-     * for the AFTER_SKY phase, {@link #drawTimer} for the AFTER_LEVEL phase);
-     * their latest samples are summed as the throttle input.
+     * Draw elapsed-query ring depth. Compute uses independent timestamp pairs
+     * so preparation can run inside an external elapsed query. Both poll
+     * without waiting; their latest samples feed the throttle.
      */
     private static final int TIMER_RING = 4;
     private PackagePoolGpu packageParticles;
@@ -171,7 +172,7 @@ public final class CMIParticleEngine {
     public void packageInterpolation(float partialTick) { packagePartialTick=partialTick; }
     public float packageInterpolation(){return packagePartialTick;}
     public PackagePoolGpu packageParticlesForDraw(){return available()?packageParticles:null;}
-    public boolean packageMainFrameReady(){return frameArmed;}
+    public boolean packageMainFrameReady(){return frameArmed&&frameCoordinator.publication()!=null;}
     private boolean hookPackagesDrawn;
     public void markHookPackageDrawn(){hookPackagesDrawn=true;}
     public String packageShaderStatus(){return CreateManaIndustry.IRIS_ACTIVE?com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.status():"Iris absent";}
@@ -245,32 +246,14 @@ public final class CMIParticleEngine {
     private final Set<Long> cancelledStreamIds = new HashSet<>();
     private final ParticleBuffers gpu = new ParticleBuffers();
     private final ParticlePrograms programs = new ParticlePrograms();
+    private final ParticleAppendTarget appendTarget=new ParticleAppendTarget(gpu,this::ensureEmitter);
     private final ParticleFrameProfiler profiler = new ParticleFrameProfiler();
     private final CollisionBake collisionBake = new CollisionBake();
     private final ParticleAtlas spriteAtlas = ParticleAtlas.SPRITE;
     private final ParticleAtlas allayAtlas = ParticleAtlas.ALLAY;
 
-    private final FloatBuffer emitFront = BufferUtils.createFloatBuffer(ParticleBuffers.MAX_EMIT_COMMANDS * ParticleBuffers.EMIT_ENTRY_FLOATS);
-    private final Vec3[] emitOrigins = new Vec3[ParticleBuffers.MAX_EMIT_COMMANDS];
-    private final int[] emitIds = new int[ParticleBuffers.MAX_EMIT_COMMANDS];
-    private final int[] emitCounts = new int[ParticleBuffers.MAX_EMIT_COMMANDS];
-    private final boolean[] emitTranslucent = new boolean[ParticleBuffers.MAX_EMIT_COMMANDS];
-    /** 0 = use origin.xyz, else (particle index + 1): origin resolves GPU-side. */
-    private final float[] emitOriginRef = new float[ParticleBuffers.MAX_EMIT_COMMANDS];
-    /** Spawn-time packed light (blockLight + 16·skyLight); combat commands only. */
-    private final float[] emitLight = new float[ParticleBuffers.MAX_EMIT_COMMANDS];
-    /** Storm member index base of each emit command (storm batch scheduling). */
-    private final int[] emitMemberBase = new int[ParticleBuffers.MAX_EMIT_COMMANDS];
-    /** Storm member key (memberIdx+1, 0 = legacy pool-index source) of each emit command. */
-    private final int[] emitMemberKey = new int[ParticleBuffers.MAX_EMIT_COMMANDS];
-    /** Per-command ring-spawn flag (storm growth members; emit command word c.w). */
-    private final boolean[] emitRingSpawn = new boolean[ParticleBuffers.MAX_EMIT_COMMANDS];
-    /** Hex-spray command marker: c slots carry {vel.xyz b/s, packed fuzz/spread} instead of light/member fields. */
-    private final boolean[] emitHex = new boolean[ParticleBuffers.MAX_EMIT_COMMANDS];
-    /** Direct conjure marker: c.w carries packed RGB plus the per-particle gravity bit. */
-    private final boolean[] emitHexDirect = new boolean[ParticleBuffers.MAX_EMIT_COMMANDS];
-    private final Vec3[] emitHexVel = new Vec3[ParticleBuffers.MAX_EMIT_COMMANDS];
-    private final float[] emitHexParams = new float[ParticleBuffers.MAX_EMIT_COMMANDS];
+    private final com.iridium126.createmanaindustry.client.particles.emitter.EmitCommandWriter emitCommands =
+            new com.iridium126.createmanaindustry.client.particles.emitter.EmitCommandWriter();
 
     // ---- vanilla combat particles (crit / enchanted-hit / heart / poof) ----
     /**
@@ -312,16 +295,25 @@ public final class CMIParticleEngine {
 
     /** One-shot Hexcasting conjure spray (spawnStyle 4), drained next compute. */
     private record HexSpray(float x, float y, float z, float vx, float vy, float vz,
-            float fuzz, float spread, int count, float[] wheel) {
-    }
-
-    /** One direct Hexcasting {@code conjure_particle} (spawnStyle 5). */
-    private record HexParticle(float x, float y, float z, float vx, float vy, float vz,
-            int color, boolean gravity) {
+            float fuzz, float spread, int count, com.iridium126.createmanaindustry.client.hex.particles.HexPigmentData pigment, Runnable recovery, int bornTick)
+            implements com.iridium126.createmanaindustry.client.particles.emitter.EmitCommandWriter.Parameters {
+        public void write(FloatBuffer target) {
+            int start=target.position();
+            pigment.write(target,fuzz,spread);
+            target.put(start+43,Float.intBitsToFloat(bornTick));
+        }
     }
 
     private final List<HexSpray> hexSprays = new ArrayList<>();
-    private final List<HexParticle> hexParticles = new ArrayList<>();
+    private final com.iridium126.createmanaindustry.client.particles.emitter.DirectParticleBatch hexParticles =
+            new com.iridium126.createmanaindustry.client.particles.emitter.DirectParticleBatch(true);
+    private final com.iridium126.createmanaindustry.client.gpu.buffer.GpuGrowingBuffer hexDirectStorage =
+            new com.iridium126.createmanaindustry.client.gpu.buffer.GpuGrowingBuffer();
+    private ClientLevel hexInputWorld;
+    private boolean replayingHex;
+    private int directHexEmitter=-1,sprayHexEmitter=-1,hexTick;
+    public void nativeParticleTick(){hexTick++;hexParticles.tick();}
+
     private final SharedFateGpu sharedFate = new SharedFateGpu();
     private final PartitionGpu partition = new PartitionGpu();
 
@@ -334,11 +326,34 @@ public final class CMIParticleEngine {
      * sampling happens GPU-side in emit.comp at the next frame packing.
      */
     public void spawnHexSpray(Vec3 pos, Vec3 vel, double fuzziness, double spread, int count, float[] wheelRGBA) {
-        if (!this.available() || count <= 0)
-            return;
-        this.hexSprays.add(new HexSpray((float) pos.x, (float) pos.y, (float) pos.z,
-                (float) vel.x, (float) vel.y, (float) vel.z,
-                (float) fuzziness, (float) spread, count, wheelRGBA));
+        trySpawnHexSpray(pos,vel,fuzziness,spread,count,
+                com.iridium126.createmanaindustry.client.hex.particles.HexPigmentData.wheel(wheelRGBA));
+    }
+
+    public boolean trySpawnHexSpray(Vec3 pos,Vec3 vel,double fuzziness,double spread,int count,
+            com.iridium126.createmanaindustry.client.hex.particles.HexPigmentData pigment) {
+        return trySpawnHexSpray(pos,vel,fuzziness,spread,count,pigment,null);
+    }
+
+    public boolean trySpawnHexSpray(Vec3 pos,Vec3 vel,double fuzziness,double spread,int count,
+            com.iridium126.createmanaindustry.client.hex.particles.HexPigmentData pigment,Runnable recovery) {
+        if(!available()||!ClientConfig.particleEnabled||pigment==null||!RenderSystem.isOnRenderThread()
+                ||Minecraft.getInstance().level==null||hexSprays.size()>=ParticleBuffers.MAX_EMIT_COMMANDS)return false;
+        if(!Double.isFinite(fuzziness)||!Double.isFinite(spread)||fuzziness<0||spread<0)return false;
+        if(count<=0)return true;
+        if(count>gpu.capacity()||!Float.isFinite((float)fuzziness)||!Float.isFinite((float)spread)
+                ||!Float.isFinite((float)pos.x)||!Float.isFinite((float)pos.y)||!Float.isFinite((float)pos.z)
+                ||!Float.isFinite((float)vel.x)||!Float.isFinite((float)vel.y)||!Float.isFinite((float)vel.z))return false;
+        if(sprayHexEmitter<0){
+            sprayHexEmitter=ensureEmitter(HexSpecs.spraySpec());
+            if(sprayHexEmitter<0)return false;
+            gpu.setEmitterHeader(sprayHexEmitter,HexSpecs.packedSprayHeader());
+        }
+        var world=Minecraft.getInstance().level;
+        if(hexInputWorld!=world){hexParticles.clear();hexSprays.clear();hexInputWorld=world;}
+        hexSprays.add(new HexSpray((float)pos.x,(float)pos.y,(float)pos.z,(float)vel.x,(float)vel.y,(float)vel.z,
+                (float)fuzziness,(float)spread,count,pigment,recovery,hexTick+1));
+        return true;
     }
 
     /**
@@ -348,12 +363,40 @@ public final class CMIParticleEngine {
      * assigns gravity only when ALL THREE constructor components are non-zero.
      */
     public void spawnHexParticle(Vec3 pos, Vec3 velocityPerTick, int color) {
-        if (!this.available())
-            return;
-        boolean gravity = velocityPerTick.x != 0.0 && velocityPerTick.y != 0.0 && velocityPerTick.z != 0.0;
-        this.hexParticles.add(new HexParticle((float) pos.x, (float) pos.y, (float) pos.z,
-                (float) (velocityPerTick.x * 20.0), (float) (velocityPerTick.y * 20.0),
-                (float) (velocityPerTick.z * 20.0), color, gravity));
+        if(!trySpawnHexParticle(pos.x,pos.y,pos.z,velocityPerTick.x,velocityPerTick.y,velocityPerTick.z,color)) {
+            var world=Minecraft.getInstance().level;
+            if(world!=null)replayHexParticle(world,pos.x,pos.y,pos.z,velocityPerTick.x,velocityPerTick.y,velocityPerTick.z,color);
+        }
+    }
+
+    public boolean trySpawnHexParticle(double x,double y,double z,double vx,double vy,double vz,int color) {
+        if(replayingHex||!available()||!ClientConfig.particleEnabled||!RenderSystem.isOnRenderThread())return false;
+        var world=Minecraft.getInstance().level;
+        if(world==null)return false;
+        if(hexInputWorld!=world){hexParticles.clear();hexSprays.clear();hexInputWorld=world;}
+        if(directHexEmitter<0){
+            directHexEmitter=ensureEmitter(HexSpecs.directSpec());
+            if(directHexEmitter<0)return false;
+            gpu.setEmitterHeader(directHexEmitter,HexSpecs.packedDirectHeader(HexSpecs.directSpec()));
+        }
+        return hexParticles.offer(x,y,z,vx,vy,vz,color,hexTick+1);
+    }
+
+    private void replayHexParticle(ClientLevel world,double x,double y,double z,double vx,double vy,double vz,int color) {
+        boolean previous=replayingHex;replayingHex=true;
+        try{Minecraft.getInstance().particleEngine.createParticle(new at.petrak.hexcasting.common.particles.ConjureParticleOptions(color),x,y,z,vx,vy,vz);}
+        finally{replayingHex=previous;}
+    }
+
+    private void replayHexInputs(){
+        var world=hexInputWorld;
+        boolean prior=replayingHex;replayingHex=true;
+        try {
+            if(world!=null&&world==Minecraft.getInstance().level) {
+                hexParticles.replay((x,y,z,vx,vy,vz,color)->replayHexParticle(world,x,y,z,vx,vy,vz,color));
+                for(var spray:hexSprays)if(spray.recovery()!=null)spray.recovery().run();
+            } else hexParticles.clear();
+        } finally {hexSprays.clear();hexInputWorld=null;replayingHex=prior;}
     }
 
     /** Packs RGB in the low 24 bits; the unused ARGB alpha bit carries gravity. */
@@ -413,7 +456,8 @@ public final class CMIParticleEngine {
      * lookup instead of a driver call; cleared whenever programs are rebuilt
      * (rebuild recreates every program id) or the engine shuts down.
      */
-    private final Map<Integer, Map<String, Integer>> uniformLocations = new HashMap<>();
+    private final com.iridium126.createmanaindustry.client.gpu.shader.GpuUniformCache uniformLocations =
+            new com.iridium126.createmanaindustry.client.gpu.shader.GpuUniformCache();
 
     private boolean initialized = false;
     private boolean disabled = false;
@@ -509,84 +553,6 @@ public final class CMIParticleEngine {
     private boolean frameSorted = false;
     private int frameFinalPerm = -1;
 
-    /**
-     * One GL_TIME_ELAPSED query ring. Collects the oldest sample on rotation
-     * ONLY when available (zero stalls); otherwise the previous value stands.
-     * Two instances cover the split frame: one brackets the AFTER_SKY compute
-     * phase, the other the AFTER_LEVEL draw phase. Their latest samples are
-     * summed as the throttle input so the budget sees the whole per-frame
-     * particle cost exactly as when one bracket covered everything.
-     */
-    private static final class GpuTimerRing {
-        final int[] queries = new int[TIMER_RING];
-        int slot = 0;
-        int issued = 0;
-        boolean ready = false;
-        /** True once any completed sample has ever landed in {@link #lastMs}. */
-        boolean sampled = false;
-        double lastMs = 0;
-
-        void ensureCreated() {
-            if (!this.ready) {
-                GL15.glGenQueries(this.queries);
-                this.ready = true;
-            }
-        }
-
-        /**
-         * Begins a bracket ONLY when the GL_TIME_ELAPSED target is free. The
-         * target is process-global — vanilla's Alt+F3 profiler (and any other
-         * timer-query user) can own it at our begin point; a begin issued
-         * against a busy target fails with GL_INVALID_OPERATION, and the
-         * phase-tail end would then end the FOREIGN query (ruining its sample)
-         * or error "does not have an active query". Returns false in that
-         * case: the bracket is skipped for this frame (the previous sample
-         * stands for the throttle) and {@link #endBracket()} must not run.
-         */
-        boolean begin() {
-            if (ParticleGLUtil.activeTimeElapsedQuery() != 0)
-                return false;
-            GL15.glBeginQuery(GL33.GL_TIME_ELAPSED, this.queries[this.slot]);
-            return true;
-        }
-
-        /**
-         * Ends an open bracket exactly once (mirrors the old partial-query
-         * discipline). Guarded by the active-id check: only ends when THIS
-         * ring's slot is still the active query — a foreign end that already
-         * closed our bracket must not turn the tail into a second (erroring)
-         * glEndQuery.
-         */
-        void endBracket() {
-            if (ParticleGLUtil.activeTimeElapsedQuery() != this.queries[this.slot])
-                return;
-            GL15.glEndQuery(GL33.GL_TIME_ELAPSED);
-        }
-
-        /** Rotates the cursor and polls the oldest sample — never blocks. */
-        void rotateAndPoll() {
-            this.slot = (this.slot + 1) % TIMER_RING;
-            if (++this.issued >= TIMER_RING) {
-                int oldest = this.queries[this.slot];
-                if (GL15.glGetQueryObjecti(oldest, GL15.GL_QUERY_RESULT_AVAILABLE) == GL11.GL_TRUE) {
-                    this.lastMs = (GL15.glGetQueryObjectui(oldest, GL15.GL_QUERY_RESULT) & 0xFFFFFFFFL) / 1_000_000.0;
-                    this.sampled = true;
-                }
-            }
-        }
-
-        void free() {
-            if (this.ready) {
-                GL15.glDeleteQueries(this.queries);
-                this.ready = false;
-            }
-            this.slot = 0;
-            this.issued = 0;
-            this.sampled = false;
-            this.lastMs = 0;
-        }
-    }
-
     // ---- Allay Storm runtime (composition; render thread only) --------------
     /**
      * Every mutable storm state and behavior — the sync state machine, the
@@ -598,10 +564,10 @@ public final class CMIParticleEngine {
      * WITHOUT dereferencing it (field init order), so composition here is
      * safe despite the eagerly initialized singleton.
      */
-    private final AllayStormRuntime storm = new AllayStormRuntime(this);
+    private final AllayStormRuntime storm = new AllayStormRuntime(new StormParticleAccess(this));
     private long lastErrorTime = 0;
-    private final GpuTimerRing computeTimer = new GpuTimerRing();
-    private final GpuTimerRing drawTimer = new GpuTimerRing();
+    private final com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing computeTimer = new com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing(TIMER_RING);
+    private final com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing drawTimer = new com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing(TIMER_RING);
     /** Scratch Proj*View and its 6 normalized frustum planes (keygen cull test). */
     private final Matrix4f projView = new Matrix4f();
     private final float[] frustumPlanes = new float[24];
@@ -679,7 +645,7 @@ public final class CMIParticleEngine {
      */
     public void applyWave(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket packet){this.storm.applyWave(packet);}
     public String starfallStatus(){return storm.starfallStatus();}
-    public com.iridium126.createmanaindustry.client.particles.allaystorm.StarfallGpuBuffers starfallGpu(){return storm.starfallGpu();}
+    public com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers starfallGpu(){return storm.starfallGpu();}
 
     /**
      * Dive-wave uniform staging for the MODEL render path (the held-sword
@@ -753,7 +719,7 @@ public final class CMIParticleEngine {
     public void requestProgramRebuild() {
         this.sharedFate.close();
         this.partition.close();
-        if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.requestReload();
+        if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.requestReload();
         if(CreateManaIndustry.IRISVEIL_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.invalidateShadow();
         if(CreateManaIndustry.IRIS_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.reload();
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Package resources reloaded",true);
@@ -764,11 +730,13 @@ public final class CMIParticleEngine {
 
     /** Frees all GPU resources on client shutdown. Safe when never initialised. */
     public void close() {
+        this.frameCoordinator.abort();
+        replayHexInputs();
         this.sharedFate.close();
         this.partition.close();
         com.iridium126.createmanaindustry.client.greattrick.SharedFateClient.clear();
         this.storm.starfallGpu().close();
-        if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.close();
+        if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.close();
         com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle engine closed",false);
         try {
             if(CreateManaIndustry.IRIS_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook.close();
@@ -782,10 +750,12 @@ public final class CMIParticleEngine {
         } catch (RuntimeException | LinkageError e) {
             CreateManaIndustry.LOGGER.warn("[CMI particles] GPU free failed", e);
         }
+        this.hexDirectStorage.close();
+        this.directHexEmitter=this.sprayHexEmitter=-1;
         this.programs.delete();
         ParticleDiagnostics.INSTANCE.close();
-        this.computeTimer.free();
-        this.drawTimer.free();
+        this.computeTimer.close();
+        this.drawTimer.close();
         try {
             this.spriteAtlas.free();
             this.allayAtlas.free();
@@ -866,6 +836,8 @@ public final class CMIParticleEngine {
     // ------------------------------------------------------------------
 
     private final ParticleFrameLatch levelFrame = new ParticleFrameLatch();
+    private final com.iridium126.createmanaindustry.client.gpu.frame.GpuFrameCoordinator frameCoordinator =
+            new com.iridium126.createmanaindustry.client.gpu.frame.GpuFrameCoordinator();
     private final ParticleComputeState earlyComputeState = new ParticleComputeState();
     private final org.joml.Matrix4f levelView = new org.joml.Matrix4f();
     private final org.joml.Matrix4f levelProjection = new org.joml.Matrix4f();
@@ -880,6 +852,7 @@ public final class CMIParticleEngine {
             levelDelta = null;
             frameLevel = mc.level;
             frameAttempted = frameArmed = false;
+            frameCoordinator.abort();
         }
     }
 
@@ -901,6 +874,7 @@ public final class CMIParticleEngine {
         } finally {
             if (primary) {
                 frameAttempted = frameArmed = false;
+                frameCoordinator.abort();
                 levelCamera = null;
                 levelDelta = null;
                 frameLevel = null;
@@ -910,14 +884,14 @@ public final class CMIParticleEngine {
     }
 
     public long renderFrameToken(){return levelFrame.token();}
-    public boolean currentFrameReady(){return levelFrame.ready()&&frameLevel==Minecraft.getInstance().level;}
+    public boolean currentFrameReady(){return levelFrame.ready()&&frameCoordinator.publication()!=null&&frameLevel==Minecraft.getInstance().level;}
     public long currentGeneration(){return committedGeneration;}
-    public int committedCounterBuffer(){return gpu.counterBufferId(lastGoodSlot);}
+    public int committedCounterBuffer(){var frame=frameCoordinator.publication();return frame==null?0:frame.counter();}
     /** Called after Iris pipeline setup but before any shadow camera/state is installed. */
     public boolean prepareCurrentFrame(){
         if(!levelFrame.primary()||levelCamera==null||frameLevel!=Minecraft.getInstance().level)return false;
         if(!ClientConfig.shaderPackIntegration||!dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse())return false;
-        if(!levelFrame.claim())return levelFrame.ready();
+        if(!levelFrame.claim())return currentFrameReady();
         try {
             earlyComputeState.capture();
             try {
@@ -927,10 +901,11 @@ public final class CMIParticleEngine {
             }
         } catch (RuntimeException | LinkageError failure) {
             frameArmed = false;
+            frameCoordinator.abort();
             CreateManaIndustry.LOGGER.warn("[CMI particles] pre-shadow preparation failed", failure);
         }
         levelFrame.complete(frameArmed);
-        return levelFrame.ready();
+        return currentFrameReady();
     }
     public void beginFrame(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix, DeltaTracker deltaTracker) {
         if(camera!=Minecraft.getInstance().gameRenderer.getMainCamera())return;
@@ -943,6 +918,7 @@ public final class CMIParticleEngine {
     private void computeFrame(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix, DeltaTracker deltaTracker) {
         this.frameAttempted = false;
         this.frameArmed = false;
+        this.frameCoordinator.abort();
         if (this.disabled)
             return;
         if (!ClientConfig.particleEnabled) {
@@ -997,10 +973,14 @@ public final class CMIParticleEngine {
         this.frameAttempted = true;
         this.frameStartNanos = System.nanoTime();
         ParticleDiagnostics.INSTANCE.begin();
+        boolean timedCompute=this.computeTimer.begin(), computeSucceeded=false;
         try {
             runCompute(camera, view, projectionMatrix, deltaTracker);
+            computeSucceeded=true;
         } catch (RuntimeException | LinkageError e) {
             this.frameArmed = false;
+            this.frameCoordinator.abort();
+            replayHexInputs();
             com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient.closeAll("Particle frame failed",true);
             long now = System.currentTimeMillis();
             if (now - this.lastErrorTime > 5000) {
@@ -1008,6 +988,7 @@ public final class CMIParticleEngine {
                 CreateManaIndustry.LOGGER.error("[CMI particles] compute phase failed", e);
             }
         } finally {
+            if(timedCompute)this.computeTimer.end(computeSucceeded);
             this.computeSubmitNanos = System.nanoTime() - this.frameStartNanos;
             ParticleDiagnostics.INSTANCE.mark("world");
             ParticleDiagnostics.INSTANCE.pauseCpu();
@@ -1030,8 +1011,11 @@ public final class CMIParticleEngine {
         try {
             // An aborted compute phase leaves frameArmed clear; the last fully
             // committed generation simply persists one more frame undrawn.
-            if (this.frameArmed)
-                this.drawPipeline.runDraws(camera, view, projectionMatrix);
+            if (this.frameArmed) {
+                this.frameCoordinator.draw();
+                try { this.drawPipeline.runDraws(camera, view, projectionMatrix); }
+                finally { this.frameCoordinator.finishDraw(); }
+            }
         } finally {
             // Prefer the lagged GPU-side cost of BOTH phases (each ring reads a
             // 3-frame-old completed sample, summed); fall back to CPU submit
@@ -1039,8 +1023,8 @@ public final class CMIParticleEngine {
             // GPU work (shader-pack MODEL draw) is measured by its own timer
             // ring and folded in so the throttle sees the full per-frame cost.
             double baseMs;
-            if (!this.frameIdle && (this.computeTimer.sampled || this.drawTimer.sampled))
-                baseMs = this.computeTimer.lastMs + this.drawTimer.lastMs;
+            if (this.computeTimer.sampled())
+                baseMs = this.computeTimer.lastMs() + (this.frameIdle?0:this.drawTimer.lastMs());
             else
                 baseMs = (this.computeSubmitNanos + System.nanoTime() - drawStartNanos) / 1_000_000.0;
             synchronized (this) {
@@ -1057,6 +1041,7 @@ public final class CMIParticleEngine {
 
     /** Clears every particle, stream and queued request (render thread only). */
     private void dropAll() {
+        replayHexInputs();
         this.pending.clear();
         this.streams.clear();
         this.cancelledStreamIds.clear();
@@ -1105,6 +1090,7 @@ public final class CMIParticleEngine {
     }
 
     private void runCompute(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix, DeltaTracker deltaTracker) {
+        this.frameCoordinator.begin();
         this.frameSeed++;
         this.frameIdle = false;
 
@@ -1221,33 +1207,16 @@ public final class CMIParticleEngine {
         if (mcClock.level != null)
             this.storm.tickClock(mcClock.level.getGameTime());
 
-        // 2. Build emit entries (storm first, then bursts, then streams). The
-        // storm's trickle-in scheduling fills the FIRST command slots — it
-        // writes the shared command arrays through an EmitSchedule context
-        // (carrying the runCompute-local counters) and the bursts/streams
-        // below append with plain locals. See AllayStormRuntime for the
-        // scheduling semantics (dead-member run splitting, ~60-frame drain,
-        // atlas + bake-quadrant upkeep).
-        // Hex-spray markers MUST reset every frame: only the hex drain writes
-        // them, and a stale true would re-interpret the next frame's reuse of
-        // that slot (combat/classic/storm) as hex — its c slots would be
-        // overwritten with stale spray params (combat light = vel.x ≈ 0 →
-        // blacked-out particles).
-        java.util.Arrays.fill(this.emitHex, false);
-        java.util.Arrays.fill(this.emitHexDirect, false);
-        var schedule = new AllayStormRuntime.EmitSchedule(this.emitIds, this.emitCounts, this.emitOrigins,
-                this.emitTranslucent, this.emitOriginRef, this.emitLight, this.emitMemberBase, this.emitMemberKey,
-                this.emitRingSpawn);
-        this.storm.scheduleSpawnRuns(schedule);
+        // Producers share one bounded writer. No producer owns parallel command metadata.
+        this.emitCommands.clear();
+        this.storm.scheduleSpawnRuns(this.emitCommands);
         // continuous chased center: rewrite the storm header's anchor slot from
         // the interpolated center every frame (1 Hz snapshots, frame-rate motion)
         this.storm.refreshCenterHeader();
         // dive waves: expire dead slots, keep the target shafts baked (with
         // hysteresis), rebuild the wave uniform staging for both consumers
         this.storm.refreshWaves();
-        this.storm.scheduleRings(schedule);
-        int entryCount = schedule.entryCount;
-        int totalSpawn = schedule.totalSpawn;
+        this.storm.scheduleRings(this.emitCommands);
 
         for (Burst b : bursts) {
             int id = ensureEmitter(b.spec);
@@ -1255,18 +1224,9 @@ public final class CMIParticleEngine {
                 continue;
             ensureEmitterRuntime(id, b.spec, b.origin);
             int n = Math.max(1, Math.round(b.count * this.scale));
-            if (n <= 0 || entryCount >= ParticleBuffers.MAX_EMIT_COMMANDS)
+            if (n <= 0 || this.emitCommands.full())
                 continue;
-            this.emitIds[entryCount] = id;
-            this.emitCounts[entryCount] = n;
-            this.emitOrigins[entryCount] = b.origin;
-            this.emitTranslucent[entryCount] = isTranslucent(b.spec);
-            this.emitOriginRef[entryCount] = 0f;
-            this.emitLight[entryCount] = specSpawnLight(b.spec, b.origin);
-            this.emitMemberKey[entryCount] = 0;
-            this.emitRingSpawn[entryCount] = false;
-            totalSpawn += n;
-            entryCount++;
+            this.emitCommands.basic(id,n,b.origin,specSpawnLight(b.spec,b.origin));
         }
 
         // Vanilla combat particles: drain one-shot bursts (damage hearts) and
@@ -1275,18 +1235,10 @@ public final class CMIParticleEngine {
         // tiny — and always target a pool particle (originRef) at the spawn
         // light sampled when the hit landed.
         for (CombatBurst cb : this.combatBursts) {
-            if (entryCount >= ParticleBuffers.MAX_EMIT_COMMANDS)
+            if (this.emitCommands.full())
                 break;
-            this.emitIds[entryCount] = cb.emitId();
-            this.emitCounts[entryCount] = cb.count();
-            this.emitOrigins[entryCount] = Vec3.ZERO;
-            this.emitTranslucent[entryCount] = false; // combat specs are OPAQUE
-            this.emitOriginRef[entryCount] = Float.intBitsToFloat(cb.localToken());
-            this.emitLight[entryCount] = cb.light();
-            this.emitMemberKey[entryCount] = cb.memberIdx()>=0?cb.memberIdx()+1:-1;
-            this.emitRingSpawn[entryCount] = false;
-            totalSpawn += cb.count();
-            entryCount++;
+            this.emitCommands.tracked(cb.emitId(),cb.count(),cb.localToken(),
+                    cb.memberIdx()>=0?cb.memberIdx()+1:-1,cb.light());
         }
         this.combatBursts.clear();
         if (!this.trackings.isEmpty()) {
@@ -1298,17 +1250,8 @@ public final class CMIParticleEngine {
                 int n = (int) want;
                 t.acc = want - n;
                 n = Math.min(n, (int) Math.ceil(t.remaining));
-                if (n > 0 && entryCount < ParticleBuffers.MAX_EMIT_COMMANDS) {
-                    this.emitIds[entryCount] = t.emitId;
-                    this.emitCounts[entryCount] = n;
-                    this.emitOrigins[entryCount] = Vec3.ZERO;
-                    this.emitTranslucent[entryCount] = false;
-                    this.emitOriginRef[entryCount] = Float.intBitsToFloat(t.localToken);
-                    this.emitLight[entryCount] = t.light;
-                    this.emitMemberKey[entryCount] = t.memberIdx>=0?t.memberIdx+1:-1;
-                    this.emitRingSpawn[entryCount] = false;
-                    totalSpawn += n;
-                    entryCount++;
+                if (n > 0 && !this.emitCommands.full()) {
+                    this.emitCommands.tracked(t.emitId,n,t.localToken,t.memberIdx>=0?t.memberIdx+1:-1,t.light);
                     t.remaining -= n;
                 }
                 if (t.remaining <= 0 || t.elapsed >= TrackingBurst.DURATION)
@@ -1329,180 +1272,46 @@ public final class CMIParticleEngine {
             if (n <= 0)
                 continue;
             int id = ensureEmitter(s.spec);
-            if (id < 0 || entryCount >= ParticleBuffers.MAX_EMIT_COMMANDS)
+            if (id < 0 || this.emitCommands.full())
                 continue;
             ensureEmitterRuntime(id, s.spec, s.origin);
-            this.emitIds[entryCount] = id;
-            this.emitCounts[entryCount] = n;
-            this.emitOrigins[entryCount] = s.origin;
-            this.emitTranslucent[entryCount] = isTranslucent(s.spec);
-            this.emitOriginRef[entryCount] = 0f;
-            this.emitLight[entryCount] = specSpawnLight(s.spec, s.origin);
-            this.emitMemberKey[entryCount] = 0;
-            this.emitRingSpawn[entryCount] = false;
-            totalSpawn += n;
-            entryCount++;
+            this.emitCommands.basic(id,n,s.origin,specSpawnLight(s.spec,s.origin));
         }
-        // Direct Hexcasting conjure particles (spawnStyle 5): one command per
-        // vanilla particle because each call can carry a different solid RGB
-        // color, velocity and gravity condition. The shared direct spec keeps
-        // emitter pressure constant; those per-particle values ride c slots.
-        EmitterSpec directHexSpec = HexSpecs.directSpec();
-        int directHexId = Integer.MIN_VALUE;
-        for (HexParticle hp : this.hexParticles) {
-            if (entryCount >= ParticleBuffers.MAX_EMIT_COMMANDS)
-                break;
-            if (directHexId == Integer.MIN_VALUE) {
-                Integer existing = this.emitterIds.get(directHexSpec);
-                if (existing != null) {
-                    directHexId = existing;
-                } else {
-                    directHexId = ensureEmitter(directHexSpec);
-                    if (directHexId >= 0)
-                        this.gpu.setEmitterHeader(directHexId, HexSpecs.packedDirectHeader(directHexSpec));
-                }
-            }
-            if (directHexId < 0)
-                break;
-            Vec3 origin = new Vec3(hp.x(), hp.y(), hp.z());
-            this.emitIds[entryCount] = directHexId;
-            this.emitCounts[entryCount] = 1;
-            this.emitOrigins[entryCount] = origin;
-            this.emitTranslucent[entryCount] = false; // additive
-            this.emitOriginRef[entryCount] = 0f;
-            this.emitLight[entryCount] = 0f;
-            this.emitMemberKey[entryCount] = 0;
-            this.emitRingSpawn[entryCount] = false;
-            this.emitHex[entryCount] = true;
-            this.emitHexDirect[entryCount] = true;
-            this.emitHexVel[entryCount] = new Vec3(hp.vx(), hp.vy(), hp.vz());
-            this.emitHexParams[entryCount] = packHexDirectColor(hp.color(), hp.gravity());
-            totalSpawn++;
-            entryCount++;
-        }
-        this.hexParticles.clear();
-
-        // Hexcasting conjure sprays (spawnStyle 4): ONE emit command per
-        // spray — the per-particle cone/fuzz sampling is GPU-side (emit.comp).
-        // Each distinct pigment wheel is a distinct spec (the colors ride the
-        // packed header's keyframe slots), so emitter dedupe collapses
-        // identical pigments; fresh ids get the style/colorMode header patch.
+        // Direct inputs are a separate bounded batch, not one shared command per particle.
+        if(hexInputWorld!=Minecraft.getInstance().level)hexParticles.clear();
+        int directHexCount=hexParticles.ready();
+        // Sprays use one stable behavior header; per-batch pigment data follows the command table.
+        int consumedSprays=0;
         for (HexSpray hs : this.hexSprays) {
-            if (entryCount >= ParticleBuffers.MAX_EMIT_COMMANDS)
+            if(hexTick-hs.bornTick()<0)break;
+            if (this.emitCommands.full())
                 break;
-            EmitterSpec spec = HexSpecs.specForWheel(hs.wheel());
-            int id;
-            Integer existing = this.emitterIds.get(spec);
-            if (existing != null) {
-                id = existing;
-            } else {
-                id = ensureEmitter(spec);
-                if (id < 0)
-                    continue;
-                this.gpu.setEmitterHeader(id, HexSpecs.packedHeader(spec));
-            }
-            Vec3 origin = new Vec3(hs.x(), hs.y(), hs.z());
-            ensureEmitterRuntime(id, spec, origin);
-            this.emitIds[entryCount] = id;
-            this.emitCounts[entryCount] = hs.count();
-            this.emitOrigins[entryCount] = origin;
-            this.emitTranslucent[entryCount] = false; // additive
-            this.emitOriginRef[entryCount] = 0f;
-            this.emitLight[entryCount] = 0f;
-            this.emitMemberKey[entryCount] = 0;
-            this.emitRingSpawn[entryCount] = false;
-            this.emitHex[entryCount] = true;
-            this.emitHexDirect[entryCount] = false;
-            this.emitHexVel[entryCount] = new Vec3(hs.vx(), hs.vy(), hs.vz());
-            this.emitHexParams[entryCount] = packHexParams(hs.fuzz(), hs.spread());
-            totalSpawn += hs.count();
-            entryCount++;
+            EmitterSpec spec = HexSpecs.spraySpec();
+            int id=sprayHexEmitter;
+            if(id<0)break;
+            if (!this.emitCommands.parameterized(id,hs.count(),hs.x(),hs.y(),hs.z(),
+                    hs.vx(),hs.vy(),hs.vz(),packHexParams(hs.fuzz(),hs.spread()),hs)) break;
+            consumedSprays++;
         }
-        this.hexSprays.clear();
 
         this.streamCount = this.streams.size();
 
-        // 3. Cap spawn request to the free pool (extra safety margin). The
-        // pool-usage estimate uses the (possibly stale) snapshot plus spawns
-        // since — overspawning is impossible: the GPU-side slot guard drops
-        // anything beyond capacity anyway.
-        // Compaction must move EVERY per-command array in lockstep: the c-slot
-        // metadata (light/memberBase/memberKey/ringSpawn or hex vel/params)
-        // selects its meaning per command, so a dropped entry here would pair
-        // surviving commands with stale slots' metadata (wrong member identity,
-        // blacked-out combat light, emitter flags leaking across types).
         if(this.packageParticles!=null && this.packageParticles.hasInput())
             this.packageEmitter=ensureEmitter(this.packageSpec);
-        int free = cap;
-        if (totalSpawn > free) {
-            double k = free <= 0 ? 0 : (double) free / totalSpawn;
-            totalSpawn = 0;
-            int w = 0;
-            for (int i = 0; i < entryCount; i++) {
-                int n = Math.max(0, (int) (this.emitCounts[i] * k));
-                if(this.storm.ringsRequested()&&this.emitRingSpawn[i]&&this.emitCounts[i]==128&&this.emitLight[i]>0&&this.emitMemberKey[i]>=0&&!this.emitHex[i])n=n>=128?128:0;
-                if (n > 0) {
-                    this.emitIds[w] = this.emitIds[i];
-                    this.emitCounts[w] = n;
-                    this.emitOrigins[w] = this.emitOrigins[i];
-                    this.emitTranslucent[w] = this.emitTranslucent[i];
-                    this.emitOriginRef[w] = this.emitOriginRef[i];
-                    this.emitLight[w] = this.emitLight[i];
-                    this.emitMemberBase[w] = this.emitMemberBase[i];
-                    this.emitMemberKey[w] = this.emitMemberKey[i];
-                    this.emitRingSpawn[w] = this.emitRingSpawn[i];
-                    this.emitHex[w] = this.emitHex[i];
-                    this.emitHexDirect[w] = this.emitHexDirect[i];
-                    this.emitHexVel[w] = this.emitHexVel[i];
-                    this.emitHexParams[w] = this.emitHexParams[i];
-                    totalSpawn += n;
-                    w++;
-                }
-            }
-            entryCount = w;
-        }
+        this.emitCommands.limitParticles(cap,this.storm.ringsRequested());
+        int entryCount=this.emitCommands.size(),totalSpawn=this.emitCommands.particles();
 
         // CPU limits submission work only; GPU allocation and dispatch determine the exact live set.
         int blockSpawnBound = this.blockEmitters.spawnBound(dt, Math.max(0.0, Math.min(1.0, this.scale)), cap);
         // Handoff for runDraws' empty-guard: final count after free-pool capping.
-        this.frameEntryCount = entryCount + (blockSpawnBound > 0 ? 1 : 0);
+        this.frameEntryCount = entryCount + (blockSpawnBound > 0 ? 1 : 0) + (directHexCount>0?1:0);
 
         // 4. Upload emit commands into the next ring slot + emitters.
         extractFrustum(projectionMatrix, view);
         int ringId = this.gpu.nextEmitBuffer();
         this.gpu.uploadDirtyEmitters();
-        if (entryCount > 0) {
-            this.emitFront.clear();
-            int prefix = 0;
-            for (int i = 0; i < entryCount; i++) {
-                Vec3 o = this.emitOrigins[i];
-                float seed = (((long) this.frameSeed * 2654435761L + i * 73856093L) >>> 8) % 1_000_000 * 0.000001f;
-                // a: origin.xyz + count (origin.xyz unused when originRef
-                // points at a pool particle — combat styles)
-                this.emitFront.put((float) o.x).put((float) o.y).put((float) o.z).put(this.emitCounts[i]);
-                // b: emitterId, seed, prefix (exclusive), originRef (0 = absolute)
-                this.emitFront.put(this.emitIds[i]).put(seed).put((float) prefix).put(this.emitOriginRef[i]);
-                // c: spawn-time packed light (combat), storm member index base
-                // (storm style 3), combat member key (c.z: memberIdx+1, 0 =
-                // legacy pool-index source; consumed only by combat styles 1/2),
-                // ring-spawn flag (c.w: storm growth members spawn on the ring).
-                // Hex commands (style 4/5) reuse all four: {vel.xyz b/s,
-                // intBitsToFloat(fuzz/spread or direct RGB+gravity)} — see
-                // emit.comp.
-                if (this.emitHex[i]) {
-                    this.emitFront.put((float) this.emitHexVel[i].x).put((float) this.emitHexVel[i].y)
-                            .put((float) this.emitHexVel[i].z).put(this.emitHexParams[i]);
-                } else {
-                    this.emitFront.put(this.emitLight[i]).put(this.emitMemberBase[i])
-                            .put((float) this.emitMemberKey[i]).put(this.emitRingSpawn[i] ? 1f : 0f);
-                }
-                // b.z carries the exclusive prefix offset so the shader can
-                // binary-search its command instead of scanning linearly
-                prefix += this.emitCounts[i];
-            }
-            this.emitFront.flip();
-            this.gpu.uploadEmits(ringId, this.emitFront);
-        }
+        if (entryCount > 0)
+            this.gpu.uploadEmits(ringId,this.emitCommands.encode(this.frameSeed));
 
         // 4b. Upload pending melee-damage entries (see enqueueDamage). Frames
         // without clicks skip the upload entirely; a frame with entries
@@ -1528,24 +1337,23 @@ public final class CMIParticleEngine {
         // Every material submits indirect draws. Empty GPU counts perform no particle work.
         boolean fateActive = this.sharedFate.prepare(camera.getPosition(), deltaTracker.getGameTimeDeltaPartialTick(false));
         boolean partitionActive = this.partition.prepare(camera.getPosition());
-        boolean createsParticles = totalSpawn > 0 || blockSpawnBound > 0 || fateActive || partitionActive
+        boolean createsParticles = totalSpawn > 0 || directHexCount>0 || blockSpawnBound > 0 || fateActive || partitionActive
                 || (this.packageParticles!=null && this.packageParticles.hasInput() && this.packageEmitter>=0);
         if (!this.poolMayBeAlive && !createsParticles) {
             this.frameIdle = true;
+            this.frameCoordinator.abort();
             return;
         }
         boolean sorted = true;
         this.frameSorted = true;
-        this.computeTimer.ensureCreated();
         boolean packageStaged=false;
+        this.frameCoordinator.simulate();
         // From the timer-query begin to the phase-tail bookkeeping everything
         // runs under try/finally: a mid-phase failure ends the partial bracket,
         // restores program/VAO/SSBO/texture state, and skips the pool
         // swap — the last fully-written pool stays the next read source.
-        boolean queryActive = false;
         try {
-            if (this.computeTimer.begin())
-                queryActive = true;
+            if(this.storm.active())this.gpu.ensureStormIdentities();
             this.gpu.ensureCarrierCapacity(this.storm.carrierCount());
             if(this.storm.active()||this.storm.starfallGpu().bytes()>0)this.storm.starfallGpu().prepare(this.committedGeneration+1);
             ParticleDiagnostics.INSTANCE.mark("reset_grid");
@@ -1560,7 +1368,7 @@ public final class CMIParticleEngine {
             ParticleDispatch.prepare(this.programs, 0);
             GL20.glUseProgram(this.programs.reset());
             this.gpu.bindPopulationWrite(this.programs.reset(),committedGeneration+1);
-            this.storm.starfallGpu().bind(this.programs.reset(),true);
+            StormParticleAccess.bindWaves(this.storm.starfallGpu(),this.programs.reset(),true);
             this.gpu.bindIndirect(2);
             this.gpu.bindCounter(3, slot);
             // reset.comp also re-arms the hit query to MISS -- EVERY binding a
@@ -1625,6 +1433,8 @@ public final class CMIParticleEngine {
             }
 
             setFloatUniform(this.programs.update(), "uDt", dt);
+            setUIntUniform(this.programs.update(),"uHexCurrentTick",hexTick);
+            setIntUniform(this.programs.update(),"uHexTickReady",1);
             setFloatUniform(this.programs.update(), "uTimeSec", this.timeSec());
             // all synced players feed the repulsion (vanilla entity sync — no
             // extra packets); nearest 16 by distance to the storm anchor
@@ -1641,7 +1451,7 @@ public final class CMIParticleEngine {
             setFloatUniform(this.programs.update(), "uStormConvPhase", this.storm.convPhase());
             setFloatUniform(this.programs.update(), "uStormConvRate", this.storm.convRate());
             // dive-wave squads (staging rebuilt by refreshWaves above)
-            this.storm.starfallGpu().bind(this.programs.update(),true);
+            StormParticleAccess.bindWaves(this.storm.starfallGpu(),this.programs.update(),true);
             setVec4ArrayUniform(this.programs.update(), "uWave", this.storm.waveUniform());
             setVec4ArrayUniform(this.programs.update(), "uWaveTarget", this.storm.waveTargetUniform());
             setVec4ArrayUniform(this.programs.update(), "uWavePath", this.storm.wavePathUniform());
@@ -1652,16 +1462,17 @@ public final class CMIParticleEngine {
             // kill was consumed by this dispatch must refire next frame or the
             // untouched storm members would survive on a never-rebuilt grid.
 
+            this.frameCoordinator.generate();
             ParticleDiagnostics.INSTANCE.mark("emit");
             if (entryCount > 0) {
                 if(this.storm.ringsRequested()){
-                    int reserve=this.programs.ringReserve();GL20.glUseProgram(reserve);this.storm.starfallGpu().bind(reserve,true);
+                    int reserve=this.programs.ringReserve();GL20.glUseProgram(reserve);StormParticleAccess.bindWaves(this.storm.starfallGpu(),reserve,true);
                     this.gpu.bindCounter(3,slot);this.gpu.bindEmitBuffer(4,ringId);this.gpu.bindEmitters(5);
                     setUIntUniform(reserve,"uEmitCount",entryCount);setUIntUniform(reserve,"uCapacity",cap);setFloatUniform(reserve,"uTimeSec",this.timeSec());
                     GL43.glDispatchCompute((entryCount+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
                 }
                 GL20.glUseProgram(this.programs.emit());
-                this.storm.starfallGpu().bind(this.programs.emit(),true);
+                StormParticleAccess.bindWaves(this.storm.starfallGpu(),this.programs.emit(),true);
                 setFloatUniform(this.programs.emit(),"uTimeSec",this.timeSec());
             this.gpu.bindIdentities(this.programs.emit());
                 this.gpu.bindPopulationRead(this.programs.emit());
@@ -1673,8 +1484,12 @@ public final class CMIParticleEngine {
                 this.gpu.bindEmitBuffer(4, ringId);
                 this.gpu.bindEmitters(5);
                 this.gpu.bindMemberMap(); // combat styles resolve member-keyed origins through it
+                setUIntUniform(this.programs.emit(), "uDirectHexBatch", 0);
+                setUIntUniform(this.programs.emit(),"uHexCurrentTick",hexTick);
+                setIntUniform(this.programs.emit(),"uHexTickReady",1);
                 setUIntUniform(this.programs.emit(), "uTotalSpawn", totalSpawn);
                 setUIntUniform(this.programs.emit(), "uEmitCount", entryCount);
+                setUIntUniform(this.programs.emit(),"uHexParameterBase",entryCount*ParticleBuffers.EMIT_ENTRY_FLOATS);
 
                 // storm style 3 (analytic spawn): instance seed + the
                 // growth-law phases (the spawn state IS the servo's
@@ -1686,6 +1501,26 @@ public final class CMIParticleEngine {
                 setFloatUniform(this.programs.emit(), "uStormConvRate", this.storm.convRate());
                 GL43.glDispatchCompute(Math.max(1, (totalSpawn + 63) / 64), 1, 1);
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+            }
+
+            if(directHexCount>0){
+                int program=programs.emit();
+                var records=hexParticles.encode(directHexEmitter,frameSeed);
+                int buffer=hexDirectStorage.ensure((long)records.remaining()*4);
+                GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
+                GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,records);
+                GL20.glUseProgram(program);
+                gpu.bindParticleWrite(1);gpu.bindCounter(3,slot);gpu.bindEmitters(5);
+                GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,4,buffer);
+                gpu.beginBindings();
+                setUIntUniform(program,"uTotalSpawn",directHexCount);
+                setUIntUniform(program,"uEmitCount",directHexCount);
+                setUIntUniform(program,"uDirectHexBatch",1);
+                setUIntUniform(program,"uHexCurrentTick",hexTick);
+                setIntUniform(program,"uHexTickReady",1);
+                try{GL43.glDispatchCompute((directHexCount+63)/64,1,1);}
+                finally{setUIntUniform(program,"uDirectHexBatch",0);}
+                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             }
 
             if (blockSpawnBound > 0) {
@@ -1712,12 +1547,12 @@ public final class CMIParticleEngine {
             }
 
             if (fateActive) {
-                this.sharedFate.generate(this.gpu, this, slot, view, projectionMatrix, this.frustumPlanes, (float)this.scale);
+                this.sharedFate.generate(this.appendTarget, slot, view, projectionMatrix, this.frustumPlanes, (float)this.scale);
                 this.gpu.beginBindings();
                 this.gpu.bindDispatch();
             }
             if(partitionActive) {
-                this.partition.generate(this.gpu,this,slot,view,projectionMatrix,this.frustumPlanes,(float)this.scale);
+                this.partition.generate(this.appendTarget,slot,view,projectionMatrix,this.frustumPlanes,(float)this.scale);
                 this.gpu.beginBindings();
             }
             if(this.packageParticles!=null && this.packageParticles.needsStage()) {
@@ -1737,6 +1572,7 @@ public final class CMIParticleEngine {
             // 6. keygen: GPU frustum cull + partition of both permutations. Runs in
             //    BOTH paths (it is the fast path's cull pass); it owns the draw
             //    counts, so update/emit never touch the indirect buffer.
+            this.frameCoordinator.cullSort();
             int finalPerm = -1;
             ParticleDiagnostics.INSTANCE.mark("keygen");
             // Shared Fate and package compute passes reuse the counter/indirect SSBO slots.
@@ -1773,7 +1609,7 @@ public final class CMIParticleEngine {
                 setUIntUniform(kg, "uCarrierBase", this.gpu.carrierBase());
                 setUIntUniform(kg,"uCarrierLimit",this.gpu.carrierCapacity());
                 setFloatUniform(kg, "uTimeSec", this.timeSec());
-                this.storm.starfallGpu().bind(kg,true);
+                StormParticleAccess.bindWaves(this.storm.starfallGpu(),kg,true);
                 setVec4ArrayUniform(kg, "uWave", this.storm.waveUniform());
                 setVec4ArrayUniform(kg, "uWaveTarget", this.storm.waveTargetUniform());
                 setFloatArrayUniform(kg, "uWaveTier", this.storm.waveTierUniform());
@@ -1902,19 +1738,7 @@ public final class CMIParticleEngine {
             GL43.glDispatchCompute(1, 1, 1);
             GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_COMMAND_BARRIER_BIT
                     | GL42.GL_TEXTURE_FETCH_BARRIER_BIT | GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-            if (queryActive) {
-                this.computeTimer.endBracket();
-                queryActive = false;
-                // Collect the oldest sample in the compute ring (issued
-                // TIMER_RING-1 phases ago, virtually always complete): the
-                // true GPU-side cost of this phase. Never blocks — skipped
-                // when the GPU runs that far behind. Skipped with the bracket
-                // when a foreign query owned the target: this slot was not
-                // issued, so there is nothing to collect and the previous
-                // sample stands. The draw ring polls itself after runDraws;
-                // endFrame sums both as the throttle input.
-                this.computeTimer.rotateAndPoll();
-            }
+
 
 
             // 8. Swap the ping-pong pool — success only: an aborted phase keeps
@@ -1956,9 +1780,10 @@ public final class CMIParticleEngine {
             this.dmgClearNext = this.dmgPending;
             this.dmgPending = false;
             this.dmgCount = 0;
-            this.frameArmed = true;
             this.committedGeneration++;
             this.gpu.commitPopulation(this.committedGeneration);
+            this.hexParticles.commit();
+            if(consumedSprays>0)this.hexSprays.subList(0,consumedSprays).clear();
             this.storm.commitStarfall();
             if (createsParticles) {
                 this.lastCreationGeneration = this.committedGeneration;
@@ -1980,19 +1805,14 @@ public final class CMIParticleEngine {
                     this.storm.dropWaveContact();
                 }
             }
+            if(packageStaged&&this.packageParticles.committedPoolBuffer()!=this.gpu.particleReadBufferId())
+                throw new IllegalStateException("Package output belongs to a different particle pool");
+            this.frameCoordinator.publish(this.committedGeneration,this.gpu.particleReadBufferId(),Math.max(0,finalPerm),
+                    this.gpu.indirectBufferId(),this.gpu.counterBufferId(slot),this.gpu.populationBufferId(this.committedGeneration),
+                    this.committedGeneration,this.storm.starfallGpu().committedGeneration(),packageStaged?this.committedGeneration:-1);
+            this.frameArmed = true;
         } finally {
             this.storm.starfallGpu().abort();
-            if (queryActive) {
-                // Mid-phase failure: end the partial bracket so the query object
-                // stays reusable, and leave the ring cursor alone — the slot is
-                // simply reused (its partial result overwritten) next phase
-                // rather than feeding a bogus time into the throttle.
-                try {
-                    this.computeTimer.endBracket();
-                } catch (RuntimeException | LinkageError ignoredCleanup) {
-                    // context is going away; nothing further to do
-                }
-            }
             this.gpu.restoreCommittedFrame();
             if(this.packageParticles!=null)this.packageParticles.abort();
             // Restore the exact post-phase state the success path leaves behind.
@@ -2047,7 +1867,6 @@ public final class CMIParticleEngine {
         private void runDraws(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix) {
             CMIParticleEngine.this.gpu.beginBindings();
             boolean queryActive = false;
-            CMIParticleEngine.this.drawTimer.ensureCreated();
             try {
                 if (CMIParticleEngine.this.drawTimer.begin())
                     queryActive = true;
@@ -2074,7 +1893,7 @@ public final class CMIParticleEngine {
                         drawPass(2, view, projectionMatrix, camera);
                     }
                     ParticleDiagnostics.INSTANCE.mark("draw_hex");
-                    if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.drawWorld();
+                    if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.drawWorld();
                     ParticleDiagnostics.INSTANCE.mark("draw_additive");
                     drawPass(0, view, projectionMatrix, camera);
                     ParticleDiagnostics.INSTANCE.mark("draw_cleanup");
@@ -2087,18 +1906,14 @@ public final class CMIParticleEngine {
                 CMIParticleEngine.this.hookPackagesDrawn = false;
 
                 if (queryActive) {
-                    // Skipped with the bracket when a foreign query owned the
-                    // target: this slot was not issued, so the previous sample
-                    // stands (same discipline as the compute tail).
-                    CMIParticleEngine.this.drawTimer.endBracket();
+                    CMIParticleEngine.this.drawTimer.end(true);
                     queryActive = false;
-                    CMIParticleEngine.this.drawTimer.rotateAndPoll();
                 }
             } finally {
                 if (queryActive) {
                     // Same partial-bracket discipline as the compute phase.
                     try {
-                        CMIParticleEngine.this.drawTimer.endBracket();
+                        CMIParticleEngine.this.drawTimer.end(false);
                     } catch (RuntimeException | LinkageError ignoredCleanup) {
                         // context is going away; nothing further to do
                     }
@@ -2172,7 +1987,7 @@ public final class CMIParticleEngine {
             if (prog == 0)
                 return;
             GL20.glUseProgram(prog);
-            CMIParticleEngine.this.storm.starfallGpu().bind(prog,false);
+            StormParticleAccess.bindWaves(CMIParticleEngine.this.storm.starfallGpu(),prog,false);
             setFloatUniform(prog,"uTimeSec",CMIParticleEngine.this.timeSec());
             CMIParticleEngine.this.gpu.bindModelDrawInputs(mainPermutation());
 
@@ -2215,7 +2030,7 @@ public final class CMIParticleEngine {
          * (zeroed staging); the UV table is a constant of the atlas layout.
          */
         private void uploadStormItemUniforms(int prog) {
-            CMIParticleEngine.this.storm.starfallGpu().bind(prog,false);
+            StormParticleAccess.bindWaves(CMIParticleEngine.this.storm.starfallGpu(),prog,false);
             setVec4ArrayUniform(prog, "uWave", CMIParticleEngine.this.storm.waveUniform());
             setVec4ArrayUniform(prog, "uWaveTarget", CMIParticleEngine.this.storm.waveTargetUniform());
             setFloatArrayUniform(prog, "uWaveTier", CMIParticleEngine.this.storm.waveTierUniform());
@@ -2237,7 +2052,7 @@ public final class CMIParticleEngine {
             if (prog == 0)
                 return;
             GL20.glUseProgram(prog);
-            CMIParticleEngine.this.storm.starfallGpu().bind(prog,false);
+            StormParticleAccess.bindWaves(CMIParticleEngine.this.storm.starfallGpu(),prog,false);
             setFloatUniform(prog,"uTimeSec",CMIParticleEngine.this.timeSec());
             CMIParticleEngine.this.gpu.bindBillboardDrawInputs(mode, mainPermutation());
             CMIParticleEngine.this.sharedFate.bindDrawInputs();
@@ -2272,6 +2087,8 @@ public final class CMIParticleEngine {
                 }
                 setIntUniform(prog, "uLightmap", 2);
             } else {
+                setFloatUniform(prog,"uHexPartialTick",Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(false));
+                setIntUniform(prog,"uHexTickReady",1);
                 setFloatUniform(prog, "uGlow", 1.0f);
             }
             setFloatUniform(prog, "uFadeDist", (float) ClientConfig.particleFadeDistance);
@@ -2962,7 +2779,7 @@ public final class CMIParticleEngine {
      * so freshly arrived storm state of the new level is never wiped by this.
      */
     public void onLevelChanged() {
-        if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.requestReload();
+        if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.requestReload();
         if (this.initialized) {
             dropAll();
             this.collisionBake.reset();
@@ -3033,11 +2850,9 @@ public final class CMIParticleEngine {
         return this.initialized;
     }
 
-    public static void clearUniformProgram(int program){INSTANCE.uniformLocations.remove(program);}
+    public static void clearUniformProgram(int program){INSTANCE.uniformLocations.retire(program);}
     public static int loc(int prog, String name) {
-        return INSTANCE.uniformLocations
-                .computeIfAbsent(prog, p -> new HashMap<>())
-                .computeIfAbsent(name, n -> GL20.glGetUniformLocation(prog, n));
+        return INSTANCE.uniformLocations.location(prog, name);
     }
 
     public static void setUIntUniform(int prog, String name, int value) {

@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.lwjgl.opengl.*;
@@ -15,8 +17,8 @@ public final class PackageFreezeDiagnosticsGpu implements AutoCloseable {
     private long step,sequence,nextCapture;
     private int offset;
     private boolean closed;
-    public static boolean supported(){return GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS)>15
-            &&GL11.glGetInteger(GL43.GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS)>=9;}
+    public static boolean supported(){return GpuCapabilities.current().storageBindings()>15
+            &&GpuCapabilities.current().computeStorageBlocks()>=9;}
     public PackageFreezeDiagnosticsGpu(int capacity,Function<String,String> sources){
         if(!supported())throw new IllegalStateException("Device cannot fit the optional freeze diagnostic SSBO; base physics remains supported");
         this.capacity=capacity;int state=0,out=0,linked=0;PackageReadbackRing readback=null;
@@ -36,7 +38,7 @@ public final class PackageFreezeDiagnosticsGpu implements AutoCloseable {
         for(int i=0;i<captureLocations.length;i++)captureLocations[i]=GL20.glGetUniformLocation(program,CAPTURE_UNIFORMS[i]);
     }
     private static int buffer(int bytes){
-        if(bytes<=0||bytes>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))throw new IllegalArgumentException("Freeze storage size");
+        if(bytes<=0||bytes>GpuCapabilities.current().storageBlockBytes())throw new IllegalArgumentException("Freeze storage size");
         int id=GL15.glGenBuffers();if(id==0)throw new IllegalStateException("Freeze buffer allocation failed");
         try{GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);
             if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)throw new IllegalStateException("Freeze buffer storage allocation failed");

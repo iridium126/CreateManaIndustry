@@ -19,7 +19,7 @@
 - shaderpack 绘制准备复用 GPU 可见性判定并缓存不变的传动轮掩码；状态边界只保存包裹绘制实际修改的 GL 状态。见[绘制性能优化基准](benchmarks/package-render-optimization-2026-10-04.md)。
 - 传动轮移除或变形会立即撤销该轮的客户端绘制准入，由服务端按轨道退役其租约并回传确认姿态；不会因此暂停共享 GPU 会话中的自由包裹或其他传动轮。
 - 自由与锁链使用独立时钟和渲染插值；自由场景等待几何或力输入时，锁链继续推进。
-- 自由包裹由 `PackageLightObserverClient` 呈现，协议为 `gpu-packages-14` / `gpu-package-observers-5`。暂停时显示最后确认姿态；普通与 Iris 渲染使用一致的面亮度规则。
+- 自由包裹由 `PackageLightObserverClient` 呈现，协议为 `gpu-packages-15` / `gpu-package-observers-5`。暂停时显示最后确认姿态；普通与 Iris 渲染使用一致的面亮度规则。
 
 - 自由包裹已接入 CPU 分项诊断、共享几何预算、按 domain/bank 发布和版本预取；物理使用稳定活动索引、整场景睡眠与 moving 候选，环境计时继续推进。见[逐项优化与基准](benchmarks/package-priority-optimization-2026-10-09.md)。
 
@@ -36,3 +36,5 @@
 
 
 空 section 独立覆盖、原生环境批次与当前未完成的行为验收范围见 [协议 14 环境实现说明](gpu-package-environment-14.md)。
+
+权威环境区域合包的布局、生命周期及未完成项见[协议 15](gpu-package-protocol-15.md)。

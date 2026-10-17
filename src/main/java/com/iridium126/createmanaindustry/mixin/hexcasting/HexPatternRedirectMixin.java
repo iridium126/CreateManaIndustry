@@ -12,6 +12,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class HexPatternRedirectMixin {
     @Inject(method = "renderCastingStack", at = @At("HEAD"), cancellable = true)
     private static void cmi$gpuPatterns(PoseStack pose, Player player, float partialTick, CallbackInfo ci) {
-        if (com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.castingStack(pose,player,partialTick)) ci.cancel();
+        if (com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.castingStack(pose,player,partialTick)) ci.cancel();
     }
 }

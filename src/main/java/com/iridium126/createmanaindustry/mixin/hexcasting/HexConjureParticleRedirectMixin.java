@@ -3,40 +3,32 @@ package com.iridium126.createmanaindustry.mixin.hexcasting;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 
 import at.petrak.hexcasting.common.particles.ConjureParticleOptions;
-import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.particle.Particle;
+import net.minecraft.client.particle.ParticleEngine;
 import net.minecraft.core.particles.ParticleOptions;
-import net.minecraft.world.phys.Vec3;
 
 /**
- * Captures every client-side ingress for Hexcasting's custom
- * {@code hexcasting:conjure_particle}. Hex uses the six-argument overload for
- * local/client effects and the limiter-aware seven-argument overload for
- * server particle packets, so both must be covered to make the redirection
- * complete without changing any other particle type.
+ * Intercepts creation after LevelRenderer has applied distance/particle settings
+ * and overrideLimiter. Rejecting GPU admission preserves the original provider.
  */
-@Mixin(ClientLevel.class)
+@Mixin(ParticleEngine.class)
 public class HexConjureParticleRedirectMixin {
+    @Inject(method="tick()V",at=@At("TAIL"))
+    private void cmi$nativeParticleTick(CallbackInfo ignored){CMIParticleEngine.INSTANCE.nativeParticleTick();}
 
-    @Inject(method = "addParticle(Lnet/minecraft/core/particles/ParticleOptions;DDDDDD)V",
+    @Inject(method = "createParticle(Lnet/minecraft/core/particles/ParticleOptions;DDDDDD)Lnet/minecraft/client/particle/Particle;",
             at = @At("HEAD"), cancellable = true)
     private void cmi$redirectConjureParticle(ParticleOptions options, double x, double y, double z,
-            double xd, double yd, double zd, CallbackInfo ci) {
+            double xd, double yd, double zd, CallbackInfoReturnable<Particle> ci) {
         if (redirect(options, x, y, z, xd, yd, zd))
-            ci.cancel();
-    }
-
-    @Inject(method = "addParticle(Lnet/minecraft/core/particles/ParticleOptions;ZDDDDDD)V",
-            at = @At("HEAD"), cancellable = true)
-    private void cmi$redirectConjureParticleWithLimiter(ParticleOptions options, boolean overrideLimiter,
-            double x, double y, double z, double xd, double yd, double zd, CallbackInfo ci) {
-        if (redirect(options, x, y, z, xd, yd, zd))
-            ci.cancel();
+            ci.setReturnValue(null);
     }
 
     private static boolean redirect(ParticleOptions options, double x, double y, double z,
@@ -46,7 +38,6 @@ public class HexConjureParticleRedirectMixin {
         CMIParticleEngine engine = CMIParticleEngine.INSTANCE;
         if (!engine.available())
             return false; // retain the vanilla provider during engine startup/failure
-        engine.spawnHexParticle(new Vec3(x, y, z), new Vec3(xd, yd, zd), conjure.color());
-        return true;
+        return engine.trySpawnHexParticle(x,y,z,xd,yd,zd,conjure.color());
     }
 }

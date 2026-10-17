@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.ByteBuffer;
 import java.util.function.Function;
 import org.lwjgl.opengl.*;
@@ -49,8 +51,9 @@ public final class PackagePhysicsGpu implements AutoCloseable {
     private int fastCells,longBodies;
     private PackageEnvironmentGpu environment;
     private PackageFreezeDiagnosticsGpu freezeDiagnostics;
-    public PackageEnvironmentGpu enableEnvironment(Function<String,String> sources){ensureOpen();if(environment==null){
-        environment=new PackageEnvironmentGpu(capacity,sources);environment.motionMirror(links,capacity*3+8);environment.freezeDiagnostics(freezeDiagnostics);
+    public PackageEnvironmentGpu enableEnvironment(Function<String,String> sources){return enableEnvironment(sources,capacity);}
+    PackageEnvironmentGpu enableEnvironment(Function<String,String> sources,int historyPages){ensureOpen();if(environment==null){
+        environment=new PackageEnvironmentGpu(capacity,historyPages,sources);environment.motionMirror(links,capacity*3+8);environment.freezeDiagnostics(freezeDiagnostics);
         for(int i=0;i<programs.length;i++)GL41.glProgramUniform1i(programs[i],locations[i][26],1);
     }return environment;}
     public PackageEnvironmentGpu environment(){return environment;}
@@ -102,8 +105,8 @@ public final class PackagePhysicsGpu implements AutoCloseable {
         preparedMask=new boolean[capacity];
         tableSize=Integer.highestOneBit(Math.max(64,capacity-1))<<1;
         indexSize=Math.min(tableSize,MIN_INDEX_BUCKETS);
-        if((tableSize+63)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0)
-                || (long)capacity*BODY_BYTES>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))
+        if((tableSize+63)/64>GpuCapabilities.current().computeGroupsX()
+                || (long)capacity*BODY_BYTES>GpuCapabilities.current().storageBlockBytes())
             throw new IllegalArgumentException("Package buffers exceed device limits");
         try {
             boolean diagnosticSupported=PackageFreezeDiagnosticsGpu.supported();

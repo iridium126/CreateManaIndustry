@@ -67,11 +67,8 @@ public final class CMIPackEntityMergeHook {
 
     private static final ShaderPackProgramCompiler COMPILER = new ShaderPackProgramCompiler();
 
-    /** GL_TIME_ELAPSED ring for this window's GPU cost (never blocks). */
-    private static final int[] TIMER_QUERIES = new int[4];
-    private static int timerSlot = 0;
-    private static int timerIssued = 0;
-    private static boolean timerReady = false;
+    private static final com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing MERGE_TIMER=
+            new com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing(4);
 
     /** Uniform-location cache (program id -> name -> location). */
     private static final Map<Integer, Map<String, Integer>> UNIFORMS = new HashMap<>();
@@ -82,7 +79,7 @@ public final class CMIPackEntityMergeHook {
     private static final PackageDrawTelemetry SHADOW_PREP_TIMING=new PackageDrawTelemetry();
     private static ParticleComputeState shadowComputeState;
     private static PackageRenderState shadowDrawState;
-    public static void invalidateShadow(){if(MODEL_SHADOW!=null)MODEL_SHADOW.close();MODEL_SHADOW=null;SHADOW_PREP_TIMING.close();}
+    public static void invalidateShadow(){if(MODEL_SHADOW!=null)MODEL_SHADOW.close();MODEL_SHADOW=null;SHADOW_PREP_TIMING.close();MERGE_TIMER.close();}
     private CMIPackEntityMergeHook() {}
 
     // ------------------------------------------------------------------
@@ -102,17 +99,9 @@ public final class CMIPackEntityMergeHook {
             if (!ensureCompiledWithListener())
                 return; // sticky failure recorded; the engine's plain AFTER_LEVEL path takes over
 
-            // The finally is load-bearing: a drawEntities throw with the
-            // bracket open would leave this query ACTIVE forever, failing
-            // every later glBeginQuery on the target with GL_INVALID_OPERATION
-            // ("Cannot begin query on an active query object").
-            boolean timed = beginTimer(engine);
-            try {
-                drawEntities(engine);
-            } finally {
-                if (timed)
-                    endTimer(engine);
-            }
+            boolean timed=beginTimer(engine),succeeded=false;
+            try {drawEntities(engine);succeeded=true;}
+            finally {if(timed)endTimer(succeeded);}
 
             // Latch even when this frame's instance count is zero: skipping the
             // L0 drawModels then costs nothing (it would submit the same empty
@@ -185,7 +174,7 @@ public final class CMIPackEntityMergeHook {
                     RenderSystem.enableDepthTest();RenderSystem.disableBlend();RenderSystem.depthMask(true);RenderSystem.enableCull();bindAtlas(engine,COMPILER.shadowGtextureUnit());
                     uploadSegmentMode(shader.getId(),engine,0);gpu.drawModelCutout();uploadSegmentMode(shader.getId(),engine,2);gpu.drawModelCarrier();uploadSegmentMode(shader.getId(),engine,0);gpu.drawModelGhost();
                 }finally{if(applied)shader.clear();}
-                engine.shaderPackShadowStatus="active (frame="+engine.renderFrameToken()+", generation="+engine.currentGeneration()+", age=0, storage="+MODEL_SHADOW.bytes()+"B; "+SHADOW_PREP_TIMING.report()+")";
+                engine.shaderPackShadowStatus="active (frame="+engine.renderFrameToken()+", generation="+engine.currentGeneration()+", age=0; "+SHADOW_PREP_TIMING.report()+")";
             }finally{
                 if(depth)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();if(blend)RenderSystem.enableBlend();else RenderSystem.disableBlend();if(cull)RenderSystem.enableCull();else RenderSystem.disableCull();RenderSystem.depthMask(depthMask);
                 captured.setCurrentAlphaTest(alpha);
@@ -423,32 +412,13 @@ public final class CMIPackEntityMergeHook {
     // Timer ring (never blocks)
     // ------------------------------------------------------------------
 
-    /**
-     * Begins a timer bracket ONLY when the GL_TIME_ELAPSED target is free
-     * (vanilla's Alt+F3 profiler and other timer users can own it); returns
-     * false when the bracket was skipped — the caller must then not run
-     * {@link #endTimer}, which would end the foreign query or error.
-     */
     private static boolean beginTimer(CMIParticleEngine engine) {
-        if (!timerReady) {
-            GL30.glGenQueries(TIMER_QUERIES);
-            timerReady = true;
-        }
-        if (ParticleGLUtil.activeTimeElapsedQuery() != 0)
-            return false;
-        GL15.glBeginQuery(GL33.GL_TIME_ELAPSED, TIMER_QUERIES[timerSlot]);
-        return true;
+        MERGE_TIMER.poll();
+        if(MERGE_TIMER.sampled())engine.addExternalGpuMs(MERGE_TIMER.lastMs());
+        return MERGE_TIMER.begin();
     }
 
-    private static void endTimer(CMIParticleEngine engine) {
-        GL15.glEndQuery(GL33.GL_TIME_ELAPSED);
-        timerSlot = (timerSlot + 1) % TIMER_QUERIES.length;
-        if (++timerIssued >= TIMER_QUERIES.length) {
-            int oldest = TIMER_QUERIES[timerSlot];
-            if (GL15.glGetQueryObjecti(oldest, GL15.GL_QUERY_RESULT_AVAILABLE) == GL11.GL_TRUE)
-                engine.addExternalGpuMs(GL15.glGetQueryObjectui(oldest, GL15.GL_QUERY_RESULT) / 1_000_000.0);
-        }
-    }
+    private static void endTimer(boolean publish) {MERGE_TIMER.end(publish);}
 
     // ------------------------------------------------------------------
     // Uniform helpers

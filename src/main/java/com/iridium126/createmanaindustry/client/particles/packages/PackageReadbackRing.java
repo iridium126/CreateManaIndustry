@@ -12,9 +12,10 @@ public final class PackageReadbackRing implements AutoCloseable {
     /** Bytes are borrowed until the callback returns; decoding/transport must not retain this buffer. */
     public record Snapshot(long epoch,long sequence,long submittedNanos,ByteBuffer bytes) {}
     private static final class Slot {
-        int buffer;
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer storage;
         long fence,epoch,sequence,submittedNanos;
         int length;
+        int headerBytes, recordBytes, maxRecords;
         boolean copied;
     }
     private final Slot[] slots=new Slot[SLOTS];
@@ -28,14 +29,18 @@ public final class PackageReadbackRing implements AutoCloseable {
         this.bytes=bytes;scratch=BufferUtils.createByteBuffer(bytes);
         try {
             for(int i=0;i<SLOTS;i++) {
-                Slot slot=new Slot();slots[i]=slot;slot.buffer=GL15.glGenBuffers();
-                GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,slot.buffer);
-                GL15.glBufferData(GL31.GL_COPY_WRITE_BUFFER,bytes,GL15.GL_STREAM_READ);
+                Slot slot=new Slot();slots[i]=slot;
+                slot.storage=new com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer(bytes);
             }
         }catch(RuntimeException failure){close();throw failure;}
     }
     public boolean submit(int source,long epoch,long sequence) {
         return submit(source,0,bytes,epoch,sequence);
+    }
+    /** Render-thread capture target, or zero under backpressure. Submit it before any other ring operation. */
+    public int writableCaptureBuffer() {
+        open();
+        return pending==SLOTS?0:slots[next].storage.id();
     }
     /** Bounded fragments of an immutable capture; never copies unused maximum-capacity records. */
     public boolean submit(int source,long sourceOffset,int length,long epoch,long sequence) {
@@ -45,14 +50,27 @@ public final class PackageReadbackRing implements AutoCloseable {
         if(sequence<0 || sequence<=lastSequence)throw new IllegalArgumentException("Snapshot sequence must increase");
         if(pending==SLOTS)return false;
         Slot slot=slots[next];
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,source);
-        GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,slot.buffer);
-        GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,sourceOffset,0,length);
+        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        if(source!=slot.storage.id()) {
+            GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,source);
+            GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,slot.storage.id());
+            GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,sourceOffset,0,length);
+        } else if(sourceOffset!=0)throw new IllegalArgumentException("In-place capture offset");
         long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);
         if(fence==0)throw new IllegalStateException("Package snapshot fence allocation failed");
         slot.epoch=epoch;slot.sequence=sequence;slot.length=length;slot.copied=false;slot.submittedNanos=System.nanoTime();slot.fence=fence;
+        slot.headerBytes=slot.recordBytes=slot.maxRecords=0;
         lastSequence=sequence;next=(next+1)%SLOTS;pending++;
+        return true;
+    }
+    /** Freeze a bounded capture; after its fence only the header and populated records are downloaded. */
+    public boolean submitCounted(int source,int headerBytes,int recordBytes,int maxRecords,long epoch,long sequence) {
+        if(headerBytes<4||recordBytes<=0||maxRecords<0
+                ||(long)headerBytes+(long)recordBytes*maxRecords>bytes)
+            throw new IllegalArgumentException("Invalid counted package snapshot layout");
+        if(!submit(source,0,Math.addExact(headerBytes,Math.multiplyExact(recordBytes,maxRecords)),epoch,sequence))return false;
+        Slot slot=slots[(next-1+SLOTS)%SLOTS];
+        slot.headerBytes=headerBytes;slot.recordBytes=recordBytes;slot.maxRecords=maxRecords;
         return true;
     }
     /** Zero timeout; stale epochs are retired without decoding after their copies finish. */
@@ -75,8 +93,27 @@ public final class PackageReadbackRing implements AutoCloseable {
             // FIFO stops on refusal, so scratch remains this exact immutable slot. A full
             // journal must not cause the same <=1MiB GPU download on every subsequent frame.
             if(!slot.copied) {
-                scratch.clear().limit(slot.length);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,slot.buffer);
-                GL15.glGetBufferSubData(GL31.GL_COPY_READ_BUFFER,0,scratch);slot.copied=true;PackageCpuDiagnostics.downloaded(slot.length);
+                if(slot.headerBytes==0) {
+                    scratch.clear().limit(slot.length);
+                    slot.storage.readCompleted(0,slot.length,scratch);
+                    PackageCpuDiagnostics.downloaded(slot.length);
+                } else {
+                    scratch.clear().limit(slot.headerBytes);
+                    slot.storage.readCompleted(0,slot.headerBytes,scratch);
+                    PackageCpuDiagnostics.downloaded(slot.headerBytes);
+                    int records=scratch.order(java.nio.ByteOrder.nativeOrder()).getInt(0);
+                    if(records<0)throw new IllegalStateException("Invalid captured package record count");
+                    // Capture kernels may count attempted reservations beyond their bounded output.
+                    records=Math.min(records,slot.maxRecords);
+                    slot.length=slot.headerBytes+records*slot.recordBytes;
+                    if(records!=0) {
+                        scratch.limit(slot.length).position(slot.headerBytes);
+                        slot.storage.readCompleted(slot.headerBytes,slot.length-slot.headerBytes,scratch);
+                        PackageCpuDiagnostics.downloaded(slot.length-slot.headerBytes);
+                    }
+                }
+                scratch.position(0).limit(slot.length);
+                slot.copied=true;
             }
             if(!consumer.test(new Snapshot(slot.epoch,slot.sequence,slot.submittedNanos,scratch.asReadOnlyBuffer().order(scratch.order()))))break;
             retire(slot);
@@ -92,9 +129,8 @@ public final class PackageReadbackRing implements AutoCloseable {
             Slot slot=slots[(next-pending+SLOTS)%SLOTS];
             // New names/storage: outstanding GPU copies retain the deleted old storage until complete.
             // Never reuse an unfinished snapshot's storage for a new world/epoch.
-            GL15.glDeleteBuffers(slot.buffer);
-            slot.buffer=GL15.glGenBuffers();GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,slot.buffer);
-            GL15.glBufferData(GL31.GL_COPY_WRITE_BUFFER,bytes,GL15.GL_STREAM_READ);
+            slot.storage.close();
+            slot.storage=new com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer(bytes);
             retire(slot);
         }
         lastSequence=-1;
@@ -106,7 +142,7 @@ public final class PackageReadbackRing implements AutoCloseable {
         if(closed)return;closed=true;
         for(Slot slot:slots)if(slot!=null) {
             if(slot.fence!=0)GL32.glDeleteSync(slot.fence);
-            if(slot.buffer!=0)GL15.glDeleteBuffers(slot.buffer);
+            if(slot.storage!=null)slot.storage.close();
         }
         pending=0;
     }

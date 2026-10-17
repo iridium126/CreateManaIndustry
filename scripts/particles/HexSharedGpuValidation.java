@@ -6,7 +6,7 @@ import org.lwjgl.opengl.*;
 import org.lwjgl.glfw.*;
 import org.joml.Matrix4f;
 import net.minecraft.world.phys.Vec2;
-import com.iridium126.createmanaindustry.client.particles.hex.*;
+import com.iridium126.createmanaindustry.client.hex.pattern.*;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource;
 import at.petrak.hexcasting.client.render.RenderLib;
 import at.petrak.hexcasting.client.ClientTickCounter;
@@ -160,6 +160,8 @@ public class HexSharedGpuValidation {
         GL30.glEnablei(GL11.GL_BLEND,1);GL40.glBlendFuncSeparatei(1,GL11.GL_ONE,GL11.GL_ZERO,GL11.GL_ZERO,GL11.GL_ONE);GL40.glBlendEquationSeparatei(1,GL14.GL_FUNC_REVERSE_SUBTRACT,GL14.GL_FUNC_ADD);GL40.glPatchParameteri(GL40.GL_PATCH_VERTICES,5);
         try(var gpu=new HexGpuBackend(16L<<20,HexSharedGpuValidation::source)){
             try(var saved=boundary.capture()){
+                GL11.glViewport(1,2,3,4);boolean rejected=false;try{boundary.capture();}catch(IllegalStateException expected){rejected=true;}
+                check(rejected,"nested capture overwrote its active boundary");
                 var d=new HexGpuBackend.Draw();d.shape=new HexShape(positions("qwe"),Set.of(),HexShape.Style.ORBIT,true,false);try(var batch=gpu.prepare(List.of(d))){check(batch!=null,"state batch");GL20.glUseProgram(gpu.plainProgram());batch.bind(gpu.plainProgram());}
                 HexPassState.nativeState();GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,fbo);GL11.glViewport(0,0,1,1);GL11.glDisable(GL11.GL_SCISSOR_TEST);GL11.glColorMask(false,true,false,true);GL40.glPatchParameteri(GL40.GL_PATCH_VERTICES,3);GL40.glBlendFuncSeparatei(1,GL11.GL_ZERO,GL11.GL_ONE,GL11.GL_ONE,GL11.GL_ZERO);GL40.glBlendEquationSeparatei(1,GL14.GL_FUNC_ADD,GL14.GL_FUNC_SUBTRACT);
                 GL13.glActiveTexture(GL13.GL_TEXTURE0+high);GL11.glBindTexture(GL11.GL_TEXTURE_2D,0);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,0);

@@ -36,7 +36,7 @@ public record ServerboundPackagePacket(int action,int capabilities,PackageRegion
                 && (index<0 || identity==null || leaseEpoch<=0 || revision<=0))throw new IllegalArgumentException("Package baseline");
         if(deltaAction(action) && (sequence<0 || revision<=0 || changes.length==0))throw new IllegalArgumentException("Package delta");
         if(action==CONTROL_BATCH&&(revision<=0||sequence!=0||changes.length==0||changes.length>PackageControlBatchCodec.MAX_BYTES))throw new IllegalArgumentException("Package controls");
-        if(action==ENVIRONMENT&&(revision<=0||changes.length==0))throw new IllegalArgumentException("Package environment event");
+        if(action==ENVIRONMENT&&(revision<=0||!PackageEnvironmentBatchCodec.validLength(changes.length)))throw new IllegalArgumentException("Package environment batch");
         if(!deltaAction(action)&&action!=CONTROL_BATCH&&action!=ENVIRONMENT&&changes.length!=0)throw new IllegalArgumentException("Unexpected package body");
     }
     @Override public byte[] changes(){return changes.clone();}

@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.HashSet;
@@ -34,7 +36,7 @@ public final class PackageChainTrackGpu implements AutoCloseable {
 
     public PackageChainTrackGpu(int capacity,int trackCapacity,int nodeCapacity,Function<String,String> sources) {
         if(capacity<1 || capacity>131072 || trackCapacity<1 || trackCapacity>131072 || nodeCapacity<1 || nodeCapacity>1_048_576
-                || (capacity+63)/64>GL30.glGetIntegeri(GL43.GL_MAX_COMPUTE_WORK_GROUP_COUNT,0))
+                || (capacity+63)/64>GpuCapabilities.current().computeGroupsX())
             throw new IllegalArgumentException("Chain track capacities");
         this.capacity=capacity;this.trackCapacity=trackCapacity;this.nodeCapacity=nodeCapacity;
         nodeFirst=new int[trackCapacity];nodeLength=new int[trackCapacity];revisions=new long[trackCapacity];thresholds=new float[nodeCapacity];
@@ -258,7 +260,7 @@ public final class PackageChainTrackGpu implements AutoCloseable {
         if(data.hasRemaining())GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,offset,data);
     }
     private static int buffer(long bytes) {
-        if(bytes>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))throw new IllegalArgumentException("Chain SSBO device limit");
+        if(bytes>GpuCapabilities.current().storageBlockBytes())throw new IllegalArgumentException("Chain SSBO device limit");
         int id=GL15.glGenBuffers();if(id==0)throw new IllegalStateException("Chain buffer allocation failed");
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);
         if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes){GL15.glDeleteBuffers(id);throw new IllegalStateException("Chain storage allocation failed");}return id;

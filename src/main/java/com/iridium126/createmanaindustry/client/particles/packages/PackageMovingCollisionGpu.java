@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.packages;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
+
 import java.nio.*;
 import java.util.*;
 import org.lwjgl.opengl.*;
@@ -22,7 +24,7 @@ public final class PackageMovingCollisionGpu implements AutoCloseable {
     public PackageMovingCollisionGpu(){this(fence->GL32.glClientWaitSync(fence,GL32.GL_SYNC_FLUSH_COMMANDS_BIT,0));}
     /** Injected completion observation is used by validation to hold all four banks busy. */
     public PackageMovingCollisionGpu(java.util.function.LongToIntFunction poll){this.poll=Objects.requireNonNull(poll);empty=GL15.glGenBuffers();if(empty==0)throw new IllegalStateException("Moving fallback buffer unavailable");GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,empty);GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,48,GL15.GL_DYNAMIC_DRAW);if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=48){GL15.glDeleteBuffers(empty);throw new IllegalStateException("Moving fallback storage unavailable");}}
-    private static ByteBuffer map(int id,int bytes){if(id==0||bytes>GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE))throw new IllegalStateException("Moving storage/device limit");GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);GL44.glBufferStorage(GL43.GL_SHADER_STORAGE_BUFFER,bytes,MAP_FLAGS);if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)throw new IllegalStateException("Moving storage unavailable");var mapped=GL30.glMapBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,0,bytes,MAP_FLAGS);if(mapped==null)throw new IllegalStateException("Moving mapping unavailable");return mapped.order(ByteOrder.nativeOrder());}
+    private static ByteBuffer map(int id,int bytes){if(id==0||bytes>GpuCapabilities.current().storageBlockBytes())throw new IllegalStateException("Moving storage/device limit");GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);GL44.glBufferStorage(GL43.GL_SHADER_STORAGE_BUFFER,bytes,MAP_FLAGS);if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)throw new IllegalStateException("Moving storage unavailable");var mapped=GL30.glMapBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,0,bytes,MAP_FLAGS);if(mapped==null)throw new IllegalStateException("Moving mapping unavailable");return mapped.order(ByteOrder.nativeOrder());}
     private void owner(){if(Thread.currentThread()!=owner||closed)throw new IllegalStateException("Moving GPU atlas unavailable/off owner thread");}
     public void tickRate(double rate){
         owner();if(viewOpen)throw new IllegalStateException("Moving bank resize during view");

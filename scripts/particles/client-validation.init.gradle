@@ -1,0 +1,38 @@
+// User-operated client checks, isolated from run/ saves and configuration.
+gradle.projectsEvaluated {
+    def p=gradle.rootProject
+    def runtime=p.file(p.findProperty('gpuClientRunDir') ?: 'build/client-gpu-validation').canonicalFile
+    def buildRoot=p.layout.buildDirectory.get().asFile.canonicalFile.toPath()
+    if(runtime.toPath()==buildRoot || !runtime.toPath().startsWith(buildRoot))
+        throw new GradleException('gpuClientRunDir must be a dedicated directory inside build/')
+
+    p.neoForge.runs.client.gameDirectory.set(runtime)
+    p.neoForge.runs.client.programArguments.addAll('--width','1280','--height','720')
+    p.neoForge.runs.client.systemProperty('cmi.profilePackageTransactions','true')
+    // The ordinary run depends on this task; redirect its output as well.
+    p.tasks.named('copyTricksterToRunMods').configure { into(new File(runtime,'mods')) }
+    def runtimeMods=p.tasks.register('prepareGpuClientRuntimeMods',Copy) {
+        // Use the resolved required Sodium distribution, not only its compile-time core.
+        from(p.configurations.getByName('sodiumDistribution'))
+        from(p.file('run/mods')) {
+            include '*.jar'
+            exclude { entry ->
+                def name=entry.file.name.toLowerCase(java.util.Locale.ROOT)
+                name.contains('sodium') || name.contains('trickster')
+            }
+        }
+        into(new File(runtime,'mods'))
+    }
+    def prepare=p.tasks.register('prepareGpuClientValidation') {
+        dependsOn(runtimeMods,p.tasks.named('copyTricksterToRunMods'))
+        doLast {
+            def client=new File(runtime,'config/createmanaindustry-client.toml')
+            def server=new File(runtime,'defaultconfigs/createmanaindustry-server.toml')
+            client.parentFile.mkdirs();server.parentFile.mkdirs()
+            if(!client.exists())client.text='[particles]\nautoThrottle = false\npackageGpuAuthority = true\n'
+            if(!server.exists())server.text='[gpuPackages]\nauthorityEnabled = true\n'
+            logger.lifecycle('GPU client check directory: '+runtime)
+        }
+    }
+    p.tasks.named('runClient').configure { dependsOn(prepare) }
+}

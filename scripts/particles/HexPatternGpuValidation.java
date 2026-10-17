@@ -70,6 +70,242 @@ public class HexPatternGpuValidation {
     static void uint(int program,String name,int value) {
         GL20.glUseProgram(program);GL30.glUniform1ui(GL20.glGetUniformLocation(program,name),value);
     }
+    static void residentResources() {
+        var table=new com.iridium126.createmanaindustry.client.particles.engine.BlockEmitterTable();
+        var identities=new com.iridium126.createmanaindustry.client.allaystorm.StormIdentityBuffers();
+        try {
+            table.add(1,2,3,100,0,8);table.uploadAndBind();
+            int old=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,4);
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,old);
+            check(GL15.glGetBufferParameteri(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)<1024,"small source allocated full table");
+            var phase=bytes(4).putFloat(0,.875f);
+            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,20,phase);
+            for(int i=1;i<100;i++)table.add(i,2,3,100,0,8);
+            table.uploadAndBind();int grown=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,4);
+            var rows=bytes(100*32);read(grown,rows);
+            check(rows.getFloat(20)==.875f,"source growth reset GPU-owned fractional phase");
+            check(rows.getFloat(99*32)==99,"source growth lost dirty tail");
+            table.remove(50);table.uploadAndBind();read(grown,rows);
+            check(rows.getFloat(50*32+12)==0,"removed source still active");
+            check(rows.getFloat(20)==.875f,"neighbor dirty update reset phase");
+            identities.initialize();
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,identities.corrections());
+            check(GL15.glGetBufferParameteri(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)==32,"idle Storm allocated full corrections");
+            identities.ensureMembers();
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,identities.members());
+            check(GL15.glGetBufferParameteri(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)==131072*4,"Storm storage follows particle capacity");
+            var correction=BufferUtils.createFloatBuffer(8).put(new float[]{1,2,3,4,5,6,7,8}).flip();
+            identities.write(131071,correction);
+            var result=bytes(32);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,identities.corrections());
+            GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,131071L*32,result);
+            check(result.getFloat(28)==8,"last Storm identity correction dropped");
+            check(GL11.glGetError()==GL11.GL_NO_ERROR,"resident buffer GL error");
+        } finally {table.free();identities.close();}
+        int foreign=GL15.glGenQueries();
+        try(var timer=new com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing(4)) {
+            GL15.glBeginQuery(GL33.GL_TIME_ELAPSED,foreign);
+            check(timer.begin(),"timestamp ring refused a foreign elapsed query");
+            timer.end(false);
+            check(GL15.glGetQueryi(GL33.GL_TIME_ELAPSED,GL15.GL_CURRENT_QUERY)==foreign,"timestamp scope ended foreign timer");
+            GL15.glEndQuery(GL33.GL_TIME_ELAPSED);GL11.glFinish();timer.poll();
+            check(!timer.sampled(),"aborted compute published a timing sample");
+            check(timer.begin(),"timestamp slot did not retire");timer.end(true);GL11.glFinish();timer.poll();
+            check(timer.sampled()&&timer.lastMs()>=0,"complete timestamp pair missing");
+            check(GL11.glGetError()==GL11.GL_NO_ERROR,"timestamp query GL error");
+        } finally {GL15.glDeleteQueries(foreign);}
+        System.out.println("Resident source growth preserves phases; lazy Storm identity storage passed");
+    }
+
+    static void ownedShaderCompiler() {
+        String vertex="#version 450 core\nvoid main(){gl_Position=vec4(0,0,0,1);}";
+        String fragment="#version 450 core\nout vec4 color;void main(){color=vec4(1);}";
+        int compute=com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute("owned compute",
+                "#version 450 core\nlayout(local_size_x=1)in;void main(){}");
+        int graphics=com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.graphics("owned graphics",vertex,fragment);
+        try {
+            check(GL20.glGetProgrami(compute,GL20.GL_ATTACHED_SHADERS)==0,"owned compute retained stage objects");
+            check(GL20.glGetProgrami(graphics,GL20.GL_ATTACHED_SHADERS)==0,"owned graphics retained stage objects");
+            boolean failed=false;
+            try {com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.graphics("invalid fragment",vertex,"#version 450 core\ninvalid source");}
+            catch(IllegalStateException expected){failed=true;}
+            check(failed,"invalid owned fragment was accepted");
+            failed=false;
+            try {com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.graphics("invalid interface",
+                    "#version 450 core\nout vec3 value;void main(){value=vec3(1);gl_Position=vec4(0,0,0,1);}",
+                    "#version 450 core\nin vec4 value;out vec4 color;void main(){color=value;}");}
+            catch(IllegalStateException expected){failed=true;}
+            check(failed,"incompatible owned stages were linked");
+            check(GL20.glIsProgram(compute)&&GL20.glIsProgram(graphics),"rejected compiler candidate damaged live programs");
+            check(GL11.glGetError()==GL11.GL_NO_ERROR,"owned compiler cleanup left GL errors");
+        } finally {GL20.glDeleteProgram(compute);GL20.glDeleteProgram(graphics);}
+        System.out.println("Owned shader compiler: detached stages, compile/link rejection and live-program isolation passed");
+    }
+
+    static Field nativeParticleField(Class<?> type,String name)throws Exception{
+        while(type!=null){try{var field=type.getDeclaredField(name);field.setAccessible(true);return field;}catch(NoSuchFieldException ignored){type=type.getSuperclass();}}
+        throw new NoSuchFieldException(name);
+    }
+    static void nativeConjureMotion() throws Exception {
+        var type=Class.forName("at.petrak.hexcasting.client.particles.ConjureParticle");
+        var constructor=type.getDeclaredConstructors()[0];constructor.setAccessible(true);
+        var sprites=(net.minecraft.client.particle.SpriteSet)Proxy.newProxyInstance(type.getClassLoader(),new Class<?>[]{net.minecraft.client.particle.SpriteSet.class},(proxy,method,args)->null);
+        var lifetime=nativeParticleField(type,"lifetime");var age=nativeParticleField(type,"age");
+        var tick=type.getMethod("tick");
+        Field[] positions={nativeParticleField(type,"x"),nativeParticleField(type,"y"),nativeParticleField(type,"z")};
+        Field[] velocities={nativeParticleField(type,"xd"),nativeParticleField(type,"yd"),nativeParticleField(type,"zd")};
+        int program=compute("update.comp");ByteBuffer data=bytes(64),header=bytes(320),result=bytes(64);
+        header.putFloat(0,1).putFloat(17*16,5).putFloat(17*16+4,5);
+        int input=buffer(0,data),output=buffer(1,result),headers=buffer(5,header),counter=buffer(3,bytes(16)),previous=buffer(14,bytes(16).putInt(0,1));
+        try {
+            uint(program,"uCapacity",1);uint(program,"uKillEmit",-1);
+            for(double[] velocity:new double[][]{{.01,.02,.03},{.01,0,.03},{0,0,0}})for(float dt:new float[]{.05f,.01f}){
+                Object nativeParticle=constructor.newInstance(null,4.,5.,6.,velocity[0],velocity[1],velocity[2],sprites,0xffab65eb);
+                lifetime.setInt(nativeParticle,40);age.setInt(nativeParticle,0);
+                data.clear();for(int i=0;i<64;i+=4)data.putInt(i,0);
+                data.putFloat(0,4).putFloat(4,5).putFloat(8,6).putFloat(12,1).putFloat(16,(float)(velocity[0]*20)).putFloat(20,(float)(velocity[1]*20)).putFloat(24,(float)(velocity[2]*20));
+                data.putFloat(44,velocity[0]!=0&&velocity[1]!=0&&velocity[2]!=0?-1:1).putFloat(52,2);
+                upload(input,data);int logical=0;
+                for(int frame=1;frame<=(int)Math.round(1.5/dt);frame++){
+                    int target=(int)Math.floor(frame*(double)dt*20+.0001);
+                    while(logical<target){tick.invoke(nativeParticle);logical++;}
+                    upload(counter,bytes(16));GL20.glUseProgram(program);
+                    GL20.glUniform1f(GL20.glGetUniformLocation(program,"uDt"),.05f);
+                    GL20.glUniform1f(GL20.glGetUniformLocation(program,"uHexDt"),dt);
+                    dispatch(program,1);read(output,result);
+                    for(int axis=0;axis<3;axis++){
+                        check(Math.abs(result.getFloat(axis*4)-positions[axis].getDouble(nativeParticle))<.0001,"native Conjure position differs at tick "+logical);
+                        check(Math.abs(result.getFloat(16+axis*4)/20-velocities[axis].getDouble(nativeParticle))<.00001,"native Conjure velocity differs at tick "+logical);
+                    }
+                    upload(input,result);
+                }
+                ByteBuffer frozen=bytes(64);frozen.put(result.duplicate().clear()).clear();
+                upload(counter,bytes(16));GL20.glUniform1f(GL20.glGetUniformLocation(program,"uHexDt"),0);dispatch(program,1);read(output,result);
+                for(int i=0;i<64;i+=4)check(result.getInt(i)==frozen.getInt(i),"paused native Conjure advanced");
+                // Production uses the exact ParticleEngine.tick counter, including wrap-around.
+                result.putFloat(48,0).putInt(56,0xfffffffe);upload(input,result);
+                uint(program,"uHexCurrentTick",1);GL20.glUniform1i(GL20.glGetUniformLocation(program,"uHexTickReady"),1);
+                upload(counter,bytes(16));dispatch(program,1);read(output,result);
+                check(Math.abs(result.getFloat(48)-.15)<1e-6,"native tick counter lost wrapped steps");
+                check(result.getInt(56)==1,"native tick stamp was not published");
+                upload(input,result);upload(counter,bytes(16));dispatch(program,1);
+                ByteBuffer repeated=bytes(64);read(output,repeated);
+                for(int i=0;i<64;i+=4)check(result.getInt(i)==repeated.getInt(i),"same native tick advanced twice");
+                GL20.glUniform1i(GL20.glGetUniformLocation(program,"uHexTickReady"),0);
+            }
+        } finally {for(int id:new int[]{input,output,headers,counter,previous})GL15.glDeleteBuffers(id);GL20.glDeleteProgram(program);}
+        System.out.println("Native ConjureParticle tick motion, blocked-Y acceleration, sub-tick partitioning and pause passed");
+    }
+
+    static void nativePigmentParameters() throws Exception {
+        String shader="""
+            layout(local_size_x=64) in;
+            layout(std430,binding=4) readonly buffer EmitCmdBuf {float entries[];} emitCmd;
+            layout(std430,binding=0) readonly buffer Directions {vec4 values[];} directions;
+            layout(std430,binding=1) writeonly buffer Colors {vec4 values[];} colors;
+            #pragma cmi_include chunks/hex_pigment.glsl
+            uniform uint uCount;
+            void main(){uint i=gl_GlobalInvocationID.x;if(i<uCount)colors.values[i]=vec4(hexPigment(0u,directions.values[i].xyz),1.);}
+            """;
+        shader=shader.replace("#pragma cmi_include chunks/hex_pigment.glsl",source("chunks/hex_pigment.glsl"));
+        int program=link(stageText("native pigment parameters",GL43.GL_COMPUTE_SHADER,shader));
+        int count=257;var dirs=bytes(count*16);var result=bytes(count*16);
+        Random random=new Random(421);for(int i=0;i<count;i++)for(int axis=0;axis<3;axis++)dirs.putFloat(i*16+axis*4,random.nextFloat()*4-2);
+        int input=buffer(0,dirs),output=buffer(1,result),parameters=buffer(4,bytes(48*4));
+        try {
+            uint(program,"uCount",count);uint(program,"uHexParameterBase",0);
+            for(int[] palette:new int[][]{{0xffab65eb},{0xff000000},{0xff200000,0xff000000,0xff002000},{0xff54398a,0xffcfa0f3,0xfffecbe6,0xffcfa0f3,0xffe77c56}}) {
+                for(float time:new float[]{0,1,-1,399.5f,8000,1000000}) {
+                    var data=com.iridium126.createmanaindustry.client.hex.particles.HexPigmentData.palette(palette,time,400);
+                    var encoded=bytes(48*4);data.write(encoded.asFloatBuffer(),0,0);upload(parameters,encoded);
+                    dispatch(program,(count+63)/64);read(output,result);
+                    var provider=new at.petrak.hexcasting.api.pigment.ColorProvider(){
+                        @Override protected int getRawColor(float t,net.minecraft.world.phys.Vec3 position){return palette.length==1?palette[0]:at.petrak.hexcasting.api.addldata.ADPigment.morphBetweenColors(palette,new net.minecraft.world.phys.Vec3(.1,.1,.1),t/400,position);}
+                    };
+                    for(int i=0;i<count;i++) {
+                        int color=provider.getColor(time,new net.minecraft.world.phys.Vec3(dirs.getFloat(i*16),dirs.getFloat(i*16+4),dirs.getFloat(i*16+8)));
+                        for(int channel=0;channel<3;channel++)check(Math.round(result.getFloat(i*16+channel*4)*255)==((color>>(16-channel*8))&255),"native pigment byte mismatch at time "+time+", direction "+i+", channel "+channel);
+                    }
+                }
+            }
+        } finally {for(int id:new int[]{input,output,parameters})GL15.glDeleteBuffers(id);GL20.glDeleteProgram(program);}
+        System.out.println("Native pigment parameters match actual ColorProvider RGB, including dark colors and negative/long clocks");
+    }
+
+    static void directHexBatch() throws Exception {
+        int program=compute("emit.comp");
+        int cap=1024;
+        var inputs=new com.iridium126.createmanaindustry.client.particles.emitter.DirectParticleBatch();
+        ByteBuffer pool=bytes((cap+1)*64),counter=bytes(16),header=bytes(320);
+        header.putFloat(17*16,5).putFloat(17*16+4,5);
+        int output=buffer(1,pool),counts=buffer(3,counter),headers=buffer(5,header),records=0;
+        try {
+            uint(program,"uCapacity",cap);uint(program,"uDirectHexBatch",1);
+            for(int n:new int[]{255,256,257,1024,1025}) {
+                inputs.clear();for(int i=0;i<n;i++)check(inputs.offer(i,2,3,.01,.02,.03,0xff1256ab),"direct input admission");
+                var floats=inputs.encode(0,1);var encoded=bytes(floats.remaining()*4);encoded.asFloatBuffer().put(floats);
+                if(records!=0)GL15.glDeleteBuffers(records);records=buffer(4,encoded);
+                upload(counts,bytes(16));for(int i=cap*64;i<pool.capacity();i+=4)pool.putInt(i,0x5a5a5a5a);upload(output,pool);
+                uint(program,"uTotalSpawn",n);uint(program,"uEmitCount",n);dispatch(program,(n+63)/64);
+                read(counts,counter);check(counter.getInt(0)==n,"direct batch lost inputs at shared command limit");
+                read(output,pool);var seen=new BitSet();
+                for(int i=0;i<Math.min(n,cap);i++){
+                    int b=i*64;int x=(int)pool.getFloat(b);check(x>=0&&x<n&&!seen.get(x),"direct input duplicate/position");seen.set(x);
+                    check(Math.abs(pool.getFloat(b+32)-0x12/255f)<1e-6,"direct RGB lost");
+                    check(pool.getFloat(b+44)<0,"direct gravity flag lost");
+                    check(Math.abs(pool.getFloat(b+52)*20-Math.round(pool.getFloat(b+52)*20))<1e-4,"direct lifetime is not integer ticks");
+                }
+                for(int i=cap*64;i<pool.capacity();i+=4)check(pool.getInt(i)==0x5a5a5a5a,"direct emission exceeded capacity");
+            }
+        } finally {for(int id:new int[]{output,counts,headers,records})GL15.glDeleteBuffers(id);GL20.glDeleteProgram(program);}
+        System.out.println("Direct Hex batches: 255/256/257 and saturation passed");
+    }
+
+    static void mixedEmitWriter() throws Exception {
+        int program=compute("emit.comp"),cap=1024;
+        var writer=new com.iridium126.createmanaindustry.client.particles.emitter.EmitCommandWriter();
+        var header=bytes(640);
+        header.asFloatBuffer().put(com.iridium126.createmanaindustry.client.particles.engine.HexSpecs.packedSprayHeader());
+        header.asFloatBuffer().position(80).put(com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.builder().speed(0,0).gravity(0,0,0).life(10,10).build().packed());
+        var pool=bytes((cap+1)*64);var counter=bytes(16);
+        int output=buffer(1,pool),counts=buffer(3,counter),headers=buffer(5,header),commands=0;
+        try {
+            uint(program,"uCapacity",cap);uint(program,"uDirectHexBatch",0);
+            for(boolean compact:new boolean[]{false,true}) {
+                writer.clear();
+                for(int i=0;i<256;i++) {
+                    if(i%3==0)check(writer.basic(1,1,new net.minecraft.world.phys.Vec3(i,0,0),0),"mixed writer basic admission");
+                    else {
+                        int rgb=0xff000000|((i+1)<<16)|((256-i)<<8)|i;
+                        var palette=com.iridium126.createmanaindustry.client.hex.particles.HexPigmentData.palette(new int[]{rgb},0,400);
+                        check(writer.parameterized(0,3,i,0,0,0,0,0,0,target->palette.write(target,0,0)),"mixed writer parameter admission");
+                    }
+                }
+                if(compact)writer.limitParticles(writer.particles()/2,false);
+                var encoded=writer.encode(37);var raw=bytes(encoded.remaining()*4);raw.asFloatBuffer().put(encoded);
+                if(commands!=0)GL15.glDeleteBuffers(commands);commands=buffer(4,raw);
+                upload(counts,bytes(16));for(int b=cap*64;b<pool.capacity();b+=4)pool.putInt(b,0x5a5a5a5a);upload(output,pool);
+                uint(program,"uTotalSpawn",writer.particles());uint(program,"uEmitCount",writer.size());
+                uint(program,"uHexParameterBase",writer.size()*12);dispatch(program,(writer.particles()+63)/64);
+                read(counts,counter);check(counter.getInt(0)==writer.particles(),"mixed writer spawn count/prefix");read(output,pool);
+                int[] seen=new int[256];
+                for(int i=0;i<writer.particles();i++) {
+                    int b=i*64,x=Math.round(pool.getFloat(b));check(x>=0&&x<256,"mixed writer origin corrupted");seen[x]++;
+                    if(x%3!=0) {
+                        check(pool.getInt(b+60)==0,"mixed writer selected wrong behavior header");
+                        // ColorProvider clamps dark RGB to minimum luminance; test the actual per-command palette.
+                        int rawRgb=0xff000000|((x+1)<<16)|((256-x)<<8)|x;
+                        var provider=new at.petrak.hexcasting.api.pigment.ColorProvider(){@Override protected int getRawColor(float t,net.minecraft.world.phys.Vec3 pos){return rawRgb;}};
+                        int expected=provider.getColor(0,net.minecraft.world.phys.Vec3.ZERO);
+                        for(int c=0;c<3;c++)check(Math.round(pool.getFloat(b+32+c*4)*255)==((expected>>(16-c*8))&255),"mixed writer palette detached from command");
+                    }
+                }
+                for(int x=0;x<256;x++)check(seen[x]==(compact?(x%3==0?0:1):(x%3==0?1:3)),"mixed writer lost/duplicated row after compaction");
+                for(int b=cap*64;b<pool.capacity();b+=4)check(pool.getInt(b)==0x5a5a5a5a,"mixed writer exceeded pool");
+            }
+        } finally {for(int id:new int[]{output,counts,headers,commands})GL15.glDeleteBuffers(id);GL20.glDeleteProgram(program);}
+        System.out.println("Bounded writer: mixed ordinary/native commands, 170 palettes, compaction and slot reuse passed");
+    }
+
     static void dispatchBounds() throws Exception {
         int program=compute("prepare_dispatch.comp");
         ByteBuffer previous=bytes(16), current=bytes(16), commands=bytes(com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.INDIRECT_UINTS*4), args=bytes(36);
@@ -508,6 +744,12 @@ public class HexPatternGpuValidation {
         for(String shader:List.of("additive","model","textured"))
             GL20.glDeleteProgram(link(stage(shader+".vsh",GL20.GL_VERTEX_SHADER),stage(shader+".fsh",GL20.GL_FRAGMENT_SHADER)));
         buffer(31,bytes(4+2*4096*4));
+        residentResources();
+        nativeConjureMotion();
+        ownedShaderCompiler();
+        nativePigmentParameters();
+        directHexBatch();
+        mixedEmitWriter();
         dispatchBounds();
         capacity();
         deathChainAndRebirth();

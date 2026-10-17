@@ -7,7 +7,7 @@ import com.iridium126.createmanaindustry.client.render.mist.MistClientHandler;
 import com.iridium126.createmanaindustry.client.render.InlineTrickRenderer;
 import com.iridium126.createmanaindustry.client.render.InlineYsmGeometryRenderer;
 import com.iridium126.createmanaindustry.client.ponder.CMIPonderPlugin;
-import com.iridium126.createmanaindustry.client.particles.allaystorm.AllayStormClientHandler;
+import com.iridium126.createmanaindustry.client.allaystorm.AllayStormClientHandler;
 import com.iridium126.createmanaindustry.client.render.YsmClientPreviews;
 import com.iridium126.createmanaindustry.compat.ysm.client.YsmClientArchives;
 import com.iridium126.createmanaindustry.compat.ysm.net.ClientboundYsmArchivePacket;
@@ -156,13 +156,13 @@ public class CreateManaIndustryClient {
         // deliberately no second ALLVR terrain draw here; Iris therefore sees
         // the same pass/framebuffer/material path as ordinary Sodium sections.
         if (stage == RenderLevelStageEvent.Stage.AFTER_SKY) {
-            if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.prepareWorld();
+            if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.prepareWorld();
             CMIParticleEngine.INSTANCE.beginFrame(event.getCamera(),
                     event.getModelViewMatrix(), event.getProjectionMatrix(), event.getPartialTick());
         } else if (stage == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             CMIParticleEngine.INSTANCE.endFrame(event.getCamera(),
                     event.getModelViewMatrix(), event.getProjectionMatrix());
-            if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.particles.hex.HexPatternService.drawWorld();
+            if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.drawWorld();
         }
     }
 

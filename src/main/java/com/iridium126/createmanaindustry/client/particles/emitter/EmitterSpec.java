@@ -159,7 +159,7 @@ public final class EmitterSpec {
     /** Max keyframe colours carried to the shader (RGBA each). */
     public static final int MAX_COLORS = 8;
     /** GPU header size in vec4 (see class javadoc). */
-    public static final int VEC4_PER_EMITTER = 20;
+    public static final int VEC4_PER_EMITTER = ParticleLayout.HEADER_VEC4;
 
     public final EmitterShape shape;
     /** Shape parameter: box half-extent, sphere radius, or cone height (blocks). */
@@ -222,8 +222,10 @@ public final class EmitterSpec {
     public final boolean lightmap;
     /** Additive shader colour mode carried in header 17.x for non-MODEL emitters. */
     public final int shaderColorMode;
+    public final int spawnStyle;
 
     private final float[] packed;
+    private final int hash;
 
     private EmitterSpec(Builder b) {
         this.shape = Objects.requireNonNull(b.shape, "shape");
@@ -258,7 +260,9 @@ public final class EmitterSpec {
         this.heldItem = Objects.requireNonNull(b.heldItem, "heldItem");
         this.lightmap = b.lightmap;
         this.shaderColorMode = Math.max(0, Math.min(255, b.shaderColorMode));
+        this.spawnStyle = Math.max(0, Math.min(255, b.spawnStyle));
         this.packed = pack();
+        this.hash = Arrays.hashCode(packed);
     }
 
     public static Builder builder() {
@@ -319,8 +323,9 @@ public final class EmitterSpec {
         // 17: animation (MODEL only), shader colour mode (additive), spawnStyle
         // (storm writes post-pack), heldItem (MODEL) / lightMode (textured)
         // — material split, 0
-        f[17 * 4 + 0] = type.material() == ParticleTypes.Material.MODEL ? animation.index() : shaderColorMode;
-        f[17 * 4 + 2] = type.material() == ParticleTypes.Material.MODEL ? heldItem.index() : (lightmap ? 1f : 0f);
+        f[ParticleLayout.HEADER_ANIMATION_COLOR] = type.material() == ParticleTypes.Material.MODEL ? animation.index() : shaderColorMode;
+        f[ParticleLayout.HEADER_SPAWN_STYLE] = spawnStyle;
+        f[ParticleLayout.HEADER_ITEM_LIGHT] = type.material() == ParticleTypes.Material.MODEL ? heldItem.index() : (lightmap ? 1f : 0f);
         // 18 stays zero; 19 carries the PLANE basis normal.
         f[19 * 4 + 0] = (float) planeNormal.x;
         f[19 * 4 + 1] = (float) planeNormal.y;
@@ -328,9 +333,9 @@ public final class EmitterSpec {
         return f;
     }
 
-    /** The packed 20-vec4 GPU header for this spec. */
+    /** An owned copy; mutations cannot invalidate the value-keyed emitter cache. */
     public float[] packed() {
-        return packed;
+        return packed.clone();
     }
 
     /**
@@ -339,7 +344,7 @@ public final class EmitterSpec {
      */
     public float[] packedWithAnimation(int animationIndex) {
         float[] f = packed.clone();
-        f[17 * 4] = animationIndex;
+        f[ParticleLayout.HEADER_ANIMATION_COLOR] = animationIndex;
         return f;
     }
 
@@ -354,7 +359,7 @@ public final class EmitterSpec {
 
     @Override
     public int hashCode() {
-        return Arrays.hashCode(packed);
+        return hash;
     }
 
     @Override
@@ -394,6 +399,7 @@ public final class EmitterSpec {
         private HeldItem heldItem = HeldItem.NONE;
         private boolean lightmap = false;
         private int shaderColorMode = 0;
+        private int spawnStyle = 0;
 
         public Builder shape(EmitterShape v) { this.shape = v; return this; }
         public Builder size(double v) { this.size = v; return this; }
@@ -457,6 +463,7 @@ public final class EmitterSpec {
         public Builder lightmap(boolean v) { this.lightmap = v; return this; }
         /** Sets the additive vertex-shader colour mode carried in header 17.x. */
         public Builder shaderColorMode(int v) { this.shaderColorMode = v; return this; }
+        public Builder spawnStyle(int v) { this.spawnStyle = v; return this; }
 
         public EmitterSpec build() {
             return new EmitterSpec(this);

@@ -31,11 +31,12 @@ import net.minecraft.client.Minecraft;
  */
 @Mixin(targets = "at.petrak.hexcasting.common.msgs.MsgCastParticleS2C$Handler")
 public class HexSprayRedirectMixin {
+    private static final ThreadLocal<Boolean> cmi$replaying=ThreadLocal.withInitial(()->false);
 
     @Inject(method = "handle(Lat/petrak/hexcasting/common/msgs/MsgCastParticleS2C;)V",
             at = @At("HEAD"), cancellable = true)
     private static void cmi$redirectHexSpray(MsgCastParticleS2C msg, CallbackInfo ci) {
-        if (!ClientConfig.hexParticleRedirect)
+        if (!ClientConfig.hexParticleRedirect || cmi$replaying.get())
             return;
         CMIParticleEngine engine = CMIParticleEngine.INSTANCE;
         if (!engine.available())
@@ -44,10 +45,22 @@ public class HexSprayRedirectMixin {
         // queue is render-thread state, so the GPU spawn hops too (execute
         // runs inline when already on the main thread).
         ParticleSpray spray = msg.spray();
+        var world=Minecraft.getInstance().level;
         Minecraft.getInstance().execute(() -> {
-            float[] wheel = HexSpecs.sampleWheel(msg.colorizer().getColorProvider());
-            engine.spawnHexSpray(spray.getPos(), spray.getVel(), spray.getFuzziness(),
-                    spray.getSpread(), spray.getCount(), wheel);
+            if(world==null||world!=Minecraft.getInstance().level)return;
+            Runnable nativeCall=()->{
+                cmi$replaying.set(true);
+                try{MsgCastParticleS2C.Handler.handle(msg);}
+                finally{cmi$replaying.remove();}
+            };
+            var mc=Minecraft.getInstance();
+            // Cases needing per-particle vanilla limiter decisions retain the native handler.
+            if(mc.options.particles().get()!=net.minecraft.client.ParticleStatus.ALL
+                    ||mc.gameRenderer.getMainCamera().getPosition().distanceTo(spray.getPos())+spray.getFuzziness()*.5>32){
+                nativeCall.run();return;
+            }
+            var pigment=com.iridium126.createmanaindustry.client.hex.particles.HexPigmentData.nativePigment(msg.colorizer());
+            if(!engine.trySpawnHexSpray(spray.getPos(),spray.getVel(),spray.getFuzziness(),spray.getSpread(),spray.getCount(),pigment,nativeCall))nativeCall.run();
         });
         ci.cancel();
     }

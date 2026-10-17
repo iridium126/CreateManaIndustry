@@ -65,6 +65,12 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
     private int transitions,activeCount;
     private long nextCapture,lastCommit=-1,lastCaptureVersion=-1,lastCaptureConfirmation=-1;
     private boolean closed,closing;
+    private java.util.function.IntConsumer acquiredBody=body->{},releasedBody=body->{};
+    /** Install before admission; ownership changes are incremental, never a population scan. */
+    public void bodyOwnership(java.util.function.IntConsumer acquired,java.util.function.IntConsumer released){
+        open();if(!byBody.isEmpty())throw new IllegalStateException("Package ownership hook installed after admission");
+        acquiredBody=java.util.Objects.requireNonNull(acquired);releasedBody=java.util.Objects.requireNonNull(released);
+    }
     private java.util.Iterator<Entry> closingEntries;
 
     public PackageFreeAcquisitionGpu(PackageRegion region,long epoch,long revision,double ox,double oy,double oz,
@@ -202,7 +208,7 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
                     int local=physics.nextFreeBody();
                     try{encode(entry,local);}catch(IllegalArgumentException unsupported){release(entry,entry.checkpoint.baseline(),true);continue;}
                     entry.body=local;entry.candidate=pool.nextCandidate();entry.delta=detector.nextCandidate();
-                    physics.writeFree(local,body,emptyChain);byBody.put(local,entry);pool.writeMetadata(entry.candidate,metadata);channel.write(entry.delta,delta,baseline);
+                    physics.writeFree(local,body,emptyChain);byBody.put(local,entry);acquiredBody.accept(local);pool.writeMetadata(entry.candidate,metadata);channel.write(entry.delta,delta,baseline);
                     byCandidate.put(entry.candidate,entry);entry.phase=Phase.OFFER_ADMISSION;awaiting.add(entry);
                 }
                 case FINAL_UPLOAD -> {
@@ -233,7 +239,8 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         var entry=entries.get(packet.baseline().index());
         if(entry==null||entry.terminal||entry.phase!=Phase.ACTIVE||!sameIdentity(entry,packet)
                 ||entry.checkpoint.baseline().leaseEpoch()!=packet.baseline().leaseEpoch()||entry.checkpoint.baseline().revision()!=packet.baseline().revision()||packet.sequence()<=entry.environmentAck)return;
-        entry.environmentAck=packet.sequence();if(physics.environment()!=null)physics.environment().acknowledge(entry.body,packet.sequence(),packet.fireTicks(),packet.health(),packet.environmentPermissions(),physics.freeStateBuffer(),packet.environmentCorrection()?packet.baseline().snapshot():null,packet.environmentMotion(),ox,oy,oz,entry.offer.height()*.5f);
+        var lifecycle=entry.checkpoint.baseline();
+        entry.environmentAck=packet.sequence();if(physics.environment()!=null)physics.environment().acknowledge(entry.body,packet.sequence(),packet.fireTicks(),packet.health(),packet.environmentPermissions(),physics.freeStateBuffer(),packet.environmentCorrection()?packet.baseline().snapshot():null,packet.environmentMotion(),ox,oy,oz,entry.offer.height()*.5f,lifecycle.identity().id(),lifecycle.identity().generation(),lifecycle.leaseEpoch(),lifecycle.index(),lifecycle.revision());
         if(packet.environmentCorrection())physics.environmentCorrected();
     }
     private void encode(Entry entry,int bodyIndex) {
@@ -304,13 +311,14 @@ public final class PackageFreeAcquisitionGpu implements AutoCloseable {
         entry.phase=Phase.RELEASED;entry.terminal=true;entry.owned=false;transitions--;awaiting.remove(entry);
         // A closing map is drained only through its bounded iterator.
         if(!closing)entries.remove(entry.offer.baseline().index(),entry);byCandidate.remove(entry.candidate,entry);
-        if(entry.body>=0){byBody.remove(entry.body,entry);entry.retireBarrier=detector.captureBarrier();entry.environmentBarrier=physics.environment()==null?-1:physics.environment().barrier();
+        if(entry.body>=0){if(byBody.remove(entry.body,entry))releasedBody.accept(entry.body);entry.retireBarrier=detector.captureBarrier();entry.environmentBarrier=physics.environment()==null?-1:physics.environment().barrier();
             entry.retireFence=org.lwjgl.opengl.GL32.glFenceSync(org.lwjgl.opengl.GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);if(entry.retireFence==0)throw new IllegalStateException("Retirement fence unavailable");retired.addLast(entry);}
         reservedIdentities.remove(identity);
     }
     private void open(){if(closed || Thread.currentThread()!=owner)throw new IllegalStateException("Acquisition closed/off render thread");}
     @Override public void close(){
         if(closed)return;closed=true;admissions.close();
+        for(int body:byBody.keySet())releasedBody.accept(body);
         for(var entry:retired)if(entry.retireFence!=0)org.lwjgl.opengl.GL32.glDeleteSync(entry.retireFence);
         retired.clear();work.clear();awaiting.clear();entries.clear();byCandidate.clear();byBody.clear();reservedIdentities.clear();captureEntries.clear();captureExpected.clear();
     }

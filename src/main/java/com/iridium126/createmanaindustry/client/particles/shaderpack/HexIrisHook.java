@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.client.particles.shaderpack;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.accessor.*;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms;
-import com.iridium126.createmanaindustry.client.particles.hex.*;
+import com.iridium126.createmanaindustry.client.hex.pattern.*;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.mojang.blaze3d.shaders.Uniform;
 import net.irisshaders.iris.Iris;
@@ -25,6 +25,7 @@ import java.util.*;
 
 /** Iris-only bridge; Hex shadows never require iris-veil or the MODEL shader. */
 public final class HexIrisHook {
+    private static final com.iridium126.createmanaindustry.client.gpu.shader.GpuUniformCache uniforms=new com.iridium126.createmanaindustry.client.gpu.shader.GpuUniformCache();
     private static CMIPackageIrisPipeline owner;private static ShaderInstance shader;private static Uniform placeholder;
     private static Object attempted;private static boolean tessellation;private static final Deque<Set<Player>> accepted=new ArrayDeque<>();
     private static final HexPassState state=new HexPassState();private static String status="off";
@@ -34,7 +35,7 @@ public final class HexIrisHook {
     public static String status(){return status;}
     public static void begin(){accepted.push(new HashSet<>());}
     public static void end(){if(accepted.isEmpty())throw new IllegalStateException("Hex shadow scope");accepted.pop();}
-    public static void invalidate(){if(owner!=null&&shader!=null)owner.cmi$discardPackageShader(shader);if(placeholder!=null)placeholder.close();owner=null;shader=null;placeholder=null;attempted=null;}
+    public static void invalidate(){uniforms.clear();if(shader!=null)HexPatternService.retireProgram(shader.getId());if(owner!=null&&shader!=null)owner.cmi$discardPackageShader(shader);if(placeholder!=null)placeholder.close();owner=null;shader=null;placeholder=null;attempted=null;}
     private static boolean ensure() {
         Object pipeline=Iris.getPipelineManager().getPipelineNullable();if(attempted==pipeline)return shader!=null&&owner==pipeline;
         invalidate();attempted=pipeline;if(!(pipeline instanceof CMIPackageIrisPipeline bridge)||!bridge.cmi$packageHasShadows())return false;
@@ -49,9 +50,9 @@ public final class HexIrisHook {
             if(shader==null)throw new IllegalStateException("Missing Hex shadow shader");owner=bridge;
             if(shader.MODEL_VIEW_MATRIX==null)shader.MODEL_VIEW_MATRIX=placeholder=new Uniform("ModelViewMat",10,16,shader);
             tessellation=ref.getTessControlSource().isPresent();return true;
-        }catch(Exception|LinkageError error){status="native fallback: "+error;CreateManaIndustry.LOGGER.warn("[CMI Hex] Native Iris shadow merge unavailable",error);if(shader!=null){bridge.cmi$discardPackageShader(shader);shader=null;}return false;}
+        }catch(Exception|LinkageError error){status="native fallback: "+error;CreateManaIndustry.LOGGER.warn("[CMI Hex] Native Iris shadow merge unavailable",error);if(shader!=null){HexPatternService.retireProgram(shader.getId());uniforms.retire(shader.getId());bridge.cmi$discardPackageShader(shader);shader=null;}return false;}
     }
-    private static void matrix(int id,String name,Matrix4f value){int l=GL20.glGetUniformLocation(id,name);if(l>=0)GL20.glUniformMatrix4fv(l,false,value.get(new float[16]));}
+    private static void matrix(int id,String name,Matrix4f value){int l=uniforms.location(id,name);if(l>=0)uniforms.matrix(id,name,value);}
     public static void draw(Camera camera,Frustum frustum,boolean entities,boolean playerOnly){
         if(!GL.getCapabilities().OpenGL45||!CreateManaIndustry.HEX_ACTIVE||!HexPatternService.enabled()||!ClientConfig.shaderPackIntegration||(!entities&&!playerOnly))return;
         var mc=Minecraft.getInstance();if(mc.level==null)return;
@@ -78,11 +79,11 @@ public final class HexIrisHook {
                     com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(0,at.petrak.hexcasting.client.render.VCDrawHelper.getWHITE());
                     applied=true;shader.apply();int id=shader.getId();
                     int white=mc.getTextureManager().getTexture(at.petrak.hexcasting.client.render.VCDrawHelper.getWHITE()).getId();
-                    for(String name:new String[]{"gtexture","tex","texture0"}){int location=GL20.glGetUniformLocation(id,name);if(location>=0){int unit=GL20.glGetUniformi(id,location);GL13.glActiveTexture(GL13.GL_TEXTURE0+unit);GL11.glBindTexture(GL11.GL_TEXTURE_2D,white);}}HexPatternService.bindBatch(batch,id);
+                    for(String name:new String[]{"gtexture","tex","texture0"}){int location=uniforms.location(id,name);if(location>=0){int unit=GL20.glGetUniformi(id,location);GL13.glActiveTexture(GL13.GL_TEXTURE0+unit);GL11.glBindTexture(GL11.GL_TEXTURE_2D,white);}}HexPatternService.bindBatch(batch,id);
                     var view=new Matrix4f(ShadowRenderer.MODELVIEW);var projection=new Matrix4f(ShadowRenderer.PROJECTION);
                     matrix(id,"iris_ModelViewMat",view);matrix(id,"iris_ProjMat",projection);matrix(id,"iris_ModelViewMatInverse",new Matrix4f(view).invert());matrix(id,"iris_ProjMatInverse",new Matrix4f(projection).invert());
                     matrix(id,"shadowModelView",view);matrix(id,"shadowModelViewInverse",new Matrix4f(view).invert());
-                    int cp=GL20.glGetUniformLocation(id,"cameraPosition");if(cp>=0)GL20.glUniform3f(cp,(float)position.x,(float)position.y,(float)position.z);
+                    int cp=uniforms.location(id,"cameraPosition");if(cp>=0)GL20.glUniform3f(cp,(float)position.x,(float)position.y,(float)position.z);
                     HexPassState.nativeState();if(tessellation)GL40.glPatchParameteri(GL40.GL_PATCH_VERTICES,3);batch.draw(tessellation);
                     if(!accepted.isEmpty())accepted.peek().addAll(owners);status="active: current-frame, "+batch.count()+" patterns";
                 }finally{if(applied)shader.clear();}

@@ -161,6 +161,8 @@
     "iris.MixinProgramDirectives",
     "hexcasting.HexSprayRedirectMixin",
     "hexcasting.HexConjureParticleRedirectMixin",
+    "hexcasting.HexUuidColorPaletteMixin",
+    "hexcasting.HexPrideColorPaletteMixin",
     "hexcasting.HexPatternRedirectMixin",
     "hexcasting.HexWorldFrameMixin",
     "hexcasting.HexEntityContextMixin",

@@ -8,6 +8,15 @@ import com.iridium126.createmanaindustry.content.logistics.gpupackage.*;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackagePacket;
 
 class PackageTransitionInboxTest {
+    @Test void independentBudgetsNeverConsumeAcknowledgementsAsControls(){
+        var inbox=new PackageTransitionInbox();
+        for(int n=0;n<513;n++)inbox.offer(packet(ClientboundPackagePacket.ENVIRONMENT_ACK,n,1,1));
+        inbox.offer(packet(ClientboundPackagePacket.OFFER,0,1,0));
+        for(int n=0;n<512;n++)assertNotNull(inbox.pollAcknowledgement());
+        assertEquals(ClientboundPackagePacket.OFFER,inbox.pollControl().action());
+        assertNull(inbox.pollControl());assertEquals(1,inbox.size());
+        assertEquals(512,inbox.pollAcknowledgement().baseline().index());assertTrue(inbox.isEmpty());
+    }
     @Test void environmentAckBurstCanDrainIndependentlyOfAdmissionQuota(){
         var inbox=new PackageTransitionInbox();for(int i=0;i<512;i++){
             inbox.offer(packet(ClientboundPackagePacket.OFFER,i,1,0));inbox.offer(packet(ClientboundPackagePacket.ENVIRONMENT_ACK,i,1,40));
