@@ -21,7 +21,7 @@ import net.minecraft.core.particles.ParticleOptions;
 @Mixin(ParticleEngine.class)
 public class HexConjureParticleRedirectMixin {
     @Inject(method="tick()V",at=@At("TAIL"))
-    private void cmi$nativeParticleTick(CallbackInfo ignored){CMIParticleEngine.INSTANCE.nativeParticleTick();}
+    private void cmi$nativeParticleTick(CallbackInfo ignored){com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime.INSTANCE.nativeParticleTick();}
 
     @Inject(method = "createParticle(Lnet/minecraft/core/particles/ParticleOptions;DDDDDD)Lnet/minecraft/client/particle/Particle;",
             at = @At("HEAD"), cancellable = true)
@@ -36,7 +36,7 @@ public class HexConjureParticleRedirectMixin {
         if (!(options instanceof ConjureParticleOptions conjure) || !ClientConfig.hexParticleRedirect)
             return false;
         CMIParticleEngine engine = CMIParticleEngine.INSTANCE;
-        if (!engine.available())
+        if (!com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime.INSTANCE.available())
             return false; // retain the vanilla provider during engine startup/failure
         return engine.trySpawnHexParticle(x,y,z,xd,yd,zd,conjure.color());
     }

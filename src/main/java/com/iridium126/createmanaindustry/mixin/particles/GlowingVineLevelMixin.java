@@ -22,7 +22,7 @@ public abstract class GlowingVineLevelMixin {
         Level level = (Level) (Object) this;
         if (cir.getReturnValueZ() && level instanceof ClientLevel clientLevel) {
             BlockParticleEmitterClient.onBlockChanged(clientLevel, pos);
-            com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime.blockChanged(clientLevel,pos);
+            com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRuntime.blockChanged(clientLevel,pos);
         }
     }
 }

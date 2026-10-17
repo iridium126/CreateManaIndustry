@@ -7,7 +7,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime;
+import com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRuntime;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
 

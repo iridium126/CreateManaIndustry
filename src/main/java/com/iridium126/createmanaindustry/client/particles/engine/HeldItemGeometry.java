@@ -52,7 +52,7 @@ import org.joml.Quaternionf;
  * partId 7 (the carrier cutout segment; {@code vSeg} selects translucent parts
  * by the explicit id set {4,5,6}), face normal axis id.
  */
-final class HeldItemGeometry {
+public final class HeldItemGeometry {
 
     /** MODEL atlas cells: frame 0 = allay body, frames 1..6 = the tiers in
      * {@link com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.HeldItem}

@@ -1,6 +1,63 @@
 # GPU 运行时重构：当前验证与性能边界
 
-状态：实施中，未完成全量验收。报告更新：2026-10-17；采样时间见各次 metadata。基线为 `6b27b6ff10fce3264f9d7bd1da755db8f3fc4cc3`，当前为未提交工作区。实际 OpenGL：RTX 4070 Laptop GPU、NVIDIA 581.15、OpenGL 4.5；Create 固定为 6.0.10。
+更新：2026-10-17。第四批结构和自动正确性回归通过，真实客户端及整帧性能仍待用户验收。调用归属、预算、故障边界和测试入口见[第四批报告](../gpu-runtime-stage4.md)。固定 RTX 4070 Laptop GPU／NVIDIA 581.15／OpenGL 4.5；Minecraft 1.21.1／NeoForge 21.1.236／Create 6.0.10。
+
+## 第四批独立基线
+
+修改前保存实际工作区源码、编译产物、资源和 classpath；基线 HEAD `92157ea5d39fe04bbcea7da77860511b382d05d2`，源码快照 SHA-256 `c1d78afa50a9e2c58878f56fde391ab01675205aff7921f9106377108faf3ad4`。原暂存补丁 SHA-256 `c596e3fd1e504d4243eea8b2ac7bdcd5c2fac7554199a62743f11156666549ce` 保持不变。包裹另外从修改前 INDEX 生成独立命名的历史 Java／shader，仅迁移类型位置和必要可见性，不修改历史方法或 kernel。
+
+原始结果在忽略的 `build/benchmarks/gpu-runtime-stage4-20261017/`。`final-identity-cache/` 是最终通用池对照，`performance-final/` 是包裹空气／地面对照；此前目录记录修复过程，不能挑选为最终结果。
+
+## 第四批通用池生产 pass A/B
+
+同一进程使用独立类加载器、池、程序及 shader 资源，交替运行冻结基线和候选。每场景先各执行 20000 帧使 JVM 编译稳定，再做五次试验，每次先预热 5×20 帧、后采样 40 帧，试验间交换先后顺序。两边都使用已有生产 `GpuUniformCache`，避免夹具 `HashMap<Integer,...>` 的 GL 名称装箱污染分配。下表取五次分位数的中位数。
+
+| 场景 | GPU p50 ms 基线→当前 | GPU p95 变化 | CPU 提交 p50 ms 基线→当前 | CPU p95 变化 |
+| --- | --- | --- | --- | --- |
+| 空池 | 0.061440→0.062464（+1.67%） | +2.04% | 0.006900→0.007100（+2.90%） | -0.99% |
+| 16384 additive 静止 | 0.080896→0.081920（+1.27%） | -0.81% | 0.005900→0.005900（+0.00%） | -1.33% |
+| 16384 additive／ALPHA 各半 | 0.087040→0.087040（+0.00%） | +3.13% | 0.005600→0.005800（+3.57%） | +4.23% |
+
+| 场景 | GPU p99 ms 基线→当前 | CPU p99 ms 基线→当前 | 夹具分配 B／帧 基线→当前 |
+| --- | --- | --- | --- |
+| 空池 | 0.103424→0.103424 | 0.010400→0.011000 | 57→57 |
+| 16384 additive | 0.152576→0.129024 | 0.012500→0.007900 | 57→57 |
+| 16384 混合 | 0.135168→0.137216 | 0.007300→0.008600 | 57→57 |
+
+三组 GPU p50 最大回退 +1.67%，CPU 提交 p50 最大回退 +3.57%；GPU／CPU p95 最大回退分别 +3.13%／+4.23%。均在该受控范围的 5% 内。40 个样本的 p99 接近最大值，只作观测，不宣称尾延迟改善。
+
+每帧实际执行 reset、update、keygen、radix、capture、pool／population 提升及两种间接绘制，保留 10 次 dispatch API 和 2 次 draw API；空池零组数／零实例仍保留相同提交路径。每次均校验存活计数、两种材质实例数及 GL 错误。有效上传为 2048 B／帧的 histogram 清零，采样路径读回为 0；验证计数读取在采样外。夹具 GPU 查询会等待结果以分离 CPU 提交和 GPU 耗时，生产仍用异步 timestamp。
+
+该范围**不包含**场景组合根、输入生产、完整 CPU 预算 scope、世界／碰撞采集、Storm 反馈、包裹事务、Iris 或 Hex 图案的整帧组合，也不模拟普通地面碰撞。分配列包含计时夹具自身，不能当作游戏整帧分配。不能用这些数值代替用户执行的空场景、地面和混合整帧验收。
+
+初版每粒子 CAS 重试在密集追加时产生严重串行等待，已否决；最终单记录追加恢复原子计数，拒绝时饱和并在 barrier 后消费，整体输出保留全收或不收预约。Hex 运动和死亡表现也纳入保护。绑定缓存改为接收退休通知直接遗忘名称；uniform 缓存在一个绑定阶段复用，退休时原地失效。没有改变表现、逻辑 tick、攻击规则，未引入第五批工作组／排序／睡眠候选。
+
+## 第四批包裹空气／地面 A/B
+
+同驱动、同进程交替旧／新物理与环境 kernel，五次试验，每次预热 5×20 步后采样 40 次：
+
+| 包裹场景／数量 | GPU p50 ms 基线→当前 | CPU p50 ms 基线→当前 | GPU p95 变化 | CPU p95 变化 |
+| --- | --- | --- | --- | --- |
+| 空气／1024 | 0.515072→0.517120（+0.40%） | 0.020900→0.018700（-10.53%） | +1.36% | -18.49% |
+| 空气／8192 | 0.614400→0.615424（+0.17%） | 0.032400→0.033700（+4.01%） | -0.16% | -19.19% |
+| 地面／1024 | 0.123904→0.124928（+0.83%） | 0.015800→0.015700（-0.63%） | +0.79% | +17.07% |
+| 地面／8192 | 0.162816→0.162816（+0.00%） | 0.033100→0.031800（-3.93%） | +0.00% | -2.22% |
+
+四组 GPU／CPU p50 最大回退分别 +0.83%／+4.01%，通过该范围的中位门槛。地面 1024 的 CPU p95 增加 4.2 µs（+17.07%），如实保留；它没有通过第五批算法候选的 p95 门槛，本批也未替换算法。其余范围和旧夹具相同：不包含完整 prepare、网络、服务器事务或绘制，不能声明整帧性能通过。
+
+复现（冻结运行时目录必须是修改前保存的产物，不能从候选重新生成基线）：
+
+```powershell
+.\gradlew.bat benchmarkParticlePipelineAB --offline --no-configuration-cache --no-parallel -I scripts/particles/validation.init.gradle -Pstage4BaselineRuntime=build/benchmarks/gpu-runtime-stage4-20261017/baseline -PbenchmarkOutput=build/benchmarks/stage4-pipeline-repeat
+python -B scripts/particles/prepare_package_baseline.py --ref 92157ea5d39fe04bbcea7da77860511b382d05d2 --output build/stage4-package-ref-baseline
+.\gradlew.bat validatePackageGpu --offline --no-configuration-cache --no-parallel -I scripts/particles/validation.init.gradle -I scripts/particles/environment-benchmark.init.gradle -PpackageEnvironmentBaseline=build/stage4-package-ref-baseline -PbenchmarkOutput=build/benchmarks/stage4-package-repeat
+```
+
+包裹原始 CSV 另写入 `build/package-environment-benchmark*.csv`，运行结束后复制到该次结果目录。原始显存测量仍交由外部系统／驱动工具；没有新增游戏内显存输出。
+
+## 此前批次历史结果
+
+以下结果使用历史基线 `6b27b6ff10fce3264f9d7bd1da755db8f3fc4cc3`，对应此前批次的局部修改，不能作为第四批的新验收结果。
 
 ## 普通包裹场景 A/B
 

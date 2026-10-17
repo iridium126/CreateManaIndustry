@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.packages;
 
-import com.iridium126.createmanaindustry.client.particles.packages.PackageWorldRuntime;
+import com.iridium126.createmanaindustry.client.packages.world.PackageWorldRuntime;
 import com.simibubi.create.content.kinetics.chainConveyor.ChainPackageInteractionHandler;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;

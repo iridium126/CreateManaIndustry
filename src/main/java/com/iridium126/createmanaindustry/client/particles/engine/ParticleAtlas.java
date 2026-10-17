@@ -1,4 +1,5 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
+import com.iridium126.createmanaindustry.client.particles.interaction.CombatSpecs;
 
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -210,7 +211,7 @@ public final class ParticleAtlas {
 
     public void free() {
         if (textureId >= 0) {
-            GL30.glDeleteTextures(textureId);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(textureId);
             textureId = -1;
         }
     }

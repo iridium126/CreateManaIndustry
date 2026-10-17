@@ -16,6 +16,7 @@ import java.util.*;
 
 /** Parallel curves, ordered reservations and parallel emission into the existing conjure/Iris draw path. */
 public final class SharedFateGpu implements AutoCloseable {
+    public static final SharedFateGpu INSTANCE=new SharedFateGpu();
     private static final java.util.function.Function<String,String> SOURCES=com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderResources.loader("createmanaindustry","shaders/particles/");
     private final com.iridium126.createmanaindustry.client.gpu.shader.GpuUniformCache uniforms = new com.iridium126.createmanaindustry.client.gpu.shader.GpuUniformCache();
     // Five input vec4s; twenty-four job/state vec4s include the frame, LOD history and 33-point arc table.
@@ -59,7 +60,7 @@ public final class SharedFateGpu implements AutoCloseable {
             if(read!=0){
                 GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,read);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,next);
                 GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,(long)stateCapacity*STATE_BYTES);
-                GL15.glDeleteBuffers(read);GL15.glDeleteBuffers(write);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(read);com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(write);
             }
             read=next;write=nextWrite;stateCapacity=slots;
         }
@@ -75,7 +76,7 @@ public final class SharedFateGpu implements AutoCloseable {
         int needed=debrisSlots.values().stream().mapToInt(slot->slot+1).max().orElse(0);
         if(needed>debrisCapacity){
             int slotsNeeded=powerOfTwo(needed),next=buffer((long)slotsNeeded*2048*64),nextWrite=buffer((long)slotsNeeded*2048*64);
-            if(debrisRead!=0){copy(debrisRead,next,(long)debrisCapacity*2048*64);GL15.glDeleteBuffers(debrisRead);GL15.glDeleteBuffers(debrisWrite);}
+            if(debrisRead!=0){copy(debrisRead,next,(long)debrisCapacity*2048*64);com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(debrisRead);com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(debrisWrite);}
             debrisRead=next;debrisWrite=nextWrite;debrisCapacity=slotsNeeded;
         }
         staging.clear();
@@ -88,12 +89,12 @@ public final class SharedFateGpu implements AutoCloseable {
             Vec3 delta=wire.lastCamera==null?Vec3.ZERO:wire.lastCamera.subtract(camera);
             staging.putFloat((float)delta.x).putFloat((float)delta.y).putFloat((float)delta.z).putFloat(0);
         }
-        staging.flip();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,input);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,staging);
+        staging.flip();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,input);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,staging);
         return true;
     }
     public void generate(ParticleAppendTarget output,int counterSlot,Matrix4fc view,Matrix4fc projection,float[] frustum,float throttle) {
         if(frames.isEmpty())return;
-        int emitter=output.emitter(SPEC),alphaEmitter=output.emitter(ALPHA_SPEC),ribbonEmitter=output.emitter(RIBBON_SPEC);
+        int emitter=output.ensureEmitter(SPEC),alphaEmitter=output.ensureEmitter(ALPHA_SPEC),ribbonEmitter=output.ensureEmitter(RIBBON_SPEC);
         if(emitter<0||alphaEmitter<0||ribbonEmitter<0)return;
         int needed=Math.addExact(Math.min(Math.min(output.capacity(),ClientConfig.sameFateMaxParticles),2048*frames.size()),4*frames.size());
         if(nodeWriteCapacity<needed){nodeWrite=reallocate(nodeWrite,(long)needed*64);nodeWriteCapacity=needed;}
@@ -106,7 +107,7 @@ public final class SharedFateGpu implements AutoCloseable {
         GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,(long)stateCapacity*STATE_BYTES);
         GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,input);GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,jobs);
         GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,2,read);GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,3,write);
-        output.bind(counterSlot,4,5);
+        output.bind(output.reserveOutput(),counterSlot,4,5);
         GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,nodeWrite);
         GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,7,debrisRead);
         GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,8,debrisWrite);
@@ -154,17 +155,17 @@ public final class SharedFateGpu implements AutoCloseable {
     private static int buffer(long bytes){
         if(bytes>GpuCapabilities.current().storageBlockBytes())throw new IllegalStateException("Shared-fate GPU metadata exceeds SSBO capacity");
         int buffer=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
-        GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);zero(buffer);return buffer;
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);zero(buffer);return buffer;
     }
     private static void zero(int buffer){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_RGBA32F,GL11.GL_RGBA,GL11.GL_FLOAT,(ByteBuffer)null);}
-    private static int reallocate(int old,long bytes){int next=buffer(bytes);if(old!=0)GL15.glDeleteBuffers(old);return next;}
+    private static int reallocate(int old,long bytes){int next=buffer(bytes);if(old!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(old);return next;}
     private void uint(int p,String name,int value){GL30.glUniform1ui(uniforms.location(p,name),value);}
     private void scalar(int p,String name,float value){GL20.glUniform1f(uniforms.location(p,name),value);}
     private void matrix(int p,String name,Matrix4fc value){uniforms.matrix(p,name,value);}
     public void close(){
         uniforms.clear();
-        for(int buffer:new int[]{input,jobs,read,write,nodeRead,nodeWrite,debrisRead,debrisWrite})if(buffer!=0)GL15.glDeleteBuffers(buffer);
-        if(prepare!=0)GL20.glDeleteProgram(prepare);if(reserve!=0)GL20.glDeleteProgram(reserve);if(emit!=0)GL20.glDeleteProgram(emit);
+        for(int buffer:new int[]{input,jobs,read,write,nodeRead,nodeWrite,debrisRead,debrisWrite})if(buffer!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(buffer);
+        if(prepare!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(prepare);if(reserve!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(reserve);if(emit!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(emit);
         nodeRead=nodeWrite=nodeReadCapacity=nodeWriteCapacity=debrisRead=debrisWrite=debrisCapacity=0;debrisSlots.clear();
         disabled=false;staged=false;input=jobs=read=write=prepare=reserve=emit=inputCapacity=stateCapacity=0;staging=null;frames=List.of();
     }

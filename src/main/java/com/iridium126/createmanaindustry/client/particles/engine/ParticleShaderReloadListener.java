@@ -32,8 +32,8 @@ public final class ParticleShaderReloadListener {
             protected void apply(Void ignored, ResourceManager resourceManager, ProfilerFiller profilerFiller) {
                 // Runs on the game thread after a resource reload; the engine
                 // recompiles lazily on the render thread's next frame.
-                com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime.closeCurrent();
-                CMIParticleEngine.INSTANCE.requestProgramRebuild();
+                com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRuntime.closeCurrent();
+                com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.requestProgramRebuild();
             }
         });
     }

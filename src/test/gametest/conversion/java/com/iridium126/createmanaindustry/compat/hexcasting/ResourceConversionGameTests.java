@@ -22,7 +22,6 @@ import com.iridium126.createmanaindustry.compat.trickster.trick.ManaToMediaTrick
 import com.iridium126.createmanaindustry.compat.trickster.blunder.ResourceConversionBlunder;
 import com.mojang.authlib.GameProfile;
 import dev.enjarai.trickster.item.ModItems;
-import dev.enjarai.trickster.item.component.ManaComponent;
 import dev.enjarai.trickster.item.component.ModComponents;
 import dev.enjarai.trickster.spell.Pattern;
 import dev.enjarai.trickster.spell.SpellContext;

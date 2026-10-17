@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry;
 
-import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
 import com.iridium126.createmanaindustry.client.particles.BlockParticleEmitterClient;
 import com.iridium126.createmanaindustry.client.render.fuelrod.FuelRodBloomHandler;
 import com.iridium126.createmanaindustry.client.render.mist.MistClientHandler;
@@ -57,20 +56,20 @@ public class CreateManaIndustryClient {
         // linking client-only implementations into classes loaded on servers.
         ClientboundStormStatePacket.installClientHandler(AllayStormClientHandler::onState);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackagePacket.installClientHandler(
-                com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient::receive);
+                com.iridium126.createmanaindustry.client.packages.authority.PackageAuthorityClient::receive);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageAckPacket.installClientHandler(
-                com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient::receiveAcks);
+                com.iridium126.createmanaindustry.client.packages.authority.PackageAuthorityClient::receiveAcks);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageObserverPacket.installClientHandler(
-                com.iridium126.createmanaindustry.client.particles.packages.PackageLightObserverClient::receive);
-        com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundLightPackagePacket.installClientHandler(com.iridium126.createmanaindustry.client.particles.packages.PackageLightClient::receive);
+                com.iridium126.createmanaindustry.client.packages.feedback.PackageLightObserverClient::receive);
+        com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundLightPackagePacket.installClientHandler(com.iridium126.createmanaindustry.client.packages.feedback.PackageLightClient::receive);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainPackagePacket.installClientHandler(
-                com.iridium126.createmanaindustry.client.particles.packages.PackageAuthorityClient::receiveChain);
+                com.iridium126.createmanaindustry.client.packages.authority.PackageAuthorityClient::receiveChain);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainInteractionPacket.installClientHandler(
-                com.iridium126.createmanaindustry.client.particles.packages.PackageWorldRuntime::chainInteraction);
+                com.iridium126.createmanaindustry.client.packages.world.PackageWorldRuntime::chainInteraction);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageChainClientHooks.install(
-                com.iridium126.createmanaindustry.client.particles.packages.PackageChainClientOwnership.INSTANCE);
+                com.iridium126.createmanaindustry.client.packages.authority.PackageChainClientOwnership.INSTANCE);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageForceHooks.install(
-                com.iridium126.createmanaindustry.client.particles.packages.PackageForceClient.HOOKS);
+                com.iridium126.createmanaindustry.client.packages.world.PackageForceClient.HOOKS);
         ClientboundStormDamagePacket.installClientHandler(AllayStormClientHandler::onDamage);
         ClientboundStormPositionsPacket.installClientHandler(AllayStormClientHandler::onPositions);
         ClientboundStormCenterPacket.installClientHandler(AllayStormClientHandler::onCenter);
@@ -151,16 +150,16 @@ public class CreateManaIndustryClient {
         // NB: Stage is a plain class of constants (not an enum) in this NeoForge
         // version, so stage dispatch must use identity comparison, not switch.
         var stage = event.getStage();
-        if(stage==RenderLevelStageEvent.Stage.AFTER_ENTITIES)com.iridium126.createmanaindustry.client.particles.packages.PackageLightClient.render(event);
+        if(stage==RenderLevelStageEvent.Stage.AFTER_ENTITIES)com.iridium126.createmanaindustry.client.packages.feedback.PackageLightClient.render(event);
         // ALLVR terrain is rendered by Sodium's normal terrain pass.  There is
         // deliberately no second ALLVR terrain draw here; Iris therefore sees
         // the same pass/framebuffer/material path as ordinary Sodium sections.
         if (stage == RenderLevelStageEvent.Stage.AFTER_SKY) {
             if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.prepareWorld();
-            CMIParticleEngine.INSTANCE.beginFrame(event.getCamera(),
+            com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.beginFrame(event.getCamera(),
                     event.getModelViewMatrix(), event.getProjectionMatrix(), event.getPartialTick());
         } else if (stage == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
-            CMIParticleEngine.INSTANCE.endFrame(event.getCamera(),
+            com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.endFrame(event.getCamera(),
                     event.getModelViewMatrix(), event.getProjectionMatrix());
             if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.drawWorld();
         }
@@ -193,7 +192,7 @@ public class CreateManaIndustryClient {
     /** Releases the GPU particle engine's resources when the game shuts down. */
     @SubscribeEvent
     private static void onGameShuttingDown(GameShuttingDownEvent event) {
-        CMIParticleEngine.INSTANCE.close();
+        com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.close();
     }
 
     /**
@@ -201,26 +200,26 @@ public class CreateManaIndustryClient {
      * per-frame GPU hit query says an allay is under the crosshair (and the
      * CPU block-occlusion check agrees), the vanilla handling is cancelled and
      * replaced with a fully local synthetic attack ({@code
-     * CMIParticleEngine.handlePlayerAttack}) -- cooldown scaling, crits,
+     * ModelInteractionRuntime.handlePlayerAttack}) -- cooldown scaling, crits,
      * enchantments and knockback all mirror {@code Player.attack}, but no
      * interact packet is sent. A miss falls through to the vanilla miss swing.
      */
     @SubscribeEvent
     private static void onAttackKey(InputEvent.InteractionKeyMappingTriggered event) {
-        if (event.isAttack() && CMIParticleEngine.INSTANCE.handlePlayerAttack())
+        if (event.isAttack() && com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.handlePlayerAttack())
             event.setCanceled(true);
     }
 
     /**
      * Use-key fall-through for the synthetic crosshair pick: {@code
-     * CMIParticleEngine.injectCrosshairPick} surfaces an ENTITY hit on the
+     * ModelInteractionRuntime.injectCrosshairPick} surfaces an ENTITY hit on the
      * client-side proxy ({@code proxyFor}), and vanilla {@code startUseItem}
      * would run the proxy's {@code Allay.mobInteract} as client-side
      * prediction — handing the held item to a throwaway object (count
      * desyncs, ITEM_GIVEN plays, the server never sees an entity). The storm
      * allay is not an entity: the click is cancelled and replayed against
      * the pre-injection vanilla pick result ({@code
-     * CMIParticleEngine.replayVanillaUse}) exactly as if the particle weren't
+     * ModelInteractionRuntime.replayVanillaUse}) exactly as if the particle weren't
      * there — items stay in hand, real entities and blocks behind the allay
      * respond normally. Real allay entities never match this gate (plain
      * engine object identity, and vanilla picking always outranks the
@@ -232,11 +231,11 @@ public class CreateManaIndustryClient {
             return;
         Minecraft mc = Minecraft.getInstance();
         if (!(mc.hitResult instanceof EntityHitResult hit)
-                || !CMIParticleEngine.INSTANCE.isSyntheticPickTarget(hit.getEntity()))
+                || !com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.isSyntheticPickTarget(hit.getEntity()))
             return;
         event.setCanceled(true);
         event.setSwingHand(false);
-        CMIParticleEngine.INSTANCE.replayVanillaUse(mc);
+        com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.replayVanillaUse(mc);
     }
 
     @SubscribeEvent
@@ -314,7 +313,7 @@ public class CreateManaIndustryClient {
             // so a new-dimension storm ACTIVATE applied on the loading screen
             // in between was wiped right after (the server never re-sends an
             // ACTIVATE until the player re-enters the activation range).
-            CMIParticleEngine.INSTANCE.onLevelChanged();
+            com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.onLevelChanged();
         }
     }
 
@@ -327,7 +326,7 @@ public class CreateManaIndustryClient {
     private static void onLevelLoad(LevelEvent.Load event) {
         if (event.getLevel() instanceof net.minecraft.client.multiplayer.ClientLevel) {
             BlockParticleEmitterClient.clear();
-            CMIParticleEngine.INSTANCE.onLevelChanged();
+            com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.onLevelChanged();
             // Terrain binds in AllvrMinecraftLevelMixin after the old world's
             // Unload; this constructor-time Load is too early for that state.
         }

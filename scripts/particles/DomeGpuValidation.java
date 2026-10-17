@@ -48,14 +48,14 @@ public class DomeGpuValidation extends StarfallGpuValidation {
     gpu.commit();int committed=gpu.committedBuffer();gpu.rebuild(new ClientboundStormWavePacket[]{dome(n,2,2,3),null,null,null});gpu.prepare(2);gpu.abort();check(gpu.committedBuffer()==committed,"failed dome prepare published");
     GL15.glDeleteBuffers(out);
    }
-  }finally{CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}
+  }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
  }
  static void assertFinite(ByteBuffer b,int o,int words){for(int j=0;j<words;j++)check(Float.isFinite(b.getFloat(o+j*4)),"nonfinite dome geometry");}
  static void unlockedCarrier(){
   int p=motionProgram(),out=buffer(bytes(768*48));try(var gpu=new StarfallGpuBuffers()){
    stage(gpu,dome(768,1,0,2),p);bind(10,out);ui(p,"uCount",768);f(p,"uTimeSec",12);dispatch(p,12);var rows=read(out,768*48);
    for(int i=0;i<768;i++){check(rows.getFloat(i*48+12)==2,"unlocked dome entered warning phase");check(rows.getFloat(i*48+32)==0,"unlocked dome holds sword");}
-  }finally{GL15.glDeleteBuffers(out);CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}
+  }finally{GL15.glDeleteBuffers(out);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
  }
  static void contactsWithoutRings(){
   int p=compile("wavecontact.comp");try(var gpu=new StarfallGpuBuffers()){
@@ -75,12 +75,12 @@ public class DomeGpuValidation extends StarfallGpuValidation {
     put(out,bytes(4+16384*24));f(p,"uTimeSec",10+1.5f+AllayDome.closeSeconds(snap.crownRadius())+.01f);dispatch(p,(n+65)/64);check(read(out,4).getInt(0)==0,"completed petal damages");
     for(int b:new int[]{pool,counter,header,out,stampsA,stampsB})GL15.glDeleteBuffers(b);
    }
-  }finally{CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}
+  }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
  }
  static void carrierAndCompaction(){
   int n=24576;try(var q=new Fixture(n,n,n);var gpu=new StarfallGpuBuffers();var shadow=new ModelShadowGpu(n,ParticleBuffers.CARRIER_CAP+n,DomeGpuValidation::source)){
    var data=bytes(n*64);for(int i=0;i<n;i++){particle(data,i,2,0,0,20);data.putFloat(i*64+12,n-i);}
-   q.build(data,n);var snap=dome(n,1,2,3);stage(gpu,snap,0);gpu.commit();shadow.starfall(gpu.committedBuffer());var c=new com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling();c.distance=-1;c.safe=-1;
+   q.build(data,n);var snap=dome(n,1,2,3);stage(gpu,snap,0);gpu.commit();shadow.starfall(gpu.committedBuffer());var c=new com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling();c.distance=-1;c.safe=-1;
    for(int group=0;group<6;group++){
     float time=AllayDome.warningStart(10,20,group)+.5f;
     shadow.prepare(q.pool,q.emit,q.counter,c,0,0,0,.35f,.6f,1,time,new float[16],new float[16],new float[4],q.pop,7);
@@ -104,7 +104,7 @@ public class DomeGpuValidation extends StarfallGpuValidation {
   GL20.glUseProgram(program);GL41.glProgramUniformMatrix4fv(program,GL20.glGetUniformLocation(program,"vp"),false,vp.get(new float[16]));GL11.glViewport(0,0,512,384);GL11.glClearColor(.025f,.035f,.07f,1);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);GL11.glEnable(GL32.GL_PROGRAM_POINT_SIZE);GL11.glDrawArrays(GL11.GL_POINTS,0,count);
   var pixels=bytes(512*384*4);GL11.glReadPixels(0,0,512,384,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);var image=new java.awt.image.BufferedImage(512,384,java.awt.image.BufferedImage.TYPE_INT_RGB);int lit=0;
   for(int y=0;y<384;y++)for(int x=0;x<512;x++){int o=(y*512+x)*4,r=pixels.get(o)&255,g=pixels.get(o+1)&255,b=pixels.get(o+2)&255;if(b>100)lit++;image.setRGB(x,383-y,(r<<16)|(g<<8)|b);}check(lit>100,"dome framebuffer missing");javax.imageio.ImageIO.write(image,"png",Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/dome-geometry-framebuffer.png").toFile());
-  GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL11.glDisable(GL32.GL_PROGRAM_POINT_SIZE);GL15.glDeleteBuffers(input);GL11.glDeleteTextures(tex);GL30.glDeleteFramebuffers(fb);GL30.glDeleteVertexArrays(vao);GL20.glUseProgram(0);GL20.glDeleteProgram(program);GL20.glDeleteShader(vs);GL20.glDeleteShader(fs);
+  GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL11.glDisable(GL32.GL_PROGRAM_POINT_SIZE);GL15.glDeleteBuffers(input);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(tex);GL30.glDeleteFramebuffers(fb);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);GL20.glUseProgram(0);GL20.glDeleteProgram(program);GL20.glDeleteShader(vs);GL20.glDeleteShader(fs);
  }
  static void simulationBanks(){
   int n=65,update=compile("update.comp");try(var q=new Fixture(n,n,n);var gpu=new StarfallGpuBuffers()){
@@ -137,7 +137,7 @@ public class DomeGpuValidation extends StarfallGpuValidation {
     }
     check(live==63,"corpse expiration or permanent members incorrect");
    }finally{for(int b:new int[]{output,grid,damage,players,correction,map,identity})GL15.glDeleteBuffers(b);}
-  }finally{CMIParticleEngine.clearUniformProgram(update);GL20.glDeleteProgram(update);}
+  }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(update);GL20.glDeleteProgram(update);}
  }
  public static void main(String[] args)throws Exception{
   GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(512,384,"Dome GPU validation",0,0);
@@ -164,7 +164,7 @@ public class DomeGpuValidation extends StarfallGpuValidation {
     ui(update,"uCapacity",total);ui(update,"uKillEmit",-1);f(update,"uDt",.05f);f(update,"uTimeSec",12);f(update,"uStormOmegaNow",.1f);
     GL41.glProgramUniform4fv(update,GL20.glGetUniformLocation(update,"uWave"),new float[]{1,1,0,60,0,0,0,0,0,0,0,0,0,0,0,0});GL41.glProgramUniform4fv(update,GL20.glGetUniformLocation(update,"uWaveTarget"),new float[]{0,.5f,0,1,0,0,0,0,0,0,0,0,0,0,0,0});
     GL41.glProgramUniform4fv(update,GL20.glGetUniformLocation(update,"uWavePath"),new float[]{0,12,0,1,0,10.5f,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0});
-    var cull=new com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling();cull.distance=-1;cull.safe=-1;
+    var cull=new com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling();cull.distance=-1;cull.safe=-1;
     var zero=bytes(16);var liveCounter=bytes(16).putInt(0,total);float[] emptyWaves=new float[]{1,1,0,60,0,0,0,0,0,0,0,0,0,0,0,0},emptyTargets=new float[]{0,.5f,0,1,0,0,0,0,0,0,0,0,0,0,0,0},emptyTiers=new float[]{5,0,0,0};int updateQuery=GL15.glGenQueries(),shadowQuery=GL15.glGenQueries(),cullQuery=GL15.glGenQueries();
     for(boolean domeMode:new boolean[]{false,true}){
      var packet=domeMode?dome(members,1,2,3):starBenchmarkPacket(members);
@@ -190,7 +190,7 @@ public class DomeGpuValidation extends StarfallGpuValidation {
      check(GL11.glGetError()==0,"benchmark GL error");String row=total+","+members+","+(domeMode?"dome":"starfall")+","+run+","+p(ug,.5)+","+p(ug,.95)+","+p(sg,.5)+","+p(sg,.95)+","+p(kg,.5)+","+p(kg,.95)+","+p(cw,.5)+","+p(cw,.95)+","+p(tc,.5)+","+p(tc,.95)+","+p(alloc,.5)+","+gpu.uploadedBytes()+","+gpu.bytes();rows.add(row);System.out.println(row);
     }
     }
-    GL15.glDeleteQueries(cullQuery);GL15.glDeleteQueries(updateQuery);GL15.glDeleteQueries(shadowQuery);for(int id:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(id);for(int p:new int[]{build,update}){CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}for(int p:new int[]{q.reset,q.keygen,q.prepare})CMIParticleEngine.clearUniformProgram(p);
+    GL15.glDeleteQueries(cullQuery);GL15.glDeleteQueries(updateQuery);GL15.glDeleteQueries(shadowQuery);for(int id:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(id);for(int p:new int[]{build,update}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}for(int p:new int[]{q.reset,q.keygen,q.prepare})com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);
    }
   }
   Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/dome-benchmark.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/dome-benchmark-samples.csv"),raw);

@@ -36,7 +36,7 @@ final class ParticleEmitterUploads {
             staging.clear();staging.put(mirror,offset,length).flip();
             ParticleDiagnostics.INSTANCE.upload(length*4L);
             ParticleDiagnostics.INSTANCE.call();
-            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,offset*4L,staging);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,offset*4L,staging);
             dirty.clear(first,end);first=dirty.nextSetBit(end);
         }
     }

@@ -1,5 +1,7 @@
+import com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry;
+import com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState;
 import java.nio.*;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageCpuDiagnostics;
+import com.iridium126.createmanaindustry.client.packages.feedback.PackageCpuDiagnostics;
 import java.nio.file.*;
 import java.util.*;
 import org.lwjgl.*;
@@ -7,42 +9,40 @@ import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.*;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
-import com.iridium126.createmanaindustry.client.particles.packages.PackagePhysicsGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageSimulationClock;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageForceScene;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageForceGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageMixedPhysicsGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageChainTrackGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageChainEventChannel;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageMovingGeometry;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageMovingDynamicBoxes;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageMovingCollisionCache;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageMovingCollisionGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageReadbackRing;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageAdmissionTracker;
-import com.iridium126.createmanaindustry.client.particles.packages.PackagePoolGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageChainFramesGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageDeltaGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageFreeUpload;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageFreeAcquisitionGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageControlQueue;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageChainAcquisitionGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageChainUpload;
-import com.iridium126.createmanaindustry.client.particles.packages.PackagePoseQueryGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageObserverGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageFreePickQueue;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageChainCheckpointGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageChainUseQueue;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageModelCache;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageDeltaChannel;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageDeltaJournal;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionCache;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRequests;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageWorldPrefetchGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageFreezeDiagnosticsGpu;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageFreezeReport;
+import com.iridium126.createmanaindustry.client.packages.simulation.PackagePhysicsGpu;
+import com.iridium126.createmanaindustry.client.packages.feedback.PackageEnvironmentGpu;
+import com.iridium126.createmanaindustry.client.packages.simulation.PackageSimulationClock;
+import com.iridium126.createmanaindustry.client.packages.world.PackageForceScene;
+import com.iridium126.createmanaindustry.client.packages.simulation.PackageForceGpu;
+import com.iridium126.createmanaindustry.client.packages.simulation.PackageMixedPhysicsGpu;
+import com.iridium126.createmanaindustry.client.packages.simulation.PackageChainTrackGpu;
+import com.iridium126.createmanaindustry.client.packages.authority.PackageChainEventChannel;
+import com.iridium126.createmanaindustry.client.packages.world.PackageMovingGeometry;
+import com.iridium126.createmanaindustry.client.packages.world.PackageMovingDynamicBoxes;
+import com.iridium126.createmanaindustry.client.packages.world.PackageMovingCollisionCache;
+import com.iridium126.createmanaindustry.client.packages.world.PackageMovingCollisionGpu;
+import com.iridium126.createmanaindustry.client.packages.feedback.PackageReadbackRing;
+import com.iridium126.createmanaindustry.client.packages.authority.PackageAdmissionTracker;
+import com.iridium126.createmanaindustry.client.packages.render.PackagePoolGpu;
+import com.iridium126.createmanaindustry.client.packages.simulation.PackageChainFramesGpu;
+import com.iridium126.createmanaindustry.client.packages.feedback.PackageDeltaGpu;
+import com.iridium126.createmanaindustry.client.packages.simulation.PackageFreeUpload;
+import com.iridium126.createmanaindustry.client.packages.authority.PackageFreeAcquisitionGpu;
+import com.iridium126.createmanaindustry.client.packages.authority.PackageControlQueue;
+import com.iridium126.createmanaindustry.client.packages.authority.PackageChainAcquisitionGpu;
+import com.iridium126.createmanaindustry.client.packages.simulation.PackageChainUpload;
+import com.iridium126.createmanaindustry.client.packages.feedback.PackagePoseQueryGpu;
+import com.iridium126.createmanaindustry.client.packages.authority.PackageFreePickQueue;
+import com.iridium126.createmanaindustry.client.packages.feedback.PackageChainCheckpointGpu;
+import com.iridium126.createmanaindustry.client.packages.authority.PackageChainUseQueue;
+import com.iridium126.createmanaindustry.client.packages.render.PackageModelCache;
+import com.iridium126.createmanaindustry.client.packages.feedback.PackageDeltaChannel;
+import com.iridium126.createmanaindustry.client.packages.feedback.PackageDeltaJournal;
+import com.iridium126.createmanaindustry.client.packages.world.PackageCollisionCache;
+import com.iridium126.createmanaindustry.client.packages.world.PackageCollisionGpu;
+import com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRequests;
+import com.iridium126.createmanaindustry.client.packages.world.PackageWorldPrefetchGpu;
+import com.iridium126.createmanaindustry.client.packages.feedback.PackageFreezeReport;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageDeltaCodec;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageAckRanges;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageBatchDeltaCodec;
@@ -64,7 +64,9 @@ import com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderS
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms;
 
-/** Driver validation of package kernels; does not enable gameplay takeover. */
+/** Driver validation of package kernels;
+
+ does not enable gameplay takeover. */
 public class PackageGpuValidation {
     static int checks;
     static boolean irisNativeTransform;
@@ -281,9 +283,9 @@ public class PackageGpuValidation {
                 fixture.bridge.unbindPassTbos(10);
             }
         }finally {
-            GL20.glUseProgram(0);GL30.glBindVertexArray(0);GL20.glDeleteProgram(ordinary);GL20.glDeleteProgram(merged);GL30.glDeleteVertexArrays(vao);
+            GL20.glUseProgram(0);GL30.glBindVertexArray(0);GL20.glDeleteProgram(ordinary);GL20.glDeleteProgram(merged);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);
             for(int b:new int[]{pool,attachment,lightBuffer,output})GL15.glDeleteBuffers(b);
-            GL11.glDeleteTextures(views);GL11.glDeleteTextures(light);GL13.glActiveTexture(GL13.GL_TEXTURE0);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(views);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(light);GL13.glActiveTexture(GL13.GL_TEXTURE0);
         }
     }
     static void check(boolean ok,String message){checks++;if(!ok)throw new AssertionError(message);}
@@ -2002,7 +2004,7 @@ public class PackageGpuValidation {
         var counter=PackageCpuDiagnostics.class.getDeclaredField("dispatches");counter.setAccessible(true);
         for(int count:new int[]{0,1,17,512,513})for(int trial=0;trial<5;trial++)for(int order=0;order<2;order++){
             boolean baseline=(trial+order)%2==0;String label=baseline?"baseline":"current";int capacity=Math.max(1,count);
-            Class<?> type=Class.forName("com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentGpu"+(baseline?"Baseline":""));
+            Class<?> type=Class.forName("com.iridium126.createmanaindustry.client.packages.feedback.PackageEnvironmentGpu"+(baseline?"Baseline":""));
             var env=(AutoCloseable)type.getConstructor(int.class,java.util.function.Function.class).newInstance(capacity,baseline?oldSources:(java.util.function.Function<String,String>)PackageGpuValidation::source);
             var upload=type.getMethod("upload",ByteBuffer.class,int.class);
             var ack=java.lang.invoke.MethodHandles.lookup().unreflect(type.getMethod("acknowledge",int.class,long.class,int.class,float.class,int.class)).bindTo(env);
@@ -2045,7 +2047,7 @@ public class PackageGpuValidation {
         raw.add("count,active,trial,variant,sample,gpu_ms,submit_ms,poll_ms,download_bytes");
         for(int count:new int[]{8192,131072})for(int active:new int[]{0,17,512})for(int trial=0;trial<5;trial++)for(int order=0;order<2;order++){
             boolean baseline=(trial+order)%2==0;String label=baseline?"baseline":"current";
-            Class<?> type=Class.forName("com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentGpu"+(baseline?"Baseline":""));
+            Class<?> type=Class.forName("com.iridium126.createmanaindustry.client.packages.feedback.PackageEnvironmentGpu"+(baseline?"Baseline":""));
             var env=(AutoCloseable)type.getConstructor(int.class,java.util.function.Function.class).newInstance(count,baseline?oldSources:(java.util.function.Function<String,String>)PackageGpuValidation::source);
             int timer=GL15.glGenQueries();
             try {
@@ -2097,8 +2099,8 @@ public class PackageGpuValidation {
             // Alternate order to reduce warm-driver/clock bias.
             for(int order=0;order<2;order++){
                 boolean baseline=(run+order)%2==0;String suffix=baseline?"Baseline":"";
-                Class<?> atlasType=Class.forName("com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionGpu"+suffix);
-                Class<?> physicsType=Class.forName("com.iridium126.createmanaindustry.client.particles.packages.PackagePhysicsGpu"+suffix);
+                Class<?> atlasType=Class.forName("com.iridium126.createmanaindustry.client.packages.world.PackageCollisionGpu"+suffix);
+                Class<?> physicsType=Class.forName("com.iridium126.createmanaindustry.client.packages.simulation.PackagePhysicsGpu"+suffix);
                 Object atlas=atlasType.getConstructor(int.class,int.class).newInstance(256,1024);
                 Object physics=physicsType.getConstructor(int.class,float.class,java.util.function.Function.class,boolean.class).newInstance(n,2f,baseline?baselineSources:(java.util.function.Function<String,String>)PackageGpuValidation::source,false);
                 var offer=atlasType.getMethod("offer",PackageCollisionCache.Section.class,PackageCollisionCache.Snapshot.class);
@@ -2336,8 +2338,8 @@ public class PackageGpuValidation {
     }
     static void growingBufferRetirementBoundary() {
         if(!com.mojang.blaze3d.systems.RenderSystem.isOnRenderThread())com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
-        var compute=new com.iridium126.createmanaindustry.client.particles.engine.ParticleComputeState();
-        var draw=new com.iridium126.createmanaindustry.client.particles.packages.PackageRenderState();
+        var compute=new com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState();
+        var draw=new com.iridium126.createmanaindustry.client.packages.render.PackageRenderState();
         int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT),live=buffer(BufferUtils.createByteBuffer(alignment+64)),replacement=0;
         int writer=com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute("growth retirement visibility",
                 "#version 450 core\nlayout(local_size_x=1)in;layout(std430,binding=0)buffer Data{uint words[];};void main(){words[0]=0x12345678u;}");
@@ -2367,7 +2369,7 @@ public class PackageGpuValidation {
         captureDemandStatistics();
         var air=snapshot((s,i)->WORLD_AIR);
         var web=snapshot((s,i)->(i&15)==4||(i&15)==8?new PackageCollisionCache.Cell(List.of(),.6f,3<<16):WORLD_AIR);
-        var layout=new com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentLayout(3);
+        var layout=new com.iridium126.createmanaindustry.client.packages.feedback.PackageEnvironmentLayout(3);
         try(var world=new PackageCollisionGpu(27,1);var gpu=new PackagePhysicsGpu(3,2,PackageGpuValidation::source)) {
             cubeWorld(world,air,web,0,0,0);
             var attach=PackagePhysicsGpu.class.getDeclaredMethod("enableEnvironment",java.util.function.Function.class,int.class);attach.setAccessible(true);
@@ -2420,7 +2422,7 @@ public class PackageGpuValidation {
         System.out.println("Paged environment: local pressure, suffix ordering, wrap, late ACK, capture retention, growth and slot reuse passed");
     }
     static void captureDemandStatistics()throws Exception {
-        int capacity=2050;var layout=new com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentLayout(capacity);
+        int capacity=2050;var layout=new com.iridium126.createmanaindustry.client.packages.feedback.PackageEnvironmentLayout(capacity);
         int[] indices={0,1,31,32,127,128,2047,2048,2049};
         try(var env=new PackageEnvironmentGpu(capacity,0,PackageGpuValidation::source)) {
             var headers=BufferUtils.createByteBuffer(capacity*64);
@@ -2449,7 +2451,7 @@ public class PackageGpuValidation {
     }
     static void pagedEnvironmentGrowth()throws Exception {
         int count=1025,capacity=2049;
-        var layout=new com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentLayout(capacity);
+        var layout=new com.iridium126.createmanaindustry.client.packages.feedback.PackageEnvironmentLayout(capacity);
         var web=snapshot((s,i)->new PackageCollisionCache.Cell(List.of(),.6f,3<<16));
         try(var world=new PackageCollisionGpu(27,1);var env=new PackageEnvironmentGpu(capacity,count,PackageGpuValidation::source)) {
             cubeWorld(world,web,web,0,0,0);var headers=BufferUtils.createByteBuffer(count*64);var bodies=bodies(count);
@@ -2488,7 +2490,7 @@ public class PackageGpuValidation {
         }
     }
     static void pagedEnvironmentMaximum()throws Exception {
-        int count=131072;var layout=new com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentLayout(count);
+        int count=131072;var layout=new com.iridium126.createmanaindustry.client.packages.feedback.PackageEnvironmentLayout(count);
         var web=snapshot((s,i)->new PackageCollisionCache.Cell(List.of(),.6f,3<<16));
         try(var world=new PackageCollisionGpu(1,1);var env=new PackageEnvironmentGpu(count,PackageGpuValidation::source)) {
             check(world.offer(new PackageCollisionCache.Section(0,0,0),web),"maximum page world");uploadWorld(world);
@@ -2523,7 +2525,7 @@ public class PackageGpuValidation {
             cubeWorld(world,air,air,0,0,0);var bodies=bodies(count);
             for(int slot:slots){body(bodies,slot,5,8,5,1);env.reset(slot,slot+1,1,1,1,5,7);}
             var samplesField=PackageEnvironmentGpu.class.getDeclaredField("samples");samplesField.setAccessible(true);
-            int samples=samplesField.getInt(env),pendingStart=new com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentLayout(count).pendingSample()*48;
+            int samples=samplesField.getInt(env),pendingStart=new com.iridium126.createmanaindustry.client.packages.feedback.PackageEnvironmentLayout(count).pendingSample()*48;
             int pendingBytes=((count+127)/128)*48,state=buffer(bodies);
             try {
                 try(var view=world.view(0,0,0)){env.step(state,count,view);}
@@ -4051,7 +4053,7 @@ public class PackageGpuValidation {
         int live=GL15.glGenBuffers(),retiring=GL15.glGenBuffers();
         int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
         for(int buffer:new int[]{live,retiring}){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,alignment+64,GL15.GL_DYNAMIC_COPY);}
-        var boundary=new com.iridium126.createmanaindustry.client.particles.engine.ParticleComputeState();
+        var boundary=new com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState();
         try {
             GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,3,live,alignment,64);
             GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,13,retiring,alignment,64);
@@ -4060,7 +4062,7 @@ public class PackageGpuValidation {
             GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,live);
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"retirement state fixture setup");
             boundary.capture();GL15.glDeleteBuffers(retiring);
-            com.iridium126.createmanaindustry.client.particles.engine.ParticleComputeState.resourcesRetired();
+            com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState.resourcesRetired();
             boundary.restore();
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"authority retirement restored a deleted buffer (GL_INVALID_OPERATION)");
             check(!GL15.glIsBuffer(retiring),"state restore recreated a retired buffer name");
@@ -5124,7 +5126,7 @@ public class PackageGpuValidation {
             acquisition.attachChannel(channel);channelRef[0]=channel;cubeWorld(world,air,floor,0,0,0);
             var ranges=BufferUtils.createByteBuffer(16);ranges.putInt(4,3).putFloat(8,1);pool.uploadMeshes(BufferUtils.createByteBuffer(3*48),ranges,1);
             var simulationClock=new PackageSimulationClock();long lastOfferTick=-2,clientCaptures=0;
-            var inputs=new com.iridium126.createmanaindustry.client.particles.packages.PackageInputTimeline();
+            var inputs=new com.iridium126.createmanaindustry.client.packages.authority.PackageInputTimeline();
             var captureForces=PackageForceScene.bake(0,List.of(),0,0,0);
             var capturedSources=new Object();
             try(var upload=new PackageForceGpu()){
@@ -6405,7 +6407,7 @@ public class PackageGpuValidation {
         check(GL11.glGetError()==GL11.GL_NO_ERROR,"before shadow boundary GL error");
         try(var f=new DrawPassFixture(4,false)) {
             float[] invisible=new float[24];invisible[3]=-1e6f;f.stage(invisible);
-            var policy=new com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling();
+            var policy=new com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling();
             float[][] planes=new float[13][4];planes[12]=new float[]{2,0,0,-2};policy.set(planes,13);
             check(policy.planes[48]==1 && policy.planes[51]==-1,"normalised Iris planes");
             var before=readBuffer(f.pool,4*64);var admission=readBuffer(f.bridge.admissionBuffer(),4*32);
@@ -6425,7 +6427,7 @@ public class PackageGpuValidation {
             int foreign=buffer(BufferUtils.createByteBuffer(alignment+256)),vao=GL30.glGenVertexArrays();
             int tex=texture(10,1),view=GL11.glGenTextures();GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,view);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_RGBA32F,foreign);
             int program=feedbackProgram("#version 450 core\nvoid main(){gl_Position=vec4(0,0,0,1);}","gl_Position");
-            var state=new com.iridium126.createmanaindustry.client.particles.packages.PackageRenderState();
+            var state=new com.iridium126.createmanaindustry.client.packages.render.PackageRenderState();
             try {
                 for(int attempt=0;attempt<3;attempt++) {
                     GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,1,foreign,alignment,128);
@@ -6476,12 +6478,12 @@ public class PackageGpuValidation {
                 GL11.glDisable(GL11.GL_BLEND);GL20.glBlendEquationSeparate(GL14.GL_FUNC_ADD,GL14.GL_FUNC_ADD);
                 for(int i=0;i<12;i++)GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,i,0);
                 GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,0);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,0);
-                GL20.glDeleteProgram(program);GL30.glDeleteVertexArrays(vao);GL11.glDeleteTextures(view);GL11.glDeleteTextures(tex);GL15.glDeleteBuffers(foreign);GL13.glActiveTexture(GL13.GL_TEXTURE0);
+                GL20.glDeleteProgram(program);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(view);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(tex);GL15.glDeleteBuffers(foreign);GL13.glActiveTexture(GL13.GL_TEXTURE0);
             }
         }
     }
     static void packageDrawTelemetry() {
-        try(var timing=new com.iridium126.createmanaindustry.client.particles.packages.PackageDrawTelemetry()) {
+        try(var timing=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry()) {
             timing.begin(false);timing.end();check(timing.pending()==0 && timing.cpuSamples()==0,"disabled draw timing issued samples");
             int foreign=GL15.glGenQueries();
             try {
@@ -6582,7 +6584,7 @@ public class PackageGpuValidation {
             try(var f=new DrawPassFixture(n,false,mode.equals("legacy_group_reference"))) {
                 float[] frustum=new float[24];f.stage(frustum);int timer=GL15.glGenQueries();
                 float[] shadow=new float[52];for(int i=0;i<13;i++){shadow[i*4+1]=i%2==0?1:-1;shadow[i*4+3]=1000;}
-                var state=new com.iridium126.createmanaindustry.client.particles.packages.PackageRenderState();
+                var state=new com.iridium126.createmanaindustry.client.packages.render.PackageRenderState();
                 // Fixed GPU reset (no new host counter upload inside the measured loop).
                 Runnable submit=mode.equals("split_boundary_13")?()->{
                     state.capture();try{f.bridge.preparePass(PackagePoolGpu.DrawPass.SHADOW,f.pool,shadow,13,-1,-1,16,0,-32);}finally{state.restore();}
@@ -6708,11 +6710,11 @@ public class PackageGpuValidation {
             lightPixels.flip();GL13.glActiveTexture(GL13.GL_TEXTURE2);GL11.glBindTexture(GL11.GL_TEXTURE_2D,light);
             GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D,0,0,0,16,16,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,lightPixels);
             var beforeLighting=readBuffer(pool,128);
-            try(var lights=new com.iridium126.createmanaindustry.client.particles.packages.PackageLightGpu(2)) {
+            try(var lights=new com.iridium126.createmanaindustry.client.packages.world.PackageLightGpu(2)) {
                 bridge.lightSource(lights);
                 for(int block:new int[]{3,12}) {
                     byte[] data=new byte[4096];Arrays.fill(data,0,2048,(byte)(block|(block<<4)));Arrays.fill(data,2048,4096,(byte)0x88);
-                    for(int x=-1;x<=0;x++)lights.offer(new PackageCollisionCache.Section(x,-1,0),new com.iridium126.createmanaindustry.client.particles.packages.PackageLightCache.Snapshot(block,data));
+                    for(int x=-1;x<=0;x++)lights.offer(new PackageCollisionCache.Section(x,-1,0),new com.iridium126.createmanaindustry.client.packages.world.PackageLightCache.Snapshot(block,data));
                     check(lights.pump(16384,Long.MAX_VALUE),"production light atlas publication");
                     if(block==12) {
                         boolean failed=false;try{bridge.rebuild(name->name.equals("packages/light_sample.comp")?"broken shader":source(name));}catch(IllegalStateException expected){failed=true;}
@@ -6741,7 +6743,7 @@ public class PackageGpuValidation {
                 bridge.lightSource(null);
             }
             check(readBuffer(pool,128).equals(beforeLighting),"drawing light modified the committed pool generation");
-        }finally {GL15.glDeleteBuffers(pool);GL15.glDeleteBuffers(counter);GL11.glDeleteTextures(atlas);GL11.glDeleteTextures(light);}
+        }finally {GL15.glDeleteBuffers(pool);GL15.glDeleteBuffers(counter);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(atlas);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(light);}
     }
     static void previewLoad() {
         // Exercise the reported 65,536-package workload through processed resources and pool import.
@@ -6812,7 +6814,7 @@ public class PackageGpuValidation {
                 for(int channel=0;channel<4;channel++)check(Math.abs(actual.getFloat(channel*4)-color[channel]*(channel<3?diffuse:1))<2e-5,
                         "package face lighting depends on authority/camera or duplicates pack diffuse face="+face+" pitch="+pitch+" merged="+!nativePass);
             }
-        }finally{GL20.glUseProgram(0);GL20.glDeleteProgram(ordinary);GL20.glDeleteProgram(merged);GL30.glDeleteVertexArrays(vao);GL15.glDeleteBuffers(pool);GL15.glDeleteBuffers(attachment);GL15.glDeleteBuffers(output);GL11.glDeleteTextures(light);GL11.glDeleteTextures(views);}
+        }finally{GL20.glUseProgram(0);GL20.glDeleteProgram(ordinary);GL20.glDeleteProgram(merged);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);GL15.glDeleteBuffers(pool);GL15.glDeleteBuffers(attachment);GL15.glDeleteBuffers(output);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(light);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(views);}
     }
     static void poseParity() {
         int shader=GL20.glCreateShader(GL20.GL_VERTEX_SHADER);
@@ -6891,9 +6893,9 @@ public class PackageGpuValidation {
                 check(result.getFloat(28)==1,"package color alpha");
             }
         }finally {
-            GL20.glUseProgram(0);GL20.glDeleteProgram(program);GL30.glDeleteVertexArrays(vao);
+            GL20.glUseProgram(0);GL20.glDeleteProgram(program);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);
             GL15.glDeleteBuffers(pool);GL15.glDeleteBuffers(attachment);GL15.glDeleteBuffers(output);
-            GL11.glDeleteTextures(light);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(light);
         }
     }
     /** Keep pool capacity fixed to expose clearing costs at low occupancy. */

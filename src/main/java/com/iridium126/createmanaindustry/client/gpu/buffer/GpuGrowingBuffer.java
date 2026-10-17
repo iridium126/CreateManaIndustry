@@ -26,7 +26,7 @@ public final class GpuGrowingBuffer implements AutoCloseable {
         long fence = 0;
         try {
             GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, next);
-            GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER, capacity, GL15.GL_DYNAMIC_DRAW);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER, capacity, GL15.GL_DYNAMIC_DRAW);
             if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=capacity)
                 throw new IllegalStateException("GPU buffer storage allocation failed");
             GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
@@ -45,7 +45,7 @@ public final class GpuGrowingBuffer implements AutoCloseable {
             return buffer;
         } catch (RuntimeException | Error failure) {
             if (fence != 0) GL32.glDeleteSync(fence);
-            GL15.glDeleteBuffers(next);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(next);
             throw failure;
         }
     }
@@ -58,7 +58,7 @@ public final class GpuGrowingBuffer implements AutoCloseable {
             if (status == GL32.GL_WAIT_FAILED) throw new IllegalStateException("GPU resource retirement failed");
             GL32.glDeleteSync(first.fence);
             GpuBufferRetirement.retiring(first.buffer);
-            GL15.glDeleteBuffers(first.buffer);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(first.buffer);
             retired.removeFirst();
         }
     }
@@ -67,11 +67,11 @@ public final class GpuGrowingBuffer implements AutoCloseable {
     public long capacityBytes(){return bytes;}
 
     @Override public void close() {
-        if (buffer != 0){GpuBufferRetirement.retiring(buffer);GL15.glDeleteBuffers(buffer);}
+        if (buffer != 0){GpuBufferRetirement.retiring(buffer);com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(buffer);}
         for (var entry : retired) {
             GL32.glDeleteSync(entry.fence);
             GpuBufferRetirement.retiring(entry.buffer);
-            GL15.glDeleteBuffers(entry.buffer);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(entry.buffer);
         }
         retired.clear();
         buffer = 0;

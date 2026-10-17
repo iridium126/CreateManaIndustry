@@ -8,31 +8,36 @@ Great Trick 的字形、书本及交互 UI 仍有独立 CPU 绘制路径；Hex �
 
 ## 0. 实施进度与当前验收边界
 
+第四批实际所有者、直接调用、五域包迁移、场景与预算接线及故障隔离已实现，详情、调用归属和自动验证入口见[第四批实施报告](gpu-runtime-stage4.md)。后文第 2～9 节中的旧引擎方法、行数和依赖是分析基线，不是当前代码结构。
+
 真实客户端验收按用户要求交由用户执行，不再由代理操作客户端；自动代码／GLSL／GameTest／性能夹具继续推进。检查清单及隔离运行入口见[客户端验收](gpu-runtime-client-acceptance.md)，尚无用户执行结果的项目保持待验收。
 
 执行基线已明确为 Minecraft 1.21.1／NeoForge 21.1.236／**Create 6.0.10**，不升级或扩大为双版本支持。实际解析 JAR 的 `Git-Hash` 与本地 Create 提交 `ac0c444d9828da3453ae8cc65338e8de063286fb` 一致；环境审计改为读取该提交，不读取参考工作树 HEAD。Hex 使用实际依赖 `0.12.0-devel-pre-53`。
 
 | 项目 | 当前实现 | 验收／剩余工作 |
 | --- | --- | --- |
-| 公共 GPU 机制 | 按 GL 上下文缓存能力与容量限制、计算／绘制程序编译器、持久映射读回存储、按所有者失效的 uniform 缓存、独立源码解析／资源加载、按需增长和零等待退休、timestamp 对计时；公共增长／读回缓冲删除前使活动状态快照中的旧名称失效 | 单元与真实 GLSL 回归已运行；带有效数据增长与嵌套计算／绘制退休恢复专项通过；其余资源所有者迁移和最终混合边界验收仍待实施 |
-| 业务拆分 | Great Trick 构形回归业务包，通过 `ParticleAppendTarget` 发射；Storm 业务迁入 `client/allaystorm`，状态机通过 `StormParticlePort` 提交绑定／反馈操作；Hex 图案回归 `client/hex/pattern` 并独立加载源码 | 包迁移、帧绑定、原生／Iris 图案和 Great Trick 回归通过；普通管线固定阶段与不可变资源发布已接线；全部业务端口、预算及 MODEL 交互拆分仍待实施 |
+| 公共 GPU 机制 | 按 GL 上下文缓存能力与容量限制、计算／绘制程序编译器、持久映射读回存储、按所有者失效的 uniform 缓存、独立源码解析／资源加载、按需增长和零等待退休、timestamp 对计时；公共增长／读回缓冲删除前使活动状态快照中的旧名称失效 | 单元与真实 GLSL 回归已运行；带有效数据增长与嵌套计算／绘制退休恢复专项通过；第四批资源所有权迁移及缓存／状态退休已实现，最终客户端混合边界仍待用户验收 |
+| 业务拆分 | 固定 `ClientGpuScene` 组合根、独立 MODEL 交互、Storm 状态／反馈及 GPU 所有者、包裹 authority／simulation／world／render／feedback 五域；Great Trick 与 Hex 使用实际业务入口，删除 `StormParticleAccess` 和引擎业务／资源转发 | 全部调用方及夹具已迁移，结构门禁和相关自动回归通过；固定阶段、不可变资源发布与五类预算已接线，实机与整帧性能仍待用户验收 |
 | Hex 直接输入 | 有界连续记录、独立批量 dispatch；取得准入才取消原生；失败仅回放未发布输入；接管移到原版限制器之后 | 255／256／257、饱和、重放队列测试通过；真实 ConjureParticle.tick 对照已通过；原生 tick 队列、计数回绕及同 tick 不重复推进通过；精灵与真实客户端接管矩阵继续验收 |
 | Hex Spray | 固定规格头，原生 palette 随当帧命令上传并在出生时冻结 RGB；未知 provider／需原版逐粒子限制的场景回退原生 | 实际 ColorProvider 的 RGB 差分及通用管线通过；动态队列公平性、完整运动／精灵与客户端 accessor 注入仍需验收 |
 | 规格与 CPU 固定成本 | 有界 `EmitCommandWriter` 统一普通／跟踪／Storm／Hex 字段初始化、参数尾部与压缩；`ParticleLayout` 固定 64 B／20 vec4 ABI 与具名字段；头数组返回副本、具名 spawnStyle 和稳定 hash；图案任务按批次 stamp 去重；Hex／Great Trick uniform 缓存与矩阵复用 | 新增不可变键、程序名复用及模块依赖门禁；256 命令／170 palette 混合实际 GPU 回归通过；不宣称已得到整帧性能收益 |
 | Storm／方块资源 | 成员表／纠正表按身份容量延迟分配；源表 CPU／GPU 按需增长，GPU copy 保留累计相位 | 三种攻击、末身份写入、源表增长与相邻脏更新回归通过；高空洞率索引及完整 A/B 待实施 |
 | 包裹环境传输 | 待处理身份位图复用 samples SSBO；固定 20 样本历史改为每身份工作区／内联槽及按需 19 槽页，异步头报告页需求，页不足局部背压；直接写入空闲不可变快照槽，缺页统计先在设备存储累积，再于第二遍捕获发布；区域归属增量登记；ACK 最多 512 条，同 body 链保序并核验完整生命周期 | 页争用、部分 ACK、环绕、快照保留、有效历史扩容及 131072 唯一页专项通过；页回收复用，物理存储只增长；区域合包已接入协议 15。普通步进及最终捕获相对 INDEX 的 GPU／CPU p50 回退均在 5% 内，原高容量饱和捕获回退已消除；尾分位、增长维护、整帧及网络／事务全路径仍待验收，有序效果 journal 未完成 |
 | 帧发布 | 公共 `GpuFrameCoordinator` 校验固定阶段；同份不可变快照携带池、排列、commands、counter、population 与 Storm／包裹版本；仅全提交后开放当前帧绘制 | 阶段／失效／混合版本单元与实际调用顺序门禁已接入，仍需真实客户端混合渲染验收；包裹内部时钟及独立 Hex 几何不被协调器推进 |
+| 五类预算 | CPU 准备、GPU 模拟／绘制、实际上传／读回字节及队列接收／延期／拒绝／积压分别记账；嵌套不重算，沿用已有阈值／EMA | 独立 UI、必要工作和失败候选保持各域规则；无新增配置或硬限额，详见[第四批](gpu-runtime-stage4.md) |
 | 显存输出 | 移除 Hex、Storm 域和 MODEL 阴影状态中的显存字节；保留内部预算与离线工具计数 | 实际显存使用外部工具；不将逻辑申请字节当作实际驻留 |
+
+第四批自动正确性验证通过：694 项 JVM 测试、真实 GLSL／Iris 与发行包检查；保留此前实际 Create 6.0.10 的 25 项 GameTest 结果。最终通用池受控路径 GPU／CPU p50 最大回退 +1.67%／+3.57%，包裹空气／地面分别 +0.83%／+4.01%；包裹地面 1024 的 CPU p95 +17.07% 单列保留。仅通过这些局部范围，完整帧性能仍由用户验收。详见[第四批性能范围](benchmarks/gpu-runtime-architecture.md)。
 
 已在真实 RTX 4070 Laptop GPU／NVIDIA 581.15 上运行粒子、Hex 图案／Iris、Great Trick、MODEL 和三种 Storm 攻击的相应回归；包裹修复专项及实际 Create 6.0.10 的 25 项环境／输出 GameTest 通过。这些覆盖不等于全部原版差分或实机渲染验收。原始日志与构建结果位于忽略的 `build/benchmarks/gpu-runtime-*` 及隔离 GameTest 目录。
 
-普通包裹空气／地面受控步进已完成五轮预热 A/B：GPU 中位回退最高 +1.30%，CPU 提交中位回退最高 +0.62%，均在 5% 内；另完成捕获／读取的六组 A/B，GPU 中位下降约 49%～92%，CPU 读取中位下降约 29%～76%；完整 prepare／网络／事务／绘制仍不在这两种夹具范围，详见[当前验证与性能边界](benchmarks/gpu-runtime-architecture.md)。
+此前批次普通包裹空气／地面受控步进已完成五轮预热 A/B：GPU 中位回退最高 +1.30%，CPU 提交中位回退最高 +0.62%，均在 5% 内；另完成捕获／读取的六组 A/B，GPU 中位下降约 49%～92%，CPU 读取中位下降约 29%～76%；完整 prepare／网络／事务／绘制仍不在这两种夹具范围，详见[当前验证与性能边界](benchmarks/gpu-runtime-architecture.md)。
 
 环境 ACK 另完成五轮预热 A/B：512 条由 512 次 dispatch 降为 1 次，局部 GPU p50 下降约 99.0%、CPU p50 下降约 61.6%；单条 ACK 的固定成本及 17 条 CPU p95 的小幅回退单独记录，不能把批量收益当作所有场景收益。结果与限制见同一[性能报告](benchmarks/gpu-runtime-architecture.md)。
 
-**仍未完成**：包裹完整环境／移动结构行为、有序分页效果 journal 及对应存档扩展、历史页池的最终集成／性能验收、帧协调的全部业务端口和预算、全部算法候选的 A/B、五轮预热整帧性能及真实客户端混合渲染验收。当前区域合包已将权威 wire 升为 `gpu-packages-15`，观察流仍为 `gpu-package-observers-5`；协议升级不代表第三批完成，详见[协议与未完成项](gpu-package-protocol-15.md)。
+**仍未完成**：包裹完整环境／移动结构行为、有序分页效果 journal 及对应存档扩展、历史页池的最终集成／性能验收、全部算法候选的 A/B、五轮预热整帧性能及真实客户端混合渲染验收。当前区域合包已将权威 wire 升为 `gpu-packages-15`，观察流仍为 `gpu-package-observers-5`；协议升级不代表第三批完成，详见[协议与未完成项](gpu-package-protocol-15.md)。
 
-本次续作保留已有暂存内容，修改前 index／worktree 补丁和状态保存在忽略的 `build/benchmarks/gpu-runtime-continuation-20261017/`。补齐公共能力缓存、绘制／Iris timestamp 查询所有权和失败样本丢弃、Hex／包裹绘制的公共分位计时、prepare／反馈／服务器事务计时边界，以及有界区域合包。已有 JVM、真实 GLSL／Iris 与 25 项 Create 环境／输出 GameTest 通过；严格 `--check --acceptance` 仍拒绝完整对齐（148 行均缺少完整差分证据）。第一批的全场景／实机门槛仍未关闭，后续批次只保留已实施子项，不能标成整批完成。
+本次续作保留已有暂存内容，修改前 index／worktree 补丁和状态保存在忽略的 `build/benchmarks/gpu-runtime-continuation-20261017/`。补齐公共能力缓存、绘制／Iris timestamp 查询所有权和失败样本丢弃、Hex／包裹绘制的公共分位计时、prepare／反馈／服务器事务计时边界，以及有界区域合包。已有 JVM、真实 GLSL／Iris 与 25 项 Create 环境／输出 GameTest 通过；严格 `--check --acceptance` 仍拒绝完整对齐（148 行均缺少完整差分证据）。第一批的全场景／实机门槛仍未关闭；第四批代码及自动验证单独记录，不能据此标成全量计划或实机验收完成。
 
 后续历史分页轮次的原始结果在 `build/benchmarks/gpu-runtime-pages-20261017/`，基线是修改前 INDEX，未改动原暂存内容。131072 容量的历史缓冲初始申请从约 126 MiB 降为 16 MiB，高水位申请 128 MiB；不新增游戏内字节输出。此前受审批额度阻止的 JVM／构建／包裹修复／Hex Iris／观察／光照／shaderpack 联合回归已补跑通过。缺页统计修复后的分页专项、完整包裹修复和 25 项实际 Create GameTest 也通过；使用独立分页快照与 INDEX 两种基线的 A/B 均已记录，饱和捕获相对旧分页版本 GPU p50 下降约 44%。最终发行包不含验证夹具。这仍不代表全量性能验收，详见[本轮报告](benchmarks/gpu-runtime-architecture.md)。
 

@@ -40,7 +40,7 @@ import java.util.List;
  * vertex shader — unlike the body parts, whose UVs are baked atlas-space).
  * Pivots and pose math live in the shader.
  */
-final class AllayModelGeometry {
+public final class AllayModelGeometry {
 
     /** 32x32 texture (LayerDefinition.create(..., 32, 32)). */
     private static final float TEX_SIZE = 32f;

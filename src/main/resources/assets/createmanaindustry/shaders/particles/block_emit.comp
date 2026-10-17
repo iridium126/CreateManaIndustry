@@ -40,6 +40,7 @@ vec3 randomDir(float s) {
 
 #pragma cmi_include chunks/frustum_culling.glsl
 
+#pragma cmi_include chunks/pool_reservation.glsl
 void main() {
     uint cluster = gl_LocalInvocationID.x / 16u;
     uint lane = gl_LocalInvocationID.x % 16u;
@@ -63,8 +64,9 @@ void main() {
                 blocks.data[index].params.y = fract(want);
                 if (count > 0u) {
                     // One reservation for all particles from this emitter.
-                    uint base = atomicAdd(counter.writeSlot, count);
-                    counts[cluster] = min(count, uCapacity - min(base, uCapacity));
+                    uint granted;
+                    uint base = cmiReservePool(count,false,granted);
+                    counts[cluster] = granted;
                     bases[cluster] = base;
                     origins[cluster] = e.originRate;
                     specs[cluster] = uint(e.params.x);

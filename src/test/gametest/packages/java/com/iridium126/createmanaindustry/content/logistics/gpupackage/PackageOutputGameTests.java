@@ -84,8 +84,8 @@ public final class PackageOutputGameTests {
                 .setValue(BeltBlock.HORIZONTAL_FACING,Direction.EAST).setValue(BeltBlock.PART,BeltPart.END);
         helper.getLevel().setBlockAndUpdate(source,state);
         var belt=(BeltBlockEntity)helper.getLevel().getBlockEntity(source);belt.beltLength=1;
-        var worldSource=new com.iridium126.createmanaindustry.client.particles.packages.PackageWorldCollisionSource(helper.getLevel());
-        var section=new com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionCache.Section(source.getX()>>4,source.getY()>>4,source.getZ()>>4);
+        var worldSource=new com.iridium126.createmanaindustry.client.packages.world.PackageWorldCollisionSource(helper.getLevel());
+        var section=new com.iridium126.createmanaindustry.client.packages.world.PackageCollisionCache.Section(source.getX()>>4,source.getY()>>4,source.getZ()>>4);
         int cell=(source.getX()&15)|((source.getZ()&15)<<4)|((source.getY()&15)<<8);
         var before=worldSource.capture(section,cell);
         var entries=new java.util.ArrayList<PackageLightStore.Entry>();var identities=new java.util.HashSet<PackageLease.Identity>();

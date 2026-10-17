@@ -8,7 +8,7 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * All-in-one static home of the Allay Storm's emitter spec and its per-id
- * header packing. Extracted from {@code CMIParticleEngine} so the engine file
+ * header packing. Extracted from {@code ParticleRuntime} so the engine file
  * keeps only the storm's RUNTIME state (active latch, anchor, derived omega,
  * trickle-in counter); everything that describes WHAT a storm member is —
  * the spec, its population/speed caps and the reserved header slots

@@ -30,7 +30,7 @@ void spawnDeathPoof(uint hb, vec4 p0, vec4 p1, vec4 p3) {
         // integrates continuous ages). Range (0.9, 4.1] s, biased short like
         // vanilla; the POOF header's life min/max are range documentation only.
         float maxLife = max((16.0 / (0.8 * cmiHash1(s + 12.1) + 0.2) + 2.0) / 20.0, 0.1);
-        uint slot = atomicAdd(counter.writeSlot, 1u);
+        uint slot = cmiReserveParticle();
         if (slot >= uCapacity)
             return;
         uint wb = slot * 4u;

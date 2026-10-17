@@ -29,7 +29,7 @@ allprojects {
                         java.util.HexFormat.of().formatHex(digest.digest())
                     }
                     def gpuJava=fileTree('src/main/java') {
-                        include '**/client/gpu/**','**/client/particles/**','**/client/allaystorm/**','**/client/greattrick/**','**/client/hex/**','**/mixin/hexcasting/**'
+                        include '**/client/gpu/**','**/client/particles/**','**/client/packages/**','**/client/render/scene/**','**/client/allaystorm/**','**/client/greattrick/**','**/client/hex/**','**/mixin/hexcasting/**'
                     }
                     def gpuShaders=fileTree('src/main/resources/assets/createmanaindustry/shaders')
                     def packageServerJava=fileTree('src/main/java') { include '**/content/logistics/gpupackage/**' }
@@ -62,6 +62,41 @@ allprojects {
         }
         // The current workspace's independent Hex JIT sources import Kotlin directly.
         tasks.named('compileJava') { classpath += kotlin }
+        tasks.register('validateSceneFrameGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/SceneFrameGpuValidation.java'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkParticlePipeline', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/ParticlePipelineBenchmark.java'
+            workingDir = project.projectDir
+        }
+        def pipelineTools = tasks.register('compileParticlePipelineBenchmark', JavaCompile) {
+            dependsOn tasks.named('classes')
+            source = files('scripts/particles/ParticlePipelineBenchmark.java')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            destinationDirectory = layout.buildDirectory.dir('particle-pipeline-tools')
+            options.encoding = 'UTF-8'
+        }
+        tasks.register('benchmarkParticlePipelineAB', JavaExec) {
+            dependsOn pipelineTools
+            classpath = files(pipelineTools.flatMap { it.destinationDirectory }) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'ParticlePipelineBenchmark'
+            systemProperty 'cmi.pipeline.baseline', file(findProperty('stage4BaselineRuntime') ?: 'build/benchmarks/gpu-runtime-stage4-20261017/baseline').absolutePath
+            workingDir = project.projectDir
+        }
+        // The baseline runtime is captured before changing production sources. Never refresh it here.
+        if (project.hasProperty('stage4BaselineRuntime')) {
+            tasks.register('benchmarkStage4BaselinePipeline', JavaExec) {
+                def baseline = file(project.property('stage4BaselineRuntime'))
+                classpath = files(file(baseline.toPath().resolve('classpath.txt')).getText('UTF-8').trim().split(java.util.regex.Pattern.quote(File.pathSeparator)))
+                mainClass = 'scripts/particles/ParticlePipelineBenchmark.java'
+                workingDir = project.projectDir
+            }
+        }
         tasks.register('validateHexGpu', JavaExec) {
             dependsOn tasks.named('classes'), 'validateHexSharedGpu'
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin

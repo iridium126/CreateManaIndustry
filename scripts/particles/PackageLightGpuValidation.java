@@ -5,7 +5,11 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.*;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource;
-import com.iridium126.createmanaindustry.client.particles.packages.*;
+import com.iridium126.createmanaindustry.client.packages.authority.*;
+import com.iridium126.createmanaindustry.client.packages.simulation.*;
+import com.iridium126.createmanaindustry.client.packages.world.*;
+import com.iridium126.createmanaindustry.client.packages.render.*;
+import com.iridium126.createmanaindustry.client.packages.feedback.*;
 
 /** Real-driver light probe and immutable atlas validation; never enables gameplay takeover. */
 public class PackageLightGpuValidation {

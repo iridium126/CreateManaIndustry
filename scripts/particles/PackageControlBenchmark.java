@@ -1,4 +1,4 @@
-import com.iridium126.createmanaindustry.client.particles.packages.PackageControlQueue;
+import com.iridium126.createmanaindustry.client.packages.authority.PackageControlQueue;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.*;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.*;
 import io.netty.buffer.Unpooled;

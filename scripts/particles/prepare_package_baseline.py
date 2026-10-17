@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse
 import hashlib
 import subprocess
+import re
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -31,13 +32,34 @@ def main():
         digest.update(path.encode());digest.update(b'\0');digest.update(data)
         return data
     prefix = "src/main/java/com/iridium126/createmanaindustry/client/particles/packages/"
+    current={p.stem:p for p in (ROOT/'src/main/java/com/iridium126/createmanaindustry/client/packages').rglob('*.java')}
+    def source_path(name):
+        legacy=prefix+name+'.java'
+        if args.ref=='WORKTREE' and not (ROOT/legacy).exists():
+            return current[name].relative_to(ROOT).as_posix()
+        return legacy
+    def current_package(name):
+        return re.search(r'^package ([^;]+);',current[name].read_text(encoding='utf-8'),re.M)[1]
     names = ("PackageCollisionGpu", "PackagePhysicsGpu", "PackageEnvironmentGpu", "PackageReadbackRing")
-    if b'PackageEnvironmentLayout' in source(prefix+'PackageEnvironmentGpu.java'):
+    if b'PackageEnvironmentLayout' in source(source_path('PackageEnvironmentGpu')):
         names += ('PackageEnvironmentLayout',)
     for name in names:
-        text = snapshot_source(prefix + name + ".java").decode("utf-8")
+        text = snapshot_source(source_path(name)).decode("utf-8")
         for candidate in names:
             text = text.replace(candidate, candidate + "Baseline")
+        # Package moves do not make a historical snapshot depend on the old runtime.
+        # Only type locations/access boundaries change; historical method bodies and GLSL stay frozen.
+        package=current_package(name)
+        imports='\n'.join('import com.iridium126.createmanaindustry.client.packages.'+domain+'.*;'
+                          for domain in ('authority','simulation','world','render','feedback'))
+        imports+='\n'+'\n'.join('import '+current_package(candidate)+'.'+candidate+'Baseline;' for candidate in names)
+        text=re.sub(r'^package [^;]+;', 'package '+package+';\n'+imports,text,count=1,flags=re.M)
+        for candidate in current:
+            text=text.replace('com.iridium126.createmanaindustry.client.particles.packages.'+candidate,
+                              current_package(candidate)+'.'+candidate)
+        if name=='PackageEnvironmentGpu':
+            for method in ('climbingBounds','motionMirror','bindStorage','step'):
+                text=text.replace('    void '+method+'(', '    public void '+method+'(')
         # The benchmark has no moving sources; the production view's typed ownership token
         # cannot accept the renamed historical physics object.
         text = text.replace("for(var view:moving)view.claimStep(this);", "if(!moving.isEmpty())throw new IllegalArgumentException(\"Static-world benchmark only\");")

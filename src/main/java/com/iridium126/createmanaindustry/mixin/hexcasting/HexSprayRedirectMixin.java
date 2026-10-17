@@ -39,7 +39,7 @@ public class HexSprayRedirectMixin {
         if (!ClientConfig.hexParticleRedirect || cmi$replaying.get())
             return;
         CMIParticleEngine engine = CMIParticleEngine.INSTANCE;
-        if (!engine.available())
+        if (!com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime.INSTANCE.available())
             return; // engine down: vanilla fallback
         // The vanilla handler hops to the main thread inside; the hexSprays
         // queue is render-thread state, so the GPU spawn hops too (execute

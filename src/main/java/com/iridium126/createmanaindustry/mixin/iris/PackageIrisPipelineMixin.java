@@ -27,7 +27,7 @@ public abstract class PackageIrisPipelineMixin implements CMIPackageIrisPipeline
     private void cmi$capturePackagePrograms(ProgramSet set,CallbackInfo ci){cmi$packageProgramSet=set;}
     @Inject(method="renderShadows",at=@At("HEAD"))
     private void cmi$prepareCurrentParticleFrame(net.irisshaders.iris.mixin.LevelRendererAccessor renderer,net.minecraft.client.Camera camera,CallbackInfo ci){
-        com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine.INSTANCE.prepareCurrentFrame();
+        com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.prepareCurrentFrame();
         if(com.iridium126.createmanaindustry.CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.prepareWorld();
     }
     @Override public ProgramSet cmi$packageProgramSet(){return cmi$packageProgramSet;}

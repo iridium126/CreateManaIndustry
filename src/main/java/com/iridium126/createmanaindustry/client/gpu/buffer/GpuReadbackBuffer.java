@@ -40,11 +40,11 @@ public final class GpuReadbackBuffer implements AutoCloseable {
         if(offset<0||bytes<0||offset>size-bytes||target.remaining()<bytes)
             throw new IllegalArgumentException("Readback range");
         mapping.position(offset).limit(offset+bytes);
-        try {target.put(mapping);}finally{mapping.clear();}
+        try {target.put(mapping);com.iridium126.createmanaindustry.client.gpu.profile.GpuBudgetLedger.downloaded(bytes);}finally{mapping.clear();}
     }
 
     @Override public void close() {
-        if(buffer!=0){GpuBufferRetirement.retiring(buffer);GL15.glDeleteBuffers(buffer);}
+        if(buffer!=0){GpuBufferRetirement.retiring(buffer);com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(buffer);}
         // Deletion unmaps and retains storage required by queued GPU commands.
         // Never expose the mapping: no Java reader can retain a retired pointer.
         buffer=0;mapping=null;

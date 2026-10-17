@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.packages;
 
-import com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime;
+import com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRuntime;
 import com.simibubi.create.content.contraptions.Contraption;
 import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;

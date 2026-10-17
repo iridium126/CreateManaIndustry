@@ -9,6 +9,7 @@ import org.lwjgl.opengl.GL43;
 
 /** Render/client-thread owned resident table. No GL calls from world callbacks. */
 public final class BlockEmitterTable {
+    public static final BlockEmitterTable INSTANCE=new BlockEmitterTable();
     public static final int CAPACITY = 262140;
     private static final int WORDS = 8;
     private FloatBuffer staging = BufferUtils.createFloatBuffer(0);
@@ -75,7 +76,7 @@ public final class BlockEmitterTable {
         for (int start = dirty.nextSetBit(0); start >= 0 && start < highWater;) {
             int end = Math.min(highWater, dirty.nextClearBit(start));
             staging.limit(end * WORDS).position(start * WORDS);
-            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, (long) start * WORDS * 4, staging);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, (long) start * WORDS * 4, staging);
             staging.clear();
             start = dirty.nextSetBit(end);
         }

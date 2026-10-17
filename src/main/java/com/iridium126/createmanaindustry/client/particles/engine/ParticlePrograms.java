@@ -35,6 +35,7 @@ import org.lwjgl.opengl.GL20;
  * reload listener flips so F3+T recompiles shaders.
  */
 public final class ParticlePrograms {
+    public static final ParticlePrograms INSTANCE=new ParticlePrograms();
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger(ParticlePrograms.class);
 
     private static final String GLSL_DIR = "shaders/particles/";
@@ -350,32 +351,7 @@ public final class ParticlePrograms {
         return s == null ? "" : s;
     }
 
-    /** Vertex stride of the baked MODEL geometry (public for the shader-pack compiler). */
-    public static int modelVertexFloats() {
-        return AllayModelGeometry.VERTEX_FLOATS;
-    }
-
-    /**
-     * Above-feet height in blocks of the rest-pose model — the vanilla-size
-     * scale divisor (public for the shader-pack merged vertex source).
-     */
-    public static float modelAboveFeet() {
-        return AllayModelGeometry.MODEL_ABOVE_FEET;
-    }
-
-    /**
-     * The vanilla handheld display transform as a GLSL {@code mat4(...)}
-     * constructor string — injected as {@code CMI_HELD_DISPLAY} into the
-     * self-drawn prelude and the shader-pack merged vertex source.
-     */
-    public static String heldItemDisplayMatrix() {
-        return HeldItemGeometry.displayMatrixGLSL();
-    }
-
     /** Per-tier atlas UV rects ({@code uHeldItemUV}) for the MODEL render path. */
-    public static float[] heldItemUVTable() {
-        return HeldItemGeometry.uvTable();
-    }
 
     /**
      * Loads a bundled shader file as text, or null on failure. Lines of the form
@@ -417,7 +393,7 @@ public final class ParticlePrograms {
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
                 this.grid, this.hit, this.damagePrepare,this.stormPos, this.waveContact, this.ringReserve,
                 this.render, this.texturedRender, this.modelRender }) {
-            if (p != 0){CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}
+            if (p != 0){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(p);}
         }
         this.prepareDispatch = this.reset = this.update = this.emit = this.blockEmit = this.keygen = 0;
         this.radixHist = this.radixScan = this.radixScatter = this.capture = 0;

@@ -5,7 +5,7 @@ import org.lwjgl.*;
 import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.*;
 import com.iridium126.createmanaindustry.client.particles.engine.*;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling;
+import com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling;
 
 /** Production keygen/dispatch/shadow/pick/damage/emit kernels, with no game-world mutation. */
 public class ModelPopulationGpuValidation {

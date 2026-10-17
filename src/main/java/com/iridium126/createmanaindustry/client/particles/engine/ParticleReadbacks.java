@@ -14,7 +14,7 @@ final class ParticleReadbacks {
         int buffer;
         GpuReadbackBuffer storage;
         long fence, generation, epoch, gameTime;
-        boolean positions, waves;
+        boolean positions, waves,published;
         ParticleHitRay hitRay;
         final ByteBuffer data = BufferUtils.createByteBuffer(BYTES);
     }
@@ -33,7 +33,7 @@ final class ParticleReadbacks {
     Slot completed() {
         Slot oldest = null;
         for (Slot slot : slots)
-            if (slot.fence != 0 && (oldest == null || slot.generation < oldest.generation)) oldest = slot;
+            if (slot.fence != 0 && slot.published && (oldest == null || slot.generation < oldest.generation)) oldest = slot;
         if (oldest == null) return null;
         int state = GL32.glClientWaitSync(oldest.fence, 0, 0);
         if (state == GL32.GL_TIMEOUT_EXPIRED) return null;
@@ -49,7 +49,7 @@ final class ParticleReadbacks {
     }
     void release(Slot slot) {
         GL32.glDeleteSync(slot.fence);
-        slot.fence = 0;
+        slot.fence = 0;slot.published=false;
     }
     void clear() {
         for (Slot slot : slots) if (slot.fence != 0) release(slot);

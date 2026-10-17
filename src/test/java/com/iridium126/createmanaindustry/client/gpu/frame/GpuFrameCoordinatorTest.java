@@ -4,11 +4,11 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class GpuFrameCoordinatorTest {
-    private void prepare(GpuFrameCoordinator frame) { frame.begin();frame.simulate();frame.generate();frame.cullSort(); }
-    private void publish(GpuFrameCoordinator frame,long generation) { frame.publish(generation,1,2,3,4,5,generation,generation,-1); }
+    private void prepare(GpuFrameCoordinator frame) { frame.begin(0);frame.simulate();frame.generate();frame.cullSort(); }
+    private void publish(GpuFrameCoordinator frame,long generation) { frame.publish(frame.candidate(generation,1,2,3,4,5,generation,generation,-1)); }
 
     @Test void everyPhaseMustCompleteBeforeTheSinglePublicationAndDraw() {
-        var frame=new GpuFrameCoordinator();frame.begin();
+        var frame=new GpuFrameCoordinator();frame.begin(0);
         assertThrows(IllegalStateException.class,frame::generate);
         assertThrows(IllegalStateException.class,()->publish(frame,1));
         frame.simulate();frame.generate();frame.cullSort();publish(frame,1);
@@ -27,13 +27,20 @@ class GpuFrameCoordinatorTest {
         assertEquals(1,old.generation()); // a consumer's tuple is immutable
     }
 
-    @Test void eachAttachedDomainMustBelongToThePublishedGeneration() {
+    @Test void sceneChecksActualResourceVersionsWithoutEquatingBusinessClocks() {
         var frame=new GpuFrameCoordinator();prepare(frame);
-        assertThrows(IllegalArgumentException.class,()->frame.publish(9,1,2,3,4,5,8,9,9));
+        var candidate=frame.candidate(9,1,2,3,4,5,9,38,72);
+        assertThrows(IllegalArgumentException.class,()->com.iridium126.createmanaindustry.client.render.scene.ScenePublicationPolicy.validate(candidate,8,38,72));
         assertNull(frame.publication());
-        assertThrows(IllegalArgumentException.class,()->frame.publish(9,1,2,3,4,5,9,8,9));
-        assertThrows(IllegalArgumentException.class,()->frame.publish(9,1,2,3,4,5,9,9,8));
-        assertThrows(IllegalArgumentException.class,()->frame.publish(9,0,2,3,4,5,9,-1,-1));
-        frame.publish(9,1,0,3,4,5,9,-1,-1);assertNotNull(frame.publication());
+        assertThrows(IllegalArgumentException.class,()->com.iridium126.createmanaindustry.client.render.scene.ScenePublicationPolicy.validate(candidate,9,37,72));
+        assertThrows(IllegalArgumentException.class,()->com.iridium126.createmanaindustry.client.render.scene.ScenePublicationPolicy.validate(candidate,9,38,71));
+        assertThrows(IllegalArgumentException.class,()->frame.candidate(9,0,2,3,4,5,9,-1,-1));
+        com.iridium126.createmanaindustry.client.render.scene.ScenePublicationPolicy.validate(candidate,9,38,72);
+        frame.publish(candidate);assertNotNull(frame.publication());
+    }
+    @Test void retiredCandidateCannotPublishEvenWhenBufferNamesAreReused() {
+        var frame=new GpuFrameCoordinator();prepare(frame);var old=frame.candidate(1,1,2,3,4,5,1,-1,-1);
+        frame.abort();prepare(frame);
+        assertThrows(IllegalArgumentException.class,()->frame.publish(old));assertNull(frame.publication());
     }
 }

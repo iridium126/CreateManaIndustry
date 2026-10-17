@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.mixin.render;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook;
-import com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook;
+import com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook;
 
 import net.minecraft.client.renderer.LevelRenderer;
 

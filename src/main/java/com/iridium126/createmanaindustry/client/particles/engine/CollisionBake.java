@@ -308,7 +308,7 @@ public final class CollisionBake {
         this.inFlight = null;
         this.inFlightTask = null;
         if (textureId >= 0) {
-            GL30.glDeleteTextures(textureId);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(textureId);
             textureId = -1;
         }
         slots.clear();
@@ -436,7 +436,7 @@ public final class CollisionBake {
 
         GL12.glBindTexture(GL12.GL_TEXTURE_3D, textureId);
         ParticleGLUtil.prepareClientUpload(); // guard PBO / unpack-state leftovers
-        GL12.glTexSubImage3D(GL12.GL_TEXTURE_3D, 0, 0, 0, task.slot.slice * SZ, SX, SY, SZ,
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.texture3d(GL12.GL_TEXTURE_3D, 0, 0, 0, task.slot.slice * SZ, SX, SY, SZ,
                 GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, upload);
         task.slot.dirty = false;
         task.slot.lastBuilt = level.getGameTime();

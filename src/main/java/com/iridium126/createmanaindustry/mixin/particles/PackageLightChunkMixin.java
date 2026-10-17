@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.particles;
 
-import com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime;
+import com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRuntime;
 import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.SectionPos;

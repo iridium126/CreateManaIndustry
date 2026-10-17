@@ -1,9 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.shaderpack;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers;
-import com.iridium126.createmanaindustry.client.particles.engine.ParticleGLUtil;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -20,20 +18,17 @@ import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
-import org.lwjgl.opengl.GL33;
 import org.lwjgl.opengl.GL40;
 import net.minecraft.client.Camera;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.world.entity.EntityType;
 import com.iridium126.createmanaindustry.client.particles.engine.ModelShadowGpu;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms;
-import com.iridium126.createmanaindustry.client.particles.engine.ParticleComputeState;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageDrawTelemetry;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageRenderState;
+import com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState;
+import com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling;
+import com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry;
+import com.iridium126.createmanaindustry.client.packages.render.PackageRenderState;
 
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Draws the MODEL (allay) particle segments INSIDE the gbuffer phase -- at the
@@ -53,7 +48,7 @@ import java.util.Map;
  * in-fragment as usual.
  *
  * <p>Arbitration: a successful draw here latches
- * {@link CMIParticleEngine#markHookModelDrawn()}, so the engine's AFTER_LEVEL
+ * {@link ParticleRuntime#markHookModelDrawn()}, so the engine's AFTER_LEVEL
  * frame skips its own drawModels. When compilation fails the latch stays clear
  * and runFrame draws the MODEL segments itself on that plain path --
  * byte-for-byte the treatment every other particle type gets (sprites are
@@ -68,18 +63,17 @@ public final class CMIPackEntityMergeHook {
     private static final ShaderPackProgramCompiler COMPILER = new ShaderPackProgramCompiler();
 
     private static final com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing MERGE_TIMER=
-            new com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing(4);
+            new com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing(4,ms->com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.addExternalGpuMs(ms));
 
     /** Uniform-location cache (program id -> name -> location). */
-    private static final Map<Integer, Map<String, Integer>> UNIFORMS = new HashMap<>();
     private static boolean rebuildListenerRegistered = false;
 
     private static ModelShadowGpu MODEL_SHADOW;
     private static final PackageDrawCulling SHADOW_CULLING=new PackageDrawCulling();
-    private static final PackageDrawTelemetry SHADOW_PREP_TIMING=new PackageDrawTelemetry();
-    private static ParticleComputeState shadowComputeState;
+    private static final GpuPassTelemetry SHADOW_TIMING=new GpuPassTelemetry();
+    private static GpuComputeState shadowComputeState;
     private static PackageRenderState shadowDrawState;
-    public static void invalidateShadow(){if(MODEL_SHADOW!=null)MODEL_SHADOW.close();MODEL_SHADOW=null;SHADOW_PREP_TIMING.close();MERGE_TIMER.close();}
+    public static void invalidateShadow(){if(MODEL_SHADOW!=null)MODEL_SHADOW.close();MODEL_SHADOW=null;SHADOW_TIMING.close();MERGE_TIMER.close();}
     private CMIPackEntityMergeHook() {}
 
     // ------------------------------------------------------------------
@@ -88,40 +82,39 @@ public final class CMIPackEntityMergeHook {
 
     /** Called from {@code LevelRendererBlockEntitiesMixin} inside renderLevel. */
     public static void render() {
-        CMIParticleEngine engine = CMIParticleEngine.INSTANCE;
-        try {
+
+        try(var accounting=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.budgets.prepare()) {
             if (!ClientConfig.shaderPackIntegration
                     || !IrisVeilCompat.isShaderPackInUse()
-                    || !engine.available()
-                    || !engine.packageMainFrameReady())
+                    || com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication()==null)
                 return;
 
             if (!ensureCompiledWithListener())
                 return; // sticky failure recorded; the engine's plain AFTER_LEVEL path takes over
 
-            boolean timed=beginTimer(engine),succeeded=false;
-            try {drawEntities(engine);succeeded=true;}
+            boolean timed=beginTimer(),succeeded=false;
+            try {drawEntities();succeeded=true;}
             finally {if(timed)endTimer(succeeded);}
 
             // Latch even when this frame's instance count is zero: skipping the
             // L0 drawModels then costs nothing (it would submit the same empty
             // commands), while a CPU-side per-type readback would be a stall.
-            engine.markHookModelDrawn();
-            engine.shaderPackPathStatus = "pack entity merge (cutout+ghost dual, model near-first, current-frame perm)";
-            engine.shaderPackDepthStatus = "hardware (gbuffer)";
-            engine.shaderPackErrorStatus = "";
-            engine.shaderPackPermStatus = "gbuffer permutation age " + engine.lastFinalPermAgeFrames()
+            com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.markHookModelDrawn();
+            com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackPathStatus = "pack entity merge (cutout+ghost dual, model near-first, current-frame perm)";
+            com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackDepthStatus = "hardware (gbuffer)";
+            com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackErrorStatus = "";
+            com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackPermStatus = "gbuffer permutation age " + com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.lastFinalPermAgeFrames()
                     + "f (0 = this frame's cull)";
         } catch (RuntimeException | LinkageError e) {
             CreateManaIndustry.LOGGER.warn("[CMI particles] pack entity merge draw failed", e);
-            engine.shaderPackErrorStatus = String.valueOf(e);
+            com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackErrorStatus = String.valueOf(e);
         }
     }
 
     private static boolean ensureCompiledWithListener() {
         if (!rebuildListenerRegistered) {
             rebuildListenerRegistered = true;
-            COMPILER.setOnRebuild(UNIFORMS::clear);
+            COMPILER.setOnRebuild(com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms::clear);
         }
         return COMPILER.ensureCompiled();
     }
@@ -141,12 +134,12 @@ public final class CMIPackEntityMergeHook {
      * frame -- the gbuffer path and the plain fallback are untouched.
      */
     public static void renderShadow(Camera camera,Frustum frustum) {
-        CMIParticleEngine engine=CMIParticleEngine.INSTANCE;
-        if(!engine.currentFrameReady()){engine.shaderPackShadowStatus="current frame unavailable";return;}
-        if(!ClientConfig.shaderPackIntegration||!IrisVeilCompat.isShaderPackInUse()||!engine.available())return;
-        try{
-            if(!PackageShadowPolicy.copy(frustum,SHADOW_CULLING)){engine.shaderPackShadowStatus="unsupported shadow frustum: "+(frustum==null?"null":frustum.getClass().getName());return;}
-            if(shadowComputeState==null){shadowComputeState=new ParticleComputeState();shadowDrawState=new PackageRenderState();}
+
+        if(!com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.currentFrameReady()){com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="current frame unavailable";return;}
+        if(!ClientConfig.shaderPackIntegration||!IrisVeilCompat.isShaderPackInUse()||com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication()==null)return;
+        try(var accounting=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.budgets.prepare()){
+            if(!PackageShadowPolicy.copy(frustum,SHADOW_CULLING)){com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="unsupported shadow frustum: "+(frustum==null?"null":frustum.getClass().getName());return;}
+            if(shadowComputeState==null){shadowComputeState=new GpuComputeState();shadowDrawState=new PackageRenderState();}
             shadowComputeState.capture();
             try {
             shadowDrawState.capture();
@@ -158,23 +151,25 @@ public final class CMIPackEntityMergeHook {
             boolean depth=GL11.glIsEnabled(GL11.GL_DEPTH_TEST),blend=GL11.glIsEnabled(GL11.GL_BLEND),cull=GL11.glIsEnabled(GL11.GL_CULL_FACE),depthMask=GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
             try{
                 // First-use shader construction belongs inside the same boundary as drawing.
-                if(!ensureCompiledWithListener()){engine.shaderPackShadowStatus="merge failed";return;}
-                if(!COMPILER.shadowReady()){engine.shaderPackShadowStatus="no shadow track";return;}
-                var gpu=engine.gpuBuffers();
+                if(!ensureCompiledWithListener()){com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="merge failed";return;}
+                if(!COMPILER.shadowReady()){com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="no shadow track";return;}
+                var gpu=ParticleBuffers.INSTANCE;
                 if(MODEL_SHADOW==null||MODEL_SHADOW.capacity()!=gpu.capacity()||MODEL_SHADOW.carrierCapacity()!=gpu.carrierCapacity()){invalidateShadow();MODEL_SHADOW=new ModelShadowGpu(gpu.capacity(),gpu.carrierCapacity(),ParticlePrograms::loadParticlePlain);}
-                engine.addExternalGpuMs(SHADOW_PREP_TIMING.poll());
-                SHADOW_PREP_TIMING.begin(ClientConfig.particleAutoThrottle||com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled());
-                try{MODEL_SHADOW.starfall(engine.starfallGpu().committedBuffer());var p=camera.getPosition();MODEL_SHADOW.prepare(gpu.particleReadBufferId(),gpu.emitterBufferId(),engine.committedCounterBuffer(),SHADOW_CULLING,
-                        (float)p.x,(float)p.y,(float)p.z,EntityType.ALLAY.getWidth(),EntityType.ALLAY.getHeight(),(float)net.minecraft.world.entity.Entity.getViewScale(),engine.timeSec(),engine.stormWaveUniform(),engine.stormWaveTargetUniform(),engine.stormWaveTierUniform(),gpu.populationBufferId(engine.currentGeneration()),engine.currentGeneration());}
-                finally{SHADOW_PREP_TIMING.end();}
+                com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.addExternalGpuMs(SHADOW_TIMING.poll());
+                SHADOW_TIMING.begin(ClientConfig.particleAutoThrottle||com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled());
+                boolean shadowSucceeded=false;
+                try{MODEL_SHADOW.starfall(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer());var p=camera.getPosition();MODEL_SHADOW.prepare(gpu.particleReadBufferId(),gpu.emitterBufferId(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().counter(),SHADOW_CULLING,
+                        (float)p.x,(float)p.y,(float)p.z,EntityType.ALLAY.getWidth(),EntityType.ALLAY.getHeight(),(float)net.minecraft.world.entity.Entity.getViewScale(),com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec(),null,null,null,gpu.populationBufferId(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation()),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation());
                 gpu.bindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleReadBufferId(),MODEL_SHADOW.instances());gpu.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,MODEL_SHADOW.commands());
                 ShaderInstance shader=COMPILER.shadowShader();boolean applied=false;
                 try{
-                    applied=true;shader.apply();uploadShadowUniforms(shader.getId(),engine);setInt(shader.getId(),"cmi_ShadowPass",1);
-                    RenderSystem.enableDepthTest();RenderSystem.disableBlend();RenderSystem.depthMask(true);RenderSystem.enableCull();bindAtlas(engine,COMPILER.shadowGtextureUnit());
-                    uploadSegmentMode(shader.getId(),engine,0);gpu.drawModelCutout();uploadSegmentMode(shader.getId(),engine,2);gpu.drawModelCarrier();uploadSegmentMode(shader.getId(),engine,0);gpu.drawModelGhost();
+                    applied=true;shader.apply();uploadShadowUniforms(shader.getId());setInt(shader.getId(),"cmi_ShadowPass",1);
+                    RenderSystem.enableDepthTest();RenderSystem.disableBlend();RenderSystem.depthMask(true);RenderSystem.enableCull();bindAtlas(COMPILER.shadowGtextureUnit());
+                    uploadSegmentMode(shader.getId(),0);gpu.drawModelCutout();uploadSegmentMode(shader.getId(),2);gpu.drawModelCarrier();uploadSegmentMode(shader.getId(),0);gpu.drawModelGhost();
                 }finally{if(applied)shader.clear();}
-                engine.shaderPackShadowStatus="active (frame="+engine.renderFrameToken()+", generation="+engine.currentGeneration()+", age=0; "+SHADOW_PREP_TIMING.report()+")";
+                shadowSucceeded=true;
+                }finally{SHADOW_TIMING.end(shadowSucceeded);}
+                com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="active (frame="+com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken()+", generation="+com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation()+", age=0; "+SHADOW_TIMING.report()+")";
             }finally{
                 if(depth)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();if(blend)RenderSystem.enableBlend();else RenderSystem.disableBlend();if(cull)RenderSystem.enableCull();else RenderSystem.disableCull();RenderSystem.depthMask(depthMask);
                 captured.setCurrentAlphaTest(alpha);
@@ -183,7 +178,7 @@ public final class CMIPackEntityMergeHook {
                 shadowDrawState.restore();
             }
             } finally {shadowComputeState.restore();}
-        }catch(RuntimeException|LinkageError error){engine.shaderPackShadowStatus="draw failed";CreateManaIndustry.LOGGER.warn("[CMI particles] current-frame model shadow failed",error);}
+        }catch(RuntimeException|LinkageError error){com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="draw failed";CreateManaIndustry.LOGGER.warn("[CMI particles] current-frame model shadow failed",error);}
     }
 
     /**
@@ -196,7 +191,7 @@ public final class CMIPackEntityMergeHook {
      * per-section offsets). So cmi_CameraPos here feeds exactly what the gbuffer
      * path feeds, and our vertex main needs no shadow variant at all.
      */
-    private static void uploadShadowUniforms(int progId, CMIParticleEngine engine) {
+    private static void uploadShadowUniforms(int progId) {
         Matrix4f projection = new Matrix4f(ShadowRenderer.PROJECTION);
         Matrix4f modelView = new Matrix4f(ShadowRenderer.MODELVIEW);
         uploadIrisMatrices(progId, projection, modelView);
@@ -206,7 +201,7 @@ public final class CMIPackEntityMergeHook {
         setFloat(progId, "cmi_FadeDist", (float) ClientConfig.particleFadeDistance);
         // the shared simulation clock — without it the wave-claim window test
         // (chunks/allay_storm.glsl) never fires and swords drop out of shadows
-        setFloat(progId, "uTimeSec", engine.timeSec());
+        setFloat(progId, "uTimeSec", com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
         // Round-trip insurance for packs whose merged program is the plain
         // terrain-fallback shadow variant (no shadow_entities source): its
         // vertex stage routes positions through the NAMED matrices
@@ -218,19 +213,19 @@ public final class CMIPackEntityMergeHook {
         setMat(progId, "shadowModelViewInverse", new Matrix4f(modelView).invert());
         setFloat3(progId, "cameraPosition", (float) camPos.x, (float) camPos.y, (float) camPos.z);
         setSamplers(progId);
-        engine.starfallGpu().bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
-        setInt(progId,"uStarfallEnabled",engine.starfallGpu().committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
-        uploadStormItemUniforms(progId, engine);
+        com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
+        setInt(progId,"uStarfallEnabled",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
+        uploadStormItemUniforms(progId);
     }
 
     // ------------------------------------------------------------------
     // Draw
     // ------------------------------------------------------------------
 
-    private static void drawEntities(CMIParticleEngine engine) {
-        var gpu = engine.gpuBuffers();
+    private static void drawEntities() {
+        var gpu = ParticleBuffers.INSTANCE;
 
-        bindSharedResources(engine, gpu);
+        bindSharedResources(gpu);
         gpu.bindDrawIndirect();
 
         // Cutout segment: native solid-entity treatment -- no blending, depth
@@ -239,20 +234,20 @@ public final class CMIPackEntityMergeHook {
         ShaderInstance shader = COMPILER.entitiesShader();
         shader.apply();
         int progId = shader.getId();
-        uploadSegmentUniforms(progId, engine);
+        uploadSegmentUniforms(progId);
         // Nearest-first cutout: early-Z rejects occluded fragments before the
         // pack's fragment shader runs -- the dense-swarm fragment-pressure fix.
-        uploadSegmentMode(progId, engine, 1);
+        uploadSegmentMode(progId, 1);
         RenderSystem.enableDepthTest();
         GL11.glEnable(GL11.GL_CULL_FACE);
         RenderSystem.disableBlend();
         RenderSystem.depthMask(true);
-        bindAtlas(engine, COMPILER.gtextureUnit());
+        bindAtlas(COMPILER.gtextureUnit());
         gpu.drawModelCutout();
         // Held-item carrier segment: same cutout class as the body (depth
         // writes, no blending), so it rides the body's shader state — drawn
         // after the body, before the blended ghost, mirroring the L0 order.
-        uploadSegmentMode(progId, engine, 2);
+        uploadSegmentMode(progId, 2);
         gpu.drawModelCarrier();
         shader.clear();
 
@@ -264,17 +259,17 @@ public final class CMIPackEntityMergeHook {
         ShaderInstance ghost = COMPILER.ghostShader();
         ghost.apply();
         progId = ghost.getId();
-        uploadSegmentUniforms(progId, engine);
+        uploadSegmentUniforms(progId);
         // Ghost keeps forward reads: back-to-front order is load-bearing for
         // correct translucent compositing of overlapping shells.
-        uploadSegmentMode(progId, engine, 0);
+        uploadSegmentMode(progId, 0);
         RenderSystem.enableDepthTest();
         GL11.glEnable(GL11.GL_CULL_FACE);
         RenderSystem.enableBlend();
         RenderSystem.blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
                 GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
         RenderSystem.depthMask(true);
-        bindAtlas(engine, COMPILER.ghostGtextureUnit());
+        bindAtlas(COMPILER.ghostGtextureUnit());
         gpu.drawModelGhost();
         ghost.clear();
 
@@ -294,12 +289,12 @@ public final class CMIPackEntityMergeHook {
      * gbuffer matrices ourselves (same protocol as flw-compat), then neutralise
      * the stale entity uniforms and push our data uniforms.
      */
-    private static void uploadSegmentUniforms(int progId, CMIParticleEngine engine) {
+    private static void uploadSegmentUniforms(int progId) {
         Matrix4f projection = new Matrix4f(CapturedRenderingState.INSTANCE.getGbufferProjection());
         Matrix4f modelView = new Matrix4f(CapturedRenderingState.INSTANCE.getGbufferModelView());
         uploadIrisMatrices(progId, projection, modelView);
         uploadNeutralEntityUniforms(progId);
-        uploadCmiUniforms(progId, engine);
+        uploadCmiUniforms(progId);
         setSamplers(progId);
     }
 
@@ -318,11 +313,11 @@ public final class CMIPackEntityMergeHook {
             GL20.glUniformMatrix4fv(l, false, m.get(new float[16]));
     }
 
-    private static void bindSharedResources(CMIParticleEngine engine, ParticleBuffers gpu) {
+    private static void bindSharedResources( ParticleBuffers gpu) {
         // Merged programs read particle data through TBO views pinned to fixed
         // texture units; plain sampler declarations survive every in-game pass
         // where interface blocks demonstrably do not.
-        int permId = engine.lastFinalPermBufferId();
+        int permId = com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().permutation();
         gpu.bindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,
                 gpu.particleReadBufferId(),
                 permId >= 0 ? permId : gpu.sortBuffer(0));
@@ -358,15 +353,15 @@ public final class CMIPackEntityMergeHook {
         }
     }
 
-    private static void uploadCmiUniforms(int progId, CMIParticleEngine engine) {
+    private static void uploadCmiUniforms(int progId) {
         setInt(progId,"cmi_ShadowPass",0);
         var camPos = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
         setFloat3(progId, "cmi_CameraPos", (float) camPos.x, (float) camPos.y, (float) camPos.z);
         setFloat(progId, "cmi_FadeDist", (float) ClientConfig.particleFadeDistance);
-        setFloat(progId, "uTimeSec", engine.timeSec());
-        engine.starfallGpu().bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
-        setInt(progId,"uStarfallEnabled",engine.starfallGpu().committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
-        uploadStormItemUniforms(progId, engine);
+        setFloat(progId, "uTimeSec", com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
+        com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
+        setInt(progId,"uStarfallEnabled",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
+        uploadStormItemUniforms(progId);
     }
 
     /**
@@ -375,12 +370,10 @@ public final class CMIPackEntityMergeHook {
      * per-tier atlas UV rects. Same names and staging the self-drawn model.vsh
      * consumes; cheap on stormless frames.
      */
-    private static void uploadStormItemUniforms(int progId, CMIParticleEngine engine) {
-        setVec4Array(progId, "uWave", engine.stormWaveUniform());
-        setVec4Array(progId, "uWaveTarget", engine.stormWaveTargetUniform());
-        setFloatArray(progId, "uWaveTier", engine.stormWaveTierUniform());
+    private static void uploadStormItemUniforms(int progId) {
+        com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.uploadUniforms(progId);
         setVec4Array(progId, "uHeldItemUV",
-                com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms.heldItemUVTable());
+                com.iridium126.createmanaindustry.client.particles.engine.HeldItemGeometry.uvTable());
     }
 
     /**
@@ -394,27 +387,26 @@ public final class CMIPackEntityMergeHook {
      * merged vertex source), 2 = held-item carrier region (forward, exact
      * count).
      */
-    private static void uploadSegmentMode(int progId, CMIParticleEngine engine, int segmentMode) {
-        setInt(progId, "cmi_MetaSlot", engine.gpuBuffers().metaSlotIndex());
-        setInt(progId, "cmi_CarrierBase", engine.gpuBuffers().carrierBase());
+    private static void uploadSegmentMode(int progId,  int segmentMode) {
+        setInt(progId, "cmi_MetaSlot", ParticleBuffers.INSTANCE.metaSlotIndex());
+        setInt(progId, "cmi_CarrierBase", ParticleBuffers.INSTANCE.carrierBase());
         setInt(progId, "cmi_SegmentMode", segmentMode);
     }
 
     /** The pack fragment samples the entity texture through its gtexture sampler. */
-    private static void bindAtlas(CMIParticleEngine engine, int unit) {
+    private static void bindAtlas( int unit) {
         if (unit < 0)
             return;
         RenderSystem.activeTexture(GL13.GL_TEXTURE0 + unit);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, engine.modelAtlasTextureId());
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY.textureId());
     }
 
     // ------------------------------------------------------------------
     // Timer ring (never blocks)
     // ------------------------------------------------------------------
 
-    private static boolean beginTimer(CMIParticleEngine engine) {
+    private static boolean beginTimer() {
         MERGE_TIMER.poll();
-        if(MERGE_TIMER.sampled())engine.addExternalGpuMs(MERGE_TIMER.lastMs());
         return MERGE_TIMER.begin();
     }
 
@@ -425,8 +417,7 @@ public final class CMIPackEntityMergeHook {
     // ------------------------------------------------------------------
 
     private static int loc(int prog, String name) {
-        return UNIFORMS.computeIfAbsent(prog, k -> new HashMap<>())
-                .computeIfAbsent(name, n -> GL20.glGetUniformLocation(prog, n));
+        return com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(prog,name);
     }
 
     private static void setInt(int prog, String name, int v) {

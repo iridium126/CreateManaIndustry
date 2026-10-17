@@ -1,14 +1,14 @@
 package com.iridium126.createmanaindustry.client.hex.pattern;
 
-import com.iridium126.createmanaindustry.client.particles.engine.ParticleComputeState;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageRenderState;
+import com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState;
+import com.iridium126.createmanaindustry.client.packages.render.PackageRenderState;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.lwjgl.opengl.*;
 
 /** One boundary per batch, not per pattern. UI clipping/framebuffers are inherited exactly. */
 public final class HexPassState implements AutoCloseable {
-    private ParticleComputeState compute;
+    private GpuComputeState compute;
     private PackageRenderState draw;
     private boolean[][] indexedColor;
     private final int[] viewport=new int[4],box=new int[4];private final boolean[] color=new boolean[4];private final java.nio.ByteBuffer mask=org.lwjgl.BufferUtils.createByteBuffer(4);
@@ -16,7 +16,7 @@ public final class HexPassState implements AutoCloseable {
     public HexPassState capture(){
         if(open)throw new IllegalStateException("Nested Hex state boundary");
         // Service/configuration class loading does not require an active GL context.
-        if(compute==null){compute=new ParticleComputeState(true);draw=new PackageRenderState();indexedColor=new boolean[GL11.glGetInteger(GL20.GL_MAX_DRAW_BUFFERS)][4];}
+        if(compute==null){compute=new GpuComputeState(true);draw=new PackageRenderState();indexedColor=new boolean[GL11.glGetInteger(GL20.GL_MAX_DRAW_BUFFERS)][4];}
         shader=RenderSystem.getShader();drawFbo=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);readFbo=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
         GL11.glGetIntegerv(GL11.GL_VIEWPORT,viewport);GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX,box);scissor=GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
         depth=GL11.glIsEnabled(GL11.GL_DEPTH_TEST);blend=GL11.glIsEnabled(GL11.GL_BLEND);cull=GL11.glIsEnabled(GL11.GL_CULL_FACE);write=GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);depthFunc=GL11.glGetInteger(GL11.GL_DEPTH_FUNC);

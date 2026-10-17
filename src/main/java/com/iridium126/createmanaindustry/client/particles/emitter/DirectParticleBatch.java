@@ -16,6 +16,7 @@ public final class DirectParticleBatch {
     private FloatBuffer staging = BufferUtils.createFloatBuffer(0);
     private int count, ready;
     private final boolean tickGated;
+    private final com.iridium126.createmanaindustry.client.gpu.profile.GpuQueueAccounting accounting=new com.iridium126.createmanaindustry.client.gpu.profile.GpuQueueAccounting();
     public DirectParticleBatch(){this(false);}
     public DirectParticleBatch(boolean tickGated){this.tickGated=tickGated;}
 
@@ -25,7 +26,7 @@ public final class DirectParticleBatch {
     public boolean offer(double x, double y, double z, double vx, double vy, double vz, int color,int bornTick) {
         if (count == LIMIT || !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
                 || !Float.isFinite((float)x) || !Float.isFinite((float)y) || !Float.isFinite((float)z)
-                || !Float.isFinite((float)(vx*20)) || !Float.isFinite((float)(vy*20)) || !Float.isFinite((float)(vz*20))) return false;
+                || !Float.isFinite((float)(vx*20)) || !Float.isFinite((float)(vy*20)) || !Float.isFinite((float)(vz*20))) {accounting.rejected(1);return false;}
         if (count == colors.length) {
             int capacity = Math.min(LIMIT, Math.max(64, colors.length * 2));
             inputs = Arrays.copyOf(inputs, capacity * 6);
@@ -38,8 +39,10 @@ public final class DirectParticleBatch {
         inputs[b+3] = vx; inputs[b+4] = vy; inputs[b+5] = vz;
         colors[count] = color;born[count++]=bornTick;
         if(!tickGated)ready=count;
+        accounting.accepted(1);
         return true;
     }
+    public void measureQueue(){accounting.deferred(count-ready);accounting.measure(count);}
 
     public int count() { return count; }
     public int ready() { return ready; }

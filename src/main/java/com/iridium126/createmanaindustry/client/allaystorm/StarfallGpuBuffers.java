@@ -9,6 +9,7 @@ import java.nio.IntBuffer;
 import java.util.Arrays;
 /** A roster snapshot and identity-keyed phase state travel with each committed simulation. */
 public final class StarfallGpuBuffers implements AutoCloseable {
+ public static final StarfallGpuBuffers INSTANCE=new StarfallGpuBuffers();
  public static final int DATA_BINDING=26, STATE_READ=27, STATE_WRITE=28, HEADER=16, WAVE_WORDS=312, ROSTER=131072;
  public static final int DATA_WORDS=HEADER+ROSTER+4*WAVE_WORDS, STATE_WORDS=ROSTER*2+256+128;
  private final int[] words=new int[DATA_WORDS],data={0,0},state={0,0},textures={0,0};
@@ -64,16 +65,16 @@ public final class StarfallGpuBuffers implements AutoCloseable {
  public void helixReady(int slot,boolean ready){int b=HEADER+ROSTER+slot*WAVE_WORDS;if(words[b+20]!=Float.floatToRawIntBits(2f))return;int mask=ready?words[1]|(1<<slot):words[1]&~(1<<slot);if(mask!=words[1]){words[1]=mask;readyVersion++;}}
  private void put(int b,float a,float c,float d,float e){words[b]=Float.floatToRawIntBits(a);words[b+1]=Float.floatToRawIntBits(c);words[b+2]=Float.floatToRawIntBits(d);words[b+3]=Float.floatToRawIntBits(e);}
  private void ensure(){if(data[0]!=0)return;upload=MemoryUtil.memAllocInt(DATA_WORDS);for(int i=0;i<2;i++){
-  data[i]=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,data[i]);GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,DATA_WORDS*4L,GL15.GL_DYNAMIC_DRAW);
-  state[i]=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,state[i]);GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,STATE_WORDS*4L,GL15.GL_DYNAMIC_DRAW);
+  data[i]=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,data[i]);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,DATA_WORDS*4L,GL15.GL_DYNAMIC_DRAW);
+  state[i]=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,state[i]);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,STATE_WORDS*4L,GL15.GL_DYNAMIC_DRAW);
   GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);
   textures[i]=GL11.glGenTextures();GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,textures[i]);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_R32UI,data[i]);
  }}
  public void prepare(long generation){if(data[0]==0&&!hasWaves)return;ensure();if(clearStates){for(int buffer:state){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);}clearStates=false;}int write=1-read;
   if(versions[write]!=version){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);
-   if(rosterVersions[write]!=rosterVersion){upload.clear();upload.put(words,0,HEADER+ROSTER).flip();GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,upload);rosterVersions[write]=rosterVersion;uploadedBytes+=4L*(HEADER+ROSTER);}
-   upload.clear();upload.put(words,HEADER+ROSTER,DATA_WORDS-HEADER-ROSTER).flip();GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,4L*(HEADER+ROSTER),upload);uploadedBytes+=4L*(DATA_WORDS-HEADER-ROSTER);versions[write]=version;
-  }if(readyVersions[write]!=readyVersion){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);upload.clear();upload.put(words[1]).flip();GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,4,upload);uploadedBytes+=4;readyVersions[write]=readyVersion;}
+   if(rosterVersions[write]!=rosterVersion){upload.clear();upload.put(words,0,HEADER+ROSTER).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,upload);rosterVersions[write]=rosterVersion;uploadedBytes+=4L*(HEADER+ROSTER);}
+   upload.clear();upload.put(words,HEADER+ROSTER,DATA_WORDS-HEADER-ROSTER).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,4L*(HEADER+ROSTER),upload);uploadedBytes+=4L*(DATA_WORDS-HEADER-ROSTER);versions[write]=version;
+  }if(readyVersions[write]!=readyVersion){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);upload.clear();upload.put(words[1]).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,4,upload);uploadedBytes+=4;readyVersions[write]=readyVersion;}
   generations[write]=generation;enabled[write]=hasWaves;pending=true;
   GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
  }
@@ -85,13 +86,28 @@ public final class StarfallGpuBuffers implements AutoCloseable {
   return valid;
  }
  /** Standalone validation entry; shared-pool owners use bind(staged) and their own program cache. */
- public void bind(int program,boolean staged){boolean valid=bind(staged);if(program!=0)GL41.glProgramUniform1i(program,GL20.glGetUniformLocation(program,"uStarfallEnabled"),valid?1:0);}
+ public void bind(int program,boolean staged){boolean valid=bind(staged);if(program!=0)GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStarfallEnabled"),valid?1:0);}
  public void bindTexture(int unit){boolean valid=data[read]!=0&&enabled[read]&&generations[read]>=0;GL13.glActiveTexture(GL13.GL_TEXTURE0+unit);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,valid?textures[read]:0);GL13.glActiveTexture(GL13.GL_TEXTURE0);}
+ public long candidateGeneration(){return pending?generations[1-read]:generations[read];}
  public long committedGeneration(){return generations[read];}
  public int committedBuffer(){return generations[read]>=0&&enabled[read]?data[read]:0;}
  public void commit(){if(pending){read=1-read;pending=false;}}
  public void abort(){pending=false;}
  public void invalidate(){words[0]=++domainToken;words[1]=0;readyVersion++;Arrays.fill(readyVersions,-1);clearStates=true;Arrays.fill(generations,-1);Arrays.fill(versions,-1);Arrays.fill(rosterVersions,-1);version++;pending=false;}
  public long bytes(){return data[0]==0?0:8L*(DATA_WORDS+STATE_WORDS);}
- @Override public void close(){for(int i=0;i<2;i++){if(data[i]!=0)GL15.glDeleteBuffers(data[i]);if(state[i]!=0)GL15.glDeleteBuffers(state[i]);if(textures[i]!=0)GL11.glDeleteTextures(textures[i]);data[i]=state[i]=textures[i]=0;}if(upload!=null){MemoryUtil.memFree(upload);upload=null;}invalidate();}
+ @Override public void close(){for(int i=0;i<2;i++){if(data[i]!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(data[i]);if(state[i]!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(state[i]);if(textures[i]!=0)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(textures[i]);data[i]=state[i]=textures[i]=0;}if(upload!=null){MemoryUtil.memFree(upload);upload=null;}invalidate();}
+
+
+ private final float[] waves=new float[16],targets=new float[16],tiers=new float[4],path=new float[96];
+ public void resetUniforms(){Arrays.fill(waves,0);Arrays.fill(targets,0);Arrays.fill(tiers,0);}
+ public void waveUniform(int slot,float seed,float start,float until,int id,float tier) {
+  if(slot<0||slot>=4)throw new IllegalArgumentException("Wave slot");
+  int b=slot*4;waves[b]=seed;waves[b+2]=start;waves[b+3]=until;targets[b+3]=id;tiers[slot]=tier;
+ }
+ public void uploadUniforms(int program) {
+  com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setVec4ArrayUniform(program,"uWave",waves);
+  com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setVec4ArrayUniform(program,"uWaveTarget",targets);
+  com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setFloatArrayUniform(program,"uWaveTier",tiers);
+  com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setVec4ArrayUniform(program,"uWavePath",path);
+ }
 }

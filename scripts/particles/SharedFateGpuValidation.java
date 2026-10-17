@@ -275,7 +275,7 @@ public class SharedFateGpuValidation {
                 System.out.println("Blue filament pixels: time="+animationTime+", distance="+distance+", bindings="+copies+", alpha="+nAlpha+", glow/stars="+nAdd+"; four backgrounds, continuity and occlusion passed");
             }
         }finally{
-            GL11.glDepthMask(true);pool.free();GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(framebuffer);GL11.glDeleteTextures(color);GL30.glDeleteRenderbuffers(depthBuffer);
+            GL11.glDepthMask(true);pool.free();GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(framebuffer);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(color);GL30.glDeleteRenderbuffers(depthBuffer);
             for(int p:new int[]{prepare,reserve,emit,publish,keygen,draw,alpha,hist,scan,scatter})GL20.glDeleteProgram(p);
             for(int id:new int[]{input,jobs,previous,next,dummy,nodes,debrisRead,debrisWrite})GL15.glDeleteBuffers(id);
         }
@@ -341,7 +341,7 @@ public class SharedFateGpuValidation {
             check(lit>10,"published wire draws visible pixels, not just valid compute records");
             System.out.println("Partition handoff: "+live+" samples, "+lit+" visible pixels");
         } finally {
-            pool.free();GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(framebuffer);GL11.glDeleteTextures(color);
+            pool.free();GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(framebuffer);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(color);
             for(int p:new int[]{prepare,reserve,emit,publish,keygen,draw})GL20.glDeleteProgram(p);
             for(int b:new int[]{input,jobs,previous,next,dummy})GL15.glDeleteBuffers(b);
         }
@@ -445,7 +445,7 @@ public class SharedFateGpuValidation {
                     var j=read(jobs,baseline?320:384);int records=0;for(int i=0;i<links;i++)records+=read(jobs,links*(baseline?320:384)).getInt(i*(baseline?320:384)+28);
                     System.out.printf(java.util.Locale.ROOT,"%s,%d,%d,%d,%d,%d,%.4f,%.4f,%.4f,%.4f%n",baseline?"particles":"ribbons",links,length,records,baseline?0:(int)j.getFloat(304)*links,baseline?0:(int)j.getFloat(312)*links,sums[0],sums[1],sums[2],sums[0]+sums[1]+sums[2]);
                 }finally{pool.free();for(int b:new int[]{input,jobs,previous,next,nodes,dummy})GL15.glDeleteBuffers(b);}
-            }}finally{for(int p:new int[]{prepare,reserve,emit,publish,keygen,hist,scan,scatter,alpha,add})GL20.glDeleteProgram(p);GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(fb);GL11.glDeleteTextures(tex);GL15.glDeleteQueries(queries);}
+            }}finally{for(int p:new int[]{prepare,reserve,emit,publish,keygen,hist,scan,scatter,alpha,add})GL20.glDeleteProgram(p);GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(fb);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(tex);GL15.glDeleteQueries(queries);}
         }
         sourceRoot=null;
     }

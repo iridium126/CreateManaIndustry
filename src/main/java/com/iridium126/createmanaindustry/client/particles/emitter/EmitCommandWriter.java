@@ -57,14 +57,17 @@ public final class EmitCommandWriter {
                            float c0, float c1, float c2, float c3, Parameters input) {
         // Float count/prefix must remain exact; total work is capped before upload.
         if (full() || emitter < 0 || count <= 0 || count > (1 << 24)
-                || particles + count > Integer.MAX_VALUE) return false;
-        if (!Float.isFinite((float)x) || !Float.isFinite((float)y) || !Float.isFinite((float)z)) return false;
+                || particles + count > Integer.MAX_VALUE) { com.iridium126.createmanaindustry.client.gpu.profile.GpuBudgetLedger.queued(0,0,1,0);return false; }
+        if (!Float.isFinite((float)x) || !Float.isFinite((float)y) || !Float.isFinite((float)z)) {
+            com.iridium126.createmanaindustry.client.gpu.profile.GpuBudgetLedger.queued(0,0,1,0);return false;
+        }
         int b = size * WORDS;
         rows[b] = (float)x; rows[b+1] = (float)y; rows[b+2] = (float)z; rows[b+ParticleLayout.COMMAND_COUNT] = count;
         rows[b+ParticleLayout.COMMAND_EMITTER] = emitter; rows[b+ParticleLayout.COMMAND_SEED] = 0; rows[b+ParticleLayout.COMMAND_PREFIX] = 0; rows[b+ParticleLayout.COMMAND_REFERENCE] = reference;
         rows[b+8] = c0; rows[b+9] = c1; rows[b+10] = c2; rows[b+11] = c3;
         parameters[size++] = input;
         particles += count;
+        com.iridium126.createmanaindustry.client.gpu.profile.GpuBudgetLedger.queued(1,0,0,0);
         return true;
     }
 

@@ -1,5 +1,9 @@
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource;
-import com.iridium126.createmanaindustry.client.particles.packages.*;
+import com.iridium126.createmanaindustry.client.packages.authority.*;
+import com.iridium126.createmanaindustry.client.packages.simulation.*;
+import com.iridium126.createmanaindustry.client.packages.world.*;
+import com.iridium126.createmanaindustry.client.packages.render.*;
+import com.iridium126.createmanaindustry.client.packages.feedback.*;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.*;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageObserverPacket;
 import net.minecraft.resources.ResourceLocation;

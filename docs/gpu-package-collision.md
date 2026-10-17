@@ -4,7 +4,7 @@
 
 ## 代码入口
 
-`client/particles/packages/` 下的 `PackageCollisionCaptureSchedule`、`PackageCollisionCache`、`PackageMovingCollisionCache`、`PackageWorldRuntime`、`PackageFrameBudget` 和 `PackageFreezeReport` 管理采集、版本、上传、历史与诊断。生产着色器位于 `assets/createmanaindustry/shaders/particles/packages/`。真实 GPU 场景集中在 `scripts/particles/PackageGpuValidation.java`。
+`client/packages/world/` 下的 `PackageCollisionCaptureSchedule`、`PackageCollisionCache`、`PackageMovingCollisionCache`、`PackageWorldRuntime`、`PackageFrameBudget` 和 `PackageFreezeReport` 管理采集、版本、上传、历史与诊断；五域调用归属见[第四批报告](gpu-runtime-stage4.md)。生产着色器位于 `assets/createmanaindustry/shaders/particles/packages/`。真实 GPU 场景集中在 `scripts/particles/PackageGpuValidation.java`。
 
 ## 世界采集与局部更新
 

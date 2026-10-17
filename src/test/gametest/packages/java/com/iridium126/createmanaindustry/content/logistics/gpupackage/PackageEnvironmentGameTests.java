@@ -61,9 +61,9 @@ public final class PackageEnvironmentGameTests {
     @GameTest(template="package_output_test",timeoutTicks=40)
     public static void openTrapdoorsHonorNeoForgeLadderExtensions(GameTestHelper helper){
         var level=helper.getLevel();var at=helper.absolutePos(new BlockPos(1,3,1));
-        var source=new com.iridium126.createmanaindustry.client.particles.packages.PackageWorldCollisionSource(level);
+        var source=new com.iridium126.createmanaindustry.client.packages.world.PackageWorldCollisionSource(level);
         var reference=new Reference(level,Vec3.atBottomCenterOf(at).add(0,.01,0),PackageItem.containing(List.of()));
-        var section=new com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionCache.Section(at.getX()>>4,at.getY()>>4,at.getZ()>>4);
+        var section=new com.iridium126.createmanaindustry.client.packages.world.PackageCollisionCache.Section(at.getX()>>4,at.getY()>>4,at.getZ()>>4);
         int index=(at.getX()&15)|((at.getZ()&15)<<4)|((at.getY()&15)<<8),checked=0;
         for(var block:net.minecraft.core.registries.BuiltInRegistries.BLOCK){
             var id=net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block);

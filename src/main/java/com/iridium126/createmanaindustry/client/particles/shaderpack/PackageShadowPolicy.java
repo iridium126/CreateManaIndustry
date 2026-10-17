@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.shaderpack;
 
 import com.iridium126.createmanaindustry.accessor.CMIPackageShadowCulling;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling;
+import com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling;
 import net.irisshaders.iris.shadows.frustum.*;
 import net.irisshaders.iris.shadows.frustum.fallback.NonCullingFrustum;
 import net.minecraft.client.renderer.culling.Frustum;

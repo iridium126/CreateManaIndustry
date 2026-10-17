@@ -4,7 +4,11 @@ import java.util.*;
 import org.lwjgl.*;
 import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.*;
-import com.iridium126.createmanaindustry.client.particles.packages.*;
+import com.iridium126.createmanaindustry.client.packages.authority.*;
+import com.iridium126.createmanaindustry.client.packages.simulation.*;
+import com.iridium126.createmanaindustry.client.packages.world.*;
+import com.iridium126.createmanaindustry.client.packages.render.*;
+import com.iridium126.createmanaindustry.client.packages.feedback.*;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource;
 
 /** Standalone archived three-index comparison. Never included in the mod JAR. */

@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.client.particles;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
-import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
+import com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.client.Minecraft;
@@ -33,7 +33,7 @@ public final class BlockParticleEmitterClient {
         if (level != owner) return;
         long key = ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4);
         if (!SCANNED_CHUNKS.contains(key) && !(scanningSection >= 0 && scanningChunk == key)) return;
-        if (!CMIParticleEngine.INSTANCE.available()) {
+        if (!ParticleRuntime.INSTANCE.available()) {
             onChunkLoaded(level, new ChunkPos(pos));
             return;
         }
@@ -44,14 +44,14 @@ public final class BlockParticleEmitterClient {
         var blocks = SOURCES_BY_CHUNK.get(key);
         if (blocks != null) {
             var old = blocks.remove(pos.asLong());
-            if (old != null) for (int slot : old) CMIParticleEngine.INSTANCE.blockEmitters().remove(slot);
+            if (old != null) for (int slot : old) com.iridium126.createmanaindustry.client.particles.engine.BlockEmitterTable.INSTANCE.remove(slot);
         }
         if (!BlockParticleEmitters.matches(state)) return;
         var slots = new IntArrayList(5);
         BlockParticleEmitters.collect(state, source -> {
-            int id = CMIParticleEngine.INSTANCE.ensureEmitter(source.spec());
+            int id = ParticleRuntime.INSTANCE.ensureEmitter(source.spec());
             if (id < 0) return;
-            int slot = CMIParticleEngine.INSTANCE.blockEmitters().add(
+            int slot = com.iridium126.createmanaindustry.client.particles.engine.BlockEmitterTable.INSTANCE.add(
                     pos.getX() + source.x(), pos.getY() + source.y(), pos.getZ() + source.z(),
                     source.rate(), id, source.cullRadius());
             if (slot >= 0) slots.add(slot);
@@ -68,7 +68,7 @@ public final class BlockParticleEmitterClient {
     private static void removeChunkSources(long key) {
         var blocks = SOURCES_BY_CHUNK.get(key);
         if (blocks != null) for (var slots : blocks.values())
-            for (int slot : slots) CMIParticleEngine.INSTANCE.blockEmitters().remove(slot);
+            for (int slot : slots) com.iridium126.createmanaindustry.client.particles.engine.BlockEmitterTable.INSTANCE.remove(slot);
     }
 
     public static void onChunkUnloaded(ClientLevel level, ChunkPos pos) {
@@ -96,10 +96,10 @@ public final class BlockParticleEmitterClient {
             clear();
             owner = minecraft.level;
         }
-        if (owner == null || minecraft.player == null || !CMIParticleEngine.INSTANCE.available()) return;
+        if (owner == null || minecraft.player == null || !ParticleRuntime.INSTANCE.available()) return;
         BlockParticleEmitters.registerDefaults();
         scheduleChunkDiscovery(minecraft.gameRenderer.getMainCamera().getPosition(),
-                CMIParticleEngine.INSTANCE.renderDistanceBlocks());
+                ParticleRuntime.INSTANCE.renderDistanceBlocks());
         int chunksStarted = 0;
         for (int budget = 0; budget < SCAN_SECTIONS_PER_TICK;) {
             if (scanningSection < 0) {
@@ -201,7 +201,7 @@ public final class BlockParticleEmitterClient {
 
 
     public static void clear() {
-        CMIParticleEngine.INSTANCE.blockEmitters().clear();
+        com.iridium126.createmanaindustry.client.particles.engine.BlockEmitterTable.INSTANCE.clear();
         SOURCES_BY_CHUNK.clear();
         SCANNED_CHUNKS.clear();
         QUEUED_CHUNKS.clear();

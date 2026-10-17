@@ -1,11 +1,21 @@
 package com.iridium126.createmanaindustry.client.particles.emitter;
 
-import java.nio.FloatBuffer;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class EmitCommandWriterTest {
+    @Test void queueBudgetMeasuresBoundedEntriesRatherThanTheParticlesTheyExpandInto() {
+        var ledger=new com.iridium126.createmanaindustry.client.gpu.profile.GpuBudgetLedger();ledger.begin(1);
+        var writer=new EmitCommandWriter(2);
+        try(var accounting=ledger.prepare()) {
+            assertTrue(writer.members(1,128,Vec3.ZERO,0,false));
+            assertTrue(writer.basic(2,1,Vec3.ZERO,0));
+            assertFalse(writer.basic(3,4000,Vec3.ZERO,0));
+        }
+        assertEquals(2,ledger.snapshot().accepted());assertEquals(1,ledger.snapshot().rejected());
+        assertEquals(129,writer.particles());assertEquals(2,writer.size());
+    }
     private static EmitCommandWriter.Parameters parameters(int tag) {
         return target -> { for (int i=0;i<48;i++) target.put(tag+i); };
     }

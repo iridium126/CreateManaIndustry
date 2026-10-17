@@ -1,4 +1,5 @@
 package com.iridium126.createmanaindustry.client.gpu;
+import com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry;
 
 import java.io.IOException;
 import org.junit.jupiter.api.Test;
@@ -28,11 +29,11 @@ class GpuModuleBoundaryTest {
             excludes("gpu/"+type,ROOT+"particles/",ROOT+"greattrick/",ROOT+"hex/",ROOT+"packages/",ROOT+"allaystorm/");
     }
     @Test void businessProducersUseNarrowPortsAndHexDoesNotRequireTheGeneralPool()throws IOException{
-        excludes("allaystorm/StarfallGpuBuffers","CMIParticleEngine","ParticleBuffers","ParticlePrograms");
-        excludes("allaystorm/AllayStormRuntime","CMIParticleEngine","ParticlePrograms","org/lwjgl/opengl/");
-        excludes("allaystorm/StormParticlePort","CMIParticleEngine","ParticleBuffers","ParticlePrograms");
-        excludes("greattrick/sharedfate/SharedFateGpu","CMIParticleEngine","ParticleBuffers");
-        excludes("greattrick/partition/PartitionGpu","CMIParticleEngine","ParticleBuffers","SharedFateGpu");
-        excludes("hex/pattern/HexPatternService","CMIParticleEngine","ParticlePrograms","ParticleFrameLatch");
+        excludes("allaystorm/StarfallGpuBuffers","ParticleRuntime","ParticleBuffers","ParticlePrograms");
+        excludes("allaystorm/AllayStormRuntime","ParticleRuntime","ParticlePrograms","org/lwjgl/opengl/");
+        excludes("allaystorm/StormParticlePort","ParticleRuntime","ParticleBuffers","ParticlePrograms");
+        excludes("greattrick/sharedfate/SharedFateGpu","ParticleRuntime","ParticleBuffers");
+        excludes("greattrick/partition/PartitionGpu","ParticleRuntime","ParticleBuffers","SharedFateGpu");
+        excludes("hex/pattern/HexPatternService","ParticleRuntime","ParticlePrograms","ParticleFrameLatch");
     }
 }

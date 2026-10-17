@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.vanilla;
 
-import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
+import com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Tail hook on the vanilla crosshair pick: lets the GPU allay particles win
  * the crosshair like real entities (see
- * {@link CMIParticleEngine#injectCrosshairPick} for the full contract).
+ * {@link ParticleRuntime#injectCrosshairPick} for the full contract).
  * Runs AFTER vanilla has chosen its entity/block result; the engine only
  * replaces it when an allay particle is strictly closer, so every vanilla
  * outcome stays intact otherwise. No-op cost when the engine is unavailable
@@ -25,6 +25,6 @@ public abstract class GameRendererPickMixin {
     @Inject(method = "pick(F)V", at = @At("TAIL"))
     private void createmanaindustry$injectParticlePick(float partialTicks, CallbackInfo ci) {
         var mc=Minecraft.getInstance();
-        CMIParticleEngine.INSTANCE.injectCrosshairPick(mc);
+        com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.injectCrosshairPick(mc);
     }
 }

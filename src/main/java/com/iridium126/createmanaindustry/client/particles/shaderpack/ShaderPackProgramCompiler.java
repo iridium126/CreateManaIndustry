@@ -614,12 +614,12 @@ public final class ShaderPackProgramCompiler {
         sb.append("#version 400 core\n");
         // constants ride the AST as plain const declarations -- #define lines
         // vanish when declarations transplant across glsl-transformer trees
-        sb.append("const uint MODEL_VERTEX_FLOATS = ").append(ParticlePrograms.modelVertexFloats()).append("u;\n");
+        sb.append("const uint MODEL_VERTEX_FLOATS = ").append(com.iridium126.createmanaindustry.client.particles.engine.AllayModelGeometry.VERTEX_FLOATS).append("u;\n");
         sb.append("const uint VEC4_PER_EMITTER = 20u;\n");
         // rest-pose model above-feet height in blocks -- the vanilla-size scale
         // divisor shared with model.vsh / hit.comp (emitted as a plain const
         // here because #defines do not survive the AST transplant)
-        sb.append("const float MODEL_ABOVE_FEET = ").append(ParticlePrograms.modelAboveFeet()).append(";\n");
+        sb.append("const float MODEL_ABOVE_FEET = ").append(com.iridium126.createmanaindustry.client.particles.engine.AllayModelGeometry.MODEL_ABOVE_FEET).append(";\n");
         // particle data arrives through TBO views: plain samplerBuffer uniforms
         // survive every in-game pass, interface blocks demonstrably do not
         sb.append("uniform samplerBuffer cmi_Geo;\n");
@@ -632,7 +632,7 @@ public final class ShaderPackProgramCompiler {
         // uWaveTarget / uTimeSec arrive through chunks/allay_pose.glsl's
         // top-included allay_storm chunk (declared next to the shared
         // cmiStormWaveClaim predicate), so they must NOT be re-declared here.
-        sb.append("const mat4 CMI_HELD_DISPLAY = ").append(ParticlePrograms.heldItemDisplayMatrix()).append(";\n");
+        sb.append("const mat4 CMI_HELD_DISPLAY = ").append(com.iridium126.createmanaindustry.client.particles.engine.HeldItemGeometry.displayMatrixGLSL()).append(";\n");
         sb.append("""
                 uniform float uWaveTier[4];  // held-sword material id per slot (0 = none)
                 uniform vec4 uHeldItemUV[7]; // per-tier atlas rects {uvMin.xy, uvMax.xy}, slot 0 unused

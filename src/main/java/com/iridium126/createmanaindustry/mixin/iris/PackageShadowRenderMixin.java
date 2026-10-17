@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.iris;
 
-import com.iridium126.createmanaindustry.client.particles.shaderpack.PackageShaderHook;
+import com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook;
 import net.irisshaders.iris.mixin.LevelRendererAccessor;
 import net.irisshaders.iris.shadows.ShadowRenderer;
 import net.irisshaders.iris.shadows.frustum.FrustumHolder;

@@ -63,7 +63,7 @@ public class HexSharedGpuValidation {
                 var p=BufferUtils.createByteBuffer(4);GL11.glReadPixels(32,32,1,1,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,p);check((p.get(1)&255)>200,"inner line pixel");GL11.glReadPixels(16,32,1,1,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,p);check((p.get(2)&255)>200,"native six-sided node pixel");
             }
             GL11.glFinish();check(gpu.allocatedBytes()<(16L<<20),"pixel budget");
-        }finally{GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(fbo);GL11.glDeleteTextures(tex);}
+        }finally{GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(fbo);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(tex);}
     }
     static int graphics(String vertex,String fragment){int p=GL20.glCreateProgram();var ids=new ArrayList<Integer>();try{for(int i=0;i<2;i++){int shader=GL20.glCreateShader(i==0?GL20.GL_VERTEX_SHADER:GL20.GL_FRAGMENT_SHADER);ids.add(shader);GL20.glShaderSource(shader,i==0?vertex:fragment);GL20.glCompileShader(shader);check(GL20.glGetShaderi(shader,GL20.GL_COMPILE_STATUS)!=0,GL20.glGetShaderInfoLog(shader));GL20.glAttachShader(p,shader);}GL20.glLinkProgram(p);check(GL20.glGetProgrami(p,GL20.GL_LINK_STATUS)!=0,GL20.glGetProgramInfoLog(p));return p;}finally{for(int shader:ids)GL20.glDeleteShader(shader);}}
     static final class NativeDrawer implements at.petrak.hexcasting.client.render.VCDrawHelper,AutoCloseable {
@@ -81,7 +81,7 @@ public class HexSharedGpuValidation {
         void render(HexGpuBackend.Draw d,List<Vec2> raw,boolean dots){var style=d.shape.style;var noisy=RenderLib.makeZappy(raw,d.shape.duplicates,style.hops(),style.variance(),style.speed(),style.flow(),style.readability(),style.lastLength(),d.seed);
             z=d.outerZ;RenderLib.drawLineSeq(d.transform,noisy,d.outer*2,d.outerTail,d.outerHead,this);z=d.innerZ;RenderLib.drawLineSeq(d.transform,noisy,d.inner*2,d.innerTail,d.innerHead,this);
             if(dots){z=1;for(int i=0;i<d.shape.nodes;i++)RenderLib.drawSpot(d.transform,raw.get(i),d.dotRadius,d.dotColor,this);}}
-        public void close(){storage.close();GL15.glDeleteBuffers(vbo);GL30.glDeleteVertexArrays(vao);GL20.glDeleteProgram(program);}
+        public void close(){storage.close();GL15.glDeleteBuffers(vbo);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);GL20.glDeleteProgram(program);}
     }
     static ByteBuffer image(){var b=BufferUtils.createByteBuffer(64*64*4);GL11.glReadPixels(0,0,64,64,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,b);return b;}
     static void nativePixels(){
@@ -97,7 +97,7 @@ public class HexSharedGpuValidation {
                 for(int i=0;i<expected.capacity();i+=4){int max=0;for(int c=0;c<4;c++)max=Math.max(max,Math.abs((expected.get(i+c)&255)-(actual.get(i+c)&255)));if(max>2)bad++;}
                 check(bad<=12,"native caps/gradient/node image mismatch: "+bad+" pixels / gradient="+gradient+" dots="+dots+" alpha="+translucent+" overlap="+overlap);GL11.glFinish();
             }
-        }finally{GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(fbo);GL11.glDeleteTextures(texture);}
+        }finally{GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(fbo);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(texture);}
     }
     static void iris(){
         String pack="#version 120\nvarying vec4 probe;void main(){gl_Position=ftransform();probe=gl_Color;}";
@@ -131,7 +131,7 @@ public class HexSharedGpuValidation {
                     String row=pass+","+n+","+run+","+path+","+percentile(cpu,.5)+","+percentile(cpu,.95)+","+percentile(thread,.95)+","+percentile(bytes,.95)+","+percentile(gt,.5)+","+percentile(gt,.95)+","+(path.equals("gpu")?gpu.transferredBytes()+gpu.uploadedBytes()-beforeUpload:nativeDraw.uploaded-beforeNativeUpload)+","+(path.equals("gpu")?count:nativeDraw.draws-beforeDraws)+","+gpu.allocatedBytes();rows.add(row);System.out.println(row);
                 }
             }
-        }finally{GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(fbo);GL11.glDeleteTextures(texture);}
+        }finally{GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(fbo);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(texture);}
         String stem=longPatterns?System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/hex-shared-long-benchmark":System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/hex-shared-benchmark";Files.write(Path.of(stem+".csv"),rows);Files.write(Path.of(stem+"-samples.csv"),rawRows);
     }
     static void budget(){
@@ -170,7 +170,7 @@ public class HexSharedGpuValidation {
             check(GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE)==GL13.GL_TEXTURE0+high&&GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D)==two&&GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER)==tbo,"high sampler/TBO restoration");
             check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,2)==buffer&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,2)==alignment&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,2)==alignment,"nonzero SSBO range restoration");
             check(GL11.glGetInteger(GL40.GL_PATCH_VERTICES)==5&&GL30.glIsEnabledi(GL11.GL_BLEND,1)&&GL30.glGetIntegeri(GL14.GL_BLEND_SRC_RGB,1)==GL11.GL_ONE&&GL30.glGetIntegeri(GL20.GL_BLEND_EQUATION_RGB,1)==GL14.GL_FUNC_REVERSE_SUBTRACT,"indexed blend/tessellation restoration");var mask=BufferUtils.createByteBuffer(4);GL11.glGetBooleanv(GL11.GL_COLOR_WRITEMASK,mask);check(mask.get(0)!=0&&mask.get(1)==0&&mask.get(2)!=0&&mask.get(3)==0,"global color mask restoration");GL30.glGetBooleani_v(GL11.GL_COLOR_WRITEMASK,1,mask);check(mask.get(0)==0&&mask.get(1)!=0&&mask.get(2)==0&&mask.get(3)!=0,"indexed color mask restoration");check(GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM)==0&&GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING)==0,"program/VAO restoration");
-        }finally{com.mojang.blaze3d.systems.RenderSystem.disableScissor();com.mojang.blaze3d.systems.RenderSystem.colorMask(true,true,true,true);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,2,0);GL11.glBindTexture(GL11.GL_TEXTURE_2D,0);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,0);GL15.glDeleteBuffers(buffer);GL11.glDeleteTextures(two);GL11.glDeleteTextures(tbo);GL30.glDeleteFramebuffers(fbo);GL13.glActiveTexture(GL13.GL_TEXTURE0);GL40.glPatchParameteri(GL40.GL_PATCH_VERTICES,3);}
+        }finally{com.mojang.blaze3d.systems.RenderSystem.disableScissor();com.mojang.blaze3d.systems.RenderSystem.colorMask(true,true,true,true);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,2,0);GL11.glBindTexture(GL11.GL_TEXTURE_2D,0);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,0);GL15.glDeleteBuffers(buffer);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(two);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(tbo);GL30.glDeleteFramebuffers(fbo);GL13.glActiveTexture(GL13.GL_TEXTURE0);GL40.glPatchParameteri(GL40.GL_PATCH_VERTICES,3);}
     }
     public static void main(String[] args)throws Exception {
         GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);

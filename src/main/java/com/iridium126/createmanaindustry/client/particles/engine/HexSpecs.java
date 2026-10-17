@@ -1,4 +1,5 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
+import com.iridium126.createmanaindustry.client.particles.interaction.CombatSpecs;
 
 import java.util.Random;
 import java.util.UUID;

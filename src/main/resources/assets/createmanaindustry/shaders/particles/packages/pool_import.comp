@@ -24,7 +24,8 @@ uniform uint uPrepareBasicDraw,uMeshCount;
 #pragma cmi_include packages/draw_cull.glsl
 #endif
 void main() {
-    uint g=gl_GlobalInvocationID.x;if(g>=accepted)return;
+    uint g=gl_GlobalInvocationID.x;uint slots=uint(pool.length())/4u;
+    if(base>slots||accepted>slots-base||g>=accepted)return;
     uint i=selected[g<activeAccepted?g:uCount-1u-(g-activeAccepted)];
     Meta m=meta[i];
     // Two uvec4 per candidate: full stable identity plus slot+1/flags. Zero is rejected.

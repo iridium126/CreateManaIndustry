@@ -13,7 +13,7 @@ bool updateHexParticle(uint emitterBase,vec4 p0,vec4 p1,vec4 p2,vec4 p3){
     if(after>lifetime)return true;
     vec3 position=p0.xyz,velocity=p1.xyz;
     advanceHexTicks(position,velocity,p2.w<0.,max(0,ticks));
-    uint slot=atomicAdd(counter.writeSlot,1u);
+    uint slot=cmiReserveParticle();
     if(slot<uCapacity){
         uint base=slot*4u;
         writeBuf.data[base]=vec4(position,p0.w);writeBuf.data[base+1u]=vec4(velocity,p1.w);

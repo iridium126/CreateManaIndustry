@@ -1,3 +1,4 @@
+import com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState;
 import java.nio.*;
 import java.nio.file.*;
 import java.lang.reflect.*;
@@ -246,7 +247,7 @@ public class HexPatternGpuValidation {
                 if(records!=0)GL15.glDeleteBuffers(records);records=buffer(4,encoded);
                 upload(counts,bytes(16));for(int i=cap*64;i<pool.capacity();i+=4)pool.putInt(i,0x5a5a5a5a);upload(output,pool);
                 uint(program,"uTotalSpawn",n);uint(program,"uEmitCount",n);dispatch(program,(n+63)/64);
-                read(counts,counter);check(counter.getInt(0)==n,"direct batch lost inputs at shared command limit");
+                read(counts,counter);check(counter.getInt(0)==Math.min(n,cap),"direct batch visible count differs from admitted output");
                 read(output,pool);var seen=new BitSet();
                 for(int i=0;i<Math.min(n,cap);i++){
                     int b=i*64;int x=(int)pool.getFloat(b);check(x>=0&&x<n&&!seen.get(x),"direct input duplicate/position");seen.set(x);
@@ -338,7 +339,7 @@ public class HexPatternGpuValidation {
         int out=buffer(1,pool), counter=buffer(3,counts), emitCommand=buffer(4,command), emitter=buffer(5,header);
         int emit=compute("emit.comp");uint(emit,"uCapacity",cap);uint(emit,"uTotalSpawn",129);uint(emit,"uEmitCount",1);
         dispatch(emit,3);read(out,pool);read(counter,counts);
-        check(counts.getInt(0)==129,"allocation attempts remain monotonic on overflow");
+        check(counts.getInt(0)==cap,"overflow rejection must preserve the bounded visible prefix");
         for(int i=cap*64;i<pool.capacity();i+=4)check(pool.getInt(i)==0x5a5a5a5a,"emit wrote beyond capacity");
         for(int i=0;i<cap;i++) check(pool.getFloat(i*64+52)>0,"dense initialized output");
         int input=buffer(0,pool);ByteBuffer previous=bytes(16);previous.putInt(0,1000000);int prev=buffer(14,previous);
@@ -451,6 +452,8 @@ public class HexPatternGpuValidation {
         for(int frame=0;frame<8;frame++)check(invoke(ring,"freeSlot",new Class<?>[]{})==null,"overwrote an unconsumed readback slot");
         // Finishing is test-only: production always polls with a zero timeout.
         GL11.glFinish();
+        check(invoke(ring,"completed",new Class<?>[]{})==null,"Unpublished candidate readback escaped its frame");
+        for(Object slot:slots)setField(slot,"published",true);
         for(int i=0;i<4;i++) {
             Object slot=invoke(ring,"completed",new Class<?>[]{});
             check(slot==slots[i],"readback completion order");
@@ -487,7 +490,7 @@ public class HexPatternGpuValidation {
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,GL11.GL_RGBA8,1,1,0,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,bytes(4).putInt(0,-1));
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MIN_FILTER,GL11.GL_NEAREST);GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MAG_FILTER,GL11.GL_NEAREST);
         GL11.glViewport(0,0,64,64);GL11.glDisable(GL11.GL_DEPTH_TEST);GL11.glDisable(GL11.GL_CULL_FACE);GL11.glDisable(GL11.GL_BLEND);
-        var foreign=buffer(0,bytes(65536));var boundary=new com.iridium126.createmanaindustry.client.particles.engine.ParticleComputeState();
+        var foreign=buffer(0,bytes(65536));var boundary=new com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState();
         com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
         try {
             // All tests draw after the pool has swapped and foreign state was restored.
@@ -542,6 +545,7 @@ public class HexPatternGpuValidation {
                 for(int binding=0;binding<16;binding++)GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,foreign);
                 gpu.beginBindings();gpu.bindModelDrawInputs(permutation);
                 check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,7)==permutation,"MODEL inherited package or shadow sort list");
+
                 check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,1)==gpu.particleReadBufferId(),"MODEL used stale pool");
                 GL20.glUseProgram(model);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(model,"ModelViewMat"),false,identity);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(model,"ProjMat"),false,identity);
                 GL20.glUniform1f(GL20.glGetUniformLocation(model,"uFadeDist"),100);GL20.glUniform1i(GL20.glGetUniformLocation(model,"uSprite"),1);uint(model,"uCarrierBase",1000);
@@ -558,7 +562,7 @@ public class HexPatternGpuValidation {
         } finally {
             GL20.glUseProgram(0);gpu.unbindShaders();gpu.free();GL15.glDeleteBuffers(foreign);
             for(int p:new int[]{additive,textured,model,keygen,hist,scan,scatter})GL20.glDeleteProgram(p);
-            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(framebuffer);GL11.glDeleteTextures(color);GL11.glDeleteTextures(white);
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(framebuffer);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(color);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(white);
         }
         System.out.println("Actual additive/ALPHA/OPAQUE/MODEL pixels: late draws, early state restoration, mixed/empty/offscreen scenes and foreign package/high-SSBO bindings passed");
     }

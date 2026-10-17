@@ -56,7 +56,7 @@ public final class GpuShaderCompiler {
             if (second != 0) GL20.glDetachShader(program, second);
             return program;
         } catch (RuntimeException | Error failure) {
-            if (program != 0) GL20.glDeleteProgram(program);
+            if (program != 0) com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(program);
             throw failure;
         }
     }

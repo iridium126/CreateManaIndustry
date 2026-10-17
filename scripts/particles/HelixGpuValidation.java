@@ -38,7 +38,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
     gpu.commit();int old=gpu.committedBuffer();stage(gpu,helix(n,2,2,3,curved),p);gpu.abort();check(gpu.committedBuffer()==old,"helix failed submission published");
     GL15.glDeleteBuffers(output);
    }
-  }finally{CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}
+  }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
  }
  static void armIdentity(){
   String text=source("chunks/allay_storm.glsl")+"\nlayout(local_size_x=64)in;layout(std430,binding=10)buffer R{uint arm[];} result;uniform float uStormSeed;void main(){uint i=gl_GlobalInvocationID.x;if(i>=131072u)return;precise float s0=cmiHash1(uStormSeed+31.7);precise float shift=s0*97.;precise float t=float(i)*.6123;precise float p=t+.7;precise float q=p+shift;precise float a=cmiHash1(q);precise float q2=q*7.31;precise float b=cmiHash1(q2);precise float ma=a*.618;precise float mb=b*.382;precise float seed=ma+mb;result.arm[i]=uint(floor(cmiHash1(seed*5.7)*6.));}";
@@ -59,7 +59,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
     for(int i=0;i<cap;i++)state.putInt(i*8+4,4);put(stateBuffer,state);gpu.helixReady(0,false);gpu.prepare(2);gpu.bind(p,true);dispatch(p,(cap+63)/64);check(read(out,4).getInt(0)==0,"unready collision window hurt player");
     for(int b:new int[]{pool,previous,count,prevCount,header,out,map,stampsA,stampsB})GL15.glDeleteBuffers(b);
    }
-  }finally{CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}
+  }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
  }
  static void renderHelix(ByteBuffer rows,int count)throws Exception{
   // Use the existing framebuffer probe with a side view tailored to the long drill.
@@ -104,7 +104,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
     }
     check(live==63,"corpse expiration or permanent members incorrect");
    }finally{for(int b:new int[]{output,grid,damage,players,correction,map,identity})GL15.glDeleteBuffers(b);}
-  }finally{CMIParticleEngine.clearUniformProgram(update);GL20.glDeleteProgram(update);}
+  }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(update);GL20.glDeleteProgram(update);}
  }
 
 
@@ -112,7 +112,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
   int n=16384;try(var q=new Fixture(n,n,n);var gpu=new StarfallGpuBuffers();var shadow=new ModelShadowGpu(n,ParticleBuffers.CARRIER_CAP+n,HelixGpuValidation::source)){
    var particles=bytes(n*64);for(int i=0;i<n;i++){particle(particles,i,2,0,0,20);particles.putFloat(i*64+12,n-i);}
    q.build(particles,n);gpu.rebuild(new ClientboundStormWavePacket[]{helix(n,1,2,3,true),null,null,null});gpu.prepare(1);gpu.commit();shadow.starfall(gpu.committedBuffer());
-   var c=new com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling();c.distance=-1;c.safe=-1;
+   var c=new com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling();c.distance=-1;c.safe=-1;
    byte[] main=new byte[(n+ParticleBuffers.CARRIER_CAP+1)*8];read(q.sorted,main.length).get(main);
    for(float time:new float[]{7,8.5f,12,50}){
     shadow.prepare(q.pool,q.emit,q.counter,c,0,0,0,.35f,.6f,1,time,new float[16],new float[16],new float[4],q.pop,7);
@@ -140,7 +140,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
     ui(update,"uCapacity",total);ui(update,"uKillEmit",-1);f(update,"uDt",.05f);f(update,"uTimeSec",12);f(update,"uStormOmegaNow",.1f);
     GL41.glProgramUniform4fv(update,GL20.glGetUniformLocation(update,"uWave"),new float[]{1,1,0,60,0,0,0,0,0,0,0,0,0,0,0,0});GL41.glProgramUniform4fv(update,GL20.glGetUniformLocation(update,"uWaveTarget"),new float[]{0,.5f,0,1,0,0,0,0,0,0,0,0,0,0,0,0});
     GL41.glProgramUniform4fv(update,GL20.glGetUniformLocation(update,"uWavePath"),new float[]{0,12,0,1,0,10.5f,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0});
-    var cull=new com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling();cull.distance=-1;cull.safe=-1;
+    var cull=new com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling();cull.distance=-1;cull.safe=-1;
     var zero=bytes(16);var liveCounter=bytes(16).putInt(0,total);float[] emptyWaves=new float[]{1,1,0,60,0,0,0,0,0,0,0,0,0,0,0,0},emptyTargets=new float[]{0,.5f,0,1,0,0,0,0,0,0,0,0,0,0,0,0},emptyTiers=new float[]{5,0,0,0};int updateQuery=GL15.glGenQueries(),shadowQuery=GL15.glGenQueries(),cullQuery=GL15.glGenQueries(),contactQuery=GL15.glGenQueries();
     bool(contact,"uPopulationReadEnabled",true);gen(contact,"uPopulationGeneration",7);ui(contact,"uLocalWaveMask",1);f(contact,"uTimeSec",12);f(contact,"uDt",.05f);GL41.glProgramUniform3f(contact,GL20.glGetUniformLocation(contact,"uLocalPlayerPos"),-1000,0,0);GL41.glProgramUniform4fv(contact,GL20.glGetUniformLocation(contact,"uWaveTarget"),emptyTargets);
     for(boolean helixMode:new boolean[]{false,true}){
@@ -168,7 +168,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
      check(GL11.glGetError()==0,"benchmark GL error");String row=total+","+members+","+(helixMode?"helix":"starfall")+","+run+","+p(ug,.5)+","+p(ug,.95)+","+p(sg,.5)+","+p(sg,.95)+","+p(kg,.5)+","+p(kg,.95)+","+p(cg,.5)+","+p(cg,.95)+","+p(cw,.5)+","+p(cw,.95)+","+p(tc,.5)+","+p(tc,.95)+","+p(alloc,.5)+","+gpu.uploadedBytes()+","+gpu.bytes();rows.add(row);System.out.println(row);
     }
     }
-    GL15.glDeleteQueries(contactQuery);GL15.glDeleteBuffers(contactsOut);GL15.glDeleteBuffers(stamps);GL15.glDeleteQueries(cullQuery);GL15.glDeleteQueries(updateQuery);GL15.glDeleteQueries(shadowQuery);for(int id:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(id);for(int p:new int[]{build,update,contact}){CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}for(int p:new int[]{q.reset,q.keygen,q.prepare})CMIParticleEngine.clearUniformProgram(p);
+    GL15.glDeleteQueries(contactQuery);GL15.glDeleteBuffers(contactsOut);GL15.glDeleteBuffers(stamps);GL15.glDeleteQueries(cullQuery);GL15.glDeleteQueries(updateQuery);GL15.glDeleteQueries(shadowQuery);for(int id:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(id);for(int p:new int[]{build,update,contact}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}for(int p:new int[]{q.reset,q.keygen,q.prepare})com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);
    }
   }
   Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/helix-benchmark.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/helix-benchmark-samples.csv"),raw);

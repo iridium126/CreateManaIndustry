@@ -28,10 +28,11 @@ import org.lwjgl.opengl.GL43;
  * SSBO — plus the packless vertex array used for the instanced draws.
  * <p>
  * All callers must be on the render thread with a current GL context. Lazily
- * created by {@code CMIParticleEngine} on the first frame; effective capacity
+ * created by {@code ParticleRuntime} on the first frame; effective capacity
  * is capped by {@code GL_MAX_SHADER_STORAGE_BLOCK_SIZE}.
  */
-public final class ParticleBuffers {
+public final class ParticleBuffers implements com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferRetirement.Snapshot {
+    public static final ParticleBuffers INSTANCE=new ParticleBuffers();
 
     public static final int VEC4_PER_PARTICLE = com.iridium126.createmanaindustry.client.particles.emitter.ParticleLayout.PARTICLE_VEC4;  // 4 vec4 = 16 floats
     /** Bytes per particle in the double-buffered particle SSBOs (4 vec4 × 4 floats × 4 B). */
@@ -137,7 +138,7 @@ public final class ParticleBuffers {
     public static final int GRID_BB = 13;
     /** Spatial-hash table size in cells (power of two; masked hashing). */
     public static final int GRID_TABLE = 16384;
-    /** CPU melee-damage queue (see CMIParticleEngine.enqueueDamage). */
+    /** CPU melee-damage queue (see ModelInteractionRuntime.enqueueDamage). */
     public static final int DAMAGE_BB = 16;
     /** Per-frame crosshair hit-query result (see hit.comp / capture.comp). */
     public static final int HIT_BB = 17;
@@ -319,6 +320,7 @@ public final class ParticleBuffers {
     private final int[] indirectFrames = new int[2], additiveFrames = new int[2], opaqueFrames = new int[2];
     private int renderIndex;
     private boolean bindingScope;
+    private com.iridium126.createmanaindustry.client.gpu.shader.GpuUniformCache uniforms;
     private final int[] bound = new int[32];
     private void bindBase(int target, int binding, int buffer) {
         if (bindingScope && bound[binding] == buffer) return;
@@ -328,7 +330,16 @@ public final class ParticleBuffers {
     }
     public void beginBindings() {
         java.util.Arrays.fill(bound, -1);
+        uniforms=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.currentCache();
+        if(!bindingScope)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferRetirement.capture(this);
         bindingScope = true;
+    }
+    @Override public void forgetBuffer(int buffer) {
+        for(int binding=0;binding<bound.length;binding++)if(bound[binding]==buffer)bound[binding]=-1;
+    }
+    private void endBindings() {
+        if(bindingScope)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferRetirement.restore(this);
+        bindingScope=false;
     }
     public static final int IDENTITY_BB = 31;
     private int identitySSBO = -1;
@@ -470,7 +481,7 @@ public final class ParticleBuffers {
         this.tmp4.putInt(HIT_MISS).putInt(0).putInt(HIT_MISS).putInt(0);
         this.tmp4.flip();
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.hitSSBO);
-        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
         // Storm player-repulsion source (vec4 per player, up to 16).
         this.playersSSBO = createBuffer(MAX_STORM_PLAYERS * 16L, null);
         // Minimal legal bindings until Storm identities are actually used.
@@ -493,7 +504,7 @@ public final class ParticleBuffers {
         this.tmp4.flip();
         for (int id : this.indirectFrames) {
             GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, id);
-            GL15.glBufferSubData(GL40.GL_DRAW_INDIRECT_BUFFER, 0, this.tmp4);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL40.GL_DRAW_INDIRECT_BUFFER, 0, this.tmp4);
         }
 
         // zero all counter slots
@@ -502,7 +513,7 @@ public final class ParticleBuffers {
         this.tmp4.flip();
         for (int id : this.counterSSBOs) {
             GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, id);
-            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
         }
 
         invalidateIdentities();
@@ -514,9 +525,9 @@ public final class ParticleBuffers {
         int id = GL15.glGenBuffers();
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, id);
         if (data == null) {
-            GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER, sizeBytes, GL15.GL_DYNAMIC_DRAW);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER, sizeBytes, GL15.GL_DYNAMIC_DRAW);
         } else {
-            GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER, data, GL15.GL_DYNAMIC_DRAW);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER, data, GL15.GL_DYNAMIC_DRAW);
         }
         return id;
     }
@@ -553,11 +564,11 @@ public final class ParticleBuffers {
         int required=CARRIER_CAP+Math.min(131072,Math.max(0,participants));if(required<=carrierCapacity)return;
         int grown=Math.min(CARRIER_CAP+131072,Math.max(required,carrierCapacity+carrierCapacity/2));
         long oldBytes=(capacity+(long)carrierCapacity+1)*8,newBytes=(capacity+(long)grown+1)*8;
-        int scratch=GL15.glGenBuffers();GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,scratch);GL15.glBufferData(GL31.GL_COPY_WRITE_BUFFER,oldBytes,GL15.GL_STREAM_COPY);
+        int scratch=GL15.glGenBuffers();GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,scratch);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL31.GL_COPY_WRITE_BUFFER,oldBytes,GL15.GL_STREAM_COPY);
         try{for(int buffer:sortSSBOs){GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,buffer);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,scratch);GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,oldBytes);
-            GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,buffer);GL15.glBufferData(GL31.GL_COPY_WRITE_BUFFER,newBytes,GL15.GL_DYNAMIC_DRAW);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,scratch);
+            GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,buffer);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL31.GL_COPY_WRITE_BUFFER,newBytes,GL15.GL_DYNAMIC_DRAW);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,scratch);
             GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,oldBytes-8);GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,oldBytes-8,newBytes-8,8);
-        }}finally{GL15.glDeleteBuffers(scratch);}carrierCapacity=grown;
+        }}finally{com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(scratch);}carrierCapacity=grown;
     }
     public int carrierBase() {
         return this.capacity;
@@ -586,23 +597,26 @@ public final class ParticleBuffers {
 
     /** Call after a full frame: the freshly written buffer becomes the next read source. */
     public void beginComputeFrame() { beginBindings(); selectRenderFrame(1 - this.readIndex);populationGenerations[1-readIndex]=-1; }
+    int candidatePopulationBuffer(){return populationSSBOs[1-readIndex];}
     public void commitPopulation(long generation){populationGenerations[readIndex]=generation;}
     public int populationBufferId(long generation){return populationGenerations[readIndex]==generation?populationSSBOs[readIndex]:0;}
     public long populationStorageBytes(){return populationSSBOs[0]>0?2L*(POPULATION_HEADER_BYTES+4L*(modelIndexCapacity+stormIndexCapacity)):0;}
     public void bindPopulationRead(int program){bindPopulationRead(program,false,Math.max(0,populationGenerations[readIndex]));}
     public void bindPopulationRead(int program,boolean current,long generation){
+        if(uniforms==null)uniforms=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.currentCache();
         int index=current?1-readIndex:readIndex;bindBase(GL43.GL_SHADER_STORAGE_BUFFER,POPULATION_READ_BB,populationSSBOs[index]);
-        org.lwjgl.opengl.GL41.glProgramUniform1i(program,CMIParticleEngine.loc(program,"uPopulationReadEnabled"),current||populationGenerations[index]>=0?1:0);
-        org.lwjgl.opengl.GL41.glProgramUniform2ui(program,CMIParticleEngine.loc(program,"uPopulationGeneration"),(int)generation,(int)(generation>>>32));
+        org.lwjgl.opengl.GL41.glProgramUniform1i(program,uniforms.location(program,"uPopulationReadEnabled"),current||populationGenerations[index]>=0?1:0);
+        org.lwjgl.opengl.GL41.glProgramUniform2ui(program,uniforms.location(program,"uPopulationGeneration"),(int)generation,(int)(generation>>>32));
     }
     public void bindPopulationWrite(int program,long generation){
+        if(uniforms==null)uniforms=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.currentCache();
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER,POPULATION_WRITE_BB,populationSSBOs[1-readIndex]);
-        org.lwjgl.opengl.GL41.glProgramUniform1i(program,CMIParticleEngine.loc(program,"uPopulationWriteEnabled"),1);
-        org.lwjgl.opengl.GL41.glProgramUniform2ui(program,CMIParticleEngine.loc(program,"uPopulationWriteGeneration"),(int)generation,(int)(generation>>>32));
-        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,CMIParticleEngine.loc(program,"uPopulationModelCapacity"),modelIndexCapacity);
-        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,CMIParticleEngine.loc(program,"uPopulationStormCapacity"),stormIndexCapacity);
+        org.lwjgl.opengl.GL41.glProgramUniform1i(program,uniforms.location(program,"uPopulationWriteEnabled"),1);
+        org.lwjgl.opengl.GL41.glProgramUniform2ui(program,uniforms.location(program,"uPopulationWriteGeneration"),(int)generation,(int)(generation>>>32));
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,uniforms.location(program,"uPopulationModelCapacity"),modelIndexCapacity);
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,uniforms.location(program,"uPopulationStormCapacity"),stormIndexCapacity);
     }
-    public void restoreCommittedFrame() { bindingScope = false; selectRenderFrame(this.readIndex); }
+    public void restoreCommittedFrame() { endBindings();selectRenderFrame(this.readIndex); }
     private void selectRenderFrame(int index) {
         this.renderIndex = index;
         this.indirectSSBO = this.indirectFrames[index];
@@ -776,7 +790,7 @@ public final class ParticleBuffers {
         try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
             java.nio.IntBuffer ib = stack.mallocInt(indices.length);
             ib.put(indices).flip();
-            GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, ib, GL15.GL_STATIC_DRAW);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL15.GL_ELEMENT_ARRAY_BUFFER, ib, GL15.GL_STATIC_DRAW);
         }
         GL30.glBindVertexArray(0);
 
@@ -793,7 +807,7 @@ public final class ParticleBuffers {
         this.tmp4.flip();
         for (int id : this.indirectFrames) {
             GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, id);
-            GL15.glBufferSubData(GL40.GL_DRAW_INDIRECT_BUFFER, 2L * INDIRECT_STRIDE, this.tmp4);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL40.GL_DRAW_INDIRECT_BUFFER, 2L * INDIRECT_STRIDE, this.tmp4);
         }
     }
 
@@ -815,7 +829,7 @@ public final class ParticleBuffers {
             FloatBuffer buf = stack.mallocFloat(meta.length);
             buf.put(meta).flip();
             GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.bakeMetaSSBO);
-            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, buf);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, buf);
         }
     }
 
@@ -823,7 +837,7 @@ public final class ParticleBuffers {
     public void clearHist() {
         org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.histSSBO);
-        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.zero2048);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.zero2048);
     }
 
     /** Binds the boids spatial-hash buffer at its fixed binding. */
@@ -864,7 +878,7 @@ public final class ParticleBuffers {
         }
         this.playersTmp.flip();
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.playersSSBO);
-        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.playersTmp);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.playersTmp);
     }
 
     /** Binds the storm correction-slot buffer at its fixed binding. */
@@ -899,7 +913,7 @@ public final class ParticleBuffers {
         this.tmp4.putInt(0);
         this.tmp4.flip();
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.stormPosSSBO);
-        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
     }
 
     /** Binds the storm member identity map at its fixed binding. */
@@ -949,7 +963,7 @@ public final class ParticleBuffers {
         this.tmp4.putInt(0);
         this.tmp4.flip();
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.waveContactSSBO);
-        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
     }
 
 
@@ -975,7 +989,6 @@ public final class ParticleBuffers {
     }
 
 
-
     /**
      * Uploads the damage-queue header (+ entries when {@code buf} carries any)
      * to the GPU. Must be enqueued BEFORE this frame's update dispatch; the
@@ -985,14 +998,14 @@ public final class ParticleBuffers {
     public void uploadDamageQueue(ByteBuffer buf) {
         ParticleDiagnostics.INSTANCE.upload(buf.remaining());
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.damageSSBO);
-        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, buf);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, buf);
     }
 
     /** Replaces the given emit-command ring slot contents (data already flipped). */
     public void uploadEmits(int bufferId, FloatBuffer data) {
         ParticleDiagnostics.INSTANCE.upload(data.remaining() * 4L);
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, bufferId);
-        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, data);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, data);
     }
 
     /** Records one emitter header; uploaded lazily on the next frame. */
@@ -1011,7 +1024,7 @@ public final class ParticleBuffers {
         this.tmp4.flip();
         for (int id : this.counterSSBOs) {
             GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, id);
-            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
         }
 
         this.tmp4.clear();
@@ -1021,7 +1034,7 @@ public final class ParticleBuffers {
         for (int id : this.indirectFrames) {
             GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, id);
             for (int i = 0; i < INDIRECT_COMMANDS; i++)
-                GL15.glBufferSubData(GL40.GL_DRAW_INDIRECT_BUFFER, i * INDIRECT_STRIDE + 4, this.tmp4);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL40.GL_DRAW_INDIRECT_BUFFER, i * INDIRECT_STRIDE + 4, this.tmp4);
         }
 
         // clear the damage queue and mark the hit query as a miss
@@ -1030,12 +1043,12 @@ public final class ParticleBuffers {
             this.tmp4.putInt(0);
         this.tmp4.flip();
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.damageSSBO);
-        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
         this.tmp4.clear();
         this.tmp4.putInt(HIT_MISS).putInt(0).putInt(HIT_MISS).putInt(0);
         this.tmp4.flip();
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.hitSSBO);
-        GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
     }
 
     /**
@@ -1043,7 +1056,7 @@ public final class ParticleBuffers {
      * of the world's rendering after our frame.
      */
     public void unbindShaders() {
-        this.bindingScope = false;
+        endBindings();
         ParticleDiagnostics.INSTANCE.call();
         org.lwjgl.opengl.GL44.nglBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER, 0,
                 IDENTITY_BB + 1, 0L);
@@ -1069,11 +1082,12 @@ public final class ParticleBuffers {
     }
 
     public void bindIdentities(int program) {
+        if(uniforms==null)uniforms=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.currentCache();
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER, IDENTITY_BB, this.identitySSBO);
-        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,CMIParticleEngine.loc(program,"uIdentityReadBase"),readIndex*capacity);
-        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,CMIParticleEngine.loc(program,"uIdentityWriteBase"),(1-readIndex)*capacity);
-        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,CMIParticleEngine.loc(program,"uIdentityCapacity"),capacity);
-        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,CMIParticleEngine.loc(program,"uDamageApprovalCount"),damageApprovalCount);
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,uniforms.location(program,"uIdentityReadBase"),readIndex*capacity);
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,uniforms.location(program,"uIdentityWriteBase"),(1-readIndex)*capacity);
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,uniforms.location(program,"uIdentityCapacity"),capacity);
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,uniforms.location(program,"uDamageApprovalCount"),damageApprovalCount);
     }
 
     public void bindDispatch() {
@@ -1178,56 +1192,56 @@ public final class ParticleBuffers {
                 GL30.glBindVertexArray(this.vao);
             GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
             GL30.glBindVertexArray(0);
-            GL15.glDeleteBuffers(this.modelIndexBuffer);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.modelIndexBuffer);
         }
         if (this.vao >= 0)
-            GL30.glDeleteVertexArrays(this.vao);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(this.vao);
         for (int id : this.particleSSBOs)
             if (id > 0)
-                GL15.glDeleteBuffers(id);
-        for(int id:populationSSBOs)if(id>0)GL15.glDeleteBuffers(id);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(id);
+        for(int id:populationSSBOs)if(id>0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(id);
         java.util.Arrays.fill(populationSSBOs,0);java.util.Arrays.fill(populationGenerations,-1);
         for (int id : this.emitSSBOs)
             if (id > 0)
-                GL15.glDeleteBuffers(id);
-        if (this.identitySSBO > 0) { GL15.glDeleteBuffers(this.identitySSBO); this.identitySSBO = -1; }
-        if (this.waveStampSSBO > 0) { GL15.glDeleteBuffers(this.waveStampSSBO); this.waveStampSSBO = -1; }
-        if (this.dispatchSSBO > 0) { GL15.glDeleteBuffers(this.dispatchSSBO); this.dispatchSSBO = -1; }
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(id);
+        if (this.identitySSBO > 0) { com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.identitySSBO); this.identitySSBO = -1; }
+        if (this.waveStampSSBO > 0) { com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.waveStampSSBO); this.waveStampSSBO = -1; }
+        if (this.dispatchSSBO > 0) { com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.dispatchSSBO); this.dispatchSSBO = -1; }
         if (this.emitterSSBO > 0)
-            GL15.glDeleteBuffers(this.emitterSSBO);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.emitterSSBO);
         for (int[] frames : new int[][] {this.indirectFrames, this.additiveFrames, this.opaqueFrames})
-            for (int id : frames) if (id > 0) GL15.glDeleteBuffers(id);
+            for (int id : frames) if (id > 0) com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(id);
         for (int id : this.counterSSBOs)
             if (id > 0)
-                GL15.glDeleteBuffers(id);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(id);
         for (int id : this.sortSSBOs)
             if (id > 0)
-                GL15.glDeleteBuffers(id);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(id);
         if (this.modelGeoSSBO > 0)
-            GL15.glDeleteBuffers(this.modelGeoSSBO);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.modelGeoSSBO);
         if (this.histSSBO > 0)
-            GL15.glDeleteBuffers(this.histSSBO);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.histSSBO);
         if (this.offsetSSBO > 0)
-            GL15.glDeleteBuffers(this.offsetSSBO);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.offsetSSBO);
         if (this.bakeMetaSSBO > 0)
-            GL15.glDeleteBuffers(this.bakeMetaSSBO);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.bakeMetaSSBO);
         if (this.gridSSBO > 0)
-            GL15.glDeleteBuffers(this.gridSSBO);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.gridSSBO);
         if (this.damageSSBO > 0)
-            GL15.glDeleteBuffers(this.damageSSBO);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.damageSSBO);
         if (this.hitSSBO > 0)
-            GL15.glDeleteBuffers(this.hitSSBO);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.hitSSBO);
         if (this.playersSSBO > 0)
-            GL15.glDeleteBuffers(this.playersSSBO);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.playersSSBO);
         this.stormIdentities.close();
         if (this.stormPosSSBO > 0)
-            GL15.glDeleteBuffers(this.stormPosSSBO);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.stormPosSSBO);
 
         if (this.waveContactSSBO > 0)
-            GL15.glDeleteBuffers(this.waveContactSSBO);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.waveContactSSBO);
         for (int[] t : this.mergedTbos)
             if (t[0] > 0)
-                GL11.glDeleteTextures(t[0]);
+                com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(t[0]);
         java.util.Arrays.fill(this.particleSSBOs, 0);
         java.util.Arrays.fill(this.emitSSBOs, 0);
         java.util.Arrays.fill(this.counterSSBOs, 0);
@@ -1242,7 +1256,7 @@ public final class ParticleBuffers {
         this.stormPosSSBO = this.waveContactSSBO = this.modelIndexBuffer = this.vao = -1;
         this.capacity = this.maxEmitters = this.readIndex = this.ringIndex = this.renderIndex = 0;
         this.emitterUploads = null;
-        this.bindingScope = false;
+        endBindings();
         this.initialized = false;
     }
 }

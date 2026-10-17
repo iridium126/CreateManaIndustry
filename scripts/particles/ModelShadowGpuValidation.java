@@ -1,3 +1,4 @@
+import com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState;
 import java.nio.*;
 import java.nio.file.*;
 import java.util.*;
@@ -5,7 +6,7 @@ import org.lwjgl.*;
 import org.lwjgl.opengl.*;
 import org.lwjgl.glfw.*;
 import com.iridium126.createmanaindustry.client.particles.engine.*;
-import com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling;
+import com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling;
 
 /** Actual driver validation of independent MODEL shadow culling. No Minecraft world is changed. */
 public class ModelShadowGpuValidation {
@@ -77,7 +78,7 @@ public class ModelShadowGpuValidation {
             int pool=buffer(data),emit=buffer(h),count=buffer(bytes(16).putInt(0,1));
             try{
                 var c=new PackageDrawCulling();c.clear();
-                float scale=2*.297f/ParticlePrograms.modelAboveFeet();float range=.6f*scale*64;
+                float scale=2*.297f/com.iridium126.createmanaindustry.client.particles.engine.AllayModelGeometry.MODEL_ABOVE_FEET;float range=.6f*scale*64;
                 particle(data,0,range-.001f,0,0,1,1);put(pool,data);prepare(gpu,pool,emit,count,c);check(models(gpu)==1,"entity distance inside");
                 particle(data,0,range+.001f,0,0,1,1);put(pool,data);prepare(gpu,pool,emit,count,c);check(models(gpu)==0,"entity distance outside");
                 h.putFloat(5*16+8,.01f).putFloat(5*16+12,1).putFloat(6*16,2);put(emit,h);
@@ -86,12 +87,13 @@ public class ModelShadowGpuValidation {
                 put(emit,headers(2,.297f,false,false));particle(data,0,0,0,0,1,1);put(pool,data);
                 c.set(new float[][]{{1,0,0,-.6f}},1);prepare(gpu,pool,emit,count,c);check(models(gpu)==1,"native Allay width plus inflate(.5)");
                 c.planes[3]=-.7f;prepare(gpu,pool,emit,count,c);check(models(gpu)==0,"fixed package width incorrectly used for MODEL");
+
             }finally{for(int id:new int[]{pool,emit,count})GL15.glDeleteBuffers(id);}
         }
     }
     static void stateBoundary(){
         com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
-        var state=new ParticleComputeState();int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
+        var state=new GpuComputeState();int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
         int foreign=buffer(bytes(alignment+64)),vao=GL30.glGenVertexArrays(),pbo=buffer(bytes(64));GL30.glBindVertexArray(vao);
         for(int binding:new int[]{15,26,27,28})GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,binding,foreign,alignment,64);int attackTexture=GL11.glGenTextures();GL13.glActiveTexture(GL13.GL_TEXTURE14);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,attackTexture);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_R32UI,foreign);GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,foreign);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,foreign);
         GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER,pbo);GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH,17);GL13.glActiveTexture(GL13.GL_TEXTURE18);
@@ -100,8 +102,8 @@ public class ModelShadowGpuValidation {
         check(GL11.glGetInteger(GL43.GL_DISPATCH_INDIRECT_BUFFER_BINDING)==foreign&&GL11.glGetInteger(GL31.GL_COPY_READ_BUFFER)==foreign,"compute state lost indirect/copy binding");
         check(GL11.glGetInteger(GL21.GL_PIXEL_UNPACK_BUFFER_BINDING)==pbo&&GL11.glGetInteger(GL11.GL_UNPACK_ROW_LENGTH)==17,"compute state lost unpack state");check(GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING)==vao&&GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE)==GL13.GL_TEXTURE18,"compute state lost VAO/active texture");
         for(int binding:new int[]{26,27,28})check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,binding)==foreign&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,binding)==alignment&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,binding)==64,"attack state lost SSBO range "+binding);
-        GL13.glActiveTexture(GL13.GL_TEXTURE14);check(GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER)==attackTexture,"attack TBO state not restored");GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,0);GL11.glDeleteTextures(attackTexture);GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER,0);GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH,0);GL15.glDeleteBuffers(foreign);GL15.glDeleteBuffers(pbo);GL30.glDeleteVertexArrays(vao);
+        GL13.glActiveTexture(GL13.GL_TEXTURE14);check(GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER)==attackTexture,"attack TBO state not restored");GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,0);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(attackTexture);GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER,0);GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH,0);GL15.glDeleteBuffers(foreign);GL15.glDeleteBuffers(pbo);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);
     }
     static int vertexProgram(String vertex){
         int shader=GL20.glCreateShader(GL20.GL_VERTEX_SHADER),program=GL20.glCreateProgram();
@@ -131,7 +133,7 @@ public class ModelShadowGpuValidation {
         finally{for(int shader:shaders)GL20.glDeleteShader(shader);GL20.glDeleteProgram(linked);}
         int program=vertexProgram(patched),vao=GL30.glGenVertexArrays();GL30.glBindVertexArray(vao);
         var particle=bytes(64);particle(particle,0,150,0,0,5,1);
-        var geometry=bytes(ParticlePrograms.modelVertexFloats()*4);geometry.putFloat(4,16).putFloat(20,0).putFloat(24,0);
+        var geometry=bytes(com.iridium126.createmanaindustry.client.particles.engine.AllayModelGeometry.VERTEX_FLOATS*4);geometry.putFloat(4,16).putFloat(20,0).putFloat(24,0);
         int[] buffers={buffer(geometry),buffer(particle),buffer(headers(2,.3f,false,false)),buffer(bytes(16).putInt(8,1)),buffer(bytes(16))};
         int[] formats={GL30.GL_R32F,GL30.GL_RGBA32F,GL30.GL_RGBA32F,GL30.GL_RG32UI};int[] textures=new int[4];
         try{
@@ -165,16 +167,16 @@ public class ModelShadowGpuValidation {
                     float[] identity=new org.joml.Matrix4f().get(new float[16]);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(nativeProgram,"ModelViewMat"),false,identity);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(nativeProgram,"ProjMat"),false,identity);GL20.glUniform1f(GL20.glGetUniformLocation(nativeProgram,"uTimeSec"),12);GL20.glUniform1f(GL20.glGetUniformLocation(nativeProgram,"uFadeDist"),1000);
                     GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL30.glBeginTransformFeedback(GL11.GL_POINTS);GL31.glDrawArraysInstanced(GL11.GL_POINTS,0,1,1);GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);var nativePose=read(buffers[4],16);
                     for(int component=0;component<4;component++)check(Math.abs(merged.getFloat(component*4)-nativePose.getFloat(component*4))<.0001,"attack native/Iris pose mismatch kind="+attackKind);
-                }finally{CMIParticleEngine.clearUniformProgram(nativeProgram);GL20.glDeleteProgram(nativeProgram);}
+                }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(nativeProgram);GL20.glDeleteProgram(nativeProgram);}
             }
             // Resource/source rebuild must produce both overlay variants with the same shadow flag.
             int overlay=vertexProgram(injector.patch(pack,(String)build.invoke(compiler,true),"MODEL overlay validation"));GL20.glDeleteProgram(overlay);
-        }finally{GL20.glUseProgram(0);for(int id:buffers)GL15.glDeleteBuffers(id);for(int id:textures)GL11.glDeleteTextures(id);GL30.glDeleteVertexArrays(vao);GL20.glDeleteProgram(program);}
+        }finally{GL20.glUseProgram(0);for(int id:buffers)GL15.glDeleteBuffers(id);for(int id:textures)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(id);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);GL20.glDeleteProgram(program);}
     }
     static double percentile(double[] input,double q){var copy=input.clone();Arrays.sort(copy);return copy[(int)Math.ceil(copy.length*q)-1];}
     static void benchmark()throws Exception {
         var raw=new ArrayList<String>();raw.add("mode,count,run,sample,gpu_ms,cpu_submit_ms");
-        var boundary=new ParticleComputeState();
+        var boundary=new GpuComputeState();
         var rows=new ArrayList<String>();rows.add("mode,capacity,count,run,gpu_p50_ms,gpu_p95_ms,cpu_submit_p50_ms,cpu_submit_p95_ms,extra_storage_bytes");
         for(int n:new int[]{10000,65536,131072,Math.min(2_000_000,effectiveLimit())})try(var gpu=new ModelShadowGpu(n,ModelShadowGpuValidation::source)){
             var data=bytes(n*64);for(int i=0;i<n;i++)particle(data,i,i%16-8,2,i/16%16-8,1,1);
@@ -194,7 +196,7 @@ public class ModelShadowGpuValidation {
      * It excludes building/updating that index and does not move simulation records. */
     static void indexProbe()throws Exception {
         var rows=new ArrayList<String>();var raw=new ArrayList<String>();rows.add("total_live,model_live,mode,run,gpu_p50_ms,gpu_p95_ms,cpu_submit_p50_ms,cpu_submit_p95_ms,index_bytes");raw.add("total_live,model_live,mode,run,sample,gpu_ms,cpu_submit_ms");
-        var boundary=new ParticleComputeState();float[] waves=new float[16],targets=new float[16],tiers=new float[4];
+        var boundary=new GpuComputeState();float[] waves=new float[16],targets=new float[16],tiers=new float[4];
         for(int[] scenario:new int[][]{{100000,100},{100000,10000},{2000000,100},{2000000,10000},{2000000,2000000}}){
             int n=Math.min(scenario[0],effectiveLimit()),m=Math.min(scenario[1],n),stride=n/m;var data=bytes(n*64);var list=bytes(32+m*4);list.putInt(0,m).putInt(8,n).putInt(12,1).putInt(16,1).putInt(24,m);
             for(int i=0;i<n;i++){particle(data,i,i%16-8,2,i/16%16-8,1,1);data.putInt(i*64+60,1);}

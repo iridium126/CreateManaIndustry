@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.packages.sable;
 
-import com.iridium126.createmanaindustry.client.particles.packages.PackageCollisionRuntime;
+import com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRuntime;
 import dev.ryanhcode.sable.sublevel.ClientSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.plot.LevelPlot;

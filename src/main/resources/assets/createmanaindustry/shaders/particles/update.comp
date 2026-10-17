@@ -157,6 +157,7 @@ vec2 cmiGauss2(float s) {
 // velocity is a critically-damped approach shape (dist-scaled, capped).
 #pragma cmi_include chunks/storm_navigation.glsl
 
+#pragma cmi_include chunks/pool_reservation.glsl
 #pragma cmi_include chunks/death_spawn.glsl
 
 #pragma cmi_types update
@@ -195,7 +196,7 @@ void main() {
     if(emitters.u[hb+17u].y>6.5&&emitters.u[hb+17u].y<7.5){
         float fade=uStarfallEnabled&&floatBitsToUint(p2.x)==cmiStarWord(0u)?cmiStarMarkerFade(floatBitsToUint(p3.z),uTimeSec):-1.;
         if(fade<0.){p2.w=max(0.,p2.w-uDt/.25);}else p2.w=min(p2.w,fade);
-        if(p2.w<=0.)return;uint slot=atomicAdd(counter.writeSlot,1u);if(slot>=uCapacity)return;
+        if(p2.w<=0.)return;uint slot=cmiReserveParticle();if(slot>=uCapacity)return;
         uint wb=slot*4u;writeBuf.data[wb]=p0;writeBuf.data[wb+1u]=p1;writeBuf.data[wb+2u]=p2;writeBuf.data[wb+3u]=vec4(p3.x+uDt,p3.yzw);return;
     }
     vec4 stormA = emitters.u[hb + 18u]; // x storm gate (0 none | 2 vortex), y radius, z reserved (was wander), w maxSpeed
@@ -277,7 +278,7 @@ void main() {
         hurt = max(0.0, hurt - 2.0 * uDt);
     }
 
-    uint slot = atomicAdd(counter.writeSlot, 1u);
+    uint slot = cmiReserveParticle();
     if (slot >= uCapacity)
         return;
 

@@ -1,4 +1,4 @@
-import com.iridium126.createmanaindustry.client.particles.packages.PackageEnvironmentUplink;
+import com.iridium126.createmanaindustry.client.packages.feedback.PackageEnvironmentUplink;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.*;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ServerboundPackagePacket;
 import io.netty.buffer.Unpooled;

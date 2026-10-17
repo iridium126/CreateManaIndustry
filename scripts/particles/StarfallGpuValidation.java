@@ -28,7 +28,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
    try(var censusFixture=new Fixture(128,0,0)){
     put(censusFixture.emit,header);gpu.bind(censusFixture.reset,true);gpu.bind(censusFixture.keygen,true);censusFixture.build(particles,128);
     int status=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);check(read(status,StarfallGpuBuffers.STATE_WORDS*4).getInt(262400*4)==128,"keygen full-circle census");
-    censusFixture.build(particles,127);check(read(status,StarfallGpuBuffers.STATE_WORDS*4).getInt(262400*4)==127,"keygen incomplete-circle census");CMIParticleEngine.clearUniformProgram(censusFixture.reset);CMIParticleEngine.clearUniformProgram(censusFixture.keygen);CMIParticleEngine.clearUniformProgram(censusFixture.prepare);
+    censusFixture.build(particles,127);check(read(status,StarfallGpuBuffers.STATE_WORDS*4).getInt(262400*4)==127,"keygen incomplete-circle census");com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(censusFixture.reset);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(censusFixture.keygen);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(censusFixture.prepare);
    }
    bind(3,counter);bind(5,h);bind(0,pool);bind(1,output);bind(14,previous);put(counter,bytes(16));gpu.bind(update,true);ui(update,"uCapacity",cap);ui(update,"uKillEmit",-1);f(update,"uDt",.25f);f(update,"uTimeSec",12);dispatch(update,2);
    check(read(counter,16).getInt(0)==128,"ring died early");var next=read(output,cap*64);for(int i=0;i<128;i++)for(int j=0;j<8;j++){int original=Math.round(next.getFloat(i*64+24)*128/(float)(2*Math.PI))&127;check(next.getInt(i*64+j*4)==particles.getInt(original*64+j*4),"ring position/size/roll moved");}
@@ -37,7 +37,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
    put(counter,bytes(16));f(update,"uTimeSec",12.3f);dispatch(update,2);check(read(counter,16).getInt(0)==0,"aborted ring survived");
    // Render the real additive shaders with conjure-sized camera-facing particles.
    stage(gpu,packet(65,1,2,0),emit);gpu.commit();gpu.bind(0,false);var census=bytes(StarfallGpuBuffers.STATE_WORDS*4).putInt(262400*4,128);put(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28),census);renderRing(gpu,pool,h);gpu.invalidate();stage(gpu,packet(65,1,2,0),update);bind(0,pool);bind(1,output);bind(3,counter);bind(14,previous);put(counter,bytes(16));f(update,"uTimeSec",12);f(update,"uDt",.1f);dispatch(update,2);check(read(counter,16).getInt(0)==128,"cross-generation rings lack fade");check(Math.abs(read(output,8192).getFloat(44)-.6)<.001,"old ring followed restarted wave");
-  }finally{for(int p:new int[]{reserve,emit,update}){CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}for(int b:new int[]{h,counter,pool,output,previous,cmd})GL15.glDeleteBuffers(b);}
+  }finally{for(int p:new int[]{reserve,emit,update}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}for(int b:new int[]{h,counter,pool,output,previous,cmd})GL15.glDeleteBuffers(b);}
  }
  static int graphicsStage(String name,int type){int s=GL20.glCreateShader(type);GL20.glShaderSource(s,"#version 450 core\n"+ParticlePrograms.commonPrelude()+source(name));GL20.glCompileShader(s);check(GL20.glGetShaderi(s,GL20.GL_COMPILE_STATUS)!=0,GL20.glGetShaderInfoLog(s));return s;}
  static void renderRing(StarfallGpuBuffers gpu,int pool,int header)throws Exception{
@@ -50,7 +50,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
   var pixels=bytes(128*128*4);GL11.glReadPixels(0,0,128,128,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);int lit=0;var image=new java.awt.image.BufferedImage(128,128,java.awt.image.BufferedImage.TYPE_INT_RGB);
   for(int y=0;y<128;y++)for(int x=0;x<128;x++){int o=(y*128+x)*4,r=pixels.get(o)&255,g=pixels.get(o+1)&255,b=pixels.get(o+2)&255;if(b>8)lit++;image.setRGB(x,127-y,(r<<16)|(g<<8)|b);}
   check(lit>100,"ring missing from framebuffer");check((pixels.get((64*128+64)*4+2)&255)==0,"ring filled center");javax.imageio.ImageIO.write(image,"png",Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-ring-framebuffer.png").toFile());int currentState=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var census=bytes(StarfallGpuBuffers.STATE_WORDS*4).putInt(262400*4,127);put(currentState,census);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES,0,6,128);GL11.glReadPixels(0,0,128,128,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);for(int i=2;i<pixels.capacity();i+=4)check(pixels.get(i)==0,"partial circle rendered");census.putInt(262400*4,128);put(currentState,census);
-  GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL11.glDisable(GL11.GL_BLEND);GL11.glDeleteTextures(tex);GL30.glDeleteFramebuffers(fb);GL15.glDeleteBuffers(order);GL30.glDeleteVertexArrays(vao);{CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}GL20.glDeleteShader(vs);GL20.glDeleteShader(fs);GL20.glUseProgram(0);
+  GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL11.glDisable(GL11.GL_BLEND);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(tex);GL30.glDeleteFramebuffers(fb);GL15.glDeleteBuffers(order);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}GL20.glDeleteShader(vs);GL20.glDeleteShader(fs);GL20.glUseProgram(0);
  }
  static void contacts(){int p=compile("wavecontact.comp");try(var gpu=new StarfallGpuBuffers()){
   for(int n:new int[]{0,1,63,64,65}){int capacity=Math.max(1,n);var particles=bytes(capacity*64);for(int i=0;i<n;i++){particle(particles,i,2,0,0,20);particles.putFloat(i*64+4,.5f).putFloat(i*64+12,i+1);}
@@ -62,18 +62,18 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
    stage(gpu,packet(n,18,2,0),p);GL41.glProgramUniform4fv(p,GL20.glGetUniformLocation(p,"uWaveTarget"),new float[]{0,.5f,0,18,0,0,0,0,0,0,0,0,0,0,0,0});dispatch(p,Math.max(1,(n+63)/64));check(read(out,4).getInt(0)==0,"old phase accepted by new wave");for(int i=0;i<n;i++)phaseState.putInt(i*8,18);put(stateBuffer,phaseState);dispatch(p,Math.max(1,(n+63)/64));check(read(out,4).getInt(0)==n,"next wave suppressed");
    for(int id:new int[]{pool,counter,header,out,stamps})GL15.glDeleteBuffers(id);
   }
- }finally{{CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}}}
+ }finally{{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}}}
  static int compileText(String name,String text){int shader=GL20.glCreateShader(GL43.GL_COMPUTE_SHADER);GL20.glShaderSource(shader,"#version 450 core\n"+ParticlePrograms.commonPrelude()+text);GL20.glCompileShader(shader);check(GL20.glGetShaderi(shader,GL20.GL_COMPILE_STATUS)!=0,name+GL20.glGetShaderInfoLog(shader));int p=GL20.glCreateProgram();GL20.glAttachShader(p,shader);GL20.glLinkProgram(p);check(GL20.glGetProgrami(p,GL20.GL_LINK_STATUS)!=0,GL20.glGetProgramInfoLog(p));GL20.glDeleteShader(shader);return p;}
  static void formations(){String nav=source("chunks/storm_navigation.glsl");nav=nav.substring(nav.indexOf("vec3 cmiStarRoute"));int p=compileText("formation",source("chunks/allay_storm.glsl")+nav+"\nlayout(local_size_x=64) in;layout(std430,binding=10) buffer Output{vec4 rows[];} result;uniform uint uCount;void main(){uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;vec3 target,velocity;uint phase=0u;bool engaged=cmiStarSteering(float(i+1u),float(i)*.0001,vec3(0),vec3(99,0,0),6.,target,velocity,phase);result.rows[i*2u]=vec4(target,float(phase));result.rows[i*2u+1u]=vec4(velocity,engaged?1.:0.);}");
   try(var gpu=new StarfallGpuBuffers()){for(int n:new int[]{1,63,64,65,8192,16384}){int out=buffer(bytes(n*32));bind(10,out);stage(gpu,packet(n,1,2,0),p);ui(p,"uCount",n);
    for(float time:new float[]{0,5,10.5f,12,15,17}){f(p,"uTimeSec",time);dispatch(p,(n+63)/64);var result=read(out,n*32);for(int i=0;i<n;i++){for(int j=0;j<7;j++)check(Float.isFinite(result.getFloat(i*32+j*4)),"nonfinite formation");float vx=result.getFloat(i*32+16),vy=result.getFloat(i*32+20),vz=result.getFloat(i*32+24);check(vx*vx+vy*vy+vz*vz<=36.001,"formation velocity cap");if(i==0){int expected=time==0?1:time==5?2:time==10.5?3:time==12?4:time==15?5:6;check(result.getFloat(12)==expected,"formation phase");}}}
    GL15.glDeleteBuffers(out);
-  }}finally{CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}
+  }}finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
   try(var q=new Fixture(20000,20000,20000);var gpu=new StarfallGpuBuffers();var shadow=new ModelShadowGpu(20000,36384,StarfallGpuValidation::source)){
    var data=bytes(20000*64);for(int i=0;i<20000;i++){particle(data,i,2,0,0,20);data.putFloat(i*64+12,i+1);}q.build(data,20000);
    // An upper-size fixture uses five 4096-member columns, preserving the same exact roster format.
    var original=packet(20000,1,2,0);var snap=new ClientboundStormWavePacket(1,37,2,1,1,5,5,4096,0,4,10,60,0,12,0,4,original.members(),original.path(),new float[]{0,.5f,0,3.5f,0,.5f,0,3.5f,0,.5f,0,3.5f,0,.5f,0,3.5f,0,.5f,0,3.5f});
-   gpu.rebuild(new ClientboundStormWavePacket[]{snap,null,null,null});gpu.prepare(1);gpu.commit();shadow.starfall(gpu.committedBuffer());var allCull=new com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling();allCull.distance=-1;allCull.safe=-1;shadow.prepare(q.pool,q.emit,q.counter,allCull,0,0,0,.35f,.6f,1,12,new float[16],new float[16],new float[4],q.pop,7);
+   gpu.rebuild(new ClientboundStormWavePacket[]{snap,null,null,null});gpu.prepare(1);gpu.commit();shadow.starfall(gpu.committedBuffer());var allCull=new com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling();allCull.distance=-1;allCull.safe=-1;shadow.prepare(q.pool,q.emit,q.counter,allCull,0,0,0,.35f,.6f,1,12,new float[16],new float[16],new float[4],q.pop,7);
    check(read(shadow.commands(),(ParticleBuffers.INDIRECT_UINTS+4)*4).getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==20000,"expanded shadow carrier lost swords");
   }
  }
@@ -92,7 +92,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
     ui(update,"uCapacity",total);ui(update,"uKillEmit",-1);f(update,"uDt",.05f);f(update,"uTimeSec",12);f(update,"uStormOmegaNow",.1f);
     GL41.glProgramUniform4fv(update,GL20.glGetUniformLocation(update,"uWave"),new float[]{1,1,0,60,0,0,0,0,0,0,0,0,0,0,0,0});GL41.glProgramUniform4fv(update,GL20.glGetUniformLocation(update,"uWaveTarget"),new float[]{0,.5f,0,1,0,0,0,0,0,0,0,0,0,0,0,0});
     GL41.glProgramUniform4fv(update,GL20.glGetUniformLocation(update,"uWavePath"),new float[]{0,12,0,1,0,10.5f,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0});
-    var cull=new com.iridium126.createmanaindustry.client.particles.packages.PackageDrawCulling();cull.distance=-1;cull.safe=-1;
+    var cull=new com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling();cull.distance=-1;cull.safe=-1;
     var zero=bytes(16);float[] emptyWaves=new float[]{1,1,0,60,0,0,0,0,0,0,0,0,0,0,0,0},emptyTargets=new float[]{0,.5f,0,1,0,0,0,0,0,0,0,0,0,0,0,0},emptyTiers=new float[]{5,0,0,0};int updateQuery=GL15.glGenQueries(),shadowQuery=GL15.glGenQueries();
     for(boolean star:new boolean[]{false,true})for(int run=0;run<3;run++){
      double[] ug=new double[120],sg=new double[120],cw=new double[120],tc=new double[120],alloc=new double[120];
@@ -112,7 +112,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
      }
      check(GL11.glGetError()==0,"benchmark GL error");String row=total+","+members+","+(star?"starfall":"legacy_dive")+","+run+","+p(ug,.5)+","+p(ug,.95)+","+p(sg,.5)+","+p(sg,.95)+","+p(cw,.5)+","+p(cw,.95)+","+p(tc,.5)+","+p(tc,.95)+","+p(alloc,.5)+","+gpu.uploadedBytes()+","+gpu.bytes();rows.add(row);System.out.println(row);
     }
-    GL15.glDeleteQueries(updateQuery);GL15.glDeleteQueries(shadowQuery);for(int id:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(id);for(int p:new int[]{build,update}){CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}
+    GL15.glDeleteQueries(updateQuery);GL15.glDeleteQueries(shadowQuery);for(int id:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(id);for(int p:new int[]{build,update}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
    }
   }
   Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-benchmark.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-benchmark-samples.csv"),raw);
@@ -139,7 +139,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
      check(read(counter,16).getInt(0)==n,"ring benchmark incomplete reservation");check(GL11.glGetError()==0,"ring benchmark GL error");String row=columns+","+n+","+run+","+p(bt,.5)+","+p(bt,.95)+","+p(dt,.5)+","+p(dt,.95)+","+p(ct,.5)+","+p(ct,.95)+","+p(at,.5)+","+(columns*48);rows.add(row);System.out.println(row);
     }GL15.glDeleteQueries(birth);GL15.glDeleteQueries(draw);
    }finally{for(int id:new int[]{pool,counter,commands,indices})GL15.glDeleteBuffers(id);}
-  }}finally{GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL11.glDisable(GL11.GL_BLEND);GL11.glDeleteTextures(tex);GL30.glDeleteFramebuffers(fb);GL30.glDeleteVertexArrays(vao);GL15.glDeleteBuffers(header);for(int p:new int[]{reserve,emit,render}){CMIParticleEngine.clearUniformProgram(p);GL20.glDeleteProgram(p);}GL20.glDeleteShader(vs);GL20.glDeleteShader(fs);}
+  }}finally{GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL11.glDisable(GL11.GL_BLEND);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(tex);GL30.glDeleteFramebuffers(fb);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);GL15.glDeleteBuffers(header);for(int p:new int[]{reserve,emit,render}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}GL20.glDeleteShader(vs);GL20.glDeleteShader(fs);}
   Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-ring-benchmark.csv"),rows);
  }
  public static void main(String[] args)throws Exception{GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(128,128,"Starfall GPU validation",0,0);

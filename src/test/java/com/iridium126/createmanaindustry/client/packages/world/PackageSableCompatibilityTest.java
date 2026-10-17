@@ -1,0 +1,139 @@
+package com.iridium126.createmanaindustry.client.packages.world;
+
+import com.iridium126.createmanaindustry.client.packages.simulation.PackageChainFrameScene;
+import com.iridium126.createmanaindustry.client.packages.simulation.PackageSablePose;
+
+
+import static org.junit.jupiter.api.Assertions.*;
+import com.google.gson.JsonParser;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import org.junit.jupiter.api.Test;
+import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+
+class PackageSableCompatibilityTest {
+    @Test void absentModDoesNotLinkTheTypedAdapter() {
+        // Sable is compileOnly. This JVM has the math companion for other tests,
+        // but none of the Sable sublevel/physics/loader implementation classes.
+        assertNull(getClass().getResource("/dev/ryanhcode/sable/Sable.class"));
+        assertNull(getClass().getResource("/dev/ryanhcode/sable/sublevel/ClientSubLevel.class"));
+        assertNull(PackageMovingCollisionSources.optionalBridge(false, null));
+        assertNull(PackageForceClient.optionalBridge(false));
+        assertNull(PackageChainFrameScene.optionalBridge(false));
+    }
+
+    @Test void commonSourcesHaveNoExternalSableTypesAndAdapterHasNoReflection() throws Exception {
+        String root = "/com/iridium126/createmanaindustry/client/packages/world/";
+        for (String suffix : new String[]{"", "$Base", "$CreateSource", "$OptionalBridge"}) {
+            try (var stream = getClass().getResourceAsStream(root + "PackageMovingCollisionSources" + suffix + ".class")) {
+                assertNotNull(stream);
+                assertFalse(new String(stream.readAllBytes(), StandardCharsets.ISO_8859_1).contains("dev/ryanhcode/sable/"));
+            }
+        }
+        for (String name : new String[]{"PackageSableCollisionSources", "PackageSableCollisionSources$Source", "PackageSablePose", "PackageSableForceSources", "PackageSableChainFrames"}) {
+            try (var stream = getClass().getResourceAsStream("/com/iridium126/createmanaindustry/client/packages/"+(name.equals("PackageSablePose")||name.equals("PackageSableChainFrames")?"simulation/":"world/")+name+".class")) {
+                assertNotNull(stream);
+                String bytecode = new String(stream.readAllBytes(), StandardCharsets.ISO_8859_1);
+                assertFalse(bytecode.contains("java/lang/reflect/"));
+                assertFalse(bytecode.contains("forName"));
+                assertFalse(bytecode.contains("getMethod"));
+                assertFalse(bytecode.contains("getField"));
+            }
+        }
+        try(var stream=getClass().getResourceAsStream(root+"PackageSableCollisionSources.class")) {
+            assertNotNull(stream);String bytecode=new String(stream.readAllBytes(),StandardCharsets.ISO_8859_1);
+            assertTrue(bytecode.contains("BlockSubLevelDynamicCollider"));
+            assertTrue(bytecode.contains("buildBoxes"));
+            assertTrue(bytecode.contains("VoxelColliderData"));
+        }
+        for(String path:new String[]{root+"PackageForceClient.class",root+"PackageForceClient$OptionalBridge.class",root+"PackageForceScene.class",
+                "/com/iridium126/createmanaindustry/content/logistics/gpupackage/PackageForceHooks.class"}){
+            try(var stream=getClass().getResourceAsStream(path)){assertNotNull(stream);assertFalse(new String(stream.readAllBytes(),StandardCharsets.ISO_8859_1).contains("dev/ryanhcode/sable/"));}
+        }
+
+    }
+
+    @Test void plotBlockChangesInvalidateOnlyMovingCollisionAndMixinIsVersionGated() throws Exception {
+        var mixin=PackageCollisionHookContractTest.type("com/iridium126/createmanaindustry/mixin/packages/sable/PackageSableCollisionPlotMixin");
+        var hook=mixin.methods.stream().filter(method->method.name.equals("cmi$invalidateMovingCollision")).findFirst().orElseThrow();
+        var inject=hook.visibleAnnotations.stream().filter(a->a.desc.equals("Lorg/spongepowered/asm/mixin/injection/Inject;")).findFirst().orElseThrow();
+        assertTrue(PackageCollisionHookContractTest.annotationValueContains(inject,"method",
+                "onBlockChange(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;)V"));
+        assertTrue(PackageCollisionHookContractTest.annotationAt(inject,"TAIL"));
+        boolean movingOnly=false;
+        for(var instruction:hook.instructions)if(instruction instanceof MethodInsnNode call
+                && call.owner.equals("com/iridium126/createmanaindustry/client/packages/world/PackageCollisionRuntime")
+                && call.name.equals("movingBlockChanged"))movingOnly=true;
+        assertTrue(movingOnly,"Sable plot edits should invalidate moving geometry without static-world recapture");
+
+        try(var input=getClass().getClassLoader().getResourceAsStream("createmanaindustry.mixins.json")) {
+            assertNotNull(input);var json=JsonParser.parseReader(new InputStreamReader(input)).getAsJsonObject();
+            var clients=json.getAsJsonArray("client").toString();var common=json.getAsJsonArray("mixins").toString();
+            assertTrue(clients.contains("packages.sable.PackageSableCollisionPlotMixin"));
+            assertFalse(common.contains("PackageSableCollisionPlotMixin"));
+        }
+        var plugin=PackageCollisionHookContractTest.type("com/iridium126/createmanaindustry/mixin/CMIMixinPlugin");
+        var gate=plugin.methods.stream().filter(method->method.name.equals("shouldApplyMixin")).findFirst().orElseThrow();
+        boolean packageGate=false,sableGate=false;
+        for(var instruction:gate.instructions) {
+            if(instruction instanceof LdcInsnNode constant && ".packages.sable.".equals(constant.cst))sableGate=true;
+            if(instruction instanceof MethodInsnNode call && call.name.equals("isSupportedVersion")
+                    && call.desc.equals("(Ljava/lang/String;Ljava/lang/String;)Z"))packageGate=true;
+        }
+        assertTrue(sableGate&&packageGate,"the Sable-specific hook must be gated before its optional target is loaded");
+    }
+
+    @Test void plotCollisionCaptureUsesEmbeddedCoordinatesWithoutParentChunkGate() throws Exception {
+        String sourceName="com/iridium126/createmanaindustry/client/packages/world/PackageSableCollisionSources$Source";
+        var source=PackageCollisionHookContractTest.type(sourceName);
+        var open=source.methods.stream().filter(method->method.name.equals("open")).findFirst().orElseThrow();
+        assertTrue(java.util.stream.StreamSupport.stream(open.instructions.spliterator(),false)
+                .filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast)
+                .anyMatch(call->call.owner.equals("dev/ryanhcode/sable/sublevel/plot/LevelPlot")
+                        &&call.name.equals("getEmbeddedLevelAccessor")));
+
+        var cursor=PackageCollisionHookContractTest.type(sourceName+"$1");
+        var next=cursor.methods.stream().filter(method->method.name.equals("next")).findFirst().orElseThrow();
+        boolean convertsStorageCoordinates=false,usesParentChunkGate=false,skipsNullSections=false;
+        for(var instruction:next.instructions)if(instruction instanceof MethodInsnNode call) {
+            if(call.owner.equals("com/iridium126/createmanaindustry/client/packages/world/PackageSableCollisionCoordinates")
+                    &&call.name.equals("contextPosition"))convertsStorageCoordinates=true;
+            if(call.owner.equals("com/iridium126/createmanaindustry/client/packages/world/PackageSableCollisionSections")
+                    &&call.name.equals("nextNonNull"))skipsNullSections=true;
+            if(call.name.equals("hasChunkAt"))usesParentChunkGate=true;
+        }
+        assertTrue(convertsStorageCoordinates,"embedded world queries must use coordinates relative to the plot center");
+        assertTrue(skipsNullSections,"sparse plot chunk sections must be skipped without aborting the entire geometry capture");
+        assertFalse(usesParentChunkGate,"the plot holder, not ClientLevel.hasChunkAt, owns the captured chunk");
+    }
+
+    @Test void sableImpactCallbacksDoNotMarkKnownCollisionGeometryUnsupported() throws Exception {
+        String root = "com/iridium126/createmanaindustry/client/packages/world/";
+        var bridge = PackageCollisionHookContractTest.type(root + "PackageMovingCollisionSources$OptionalBridge");
+        assertFalse(bridge.methods.stream().anyMatch(method -> method.name.equals("unsupported")),
+                "optional integrations must not classify impact callbacks as missing geometry");
+
+        var base = PackageCollisionHookContractTest.type(root + "PackageMovingCollisionSources$Base");
+        boolean capturesOrdinaryShape = false;
+        boolean queriesOptionalDynamicShape = false;
+        for (var method : base.methods) {
+            for (var instruction : method.instructions) if (instruction instanceof MethodInsnNode call) {
+                if (call.name.equals("getCollisionShape")) capturesOrdinaryShape = true;
+                if (call.name.equals("dynamicBoxes")) queriesOptionalDynamicShape = true;
+                assertFalse(call.name.equals("unsupported"),
+                        "an optional impact callback must not turn a collision into a freeze condition");
+            }
+        }
+        assertTrue(capturesOrdinaryShape, "callback blocks still use their normal collision shape");
+        assertTrue(queriesOptionalDynamicShape, "Sable-specific custom collider geometry remains supported");
+
+        try (var stream = getClass().getResourceAsStream("/" + root + "PackageSableCollisionSources.class")) {
+            assertNotNull(stream);
+            assertFalse(new String(stream.readAllBytes(), StandardCharsets.ISO_8859_1)
+                            .contains("BlockWithSubLevelCollisionCallback"),
+                    "impact callback APIs must not participate in geometry availability");
+        }
+    }
+
+}

@@ -1,7 +1,6 @@
 package com.iridium126.createmanaindustry.dimension.storage;
 
 
-
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 

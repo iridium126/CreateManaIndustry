@@ -1,0 +1,240 @@
+package com.iridium126.createmanaindustry.client.packages.world;
+
+import com.iridium126.createmanaindustry.client.packages.simulation.PackageSimulationClock;
+
+
+import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
+
+class PackageMovingCollisionCacheTest {
+    @Test void acceleratedPoseIntervalsCoverRotationAndTranslationExactlyOnce(){
+        var clock=new AtomicLong();var source=new Source(clock){
+            @Override public PackageMovingGeometry.Pose pose(boolean previous){return previous?IDENTITY:new PackageMovingGeometry.Pose(0,1,0,-1,0,0,0,0,1,10,0,0);}
+        };
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);cache.tickRate(200);cache.offer(source);cache.tick(1);cache.captureHistory(1,10,true);
+        var end=IDENTITY;double motion=0;
+        for(int tick=1;tick<=10;tick++){
+            var interval=cache.history(tick).getFirst();assertEquals(end,interval.previous);assertEquals(tick+1,interval.poseFrame);
+            motion+=interval.current.tx()-interval.previous.tx();end=interval.current;
+            assertEquals(tick,interval.current.tx(),1e-12);
+            assertEquals(1,interval.current.xx()*interval.current.xx()+interval.current.xy()*interval.current.xy(),1e-12);
+        }
+        assertEquals(10,motion,1e-12);assertEquals(source.pose(false),end);
+        cache.captureHistory(1,10,false);assertEquals(1,cache.history(1).getFirst().current.tx(),1e-12);
+    }
+    @Test void twoHundredTpsRetainsImmutablePosePairsForOneSecond(){
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);cache.tickRate(200);
+        for(int tick=0;tick<250;tick++){cache.tick(1);cache.captureHistory(tick,true);}
+        assertFalse(cache.hasHistory(49));assertTrue(cache.hasHistory(50));assertNotNull(cache.history(50));
+        cache.tickRate(20);assertTrue(cache.hasHistory(50));
+        cache.captureHistory(249,false);assertNotNull(cache.history(249),"same-tick data must stay immutable");
+    }
+    @Test void removedLastStructureTurnsAnUnavailableIntervalIntoAConfirmedEmptyScene(){
+        var source=new Source(new AtomicLong());source.length=1;
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);
+        assertTrue(cache.offer(source));cache.tick(1);cache.captureHistory(7,false);
+        assertTrue(cache.hasHistory(7));assertNull(cache.history(7));
+        cache.remove(source.key());assertTrue(cache.entries().isEmpty());
+        assertNull(cache.simulationFrame(7,false));
+        assertTrue(cache.simulationFrame(7,true).isEmpty());
+        assertNull(cache.history(7),"historical capture remains immutable");
+    }
+    @Test void removedStructureGeometryRemainsReferencedUntilItsLastInputFrameExpires(){
+        var source=new Source(new AtomicLong());source.length=1;
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);
+        assertTrue(cache.offer(source));cache.tick(1);cache.captureHistory(0,true);
+        var entry=cache.history(0).getFirst();
+        var reference=new PackageMovingCollisionCache.GeometryRevision(entry.identity,entry.revision());
+        var retained=cache.retainedGeometry();assertTrue(retained.contains(reference));
+        cache.captureHistory(1,true);
+        assertSame(retained,cache.retainedGeometry(),"unchanged geometry revisions reuse the cached set");
+        cache.remove(source.key());
+        assertTrue(cache.retainedGeometry().contains(reference));
+        for(int tick=2;tick<=PackageSimulationClock.HISTORY_TICKS;tick++)cache.captureHistory(tick,true);
+        assertTrue(cache.retainedGeometry().contains(reference),"the second frame still retains the geometry revision");
+        cache.captureHistory(PackageSimulationClock.HISTORY_TICKS+1L,true);
+        assertFalse(cache.retainedGeometry().contains(reference));
+    }
+    static final PackageMovingGeometry.Pose IDENTITY=new PackageMovingGeometry.Pose(1,0,0,0,1,0,0,0,1,0,0,0);
+    static class Source implements PackageMovingCollisionCache.Source {
+        final Thread owner=Thread.currentThread();final PackageMovingGeometry.Key key=new PackageMovingGeometry.Key(0,UUID.randomUUID());
+        long revision=1;int length=40;boolean missing,poseMissing,throwCursor;final AtomicLong clock;
+        Source(AtomicLong clock){this.clock=clock;}
+        void owner(){assertSame(owner,Thread.currentThread());}
+        public PackageMovingGeometry.Key key(){return key;}
+        public long revision(){owner();return revision;}
+        public boolean alive(){owner();return true;}
+        public PackageMovingGeometry.Bounds bounds(){owner();return new PackageMovingGeometry.Bounds(0,0,0,length,1,1);}
+        public PackageMovingGeometry.Pose pose(boolean previous){owner();if(poseMissing)throw new IllegalStateException();return IDENTITY;}
+        public PackageMovingCollisionCache.Cursor open(){owner();return new PackageMovingCollisionCache.Cursor(){
+            int next;
+            public boolean hasNext(){owner();if(throwCursor)throw new ConcurrentModificationException();return next<length;}
+            public List<PackageMovingGeometry.Box> next(){owner();if(missing)return null;clock.addAndGet(100);int x=next++;return List.of(new PackageMovingGeometry.Box(x,0,0,x+1,1,1,.6f,0));}
+        };}
+    }
+    @Test void budgetSplitsOwnerCaptureAndWorkerTouchesOnlyPrimitives() throws Exception {
+        var tasks=new ArrayDeque<Runnable>();var clock=new AtomicLong();var source=new Source(clock);
+        var cache=new PackageMovingCollisionCache(tasks::add,1,clock::get);cache.offer(source);
+        cache.tick(250);assertEquals(300,cache.lastCaptureNanos());assertEquals(1,cache.overruns());
+        assertNull(cache.entries().iterator().next().snapshot());assertTrue(tasks.isEmpty());
+        for(int i=0;i<10;i++)cache.tick(10000);
+        assertEquals(1,tasks.size());var worker=new Thread(tasks.remove());worker.start();worker.join();
+        cache.tick(10000);var result=cache.entries().iterator().next().snapshot();assertNotNull(result);
+        assertEquals(1,result.count());assertEquals(40,result.nodes().getFloat(16));assertTrue(result.nodes().isReadOnly());
+    }
+    @Test void slowGeometryCaptureCannotStarveOtherSourcesPoseHistory() {
+        var clock=new AtomicLong();var slow=new Source(clock);slow.length=40;
+        var later=new Source(clock);later.length=1;
+        var cache=new PackageMovingCollisionCache(Runnable::run,2,clock::get);
+        assertTrue(cache.offer(slow));assertTrue(cache.offer(later));
+        cache.tick(250);
+        assertTrue(cache.posesReady(),"pose history must be sampled before a large collider consumes the geometry budget");
+        cache.captureHistory(11,true);
+        assertEquals(2,cache.history(11).size());
+        assertEquals(300,cache.lastCaptureNanos(),"geometry work remains bounded by the shared capture budget");
+    }
+    @Test void staticSectionCaptureCannotStarveMovingInputHistory() {
+        var clock=new AtomicLong();
+        double[] translation={0};
+        var source=new Source(clock){
+            @Override public PackageMovingGeometry.Pose pose(boolean previous){
+                owner();return new PackageMovingGeometry.Pose(1,0,0,0,1,0,0,0,1,translation[0]-(previous?1:0),0,0);
+            }
+        };
+        source.length=1;
+        var moving=new PackageMovingCollisionCache(Runnable::run,1,clock::get);
+        moving.offer(source);moving.tick(10_000);moving.tick(10_000);
+        var geometry=moving.entries().iterator().next().snapshot();assertNotNull(geometry);
+        var world=new PackageCollisionCache(Runnable::run,1,clock::get);
+        world.request(new PackageCollisionCache.Section(1,0,0));
+        long started=clock.get(),budget=250;
+        world.tick((section,cell)->{clock.addAndGet(100);return new PackageCollisionCache.Cell(List.of(),.6f,0);},budget);
+        translation[0]=16;
+        moving.tick(Math.max(0,budget-(clock.get()-started)));
+        moving.captureHistory(12,true);
+        assertTrue(moving.posesReady(),"a newly demanded section consumed the geometry budget and dropped the moving pose tick");
+        var captured=moving.history(12);assertNotNull(captured,"missing pose history blocks all subsequent free-body ticks");
+        assertEquals(15,captured.getFirst().previous.tx());assertEquals(16,captured.getFirst().current.tx());
+        assertSame(geometry,moving.entries().iterator().next().snapshot());
+        assertEquals(300,clock.get()-started,"zero remaining budget must not start geometry work");
+    }
+    @Test void completedGeometryPublishesEvenWhenStaticCaptureSpentTheBudget() {
+        var tasks=new ArrayDeque<Runnable>();var clock=new AtomicLong();var source=new Source(clock);source.length=1;
+        var cache=new PackageMovingCollisionCache(tasks::add,1,clock::get);cache.offer(source);cache.tick(10_000);
+        var entry=cache.entries().iterator().next();assertNull(entry.snapshot());tasks.remove().run();
+        long before=clock.get();cache.tick(0);
+        assertNotNull(entry.snapshot(),"completed BVH must not wait for another geometry capture budget");
+        assertEquals(before,clock.get(),"publication must not capture any more blocks");assertTrue(tasks.isEmpty());
+        source.revision++;cache.tick(10_000);assertNull(entry.snapshot());tasks.remove().run();
+        source.revision++;cache.tick(0);
+        assertNull(entry.snapshot(),"a completed stale BVH must never publish after a newer edit");
+        assertNull(entry.future);assertNull(entry.cursor);assertTrue(tasks.isEmpty());
+        cache.tick(10_000);tasks.remove().run();cache.tick(0);assertNotNull(entry.snapshot());
+    }
+    @Test void zeroBudgetCapturesDirtyPoseWithoutStartingGeometryWork() {
+        var tasks=new ArrayDeque<Runnable>();var clock=new AtomicLong();var source=new Source(clock);
+        var cache=new PackageMovingCollisionCache(tasks::add,1,clock::get);cache.offer(source);
+        cache.tick(0);cache.captureHistory(1,true);
+        var entry=cache.entries().iterator().next();assertNotNull(cache.history(1));
+        assertTrue(cache.posesReady());assertNull(entry.snapshot());assertNull(entry.cursor);assertTrue(tasks.isEmpty());
+        long revision=entry.revision();source.revision++;source.length=50;
+        cache.tick(0);cache.captureHistory(2,true);
+        assertTrue(entry.revision()>revision);assertEquals(50,cache.history(2).getFirst().bounds.x1());
+        assertNull(entry.snapshot());assertNull(entry.cursor);assertTrue(tasks.isEmpty());assertEquals(0,clock.get());
+    }
+    @Test void staleTasksAndClearedEntriesCannotBecomeCurrent() {
+        var tasks=new ArrayDeque<Runnable>();var source=new Source(new AtomicLong());source.length=1;
+        var cache=new PackageMovingCollisionCache(tasks::add,1,()->0L);cache.offer(source);cache.tick(1);
+        var old=cache.entries().iterator().next();long before=old.revision();cache.clear();
+        assertEquals(0,old.poseFrame);assertTrue(old.revision()>before);
+        cache.offer(source);tasks.remove().run();cache.tick(1);assertNull(cache.entries().iterator().next().snapshot());
+        assertEquals(2,cache.entries().iterator().next().identity);tasks.remove().run();cache.tick(1);assertNotNull(cache.entries().iterator().next().snapshot());
+        cache.remove(source.key());assertFalse(cache.entries().iterator().hasNext());
+    }
+    @Test void unavailableChunksAndPosesAreNeverAirAndCanRecover() {
+        var source=new Source(new AtomicLong());source.length=1;source.missing=true;
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);cache.offer(source);cache.tick(1);cache.tick(1);
+        assertNull(cache.entries().iterator().next().snapshot());
+        source.missing=false;cache.tick(1);cache.tick(1);assertNotNull(cache.entries().iterator().next().snapshot());
+        source.poseMissing=true;cache.tick(1);assertFalse(cache.posesReady());
+        source.poseMissing=false;cache.tick(1);assertTrue(cache.posesReady());assertNotNull(cache.entries().iterator().next().snapshot());
+        cache.tick(0);assertTrue(cache.posesReady());
+        source.poseMissing=true;cache.tick(0);assertFalse(cache.posesReady(),"a zero geometry budget must not hide an unavailable pose");
+    }
+    @Test void missingMovingBvhKeepsPoseAndBoundsForBodyLocalCollisionPauses() {
+        var source=new Source(new AtomicLong());source.length=1;source.missing=true;
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);
+        assertTrue(cache.offer(source));cache.tick(1);
+        var entry=cache.entries().iterator().next();
+        assertNull(entry.snapshot());assertTrue(cache.posesReady());
+        assertNotNull(entry.bounds);assertNotNull(entry.previous);assertNotNull(entry.current);
+        cache.captureHistory(4,true);
+        var historical=cache.history(4).getFirst();
+        assertNotNull(historical.bounds);assertNotNull(historical.previous);assertNotNull(historical.current);
+        assertNull(historical.snapshot());
+    }
+    @Test void iteratorChangesAreRetriedWithoutPublishingPartialGeometry() {
+        var source=new Source(new AtomicLong());source.length=1;source.throwCursor=true;
+        var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);cache.offer(source);cache.tick(1);
+        assertNull(cache.entries().iterator().next().snapshot());source.throwCursor=false;
+        cache.tick(1);cache.tick(1);assertNotNull(cache.entries().iterator().next().snapshot());
+        source.revision++;cache.tick(1);assertNull(cache.entries().iterator().next().snapshot());
+        cache.tick(1);assertNotNull(cache.entries().iterator().next().snapshot());
+    }
+    @Test void globalWorkerBudgetSurvivesWorldClear() {
+        var tasks=new ArrayDeque<Runnable>();var cache=new PackageMovingCollisionCache(tasks::add,8,()->0L);
+        for(int i=0;i<8;i++){var source=new Source(new AtomicLong());source.length=1;assertTrue(cache.offer(source));}
+        cache.tick(1);assertEquals(4,tasks.size());cache.clear();
+        var source=new Source(new AtomicLong());source.length=1;cache.offer(source);cache.tick(1);assertEquals(4,tasks.size());
+        while(!tasks.isEmpty())tasks.remove().run();
+        cache.tick(1);assertEquals(1,tasks.size());tasks.remove().run();cache.tick(1);assertNotNull(cache.entries().iterator().next().snapshot());
+    }
+    @Test void geometryRetainsHolesMaterialsAndCapacityFailure() {
+        var boxes=new ArrayList<PackageMovingGeometry.Box>();boxes.add(new PackageMovingGeometry.Box(0,0,0,1,1,1,.6f,0));
+        boxes.add(new PackageMovingGeometry.Box(1,0,0,2,1,1,.7f,0));assertEquals(3,PackageMovingGeometry.bake(1,boxes).count());
+        boxes.set(1,new PackageMovingGeometry.Box(2,0,0,3,1,1,.6f,0));assertEquals(3,PackageMovingGeometry.bake(1,boxes).count());
+        boxes.clear();for(int i=0;i<4097;i++)boxes.add(new PackageMovingGeometry.Box(i*2,0,0,i*2+1,1,1,.6f,0));
+        assertEquals(8193,PackageMovingGeometry.bake(1,boxes).count(),"a Sable sublevel above the old 4096-leaf cap must still produce collision geometry");
+        boxes.clear();for(int i=0;i<PackageMovingGeometry.MAX_BOXES+1;i++)boxes.add(new PackageMovingGeometry.Box(i*2,0,0,i*2+1,1,1,.6f,0));
+        assertThrows(IllegalArgumentException.class,()->PackageMovingGeometry.bake(1,boxes));
+    }
+
+    @Test void largeSableLikePlotCaptureUsesItsTimeBudgetInsteadOfSixteenCellsPerTick() {
+        var tasks=new ArrayDeque<Runnable>();var clock=new AtomicLong();var source=new Source(clock);source.length=40;
+        var cache=new PackageMovingCollisionCache(tasks::add,1,clock::get);cache.offer(source);cache.tick(10_000);
+        assertEquals(1,tasks.size(),"capture should reach the worker in one budgeted tick when its time budget allows it");
+        assertNull(cache.entries().iterator().next().snapshot());
+        tasks.remove().run();cache.tick(10_000);
+        assertNotNull(cache.entries().iterator().next().snapshot());
+    }
+    @Test void optionalAbiFailuresRevokeCoverageAtEveryCaptureStage() {
+        for(int stage=0;stage<5;stage++) {
+            final int selected=stage;
+            boolean[] broken={true};
+            var source=new Source(new AtomicLong()) {
+                void fail(int at){if(broken[0]&&selected==at)throw new NoSuchMethodError("Injected optional ABI change");}
+                @Override public long revision(){fail(0);return super.revision();}
+                @Override public PackageMovingGeometry.Pose pose(boolean previous){fail(1);return super.pose(previous);}
+                @Override public PackageMovingCollisionCache.Cursor open(){
+                    fail(2);var delegate=super.open();
+                    return new PackageMovingCollisionCache.Cursor(){
+                        public boolean hasNext(){fail(3);return delegate.hasNext();}
+                        public List<PackageMovingGeometry.Box> next(){fail(4);return delegate.next();}
+                    };
+                }
+            };
+            source.length=1;
+            var cache=new PackageMovingCollisionCache(Runnable::run,1,()->0L);cache.offer(source);
+            assertDoesNotThrow(()->cache.tick(1));
+            var entry=cache.entries().iterator().next();
+            assertNull(entry.snapshot(),"ABI stage "+stage);
+            if(stage<2)assertFalse(cache.posesReady());
+            broken[0]=false;source.revision++;
+            cache.tick(1);cache.tick(1);
+            assertNotNull(entry.snapshot(),"Recovery stage "+stage);
+            assertTrue(cache.posesReady());
+        }
+    }
+}

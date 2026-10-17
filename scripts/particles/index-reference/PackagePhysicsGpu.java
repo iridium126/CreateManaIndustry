@@ -1,4 +1,9 @@
-package com.iridium126.createmanaindustry.client.particles.packages;
+package com.iridium126.createmanaindustry.client.packages.simulation;
+import com.iridium126.createmanaindustry.client.packages.authority.*;
+import com.iridium126.createmanaindustry.client.packages.simulation.*;
+import com.iridium126.createmanaindustry.client.packages.world.*;
+import com.iridium126.createmanaindustry.client.packages.render.*;
+import com.iridium126.createmanaindustry.client.packages.feedback.*;
 
 import java.nio.ByteBuffer;
 import java.util.function.Function;

@@ -13,6 +13,7 @@ import java.util.*;
 
 /** One batch of analytic faces/edges, one shared conjure material, no CPU particles or GPU readback. */
 public final class PartitionGpu implements AutoCloseable {
+    public static final PartitionGpu INSTANCE=new PartitionGpu();
     private static final java.util.function.Function<String,String> SOURCES=com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderResources.loader("createmanaindustry","shaders/particles/");
     private final com.iridium126.createmanaindustry.client.gpu.shader.GpuUniformCache uniforms = new com.iridium126.createmanaindustry.client.gpu.shader.GpuUniformCache();
     private static final EmitterSpec SPEC=com.iridium126.createmanaindustry.client.greattrick.GreatTrickParticleSpecs.conjure();
@@ -30,7 +31,7 @@ public final class PartitionGpu implements AutoCloseable {
             if(prepare==0){prepare=compile("partition_prepare.comp");reserve=compile("partition_reserve.comp");emit=compile("partition_emit.comp");}
             if(fields.size()>capacity) {
                 capacity=Integer.highestOneBit(fields.size())*2;
-                if(input!=0){GL15.glDeleteBuffers(input);GL15.glDeleteBuffers(jobs);}
+                if(input!=0){com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(input);com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(jobs);}
                 input=buffer((long)capacity*64);jobs=buffer((long)capacity*18*64);staging=BufferUtils.createByteBuffer(capacity*64);
             }
             staging.clear();float time=PartitionClient.now();
@@ -42,14 +43,14 @@ public final class PartitionGpu implements AutoCloseable {
                 Vec3 anchor=f.stopped<0?Vec3.ZERO:frozen.computeIfAbsent(f.id,k->camera).subtract(camera);
                 staging.putFloat((float)anchor.x).putFloat((float)anchor.y).putFloat((float)anchor.z).putFloat(0);
             }
-            staging.flip();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,input);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,staging);return true;
+            staging.flip();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,input);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,staging);return true;
         }catch(RuntimeException error){close();disabled=true;com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("Partition GPU rendering disabled until reload",error);return false;}
     }
     public void generate(ParticleAppendTarget output,int slot,org.joml.Matrix4fc view,org.joml.Matrix4fc projection,float[] frustum,float throttle) {
         if(fields.isEmpty())return;
-        int emitter=output.emitter(SPEC);if(emitter<0)return;output.flushHeaders();
+        int emitter=output.ensureEmitter(SPEC);if(emitter<0)return;output.flushHeaders();
         GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,input);GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,jobs);
-        output.bind(slot,4,5);
+        output.bind(output.reserveOutput(),slot,4,5);
         GL20.glUseProgram(prepare);uint(prepare,"uCount",fields.size());scalar(prepare,"uFadeDistance",ClientConfig.particleFadeDistance);
         GL20.glUniform4fv(uniforms.location(prepare,"uFrustum"),frustum);
         GL43.glDispatchCompute((fields.size()*18+63)/64,1,1);barrier();
@@ -66,7 +67,7 @@ public final class PartitionGpu implements AutoCloseable {
     private static void barrier(){GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
     private void uint(int p,String n,int v){GL30.glUniform1ui(uniforms.location(p,n),v);}
     private void scalar(int p,String n,float v){GL20.glUniform1f(uniforms.location(p,n),v);}
-    private static int buffer(long size){int b=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,b);GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,size,GL15.GL_DYNAMIC_COPY);return b;}
+    private static int buffer(long size){int b=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,b);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,size,GL15.GL_DYNAMIC_COPY);return b;}
     public void reset(){fields=List.of();frozen.clear();}
-    public void close(){uniforms.clear();if(input!=0)GL15.glDeleteBuffers(input);if(jobs!=0)GL15.glDeleteBuffers(jobs);for(int p:new int[]{prepare,reserve,emit})if(p!=0)GL20.glDeleteProgram(p);input=jobs=prepare=reserve=emit=capacity=0;staging=null;disabled=false;reset();}
+    public void close(){uniforms.clear();if(input!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(input);if(jobs!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(jobs);for(int p:new int[]{prepare,reserve,emit})if(p!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(p);input=jobs=prepare=reserve=emit=capacity=0;staging=null;disabled=false;reset();}
 }

@@ -2,6 +2,8 @@
 
 状态：区域环境合包已实现，完整环境行为与分页 journal **尚未验收**。固定 Minecraft 1.21.1／NeoForge 21.1.236／Create 6.0.10。权威通道为 `gpu-packages-15`，观察通道保持 `gpu-package-observers-5`；服务端与权威客户端需要同时升级。
 
+第四批只迁移客户端职责及直接调用，详见[调度与所有权](gpu-runtime-stage4.md)；本批未修改 wire、观察流、服务端包结构、存档字段或旧记录默认值，也未补齐下列第三批语义。
+
 固定 20 样本窗口的 GPU 历史存储已改为按需页池，并保留不可变异步快照；这不改变 1024 B 记录、ACK 或存档格式，也不等于逐行为阶段的有序分页效果 journal 已完成。真实 GLSL 正确性专项与联合回归通过；设备端缺页统计修复了高容量饱和捕获的中位耗时回退，尾分位、增长维护和网络／整帧性能仍待验收。详见[存储布局](gpu-package-environment-14.md)及[本轮结果](benchmarks/gpu-runtime-architecture.md)。
 
 `ServerboundPackagePacket.ENVIRONMENT` 继续使用 region／epoch／region revision 的外层信封，body 改为连续的 1～24 条 1024 B journal 记录。body 必须非空、长度是 1024 的整数倍且不超过 24576 B；不加入跨包字典、跨区域索引或隐式身份。单条记录、48 B 样本、20 条窗口和现有 ACK 格式保持原布局，详见[环境字段与存档](gpu-package-environment-14.md)。

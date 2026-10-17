@@ -40,7 +40,7 @@ class HexBackendContractTest {
         var mixin=type(root+"hexcasting/HexPatternRedirectMixin");assertTrue(java.util.Arrays.stream(mixin.methods.get(1).instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode call&&call.name.equals("castingStack")));
     }
     @Test void productionOrbitProducerIsIndependentOfGeneralPool()throws Exception {
-        var c=type("com/iridium126/createmanaindustry/client/particles/engine/CMIParticleEngine");var compute=c.methods.stream().filter(m->m.name.equals("runCompute")).findFirst().orElseThrow();
+        var c=type("com/iridium126/createmanaindustry/client/particles/engine/ParticleRuntime$FrameCandidate");var compute=c.methods.stream().filter(m->m.name.equals("input")).findFirst().orElseThrow();
         assertFalse(java.util.Arrays.stream(compute.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode call&&call.owner.endsWith("HexPatternRuntime")&&call.name.equals("prepare")));
         assertFalse(java.util.Arrays.stream(compute.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode call&&(call.name.equals("hexReconcile")||call.name.equals("hexPrepare"))));
     }

@@ -7,13 +7,9 @@ import com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers
 import com.iridium126.createmanaindustry.content.allaystorm.AllayStormData;
 import com.iridium126.createmanaindustry.content.allaystorm.AllayStormManager;
 import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormStatePacket;
-import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormPositionsPacket;
-import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket;
 
-import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * Render-thread Storm state, scheduling and server feedback policy.
@@ -21,6 +17,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * Per-member work uses this domain's state and performs no engine discovery.
  */
 public final class AllayStormRuntime {
+    public static final AllayStormRuntime INSTANCE=new AllayStormRuntime(com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime.INSTANCE);
 
     private final StormParticlePort particles;
 
@@ -319,32 +316,6 @@ public final class AllayStormRuntime {
     private double stormCorrectionHz = 5.0;
     /** Next member index to schedule for spawning (skips dead members). */
     private int stormSpawnCursor = 0;
-    /** gameTime (ticks) of the last dispatched position snapshot. */
-    private long lastSnapshotGameTime = Long.MIN_VALUE;
-    /** Set when the compute phase dispatched a readback; consumed at fence poll. */
-    private boolean stormPosPending = false;
-    private long stormPosGameTime = 0;
-
-    // ---- crosshair hit-query snapshot (storm asset; see the class javadoc) ---
-    /**
-     * Newest fence-signalled hit-query snapshot: the packed sort key of the
-     * allay under the crosshair ({@link ParticleBuffers#HIT_MISS} = none) and
-     * its HP as float bits. At most one frame old -- a click consumes it with
-     * zero stalls; a stale camera for one frame is accepted (documented).
-     */
-    private int hitKeySnapshot = ParticleBuffers.HIT_MISS;
-    private int hitHpBits = 0;
-    /**
-     * Non-consuming mirror of {@link #hitKeySnapshot} for the crosshair pick
-     * ({code CMIParticleEngine.injectCrosshairPick}): the click path
-     * consume-once resets {@code hitKeySnapshot}, and the crosshair must not
-     * flicker for the frame between a click and the next fence poll. Refreshed
-     * at the same fence poll, cleared wherever the click snapshot is
-     * invalidated.
-     */
-    private int crosshairHitKey = ParticleBuffers.HIT_MISS;
-    /** Storm member identity of the newest hit-query snapshot (-1 = non-storm). */
-    private int hitMemberIdx = -1;
 
     // ---- synced player collection (storm repulsion + readback near-test) -----
 
@@ -354,7 +325,7 @@ public final class AllayStormRuntime {
     /** Player count uploaded with the last collectSyncedPlayers (pass handoff). */
     private int lastPlayerCount = 0;
 
-    // ---- public protocol API (engine delegates; handler is the caller) -------
+    // ---- public protocol API (called directly by the network handler) -------
 
     /**
      * Applies a server storm-state packet (ACTIVATE / UPDATE / DEACTIVATE /
@@ -385,7 +356,7 @@ public final class AllayStormRuntime {
                 // identity -> slot entries must never serve member-keyed
                 // combat origins
                 if (particles.initialized())
-                    particles.invalidateIdentities();
+                    particles.invalidateParticleIdentities();
                 this.stormDead.clear();
                 if (deadBitmap != null) {
                     byte[] bm = deadBitmap;
@@ -420,7 +391,7 @@ public final class AllayStormRuntime {
                 this.stormSpawnCursor = 0;
                 this.pendingStormSpawns = Math.max(0, count - this.stormDead.cardinality());
                 this.stormHeaderWritten = false;
-                dropHitKeys(); // identities reshuffle
+                com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.dropHitKeys(); // identities reshuffle
                 clearWaveState(); // new generation: live waves are void (server aborts too)
             }
             case ClientboundStormStatePacket.ACTION_UPDATE -> {
@@ -441,7 +412,7 @@ public final class AllayStormRuntime {
                 if (this.stormHeaderWritten && this.stormEmitId >= 0) {
                     // re-pack header so G(t)/springs retarget on the next dispatch
                     float[] h = AllayStormSpec.packedHeader(this.stormRadius, this.center);
-                    h[16 * 4 + 0] = particles.poofEmitter();
+                    h[16 * 4 + 0] = particles.ensurePoofEmitter();
                     particles.header(this.stormEmitId, h);
                 }
             }
@@ -450,7 +421,7 @@ public final class AllayStormRuntime {
                 if (this.stormActive && this.stormEmitId >= 0)
                     this.stormKillEmitId = this.stormEmitId;
                 if (particles.initialized())
-                    particles.invalidateIdentities();
+                    particles.invalidateParticleIdentities();
                 this.stormActive = false;
                 this.stormAuthority = false;
                 this.pendingStormSpawns = 0;
@@ -462,53 +433,12 @@ public final class AllayStormRuntime {
                 this.stormConvPhase = 0f;
                 this.stormConvRate = 0f;
                 this.stormOmegaNow = 0f;
-                dropHitKeys();
+                com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.dropHitKeys();
                 clearWaveState(); // members disperse; no wave exists to steer them
             }
             default -> {
             }
         }
-    }
-
-    /**
-     * Applies one relayed position snapshot ({@code entries} stride
-     * {@code 8: memberIdx, pad, posRelToAnchor.xyz, vel.xyz}) by writing soft
-     * correction slots — positions are never written directly (no teleports);
-     * the update pass eases members toward the extrapolated targets.
-     */
-    public void applyCorrections(float[] entries, long gameTime) {
-        if (!this.stormActive || entries == null || entries.length < 8)
-            return;
-        float arrival = clockSeconds(gameTime);
-        var target = particles; // captured before the member loop
-        int cap = StormIdentityBuffers.LIMIT;
-        for (int o = 0; o + 7 < entries.length; o += 8) {
-            int memberIdx = (int) entries[o];
-            if (memberIdx < 0 || memberIdx >= cap)
-                continue; // no correction slot exists for this identity
-            float mx = (float) this.center.x + entries[o + 2];
-            float my = (float) this.center.y + entries[o + 3];
-            float mz = (float) this.center.z + entries[o + 4];
-            target.correction(memberIdx, mx, my, mz, arrival,
-                    entries[o + 5], entries[o + 6], entries[o + 7], 1.0f);
-        }
-    }
-
-    /**
-     * Applies a hit correction from a server DAMAGE broadcast: every client
-     * (authority included) eases the struck member to the attacker's exact
-     * hit spot over a short strong window, so hurt-flash / corpse / poof all
-     * play at the same place without any periodic snapshot needing to catch up.
-     */
-    public void applyHitCorrection(int memberIdx, Vec3 relToAnchor, long gameTime) {
-        if (!this.stormActive || memberIdx < 0 || memberIdx >= StormIdentityBuffers.LIMIT)
-            return;
-        float arrival = clockSeconds(gameTime);
-        particles.correction(memberIdx,
-                (float) (this.center.x + relToAnchor.x),
-                (float) (this.center.y + relToAnchor.y),
-                (float) (this.center.z + relToAnchor.z),
-                arrival, 0f, 0f, 0f, 10.0f);
     }
 
     /**
@@ -535,8 +465,8 @@ public final class AllayStormRuntime {
             // skip loop re-reads stormDead every frame; the bit is idempotent.
             this.stormDead.set(memberIdx);
         }
-        particles.damage(memberIdx, damage, kbX, kbZ, light, died);
-        applyHitCorrection(memberIdx, relToAnchor, gameTime);
+        com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.enqueueDamageEntry(memberIdx,damage,kbX,kbZ,light,ParticleBuffers.DAMAGE_FLAG_MEMBER|(died?ParticleBuffers.DAMAGE_FLAG_DIED:0));
+        StormFeedback.INSTANCE.applyHitCorrection(memberIdx, relToAnchor, gameTime);
     }
 
     /** Full storm teardown (level clear/shutdown): forget the emitter id too. */
@@ -551,8 +481,7 @@ public final class AllayStormRuntime {
         this.stormSpawnCursor = 0;
         this.stormCount = 0;
         this.stormAnalyticUpTo = 0;
-        this.stormPosPending = false;
-        this.lastSnapshotGameTime = Long.MIN_VALUE;
+        StormFeedback.INSTANCE.reset();
         this.centerValid = false;
         this.center = Vec3.ZERO;
         this.countValid = false;
@@ -639,72 +568,6 @@ public final class AllayStormRuntime {
         if (hadMembers) this.particles.clearMembers();
     }
 
-    // ---- crosshair hit-query snapshot plumbing -------------------------------
-
-    /**
-     * Stores the fence-fresh hit-query readback (engine's
-     * {@code pollCounterSnapshot}): packed key, winner HP bits, storm member
-     * identity ({@code HIT_MISS} = non-storm MODEL winner).
-     */
-    private int hitToken;
-    public int hitToken() { return this.hitToken; }
-    public void onHitReadback(int key, int hpBits, int memberIdx, int token) {
-        this.hitToken = token;
-        this.hitKeySnapshot = key;
-        this.crosshairHitKey = key;
-        this.hitHpBits = hpBits;
-        this.hitMemberIdx = memberIdx == ParticleBuffers.HIT_MISS ? -1 : memberIdx;
-    }
-
-    /** Full hit-snapshot drop (pool reset): keys + HP + member identity. */
-    public void dropHitSnapshots() {
-        this.hitToken=0;
-        this.hitKeySnapshot = ParticleBuffers.HIT_MISS;
-        this.crosshairHitKey = ParticleBuffers.HIT_MISS;
-        this.hitHpBits = 0;
-        this.hitMemberIdx = -1;
-    }
-
-    /**
-     * Keys-only drop (storm kill frame / ACTIVATE / STOP): identities
-     * reshuffle, but the HP and member slots are refreshed by the next fence
-     * poll regardless.
-     */
-    public void dropHitKeys() {
-        this.hitToken=0;
-        this.hitKeySnapshot = ParticleBuffers.HIT_MISS;
-        this.crosshairHitKey = ParticleBuffers.HIT_MISS;
-    }
-
-    /** Packed key of the newest hit snapshot (consume-once click path). */
-    public int hitKeySnapshot() {
-        return this.hitKeySnapshot;
-    }
-
-    /**
-     * Consume-once click path: clears ONLY {@link #hitKeySnapshot} — the
-     * crosshair mirror {@link #crosshairHitKey} stays so the crosshair does
-     * not flicker in the frame between a click and the next fence poll.
-     */
-    public void consumeHitSnapshot() {
-        this.hitKeySnapshot = ParticleBuffers.HIT_MISS;
-    }
-
-    /** Non-consuming mirror for the crosshair pick injection. */
-    public int crosshairHitKey() {
-        return this.crosshairHitKey;
-    }
-
-    /** Winner HP (float bits decoded) for the hurt/death sound choice. */
-    public float hitHp() {
-        return Float.intBitsToFloat(this.hitHpBits);
-    }
-
-    /** Storm member identity of the newest snapshot (-1 = non-storm winner). */
-    public int hitMemberIdx() {
-        return this.hitMemberIdx;
-    }
-
     /**
      * Storm center (world space) — the INTERPOLATED chased center. Every
      * anchor-relative wire coordinate is produced and consumed against this
@@ -766,55 +629,6 @@ public final class AllayStormRuntime {
         return this.playerScratch;
     }
 
-    // ---- authority position readback -------------------------------------------
-
-    /**
-     * 6c. Authority-only: dispatches {@code stormpos.comp} over the freshly
-     * written pool at the configured snapshot rate, compacting storm members
-     * within melee reach of any synced player into the staging buffer. The
-     * readback happens at the next fence poll ({@link #acceptPositionSnapshot})
-     * and ships as a {@link ServerboundStormPositionsPacket}. Skipped on
-     * non-authority clients and while no storm runs; costs the distance tests
-     * alone in steady state. {@code upper} is the engine's dispatch bound
-     * over its pool census ({@code aliveKnown + spawnDelta + 64}) — pool
-     * bookkeeping stays on the engine side of the seam.
-     */
-    public void dispatchStormPosReadback(int slot, int cap, int upper) {
-        if (this.stormPosPending || !this.stormActive || !this.stormAuthority || this.stormCorrectionHz <= 0)
-            return;
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null)
-            return;
-        long now = mc.level.getGameTime();
-        if (this.lastSnapshotGameTime != Long.MIN_VALUE
-                && now - this.lastSnapshotGameTime < 20.0 / this.stormCorrectionHz)
-            return;
-        if (upper <= 0 || this.lastPlayerCount <= 0)
-            return;
-        this.lastSnapshotGameTime = now;
-        if (!particles.capturePositions(slot, this.center, this.lastPlayerCount)) return;
-        this.stormPosPending = true;
-        this.stormPosGameTime = now;
-    }
-
-    /**
-     * Consumes a pending storm position readback at the fence poll (success
-     * path): reads the staging buffer and ships it to the server.
-     */
-    public boolean positionSnapshotPending() { return this.stormPosPending; }
-    public long positionSnapshotTime() { return this.stormPosGameTime; }
-    public boolean waveSnapshotPending() { return this.waveContactPending; }
-
-    public void acceptPositionSnapshot(long gameTime, float[] entries) {
-        if (entries != null && entries.length >= 8)
-            PacketDistributor.sendToServer(new ServerboundStormPositionsPacket(gameTime, entries));
-    }
-
-    /** Drops a pending readback (fence WAIT_FAILED; a fresh one is scheduled anyway). */
-    public void dropPositionSnapshot() {
-        this.stormPosPending = false;
-    }
-
     // ---- emit scheduling ---------------------------------------------------------
 
     /**
@@ -835,7 +649,7 @@ public final class AllayStormRuntime {
             particles.prepareAppearance(this.center);
         }
         if (this.stormActive && this.pendingStormSpawns > 0) {
-            int id = particles.emitter(AllayStormSpec.SPEC);
+            int id = particles.ensureEmitter(AllayStormSpec.SPEC);
             if (id >= 0) {
                 if (!this.stormHeaderWritten) {
                     // Anchor + storm parameters ride the per-id header slots 18/19
@@ -845,7 +659,7 @@ public final class AllayStormRuntime {
                     // refreshCenterHeader rewrites the center every frame after
                     // this, so the initial value is just the seed.
                     float[] h = AllayStormSpec.packedHeader(this.stormRadius, this.center);
-                    h[16 * 4 + 0] = particles.poofEmitter();
+                    h[16 * 4 + 0] = particles.ensurePoofEmitter();
                     particles.header(id, h); // uploaded below this frame
                     this.stormEmitId = id;
                     this.stormHeaderWritten = true;
@@ -900,7 +714,7 @@ public final class AllayStormRuntime {
         if (!this.stormActive || !this.stormHeaderWritten || this.stormEmitId < 0)
             return;
         float[] h = AllayStormSpec.packedHeader(this.stormRadius, this.center);
-        h[16 * 4 + 0] = particles.poofEmitter();
+        h[16 * 4 + 0] = particles.ensurePoofEmitter();
         particles.header(this.stormEmitId, h);
     }
 
@@ -920,18 +734,17 @@ public final class AllayStormRuntime {
     public static final int MAX_WAVE_PATH = 6;
 
     private static final class WaveClient {
+        ContactAuthority feedbackIdentity;
         boolean alive;int slotIdx=-1,waveId,targetEntityId;long epoch;
         com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket packet;
         final float[] bounds=new float[6];boolean windowReady;
-        final IntOpenHashSet reported=new IntOpenHashSet();int ringCommittedMask,ringScheduledMask,columnSoundMask;boolean startSound,lockSound;
+        int ringCommittedMask,ringScheduledMask,columnSoundMask;boolean startSound,lockSound;
     }
     private final WaveClient[] waveSlots=new WaveClient[MAX_WAVES];
     private final com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[] starfallSnapshots=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[MAX_WAVES];
-    private final StarfallGpuBuffers starfallGpu=new StarfallGpuBuffers();
-    private boolean starfallDirty=true,waveContactPending;private String lastHelixAbort="none";
-    private final float[] waveUniform=new float[16],waveTargetUniform=new float[16],wavePathUniform=new float[96],waveTierUniform=new float[4];
-    public float[] waveUniform(){return waveUniform;}public float[] waveTargetUniform(){return waveTargetUniform;}public float[] wavePathUniform(){return wavePathUniform;}public float[] waveTierUniform(){return waveTierUniform;}
-    public StarfallGpuBuffers starfallGpu(){return starfallGpu;}
+    private final StarfallGpuBuffers starfallGpu=StarfallGpuBuffers.INSTANCE;
+    private boolean starfallDirty=true;private String lastHelixAbort="none";
+
     public boolean anyWaveActive(){for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort())return true;return false;}
     private boolean locallyRelevant(WaveClient w){
         var me=Minecraft.getInstance().player;if(me==null||w==null||!w.alive||w.packet.abort())return false;
@@ -957,11 +770,12 @@ public final class AllayStormRuntime {
         w.packet=p.copy(p.locked()?2:p.event(),p.phase(),p.lockSec(),p.diveUntilSec(),members);
         if(p.helixAttack()){java.util.Arrays.fill(w.bounds,0,3,Float.POSITIVE_INFINITY);java.util.Arrays.fill(w.bounds,3,6,Float.NEGATIVE_INFINITY);float pad=p.helix().radius()+4;for(int i=0;i<48;i++)for(int axis=0;axis<3;axis++){float v=p.helix().samples()[i*4+axis];w.bounds[axis]=Math.min(w.bounds[axis],v-pad);w.bounds[axis+3]=Math.max(w.bounds[axis+3],v+pad);}}
         w.alive=true;w.waveId=p.waveId();w.epoch=p.epoch();w.targetEntityId=p.targetEntityId();starfallDirty=true;
+        if(w.feedbackIdentity==null||w.feedbackIdentity.id()!=w.waveId||w.feedbackIdentity.epoch()!=w.epoch)w.feedbackIdentity=new ContactAuthority(w.waveId,w.epoch);
     }
     private WaveClient findWaveById(int id){for(var w:waveSlots)if(w!=null&&w.alive&&w.waveId==id)return w;return null;}
-    public void clearWaveState(){lastHelixAbort="none";java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);waveContactPending=false;starfallDirty=true;starfallGpu.invalidate();}
+    public void clearWaveState(){lastHelixAbort="none";java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);StormFeedback.INSTANCE.retireWaves();starfallDirty=true;starfallGpu.invalidate();}
     public void refreshWaves(){
-        java.util.Arrays.fill(waveUniform,0);java.util.Arrays.fill(waveTargetUniform,0);java.util.Arrays.fill(waveTierUniform,0);
+        starfallGpu.resetUniforms();
         int soundBudget=2;
         for(int slot=0;slot<4;slot++){
             var w=waveSlots[slot];if(w==null||!w.alive){starfallSnapshots[slot]=null;continue;}
@@ -975,7 +789,7 @@ public final class AllayStormRuntime {
                     for(int c=0;c<(p.helixAttack()?1:p.dome()?6:p.columns());c++){float phaseStart=p.helixAttack()?p.helix().thrust():p.dome()?com.iridium126.createmanaindustry.content.allaystorm.AllayDome.warningStart(p.lockSec(),p.crownRadius(),c):p.lockSec()+1+c*.35f;float age=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,phaseStart);int bit=1<<c;if((w.columnSoundMask&bit)==0&&age>=0){w.columnSoundMask|=bit;if(age<.2&&soundBudget>0){soundBudget--;int k=c*4;mc.level.playLocalSound(p.dome()?p.centerX():p.landings()[k],!p.starfall()?p.centerY()+6:p.landings()[k+1]+6,p.dome()?p.centerZ():p.landings()[k+2],net.minecraft.sounds.SoundEvents.PLAYER_ATTACK_SWEEP,net.minecraft.sounds.SoundSource.HOSTILE,.3f,1+c*.01f,false);}}}
                 }
             }
-int b=slot*4;waveUniform[b]=p.waveSeed();waveUniform[b+2]=p.startSec();waveUniform[b+3]=p.diveUntilSec();waveTargetUniform[b+3]=p.waveId();waveTierUniform[slot]=p.swordTier();
+starfallGpu.waveUniform(slot,p.waveSeed(),p.startSec(),p.diveUntilSec(),p.waveId(),p.swordTier());
             if(p.helixAttack()){updateHelixWindow(w);}
             else if(p.dome()){particles.collisionColumn(p.centerX(),p.centerY()-.5,p.centerZ());}
             else if(p.event()==2){particles.collisionColumn(p.landings()[0],p.landings()[1]-.5,p.landings()[2]);}
@@ -1002,7 +816,7 @@ int b=slot*4;waveUniform[b]=p.waveSeed();waveUniform[b+2]=p.startSec();waveUnifo
         com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.builder().speed(0,0).life(180,180).sizeOverLife(.27,.27,1).gravity(0,0,0).drag(0).glow(1).color(.3f,.8f,1,1).spawnStyle(7).type(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.standard(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Material.ADDITIVE)).build();
     public void scheduleRings(EmitCommandWriter schedule){
         int emitter=-1;for(var w:waveSlots){if(w==null||!w.alive||w.ringCommittedMask==(w.packet.columns()==32?-1:(1<<w.packet.columns())-1)||w.packet.event()!=2||!w.packet.starfall())continue;
-            if(emitter<0){emitter=particles.emitter(STARFALL_RING_SPEC);if(emitter<0)return;particles.header(emitter,STARFALL_RING_SPEC.packed());}
+            if(emitter<0){emitter=particles.ensureEmitter(STARFALL_RING_SPEC);if(emitter<0)return;particles.header(emitter,STARFALL_RING_SPEC.packed());}
             for(int c=0;c<w.packet.columns()&&!schedule.full();c++){
                 if((w.ringCommittedMask&(1<<c))!=0)continue;
                 if (!schedule.ring(emitter,w.waveId,w.slotIdx,c)) break;
@@ -1031,43 +845,15 @@ int b=slot*4;waveUniform[b]=p.waveSeed();waveUniform[b+2]=p.startSec();waveUnifo
     public boolean ringsRequested(){for(var w:waveSlots)if(w!=null&&w.alive&&w.ringCommittedMask!=(w.packet.columns()==32?-1:(1<<w.packet.columns())-1)&&w.packet.event()==2&&w.packet.starfall())return true;return false;}
     public void commitStarfall(){starfallGpu.commit();for(var w:waveSlots)if(w!=null&&w.alive&&w.packet.event()==2&&!w.packet.dome())w.ringCommittedMask|=w.ringScheduledMask;}
 
-    /**
-     * Wave-contact detection dispatch (render thread, after the stormpos
-     * readback — the same freshly written pool + counter slot): runs ONLY when
-     * a live wave targets the local player; the tiny staging buffer rides the
-     * frame fence back and {@link #acceptWaveSnapshot} ships the reports.
-     */
-    public void dispatchWaveContactReadback(int slot, int upper,float dt) {
-        if (!this.stormActive || !anyWaveTargetingLocalPlayer())
-            return;
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || mc.player == null)
-            return;
-        int localMask=0;for(int i=0;i<4;i++){var w=waveSlots[i];if(locallyRelevant(w))localMask|=1<<i;}
-        Vec3 aim = mc.player.position().add(0.0, 0.5, 0.0);
-        if (!particles.captureWaveContacts(slot, localMask, aim, this.timeSec, dt,
-                this.waveUniform, this.waveTargetUniform, this.starfallGpu)) return;
-        this.waveContactPending = true;
-    }
+    private int candidateSpawnCursor,candidatePendingSpawns;
+    public void checkpointSpawnInputs() {candidateSpawnCursor=stormSpawnCursor;candidatePendingSpawns=pendingStormSpawns;}
+    public void restoreSpawnInputs() {stormSpawnCursor=candidateSpawnCursor;pendingStormSpawns=candidatePendingSpawns;}
 
-    /**
-     * Consumes a pending wave-contact readback at the fence poll: dedupes per
-     * member per wave and ships one ServerboundStormWaveContactPacket per new
-     * contact. The contact point rides rel-to-the-interpolated-center, the
-     * same frame the melee hit reports use (the server's +8 reach margin
-     * absorbs the sub-2-block anchor skew).
-     */
-    public void acceptWaveSnapshot(float[] entries) {
-        if (entries == null)
-            return;
-        for(int o=0;o+5<entries.length;o+=6){int member=Math.round(entries[o]),id=Math.round(entries[o+1]);WaveClient w=findWaveById(id);
-            if(w==null||!w.reported.add(member))continue;
-            PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(id,w.epoch,entries[o+5],member,entries[o+2],entries[o+3],entries[o+4]));
-        }
+    record FeedbackState(boolean active,boolean authority,double correctionHz,Vec3 center,float time,int players,int waveMask) {}
+    FeedbackState feedbackState() {
+        int mask=0;for(int i=0;i<MAX_WAVES;i++)if(locallyRelevant(waveSlots[i]))mask|=1<<i;
+        return new FeedbackState(stormActive,stormAuthority,stormCorrectionHz,center,timeSec,lastPlayerCount,mask);
     }
-
-    /** Drops a pending wave-contact readback (fence WAIT_FAILED; a fresh one is scheduled anyway). */
-    public void dropWaveContact() {
-        this.waveContactPending = false;
-    }
+    public record ContactAuthority(int id,long epoch) {}
+    ContactAuthority contactAuthority(int id) {var wave=findWaveById(id);return wave==null?null:wave.feedbackIdentity;}
 }
