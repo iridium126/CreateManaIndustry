@@ -100,10 +100,32 @@ public final class PartitionGameTests {
         }finally{config.set(previous);at.petrak.hexcasting.xplat.IXplatAbstractions.INSTANCE.setSentinel(p,null);CastChains.release(c,owner);}
     }
     @GameTest(template="trickster_stock_test")
-    public static void creationImmediatelyRefreshesSharedFate(GameTestHelper h){var p=player(h);Object owner=new Object();var c=CastChains.attach(new CastChain(),p,owner);var target=h.spawn(EntityType.COW,new BlockPos(1,1,1));target.setPos(p.position().add(4,0,0));try {
-        com.iridium126.createmanaindustry.compat.trickster.sharedfate.SharedFateManager.bind(p,target,c,32000);
-        h.assertTrue(c.fateTargets().size()==1,"Initial binding failed");h.assertTrue(PartitionManager.create(p,c,box(p,0,1)),"Create failed");h.assertTrue(c.fateTargets().isEmpty(),"Cross-partition fate retained until next tick");h.succeed();
-    }finally{CastChains.release(c,owner);}}
+    public static void creationImmediatelyRefreshesSharedFate(GameTestHelper h) {
+        var p = player(h);
+        Object owner = new Object();
+        var c = CastChains.attach(new CastChain(), p, owner);
+        var target = h.spawn(EntityType.COW, new BlockPos(1, 1, 1));
+        target.setPos(p.position().add(4, 0, 0));
+        // Random template placement can put the four-block endpoint in a
+        // neighbouring chunk. Native EntityFragment requires entity ticking.
+        var chunk = target.chunkPosition();
+        boolean alreadyForced = h.getLevel().getForcedChunks().contains(chunk.toLong());
+        h.getLevel().setChunkForced(chunk.x, chunk.z, true);
+        h.startSequence().thenWaitUntil(() -> h.assertTrue(
+                dev.enjarai.trickster.spell.fragment.EntityFragment.isValidEntity(target),
+                "Shared Fate fixture is waiting for its target's entity-ticking chunk"))
+                .thenExecute(() -> {
+                    try {
+                        com.iridium126.createmanaindustry.compat.trickster.sharedfate.SharedFateManager.bind(p, target, c, 32000);
+                        h.assertTrue(c.fateTargets().size() == 1, "Initial binding failed");
+                        h.assertTrue(PartitionManager.create(p, c, box(p, 0, 1)), "Create failed");
+                        h.assertTrue(c.fateTargets().isEmpty(), "Cross-partition fate retained until next tick");
+                    } finally {
+                        CastChains.release(c, owner);
+                        h.getLevel().setChunkForced(chunk.x, chunk.z, alreadyForced);
+                    }
+                }).thenSucceed();
+    }
     @GameTest(template="trickster_stock_test")
     public static void savedExecutorRetainsAllEffectsAndConflictDropsOnlyPartition(GameTestHelper h){
         var p=player(h);Object owner=new Object(),otherOwner=new Object();var c=CastChains.attach(new CastChain(),p,owner);var d=CastChains.attach(new CastChain(),p,otherOwner);

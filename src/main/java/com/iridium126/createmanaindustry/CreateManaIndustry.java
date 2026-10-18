@@ -133,7 +133,7 @@ public class CreateManaIndustry {
         }
         if (HEX_ACTIVE && TRICKSTER_ACTIVE) {
             // Keep Inline and Trickster types out of this constructor's verifier.
-            com.iridium126.createmanaindustry.compat.hexcasting.HexTricksBootstrap.register(modEventBus);
+            com.iridium126.createmanaindustry.compat.hextrick.bootstrap.HexTricksBootstrap.register(modEventBus);
         }
 
         // Fuel rod structure recognition: glass has no block entity, so its
@@ -167,7 +167,7 @@ public class CreateManaIndustry {
     }
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(MODID).versioned("4");
+        PayloadRegistrar registrar = event.registrar(MODID).versioned("5");
         registrar.playToClient(
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.TYPE,
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.STREAM_CODEC,

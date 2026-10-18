@@ -1,13 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
-import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-
 import com.iridium126.createmanaindustry.compat.trickster.construct.ConstructMediaStorage;
-
 import dev.enjarai.trickster.block.ModularSpellConstructBlockEntity;
 import dev.enjarai.trickster.block.SpellConstructBlockEntity;
 import net.minecraft.core.HolderLookup;
@@ -15,6 +8,11 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Persists construct media ({@code cmi_media} NBT) and lets direct

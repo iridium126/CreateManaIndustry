@@ -3,13 +3,12 @@ package com.iridium126.createmanaindustry.mixin.hextrick;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
 import com.iridium126.createmanaindustry.compat.trickster.casting.ChainState;
 import com.iridium126.createmanaindustry.compat.trickster.casting.InvertedPayments;
-
 import dev.enjarai.trickster.spell.SpellContext;
 import dev.enjarai.trickster.spell.exception.blunder.*;
 import dev.enjarai.trickster.spell.mana.ManaPool;
 import dev.enjarai.trickster.spell.mana.storage.ManaVariant;
-import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 import java.util.function.Predicate;
+import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.*;

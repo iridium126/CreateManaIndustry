@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.mixin.trickster;
 
+import com.iridium126.createmanaindustry.compat.hextrick.data.TrickIota;
+
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 

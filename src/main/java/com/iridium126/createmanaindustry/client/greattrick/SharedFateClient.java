@@ -35,6 +35,7 @@ public final class SharedFateClient {
         Endpoint(Pose pose){previous=current=pose;updated=now();}
         void set(Pose pose){previous=current;current=pose;updated=now();}
         Pose resolve(float partial) {
+            if(current.anchored())return current;
             var entity=Minecraft.getInstance().level.getEntity(current.entityId());
             if(entity!=null&&entity.getUUID().equals(current.entity())){
                 trackedUpdated=updated;

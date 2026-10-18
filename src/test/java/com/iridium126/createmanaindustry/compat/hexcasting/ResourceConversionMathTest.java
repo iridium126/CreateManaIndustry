@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.compat.hexcasting;
 
+import com.iridium126.createmanaindustry.compat.hextrick.conversion.ResourceConversionMath;
+
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 

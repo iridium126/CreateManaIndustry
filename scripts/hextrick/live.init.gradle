@@ -1,0 +1,42 @@
+// Isolated real client/dedicated-server and two-process restart acceptance.
+gradle.projectsEvaluated {
+    def p = gradle.rootProject
+    def probe = p.sourceSets.create('interopLive')
+    probe.java.setSrcDirs([p.file('src/test/live/hexinterop/java')])
+    probe.compileClasspath += p.sourceSets.main.output + p.sourceSets.main.compileClasspath
+    probe.runtimeClasspath += p.sourceSets.main.runtimeClasspath
+    p.neoForge.mods.getByName(p.mod_id.toString()).sourceSet(probe)
+    def client = p.file('build/hexinterop-live/client')
+    def server = p.file('build/hexinterop-live/server')
+    def owo = p.fileTree(new File(p.gradle.gradleUserHomeDir, 'caches/modules-2/files-2.1/codeberg.master_bw3.trickster/owo-lib-neoforge/0.13.0-alpha.15+1.21')) {
+        include '**/owo-lib-neoforge-0.13.0-alpha.15+1.21.jar'
+    }.files
+    p.dependencies.add('localRuntime', p.files(owo))
+    p.dependencies.add('localRuntime', 'maven.modrinth:WjFyIzFj:fFV6HwT2')
+    p.neoForge.runs.client.gameDirectory.set(client)
+    p.neoForge.runs.server.gameDirectory.set(server)
+    [p.neoForge.runs.client, p.neoForge.runs.server].each { it.sourceSet.set(probe) }
+    p.tasks.named('copyTricksterToRunMods', Copy).configure { into(new File(server, 'mods')) }
+    p.tasks.register('interopClientMods', Copy) {
+        dependsOn 'copyTricksterToRunMods'
+        from(new File(server, 'mods')); into(new File(client, 'mods')); include '*.jar'
+        from(p.configurations.sodiumDistribution)
+    }
+    p.tasks.named('runClient', JavaExec).configure {
+        dependsOn probe.classesTaskName, 'interopClientMods'
+        maxHeapSize = '4g'
+        args '--username', 'InteropAcceptance', '--quickPlayMultiplayer', '127.0.0.1:25576'
+    }
+    p.tasks.named('runServer', JavaExec).configure {
+        dependsOn probe.classesTaskName
+        maxHeapSize = '3g'
+        standardInput = System.in
+        systemProperty 'cmi.interop.phase', p.findProperty('interopPhase') ?: 'write'
+        doFirst {
+            server.mkdirs()
+            new File(server, 'eula.txt').text = 'eula=true\n'
+            def properties = new File(server, 'server.properties')
+            if (!properties.exists()) properties.text = 'server-ip=127.0.0.1\nserver-port=25576\nonline-mode=false\nspawn-protection=0\ngamemode=creative\nlevel-type=minecraft:flat\ngenerate-structures=false\nview-distance=4\nsimulation-distance=4\n'
+        }
+    }
+}

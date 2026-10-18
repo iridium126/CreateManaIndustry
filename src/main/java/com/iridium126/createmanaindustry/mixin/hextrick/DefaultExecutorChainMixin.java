@@ -1,11 +1,11 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
+import com.iridium126.createmanaindustry.compat.hextrick.execution.ExecutorBudgetAccess;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChain;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
 import com.iridium126.createmanaindustry.compat.trickster.casting.ChainState;
 import com.iridium126.createmanaindustry.compat.trickster.casting.ExecutorChainAccess;
 import com.iridium126.createmanaindustry.compat.trickster.greattrick.GreatTricks;
-
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import dev.enjarai.trickster.spell.Fragment;
@@ -47,6 +47,7 @@ public abstract class DefaultExecutorChainMixin implements ExecutorChainAccess {
     @Inject(method = "type", at = @At("HEAD"), cancellable = true)
     private void cmi$persist(CallbackInfoReturnable<SpellExecutorType<?>> cir) {
         CastChain chain = ((ChainState)state).cmi$getChain();
-        if (chain.player() != null) cir.setReturnValue(chain.partition()!=null ? GreatTricks.PARTITION_EXECUTOR : chain.fateTargets().isEmpty() ? GreatTricks.CHAIN_EXECUTOR : GreatTricks.FATE_EXECUTOR);
+        if (chain.player() != null || ((ExecutorBudgetAccess)this).cmi$hasMixedBudget())
+            cir.setReturnValue(chain.partition()!=null ? GreatTricks.PARTITION_EXECUTOR : chain.fateTargets().isEmpty() ? GreatTricks.CHAIN_EXECUTOR : GreatTricks.FATE_EXECUTOR);
     }
 }

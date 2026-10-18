@@ -222,10 +222,15 @@ public final class HexJitRegressionGameTests {
             for (int i = 0; i < 300; i++) quoting.add(target);
             quoting.add(new PatternIota(HexActions.CLOSE_PAREN.value().prototype()));
             net.minecraft.nbt.Tag quotedOff = null;
+            String quoteChain = com.iridium126.createmanaindustry.CreateManaIndustry.TRICKSTER_ACTIVE
+                    ? new com.iridium126.createmanaindustry.compat.trickster.casting.CastChain().encode() : null;
             for (var mode : List.of(ServerConfig.HexJitMode.OFF, ServerConfig.HexJitMode.AUTO)) {
                 ServerConfig.hexJitMode = mode;
                 var quoteEnv = new CallbackEnv(player);
                 var quoteVm = vm(quoteEnv, List.of(new ListIota(quoting)));
+                // Compare the same staff-session identity in both modes. New
+                // independent CMI sessions intentionally have different UUIDs.
+                if (quoteChain != null) quoteVm.getImage().getUserData().putString("cmi_cast_chain", quoteChain);
                 var quoteView = quoteVm.queueExecuteAndWrapIotas(List.of(eval), helper.getLevel());
                 var encoded = CastingImage.Companion.getCODEC().encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, quoteVm.getImage()).getOrThrow();
                 helper.assertTrue(quoteView.getResolutionType().getSuccess() && quoteEnv.sounds == 100,
@@ -236,6 +241,7 @@ public final class HexJitRegressionGameTests {
                     helper.assertTrue(ExecutionScope.lastSoundsEmitted() == 1 && ExecutionScope.lastSoundsCoalesced() == 99,
                             "Identical Staff sounds were not coalesced within the cast");
             }
+            if (quoteChain != null) com.iridium126.createmanaindustry.compat.trickster.casting.CastChains.resetStaff(player, quoteChain);
 
             int interpreterCallbacks = -1;
             for (var mode : List.of(ServerConfig.HexJitMode.OFF, ServerConfig.HexJitMode.AUTO)) {

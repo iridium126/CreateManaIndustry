@@ -50,6 +50,36 @@ python scripts/benchmarks/run.py validateStarfallGpu validateDomeGpu validateHel
 
 性能测量按需添加 benchmark 参数；正确性断言必须通过才能接受测量结果。运行器把命令、版本元数据、退出状态、样本和日志放到独立的 `build/benchmarks/` 目录。直接 Gradle 入口仍兼容，详见 [性能结果规则](benchmarks/README.md) 和 [GPU 工具](../scripts/particles/README.md)。
 
+## Hexcasting / Trickster 整改验证
+
+先顺序运行 Trickster、资源转换、两种模组缺席、HexParse 及其缺席、受影响的 Hex JIT 正确性子集。不要并发启动 GameTest：各入口复用同一 `gameTest` 编译输出。
+
+```powershell
+.\gradlew.bat test runGameTestServer -I scripts/trickster/gametest.init.gradle --offline --no-configuration-cache
+.\gradlew.bat runGameTestServer -I scripts/conversion/gametest.init.gradle --offline --no-configuration-cache
+.\gradlew.bat runGameTestServer -I scripts/conversion/gametest.init.gradle -PconversionAbsent=hexcasting --offline --no-configuration-cache
+.\gradlew.bat runGameTestServer -I scripts/conversion/gametest.init.gradle -PconversionAbsent=trickster --offline --no-configuration-cache
+.\gradlew.bat runGameTestServer -I scripts/hexparse/gametest.init.gradle --offline --no-configuration-cache
+.\gradlew.bat runGameTestServer -I scripts/hexparse/absent.init.gradle --offline --no-configuration-cache
+.\gradlew.bat runGameTestServer -I scripts/hexjit/gametest.init.gradle -I scripts/hexjit/regression.init.gradle --offline --no-configuration-cache
+.\gradlew.bat test assemble --offline
+```
+
+性能入口使用 opt-in source set，不进发行包。相同输入每项预热 1000 次、采样 7 × 1000 次，输出时间、线程分配和 CPU 计时。旧短样本只作调试，不与最终长样本混合。
+
+```powershell
+# 修改前需自行保存 main classes/resources；此快照不能靠修改后的源码重建
+.\gradlew.bat runGameTestServer -I scripts/hextrick/benchmark.init.gradle -PinteropBaseline -PbenchmarkOutput=build/benchmarks/hexinterop-baseline-final --offline --no-configuration-cache
+.\gradlew.bat runGameTestServer -I scripts/hextrick/benchmark.init.gradle -PbenchmarkOutput=build/benchmarks/hexinterop-final --offline --no-configuration-cache
+python scripts/hextrick/compare-benchmarks.py
+```
+
+保留的基线位于 `build/benchmarks/hexinterop-baseline/{classes,resources,distribution.jar,head.txt,staged.patch}`。基线入口停用 main 编译并切换其输出，基准源码、依赖和场景与当前版本相同。汇总保留中位数和各轮范围；微基准不代表整服吞吐、真实客户端网络或帧率。
+
+真实两进程重启探针：先运行 `.\gradlew.bat runServer -I scripts/hextrick/live.init.gradle -PinteropPhase=write --offline --no-configuration-cache`，看到 WRITE_READY 后在控制台 `stop` 正常保存；再运行同命令 `-PinteropPhase=read`，等待 RESTART_PASS 后 `stop`。隔离目录 `build/hexinterop-live`，证据在 `evidence`，账目为 64000 − 7000 − 20000 = 37000。探针以真实方块 NBT 和原生 executor ENDEC 验证恢复，不替代客户端连接或玩家存档完整流程。每轮必须从 write 开始，read 会实际扣款，不能对已扣款世界重复 read。
+
+真实客户端交由用户执行，操作清单见[互操作开发契约](hexcasting-trickster-interop-dev.md)。自动探针及夹具只能通过初始化脚本启用。
+
 ## 维护与发布
 
 - 新增回归优先扩展已有场景或参数化测试，共享夹具；不为每个修复复制整套启动脚本。

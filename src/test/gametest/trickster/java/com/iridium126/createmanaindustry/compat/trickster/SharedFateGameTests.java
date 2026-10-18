@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.compat.trickster;
 
+import com.iridium126.createmanaindustry.compat.hextrick.data.TrickIota;
+
 import com.iridium126.createmanaindustry.compat.trickster.anima.BatteryAnima;
 import com.iridium126.createmanaindustry.compat.trickster.blunder.SharedFateBlunder;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChain;
@@ -74,7 +76,7 @@ public final class SharedFateGameTests {
                 0,at.petrak.hexcasting.api.utils.TreeList.empty(),false,false,0,image.getUserData());
         var vm=new CastingVM(image,new StaffCastEnv(caster,InteractionHand.MAIN_HAND));long balance=BatteryAnima.available(caster);
         try {
-            vm.queueExecuteAndWrapIota(new com.iridium126.createmanaindustry.compat.hexcasting.TrickIota(bind),helper.getLevel());
+            vm.queueExecuteAndWrapIota(new com.iridium126.createmanaindustry.compat.hextrick.data.TrickIota(bind),helper.getLevel());
             helper.assertTrue(BatteryAnima.available(caster)==balance-32000,"Valid Hex entity argument did not reach Shared Fate's Entity signature");
             helper.assertTrue(vm.getImage().getStack().last() instanceof at.petrak.hexcasting.api.casting.iota.EntityIota entity
                     && entity.getEntityId().equals(target.getUUID())&&!entity.isPlayer(),"Shared Fate returned a wrapped spell instead of the target EntityIota");
@@ -136,7 +138,7 @@ public final class SharedFateGameTests {
     public static void staffTrickIotaKeepsBindingForNextVmAndReplaysRealDivisionMishap(GameTestHelper helper) {
         var caster=player(helper,false);var target=helper.spawn(EntityType.COW,new BlockPos(1,1,1));
         var vm=new CastingVM(new CastingImage(),new StaffCastEnv(caster,InteractionHand.MAIN_HAND));
-        var result=vm.queueExecuteAndWrapIota(new com.iridium126.createmanaindustry.compat.hexcasting.TrickIota(binding(target)),helper.getLevel());
+        var result=vm.queueExecuteAndWrapIota(new com.iridium126.createmanaindustry.compat.hextrick.data.TrickIota(binding(target)),helper.getLevel());
         helper.assertTrue(result.getResolutionType().getSuccess()&&!result.isStackClear(),"Valid staff TrickIota failed");
         var xplat=at.petrak.hexcasting.xplat.IXplatAbstractions.INSTANCE;
         xplat.setStaffcastImage(caster,vm.getImage());
@@ -161,7 +163,7 @@ public final class SharedFateGameTests {
         var caster=player(helper,false);var target=helper.spawn(EntityType.COW,new BlockPos(1,1,1));
         var source=new PlayerSpellSource(caster);var manager=source.getExecutionManager().orElseThrow();manager.killAll();
         var vm=new CastingVM(new CastingImage(),new StaffCastEnv(caster,InteractionHand.MAIN_HAND));
-        var result=vm.queueExecuteAndWrapIota(new com.iridium126.createmanaindustry.compat.hexcasting.TrickIota(delayedBinding(target)),helper.getLevel());
+        var result=vm.queueExecuteAndWrapIota(new com.iridium126.createmanaindustry.compat.hextrick.data.TrickIota(delayedBinding(target)),helper.getLevel());
         helper.assertTrue(result.getResolutionType().getSuccess()&&result.isStackClear(),"Long TrickIota did not hand off");
         helper.runAfterDelay(2,()->{
             try {

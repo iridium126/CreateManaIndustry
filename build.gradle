@@ -313,6 +313,20 @@ def extractCardinalBase = tasks.register('extractCardinalBase', Copy) {
 }
 def cardinalBaseFiles = files(cardinalBaseJar).builtBy(extractCardinalBase)
 
+// Compile against the exact Endec byte-buffer adapter already shipped by Owo.
+def owoCodecArtifacts = configurations.create('owoCodecDistribution')
+dependencies.add('owoCodecDistribution', 'codeberg.master_bw3.trickster:owo-lib-neoforge:0.13.0-alpha.15+1.21@jar') { transitive = false }
+def endecNettyJar = layout.buildDirectory.file('optional-api/endec-netty.jar')
+def extractEndecNetty = tasks.register('extractEndecNetty', Copy) {
+    from({ zipTree(owoCodecArtifacts.singleFile).matching { include 'META-INF/jars/netty-*.jar' } })
+    into(layout.buildDirectory.dir('optional-api'))
+    eachFile { path = 'endec-netty.jar' }
+    includeEmptyDirs = false
+}
+def endecNettyFiles = files(endecNettyJar).builtBy(extractEndecNetty)
+dependencies.add('compileOnly', endecNettyFiles)
+dependencies.add('testRuntimeOnly', endecNettyFiles)
+
 // Build Voxy from the upstream multiversion branch and keep the resulting jar
 // outside build/ so a normal `clean` does not throw away this relatively
 // expensive optional dependency build.

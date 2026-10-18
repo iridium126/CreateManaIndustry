@@ -1,8 +1,10 @@
 package com.iridium126.createmanaindustry.compat.trickster;
 
-import com.iridium126.createmanaindustry.compat.trickster.trick.EvalIotaTrick;
-import com.iridium126.createmanaindustry.compat.trickster.trick.ManaToMediaTrick;
-import com.iridium126.createmanaindustry.compat.trickster.trick.ReadIotaTrick;
+import com.iridium126.createmanaindustry.compat.hextrick.bootstrap.CMITricksterFragmentTypes;
+
+import com.iridium126.createmanaindustry.compat.hextrick.execution.EvalIotaTrick;
+import com.iridium126.createmanaindustry.compat.hextrick.conversion.ManaToMediaTrick;
+import com.iridium126.createmanaindustry.compat.hextrick.execution.ReadIotaTrick;
 import com.iridium126.createmanaindustry.compat.trickster.trick.ReadPotionEffectsTrick;
 import com.iridium126.createmanaindustry.compat.trickster.trick.TemporaryKineticStressTrick;
 

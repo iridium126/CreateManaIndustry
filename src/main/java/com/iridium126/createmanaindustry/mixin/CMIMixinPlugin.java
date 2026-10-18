@@ -108,7 +108,10 @@ public class CMIMixinPlugin implements IMixinConfigPlugin {
     }
 
     @Override
-    public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {}
+    public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
+        if (mixinClassName.contains(".hextrick."))
+            com.iridium126.createmanaindustry.compat.hextrick.bootstrap.HexInteropContracts.verify(targetClassName, targetClass);
+    }
 
     @Override
     public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {}

@@ -1,5 +1,8 @@
 package com.iridium126.createmanaindustry.compat.trickster;
 
+import com.iridium126.createmanaindustry.compat.hextrick.data.TrickIota;
+import com.iridium126.createmanaindustry.compat.hextrick.conversion.FragmentConverter;
+
 import com.iridium126.createmanaindustry.compat.trickster.anima.BatteryAnima;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChain;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
@@ -221,7 +224,17 @@ public final class PotionGameTests {
     }
     @GameTest(template="trickster_stock_test")
     public static void playerTrueNamesRespectConfiguredDistanceExemption(GameTestHelper helper) throws Exception {
-        var player=player(helper);var recipient=player(helper);helper.getLevel().addNewPlayer(recipient);
+        var player=player(helper);
+        // A native FakePlayer is a supported packet sink. A real ServerPlayer
+        // borrowing its listener has no negotiated channel for effect sync.
+        var recipient=FakePlayerFactory.get(helper.getLevel(),new GameProfile(UUID.randomUUID(),"PotionRecipient"));
+        var connection=recipient.connection.getConnection();
+        if(connection.channel()==null) {
+            new io.netty.channel.embedded.EmbeddedChannel(connection);
+            net.neoforged.neoforge.network.registration.NetworkRegistry.configureMockConnection(connection);
+        }
+        recipient.setPos(player.position());recipient.setGameMode(net.minecraft.world.level.GameType.SURVIVAL);
+        helper.getLevel().addNewPlayer(recipient);
         var field=HexConfig.server().getClass().getDeclaredField("doesTrueNameHaveAmbit");field.setAccessible(true);
         var config=(net.neoforged.neoforge.common.ModConfigSpec.BooleanValue)field.get(null);boolean previous=config.get();
         Object owner=new Object();var chain=CastChains.attach(new CastChain(),player,owner);var start=player.position();var ctx=context(player);var target=EntityFragment.from(recipient);

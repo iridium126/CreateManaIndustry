@@ -16,7 +16,9 @@ public record ClientboundSharedFatePacket(ResourceLocation dimension, List<Link>
         implements CustomPacketPayload {
     public static final int ADD = 0, REMOVE = 1, UPDATE = 2;
     public record Link(UUID id, UUID caster, UUID target, int action, boolean animate) {}
-    public record Pose(UUID entity, int entityId, Vec3 position, float height) {}
+    public record Pose(UUID entity, int entityId, Vec3 position, float height, boolean anchored) {
+        public Pose(UUID entity,int entityId,Vec3 position,float height){this(entity,entityId,position,height,false);}
+    }
     public static final int MAX_LINKS = 256, MAX_POSES = 512;
     public static final Type<ClientboundSharedFatePacket> TYPE = new Type<>(CreateManaIndustry.modLoc("shared_fate"));
     private static final ClientPayloadHandler<ClientboundSharedFatePacket> CLIENT = new ClientPayloadHandler<>();
@@ -37,7 +39,7 @@ public record ClientboundSharedFatePacket(ResourceLocation dimension, List<Link>
         b.writeVarInt(p.poses.size());
         for (Pose pose : p.poses) {
             b.writeUUID(pose.entity); b.writeVarInt(pose.entityId);
-            b.writeDouble(pose.position.x); b.writeDouble(pose.position.y); b.writeDouble(pose.position.z); b.writeFloat(pose.height);
+            b.writeDouble(pose.position.x); b.writeDouble(pose.position.y); b.writeDouble(pose.position.z); b.writeFloat(pose.height); b.writeBoolean(pose.anchored);
         }
     }
     private static ClientboundSharedFatePacket decode(RegistryFriendlyByteBuf b) {
@@ -53,7 +55,7 @@ public record ClientboundSharedFatePacket(ResourceLocation dimension, List<Link>
             UUID id=b.readUUID(); int entity=b.readVarInt(); var position=new Vec3(b.readDouble(),b.readDouble(),b.readDouble()); float height=b.readFloat();
             if(!Double.isFinite(position.x)||!Double.isFinite(position.y)||!Double.isFinite(position.z)||!Float.isFinite(height)||height<0)
                 throw new IllegalArgumentException("Invalid shared-fate pose");
-            poses.add(new Pose(id,entity,position,height));
+            poses.add(new Pose(id,entity,position,height,b.readBoolean()));
         }
         return new ClientboundSharedFatePacket(dimension,links,poses);
     }

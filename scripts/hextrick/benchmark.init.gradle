@@ -1,0 +1,20 @@
+// Same probe and dependencies against preserved baseline or the current main output.
+gradle.projectsEvaluated {
+    def p = gradle.rootProject
+    if (p.hasProperty('interopBaseline')) {
+        def baseline = p.file('build/benchmarks/hexinterop-baseline')
+        if (!new File(baseline, 'classes').isDirectory()) throw new GradleException('Preserve baseline classes first')
+        p.sourceSets.main.output.classesDirs.setFrom(new File(baseline, 'classes'))
+        p.sourceSets.main.output.resourcesDir = new File(baseline, 'resources')
+        p.tasks.named('compileJava').configure { enabled = false }
+        p.tasks.named('processResources').configure { enabled = false }
+    }
+    p.apply from: p.file('scripts/testing/common.gradle')
+    p.dependencies.add('localRuntime', 'maven.modrinth:WjFyIzFj:fFV6HwT2')
+    p.configureCmiGameTests(name: 'hexinterop-benchmark', sources: 'src/test/gametest/hexinterop-benchmark/java', structure: 'hexinterop_benchmark', size: 3)
+    p.tasks.named('runGameTestServer', JavaExec).configure {
+        systemProperty 'cmi.benchmark.output', p.file(p.findProperty('benchmarkOutput') ?: 'build/benchmarks/hexinterop-current').absolutePath
+        systemProperty 'cmi.benchmark.label', p.hasProperty('interopBaseline') ? 'baseline' : 'current'
+        systemProperty 'cmi.benchmark.iterations', p.findProperty('interopBenchmarkIterations') ?: '1000'
+    }
+}

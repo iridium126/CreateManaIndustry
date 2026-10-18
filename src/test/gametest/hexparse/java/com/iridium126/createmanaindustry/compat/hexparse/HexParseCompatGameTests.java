@@ -5,7 +5,7 @@ import at.petrak.hexcasting.api.casting.iota.ListIota;
 import at.petrak.hexcasting.api.casting.iota.PatternIota;
 import at.petrak.hexcasting.common.casting.PatternRegistryManifest;
 import at.petrak.hexcasting.xplat.IXplatAbstractions;
-import com.iridium126.createmanaindustry.compat.hexcasting.TrickIota;
+import com.iridium126.createmanaindustry.compat.hextrick.data.TrickIota;
 import com.iridium126.createmanaindustry.compat.hexcasting.ysm.CubeIota;
 import com.iridium126.createmanaindustry.compat.hexcasting.ysm.GroupIota;
 import com.iridium126.createmanaindustry.compat.ysm.YsmServerRuntime;

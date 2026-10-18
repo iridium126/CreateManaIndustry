@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.client.render;
 
-import com.iridium126.createmanaindustry.compat.hexcasting.InlineTrickData;
+import com.iridium126.createmanaindustry.compat.hextrick.data.InlineTrickData;
 import com.samsthenerd.inline.api.client.GlowHandling;
 import com.samsthenerd.inline.api.client.InlineRenderer;
 
@@ -47,6 +47,10 @@ public class InlineTrickRenderer implements InlineRenderer<InlineTrickData> {
             TextRenderingContext trContext) {
         if (trContext.isGlowy())
             return charWidth(data, style, codepoint);
+        if (data.broken) {
+            drawContext.drawString(net.minecraft.client.Minecraft.getInstance().font, "?", 4, 0, 0xffff5555, false);
+            return ICON_SIZE;
+        }
 
         var pose = drawContext.pose();
         pose.pushPose();
