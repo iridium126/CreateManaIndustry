@@ -26,27 +26,22 @@ public final class AllayStormClientHandler {
     /** {@link ClientboundStormStatePacket}: lifecycle + authority flips. */
     public static void onState(ClientboundStormStatePacket packet) {
         AllayStormRuntime e = AllayStormRuntime.INSTANCE;
-        Vec3 anchor = new Vec3(packet.anchor().getX(), packet.anchor().getY(), packet.anchor().getZ());
-        e.applyStormState(packet.action(), packet.authority(), packet.correctionHz(),
-                anchor, packet.count(), packet.stormSeed(), packet.creationRadius(),
-                packet.finalRadius(), packet.growthPerSecond(), packet.createdAt(),
-                packet.deadBitmap());
+        var level = net.minecraft.client.Minecraft.getInstance().level;
+        if (level != null) e.applyStormState(packet, level.dimension().location());
     }
 
     /** {@link ClientboundStormDamagePacket}: authoritative damage + hit correction. */
     public static void onDamage(ClientboundStormDamagePacket packet) {
         AllayStormRuntime e = AllayStormRuntime.INSTANCE;
-        Vec3 rel = new Vec3(packet.relX(), packet.relY(), packet.relZ());
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.level == null || !packet.dimension().equals(mc.level.dimension().location()) || !packet.identity().equals(e.identity())) return;
+        Vec3 position = new Vec3(packet.x(), packet.y(), packet.z());
         e.applyStormDamage(packet.memberIdx(), packet.damage(), packet.kbX(), packet.kbZ(),
-                packet.light(), packet.died(), rel, gameClock());
-        // Combat visuals relay: everyone EXCEPT the attacker spawns the crit /
-        // enchanted stars + damage hearts from the broadcast (vanilla parity —
-        // the attacker drew its own instantly at click time and skips here to
-        // avoid a double burst).
-        var local = net.minecraft.client.Minecraft.getInstance().player;
-        if (local == null || local.getId() != packet.attackerId())
-            com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.spawnCombatVisuals(packet.memberIdx(), packet.light(),
-                    packet.crit(), packet.magic(), packet.hearts());
+                packet.light(), packet.died(), position, gameClock());
+        com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.spawnCombatVisuals(packet.memberIdx(), packet.light(),
+                packet.crit(), packet.magic(), packet.hearts());
+        if (mc.player != null && mc.player.getId() == packet.attackerId() && (packet.kbX() != 0 || packet.kbZ() != 0))
+            mc.player.setSprinting(false); // velocity comes from the server motion packet
     }
 
     /** {@link ClientboundStormPositionsPacket}: relayed authority snapshot. */

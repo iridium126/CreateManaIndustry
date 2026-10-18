@@ -49,15 +49,15 @@ public final class StormFeedback {
      * hit spot over a short strong window, so hurt-flash / corpse / poof all
      * play at the same place without any periodic snapshot needing to catch up.
      */
-    public void applyHitCorrection(int memberIdx, Vec3 relToAnchor, long gameTime) {
+    public void applyHitCorrection(int memberIdx, Vec3 position, long gameTime) {
         var state=AllayStormRuntime.INSTANCE.feedbackState();
         if (!state.active() || memberIdx < 0 || memberIdx >= StormIdentityBuffers.LIMIT)
             return;
         float arrival = (gameTime & ((1L<<21)-1))*.05f;
         particles.correction(memberIdx,
-                (float) (state.center().x + relToAnchor.x),
-                (float) (state.center().y + relToAnchor.y),
-                (float) (state.center().z + relToAnchor.z),
+                (float) position.x,
+                (float) position.y,
+                (float) position.z,
                 arrival, 0f, 0f, 0f, 10.0f);
     }
 
@@ -161,12 +161,19 @@ public final class StormFeedback {
     public StormFeedback(StormParticlePort particles) {this.particles=java.util.Objects.requireNonNull(particles);}
     public void reset() {stormPosPending=false;lastSnapshotGameTime=Long.MIN_VALUE;waveContactPending=false;reported.clear();}
     public void retireWaves() {
-        waveContactPending=false;reported.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
+        waveContactPending=false;
+        retireWaveReports();
     }
-    public void reportHit(int member,float damage,float kbX,float kbZ,float light,boolean critical,boolean magic,int hearts,Vec3 hit) {
-        var center=AllayStormRuntime.INSTANCE.center();
+    /** Prune replaced identities without dropping other waves' in-flight GPU feedback. */
+    public void retireWaveReports() {
+        reported.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
+    }
+    public void reportHit(int member, Vec3 hit) {
+        var identity = AllayStormRuntime.INSTANCE.identity();
+        var level = Minecraft.getInstance().level;
+        if (identity == null || level == null) return;
         PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormHitPacket(
-                member,damage,kbX,kbZ,light,critical,magic,hearts,hit.x-center.x,hit.y-center.y,hit.z-center.z));
+                identity.dimension(), identity.epoch(), member, level.getGameTime(), hit.x, hit.y, hit.z));
     }
 
 }

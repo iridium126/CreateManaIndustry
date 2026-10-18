@@ -89,35 +89,13 @@ public final class AllayStormRuntime {
         }
         if (this.stormActive) {
             this.stormRadius = AllayStormData.vortexRadius(this.countInterp);
-            // growth-law phase integrals (see the field doc above): LINEAR in
-            // the grown radius during the growth window, constant-rate after.
-            float r0 = this.stormCreationRadius;
-            float rf = Math.max(this.stormFinalRadius, 0.5f);
-            float rNow = (float) this.stormRadius;
-            float grown = Math.min(rNow, rf) - r0;
-            float age = (this.gameTimeNow - this.stormCreatedAtGameTime) / 20.0f;
-            float growDur = this.stormGrowthPerSecond > 0.0f
-                    ? (float) (64.0 * ((double) rf * rf - (double) r0 * r0) / this.stormGrowthPerSecond)
-                    : 0.0f;
-            float postSec = Math.max(0.0f, age - growDur);
-            float g = Math.max(this.stormGrowthPerSecond, 1.0e-6f);
-            // rotPhase grows unbounded post-growth (SPIN_K/rf per second), so
-            // a bare float loses fractional-turn precision after a few weeks
-            // of uptime (the ULP exceeds the per-frame increment and the
-            // rotation stutters). Accumulate in double and reduce mod 2*pi
-            // before the float store — an EXACT equivalence, not an
-            // approximation: every consumer (servo target + analytic spawn,
-            // CPU and GPU) reads the phase through cos/sin with coefficient
-            // 1, and Java's % is fully-specified IEEE fmod, so all clients
-            // stay bit-identical. convPhase cannot take the same reduction
-            // (see the stormConvPhase field).
-            double rotPhase = (double) AllayStormData.SPIN_K * 128.0 * grown / g
-                    + (double) AllayStormData.SPIN_K / rf * postSec;
-            this.stormRotPhase = (float) (rotPhase % (2.0 * Math.PI));
-            this.stormConvPhase = 64.0f * grown / g + postSec / (2.0f * rf);
-            this.stormConvRate = (rNow < rf ? 1.0f / (2.0f * rNow) : 0.0f)
-                    + (postSec > 0.0f ? 1.0f / (2.0f * rf) : 0.0f);
-            this.stormOmegaNow = AllayStormData.vortexOmega(rNow, this.stormSeed);
+            var phases = com.iridium126.createmanaindustry.content.allaystorm.AllayStormPhases.evaluate(
+                    stormCreationRadius, stormFinalRadius, stormGrowthPerSecond, stormCreatedAtGameTime,
+                    gameTimeNow, countInterp, stormSeed);
+            stormRotPhase = phases.rotation();
+            stormConvPhase = phases.conveyor();
+            stormConvRate = phases.conveyorRate();
+            stormOmegaNow = phases.omega();
         }
     }
 
@@ -191,6 +169,8 @@ public final class AllayStormRuntime {
     // ---- storm sync state ----------------------------------------------------
 
     private boolean stormActive = false;
+    private com.iridium126.createmanaindustry.content.allaystorm.StormIdentity stormIdentity;
+    public com.iridium126.createmanaindustry.content.allaystorm.StormIdentity identity() { return stormIdentity; }
     private int stormEmitId = -1;
     private Vec3 stormAnchor = Vec3.ZERO;
 
@@ -343,7 +323,14 @@ public final class AllayStormRuntime {
  * the synced count and seed. DEACTIVATE (out of range) and STOP (storm
  * over): local dispersal; the members compact away on the next update dispatch.
      */
-    public void applyStormState(int action, boolean authority, double correctionHz,
+    public void applyStormState(ClientboundStormStatePacket p, net.minecraft.resources.ResourceLocation currentDimension) {
+        if (!p.identity().acceptsLifecycle(p.action(), currentDimension, stormIdentity)) return;
+        if (p.action() == ClientboundStormStatePacket.ACTION_ACTIVATE) stormIdentity = p.identity();
+        applyStormState(p.action(), p.authority(), p.correctionHz(), Vec3.atLowerCornerOf(p.anchor()),
+                p.count(), p.stormSeed(), p.creationRadius(), p.finalRadius(), p.growthPerSecond(), p.createdAt(), p.deadBitmap());
+    }
+
+    private void applyStormState(int action, boolean authority, double correctionHz,
             Vec3 anchor, int count, int seed,
             float creationRadius, float finalRadius, float growthPerSecond, long createdAt,
             byte[] deadBitmap) {
@@ -417,6 +404,7 @@ public final class AllayStormRuntime {
                 }
             }
             case ClientboundStormStatePacket.ACTION_DEACTIVATE, ClientboundStormStatePacket.ACTION_STOP -> {
+                this.stormIdentity = null;
                 // local dispersal; server state is not this side's business
                 if (this.stormActive && this.stormEmitId >= 0)
                     this.stormKillEmitId = this.stormEmitId;
@@ -452,7 +440,7 @@ public final class AllayStormRuntime {
      * Every active client — the attacker included — runs this identical path.
      */
     public void applyStormDamage(int memberIdx, float damage, float kbX, float kbZ,
-            float light, boolean died, Vec3 relToAnchor, long gameTime) {
+            float light, boolean died, Vec3 hitPosition, long gameTime) {
         if (!this.stormActive)
             return;
         if (died && memberIdx >= 0) {
@@ -466,11 +454,12 @@ public final class AllayStormRuntime {
             this.stormDead.set(memberIdx);
         }
         com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.enqueueDamageEntry(memberIdx,damage,kbX,kbZ,light,ParticleBuffers.DAMAGE_FLAG_MEMBER|(died?ParticleBuffers.DAMAGE_FLAG_DIED:0));
-        StormFeedback.INSTANCE.applyHitCorrection(memberIdx, relToAnchor, gameTime);
+        StormFeedback.INSTANCE.applyHitCorrection(memberIdx, hitPosition, gameTime);
     }
 
     /** Full storm teardown (level clear/shutdown): forget the emitter id too. */
     public void resetStormState() {
+        this.stormIdentity = null;
         this.stormActive = false;
         this.pendingStormSpawns = 0;
         this.stormHeaderWritten = false;
@@ -741,6 +730,7 @@ public final class AllayStormRuntime {
         int ringCommittedMask,ringScheduledMask,columnSoundMask;boolean startSound,lockSound;
     }
     private final WaveClient[] waveSlots=new WaveClient[MAX_WAVES];
+    private final com.iridium126.createmanaindustry.content.allaystorm.StormWaveSlots waveLifecycle = new com.iridium126.createmanaindustry.content.allaystorm.StormWaveSlots();
     private final com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[] starfallSnapshots=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[MAX_WAVES];
     private final StarfallGpuBuffers starfallGpu=StarfallGpuBuffers.INSTANCE;
     private boolean starfallDirty=true;private String lastHelixAbort="none";
@@ -756,25 +746,34 @@ public final class AllayStormRuntime {
     public boolean anyWaveTargetingLocalPlayer(){for(var w:waveSlots)if(locallyRelevant(w))return true;return false;}
     public void applyWave(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket p){
         if(!stormActive||p.epoch()!=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.epoch(stormCreatedAtGameTime,stormSeed))return;
-        WaveClient w=findWaveById(p.waveId());
-        if(p.abort()){
-            if(w==null)return;var old=w.packet;
-            float now=old.startSec()+com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,old.startSec());
-            w.packet=old.copy(3,6,now,now+.25f,old.members()).reason(p.fallbackReason());
-            if(old.helixAttack())lastHelixAbort=switch(p.fallbackReason()){case 5->"blocked";case 6->"target-lost";case 7->"aim-timeout";case 8->"unsafe-route";default->"aborted";};
-            starfallDirty=true;return;
+        var update = waveLifecycle.apply(p, timeSec);
+        for (int slot = 0; slot < MAX_WAVES; slot++)
+            if (waveLifecycle.packet(slot) == null && waveSlots[slot] != null && waveSlots[slot].alive) {
+                waveSlots[slot].alive = false;
+                starfallDirty = true;
+            }
+        if (update == null) return;
+        WaveClient w = waveSlots[update.slot()];
+        if (update.replacement()) {
+            w = new WaveClient(); w.slotIdx = update.slot(); waveSlots[update.slot()] = w;
         }
-        if(w==null){if(p.event()!=0)return;for(int slot=0;slot<4;slot++)if(waveSlots[slot]==null||!waveSlots[slot].alive){w=new WaveClient();w.slotIdx=slot;waveSlots[slot]=w;break;}if(w==null)return;}
-        if(w.packet!=null&&w.packet.locked()&&p.event()==1)return;
-        int[] members=p.members().length==0&&w.packet!=null?w.packet.members():p.members();
-        w.packet=p.copy(p.locked()?2:p.event(),p.phase(),p.lockSec(),p.diveUntilSec(),members);
+        w.packet = update.packet();
+        if (p.abort()) {
+            if (w.packet.helixAttack()) lastHelixAbort = switch(p.fallbackReason()) {
+                case 5 -> "blocked"; case 6 -> "target-lost"; case 7 -> "aim-timeout"; case 8 -> "unsafe-route"; default -> "aborted";
+            };
+            starfallDirty = true;
+            return;
+        }
         if(p.helixAttack()){java.util.Arrays.fill(w.bounds,0,3,Float.POSITIVE_INFINITY);java.util.Arrays.fill(w.bounds,3,6,Float.NEGATIVE_INFINITY);float pad=p.helix().radius()+4;for(int i=0;i<48;i++)for(int axis=0;axis<3;axis++){float v=p.helix().samples()[i*4+axis];w.bounds[axis]=Math.min(w.bounds[axis],v-pad);w.bounds[axis+3]=Math.max(w.bounds[axis+3],v+pad);}}
         w.alive=true;w.waveId=p.waveId();w.epoch=p.epoch();w.targetEntityId=p.targetEntityId();starfallDirty=true;
         if(w.feedbackIdentity==null||w.feedbackIdentity.id()!=w.waveId||w.feedbackIdentity.epoch()!=w.epoch)w.feedbackIdentity=new ContactAuthority(w.waveId,w.epoch);
+        StormFeedback.INSTANCE.retireWaveReports();
     }
     private WaveClient findWaveById(int id){for(var w:waveSlots)if(w!=null&&w.alive&&w.waveId==id)return w;return null;}
-    public void clearWaveState(){lastHelixAbort="none";java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);StormFeedback.INSTANCE.retireWaves();starfallDirty=true;starfallGpu.invalidate();}
+    public void clearWaveState(){waveLifecycle.clear();lastHelixAbort="none";java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);StormFeedback.INSTANCE.retireWaves();starfallDirty=true;starfallGpu.invalidate();}
     public void refreshWaves(){
+        waveLifecycle.retire(timeSec);
         starfallGpu.resetUniforms();
         int soundBudget=2;
         for(int slot=0;slot<4;slot++){
@@ -855,5 +854,5 @@ starfallGpu.waveUniform(slot,p.waveSeed(),p.startSec(),p.diveUntilSec(),p.waveId
         return new FeedbackState(stormActive,stormAuthority,stormCorrectionHz,center,timeSec,lastPlayerCount,mask);
     }
     public record ContactAuthority(int id,long epoch) {}
-    ContactAuthority contactAuthority(int id) {var wave=findWaveById(id);return wave==null?null:wave.feedbackIdentity;}
+    ContactAuthority contactAuthority(int id) {var wave=findWaveById(id);return wave==null||wave.packet.abort()?null:wave.feedbackIdentity;}
 }

@@ -20,7 +20,7 @@
 ```text
 /cmi particle allaystorm [count]
   -> ServerLevel attachment 创建/更新
-  -> ClientboundStormStatePacket（定义、dead、HP）
+  -> ClientboundStormStatePacket（定义、dead、dimension、epoch）
   -> 客户端建立 GPU MODEL 粒子
   -> growth / wave / damage / correction
 /cmi particle allaystorm stop
@@ -39,10 +39,10 @@
 | S→C | `ClientboundStormPositionsPacket` | authority 的稀疏位置校正 |
 | S→C | `ClientboundStormWavePacket` | 星冠名单、目标、路径、阶段时间和锁定落点 |
 | C→S | `ServerboundStormPositionsPacket` | authority client 的位置快照 |
-| C→S | `ServerboundStormHitPacket` | 客户端 GPU hit readback 的伤害事件 |
+| C→S | `ServerboundStormHitPacket` | GPU 命中候选：dimension、epoch、member、sampleTick、绝对 contact.xyz；不携带伤害等战斗值 |
 | C→S | `ServerboundStormWaveContactPacket` | 本地目标与当前下降成员的接触报告 |
 
-包处理必须在主线程执行；收到的 storm/member index、count、HP、坐标范围和玩家归属都要校验。客户端报告只提供候选事实，服务端再次验证距离、状态、冷却和 invulnerability frame。
+包处理必须在主线程执行；收到的 storm/member index、count、HP、坐标范围和玩家归属都要校验。近战候选由服务端验证身份、存活状态、历史眼部位置、交互距离、遮挡与重放；伤害、暴击、击退、附魔和冷却使用服务端状态。成员近战仍沿用无成员无敌帧的既有设计，风暴对玩家的伤害遵守原版无敌帧。
 
 ## 4. 位置与 authority
 
@@ -92,3 +92,17 @@ GPU 成员归属表与参数使用双 bank，身份阶段使用同代双 bank；
 客户端激活仍由现有服务端扫描维护。除风暴中心范围外，锁定天穹的固定区域也能激活/维持附近观察者；原目标离开、风暴中心移走后，区域快照和接触上报仍有效。没有新增世界监听器。
 
 HELIX=2 使用两组真实臂名单、冻结曲线和 48 点弧长表；开始/观察者补同步带名单，锁定后不更新路线。区域激活与按玩家去重也覆盖 HELIX，接触包坐标为实际扫掠交点、时间为插值采样时刻。ABORT 携带原因，碰撞未就绪或逃生搬离不伤害。数据域维持 312 words/波次及原 SSBO/TBO 绑定；就绪变化仅更新 4 字节 header。见 [双螺旋记录](gpu-helix-2026-10-11.md)。
+
+## 协议 6 与实现审查修复（2026-10-18）
+
+当前核心注册版本为 **6**（本次从 5 升级）；客户端和服务端必须一起更新，旧协议不能混连。
+
+- `storm_state` 的四种动作均携带 dimension + 64 位 epoch。ACTIVATE 只匹配客户端当前维度，其他动作同时匹配当前活动身份；离开旧维度的服务端 track 直接移除，不向新维度发送清理。
+- `storm_hit` 只发送命中候选，不再发送伤害、击退、暴击或粒子参数。位置采用绝对 double 世界坐标，时间采用原始 game tick，避免移动中心重构偏移。服务端保留 41 tick 眼部位置，接受最近 40 tick 和最多提前 2 tick 的采样；距离上限为服务端交互距离 + 0.5 格，检测方块遮挡，同一采样不能重放，同玩家每 tick 最多一次、滚动 20 tick 最多 12 次。
+- `storm_damage` 携带 dimension + epoch、绝对 double 命中位置，以及服务端计算的有限 float 伤害/击退。攻击者也从确认包生成战斗粒子，伤害音效由服务端发送；客户端只预测挥手。请求必须先于挥手发出，因为该版本 ServerPlayer.swing 会重置攻击冷却。服务端调用真实物品及 NeoForge 攻击/暴击钩子，耐久、附魔后置效果、统计和饥饿消耗仅在结算路径执行一次。
+- NBT 的 CreationRadius 按半径恢复；成长完成不丢弃原冻结增长参数。非法/缺失增长参数按保存规模冻结并在加载时重新建立相位起点，成员身份、死亡集合和 HP 保留。
+- 客户端槽表优先回收过期槽、使用空槽，满槽时按编号回收 ABORT 槽；不驱逐有效攻击。未回收的中止波次仍淡出 0.25 秒。替换时重新建立客户端表现与反馈身份。
+
+这次没有新增服务端成员运动模拟：服务端仍不能独立证明客户端所报成员实际处于命中点；该候选信任边界保留。稀疏位置校正包的格式不属于本次修改范围。
+
+自动验证与用户客户端验收步骤见 [四项修复记录](allay-storm-review-fixes.md)。

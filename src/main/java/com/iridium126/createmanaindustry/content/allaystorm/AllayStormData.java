@@ -170,6 +170,10 @@ public final class AllayStormData {
     public static final class Serializer implements IAttachmentSerializer<CompoundTag, AllayStormData> {
         @Override
         public AllayStormData read(IAttachmentHolder holder, CompoundTag tag, HolderLookup.Provider provider) {
+            return readAt(tag, holder instanceof net.minecraft.world.level.Level level ? level.getGameTime() : 0);
+        }
+
+        public AllayStormData readAt(CompoundTag tag, long loadTime) {
             AllayStormData d = new AllayStormData();
             d.active = tag.getBoolean("Active");
             d.anchor = BlockPos.of(tag.getLong("Anchor"));
@@ -178,18 +182,24 @@ public final class AllayStormData {
             d.growthPerSecond = tag.getDouble("GrowthRate");
             d.finalCount = Math.max(d.count, Math.min(MAX_COUNT, tag.getInt("FinalCount")));
             d.createdAtGameTime = tag.getLong("CreatedAt");
-            if (d.growthPerSecond > 0.0 && d.finalCount > d.count) {
-                d.creationRadius = vortexRadius(tag.getFloat("CreationRadius"));
-                d.finalRadius = vortexRadius(d.finalCount);
+            float savedRadius = tag.getFloat("CreationRadius");
+            boolean validLaw = tag.contains("CreationRadius") && tag.contains("GrowthRate")
+                    && tag.contains("FinalCount") && tag.contains("CreatedAt")
+                    && Float.isFinite((float)d.growthPerSecond) && d.growthPerSecond >= 0
+                    && d.createdAtGameTime >= 0 && d.createdAtGameTime <= loadTime
+                    && tag.getInt("FinalCount") >= d.count && tag.getInt("FinalCount") <= MAX_COUNT
+                    && Float.isFinite(savedRadius) && savedRadius >= 2 && savedRadius <= vortexRadius(d.count);
+            if (validLaw) {
+                d.creationRadius = savedRadius;
+                d.finalRadius = d.growthPerSecond > 0 ? vortexRadius(d.finalCount) : savedRadius;
             } else {
-                // zero-rate storm (growth disabled at creation): the growth
-                // window is empty and the law anchors at the loaded size — a
-                // zero finalRadius would divide the post-growth phase terms
-                // into NaN
+                // Missing/corrupt old laws cannot be reconstructed. Freeze at
+                // the saved population and establish a new finite phase origin.
                 d.growthPerSecond = 0.0;
                 d.finalCount = d.count;
                 d.creationRadius = vortexRadius(d.count);
                 d.finalRadius = d.creationRadius;
+                d.createdAtGameTime = loadTime;
             }
             int[] deadIdx = tag.getIntArray("Dead");
             for (int i : deadIdx)

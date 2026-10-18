@@ -1,6 +1,9 @@
 package com.iridium126.createmanaindustry.content.allaystorm.network;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import net.minecraft.resources.ResourceLocation;
+import com.iridium126.createmanaindustry.content.allaystorm.StormIdentity;
+import io.netty.handler.codec.DecoderException;
 import com.iridium126.createmanaindustry.infrastructure.network.ClientPayloadHandler;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -12,57 +15,50 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import java.util.function.Consumer;
 
 /**
- * Storm member damage broadcast, server → clients (~20 bytes), sent to every
- * ACTIVE player including the attacker. Carries the authoritative death bit —
- * clients must never decide death from their local HP mirror (a client that
- * joined mid-fight has a 20 HP baseline and does not know past damage) — plus
- * the attacker-side hit position so every client eases the struck member to
- * the exact spot the hit landed before playing hurt-flash / corpse / poof
- * there (the one moment per-hit where sub-block agreement matters visually).
- * <p>
- * Knockback rides the same packet: every client applies the identical impulse
- * to the same member, which keeps post-hit divergence small during the death
- * animation window without any position traffic.
- * <p>
- * The {@code attackerId} plus the {@code visuals} byte (bit0 crit, bit1
- * enchanted-hit, bits 2-7 heart count) relay the vanilla combat-particle set:
- * every client EXCEPT the attacker spawns the crit/enchanted tracking stars
- * and the damage hearts from it (the attacker drew its own visuals instantly
- * at click time; vanilla draws everyone's through the same server relay).
+ * Protocol 6 authoritative combat result, including dimension/epoch and absolute hit position.
+ * All observers, including the attacker, apply these visuals only after server acceptance.
+ * Damage and knockback use finite floats so legitimate mace/modded hits are not byte-clamped.
+ * The death bit remains authoritative even when a late observer has a full-HP local mirror.
  */
 public record ClientboundStormDamagePacket(
         int memberIdx, float damage, float kbX, float kbZ, float light,
         boolean died, int attackerId, boolean crit, boolean magic, int hearts,
-        double relX, double relY, double relZ) implements CustomPacketPayload {
+        double x, double y, double z, ResourceLocation dimension, long epoch) implements CustomPacketPayload {
+
+    public StormIdentity identity() { return new StormIdentity(dimension, epoch); }
 
     private static final ClientPayloadHandler<ClientboundStormDamagePacket> CLIENT_HANDLER =
             new ClientPayloadHandler<>();
 
     public static final CustomPacketPayload.Type<ClientboundStormDamagePacket> TYPE =
-            new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("storm_damage"));
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(CreateManaIndustry.MODID, "storm_damage"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundStormDamagePacket> STREAM_CODEC =
             StreamCodec.of(ClientboundStormDamagePacket::encode, ClientboundStormDamagePacket::decode);
 
     private static void encode(RegistryFriendlyByteBuf buffer, ClientboundStormDamagePacket p) {
+        ResourceLocation.STREAM_CODEC.encode(buffer, p.dimension);
+        buffer.writeLong(p.epoch);
         ByteBufCodecs.VAR_INT.encode(buffer, p.memberIdx);
-        buffer.writeByte(clamp(Math.round(p.damage * 4), 0, 255));
-        buffer.writeByte(clamp(Math.round(p.kbX * 64), -128, 127));
-        buffer.writeByte(clamp(Math.round(p.kbZ * 64), -128, 127));
+        buffer.writeFloat(p.damage);
+        buffer.writeFloat(p.kbX);
+        buffer.writeFloat(p.kbZ);
         buffer.writeByte(clamp(Math.round(p.light), 0, 255));
         buffer.writeByte(p.died ? 1 : 0);
         ByteBufCodecs.VAR_INT.encode(buffer, p.attackerId);
         buffer.writeByte((p.crit ? 1 : 0) | (p.magic ? 2 : 0) | (clamp(p.hearts, 0, 63) << 2));
-        buffer.writeShort((short) clamp((int) Math.round(p.relX * 16), Short.MIN_VALUE, Short.MAX_VALUE));
-        buffer.writeShort((short) clamp((int) Math.round(p.relY * 16), Short.MIN_VALUE, Short.MAX_VALUE));
-        buffer.writeShort((short) clamp((int) Math.round(p.relZ * 16), Short.MIN_VALUE, Short.MAX_VALUE));
+        buffer.writeDouble(p.x);
+        buffer.writeDouble(p.y);
+        buffer.writeDouble(p.z);
     }
 
     private static ClientboundStormDamagePacket decode(RegistryFriendlyByteBuf buffer) {
+        ResourceLocation dimension = ResourceLocation.STREAM_CODEC.decode(buffer);
+        long epoch = buffer.readLong();
         int memberIdx = ByteBufCodecs.VAR_INT.decode(buffer);
-        float damage = (buffer.readByte() & 0xFF) / 4.0f;
-        float kbX = buffer.readByte() / 64.0f;
-        float kbZ = buffer.readByte() / 64.0f;
+        float damage = buffer.readFloat();
+        float kbX = buffer.readFloat();
+        float kbZ = buffer.readFloat();
         float light = (buffer.readByte() & 0xFF) / 1.0f;
         boolean died = buffer.readByte() != 0;
         int attackerId = ByteBufCodecs.VAR_INT.decode(buffer);
@@ -70,11 +66,15 @@ public record ClientboundStormDamagePacket(
         boolean crit = (visuals & 1) != 0;
         boolean magic = (visuals & 2) != 0;
         int hearts = (visuals >>> 2) & 0x3F;
-        double relX = buffer.readShort() / 16.0;
-        double relY = buffer.readShort() / 16.0;
-        double relZ = buffer.readShort() / 16.0;
+        double x = buffer.readDouble();
+        double y = buffer.readDouble();
+        double z = buffer.readDouble();
+        if (memberIdx < 0 || memberIdx >= 131072 || !Float.isFinite(damage) || damage <= 0
+                || !Float.isFinite(kbX) || !Float.isFinite(kbZ)
+                || !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z))
+            throw new DecoderException("Invalid storm combat result");
         return new ClientboundStormDamagePacket(memberIdx, damage, kbX, kbZ, light,
-                died, attackerId, crit, magic, hearts, relX, relY, relZ);
+                died, attackerId, crit, magic, hearts, x, y, z, dimension, epoch);
     }
 
     private static int clamp(int v, int lo, int hi) {

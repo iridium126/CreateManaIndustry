@@ -65,8 +65,12 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
  }finally{{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}}}
  static int compileText(String name,String text){int shader=GL20.glCreateShader(GL43.GL_COMPUTE_SHADER);GL20.glShaderSource(shader,"#version 450 core\n"+ParticlePrograms.commonPrelude()+text);GL20.glCompileShader(shader);check(GL20.glGetShaderi(shader,GL20.GL_COMPILE_STATUS)!=0,name+GL20.glGetShaderInfoLog(shader));int p=GL20.glCreateProgram();GL20.glAttachShader(p,shader);GL20.glLinkProgram(p);check(GL20.glGetProgrami(p,GL20.GL_LINK_STATUS)!=0,GL20.glGetProgramInfoLog(p));GL20.glDeleteShader(shader);return p;}
  static void formations(){String nav=source("chunks/storm_navigation.glsl");nav=nav.substring(nav.indexOf("vec3 cmiStarRoute"));int p=compileText("formation",source("chunks/allay_storm.glsl")+nav+"\nlayout(local_size_x=64) in;layout(std430,binding=10) buffer Output{vec4 rows[];} result;uniform uint uCount;void main(){uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;vec3 target,velocity;uint phase=0u;bool engaged=cmiStarSteering(float(i+1u),float(i)*.0001,vec3(0),vec3(99,0,0),6.,target,velocity,phase);result.rows[i*2u]=vec4(target,float(phase));result.rows[i*2u+1u]=vec4(velocity,engaged?1.:0.);}");
-  try(var gpu=new StarfallGpuBuffers()){for(int n:new int[]{1,63,64,65,8192,16384}){int out=buffer(bytes(n*32));bind(10,out);stage(gpu,packet(n,1,2,0),p);ui(p,"uCount",n);
-   for(float time:new float[]{0,5,10.5f,12,15,17}){f(p,"uTimeSec",time);dispatch(p,(n+63)/64);var result=read(out,n*32);for(int i=0;i<n;i++){for(int j=0;j<7;j++)check(Float.isFinite(result.getFloat(i*32+j*4)),"nonfinite formation");float vx=result.getFloat(i*32+16),vy=result.getFloat(i*32+20),vz=result.getFloat(i*32+24);check(vx*vx+vy*vy+vz*vz<=36.001,"formation velocity cap");if(i==0){int expected=time==0?1:time==5?2:time==10.5?3:time==12?4:time==15?5:6;check(result.getFloat(12)==expected,"formation phase");}}}
+  try(var gpu=new StarfallGpuBuffers()){for(int n:new int[]{1,63,64,65,8192,16384}){int out=buffer(bytes((n+1)*32));bind(10,out);stage(gpu,packet(n,1,2,0),p);ui(p,"uCount",n+1);
+   for(float time:new float[]{0,5,10.5f,12,15,17}){f(p,"uTimeSec",time);dispatch(p,(n+64)/64);var result=read(out,(n+1)*32);for(int i=0;i<n;i++){for(int j=0;j<7;j++)check(Float.isFinite(result.getFloat(i*32+j*4)),"nonfinite formation");float vx=result.getFloat(i*32+16),vy=result.getFloat(i*32+20),vz=result.getFloat(i*32+24);check(vx*vx+vy*vy+vz*vz<=36.001,"formation velocity cap");if(i==0){int expected=time==0?1:time==5?2:time==10.5?3:time==12?4:time==15?5:6;check(result.getFloat(12)==expected,"formation phase");}}
+    // Direct-call contract: rejected roster claims always define all out values.
+    int fallback=n*32;check(result.getFloat(fallback)==99&&result.getFloat(fallback+4)==0&&result.getFloat(fallback+8)==0,"unassigned target fallback");
+    for(int word=3;word<8;word++)check(result.getFloat(fallback+word*4)==0,"unassigned velocity/phase/engagement fallback");
+   }
    GL15.glDeleteBuffers(out);
   }}finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
   try(var q=new Fixture(20000,20000,20000);var gpu=new StarfallGpuBuffers();var shadow=new ModelShadowGpu(20000,36384,StarfallGpuValidation::source)){
@@ -76,6 +80,52 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
    gpu.rebuild(new ClientboundStormWavePacket[]{snap,null,null,null});gpu.prepare(1);gpu.commit();shadow.starfall(gpu.committedBuffer());var allCull=new com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling();allCull.distance=-1;allCull.safe=-1;shadow.prepare(q.pool,q.emit,q.counter,allCull,0,0,0,.35f,.6f,1,12,new float[16],new float[16],new float[4],q.pop,7);
    check(read(shadow.commands(),(ParticleBuffers.INDIRECT_UINTS+4)*4).getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==20000,"expanded shadow carrier lost swords");
   }
+ }
+ /** Compare the production update kernel with/without an attack far from the origin. */
+ static void bodyHomeDuringWave(){
+  int update=compile("update.comp"),n=65;
+  try(var q=new Fixture(n,n,n);var gpu=new StarfallGpuBuffers()){
+   int output=buffer(bytes(n*64)),grid=buffer(bytes((ParticleBuffers.GRID_TABLE+n)*4)),damage=buffer(bytes(16)),players=buffer(bytes(16)),correction=buffer(bytes(n*32)),map=buffer(bytes(n*4));
+   try{
+    ui(update,"uCapacity",n);ui(update,"uKillEmit",-1);f(update,"uDt",.05f);
+    f(update,"uStormOmegaNow",.2f);f(update,"uStormRotPhase",.7f);f(update,"uStormConvPhase",.3f);f(update,"uStormConvRate",.04f);
+    for(float[] center:new float[][]{{1500,128,-2300},{-1700,192,2100}}){
+     ByteBuffer data=bytes(n*64),h=headers();int hb=2*ParticleBuffers.VEC4_PER_EMITTER*16;
+     h.putFloat(hb+18*16+4,16).putFloat(hb+18*16+12,6);
+     for(int axis=0;axis<3;axis++)h.putFloat(hb+19*16+axis*4,center[axis]);
+     for(int i=0;i<n;i++){particle(data,i,2,center[0]+i*4,center[2],20);data.putFloat(i*64+4,center[1]+3).putFloat(i*64+12,i+1).putFloat(i*64+56,AllayStormWaves.memberSeed(1,i));}
+     q.build(data,n);put(q.emit,h);put(q.previous,bytes(16).putInt(0,n));
+     for(int members:new int[]{1,32,64})for(int event:new int[]{2,3}){
+      var p=packet(members,17,event,12);float[] route=p.path().clone(),land=p.landings().clone();
+      for(int i=0;i<route.length;i++)route[i]+=center[i%3];
+      for(int c=0;c<p.columns();c++)for(int axis=0;axis<3;axis++)land[c*4+axis]+=center[axis];
+      var snap=new ClientboundStormWavePacket(p.waveId(),p.epoch(),p.event(),p.waveSeed(),p.targetEntityId(),p.swordTier(),p.columns(),p.perColumn(),p.startSec(),p.assembleSec(),p.lockSec(),p.diveUntilSec(),center[0],center[1]+12,center[2],p.crownRadius(),p.members(),route,land);
+      stage(gpu,snap,update);
+      for(float time:new float[]{12,-1,0,5,10.5f,15,17,61}){
+       f(update,"uTimeSec",time);ByteBuffer[] result=new ByteBuffer[2];
+       for(int enabled=0;enabled<2;enabled++){
+        bind(0,q.pool);bind(1,output);bind(3,q.counter);bind(5,q.emit);bind(13,grid);bind(14,q.previous);bind(16,damage);bind(18,players);bind(19,correction);bind(21,map);
+        put(q.counter,bytes(16));gpu.bind(update,true);bool(update,"uStarfallEnabled",enabled!=0);dispatch(update,2);
+        check(read(q.counter,16).getInt(0)==n,"body member disappeared");
+        var compacted=read(output,n*64);result[enabled]=bytes(n*64);
+        for(int slot=0;slot<n;slot++){int id=Math.round(compacted.getFloat(slot*64+12))-1;check(id>=0&&id<n,"body identity changed");for(int word=0;word<16;word++)result[enabled].putInt(id*64+word*4,compacted.getInt(slot*64+word*4));}
+       }
+       boolean attackersMoved=false;
+       for(int member=0;member<n;member++){
+        boolean home=member>=members||event==3||time<0||time>60;
+        for(int word:new int[]{0,1,2,4,5,6}){
+         float expected=result[0].getFloat(member*64+word*4),actual=result[1].getFloat(member*64+word*4);
+         check(Float.isFinite(actual),"nonfinite body steering");
+         if(home)check(Math.abs(expected-actual)<.0001,"wave overwrote home steering: member="+member+", event="+event+", time="+time+", word="+word+", expected="+expected+", actual="+actual);
+         else if(Math.abs(expected-actual)>.001)attackersMoved=true;
+        }
+       }
+       if(event==2&&time>=0&&time<=60)check(attackersMoved,"attack roster stopped steering");
+      }
+     }
+    }
+   }finally{for(int id:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(id);}
+  }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(update);GL20.glDeleteProgram(update);}
  }
  static void benchmarkStarfall()throws Exception{
   var rows=new ArrayList<String>();rows.add("pool_live,participants,mode,run,update_gpu_p50_ms,update_gpu_p95_ms,shadow_gpu_p50_ms,shadow_gpu_p95_ms,cpu_wall_p50_ms,cpu_wall_p95_ms,thread_cpu_p50_ms,thread_cpu_p95_ms,allocated_bytes_p50,roster_upload_bytes,state_domain_bytes");
@@ -143,6 +193,6 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
   Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-ring-benchmark.csv"),rows);
  }
  public static void main(String[] args)throws Exception{GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(128,128,"Starfall GPU validation",0,0);
-  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));rings();contacts();formations();if(Arrays.asList(args).contains("--benchmark"))benchmarkStarfall();if(Arrays.asList(args).contains("--ring-benchmark"))benchmarkRings();check(GL11.glGetError()==0,"final GL state");System.out.println("Starfall GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));bodyHomeDuringWave();rings();contacts();formations();if(Arrays.asList(args).contains("--benchmark"))benchmarkStarfall();if(Arrays.asList(args).contains("--ring-benchmark"))benchmarkRings();check(GL11.glGetError()==0,"final GL state");System.out.println("Starfall GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
  }
 }

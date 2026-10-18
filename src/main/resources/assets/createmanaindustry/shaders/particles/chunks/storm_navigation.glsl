@@ -141,6 +141,9 @@ vec3 cmiStarPoint(uint assignment,float seed,float time,vec3 home){
  return home;
 }
 bool cmiStarSteering(float identity,float seed,vec3 pos,vec3 home,float cap,out vec3 target,out vec3 velocity,out uint phase){
+ // GLSL out parameters are undefined on entry and copied back even on an early return.
+ // Rejected claims must publish a finite fallback and a neutral identity phase.
+ target=home;velocity=vec3(0.);phase=0u;
  uint assignment=cmiStarAssignment(identity);if(assignment==0u||cmiStarClaim(identity,uTimeSec)<0)return false;
  phase=uint(cmiStarPhase(assignment,uTimeSec));target=cmiStarPoint(assignment,seed,uTimeSec,home);
  vec3 next=cmiStarPoint(assignment,seed,uTimeSec+.02,home);velocity=(next-target)/.02;

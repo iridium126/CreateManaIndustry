@@ -774,7 +774,7 @@ def validatePackageSableAbsent = tasks.register('validatePackageSableAbsent', Ja
     classpath = sourceSets.test.output + sourceSets.main.output + configurations.testRuntimeClasspath.filter {
         it != sableCompanionJar
     }
-    mainClass = 'com.iridium126.createmanaindustry.client.particles.packages.PackageSableAbsentProbe'
+    mainClass = 'com.iridium126.createmanaindustry.client.packages.world.PackageSableAbsentProbe'
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
 }
 tasks.named('check') { dependsOn(validatePackageSableAbsent) }

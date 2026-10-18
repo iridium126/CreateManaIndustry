@@ -1,7 +1,6 @@
 package com.iridium126.createmanaindustry.content.allaystorm;
 
 import java.util.BitSet;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -28,13 +27,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.stats.Stats;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.damagesource.DamageSource;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.animal.allay.Allay;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -68,8 +61,8 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
  *       authority's local state becomes the reference and the others ease
  *       toward it through the same soft correction layer.</li>
  *   <li><b>Hits</b>: reported by the attacking client (the server cannot
- *       detect hits against GPU state). Rate-limited per player, damage is
- *       capped by the wire format, dead members and remote players are
+ *       detect hits against GPU state). Rate-limited per player, combat values are
+ *       calculated from server weapon/cooldown state, dead members and remote players are
  *       ignored; death is decided HERE and only here, then broadcast with
  *       the death bit to every active player including the attacker.</li>
  *   <li><b>Regen</b>: vanilla 2 HP/s over the sparse damaged-alive table
@@ -102,7 +95,6 @@ public final class AllayStormManager {
     public static final double HYSTERESIS = 64.0;
 
     private static final int SCAN_INTERVAL_TICKS = 20;
-    private static final int MAX_HITS_PER_SECOND = 12;
     /** Chase speed toward the nearest player, blocks/s (horizontal only). */
     public static final double CHASE_SPEED = 2.0;
     /** Center-snapshot broadcast cadence in ticks (1 Hz; clients lerp one interval behind). */
@@ -201,7 +193,7 @@ public final class AllayStormManager {
         boolean authority;
         long order;
         long lastWaveLaunchGameTime = Long.MIN_VALUE;
-        final ArrayDeque<Long> hitTimes = new ArrayDeque<>();
+        final StormMelee.Attempts melee = new StormMelee.Attempts();
         final AllayStarfall.PlayerTrail positions=new AllayStarfall.PlayerTrail();
     }
 
@@ -242,7 +234,14 @@ public final class AllayStormManager {
         regen(level, data);
         chase(level, data);
         grow(level, rt, data);
-        for(var entry:rt.tracks.entrySet())if(entry.getValue().active){var player=level.getServer().getPlayerList().getPlayer(entry.getKey());if(player!=null)entry.getValue().positions.record(level.getGameTime(),player.getX(),player.getY()+.5,player.getZ());}
+        for (var entry : rt.tracks.entrySet()) {
+            if (!entry.getValue().active) continue;
+            var player = level.getServer().getPlayerList().getPlayer(entry.getKey());
+            if (player == null || player.serverLevel() != level) continue;
+            entry.getValue().positions.record(level.getGameTime(), player.getX(), player.getY() + .5, player.getZ());
+            Vec3 eye = player.getEyePosition();
+            entry.getValue().melee.eyes.record(level.getGameTime(), eye.x, eye.y, eye.z);
+        }
         tickWaves(level, rt, data);
         if (++rt.scanCounter >= SCAN_INTERVAL_TICKS) {
             rt.scanCounter = 0;
@@ -707,10 +706,9 @@ public final class AllayStormManager {
         // players that left the level (dimension change, logout) drop their
         // track. The player lookup is GLOBAL across dimensions, so "still
         // online" is NOT enough: a cross-dimension player must be detected
-        // via their current ServerLevel, or their stale active track would
-        // pin the authority forever and their client would never be told to
-        // disperse (belt-and-braces: the client also resets itself on the
-        // level-change events)
+        // via their current ServerLevel, or a stale track would pin authority.
+        // Client level-change events clear the old local storm; no old-level
+        // cleanup is sent to the new world.
         for (var it = rt.tracks.entrySet().iterator(); it.hasNext();) {
             var entry = it.next();
             ServerPlayer player = level.getServer().getPlayerList().getPlayer(entry.getKey());
@@ -719,8 +717,6 @@ public final class AllayStormManager {
                 if (t.active) {
                     t.active = false;
                     t.authority = false;
-                    if (player != null)
-                        PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.DEACTIVATE());
                 }
                 it.remove();
             }
@@ -756,11 +752,13 @@ public final class AllayStormManager {
         Track t = rt.tracks.computeIfAbsent(player.getUUID(), k -> new Track());
         t.active = true;
         t.order = rt.orderCounter++;
+        Vec3 eye = player.getEyePosition();
+        t.melee.eyes.record(level.getGameTime(), eye.x, eye.y, eye.z);
         // the wave cooldown counts from activation: a freshly joined player
         // gets one assemble window before the storm's first strike at them
         t.lastWaveLaunchGameTime = level.getGameTime();
         PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.ACTIVATE(
-                data.anchor, data.count, data.stormSeed,
+                StormIdentity.of(level, data), data.anchor, data.count, data.stormSeed,
                 t.authority, ServerConfig.stormCorrectionHz, data.dead.toByteArray(),
                 data.creationRadius, data.finalRadius, (float) data.growthPerSecond,
                 data.createdAtGameTime));
@@ -777,7 +775,7 @@ public final class AllayStormManager {
             return;
         t.active = false;
         t.authority = false;
-        PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.DEACTIVATE());
+        PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.DEACTIVATE(StormIdentity.of(level, data)));
     }
 
     private static void deactivateAll(ServerLevel level, Runtime rt) {
@@ -789,7 +787,8 @@ public final class AllayStormManager {
             t.authority = false;
             ServerPlayer player = rt.level.getServer().getPlayerList().getPlayer(entry.getKey());
             if (player != null)
-                PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.DEACTIVATE());
+                PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.DEACTIVATE(
+                        StormIdentity.of(level, level.getData(CMIAttachments.STORM_DATA.get()))));
         }
     }
 
@@ -816,7 +815,7 @@ public final class AllayStormManager {
                 ServerPlayer player = rt.level.getServer().getPlayerList().getPlayer(entry.getKey());
                 if (player != null)
                     PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.UPDATE(
-                            data.anchor, data.count, data.stormSeed,
+                            StormIdentity.of(rt.level, data), data.anchor, data.count, data.stormSeed,
                             should, ServerConfig.stormCorrectionHz,
                             data.creationRadius, data.finalRadius, (float) data.growthPerSecond,
                             data.createdAtGameTime));
@@ -826,116 +825,31 @@ public final class AllayStormManager {
 
     // ---- packet handling ------------------------------------------------------
 
-    /** Consumes {@link ServerboundStormHitPacket} (attacker-reported melee hit). */
+    /** Consumes a GPU candidate; all combat values come from the server. */
     public static void handleHit(ServerboundStormHitPacket packet, IPayloadContext ctx) {
-        if (!(ctx.player() instanceof ServerPlayer player))
-            return;
+        if (!(ctx.player() instanceof ServerPlayer player)) return;
         ServerLevel level = player.serverLevel();
-        if (!level.hasData(CMIAttachments.STORM_DATA.get()))
-            return;
+        if (!level.hasData(CMIAttachments.STORM_DATA.get())) return;
         AllayStormData data = level.getData(CMIAttachments.STORM_DATA.get());
-        if (!data.active)
-            return;
         Runtime rt = runtime(level);
-        Track t = rt.tracks.get(player.getUUID());
-        if (t == null || !t.active)
-            return; // remote player: no local storm to hit
-        int idx = packet.memberIdx();
-        if (idx < 0 || idx >= data.count || data.dead.get(idx))
-            return; // unknown or already dead member
-        // cheap plausibility: the reported hit spot must sit within melee
-        // reach of the attacker's SERVER-side position (the +8 covers the
-        // server view lagging a fast-moving client by ~1-2 blocks plus
-        // latency jitter). Kills the "hit any member from anywhere inside
-        // the activation range" corner of the documented trust surface, and
-        // is immune to anchor moves / radius shrinks (members fly there for
-        // seconds, but an attacker can only hit what they stand next to).
-        // Deliberately melee-shaped: a future ranged report path re-scopes
-        // or drops this check (one conditional).
-        double hitX = data.anchor.getX() + packet.relX();
-        double hitY = data.anchor.getY() + packet.relY();
-        double hitZ = data.anchor.getZ() + packet.relZ();
-        double reach = player.entityInteractionRange() + 8.0;
-        if (player.distanceToSqr(hitX, hitY, hitZ) > reach * reach)
-            return;
-        if (!rateLimit(t))
-            return;
-        float hpBefore = data.hpOf(idx);
-        float hp = hpBefore - packet.damage();
-        boolean died = hp <= 0f;
-        if (died) {
-            data.dead.set(idx);
-            data.hp.remove(idx);
-        } else {
-            data.hp.put(idx, hp);
-        }
+        Track track = rt.tracks.get(player.getUUID());
+        if (track == null || !track.active) return;
+        var result = StormMelee.attack(player, data, StormIdentity.of(level, data), packet, track.melee);
+        if (result == null) return;
         level.setData(CMIAttachments.STORM_DATA.get(), data);
-
-        // vanilla Player.attack SERVER half on a landed hit (verbatim shape):
-        // weapon durability via the item's own hurtEnemy/postHurtEnemy chain
-        // — swords/tridents/maces 1 point, diggers 2, items without overrides
-        // 0; Unbreaking, the creative bypass and the break shrink+sound all
-        // live inside hurtAndBreak. A REJECTED report never reaches here (the
-        // vanilla analog is hurt() returning false — no durability either);
-        // a KILLING hit consumes like any other landed hit. The throwaway
-        // proxy mirrors the client's proxyFor: vanilla durability
-        // implementations never read the target, but modded items and the
-        // POST_ATTACK effects below may.
-        ItemStack weapon = player.getWeaponItem();
-        ItemStack weaponCopy = weapon.copy();
-        Allay proxyTarget = new Allay(EntityType.ALLAY, level);
-        proxyTarget.setPos(hitX, hitY, hitZ);
-        boolean hurtEnemyResult = weapon.hurtEnemy(proxyTarget, player);
-        // vanilla Player.attack:1380 — POST_ATTACK enchantment effects fire
-        // SERVER-side only, in exactly this slot (after hurtEnemy, before
-        // postHurtEnemy). This is what makes Wind Burst work on a landed
-        // mace smash: its effect is ATTACKER-affected, explodes at the
-        // ATTACKER's own position behind the fall-distance ≥ 1.5 gate, and
-        // the knockback-only blast launches the player like a real-entity
-        // hit. Victim-side effects (Fire Aspect's ignite) reach only the
-        // throwaway proxy, which is not in the world and cannot burn
-        // anything.
-        EnchantmentHelper.doPostAttackEffects(level, proxyTarget,
-                player.damageSources().playerAttack(player));
-        if (!weapon.isEmpty()) {
-            if (hurtEnemyResult)
-                weapon.postHurtEnemy(proxyTarget, player);
-            if (weapon.isEmpty()) {
-                net.neoforged.neoforge.event.EventHooks.onPlayerDestroyItem(player, weaponCopy,
-                        weapon == player.getMainHandItem() ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND);
-                if (weapon == player.getMainHandItem())
-                    player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
-                else
-                    player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
-            }
-        }
-        // f8 = healthBefore - healthAfter; the server-owned hp has no armor /
-        // absorption term, so min(hpBefore, damage) IS the exact damage dealt
-        player.awardStat(Stats.DAMAGE_DEALT, Math.round(Math.min(hpBefore, packet.damage()) * 10.0F));
-        player.causeFoodExhaustion(0.1F);
-
-        // server-side hurt/death audio for everyone EXCEPT the attacker —
-        // the overload's nullable-player argument excludes exactly that
-        // player, who already played its local prediction on the click
-        // (vanilla parity: real entities play their hurt sounds server-side)
-        level.playSound(player,
-                data.anchor.getX() + packet.relX(),
-                data.anchor.getY() + packet.relY(),
-                data.anchor.getZ() + packet.relZ(),
-                died ? SoundEvents.ALLAY_DEATH : SoundEvents.ALLAY_HURT,
-                SoundSource.NEUTRAL, 1.0F, 1.0F);
-        ClientboundStormDamagePacket out = new ClientboundStormDamagePacket(idx, packet.damage(),
-                packet.kbX(), packet.kbZ(), packet.light(), died, player.getId(),
-                packet.crit(), packet.magic(), packet.hearts(),
-                packet.relX(), packet.relY(), packet.relZ());
-        // pure server circuit: the attacker receives the broadcast like everyone
+        Vec3 hit = packet.contact();
+        level.playSound(null, hit.x, hit.y, hit.z, result.died() ? SoundEvents.ALLAY_DEATH : SoundEvents.ALLAY_HURT,
+                SoundSource.NEUTRAL, 1, 1);
+        level.playSound(null, player.getX(), player.getY(), player.getZ(), result.attackSound(), SoundSource.PLAYERS, 1, 1);
+        if (result.kbX() != 0 || result.kbZ() != 0)
+            player.connection.send(new net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket(player));
+        var out = new ClientboundStormDamagePacket(packet.memberIdx(), result.damage(), result.kbX(), result.kbZ(),
+                result.light(), result.died(), player.getId(), result.crit(), result.magic(), result.hearts(),
+                hit.x, hit.y, hit.z, packet.dimension(), packet.epoch());
         for (var entry : rt.tracks.entrySet()) {
-            Track tr = entry.getValue();
-            if (!tr.active)
-                continue;
-            ServerPlayer p = rt.level.getServer().getPlayerList().getPlayer(entry.getKey());
-            if (p != null)
-                PacketDistributor.sendToPlayer(p, out);
+            if (!entry.getValue().active) continue;
+            ServerPlayer observer = level.getServer().getPlayerList().getPlayer(entry.getKey());
+            if (observer != null && observer.serverLevel() == level) PacketDistributor.sendToPlayer(observer, out);
         }
     }
 
@@ -985,16 +899,6 @@ public final class AllayStormManager {
             if (p != null)
                 PacketDistributor.sendToPlayer(p, relay);
         }
-    }
-
-    private static boolean rateLimit(Track t) {
-        long now = System.currentTimeMillis();
-        while (!t.hitTimes.isEmpty() && now - t.hitTimes.peekFirst() > 1000L)
-            t.hitTimes.pollFirst();
-        if (t.hitTimes.size() >= MAX_HITS_PER_SECOND)
-            return false;
-        t.hitTimes.addLast(now);
-        return true;
     }
 
     // ---- dive-wave contact reports ---------------------------------------------
@@ -1136,6 +1040,7 @@ public final class AllayStormManager {
     /** Ends the storm: clients disperse and forget; persisted state clears. */
     public static void stopStorm(ServerLevel level) {
         AllayStormData data = level.getData(CMIAttachments.STORM_DATA.get());
+        StormIdentity identity = StormIdentity.of(level, data);
         if (data.active || !data.dead.isEmpty() || !data.hp.isEmpty()) {
             data.active = false;
             data.dead.clear();
@@ -1154,7 +1059,7 @@ public final class AllayStormManager {
             t.authority = false;
             ServerPlayer player = rt.level.getServer().getPlayerList().getPlayer(entry.getKey());
             if (player != null)
-                PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.STOP());
+                PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.STOP(identity));
         }
     }
 
@@ -1169,13 +1074,13 @@ public final class AllayStormManager {
                 continue;
             if (updateOnly) {
                 PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.UPDATE(
-                        data.anchor, data.count, data.stormSeed,
+                        StormIdentity.of(level, data), data.anchor, data.count, data.stormSeed,
                         t.authority, ServerConfig.stormCorrectionHz,
                         data.creationRadius, data.finalRadius, (float) data.growthPerSecond,
                         data.createdAtGameTime));
             } else {
                 PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.ACTIVATE(
-                        data.anchor, data.count, data.stormSeed,
+                        StormIdentity.of(level, data), data.anchor, data.count, data.stormSeed,
                         t.authority, ServerConfig.stormCorrectionHz, data.dead.toByteArray(),
                         data.creationRadius, data.finalRadius, (float) data.growthPerSecond,
                         data.createdAtGameTime));

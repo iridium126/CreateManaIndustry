@@ -277,8 +277,9 @@ public final class ModelInteractionRuntime {
     }
 
     /**
-     * Client-side mirror of {@code Player.attack} against the particle the
-     * hit query selected, verbatim from the 1.21.1 source: cooldown scaling
+     * Storm candidates return immediately after report + swing prediction.
+     * Ordinary MODEL particles use a client-side mirror of {@code Player.attack}:
+     * cooldown scaling
      * on the base damage (0.2 + f²·0.8), the same scaling on the enchantment
      * bonus, the UNCOOLED weapon bonus, the ×1.5 crit through the NeoForge
      * CriticalHitEvent, the STRONG/WEAK hit sound split, knockback-gated
@@ -296,6 +297,13 @@ public final class ModelInteractionRuntime {
      * design).
      */
     private boolean syntheticAttack(Minecraft mc, LocalPlayer player, int idx, Vec3 hitPos, int memberIdx,int token,float hpSnapshot) {
+        if (memberIdx >= 0 && AllayStormRuntime.INSTANCE.active()) {
+            // Send before swing: ServerPlayer.swing resets the shared attack-strength ticker.
+            com.iridium126.createmanaindustry.client.allaystorm.StormFeedback.INSTANCE.reportHit(memberIdx, hitPos);
+            player.swing(InteractionHand.MAIN_HAND);
+            player.resetAttackStrengthTicker();
+            return true;
+        }
         Allay target = proxyFor(mc.level);
         ItemStack weapon = player.getWeaponItem();
         DamageSource source = player.damageSources().playerAttack(player);
@@ -405,28 +413,17 @@ public final class ModelInteractionRuntime {
         }
 
         // vanilla exhausts 0.1 per landed hit (Player.attack, both halves);
-        // the storm path lands every consumed snapshot
+        // the ordinary MODEL path lands every consumed snapshot
         player.causeFoodExhaustion(0.1F);
-        if (memberIdx >= 0 && AllayStormRuntime.INSTANCE.active()) {
-            // Server-authoritative storm path: REPORT ONLY. The server owns
-            // HP and death, and its DAMAGE broadcast applies the hit to every
-            // active client including this one (pure server circuit — the
-            // local HP mirror never gates a storm member's fate). Hit position
-            // rides along so all clients ease the struck member to the exact
-            // spot before playing hurt-flash / corpse / poof there.
-            com.iridium126.createmanaindustry.client.allaystorm.StormFeedback.INSTANCE.reportHit(
-                    memberIdx,total,kbVecX,kbVecZ,light,crit,magic,hearts,hitPos);
-        } else {
-            // legacy local-authority path (non-storm MODEL debug particles)
-            Vec3 look=Vec3.directionFromRotation(mc.gameRenderer.getMainCamera().getXRot(),mc.gameRenderer.getMainCamera().getYRot());
-            float reach=(float)player.entityInteractionRange();Vec3 eye=player.getEyePosition();
-            // Do not clamp to the proxy's quantized distance (it can lie just before the actual AABB).
-            HitResult nearer=mc.crosshairPickEntity==target?vanillaPickResult:mc.hitResult;
-            if(nearer!=null&&nearer.getType()!=HitResult.Type.MISS)reach=Math.min(reach,(float)eye.distanceTo(nearer.getLocation()));
-            var wall=mc.level.clip(new ClipContext(eye,eye.add(look.scale(reach)),ClipContext.Block.COLLIDER,ClipContext.Fluid.NONE,player));
-            if(wall.getType()!=HitResult.Type.MISS)reach=Math.min(reach,(float)eye.distanceTo(wall.getLocation()));
-            enqueueDamageEntry(idx,total,kbVecX,kbVecZ,light,0f,token,eye,look,reach);
-        }
+        // legacy local-authority path (non-storm MODEL debug particles)
+        Vec3 look=Vec3.directionFromRotation(mc.gameRenderer.getMainCamera().getXRot(),mc.gameRenderer.getMainCamera().getYRot());
+        float reach=(float)player.entityInteractionRange();Vec3 eye=player.getEyePosition();
+        // Do not clamp to the proxy's quantized distance (it can lie just before the actual AABB).
+        HitResult nearer=mc.crosshairPickEntity==target?vanillaPickResult:mc.hitResult;
+        if(nearer!=null&&nearer.getType()!=HitResult.Type.MISS)reach=Math.min(reach,(float)eye.distanceTo(nearer.getLocation()));
+        var wall=mc.level.clip(new ClipContext(eye,eye.add(look.scale(reach)),ClipContext.Block.COLLIDER,ClipContext.Fluid.NONE,player));
+        if(wall.getType()!=HitResult.Type.MISS)reach=Math.min(reach,(float)eye.distanceTo(wall.getLocation()));
+        enqueueDamageEntry(idx,total,kbVecX,kbVecZ,light,0f,token,eye,look,reach);
         player.swing(InteractionHand.MAIN_HAND);
         player.resetAttackStrengthTicker();
         return true;
@@ -441,8 +438,8 @@ public final class ModelInteractionRuntime {
      * (runs under {@code !isClientSide}) and mob effects via
      * {@code onEffectAdded} (ditto) — so the live client attribute always
      * reads the bare base value (1.0 for a player). Vanilla never minds (it
-     * recomputes server-side for real entities), but this engine's client
-     * prediction REPORTS its damage, so the mirror must be exact: weapon
+     * recomputes server-side for real entities), but ordinary MODEL particles calculate damage locally,
+     * so their mirror must include weapon
      * MAINHAND modifiers from the item component (vanilla's own client-side
      * precedent, {@code Mob.getApproximateAttackDamageWithItem}) plus
      * mob-effect modifiers via {@code MobEffect.createModifiers}, applied in

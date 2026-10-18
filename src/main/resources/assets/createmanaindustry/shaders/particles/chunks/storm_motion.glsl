@@ -47,7 +47,12 @@
         // compaction; cleared only by a new storm generation killing the
         // pool), and a latched member never engages again.
         if(uStarfallEnabled){
-            uint phase=0u;waveEngaged=cmiStarSteering(p0.w,p3.z,pos,target,spMaxV,target,vT,phase);
+            // Only a claimed member may replace its typhoon home servo. Do not
+            // alias that home with an out parameter: a rejected attack must
+            // preserve both the home position and its orbital feed-forward velocity.
+            uint phase=0u;vec3 attackTarget,attackVelocity;
+            waveEngaged=cmiStarSteering(p0.w,p3.z,pos,target,spMaxV,attackTarget,attackVelocity,phase);
+            if(waveEngaged){target=attackTarget;vT=attackVelocity;}
             uint member=cmiStarMember(p0.w);if(member<131072u){uint a=cmiStarAssignment(p0.w),id=a==0u?0u:uint(cmiStarVec(cmiStarBase((a>>1u)&3u)).x+.5);if(id!=0u&&starStateRead.words[member*2u]==id)phase=max(phase,starStateRead.words[member*2u+1u]&255u);starStateWrite.words[member*2u]=id;starStateWrite.words[member*2u+1u]=phase;}
         }else {
         if ((uint(p0.w + 0.5) & MEMBER_LATCH_BIT) == 0u) {

@@ -2,6 +2,8 @@ package com.iridium126.createmanaindustry.content.allaystorm.network;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.content.allaystorm.AllayStormData;
+import com.iridium126.createmanaindustry.content.allaystorm.StormIdentity;
+import net.minecraft.resources.ResourceLocation;
 import com.iridium126.createmanaindustry.infrastructure.network.ClientPayloadHandler;
 
 import io.netty.handler.codec.DecoderException;
@@ -49,7 +51,9 @@ public record ClientboundStormStatePacket(
         int action, boolean authority, double correctionHz,
         BlockPos anchor, int count, int stormSeed,
         float creationRadius, float finalRadius, float growthPerSecond, long createdAt,
-        byte[] deadBitmap) implements CustomPacketPayload {
+        byte[] deadBitmap, ResourceLocation dimension, long epoch) implements CustomPacketPayload {
+
+    public StormIdentity identity() { return new StormIdentity(dimension, epoch); }
 
     private static final ClientPayloadHandler<ClientboundStormStatePacket> CLIENT_HANDLER =
             new ClientPayloadHandler<>();
@@ -70,39 +74,41 @@ public record ClientboundStormStatePacket(
      */
     public static final int MAX_DEAD_BYTES = (AllayStormData.MAX_COUNT + 7) / 8;
 
-    public static final ClientboundStormStatePacket ACTIVATE(BlockPos anchor, int count,
+    public static final ClientboundStormStatePacket ACTIVATE(StormIdentity identity, BlockPos anchor, int count,
             int stormSeed, boolean authority, double hz, byte[] deadBitmap,
             float creationRadius, float finalRadius, float growthPerSecond, long createdAt) {
         return new ClientboundStormStatePacket(ACTION_ACTIVATE, authority, hz,
                 anchor, count, stormSeed,
-                creationRadius, finalRadius, growthPerSecond, createdAt, deadBitmap);
+                creationRadius, finalRadius, growthPerSecond, createdAt, deadBitmap, identity.dimension(), identity.epoch());
     }
 
-    public static final ClientboundStormStatePacket UPDATE(BlockPos anchor, int count,
+    public static final ClientboundStormStatePacket UPDATE(StormIdentity identity, BlockPos anchor, int count,
             int stormSeed, boolean authority, double hz,
             float creationRadius, float finalRadius, float growthPerSecond, long createdAt) {
         return new ClientboundStormStatePacket(ACTION_UPDATE, authority, hz,
                 anchor, count, stormSeed,
-                creationRadius, finalRadius, growthPerSecond, createdAt, null);
+                creationRadius, finalRadius, growthPerSecond, createdAt, null, identity.dimension(), identity.epoch());
     }
 
-    public static final ClientboundStormStatePacket DEACTIVATE() {
+    public static final ClientboundStormStatePacket DEACTIVATE(StormIdentity identity) {
         return new ClientboundStormStatePacket(ACTION_DEACTIVATE, false, 0, BlockPos.ZERO, 0, 0,
-                0, 0, 0, 0, null);
+                0, 0, 0, 0, null, identity.dimension(), identity.epoch());
     }
 
-    public static final ClientboundStormStatePacket STOP() {
+    public static final ClientboundStormStatePacket STOP(StormIdentity identity) {
         return new ClientboundStormStatePacket(ACTION_STOP, false, 0, BlockPos.ZERO, 0, 0,
-                0, 0, 0, 0, null);
+                0, 0, 0, 0, null, identity.dimension(), identity.epoch());
     }
 
     public static final CustomPacketPayload.Type<ClientboundStormStatePacket> TYPE =
-            new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("storm_state"));
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(CreateManaIndustry.MODID, "storm_state"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundStormStatePacket> STREAM_CODEC =
             StreamCodec.of(ClientboundStormStatePacket::encode, ClientboundStormStatePacket::decode);
 
     private static void encode(RegistryFriendlyByteBuf buffer, ClientboundStormStatePacket p) {
+        ResourceLocation.STREAM_CODEC.encode(buffer, p.dimension);
+        buffer.writeLong(p.epoch);
         buffer.writeByte((p.action & 3) | (p.authority ? 4 : 0));
         ByteBufCodecs.VAR_INT.encode(buffer, (int) Math.round(p.correctionHz * 10));
         if (p.action == ACTION_ACTIVATE || p.action == ACTION_UPDATE) {
@@ -122,6 +128,8 @@ public record ClientboundStormStatePacket(
     }
 
     private static ClientboundStormStatePacket decode(RegistryFriendlyByteBuf buffer) {
+        ResourceLocation dimension = ResourceLocation.STREAM_CODEC.decode(buffer);
+        long epoch = buffer.readLong();
         int flags = buffer.readByte() & 0xFF;
         int action = flags & 3;
         boolean authority = (flags & 4) != 0;
@@ -152,7 +160,7 @@ public record ClientboundStormStatePacket(
         }
         return new ClientboundStormStatePacket(action, authority, hz,
                 anchor, count, seed,
-                creationRadius, finalRadius, growthPerSecond, createdAt, dead);
+                creationRadius, finalRadius, growthPerSecond, createdAt, dead, dimension, epoch);
     }
 
     @Override

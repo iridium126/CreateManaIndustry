@@ -48,6 +48,15 @@ memory costs, coverage and remaining in-game acceptance work.
 
 ## Result management
 
+Starfall's standalone regression also compares the production update kernel
+with attacks enabled/disabled far from world zero. Nonparticipants must retain
+their ordinary home position and orbital velocity before, during and after an
+attack, including aborts. Run without a Minecraft client:
+
+```powershell
+.\gradlew.bat validateStarfallGpu validateDomeGpu validateHelixGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
+```
+
 Use `python scripts/benchmarks/run.py <task> <Gradle flags>` to capture the command,
 exit status, actual driver log and samples in an independent `build/benchmarks/`
 directory. Direct Gradle runs default to `build/benchmarks/current/`; override

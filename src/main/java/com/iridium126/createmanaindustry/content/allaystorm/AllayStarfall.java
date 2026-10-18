@@ -38,6 +38,7 @@ public final class AllayStarfall {
  public static final class PlayerTrail {
   private final long[] ticks=new long[41];private final double[] xyz=new double[123];private int cursor,count;
   public void record(long tick,double x,double y,double z){ticks[cursor]=tick;int b=cursor*3;xyz[b]=x;xyz[b+1]=y;xyz[b+2]=z;cursor=(cursor+1)%41;count=Math.min(41,count+1);}
+  public net.minecraft.world.phys.Vec3 positionAt(long sample){int best=-1;long difference=Long.MAX_VALUE;for(int i=0;i<count;i++){long d=Math.abs(ticks[i]-sample);if(d<difference){difference=d;best=i;}}if(best<0||difference>2)return null;int b=best*3;return new net.minecraft.world.phys.Vec3(xyz[b],xyz[b+1],xyz[b+2]);}
   public double distanceSquared(long sample,double x,double y,double z){int best=-1;long difference=Long.MAX_VALUE;for(int i=0;i<count;i++){long d=Math.abs(ticks[i]-sample);if(d<difference){difference=d;best=i;}}if(best<0||difference>2)return Double.POSITIVE_INFINITY;int b=best*3;double dx=x-xyz[b],dy=y-xyz[b+1],dz=z-xyz[b+2];return dx*dx+dy*dy+dz*dz;}
  }
 }

@@ -27,7 +27,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
  * The server cannot validate these positions (no GPU) — it applies a coarse
  * bounds check and relays the payload to the other active clients as a
  * {@link ClientboundStormPositionsPacket} (documented trust surface, same
- * tier as client-reported hit damage).
+ * tier as client-reported member hit candidates).
  */
 public record ServerboundStormPositionsPacket(long gameTime, float[] entries) implements CustomPacketPayload {
 
