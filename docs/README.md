@@ -12,6 +12,8 @@
 
 | 文档 | 内容 | 状态 |
 | --- | --- | --- |
+| [hexcasting-trickster-interop-review-2026-10-16.md](hexcasting-trickster-interop-review-2026-10-16.md) | 全部整改条目、自动回归、真实专服重启与性能对照；客户端待用户验收 | 🟡 |
+| [hexcasting-trickster-interop-dev.md](hexcasting-trickster-interop-dev.md) | 来源、根预算、编解码及 adapter 契约，真实客户端验收清单 | 🟡 |
 | [gpu-helix-2026-10-11.md](gpu-helix-2026-10-11.md) | 双螺旋贯击、协议 4、区域扫掠与离屏验证 | 🟡 |
 | [gpu-dome-2026-10-11.md](gpu-dome-2026-10-11.md) | 天穹合围实现、区域伤害、协议 3 与离屏验证 | 🟡 |
 | [gpu-starfall-2026-10-11.md](gpu-starfall-2026-10-11.md) | 星冠落阵、128 粒子圆环、同代身份阶段、Iris 与性能证据 | 🟡 |

@@ -1,12 +1,14 @@
 package com.iridium126.createmanaindustry.mixin.hexcasting;
 
+import com.iridium126.createmanaindustry.compat.hextrick.execution.circle.CircleSlateManaPool;
+
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import com.iridium126.createmanaindustry.compat.hexcasting.circle.SlateKnotHolder;
+import com.iridium126.createmanaindustry.compat.hextrick.execution.circle.SlateKnotHolder;
 
 import at.petrak.hexcasting.common.blocks.circles.BlockEntitySlate;
 import net.minecraft.core.BlockPos;

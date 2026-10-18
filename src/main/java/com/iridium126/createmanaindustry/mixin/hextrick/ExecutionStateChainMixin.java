@@ -3,7 +3,6 @@ package com.iridium126.createmanaindustry.mixin.hextrick;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChain;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
 import com.iridium126.createmanaindustry.compat.trickster.casting.ChainState;
-
 import dev.enjarai.trickster.spell.Fragment;
 import dev.enjarai.trickster.spell.execution.ExecutionState;
 import java.util.List;

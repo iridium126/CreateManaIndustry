@@ -14,7 +14,7 @@ import at.petrak.hexcasting.api.casting.iota.PatternIota;
 import at.petrak.hexcasting.api.utils.TreeList;
 import at.petrak.hexcasting.common.lib.hex.HexActions;
 import at.petrak.hexcasting.xplat.IXplatAbstractions;
-import com.iridium126.createmanaindustry.compat.hexcasting.TrickIota;
+import com.iridium126.createmanaindustry.compat.hextrick.data.TrickIota;
 import dev.enjarai.trickster.spell.PatternGlyph;
 import dev.enjarai.trickster.spell.SpellPart;
 import dev.enjarai.trickster.spell.execution.source.PlayerSpellSource;

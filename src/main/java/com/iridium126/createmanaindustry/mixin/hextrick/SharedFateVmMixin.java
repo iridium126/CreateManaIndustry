@@ -6,9 +6,9 @@ import at.petrak.hexcasting.api.casting.iota.Iota;
 import com.iridium126.createmanaindustry.compat.trickster.sharedfate.SharedFateMishaps;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import java.util.List;
 import net.minecraft.server.level.ServerLevel;
 import org.spongepowered.asm.mixin.Mixin;
-import java.util.List;
 
 @Mixin(value=CastingVM.class,remap=false,priority=1200)
 public abstract class SharedFateVmMixin {

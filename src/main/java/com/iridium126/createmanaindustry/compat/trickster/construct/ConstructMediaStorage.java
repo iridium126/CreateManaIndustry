@@ -15,7 +15,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 import net.fabricmc.fabric.api.transfer.v1.transaction.base.SnapshotParticipant;
-import com.iridium126.createmanaindustry.compat.hexcasting.ResourceConversionException;
+import com.iridium126.createmanaindustry.compat.hextrick.conversion.ResourceConversionException;
 
 /**
  * Hex media stored on Trickster spell construct block entities, charged by

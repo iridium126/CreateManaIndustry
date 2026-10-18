@@ -39,6 +39,8 @@ public final class ServerConfig {
     public enum HexJitMode { OFF, PROFILE, AUTO }
 
     public static volatile HexJitMode hexJitMode = HexJitMode.AUTO;
+    public static volatile int hexTrickMaxDepth = 32;
+    private static ModConfigSpec.IntValue HEX_TRICK_MAX_DEPTH;
     public static volatile int hexJitThreshold = 64;
     public static volatile int hexJitMaxUnits = 1024;
     public static volatile long hexJitByteBudget = 16L << 20;
@@ -326,6 +328,8 @@ public final class ServerConfig {
         BUILDER.pop();
 
         BUILDER.comment("Hexcasting integration settings.").push("hexcasting");
+        HEX_TRICK_MAX_DEPTH = BUILDER.comment("Maximum synchronous Hexcasting/Trickster language crossings.")
+                .defineInRange("bridgeMaxDepth", 32, 1, 64);
         CYPHER_MAX_MEDIA = BUILDER
                 .comment("Maximum media capacity for incomplete cyphers.")
                 .defineInRange("cypherMaxMedia", 6400000L, 10000L, Long.MAX_VALUE);
@@ -717,6 +721,7 @@ public final class ServerConfig {
     /** Copies the loaded server config values into the optional JIT runtime. */
     public static void refreshHexJitSettings() {
         hexJitMode = HEX_JIT_MODE.get();
+        hexTrickMaxDepth = HEX_TRICK_MAX_DEPTH.get();
         hexJitThreshold = HEX_JIT_THRESHOLD.get();
         hexJitMaxUnits = HEX_JIT_MAX_UNITS.get();
         hexJitByteBudget = (long) HEX_JIT_BYTE_BUDGET_MIB.get() << 20;

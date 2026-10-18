@@ -1,6 +1,9 @@
 package com.iridium126.createmanaindustry.compat.trickster.fragment;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.compat.hextrick.data.DecodeBudget;
+import com.iridium126.createmanaindustry.compat.hextrick.data.BoundedIotaNbt;
+import com.iridium126.createmanaindustry.compat.hextrick.data.BridgeFragmentCodec;
 import dev.enjarai.trickster.spell.Fragment;
 import dev.enjarai.trickster.spell.fragment.FragmentType;
 import io.wispforest.endec.Endec;
@@ -27,7 +30,10 @@ public final class PotionFragment implements Fragment {
     public PotionFragment(byte[] encoded) {
         if (encoded.length > MAX_NBT_BYTES) throw new IllegalArgumentException("Potion fragment exceeds NBT limit");
         try {
-            snapshot = canonical(NbtIo.readCompressed(new ByteArrayInputStream(encoded), NbtAccounter.create(MAX_NBT_BYTES)));
+            var budget = DecodeBudget.current();
+            snapshot = canonical(budget == null
+                    ? NbtIo.readCompressed(new ByteArrayInputStream(encoded), NbtAccounter.create(MAX_NBT_BYTES))
+                    : BoundedIotaNbt.read(BridgeFragmentCodec.decodeGzip(encoded, budget), budget));
             toEffect(); // Reject malformed and unknown registry values before using the fragment.
             bytes = encode(snapshot);
         } catch (IOException failure) {

@@ -1,8 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
-import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
 import com.iridium126.createmanaindustry.compat.trickster.casting.ExecutorChainAccess;
-
 import dev.enjarai.trickster.spell.SpellExecutor;
 import dev.enjarai.trickster.spell.execution.PlayerSpellExecutionManager;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
@@ -24,6 +22,6 @@ public abstract class PlayerExecutionManagerChainMixin {
     @Inject(method = "killAll", at = @At("HEAD"))
     private void cmi$killAll(CallbackInfo ci) { spells.values().forEach(PlayerExecutionManagerChainMixin::cmi$release); }
     @Unique private static void cmi$release(SpellExecutor executor) {
-        if (executor instanceof ExecutorChainAccess access) CastChains.release(access.cmi$executorChain(), executor);
+        if (executor instanceof ExecutorChainAccess access) access.cmi$releaseExecution();
     }
 }

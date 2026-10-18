@@ -1,19 +1,17 @@
 package com.iridium126.createmanaindustry.compat.trickster.greattrick;
 
+import com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope;
+import com.iridium126.createmanaindustry.compat.hextrick.execution.CastingContexts;
 import com.iridium126.createmanaindustry.compat.trickster.anima.BatteryAnima;
 import com.iridium126.createmanaindustry.compat.trickster.blunder.PotionBlunder;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
 import com.iridium126.createmanaindustry.compat.trickster.casting.ChainState;
 import com.iridium126.createmanaindustry.compat.trickster.fragment.PotionFragment;
-
-import at.petrak.hexcasting.api.casting.eval.env.StaffCastEnv;
-import com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope;
 import dev.enjarai.trickster.spell.*;
 import dev.enjarai.trickster.spell.exception.blunder.*;
 import dev.enjarai.trickster.spell.fragment.*;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.LivingEntity;
 import java.util.*;
+import net.minecraft.world.entity.LivingEntity;
 
 public final class TinctureShapingTrick extends GreatTrick {
     public TinctureShapingTrick() { super(GreatPattern.TINCTURE_SHAPING, 32000); }
@@ -29,7 +27,8 @@ public final class TinctureShapingTrick extends GreatTrick {
         var chain = CastChains.current() == null ? state.cmi$getChain() : CastChains.current();
         try (var ignored = CastChains.enter(chain)) {
             // Native entity range includes the configured player true-name exemption.
-            if (!new StaffCastEnv(player, InteractionHand.MAIN_HAND).isEntityInRange(entity))
+            if (!CastingContexts.environment(player,
+                    CastingContexts.origin()).isEntityInRange(entity))
                 throw new PotionBlunder("range");
         }
         var effect = potion.toEffect();

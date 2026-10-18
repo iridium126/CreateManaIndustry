@@ -1,5 +1,10 @@
 package com.iridium126.createmanaindustry.compat.hexcasting;
 
+import com.iridium126.createmanaindustry.compat.hextrick.bootstrap.CMIHexTrickActions;
+import com.iridium126.createmanaindustry.compat.hextrick.conversion.ConversionTickTime;
+import com.iridium126.createmanaindustry.compat.hextrick.conversion.OpMediaToMana;
+import com.iridium126.createmanaindustry.compat.hextrick.conversion.MishapResourceConversion;
+
 import at.petrak.hexcasting.api.casting.circles.BlockEntityAbstractImpetus;
 import at.petrak.hexcasting.api.casting.eval.env.CircleCastEnv;
 import at.petrak.hexcasting.api.casting.eval.vm.CastingImage;
@@ -8,9 +13,9 @@ import at.petrak.hexcasting.api.utils.TreeList;
 import at.petrak.hexcasting.common.blocks.circles.BlockEntitySlate;
 import at.petrak.hexcasting.common.blocks.circles.BlockSlate;
 import at.petrak.hexcasting.common.lib.HexBlocks;
-import com.iridium126.createmanaindustry.compat.hexcasting.circle.SlateKnotHolder;
+import com.iridium126.createmanaindustry.compat.hextrick.execution.circle.SlateKnotHolder;
 import com.iridium126.createmanaindustry.compat.trickster.construct.ConstructMediaStorage;
-import com.iridium126.createmanaindustry.compat.trickster.trick.ManaToMediaTrick;
+import com.iridium126.createmanaindustry.compat.hextrick.conversion.ManaToMediaTrick;
 import com.iridium126.createmanaindustry.compat.trickster.blunder.ResourceConversionBlunder;
 import com.mojang.authlib.GameProfile;
 import dev.enjarai.trickster.block.ModBlocks;

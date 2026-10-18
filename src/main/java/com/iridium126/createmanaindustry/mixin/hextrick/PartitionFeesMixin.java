@@ -4,10 +4,10 @@ import com.iridium126.createmanaindustry.compat.trickster.partition.PartitionFee
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import dev.enjarai.trickster.spell.*;
-import dev.enjarai.trickster.spell.trick.Trick;
 import dev.enjarai.trickster.spell.exception.blunder.WrappedBlunder;
-import org.spongepowered.asm.mixin.Mixin;
+import dev.enjarai.trickster.spell.trick.Trick;
 import java.util.List;
+import org.spongepowered.asm.mixin.Mixin;
 
 @Mixin(value=Trick.class,remap=false)
 public abstract class PartitionFeesMixin {

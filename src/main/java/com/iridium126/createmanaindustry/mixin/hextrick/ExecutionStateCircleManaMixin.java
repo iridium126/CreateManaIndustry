@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.mixin.hextrick;
 
-import com.iridium126.createmanaindustry.compat.hexcasting.circle.CircleSlateManaPool;
+import com.iridium126.createmanaindustry.compat.hextrick.execution.circle.CircleSlateManaPool;
 import dev.enjarai.trickster.spell.execution.ExecutionState;
 import dev.enjarai.trickster.spell.mana.MutableManaPool;
 import dev.enjarai.trickster.spell.mana.storage.ManaVariant;
