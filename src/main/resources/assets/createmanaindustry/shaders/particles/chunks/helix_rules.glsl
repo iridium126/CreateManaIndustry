@@ -1,4 +1,4 @@
-bool cmiHelix(uint b){return cmiStarVec(b+20u).x>1.5;}
+bool cmiHelix(uint b){float kind=cmiStarVec(b+20u).x;return kind>1.5&&kind<2.5;}
 vec4 cmiHelixInfo(uint b){return cmiStarVec(b+288u);}
 vec4 cmiHelixTimes(uint b){return cmiStarVec(b+292u);}
 float cmiHelixPhase(uint b,float time){

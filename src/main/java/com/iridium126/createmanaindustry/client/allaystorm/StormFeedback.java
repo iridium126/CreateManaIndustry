@@ -145,8 +145,9 @@ public final class StormFeedback {
         if (entries == null)
             return;
         for(int o=0;o+5<entries.length;o+=6){int member=Math.round(entries[o]),id=Math.round(entries[o+1]);var w=AllayStormRuntime.INSTANCE.contactAuthority(id);
+            if(member<0){if(w!=null)AllayStormRuntime.INSTANCE.columnTouchSound(id,entries[o+2],entries[o+3],entries[o+4]);continue;}
             if(w==null||!reported.computeIfAbsent(w,k->new it.unimi.dsi.fastutil.ints.IntOpenHashSet()).add(member))continue;
-            PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(id,w.epoch(),entries[o+5],member,entries[o+2],entries[o+3],entries[o+4]));
+            PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(Minecraft.getInstance().level.dimension().location(),id,w.epoch(),entries[o+5],member,entries[o+2],entries[o+3],entries[o+4]));
         }
     }
 
@@ -168,12 +169,13 @@ public final class StormFeedback {
     public void retireWaveReports() {
         reported.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
     }
+    private long attackSequence;
     public void reportHit(int member, Vec3 hit) {
         var identity = AllayStormRuntime.INSTANCE.identity();
         var level = Minecraft.getInstance().level;
         if (identity == null || level == null) return;
         PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormHitPacket(
-                identity.dimension(), identity.epoch(), member, level.getGameTime(), hit.x, hit.y, hit.z));
+                identity.dimension(), identity.epoch(), member, ++attackSequence, hit.x, hit.y, hit.z));
     }
 
 }

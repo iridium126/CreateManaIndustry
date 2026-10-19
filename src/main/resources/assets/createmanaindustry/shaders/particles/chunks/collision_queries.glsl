@@ -1,5 +1,7 @@
+#pragma cmi_include chunks/storm_collision.glsl
 // Included in update.comp; shares its declared simulation state.
 bool solidAt(vec3 wp, vec3 mOrigin, int slice) {
+    if(cmiStormVoxel)return cmiStormSolid(wp);
     vec3 rel = wp - mOrigin;
     ivec3 tc = ivec3(floor(rel + vec3(0.0001)));
     if (tc.x >= 0 && tc.x < SX && tc.y >= 0 && tc.y < SY && tc.z >= 0 && tc.z < SZ) {

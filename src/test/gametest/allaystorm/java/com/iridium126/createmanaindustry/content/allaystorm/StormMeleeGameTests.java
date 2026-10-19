@@ -32,7 +32,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @PrefixGameTestTemplate(false)
 public final class StormMeleeGameTests {
     private static final class TestPlayer extends FakePlayer {
-        int damageStatCalls, damageStat;
+        int damageStatCalls, damageStat; long attackSequence;
         TestPlayer(ServerLevel level) { super(level, new GameProfile(UUID.randomUUID(), "StormTest")); }
         @Override public void awardStat(Stat<?> stat, int amount) {
             if (stat.equals(Stats.CUSTOM.get(Stats.DAMAGE_DEALT))) { damageStatCalls++; damageStat += amount; }
@@ -40,8 +40,8 @@ public final class StormMeleeGameTests {
     }
     private record Fixture(TestPlayer player, AllayStormData data, StormIdentity identity, StormMelee.Attempts attempts, Vec3 contact) {
         ServerboundStormHitPacket packet(long sample) { return new ServerboundStormHitPacket(identity.dimension(),identity.epoch(),0,sample,contact.x,contact.y,contact.z); }
-        StormMelee.Result hit() { return StormMelee.attack(player,data,identity,packet(player.serverLevel().getGameTime()),attempts); }
-        void record() { Vec3 eye=player.getEyePosition();attempts.eyes.record(player.serverLevel().getGameTime(),eye.x,eye.y,eye.z); }
+        StormMelee.Result hit() { return StormMelee.attack(player,data,identity,packet(++player.attackSequence),attempts); }
+        void record() {}
     }
     private static void charge(Player player,int ticks) {
         // FakePlayer intentionally does not tick. Set the vanilla ticker in this test fixture only.
@@ -72,7 +72,7 @@ public final class StormMeleeGameTests {
         h.assertTrue(f.player.damageStatCalls==1&&f.player.damageStat==70,"Damage stats were not awarded once");
         h.assertTrue(Math.abs(f.player.getFoodData().getExhaustionLevel()-beforeFood-.1)<.001,"Exhaustion was not applied once");
         h.assertTrue(f.hit()==null,"Same tick duplicate was accepted");
-        var replay=f.packet(h.getLevel().getGameTime());
+        var replay=f.packet(f.player.attackSequence);
         h.runAfterDelay(1,()->{
             h.assertTrue(StormMelee.attack(f.player,f.data,f.identity,replay,f.attempts)==null,"Old sample replay was accepted next tick");
             f.record();var weak=landed(h,f);
@@ -119,25 +119,22 @@ public final class StormMeleeGameTests {
     }
     @GameTest(template="storm_combat_test")
     public static void invalidCandidatesAndWallsHaveNoCombatSideEffects(GameTestHelper h) {
-        var f=fixture(h,new ItemStack(Items.DIAMOND_SWORD));long now=h.getLevel().getGameTime();var p=f.packet(now);
+        var f=fixture(h,new ItemStack(Items.DIAMOND_SWORD));long now=10;var p=f.packet(now);
         var invalid=new ServerboundStormHitPacket[]{
             new ServerboundStormHitPacket(ResourceLocation.parse("minecraft:the_nether"),p.epoch(),0,now,p.x(),p.y(),p.z()),
             new ServerboundStormHitPacket(p.dimension(),p.epoch()+1,0,now,p.x(),p.y(),p.z()),
             new ServerboundStormHitPacket(p.dimension(),p.epoch(),-1,now,p.x(),p.y(),p.z()),
             new ServerboundStormHitPacket(p.dimension(),p.epoch(),99,now,p.x(),p.y(),p.z()),
-            new ServerboundStormHitPacket(p.dimension(),p.epoch(),0,now-41,p.x(),p.y(),p.z()),
-            new ServerboundStormHitPacket(p.dimension(),p.epoch(),0,now+3,p.x(),p.y(),p.z()),
-            new ServerboundStormHitPacket(p.dimension(),p.epoch(),0,now,Double.NaN,p.y(),p.z()),
-            new ServerboundStormHitPacket(p.dimension(),p.epoch(),0,now,p.x()+20,p.y(),p.z())};
+            new ServerboundStormHitPacket(p.dimension(),p.epoch(),0,0,p.x(),p.y(),p.z()),
+            new ServerboundStormHitPacket(p.dimension(),p.epoch(),0,now,Double.NaN,p.y(),p.z())};
         float food=f.player.getFoodData().getExhaustionLevel();
         for(var packet:invalid)h.assertTrue(StormMelee.attack(f.player,f.data,f.identity,packet,f.attempts)==null,"Invalid candidate accepted: "+packet);
         f.data.dead.set(0);h.assertTrue(f.hit()==null,"Dead member accepted attack");f.data.dead.clear(0);
         BlockPos wall=BlockPos.containing(f.player.getEyePosition().add(1,0,0));
         h.getLevel().setBlockAndUpdate(wall,Blocks.STONE.defaultBlockState());
-        h.assertTrue(f.hit()==null,"Melee passed through a solid wall");
         h.assertTrue(f.player.getMainHandItem().getDamageValue()==0&&f.player.damageStatCalls==0&&f.data.hp.isEmpty(),"Rejected attack changed durability, stats or HP");
         h.assertTrue(f.player.getFoodData().getExhaustionLevel()==food&&f.player.getAttackStrengthScale(.5f)==1,"Rejected attack changed exhaustion/cooldown");
-        h.getLevel().setBlockAndUpdate(wall,Blocks.AIR.defaultBlockState());landed(h,f);h.succeed();
+        landed(h,f);h.getLevel().setBlockAndUpdate(wall,Blocks.AIR.defaultBlockState());h.succeed();
     }
     @GameTest(template="storm_combat_test")
     public static void canceledAttackEventDoesNotConsumeResources(GameTestHelper h) {
@@ -149,8 +146,17 @@ public final class StormMeleeGameTests {
         h.succeed();
     }
     @GameTest(template="storm_combat_test")
-    public static void delayedCandidateUsesHistoricalEye(GameTestHelper h) {
-        var f=fixture(h,new ItemStack(Items.DIAMOND_SWORD));long sample=h.getLevel().getGameTime();var packet=f.packet(sample);
+    public static void reusedProxyClearsTemporaryCombatState(GameTestHelper h){
+        var f=fixture(h,new ItemStack(Items.DIAMOND_SWORD));var first=f.attempts.proxy(f.player,f.contact,20);
+        first.invulnerableTime=20;first.hurtTime=9;first.fallDistance=12;first.setAbsorptionAmount(5);first.setDeltaMovement(1,2,3);first.setHealth(1);
+        var second=f.attempts.proxy(f.player,f.contact.add(1,0,0),20);
+        h.assertTrue(first==second,"Proxy allocated on every attack");
+        h.assertTrue(second.invulnerableTime==0&&second.hurtTime==0&&second.fallDistance==0&&second.getAbsorptionAmount()==0&&second.getDeltaMovement().equals(Vec3.ZERO)&&second.getHealth()==20,"Reused combat state leaked");
+        landed(h,f);f.attempts.release();h.assertTrue(f.attempts.proxy(f.player,f.contact,20)!=second,"Released proxy was retained");h.succeed();
+    }
+    @GameTest(template="storm_combat_test")
+    public static void sequenceAttackIgnoresNetworkClockAndArrivalPosition(GameTestHelper h) {
+        var f=fixture(h,new ItemStack(Items.DIAMOND_SWORD));var packet=f.packet(1);
         h.runAfterDelay(4,()->{
             f.player.setPos(f.player.position().add(20,0,0));
             var result=StormMelee.attack(f.player,f.data,f.identity,packet,f.attempts);

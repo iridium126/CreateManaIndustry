@@ -39,7 +39,18 @@ class AllayHelixTest {
   assertThrows(IllegalArgumentException.class,()->AllayHelix.flight(roster(512),new float[]{0,0,0,0,50,0},12,10,15));
   assertThrows(IllegalArgumentException.class,()->AllayHelix.flight(roster(512),new float[]{0,0,0,500,0,0},12,10,15));
   assertEquals(.2,AllayHelix.memberU(.3f),.00001);assertEquals(1,AllayHelix.memberU(1),.00001);
-  assertTrue(AllayHelix.memberU(.15f)<.1);assertEquals(16,AllayHelix.length(512));assertEquals(32,AllayHelix.length(16384));
+  assertTrue(AllayHelix.memberU(.15f)<.1);assertEquals(32,AllayHelix.length(512));assertEquals(64,AllayHelix.length(16384));
+ }
+ @Test void directAttackHasFortyFiveDegreeAxisAndNoPostGatherWait(){
+  var f=AllayHelix.attackFlight(roster(8192),-24,88,0,0,12,20);
+  assertEquals(20,f.thrust());assertEquals(20,f.charge());
+  for(int i=1;i<6;i++){double dx=f.controls()[i*3]-f.controls()[(i-1)*3],dy=f.controls()[i*3+1]-f.controls()[(i-1)*3+1];assertEquals(-dx,dy,.0001);}
+  assertEquals(4,AllayHelix.phase(20,20,20,true,f));assertEquals(6,AllayHelix.radius(16384));
+ }
+ @Test void cachedScatterHasGaussianDensityRatherThanAnEmptyStrand(){
+  double sum=0,x=0,y=0;Set<String> unique=new HashSet<>();
+  for(int i=0;i<16000;i++){float[] p=AllayHelix.scatter(123,i);assertArrayEquals(p,AllayHelix.scatter(123,i));double r=Math.hypot(p[0],p[1]);assertTrue(r>0&&r<=3.00001);sum+=r*r;x+=p[0];y+=p[1];unique.add(p[0]+","+p[1]);}
+  assertEquals(16000,unique.size());assertEquals(0,x/16000,.03);assertEquals(0,y/16000,.03);assertTrue(sum/16000>1.8&&sum/16000<2.0);
  }
  @Test void completeEnvelopeAndDynamicObstruction(){var f=flight(8192);assertTrue(AllayHelix.clearTube(f,0,f.arcLength(),(x,y,z,r)->true));
   assertFalse(AllayHelix.clearTube(f,0,f.arcLength(),(x,y,z,r)->Math.abs(x)>r));

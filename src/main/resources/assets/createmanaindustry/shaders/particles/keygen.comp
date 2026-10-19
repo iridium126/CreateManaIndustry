@@ -109,8 +109,8 @@ void main() {
     uint hb = eid * VEC4_PER_EMITTER;
     if (uint(emitters.u[hb + 7u].x + .5) == CMI_MATERIAL_PACKAGE) return;
     if(uStarfallEnabled&&emitters.u[hb+17u].y>6.5&&emitters.u[hb+17u].y<7.5){
-        vec4 tint=pool.data[base+2u];uint tag=floatBitsToUint(p3.z),slot=tag&3u,column=(tag>>2u)&31u;
-        if(floatBitsToUint(tint.x)==cmiStarWord(0u)&&uint(cmiStarVec(cmiStarBase(slot)).x+.5)==(tag>>7u))atomicAdd(starState.words[262400u+slot*32u+column],1u);
+        vec4 tint=pool.data[base+2u];uint tag=floatBitsToUint(p3.z),slot=cmiMarkerSlot(tag),column=cmiMarkerColumn(tag);
+        if(floatBitsToUint(tint.x)==cmiStarWord(0u)&&uint(cmiStarVec(cmiStarBase(slot)).x+.5)==cmiMarkerId(tag))atomicAdd(starState.words[cmiMarkerCensus(tag)],1u);
     }
 
 
@@ -177,7 +177,7 @@ void main() {
         // behind the frustum test, so an off-screen carrier drops its sword
         // with its body. Overflow clamps the command's instanceCount back to
         // CARRIER_CAP (silent drop, see ParticleBuffers.CARRIER_CAP).
-        bool carrier=cmiModelCarrier(storm,p3.y,p3.z,p0.w,emitters.u[hb+17u].z);
+        bool carrier=cmiModelCarrier(storm,p3.y,p3.z,p0.w,emitters.u[hb+17u].z,pool.data[base+1u].w);
         if (carrier) {
             uint cpos = atomicAdd(indirect.cmd[IDX_CNT_CARRIER], 1u);
             if (cpos < (uCarrierLimit==0u?uint(CARRIER_CAP):uCarrierLimit)) {

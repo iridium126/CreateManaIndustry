@@ -5,17 +5,19 @@ import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundS
 
 /** CPU packet lifecycle. A fading abort is replaceable; a live attack never is. */
 public final class StormWaveSlots {
-    private final ClientboundStormWavePacket[] packets = new ClientboundStormWavePacket[4];
+    private final ClientboundStormWavePacket[] packets;
+    public StormWaveSlots(){this(4);}
+    public StormWaveSlots(int capacity){if(capacity!=4&&capacity!=68)throw new IllegalArgumentException("Storm slots");packets=new ClientboundStormWavePacket[capacity];}
     public record Update(int slot, ClientboundStormWavePacket packet, boolean replacement) {}
     public ClientboundStormWavePacket packet(int slot) { return packets[slot]; }
     public void clear() { Arrays.fill(packets, null); }
     public void retire(float now) {
-        for (int i = 0; i < 4; i++) if (packets[i] != null && AllayStarfall.elapsed(now, packets[i].diveUntilSec()) > 0) packets[i] = null;
+        for (int i = 0; i < packets.length; i++) if (packets[i] != null && AllayStarfall.elapsed(now, packets[i].diveUntilSec()) > 0) packets[i] = null;
     }
     public Update apply(ClientboundStormWavePacket incoming, float now) {
         retire(now);
         int slot = -1;
-        for (int i = 0; i < 4; i++) if (packets[i] != null && packets[i].waveId() == incoming.waveId()) { slot = i; break; }
+        for (int i = 0; i < packets.length; i++) if (packets[i] != null && packets[i].waveId() == incoming.waveId()) { slot = i; break; }
         if (incoming.abort()) {
             if (slot < 0 || packets[slot].abort()) return null;
             var old = packets[slot];
@@ -27,8 +29,9 @@ public final class StormWaveSlots {
         boolean replacement = slot < 0;
         if (replacement) {
             if (incoming.event() != AllayStarfall.START) return null;
-            for (int i = 0; i < 4; i++) if (packets[i] == null) { slot = i; break; }
-            if (slot < 0) for (int i = 0; i < 4; i++) if (packets[i].abort()) { slot = i; break; }
+            int begin=packets.length==68&&incoming.column()?4:0,end=packets.length==68&&!incoming.column()?4:packets.length;
+            for (int i = begin; i < end; i++) if (packets[i] == null) { slot = i; break; }
+            if (slot < 0) for (int i = begin; i < end; i++) if (packets[i].abort()) { slot = i; break; }
             if (slot < 0) return null;
         }
         var old = packets[slot];

@@ -765,13 +765,13 @@ public final class ShaderPackProgramCompiler {
                     // item invocations for every non-carrier instance are gone.
                     float carryRamp = 0.0;
                     float itemId = 0.0;
-                    if(uStarfallEnabled&&!corpse&&stormA.x>.5){int claim=cmiStarClaim(p0.w,uTimeSec);if(claim>=0)carryRamp=cmiAttackCarry(p0.w,uTimeSec);}
+                    if(uStarfallEnabled&&!corpse&&stormA.x>.5){int claim=cmiStarClaim(p0.w,uTimeSec);if(claim>=0)carryRamp=cmiAttackCarry(p0.w,uTimeSec,p1.w);}
                     if (pid == 7 && !gone) {
                         float waveTier = 0.0;
                         if (!corpse && stormA.x > 0.5) {
                             int k = cmiStormWaveClaim(p3.z,p0.w);
                             if (k >= 0) {
-                                carryRamp = uStarfallEnabled?cmiAttackCarry(p0.w,uTimeSec):cmiStormCarryRamp(uTimeSec, uWave[k].z, uWave[k].w);
+                                carryRamp = uStarfallEnabled?cmiAttackCarry(p0.w,uTimeSec,p1.w):cmiStormCarryRamp(uTimeSec, uWave[k].z, uWave[k].w);
                                 waveTier = uStarfallEnabled?cmiStarTier(k):uWaveTier[k];
                             }
                         }
@@ -792,7 +792,7 @@ public final class ShaderPackProgramCompiler {
                         anim = 3;
                     float sinceDeath = corpse ? -p3.y : 0.0;
                     float yaw;
-                    mat4 M = gone ? mat4(1.0) : cmiAllayAttackPartTransform(p3.x, p3.z,p0.w, p1.xyz, anim, pid, yaw, carryRamp, !corpse && stormA.x > .5);
+                    mat4 M = gone ? mat4(1.0) : cmiAllayAttackPartTransform(p3.x, p3.z,p0.w, p0.xyz, p1.xyz, anim, pid, yaw, carryRamp, !corpse && stormA.x > .5);
 
                     vec3 local = gone ? vec3(0.0) : vec3(texelFetch(cmi_Geo, int(vb)).x, texelFetch(cmi_Geo, int(vb + 1u)).x, texelFetch(cmi_Geo, int(vb + 2u)).x);
                     vec2 uv = gone ? vec2(0.5) : vec2(texelFetch(cmi_Geo, int(vb + 3u)).x, texelFetch(cmi_Geo, int(vb + 4u)).x);

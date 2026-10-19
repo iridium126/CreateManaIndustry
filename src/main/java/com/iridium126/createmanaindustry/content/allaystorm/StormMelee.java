@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.content.allaystorm;
 
-import java.util.ArrayDeque;
 import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormHitPacket;
 import com.iridium126.createmanaindustry.mixin.vanilla.LivingEntityAccessor;
 import net.minecraft.core.BlockPos;
@@ -16,9 +15,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.allay.Allay;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
-import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.LightLayer;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.CommonHooks;
 
@@ -27,25 +24,32 @@ public final class StormMelee {
     private StormMelee() {}
 
     public static final class Attempts {
-        public final AllayStarfall.PlayerTrail eyes = new AllayStarfall.PlayerTrail();
-        private final ArrayDeque<Long> ticks = new ArrayDeque<>();
-        private long lastTick = Long.MIN_VALUE, lastSample = Long.MIN_VALUE;
+        private final long[] ticks = new long[12];
+        private int cursor, count;
+        private long lastTick = Long.MIN_VALUE, lastSequence;
+        private Allay proxy;
 
-        public boolean claim(long now, long sample) {
-            if (now == lastTick || sample <= lastSample || !timely(now, sample)) return false;
-            while (!ticks.isEmpty() && now - ticks.peekFirst() >= 20) ticks.removeFirst();
-            if (ticks.size() >= 12) return false;
-            ticks.addLast(now); lastTick = now; lastSample = sample;
+        public boolean claim(long now, long sequence) {
+            if (sequence <= lastSequence || sequence < 1) return false;
+            lastSequence = sequence; // Rejected same-tick input must not become a deferred attack.
+            if (now == lastTick || count == ticks.length && now - ticks[cursor] < 20) return false;
+            ticks[cursor] = now; cursor = (cursor + 1) % ticks.length;
+            count = Math.min(count + 1, ticks.length); lastTick = now;
             return true;
+        }
+        public void release(){proxy=null;}
+        Allay proxy(ServerPlayer player, Vec3 contact, float health) {
+            if (proxy == null || proxy.level() != player.level()) proxy = new Allay(EntityType.ALLAY, player.level());
+            proxy.revive(); proxy.removeAllEffects(); proxy.clearFire(); proxy.setAbsorptionAmount(0);
+            proxy.invulnerableTime = 0; proxy.hurtTime = 0; proxy.deathTime = 0;
+            proxy.setDeltaMovement(Vec3.ZERO); proxy.fallDistance = 0; proxy.setTarget(null);
+            proxy.setPos(contact); proxy.setHealth(health);
+            return proxy;
         }
     }
 
     public record Result(float damage, float kbX, float kbZ, float light, boolean died,
             boolean crit, boolean magic, int hearts, SoundEvent attackSound) {}
-
-    public static boolean timely(long now, long sample) {
-        return sample >= Math.max(0, now - 40) && sample <= now + 2;
-    }
 
     /** Null means the candidate did not deal damage. Invalid candidates never consume combat resources. */
     public static Result attack(ServerPlayer player, AllayStormData data, StormIdentity identity,
@@ -53,21 +57,11 @@ public final class StormMelee {
         var level = player.serverLevel();
         int member = packet.memberIdx();
         if (!data.active || !identity.equals(packet.identity()) || !identity.dimension().equals(level.dimension().location())
-                || !player.isAlive() || player.isSpectator() || member < 0 || member >= data.count || data.dead.get(member)
-                || !timely(level.getGameTime(), packet.sampleTick())) return null;
+                || !player.isAlive() || player.isSpectator() || member < 0 || member >= data.count || data.dead.get(member)) return null;
         Vec3 contact = packet.contact();
         if (!Double.isFinite(contact.x) || !Double.isFinite(contact.y) || !Double.isFinite(contact.z)) return null;
-        Vec3 eye = attempts.eyes.positionAt(packet.sampleTick());
-        double reach = player.entityInteractionRange() + .5;
-        if (eye == null || eye.distanceToSqr(contact) > reach * reach) return null;
-        if (!level.hasChunkAt(BlockPos.containing(contact)) || !level.hasChunkAt(BlockPos.containing(eye))) return null;
-        var wall = level.clip(new ClipContext(eye, contact, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
-        if (wall.getType() != HitResult.Type.MISS && wall.getLocation().distanceToSqr(eye) + 1e-6 < eye.distanceToSqr(contact)) return null;
-        if (!attempts.claim(level.getGameTime(), packet.sampleTick())) return null;
-
-        Allay proxy = new Allay(EntityType.ALLAY, level);
-        proxy.setPos(contact);
-        proxy.setHealth(data.hpOf(member));
+        if (!attempts.claim(level.getGameTime(), packet.attackSeq())) return null;
+        Allay proxy = attempts.proxy(player, contact, data.hpOf(member));
         if (!CommonHooks.onPlayerAttackTarget(player, proxy) || !proxy.isAttackable() || proxy.skipAttackInteraction(player)) return null;
         ItemStack weapon = player.getWeaponItem();
         var source = player.damageSources().playerAttack(player);
@@ -115,6 +109,7 @@ public final class StormMelee {
         player.awardStat(Stats.DAMAGE_DEALT, Math.round(dealt * 10));
         player.causeFoodExhaustion(.1f);
         player.resetAttackStrengthTicker();
+        player.swing(InteractionHand.MAIN_HAND, false);
         BlockPos pos = BlockPos.containing(contact);
         float light = level.getBrightness(LightLayer.BLOCK, pos) + 16 * level.getBrightness(LightLayer.SKY, pos);
         SoundEvent sound = crit ? SoundEvents.PLAYER_ATTACK_CRIT : charged ? SoundEvents.PLAYER_ATTACK_STRONG : SoundEvents.PLAYER_ATTACK_WEAK;

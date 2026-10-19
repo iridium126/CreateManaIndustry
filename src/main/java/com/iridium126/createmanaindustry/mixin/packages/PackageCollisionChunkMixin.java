@@ -16,7 +16,9 @@ public abstract class PackageCollisionChunkMixin {
     @Inject(method="setBlockState(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;Z)Lnet/minecraft/world/level/block/state/BlockState;",at=@At("RETURN"))
     private void cmi$packageCollisionBlockChanged(BlockPos position, BlockState state, boolean moving,
                                                   CallbackInfoReturnable<BlockState> result) {
-        if(result.getReturnValue()!=null&&((LevelChunk)(Object)this).getLevel() instanceof ClientLevel level)
+        if(result.getReturnValue()!=null&&((LevelChunk)(Object)this).getLevel() instanceof ClientLevel level){
             PackageCollisionRuntime.blockChanged(level,position);
+            com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.blockChanged(level,position);
+        }
     }
 }

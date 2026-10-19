@@ -167,7 +167,7 @@ public class CreateManaIndustry {
     }
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(MODID).versioned("6");
+        PayloadRegistrar registrar = event.registrar(MODID).versioned("9");
         registrar.playToClient(
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.TYPE,
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.STREAM_CODEC,
@@ -252,6 +252,10 @@ public class CreateManaIndustry {
                 ClientboundStormCenterPacket.STREAM_CODEC,
                 ClientboundStormCenterPacket::handle);
         // dive-wave AI: one event per wave launch/abort, contact self-reports
+        registrar.playToClient(
+                com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket.TYPE,
+                com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket::handle);
         registrar.playToClient(
                 ClientboundStormWavePacket.TYPE,
                 ClientboundStormWavePacket.STREAM_CODEC,

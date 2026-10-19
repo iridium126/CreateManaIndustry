@@ -27,13 +27,13 @@ class StormMeleePacketTest {
             var b=buffer();try{ServerboundStormHitPacket.STREAM_CODEC.encode(b,p);assertThrows(DecoderException.class,()->ServerboundStormHitPacket.STREAM_CODEC.decode(b));}finally{b.release();}
         }
     }
-    @Test void timestampsCannotOverflowAndReplayOrFloodIsRejected() {
-        assertTrue(StormMelee.timely(100,60));assertTrue(StormMelee.timely(100,102));
-        for(long t:new long[]{59,103,Long.MIN_VALUE,Long.MAX_VALUE})assertFalse(StormMelee.timely(100,t));
-        var attempts=new StormMelee.Attempts();assertTrue(attempts.claim(100,100));
-        assertFalse(attempts.claim(100,101));assertFalse(attempts.claim(101,100));
-        for(int tick=101;tick<112;tick++)assertTrue(attempts.claim(tick,tick));
-        assertFalse(attempts.claim(112,112));assertTrue(attempts.claim(120,120));
+    @Test void sequenceIsIndependentOfWorldClockAndFloodIsBounded() {
+        var attempts=new StormMelee.Attempts();assertTrue(attempts.claim(1000,1));
+        assertFalse(attempts.claim(1000,2));assertFalse(attempts.claim(1001,2));
+        assertTrue(attempts.claim(1001,3));
+        for(int tick=1002;tick<1012;tick++)assertTrue(attempts.claim(tick,tick));
+        assertFalse(attempts.claim(1012,1012));assertTrue(attempts.claim(1020,1020));
+        assertFalse(attempts.claim(1021,Long.MIN_VALUE));
     }
     @Test void historicalEyeUsesSampleInsteadOfArrival() {
         var eyes=new AllayStarfall.PlayerTrail();for(int i=0;i<50;i++)eyes.record(i,i,64,0);

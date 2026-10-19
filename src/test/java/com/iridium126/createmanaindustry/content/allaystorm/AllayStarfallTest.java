@@ -3,6 +3,10 @@ import org.junit.jupiter.api.Test;
 import java.util.BitSet;
 import static org.junit.jupiter.api.Assertions.*;
 class AllayStarfallTest {
+ @Test void availableGateCountsTheUnionOnlyInsideGeneratedMembers(){
+  BitSet dead=new BitSet(),reserved=new BitSet();dead.set(0,10);reserved.set(5,15);dead.set(1000);reserved.set(1001);
+  assertEquals(49,AllayStarfall.available(64,dead,reserved));assertEquals(11,dead.cardinality());assertEquals(11,reserved.cardinality());
+ }
  @Test void populationThresholds(){assertEquals(0,AllayStarfall.columns(0,4096,16));assertEquals(1,AllayStarfall.columns(1,4096,16));assertEquals(1,AllayStarfall.columns(8191,4096,16));assertEquals(2,AllayStarfall.columns(8192,4096,16));assertEquals(16,AllayStarfall.columns(65536,4096,16));assertEquals(16,AllayStarfall.columns(131072,4096,16));assertEquals(32,AllayStarfall.columns(131072,4096,32));}
  @Test void exactExclusiveRosters(){BitSet dead=new BitSet(),reserved=new BitSet();for(int i=0;i<65536;i+=7)dead.set(i);
   for(int wave=0;wave<4;wave++){var chosen=AllayStarfall.select(65536,dead,reserved,16,512,wave);assertEquals(8192,chosen.members().length);assertEquals(16,chosen.columns());for(int m:chosen.members()){assertFalse(dead.get(m));assertFalse(reserved.get(m));reserved.set(m);}}

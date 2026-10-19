@@ -161,6 +161,10 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
             if(cache.snapshot(new PackageCollisionCache.Section(x,y,z))==null)return false;
         return true;
     }
+    /** Read-only optional consumer: never starts package capture or allocates package GPU state. */
+    public static PackageCollisionCache.Snapshot peekSnapshot(ClientLevel level,PackageCollisionCache.Section section){
+        owner();return current!=null&&current.level==level?current.cache.snapshot(section):null;
+    }
     public PackageCollisionCache.Snapshot snapshot(PackageCollisionCache.Section section){owner();return cache.snapshot(section);}
     public String freezeCaptureContext(PackageFreezeReport.Event event){
         owner();return event.reason()==PackageFreezeReport.Reason.SECTION_VERSION?

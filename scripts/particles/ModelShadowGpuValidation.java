@@ -146,7 +146,7 @@ public class ModelShadowGpuValidation {
                 var out=read(buffers[4],16);check(shadow==0?out.getFloat(8)>1e8:Math.abs(out.getFloat(0)-150)<5&&Math.abs(out.getFloat(8))<5,"shadow fade bypass/main fade changed");
             }
             // Active starfall: the TBO-injected MODEL and native SSBO MODEL must produce the same pose.
-            for(int attackKind:new int[]{0,1,2})try(var star=new com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers()){
+            for(int attackKind:new int[]{0,1,2,3,4})try(var star=new com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers()){
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
                 var event=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket(1,37,2,1,1,5,1,1,0,4,10,60,0,12,0,4,new int[]{0},new float[]{0,12,0,0,10,0},new float[]{0,.5f,0,3.5f});
                 if(attackKind==1){int[] roster=java.util.stream.IntStream.range(0,768).toArray();
@@ -158,10 +158,23 @@ public class ModelShadowGpuValidation {
                     var flight=com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.flight(selection,new float[]{-24-length,4,0,-24,4,0,-12,4,0,0,4,0,12,4,0,12+length,4,0},12,8,11.5f);
                     event=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket(1,37,2,1,1,5,2,4096,0,4,10,120,0,40,0,flight.radius(),roster,new float[]{0,40,0,-24,4,0},new float[8],2,3,selection.ends(),-24,4,0,0,1,10,0,flight);
                 }
-                star.rebuild(new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[]{event,null,null,null});star.prepare(1);star.commit();star.bindTexture(14);
-                particle.putFloat(12,1).putFloat(20,-6).putFloat(52,20);put(buffers[1],particle);put(buffers[2],headers(2,.3f,false,true));
+                var snapshots=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[68];
+                if(attackKind>=3){
+                    event=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket(net.minecraft.world.level.Level.OVERWORLD.location(),37,1,false,1,0,4,10,14.34f,60,0,.5f,0,12,0,0,4,java.util.stream.IntStream.range(0,64).toArray()).snapshot();
+                    snapshots[67]=event;
+                }else snapshots[0]=event;
+                star.rebuild(snapshots);star.prepare(1);star.commit();star.bindTexture(14);
+                particle.putFloat(12,1).putFloat(20,-6).putFloat(28,attackKind==3?-1.5f:0).putFloat(52,20);put(buffers[1],particle);put(buffers[2],headers(2,.3f,false,true));
                 GL20.glUseProgram(program);GL20.glUniform1i(GL20.glGetUniformLocation(program,"uStarfallEnabled"),1);GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_Starfall"),14);GL20.glUniform1f(GL20.glGetUniformLocation(program,"uTimeSec"),12);GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_ShadowPass"),1);
                 GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL30.glBeginTransformFeedback(GL11.GL_POINTS);GL31.glDrawArraysInstanced(GL11.GL_POINTS,0,1,1);GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);var merged=read(buffers[4],16);
+                if(attackKind>=3){
+                    for(float[] v:new float[][]{{0,0,0},{.001f,-6,-.001f},{-6,6,.06f},{6,-6,-.06f}}){
+                        particle.putFloat(16,v[0]).putFloat(20,v[1]).putFloat(24,v[2]);put(buffers[1],particle);
+                        GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL30.glBeginTransformFeedback(GL11.GL_POINTS);GL31.glDrawArraysInstanced(GL11.GL_POINTS,0,1,1);GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);var stable=read(buffers[4],16);
+                        for(int component=0;component<4;component++)check(Math.abs(stable.getFloat(component*4)-merged.getFloat(component*4))<.0001,"column flight pose changed with instantaneous velocity");
+                    }
+                    particle.putFloat(16,0).putFloat(20,-6).putFloat(24,0);put(buffers[1],particle);
+                }
                 int nativeProgram=vertexProgram("#version 450 core\n"+ParticlePrograms.commonPrelude()+source("model.vsh"));
                 try{GL20.glUseProgram(nativeProgram);star.bind(nativeProgram,false);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,buffers[1]);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,5,buffers[2]);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,7,buffers[3]);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,12,buffers[0]);
                     float[] identity=new org.joml.Matrix4f().get(new float[16]);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(nativeProgram,"ModelViewMat"),false,identity);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(nativeProgram,"ProjMat"),false,identity);GL20.glUniform1f(GL20.glGetUniformLocation(nativeProgram,"uTimeSec"),12);GL20.glUniform1f(GL20.glGetUniformLocation(nativeProgram,"uFadeDist"),1000);

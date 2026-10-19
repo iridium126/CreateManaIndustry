@@ -15,6 +15,11 @@ public final class AllayStarfall {
   int[] chosen=selectExact(generated,dead,reserved,quota,seed);
   return new Selection((chosen.length+perColumn-1)/perColumn,perColumn,chosen);
  }
+ /** Cheap opportunity gate; a small bitset union avoids a failed full identity scan. */
+ public static int available(int generated,BitSet dead,BitSet reserved){
+  generated=Math.max(0,Math.min(MAX_MEMBERS,generated));BitSet unavailable=(BitSet)dead.clone();unavailable.or(reserved);
+  return generated-unavailable.get(0,generated).cardinality();
+ }
  public static int[] selectExact(int generated,BitSet dead,BitSet reserved,int quota,int seed){
   generated=Math.max(0,Math.min(MAX_MEMBERS,generated));quota=Math.max(0,Math.min(generated,quota));
   int[] chosen=new int[quota];int size=0,offset=mix(seed)&(MAX_MEMBERS-1),stride=(mix(seed^0x619c731b)|1)&(MAX_MEMBERS-1);

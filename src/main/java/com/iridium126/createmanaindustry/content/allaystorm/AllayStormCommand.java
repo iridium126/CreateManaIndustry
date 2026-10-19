@@ -44,6 +44,7 @@ public final class AllayStormCommand {
                 .requires(src -> src.hasPermission(2))
                 .executes(ctx -> allayStorm(ctx, 2048))
                 .then(Commands.literal("stop").executes(AllayStormCommand::allayStormStop))
+                .then(Commands.literal("status").executes(ctx->{ctx.getSource().sendSuccess(()->Component.literal(AllayStormManager.attackStatus(ctx.getSource().getLevel())),false);return 1;}))
                 .then(Commands.argument("count", IntegerArgumentType.integer(1, 131072))
                         .executes(ctx -> allayStorm(ctx, IntegerArgumentType.getInteger(ctx, "count"))));
         return Commands.literal("cmi").then(Commands.literal("particle").then(storm));

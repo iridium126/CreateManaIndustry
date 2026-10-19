@@ -12,7 +12,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /** GPU hit candidate only. Combat values are exclusively calculated by the server. */
 public record ServerboundStormHitPacket(ResourceLocation dimension, long epoch, int memberIdx,
-        long sampleTick, double x, double y, double z) implements CustomPacketPayload {
+        long attackSeq, double x, double y, double z) implements CustomPacketPayload {
     public StormIdentity identity() { return new StormIdentity(dimension, epoch); }
     public Vec3 contact() { return new Vec3(x, y, z); }
     public static final Type<ServerboundStormHitPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(CreateManaIndustry.MODID, "storm_hit"));
@@ -21,13 +21,13 @@ public record ServerboundStormHitPacket(ResourceLocation dimension, long epoch, 
 
     private static void encode(RegistryFriendlyByteBuf b, ServerboundStormHitPacket p) {
         ResourceLocation.STREAM_CODEC.encode(b, p.dimension);
-        b.writeLong(p.epoch); b.writeVarInt(p.memberIdx); b.writeLong(p.sampleTick);
+        b.writeLong(p.epoch); b.writeVarInt(p.memberIdx); b.writeVarLong(p.attackSeq);
         b.writeDouble(p.x); b.writeDouble(p.y); b.writeDouble(p.z);
     }
     private static ServerboundStormHitPacket decode(RegistryFriendlyByteBuf b) {
         var p = new ServerboundStormHitPacket(ResourceLocation.STREAM_CODEC.decode(b), b.readLong(),
-                b.readVarInt(), b.readLong(), b.readDouble(), b.readDouble(), b.readDouble());
-        if (p.memberIdx < 0 || p.memberIdx >= 131072 || !Double.isFinite(p.x)
+                b.readVarInt(), b.readVarLong(), b.readDouble(), b.readDouble(), b.readDouble());
+        if (p.attackSeq < 1 || p.memberIdx < 0 || p.memberIdx >= 131072 || !Double.isFinite(p.x)
                 || !Double.isFinite(p.y) || !Double.isFinite(p.z))
             throw new DecoderException("Invalid storm hit candidate");
         return p;

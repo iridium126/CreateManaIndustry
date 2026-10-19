@@ -47,7 +47,7 @@ public final class ParticleGLUtil {
     }
 
 
-    static void prepareClientUpload() {
+    public static void prepareClientUpload() {
         GL30.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, 0);
         GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
         GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);

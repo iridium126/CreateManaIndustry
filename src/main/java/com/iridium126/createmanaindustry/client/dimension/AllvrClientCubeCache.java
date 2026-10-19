@@ -338,6 +338,7 @@ public final class AllvrClientCubeCache {
     }
 
     private static void notifyCubePublished(long cubePos) {
+        com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.cubeChanged(cubePos);
         AllvrSodiumBridge.onCubeApplied(cubePos);
         com.iridium126.createmanaindustry.client.dimension.lod.voxy.AllvrVoxyClientIngest
             .onCubeApplied(cubePos);
@@ -386,6 +387,7 @@ public final class AllvrClientCubeCache {
         if (unloaded != null && lightEngine != null) {
             lightEngine.onCubeUnloaded(unloaded);
         }
+        com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.cubeChanged(cubePos);
         AllvrSodiumBridge.onCubeForgotten(cubePos);
         // Voxy deliberately retains its LOD when a near cube is forgotten;
         // the next cube publication will overwrite the affected sections.

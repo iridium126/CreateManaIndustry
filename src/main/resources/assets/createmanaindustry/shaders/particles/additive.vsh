@@ -179,9 +179,10 @@ void main() {
     vColor = col;
     bool marker=emitters.u[hb+17u].y>6.5&&emitters.u[hb+17u].y<7.5;
     if(marker){
-        vHex=1.;vColor=vec3(.3,.8,1.);uint tag=floatBitsToUint(p3.z),b=cmiStarBase(tag&3u);uint column=(tag>>2u)&31u;
-        float warning=0.;if(uStarfallEnabled&&floatBitsToUint(p2.x)==cmiStarWord(0u)&&uint(cmiStarVec(b).x+.5)==(tag>>7u)){float first=cmiStarLanding(b,column).w+1.8;warning=1.-clamp((first-cmiStarTime(b,uTimeSec))/.7,0.,1.);}
-        float arc=.9+.1*cos(p1.z*3.);float breath=.95+.05*cos(uTimeSec*2.4);vAlpha=p2.w*(.16+.11*warning)*arc*breath;
-        if(uStarfallEnabled&&floatBitsToUint(p2.x)==cmiStarWord(0u)&&uint(cmiStarVec(b).x+.5)==(tag>>7u)&&starState.words[262400u+(tag&3u)*32u+column]!=128u)vAlpha=0.;
+        vHex=1.;vColor=vec3(.3,.8,1.);uint tag=floatBitsToUint(p3.z),b=cmiStarBase(cmiMarkerSlot(tag));uint column=cmiMarkerColumn(tag);
+        float warning=0.;if(uStarfallEnabled&&floatBitsToUint(p2.x)==cmiStarWord(0u)&&uint(cmiStarVec(b).x+.5)==cmiMarkerId(tag)){float first=cmiStarLanding(b,column).w+(cmiColumn(b)?0.:1.8);warning=1.-clamp((first-cmiStarTime(b,uTimeSec))/.7,0.,1.);}
+        float arc=.9+.1*cos(p1.z*3.);float breath=.95+.05*cos(uTimeSec*2.4);float pulse=0.;if(cmiColumn(b)){uint record=262592u+(cmiMarkerSlot(tag)-4u)*1024u;
+            if(starState.words[record]==cmiMarkerId(tag)){float touchdown=uintBitsToFloat(starState.words[record+1u]);if(touchdown>=0.)pulse=exp(-pow((cmiStarTime(b,uTimeSec)-touchdown)/.16,2.));}}vAlpha=p2.w*(.13+.09*warning+.1*pulse)*arc*breath;
+        if(uStarfallEnabled&&floatBitsToUint(p2.x)==cmiStarWord(0u)&&uint(cmiStarVec(b).x+.5)==cmiMarkerId(tag)&&starState.words[cmiMarkerCensus(tag)]!=128u)vAlpha=0.;
     }else vHex=hexShape;
 }

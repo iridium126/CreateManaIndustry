@@ -38,6 +38,7 @@
         // the window deadline — after which the member simply falls back to
         // its typhoon home point. One approach per member, never re-engaging.
         bool waveEngaged = false;
+        bool columnEngaged=false;uint columnPhase=0u;float columnMarker=0.;
         // One approach per member per wave. The stateless contact test is
         // REVERSIBLE — a member that turned home re-crosses the contact
         // radius within a frame or two and the hash test re-engages it,
@@ -51,9 +52,13 @@
             // alias that home with an out parameter: a rejected attack must
             // preserve both the home position and its orbital feed-forward velocity.
             uint phase=0u;vec3 attackTarget,attackVelocity;
-            waveEngaged=cmiStarSteering(p0.w,p3.z,pos,target,spMaxV,attackTarget,attackVelocity,phase);
+            uint assignment=cmiStarAssignment(p0.w);
+            if(cmiColumnAssignment(assignment)){
+                waveEngaged=cmiColumnSteer(assignment,pos,vel,target,attackTarget,attackVelocity,phase,columnMarker);columnEngaged=waveEngaged;columnPhase=phase;
+                roll=columnMarker;
+            }else waveEngaged=cmiStarSteering(p0.w,p3.z,pos,target,spMaxV,attackTarget,attackVelocity,phase);
             if(waveEngaged){target=attackTarget;vT=attackVelocity;}
-            uint member=cmiStarMember(p0.w);if(member<131072u){uint a=cmiStarAssignment(p0.w),id=a==0u?0u:uint(cmiStarVec(cmiStarBase((a>>1u)&3u)).x+.5);if(id!=0u&&starStateRead.words[member*2u]==id)phase=max(phase,starStateRead.words[member*2u+1u]&255u);starStateWrite.words[member*2u]=id;starStateWrite.words[member*2u+1u]=phase;}
+            uint member=cmiStarMember(p0.w);if(member<131072u){uint a=cmiStarAssignment(p0.w),id=a==0u?0u:uint(cmiStarVec(cmiStarBase(cmiStarSlot(a))).x+.5);if(!cmiColumnAssignment(a)&&id!=0u&&starStateRead.words[member*2u]==id)phase=max(phase,starStateRead.words[member*2u+1u]&255u);starStateWrite.words[member*2u]=id;starStateWrite.words[member*2u+1u]=phase;}
         }else {
         if ((uint(p0.w + 0.5) & MEMBER_LATCH_BIT) == 0u) {
         for (uint k = 0u; k < 4u && !waveEngaged; k++) {
@@ -111,7 +116,7 @@
             }
         }
         sepW *= STORM_W_SEP;
-        if(waveEngaged&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),b=cmiStarBase((a>>1u)&3u);if(cmiHelix(b))sepW*=.35;}
+        if(waveEngaged&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),b=cmiStarBase(cmiStarSlot(a));if(cmiHelix(b))sepW*=.35;}
         vec3 repW = vec3(0.0);
         // every synced player repels (all-client-consistent force set).
         // Squared-distance gate: the sqrt and the normalize
@@ -130,7 +135,7 @@
         }
         // whisker cone bends the engaged steering around obstacles (player
         // roofs/walls) instead of stalling against them
-        if (waveEngaged && uCollisionOn == 1 && !(uStarfallEnabled&&cmiHelix(cmiStarBase((cmiStarAssignment(p0.w)>>1u)&3u))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.)) {
+        if (waveEngaged && !columnEngaged && (uCollisionOn == 1||cmiStormVoxel) && !(uStarfallEnabled&&cmiHelix(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.)) {
             vec3 toT = target - pos;
             float dT = length(toT);
             if (dT > 1e-4) {
@@ -143,7 +148,7 @@
         // servo onto the co-rotating home point, plus the world-space terms,
         // hand ONE acceleration to the integrator
         vec3 aW = (target - pos) * STORM_VORTEX_K + (vT - vel) * STORM_VORTEX_C + sepW + repW;
-        vel += aW * uDt;
+        if(columnEngaged)vel=vT;else vel += aW * uDt;
         float spdV = length(vel);
         if (spdV > spMaxV)
             vel *= spMaxV / spdV;
@@ -173,7 +178,8 @@
             if (cB.w > 0.5 && cage >= 0.0) {
                 bool hitC = cB.w > 2.5;
                 float window = hitC ? 0.25 : 1.5;
-                if (cage <= window) {
+                uint assignment=cmiStarAssignment(p0.w);
+                if (cage <= window && (hitC||!cmiColumnAssignment(assignment))) {
                     vec3 target = cA.xyz + cB.xyz * cage; // velocity extrapolation
                     float ramp = hitC ? 1.0 : (0.25 + 0.75 * clamp(cage / window, 0.0, 1.0));
                     float k = (hitC ? 24.0 : 8.0) * ramp;

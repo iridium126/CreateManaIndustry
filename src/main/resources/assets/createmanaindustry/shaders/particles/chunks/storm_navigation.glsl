@@ -61,7 +61,8 @@ void cmiStormWavePursuit(uint slot, vec3 pos, vec3 liveTarget, float cap,
 vec3 cmiStormWhisker(vec3 pos, vec3 dir) {
     int slice = -1;
     vec3 mOrigin = vec3(0.0);
-    for (int i = 0; i < BAKE_SLICES; i++) {
+    if(cmiStormVoxel){if(cmiStormKnown(pos)){slice=0;mOrigin=floor(pos/16.)*16.;}}
+    for (int i = 0; !cmiStormVoxel&&i < BAKE_SLICES; i++) {
         vec4 meta = bakeMeta.m[i];
         if (meta.w < 0.5)
             continue;
@@ -121,7 +122,7 @@ vec3 cmiStarRoute(uint b,float fraction){
 #pragma cmi_include chunks/dome_navigation.glsl
 #pragma cmi_include chunks/helix_navigation.glsl
 vec3 cmiStarPoint(uint assignment,float seed,float time,vec3 home){
- uint slot=(assignment>>1u)&3u,col=(assignment>>3u)&31u,rank=assignment>>8u,b=cmiStarBase(slot);
+ uint slot=cmiStarSlot(assignment),col=(assignment>>3u)&31u,rank=assignment>>8u,b=cmiStarBase(slot);
  time=cmiStarTime(b,time);vec4 meta=cmiStarVec(b),t=cmiStarVec(b+4u),crown=cmiStarVec(b+8u),aim=cmiStarVec(b+12u),landing=cmiStarLanding(b,col),column=cmiStarColumn(b,col);
  if(cmiHelix(b))return cmiHelixPoint(assignment,seed,time,home);
  if(cmiDome(b))return cmiDomePoint(assignment,seed,time,home);

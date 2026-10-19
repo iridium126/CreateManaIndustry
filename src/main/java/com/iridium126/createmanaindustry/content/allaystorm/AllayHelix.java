@@ -30,8 +30,30 @@ public final class AllayHelix {
    return new Selection(a,b,members,new int[]{na,total});
   }return new Selection(-1,-1,new int[0],new int[0]);
  }
- public static float length(int members){return Math.max(16,Math.min(32,(float)Math.sqrt(members)/3));}
- public static float radius(int members){return Math.max(1.5f,Math.min(3,(float)Math.sqrt(members)/32));}
+ public static float length(int members){return Math.max(32,Math.min(64,2*(float)Math.sqrt(members)/3));}
+ public static float radius(int members){return Math.max(3,Math.min(6,(float)Math.sqrt(members)/16));}
+ /** Stable truncated isotropic Gaussian in the strand normal plane, in units of sigma. */
+ public static float[] scatter(int seed,int member){
+  double u=((AllayStarfall.mix(seed^member*0x9e3779b9)>>>8)+.5)/16777216.0;
+  double v=((AllayStarfall.mix(seed+member*0x632be5ab)>>>8)+.5)/16777216.0;
+  double r=Math.sqrt(-2*Math.log(1-u*(1-Math.exp(-4.5)))),a=2*Math.PI*v;
+  return new float[]{(float)(r*Math.cos(a)),(float)(r*Math.sin(a))};
+ }
+ public static net.minecraft.world.phys.Vec3 offset(net.minecraft.world.phys.Vec3 tangent,float u,int group,float[] scatter,float radius,float length){
+  var side=new net.minecraft.world.phys.Vec3(0,1,0).cross(tangent).normalize();var up=tangent.cross(side);
+  double v=Math.clamp(u/.2,0,1),smooth=v*v*(3-2*v),r=.15+(radius-.15)*smooth,a=u*15.707963+group*3.14159265;
+  var radial=side.scale(Math.cos(a)).add(up.scale(Math.sin(a)));var angular=side.scale(-Math.sin(a)).add(up.scale(Math.cos(a)));
+  double dr=u>0&&u<.2?(radius-.15)*6*v*(1-v)/.2:0;
+  var strand=tangent.scale(-length).add(radial.scale(dr)).add(angular.scale(r*15.707963)).normalize();
+  var normal=radial.subtract(strand.scale(radial.dot(strand))).normalize();var binormal=strand.cross(normal).normalize();
+  return radial.scale(r).add(normal.scale(scatter[0]*.2*radius)).add(binormal.scale(scatter[1]*.2*radius));
+ }
+ public static Flight attackFlight(Selection roster,float x,float y,float z,float angle,float speed,float gather){
+  double fx=Math.cos(angle)/Math.sqrt(2),fy=-1/Math.sqrt(2),fz=Math.sin(angle)/Math.sqrt(2);
+  float length=length(roster.members.length);double total=2*length+24*Math.sqrt(2)+12;double[] arcs=new double[6];for(int i=0;i<6;i++)arcs[i]=-length+total*i/5;
+  float[] controls=new float[18];for(int i=0;i<6;i++){controls[i*3]=(float)(x+fx*arcs[i]);controls[i*3+1]=(float)(y+fy*arcs[i]);controls[i*3+2]=(float)(z+fz*arcs[i]);}
+  return flight(roster,controls,speed,gather,gather);
+ }
  public static float memberU(float fraction){return fraction<.3f?.2f*(float)Math.pow(fraction/.3f,1.5):.2f+.8f*(fraction-.3f)/.7f;}
  public static float progress(Flight f,float now){
   float elapsed=Math.max(0,Math.min(f.duration(),AllayStarfall.elapsed(now,f.thrust))),distance;
@@ -55,22 +77,23 @@ public final class AllayHelix {
  }
  public static Flight flight(Selection roster,float[] controls,float maxSpeed,float charge,float thrust){
   if(controls.length<6||controls.length>18||controls.length%3!=0)throw new IllegalArgumentException("Helix control count");
+  float[] local=controls.clone();for(int i=0;i<local.length;i++)local[i]-=controls[i%3];
   float[] points=new float[SAMPLES*4],dense=new float[3],previous=new float[3];double[] derivative=new double[3],second=new double[3];
-  float total=0,curvature=0,targetArc=0;int denseSteps=1024;point(controls,0,previous,0);int next=0;
+  float total=0,curvature=0,targetArc=0;int denseSteps=1024;point(local,0,previous,0);int next=0;
   for(int i=0;i<=denseSteps;i++){
-   float t=i/(float)denseSteps;point(controls,t,dense,0);
+   float t=i/(float)denseSteps;point(local,t,dense,0);
    float dx=dense[0]-previous[0],dy=dense[1]-previous[1],dz=dense[2]-previous[2],distance=(float)Math.sqrt(dx*dx+dy*dy+dz*dz);
    if(i>0&&distance<1e-7)throw new IllegalArgumentException("Degenerate helix");
-   derivatives(controls,t,derivative,second);double speed=Math.sqrt(derivative[0]*derivative[0]+derivative[1]*derivative[1]+derivative[2]*derivative[2]);
-   if(speed<1e-5||Math.abs(derivative[1])/speed>.35)throw new IllegalArgumentException("Helix slope/cusp");
+   derivatives(local,t,derivative,second);double speed=Math.sqrt(derivative[0]*derivative[0]+derivative[1]*derivative[1]+derivative[2]*derivative[2]);
+   if(speed<1e-5||Math.abs(derivative[1])/speed>.75)throw new IllegalArgumentException("Helix slope/cusp");
    double cx=derivative[1]*second[2]-derivative[2]*second[1],cy=derivative[2]*second[0]-derivative[0]*second[2],cz=derivative[0]*second[1]-derivative[1]*second[0];
    curvature=Math.max(curvature,(float)(Math.sqrt(cx*cx+cy*cy+cz*cz)/(speed*speed*speed)));
    total+=distance;if(t<=3f/(controls.length/3-1))targetArc=total;
-   while(next<SAMPLES&&t>=next/(float)(SAMPLES-1)){float pt=next/(float)(SAMPLES-1);point(controls,pt,points,next*4);points[next*4+3]=total-distance*Math.max(0,(t-pt)*denseSteps);next++;}
+   while(next<SAMPLES&&t>=next/(float)(SAMPLES-1)){float pt=next/(float)(SAMPLES-1);point(local,pt,points,next*4);for(int axis=0;axis<3;axis++)points[next*4+axis]+=controls[axis];points[next*4+3]=total-distance*Math.max(0,(t-pt)*denseSteps);next++;}
    System.arraycopy(dense,0,previous,0,3);
   }
   float length=length(roster.members.length),radius=radius(roster.members.length);
-  if(total<=length+24||total>112||curvature>1/(4*radius))throw new IllegalArgumentException("Helix envelope length="+total+" curvature="+curvature+" radius="+radius);
+  if(total<=length+24||total>256||curvature>1/(4*radius))throw new IllegalArgumentException("Helix envelope length="+total+" curvature="+curvature+" radius="+radius);
   float speed=.95f*maxSpeed/(1+(radius+.6f)*curvature);
   return new Flight(roster.armA,roster.armB,length,radius,maxSpeed,speed,charge,thrust,thrust+(total-length)/speed+RAMP,curvature,targetArc,controls.clone(),points);
  }

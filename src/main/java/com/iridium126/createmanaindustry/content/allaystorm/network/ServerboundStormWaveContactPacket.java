@@ -23,8 +23,11 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
  * reconstruction frame as {@link ServerboundStormHitPacket}.
  */
 public record ServerboundStormWaveContactPacket(
-        int waveId, long epoch, float sampleSec, int memberIdx, float relX, float relY, float relZ) implements CustomPacketPayload {
+        net.minecraft.resources.ResourceLocation dimension, int waveId, long epoch, float sampleSec, int memberIdx, float relX, float relY, float relZ) implements CustomPacketPayload {
 
+    public ServerboundStormWaveContactPacket(int waveId,long epoch,float sampleSec,int memberIdx,float x,float y,float z){
+        this(net.minecraft.world.level.Level.OVERWORLD.location(),waveId,epoch,sampleSec,memberIdx,x,y,z);
+    }
     public static final CustomPacketPayload.Type<ServerboundStormWaveContactPacket> TYPE =
             new CustomPacketPayload.Type<>(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("createmanaindustry","storm_wave_contact"));
 
@@ -32,6 +35,7 @@ public record ServerboundStormWaveContactPacket(
             StreamCodec.of(ServerboundStormWaveContactPacket::encode, ServerboundStormWaveContactPacket::decode);
 
     private static void encode(RegistryFriendlyByteBuf buffer, ServerboundStormWaveContactPacket p) {
+        buffer.writeResourceLocation(p.dimension);
         ByteBufCodecs.VAR_INT.encode(buffer, p.waveId);
         buffer.writeLong(p.epoch);buffer.writeFloat(p.sampleSec);
         ByteBufCodecs.VAR_INT.encode(buffer, p.memberIdx);
@@ -47,7 +51,7 @@ public record ServerboundStormWaveContactPacket(
         return (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, Math.round(q)));
     }
 
-    private static ServerboundStormWaveContactPacket decode(RegistryFriendlyByteBuf b){return new ServerboundStormWaveContactPacket(b.readVarInt(),b.readLong(),b.readFloat(),b.readVarInt(),b.readFloat(),b.readFloat(),b.readFloat());}
+    private static ServerboundStormWaveContactPacket decode(RegistryFriendlyByteBuf b){return new ServerboundStormWaveContactPacket(b.readResourceLocation(),b.readVarInt(),b.readLong(),b.readFloat(),b.readVarInt(),b.readFloat(),b.readFloat(),b.readFloat());}
 
     @Override
     public Type<? extends CustomPacketPayload> type() {

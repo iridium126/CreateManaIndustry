@@ -471,6 +471,15 @@ public final class CollisionBake {
     }
     /** Bounded moving attack window; all current-frame users retain their slices. */
     public boolean helixWindow(double x,double y,double z,boolean prefetch){
+        // Nearby columns share coverage instead of requesting one of the eight slices each.
+        // The six-block horizontal margin covers the full bloom and player contact envelope.
+        for(Slot existing:slots.values()){
+            if(x-6>=existing.ax&&x+6<existing.ax+SX&&z-6>=existing.az&&z+6<existing.az+SZ
+                    &&y-1>=existing.ay&&y+6<existing.ay+SY){
+                var level=Minecraft.getInstance().level;if(level!=null)existing.pinnedUntil=level.getGameTime()+2;
+                return !existing.dirty&&existing.lastBuilt!=Long.MIN_VALUE;
+            }
+        }
         int ax=floor(x/4)*4-CENTER_XZ,ay=floor(y/4)*4-CENTER_Y,az=floor(z/4)*4-CENTER_XZ;
         Anchor key=new Anchor(ax,ay,az);Slot slot=slots.get(key);
         if(prefetch&&slot==null){boolean free=false;for(boolean used:occupied)if(!used){free=true;break;}if(!free)return false;}

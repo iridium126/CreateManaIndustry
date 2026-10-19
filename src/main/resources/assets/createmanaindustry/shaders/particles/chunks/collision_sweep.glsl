@@ -9,7 +9,7 @@
     bool swept = false;
     bool landed = false;
     float collideMode = matMotion.y;
-    if (uCollisionOn == 1 && collideMode > 0.5) {
+    if ((cmiStormVoxel||uCollisionOn == 1) && collideMode > 0.5) {
         // Slice selection is position-owned, not emitter-owned: the first baked
         // volume that CONTAINS the particle wins (presence gates unbuilt
         // slices). Two emitters sharing one spec at distant sites can never
@@ -18,7 +18,8 @@
         // site's volume it enters.
         int slice = -1;
         vec3 mOrigin = vec3(0.0);
-        for (int i = 0; i < BAKE_SLICES; i++) {
+        if(cmiStormVoxel){if(cmiStormKnown(pos)){slice=0;mOrigin=floor(pos/16.)*16.;}else cmiStormMissing=true;}
+        for (int i = 0; !cmiStormVoxel&&i < BAKE_SLICES; i++) {
             vec4 meta = bakeMeta.m[i];
             if (meta.w < 0.5)
                 continue;

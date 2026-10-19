@@ -11,13 +11,14 @@ import com.iridium126.createmanaindustry.content.allaystorm.network.*;
 /** Real production kernels; no Minecraft window or mutable world. */
 public class HelixGpuValidation extends DomeGpuValidation {
  static AllayHelix.Flight flight(int n,boolean curved){
-  float l=AllayHelix.length(n);int[] ids=new int[n];for(int i=0;i<n;i++)ids[i]=i;
-  var roster=new AllayHelix.Selection(0,3,ids,new int[]{n/2,n});float bend=curved?2:0;
-  float[] controls={-24-l,4,0,-24,4,0,-12,4,bend,0,4,bend,12,4,0,12+l,4,0};
+  int[] ids=new int[n];for(int i=0;i<n;i++)ids[i]=i;
+  var roster=new AllayHelix.Selection(0,3,ids,new int[]{n/2,n});
+  var straight=AllayHelix.attackFlight(roster,-24,28,0,0,12,8).schedule(8,11.5f);
+  if(!curved)return straight;float[] controls=straight.controls().clone();controls[8]=.1f;controls[11]=.1f;
   return AllayHelix.flight(roster,controls,12,8,11.5f);
  }
  static ClientboundStormWavePacket helix(int n,int id,int event,int phase,boolean curved){var h=flight(n,curved);int[] ids=new int[n];for(int i=0;i<n;i++)ids[i]=i;
-  return new ClientboundStormWavePacket(id,37,event,1,1,5,2,4096,0,4,10,120,0,40,0,h.radius(),ids,new float[]{0,40,0,-24,4,0},new float[8],2,phase,new int[]{n/2,n},-24,4,0,0,1,10,0,h);
+  return new ClientboundStormWavePacket(id,37,event,1,1,5,2,4096,0,4,10,120,0,40,0,h.radius(),ids,new float[]{0,40,0,-24,28,0},new float[8],2,phase,new int[]{n/2,n},-24,28,0,0,1,10,0,h);
  }
  static int helixMotion(){String nav=source("chunks/storm_navigation.glsl");nav=nav.substring(nav.indexOf("vec3 cmiStarRoute"));return compileText("helix motion",source("chunks/allay_storm.glsl")+nav+
   "\nlayout(local_size_x=64)in;layout(std430,binding=10)buffer Output{vec4 rows[];} result;uniform uint uCount;void main(){uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;float identity=float(i+1u),seed=float(i)*.0001;vec3 target,velocity;uint phase=0u;float cap=cmiAttackSpeed(identity,uTimeSec,6.);bool engaged=cmiStarSteering(identity,seed,vec3(0),vec3(99,40,0),cap,target,velocity,phase);result.rows[i*3u]=vec4(target,float(phase));result.rows[i*3u+1u]=vec4(velocity,engaged?1.:0.);result.rows[i*3u+2u]=vec4(cmiAttackCarry(identity,uTimeSec),float((cmiStarAssignment(identity)>>3u)&31u),cap,cmiStarMarkerFade(1u<<7u,uTimeSec));}");}
@@ -27,7 +28,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
     var snap=helix(n,1,2,3,curved);int output=buffer(bytes(Math.max(1,n)*48));bind(10,output);stage(gpu,snap,p);ui(p,"uCount",n);
     for(float time:new float[]{0,5,8.5f,10.5f,12,snap.helix().finish()+1,snap.helix().finish()+5}){
      f(p,"uTimeSec",time);dispatch(p,Math.max(1,(n+63)/64));var rows=read(output,Math.max(1,n)*48);
-     for(int i=0;i<n;i++){int o=i*48;assertFinite(rows,o,11);int expected=AllayHelix.phase(time,4,10,true,snap.helix());check(rows.getFloat(o+12)==expected,"helix phase");float cap=expected==4?12:6;float vx=rows.getFloat(o+16),vy=rows.getFloat(o+20),vz=rows.getFloat(o+24);check(vx*vx+vy*vy+vz*vz<=cap*cap+.001,"helix target speed");check(rows.getFloat(o+40)==cap,"phase cap leaked");check(rows.getFloat(o+44)<0,"helix admitted ground ring");check(rows.getFloat(o+36)==(i<n/2?0:1),"helix group boundary");if(time==8.5f){int first=i<n/2?0:n/2,size=i<n/2?n/2:n-n/2;float u=AllayHelix.memberU((i-first+.5f)/size);check(Math.abs(rows.getFloat(o)-(-24-u*snap.helix().length()))<.0002,"tip density or axial geometry changed");}}
+     for(int i=0;i<n;i++){int o=i*48;assertFinite(rows,o,11);int expected=AllayHelix.phase(time,4,10,true,snap.helix());check(rows.getFloat(o+12)==expected,"helix phase");float cap=expected==4?12:6;float vx=rows.getFloat(o+16),vy=rows.getFloat(o+20),vz=rows.getFloat(o+24);check(vx*vx+vy*vy+vz*vz<=cap*cap+.001,"helix target speed");check(rows.getFloat(o+40)==cap,"phase cap leaked");check(rows.getFloat(o+44)<0,"helix admitted ground ring");check(rows.getFloat(o+36)==(i<n/2?0:1),"helix group boundary");if(time==8.5f){int first=i<n/2?0:n/2,size=i<n/2?n/2:n-n/2;float u=AllayHelix.memberU((i-first+.5f)/size);var axis=new net.minecraft.world.phys.Vec3(1,-1,0).normalize();var expectedPoint=new net.minecraft.world.phys.Vec3(-24,28,0).subtract(axis.scale(u*snap.helix().length())).add(AllayHelix.offset(axis,u,i<n/2?0:1,AllayHelix.scatter(1,i),snap.helix().radius(),snap.helix().length()));check(Math.abs(rows.getFloat(o)-expectedPoint.x)<.001&&Math.abs(rows.getFloat(o+4)-expectedPoint.y)<.001&&Math.abs(rows.getFloat(o+8)-expectedPoint.z)<.001,"Gaussian normal-plane formation differs from CPU");}}
      if(time==10.5f&&n==8192&&curved)renderHelix(rows,n);
      bind(10,output);
     }
@@ -56,17 +57,17 @@ public class HelixGpuValidation extends DomeGpuValidation {
     dispatch(p,(cap+63)/64);check(read(out,4).getInt(0)==n,"low-FPS grazing sweep lost contact or required rings");var report=read(out,28);check(Math.abs(report.getFloat(12))<.0001,"sweep intersection wrong");check(Math.abs(report.getFloat(24)-12.375f)<.001,"sweep sample time wrong");
     put(out,bytes(4+16384*24));dispatch(p,(cap+63)/64);check(read(out,4).getInt(0)==0,"duplicate helix contact");bind(30,stampsB);dispatch(p,(cap+63)/64);check(read(out,4).getInt(0)==n,"victim B suppressed");
     put(out,bytes(4+16384*24));put(stampsB,bytes(cap*16));for(int i=0;i<cap;i++)state.putInt(i*8+4,4|AllayHelix.SWEEP_INVALID);put(stateBuffer,state);dispatch(p,(cap+63)/64);check(read(out,4).getInt(0)==0,"escape warp hurt player");
-    for(int i=0;i<cap;i++)state.putInt(i*8+4,4);put(stateBuffer,state);gpu.helixReady(0,false);gpu.prepare(2);gpu.bind(p,true);dispatch(p,(cap+63)/64);check(read(out,4).getInt(0)==0,"unready collision window hurt player");
+    for(int i=0;i<cap;i++)state.putInt(i*8+4,4);put(stateBuffer,state);gpu.helixReady(0,false);gpu.prepare(2);gpu.bind(p,true);dispatch(p,(cap+63)/64);check(read(out,4).getInt(0)==n,"global window gate rejected locally valid contacts");
     for(int b:new int[]{pool,previous,count,prevCount,header,out,map,stampsA,stampsB})GL15.glDeleteBuffers(b);
    }
   }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
  }
  static void renderHelix(ByteBuffer rows,int count)throws Exception{
   // Use the existing framebuffer probe with a side view tailored to the long drill.
-  var centered=bytes(rows.capacity());float min=Float.POSITIVE_INFINITY,max=Float.NEGATIVE_INFINITY;
-  for(int i=0;i<count;i++){min=Math.min(min,rows.getFloat(i*48));max=Math.max(max,rows.getFloat(i*48));}
+  var centered=bytes(rows.capacity());float min=Float.POSITIVE_INFINITY,max=Float.NEGATIVE_INFINITY,minY=Float.POSITIVE_INFINITY,maxY=Float.NEGATIVE_INFINITY;
+  for(int i=0;i<count;i++){min=Math.min(min,rows.getFloat(i*48));max=Math.max(max,rows.getFloat(i*48));minY=Math.min(minY,rows.getFloat(i*48+4));maxY=Math.max(maxY,rows.getFloat(i*48+4));}
   for(int i=0;i<rows.capacity()/4;i++)centered.putInt(i*4,rows.getInt(i*4));
-  for(int i=0;i<count;i++)centered.putFloat(i*48,rows.getFloat(i*48)-(min+max)*.5f);
+  for(int i=0;i<count;i++)centered.putFloat(i*48,(rows.getFloat(i*48)-(min+max)*.5f)/3).putFloat(i*48+4,(rows.getFloat(i*48+4)-(minY+maxY)*.5f)/3+5).putFloat(i*48+8,rows.getFloat(i*48+8)/3);
   renderDome(centered,count);Files.move(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/dome-geometry-framebuffer.png"),Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/helix-geometry-framebuffer.png"),StandardCopyOption.REPLACE_EXISTING);
  }
  public static void main(String[] args)throws Exception{

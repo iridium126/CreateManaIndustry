@@ -34,7 +34,8 @@ public record ClientboundStormWavePacket(int waveId,long epoch,int event,int wav
   this(id,epoch,event,seed,target,tier,columns,per,start,assemble,lock,end,x,y,z,radius,members,path,landings,kind,phase,ends,cx,cy,cz,orientation,direction,centerSec,fallback,null);
  }
  public boolean helixAttack(){return attackType==StormAttack.HELIX;}
- public boolean starfall(){return attackType==StormAttack.STARFALL;}
+ public boolean starfall(){return attackType==StormAttack.STARFALL||column();}
+ public boolean column(){return attackType==com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnRules.COLUMN_KIND;}
  public static ClientboundStormWavePacket abort(int id,long epoch){return new ClientboundStormWavePacket(id,epoch,3,0,0,0,0,0,0,0,0,0,0,0,0,0,new int[0],new float[0],new float[0]);}
  public static ClientboundStormWavePacket abort(int id,long epoch,int reason){return abort(id,epoch).reason(reason);}
  public ClientboundStormWavePacket reason(int value){return new ClientboundStormWavePacket(waveId,epoch,event,waveSeed,targetEntityId,swordTier,columns,perColumn,startSec,assembleSec,lockSec,diveUntilSec,crownX,crownY,crownZ,crownRadius,members,path,landings,attackType,phase,groupEnds,centerX,centerY,centerZ,orientation,direction,centerSec,value,helix);}
@@ -73,11 +74,11 @@ public record ClientboundStormWavePacket(int waveId,long epoch,int event,int wav
   AllayHelix.Flight helix=null;
   if(kind==2){
    int a=b.readUnsignedByte(),other=b.readUnsignedByte();float[] h=new float[9];for(int i=0;i<h.length;i++)h[i]=finite(b);
-   int controlCount=b.readUnsignedByte();if(a>2||other!=a+3||controlCount<2||controlCount>6||h[0]<16||h[0]>32||h[1]<1.5||h[1]>3||h[2]<6||h[2]>18||h[3]<=0||h[3]>h[2]||h[7]<0||h[7]>1/(4*h[1]))throw new DecoderException("Invalid helix geometry");
+   int controlCount=b.readUnsignedByte();if(a>2||other!=a+3||controlCount<2||controlCount>6||h[0]<32||h[0]>64||h[1]<3||h[1]>6||h[2]<6||h[2]>18||h[3]<=0||h[3]>h[2]||h[7]<0||h[7]>1/(4*h[1]))throw new DecoderException("Invalid helix geometry");
    float[] controls=new float[controlCount*3],samples=new float[AllayHelix.SAMPLES*4];
    for(int i=0;i<controls.length;i++)controls[i]=finite(b);float previousArc=-1;
    for(int i=0;i<samples.length;i++){samples[i]=finite(b);if(i%4==3){if(samples[i]<0||samples[i]<=previousArc)throw new DecoderException("Invalid helix arc");previousArc=samples[i];}}
-   if(previousArc<=h[0]+24||previousArc>112||h[8]<h[0]||h[8]>=previousArc||h[4]<f[1]||h[5]<h[4]||h[6]<=h[5]||h[6]>f[3])throw new DecoderException("Invalid helix schedule");
+   if(previousArc<=h[0]+24||previousArc>256||h[8]<h[0]||h[8]>=previousArc||h[4]<f[1]||h[5]<h[4]||h[6]<=h[5]||h[6]>f[3])throw new DecoderException("Invalid helix schedule");
    helix=new AllayHelix.Flight(a,other,h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],h[8],controls,samples);
   }
   return new ClientboundStormWavePacket(id,epoch,event,seed,target,tier,columns,per,f[0],f[1],f[2],f[3],f[4],f[5],f[6],f[7],members,path,land,kind,phase,ends,f[8],f[9],f[10],f[11],direction,f[12],fallback,helix);

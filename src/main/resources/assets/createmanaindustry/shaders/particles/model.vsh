@@ -143,13 +143,13 @@ void main() {
     // instance no longer exist at all.
     float carryRamp = 0.0;
     float itemId = 0.0;
-    if(uStarfallEnabled&&!corpse&&stormA.x>.5){int claim=cmiStarClaim(p0.w,uTimeSec);if(claim>=0)carryRamp=cmiAttackCarry(p0.w,uTimeSec);}
+    if(uStarfallEnabled&&!corpse&&stormA.x>.5){int claim=cmiStarClaim(p0.w,uTimeSec);if(claim>=0)carryRamp=cmiAttackCarry(p0.w,uTimeSec,p1.w);}
     if (pid == 7) {
         float waveTier = 0.0;
         if (!corpse && stormA.x > 0.5) {
             int k = cmiStormWaveClaim(p3.z,p0.w);
             if (k >= 0) {
-                carryRamp = uStarfallEnabled?cmiAttackCarry(p0.w,uTimeSec):cmiStormCarryRamp(uTimeSec, uWave[k].z, uWave[k].w);
+                carryRamp = uStarfallEnabled?cmiAttackCarry(p0.w,uTimeSec,p1.w):cmiStormCarryRamp(uTimeSec, uWave[k].z, uWave[k].w);
                 waveTier = uStarfallEnabled?cmiStarTier(k):uWaveTier[k];
             }
         }
@@ -174,7 +174,7 @@ void main() {
         anim = 3;
     float sinceDeath = corpse ? -p3.y : 0.0;
     float yaw;
-    mat4 M = cmiAllayAttackPartTransform(p3.x, p3.z,p0.w, p1.xyz, anim, pid, yaw, carryRamp, !corpse && stormA.x > .5);
+    mat4 M = cmiAllayAttackPartTransform(p3.x, p3.z,p0.w, p0.xyz, p1.xyz, anim, pid, yaw, carryRamp, !corpse && stormA.x > .5);
 
     // ---- vertex transform to world ----
     vec3 local = vec3(geo.v[vb], geo.v[vb + 1u], geo.v[vb + 2u]);

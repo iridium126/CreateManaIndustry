@@ -97,8 +97,10 @@ public abstract class AllvrClientLevelMixin {
         if (!AllvrDimensionLimits.isVanillaY(pos.getY()) && allvr$isAllayClient(self)) {
             boolean changed = AllvrClientCubeCache.setBlock(pos, state, flags, recursionLeft);
             cir.setReturnValue(changed);
-            if (changed && self instanceof net.minecraft.client.multiplayer.ClientLevel clientLevel)
+            if (changed && self instanceof net.minecraft.client.multiplayer.ClientLevel clientLevel) {
                 PackageCollisionRuntime.blockChanged(clientLevel, pos);
+                com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.blockChanged(clientLevel, pos);
+            }
         }
     }
 }

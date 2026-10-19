@@ -127,11 +127,7 @@ public final class ModelInteractionRuntime {
      */
     private HitResult vanillaPickResult = null;
     private long lastHitGeneration=-1;
-    private ParticleHitRay currentHitRay(){
-        var mc=Minecraft.getInstance();if(mc.player==null)return null;var eye=mc.player.getEyePosition();var cam=mc.gameRenderer.getMainCamera();
-        var look=Vec3.directionFromRotation(cam.getXRot(),cam.getYRot());return new ParticleHitRay((float)eye.x,(float)eye.y,(float)eye.z,(float)look.x,(float)look.y,(float)look.z,(float)mc.player.entityInteractionRange());
-    }
-    private boolean hitRayCurrent(){return lastHitRay!=null&&particles.currentGeneration()-lastHitGeneration<=4&&lastHitRay.matches(currentHitRay());}
+    private boolean hitRayCurrent(){return lastHitRay!=null&&lastHitGeneration>=0;}
 
     // dispatchStormPosReadback / collectSyncedPlayers moved to AllayStormRuntime
     // (the engine call site computes the pool-census dispatch bound and hands it
@@ -179,9 +175,8 @@ public final class ModelInteractionRuntime {
         // ENTITY's eye, not the third-person camera) — so the injected ray
         // parameter and the block/entity distance comparison below share one
         // exact base
-        Vec3 eye = mc.player.getEyePosition();
-        Camera camera = mc.gameRenderer.getMainCamera();
-        Vec3 look = Vec3.directionFromRotation(camera.getXRot(), camera.getYRot());
+        Vec3 eye = lastHitRay.origin();
+        Vec3 look = lastHitRay.direction();
         Vec3 hitPos = eye.add(look.scale(t));
         HitResult current = mc.hitResult;
         double currentDistSq = current == null || current.getType() == HitResult.Type.MISS
@@ -259,8 +254,8 @@ public final class ModelInteractionRuntime {
         // block, so an allay behind a wall is untargetable. One cheap CPU
         // raycast against the real world (exact collision shapes, works
         // outside the collision bake volumes too).
-        Vec3 eye = player.getEyePosition();
-        Vec3 hitPos = eye.add(player.getViewVector(1.0F).scale(Math.max(t, 0.01F)));
+        Vec3 eye = lastHitRay.origin();
+        Vec3 hitPos = lastHitRay.point(Math.max(t, 0.01F));
         BlockHitResult clip = mc.level.clip(new ClipContext(eye, hitPos,
                 ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
         if (clip.getType() != HitResult.Type.MISS
@@ -298,9 +293,9 @@ public final class ModelInteractionRuntime {
      */
     private boolean syntheticAttack(Minecraft mc, LocalPlayer player, int idx, Vec3 hitPos, int memberIdx,int token,float hpSnapshot) {
         if (memberIdx >= 0 && AllayStormRuntime.INSTANCE.active()) {
-            // Send before swing: ServerPlayer.swing resets the shared attack-strength ticker.
+            // Two-argument swing is local prediction; no vanilla swing packet may reset server cooldown.
             com.iridium126.createmanaindustry.client.allaystorm.StormFeedback.INSTANCE.reportHit(memberIdx, hitPos);
-            player.swing(InteractionHand.MAIN_HAND);
+            player.swing(InteractionHand.MAIN_HAND, false);
             player.resetAttackStrengthTicker();
             return true;
         }

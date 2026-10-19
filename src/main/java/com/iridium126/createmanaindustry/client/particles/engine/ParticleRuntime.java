@@ -288,6 +288,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             this.spriteAtlas.free();
             this.allayAtlas.free();
             this.collisionBake.free();
+            com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.reset();
         } catch (RuntimeException | LinkageError e) {
             CreateManaIndustry.LOGGER.warn("[CMI particles] atlas/bake free failed", e);
         }
@@ -481,7 +482,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         // correction timestamps without any clock sync.
         Minecraft mcClock = Minecraft.getInstance();
         if (mcClock.level != null)
-            AllayStormRuntime.INSTANCE.tickClock(mcClock.level.getGameTime());
+            AllayStormRuntime.INSTANCE.tickClock(mcClock.level.getGameTime(),deltaTracker.getGameTimeDeltaPartialTick(false));
 
         // Producers share one bounded writer. No producer owns parallel command metadata.
         ParticleRuntime.this.emitCommands.clear();
@@ -678,6 +679,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 setIntUniform(ParticleRuntime.this.programs.update(), "uCollisionOn", 0);
             }
 
+            com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.prepare(ParticleRuntime.this.programs.update());
             setFloatUniform(ParticleRuntime.this.programs.update(), "uDt", dt);
             setUIntUniform(ParticleRuntime.this.programs.update(),"uHexCurrentTick",hexTick);
             setIntUniform(ParticleRuntime.this.programs.update(),"uHexTickReady",1);
@@ -1018,6 +1020,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         }
         public long packageVersion(){return packageVersion;}
         public com.iridium126.createmanaindustry.client.render.scene.ParticleRenderFrame commit() {require(4);
+            com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.submitted();
             ParticleRuntime.this.gpu.swap();
             ParticleRuntime.this.sharedFate.commit();
             if(packageStaged) {
@@ -1077,6 +1080,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         @Override public void close() {
             if(!committed&&snapshot!=null&&snapshot.fence!=0)readbacks.release(snapshot);
             if(!committed) {
+                com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.submitted();
                 com.iridium126.createmanaindustry.client.allaystorm.StormFeedback.INSTANCE.dropPositionSnapshot();
                 com.iridium126.createmanaindustry.client.allaystorm.StormFeedback.INSTANCE.dropWaveContact();
             }
@@ -1107,6 +1111,9 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 GL11.glBindTexture(GL12.GL_TEXTURE_3D, 0);
                 GL13.glActiveTexture(GL13.GL_TEXTURE1);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+                GL11.glBindTexture(GL12.GL_TEXTURE_3D, 0);
+                GL13.glActiveTexture(GL13.GL_TEXTURE2);
+                GL11.glBindTexture(org.lwjgl.opengl.GL31.GL_TEXTURE_BUFFER, 0);
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
             } catch (RuntimeException | LinkageError ignoredCleanup) {
                 // see above
@@ -1300,7 +1307,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         int id = ensureCombatEmitter(CombatSpecs.POOF);
         return id >= 0 ? (float) id : 0f;
     }
-    public void resetWorld() { if(initialized){dropAll();collisionBake.reset();} }
+    public void resetWorld() { com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.reset();if(initialized){dropAll();collisionBake.reset();} }
 
 
     private void applyAnimation(EmitterSpec spec, EmitterSpec.Animation animation) {
@@ -1372,7 +1379,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
     public void clearMembers() { gpu.clearMemberMap(); }
     public void prepareAppearance(Vec3 center) {
         allayAtlas.ensureLoaded();
-        collisionBake.ensureQuadrants(center);
+        // Storm owns an independent complete collision atlas.
     }
     public void collisionColumn(double x, double y, double z) { collisionBake.ensureColumn(x, y, z); }
     public boolean collisionWindow(double x, double y, double z, boolean prefetch) {
