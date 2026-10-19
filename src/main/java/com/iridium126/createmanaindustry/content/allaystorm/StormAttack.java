@@ -9,7 +9,7 @@ public final class StormAttack {
   if(sum>1){dome/=sum;helix/=sum;}
   return roll<helix?HELIX:roll<helix+dome?DOME:STARFALL;
  }
- public static boolean targetRequired(int kind,boolean locked){return kind==STARFALL||!locked;}
+ public static boolean targetRequired(int kind,boolean locked){return kind==STARFALL||kind==HELIX&&!locked;}
  public static int quota(int alive,double fraction,int limit){return Math.min(limit,(int)Math.floor(Math.max(0,alive)*Math.max(0,Math.min(1,fraction))));}
  public static boolean regional(int kind){return kind==DOME||kind==HELIX;}
 }

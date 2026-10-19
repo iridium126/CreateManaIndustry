@@ -36,9 +36,18 @@ public final class StormCollisionRuntime implements AutoCloseable {
         if(current==null)current=new StormCollisionRuntime(level);
         current.lastActive=level.getGameTime();current.demand(center,radius,attacks);
     }
+    private static final class Returning {final ClientboundStormWavePacket packet;final java.util.Set<Integer> members=new java.util.HashSet<>();Returning(ClientboundStormWavePacket p){packet=p;}}
+    private final Map<Integer,Returning> returning=new HashMap<>();
+    public static void clearReturns(){if(current!=null){current.returning.clear();current.bounds=null;}}
+    public static boolean returning(){return current!=null&&!current.returning.isEmpty();}
+    public static void completed(ClientboundStormWavePacket packet,long[] ranks){if(current==null)return;var set=java.util.BitSet.valueOf(ranks);for(int rank=set.nextSetBit(0);rank>=0;rank=set.nextSetBit(rank+1))if(rank>=packet.members().length||!AllayStormRuntime.INSTANCE.livingMember(packet.members()[rank]))set.clear(rank);if(set.isEmpty())return;StarfallGpuBuffers.INSTANCE.trackReturn(packet,set.toLongArray());var record=current.returning.computeIfAbsent(packet.waveId(),k->new Returning(packet));for(int rank=set.nextSetBit(0);rank>=0;rank=set.nextSetBit(rank+1))record.members.add(packet.members()[rank]);current.bounds=null;}
+    public static void arrived(int id,int member){StarfallGpuBuffers.INSTANCE.arrived(id,member);if(current==null)return;var record=current.returning.get(id);if(record!=null&&record.members.remove(member)){if(record.members.isEmpty())current.returning.remove(id);current.bounds=null;}}
+    public static void claimed(ClientboundStormWavePacket packet){if(current==null)return;for(var it=current.returning.values().iterator();it.hasNext();){var record=it.next();if(record.packet.waveId()==packet.waveId())continue;for(int m:packet.members())record.members.remove(m);if(record.members.isEmpty())it.remove();}current.bounds=null;}
+    public static void dead(int member){if(current==null)return;for(var it=current.returning.values().iterator();it.hasNext();){var r=it.next();if(r.members.remove(member)&&r.members.isEmpty())it.remove();}current.bounds=null;}
     private void demand(Vec3 center,float radius,ClientboundStormWavePacket[] attacks){
         double pad=radius*1.15+12,minX=center.x-pad,maxX=center.x+pad,minZ=center.z-pad,maxZ=center.z+pad,minY=center.y-20,maxY=center.y+20;
-        for(var p:attacks)if(p!=null&&!p.abort()){
+        var coverage=new ArrayList<ClientboundStormWavePacket>();for(var p:attacks)if(p!=null&&!p.abort())coverage.add(p);for(var record:returning.values())coverage.add(record.packet);
+        for(var p:coverage){
             double attackPad=p.helixAttack()?p.helix().radius()*1.6+12:p.column()?16:p.crownRadius()+12;
             minX=Math.min(minX,p.centerX()-attackPad);maxX=Math.max(maxX,p.centerX()+attackPad);
             minZ=Math.min(minZ,p.centerZ()-attackPad);maxZ=Math.max(maxZ,p.centerZ()+attackPad);

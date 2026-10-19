@@ -149,14 +149,14 @@ public class ModelShadowGpuValidation {
             for(int attackKind:new int[]{0,1,2,3,4})try(var star=new com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers()){
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
                 var event=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket(1,37,2,1,1,5,1,1,0,4,10,60,0,12,0,4,new int[]{0},new float[]{0,12,0,0,10,0},new float[]{0,.5f,0,3.5f});
-                if(attackKind==1){int[] roster=java.util.stream.IntStream.range(0,768).toArray();
-                    event=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket(1,37,2,1,1,5,7,4096,0,4,10,120,0,40,0,8,roster,new float[]{0,40,0,0,8,0},new float[28],1,4,com.iridium126.createmanaindustry.content.allaystorm.AllayDome.groups(768),0,0,0,0,1,10,0);
+                if(attackKind==1){int[] roster=java.util.stream.IntStream.range(0,8192).toArray();
+                    event=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket(1,37,2,1,1,5,1,8192,0,4,10,120,0,40,0,32,roster,new float[]{0,40,0,0,8,0},new float[4],1,4,com.iridium126.createmanaindustry.content.allaystorm.AllayDome.groups(8192),0,0,0,0,1,10,0);
                 }
                 if(attackKind==2){
-                    int[] roster=java.util.stream.IntStream.range(0,8192).toArray();float length=com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.length(8192);
-                    var selection=new com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.Selection(0,3,roster,new int[]{4096,8192});
-                    var flight=com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.flight(selection,new float[]{-24-length,4,0,-24,4,0,-12,4,0,0,4,0,12,4,0,12+length,4,0},12,8,11.5f);
-                    event=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket(1,37,2,1,1,5,2,4096,0,4,10,120,0,40,0,flight.radius(),roster,new float[]{0,40,0,-24,4,0},new float[8],2,3,selection.ends(),-24,4,0,0,1,10,0,flight);
+                    int[] roster=java.util.stream.IntStream.range(0,4096).toArray();
+                    var selection=new com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.Selection(0,3,roster,new int[]{2048,4096});
+                    var flight=com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.linearFlight(selection,new net.minecraft.world.phys.Vec3(-24,4,0),new net.minecraft.world.phys.Vec3(1,0,0),80,12,10);
+                    event=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket(1,37,2,1,1,5,2,2048,0,10,10,40,0,40,0,32,roster,new float[]{0,40,0,-24,4,0},new float[8],2,4,selection.ends(),-24,4,0,0,1,10,0,flight);
                 }
                 var snapshots=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[68];
                 if(attackKind>=3){
@@ -164,7 +164,7 @@ public class ModelShadowGpuValidation {
                     snapshots[67]=event;
                 }else snapshots[0]=event;
                 star.rebuild(snapshots);star.prepare(1);star.commit();star.bindTexture(14);
-                particle.putFloat(12,1).putFloat(20,-6).putFloat(28,attackKind==3?-1.5f:0).putFloat(52,20);put(buffers[1],particle);put(buffers[2],headers(2,.3f,false,true));
+                particle.putFloat(12,1).putFloat(20,-6).putFloat(28,attackKind==3?-1.5f:attackKind==2||attackKind==1?-4:0).putFloat(52,20);put(buffers[1],particle);put(buffers[2],headers(2,.3f,false,true));
                 GL20.glUseProgram(program);GL20.glUniform1i(GL20.glGetUniformLocation(program,"uStarfallEnabled"),1);GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_Starfall"),14);GL20.glUniform1f(GL20.glGetUniformLocation(program,"uTimeSec"),12);GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_ShadowPass"),1);
                 GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL30.glBeginTransformFeedback(GL11.GL_POINTS);GL31.glDrawArraysInstanced(GL11.GL_POINTS,0,1,1);GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);var merged=read(buffers[4],16);
                 if(attackKind>=3){

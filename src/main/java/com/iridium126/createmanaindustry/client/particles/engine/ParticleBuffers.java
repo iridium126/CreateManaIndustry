@@ -209,7 +209,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     public static final int MEMBER_IDX_BITS = 18;
     public static final int MEMBER_IDX_MASK = (1 << MEMBER_IDX_BITS) - 1;
     public static final int MEMBER_LATCH_BIT = 1 << MEMBER_IDX_BITS;
-    /** Players fed to the storm repulsion / readback passes. */
+    /** Initial player staging capacity; grows to include every eligible synced player. */
     public static final int MAX_STORM_PLAYERS = 16;
     /** Base ordinary-MODEL carrier allowance. Active starfall rosters grow the tail on demand. */
     public static final int CARRIER_CAP = 4 * 4096;
@@ -389,7 +389,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     /** Matches the "major.minor" prefix of a GL_VERSION string. */
 
     /** Staging for per-frame player positions (MAX_STORM_PLAYERS vec4). */
-    private final FloatBuffer playersTmp = BufferUtils.createFloatBuffer(MAX_STORM_PLAYERS * 4);
+    private FloatBuffer playersTmp = BufferUtils.createFloatBuffer(MAX_STORM_PLAYERS * 4);
     /** Staging for one correction-slot write (2 vec4). */
     private final FloatBuffer correctionTmp = BufferUtils.createFloatBuffer(8);
 
@@ -483,7 +483,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.hitSSBO);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.tmp4);
         // Storm player-repulsion source (vec4 per player, up to 16).
-        this.playersSSBO = createBuffer(MAX_STORM_PLAYERS * 16L, null);
+        this.playersSSBO = createBuffer(playersTmp.capacity() * 4L, null);
         // Minimal legal bindings until Storm identities are actually used.
         this.stormIdentities.initialize();
         // Authority readback staging: uint count + capped entry floats.
@@ -866,19 +866,15 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     }
 
     /**
-     * Uploads up to {@link #MAX_STORM_PLAYERS} player positions (xyz packed
+     * Uploads all player positions and a reusable 6m cell index; no count truncation. Packs positions (xyz packed
      * into vec4s, stride 4 floats). {@code count} entries are read from the
      * head of the flat array.
      */
+    private final com.iridium126.createmanaindustry.client.allaystorm.StormPlayerGrid playerGrid=new com.iridium126.createmanaindustry.client.allaystorm.StormPlayerGrid();
     public void uploadPlayers(float[] xyz, int count) {
-        int n = Math.min(count, MAX_STORM_PLAYERS);
-        this.playersTmp.clear();
-        for (int i = 0; i < n; i++) {
-            this.playersTmp.put(xyz[i * 3]).put(xyz[i * 3 + 1]).put(xyz[i * 3 + 2]).put(0f);
-        }
-        this.playersTmp.flip();
-        GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.playersSSBO);
-        com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.playersTmp);
+        playerGrid.build(xyz,count);int length=playerGrid.words();float[] packed=playerGrid.data();
+        if(playersTmp.capacity()<length){playersTmp=BufferUtils.createFloatBuffer(Integer.highestOneBit(length-1)<<1);GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,playersSSBO);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,playersTmp.capacity()*4L,GL15.GL_DYNAMIC_DRAW);}
+        playersTmp.clear();playersTmp.put(packed,0,length).flip();GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,playersSSBO);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,playersTmp);
     }
 
     /** Binds the storm correction-slot buffer at its fixed binding. */

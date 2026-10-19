@@ -15,10 +15,15 @@
     // the whole storm onto the center) whenever the radius moves.
     // Only WORLD-frame acceleration leaves this block: the collision sweep
     // below still owns the final position move.
+    float cmiStormFrameCap=max(stormA.w,.5);
     if (!corpse && stormA.x > 0.5) {
         // ----- typhoon: world-frame servo onto the circulating arm home point
         vec3 anchor = emitters.u[hb + 19u].xyz;
         float spMaxV = cmiAttackSpeed(p0.w,uTimeSec,max(stormA.w, 0.5));
+        if(uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);bool returning=a==0u&&member<131072u&&(starStateRead.words[member*2u+1u]&255u)>=6u;
+            if(a!=0u&&cmiHelix(cmiStarBase(cmiStarSlot(a)))&&cmiStarPhase(a,uTimeSec)==6.)returning=true;
+            if(returning)spMaxV=max(spMaxV,length(vel)-24.*uDt);
+        }cmiStormFrameCap=spMaxV;
         // Shared home-point function (chunks/allay_pose.glsl) — the SAME
         // function emit.comp spawns with, so the two call sites cannot
         // diverge and the spawn state IS this servo's equilibrium. The
@@ -54,11 +59,16 @@
             uint phase=0u;vec3 attackTarget,attackVelocity;
             uint assignment=cmiStarAssignment(p0.w);
             if(cmiColumnAssignment(assignment)){
-                waveEngaged=cmiColumnSteer(assignment,pos,vel,target,attackTarget,attackVelocity,phase,columnMarker);columnEngaged=waveEngaged;columnPhase=phase;
+                waveEngaged=cmiColumnSteer(assignment,pos,vel,target,vT,attackTarget,attackVelocity,phase,columnMarker);columnEngaged=waveEngaged;columnPhase=phase;
                 roll=columnMarker;
             }else waveEngaged=cmiStarSteering(p0.w,p3.z,pos,target,spMaxV,attackTarget,attackVelocity,phase);
+            if(assignment!=0u){
+                uint slot=cmiStarSlot(assignment),b=cmiStarBase(slot);
+                if(cmiHelix(b)||cmiDome(b))roll=0.;
+                if(phase==6u){uint rank=cmiColumnAssignment(assignment)?cmiStarRank(assignment):cmiMajorRank(assignment);atomicOr(starStateWrite.words[CMI_COMPLETIONS+cmiCompletionOffset(slot)+rank/32u],1u<<(rank&31u));}
+            }
             if(waveEngaged){target=attackTarget;vT=attackVelocity;}
-            uint member=cmiStarMember(p0.w);if(member<131072u){uint a=cmiStarAssignment(p0.w),id=a==0u?0u:uint(cmiStarVec(cmiStarBase(cmiStarSlot(a))).x+.5);if(!cmiColumnAssignment(a)&&id!=0u&&starStateRead.words[member*2u]==id)phase=max(phase,starStateRead.words[member*2u+1u]&255u);starStateWrite.words[member*2u]=id;starStateWrite.words[member*2u+1u]=phase;}
+            uint member=cmiStarMember(p0.w);if(member<131072u){uint a=cmiStarAssignment(p0.w),id=a==0u?0u:uint(cmiStarVec(cmiStarBase(cmiStarSlot(a))).x+.5);if(!cmiColumnAssignment(a)&&id!=0u&&starStateRead.words[member*2u]==id)phase=max(phase,starStateRead.words[member*2u+1u]&255u);if(a==0u&&starStateRead.words[member*2u]!=0u&&(starStateRead.words[member*2u+1u]&255u)>=1u){id=starStateRead.words[member*2u];phase=distance(pos,target)<2.?7u:6u;}starStateWrite.words[member*2u]=id;starStateWrite.words[member*2u+1u]=phase;}
         }else {
         if ((uint(p0.w + 0.5) & MEMBER_LATCH_BIT) == 0u) {
         for (uint k = 0u; k < 4u && !waveEngaged; k++) {
@@ -86,6 +96,7 @@
         }
         // separation + player repulsion, world space.
         // Same visit budget as the boids sweep had.
+        float separationRadius=STORM_SEP_R;if(waveEngaged&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))separationRadius=1.4;}
         vec3 sepW = vec3(0.0);
         int sepVisits = 0;
         bool sepBudgetGone = false;
@@ -109,33 +120,23 @@
                 vec3 op = readBuf.data[uint(j) * 4u].xyz;
                 vec3 d = pos - op;
                 float d2 = dot(d, d);
-                if (d2 < STORM_SEP_R * STORM_SEP_R && d2 > 1e-8) {
+                if (d2 < separationRadius * separationRadius && d2 > 1e-8) {
                     float dl = sqrt(d2);
-                    sepW += d * ((STORM_SEP_R - dl) / (dl * STORM_SEP_R));
+                    sepW += d * ((separationRadius - dl) / (dl * separationRadius));
                 }
             }
         }
         sepW *= STORM_W_SEP;
-        if(waveEngaged&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),b=cmiStarBase(cmiStarSlot(a));if(cmiHelix(b))sepW*=.35;}
         vec3 repW = vec3(0.0);
         // every synced player repels (all-client-consistent force set).
         // Squared-distance gate: the sqrt and the normalize
         // divides run only for members actually inside player reach.
         // Engaged divers SKIP the repulsion entirely — they must reach their
         // target (separation above still keeps the swarm off itself).
-        if (!waveEngaged) {
-            for (int pi = 0; pi < uPlayerCount; pi++) {
-                vec3 dp = pos - players.pl[pi].xyz;
-                float dp2 = dot(dp, dp);
-                if (dp2 < STORM_PLAYER_R * STORM_PLAYER_R && dp2 > 1e-6) {
-                    float dpL = sqrt(dp2);
-                    repW += (dp / dpL) * STORM_PLAYER_W * (STORM_PLAYER_R - dpL) / STORM_PLAYER_R;
-                }
-            }
-        }
+        if(!waveEngaged)repW=cmiPlayerRepel(pos,STORM_PLAYER_R,STORM_PLAYER_W);
         // whisker cone bends the engaged steering around obstacles (player
         // roofs/walls) instead of stalling against them
-        if (waveEngaged && !columnEngaged && (uCollisionOn == 1||cmiStormVoxel) && !(uStarfallEnabled&&cmiHelix(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.)) {
+        if (waveEngaged && !columnEngaged && (uCollisionOn == 1||cmiStormVoxel) && !(uStarfallEnabled&&(cmiHelix(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))||cmiDome(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w)))))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.)) {
             vec3 toT = target - pos;
             float dT = length(toT);
             if (dT > 1e-4) {
@@ -148,7 +149,8 @@
         // servo onto the co-rotating home point, plus the world-space terms,
         // hand ONE acceleration to the integrator
         vec3 aW = (target - pos) * STORM_VORTEX_K + (vT - vel) * STORM_VORTEX_C + sepW + repW;
-        if(columnEngaged)vel=vT;else vel += aW * uDt;
+        bool domeFlow=waveEngaged&&uStarfallEnabled&&cmiDome(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.;
+        if(domeFlow){vel=vT+(target-pos)*4.+sepW;float flowSpeed=length(vel);if(flowSpeed>.000001)vel*=6./flowSpeed;}else if(columnEngaged)vel=vT;else vel += aW * uDt;
         float spdV = length(vel);
         if (spdV > spMaxV)
             vel *= spMaxV / spdV;
@@ -186,7 +188,7 @@
                     vel += (target - pos) * min(k * uDt, 0.5);
                     vel += (cB.xyz - vel) * min(2.5 * uDt, 0.35);
                     // Network correction follows the servo; it must obey the same motion cap.
-                    float cap=cmiAttackSpeed(p0.w,uTimeSec,max(stormA.w,.5)),speed=length(vel);
+                    float cap=cmiStormFrameCap,speed=length(vel);
                     if(speed>cap)vel*=cap/speed;
                 }
             }

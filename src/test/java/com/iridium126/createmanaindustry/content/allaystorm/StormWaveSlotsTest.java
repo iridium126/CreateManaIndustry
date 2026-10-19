@@ -25,6 +25,7 @@ class StormWaveSlotsTest {
         assertNull(slots.apply(ClientboundStormWavePacket.abort(2,87),5));
         assertEquals(5,slots.packet(1).waveId());
     }
+    @Test void completedSlotCanBeReusedImmediatelyAndLateCompletionCannotClearReplacement(){var slots=full();slots.complete(2);assertEquals(1,slots.apply(start(5,50),5).slot());slots.complete(2);assertEquals(5,slots.packet(1).waveId());}
     @Test void liveSlotsCannotBeEvicted() {assertNull(full().apply(start(5,50),5));}
     @Test void emptySlotPreservesAbortFade() {
         var slots=new StormWaveSlots(); slots.apply(start(1,50),0); slots.apply(ClientboundStormWavePacket.abort(1,87),5);

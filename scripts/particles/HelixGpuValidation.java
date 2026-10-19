@@ -10,36 +10,47 @@ import com.iridium126.createmanaindustry.content.allaystorm.network.*;
 
 /** Real production kernels; no Minecraft window or mutable world. */
 public class HelixGpuValidation extends DomeGpuValidation {
- static AllayHelix.Flight flight(int n,boolean curved){
-  int[] ids=new int[n];for(int i=0;i<n;i++)ids[i]=i;
-  var roster=new AllayHelix.Selection(0,3,ids,new int[]{n/2,n});
-  var straight=AllayHelix.attackFlight(roster,-24,28,0,0,12,8).schedule(8,11.5f);
-  if(!curved)return straight;float[] controls=straight.controls().clone();controls[8]=.1f;controls[11]=.1f;
-  return AllayHelix.flight(roster,controls,12,8,11.5f);
- }
- static ClientboundStormWavePacket helix(int n,int id,int event,int phase,boolean curved){var h=flight(n,curved);int[] ids=new int[n];for(int i=0;i<n;i++)ids[i]=i;
-  return new ClientboundStormWavePacket(id,37,event,1,1,5,2,4096,0,4,10,120,0,40,0,h.radius(),ids,new float[]{0,40,0,-24,28,0},new float[8],2,phase,new int[]{n/2,n},-24,28,0,0,1,10,0,h);
+ static AllayHelix.Flight flight(int n,boolean curved){var ids=new int[4096];for(int i=0;i<4096;i++)ids[i]=i;return AllayHelix.linearFlight(new AllayHelix.Selection(0,3,ids,new int[]{2048,4096}),new net.minecraft.world.phys.Vec3(-24,28,0),new net.minecraft.world.phys.Vec3(1,-1,0).normalize(),80,12,10);}
+ static ClientboundStormWavePacket helix(int n,int id,int event,int phase,boolean curved){var h=flight(n,curved);int[] ids=new int[4096];for(int i=0;i<4096;i++)ids[i]=i;
+  return new ClientboundStormWavePacket(id,37,event,1,1,5,2,2048,0,10,10,40,0,40,0,32,ids,new float[]{0,40,0,-24,28,0},new float[8],2,phase,new int[]{2048,4096},-24,28,0,0,1,10,0,h);
  }
  static int helixMotion(){String nav=source("chunks/storm_navigation.glsl");nav=nav.substring(nav.indexOf("vec3 cmiStarRoute"));return compileText("helix motion",source("chunks/allay_storm.glsl")+nav+
   "\nlayout(local_size_x=64)in;layout(std430,binding=10)buffer Output{vec4 rows[];} result;uniform uint uCount;void main(){uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;float identity=float(i+1u),seed=float(i)*.0001;vec3 target,velocity;uint phase=0u;float cap=cmiAttackSpeed(identity,uTimeSec,6.);bool engaged=cmiStarSteering(identity,seed,vec3(0),vec3(99,40,0),cap,target,velocity,phase);result.rows[i*3u]=vec4(target,float(phase));result.rows[i*3u+1u]=vec4(velocity,engaged?1.:0.);result.rows[i*3u+2u]=vec4(cmiAttackCarry(identity,uTimeSec),float((cmiStarAssignment(identity)>>3u)&31u),cap,cmiStarMarkerFade(1u<<7u,uTimeSec));}");}
  static void helixFormations()throws Exception{
-  int p=helixMotion();try(var gpu=new StarfallGpuBuffers()){
-   for(int n:new int[]{0,1,63,64,65,512,2048,8192,16384})for(boolean curved:new boolean[]{false,true}){
-    var snap=helix(n,1,2,3,curved);int output=buffer(bytes(Math.max(1,n)*48));bind(10,output);stage(gpu,snap,p);ui(p,"uCount",n);
-    for(float time:new float[]{0,5,8.5f,10.5f,12,snap.helix().finish()+1,snap.helix().finish()+5}){
-     f(p,"uTimeSec",time);dispatch(p,Math.max(1,(n+63)/64));var rows=read(output,Math.max(1,n)*48);
-     for(int i=0;i<n;i++){int o=i*48;assertFinite(rows,o,11);int expected=AllayHelix.phase(time,4,10,true,snap.helix());check(rows.getFloat(o+12)==expected,"helix phase");float cap=expected==4?12:6;float vx=rows.getFloat(o+16),vy=rows.getFloat(o+20),vz=rows.getFloat(o+24);check(vx*vx+vy*vy+vz*vz<=cap*cap+.001,"helix target speed");check(rows.getFloat(o+40)==cap,"phase cap leaked");check(rows.getFloat(o+44)<0,"helix admitted ground ring");check(rows.getFloat(o+36)==(i<n/2?0:1),"helix group boundary");if(time==8.5f){int first=i<n/2?0:n/2,size=i<n/2?n/2:n-n/2;float u=AllayHelix.memberU((i-first+.5f)/size);var axis=new net.minecraft.world.phys.Vec3(1,-1,0).normalize();var expectedPoint=new net.minecraft.world.phys.Vec3(-24,28,0).subtract(axis.scale(u*snap.helix().length())).add(AllayHelix.offset(axis,u,i<n/2?0:1,AllayHelix.scatter(1,i),snap.helix().radius(),snap.helix().length()));check(Math.abs(rows.getFloat(o)-expectedPoint.x)<.001&&Math.abs(rows.getFloat(o+4)-expectedPoint.y)<.001&&Math.abs(rows.getFloat(o+8)-expectedPoint.z)<.001,"Gaussian normal-plane formation differs from CPU");}}
-     if(time==10.5f&&n==8192&&curved)renderHelix(rows,n);
-     bind(10,output);
-    }
-    for(float boundary:new float[]{4,8,10,11.5f,snap.helix().finish(),snap.helix().finish()+2}){
-     f(p,"uTimeSec",boundary-.001f);dispatch(p,Math.max(1,(n+63)/64));var before=read(output,Math.max(1,n)*48);f(p,"uTimeSec",boundary+.001f);dispatch(p,Math.max(1,(n+63)/64));var after=read(output,Math.max(1,n)*48);
-     for(int i=0;i<n;i++){double d=0;for(int axis=0;axis<3;axis++){double delta=before.getFloat(i*48+axis*4)-after.getFloat(i*48+axis*4);d+=delta*delta;}check(d<.01,"helix boundary jump at "+boundary);}
-    }
-    gpu.commit();int old=gpu.committedBuffer();stage(gpu,helix(n,2,2,3,curved),p);gpu.abort();check(gpu.committedBuffer()==old,"helix failed submission published");
-    GL15.glDeleteBuffers(output);
+  int p=helixMotion(),n=4096;try(var gpu=new StarfallGpuBuffers()){
+   int output=buffer(bytes(n*48));bind(10,output);var snap=helix(n,1,2,4,false);stage(gpu,snap,p);ui(p,"uCount",n);var axis=AllayHelix.axis(snap.helix());var side=new net.minecraft.world.phys.Vec3(0,1,0).cross(axis).normalize();var up=axis.cross(side);
+   for(float time:new float[]{0,5,9.999f,10,10.001f,12,15,19.5f,20}){
+    f(p,"uTimeSec",time);dispatch(p,64);var rows=read(output,n*48);float elapsed=Math.max(0,time-10),progress=12*(elapsed-.075f*(1-(float)Math.pow(1-Math.clamp(elapsed/.15f,0,1),2)));
+    int done=0;for(int i=0;i<n;i++){int o=i*48;assertFinite(rows,o,11);int phase=time<10?1:HelixTemplate.coordinate(i,0)+progress>=80?6:4;if(phase==6)done++;
+     check(rows.getFloat(o+12)==phase,"per-member helix completion");check(rows.getFloat(o+28)==(phase==6?0:1),"completed member still steered");
+     if(phase!=6){var expected=new net.minecraft.world.phys.Vec3(-24,28,0).add(axis.scale(HelixTemplate.coordinate(i,0)+(time<10?0:progress))).add(side.scale(HelixTemplate.coordinate(i,1))).add(up.scale(HelixTemplate.coordinate(i,2)));
+      check(Math.abs(rows.getFloat(o)-expected.x)<.002&&Math.abs(rows.getFloat(o+4)-expected.y)<.002&&Math.abs(rows.getFloat(o+8)-expected.z)<.002,"cached logarithmic template differs on GPU");}
+     float cap=phase==1||phase==4?12:6;check(rows.getFloat(o+40)==cap,"helix phase cap");
+    }if(time==15)check(done>0&&done<n,"head and tail did not finish independently");if(time==20)check(done==n,"tail failed to leave");
    }
+   gpu.commit();int old=gpu.committedBuffer();stage(gpu,helix(n,2,2,4,false),p);gpu.abort();check(gpu.committedBuffer()==old,"failed submission published");GL15.glDeleteBuffers(output);
   }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
+ }
+ static void meshClearance()throws Exception{
+  var field=AllayModelGeometry.class.getDeclaredField("VERTICES");field.setAccessible(true);float[] vertices=(float[])field.get(null);int count=vertices.length/7;
+  int p=compileText("posed mesh clearance",source("chunks/allay_pose.glsl")+"layout(local_size_x=64)in;layout(std430,binding=12)readonly buffer Geo{float v[];}geo;layout(std430,binding=10)buffer Out{float radius[];}result;uniform uint uVertices;void main(){uint i=gl_GlobalInvocationID.x;if(i>=1024u)return;float age=float(i)*.017,seed=float(i)*.00097;float speeds[6]=float[6](0.,.05,.5,1.5,6.,12.);vec3 velocity=normalize(vec3(1,float(i%3u)-1.,0))*speeds[i%6u];float maximum=0.;for(uint j=0u;j<uVertices;j++){uint b=j*7u;int part=int(geo.v[b+5u]);if(part==7)continue;float yaw;mat4 pose=cmiAllayPartTransform(age,seed,velocity,0,part,yaw,float(i%2u));vec3 q=(pose*vec4(geo.v[b],geo.v[b+1u],geo.v[b+2u],1)).xyz/16.;q=vec3(-q.x,1.501-q.y,q.z)*(0.6/"+AllayModelGeometry.MODEL_ABOVE_FEET+");maximum=max(maximum,length(q-vec3(0,.3,0)));}result.radius[i]=maximum;}");
+  var packed=bytes(vertices.length*4);for(float v:vertices)packed.putFloat(v);packed.flip();int geo=buffer(packed),out=buffer(bytes(1024*4));bind(12,geo);bind(10,out);ui(p,"uVertices",count);bool(p,"uStarfallEnabled",true);dispatch(p,16);var rows=read(out,1024*4);float maximum=0;for(int j=0;j<1024;j++)maximum=Math.max(maximum,rows.getFloat(j*4));System.out.println("Helix posed body+wing bounding radius="+maximum);check(maximum*2<HelixTemplate.SPACING,"posed mesh clearance exceeds template safety bound");GL15.glDeleteBuffers(geo);GL15.glDeleteBuffers(out);GL20.glDeleteProgram(p);
+ }
+ static void playerGrid(){
+  int p=compileText("player grid", "layout(std430,binding=18)readonly buffer Players{vec4 pl[];}players;uniform int uPlayerCount;"+source("chunks/storm_players.glsl")+"layout(local_size_x=64)in;layout(std430,binding=10)buffer Output{uint hits[];}result;void main(){uint i=gl_GlobalInvocationID.x;if(i<8192u){float x=float(i)*.01-40.96;result.hits[i]=cmiNearPlayer(vec3(x,4,0),36.)?1u:0u;}}");
+  int out=buffer(bytes(8192*4));bind(10,out);float[] xyz=new float[300];for(int i=0;i<99;i++){xyz[i*3]=1000+i*7;xyz[i*3+1]=4;}xyz[298]=4;
+  var grid=new StormPlayerGrid();grid.build(xyz,100);var packed=bytes(grid.words()*4);for(int j=0;j<grid.words();j++)packed.putFloat(j*4,grid.data()[j]);int players=buffer(packed);bind(18,players);GL41.glProgramUniform1i(p,GL20.glGetUniformLocation(p,"uPlayerCount"),100);dispatch(p,128);var result=read(out,8192*4);
+  for(int j=0;j<8192;j++){float x=j*.01f-40.96f;check(result.getInt(j*4)==(Math.abs(x)<6?1:0),"player #100 omitted or 6m boundary wrong");}GL15.glDeleteBuffers(out);GL15.glDeleteBuffers(players);GL20.glDeleteProgram(p);
+ }
+ static void completionReadback(){
+  int p=compile("wavecontact.comp");try(var gpu=new StarfallGpuBuffers()){
+   gpu.rebuild(StarfallColumnGpuValidation.columns());gpu.prepare(1);gpu.bind(p,true);
+   int stateBuffer=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var state=bytes(StarfallGpuBuffers.STATE_WORDS*4);state.putInt((StarfallGpuBuffers.COMPLETIONS+StarfallGpuBuffers.completionOffset(67)+1)*4,-1);put(stateBuffer,state);
+   int pool=buffer(bytes(64)),counter=buffer(bytes(16).putInt(0,1)),out=buffer(bytes(4+16384*24));bind(1,pool);bind(3,counter);bind(22,out);ui(p,"uLocalWaveMask",31);f(p,"uTimeSec",25);dispatch(p,1);var rows=read(out,28);
+   check(rows.getInt(0)==1&&rows.getFloat(4)==-2&&rows.getFloat(8)==163,"high column completion identity");check(rows.getFloat(12)==1&&rows.getFloat(16)==65535&&rows.getFloat(20)==65535,"32-bit completion bitmap truncated");
+   gpu.prepare(2);gpu.bind(p,true);put(out,bytes(4+16384*24));dispatch(p,1);check(read(out,4).getInt(0)==0,"completion accumulator survived a new frame");
+   for(int b:new int[]{pool,counter,out})GL15.glDeleteBuffers(b);
+  }finally{GL20.glDeleteProgram(p);}
  }
  static void armIdentity(){
   String text=source("chunks/allay_storm.glsl")+"\nlayout(local_size_x=64)in;layout(std430,binding=10)buffer R{uint arm[];} result;uniform float uStormSeed;void main(){uint i=gl_GlobalInvocationID.x;if(i>=131072u)return;precise float s0=cmiHash1(uStormSeed+31.7);precise float shift=s0*97.;precise float t=float(i)*.6123;precise float p=t+.7;precise float q=p+shift;precise float a=cmiHash1(q);precise float q2=q*7.31;precise float b=cmiHash1(q2);precise float ma=a*.618;precise float mb=b*.382;precise float seed=ma+mb;result.arm[i]=uint(floor(cmiHash1(seed*5.7)*6.));}";
@@ -48,7 +59,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
  static void sweep(){
   int p=compile("wavecontact.comp");try(var gpu=new StarfallGpuBuffers()){
    for(int n:new int[]{1,63,64,65}){
-    int cap=n+2;ByteBuffer current=bytes(cap*64),old=bytes(cap*64);for(int i=0;i<cap;i++){particle(current,i,2,1.5f,0,20);particle(old,i,2,-1.5f,0,20);current.putFloat(i*64+4,.5f).putFloat(i*64+8,1.4f).putFloat(i*64+12,i+1);old.putFloat(i*64+4,.5f).putFloat(i*64+8,1.4f).putFloat(i*64+12,i+1);}
+    int cap=n+2;ByteBuffer current=bytes(cap*64),old=bytes(cap*64);for(int i=0;i<cap;i++){particle(current,i,2,1.5f,0,20);particle(old,i,2,-1.5f,0,20);current.putFloat(i*64+28,-4).putFloat(i*64+4,.5f).putFloat(i*64+8,1.4f).putFloat(i*64+12,i+1);old.putFloat(i*64+4,.5f).putFloat(i*64+8,1.4f).putFloat(i*64+12,i+1);}
     current.putFloat(n*64+52,0);old.putFloat((n+1)*64+12,9999); // corpse and stale map
     int pool=buffer(current),previous=buffer(old),count=buffer(bytes(16).putInt(0,cap)),prevCount=buffer(bytes(16).putInt(0,cap)),header=buffer(headers()),out=buffer(bytes(4+16384*24)),map=buffer(bytes(cap*4)),stampsA=buffer(bytes(cap*16)),stampsB=buffer(bytes(cap*16));
     var mapping=bytes(cap*4);for(int i=0;i<cap;i++)mapping.putInt(i*4,i+1);put(map,mapping);bind(0,previous);bind(1,pool);bind(3,count);bind(5,header);bind(14,prevCount);bind(21,map);bind(22,out);bind(30,stampsA);
@@ -72,7 +83,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
  }
  public static void main(String[] args)throws Exception{
   GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(512,384,"Helix GPU validation",0,0);
-  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));armIdentity();helixFormations();sweep();helixSimulationBanks();helixCarriers();if(Arrays.asList(args).contains("--benchmark"))benchmarkHelix();check(GL11.glGetError()==0,"helix final GL state");System.out.println("Helix GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));armIdentity();meshClearance();playerGrid();completionReadback();helixFormations();sweep();helixSimulationBanks();helixCarriers();if(Arrays.asList(args).contains("--benchmark"))benchmarkHelix();check(GL11.glGetError()==0,"helix final GL state");System.out.println("Helix GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
  }
  static void helixSimulationBanks(){
   int n=65,update=compile("update.comp");try(var q=new Fixture(n,n,n);var gpu=new StarfallGpuBuffers()){
@@ -110,18 +121,18 @@ public class HelixGpuValidation extends DomeGpuValidation {
 
 
  static void helixCarriers(){
-  int n=16384;try(var q=new Fixture(n,n,n);var gpu=new StarfallGpuBuffers();var shadow=new ModelShadowGpu(n,ParticleBuffers.CARRIER_CAP+n,HelixGpuValidation::source)){
-   var particles=bytes(n*64);for(int i=0;i<n;i++){particle(particles,i,2,0,0,20);particles.putFloat(i*64+12,n-i);}
+  int n=4096;try(var q=new Fixture(n,n,n);var gpu=new StarfallGpuBuffers();var shadow=new ModelShadowGpu(n,ParticleBuffers.CARRIER_CAP+n,HelixGpuValidation::source)){
+   var particles=bytes(n*64);for(int i=0;i<n;i++){particle(particles,i,2,0,0,20);particles.putFloat(i*64+12,n-i).putFloat(i*64+28,i%2==0?-4:0);}
    q.build(particles,n);gpu.rebuild(new ClientboundStormWavePacket[]{helix(n,1,2,3,true),null,null,null});gpu.prepare(1);gpu.commit();shadow.starfall(gpu.committedBuffer());
    var c=new com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling();c.distance=-1;c.safe=-1;
    byte[] main=new byte[(n+ParticleBuffers.CARRIER_CAP+1)*8];read(q.sorted,main.length).get(main);
    for(float time:new float[]{7,8.5f,12,50}){
     shadow.prepare(q.pool,q.emit,q.counter,c,0,0,0,.35f,.6f,1,time,new float[16],new float[16],new float[4],q.pop,7);
-    var commands=read(shadow.commands(),(ParticleBuffers.INDIRECT_UINTS+4)*4);check(commands.getInt(ParticleBuffers.IDX_CNT_MODELOP*4)==n,"helix shadow body lost");check(commands.getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==(time==8.5f||time==12?n:0),"helix carrier phase wrong");
+    var commands=read(shadow.commands(),(ParticleBuffers.INDIRECT_UINTS+4)*4);check(commands.getInt(ParticleBuffers.IDX_CNT_MODELOP*4)==n,"helix shadow body lost");check(commands.getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==(time==12?n/2:0),"helix carrier phase wrong");
     byte[] after=new byte[main.length];read(q.sorted,after.length).get(after);check(Arrays.equals(main,after),"helix shadow overwrote main sort");
    }
    particles.putFloat(52,-.5f);put(q.pool,particles);shadow.prepare(q.pool,q.emit,q.counter,c,0,0,0,.35f,.6f,1,12,new float[16],new float[16],new float[4],q.pop,7);
-   check(read(shadow.commands(),(ParticleBuffers.INDIRECT_UINTS+4)*4).getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==n-1,"helix corpse retains sword");
+   check(read(shadow.commands(),(ParticleBuffers.INDIRECT_UINTS+4)*4).getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==n/2-1,"helix corpse retains sword");
   }
  }
 
@@ -129,7 +140,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
   var rows=new ArrayList<String>();rows.add("pool_live,participants,mode,run,update_gpu_p50_ms,update_gpu_p95_ms,shadow_gpu_p50_ms,shadow_gpu_p95_ms,cull_gpu_p50_ms,cull_gpu_p95_ms,contact_gpu_p50_ms,contact_gpu_p95_ms,cpu_wall_p50_ms,cpu_wall_p95_ms,thread_cpu_p50_ms,thread_cpu_p95_ms,allocated_bytes_p50,roster_upload_bytes,state_domain_bytes");
   var raw=new ArrayList<String>();raw.add("pool_live,participants,mode,run,sample,update_gpu_ms,shadow_gpu_ms,cull_gpu_ms,contact_gpu_ms,cpu_wall_ms,thread_cpu_ms,allocated_bytes");
   var thread=(com.sun.management.ThreadMXBean)java.lang.management.ManagementFactory.getThreadMXBean();if(thread.isThreadCpuTimeSupported())thread.setThreadCpuTimeEnabled(true);if(thread.isThreadAllocatedMemorySupported())thread.setThreadAllocatedMemoryEnabled(true);long tid=Thread.currentThread().threadId();
-  for(int members:new int[]{512,2048,8192,16384})for(int total:new int[]{members,2000000}){
+  for(int members:new int[]{4096})for(int total:new int[]{members,2000000}){
    try(var q=new Fixture(total,members,members);var gpu=new StarfallGpuBuffers();var shadow=new ModelShadowGpu(total,ParticleBuffers.CARRIER_CAP+members,StarfallGpuValidation::source)){
     var data=bytes(total*64);for(int i=0;i<total;i++){particle(data,i,i<members?2:0,i<members?(i%17-8)*.18f:20,i<members?((i/17)%17-8)*.18f:20,i<members?20:100);if(i<members){data.putFloat(i*64+4,4).putFloat(i*64+12,i+1).putFloat(i*64+56,AllayStormWaves.memberSeed(1,i));}}
     q.build(data,total);put(q.previous,bytes(16).putInt(0,total));var h=headers();h.putFloat(18*16+2*320+12,6);put(q.emit,h);

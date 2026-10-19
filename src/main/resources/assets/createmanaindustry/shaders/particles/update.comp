@@ -76,6 +76,7 @@ layout(std430, binding = BIND_GRID) buffer GridBuf {
 // by interpolation), so the force field stays near-identical across clients.
 layout(std430, binding = BIND_PLAYERS) readonly buffer PlayersBuf { vec4 pl[]; } players;
 uniform int   uPlayerCount;
+#pragma cmi_include chunks/storm_players.glsl
 // Network correction slots, indexed by MEMBER identity (p0.w - 1): two vec4
 // per member -- {target.xyz, arrivalTime}, {targetVel.xyz, strengthScale}.
 // strengthScale 0 = inactive; 1 = regular snapshot correction (age-ramped,
@@ -262,12 +263,25 @@ void main() {
     if (!swept)
         pos += vel * uDt;
     if(cmiStormVoxel&&cmiStormMissing)cmiContactSweepValid=false;
+    if(cmiColumnExit&&cmiContactSweepValid)vel=cmiColumnExitVelocity;
     age += uDt;
-    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&cmiHelix(cmiStarBase(cmiStarSlot(a)))){float limit=cmiAttackSpeed(p0.w,uTimeSec,max(stormA.w,.5))*uDt+.01;if(!cmiContactSweepValid||distance(pos,p0.xyz)>limit)starStateWrite.words[member*2u+1u]|=0x80000000u;}}
+    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){float limit=cmiAttackSpeed(p0.w,uTimeSec,max(stormA.w,.5))*uDt+.01;if(!cmiContactSweepValid||distance(pos,p0.xyz)>limit)starStateWrite.words[member*2u+1u]|=0x80000000u;}}
 
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);
-        if(cmiColumnAssignment(a)&&!cmiContactSweepValid){roll=0.;uint member=cmiStarMember(p0.w);if((starStateWrite.words[member*2u+1u]&255u)==4u){starStateWrite.words[member*2u+1u]=5u;starStateWrite.words[328128u+((cmiStarSlot(a)-4u)*64u+cmiStarRank(a))*CMI_COLUMN_ARC_WORDS+43u]=5u;}}
+        if(cmiColumnAssignment(a)&&!cmiContactSweepValid){uint member=cmiStarMember(p0.w);if((starStateWrite.words[member*2u+1u]&255u)==4u){roll=5.;starStateWrite.words[member*2u+1u]=5u;starStateWrite.words[328128u+((cmiStarSlot(a)-4u)*64u+cmiStarRank(a))*CMI_COLUMN_ARC_WORDS+43u]=5u;starStateWrite.words[262592u+((cmiStarSlot(a)-4u)*64u+cmiStarRank(a))*16u+3u]=floatBitsToUint(cmiStarTime(cmiStarBase(cmiStarSlot(a)),uTimeSec));}}
     }
+
+    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){uint member=cmiStarMember(p0.w);roll=(starStateWrite.words[member*2u+1u]&255u)==4u&&cmiNearPlayer(pos+vec3(0,.3,0),36.)?-4.:0.;}}
+
+    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&cmiStarSlot(a)<4u){
+        uint b=cmiStarBase(cmiStarSlot(a));if(cmiHelix(b)||cmiDome(b)){
+            uint streak=0u;float phase=cmiStarPhase(a,uTimeSec);
+            if(phase==1.){vec3 target=cmiStarPoint(a,p3.z,uTimeSec,vec3(0)),next=cmiStarPoint(a,p3.z,uTimeSec+.02,vec3(0)),motion=(next-target)/.02;
+                if(distance(pos,target)<=.4&&distance(vel,motion)<=1.)streak=starStateRead.words[member*2u]==uint(cmiStarVec(b).x+.5)?min(3u,starStateRead.words[CMI_GATHER_STREAK+member]+1u):1u;
+                if(streak==3u)atomicAdd(starStateWrite.words[CMI_GATHER_COUNTS+cmiStarSlot(a)],1u);
+            }starStateWrite.words[CMI_GATHER_STREAK+member]=streak;
+        }
+    }}
 
     // DIE_ON_GROUND (cherry): vanilla removes the particle in the same tick it
     // touches ground — BEFORE the frame renders, so the landing position is

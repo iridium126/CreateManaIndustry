@@ -93,7 +93,7 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
     gpu.rebuild(replacement);gpu.prepare(2);gpu.bind(contact,true);put(stamps,bytes(n*16));dispatch(contact,64);check(read(hits,4).getInt(0)==0,"old touchdown authorized new column");
     // No collision data: nominal touchdown alone never starts a bloom or equips a sword.
     gpu.bind(update,true);bindings.run();put(q.counter,bytes(16));GL41.glProgramUniform1i(update,GL20.glGetUniformLocation(update,"uCollisionOn"),0);dispatch(update,64);
-    var blocked=read(output,n*64);for(int i=0;i<n;i++){if(Math.round(blocked.getFloat(i*64+12))>4032)check(blocked.getFloat(i*64+28)==0,"unconfirmed touchdown equipped sword");}
+    var blocked=read(output,n*64);for(int i=0;i<n;i++){if(Math.round(blocked.getFloat(i*64+12))>4032)check(blocked.getFloat(i*64+28)>=0,"unconfirmed touchdown equipped sword");}
     // The carrier list consumes the same per-particle marker as native and shadow rendering.
     gpu.commit();gpu.bind(q.keygen,false);q.build(result,n);check(read(q.commands,ParticleBuffers.INDIRECT_UINTS*4).getInt(ParticleBuffers.IDX_CNT_CARRIER*4)==n,"bloom carrier partition mismatch");
     try(var shadow=new ModelShadowGpu(n,ParticleBuffers.CARRIER_CAP+n,StarfallColumnGpuValidation::source)){
@@ -131,18 +131,26 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
         var point=StarfallColumnRules.gather(new Vec3(1500,80,-2300),member,1).add(5,3,-2);
         particle(moving,member,2,(float)point.x,(float)point.z,20);moving.putFloat(member*64+4,(float)point.y).putFloat(member*64+12,member+1).putFloat(member*64+16,.5f).putFloat(member*64+24,.5f).putFloat(member*64+56,AllayStormWaves.memberSeed(1,member));
     }
-    var bloomed=new BitSet();var completed=new BitSet();double[] firstTouch=new double[64];Arrays.fill(firstTouch,-1);put(q.previous,bytes(16).putInt(0,64));
+    var bloomed=new BitSet();var completed=new BitSet();var released=new BitSet();double[] firstTouch=new double[64];Arrays.fill(firstTouch,-1);put(q.previous,bytes(16).putInt(0,64));
     double descentMin=Double.POSITIVE_INFINITY,descentMax=0;
     double renderTime=0;float[] frameSteps=frameMode>=4?new float[]{1/144f,1/60f,.012f,.028f}:new float[]{1f/new int[]{30,60,144,240}[frameMode]};
     for(int frame=0;renderTime<=41;frame++){
         float frameDt=frameSteps[frame%frameSteps.length];renderTime+=frameDt;f(update,"uDt",frameDt);
         put(q.pool,moving);put(q.counter,bytes(16));gpu.prepare(10+frameMode*20000+frame);gpu.bind(update,true);bindings.run();if(frameMode==5)collision.bind(update);f(update,"uTimeSec",(float)renderTime);dispatch(update,1);
         check(read(q.counter,16).getInt(0)==64,"lifecycle lost a member");moving=read(output,64*64);
+        int lifecycleState=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var phases=read(lifecycleState,128*4);var localState=bytes(1024*4);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,lifecycleState);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,StarfallGpuBuffers.COLUMN_STATE*4L,localState);
+        for(int member=0;member<64;member++)if((phases.getInt(member*8+4)&255)==6&&!released.get(member)){
+            float began=localState.getFloat((member*16+3)*4);double age=renderTime-began;check(age>=.5-.0002&&age<=.5+frameDt+.0003,"short return not exactly 0.5s: "+age);released.set(member);
+        }
         for(int row=0;row<64;row++){
             int o=row*64,member=Math.round(moving.getFloat(o+12))-1;float speed=0;
             for(int j=4;j<7;j++){float v=moving.getFloat(o+j*4);speed+=v*v;}check(speed<=36.01,"lifecycle exceeded six b/s");
-            if(frameMode<5&&renderTime>9&&renderTime<10){double speedValue=Math.sqrt(speed);descentMin=Math.min(descentMin,speedValue);descentMax=Math.max(descentMax,speedValue);check(speedValue>5.99,"arc speed drifted at frame mode="+frameMode+" speed="+speedValue);}
+            if(frameMode<5&&renderTime>9&&renderTime<10&&(phases.getInt(member*8+4)&255)==2){double speedValue=Math.sqrt(speed);descentMin=Math.min(descentMin,speedValue);descentMax=Math.max(descentMax,speedValue);check(speedValue>5.99,"arc speed drifted at frame mode="+frameMode+" speed="+speedValue);}
             check(moving.getFloat(o)>1400&&moving.getFloat(o+8)<-2200,"column travelled toward origin");
+            if(frameMode<5&&renderTime>8&&renderTime<12&&(phases.getInt(member*8+4)&255)==2&&moving.getFloat(o+4)>70){
+                double radius=Math.hypot(moving.getFloat(o)-1500,moving.getFloat(o+8)+2300);
+                check(radius>=.5,"descent collapsed onto column axis: time="+renderTime+" rank="+member+" radius="+radius);
+            }
             float marker=moving.getFloat(o+28);
             if(marker<=-1&&marker>-2.5){check(!completed.get(member),"Bloom phase flickered back on");bloomed.set(member);if(firstTouch[member]<0)firstTouch[member]=renderTime;double r=Math.hypot(moving.getFloat(o)-1500,moving.getFloat(o+8)+2300);
                 check(r<=4.001&&(frameMode==5||Math.abs(moving.getFloat(o+4)-64.02-StarfallColumnRules.height(r))<.3),"actual bloom left parabola");}
@@ -151,6 +159,7 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
         gpu.commit();if(frameMode==5)collision.submitted();
     }
     check(frameMode==5?bloomed.cardinality()>0:bloomed.cardinality()==64,"complete lifecycle did not land all members: "+bloomed.cardinality());
+    check(released.cardinality()==64,"short return failed to release all members");
     check(completed.cardinality()==bloomed.cardinality(),"members failed to leave bloom at frame mode "+frameMode);
     System.out.println("Column full lifecycle frame mode="+frameMode+" landed="+bloomed.cardinality()+" completed="+completed.cardinality()+" free_descent_speed="+descentMin+".."+descentMax);
     }

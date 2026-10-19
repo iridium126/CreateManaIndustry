@@ -73,6 +73,7 @@ public class CreateManaIndustryClient {
         ClientboundStormDamagePacket.installClientHandler(AllayStormClientHandler::onDamage);
         ClientboundStormPositionsPacket.installClientHandler(AllayStormClientHandler::onPositions);
         ClientboundStormCenterPacket.installClientHandler(AllayStormClientHandler::onCenter);
+        com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket.installClientHandler(com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE::completeAttack);
         ClientboundStormWavePacket.installClientHandler(AllayStormClientHandler::onWave);
         com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket.installClientHandler(
                 com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE::applyColumn);

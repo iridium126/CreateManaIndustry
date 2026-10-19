@@ -4,34 +4,34 @@ import java.util.BitSet;
 
 /** Identity selection and the immutable arc-length flight shared with the GPU. */
 public final class AllayHelix {
- public static final int MIN_MEMBERS=512,MAX_MEMBERS=16384,SAMPLES=48;
+ public static final int MIN_MEMBERS=4096,MAX_MEMBERS=4096,SAMPLES=48;
  public static final float WARNING=1.5f,CHARGE_MIN=3,CHARGE_MAX=8,RAMP=.5f;
  public static final int SWEEP_INVALID=0x80000000,PHASE_MASK=255;
  public record Selection(int armA,int armB,int[] members,int[] ends) {}
  public record Flight(int armA,int armB,float length,float radius,float maxSpeed,float speed,float charge,
-   float thrust,float finish,float curvature,float targetArc,float[] controls,float[] samples) {
+   float thrust,float finish,float curvature,float targetArc,float[] controls,float[] samples,float axisX,float axisY,float axisZ) {
+  public Flight(int a,int b,float length,float radius,float maxSpeed,float speed,float charge,float thrust,float finish,float curvature,float targetArc,float[] controls,float[] samples){this(a,b,length,radius,maxSpeed,speed,charge,thrust,finish,curvature,targetArc,controls,samples,component(controls,0),component(controls,1),component(controls,2));}
   public float arcLength(){return samples[samples.length-1];}
   public float duration(){return finish-thrust;}
-  public Flight schedule(float charge,float thrust){float duration=(arcLength()-length)/speed+RAMP;return new Flight(armA,armB,length,radius,maxSpeed,speed,charge,thrust,thrust+duration,curvature,targetArc,controls,samples);}
+  public Flight schedule(float charge,float thrust){float duration=(arcLength()-length)/speed+RAMP;return new Flight(armA,armB,length,radius,maxSpeed,speed,charge,thrust,thrust+duration,curvature,targetArc,controls,samples,axisX,axisY,axisZ);}
  }
  private AllayHelix() {}
  public static int arm(int stormSeed,int member){float seed=AllayStormWaves.memberSeed(stormSeed,member);return Math.min(5,(int)Math.floor(AllayStormWaves.hash1(seed*5.7f)*6));}
  public static Selection select(int generated,BitSet dead,BitSet reserved,int quota,int stormSeed,int waveSeed){
-  generated=Math.min(AllayStarfall.MAX_MEMBERS,Math.max(0,generated));quota=Math.min(MAX_MEMBERS,Math.max(0,quota));
-  if(quota<MIN_MEMBERS||generated<MIN_MEMBERS)return new Selection(-1,-1,new int[0],new int[0]);
-  int[][] available=new int[6][Math.min(generated,quota)];int[] counts=new int[6];
+  generated=Math.min(AllayStarfall.MAX_MEMBERS,Math.max(0,generated));
+  int alive=generated-dead.get(0,generated).cardinality();
+  if(alive<16384||quota<4096)return new Selection(-1,-1,new int[0],new int[0]);
+  int[][] available=new int[6][2048];int[] counts=new int[6];
   int mask=AllayStarfall.MAX_MEMBERS-1,offset=AllayStarfall.mix(waveSeed)&mask,stride=(AllayStarfall.mix(waveSeed^0x619c731b)|1)&mask;
-  for(int r=0;r<=mask;r++){int member=(offset+r*stride)&mask;if(member>=generated||dead.get(member)||reserved.get(member))continue;int a=arm(stormSeed,member);if(counts[a]<available[a].length)available[a][counts[a]++]=member;}
+  for(int r=0;r<=mask;r++){int member=(offset+r*stride)&mask;if(member>=generated||dead.get(member)||reserved.get(member))continue;int arm=arm(stormSeed,member);if(counts[arm]<2048)available[arm][counts[arm]++]=member;}
   int first=Math.floorMod(waveSeed,3);
-  for(int p=0;p<3;p++){int a=(first+p)%3,b=a+3,total=Math.min(quota,counts[a]+counts[b]);
-   if(total<MIN_MEMBERS||counts[a]<256||counts[b]<256)continue;
-   int na=Math.min(counts[a],(total+1)/2),nb=Math.min(counts[b],total-na);na=total-nb;
-   int[] members=new int[total];System.arraycopy(available[a],0,members,0,na);System.arraycopy(available[b],0,members,na,nb);
-   return new Selection(a,b,members,new int[]{na,total});
+  for(int p=0;p<3;p++){int a=(first+p)%3,b=a+3;if(counts[a]<2048||counts[b]<2048)continue;
+   int[] members=new int[4096];System.arraycopy(available[a],0,members,0,2048);System.arraycopy(available[b],0,members,2048,2048);
+   return new Selection(a,b,members,new int[]{2048,4096});
   }return new Selection(-1,-1,new int[0],new int[0]);
  }
- public static float length(int members){return Math.max(32,Math.min(64,2*(float)Math.sqrt(members)/3));}
- public static float radius(int members){return Math.max(3,Math.min(6,(float)Math.sqrt(members)/16));}
+ public static float length(int members){return 64;}
+ public static float radius(int members){return 32;}
  /** Stable truncated isotropic Gaussian in the strand normal plane, in units of sigma. */
  public static float[] scatter(int seed,int member){
   double u=((AllayStarfall.mix(seed^member*0x9e3779b9)>>>8)+.5)/16777216.0;
@@ -85,7 +85,7 @@ public final class AllayHelix {
    float dx=dense[0]-previous[0],dy=dense[1]-previous[1],dz=dense[2]-previous[2],distance=(float)Math.sqrt(dx*dx+dy*dy+dz*dz);
    if(i>0&&distance<1e-7)throw new IllegalArgumentException("Degenerate helix");
    derivatives(local,t,derivative,second);double speed=Math.sqrt(derivative[0]*derivative[0]+derivative[1]*derivative[1]+derivative[2]*derivative[2]);
-   if(speed<1e-5||Math.abs(derivative[1])/speed>.75)throw new IllegalArgumentException("Helix slope/cusp");
+   if(speed<1e-5)throw new IllegalArgumentException("Helix slope/cusp");
    double cx=derivative[1]*second[2]-derivative[2]*second[1],cy=derivative[2]*second[0]-derivative[0]*second[2],cz=derivative[0]*second[1]-derivative[1]*second[0];
    curvature=Math.max(curvature,(float)(Math.sqrt(cx*cx+cy*cy+cz*cz)/(speed*speed*speed)));
    total+=distance;if(t<=3f/(controls.length/3-1))targetArc=total;
@@ -93,9 +93,21 @@ public final class AllayHelix {
    System.arraycopy(dense,0,previous,0,3);
   }
   float length=length(roster.members.length),radius=radius(roster.members.length);
-  if(total<=length+24||total>256||curvature>1/(4*radius))throw new IllegalArgumentException("Helix envelope length="+total+" curvature="+curvature+" radius="+radius);
+  if(total<=length+24||total>1024||curvature>1/(4*radius))throw new IllegalArgumentException("Helix envelope length="+total+" curvature="+curvature+" radius="+radius);
   float speed=.95f*maxSpeed/(1+(radius+.6f)*curvature);
   return new Flight(roster.armA,roster.armB,length,radius,maxSpeed,speed,charge,thrust,thrust+(total-length)/speed+RAMP,curvature,targetArc,controls.clone(),points);
+ }
+ public static Flight linearFlight(Selection roster,net.minecraft.world.phys.Vec3 center,net.minecraft.world.phys.Vec3 axis,double exit,float speed,float time){
+  float travel=(float)Math.max(0,exit+32),total=64+travel;float[] controls=new float[18],samples=new float[SAMPLES*4];
+  for(int i=0;i<6;i++){var p=center.add(axis.scale(total*i/5));controls[i*3]=(float)p.x;controls[i*3+1]=(float)p.y;controls[i*3+2]=(float)p.z;}
+  for(int i=0;i<SAMPLES;i++){float arc=total*i/(SAMPLES-1);var p=center.add(axis.scale(arc));samples[i*4]=(float)p.x;samples[i*4+1]=(float)p.y;samples[i*4+2]=(float)p.z;samples[i*4+3]=arc;}
+  return new Flight(roster.armA,roster.armB,64,32,speed,speed,time,time,time+travel/speed+.075f,0,(float)exit,controls,samples,(float)axis.x,(float)axis.y,(float)axis.z);
+ }
+ private static float component(float[] p,int axis){double x=p[3]-p[0],y=p[4]-p[1],z=p[5]-p[2],n=Math.sqrt(x*x+y*y+z*z);return n<1e-10?(axis==0?1:0):(float)((axis==0?x:axis==1?y:z)/n);}
+ public static net.minecraft.world.phys.Vec3 axis(Flight f){return new net.minecraft.world.phys.Vec3(f.axisX,f.axisY,f.axisZ).normalize();}
+ public static net.minecraft.world.phys.Vec3 turn(net.minecraft.world.phys.Vec3 from,net.minecraft.world.phys.Vec3 to,double limit){
+  if(to.lengthSqr()<1e-10)return from;to=to.normalize();double angle=Math.acos(Math.clamp(from.dot(to),-1,1));if(angle<1e-8)return to;
+  var normal=from.cross(to);if(normal.lengthSqr()<1e-10)normal=from.cross(Math.abs(from.y)<.9?new net.minecraft.world.phys.Vec3(0,1,0):new net.minecraft.world.phys.Vec3(1,0,0));normal=normal.normalize();double a=Math.min(limit,angle);return from.scale(Math.cos(a)).add(normal.cross(from).scale(Math.sin(a))).normalize();
  }
  private static void derivatives(float[] controls,float parameter,double[] first,double[] second){
   int count=controls.length/3;double t=Math.max(0,Math.min(1,parameter))*(count-1);int segment=Math.min(count-2,(int)t);double u=t-segment;

@@ -139,12 +139,10 @@ public final class ServerConfig {
     private static ModConfigSpec.DoubleValue STORM_CORRECTION_HZ;
     private static ModConfigSpec.IntValue STORM_MAX_COUNT;
     private static ModConfigSpec.DoubleValue STORM_GROWTH_PER_SECOND;
-    private static ModConfigSpec.DoubleValue STORM_WAVE_INTERVAL;
     private static ModConfigSpec.DoubleValue STORM_STARFALL_INTERVAL, STORM_STARFALL_CHANCE;
     private static ModConfigSpec.IntValue STORM_STARFALL_ACTIVE, STORM_STARFALL_COLUMN_MEMBERS;
-    private static ModConfigSpec.DoubleValue STORM_DOME_CHANCE, STORM_DOME_FRACTION;
-    private static ModConfigSpec.IntValue STORM_DOME_MAX, STORM_HELIX_MAX;
-    private static ModConfigSpec.DoubleValue STORM_HELIX_CHANCE, STORM_HELIX_FRACTION, STORM_HELIX_SPEED;
+    private static ModConfigSpec.DoubleValue STORM_DOME_CHANCE;
+    private static ModConfigSpec.DoubleValue STORM_HELIX_CHANCE, STORM_HELIX_SPEED;
     private static ModConfigSpec.DoubleValue STORM_WAVE_DAMAGE;
     private static ModConfigSpec.DoubleValue STORM_WAVE_RANGE;
     private static ModConfigSpec.IntValue STORM_CHASE_Y;
@@ -304,16 +302,11 @@ public final class ServerConfig {
         STORM_GROWTH_PER_SECOND = BUILDER
                 .comment("Members the storm generates per second while below stormMaxCount (growth runs on the server tick regardless of whether any player is in range). New members spawn on a ring just outside the visible envelope and fly to their storm positions. 0 disables growth (storms spawn at their initial count and never grow).")
                 .defineInRange("stormGrowthPerSecond", 20.0, 0.0, 2048.0);
-        STORM_WAVE_INTERVAL = BUILDER
-                .comment("Seconds between independent major attack opportunities per player (dome/helix). Eligible targets are active, under open sky and within stormWaveRange. Major attacks share four slots; the remaining probability is quiet. Regional star rain uses its own interval and capacity.")
-                .defineInRange("stormWaveInterval", 60.0, 5.0, 600.0);
-        STORM_HELIX_CHANCE=BUILDER.comment("Helix chance; dome+helix above 1 is normalized. 双螺旋概率，与天穹合计超1按比例归一。").defineInRange("stormHelixChance",.20,0,1);
-        STORM_HELIX_FRACTION=BUILDER.comment("Living members taken from two opposite real arms. 双螺旋参战存活比例。").defineInRange("stormHelixMemberFraction",.10,0,1);
-        STORM_HELIX_MAX=BUILDER.comment("Maximum helix members; fewer than 512 falls back to starfall. 双螺旋人数上限。").defineInRange("stormHelixMaxMembers",8192,512,16384);
-        STORM_HELIX_SPEED=BUILDER.comment("Helix thrust member speed cap only; other phases stay at 6. 仅双螺旋贯击阶段的速度上限。").defineInRange("stormHelixThrustSpeed",12.0,6,18);
-        STORM_DOME_CHANCE = BUILDER.comment("Dome probability per major attack opportunity; the unused probability is quiet. 天穹合围概率，剩余机会不发动大招。").defineInRange("stormDomeChance", .20, 0, 1);
-        STORM_DOME_FRACTION = BUILDER.comment("Living members requested by a dome; below 768 skips this major attack. 天穹参战比例，不足768跳过本次大招。").defineInRange("stormDomeMemberFraction", .20, 0, 1);
-        STORM_DOME_MAX = BUILDER.comment("Maximum dome members, shared reservations with starfall. 天穹人数上限，与星冠共用预留。").defineInRange("stormDomeMaxMembers", 16384, 768, 24576);
+        STORM_HELIX_CHANCE=BUILDER.comment("Independent storm-level helix probability. 双螺旋独立发动概率。").defineInRange("stormHelixChance",.5,0,1);
+        STORM_HELIX_INTERVAL=BUILDER.comment("Seconds between storm-level helix draws.").defineInRange("stormHelixInterval",30.,5.,600.);
+        STORM_DOME_INTERVAL=BUILDER.comment("Seconds between storm-level dome draws.").defineInRange("stormDomeInterval",30.,5.,600.);
+        STORM_HELIX_SPEED=BUILDER.comment("Helix thrust speed cap; gathering uses 12m/s, ordinary home uses 6m/s. 双螺旋突刺速度上限。").defineInRange("stormHelixThrustSpeed",12.0,6,18);
+        STORM_DOME_CHANCE = BUILDER.comment("Independent storm-level dome probability. 天穹独立发动概率。").defineInRange("stormDomeChance", .5, 0, 1);
         STORM_STARFALL_INTERVAL=BUILDER.comment("Independent regional star rain opportunity interval in seconds per eligible player.").defineInRange("stormStarfallInterval",.5,.05,60);
         STORM_STARFALL_CHANCE=BUILDER.comment("Independent probability per eligible player and opportunity.").defineInRange("stormStarfallChance",.5,0,1);
         STORM_STARFALL_ACTIVE=BUILDER.comment("Maximum concurrent independent columns, including their return flight.").defineInRange("stormStarfallMaxActiveColumns",64,1,64);
@@ -572,11 +565,10 @@ public final class ServerConfig {
     public static double stormCorrectionHz = 5.0;
     public static int stormMaxCount = 65536;
     public static double stormGrowthPerSecond = 20.0;
-    public static double stormWaveInterval = 60.0;
-    public static double stormHelixChance=.20, stormHelixMemberFraction=.10, stormHelixThrustSpeed=12;
-    public static int stormHelixMaxMembers=8192;
-    public static double stormDomeChance=.20, stormDomeMemberFraction=.20;
-    public static int stormDomeMaxMembers=16384;
+    public static double stormHelixInterval=30,stormDomeInterval=30;
+    private static final ModConfigSpec.DoubleValue STORM_HELIX_INTERVAL,STORM_DOME_INTERVAL;
+    public static double stormHelixChance=.5, stormHelixThrustSpeed=12;
+    public static double stormDomeChance=.5;
     public static double stormStarfallInterval=.5, stormStarfallChance=.5;
     public static int stormStarfallMaxActiveColumns=64, stormStarfallColumnMembers=64;
     public static double stormWaveDamage = 7.0;
@@ -675,11 +667,9 @@ public final class ServerConfig {
             packageMainThreadBudgetMs=PACKAGE_MAIN_THREAD_BUDGET_MS.get();
             stormMaxCount = STORM_MAX_COUNT.get();
             stormGrowthPerSecond = STORM_GROWTH_PER_SECOND.get();
-            stormWaveInterval = STORM_WAVE_INTERVAL.get();
-            stormHelixChance=STORM_HELIX_CHANCE.get();stormHelixMemberFraction=STORM_HELIX_FRACTION.get();stormHelixMaxMembers=STORM_HELIX_MAX.get();stormHelixThrustSpeed=STORM_HELIX_SPEED.get();
+            stormHelixInterval=STORM_HELIX_INTERVAL.get();stormDomeInterval=STORM_DOME_INTERVAL.get();
+            stormHelixChance=STORM_HELIX_CHANCE.get();stormHelixThrustSpeed=STORM_HELIX_SPEED.get();
             stormDomeChance=STORM_DOME_CHANCE.get();
-            stormDomeMemberFraction=STORM_DOME_FRACTION.get();
-            stormDomeMaxMembers=STORM_DOME_MAX.get();
             stormStarfallInterval=STORM_STARFALL_INTERVAL.get();stormStarfallChance=STORM_STARFALL_CHANCE.get();
             stormStarfallMaxActiveColumns=STORM_STARFALL_ACTIVE.get();stormStarfallColumnMembers=STORM_STARFALL_COLUMN_MEMBERS.get();
             stormWaveDamage = STORM_WAVE_DAMAGE.get();

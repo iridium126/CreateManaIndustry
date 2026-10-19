@@ -1,6 +1,8 @@
 # Allay Storm 同步协议
 
-状态：🟡 当前核心协议9；服务端权威、持久化和客户端GPU镜像已实现，客户端与服务端须同步更新。多客户端实机与长期压力由用户验收。
+当前运动、8192人Dome、集结反馈与协议11布局见 [协议11交付说明](allay-storm-v11.md)。历史版本段落用于追溯。
+
+状态：🟡 当前核心协议11；服务端权威、持久化和客户端GPU镜像已实现，客户端与服务端须同步更新。多客户端实机与长期压力由用户验收。
 
 ## 1. 权威边界
 
@@ -39,6 +41,7 @@
 | S→C | `ClientboundStormPositionsPacket` | authority 的稀疏位置校正 |
 | S→C | `ClientboundStormWavePacket` | 天穹／双螺旋名单、目标、路径和阶段时间 |
 | S→C | `ClientboundStormColumnPacket` | 独立单柱：dimension、epoch、ID、冻结落点、集合／阶段时间和64名成员 |
+| 双向 | `StormAttackCompletedPacket` | dimension／epoch／攻击ID／成员rank完成位图，指定反馈客户端合并提交，服务端幂等确认；观察者快照补发 |
 | C→S | `ServerboundStormPositionsPacket` | authority client 的位置快照 |
 | C→S | `ServerboundStormHitPacket` | GPU 命中候选：dimension、epoch、member、attackSeq、绝对 contact.xyz；不携带伤害等战斗值 |
 | C→S | `ServerboundStormWaveContactPacket` | dimension、epoch、攻击ID、采样时间、成员及绝对位置；单柱仅绽开，其他攻击沿用各自有效阶段 |
@@ -59,7 +62,7 @@ storm 作为每个 `ServerLevel` 的 attachment 保存。持久化字段包括 a
 
 服务端文件为 `config/createmanaindustry-server.toml`，相关键：
 
-`allay_storm.stormCorrectionHz`、`stormMaxCount`、`stormGrowthPerSecond`、`stormWaveInterval`、`stormStarfallInterval`、`stormStarfallChance`、`stormStarfallColumnMembers`、`stormStarfallMaxActiveColumns`、`stormWaveDamage`、`stormWaveRange`、`stormChaseY`、`stormDomeChance`、`stormDomeMemberFraction`、`stormDomeMaxMembers`、`stormHelixChance`、`stormHelixMemberFraction`、`stormHelixMaxMembers`、`stormHelixThrustSpeed`。
+`allay_storm.stormCorrectionHz`、`stormMaxCount`、`stormGrowthPerSecond`、`stormHelixInterval`、`stormDomeInterval`、`stormStarfallInterval`、`stormStarfallChance`、`stormStarfallColumnMembers`、`stormStarfallMaxActiveColumns`、`stormWaveDamage`、`stormWaveRange`、`stormChaseY`、`stormDomeChance`、`stormDomeMemberFraction`、`stormDomeMaxMembers`、`stormHelixChance`、`stormHelixThrustSpeed`。
 
 命令（权限 2）：
 
@@ -91,7 +94,7 @@ storm 作为每个 `ServerLevel` 的 attachment 保存。持久化字段包括 a
 
 专用碰撞域与弧长／高斯缓存是客户端本地数据，不增加逐帧位置网络流。详见 [协议9实现与验收](allay-storm-v9.md)。以下协议4／6／7／8是历史记录，其中历史校验与旧轨迹已由本节替代。
 
-## 星冠 / 天穹 / 双螺旋协议（2026-10-11）
+## 历史星冠 / 天穹 / 双螺旋协议（2026-10-11）
 
 核心网络注册版本从 3 升至 4，服务端与客户端需同时更新。波次包仍使用 `storm_wave`，事件分为 START / UPDATE / LOCK / ABORT；开始和新观察者快照包含完整、按显式组边界排序的身份名单，目标/路径更新与锁定仅发送紧凑参数，不重发名单。
 
@@ -132,3 +135,11 @@ HELIX=2 使用两组真实臂名单、冻结曲线和 48 点弧长表；开始/�
 核心版本由7升至8，两端同步升级。消息字段布局保留，新的环绕轨迹、每成员0.06秒名义错峰与接触时间窗口必须一致，拒绝旧版混连。GPU在实际接地后立即开始该成员的独立抛物面展开，不等待名义抵达时刻；服务端以集合高度和6格／秒速度给出物理最早接触下界，继续验证2秒采样时效、地形、4格范围及抛物面。GPU实际位置与触地仍为既定候选信任边界。
 
 连续渲染时钟和稳定MODEL飞行姿态仅用于客户端运动与表现，不新增成员位置同步、服务端成员位置模拟或额外GPU状态域。每成员记录仍为16 words，触地点占用原保留字段。
+
+## 协议10（2026-10-19）
+
+Helix线数据包含独立单位轴向量及模板版本，避免远坐标相减造成方向抖动，并验证固定4096名单、64格长度与32格外包络；targetArc表示冻结终止平面的轴向距离，支持任意三维轴线。完成位图不含位置，按身份和成员当前归属幂等释放；客户端本地立即交给普通归队，服务端反馈丢失以同步最晚截止时间回收。独立调度、0.5秒短回流及配置迁移详见 [协议10交付](allay-storm-v10.md)。
+
+## 协议11（2026-10-19）
+
+Dome改为单组8192名单，包含模板版本与冻结中心。新增C2S `storm_attack_gathered(dimension,epoch,id)`，权威GPU连续三帧就绪后报告；服务器在有效身份下立即LOCK，超时中止。完成位图最多128个long，覆盖rank8191；GPU大招256 words/槽、星柱2 words/槽，共1152 words。Dome同样逐成员释放并普通归队，观察者快照和独立碰撞覆盖保留。详见 [协议11交付](allay-storm-v11.md)。

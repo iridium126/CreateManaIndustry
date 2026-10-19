@@ -301,8 +301,7 @@ public final class AllayStormRuntime {
     // ---- synced player collection (storm repulsion + readback near-test) -----
 
     /** Scratch for per-frame synced player positions (xyz per player). */
-    private final float[] playerScratch = new float[ParticleBuffers.MAX_STORM_PLAYERS * 3];
-    private final double[] playerDistScratch = new double[ParticleBuffers.MAX_STORM_PLAYERS];
+    private float[] playerScratch = new float[ParticleBuffers.MAX_STORM_PLAYERS * 3];
     /** Player count uploaded with the last collectSyncedPlayers (pass handoff). */
     private int lastPlayerCount = 0;
 
@@ -452,7 +451,7 @@ public final class AllayStormRuntime {
             // member the SERVER already counts dead (reports against it are
             // rejected forever — an unkillable ghost). scheduleSpawnRuns'
             // skip loop re-reads stormDead every frame; the bit is idempotent.
-            this.stormDead.set(memberIdx);
+            this.stormDead.set(memberIdx);StormCollisionRuntime.dead(memberIdx);
         }
         com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.enqueueDamageEntry(memberIdx,damage,kbX,kbZ,light,ParticleBuffers.DAMAGE_FLAG_MEMBER|(died?ParticleBuffers.DAMAGE_FLAG_DIED:0));
         StormFeedback.INSTANCE.applyHitCorrection(memberIdx, hitPosition, gameTime);
@@ -571,7 +570,7 @@ public final class AllayStormRuntime {
     // ---- synced player collection ---------------------------------------------
 
     /**
-     * Collects the nearest {@link ParticleBuffers#MAX_STORM_PLAYERS} synced
+     * Collects all living, non-spectator synced
      * players (vanilla entity sync positions) by distance to the storm anchor
      * into {@link #playerScratch}. Every client feeds the SAME player set
      * (others lagged by interpolation), so the repulsion field is
@@ -583,32 +582,9 @@ public final class AllayStormRuntime {
             this.lastPlayerCount = 0;
             return 0;
         }
-        int count = 0;
-        double[] dist = this.playerDistScratch;
-        for (var p : mc.level.players()) {
-            double dx = p.getX() - this.center.x;
-            double dy = p.getY() - this.center.y;
-            double dz = p.getZ() - this.center.z;
-            double d2 = dx * dx + dy * dy + dz * dz;
-            int max = ParticleBuffers.MAX_STORM_PLAYERS;
-            if (count >= max) {
-                // worse than the farthest kept player: skip
-                if (d2 >= dist[max - 1])
-                    continue;
-                count = max - 1; // overwrite the farthest, then re-insert
-            }
-            int i = count++;
-            while (i > 0 && dist[i - 1] > d2) {
-                dist[i] = dist[i - 1];
-                this.playerScratch[i * 3] = this.playerScratch[(i - 1) * 3];
-                this.playerScratch[i * 3 + 1] = this.playerScratch[(i - 1) * 3 + 1];
-                this.playerScratch[i * 3 + 2] = this.playerScratch[(i - 1) * 3 + 2];
-                i--;
-            }
-            dist[i] = d2;
-            this.playerScratch[i * 3] = (float) p.getX();
-            this.playerScratch[i * 3 + 1] = (float) p.getY();
-            this.playerScratch[i * 3 + 2] = (float) p.getZ();
+        int size=mc.level.players().size();if(playerScratch.length<size*3)playerScratch=new float[Integer.highestOneBit(Math.max(1,size*3-1))<<1];
+        int count=0;for(var p:mc.level.players()){if(!p.isAlive()||p.isSpectator())continue;
+            playerScratch[count*3]=(float)p.getX();playerScratch[count*3+1]=(float)p.getBoundingBox().getCenter().y;playerScratch[count*3+2]=(float)p.getZ();count++;
         }
         this.lastPlayerCount = count;
         return count;
@@ -722,8 +698,9 @@ public final class AllayStormRuntime {
 
     private static final class WaveClient {
         ContactAuthority feedbackIdentity;
-        boolean alive;int slotIdx=-1,waveId,targetEntityId;long epoch;
+        boolean alive,simulated;int slotIdx=-1,waveId,targetEntityId;long epoch;
         com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket packet;
+        final java.util.BitSet completed=new java.util.BitSet();
         final float[] bounds=new float[6];boolean windowReady;
         int ringCommittedMask,ringScheduledMask,columnSoundMask;boolean startSound,lockSound;
     }
@@ -733,9 +710,11 @@ public final class AllayStormRuntime {
     private final StarfallGpuBuffers starfallGpu=StarfallGpuBuffers.INSTANCE;
     private boolean starfallDirty=true;private String lastHelixAbort="none";
 
+    boolean livingMember(int member){return member>=0&&member<stormCount&&!stormDead.get(member);}
     public boolean anyWaveActive(){for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort())return true;return false;}
     private boolean locallyRelevant(WaveClient w){
         var me=Minecraft.getInstance().player;if(me==null||w==null||!w.alive||w.packet.abort())return false;
+        if(stormAuthority)return true; // Aggregate gather/completion feedback is independent of local contact range.
         var p=w.packet;if(p.helixAttack()){var h=p.helix();if(!p.locked()||com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.phase(timeSec,p.assembleSec(),p.lockSec(),true,h)!=4)return false;return me.getX()>=w.bounds[0]&&me.getX()<=w.bounds[3]&&me.getY()>=w.bounds[1]&&me.getY()<=w.bounds[4]&&me.getZ()>=w.bounds[2]&&me.getZ()<=w.bounds[5];}
         if(p.column()){double dx=me.getX()-p.landings()[0],dz=me.getZ()-p.landings()[2];return dx*dx+dz*dz<=256&&Math.abs(me.getY()-p.landings()[1])<5;}
         if(p.starfall())return w.targetEntityId==me.getId();
@@ -743,6 +722,13 @@ public final class AllayStormRuntime {
         return dx*dx+dz*dz<=r*r&&me.getY()>=p.centerY()-3&&me.getY()<=p.centerY()+p.crownRadius()+4;
     }
     public boolean anyWaveTargetingLocalPlayer(){for(var w:waveSlots)if(locallyRelevant(w))return true;return false;}
+    public void completeAttack(com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket packet){
+        var identity=identity();if(identity==null||!identity.dimension().equals(packet.dimension())||identity.epoch()!=packet.epoch())return;
+        var wave=findWaveById(packet.id());if(wave==null)return;
+        var delta=java.util.BitSet.valueOf(packet.ranks());delta.andNot(wave.completed);wave.completed.or(delta);
+        if(wave.simulated)StormCollisionRuntime.completed(wave.packet,delta.toLongArray());starfallGpu.completed(packet.id(),packet.ranks());starfallDirty=true;
+        if(wave.completed.cardinality()==wave.packet.members().length){wave.alive=false;waveLifecycle.complete(wave.waveId);starfallSnapshots[wave.slotIdx]=null;}
+    }
     public void applyColumn(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket p){
         var mc=Minecraft.getInstance();if(mc.level==null||!mc.level.dimension().location().equals(p.dimension()))return;
         applyWave(p.snapshot());
@@ -760,8 +746,10 @@ public final class AllayStormRuntime {
         if (update.replacement()) {
             w = new WaveClient(); w.slotIdx = update.slot(); waveSlots[update.slot()] = w;
         }
+        if(p.event()==0&&!p.abort())StormCollisionRuntime.claimed(update.packet());
         w.packet = update.packet();
         if (p.abort()) {
+            if(w.simulated&&(w.packet.helixAttack()||w.packet.dome()||w.packet.column())){var all=new java.util.BitSet();all.set(0,w.packet.members().length);all.andNot(w.completed);StormCollisionRuntime.completed(w.packet,all.toLongArray());}
             if (w.packet.helixAttack()) lastHelixAbort = switch(p.fallbackReason()) {
                 case 5 -> "blocked"; case 6 -> "target-lost"; case 7 -> "aim-timeout"; case 8 -> "unsafe-route"; default -> "aborted";
             };
@@ -774,7 +762,7 @@ public final class AllayStormRuntime {
         StormFeedback.INSTANCE.retireWaveReports();
     }
     private WaveClient findWaveById(int id){for(var w:waveSlots)if(w!=null&&w.alive&&w.waveId==id)return w;return null;}
-    public void clearWaveState(){waveLifecycle.clear();lastHelixAbort="none";java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);StormFeedback.INSTANCE.retireWaves();starfallDirty=true;starfallGpu.invalidate();}
+    public void clearWaveState(){StormCollisionRuntime.clearReturns();waveLifecycle.clear();lastHelixAbort="none";java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);StormFeedback.INSTANCE.retireWaves();starfallDirty=true;starfallGpu.invalidate();}
     private long columnSoundTick=Long.MIN_VALUE;private int columnSounds;
     public void refreshWaves(){
         waveLifecycle.retire(timeSec);
@@ -783,14 +771,14 @@ public final class AllayStormRuntime {
         int soundBudget=2;
         for(int slot=0;slot<MAX_WAVES;slot++){
             var w=waveSlots[slot];if(w==null||!w.alive){starfallSnapshots[slot]=null;continue;}
-            if(com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,w.packet.diveUntilSec())>0){w.alive=false;starfallDirty=true;starfallSnapshots[slot]=null;continue;}
+            if(com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,w.packet.diveUntilSec())>0){if(w.simulated&&!w.packet.abort()&&(w.packet.helixAttack()||w.packet.dome()||w.packet.column())){var all=new java.util.BitSet();all.set(0,w.packet.members().length);all.andNot(w.completed);StormCollisionRuntime.completed(w.packet,all.toLongArray());}w.alive=false;starfallDirty=true;starfallSnapshots[slot]=null;continue;}
             w.ringScheduledMask=0;var p=w.packet;starfallSnapshots[slot]=p;
             var mc=Minecraft.getInstance();
             if(!p.column()&&!p.abort()&&mc.level!=null){
                 float startAge=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.startSec());
                 if(!w.startSound&&startAge>=0){w.startSound=true;if(startAge<.5&&soundBudget>0){soundBudget--;mc.level.playLocalSound(p.crownX(),p.crownY(),p.crownZ(),net.minecraft.sounds.SoundEvents.ALLAY_AMBIENT_WITH_ITEM,net.minecraft.sounds.SoundSource.HOSTILE,.4f,.7f,false);}}
                 if(p.event()==2){float lockAge=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.lockSec());if(!w.lockSound){w.lockSound=true;if(lockAge<.5&&soundBudget>0){soundBudget--;mc.level.playLocalSound(!p.starfall()?p.centerX():p.landings()[0],!p.starfall()?p.centerY()+p.crownRadius():p.landings()[1],!p.starfall()?p.centerZ():p.landings()[2],net.minecraft.sounds.SoundEvents.AMETHYST_BLOCK_CHIME,net.minecraft.sounds.SoundSource.HOSTILE,.45f,1.1f,false);}}
-                    for(int c=0;c<(p.helixAttack()?1:p.dome()?6:p.columns());c++){float phaseStart=p.helixAttack()?p.helix().thrust():p.dome()?com.iridium126.createmanaindustry.content.allaystorm.AllayDome.warningStart(p.lockSec(),p.crownRadius(),c):p.lockSec()+1+c*.35f;float age=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,phaseStart);int bit=1<<c;if((w.columnSoundMask&bit)==0&&age>=0){w.columnSoundMask|=bit;if(age<.2&&soundBudget>0){soundBudget--;int k=c*4;mc.level.playLocalSound(p.dome()?p.centerX():p.landings()[k],!p.starfall()?p.centerY()+6:p.landings()[k+1]+6,p.dome()?p.centerZ():p.landings()[k+2],net.minecraft.sounds.SoundEvents.PLAYER_ATTACK_SWEEP,net.minecraft.sounds.SoundSource.HOSTILE,.3f,1+c*.01f,false);}}}
+                    for(int c=0;c<(p.helixAttack()||p.dome()?1:p.columns());c++){float phaseStart=p.helixAttack()?p.helix().thrust():p.dome()?com.iridium126.createmanaindustry.content.allaystorm.AllayDome.warningStart(p.lockSec(),p.crownRadius(),c):p.lockSec()+1+c*.35f;float age=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,phaseStart);int bit=1<<c;if((w.columnSoundMask&bit)==0&&age>=0){w.columnSoundMask|=bit;if(age<.2&&soundBudget>0){soundBudget--;int k=c*4;mc.level.playLocalSound(p.dome()?p.centerX():p.landings()[k],!p.starfall()?p.centerY()+6:p.landings()[k+1]+6,p.dome()?p.centerZ():p.landings()[k+2],net.minecraft.sounds.SoundEvents.PLAYER_ATTACK_SWEEP,net.minecraft.sounds.SoundSource.HOSTILE,.3f,1+c*.01f,false);}}}
                 }
             }
             if(slot<4)starfallGpu.waveUniform(slot,p.waveSeed(),p.startSec(),p.diveUntilSec(),p.waveId(),p.swordTier());
@@ -831,11 +819,8 @@ public final class AllayStormRuntime {
             if(p.helixAttack()){helices++;helixMembers+=p.members().length;var h=p.helix();float now=p.startSec()+com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.startSec());
                 String stage=now<p.assembleSec()?"assemble":!p.locked()?(now<h.charge()?"approach":"charge"):now<h.thrust()?"locked":now<h.finish()?"thrust":"return";
                 helixStages.append('#').append(w.waveId).append(':').append(stage).append(", arc=").append(h.arcLength()).append(", advanceSpeed=").append(com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.speedAt(h,now)).append(", memberCap=").append(stage.equals("thrust")?h.maxSpeed():6).append(", window=").append(w.windowReady?"ready":"pending").append(' ');
-            }else if(p.dome()){domes++;domeMembers+=p.members().length;int g=com.iridium126.createmanaindustry.content.allaystorm.AllayDome.closingPetal(timeSec,p.lockSec(),p.crownRadius());
-                float age=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.lockSec());
-                int petal=(int)Math.floor(age/(1.5f+com.iridium126.createmanaindustry.content.allaystorm.AllayDome.closeSeconds(p.crownRadius())));
-                String stage=!p.locked()?(com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.assembleSec())<0?"assemble":"approach"):petal>=6?"return":g<0?"warning-"+(petal+1):"closing-"+(g+1);
-                stages.append('#').append(w.waveId).append(':').append(stage).append(' ');
+            }else if(p.dome()){domes++;domeMembers+=p.members().length;
+                stages.append('#').append(w.waveId).append(':').append(p.locked()?"contract":"assemble").append(' ');
             }else{stars++;starMembers+=p.members().length;columns+=p.columns();}
             if(p.fallbackReason()!=0)fallbacks.append('#').append(w.waveId).append(':').append(p.fallbackReason()==1?"too-few":p.fallbackReason()==2?"terrain":p.fallbackReason()==3?"helix-arms":p.fallbackReason()==4?"helix-route":"helix-blocked").append(' ');
         }
@@ -843,7 +828,7 @@ public final class AllayStormRuntime {
     }
     public int carrierCount(){int count=0;for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort())count+=w.packet.members().length;return count;}
     public boolean ringsRequested(){for(var w:waveSlots)if(w!=null&&w.alive&&w.ringCommittedMask!=(w.packet.columns()==32?-1:(1<<w.packet.columns())-1)&&w.packet.event()==2&&w.packet.starfall())return true;return false;}
-    public void commitStarfall(){starfallGpu.commit();for(var w:waveSlots)if(w!=null&&w.alive&&w.packet.event()==2&&!w.packet.dome())w.ringCommittedMask|=w.ringScheduledMask;}
+    public void commitStarfall(){starfallGpu.commit();for(var w:waveSlots)if(w!=null&&w.alive){w.simulated=true;if(w.packet.event()==2&&!w.packet.dome())w.ringCommittedMask|=w.ringScheduledMask;}}
 
     private int candidateSpawnCursor,candidatePendingSpawns;
     public void checkpointSpawnInputs() {candidateSpawnCursor=stormSpawnCursor;candidatePendingSpawns=pendingStormSpawns;}
@@ -852,6 +837,7 @@ public final class AllayStormRuntime {
     record FeedbackState(boolean active,boolean authority,double correctionHz,Vec3 center,float time,int players,int waveMask) {}
     FeedbackState feedbackState() {
         int mask=0;for(int i=0;i<MAX_WAVES;i++)if(locallyRelevant(waveSlots[i]))mask|=i<4?1<<i:16;
+        if((stormAuthority&&anyWaveActive())||StormCollisionRuntime.returning())mask|=31;
         return new FeedbackState(stormActive,stormAuthority,stormCorrectionHz,center,timeSec,lastPlayerCount,mask);
     }
     public record ContactAuthority(int id,long epoch) {}

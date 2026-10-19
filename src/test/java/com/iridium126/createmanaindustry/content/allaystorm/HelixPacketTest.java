@@ -8,7 +8,7 @@ import net.neoforged.neoforge.network.connection.ConnectionType;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 class HelixPacketTest {
- static ClientboundStormWavePacket packet(int event,int phase,boolean members){var roster=AllayHelixTest.roster(8192);var f=AllayHelixTest.flight(8192);
+ static ClientboundStormWavePacket packet(int event,int phase,boolean members){var roster=AllayHelixTest.roster(4096);var f=AllayHelixTest.flight(4096);
   return new ClientboundStormWavePacket(9,87,event,1,1,5,2,4096,0,4,13,90,0,128,0,f.radius(),members?roster.members():new int[0],new float[]{0,128,0,-24,4,0},new float[8],2,phase,roster.ends(),-24,4,0,0,1,10,0,f);
  }
  static ClientboundStormWavePacket roundtrip(ClientboundStormWavePacket p){var b=new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY, ConnectionType.OTHER);try{ClientboundStormWavePacket.STREAM_CODEC.encode(b,p);var q=ClientboundStormWavePacket.STREAM_CODEC.decode(b);assertFalse(b.isReadable());return q;}finally{b.release();}}

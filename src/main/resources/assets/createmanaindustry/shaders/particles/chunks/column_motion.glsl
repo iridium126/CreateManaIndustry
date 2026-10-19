@@ -1,3 +1,4 @@
+bool cmiColumnExit=false;vec3 cmiColumnExitVelocity=vec3(0);
 // Identity-keyed member state; immutable curve lengths are initialized once on departure.
 vec3 cmiColumnState3(uint s){return vec3(uintBitsToFloat(starStateWrite.words[s]),uintBitsToFloat(starStateWrite.words[s+1u]),uintBitsToFloat(starStateWrite.words[s+2u]));}
 void cmiColumnStore3(uint s,vec3 v){starStateWrite.words[s]=floatBitsToUint(v.x);starStateWrite.words[s+1u]=floatBitsToUint(v.y);starStateWrite.words[s+2u]=floatBitsToUint(v.z);}
@@ -18,10 +19,16 @@ bool cmiColumnFloor(vec3 p){
 }
 vec3 cmiColumnCurve(uint s,uint arc,uint b,uint rank,float u){
  float begin=cmiColumnState(s+2u);vec4 t=cmiStarVec(b+4u);float duration=max(t.z+cmiColumnDelay(rank)-t.y,.1);
- vec3 top=cmiColumnGatherAt(b,rank,begin),start=cmiColumnState3(arc+33u),direction=cmiColumnState3(arc+36u);
- vec3 point=cmiColumnDescentLocalAt(b,rank,begin+u*duration,begin);
- float h0=u*(1.-u)*(1.-u),h1=u*u*(u-1.);
- return point+(start-top)*(1.-cmiColumnSmooth(u))+(direction*4.-cmiColumnOrbitVelocity(b,rank,begin)*duration)*h0+cmiColumnTangent(cmiColumnAngle(b,rank),cmiColumnRoot(rank))*4.*h1;
+ vec3 landing=cmiStarLanding(b,0u).xyz,start=cmiColumnState3(arc+33u)-landing,direction=cmiColumnState3(arc+36u);
+ float r0=max(length(start.xz),.2),r1=cmiColumnRoot(rank),a0=atan(start.z,start.x);
+ float a1=a0+.7*duration;a1+=cmiColumnWrap(cmiColumnAngle(b,rank)-a1);
+ float h0=u*(1.-u)*(1.-u),h1=u*u*(u-1.),blend=cmiColumnSmooth(u);
+ vec2 radial=vec2(cos(a0),sin(a0));float dr=clamp(dot(direction.xz,radial)*4.,-.25*r0,.25*r0);
+ float radius=max(.2,mix(r0,r1,blend)+dr*h0+.35*h1);
+ float angular=dot(direction.xz,vec2(-radial.y,radial.x))*4./r0;
+ float angle=mix(a0,a1,blend)+angular*h0;
+ float height=mix(start.y,cmiColumnHeight(r1),blend)+direction.y*4.*h0+.35*r1*.125*h1;
+ return vec3(cos(angle)*radius,height,sin(angle)*radius);
 }
 void cmiColumnCurveInit(uint s,uint arc,uint b,uint rank,vec3 pos,vec3 vel,float begin){
  cmiColumnStore(s+2u,begin);cmiColumnStore3(arc+33u,pos);
@@ -51,7 +58,7 @@ void cmiColumnBloomInit(uint s,uint arc,uint b,vec3 point,float time){
  cmiColumnStore(s+1u,time);cmiColumnStore3(s+12u,point);cmiColumnStore(s+15u,0.);
  cmiColumnStore(arc+45u,r);cmiColumnStore(arc+46u,atan(delta.y,delta.x));starStateWrite.words[arc+43u]=4u;
 }
-bool cmiColumnSteer(uint a,vec3 pos,vec3 vel,vec3 home,out vec3 target,out vec3 feed,out uint phase,out float marker){
+bool cmiColumnSteer(uint a,vec3 pos,vec3 vel,vec3 home,vec3 homeVelocity,out vec3 target,out vec3 feed,out uint phase,out float marker){
  uint slot=cmiStarSlot(a),rank=cmiStarRank(a),b=cmiStarBase(slot),s=262592u+(slot-4u)*1024u+rank*16u,arc=328128u+((slot-4u)*64u+rank)*CMI_COLUMN_ARC_WORDS;
  vec4 t=cmiStarVec(b+4u);float time=cmiStarTime(b,uTimeSec);uint id=uint(cmiStarVec(b).x+.5);
  target=home;feed=vec3(0);phase=0u;marker=0.;if(time<t.x||time>t.w||cmiStarVec(b).y>2.5)return false;
@@ -63,9 +70,9 @@ bool cmiColumnSteer(uint a,vec3 pos,vec3 vel,vec3 home,out vec3 target,out vec3 
   starStateWrite.words[s]=id;cmiColumnStore(s+1u,-1.);cmiColumnStore(s+2u,-1.);cmiColumnStore(s+3u,-1.);cmiColumnStore3(s+4u,pos);cmiColumnStore3(s+8u,vel);
  }
  uint state=starStateWrite.words[arc+43u];float step=max(uDt,.000001),remaining=6.*step;vec3 point=pos,motion=vec3(0);
- if(state==6u)return false;
+ if(state==6u){phase=6u;marker=6.;return false;}
  if(state==0u){
-  if(time<t.y){phase=1u;target=cmiColumnApproach(s,b,rank,time);feed=(target-pos)/step;return true;}
+  if(time<t.y){phase=1u;marker=3.;target=cmiColumnApproach(s,b,rank,time);feed=(target-pos)/step;return true;}
   cmiColumnCurveInit(s,arc,b,rank,pos,vel,time-step);state=2u;
  }
  // A collision can end descent before the reference endpoint on a hill or a stair.
@@ -75,9 +82,9 @@ bool cmiColumnSteer(uint a,vec3 pos,vec3 vel,vec3 home,out vec3 target,out vec3 
   if(state==2u){
    float total=cmiColumnState(arc+32u),move=min(remaining,max(0.,total-travelled));
    vec3 before=cmiColumnCurve(s,arc,b,rank,cmiColumnParameter(arc,travelled)),after=cmiColumnCurve(s,arc,b,rank,cmiColumnParameter(arc,travelled+move));
-   motion+=after-before;point=pos+motion;remaining-=move;travelled+=move;cmiColumnStore(s+15u,travelled);
+   vec3 delta=after-before;motion+=length(delta)>.000001?normalize(delta)*move:vec3(0);point=pos+motion;remaining-=move;travelled+=move;cmiColumnStore(s+15u,travelled);
    if(length(after-before)>.00001)cmiColumnStore3(arc+40u,normalize(after-before));
-   if(travelled<total-.00001)break;
+   if(travelled<total-.00001){marker=4.+clamp(travelled/max(total,.00001),0.,.99999);break;}
    // Reference progress never waits for collision displacement to be recovered.
    if(cmiColumnFloor(point)&&length(point.xz-cmiStarLanding(b,0u).xz)<=4.){cmiColumnBloomInit(s,arc,b,point,time-remaining/6.);state=4u;}
    else{state=5u;starStateWrite.words[arc+43u]=5u;cmiColumnStore(s+3u,time-remaining/6.);}
@@ -92,9 +99,17 @@ bool cmiColumnSteer(uint a,vec3 pos,vec3 vel,vec3 home,out vec3 target,out vec3 
   if(remaining<=.000001)break;
  }
  if(state==5u){
-  marker=0.;vec3 delta=home-point;
-  if(length(delta)<.3){starStateWrite.words[arc+43u]=6u;return false;}
-  vec3 direction=cmiColumnTurn(cmiColumnState3(arc+40u),delta,2.5*step);cmiColumnStore3(arc+40u,direction);motion+=direction*remaining;point=pos+motion;
+  marker=5.;float began=cmiColumnState(s+3u),age=max(0.,time-began);
+  float available=max(0.,.5-max(0.,time-step-began)),move=min(remaining,available*6.);
+  vec3 delta=home-point,direction=cmiColumnState3(arc+40u);
+  if(length(delta)>.00001)direction=cmiColumnTurn(direction,delta,2.5*min(step,.5)*cmiColumnSmooth(clamp(age/.5,0.,1.)));
+  cmiColumnStore3(arc+40u,direction);motion+=direction*move;point=pos+motion;remaining-=move;
+  if(age>=.5){
+   float ordinary=remaining/6.;vec3 finalVelocity=direction*6.;
+   if(ordinary>0.){finalVelocity+=((home-point)*24.+(homeVelocity-finalVelocity)*6.)*ordinary;float speed=length(finalVelocity);if(speed>6.)finalVelocity*=6./speed;motion+=finalVelocity*ordinary;point=pos+motion;}
+   cmiColumnExit=true;cmiColumnExitVelocity=finalVelocity;starStateWrite.words[arc+43u]=6u;phase=6u;marker=6.;target=point;feed=motion/step;return true;
+  }
+
  }
  phase=state;target=point;feed=motion/step;return true;
 }

@@ -14,14 +14,14 @@ class AllayHelixTest {
  @Test void actualOppositeArmsExactAndExclusive(){
   BitSet dead=new BitSet(),reserved=new BitSet();dead.set(0,123);
   for(int seed:new int[]{1,2,16777215})for(int wave=0;wave<4;wave++){
-   var selection=AllayHelix.select(131072,dead,reserved,8192,seed,wave);assertEquals(8192,selection.members().length);assertEquals(selection.armA()+3,selection.armB());
-   int first=selection.ends()[0];assertTrue(first>=256&&8192-first>=256);
-   for(int rank=0;rank<8192;rank++){int member=selection.members()[rank];assertFalse(dead.get(member));assertFalse(reserved.get(member));reserved.set(member);assertEquals(rank<first?selection.armA():selection.armB(),AllayHelix.arm(seed,member));}
+   var selection=AllayHelix.select(131072,dead,reserved,8192,seed,wave);assertEquals(4096,selection.members().length);assertEquals(selection.armA()+3,selection.armB());
+   int first=selection.ends()[0];assertTrue(first==2048);
+   for(int rank=0;rank<4096;rank++){int member=selection.members()[rank];assertFalse(dead.get(member));assertFalse(reserved.get(member));reserved.set(member);assertEquals(rank<first?selection.armA():selection.armB(),AllayHelix.arm(seed,member));}
   }
  }
  @Test void shortageAndOtherPairs(){
   var dead=new BitSet();var reserved=new BitSet();for(int i=0;i<131072;i++)if(AllayHelix.arm(1,i)==0||AllayHelix.arm(1,i)==3)reserved.set(i);
-  var selected=AllayHelix.select(131072,dead,reserved,8192,1,0);assertEquals(8192,selected.members().length);assertNotEquals(0,selected.armA());
+  var selected=AllayHelix.select(131072,dead,reserved,8192,1,0);assertEquals(4096,selected.members().length);assertNotEquals(0,selected.armA());
   reserved.set(0,131072);assertEquals(0,AllayHelix.select(131072,dead,reserved,8192,1,0).members().length);assertEquals(0,AllayHelix.select(511,dead,new BitSet(),8192,1,0).members().length);
  }
  @Test void arcTableSpeedAndTailExit(){
@@ -36,16 +36,16 @@ class AllayHelixTest {
   }
  }
  @Test void splineRejectsUnsafeGeometryAndTipDensity(){
-  assertThrows(IllegalArgumentException.class,()->AllayHelix.flight(roster(512),new float[]{0,0,0,0,50,0},12,10,15));
-  assertThrows(IllegalArgumentException.class,()->AllayHelix.flight(roster(512),new float[]{0,0,0,500,0,0},12,10,15));
+  assertThrows(IllegalArgumentException.class,()->AllayHelix.flight(roster(4096),new float[]{0,0,0,0,0,0},12,10,15));
+  assertThrows(IllegalArgumentException.class,()->AllayHelix.flight(roster(512),new float[]{0,0,0,1500,0,0},12,10,15));
   assertEquals(.2,AllayHelix.memberU(.3f),.00001);assertEquals(1,AllayHelix.memberU(1),.00001);
-  assertTrue(AllayHelix.memberU(.15f)<.1);assertEquals(32,AllayHelix.length(512));assertEquals(64,AllayHelix.length(16384));
+  assertTrue(AllayHelix.memberU(.15f)<.1);assertEquals(64,AllayHelix.length(512));assertEquals(64,AllayHelix.length(16384));
  }
  @Test void directAttackHasFortyFiveDegreeAxisAndNoPostGatherWait(){
   var f=AllayHelix.attackFlight(roster(8192),-24,88,0,0,12,20);
   assertEquals(20,f.thrust());assertEquals(20,f.charge());
   for(int i=1;i<6;i++){double dx=f.controls()[i*3]-f.controls()[(i-1)*3],dy=f.controls()[i*3+1]-f.controls()[(i-1)*3+1];assertEquals(-dx,dy,.0001);}
-  assertEquals(4,AllayHelix.phase(20,20,20,true,f));assertEquals(6,AllayHelix.radius(16384));
+  assertEquals(4,AllayHelix.phase(20,20,20,true,f));assertEquals(32,AllayHelix.radius(16384));
  }
  @Test void cachedScatterHasGaussianDensityRatherThanAnEmptyStrand(){
   double sum=0,x=0,y=0;Set<String> unique=new HashSet<>();

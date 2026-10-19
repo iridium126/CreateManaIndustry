@@ -20,27 +20,10 @@ vec3 cmiHelixOffset(vec3 tangent,float u,uint group,vec2 scatter,float radius,fl
  vec3 normal=normalize(radial-strand*dot(radial,strand)),binormal=normalize(cross(strand,normal));
  return radial*r+(normal*scatter.x+binormal*scatter.y)*(.2*radius);
 }
-vec3 cmiHelixPoint(uint assignment,float seed,float time,vec3 home ){
- uint b=cmiStarBase((assignment>>1u)&3u),group=(assignment>>3u)&31u,rank=assignment>>8u;
- vec4 times=cmiStarVec(b+4u),h=cmiHelixTimes(b),info=cmiHelixInfo(b),column=cmiStarColumn(b,group);
- float u=cmiHelixU((float(rank)+.5)/max(column.y,1.)),heading=cmiHelixHeading(b,time);vec3 forward=vec3(cos(heading),-1,sin(heading))*.707106781;
+vec3 cmiHelixPoint(uint assignment,float seed,float time,vec3 home){
+ uint b=cmiStarBase(cmiStarSlot(assignment));vec3 axis=normalize(cmiStarVec(b+308u).xyz);
  vec3 center=cmiStarVec(b+24u).xyz;
- if(cmiStarVec(b+20u).y<3.)center=mix(cmiStarVec(b+28u).xyz,center,clamp((time-cmiStarVec(b+28u).w)/.5,0.,1.));
- vec2 scatter=vec2(0);
- // Roster identity is supplied separately below; cached Gaussian values never depend on frame time.
- uint packedMember=((assignment>>1u)&3u)*16384u+rank+(group==0u?0u:uint(cmiStarColumn(b,0u).y+.5));
- scatter=vec2(uintBitsToFloat(cmiStarWord(152304u+packedMember*2u)),uintBitsToFloat(cmiStarWord(152305u+packedMember*2u)));
- vec3 line=center-forward*(u*info.x)+cmiHelixOffset(forward,u,group,scatter,info.y,info.x);
- if(cmiStarVec(b).y<1.5||time<times.z)return line;
- float arc=cmiHelixProgress(b,time)-u*info.x;vec3 curve,tangent;cmiHelixCurve(b,cmiHelixParameter(b,arc),curve,tangent);
- vec3 frozen=curve+cmiHelixOffset(tangent,u,group,scatter,info.y,info.x);
- if(time<h.y)return mix(line,frozen,smoothstep(times.z,h.y,time));
- if(time<h.z)return frozen;
- float age=time-h.z;vec3 side=normalize(cross(vec3(0,1,0),tangent));float signSide=group==0u?1.:-1.;
- vec3 split=frozen+side*(signSide*(info.y+4.)*smoothstep(0.,2.,age));
- if(age<2.)return split;
- float duration=max(1.,times.w-h.z-2.),f=clamp((age-2.)/duration,0.,1.);
- vec3 entry=cmiStarVec(b+12u).xyz,reverse=cmiStarRoute(b,1.-f);
- vec3 bridge=mix(split,reverse,smoothstep(0.,.35,f));bridge+=side*signSide*4.*sin(3.14159265*f)*(1.-f);
- return mix(bridge,home,smoothstep(.7,1.,f));
+ if(cmiStarVec(b+20u).y<3.){float t=clamp((time-cmiStarVec(b+28u).w)/.25,0.,1.);axis=normalize(mix(cmiStarVec(b+300u).xyz,axis,t));center=mix(cmiStarVec(b+28u).xyz,center,t);}
+ vec3 side=cmiStarVec(b+304u).xyz;side=normalize(side-axis*dot(axis,side));vec3 up=cross(axis,side),local=cmiHelixLocal(assignment);
+ return center+axis*(local.x+(cmiHelixPhase(b,time)==1.?0.:cmiHelixProgress(b,time)))+side*local.y+up*local.z;
 }

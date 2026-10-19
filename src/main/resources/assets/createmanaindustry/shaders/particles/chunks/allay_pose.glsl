@@ -240,21 +240,22 @@ mat4 cmiAllayStarPartTransform(float age,float seed,vec3 velocity,int animation,
  mat4 transform=cmiAllayPartTransform(age,seed,velocity,animation,part,yaw,carry);
  if(starAttack&&uStarfallEnabled){mat4 center=mat4(1.);center[3].y=23.5;mat4 inverseCenter=mat4(1.);inverseCenter[3].y=-23.5;transform=center*cmiRotX(clamp(-velocity.y*.08,-.45,.45)*carry)*inverseCenter*transform;}return transform;
 }
-mat4 cmiAllayAttackPartTransform(float age,float seed,float identity,vec3 position,vec3 velocity,int animation,int part,out float yaw,float carry,bool attack){
+mat4 cmiAllayAttackPartTransform(float age,float seed,float identity,vec3 position,vec3 velocity,int animation,int part,out float yaw,float carry,float marker,bool attack){
  int slot=attack&&uStarfallEnabled?cmiStarClaim(identity,uTimeSec):-1;
- bool helix=slot>=0&&cmiHelix(cmiStarBase(uint(slot)));
- bool column=slot>=4&&cmiColumn(cmiStarBase(uint(slot)));
+ bool helix=slot>=0&&(cmiHelix(cmiStarBase(uint(slot)))||cmiDome(cmiStarBase(uint(slot))));
+ bool column=slot>=4&&cmiColumn(cmiStarBase(uint(slot)))&&marker<5.5;
  if(helix||column)animation=0;
  // Column flight has one stable pose. Do not switch to idle yaw/head/wing inputs at tiny velocities.
  vec3 poseVelocity=column?vec3(1.5,0,0):velocity;
- mat4 transform=cmiAllayStarPartTransform(age,seed,poseVelocity,animation,part,yaw,carry,attack);
+ // Helix raises carrying arms without tilting the whole body: keep the checked body/wing envelope.
+ mat4 transform=helix?cmiAllayPartTransform(age,seed,poseVelocity,animation,part,yaw,carry):cmiAllayStarPartTransform(age,seed,poseVelocity,animation,part,yaw,carry,attack);
  if(column){uint a=cmiStarAssignment(identity),b=cmiStarBase(uint(slot)),rank=cmiStarRank(a);
   vec2 radial=position.xz-cmiStarLanding(b,0u).xz;float angle=length(radial)>.1?atan(radial.y,radial.x):cmiColumnAngle(b,rank);
-  vec4 t=cmiStarVec(b+4u);float u=clamp((cmiStarTime(b,uTimeSec)-t.y)/max(t.z+cmiColumnDelay(rank)-t.y,.1),0.,1.);
+  float u=marker<0.?1.:marker>=4.&&marker<5.?marker-4.:marker>=5.?1.:0.;
   float heading=angle+1.570796327*(1.-max(cmiColumnSmooth(u),carry));yaw=atan(-cos(heading),sin(heading));
  }
  if(helix&&carry>0.){uint b=cmiStarBase(uint(slot));float time=cmiStarTime(b,uTimeSec);
   if(cmiHelixPhase(b,time)!=4.||length(velocity.xz)<.05){float angle=cmiHelixHeading(b,time);yaw=atan(-cos(angle),sin(angle));}
-  mat4 center=mat4(1.);center[3].y=23.5;mat4 inverseCenter=mat4(1.);inverseCenter[3].y=-23.5;transform=center*cmiRotX(.3*carry)*inverseCenter*transform;
+  // Arm pose only; a whole-body tilt would invalidate the 1.4m body/wing clearance.
  }return transform;
 }

@@ -38,6 +38,12 @@ const float CONTACT_R = 1.6;
 #pragma cmi_include chunks/allay_storm.glsl
 
 void main() {
+    if(uStarfallEnabled){
+      uint invocation=gl_GlobalInvocationID.x;
+      if(invocation<4u){uint b=cmiStarBase(invocation);if((cmiHelix(b)||cmiDome(b))&&cmiStarVec(b).y<1.5&&cmiStarVec(b).x>.5&&state.words[CMI_GATHER_COUNTS+invocation]==uint(cmiStarVec(b+16u).w+.5)&&state.words[CMI_GATHER_COUNTS+invocation]>0u){uint o=atomicAdd(result.count,1u);if(o<WAVECONTACT_CAP){o*=6u;result.entries[o]=-4.;result.entries[o+1u]=cmiStarVec(b).x;for(uint j=2u;j<6u;j++)result.entries[o+j]=0.;}}}
+      for(uint word=invocation;word<CMI_COMPLETION_WORDS;word+=gl_NumWorkGroups.x*64u){uint bits=state.words[CMI_COMPLETIONS+word];if(bits==0u)continue;uint slot=word<1024u?word/256u:4u+(word-1024u)/2u,b=cmiStarBase(slot),id=uint(cmiStarVec(b).x+.5);if(id==0u||cmiStarVec(b).y>2.5)continue;
+        uint outIndex=atomicAdd(result.count,1u);if(outIndex<WAVECONTACT_CAP){uint o=outIndex*6u;result.entries[o]=-2.;result.entries[o+1u]=float(id);result.entries[o+2u]=float(word-cmiCompletionOffset(slot));result.entries[o+3u]=float(bits&65535u);result.entries[o+4u]=float(bits>>16u);result.entries[o+5u]=uTimeSec;}}
+    }
     uint liveCount=min(counter.writeSlot,uint(pool.data.length())/VEC4_PER_PARTICLE),rank=gl_GlobalInvocationID.x;
     if(rank>=cmiPopulationCount(liveCount,true))return;
     uint idx=cmiPopulationSlot(rank,liveCount,true);if(idx>=liveCount)return;
@@ -56,6 +62,8 @@ void main() {
         return; // not a storm member
     // update may latch pursuit completion in this very frame. Reporting is
     // independently deduplicated by (member, wave), including latched members.
+    uint stableMember=cmiStarMember(p0.w);
+    if(stableMember<131072u&&(cmiStarWord(201456u+stableMember/32u)&(1u<<(stableMember&31u)))==0u&&(state.words[stableMember*2u+1u]&255u)==7u){uint o=atomicAdd(result.count,1u);if(o<WAVECONTACT_CAP){o*=6u;result.entries[o]=-3.;result.entries[o+1u]=float(state.words[stableMember*2u]);result.entries[o+2u]=float(stableMember);result.entries[o+3u]=0.;result.entries[o+4u]=0.;result.entries[o+5u]=uTimeSec;}}
     uint assignment=cmiStarAssignment(p0.w);
     if(uStarfallEnabled&&cmiColumnAssignment(assignment)){
         uint slot=cmiStarSlot(assignment),b=cmiStarBase(slot),member=cmiStarMember(p0.w),id=uint(cmiStarVec(b).x+.5);
@@ -87,16 +95,17 @@ void main() {
             continue;
         uint member = (uint(p0.w + 0.5) & MEMBER_IDX_MASK) - 1u;
         vec3 contact=p0.xyz;float hitTime=uTimeSec;
-        if(uStarfallEnabled&&cmiHelix(cmiStarBase(k))){
+        if(uStarfallEnabled&&(cmiHelix(cmiStarBase(k))||cmiDome(cmiStarBase(k)))){
+            if(pool.data[base+1u].w!= -4.)continue;
             uint b=cmiStarBase(k);if(member>=uint(memberMap.slots.length())||(state.words[member*2u+1u]&0x80000000u)!=0u)continue;
             uint old= floatBitsToUint(memberMap.slots[member]);if(old==0u||old>previousCount.live||old>uint(previous.data.length())/4u)continue;
             vec4 before=previous.data[(old-1u)*4u],beforeLife=previous.data[(old-1u)*4u+3u];
             if(cmiStarMember(before.w)!=member||beforeLife.y<=0.||floatBitsToUint(beforeLife.w)!=eid)continue;
-            vec3 segment=p0.xyz-before.xyz;float distance2=dot(segment,segment),limit=cmiHelixInfo(b).w*uDt+.01;
+            vec3 segment=p0.xyz-before.xyz;float distance2=dot(segment,segment),limit=cmiAttackSpeed(p0.w,uTimeSec,6.)*uDt+.01;
             if(distance2>limit*limit)continue;
             float alpha=distance2>1e-8?clamp(dot(uLocalPlayerPos-before.xyz,segment)/distance2,0.,1.):1.;
             contact=before.xyz+alpha*segment;hitTime=uTimeSec-uDt*(1.-alpha);
-            if(cmiHelixPhase(b,cmiStarTime(b,hitTime))!=4.)continue;
+            if(cmiStarPhase(cmiStarAssignment(p0.w),hitTime)!=4.)continue;
         }
         vec3 d = contact - uLocalPlayerPos;
         if (dot(d, d) > CONTACT_R * CONTACT_R)

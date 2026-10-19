@@ -146,7 +146,8 @@ bool cmiStarSteering(float identity,float seed,vec3 pos,vec3 home,float cap,out 
  // Rejected claims must publish a finite fallback and a neutral identity phase.
  target=home;velocity=vec3(0.);phase=0u;
  uint assignment=cmiStarAssignment(identity);if(assignment==0u||cmiStarClaim(identity,uTimeSec)<0)return false;
- phase=uint(cmiStarPhase(assignment,uTimeSec));target=cmiStarPoint(assignment,seed,uTimeSec,home);
+ phase=uint(cmiStarPhase(assignment,uTimeSec));if(phase==6u&&(cmiHelix(cmiStarBase(cmiStarSlot(assignment)))||cmiDome(cmiStarBase(cmiStarSlot(assignment)))))return false;target=cmiStarPoint(assignment,seed,uTimeSec,home);
+ if(cmiDome(cmiStarBase(cmiStarSlot(assignment)))){velocity=cmiDomeVelocity(assignment,cmiStarTime(cmiStarBase(cmiStarSlot(assignment)),uTimeSec));return true;}
  vec3 next=cmiStarPoint(assignment,seed,uTimeSec+.02,home);velocity=(next-target)/.02;
  float speed=length(velocity);if(speed>cap)velocity*=cap/speed;return true;
 }

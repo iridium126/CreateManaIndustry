@@ -174,7 +174,7 @@ void main() {
         anim = 3;
     float sinceDeath = corpse ? -p3.y : 0.0;
     float yaw;
-    mat4 M = cmiAllayAttackPartTransform(p3.x, p3.z,p0.w, p0.xyz, p1.xyz, anim, pid, yaw, carryRamp, !corpse && stormA.x > .5);
+    mat4 M = cmiAllayAttackPartTransform(p3.x, p3.z,p0.w, p0.xyz, p1.xyz, anim, pid, yaw, carryRamp, p1.w, !corpse && stormA.x > .5);
 
     // ---- vertex transform to world ----
     vec3 local = vec3(geo.v[vb], geo.v[vb + 1u], geo.v[vb + 2u]);

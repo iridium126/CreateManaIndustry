@@ -10,6 +10,7 @@ public final class StormWaveSlots {
     public StormWaveSlots(int capacity){if(capacity!=4&&capacity!=68)throw new IllegalArgumentException("Storm slots");packets=new ClientboundStormWavePacket[capacity];}
     public record Update(int slot, ClientboundStormWavePacket packet, boolean replacement) {}
     public ClientboundStormWavePacket packet(int slot) { return packets[slot]; }
+    public void complete(int id){for(int i=0;i<packets.length;i++)if(packets[i]!=null&&packets[i].waveId()==id)packets[i]=null;}
     public void clear() { Arrays.fill(packets, null); }
     public void retire(float now) {
         for (int i = 0; i < packets.length; i++) if (packets[i] != null && AllayStarfall.elapsed(now, packets[i].diveUntilSec()) > 0) packets[i] = null;

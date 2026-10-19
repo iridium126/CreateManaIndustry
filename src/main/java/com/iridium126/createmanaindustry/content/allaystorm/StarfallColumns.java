@@ -20,6 +20,7 @@ import net.minecraft.world.phys.Vec3;
 public final class StarfallColumns {
     private static final class Active {
         final ClientboundStormColumnPacket packet;
+        final BitSet completed=new BitSet();
         final Map<UUID,BitSet> reported=new HashMap<>();
         Active(ClientboundStormColumnPacket packet){this.packet=packet;}
     }
@@ -44,9 +45,9 @@ public final class StarfallColumns {
         var it=columns.values().iterator();
         while(it.hasNext()){
             var a=it.next();var p=a.packet;float at=time(p,now);
-            boolean expired=at>p.end();
+            boolean expired=at>p.end()||a.completed.cardinality()==64;
             // Frozen footprints remain independent of their triggering player.
-            if(expired||!data.active||p.epoch()!=currentIdentity.epoch()||!p.dimension().equals(currentIdentity.dimension())){if(!expired)send.accept(p.aborted());for(int m:p.members())reserved.clear(m);it.remove();}
+            if(expired||!data.active||p.epoch()!=currentIdentity.epoch()||!p.dimension().equals(currentIdentity.dimension())){if(!expired)send.accept(p.aborted());for(int rank=0;rank<64;rank++)if(!a.completed.get(rank))reserved.clear(p.members()[rank]);it.remove();}
         }
         int interval=Math.max(1,(int)Math.round(ServerConfig.stormStarfallInterval*20));
         if(nextAttempt!=Long.MIN_VALUE&&tick<nextAttempt)return;
@@ -76,7 +77,7 @@ public final class StarfallColumns {
             float assemble=start+Math.max(4,(radius*2+16)*2/AllayStarfall.SPEED);
             float touch=assemble+StarfallColumnRules.descentSeconds(gather+6-y);
             float bloomEnd=touch+StarfallColumnRules.delay(63)+StarfallColumnRules.ARRIVAL_GRACE+StarfallColumnRules.BLOOM;
-            float end=bloomEnd+Math.max(6,(radius*2+Math.abs(gather-y)+20)*2/AllayStarfall.SPEED);
+            float end=bloomEnd+Math.max(4,StarfallColumnRules.descentSeconds(gather+6-y)*.5f);
             int id=ids.getAsInt();
             var packet=new ClientboundStormColumnPacket(level.dimension().location(),StormIdentity.of(level,data).epoch(),id,false,seed,start,assemble,touch,bloomEnd,end,
                 (float)landing.x,y,(float)landing.z,gather,(float)cx,(float)cz,radius,roster);
@@ -84,6 +85,13 @@ public final class StarfallColumns {
         }
     }
 
+    public long[] completed(int id){var a=columns.get(id);return a==null?new long[0]:a.completed.toLongArray();}
+    public boolean complete(int id,BitSet ranks,BitSet reserved){var a=columns.get(id);if(a==null||ranks.length()>64)return false;for(int rank=ranks.nextSetBit(0);rank>=0;rank=ranks.nextSetBit(rank+1))if(!a.completed.get(rank)){a.completed.set(rank);reserved.clear(a.packet.members()[rank]);}return true;}
+    public void deadMember(int member,BitSet reserved,Consumer<com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket> send){
+        for(var a:columns.values())for(int rank=0;rank<64;rank++)if(a.packet.members()[rank]==member&&!a.completed.get(rank)){
+            a.completed.set(rank);reserved.clear(member);send.accept(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(a.packet.dimension(),a.packet.epoch(),a.packet.id(),a.completed.toLongArray()));return;
+        }
+    }
     private static double ground(ServerLevel level,double x,double z){
         int bx=(int)Math.floor(x),bz=(int)Math.floor(z);
         if(!level.hasChunk(bx>>4,bz>>4))return Double.NaN;
@@ -102,7 +110,7 @@ public final class StarfallColumns {
     public boolean contact(ServerPlayer player,AllayStormData data,StormIdentity identity,int id,long epoch,float sample,int member,Vec3 contact){
         Active a=columns.get(id);if(a==null||!data.active||!player.isAlive()||player.isSpectator()||identity.epoch()!=epoch)return false;
         var p=a.packet;if(!p.dimension().equals(player.level().dimension().location())||p.epoch()!=epoch||member<0||member>=data.count||data.dead.get(member))return false;
-        int rank=-1;for(int i=0;i<p.members().length;i++)if(p.members()[i]==member){rank=i;break;}if(rank<0)return false;
+        int rank=-1;for(int i=0;i<p.members().length;i++)if(p.members()[i]==member){rank=i;break;}if(rank<0||a.completed.get(rank))return false;
         if(!Double.isFinite(contact.x)||!Double.isFinite(contact.y)||!Double.isFinite(contact.z))return false;
         BitSet reported=a.reported.computeIfAbsent(player.getUUID(),k->new BitSet());if(reported.get(rank))return false;reported.set(rank);
         var source=new DamageSource(player.registryAccess().registryOrThrow(Registries.DAMAGE_TYPE).getHolderOrThrow(CMIDamageTypes.STORM_PECK),contact);

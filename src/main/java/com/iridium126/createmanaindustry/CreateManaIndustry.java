@@ -167,7 +167,7 @@ public class CreateManaIndustry {
     }
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(MODID).versioned("9");
+        PayloadRegistrar registrar = event.registrar(MODID).versioned("11");
         registrar.playToClient(
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.TYPE,
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.STREAM_CODEC,
@@ -251,6 +251,13 @@ public class CreateManaIndustry {
                 ClientboundStormCenterPacket.TYPE,
                 ClientboundStormCenterPacket.STREAM_CODEC,
                 ClientboundStormCenterPacket::handle);
+        registrar.playToServer(com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket.TYPE,
+                com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket::handle);
+        registrar.playBidirectional(
+                com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket.TYPE,
+                com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket::handle);
         // dive-wave AI: one event per wave launch/abort, contact self-reports
         registrar.playToClient(
                 com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket.TYPE,
