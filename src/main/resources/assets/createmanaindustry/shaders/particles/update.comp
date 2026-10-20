@@ -257,7 +257,8 @@ void main() {
 
 #pragma cmi_include chunks/storm_motion.glsl
 
-    bool cmiContactSweepValid=true;
+    bool cmiContactSweepValid=true,cmiTerrainClipped=false;
+    vec3 cmiBeforeSweepVelocity=vel;
 #pragma cmi_include chunks/collision_sweep.glsl
 
     if (!swept)
@@ -276,12 +277,29 @@ void main() {
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&cmiStarSlot(a)<4u){
         uint b=cmiStarBase(cmiStarSlot(a));if(cmiHelix(b)||cmiDome(b)){
             uint streak=0u;float phase=cmiStarPhase(a,uTimeSec);
-            if(phase==1.){vec3 target=cmiStarPoint(a,p3.z,uTimeSec,vec3(0)),next=cmiStarPoint(a,p3.z,uTimeSec+.02,vec3(0)),motion=(next-target)/.02;
-                if(distance(pos,target)<=.4&&distance(vel,motion)<=1.)streak=starStateRead.words[member*2u]==uint(cmiStarVec(b).x+.5)?min(3u,starStateRead.words[CMI_GATHER_STREAK+member]+1u):1u;
-                if(streak==3u)atomicAdd(starStateWrite.words[CMI_GATHER_COUNTS+cmiStarSlot(a)],1u);
-            }starStateWrite.words[CMI_GATHER_STREAK+member]=streak;
+            bool same=starStateRead.words[member*2u]==uint(cmiStarVec(b).x+.5);
+            float blockedSeconds=same?uintBitsToFloat(starStateRead.words[CMI_GATHER_BLOCKED+member]):0.;
+            if(phase==1.){bool resourceUnknown=cmiDome(b)&&cmiStarWord(2u)==0u;vec3 target=resourceUnknown?pos:cmiStarPoint(a,p3.z,uTimeSec,vec3(0)),next=resourceUnknown?pos:cmiStarPoint(a,p3.z,uTimeSec+.02,vec3(0)),motion=(next-target)/.02;
+                bool unknown=resourceUnknown||(cmiStormVoxel&&(cmiStormMissing||!cmiStormKnown(target)||!cmiStormKnown(target+vec3(0,.6,0))));
+                bool occupied=!unknown&&cmiStormVoxel&&(cmiStormSolid(target)||cmiStormSolid(target+vec3(0,.6,0)));
+                vec3 towards=target-p0.xyz;
+                bool stalled=cmiTerrainClipped&&length(towards)>.4&&dot(pos-p0.xyz,normalize(towards))<max(0.,dot(cmiBeforeSweepVelocity*uDt,normalize(towards)))*.1;
+                blockedSeconds=stalled?blockedSeconds+uDt:0.;
+                bool blocked=occupied||blockedSeconds>=.5;uint counts=CMI_GATHER_COUNTS+cmiStarSlot(a)*4u,word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);
+                if(unknown||blocked){
+                    atomicAdd(starStateWrite.words[counts+(unknown?3u:2u)],1u);
+                    if((atomicAnd(starStateWrite.words[CMI_GATHER_ELIGIBLE+word],~bit)&bit)!=0u)atomicAdd(starStateWrite.words[counts+1u],0xffffffffu);
+                }
+                else{
+                    if(distance(pos,target)<=.4&&distance(vel,motion)<=1.)streak=same?min(3u,starStateRead.words[CMI_GATHER_STREAK+member]+1u):1u;
+                    if(streak==3u){atomicAdd(starStateWrite.words[counts],1u);atomicOr(starStateWrite.words[CMI_GATHER_READY+word],bit);}
+                }
+            }else blockedSeconds=0.;
+            starStateWrite.words[CMI_GATHER_BLOCKED+member]=floatBitsToUint(blockedSeconds);starStateWrite.words[CMI_GATHER_STREAK+member]=streak;
         }
     }}
+
+    if(corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&cmiStarSlot(a)<4u){uint b=cmiStarBase(cmiStarSlot(a));if((cmiHelix(b)||cmiDome(b))&&cmiStarVec(b+20u).y<3.){uint word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);if((atomicAnd(starStateWrite.words[CMI_GATHER_ELIGIBLE+word],~bit)&bit)!=0u)atomicAdd(starStateWrite.words[CMI_GATHER_COUNTS+cmiStarSlot(a)*4u+1u],0xffffffffu);}}}
 
     // DIE_ON_GROUND (cherry): vanilla removes the particle in the same tick it
     // touches ground — BEFORE the frame renders, so the landing position is

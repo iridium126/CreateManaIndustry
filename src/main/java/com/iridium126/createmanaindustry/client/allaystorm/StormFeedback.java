@@ -141,21 +141,33 @@ public final class StormFeedback {
      * absorbs the sub-2-block anchor skew).
      */
     private final java.util.Map<Integer,java.util.BitSet> completions=new java.util.HashMap<>();
-    private final java.util.Set<AllayStormRuntime.ContactAuthority> gathered=new java.util.HashSet<>();
+    private final java.util.Map<AllayStormRuntime.ContactAuthority,Long> gathered=new java.util.HashMap<>();
     private long completionTick=Long.MIN_VALUE;
     public void acceptWaveSnapshot(float[] entries) {
         retireWaves();
         if (entries == null)
             return;
+        var ready=new java.util.HashMap<Integer,java.util.BitSet>();
+        var eligible=new java.util.HashMap<Integer,java.util.BitSet>();
+        var counts=new java.util.HashMap<Integer,int[]>();
         for(int o=0;o+5<entries.length;o+=6){int member=Math.round(entries[o]),id=Math.round(entries[o+1]);var w=AllayStormRuntime.INSTANCE.contactAuthority(id);
-            if(member== -4){var mc=Minecraft.getInstance();if(w!=null&&mc.level!=null&&AllayStormRuntime.INSTANCE.feedbackState().authority()&&gathered.add(w))PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(mc.level.dimension().location(),w.epoch(),id));continue;}
+            if(member== -6){if(w!=null){int[] c={Math.round(entries[o+2]),Math.round(entries[o+3]),Math.round(entries[o+4]),Math.round(entries[o+5])};counts.put(id,c);AllayStormRuntime.INSTANCE.gatherProgress(id,c);}continue;}
+            if(member== -4||member== -5){if(w!=null){int word=Math.round(entries[o+2]),bits=Math.round(entries[o+3])|(Math.round(entries[o+4])<<16);if(word>=0&&word<384){var mask=(member== -4?ready:eligible).computeIfAbsent(id,k->new java.util.BitSet());for(int bit=0;bit<32;bit++)if((bits&(1<<bit))!=0)mask.set(word*32+bit);}}continue;}
             if(member== -3){StormCollisionRuntime.arrived(id,Math.round(entries[o+2]));continue;}
-            if(member== -2){if(w!=null){int word=Math.round(entries[o+2]),bits=Math.round(entries[o+3])|(Math.round(entries[o+4])<<16);if(word>=0&&word<256){var mask=completions.computeIfAbsent(id,k->new java.util.BitSet());for(int bit=0;bit<32;bit++)if((bits&(1<<bit))!=0)mask.set(word*32+bit);}}continue;}
+            if(member== -2){if(w!=null){int word=Math.round(entries[o+2]),bits=Math.round(entries[o+3])|(Math.round(entries[o+4])<<16);if(word>=0&&word<384){var mask=completions.computeIfAbsent(id,k->new java.util.BitSet());for(int bit=0;bit<32;bit++)if((bits&(1<<bit))!=0)mask.set(word*32+bit);}}continue;}
             if(member<0){if(w!=null)AllayStormRuntime.INSTANCE.columnTouchSound(id,entries[o+2],entries[o+3],entries[o+4]);continue;}
             if(w==null||!reported.computeIfAbsent(w,k->new it.unimi.dsi.fastutil.ints.IntOpenHashSet()).add(member))continue;
             PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(Minecraft.getInstance().level.dimension().location(),id,w.epoch(),entries[o+5],member,entries[o+2],entries[o+3],entries[o+4]));
         }
-        var mc=Minecraft.getInstance();if(mc.level!=null&&completionTick!=mc.level.getGameTime()){
+        var mc=Minecraft.getInstance();
+        if(mc.level!=null&&AllayStormRuntime.INSTANCE.feedbackState().authority())for(var entry:ready.entrySet()){
+            int id=entry.getKey();var w=AllayStormRuntime.INSTANCE.contactAuthority(id);var e=eligible.get(id);var c=counts.get(id);var r=entry.getValue();
+            if(w!=null&&e!=null&&c!=null&&r.cardinality()==c[0]&&e.cardinality()==c[1]&&com.iridium126.createmanaindustry.content.allaystorm.StormGatherRules.valid(r,e,12288)&&(!gathered.containsKey(w)||mc.level.getGameTime()-gathered.get(w)>=5)){
+                gathered.put(w,mc.level.getGameTime());
+                PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(mc.level.dimension().location(),w.epoch(),id,r.toLongArray(),e.toLongArray()));
+            }
+        }
+        if(mc.level!=null&&completionTick!=mc.level.getGameTime()){
             completionTick=mc.level.getGameTime();
             for(var entry:completions.entrySet()){var w=AllayStormRuntime.INSTANCE.contactAuthority(entry.getKey());if(w==null)continue;
                 var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(mc.level.dimension().location(),w.epoch(),w.id(),entry.getValue().toLongArray());
@@ -181,7 +193,7 @@ public final class StormFeedback {
     }
     /** Prune replaced identities without dropping other waves' in-flight GPU feedback. */
     public void retireWaveReports() {
-        gathered.removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
+        gathered.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
         reported.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
     }
     private long attackSequence;

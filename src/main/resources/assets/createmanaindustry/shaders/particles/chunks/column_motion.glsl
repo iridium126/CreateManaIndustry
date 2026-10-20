@@ -7,8 +7,7 @@ void cmiColumnStore(uint s,float v){starStateWrite.words[s]=floatBitsToUint(v);}
 vec3 cmiColumnApproach(uint s,uint b,uint rank,float time){
  vec4 t=cmiStarVec(b+4u);float duration=max(t.y-t.x,.1),u=clamp((time-t.x)/duration,0.,1.);
  vec3 origin=cmiColumnState3(s+4u),v=cmiColumnState3(s+8u);
- vec3 orbit=cmiColumnOrbitVelocity(b,rank,time);float late=cmiColumnSmooth((time-t.y+.5)/.5);
- return mix(origin,cmiColumnGatherAt(b,rank,time),cmiColumnSmooth(u))+v*(duration*u*pow(1.-u,3.))+(normalize(orbit)*6.-orbit)*((time-t.y)*late);
+ return mix(origin,cmiColumnGatherAt(b,rank,time),cmiColumnSmooth(u))+v*(duration*u*pow(1.-u,3.));
 }
 bool cmiColumnFloor(vec3 p){
  if(cmiStormVoxel)return cmiStormKnown(p)&&!cmiStormSolid(p+vec3(0,.1,0))&&cmiStormSolid(p-vec3(0,.2,0))&&!cmiStormMissing;

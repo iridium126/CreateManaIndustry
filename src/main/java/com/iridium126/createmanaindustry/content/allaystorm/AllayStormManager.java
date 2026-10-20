@@ -291,7 +291,7 @@ public final class AllayStormManager {
                 it.remove();
 
             } else if(!(w.kind==StormAttack.HELIX?advanceHelix(level,rt,w,tp,now,nowSec):w.kind==AllayDome.DOME?advanceDome(level,rt,w,tp,now,nowSec):advanceStarfall(level,rt,w,tp,now,nowSec))) {
-                broadcastWave(level,rt,ClientboundStormWavePacket.abort(w.id,w.epoch,w.abortReason));releaseWave(rt,w);it.remove();
+                if(w.abortReason==7)rt.stats.count(StormAttackStats.Reason.GATHER_TIMEOUT);broadcastWave(level,rt,ClientboundStormWavePacket.abort(w.id,w.epoch,w.abortReason));releaseWave(rt,w);it.remove();
             }
         }
 
@@ -317,9 +317,9 @@ public final class AllayStormManager {
             if(roster.members().length!=4096){rt.stats.count(StormAttackStats.Reason.RESERVED);return;}
             if(!launchHelix(level,rt,data,target,level.getGameTime(),seed,roster,track))rt.stats.count(StormAttackStats.Reason.RESOURCE);
         }else{
-            int quota=8192;
+            int quota=AllayDome.MAX_MEMBERS;
             int[] roster=AllayDome.select(data.count,data.dead,rt.waveReserved,quota,seed);
-            if(roster.length!=8192){rt.stats.count(StormAttackStats.Reason.RESERVED);return;}
+            if(roster.length!=AllayDome.MAX_MEMBERS){rt.stats.count(StormAttackStats.Reason.RESERVED);return;}
             if(!launchDome(level,rt,data,target,level.getGameTime(),seed,roster,track))rt.stats.count(StormAttackStats.Reason.RESOURCE);
         }
     }
@@ -328,7 +328,7 @@ public final class AllayStormManager {
         int id=++rt.waveIdCounter;if(id>=1<<24)rt.waveIdCounter=id=1;return id;
     }
     private static ClientboundStormWavePacket wavePacket(Wave w,int event,boolean roster,int targetId){
-        return new ClientboundStormWavePacket(w.id,w.epoch,event,w.seed,targetId,w.tier,w.columns,w.perColumn,w.start,w.assemble,w.lock,w.end,w.crownX,w.crownY,w.crownZ,w.radius,roster?w.members:new int[0],w.route.clone(),w.landings.clone(),w.kind,w.currentPhase,w.groupEnds.clone(),w.centerX,w.centerY,w.centerZ,w.orientation,w.direction,w.centerSec,w.fallbackReason,w.helix);
+        return new ClientboundStormWavePacket(w.id,w.epoch,event,w.seed,targetId,w.tier,w.columns,w.perColumn,w.start,w.assemble,w.lock,w.end,w.crownX,w.crownY,w.crownZ,w.radius,roster?w.members:new int[0],w.route.clone(),w.landings.clone(),w.kind,w.currentPhase,w.groupEnds.clone(),w.centerX,w.centerY,w.centerZ,w.orientation,w.direction,w.centerSec,w.fallbackReason,w.helix,w.completed.toLongArray());
     }
 
 
@@ -376,9 +376,9 @@ public final class AllayStormManager {
         float now=clockSeconds(tick),radius=32,orientation=(AllayStarfall.mix(seed)&65535)*(float)(Math.PI*2/65536);
         Vec3 from=new Vec3(rt.chaseX,ServerConfig.stormChaseY,rt.chaseZ);
         Wave w=new Wave(nextAttackId(rt),seed,target.getUUID(),StormIdentity.of(level,data).epoch(),tick,
-            new AllayStarfall.Selection(1,8192,roster),5,now,(float)from.x,(float)from.y-8,(float)from.z,AllayStormData.vortexRadius(data.count),
+            new AllayStarfall.Selection(1,AllayDome.MAX_MEMBERS,roster),5,now,(float)from.x,(float)from.y-8,(float)from.z,AllayStormData.vortexRadius(data.count),
             new float[]{(float)from.x,(float)from.y,(float)from.z,x,y,z});
-        w.kind=StormAttack.DOME;w.radius=radius;w.groupEnds=new int[]{8192};w.orientation=orientation;
+        w.kind=StormAttack.DOME;w.radius=radius;w.groupEnds=new int[]{AllayDome.MAX_MEMBERS};w.orientation=orientation;
         w.centerX=x;w.centerY=y;w.centerZ=z;w.centerSec=now;
         w.assemble=w.start+(float)Math.max(4,(from.distanceTo(new Vec3(x,y,z))+1.15*AllayStormData.vortexRadius(data.count)+32)/12+4);
         w.lock=w.assemble;w.end=w.assemble+60.25f;
@@ -856,7 +856,14 @@ public final class AllayStormManager {
     public static void gatheredAttack(com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket packet,IPayloadContext ctx){
         if(!(ctx.player() instanceof ServerPlayer player))return;var level=player.serverLevel();var data=level.getData(CMIAttachments.STORM_DATA.get());var rt=runtime(level);var track=rt.tracks.get(player.getUUID());
         if(!data.active||track==null||!track.active||!track.authority||!StormIdentity.of(level,data).equals(new StormIdentity(packet.dimension(),packet.epoch())))return;
-        for(var w:rt.waves)if(w.id==packet.id()&&StormAttack.regional(w.kind)&&!w.locked&&AllayStarfall.elapsed(clockSeconds(level.getGameTime()),w.assemble)<0){w.gathered=true;return;}
+        for(var w:rt.waves)if(w.id==packet.id()&&StormAttack.regional(w.kind)&&!w.locked&&!w.gathered&&AllayStarfall.elapsed(clockSeconds(level.getGameTime()),w.assemble)<0){
+            var ready=BitSet.valueOf(packet.ready());var eligible=BitSet.valueOf(packet.eligible());
+            if(ready.length()>w.members.length||eligible.length()>w.members.length)return;
+            for(int rank=0;rank<w.members.length;rank++)if(data.dead.get(w.members[rank])||w.completed.get(rank)){ready.clear(rank);eligible.clear(rank);}
+            if(!StormGatherRules.valid(ready,eligible,w.members.length))return;
+            for(int rank=0;rank<w.members.length;rank++)if(!ready.get(rank)&&!w.completed.get(rank)){w.completed.set(rank);w.membership.clear(w.members[rank]);rt.waveReserved.clear(w.members[rank]);}
+            w.gathered=true;return;
+        }
     }
 
     public static void completeAttack(com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket packet,IPayloadContext ctx){

@@ -8,7 +8,7 @@ import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 
 /** Server-owned, bounded rules shared with the attack packet and GPU table. */
 public final class AllayDome {
-    public static final int STARFALL=0, DOME=1, MIN_MEMBERS=16384, MAX_MEMBERS=8192, GROUPS=1;
+    public static final int STARFALL=0, DOME=1, MIN_MEMBERS=16384, MAX_MEMBERS=12288, GROUPS=1;
     public static final float MAX_ASCENT=32;
     private AllayDome() {}
     public static boolean targetRequired(int kind,boolean locked){return StormAttack.targetRequired(kind,locked);}
@@ -18,7 +18,7 @@ public final class AllayDome {
         double vertical=y<cy?cy-y:y>cy+MAX_ASCENT?y-cy-MAX_ASCENT:0;
         return horizontal*horizontal+vertical*vertical;
     }
-    public static int quota(int alive){return alive>=MIN_MEMBERS?8192:0;}
+    public static int quota(int alive){return alive>=MIN_MEMBERS?MAX_MEMBERS:0;}
     public static int[] select(int generated,BitSet dead,BitSet reserved,int quota,int seed){
         return AllayStarfall.selectExact(generated,dead,reserved,quota,seed);
     }

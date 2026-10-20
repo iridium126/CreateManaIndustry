@@ -1,8 +1,8 @@
 # Allay Storm 同步协议
 
-当前运动、8192人Dome、集结反馈与协议11布局见 [协议11交付说明](allay-storm-v11.md)。历史版本段落用于追溯。
+当前运动、12288人Dome、95%集结反馈与协议12布局见 [协议12交付说明](allay-storm-v12.md)。历史版本段落用于追溯。
 
-状态：🟡 当前核心协议11；服务端权威、持久化和客户端GPU镜像已实现，客户端与服务端须同步更新。多客户端实机与长期压力由用户验收。
+状态：🟡 当前核心协议12；服务端权威、持久化和客户端GPU镜像已实现，客户端与服务端须同步更新。多客户端实机与长期压力由用户验收。
 
 ## 1. 权威边界
 
@@ -143,3 +143,8 @@ Helix线数据包含独立单位轴向量及模板版本，避免远坐标相减
 ## 协议11（2026-10-19）
 
 Dome改为单组8192名单，包含模板版本与冻结中心。新增C2S `storm_attack_gathered(dimension,epoch,id)`，权威GPU连续三帧就绪后报告；服务器在有效身份下立即LOCK，超时中止。完成位图最多128个long，覆盖rank8191；GPU大招256 words/槽、星柱2 words/槽，共1152 words。Dome同样逐成员释放并普通归队，观察者快照和独立碰撞覆盖保留。详见 [协议11交付](allay-storm-v11.md)。
+
+
+## 协议12（2026-10-20）
+
+Dome固定12288名、模板v2。`storm_attack_gathered`携带dimension、epoch、id、ready/eligible两张rank位图；每张最多192个long。服务器验证身份、名单及 `ready*100 >= eligible*95`，冻结就绪名单；LOCK和观察者START快照原子携带completedRanks，包含未参战成员。`storm_attack_completed`同样最多192个long。GPU每大招384个uint、星柱仍2个uint，共1664 words。未生成到GPU池中的名单成员仍计入未到达；地形受阻与未知覆盖从eligible移除。详见 [协议12交付](allay-storm-v12.md)。

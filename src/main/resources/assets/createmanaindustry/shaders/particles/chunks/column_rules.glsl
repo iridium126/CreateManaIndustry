@@ -22,8 +22,9 @@ vec3 cmiColumnBloomFrom(uint b,uint rank,float age,vec3 touchdown){
  float r=cmiColumnRadius(cmiColumnArc(length(offset))+max(age,0.)*6.),a=atan(offset.y,offset.x);
  return landing+vec3(cos(a)*r,cmiColumnHeight(r),sin(a)*r);
 }
+float cmiColumnOrbitRadius(uint rank);
 float cmiColumnOrbitAngle(uint b,uint rank,float time){
- return float(rank&3u)*1.570796327+float(rank/4u)*.35+cmiStarVec(b+12u).w*.0001+.7*(time-cmiStarVec(b+4u).x);
+ return float(rank&3u)*1.570796327+float(rank/4u)*.35+cmiStarVec(b+12u).w*.0001+(6./cmiColumnOrbitRadius(rank))*(time-cmiStarVec(b+4u).x);
 }
 float cmiColumnOrbitRadius(uint rank){return .9+.3*float(rank/4u)/15.;}
 vec3 cmiColumnGatherAt(uint b,uint rank,float time){
@@ -32,14 +33,14 @@ vec3 cmiColumnGatherAt(uint b,uint rank,float time){
 }
 vec3 cmiColumnGather(uint b,uint rank){return cmiColumnGatherAt(b,rank,cmiStarVec(b+4u).y);}
 vec3 cmiColumnOrbitVelocity(uint b,uint rank,float time){
- float a=cmiColumnOrbitAngle(b,rank,time),speed=.7*cmiColumnOrbitRadius(rank);
+ float a=cmiColumnOrbitAngle(b,rank,time),speed=6.;
  return vec3(-sin(a)*speed,0,cos(a)*speed);
 }
 vec3 cmiColumnDescentLocalAt(uint b,uint rank,float time,float begin){
  vec4 t=cmiStarVec(b+4u);float duration=max(t.z+cmiColumnDelay(rank)-t.y,.1),u=clamp((time-begin)/duration,0.,1.),s=cmiColumnSmooth(u);
  float first=cmiColumnOrbitAngle(b,rank,begin),last=first+.7*duration;
  last+=cmiColumnWrap(cmiColumnAngle(b,rank)-last);
- float angle=mix(first+.7*clamp(time-begin,0.,duration),last,s),r=mix(cmiColumnOrbitRadius(rank),cmiColumnRoot(rank),s);
+ float angle=mix(first+(6./cmiColumnOrbitRadius(rank))*clamp(time-begin,0.,duration),last,s),r=mix(cmiColumnOrbitRadius(rank),cmiColumnRoot(rank),s);
  vec3 top=cmiColumnGatherAt(b,rank,begin),foot=cmiColumnBloom(b,rank,0.);
  vec3 landing=cmiStarLanding(b,0u).xyz;
  return vec3(cos(angle)*r,mix(top.y-landing.y,cmiColumnHeight(cmiColumnRoot(rank)),s),sin(angle)*r);

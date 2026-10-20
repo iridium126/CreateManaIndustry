@@ -59,6 +59,7 @@
             // per frame; the scans only run on genuine embeds.
             bool insideSolid = solidAt(pos, mOrigin, slice);
             if (insideSolid) {
+                cmiTerrainClipped=true;
                 cmiContactSweepValid=false;
                 vec3 escDir = vec3(0.0);
                 float escDist = 0.0;
@@ -142,9 +143,10 @@
                     float sx = vel.x * sdt;
                     if (sx != 0.0) {
                         float probe = sx + (sx > 0.0 ? marginXZ : -marginXZ);
-                        if (solidAt(pos + vec3(probe, 0.0, 0.0), mOrigin, slice))
+                        if (solidAt(pos + vec3(probe, 0.0, 0.0), mOrigin, slice)){
+                            cmiTerrainClipped=true;
                             vel.x = 0.0;
-                        else
+                        }else
                             pos.x += sx;
                     }
                     float sy = vel.y * sdt;
@@ -167,6 +169,7 @@
                                     || solidAt(pos + vec3(0.0, sy + marginYUp, 0.0), mOrigin, slice);
                         }
                         if (blockedY) {
+                            cmiTerrainClipped=true;
                             vel.y = 0.0;
                             if (sy < 0.0) {
                                 landed = true;
@@ -183,9 +186,10 @@
                     float sz = vel.z * sdt;
                     if (sz != 0.0) {
                         float probe = sz + (sz > 0.0 ? marginXZ : -marginXZ);
-                        if (solidAt(pos + vec3(0.0, 0.0, probe), mOrigin, slice))
+                        if (solidAt(pos + vec3(0.0, 0.0, probe), mOrigin, slice)){
+                            cmiTerrainClipped=true;
                             vel.z = 0.0;
-                        else
+                        }else
                             pos.z += sz;
                     }
                     if (landed && collideMode > 1.5)

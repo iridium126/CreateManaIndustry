@@ -17,6 +17,7 @@ uint cmiStarMember(float identity){return (uint(identity+.5)&262143u)-1u;}
 uint cmiStarAssignment(float identity){uint member=cmiStarMember(identity);return uStarfallEnabled&&member<131072u?cmiStarWord(16u+member):0u;}
 int cmiStarClaim(float identity,float time){
  uint a=cmiStarAssignment(identity);if(a==0u)return -1;uint slot=cmiStarSlot(a),b=cmiStarBase(slot);
+ float kind=cmiStarVec(b+20u).x;if(kind>.5&&kind<1.5&&cmiStarWord(2u)==0u)return -1;
  time=cmiStarTime(b,time);vec4 meta=cmiStarVec(b),times=cmiStarVec(b+4u);return meta.x>.5&&meta.y<2.5&&time>=times.x&&time<=times.w?int(slot):-1;
 }
 float cmiStarCarry(int slot,float time){uint b=cmiStarBase(uint(slot));time=cmiStarTime(b,time);vec4 t=cmiStarVec(b+4u);return min(clamp((time-t.x)/.25,0.,1.),clamp((t.w-time)/.25,0.,1.));}
@@ -24,12 +25,12 @@ float cmiStarTier(int slot){return cmiStarVec(cmiStarBase(uint(slot))+16u).x;}
 bool cmiDome(uint b){float kind=cmiStarVec(b+20u).x;return kind>.5&&kind<1.5;}
 #pragma cmi_include chunks/helix_rules.glsl
 uint cmiMajorRank(uint a){uint b=cmiStarBase(cmiStarSlot(a));return cmiStarRank(a)+(cmiHelix(b)?cmiStarGroup(a)*2048u:0u);}
-const uint CMI_COMPLETIONS=721344u,CMI_COMPLETION_WORDS=1152u,CMI_GATHER_STREAK=722496u,CMI_GATHER_COUNTS=853568u;
-uint cmiCompletionOffset(uint slot){return slot<4u?slot*256u:1024u+(slot-4u)*2u;}
+const uint CMI_COMPLETIONS=721344u,CMI_COMPLETION_WORDS=1664u,CMI_GATHER_STREAK=723008u,CMI_GATHER_COUNTS=854080u,CMI_GATHER_READY=854096u,CMI_GATHER_ELIGIBLE=855632u,CMI_GATHER_BLOCKED=857168u;
+uint cmiCompletionOffset(uint slot){return slot<4u?slot*384u:1536u+(slot-4u)*2u;}
 float cmiDomePhase(uint b,uint group,float time){vec4 t=cmiStarVec(b+4u);return cmiStarVec(b).y>2.5||time>t.w?6.:cmiStarVec(b+20u).y<3.||time<t.z?1.:4.;}
 const uint CMI_DOME_DATA=205552u;
 vec4 cmiDomeRecord(uint a){return cmiStarVec(CMI_DOME_DATA+4u+cmiMajorRank(a)*4u);}
-float cmiDomeMemberPhase(uint a,float time){uint b=cmiStarBase(cmiStarSlot(a));float phase=cmiDomePhase(b,0u,time);vec4 r=cmiDomeRecord(a);return phase==4.&&r.y+max(0.,time-cmiStarVec(b+4u).z)*6.>=r.z?6.:phase;}
+float cmiDomeMemberPhase(uint a,float time){uint b=cmiStarBase(cmiStarSlot(a));float phase=cmiDomePhase(b,0u,time);vec4 r=cmiDomeRecord(a);return phase==4.&&max(0.,time-cmiStarVec(b+4u).z)>=r.z?6.:phase;}
 float cmiAttackCarry(float identity,float time){
  int slot=cmiStarClaim(identity,time);if(slot<0)return 0.;uint b=cmiStarBase(uint(slot));
  if(cmiColumn(b))return 0.;

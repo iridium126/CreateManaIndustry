@@ -6,8 +6,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class AllayDomeTest {
  @Test void fixedCountThresholdAndIdentityGroups(){
-  assertEquals(0,AllayDome.quota(16383));assertEquals(8192,AllayDome.quota(16384));
-  assertArrayEquals(new int[]{8192},AllayDome.groups(8192));assertEquals(0,AllayDome.group(new int[]{8192},8191));assertEquals(-1,AllayDome.group(new int[]{8192},8192));assertEquals(32,AllayDome.radius(8192));
+  assertEquals(0,AllayDome.quota(16383));assertEquals(12288,AllayDome.quota(16384));
+  assertArrayEquals(new int[]{12288},AllayDome.groups(12288));assertEquals(0,AllayDome.group(new int[]{12288},12287));assertEquals(-1,AllayDome.group(new int[]{12288},12288));assertEquals(32,AllayDome.radius(12288));
  }
  @Test void sharedReservationsDeathsAndUndersize(){
   BitSet dead=new BitSet(),reserved=new BitSet();dead.set(0,20);
