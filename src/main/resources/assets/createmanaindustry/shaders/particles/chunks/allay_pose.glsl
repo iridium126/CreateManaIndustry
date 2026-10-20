@@ -255,7 +255,7 @@ mat4 cmiAllayAttackPartTransform(float age,float seed,float identity,vec3 positi
   float heading=angle+1.570796327*(1.-max(cmiColumnSmooth(u),carry));yaw=atan(-cos(heading),sin(heading));
  }
  if(helix&&carry>0.){uint b=cmiStarBase(uint(slot));float time=cmiStarTime(b,uTimeSec);
-  if(cmiHelixPhase(b,time)!=4.||length(velocity.xz)<.05){float angle=cmiHelixHeading(b,time);yaw=atan(-cos(angle),sin(angle));}
+  if(cmiHelix(b)&&(cmiHelixPhase(b,time)!=4.||length(velocity.xz)<.05)){float angle=cmiHelixHeading(b,time);yaw=atan(-cos(angle),sin(angle));}
   // Arm pose only; a whole-body tilt would invalidate the 1.4m body/wing clearance.
  }return transform;
 }

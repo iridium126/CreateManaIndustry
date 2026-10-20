@@ -16,6 +16,7 @@
     // Only WORLD-frame acceleration leaves this block: the collision sweep
     // below still owns the final position move.
     float cmiStormFrameCap=max(stormA.w,.5);
+    bool cmiDomeFollowing=false;vec3 cmiDomeFollowingPoint=vec3(0);
     if (!corpse && stormA.x > 0.5) {
         // ----- typhoon: world-frame servo onto the circulating arm home point
         vec3 anchor = emitters.u[hb + 19u].xyz;
@@ -65,6 +66,7 @@
             if(assignment!=0u){
                 uint slot=cmiStarSlot(assignment),b=cmiStarBase(slot);
                 if(cmiHelix(b)||cmiDome(b))roll=0.;
+                uint member=cmiStarMember(p0.w);if((cmiHelix(b)||cmiDome(b))&&starStateRead.words[member*2u]==uint(cmiStarVec(b).x+.5)&&(starStateRead.words[member*2u+1u]&255u)>=6u){phase=6u;waveEngaged=false;}
                 if(phase==6u){uint rank=cmiColumnAssignment(assignment)?cmiStarRank(assignment):cmiMajorRank(assignment);atomicOr(starStateWrite.words[CMI_COMPLETIONS+cmiCompletionOffset(slot)+rank/32u],1u<<(rank&31u));}
             }
             if(waveEngaged){target=attackTarget;vT=attackVelocity;}
@@ -96,15 +98,26 @@
         }
         // separation + player repulsion, world space.
         // Same visit budget as the boids sweep had.
-        float separationRadius=STORM_SEP_R;if(waveEngaged&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))separationRadius=1.4;}
+        uint domeAssignment=uStarfallEnabled?cmiStarAssignment(p0.w):0u;
+        bool domeMember=waveEngaged&&domeAssignment!=0u&&cmiDome(cmiStarBase(cmiStarSlot(domeAssignment)));
+        bool domeFlow=domeMember&&cmiStarPhase(domeAssignment,uTimeSec)==4.;
+        bool domeGather=domeMember&&!domeFlow;
+        vec3 domePreviousPoint=pos,domePreviousVelocity=vel;
+        if(domeFlow)cmiDomeSample(domeAssignment,uTimeSec-uDt,domePreviousPoint,domePreviousVelocity);
+        // Certified channels already separate members of this attack. The
+        // ordinary grid remains the sole runtime fallback for actual deviations,
+        // moving terrain, other attacks and ordinary returning storm members.
+        bool domeOnPath=domeFlow&&cmiStarTime(cmiStarBase(cmiStarSlot(domeAssignment)),uTimeSec)-cmiStarVec(cmiStarBase(cmiStarSlot(domeAssignment))+4u).z>=1.25&&distance(pos,domePreviousPoint)<.02;
+        float separationRadius=STORM_SEP_R;if(waveEngaged&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))separationRadius=domeMember?.45:1.4;}
         vec3 sepW = vec3(0.0);
         int sepVisits = 0;
         bool sepBudgetGone = false;
         ivec3 pc = ivec3(floor(pos / CELL_SIZE));
-        for (int ox = -1; ox <= 1 && !sepBudgetGone; ox++)
-        for (int oy = -1; oy <= 1 && !sepBudgetGone; oy++)
-        for (int oz = -1; oz <= 1 && !sepBudgetGone; oz++) {
-            ivec3 c3 = pc + ivec3(ox, oy, oz);
+        for (int x = 0; x < 3 && !sepBudgetGone; x++)
+        for (int y = 0; y < 3 && !sepBudgetGone; y++)
+        for (int z = 0; z < 3 && !sepBudgetGone; z++) {
+            ivec3 offset=domeMember?ivec3(x==0?0:x==1?1:-1,y==0?0:y==1?1:-1,z==0?0:z==1?1:-1):ivec3(x-1,y-1,z-1);
+            ivec3 c3 = pc + offset;
             uint hcell = (uint(c3.x) * 92837111u ^ uint(c3.y) * 689287499u ^ uint(c3.z) * 283923481u)
                     & (GRID_TABLE - 1u);
             int sN = grid.heads[int(hcell)];
@@ -118,8 +131,17 @@
                 if (j == int(idx))
                     continue;
                 vec3 op = readBuf.data[uint(j) * 4u].xyz;
-                vec3 d = pos - op;
+                vec3 d = pos-op;
                 float d2 = dot(d, d);
+                if(d2>=separationRadius*separationRadius)continue;
+                if(domeOnPath){
+                    uint otherAssignment=cmiStarAssignment(readBuf.data[uint(j)*4u].w);
+                    if(otherAssignment!=0u&&cmiStarSlot(otherAssignment)==cmiStarSlot(domeAssignment)){
+                        uint otherMember=cmiStarMember(readBuf.data[uint(j)*4u].w);
+                        if(otherMember<131072u&&(starStateRead.words[otherMember*2u+1u]&0x40000000u)!=0u&&starStateRead.words[otherMember*2u]==starStateWrite.words[cmiStarMember(p0.w)*2u])continue;
+                    }
+                }
+                if(d2<=1e-8){d=cmiStormSeparationDelta(d,cmiStarMember(p0.w),cmiStarMember(readBuf.data[uint(j)*4u].w));d2=dot(d,d);}
                 if (d2 < separationRadius * separationRadius && d2 > 1e-8) {
                     float dl = sqrt(d2);
                     sepW += d * ((separationRadius - dl) / (dl * separationRadius));
@@ -149,8 +171,22 @@
         // servo onto the co-rotating home point, plus the world-space terms,
         // hand ONE acceleration to the integrator
         vec3 aW = (target - pos) * STORM_VORTEX_K + (vT - vel) * STORM_VORTEX_C + sepW + repW;
-        bool domeFlow=waveEngaged&&uStarfallEnabled&&cmiDome(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.;
-        if(domeFlow){vel=vT+(target-pos)*4.+sepW;float flowSpeed=length(vel);if(flowSpeed>.000001)vel*=6./flowSpeed;}else if(columnEngaged)vel=vT;else vel += aW * uDt;
+        if(domeFlow){
+            uint member=cmiStarMember(p0.w),a=cmiStarAssignment(p0.w),b=cmiStarBase(cmiStarSlot(a)),j=CMI_DOME_JOIN+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u,id=uint(cmiStarVec(b).x+.5);
+            bool fresh=starStateRead.words[j]!=id;vec3 offset=vec3(0),delta=vec3(0);float started;
+            if(fresh){offset=pos-domePreviousPoint;delta=vel-domePreviousVelocity;started=uTimeSec-uDt;}else{offset=vec3(uintBitsToFloat(starStateRead.words[j+1u]),uintBitsToFloat(starStateRead.words[j+2u]),uintBitsToFloat(starStateRead.words[j+3u]));delta=vec3(uintBitsToFloat(starStateRead.words[j+4u]),uintBitsToFloat(starStateRead.words[j+5u]),uintBitsToFloat(starStateRead.words[j+6u]));started=uintBitsToFloat(starStateRead.words[j+7u]);}
+            starStateWrite.words[j]=id;for(uint k=0u;k<3u;k++){starStateWrite.words[j+1u+k]=floatBitsToUint(offset[k]);starStateWrite.words[j+4u+k]=floatBitsToUint(delta[k]);}starStateWrite.words[j+7u]=floatBitsToUint(started);
+            float age=clamp(cmiStarTime(b,uTimeSec)-cmiStarTime(b,started),0.,1.),h=1.-3.*age*age+2.*age*age*age,g=age-2.*age*age+age*age*age;
+            target+=offset*h+delta*g;vT+=offset*(-6.*age+6.*age*age)+delta*(1.-4.*age+3.*age*age);
+            cmiDomeFollowing=domeOnPath;cmiDomeFollowingPoint=target;vel=(target-pos)/max(uDt,.0001)+sepW*.5;float speed=length(vel);vel=speed>.000001?vel*(6./speed):normalize(vT)*6.;
+        }else if(domeGather){
+            // Bounded interception of a moving ring; a same-speed tail chase never catches it.
+            uint a=cmiStarAssignment(p0.w),b=cmiStarBase(cmiStarSlot(a));vec4 ring=cmiDomeRing(a);vec3 center=cmiDomeCenter(b,uTimeSec)+vec3(0,ring.y-.3,0);
+            float phi=ring.z+cmiStarVec(b+20u).z+6.*(cmiStarTime(b,uTimeSec-uDt)-cmiStarVec(b+4u).x)/ring.x;float lo=0.,hi=(distance(pos,center)+ring.x)/6.+.05;
+            for(int k=0;k<10;k++){float mid=(lo+hi)*.5;float angle=phi+6.*mid/ring.x;vec3 future=center+vec3(cos(angle),0,sin(angle))*ring.x;if(distance(pos,future)>6.*mid)lo=mid;else hi=mid;}
+            float angle=phi+6.*max(hi,uDt)/ring.x;vec3 future=center+vec3(cos(angle),0,sin(angle))*ring.x,desired=future-pos+sepW*.04;
+            float speed=length(desired);if(speed>.000001)desired*=6./speed;else desired=vT;vel=desired;
+        }else if(columnEngaged)vel=vT;else vel += aW * uDt;
         float spdV = length(vel);
         if (spdV > spMaxV)
             vel *= spMaxV / spdV;

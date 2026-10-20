@@ -28,8 +28,10 @@ uint cmiMajorRank(uint a){uint b=cmiStarBase(cmiStarSlot(a));return cmiStarRank(
 const uint CMI_COMPLETIONS=721344u,CMI_COMPLETION_WORDS=1664u,CMI_GATHER_STREAK=723008u,CMI_GATHER_COUNTS=854080u,CMI_GATHER_READY=854096u,CMI_GATHER_ELIGIBLE=855632u,CMI_GATHER_BLOCKED=857168u;
 uint cmiCompletionOffset(uint slot){return slot<4u?slot*384u:1536u+(slot-4u)*2u;}
 float cmiDomePhase(uint b,uint group,float time){vec4 t=cmiStarVec(b+4u);return cmiStarVec(b).y>2.5||time>t.w?6.:cmiStarVec(b+20u).y<3.||time<t.z?1.:4.;}
-const uint CMI_DOME_DATA=205552u;
-vec4 cmiDomeRecord(uint a){return cmiStarVec(CMI_DOME_DATA+4u+cmiMajorRank(a)*4u);}
+const uint CMI_DOME_DATA=205552u,CMI_DOME_JOIN=988240u;
+vec4 cmiDomeRing(uint a){return cmiStarVec(CMI_DOME_DATA+8u+cmiMajorRank(a)*8u);}
+uint cmiDomeMappedRank(uint a){uint b=cmiStarBase(cmiStarSlot(a)),rank=cmiMajorRank(a);vec4 ring=cmiDomeRing(a),r=cmiStarVec(CMI_DOME_DATA+4u+rank*8u);float dt=cmiStarVec(b+4u).z-cmiStarVec(b+4u).x,shift=floor((6.*dt/ring.x)*ring.w/6.28318530718+.5);return uint(r.w)+uint(mod(float(rank)-r.w+shift,ring.w));}
+vec4 cmiDomeRecord(uint a){return cmiStarVec(CMI_DOME_DATA+4u+cmiDomeMappedRank(a)*8u);}
 float cmiDomeMemberPhase(uint a,float time){uint b=cmiStarBase(cmiStarSlot(a));float phase=cmiDomePhase(b,0u,time);vec4 r=cmiDomeRecord(a);return phase==4.&&max(0.,time-cmiStarVec(b+4u).z)>=r.z?6.:phase;}
 float cmiAttackCarry(float identity,float time){
  int slot=cmiStarClaim(identity,time);if(slot<0)return 0.;uint b=cmiStarBase(uint(slot));

@@ -703,6 +703,11 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.uploadUniforms(ParticleRuntime.this.programs.update());
             ParticleRuntime.this.gpu.dispatch(0);
             GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+            if(StarfallGpuBuffers.INSTANCE.hasDome()){
+                com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(ParticleRuntime.this.programs.domeContacts());
+                DomeBodyContacts.run(ParticleRuntime.this.programs.grid(),ParticleRuntime.this.programs.domeContacts(),ParticleRuntime.this.gpu.particleReadBufferId(),ParticleRuntime.this.gpu.counterBufferId(ParticleRuntime.this.lastGoodSlot),ParticleRuntime.this.gpu.particleWriteBufferId(),ParticleRuntime.this.gpu.counterBufferId(slot),ParticleRuntime.this.gpu.gridBufferId(),AllayStormRuntime.INSTANCE.timeSec(),dt,playerCount,StarfallGpuBuffers.INSTANCE);
+                ParticleRuntime.this.gpu.bindParticleRead(0);ParticleRuntime.this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,ParticleRuntime.this.lastGoodSlot);
+            }
             // uKillEmit is retired at the SUCCESS TAIL (after the pool swap), not
             // here: an aborted frame discards its output pool, so a stop whose
             // kill was consumed by this dispatch must refire next frame or the

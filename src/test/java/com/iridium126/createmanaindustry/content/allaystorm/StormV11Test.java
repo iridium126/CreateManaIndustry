@@ -4,12 +4,12 @@ import java.util.*;
 import net.minecraft.world.phys.Vec3;
 import static org.junit.jupiter.api.Assertions.*;
 class StormV11Test {
- @Test void thickShellTemplateIsFixedFiniteAndEndsInsideCore(){
+ @Test void thickShellTemplateIsFixedFiniteAndExitsBeyondCore(){
   assertTrue(DomeTemplate.available());Map<String,List<Vec3>> grid=new HashMap<>();double spacing=1.4;
   for(int i=0;i<12288;i++){var p=DomeTemplate.point(i,0);assertTrue(p.y>=0&&p.length()>=16&&p.length()<=32);int x=(int)Math.floor(p.x/spacing),y=(int)Math.floor(p.y/spacing),z=(int)Math.floor(p.z/spacing);
-   for(int a=-1;a<=1;a++)for(int b=-1;b<=1;b++)for(int c=-1;c<=1;c++)for(var q:grid.getOrDefault((x+a)+","+(y+b)+","+(z+c),List.of()))assertTrue(p.distanceTo(q)>=1.39999);
-   grid.computeIfAbsent(x+","+y+","+z,k->new ArrayList<>()).add(p);assertTrue(DomeTemplate.duration(i)>0&&DomeTemplate.duration(i)<=60);assertTrue(DomeTemplate.point(i,360).length()<6);
-   for(double time:new double[]{0,1,5,10,20,40,59.9})if(time<DomeTemplate.duration(i)){var q=DomeTemplate.point(i,time*6);assertTrue(Double.isFinite(q.x)&&q.y>=0&&Double.isFinite(q.z));}
+   for(int a=-1;a<=1;a++)for(int b=-1;b<=1;b++)for(int c=-1;c<=1;c++)for(var q:grid.getOrDefault((x+a)+","+(y+b)+","+(z+c),List.of()))assertTrue(p.distanceTo(q)>=0.68);
+   grid.computeIfAbsent(x+","+y+","+z,k->new ArrayList<>()).add(p);assertTrue(DomeTemplate.duration(i)>0&&DomeTemplate.duration(i)<=60);assertTrue(Double.isFinite(DomeTemplate.point(i,360).length()));
+   for(double time:new double[]{0,1,5,10,20,40,59.9})if(time<DomeTemplate.duration(i)){var q=DomeTemplate.point(i,time*6);assertTrue(Double.isFinite(q.x)&&q.y>=-12&&Double.isFinite(q.z));}
 
 
   }

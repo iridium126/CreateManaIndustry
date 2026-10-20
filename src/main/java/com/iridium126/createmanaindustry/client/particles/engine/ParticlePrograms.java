@@ -55,6 +55,9 @@ public final class ParticlePrograms {
 
     private static String buildPrelude() {
         StringBuilder sb = new StringBuilder(768);
+        sb.append("#define CMI_DOME_CONTACT_DELTA ").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_CONTACT_DELTA).append("u\n");
+        sb.append("#define CMI_DOME_CONTACT_QUEUE ").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_CONTACT_QUEUE).append("u\n");
+        sb.append("#define CMI_DOME_CONTACT_ARGS ").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_CONTACT_ARGS).append("u\n");
         sb.append("// ==== CMI particle engine common constants ====\n");
         sb.append("// ==== GENERATED from ParticleBuffers by ParticlePrograms -- edit THERE, not here ====\n");
         sb.append("#define BIND_IDENTITY ").append(ParticleBuffers.IDENTITY_BB).append('\n');
@@ -149,6 +152,8 @@ public final class ParticlePrograms {
     private int radixScatter;
     private int capture;
     private int grid;           // boids spatial-hash build (storm swarms)
+    private int domeContacts;
+    public int domeContacts(){return domeContacts;}
     private int hit;            // per-frame crosshair hit query (melee targeting)
     private int damagePrepare;
     public int damagePrepare(){return damagePrepare;}
@@ -193,6 +198,7 @@ public final class ParticlePrograms {
             candidate.radixScatter = compute.applyAsInt(GLSL_DIR + "radix_scatter.comp");
             candidate.capture = compute.applyAsInt(GLSL_DIR + "capture.comp");
             candidate.grid = compute.applyAsInt(GLSL_DIR + "gridbuild.comp");
+            candidate.domeContacts=compute.applyAsInt(GLSL_DIR+"dome_contacts.comp");
             candidate.hit = compute.applyAsInt(GLSL_DIR + "hit.comp");
             candidate.damagePrepare=compute.applyAsInt(GLSL_DIR+"damage_prepare.comp");
             candidate.stormPos = compute.applyAsInt(GLSL_DIR + "stormpos.comp");
@@ -217,6 +223,7 @@ public final class ParticlePrograms {
             this.radixScatter = candidate.radixScatter; candidate.radixScatter = 0;
             this.capture = candidate.capture; candidate.capture = 0;
             this.grid = candidate.grid; candidate.grid = 0;
+            this.domeContacts = candidate.domeContacts; candidate.domeContacts = 0;
             this.hit = candidate.hit; candidate.hit = 0;
             this.damagePrepare=candidate.damagePrepare;candidate.damagePrepare=0;
             this.stormPos = candidate.stormPos; candidate.stormPos = 0;
@@ -243,7 +250,7 @@ public final class ParticlePrograms {
                 && this.texturedRender != 0 && this.modelRender != 0
                 && this.keygen != 0 && this.radixHist != 0 && this.radixScan != 0
                 && this.radixScatter != 0 && this.capture != 0 && this.grid != 0
-                && this.hit != 0 && this.damagePrepare!=0 && this.stormPos != 0 && this.waveContact != 0 && this.ringReserve!=0;
+                && this.hit != 0 && this.damagePrepare!=0 && this.stormPos != 0 && this.waveContact != 0 && this.ringReserve!=0 && this.domeContacts!=0;
     }
 
     public int reset() {
@@ -391,13 +398,14 @@ public final class ParticlePrograms {
         for (int p : new int[] {
                 this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
-                this.grid, this.hit, this.damagePrepare,this.stormPos, this.waveContact, this.ringReserve,
+                this.grid, this.hit, this.damagePrepare,this.stormPos, this.waveContact, this.ringReserve,this.domeContacts,
                 this.render, this.texturedRender, this.modelRender }) {
             if (p != 0){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(p);}
         }
         this.prepareDispatch = this.reset = this.update = this.emit = this.blockEmit = this.keygen = 0;
         this.radixHist = this.radixScan = this.radixScatter = this.capture = 0;
         this.grid = this.hit = this.damagePrepare = this.stormPos = this.waveContact = this.ringReserve = 0;
+        this.domeContacts=0;
         this.render = this.texturedRender = this.modelRender = 0;
     }
 }

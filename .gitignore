@@ -49,3 +49,4 @@ logs/
 docs/benchmarks/**
 !docs/benchmarks/**/
 !docs/benchmarks/**/*.md
+scripts/allaystorm/__pycache__/

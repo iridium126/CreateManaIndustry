@@ -20,8 +20,11 @@ public final class StormMajorAttackGameTests {
     private static void set(Object object,String name,Object value){try{var f=object.getClass().getDeclaredField(name);f.setAccessible(true);f.set(object,value);}catch(ReflectiveOperationException e){throw new IllegalStateException(e);}}
     private static Object call(String name,Object... args){try{for(var method:AllayStormManager.class.getDeclaredMethods())if(method.getName().equals(name)&&method.getParameterCount()==args.length){method.setAccessible(true);return method.invoke(null,args);}throw new NoSuchMethodException(name);}catch(ReflectiveOperationException e){throw new IllegalStateException(e);}}
     private record Scene(Object wave,FakePlayer player,AllayStormData data,Object runtime){}
-    @SuppressWarnings("unchecked")
     private static Scene launch(GameTestHelper h,int kind,int members){
+        return launch(h,kind,members,null);
+    }
+    @SuppressWarnings("unchecked")
+    private static Scene launch(GameTestHelper h,int kind,int members,com.google.gson.JsonObject evidence){
         var level=h.getLevel();var ground=h.absolutePos(new BlockPos(2,30,2));level.setBlockAndUpdate(ground,Blocks.STONE.defaultBlockState());level.setBlockAndUpdate(ground.offset(4,4,0),Blocks.STONE.defaultBlockState());
         var player=new FakePlayer(level,new GameProfile(UUID.randomUUID(),"StormMajor"));player.setGameMode(GameType.SURVIVAL);player.setPos(Vec3.atBottomCenterOf(ground.above()));
         var data=new AllayStormData();data.active=true;data.count=members;data.stormSeed=123;data.createdAtGameTime=level.getGameTime();level.setData(com.iridium126.createmanaindustry.CMIAttachments.STORM_DATA.get(),data);
@@ -44,6 +47,7 @@ public final class StormMajorAttackGameTests {
         h.assertTrue(start.event()==0&&start.members().length>0,"START omitted roster");
         float lock=(float)field(wave,kind==StormAttack.HELIX?"assemble":"lock");
         var identity=StormIdentity.of(level,data);var eligibleMask=new BitSet();eligibleMask.set(0,start.members().length);var readyMask=new BitSet();readyMask.set(0,(start.members().length*95+99)/100-1);readyMask.set(start.members().length-1);
+        if(evidence!=null){var gson=new com.google.gson.Gson();readyMask=BitSet.valueOf(gson.fromJson(evidence.get("ready"),long[].class));eligibleMask=BitSet.valueOf(gson.fromJson(evidence.get("eligible"),long[].class));lock=start.startSec()+evidence.get("gatherSeconds").getAsFloat();}
         var context=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?player:null);
         AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),start.waveId(),readyMask.toLongArray(),eligibleMask.toLongArray()),context);
         h.assertTrue((boolean)field(wave,"gathered"),"95 percent GPU feedback did not pass real handler");
@@ -141,6 +145,40 @@ public final class StormMajorAttackGameTests {
         var scene=launch(h,StormAttack.DOME,16384);var player=new FakePlayer(h.getLevel(),new GameProfile(UUID.randomUUID(),"DomeVictim")){@Override public boolean isInvulnerableTo(net.minecraft.world.damagesource.DamageSource source){return false;}};try{var protection=net.minecraft.server.level.ServerPlayer.class.getDeclaredField("spawnInvulnerableTime");protection.setAccessible(true);protection.setInt(player,0);}catch(ReflectiveOperationException e){throw new IllegalStateException(e);}player.setGameMode(GameType.SURVIVAL);player.setPos(scene.player().position());var tracks=(Map<UUID,Object>)field(scene.runtime(),"tracks");tracks.put(player.getUUID(),tracks.get(scene.player().getUUID()));
         var ctx=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?player:null);var identity=StormIdentity.of(h.getLevel(),scene.data());int id=(int)field(scene.wave(),"id");var members=(int[])field(scene.wave(),"members");
         var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),0,members[0],(float)player.getX()+1,(float)player.getY(),(float)player.getZ());float before=player.getHealth();AllayStormManager.handleWaveContact(packet,ctx);h.assertTrue(player.getHealth()<before,"Other active player was not hit");float after=player.getHealth();AllayStormManager.handleWaveContact(packet,ctx);h.assertTrue(player.getHealth()==after,"Duplicate Dome contact damaged twice");AllayStormManager.handleWaveContact(new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),0,members[1],packet.relX(),packet.relY(),packet.relZ()),ctx);h.assertTrue(player.getHealth()==after,"Dome bypassed vanilla invulnerability");h.succeed();
+    }
+
+    @GameTest(template="storm_combat_test",timeoutTicks=100) public static void domeTemplateCrossesStationaryCenterAndSettlesOnce(GameTestHelper h){
+        var scene=launch(h,StormAttack.DOME,16384);var wave=scene.wave();var victim=new FakePlayer(h.getLevel(),new GameProfile(UUID.randomUUID(),"DomeCenter")){@Override public boolean isInvulnerableTo(net.minecraft.world.damagesource.DamageSource source){return false;}};
+        try{var f=net.minecraft.server.level.ServerPlayer.class.getDeclaredField("spawnInvulnerableTime");f.setAccessible(true);f.setInt(victim,0);}catch(ReflectiveOperationException e){throw new IllegalStateException(e);}
+        double cx=(float)field(wave,"centerX"),cy=(float)field(wave,"centerY"),cz=(float)field(wave,"centerZ");victim.setGameMode(GameType.SURVIVAL);victim.setPos(cx,cy-.9,cz);
+        @SuppressWarnings("unchecked") var tracks=(Map<UUID,Object>)field(scene.runtime(),"tracks");tracks.put(victim.getUUID(),tracks.get(scene.player().getUUID()));
+        Vec3 hit=null;double best=100;
+        for(double t=0;t<DomeTemplate.duration(0);t+=.025){var point=DomeTemplate.point(0,t*6).add(cx,cy-.3,cz);double distance=point.distanceTo(victim.position().add(0,.5,0));if(distance<best){best=distance;hit=point;}}
+        h.assertTrue(best<1.6,"Reference core channel never contacts stationary center player");
+        var ctx=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?victim:null);
+        var identity=StormIdentity.of(h.getLevel(),scene.data());int member=((int[])field(wave,"members"))[0],id=(int)field(wave,"id");var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),0,member,(float)hit.x,(float)hit.y,(float)hit.z);
+        float health=victim.getHealth();AllayStormManager.handleWaveContact(packet,ctx);h.assertTrue(victim.getHealth()<health,"Stationary center candidate did not settle damage");health=victim.getHealth();AllayStormManager.handleWaveContact(packet,ctx);h.assertTrue(victim.getHealth()==health,"Center contact applied twice");h.succeed();
+    }
+
+    @GameTest(template="storm_combat_test",timeoutTicks=100) public static void domeProductionGpuFeedbackLocksAndDamagesOnce(GameTestHelper h){
+        String path=System.getProperty("cmi.dome.evidence");
+        if(path==null){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.info("Dome GPU replay not requested; use -PdomeEvidence=build/dome-v13/gpu-evidence.json");h.succeed();return;}
+        try{
+            var evidence=com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(java.nio.file.Path.of(path))).getAsJsonObject();
+            try(var in=DomeTemplate.class.getResourceAsStream("/data/createmanaindustry/dome-template-v3.bin")){
+                var hash=java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(in.readAllBytes()));h.assertTrue(hash.equals(evidence.get("sha256").getAsString()),"GPU evidence belongs to a different template");
+            }
+            var scene=launch(h,StormAttack.DOME,16384,evidence);var victim=new FakePlayer(h.getLevel(),new GameProfile(UUID.randomUUID(),"GpuDomeCenter")){@Override public boolean isInvulnerableTo(net.minecraft.world.damagesource.DamageSource source){return false;}};victim.setGameMode(GameType.SURVIVAL);
+            @SuppressWarnings("unchecked") var tracks=(Map<UUID,Object>)field(scene.runtime(),"tracks");tracks.put(victim.getUUID(),tracks.get(scene.player().getUUID()));
+            var invulnerable=net.minecraft.server.level.ServerPlayer.class.getDeclaredField("spawnInvulnerableTime");invulnerable.setAccessible(true);invulnerable.setInt(victim,0);
+            double x=(float)field(scene.wave(),"centerX"),y=(float)field(scene.wave(),"centerY"),z=(float)field(scene.wave(),"centerZ");victim.setPos(x,y-.9,z);
+            var hit=evidence.getAsJsonArray("contact");int rank=hit.get(0).getAsInt(),member=((int[])field(scene.wave(),"members"))[rank];h.assertTrue(!((BitSet)field(scene.wave(),"completed")).get(rank),"Actual GPU contact came from an unready member");
+            var identity=StormIdentity.of(h.getLevel(),scene.data());int id=(int)field(scene.wave(),"id");
+            var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),(float)field(scene.wave(),"lock")+hit.get(4).getAsFloat(),member,(float)x+hit.get(1).getAsFloat(),(float)y+hit.get(2).getAsFloat(),(float)z+hit.get(3).getAsFloat());
+            var context=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?victim:null);
+            float health=victim.getHealth();AllayStormManager.handleWaveContact(packet,context);h.assertTrue(victim.getHealth()<health,"Production GPU center contact did not settle server damage");health=victim.getHealth();AllayStormManager.handleWaveContact(packet,context);h.assertTrue(victim.getHealth()==health,"Production GPU contact settled twice");
+            h.succeed();
+        }catch(Exception failure){throw new IllegalStateException("Dome GPU evidence replay failed",failure);}
     }
 
 }

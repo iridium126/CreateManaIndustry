@@ -71,7 +71,7 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
     Runnable bindings=()->{bind(0,q.pool);bind(1,output);bind(3,q.counter);bind(5,q.emit);bind(11,meta);bind(13,grid);bind(14,q.previous);bind(16,damage);bind(18,players);bind(19,correction);bind(21,map);};
     bindings.run();put(q.counter,bytes(16));dispatch(update,64);
     var cold=read(output,n*64);for(int i=0;i<n;i++)check(Float.isFinite(cold.getFloat(i*64)),"column spawn nonfinite");
-    var gathered=bytes(StarfallGpuBuffers.STATE_WORDS*4);
+    var gathered=bytes(StarfallGpuBuffers.DOME_JOIN*4);
     for(int member=0;member<n;member++){int r=(StarfallGpuBuffers.COLUMN_STATE+member*16)*4;gathered.putInt(r,100+member/64).putFloat(r+4,25).putFloat(r+8,4).putFloat(r+12,-1);int arc=(StarfallGpuBuffers.COLUMN_ARC+member*StarfallGpuBuffers.COLUMN_ARC_WORDS)*4;gathered.putInt(arc+43*4,4).putFloat(arc+45*4,(float)StarfallColumnRules.root(member%64)).putFloat(arc+46*4,(float)(((member%64*27)&63)*Math.PI/32+123*.0001f));}
     put(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,27),gathered);put(q.counter,bytes(16));dispatch(update,64);
     // Touchdown is latched immediately, but the exact transition frame has no elapsed bloom motion.
@@ -82,7 +82,7 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
     // Report against a different local player near a column in the upper half of the slot domain.
     gpu.bind(contact,true);bind(1,output);bind(3,q.counter);bind(5,q.emit);bind(22,hits);bind(30,stamps);ui(contact,"uLocalWaveMask",16);f(contact,"uTimeSec",25.05f);f(contact,"uDt",.05f);
     var c=column(63);GL41.glProgramUniform3f(contact,GL20.glGetUniformLocation(contact,"uLocalPlayerPos"),c.x(),c.y()+.5f,c.z());
-    int stateBuffer=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var state=read(stateBuffer,StarfallGpuBuffers.STATE_WORDS*4);
+    int stateBuffer=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var state=read(stateBuffer,StarfallGpuBuffers.DOME_JOIN*4);
     state.putInt((262528+63)*4,127);put(stateBuffer,state);
     state.putInt((262528+63)*4,128);put(stateBuffer,state);dispatch(contact,64);int count=read(hits,4).getInt(0),contactCount=0,sounds=0;var events=read(hits,4+count*24);
     for(int event=0;event<count;event++){if(events.getFloat(4+event*24)<0)sounds++;else contactCount++;}
@@ -112,7 +112,7 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
     check(read(q.counter,16).getInt(0)==n,"benchmark did not process all 4096 members");
     // Isolate one-time arc construction from the steady bloom kernel above.
     var initial=bytes(n*64);for(int i=0;i<n;i++){var coldColumn=column(i/64);var top=StarfallColumnRules.gather(new Vec3(coldColumn.x(),coldColumn.gatherY(),coldColumn.z()),i%64,coldColumn.seed());particle(initial,i,2,(float)top.x,(float)top.z,20);initial.putFloat(i*64+4,(float)top.y).putFloat(i*64+12,i+1).putFloat(i*64+16,6).putFloat(i*64+56,AllayStormWaves.memberSeed(1,i));}
-    put(q.pool,initial);put(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,27),bytes(StarfallGpuBuffers.STATE_WORDS*4));double[] coldTimes=new double[120];
+    put(q.pool,initial);put(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,27),bytes(StarfallGpuBuffers.DOME_JOIN*4));double[] coldTimes=new double[120];
     for(int sample=-40;sample<120;sample++){put(q.counter,bytes(16));GL15.glBeginQuery(GL33.GL_TIME_ELAPSED,query);dispatch(update,64);GL15.glEndQuery(GL33.GL_TIME_ELAPSED);double elapsed=GL33.glGetQueryObjectui64(query,GL15.GL_QUERY_RESULT)/1e6;if(sample>=0)coldTimes[sample]=elapsed;}
     var initialization=List.of("columns,members,arc_init_gpu_p50_ms,arc_init_gpu_p95_ms","64,4096,"+p(coldTimes,.5)+","+p(coldTimes,.95));
     Files.write(Path.of(System.getProperty("cmi.benchmark.output","build/benchmarks/current"),"starfall-arc-initialization.csv"),initialization);initialization.forEach(System.out::println);
@@ -183,9 +183,9 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
    }
    try(var census=new Fixture(n,0,0)){
     put(census.emit,header);gpu.bind(census.reset,true);gpu.bind(census.keygen,true);census.build(particles,n);
-    int state=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var counts=read(state,StarfallGpuBuffers.STATE_WORDS*4);
+    int state=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var counts=read(state,StarfallGpuBuffers.DOME_JOIN*4);
     for(int slot=0;slot<64;slot++)check(counts.getInt((262528+slot)*4)==128,"high-slot circle census");
-    census.build(particles,n-1);check(read(state,StarfallGpuBuffers.STATE_WORDS*4).getInt((262528+63)*4)==127,"partial last-column census");
+    census.build(particles,n-1);check(read(state,StarfallGpuBuffers.DOME_JOIN*4).getInt((262528+63)*4)==127,"partial last-column census");
     com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(census.reset);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(census.keygen);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(census.prepare);
    }
   }finally{for(int id:new int[]{counter,pool,cmd,h})GL15.glDeleteBuffers(id);retire(reserve,emit);}

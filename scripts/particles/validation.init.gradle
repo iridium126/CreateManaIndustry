@@ -97,6 +97,12 @@ allprojects {
                 workingDir = project.projectDir
             }
         }
+        tasks.register('validateParticleProgramsGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/ParticleProgramLifecycleGpuValidation.java'
+            workingDir = project.projectDir
+        }
         tasks.register('validateHexGpu', JavaExec) {
             dependsOn tasks.named('classes'), 'validateHexSharedGpu'
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
@@ -164,6 +170,8 @@ allprojects {
             dependsOn 'compileStarfallHarness'
             classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'StormV10Benchmark'
+            if (project.hasProperty('stormFixedInput')) systemProperty 'cmi.storm.fixedInput', project.property('stormFixedInput').toString()
+            if (project.hasProperty('stormCoherent')) systemProperty 'cmi.storm.coherent', 'true'
             args '--dome'
             workingDir = project.projectDir
         }
@@ -179,10 +187,32 @@ allprojects {
             mainClass = 'StarfallColumnGpuValidation'
             workingDir = project.projectDir
         }
+        [30, 60, 144, 240].each { rate ->
+            tasks.register("validateDome${rate}Hz", JavaExec) {
+                dependsOn 'compileStarfallHarness'
+                classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+                mainClass = 'DomeGpuValidation'
+                systemProperty 'cmi.dome.step', (1d/rate).toString()
+                systemProperty 'cmi.dome.lifecycleOnly', 'true'
+                workingDir = project.projectDir
+            }
+        }
+        tasks.register('validateDomeIrregular', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'DomeGpuValidation'
+            systemProperty 'cmi.dome.step', (1d/60).toString()
+            systemProperty 'cmi.dome.lifecycleOnly', 'true'
+            systemProperty 'cmi.dome.jitter', 'true'
+            workingDir = project.projectDir
+        }
         tasks.register('validateDomeGpu', JavaExec) {
             dependsOn 'compileStarfallHarness'
             classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'DomeGpuValidation'
+            if (project.hasProperty('domeGeometry')) systemProperty 'cmi.dome.geometryOnly','true'
+            if (project.hasProperty('domeJitter')) systemProperty 'cmi.dome.jitter','true'
+            if (project.hasProperty('domeFps')) {systemProperty 'cmi.dome.step', (1d/project.property('domeFps').toDouble()).toString();systemProperty 'cmi.dome.lifecycleOnly','true'}
             if (project.hasProperty('domeBenchmark')) args '--benchmark'
             workingDir = project.projectDir
         }

@@ -140,6 +140,7 @@ layout(std430,binding=27) readonly buffer StarStateRead {uint words[];} starStat
 layout(std430,binding=28) buffer StarStateWrite {uint words[];} starStateWrite;
 #pragma cmi_include chunks/particle_identity.glsl
 #pragma cmi_include chunks/allay_storm.glsl
+#pragma cmi_include chunks/storm_separation.glsl
 
 #pragma cmi_include chunks/collision_queries.glsl
 
@@ -264,6 +265,8 @@ void main() {
     if (!swept)
         pos += vel * uDt;
     if(cmiStormVoxel&&cmiStormMissing)cmiContactSweepValid=false;
+    if(cmiDomeFollowing&&cmiContactSweepValid&&!cmiTerrainClipped&&distance(pos,cmiDomeFollowingPoint)<.02)
+        starStateWrite.words[cmiStarMember(p0.w)*2u+1u]|=0x40000000u;
     if(cmiColumnExit&&cmiContactSweepValid)vel=cmiColumnExitVelocity;
     age += uDt;
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){float limit=cmiAttackSpeed(p0.w,uTimeSec,max(stormA.w,.5))*uDt+.01;if(!cmiContactSweepValid||distance(pos,p0.xyz)>limit)starStateWrite.words[member*2u+1u]|=0x80000000u;}}
@@ -293,6 +296,16 @@ void main() {
                 else{
                     if(distance(pos,target)<=.4&&distance(vel,motion)<=1.)streak=same?min(3u,starStateRead.words[CMI_GATHER_STREAK+member]+1u):1u;
                     if(streak==3u){atomicAdd(starStateWrite.words[counts],1u);atomicOr(starStateWrite.words[CMI_GATHER_READY+word],bit);}
+                }
+            }else if(cmiDome(b)&&phase==4.){
+                blockedSeconds=cmiTerrainClipped?blockedSeconds+uDt:0.;
+                if(blockedSeconds>=.5){
+                    // World geometry can invalidate a baked channel. Leave it
+                    // without a damaging depenetration or a stalled attack.
+                    starStateWrite.words[member*2u+1u]=6u|0x80000000u;
+                    uint word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u;
+                    atomicOr(starStateWrite.words[CMI_COMPLETIONS+word],1u<<(cmiMajorRank(a)&31u));
+                    roll=0.;
                 }
             }else blockedSeconds=0.;
             starStateWrite.words[CMI_GATHER_BLOCKED+member]=floatBitsToUint(blockedSeconds);starStateWrite.words[CMI_GATHER_STREAK+member]=streak;

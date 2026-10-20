@@ -380,7 +380,7 @@ public final class AllayStormManager {
             new float[]{(float)from.x,(float)from.y,(float)from.z,x,y,z});
         w.kind=StormAttack.DOME;w.radius=radius;w.groupEnds=new int[]{AllayDome.MAX_MEMBERS};w.orientation=orientation;
         w.centerX=x;w.centerY=y;w.centerZ=z;w.centerSec=now;
-        w.assemble=w.start+(float)Math.max(4,(from.distanceTo(new Vec3(x,y,z))+1.15*AllayStormData.vortexRadius(data.count)+32)/12+4);
+        w.assemble=w.start+(float)Math.max(4,(from.distanceTo(new Vec3(x,y,z))+1.15*AllayStormData.vortexRadius(data.count)+32)/6+8);
         w.lock=w.assemble;w.end=w.assemble+60.25f;
         for(int rank=0;rank<roster.length;rank++){w.memberColumns.put(roster[rank],0);rt.waveReserved.set(roster[rank]);}
         rt.waves.add(w);rt.stats.count(StormAttackStats.Reason.LAUNCHED);

@@ -45,7 +45,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
  static void completionReadback(){
   int p=compile("wavecontact.comp");try(var gpu=new StarfallGpuBuffers()){
    gpu.rebuild(StarfallColumnGpuValidation.columns());gpu.prepare(1);gpu.bind(p,true);
-   int stateBuffer=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var state=bytes(StarfallGpuBuffers.STATE_WORDS*4);state.putInt((StarfallGpuBuffers.COMPLETIONS+StarfallGpuBuffers.completionOffset(67)+1)*4,-1);put(stateBuffer,state);
+   int stateBuffer=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var state=bytes(StarfallGpuBuffers.DOME_JOIN*4);state.putInt((StarfallGpuBuffers.COMPLETIONS+StarfallGpuBuffers.completionOffset(67)+1)*4,-1);put(stateBuffer,state);
    int pool=buffer(bytes(64)),counter=buffer(bytes(16).putInt(0,1)),out=buffer(bytes(4+16384*24));bind(1,pool);bind(3,counter);bind(22,out);ui(p,"uLocalWaveMask",31);f(p,"uTimeSec",25);dispatch(p,1);var rows=read(out,28);
    check(rows.getInt(0)==1&&rows.getFloat(4)==-2&&rows.getFloat(8)==163,"high column completion identity");check(rows.getFloat(12)==1&&rows.getFloat(16)==65535&&rows.getFloat(20)==65535,"32-bit completion bitmap truncated");
    gpu.prepare(2);gpu.bind(p,true);put(out,bytes(4+16384*24));dispatch(p,1);check(read(out,4).getInt(0)==0,"completion accumulator survived a new frame");
@@ -63,7 +63,7 @@ public class HelixGpuValidation extends DomeGpuValidation {
     current.putFloat(n*64+52,0);old.putFloat((n+1)*64+12,9999); // corpse and stale map
     int pool=buffer(current),previous=buffer(old),count=buffer(bytes(16).putInt(0,cap)),prevCount=buffer(bytes(16).putInt(0,cap)),header=buffer(headers()),out=buffer(bytes(4+16384*24)),map=buffer(bytes(cap*4)),stampsA=buffer(bytes(cap*16)),stampsB=buffer(bytes(cap*16));
     var mapping=bytes(cap*4);for(int i=0;i<cap;i++)mapping.putInt(i*4,i+1);put(map,mapping);bind(0,previous);bind(1,pool);bind(3,count);bind(5,header);bind(14,prevCount);bind(21,map);bind(22,out);bind(30,stampsA);
-    stage(gpu,helix(512,17,2,3,false),p);gpu.helixReady(0,true);gpu.prepare(1);gpu.bind(p,true);int stateBuffer=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var state=bytes(StarfallGpuBuffers.STATE_WORDS*4);for(int i=0;i<cap;i++)state.putInt(i*8,17).putInt(i*8+4,4);put(stateBuffer,state);
+    stage(gpu,helix(512,17,2,3,false),p);gpu.helixReady(0,true);gpu.prepare(1);gpu.bind(p,true);int stateBuffer=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var state=bytes(StarfallGpuBuffers.DOME_JOIN*4);for(int i=0;i<cap;i++)state.putInt(i*8,17).putInt(i*8+4,4);put(stateBuffer,state);
     GL41.glProgramUniform4fv(p,GL20.glGetUniformLocation(p,"uWaveTarget"),new float[]{0,.5f,0,17,0,0,0,0,0,0,0,0,0,0,0,0});GL41.glProgramUniform3f(p,GL20.glGetUniformLocation(p,"uLocalPlayerPos"),0,.5f,0);ui(p,"uLocalWaveMask",1);f(p,"uDt",.25f);f(p,"uTimeSec",12.5f);
     dispatch(p,(cap+63)/64);check(read(out,4).getInt(0)==n,"low-FPS grazing sweep lost contact or required rings");var report=read(out,28);check(Math.abs(report.getFloat(12))<.0001,"sweep intersection wrong");check(Math.abs(report.getFloat(24)-12.375f)<.001,"sweep sample time wrong");
     put(out,bytes(4+16384*24));dispatch(p,(cap+63)/64);check(read(out,4).getInt(0)==0,"duplicate helix contact");bind(30,stampsB);dispatch(p,(cap+63)/64);check(read(out,4).getInt(0)==n,"victim B suppressed");
