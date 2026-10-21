@@ -1,11 +1,11 @@
 package com.iridium126.createmanaindustry.content.allaystorm;
 
-import java.util.ArrayList;
+import java.util.*;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-class StormClientCombatContractTest {
+class StormClientContractTest {
     @Test void candidatePrecedesSwingAndStormBranchOnlyPredictsSwing() throws Exception {
         // ServerPlayer.swing resets its attack ticker. Inspect the executed early branch without loading GL/client singletons.
         var calls=new ArrayList<String>();var swings=new ArrayList<String>();
@@ -25,4 +25,6 @@ class StormClientCombatContractTest {
         assertEquals(java.util.List.of("(Lnet/minecraft/world/InteractionHand;Z)V"),swings,"Storm prediction must bypass the packet-sending LocalPlayer overload");
         for(String forbidden:new String[]{"playLocalSound","ensureCombatEmitter","setSprinting","setDeltaMovement","causeFoodExhaustion","fireCriticalHit"})assertFalse(calls.contains(forbidden),forbidden);
     }
+ @Test void spatialPlayersAreNotTruncatedAndReuseStorage(){var grid=new com.iridium126.createmanaindustry.client.allaystorm.StormPlayerGrid();float[] xyz=new float[300];for(int i=0;i<100;i++){xyz[i*3]=i%2==0?-i*7:i*7;xyz[i*3+1]=i;xyz[i*3+2]=i*2;}grid.build(xyz,100);var data=grid.data();int table=(int)data[400],found=0;var seen=new BitSet();for(int h=0;h<table;h++){int head=(int)data[(101+h)*4+3];while(head>0){assertFalse(seen.get(head-1));seen.set(head-1);found++;head=(int)data[(head-1)*4+3];}}assertEquals(100,found);grid.build(xyz,100);assertSame(data,grid.data());}
+ @Test void slotLayoutHasNoOverlap(){assertEquals(0,com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.completionOffset(0));assertEquals(1152,com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.completionOffset(3));assertEquals(1536,com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.completionOffset(4));assertEquals(1662,com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.completionOffset(67));}
 }

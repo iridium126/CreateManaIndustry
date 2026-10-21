@@ -16,9 +16,6 @@
 | [gpu-runtime-client-acceptance.md](gpu-runtime-client-acceptance.md) | 用户执行的隔离客户端启动、全功能检查清单与性能反馈格式 | 🚧 |
 | [hexcasting-trickster-interop-review-2026-10-16.md](hexcasting-trickster-interop-review-2026-10-16.md) | 全部整改条目、自动回归、真实专服重启与性能对照；客户端待用户验收 | 🟡 |
 | [hexcasting-trickster-interop-dev.md](hexcasting-trickster-interop-dev.md) | 来源、根预算、编解码及 adapter 契约，真实客户端验收清单 | 🟡 |
-| [gpu-helix-2026-10-11.md](gpu-helix-2026-10-11.md) | 双螺旋贯击、协议 4、区域扫掠与离屏验证 | 🟡 |
-| [gpu-dome-2026-10-11.md](gpu-dome-2026-10-11.md) | 天穹合围实现、区域伤害、协议 3 与离屏验证 | 🟡 |
-| [gpu-starfall-2026-10-11.md](gpu-starfall-2026-10-11.md) | 星冠落阵、128 粒子圆环、同代身份阶段、Iris 与性能证据 | 🟡 |
 | [particle-engine-dev.md](particle-engine-dev.md) | GPU 粒子池、发射器、排序、碰撞、Hexcasting 与 shaderpack | 🟡 |
 | [gpu-hex-shared-takeover-2026-10-10.md](gpu-hex-shared-takeover-2026-10-10.md) | Hex 世界/阴影/玩家预览/施法 UI 独立 GPU 后端、预算、基准与用户验收 | 🟡 |
 | [gpu-package-model-pool-decision-2026-10-10.md](gpu-package-model-pool-decision-2026-10-10.md) | 包裹/MODEL 分池历史决策与测量范围 | 🟡 |
@@ -41,7 +38,8 @@
 | [allay-dimension-voxy-lod-integration-plan.md](allay-dimension-voxy-lod-integration-plan.md) | Voxy 远景接入路线 | 📐 |
 | [allay-dimension-implementation-review-fix-plan.md](allay-dimension-implementation-review-fix-plan.md) | 未关闭的实现评审问题 | ⚠ |
 | [allay-storm-sync.md](allay-storm-sync.md) | Allay Storm 服务端权威与客户端 GPU 同步 | 🟡 |
-| [allay-storm-ai.md](allay-storm-ai.md) | Allay Storm 波次、追击和伤害规则 | 🟡 |
+| [allay-storm-ai.md](allay-storm-ai.md) | Allay Storm 当前攻击、参数与配置 | 🟡 |
+| [allay-storm-validation.md](allay-storm-validation.md) | 资源重建、单元／GPU／服务端验证和用户验收 | 🟡 |
 | [allay-particle-vanilla-alignment.md](allay-particle-vanilla-alignment.md) | 原版粒子视觉对齐范围和验收项 | 🟡 |
 | [g-self-design.md](g-self-design.md) | G-self/Iris shaderpack 的 MODEL 粒子接入 | 🟡 |
 | [trickster-stock-ticker-fix.md](trickster-stock-ticker-fix.md) | 晶结组件相等性与实际仓库出库回归 | ✅ |

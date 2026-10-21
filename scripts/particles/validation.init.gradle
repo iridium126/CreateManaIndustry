@@ -144,7 +144,7 @@ allprojects {
         }
         tasks.register('compileStarfallHarness', JavaCompile) {
             dependsOn tasks.named('classes')
-            source = files('scripts/particles/ModelPopulationGpuValidation.java', 'scripts/particles/StarfallGpuValidation.java', 'scripts/particles/DomeGpuValidation.java', 'scripts/particles/DomePoseGpuValidation.java', 'scripts/particles/HelixGpuValidation.java', 'scripts/particles/StarfallColumnGpuValidation.java', 'scripts/particles/StormCollisionGpuValidation.java', 'scripts/particles/StormV10Benchmark.java', 'scripts/particles/StormV11GatherValidation.java')
+            source = files('scripts/particles/ModelPopulationGpuValidation.java', 'scripts/particles/StarfallGpuValidation.java', 'scripts/particles/DomeGpuValidation.java', 'scripts/particles/DomePoseGpuValidation.java', 'scripts/particles/HelixGpuValidation.java', 'scripts/particles/StarfallColumnGpuValidation.java', 'scripts/particles/StormCollisionGpuValidation.java', 'scripts/particles/StormBenchmark.java')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             destinationDirectory = layout.buildDirectory.dir('starfall-harness')
             options.release = 21
@@ -163,16 +163,10 @@ allprojects {
             mainClass = 'StormCollisionGpuValidation'
             workingDir = project.projectDir
         }
-        tasks.register('validateStormV11Gather', JavaExec) {
+        tasks.register('benchmarkStormDome', JavaExec) {
             dependsOn 'compileStarfallHarness'
             classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
-            mainClass = 'StormV11GatherValidation'
-            workingDir = project.projectDir
-        }
-        tasks.register('validateStormV11Load', JavaExec) {
-            dependsOn 'compileStarfallHarness'
-            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
-            mainClass = 'StormV10Benchmark'
+            mainClass = 'StormBenchmark'
             if (project.hasProperty('stormFixedInput')) systemProperty 'cmi.storm.fixedInput', project.property('stormFixedInput').toString()
             if (project.hasProperty('stormProfile')) systemProperty 'cmi.storm.profile', 'true'
             if (project.hasProperty('stormCoherent')) systemProperty 'cmi.storm.coherent', 'true'
@@ -186,18 +180,18 @@ allprojects {
             tasks.register(taskName, JavaExec) {
                 dependsOn 'compileStarfallHarness'
                 classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
-                mainClass = 'StormV10Benchmark'
+                mainClass = 'StormBenchmark'
                 args '--dome'
                 systemProperty 'cmi.storm.coherent', mode == 'coherent' ? 'true' : 'false'
                 workingDir = project.projectDir
-                doFirst { systemProperty 'cmi.benchmark.output', file("${project.findProperty('domePerformanceDirectory') ?: 'build/dome-v14/performance-shortlist'}/${mode}${run}").absolutePath }
+                doFirst { systemProperty 'cmi.benchmark.output', file("${project.findProperty('domePerformanceDirectory') ?: 'build/benchmarks/dome-performance'}/${mode}${run}").absolutePath }
             }
         }}
         tasks.register('validateDomePerformance') { dependsOn domePerformanceTasks }
-        tasks.register('validateStormV10Load', JavaExec) {
+        tasks.register('benchmarkStormHelix', JavaExec) {
             dependsOn 'compileStarfallHarness'
             classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
-            mainClass = 'StormV10Benchmark'
+            mainClass = 'StormBenchmark'
             workingDir = project.projectDir
         }
         tasks.register('validateStarfallColumnGpu', JavaExec) {

@@ -13,7 +13,7 @@ class AllayDomeTest {
   BitSet dead=new BitSet(),reserved=new BitSet();dead.set(0,20);
   int[] a=AllayDome.select(10000,dead,reserved,2000,42);assertEquals(2000,a.length);
   for(int member:a){assertFalse(dead.get(member));assertFalse(reserved.get(member));reserved.set(member);}
-  int[] b=AllayStarfall.select(10000,dead,reserved,4,512,55).members();assertEquals(2048,b.length);
+  int[] b=AllayStarfall.selectExact(10000,dead,reserved,64,55);assertEquals(64,b.length);
   for(int member:b){assertFalse(reserved.get(member));reserved.set(member);}
   int[] c=AllayDome.select(10000,dead,reserved,10000,56);assertEquals(10000-20-a.length-b.length,c.length);
   reserved.set(0,10000);assertEquals(0,AllayDome.select(10000,dead,reserved,768,0).length);

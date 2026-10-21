@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class StormMeleePacketTest {
     private final ResourceLocation dimension=ResourceLocation.parse("minecraft:overworld");
     private RegistryFriendlyByteBuf buffer(){return new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY,ConnectionType.OTHER);}
-    @Test void candidateRoundTripContainsOnlyIdentityTimeAndPosition() {
+    @Test void candidateRoundTripContainsOnlyIdentitySequenceAndPosition() {
         var p=new ServerboundStormHitPacket(dimension,Long.MIN_VALUE,131071,9000,100000.123,128.5,-100000.321);
         var b=buffer();try{ServerboundStormHitPacket.STREAM_CODEC.encode(b,p);assertEquals(p,ServerboundStormHitPacket.STREAM_CODEC.decode(b));assertFalse(b.isReadable());}finally{b.release();}
         assertEquals(7,ServerboundStormHitPacket.class.getRecordComponents().length);
@@ -34,9 +34,5 @@ class StormMeleePacketTest {
         for(int tick=1002;tick<1012;tick++)assertTrue(attempts.claim(tick,tick));
         assertFalse(attempts.claim(1012,1012));assertTrue(attempts.claim(1020,1020));
         assertFalse(attempts.claim(1021,Long.MIN_VALUE));
-    }
-    @Test void historicalEyeUsesSampleInsteadOfArrival() {
-        var eyes=new AllayStarfall.PlayerTrail();for(int i=0;i<50;i++)eyes.record(i,i,64,0);
-        assertEquals(20,eyes.positionAt(20).x);assertNull(eyes.positionAt(0));assertNotNull(eyes.positionAt(51));assertNull(eyes.positionAt(52));
     }
 }

@@ -1,156 +1,56 @@
-# Allay Storm 同步协议
+# Allay Storm：同步与资源契约
 
-当前工作区使用核心协议14与Dome模板v4，见 [协议14实现及验收记录](allay-storm-v14.md)。上一版交付见 [协议13说明](allay-storm-v13.md)。历史版本段落用于追溯。
+当前核心协议 **14**、Dome模板 **v4**、Helix模板 **v1**。两端同步升级并重启，拒绝旧协议混连；F3+T不更新Java类。[攻击与配置](allay-storm-ai.md)和[验证入口](allay-storm-validation.md)分别维护，不保留历史协议逐版说明。
 
-状态：核心协议14（自动化验收通过，实机待用户验收）；服务端权威、持久化和客户端GPU镜像已实现，客户端与服务端须同步更新。多客户端实机与长期压力由用户验收。
+## 数据所有权与身份
 
-## 1. 权威边界
+服务端 `AllayStormData`／`AllayStormManager` 拥有风暴定义、增长、成员HP／死亡、预留、攻击计划和最终战斗结算。GPU负责位置、速度、触地、接触候选及姿态，服务端不模拟成员位置。普通位置不逐帧上传；指定authority按配置发送稀疏校正，服务端转发，其他客户端平滑应用。authority失效重新选择，旧玩家不能继续提交。
 
-服务端 `AllayStormData`/`AllayStormManager` 拥有：
+风暴身份为 `dimension + epoch`。ACTIVATE只接受客户端当前维度；UPDATE／DEACTIVATE／STOP必须匹配活动身份。换维度立即清理本地状态，旧维度服务端track只移除，不向已离开的玩家补发清理。STOP先捕获身份再清理广播；同tick重建也具有不同epoch。
 
-- storm 是否激活、anchor、seed、已生成 count；
-- growth law（final count、growth rate、创建时间）；
-- dead member 集合和受伤但未死亡成员的 HP；
-- 波次目标、伤害结算和生命周期。
+攻击另有稳定ID和名单rank，槽位可复用但不构成身份。旧完成／中止反馈不能释放新攻击成员。稳定成员身份贯穿普通运动、参战、死亡和归队，未参战导航输出保留普通盘旋目标，防止主体漂向原点。
 
-客户端 `AllayStormRuntime`/GPU 拥有高频位置、速度、姿态和绘制。成员位置不逐 tick 从服务端广播，而是由 `stormSeed + memberIdx + shared clock` 确定性重建；authority client 只上传稀疏位置校正，其他客户端接收校正并平滑应用。
+## 消息
 
-健康成员默认 20 HP；dead index 永不重新生成。storm radius 和角速度由同步的 count/seed 按同一公式推导，不作为独立状态传输。
-
-## 2. 生命周期
-
-```text
-/cmi particle allaystorm [count]
-  -> ServerLevel attachment 创建/更新
-  -> ClientboundStormStatePacket（定义、dead、dimension、epoch）
-  -> 客户端建立 GPU MODEL 粒子
-  -> growth / wave / damage / correction
-/cmi particle allaystorm stop
-  -> Server 停止并广播清理
-```
-
-重新执行命令会移动 anchor；已有 storm 的 identity/HP 语义以 `AllayStormManager` 为准。换维度、退出服务器和客户端 level change 必须清空旧 GPU pool 与 runtime，不得把旧 anchor 留在新世界。
-
-## 3. 数据包
-
-| 方向 | 包 | 作用 |
+| 方向 | 消息类（`content/allaystorm/network/`） | 当前内容与作用 |
 | --- | --- | --- |
-| S→C | `ClientboundStormStatePacket` | 初始/重连时的完整定义与稀疏状态 |
-| S→C | `ClientboundStormCenterPacket` | 当前追击中心/配置化 chase Y |
-| S→C | `ClientboundStormDamagePacket` | 按 member index 广播伤害、死亡/战斗视觉 |
-| S→C | `ClientboundStormPositionsPacket` | authority 的稀疏位置校正 |
-| S→C | `ClientboundStormWavePacket` | 天穹／双螺旋名单、目标、路径和阶段时间 |
-| S→C | `ClientboundStormColumnPacket` | 独立单柱：dimension、epoch、ID、冻结落点、集合／阶段时间和64名成员 |
-| 双向 | `StormAttackCompletedPacket` | dimension／epoch／攻击ID／成员rank完成位图，指定反馈客户端合并提交，服务端幂等确认；观察者快照补发 |
-| C→S | `ServerboundStormPositionsPacket` | authority client 的位置快照 |
-| C→S | `ServerboundStormHitPacket` | GPU 命中候选：dimension、epoch、member、attackSeq、绝对 contact.xyz；不携带伤害等战斗值 |
-| C→S | `ServerboundStormWaveContactPacket` | dimension、epoch、攻击ID、采样时间、成员及绝对位置；单柱仅绽开，其他攻击沿用各自有效阶段 |
+| S→C | `ClientboundStormStatePacket` | 生命周期、dimension／epoch、定义、增长、死亡与稀疏状态 |
+| S→C | `ClientboundStormCenterPacket` | 追击中心、authority及配置 |
+| S→C | `ClientboundStormDamagePacket` | 权威成员伤害／死亡、有限float伤害与击退、绝对double命中坐标及战斗反馈 |
+| 双向各一类 | `ServerboundStormPositionsPacket`／`ClientboundStormPositionsPacket` | authority稀疏校正及转发 |
+| S→C | `ClientboundStormWavePacket` | Helix／Dome的START、UPDATE、LOCK、ABORT；开始／观察者快照含名单，阶段更新为紧凑参数 |
+| S→C | `ClientboundStormColumnPacket` | 独立星柱身份、种子、冻结落点与集合参数、阶段时间、精确64名名单；中止紧凑发送 |
+| C→S | `StormAttackGatheredPacket` | dimension／epoch／攻击ID、ready与eligible两张rank位图，供95%就绪判定 |
+| 双向 | `StormAttackCompletedPacket` | 同身份及完成rank位图；指定客户端每game tick合并反馈，服务端幂等释放／确认 |
+| C→S | `ServerboundStormHitPacket` | 风暴身份、成员、递增attackSeq、绝对double接触点；不携带战斗值 |
+| C→S | `ServerboundStormWaveContactPacket` | 风暴／攻击身份、成员、采样秒数及绝对接触点；采样时间仅诊断 |
 
-包处理必须在主线程执行；收到的 storm/member index、count、HP、坐标范围和玩家归属都要校验。近战候选由服务端验证活动身份、活成员、有限数和递增序号，保留每tick一次／滚动20tick最多12次的有界处理；移除采样时效、历史眼位、重复距离和方块射线检查。客户端显示与点击使用最新已完成快照保存的射线及命中距离，并保留一次本地遮挡检查；伤害、暴击、击退、附魔和冷却使用服务端状态。成员近战仍沿用无成员无敌帧的既有设计，风暴对玩家的伤害遵守原版无敌帧。
+包处理在所属主线程执行，数组和资源有界。就绪／完成位图每张最多192个long，支持12288名；未到达GPU池的名单成员不能凭缺失获得就绪。服务端验证 `ready ⊆ eligible`、非空分母及 `ready×100 ≥ eligible×95`，冻结参战集合；LOCK与观察者START原子携带completedRanks（含未参战成员）。反馈丢失按同步最晚截止时间回收，本地归队不等待网络确认。
 
-## 4. 位置与 authority
+Helix同步模板版本、主体相对锚点、独立单位轴向量、阶段时间和冻结终止平面，避免远坐标相减丢精度。Dome复用START／LOCK时钟恢复流线相位，原始rank身份与循环映射通道分离。经历过集结的客户端捕获本地实际相位连续交接；新观察者按同步时钟平滑接入。重复快照不重置交接，身份失效或槽位回收清理缓存。
 
-首个激活/具备可用 GPU 读回的客户端成为 authority；服务端记录其玩家归属。authority 按 `stormCorrectionHz` 发送 near-player 成员位置，不发送全量常规 tick 数据。authority 失效后服务端重新选择并通过 state/center 重新绑定，不能继续接受旧玩家的快照。
+## 战斗信任边界
 
-客户端位置校正是 soft correction，不应瞬移成员；校正丢失时继续按确定性轨道运行。快照只携带明确的 generation/成员身份，旧快照不能覆盖新 storm。
+拾取显示和点击使用同一份最新已完成GPU快照保存的射线、身份和命中距离，不用新镜头重构旧命中点。保留一次本地遮挡检查、身份失效清理和单次消费。预测挥手不发送额外原版挥手包，避免提前重置服务端冷却。
 
-## 5. 持久化
+服务端近战仅检查活动身份、活成员、有限数、递增序号和有界处理（每tick一次、滚动20tick最多12次）；不维护眼位历史，不重复距离、时效或方块射线检查。按玩家／维度延迟复用Allay代理，调用实际版本的武器、附魔、攻击强度、暴击、击退和事件钩子；结算后统一重置冷却并广播挥手。耐久、后置效果、统计和饥饿只执行一次，伤害反馈由权威结果驱动。
 
-storm 作为每个 `ServerLevel` 的 attachment 保存。持久化字段包括 active、anchor、count、seed、growth law、创建时间、dead index 列表和稀疏 HP；位置不保存。重启后从同一 seed、count、clock 重建视觉，dead/HP 继续一致。
+区域接触信任GPU实际阶段与触地候选，服务端检查维度／epoch、攻击ID、名单／存活、有限数、未中止／释放和按玩家／成员／攻击去重，不重复历史位置、轨迹包络或地形扫描。仅Starfall实际触地展开、Helix／Dome攻击阶段允许候选；后两者距有效玩家身体中心小于6格才持剑并允许接触。调用原版hurt，保留护甲、盾牌、吸收、图腾及无敌帧；128粒子完整性只影响视觉。
 
-## 6. 配置与命令
+## GPU发布与专用碰撞
 
-服务端文件为 `config/createmanaindustry-server.toml`，相关键：
+槽0–3为大招、4–67为星柱，使用独立标记和足够位宽，不以32位活动掩码或两位槽号寻址星柱。接触按成员归属直接查询，去重按稳定成员与攻击ID存储。大招完成位图每槽384个uint、星柱每槽2个uint，总1664words。
 
-`allay_storm.stormCorrectionHz`、`stormMaxCount`、`stormGrowthPerSecond`、`stormHelixInterval`、`stormDomeInterval`、`stormStarfallInterval`、`stormStarfallChance`、`stormStarfallColumnMembers`、`stormStarfallMaxActiveColumns`、`stormWaveDamage`、`stormWaveRange`、`stormChaseY`、`stormDomeChance`、`stormDomeMemberFraction`、`stormDomeMaxMembers`、`stormHelixChance`、`stormHelixThrustSpeed`。
+参数、身份阶段与运动状态双bank提交，准备失败不发布新代；compute／原生MODEL用SSBO，Iris读取同backing的只读TBO。Dome姿态按稳定成员身份存储两个32位字，双bank按需分配最多2MiB；Iris单元15读取同代姿态，主渲染与阴影边界保存／恢复10–15单元及原纹理目标。归队保持朝向连续，剑资格不受姿态平滑延迟影响。
 
-命令（权限 2）：
+Dome v4共享五次Hermite曲线、闭合流线与离线逆弧长表；稳态不上传成员位置，不在帧内积分／Newton反解。资源后台准备、分帧上传，完整后发布；资源未就绪不得伤害。同攻击内部正常分离已烘焙，运行时只保留异常／跨攻击的一次预测接触裁剪和地形处理。
 
-```text
-/cmi particle allaystorm [count]
-/cmi particle allaystorm stop
-/cmi particle allaystorm status
-```
+主体、尸体、三种攻击和普通归队统一使用独立风暴碰撞域，不占通用粒子8槽。16³区块段位图每段512字节，空气／实心共享标记；整数纹理＋TBO页表，按需扩容，不淘汰活动需求。重叠只采集一次，范围移动增删边界，世界变更仅更新相关段；只读已加载数据，未知不能作为空气。
 
-硬上限为 131072 个成员；count 是初始数量，storm 可按 growth rate 增长至 ceiling。
+客户端所属线程采集，后台只处理不可变数字快照；默认每帧采集1ms、上传0.5ms且≤128KiB软预算。完整上传后发布页表，旧版本保留至引用帧结束。Dome覆盖中心下20格至上40格及穿出／归队；Helix包含32格尾部及扫掠，已释放成员由独立本地归队覆盖记录接管。报告请求／覆盖／未知段、显存、上传量、采集耗时及超预算，不静默回退8槽。
 
-## 7. 验证重点
+## 存档与槽位
 
-- 单客户端、双客户端和 authority 离开/重选。
-- 重启、停止/重开、换维度、退出重进。
-- 伤害、死亡广播、HP 恢复、重复 packet、越界 member index。
-- 高延迟/丢包下位置平滑，不出现旧 storm 或重复成员。
-- GPU 不可用时命令和网络状态仍安全，且不会阻塞服务端 tick。
+每维度attachment保存active、anchor、count、seed、创建时间、冻结增长定义、死亡集合和稀疏HP，不保存GPU位置。`CreationRadius`按半径恢复；长满仍保留原半径、增长率、最终规模与创建时间，确保同tick相位连续。缺失／非法增长字段以当前规模建立零增长、加载时重建相位起点，保留成员、死亡和HP，不产生NaN。
 
-星冠落阵 AI 和路径见 [allay-storm-ai.md](allay-storm-ai.md)；GPU 模型粒子见 [particle-engine-dev.md](particle-engine-dev.md)。
-
-## 协议9：当前实现（2026-10-18）
-
-核心注册版本8→9，必须同时升级两端。`storm_hit` 的原sampleTick字段改为VarLong attackSeq（从1递增），其余风暴消息字段保留。客户端已完成GPU快照不再因镜头角差／4帧读回差被拒绝，不用新镜头重构旧命中点，身份失效时清理，成功消费一次。
-
-风暴分支调用本地双参数swing预测，绕开LocalPlayer发送挥手包的单参数重载。服务端先读冷却并结算武器／附魔／事件，再重置冷却及广播挥手。Allay代理按玩家／维度延迟复用，攻击前清理临时战斗状态，离开跟踪时释放。
-
-区域接触的sampleSec保留用于诊断，不作为服务端准入条件。Starfall／Helix／Dome信任GPU实际触地和接触阶段候选；服务端验证活动维度／epoch、攻击ID、成员名单／存活、有限坐标和按玩家／成员／攻击去重，已中止或已释放攻击拒绝。不再维护玩家历史、不重复扫描地形、轨迹包络或遮挡。仍调用原版hurt处理护甲、盾牌、吸收、图腾和无敌帧。圆环128粒子完整性仅用于视觉统计，不再决定伤害资格。
-
-专用碰撞域与弧长／高斯缓存是客户端本地数据，不增加逐帧位置网络流。详见 [协议9实现与验收](allay-storm-v9.md)。以下协议4／6／7／8是历史记录，其中历史校验与旧轨迹已由本节替代。
-
-## 历史星冠 / 天穹 / 双螺旋协议（2026-10-11）
-
-核心网络注册版本从 3 升至 4，服务端与客户端需同时更新。波次包仍使用 `storm_wave`，事件分为 START / UPDATE / LOCK / ABORT；开始和新观察者快照包含完整、按显式组边界排序的身份名单，目标/路径更新与锁定仅发送紧凑参数，不重发名单。
-
-世界坐标为 float 绝对坐标；名单为有界 VarInt 身份数组，路径最多 6 点、星柱最多 32 柱、每柱最多 4096 人，校验有限数、尺寸与重复身份。代标识由持久化创建时间和 storm seed 共同生成，同 tick 重建也不共享旧事件。客户端锁定后拒绝滞后的 UPDATE。包内显式携带攻击类型和阶段；天穹使用六瓣加顶冠七组、中心、朝向、顺逆时针和同步时刻，观察者不从星冠落点数组猜测锁定状态。
-
-`storm_wave_contact` 现在包含 wave ID、64 位代标识、采样秒数、member index 和绝对 contact.xyz；不再以移动中心重构接触坐标。服务端使用有界 41 tick 位置历史接受最多两秒延迟，星冠仅对自身目标结算，天穹对冻结区域内所有接触玩家结算；按受击玩家、波次、成员去重，通过校验后才执行伤害。天穹只接受当前收拢瓣，不使用星冠圆环的准入条件。其他位置/伤害/近战包的原有坐标约定保持原样。
-
-GPU 成员归属表与参数使用双 bank，身份阶段使用同代双 bank；compute/native 使用 SSBO，Iris 模型使用同 backing 的 TBO。圆环还有客户端资源代令牌，旧圆环即使碰巧与新攻击 wave ID/slot 相同也只会淡出。帧准备失败不发布新代。天穹复用同一域，未增加固定 buffer 或 sampler；实现与证据见 [天穹合围](gpu-dome-2026-10-11.md)。
-
-客户端激活仍由现有服务端扫描维护。除风暴中心范围外，锁定天穹的固定区域也能激活/维持附近观察者；原目标离开、风暴中心移走后，区域快照和接触上报仍有效。没有新增世界监听器。
-
-HELIX=2 使用两组真实臂名单、冻结曲线和 48 点弧长表；开始/观察者补同步带名单，锁定后不更新路线。区域激活与按玩家去重也覆盖 HELIX，接触包坐标为实际扫掠交点、时间为插值采样时刻。ABORT 携带原因，碰撞未就绪或逃生搬离不伤害。数据域维持 312 words/波次及原 SSBO/TBO 绑定；就绪变化仅更新 4 字节 header。见 [双螺旋记录](gpu-helix-2026-10-11.md)。
-
-## 协议 6 与实现审查修复（2026-10-18）
-
-该次修复将核心注册版本从5升级至 **6**（当前为9）；客户端和服务端必须一起更新，旧协议不能混连。
-
-- `storm_state` 的四种动作均携带 dimension + 64 位 epoch。ACTIVATE 只匹配客户端当前维度，其他动作同时匹配当前活动身份；离开旧维度的服务端 track 直接移除，不向新维度发送清理。
-- `storm_hit` 只发送命中候选，不再发送伤害、击退、暴击或粒子参数。位置采用绝对 double 世界坐标，时间采用原始 game tick，避免移动中心重构偏移。服务端保留 41 tick 眼部位置，接受最近 40 tick 和最多提前 2 tick 的采样；距离上限为服务端交互距离 + 0.5 格，检测方块遮挡，同一采样不能重放，同玩家每 tick 最多一次、滚动 20 tick 最多 12 次。
-- `storm_damage` 携带 dimension + epoch、绝对 double 命中位置，以及服务端计算的有限 float 伤害/击退。攻击者也从确认包生成战斗粒子，伤害音效由服务端发送；客户端只预测挥手。请求必须先于挥手发出，因为该版本 ServerPlayer.swing 会重置攻击冷却。服务端调用真实物品及 NeoForge 攻击/暴击钩子，耐久、附魔后置效果、统计和饥饿消耗仅在结算路径执行一次。
-- NBT 的 CreationRadius 按半径恢复；成长完成不丢弃原冻结增长参数。非法/缺失增长参数按保存规模冻结并在加载时重新建立相位起点，成员身份、死亡集合和 HP 保留。
-- 客户端槽表优先回收过期槽、使用空槽，满槽时按编号回收 ABORT 槽；不驱逐有效攻击。未回收的中止波次仍淡出 0.25 秒。替换时重新建立客户端表现与反馈身份。
-
-这次没有新增服务端成员运动模拟：服务端仍不能独立证明客户端所报成员实际处于命中点；该候选信任边界保留。稀疏位置校正包的格式不属于本次修改范围。
-
-自动验证与用户客户端验收步骤见 [四项修复记录](allay-storm-review-fixes.md)。
-
-## 单柱星雨协议7（2026-10-18）
-
-新增 `storm_column` 独立生命周期消息，携带dimension／epoch，开始与观察者同步含64名精确成员，中止为紧凑事件。4个大招槽与64个星柱槽独立；GPU归属和圆环身份编码扩展，所有原生／阴影／Iris路径读取同代提交，取消按32位掩码寻址星柱。
-
-接触包新增dimension。单柱是冻结区域攻击，触发者离开不取消，附近每名活动玩家报告自己的接触。仅GPU确认实际集合、触地及绽开，碰撞可用且预警圈完整时产生候选；服务端验证名单、存活、时间、4格接触边界、抛物线包络、历史玩家位置、地形和遮挡，再按玩家／成员／柱去重结算。没有增加服务端成员位置模拟。
-
-详细迁移及验收见 [单柱星雨](starfall-columns.md)。以上历史协议4／6段落保留供排查旧版本，不代表当前Starfall调度。
-
-## 环绕星柱协议8（2026-10-18）
-
-核心版本由7升至8，两端同步升级。消息字段布局保留，新的环绕轨迹、每成员0.06秒名义错峰与接触时间窗口必须一致，拒绝旧版混连。GPU在实际接地后立即开始该成员的独立抛物面展开，不等待名义抵达时刻；服务端以集合高度和6格／秒速度给出物理最早接触下界，继续验证2秒采样时效、地形、4格范围及抛物面。GPU实际位置与触地仍为既定候选信任边界。
-
-连续渲染时钟和稳定MODEL飞行姿态仅用于客户端运动与表现，不新增成员位置同步、服务端成员位置模拟或额外GPU状态域。每成员记录仍为16 words，触地点占用原保留字段。
-
-## 协议10（2026-10-19）
-
-Helix线数据包含独立单位轴向量及模板版本，避免远坐标相减造成方向抖动，并验证固定4096名单、64格长度与32格外包络；targetArc表示冻结终止平面的轴向距离，支持任意三维轴线。完成位图不含位置，按身份和成员当前归属幂等释放；客户端本地立即交给普通归队，服务端反馈丢失以同步最晚截止时间回收。独立调度、0.5秒短回流及配置迁移详见 [协议10交付](allay-storm-v10.md)。
-
-## 协议11（2026-10-19）
-
-Dome改为单组8192名单，包含模板版本与冻结中心。新增C2S `storm_attack_gathered(dimension,epoch,id)`，权威GPU连续三帧就绪后报告；服务器在有效身份下立即LOCK，超时中止。完成位图最多128个long，覆盖rank8191；GPU大招256 words/槽、星柱2 words/槽，共1152 words。Dome同样逐成员释放并普通归队，观察者快照和独立碰撞覆盖保留。详见 [协议11交付](allay-storm-v11.md)。
-
-
-## 协议12（2026-10-20）
-
-Dome固定12288名、模板v2。`storm_attack_gathered`携带dimension、epoch、id、ready/eligible两张rank位图；每张最多192个long。服务器验证身份、名单及 `ready*100 >= eligible*95`，冻结就绪名单；LOCK和观察者START快照原子携带completedRanks，包含未参战成员。`storm_attack_completed`同样最多192个long。GPU每大招384个uint、星柱仍2个uint，共1664 words。未生成到GPU池中的名单成员仍计入未到达；地形受阻与未知覆盖从eligible移除。详见 [协议12交付](allay-storm-v12.md)。
-
-## 协议13（2026-10-20）
-
-Dome模板升级v3，旧客户端拒绝混连。复用START的startSec和LOCK的lockSec传递环流相位原点与交接时钟，不新增逐成员位置包。每条模板记录由4扩至8个float：曲线基址、节点数、时长、环起始rank，以及环半径、高度、初相位、人数。LOCK按环循环映射通道，名单身份和完成反馈仍使用原始rank。GPU曲线每节点16字节，保存量化位置、累计弧长、10位切向速度和毫秒曲线参数，使用C1 Hermite及弧长查表推进。同次攻击内部的时空分离烘焙进最终解码轨迹；候选池网格每帧只构建一次，实际接触进入紧凑异常队列，正常跟随者跳过内部求解，空队列为零工作组；局部修正受本帧6×dt运动球和地形约束，不产生伤害扫掠。交接和异常队列状态仅在首次Dome时扩容。
-
-95%反馈、每槽384个uint、每包192个long及completedRanks保持不变。Dome交接缓存以大招槽／原始rank及攻击ID隔离，不占用星柱缓存。少数参考通道允许低于冻结中心平面，地形仍走专用碰撞域，覆盖保留中心下方12格余量。详见 [协议13交付](allay-storm-v13.md)。
+槽位先回收过期、再用空槽，满槽按编号复用ABORT淡出槽，不驱逐有效攻击。替换完整清理名单、圆环、声音、碰撞就绪和反馈身份；有容量保留0.25秒淡出，旧圆环由资源代令牌隔离。

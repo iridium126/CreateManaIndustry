@@ -358,7 +358,7 @@ Hex 的业务代码可从 `client/particles/hex`、`engine/HexSpecs` 收敛到 `
 | --- | --- | --- |
 | `particle-engine-performance.md` | 百万级排序内核已有实测优化；CPU 上传／解绑固定成本已下降 | 当前游戏 FPS 或新架构收益 |
 | `benchmarks/model-population-hit-fix-2026-10-10/summary.md` | 大混合池稀少 MODEL 的同代活动索引有效；密集场景也有维护成本 | MODEL 必须完全拆模拟池 |
-| `gpu-helix-2026-10-11.md` | 固定输入下 HELIX 更新／接触／列表准备有测量 | 完整 Boss 绘制、服务器 A*、实际光影过绘成本 |
+| `allay-storm-validation.md` | 固定输入下 HELIX 更新／接触／列表准备有测量 | 完整 Boss 绘制、服务器 A*、实际光影过绘成本 |
 | `benchmarks/package-environment-2026-10-15/README.md` | 普通空气／地面夹具符合原门槛 | 环境捕获、网络、特殊环境及 200 tick/s 已验收 |
 | `gpu-package-model-pool-decision-2026-10-10.md` | 拆完整池没有得到 CPU 收益证明；紧凑包裹快照可独立研究 | 当前活动索引仍未实现，或分域必定省显存 |
 | `gpu-hex-shared-takeover-2026-10-10.md` | 独立 Hex 图案后端及四种接管上下文已有实现／离线验证；源描述可缓存 | 接管全部 Hex 绘制，或整个 Minecraft 玩家收集／UI 布局／光影成本已包含在后端计时中 |
