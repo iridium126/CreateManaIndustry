@@ -52,7 +52,7 @@ public final class StormCollisionRuntime implements AutoCloseable {
             minX=Math.min(minX,p.centerX()-attackPad);maxX=Math.max(maxX,p.centerX()+attackPad);
             minZ=Math.min(minZ,p.centerZ()-attackPad);maxZ=Math.max(maxZ,p.centerZ()+attackPad);
             minY=Math.min(minY,p.column()?p.landings()[1]-12:p.centerY()-12);maxY=Math.max(maxY,p.crownY()+20);
-            if(p.dome())maxY=Math.max(maxY,p.centerY()+40);
+            if(p.dome()){maxY=Math.max(maxY,p.centerY()+40);minY=Math.min(minY,p.centerY()-20);}
             float[] route=p.helixAttack()?p.helix().controls():p.path();
             for(int i=0;i<route.length;i+=3){minX=Math.min(minX,route[i]-attackPad);maxX=Math.max(maxX,route[i]+attackPad);minY=Math.min(minY,route[i+1]-attackPad);maxY=Math.max(maxY,route[i+1]+attackPad);minZ=Math.min(minZ,route[i+2]-attackPad);maxZ=Math.max(maxZ,route[i+2]+attackPad);}
         }

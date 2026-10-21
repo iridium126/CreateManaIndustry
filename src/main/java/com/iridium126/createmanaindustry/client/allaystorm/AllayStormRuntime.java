@@ -42,6 +42,7 @@ public final class AllayStormRuntime {
     public void tickClock(long gameTime) {tickClock(gameTime,0);}
     public void tickClock(long gameTime,float partialTick) {
         this.gameTimeNow = gameTime;
+        starfallGpu.clock(((gameTime&((1L<<21)-1))+Math.clamp(partialTick,0,1))/20.0);
         this.timeSec = com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnRules.renderSeconds(gameTime,partialTick);
         refreshInterpolatedCenter();
         refreshInterpolatedCount();

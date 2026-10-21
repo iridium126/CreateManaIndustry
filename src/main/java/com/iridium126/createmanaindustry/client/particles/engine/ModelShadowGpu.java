@@ -54,7 +54,7 @@ public final class ModelShadowGpu implements AutoCloseable {
         GL43.glDispatchComputeIndirect(ParticleBuffers.INDIRECT_UINTS*4L);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL20.glUseProgram(programs[2]);GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT);
     }
-    public void starfall(int buffer){GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,26,buffer);for(int p:programs)GL41.glProgramUniform1i(p,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(p,"uStarfallEnabled"),buffer>0?1:0);}
+    public void starfall(int buffer){for(int p:programs)com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindPose(p);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,26,buffer);for(int p:programs)GL41.glProgramUniform1i(p,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(p,"uStarfallEnabled"),buffer>0?1:0);}
     public int carrierCapacity(){return carrierCapacity;}
     public int instances(){return instances;}public int commands(){return commands;}public int capacity(){return capacity;}
     public long bytes(){return (long)(meta+1)*8+(ParticleBuffers.INDIRECT_UINTS+4L)*4;}

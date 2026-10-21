@@ -16,18 +16,18 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 /**
  * Reserves the texture units the merged MODEL-particle programs pin their TBO
  * samplers to ({@code ShaderPackProgramCompiler#MERGED_SAMPLER_UNIT_BASE}
- * through {@code +4}) inside Iris's own sampler allocator, so a pack sampler
+ * through {@code +5}) inside Iris's own sampler allocator, so a pack sampler
  * can never be assigned onto them -- the same practice iris-flw-compat uses
  * for its Flywheel units via this exact builder parameter. Without the
- * reservation, a pack sampler landing on units 10-14 would silently fight
+ * reservation, a pack sampler landing on units 10-15 would silently fight
  * the particle TBO fetches within the same draw.
  *
- * <p>Retains the five-unit reservation under iris-veil-compat. In an
+ * <p>Retains the six-unit reservation under iris-veil-compat. In an
  * Iris-only environment only package program construction reserves three units;
  * unrelated native programs retain the pack's entire sampler budget.
  *
  * <p>Gated on Iris presence by {@code CMIMixinPlugin}. Packages use the first
- * three units; MODEL uses all five. The two passes never run concurrently.
+ * three units; MODEL uses all six. The two passes never run concurrently.
  */
 @Mixin(value = ProgramSamplers.class, remap = false)
 public class MixinProgramSamplers {

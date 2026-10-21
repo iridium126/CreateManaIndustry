@@ -73,6 +73,8 @@ public final class CMIPackEntityMergeHook {
     private static final GpuPassTelemetry SHADOW_TIMING=new GpuPassTelemetry();
     private static GpuComputeState shadowComputeState;
     private static PackageRenderState shadowDrawState;
+    private static final com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState mergedTboState=
+            new com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState(10,6);
     public static void invalidateShadow(){if(MODEL_SHADOW!=null)MODEL_SHADOW.close();MODEL_SHADOW=null;SHADOW_TIMING.close();MERGE_TIMER.close();}
     private CMIPackEntityMergeHook() {}
 
@@ -93,8 +95,9 @@ public final class CMIPackEntityMergeHook {
                 return; // sticky failure recorded; the engine's plain AFTER_LEVEL path takes over
 
             boolean timed=beginTimer(),succeeded=false;
+            mergedTboState.capture();
             try {drawEntities();succeeded=true;}
-            finally {if(timed)endTimer(succeeded);}
+            finally {mergedTboState.restore();if(timed)endTimer(succeeded);}
 
             // Latch even when this frame's instance count is zero: skipping the
             // L0 drawModels then costs nothing (it would submit the same empty
@@ -214,6 +217,7 @@ public final class CMIPackEntityMergeHook {
         setFloat3(progId, "cameraPosition", (float) camPos.x, (float) camPos.y, (float) camPos.z);
         setSamplers(progId);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
+        com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindPose(progId);
         setInt(progId,"uStarfallEnabled",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         uploadStormItemUniforms(progId);
     }
@@ -360,6 +364,7 @@ public final class CMIPackEntityMergeHook {
         setFloat(progId, "cmi_FadeDist", (float) ClientConfig.particleFadeDistance);
         setFloat(progId, "uTimeSec", com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
+        com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindPose(progId);
         setInt(progId,"uStarfallEnabled",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         uploadStormItemUniforms(progId);
     }

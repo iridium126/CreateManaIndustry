@@ -7,7 +7,7 @@ import com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferRetirement;
 
 /** Reused package-pass boundary. Restores the GL state touched by package draws. Never waits. */
 public final class PackageRenderState implements GpuBufferRetirement.Snapshot {
-    private final int[] ssbo=new int[12],tbo=new int[3],textures=new int[3];
+    private final int[] ssbo=new int[12],tbo=new int[6],textures=new int[3];
     private final long[] offsets=new long[12],sizes=new long[12];
     private final int[][] blend;
     private final boolean[] blendEnabled;
@@ -31,6 +31,8 @@ public final class PackageRenderState implements GpuBufferRetirement.Snapshot {
         }
         for(int i=0;i<3;i++) {
             GL13.glActiveTexture(GL13.GL_TEXTURE0+i);textures[i]=GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        }
+        for(int i=0;i<tbo.length;i++){
             GL13.glActiveTexture(GL13.GL_TEXTURE10+i);tbo[i]=GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER);
         }
         GL13.glActiveTexture(active);
@@ -63,7 +65,9 @@ public final class PackageRenderState implements GpuBufferRetirement.Snapshot {
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,storage);
         for(int i=0;i<3;i++) {
             GL13.glActiveTexture(GL13.GL_TEXTURE0+i);GL11.glBindTexture(GL11.GL_TEXTURE_2D,textures[i]);
-            // Zero glBindTextures would unbind every foreign target on these units.
+        }
+        for(int i=0;i<tbo.length;i++){
+            // Restore our TBO targets through unit 15 without disturbing foreign texture targets.
             GL13.glActiveTexture(GL13.GL_TEXTURE10+i);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,tbo[i]);
         }
         GL13.glActiveTexture(active);

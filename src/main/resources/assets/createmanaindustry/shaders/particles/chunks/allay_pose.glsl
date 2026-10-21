@@ -240,6 +240,7 @@ mat4 cmiAllayStarPartTransform(float age,float seed,vec3 velocity,int animation,
  mat4 transform=cmiAllayPartTransform(age,seed,velocity,animation,part,yaw,carry);
  if(starAttack&&uStarfallEnabled){mat4 center=mat4(1.);center[3].y=23.5;mat4 inverseCenter=mat4(1.);inverseCenter[3].y=-23.5;transform=center*cmiRotX(clamp(-velocity.y*.08,-.45,.45)*carry)*inverseCenter*transform;}return transform;
 }
+#pragma cmi_include chunks/dome_pose.glsl
 mat4 cmiAllayAttackPartTransform(float age,float seed,float identity,vec3 position,vec3 velocity,int animation,int part,out float yaw,float carry,float marker,bool attack){
  int slot=attack&&uStarfallEnabled?cmiStarClaim(identity,uTimeSec):-1;
  bool helix=slot>=0&&(cmiHelix(cmiStarBase(uint(slot)))||cmiDome(cmiStarBase(uint(slot))));
@@ -247,8 +248,11 @@ mat4 cmiAllayAttackPartTransform(float age,float seed,float identity,vec3 positi
  if(helix||column)animation=0;
  // Column flight has one stable pose. Do not switch to idle yaw/head/wing inputs at tiny velocities.
  vec3 poseVelocity=column?vec3(1.5,0,0):velocity;
+ vec3 domeDirection;float domeCarry,domeSpeed,domeYaw;bool domePose=attack&&animation!=3&&cmiDomeCommittedPose(identity,domeDirection,domeCarry,domeSpeed,domeYaw);
+ if(domePose){poseVelocity=domeDirection*domeSpeed;carry=domeCarry;animation=0;}
  // Helix raises carrying arms without tilting the whole body: keep the checked body/wing envelope.
- mat4 transform=helix?cmiAllayPartTransform(age,seed,poseVelocity,animation,part,yaw,carry):cmiAllayStarPartTransform(age,seed,poseVelocity,animation,part,yaw,carry,attack);
+ mat4 transform=helix||domePose?cmiAllayPartTransform(age,seed,poseVelocity,animation,part,yaw,carry):cmiAllayStarPartTransform(age,seed,poseVelocity,animation,part,yaw,carry,attack);
+ if(domePose)yaw=-domeYaw;
  if(column){uint a=cmiStarAssignment(identity),b=cmiStarBase(uint(slot)),rank=cmiStarRank(a);
   vec2 radial=position.xz-cmiStarLanding(b,0u).xz;float angle=length(radial)>.1?atan(radial.y,radial.x):cmiColumnAngle(b,rank);
   float u=marker<0.?1.:marker>=4.&&marker<5.?marker-4.:marker>=5.?1.:0.;

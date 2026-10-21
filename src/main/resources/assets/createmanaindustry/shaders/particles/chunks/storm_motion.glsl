@@ -16,7 +16,7 @@
     // Only WORLD-frame acceleration leaves this block: the collision sweep
     // below still owns the final position move.
     float cmiStormFrameCap=max(stormA.w,.5);
-    bool cmiDomeFollowing=false;vec3 cmiDomeFollowingPoint=vec3(0);
+    bool cmiDomeFollowing=false,cmiDomeGatherSampleValid=false;vec3 cmiDomeFollowingPoint=vec3(0),cmiDomePoseTangent=vel;
     if (!corpse && stormA.x > 0.5) {
         // ----- typhoon: world-frame servo onto the circulating arm home point
         vec3 anchor = emitters.u[hb + 19u].xyz;
@@ -70,7 +70,7 @@
                 if(phase==6u){uint rank=cmiColumnAssignment(assignment)?cmiStarRank(assignment):cmiMajorRank(assignment);atomicOr(starStateWrite.words[CMI_COMPLETIONS+cmiCompletionOffset(slot)+rank/32u],1u<<(rank&31u));}
             }
             if(waveEngaged){target=attackTarget;vT=attackVelocity;}
-            uint member=cmiStarMember(p0.w);if(member<131072u){uint a=cmiStarAssignment(p0.w),id=a==0u?0u:uint(cmiStarVec(cmiStarBase(cmiStarSlot(a))).x+.5);if(!cmiColumnAssignment(a)&&id!=0u&&starStateRead.words[member*2u]==id)phase=max(phase,starStateRead.words[member*2u+1u]&255u);if(a==0u&&starStateRead.words[member*2u]!=0u&&(starStateRead.words[member*2u+1u]&255u)>=1u){id=starStateRead.words[member*2u];phase=distance(pos,target)<2.?7u:6u;}starStateWrite.words[member*2u]=id;starStateWrite.words[member*2u+1u]=phase;}
+            uint member=cmiStarMember(p0.w);if(member<131072u){uint a=cmiStarAssignment(p0.w),id=a==0u?0u:uint(cmiStarVec(cmiStarBase(cmiStarSlot(a))).x+.5);if(!cmiColumnAssignment(a)&&id!=0u&&starStateRead.words[member*2u]==id)phase=max(phase,starStateRead.words[member*2u+1u]&255u);if(a==0u&&starStateRead.words[member*2u]!=0u&&(starStateRead.words[member*2u+1u]&255u)>=1u){id=starStateRead.words[member*2u];phase=distance(pos,target)<2.?7u:6u;}starStateWrite.words[member*2u]=id;starStateWrite.words[member*2u+1u]=phase|((phase==4u&&id==starStateRead.words[member*2u])?(starStateRead.words[member*2u+1u]&0x20000000u):0u);}
         }else {
         if ((uint(p0.w + 0.5) & MEMBER_LATCH_BIT) == 0u) {
         for (uint k = 0u; k < 4u && !waveEngaged; k++) {
@@ -102,18 +102,22 @@
         bool domeMember=waveEngaged&&domeAssignment!=0u&&cmiDome(cmiStarBase(cmiStarSlot(domeAssignment)));
         bool domeFlow=domeMember&&cmiStarPhase(domeAssignment,uTimeSec)==4.;
         bool domeGather=domeMember&&!domeFlow;
+        if(domeGather){cmiDomeGatherSampleValid=true;cmiDomeFollowingPoint=target;cmiDomePoseTangent=vT;}
         vec3 domePreviousPoint=pos,domePreviousVelocity=vel;
-        if(domeFlow)cmiDomeSample(domeAssignment,uTimeSec-uDt,domePreviousPoint,domePreviousVelocity);
+        if(domeFlow)cmiDomeSampleOffset(domeAssignment,-uDt,domePreviousPoint,domePreviousVelocity);
         // Certified channels already separate members of this attack. The
         // ordinary grid remains the sole runtime fallback for actual deviations,
         // moving terrain, other attacks and ordinary returning storm members.
-        bool domeOnPath=domeFlow&&cmiStarTime(cmiStarBase(cmiStarSlot(domeAssignment)),uTimeSec)-cmiStarVec(cmiStarBase(cmiStarSlot(domeAssignment))+4u).z>=1.25&&distance(pos,domePreviousPoint)<.02;
+        uint domeIdentity=cmiStarMember(p0.w);
+        bool domeReturning=!waveEngaged&&uDomePoseStorageEnabled&&domeIdentity<131072u&&(starStateRead.words[CMI_DOME_POSE+domeIdentity*2u+1u]&0x80000000u)!=0u;
         float separationRadius=STORM_SEP_R;if(waveEngaged&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))separationRadius=domeMember?.45:1.4;}
         vec3 sepW = vec3(0.0);
         int sepVisits = 0;
         bool sepBudgetGone = false;
         ivec3 pc = ivec3(floor(pos / CELL_SIZE));
-        for (int x = 0; x < 3 && !sepBudgetGone; x++)
+        // Dome uses the single post-integration candidate hash and swept-contact
+        // pass. It must not also receive an earlier boids position correction.
+        for (int x = 0; x < 3 && !sepBudgetGone && !domeMember; x++)
         for (int y = 0; y < 3 && !sepBudgetGone; y++)
         for (int z = 0; z < 3 && !sepBudgetGone; z++) {
             ivec3 offset=domeMember?ivec3(x==0?0:x==1?1:-1,y==0?0:y==1?1:-1,z==0?0:z==1?1:-1):ivec3(x-1,y-1,z-1);
@@ -134,13 +138,6 @@
                 vec3 d = pos-op;
                 float d2 = dot(d, d);
                 if(d2>=separationRadius*separationRadius)continue;
-                if(domeOnPath){
-                    uint otherAssignment=cmiStarAssignment(readBuf.data[uint(j)*4u].w);
-                    if(otherAssignment!=0u&&cmiStarSlot(otherAssignment)==cmiStarSlot(domeAssignment)){
-                        uint otherMember=cmiStarMember(readBuf.data[uint(j)*4u].w);
-                        if(otherMember<131072u&&(starStateRead.words[otherMember*2u+1u]&0x40000000u)!=0u&&starStateRead.words[otherMember*2u]==starStateWrite.words[cmiStarMember(p0.w)*2u])continue;
-                    }
-                }
                 if(d2<=1e-8){d=cmiStormSeparationDelta(d,cmiStarMember(p0.w),cmiStarMember(readBuf.data[uint(j)*4u].w));d2=dot(d,d);}
                 if (d2 < separationRadius * separationRadius && d2 > 1e-8) {
                     float dl = sqrt(d2);
@@ -173,19 +170,53 @@
         vec3 aW = (target - pos) * STORM_VORTEX_K + (vT - vel) * STORM_VORTEX_C + sepW + repW;
         if(domeFlow){
             uint member=cmiStarMember(p0.w),a=cmiStarAssignment(p0.w),b=cmiStarBase(cmiStarSlot(a)),j=CMI_DOME_JOIN+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u,id=uint(cmiStarVec(b).x+.5);
-            bool fresh=starStateRead.words[j]!=id;vec3 offset=vec3(0),delta=vec3(0);float started;
-            if(fresh){offset=pos-domePreviousPoint;delta=vel-domePreviousVelocity;started=uTimeSec-uDt;}else{offset=vec3(uintBitsToFloat(starStateRead.words[j+1u]),uintBitsToFloat(starStateRead.words[j+2u]),uintBitsToFloat(starStateRead.words[j+3u]));delta=vec3(uintBitsToFloat(starStateRead.words[j+4u]),uintBitsToFloat(starStateRead.words[j+5u]),uintBitsToFloat(starStateRead.words[j+6u]));started=uintBitsToFloat(starStateRead.words[j+7u]);}
-            starStateWrite.words[j]=id;for(uint k=0u;k<3u;k++){starStateWrite.words[j+1u+k]=floatBitsToUint(offset[k]);starStateWrite.words[j+4u+k]=floatBitsToUint(delta[k]);}starStateWrite.words[j+7u]=floatBitsToUint(started);
-            float age=clamp(cmiStarTime(b,uTimeSec)-cmiStarTime(b,started),0.,1.),h=1.-3.*age*age+2.*age*age*age,g=age-2.*age*age+age*age*age;
-            target+=offset*h+delta*g;vT+=offset*(-6.*age+6.*age*age)+delta*(1.-4.*age+3.*age*age);
-            cmiDomeFollowing=domeOnPath;cmiDomeFollowingPoint=target;vel=(target-pos)/max(uDt,.0001)+sepW*.5;float speed=length(vel);vel=speed>.000001?vel*(6./speed):normalize(vT)*6.;
+            bool fresh=starStateRead.words[j]!=id;vec3 offset=vec3(0),delta=vec3(0);float started,initialSpeed;
+            if(fresh){offset=pos-domePreviousPoint;delta=vel-domePreviousVelocity;started=cmiDomeElapsed(b,uTimeSec)-uDt;initialSpeed=length(vel);}else{offset=vec3(uintBitsToFloat(starStateRead.words[j+1u]),uintBitsToFloat(starStateRead.words[j+2u]),uintBitsToFloat(starStateRead.words[j+3u]));vec2 xy=unpackHalf2x16(starStateRead.words[j+4u]);delta=vec3(xy,uintBitsToFloat(starStateRead.words[j+5u]));initialSpeed=uintBitsToFloat(starStateRead.words[j+6u]);started=uintBitsToFloat(starStateRead.words[j+7u]);}
+            starStateWrite.words[j]=id;for(uint k=0u;k<3u;k++)starStateWrite.words[j+1u+k]=floatBitsToUint(offset[k]);starStateWrite.words[j+4u]=packHalf2x16(delta.xy);starStateWrite.words[j+5u]=floatBitsToUint(delta.z);starStateWrite.words[j+6u]=floatBitsToUint(initialSpeed);starStateWrite.words[j+7u]=floatBitsToUint(started);
+            float age=clamp(cmiDomeElapsed(b,uTimeSec)-started,0.,1.),previousAge=clamp(age-uDt,0.,1.);
+            float h=1.-age*age*age*(10.-15.*age+6.*age*age),g=age-age*age*age*(6.-8.*age+3.*age*age);
+            float ph=1.-previousAge*previousAge*previousAge*(10.-15.*previousAge+6.*previousAge*previousAge),pg=previousAge-previousAge*previousAge*previousAge*(6.-8.*previousAge+3.*previousAge*previousAge);
+            target+=offset*h+delta*g;domePreviousPoint+=offset*ph+delta*pg;
+            vT+=offset*(-30.*age*age+60.*age*age*age-30.*age*age*age*age)+delta*(1.-18.*age*age+32.*age*age*age-15.*age*age*age*age);
+            cmiDomeFollowing=true;
+            cmiDomeFollowingPoint=target;cmiDomePoseTangent=vT;
+            // Reference displacement is feed-forward, not a position snap. The
+            // bounded servo removes accumulated integration error without chasing
+            // the reference faster than six metres per second.
+            vec3 error=domePreviousPoint-pos;float errorLength=length(error);
+            vec3 correction=errorLength>.000001?error*min(6.,.6/errorLength):vec3(0);
+            bool referenceEnded=cmiDomeElapsed(b,uTimeSec)-(cmiStarVec(b+4u).z-cmiStarVec(b+4u).x)>=cmiDomeRecord(a).z;
+            vec3 desired=(referenceEnded?vT:(target-domePreviousPoint)/max(uDt,.0001))+correction;
+            float currentSpeed=length(vel),u=clamp(age/.5,0.,1.),speedGoal=mix(initialSpeed,6.,u*u*u*(10.-15.*u+6.*u*u));
+            float nextSpeed=clamp(min(speedGoal,length(desired)),max(0.,currentSpeed-18.*uDt),currentSpeed+18.*uDt);
+            vec3 direction=length(desired)>.000001?normalize(desired):normalize(vT);
+            if(currentSpeed>.0001&&nextSpeed>.0001){float cosine=clamp((currentSpeed*currentSpeed+nextSpeed*nextSpeed-324.*uDt*uDt)/(2.*currentSpeed*nextSpeed),-1.,1.);float rate=min(3.141592654,acos(cosine)/max(uDt,.0001));direction=cmiDomeTurn(vel/currentSpeed,direction,uDt,.0001,rate);}
+            vel=direction*nextSpeed;
         }else if(domeGather){
-            // Bounded interception of a moving ring; a same-speed tail chase never catches it.
-            uint a=cmiStarAssignment(p0.w),b=cmiStarBase(cmiStarSlot(a));vec4 ring=cmiDomeRing(a);vec3 center=cmiDomeCenter(b,uTimeSec)+vec3(0,ring.y-.3,0);
-            float phi=ring.z+cmiStarVec(b+20u).z+6.*(cmiStarTime(b,uTimeSec-uDt)-cmiStarVec(b+4u).x)/ring.x;float lo=0.,hi=(distance(pos,center)+ring.x)/6.+.05;
-            for(int k=0;k<10;k++){float mid=(lo+hi)*.5;float angle=phi+6.*mid/ring.x;vec3 future=center+vec3(cos(angle),0,sin(angle))*ring.x;if(distance(pos,future)>6.*mid)lo=mid;else hi=mid;}
-            float angle=phi+6.*max(hi,uDt)/ring.x;vec3 future=center+vec3(cos(angle),0,sin(angle))*ring.x,desired=future-pos+sepW*.04;
-            float speed=length(desired);if(speed>.000001)desired*=6./speed;else desired=vT;vel=desired;
+            // Predictively intercept a closed 3-D streamline; once close,
+            // integrate its displacement instead of chasing its moving point.
+            uint a=cmiStarAssignment(p0.w),b=cmiStarBase(cmiStarSlot(a));
+            vec3 previous,previousVelocity;cmiDomeSampleOffset(a,-uDt,previous,previousVelocity);
+            vec3 error=previous-pos,desired;float errorLength=length(error);
+            if(errorLength<1.)desired=(target-previous)/max(uDt,.0001)+error*min(6.,.6/max(errorLength,.000001));
+            else{
+                vec4 ring=cmiDomeRing(a);vec3 center=cmiDomeCenter(b,uTimeSec)+vec3(0,ring.y-.3,0);
+                float lo=0.,hi=(distance(pos,center)+ring.x+.6)/6.+.1;
+                for(int k=0;k<10;k++){float mid=(lo+hi)*.5;vec3 future,motion;cmiDomeSampleOffset(a,mid-uDt,future,motion);if(distance(pos,future)>6.*mid)lo=mid;else hi=mid;}
+                vec3 future,motion;cmiDomeSampleOffset(a,max(hi,uDt)-uDt,future,motion);desired=(future-pos)/max(hi,uDt);
+            }
+            float desiredSpeed=min(6.,length(desired)),oldSpeed=length(vel),newSpeed=clamp(desiredSpeed,max(0.,oldSpeed-18.*uDt),oldSpeed+18.*uDt);
+            vec3 direction=length(desired)>.000001?normalize(desired):vec3(0,0,1);
+            if(oldSpeed>.0001&&newSpeed>.0001){float cosine=clamp((oldSpeed*oldSpeed+newSpeed*newSpeed-324.*uDt*uDt)/(2.*oldSpeed*newSpeed),-1.,1.);direction=cmiDomeTurn(vel/oldSpeed,direction,uDt,.0001,min(3.141592654,acos(cosine)/max(uDt,.0001)));}
+            vel=direction*newSpeed;
+        }else if(domeReturning){
+            // Release preserves momentum. An unready or finished member must
+            // not reverse into the following baked lane in a single frame.
+            vec3 desired=vel+aW*uDt;float oldSpeed=length(vel),desiredSpeed=min(6.,length(desired));
+            float speed=clamp(desiredSpeed,max(0.,oldSpeed-18.*uDt),min(6.,oldSpeed+18.*uDt));
+            vec3 direction=length(desired)>.0001?normalize(desired):(oldSpeed>.0001?vel/oldSpeed:vec3(0,1,0));
+            if(oldSpeed>.0001&&speed>.0001){float cosine=clamp((oldSpeed*oldSpeed+speed*speed-324.*uDt*uDt)/(2.*oldSpeed*speed),-1.,1.);direction=cmiDomeTurn(vel/oldSpeed,direction,uDt,.0001,min(3.141592654,acos(cosine)/max(uDt,.0001)));}
+            vel=direction*speed;
         }else if(columnEngaged)vel=vT;else vel += aW * uDt;
         float spdV = length(vel);
         if (spdV > spMaxV)

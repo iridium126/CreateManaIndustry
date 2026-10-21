@@ -162,13 +162,13 @@ public final class StormMajorAttackGameTests {
 
     @GameTest(template="storm_combat_test",timeoutTicks=100) public static void domeProductionGpuFeedbackLocksAndDamagesOnce(GameTestHelper h){
         String path=System.getProperty("cmi.dome.evidence");
-        if(path==null){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.info("Dome GPU replay not requested; use -PdomeEvidence=build/dome-v13/gpu-evidence.json");h.succeed();return;}
+        if(path==null){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.info("Dome GPU replay not requested; use -PdomeEvidence=build/dome-v14/gpu-evidence.json");h.succeed();return;}
         try{
             var evidence=com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(java.nio.file.Path.of(path))).getAsJsonObject();
-            try(var in=DomeTemplate.class.getResourceAsStream("/data/createmanaindustry/dome-template-v3.bin")){
+            try(var in=DomeTemplate.class.getResourceAsStream("/data/createmanaindustry/dome-template-v4.bin")){
                 var hash=java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(in.readAllBytes()));h.assertTrue(hash.equals(evidence.get("sha256").getAsString()),"GPU evidence belongs to a different template");
             }
-            var scene=launch(h,StormAttack.DOME,16384,evidence);var victim=new FakePlayer(h.getLevel(),new GameProfile(UUID.randomUUID(),"GpuDomeCenter")){@Override public boolean isInvulnerableTo(net.minecraft.world.damagesource.DamageSource source){return false;}};victim.setGameMode(GameType.SURVIVAL);
+            h.assertTrue(evidence.has("production")&&evidence.get("production").getAsBoolean(),"Diagnostic contact bypass is not production GPU evidence");var scene=launch(h,StormAttack.DOME,16384,evidence);var victim=new FakePlayer(h.getLevel(),new GameProfile(UUID.randomUUID(),"GpuDomeCenter")){@Override public boolean isInvulnerableTo(net.minecraft.world.damagesource.DamageSource source){return false;}};victim.setGameMode(GameType.SURVIVAL);
             @SuppressWarnings("unchecked") var tracks=(Map<UUID,Object>)field(scene.runtime(),"tracks");tracks.put(victim.getUUID(),tracks.get(scene.player().getUUID()));
             var invulnerable=net.minecraft.server.level.ServerPlayer.class.getDeclaredField("spawnInvulnerableTime");invulnerable.setAccessible(true);invulnerable.setInt(victim,0);
             double x=(float)field(scene.wave(),"centerX"),y=(float)field(scene.wave(),"centerY"),z=(float)field(scene.wave(),"centerZ");victim.setPos(x,y-.9,z);

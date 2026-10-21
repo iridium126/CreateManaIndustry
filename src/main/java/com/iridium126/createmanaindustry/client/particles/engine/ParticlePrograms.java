@@ -58,6 +58,8 @@ public final class ParticlePrograms {
         sb.append("#define CMI_DOME_CONTACT_DELTA ").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_CONTACT_DELTA).append("u\n");
         sb.append("#define CMI_DOME_CONTACT_QUEUE ").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_CONTACT_QUEUE).append("u\n");
         sb.append("#define CMI_DOME_CONTACT_ARGS ").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_CONTACT_ARGS).append("u\n");
+        sb.append("#define CMI_DOME_HANDOFF_SECONDS ").append(com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.HANDOFF_SECONDS).append("\n");
+        sb.append("#define CMI_DOME_POSE ").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_POSE).append("u\n");
         sb.append("// ==== CMI particle engine common constants ====\n");
         sb.append("// ==== GENERATED from ParticleBuffers by ParticlePrograms -- edit THERE, not here ====\n");
         sb.append("#define BIND_IDENTITY ").append(ParticleBuffers.IDENTITY_BB).append('\n');

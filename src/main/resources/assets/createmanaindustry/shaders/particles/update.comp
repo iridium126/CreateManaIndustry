@@ -138,6 +138,8 @@ const int   STORM_MAX_VISITS = 256;
 // cmiHash1, the wave rolls/claim and cmiTyphoonHome
 layout(std430,binding=27) readonly buffer StarStateRead {uint words[];} starStateRead;
 layout(std430,binding=28) buffer StarStateWrite {uint words[];} starStateWrite;
+uniform bool uDomePoseStorageEnabled;
+#pragma cmi_include chunks/dome_pose_math.glsl
 #pragma cmi_include chunks/particle_identity.glsl
 #pragma cmi_include chunks/allay_storm.glsl
 #pragma cmi_include chunks/storm_separation.glsl
@@ -265,8 +267,13 @@ void main() {
     if (!swept)
         pos += vel * uDt;
     if(cmiStormVoxel&&cmiStormMissing)cmiContactSweepValid=false;
-    if(cmiDomeFollowing&&cmiContactSweepValid&&!cmiTerrainClipped&&distance(pos,cmiDomeFollowingPoint)<.02)
-        starStateWrite.words[cmiStarMember(p0.w)*2u+1u]|=0x40000000u;
+    if(cmiDomeFollowing){uint member=cmiStarMember(p0.w);float error=distance(pos,cmiDomeFollowingPoint);
+        uint assignment=cmiStarAssignment(p0.w);bool same=starStateRead.words[member*2u]==uint(cmiStarVec(cmiStarBase(cmiStarSlot(assignment))).x+.5);
+        bool wasFollowing=same&&(starStateRead.words[member*2u+1u]&0x40000000u)!=0u;
+        uint streak=cmiContactSweepValid&&!cmiTerrainClipped&&error<.04?min(3u,(same?starStateRead.words[CMI_GATHER_STREAK+member]:0u)+1u):0u;
+        starStateWrite.words[CMI_GATHER_STREAK+member]=streak;
+        if(cmiContactSweepValid&&!cmiTerrainClipped&&error<=.10&&(wasFollowing||streak>=3u))starStateWrite.words[member*2u+1u]|=0x40000000u;
+    }
     if(cmiColumnExit&&cmiContactSweepValid)vel=cmiColumnExitVelocity;
     age += uDt;
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){float limit=cmiAttackSpeed(p0.w,uTimeSec,max(stormA.w,.5))*uDt+.01;if(!cmiContactSweepValid||distance(pos,p0.xyz)>limit)starStateWrite.words[member*2u+1u]|=0x80000000u;}}
@@ -282,7 +289,11 @@ void main() {
             uint streak=0u;float phase=cmiStarPhase(a,uTimeSec);
             bool same=starStateRead.words[member*2u]==uint(cmiStarVec(b).x+.5);
             float blockedSeconds=same?uintBitsToFloat(starStateRead.words[CMI_GATHER_BLOCKED+member]):0.;
-            if(phase==1.){bool resourceUnknown=cmiDome(b)&&cmiStarWord(2u)==0u;vec3 target=resourceUnknown?pos:cmiStarPoint(a,p3.z,uTimeSec,vec3(0)),next=resourceUnknown?pos:cmiStarPoint(a,p3.z,uTimeSec+.02,vec3(0)),motion=(next-target)/.02;
+            if(phase==1.){bool resourceUnknown=cmiDome(b)&&cmiStarWord(2u)==0u;vec3 target=pos,motion=vec3(0);
+                if(!resourceUnknown){
+                    if(cmiDome(b)&&cmiDomeGatherSampleValid){target=cmiDomeFollowingPoint;motion=cmiDomePoseTangent;}
+                    else{target=cmiStarPoint(a,p3.z,uTimeSec,vec3(0));vec3 next=cmiStarPoint(a,p3.z,uTimeSec+.02,vec3(0));motion=(next-target)/.02;}
+                }
                 bool unknown=resourceUnknown||(cmiStormVoxel&&(cmiStormMissing||!cmiStormKnown(target)||!cmiStormKnown(target+vec3(0,.6,0))));
                 bool occupied=!unknown&&cmiStormVoxel&&(cmiStormSolid(target)||cmiStormSolid(target+vec3(0,.6,0)));
                 vec3 towards=target-p0.xyz;
@@ -295,9 +306,11 @@ void main() {
                 }
                 else{
                     if(distance(pos,target)<=.4&&distance(vel,motion)<=1.)streak=same?min(3u,starStateRead.words[CMI_GATHER_STREAK+member]+1u):1u;
+                    if(cmiDome(b)&&distance(pos,target)<.04&&distance(vel,motion)<=1.)starStateWrite.words[member*2u+1u]|=0x40000000u;
                     if(streak==3u){atomicAdd(starStateWrite.words[counts],1u);atomicOr(starStateWrite.words[CMI_GATHER_READY+word],bit);}
                 }
             }else if(cmiDome(b)&&phase==4.){
+                streak=starStateWrite.words[CMI_GATHER_STREAK+member];
                 blockedSeconds=cmiTerrainClipped?blockedSeconds+uDt:0.;
                 if(blockedSeconds>=.5){
                     // World geometry can invalidate a baked channel. Leave it
@@ -330,6 +343,43 @@ void main() {
         hurt = max(0.0, hurt - 2.0 * uDt);
     }
 
+    // Publish once per simulation frame. Drawing and shadow collection never integrate pose.
+    if(!corpse&&stormA.x>.5&&uDomePoseStorageEnabled){uint member=cmiStarMember(p0.w),a=cmiStarAssignment(p0.w);
+        if(member<131072u&&CMI_DOME_POSE+member*2u+1u<uint(starStateWrite.words.length())){
+            uint at=CMI_DOME_POSE+member*2u,flags=starStateRead.words[at+1u];
+            bool current=a!=0u&&cmiStarSlot(a)<4u&&cmiDome(cmiStarBase(cmiStarSlot(a)));
+            bool returning=a==0u&&(flags&0x80000000u)!=0u;
+            if(current||returning){
+                float initialYaw=cmiHash1(p3.z*3.7)*6.28318530718+p3.x*.3;
+                vec2 angles=(flags&0x80000000u)!=0u?cmiDomeUnpackPose(starStateRead.words[at]):vec2(length(p1.xz)>.05?atan(p1.x,p1.z):-initialYaw,length(p1.xyz)>.0001?asin(clamp(p1.y/length(p1.xyz),-1.,1.)):0.);
+                vec3 navigation=current&&cmiStarPhase(a,uTimeSec)==4.?cmiDomePoseTangent:vel;
+                angles=cmiDomeAdvancePose(angles,navigation,uDt);
+                float blend=(flags&0x80000000u)!=0u?float(flags&65535u)/65535.:0.;
+                blend=mix(blend,roll< -3.5&&roll> -4.5?1.:0.,1.-exp(-uDt/.12));
+                float poseSpeed=(flags&0x80000000u)!=0u?float((flags>>16u)&32767u)*(64./32767.):length(p1.xyz);
+                poseSpeed=mix(poseSpeed,length(vel),1.-exp(-uDt/.12));
+                bool keepPose=true;
+                uint phase=max(starStateRead.words[member*2u+1u]&255u,starStateWrite.words[member*2u+1u]&255u);
+                if(returning&&phase>=7u){
+                    // Existing contact scratch is unused by arrived members.
+                    // Fade the cached offsets onto the current ordinary pose,
+                    // including when the last attack has already disappeared.
+                    uint scratch=CMI_DOME_CONTACT_DELTA+member*4u;
+                    float ordinarySpeed=length(vel),ordinaryYaw=length(vel.xz)>.05?atan(vel.x,vel.z):-(cmiHash1(p3.z*3.7)*6.28318530718+age*.3),ordinaryPitch=ordinarySpeed>.0001?asin(clamp(vel.y/ordinarySpeed,-1.,1.)):0.;
+                    bool fresh=(starStateRead.words[CMI_GATHER_STREAK+member]&0x80000000u)==0u;
+                    vec4 offsets;float elapsed;
+                    if(fresh){vec2 previous=cmiDomeUnpackPose(starStateRead.words[at]);float yaw=previous.x;offsets=vec4(mod(yaw-ordinaryYaw+3.141592654,6.28318530718)-3.141592654,previous.y-ordinaryPitch,float((flags>>16u)&32767u)*(64./32767.)-ordinarySpeed,float(flags&65535u)/65535.);elapsed=0.;}
+                    else{offsets=vec4(uintBitsToFloat(starStateRead.words[scratch]),uintBitsToFloat(starStateRead.words[scratch+1u]),uintBitsToFloat(starStateRead.words[scratch+2u]),uintBitsToFloat(starStateRead.words[scratch+3u]));elapsed=uintBitsToFloat(starStateRead.words[CMI_GATHER_BLOCKED+member])+uDt;}
+                    for(uint k=0u;k<4u;k++)starStateWrite.words[scratch+k]=floatBitsToUint(offsets[k]);starStateWrite.words[CMI_GATHER_STREAK+member]=0x80000000u;starStateWrite.words[CMI_GATHER_BLOCKED+member]=floatBitsToUint(elapsed);
+                    float u=clamp(elapsed/.5,0.,1.),fade=1.-u*u*u*(10.-15.*u+6.*u*u);
+                    angles=cmiDomePoseAngles(cmiDomeUnpackPose(starStateRead.words[at]),ordinaryYaw+offsets.x*fade,ordinaryPitch+offsets.y*fade,uDt,0.);poseSpeed=max(0.,ordinarySpeed+offsets.z*fade);blend=offsets.w*fade;
+                    float error=abs(mod(angles.x-ordinaryYaw+3.141592654,6.28318530718)-3.141592654)+abs(angles.y-ordinaryPitch);
+                    keepPose=elapsed<.5||error>.001;
+                }
+                starStateWrite.words[at]=cmiDomePackPose(angles);starStateWrite.words[at+1u]=(keepPose?0x80000000u:0u)|uint(round(clamp(blend,0.,1.)*65535.))|(uint(round(clamp(poseSpeed/64.,0.,1.)*32767.))<<16u);
+            }else{starStateWrite.words[at]=starStateRead.words[at];starStateWrite.words[at+1u]=0u;}
+        }
+    }
     uint slot = cmiReserveParticle();
     if (slot >= uCapacity)
         return;

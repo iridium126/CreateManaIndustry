@@ -123,9 +123,9 @@ vec3 cmiStarRoute(uint b,float fraction){
 #pragma cmi_include chunks/helix_navigation.glsl
 vec3 cmiStarPoint(uint assignment,float seed,float time,vec3 home){
  uint slot=cmiStarSlot(assignment),col=(assignment>>3u)&31u,rank=assignment>>8u,b=cmiStarBase(slot);
+ if(cmiDome(b))return cmiDomePoint(assignment,seed,time,home);
  time=cmiStarTime(b,time);vec4 meta=cmiStarVec(b),t=cmiStarVec(b+4u),crown=cmiStarVec(b+8u),aim=cmiStarVec(b+12u),landing=cmiStarLanding(b,col),column=cmiStarColumn(b,col);
  if(cmiHelix(b))return cmiHelixPoint(assignment,seed,time,home);
- if(cmiDome(b))return cmiDomePoint(assignment,seed,time,home);
  float angle=6.2831853*(float(col)/max(meta.z,1.))+aim.w*.0001;
  vec3 crownOffset=vec3(cos(angle)*crown.w,sin(angle)*crown.w*.258819,sin(angle)*crown.w*.965926);
  float a=seed*6.2831853;float spread=sqrt(cmiHash1(seed*77.1))*column.z;
@@ -145,9 +145,10 @@ bool cmiStarSteering(float identity,float seed,vec3 pos,vec3 home,float cap,out 
  // GLSL out parameters are undefined on entry and copied back even on an early return.
  // Rejected claims must publish a finite fallback and a neutral identity phase.
  target=home;velocity=vec3(0.);phase=0u;
- uint assignment=cmiStarAssignment(identity);if(assignment==0u||cmiStarClaim(identity,uTimeSec)<0)return false;
+ uint assignment=cmiStarAssignment(identity);if(assignment==0u)return false;
+ if(cmiStarClaim(identity,uTimeSec)<0){uint b=cmiStarBase(cmiStarSlot(assignment));if((cmiDome(b)||cmiHelix(b))&&cmiStarPhase(assignment,uTimeSec)>=6.)phase=6u;return false;}
  phase=uint(cmiStarPhase(assignment,uTimeSec));if(phase==6u&&(cmiHelix(cmiStarBase(cmiStarSlot(assignment)))||cmiDome(cmiStarBase(cmiStarSlot(assignment)))))return false;target=cmiStarPoint(assignment,seed,uTimeSec,home);
- if(cmiDome(cmiStarBase(cmiStarSlot(assignment)))){velocity=cmiDomeVelocity(assignment,cmiStarTime(cmiStarBase(cmiStarSlot(assignment)),uTimeSec));return true;}
+ if(cmiDome(cmiStarBase(cmiStarSlot(assignment)))){velocity=cmiDomeVelocity(assignment,uTimeSec);return true;}
  vec3 next=cmiStarPoint(assignment,seed,uTimeSec+.02,home);velocity=(next-target)/.02;
  float speed=length(velocity);if(speed>cap)velocity*=cap/speed;return true;
 }

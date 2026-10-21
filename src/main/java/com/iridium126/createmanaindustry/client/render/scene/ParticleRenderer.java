@@ -28,10 +28,13 @@ import org.lwjgl.opengl.GL30;
 
 /** Actual generic particle GPU draw passes and Iris arbitration. */
 public final class ParticleRenderer {
+        private final com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState poseTboState=
+                new com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState(15,1);
         public void draw(ParticleRenderFrame frame,com.iridium126.createmanaindustry.client.gpu.frame.GpuFrameCoordinator.Publication publication,Camera camera, Matrix4fc view, Matrix4fc projectionMatrix,com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing drawTimer) {
             if(frame.generation()!=publication.generation())throw new IllegalStateException("Stale particle draw input");
             this.frame=frame;
             gpu.beginBindings();
+            poseTboState.capture();
             boolean queryActive = false;
             try {
                 if (drawTimer.begin())
@@ -114,6 +117,7 @@ public final class ParticleRenderer {
                 } catch (RuntimeException | LinkageError ignoredCleanup) {
                     // see above
                 }
+                poseTboState.restore();
             }
         }
 

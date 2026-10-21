@@ -165,9 +165,10 @@ public class ModelShadowGpuValidation {
                 }else snapshots[0]=event;
                 star.rebuild(snapshots);star.prepare(1);star.commit();
                 if(attackKind==1){com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.keys();for(int frame=0;!star.domeReady()&&frame<128;frame++){star.prepare(2+frame);star.commit();}check(star.domeReady(),"Dome shadow resource did not publish");}
-                star.bindTexture(14);
+                if(attackKind==1){star.prepare(1000);star.bind(program,true);int state=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,state);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_POSE+12287*2)*4L,bytes(8).putInt(0,0x8000bfff).putInt(4,0x8c00b333));star.commit();}
+                star.bindTexture(14);star.bindPose(program);
                 particle.putFloat(12,attackKind==1?12288:1).putFloat(20,-6).putFloat(28,attackKind==3?-1.5f:attackKind==2||attackKind==1?-4:0).putFloat(52,20);put(buffers[1],particle);put(buffers[2],headers(2,.3f,false,true));
-                GL20.glUseProgram(program);GL20.glUniform1i(GL20.glGetUniformLocation(program,"uStarfallEnabled"),1);GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_Starfall"),14);GL20.glUniform1f(GL20.glGetUniformLocation(program,"uTimeSec"),12);GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_ShadowPass"),1);
+                GL20.glUseProgram(program);GL20.glUniform1i(GL20.glGetUniformLocation(program,"uStarfallEnabled"),1);GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_Starfall"),14);GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_DomePose"),15);GL20.glUniform1f(GL20.glGetUniformLocation(program,"uTimeSec"),12);GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_ShadowPass"),1);
                 GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL30.glBeginTransformFeedback(GL11.GL_POINTS);GL31.glDrawArraysInstanced(GL11.GL_POINTS,0,1,1);GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);var merged=read(buffers[4],16);
                 if(attackKind>=3){
                     for(float[] v:new float[][]{{0,0,0},{.001f,-6,-.001f},{-6,6,.06f},{6,-6,-.06f}}){
