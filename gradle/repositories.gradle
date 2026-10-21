@@ -1,0 +1,74 @@
+repositories {
+    exclusiveContent {
+        forRepository {
+            ivy {
+                name = "TricksterOwoRelease"
+                url = uri("https://codeberg.org/master_bw3/trickster/releases/download/2.0.0-beta.46-dev.5-neo/")
+                patternLayout {
+                    artifact "[artifact]-[revision].[ext]"
+                }
+                metadataSources {
+                    artifact()
+                }
+            }
+        }
+        filter {
+            includeModule "codeberg.master_bw3.trickster", "owo-lib-neoforge"
+        }
+    }
+    mavenCentral()
+    mavenLocal()
+    maven { url = "https://cursemaven.com" }
+    maven { url = "https://maven.blamejared.com" }
+    maven {
+        name = "Sinytra"
+        url = "https://maven.sinytra.org/"
+    }
+    maven {
+        name = "Create"
+        url = "https://maven.createmod.net"
+    }
+    maven {
+        name = "Ithundxr"
+        url = "https://maven.ithundxr.dev/snapshots"
+    }
+    maven {
+        name = "Fabric"
+        url = "https://maven.fabricmc.net/"
+    }
+    maven {
+        name = "WispForest"
+        url = "https://maven.wispforest.io/releases"
+    }
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Modrinth"
+                url = "https://api.modrinth.com/maven"
+            }
+        }
+        filter {
+            includeGroup "maven.modrinth"
+        }
+    }
+    ivy {
+        url = uri("https://ci.blamejared.com/job/petrakat/job/Hexcasting/job/1.21/53/artifact/Neoforge/build/libs")
+        
+        patternLayout {
+            artifact "[artifact].[ext]"
+        }
+        metadataSources {
+            artifact() // 直接按文件名匹配，不读取pom/ivy元数据
+        }
+    }
+    ivy {
+        url = uri("https://ci.blamejared.com/job/petrakat/job/PAUCAL/job/1.21/27/artifact/Neoforge/build/libs")
+        
+        patternLayout {
+            artifact "[artifact].[ext]"
+        }
+        metadataSources {
+            artifact() // 直接按文件名匹配，不读取pom/ivy元数据
+        }
+    }
+}

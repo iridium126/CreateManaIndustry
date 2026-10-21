@@ -8,6 +8,8 @@
 
 普通测试位于 `src/test/java/`。优先保留行为、生命周期、持久化和编解码测试。Mixin 字节码及发行资源契约有独立作用；源码字符串检查只有在对应行为尚未由真实场景覆盖时才保留。测试数量不是覆盖度或性能证明。
 
+构建脚本改动另外运行 `python scripts/testing/validate_gradle.py`，验证惰性API提取、配置缓存、重映射选择及失败时输出保留；构建职责与缓存说明见[Gradle维护](building.md)。
+
 ## GameTest
 
 ```powershell

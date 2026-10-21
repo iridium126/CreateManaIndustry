@@ -1,0 +1,44 @@
+// A transformation service is loaded into ModLauncher's service layer. Keeping
+// it in main output makes FML consider the entire mod already located and skip
+// discovering it. Keep the service and mod in separate jars/layers internally;
+// the installable distribution embeds the main jar and exposes it via CMIModLocator.
+sourceSets {
+    bootstrap {
+        compileClasspath += sourceSets.main.compileClasspath
+    }
+}
+
+def bootstrapJar = tasks.register('bootstrapJar', Jar) {
+    archiveClassifier = 'bootstrap'
+    destinationDirectory = layout.buildDirectory.dir('internal')
+    from(sourceSets.bootstrap.output)
+    manifest.attributes('FMLModType': 'LIBRARY', 'Automatic-Module-Name': 'createmanaindustry.bootstrap')
+}
+
+// main's compile task prepares the generated Minecraft and optional API jars
+// shared by the bytecode template's compile classpath.
+tasks.named('compileBootstrapJava') { dependsOn(tasks.named('compileJava')) }
+
+// Only the distribution belongs in build/libs. The bootstrap-only jar is for
+// development runs; the normal Java component jar is the embedded mod payload.
+tasks.named('jar', Jar) {
+    destinationDirectory = layout.buildDirectory.dir('internal')
+}
+def distributionJar = tasks.register('distributionJar', Jar) {
+    from(sourceSets.bootstrap.output)
+    from(tasks.named('jar').flatMap { it.archiveFile }) {
+        into('META-INF/jars')
+        rename { 'createmanaindustry.jar' }
+    }
+    manifest.attributes('FMLModType': 'LIBRARY', 'Automatic-Module-Name': 'createmanaindustry.bootstrap')
+}
+tasks.named('jar') { finalizedBy(distributionJar) }
+tasks.named('assemble') { dependsOn(distributionJar, bootstrapJar) }
+// Publish and resolve the same installable artifact advertised by module metadata.
+['apiElements', 'runtimeElements'].each { configurationName ->
+    configurations.named(configurationName) {
+        outgoing.artifacts.clear()
+        outgoing.artifact(distributionJar)
+    }
+}
+

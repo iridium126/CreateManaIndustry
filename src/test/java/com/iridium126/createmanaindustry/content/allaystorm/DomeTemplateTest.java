@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DomeTemplateTest {
  @Test void publishedResourceMatchesItsFinalArcClockSeparationCertificate()throws Exception{
-  try(var in=DomeTemplate.class.getResourceAsStream("/data/createmanaindustry/dome-template-v4.bin");var proof=DomeTemplate.class.getResourceAsStream("/data/createmanaindustry/dome-template-v4.validation.json")){
+  try(var in=DomeTemplate.class.getResourceAsStream("/data/createmanaindustry/dome-template-v4.bin");var proof=DomeTemplateTest.class.getResourceAsStream("/allaystorm/dome-template-v4.validation.json")){
+   assertNotNull(in);assertNotNull(proof);
+   assertNull(DomeTemplate.class.getResource("/data/createmanaindustry/dome-template-v4.validation.json"),"Offline certificate must not be a production resource");
    var certificate=com.google.gson.JsonParser.parseReader(new java.io.InputStreamReader(proof,java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
    assertEquals(certificate.get("sha256").getAsString(),java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(in.readAllBytes())));
    assertTrue(certificate.get("continuousMinimumBodySpacing").getAsDouble()>=.50);assertEquals(768,certificate.get("coreChannels").getAsInt());assertTrue(certificate.get("belowPlaneChannels").getAsInt()<=768);

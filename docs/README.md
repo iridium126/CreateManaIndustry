@@ -12,6 +12,7 @@
 
 | 文档 | 内容 | 状态 |
 | --- | --- | --- |
+| [building.md](building.md) | Gradle职责、依赖范围、缓存、重映射、打包与验证 | ✅ |
 | [gpu-runtime-architecture-plan.md](gpu-runtime-architecture-plan.md) | GPU 引擎全部现有功能的架构、优化方向、分批实施状态及验收边界 | 🚧 |
 | [gpu-runtime-client-acceptance.md](gpu-runtime-client-acceptance.md) | 用户执行的隔离客户端启动、全功能检查清单与性能反馈格式 | 🚧 |
 | [hexcasting-trickster-interop-review-2026-10-16.md](hexcasting-trickster-interop-review-2026-10-16.md) | 全部整改条目、自动回归、真实专服重启与性能对照；客户端待用户验收 | 🟡 |

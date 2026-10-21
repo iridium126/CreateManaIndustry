@@ -1,0 +1,69 @@
+import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.zip.ZipFile
+
+/** Extract exactly one nested API without resolving its distribution during configuration. */
+@CacheableTask
+abstract class ExtractNestedApi extends DefaultTask {
+    @InputFiles @PathSensitive(PathSensitivity.NONE)
+    abstract ConfigurableFileCollection getDistribution()
+    @Input abstract Property<String> getEntryPattern()
+    @OutputFile abstract RegularFileProperty getOutputFile()
+
+    @TaskAction void extract() {
+        new ZipFile(distribution.singleFile).withCloseable { outer ->
+            def matches = outer.entries().findAll { !it.directory && it.name.matches(entryPattern.get()) }
+            if (matches.size() != 1) {
+                throw new GradleException("Expected exactly one nested API matching ${entryPattern.get()}, found ${matches.size()}")
+            }
+            def staged = new File(temporaryDir, 'api.jar')
+            outer.getInputStream(matches.first()).withCloseable { input ->
+                staged.withOutputStream { output -> input.transferTo(output) }
+            }
+            def output = outputFile.get().asFile
+            output.parentFile.mkdirs()
+            Files.move(staged.toPath(), output.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+}
+
+def specifications = [
+        sodium: [task: 'extractSodiumCoreJar', configuration: 'sodiumDistribution', coordinate: cmiCoordinates.sodium,
+                 pattern: 'META-INF/jarjar/net\\.caffeinemc\\.sodium-.*-mod\\.jar', output: '.gradle/cmi/optional-apis/sodium-core.jar'],
+        sable: [task: 'extractSableCompanion', configuration: 'sableDistribution', coordinate: cmiCoordinates.sable,
+                pattern: 'META-INF/jarjar/sable-companion-common-.*\\.jar', output: '.gradle/cmi/optional-apis/sable-companion.jar'],
+        cardinal: [task: 'extractCardinalBase', configuration: 'cardinalComponentsDistribution', coordinate: cmiCoordinates.cardinalComponents,
+                   pattern: 'META-INF/jars/cardinal-components-base-.*\\.jar', output: '.gradle/cmi/optional-apis/cardinal-components-base.jar'],
+        endec: [task: 'extractEndecNetty', configuration: 'owoCodecDistribution', coordinate: cmiCoordinates.owo,
+                pattern: 'META-INF/jars/netty-.*\\.jar', output: '.gradle/cmi/optional-apis/endec-netty.jar']
+]
+def outputs = [:]
+specifications.each { key, spec ->
+    def distribution = configurations.create(spec.configuration) {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+    dependencies.add(distribution.name, spec.coordinate)
+    def extraction = tasks.register(spec.task, ExtractNestedApi) {
+        group = 'build setup'
+        description = "Extracts the nested ${key} API from its resolved distribution"
+        it.distribution.from(distribution)
+        entryPattern.set(spec.pattern)
+        outputFile.set(layout.projectDirectory.file(spec.output))
+    }
+    def api = files(extraction.flatMap { it.outputFile })
+    outputs[key] = extraction.flatMap { it.outputFile }
+    dependencies.add('compileOnly', api)
+    if (key in ['sable', 'endec']) dependencies.add('testRuntimeOnly', api)
+}
+// The Sodium loader remains on the same compile classpath as before.
+configurations.compileOnly.extendsFrom(configurations.sodiumDistribution)
+ext.cmiOptionalApiOutputs = outputs.asImmutable()

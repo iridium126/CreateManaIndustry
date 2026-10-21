@@ -14,15 +14,9 @@ java {
     toolchain.languageVersion = JavaLanguageVersion.of(21)
 }
 
-// Resolve these once into local variables (same source as settings.gradle).
-// Task closures invoked at execution time — e.g. Copy's `rename { }`, which
-// runs the GString body as a transformer — cannot resolve project properties
-// through their owner chain, but plain locals captured by the closure always
-// can. Referencing `trickster_project_id` directly inside `rename { }` fails
-// with MissingPropertyException exactly at that point.
-def tricksterProjectId = providers.gradleProperty("trickster_project_id").get()
-def tricksterFileId = providers.gradleProperty("trickster_file_id").get()
-def fabricApiVersion = providers.gradleProperty("fabric_api_version").get()
+// Shared settings-time paths and centrally declared coordinates.
+def remapped = gradle.ext.cmiRemappedLibraries.artifacts
+def coordinates = rootProject.cmiCoordinates
 
 repositories {
     mavenCentral()
@@ -40,17 +34,17 @@ dependencies {
     minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
     mappings loom.officialMojangMappings()
 
-    modImplementation "net.fabricmc:fabric-loader:0.16.14"
-    modImplementation "curse.maven:trickster-${tricksterProjectId}:${tricksterFileId}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabricApiVersion}"
-    implementation "io.vavr:vavr:0.10.4"
+    modImplementation coordinates.fabricLoader
+    modImplementation coordinates.trickster
+    modImplementation coordinates.fabricApi
+    implementation coordinates.vavr
 }
 
 // Export into a stable dir outside build/ so the named jars survive `clean`
 // and the root project can consume them without evaluating this subproject.
 def exportedDir = layout.projectDirectory.dir("remapped-libs")
-def exportedJar = layout.projectDirectory.file("remapped-libs/trickster-${tricksterProjectId}-${tricksterFileId}-named.jar")
-def mergedFabricApiJar = layout.projectDirectory.file("remapped-libs/fabric-api-${fabricApiVersion}-named.jar")
+def exportedJar = remapped.trickster
+def mergedFabricApiJar = remapped.fabricApi
 
 tasks.register("exportTricksterNamedJar", Copy) {
     dependsOn configurations.compileClasspath
@@ -66,7 +60,7 @@ tasks.register("exportTricksterNamedJar", Copy) {
     })
 
     into(exportedDir)
-    rename { "trickster-${tricksterProjectId}-${tricksterFileId}-named.jar" }
+    rename { exportedJar.name }
 }
 
 // The fabric-api bundler jar does not include every module (e.g.
@@ -87,7 +81,7 @@ tasks.register("mergeFabricApiNamedJar", Zip) {
         matches.collect { zipTree(it) }
     })
 
-    archiveFileName = "fabric-api-${fabricApiVersion}-named.jar"
+    archiveFileName = mergedFabricApiJar.name
     destinationDirectory = exportedDir
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
@@ -98,21 +92,15 @@ configurations {
 }
 
 artifacts {
-    add("namedTrickster", exportedJar.asFile) {
+    add("namedTrickster", exportedJar) {
         builtBy tasks.named("exportTricksterNamedJar")
     }
-    add("namedFabricApi", mergedFabricApiJar.asFile) {
+    add("namedFabricApi", mergedFabricApiJar) {
         builtBy tasks.named("mergeFabricApiNamedJar")
     }
 }
 
-// This subproject exists solely to export remapped jars (Trickster, fabric-api)
-// via artifact transforms during configuration resolution. Disable every
-// lifecycle task so they never execute alongside root-project tasks.
-gradle.taskGraph.whenReady { graph ->
-    tasks.configureEach { task ->
-        if (task.name != 'exportTricksterNamedJar' && task.name != 'mergeFabricApiNamedJar') {
-            task.enabled = false
-        }
-    }
+// Only the artifact export tasks belong to this utility project.
+tasks.configureEach {
+    enabled = name in ['exportTricksterNamedJar', 'mergeFabricApiNamedJar']
 }

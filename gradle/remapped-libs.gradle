@@ -1,0 +1,10 @@
+// One settings-time decision, reused by the root dependency declarations.
+def artifacts = [
+        trickster: new File(settingsDir, "loom-remap/remapped-libs/trickster-${providers.gradleProperty('trickster_project_id').get()}-${providers.gradleProperty('trickster_file_id').get()}-named.jar"),
+        fabricApi: new File(settingsDir, "loom-remap/remapped-libs/fabric-api-${providers.gradleProperty('fabric_api_version').get()}-named.jar")
+]
+gradle.ext.cmiRemappedLibraries = [
+        artifacts: artifacts.asImmutable(),
+        useCache: !providers.gradleProperty('regenerateRemap').isPresent() && artifacts.values().every { it.isFile() }
+].asImmutable()
+if (!gradle.ext.cmiRemappedLibraries.useCache) include('loom-remap')

@@ -21,6 +21,6 @@ python -m unittest discover -s scripts/allaystorm -p test_dome_v4_tools.py
 | `test_dome_v4_tools.py` | 基变换、内部峰值、C2端点、时钟和无损编解码oracle |
 | `generate_helix_template.py` | Helix确定性4096点模板；显式指定 `--output build/...` 试制 |
 
-`data/dome-v4-source.npz` 保存float32五次B样条控制点、knots、结束时间及流线元数据，控制点使用无损XOR字节平面。源SHA256为 `15caaf4c32bdc6310d289a5137bdb75808b5226021f7ce3b7f7bce86b1633d4f`；成品SHA256为 `53456dfd103eb61f5f7dec5022d33f1d2eaf06adfa2ed584e0d4ffcf27f1fe94`。完整证书随成品位于 `src/main/resources/data/createmanaindustry/dome-template-v4.validation.json`。
+`data/dome-v4-source.npz` 保存float32五次B样条控制点、knots、结束时间及流线元数据，控制点使用无损XOR字节平面。源SHA256为 `15caaf4c32bdc6310d289a5137bdb75808b5226021f7ce3b7f7bce86b1633d4f`；成品SHA256为 `53456dfd103eb61f5f7dec5022d33f1d2eaf06adfa2ed584e0d4ffcf27f1fe94`。运行时只打包二进制模板；完整证书位于 `src/test/resources/allaystorm/dome-template-v4.validation.json`，由单元测试校验模板哈希与运动约束，不进入发布JAR。
 
 编码、曲线或分离变化后，重新运行最终解码检查和全部连续证书，再运行生产GPU生命周期／服务端回放；数学工具不代替运行时交接验证。旧v3生成、位置投影修补、原生烘焙器和跨版本比较工具已移除，需要历史研究时从Git提取，不恢复为默认路径。

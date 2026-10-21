@@ -1,0 +1,110 @@
+// All external coordinates are declared once; dependency scopes are assigned below.
+ext.cmiCoordinates = [
+        create: 'curse.maven:create-328085:7963363',
+        sable: 'maven.modrinth:T9PomCSv:U678xqle',
+        flywheel: "dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:${flywheel_version}",
+        registrate: "com.tterrag.registrate:Registrate:${registrate_version}",
+        ponder: "net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}",
+        veil: 'maven.modrinth:3KUWeVhG:dqlL6EvF',
+        iris: 'curse.maven:irisshaders-455508:8242804',
+        sodium: 'curse.maven:sodium-394468:8756580',
+        glslTransformer: 'io.github.douira:glsl-transformer:2.0.1',
+        irisVeil: 'curse.maven:iris-veil-compat-1541252:8280410',
+        jei: "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}",
+        hexcasting: 'hexcasting:hexcasting-neoforge-1.21.1-0.12.0-devel-pre-53@jar',
+        hexparse: 'maven.modrinth:WjFyIzFj:fFV6HwT2',
+        hexOverpowered: 'maven.modrinth:PkhtCPsD:I3vfDCiE',
+        paucal: 'paucal:paucal-0.7.1-pre-27+1.21.1-neoforge@jar',
+        caelus: 'curse.maven:caelus-308989:5694215',
+        inline: 'curse.maven:inline-971167:6556868',
+        patchouli: 'curse.maven:patchouli-306770:7730942',
+        clothConfig: 'curse.maven:cloth-config-348521:5729127',
+        architectury: 'curse.maven:architectury-api-419699:5786327',
+        kotlinForForge: 'curse.maven:kotlin-for-forge-351264:7471280',
+        arsNouveau: 'curse.maven:ars-nouveau-401955:8517890',
+        curios: 'curse.maven:curios-309927:6529130',
+        geckolib: 'curse.maven:geckolib-388172:8350073',
+        bitsAndBobs: 'maven.modrinth:T8bvmqVZ:ufzJ4rp9',
+        azimuth: 'curse.maven:azimuth-api-1466331:8661574',
+        strutYourStuff: 'curse.maven:strut-your-stuff-1486746:8301563',
+        accessories: 'curse.maven:accessories-938917:7583320',
+        owo: 'codeberg.master_bw3.trickster:owo-lib-neoforge:0.13.0-alpha.15+1.21@jar',
+        lithostitched: 'curse.maven:lithostitched-936015:8321754',
+        modlauncher: 'cpw.mods:modlauncher:11.0.5',
+        connector: 'org.sinytra:connector:2.0.0-beta.17+1.21.1',
+        forgifiedFabricApi: 'curse.maven:forgified-fabric-api-889079:7658611',
+        vavr: 'io.vavr:vavr:0.10.4',
+        endec: 'io.wispforest:endec:0.1.5.1',
+        trickster: "curse.maven:trickster-${trickster_project_id}:${trickster_file_id}",
+        fabricApi: "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}",
+        fabricLoader: 'net.fabricmc:fabric-loader:0.16.14',
+        cicada: 'curse.maven:cicada-989574:7068950',
+        lavender: 'curse.maven:lavender-api-962916:6107175',
+        cardinalComponents: 'curse.maven:cardinal-components-api-318449:7250871',
+        junit: 'org.junit:junit-bom:5.10.2'
+].asImmutable()
+
+configurations {
+    runtimeClasspath.extendsFrom localRuntime
+    // ModDev wires Minecraft to main; JVM tests also need that generated classpath.
+    testCompileClasspath.extendsFrom compileClasspath
+    testRuntimeClasspath.extendsFrom runtimeClasspath
+    tricksterLocalRuntime {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+    testRuntimeClasspath.extendsFrom tricksterLocalRuntime
+}
+
+apply from: file('gradle/optional-apis.gradle')
+apply from: file('gradle/voxy.gradle')
+
+def coordinates = cmiCoordinates
+def remapped = gradle.ext.cmiRemappedLibraries
+dependencies {
+    implementation coordinates.create
+    implementation coordinates.inline
+    implementation coordinates.azimuth
+    implementation coordinates.forgifiedFabricApi
+
+    // Optional integrations are available in development, not required by Maven consumers.
+    ['veil', 'hexcasting', 'arsNouveau', 'bitsAndBobs', 'jei'].each { key ->
+        compileOnly coordinates[key]
+        localRuntime coordinates[key]
+    }
+    ['sable', 'flywheel', 'registrate', 'ponder', 'iris', 'glslTransformer',
+     'irisVeil', 'hexparse', 'modlauncher', 'connector', 'vavr', 'endec'].each { key ->
+        compileOnly coordinates[key]
+    }
+    // GLSL transformer is supplied by Iris/Veil compatibility at runtime; never bundle it.
+    compileOnly(coordinates.owo) { transitive = false }
+
+    ['paucal', 'caelus', 'patchouli', 'clothConfig', 'architectury', 'kotlinForForge',
+     'curios', 'geckolib', 'strutYourStuff', 'accessories', 'lithostitched'].each { key ->
+        localRuntime coordinates[key]
+    }
+    localRuntime(coordinates.owo) { transitive = false }
+    ['cicada', 'lavender', 'cardinalComponents'].each { key -> runtimeOnly coordinates[key] }
+    tricksterLocalRuntime coordinates.trickster
+
+    // Connector and the bootstrap service must be visible before mod discovery.
+    additionalRuntimeClasspath coordinates.connector
+    additionalRuntimeClasspath files(tasks.named('bootstrapJar'))
+    if (remapped.useCache) {
+        compileOnly files(remapped.artifacts.values())
+    } else {
+        compileOnly project(path: ':loom-remap', configuration: 'namedFabricApi')
+        compileOnly project(path: ':loom-remap', configuration: 'namedTrickster')
+    }
+
+    testImplementation platform(coordinates.junit)
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation sourceSets.bootstrap.output
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly coordinates.hexOverpowered
+    testRuntimeOnly coordinates.modlauncher
+    // Inspect real APIs/bytecode without initializing the optional mods.
+    testRuntimeOnly(coordinates.ponder) { transitive = false }
+    testRuntimeOnly(coordinates.iris) { transitive = false }
+}

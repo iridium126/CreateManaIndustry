@@ -77,4 +77,4 @@ python scripts/benchmarks/run.py benchmarkStormHelix --offline
 - 坡地、台阶、屋顶、动态障碍、未知／卸载碰撞、死亡／中止；多客户端换维度、观察者及authority离开。
 - 实际Iris光影包下MODEL／阴影一致，密集多人场景完整CPU／GPU帧时间、显存、上传量和冷启动成本。
 
-当前分发JAR从 `build/libs/` 获取。发布检查包含内嵌mod JAR：资源与证书匹配，不含旧模板、离线控制点、测试类或GameTest夹具。两端替换并重启，存档与当前配置保留。
+当前分发JAR从 `build/libs/` 获取。离线证书在 `src/test/resources/allaystorm/`，只用于校验生产模板，不属于运行时资源。更新模板时同时更新测试证书。发布检查包含内嵌mod JAR：保留当前二进制模板，排除验证证书、旧模板、离线控制点、测试类及GameTest夹具。两端替换并重启，存档与当前配置保留。
