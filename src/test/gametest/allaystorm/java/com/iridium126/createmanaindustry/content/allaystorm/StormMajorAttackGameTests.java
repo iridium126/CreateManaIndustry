@@ -45,6 +45,11 @@ public final class StormMajorAttackGameTests {
         h.assertTrue((int)field(wave,"kind")==kind,"Wrong major attack selected");
         var start=(ClientboundStormWavePacket)call("wavePacket",wave,AllayStarfall.START,true,player.getId());
         h.assertTrue(start.event()==0&&start.members().length>0,"START omitted roster");
+        if(kind==StormAttack.HELIX){
+            h.assertTrue(Math.abs(start.diveUntilSec()-start.helix().finish()-1)<.001,"Initial Helix deadline is not tail plus one second");
+            call("advanceHelix",level,runtime,wave,player,level.getGameTime()+5,start.startSec()+.25f);
+            h.assertTrue(Math.abs((float)field(wave,"end")-((AllayHelix.Flight)field(wave,"helix")).finish()-1)<.001,"Aiming update changed Helix deadline margin");
+        }
         float lock=(float)field(wave,kind==StormAttack.HELIX?"assemble":"lock");
         var identity=StormIdentity.of(level,data);var eligibleMask=new BitSet();eligibleMask.set(0,start.members().length);var readyMask=new BitSet();readyMask.set(0,(start.members().length*95+99)/100-1);readyMask.set(start.members().length-1);
         if(evidence!=null){var gson=new com.google.gson.Gson();readyMask=BitSet.valueOf(gson.fromJson(evidence.get("ready"),long[].class));eligibleMask=BitSet.valueOf(gson.fromJson(evidence.get("eligible"),long[].class));lock=start.startSec()+evidence.get("gatherSeconds").getAsFloat();}
@@ -57,6 +62,8 @@ public final class StormMajorAttackGameTests {
         h.assertTrue((boolean)field(wave,"locked"),"Major attack never LOCKed on rough ground");
         if(kind==StormAttack.HELIX){
             var flight=(AllayHelix.Flight)field(wave,"helix");h.assertTrue(flight.thrust()==lock,"Helix waited after assembling");
+            h.assertTrue(flight.speed()==12&&flight.maxSpeed()==32,"Helix LOCK lost fixed axial or rotating speed budget");
+            h.assertTrue(Math.abs((float)field(wave,"end")-flight.finish()-1)<.001,"LOCK changed Helix deadline margin");
             double x=flight.controls()[9]-flight.controls()[3],y=flight.controls()[10]-flight.controls()[4],z=flight.controls()[11]-flight.controls()[5];
             h.assertTrue(start.members().length==4096&&start.groupEnds()[0]==2048,"Helix fixed roster missing");
             h.assertTrue(Math.abs(Math.hypot((float)field(wave,"offsetX"),(float)field(wave,"offsetZ"))-(AllayStormData.vortexRadius(data.count)))<.001,"Helix not anchored outside storm");
@@ -69,6 +76,21 @@ public final class StormMajorAttackGameTests {
     }
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void forcedDomeStartsAndClosesOnRoughGround(GameTestHelper h){launch(h,StormAttack.DOME,16384);h.succeed();}
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void helixAssemblesRelativeToStormThenImmediatelyAttacks(GameTestHelper h){launch(h,StormAttack.HELIX,16384);h.succeed();}
+    @GameTest(template="storm_combat_test",timeoutTicks=40) public static void helixDeadlineRetiresSlotAndDoesNotReleaseReplacement(GameTestHelper helper){
+        var scene=launch(helper,StormAttack.HELIX,16384);var waves=(List<?>)field(scene.runtime(),"waves");var reserved=(BitSet)field(scene.runtime(),"waveReserved");
+        float now=(helper.getLevel().getGameTime()&((1<<21)-1))/20f;
+        set(scene.wave(),"end",now+.05f);call("tickWaves",helper.getLevel(),scene.runtime(),scene.data(),List.of(scene.player()));helper.assertTrue(waves.size()==1,"Helix retired before deadline");
+        set(scene.wave(),"end",now-.05f);call("tickWaves",helper.getLevel(),scene.runtime(),scene.data(),List.of(scene.player()));helper.assertTrue(waves.isEmpty()&&reserved.isEmpty(),"Helix deadline retained slot or reservations");
+        int member=((int[])field(scene.wave(),"members"))[0];reserved.set(member);call("tickWaves",helper.getLevel(),scene.runtime(),scene.data(),List.of(scene.player()));helper.assertTrue(reserved.get(member),"Repeated deadline tick released new owner");helper.succeed();
+    }
+    @GameTest(template="storm_combat_test",timeoutTicks=40) public static void helixAllCompletedRetiresBeforeDeadline(GameTestHelper helper){
+        var scene=launch(helper,StormAttack.HELIX,16384);var members=(int[])field(scene.wave(),"members");var completed=new BitSet();completed.set(0,members.length);var identity=StormIdentity.of(helper.getLevel(),scene.data());
+        var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(identity.dimension(),identity.epoch(),(int)field(scene.wave(),"id"),completed.toLongArray());
+        var context=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?scene.player():null);
+        AllayStormManager.completeAttack(packet,context);call("tickWaves",helper.getLevel(),scene.runtime(),scene.data(),List.of(scene.player()));
+        var reserved=(BitSet)field(scene.runtime(),"waveReserved");helper.assertTrue(((List<?>)field(scene.runtime(),"waves")).isEmpty()&&reserved.isEmpty(),"All-completed Helix waited for whole-wave deadline");
+        reserved.set(members[0]);AllayStormManager.completeAttack(packet,context);helper.assertTrue(reserved.get(members[0]),"Late full completion released new owner");helper.succeed();
+    }
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void majorMemberThresholdsRemain(GameTestHelper h){launch(h,StormAttack.DOME,32);launch(h,StormAttack.HELIX,32);h.succeed();}
     @SuppressWarnings("unchecked")
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void independentMajorsCanShareOneTarget(GameTestHelper h){

@@ -91,7 +91,7 @@ public record ClientboundStormWavePacket(int waveId,long epoch,int event,int wav
   if(kind==2){
    if(b.readVarInt()!=com.iridium126.createmanaindustry.content.allaystorm.HelixTemplate.VERSION)throw new DecoderException("Unknown helix template");
    int a=b.readUnsignedByte(),other=b.readUnsignedByte();float[] h=new float[12];for(int i=0;i<h.length;i++)h[i]=finite(b);
-   int controlCount=b.readUnsignedByte();if(a>2||other!=a+3||controlCount<2||controlCount>6||h[0]!=64||h[1]!=32||h[2]<6||h[2]>18||h[3]<=0||h[3]>h[2]||h[7]<0||h[7]>1/(4*h[1]))throw new DecoderException("Invalid helix geometry");
+   int controlCount=b.readUnsignedByte();if(a>2||other!=a+3||controlCount<2||controlCount>6||h[0]!=64||h[1]!=32||h[2]!=com.iridium126.createmanaindustry.content.allaystorm.StormMotion.HELIX_LIMIT||h[3]!=com.iridium126.createmanaindustry.content.allaystorm.StormMotion.HELIX_THRUST||h[7]<0||h[7]>1/(4*h[1]))throw new DecoderException("Invalid helix geometry");
    if(Math.abs(h[9]*h[9]+h[10]*h[10]+h[11]*h[11]-1)>.002)throw new DecoderException("Invalid helix axis");
    float[] controls=new float[controlCount*3],samples=new float[AllayHelix.SAMPLES*4];
    for(int i=0;i<controls.length;i++)controls[i]=finite(b);float previousArc=-1;

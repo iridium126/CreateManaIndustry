@@ -167,7 +167,7 @@ public class CreateManaIndustry {
     }
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(MODID).versioned("16");
+        PayloadRegistrar registrar = event.registrar(MODID).versioned("17");
         registrar.playToClient(
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.TYPE,
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.STREAM_CODEC,

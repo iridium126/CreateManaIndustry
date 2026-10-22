@@ -75,7 +75,12 @@ bool cmiColumnSteerAt(uint a,vec3 pos,vec3 vel,vec3 home,vec3 homeVelocity,float
  if(state==6u){phase=6u;marker=6.;return false;}
  if(state==0u){
   if(time<t.y){phase=1u;marker=3.;target=cmiColumnApproach(s,b,rank,time);feed=(target-pos)/step;return true;}
-  cmiColumnCurveInit(s,arc,b,rank,pos,vel,time-step);state=2u;
+  vec3 direction=vel;float begin=time-step;
+  if(distance(pos,cmiColumnGatherAt(b,rank,begin))<=.4&&distance(vel,cmiColumnOrbitVelocity(b,rank,begin))<=1.){
+   vec2 radial=pos.xz-cmiStarLanding(b,0u).xz;
+   if(length(radial)>.0001){radial=normalize(radial);direction=vec3(-radial.y*CMI_COLUMN_ORBIT_SPEED,-sqrt(36.-CMI_COLUMN_ORBIT_SPEED*CMI_COLUMN_ORBIT_SPEED),radial.x*CMI_COLUMN_ORBIT_SPEED);}
+  }
+  cmiColumnCurveInit(s,arc,b,rank,pos,direction,begin);state=2u;
  }
  // A collision can end descent before the reference endpoint on a hill or a stair.
  if(state==2u&&cmiColumnFloor(pos)&&fract(pos.y)<.04){cmiColumnBloomInit(s,arc,b,pos,time-step);state=4u;}

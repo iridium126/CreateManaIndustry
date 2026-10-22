@@ -149,6 +149,7 @@ bool cmiStarSteering(float identity,float seed,vec3 pos,vec3 home,float cap,out 
  if(cmiStarClaim(identity,uTimeSec)<0){uint b=cmiStarBase(cmiStarSlot(assignment));if((cmiDome(b)||cmiHelix(b))&&cmiStarPhase(assignment,uTimeSec)>=6.)phase=6u;return false;}
  phase=uint(cmiStarPhase(assignment,uTimeSec));if(phase==6u&&(cmiHelix(cmiStarBase(cmiStarSlot(assignment)))||cmiDome(cmiStarBase(cmiStarSlot(assignment)))))return false;target=cmiStarPoint(assignment,seed,uTimeSec,home);
  if(cmiDome(cmiStarBase(cmiStarSlot(assignment)))){velocity=cmiDomeVelocity(assignment,uTimeSec);return true;}
+ if(cmiHelix(cmiStarBase(cmiStarSlot(assignment)))&&phase==4u){velocity=cmiHelixVelocity(assignment,cmiStarTime(cmiStarBase(cmiStarSlot(assignment)),uTimeSec));return true;}
  vec3 next=cmiStarPoint(assignment,seed,uTimeSec+.02,home);velocity=(next-target)/.02;
  float speed=length(velocity);if(speed>cap)velocity*=cap/speed;return true;
 }

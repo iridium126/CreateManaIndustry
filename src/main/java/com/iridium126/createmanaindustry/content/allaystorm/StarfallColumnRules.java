@@ -24,7 +24,7 @@ public final class StarfallColumnRules {
         return landing.add(Math.cos(angle)*r,height(r),Math.sin(angle)*r);
     }
     public static double gatherOffset(int rank){return (rank/4-7.5)*.7;}
-    public static double orbitAngle(int rank,int seed,double elapsed){return (rank&3)*Math.PI/2+(rank/4)*.35+seed*.0001f+6/(.9+.3*(rank/4)/15.)*elapsed;}
+    public static double orbitAngle(int rank,int seed,double elapsed){return (rank&3)*Math.PI/2+(rank/4)*.35+seed*.0001f+StormMotion.COLUMN_ORBIT/(.9+.3*(rank/4)/15.)*elapsed;}
     public static Vec3 gather(Vec3 origin,int rank,int seed) {return gather(origin,rank,seed,0);}
     public static Vec3 gather(Vec3 origin,int rank,int seed,double elapsed) {
         double angle=orbitAngle(rank,seed,elapsed),r=.9+.3*(rank/4)/15.;
@@ -35,7 +35,7 @@ public final class StarfallColumnRules {
         double u=Math.clamp(fraction,0,1),s=smooth(u),first=orbitAngle(rank,seed,assembleAge),last=first+.7*duration;
         double angleEnd=((rank*27)&63)*Math.PI/32+seed*.0001f;
         last+=Math.atan2(Math.sin(angleEnd-last),Math.cos(angleEnd-last));
-        double angle=(first+6/(.9+.3*(rank/4)/15.)*u*duration)*(1-s)+last*s,r=(.9+.3*(rank/4)/15.)*(1-s)+root(rank)*s;
+        double angle=(first+StormMotion.COLUMN_ORBIT/(.9+.3*(rank/4)/15.)*u*duration)*(1-s)+last*s,r=(.9+.3*(rank/4)/15.)*(1-s)+root(rank)*s;
         Vec3 top=gather(origin,rank,seed,assembleAge),foot=bloom(landing,rank,seed,0);
         return new Vec3(landing.x+Math.cos(angle)*r,top.y*(1-s)+foot.y*s,landing.z+Math.sin(angle)*r);
     }

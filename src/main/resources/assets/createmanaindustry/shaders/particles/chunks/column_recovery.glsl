@@ -40,7 +40,7 @@ void cmiColumnRecover(uint assignment,inout vec3 pos,inout vec3 vel,vec3 home,ve
   float step=min(.1,now-cursor);vec3 target,feed;float marker;
   bool engaged=cmiColumnSteerAt(assignment,pos,vel,home,homeVelocity,cursor+step,step,target,feed,phase,marker);
   if(engaged)vel=feed;else vel+=((home-pos)*24.+(homeVelocity-vel)*6.)*step;
-  float speed=length(vel);if(speed>6.)vel*=6./speed;
+  float speed=length(vel),cap=phase==1u?CMI_STORM_INTERCEPT:CMI_STORM_CRUISE;if(speed>cap)vel*=cap/speed;
   cmiColumnReplayCollision(pos,vel,step);cursor+=step;
  }
  cmiColumnStore(stateBase+7u,cursor);starStateWrite.words[arc+44u]=cursor<now-.0001?1u:0u;

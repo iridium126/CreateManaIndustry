@@ -1,0 +1,2 @@
+#define CMI_DOME_JOIN_AT(ASSIGNMENT) (CMI_DOME_JOIN+(cmiStarSlot(ASSIGNMENT)*12288u+cmiMajorRank(ASSIGNMENT))*8u)
+#define CMI_DOME_MOTION_LIMIT(STATE,ASSIGNMENT,PHASE) cmiDomeMotionLimit(PHASE,cmiDomeElapsed(cmiStarBase(cmiStarSlot(ASSIGNMENT)),uTimeSec)-uintBitsToFloat(STATE.words[CMI_DOME_JOIN_AT(ASSIGNMENT)+7u]),uintBitsToFloat(STATE.words[CMI_DOME_JOIN_AT(ASSIGNMENT)+6u]))

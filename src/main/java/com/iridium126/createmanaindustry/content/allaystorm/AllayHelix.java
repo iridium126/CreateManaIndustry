@@ -6,6 +6,7 @@ import java.util.BitSet;
 public final class AllayHelix {
  public static final int MIN_MEMBERS=4096,MAX_MEMBERS=4096,SAMPLES=48;
  public static final float WARNING=1.5f,CHARGE_MIN=3,CHARGE_MAX=8,RAMP=.5f;
+ public static final float FAULT_GRACE=1f;
  public static final int SWEEP_INVALID=0x80000000,PHASE_MASK=255;
  public record Selection(int armA,int armB,int[] members,int[] ends) {}
  public record Flight(int armA,int armB,float length,float radius,float maxSpeed,float speed,float charge,
@@ -16,6 +17,7 @@ public final class AllayHelix {
   public Flight schedule(float charge,float thrust){float duration=(arcLength()-length)/speed+RAMP;return new Flight(armA,armB,length,radius,maxSpeed,speed,charge,thrust,thrust+duration,curvature,targetArc,controls,samples,axisX,axisY,axisZ);}
  }
  private AllayHelix() {}
+ public static float deadline(Flight flight){return flight.finish()+FAULT_GRACE;}
  public static int arm(int stormSeed,int member){float seed=AllayStormWaves.memberSeed(stormSeed,member);return Math.min(5,(int)Math.floor(AllayStormWaves.hash1(seed*5.7f)*6));}
  public static Selection select(int generated,BitSet dead,BitSet reserved,int quota,int stormSeed,int waveSeed){
   generated=Math.min(AllayStarfall.MAX_MEMBERS,Math.max(0,generated));
@@ -97,11 +99,11 @@ public final class AllayHelix {
   float speed=.95f*maxSpeed/(1+(radius+.6f)*curvature);
   return new Flight(roster.armA,roster.armB,length,radius,maxSpeed,speed,charge,thrust,thrust+(total-length)/speed+RAMP,curvature,targetArc,controls.clone(),points);
  }
- public static Flight linearFlight(Selection roster,net.minecraft.world.phys.Vec3 center,net.minecraft.world.phys.Vec3 axis,double exit,float speed,float time){
+ public static Flight linearFlight(Selection roster,net.minecraft.world.phys.Vec3 center,net.minecraft.world.phys.Vec3 axis,double exit,float time){
   float travel=(float)Math.max(0,exit+32),total=64+travel;float[] controls=new float[18],samples=new float[SAMPLES*4];
   for(int i=0;i<6;i++){var p=center.add(axis.scale(total*i/5));controls[i*3]=(float)p.x;controls[i*3+1]=(float)p.y;controls[i*3+2]=(float)p.z;}
   for(int i=0;i<SAMPLES;i++){float arc=total*i/(SAMPLES-1);var p=center.add(axis.scale(arc));samples[i*4]=(float)p.x;samples[i*4+1]=(float)p.y;samples[i*4+2]=(float)p.z;samples[i*4+3]=arc;}
-  return new Flight(roster.armA,roster.armB,64,32,speed,speed,time,time,time+travel/speed+.075f,0,(float)exit,controls,samples,(float)axis.x,(float)axis.y,(float)axis.z);
+  return new Flight(roster.armA,roster.armB,64,32,StormMotion.HELIX_LIMIT,StormMotion.HELIX_THRUST,time,time,time+travel/StormMotion.HELIX_THRUST+.075f,0,(float)exit,controls,samples,(float)axis.x,(float)axis.y,(float)axis.z);
  }
  private static float component(float[] p,int axis){double x=p[3]-p[0],y=p[4]-p[1],z=p[5]-p[2],n=Math.sqrt(x*x+y*y+z*z);return n<1e-10?(axis==0?1:0):(float)((axis==0?x:axis==1?y:z)/n);}
  public static net.minecraft.world.phys.Vec3 axis(Flight f){return new net.minecraft.world.phys.Vec3(f.axisX,f.axisY,f.axisZ).normalize();}

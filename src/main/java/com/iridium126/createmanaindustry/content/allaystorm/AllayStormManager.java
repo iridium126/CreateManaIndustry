@@ -349,8 +349,8 @@ public final class AllayStormManager {
         w.centerX=(float)center.x;w.centerY=(float)center.y;w.centerZ=(float)center.z;w.centerSec=clockSeconds(tick);
         // Account for 2m/s body motion and worst-case rotating outer-envelope velocity.
         w.assemble=w.start+Math.max(4,(float)((offset+1.15*AllayStormData.vortexRadius(data.count)+46+8)/(12-2-Math.sqrt(2048)*Math.toRadians(8))));
-        w.lock=w.assemble;w.helix=AllayHelix.linearFlight(roster,center,axis,Math.max(0,target.getBoundingBox().getCenter().subtract(center).dot(axis))+12,(float)ServerConfig.stormHelixThrustSpeed,w.assemble);
-        w.end=w.helix.finish()+5f;
+        w.lock=w.assemble;w.helix=AllayHelix.linearFlight(roster,center,axis,Math.max(0,target.getBoundingBox().getCenter().subtract(center).dot(axis))+12,w.assemble);
+        w.end=AllayHelix.deadline(w.helix);
         w.memberColumns.clear();for(int rank=0;rank<w.members.length;rank++)w.memberColumns.put(w.members[rank],rank/2048);
         for(int member:w.members)rt.waveReserved.set(member);rt.waves.add(w);
         rt.stats.count(StormAttackStats.Reason.LAUNCHED);broadcastWave(level,rt,wavePacket(w,AllayStarfall.START,true,target.getId()));return true;
@@ -365,9 +365,9 @@ public final class AllayStormManager {
                 Vec3 aim=target.getBoundingBox().getCenter().subtract(center),axis=AllayHelix.turn(AllayHelix.axis(w.helix),aim,Math.toRadians(8)*seconds);
                 w.centerX=(float)center.x;w.centerY=(float)center.y;w.centerZ=(float)center.z;w.centerSec=now;
                 float launch=lock?now:w.assemble;
-                w.helix=AllayHelix.linearFlight(w.helixRoster,center,axis,Math.max(-32,aim.dot(axis))+12,(float)ServerConfig.stormHelixThrustSpeed,launch);
+                w.helix=AllayHelix.linearFlight(w.helixRoster,center,axis,Math.max(-32,aim.dot(axis))+12,launch);
                 if(lock){w.assemble=now;w.lock=now;w.locked=true;w.currentPhase=4;}else w.currentPhase=1;
-                w.end=w.helix.finish()+5f;
+                w.end=AllayHelix.deadline(w.helix);
                 broadcastWave(level,rt,wavePacket(w,lock?AllayStarfall.LOCK:AllayStarfall.UPDATE,false,target.getId()));
             }
         }

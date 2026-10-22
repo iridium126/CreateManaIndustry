@@ -25,5 +25,14 @@ vec3 cmiHelixPoint(uint assignment,float seed,float time,vec3 home){
  vec3 center=cmiStarVec(b+24u).xyz;
  if(cmiStarVec(b+20u).y<3.){float t=clamp((time-cmiStarVec(b+28u).w)/.25,0.,1.);axis=normalize(mix(cmiStarVec(b+300u).xyz,axis,t));center=mix(cmiStarVec(b+28u).xyz,center,t);}
  vec3 side=cmiStarVec(b+304u).xyz;side=normalize(side-axis*dot(axis,side));vec3 up=cross(axis,side),local=cmiHelixLocal(assignment);
- return center+axis*(local.x+(cmiHelixPhase(b,time)==1.?0.:cmiHelixProgress(b,time)))+side*local.y+up*local.z;
+ float progress=cmiHelixPhase(b,time)==1.?0.:cmiHelixProgress(b,time),angle=-cmiHelixPitch()*progress;
+ vec2 radial=mat2(cos(angle),sin(angle),-sin(angle),cos(angle))*local.yz;
+ return center+axis*(local.x+progress)+side*radial.x+up*radial.y;
+}
+vec3 cmiHelixVelocity(uint assignment,float time){
+ uint base=cmiStarBase(cmiStarSlot(assignment));vec3 axis=normalize(cmiStarVec(base+308u).xyz),side=cmiStarVec(base+304u).xyz;
+ side=normalize(side-axis*dot(axis,side));vec3 up=cross(axis,side),local=cmiHelixLocal(assignment);
+ float angle=-cmiHelixPitch()*cmiHelixProgress(base,time),speed=cmiHelixAdvanceSpeed(base,time);
+ vec2 rotated=mat2(cos(angle),sin(angle),-sin(angle),cos(angle))*local.yz;
+ return axis*speed+cross(axis,side*rotated.x+up*rotated.y)*(-cmiHelixPitch()*speed);
 }

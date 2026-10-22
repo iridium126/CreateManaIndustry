@@ -1,5 +1,6 @@
 // Stable member roster, shared by compute, native MODEL and GLSL-330 Iris TBO readers.
 uniform bool uStarfallEnabled;
+#pragma cmi_include chunks/storm_speeds.glsl
 uniform bool uDomePreciseClock;
 uniform vec4 uDomeElapsed;
 #ifdef CMI_STARFALL_TBO
@@ -35,10 +36,11 @@ const uint CMI_COMPLETIONS=721344u,CMI_COMPLETION_WORDS=1664u,CMI_GATHER_STREAK=
 const uint CMI_DOME_INSIDE_BOUND=0x10000000u;
 uint cmiCompletionOffset(uint slot){return slot<4u?slot*384u:1536u+(slot-4u)*2u;}
 float cmiDomePhase(uint b,uint group,float time){vec4 t=cmiStarVec(b+4u);float elapsed=cmiDomeElapsed(b,time);return cmiStarVec(b).y>2.5||elapsed>t.w-t.x?6.:cmiStarVec(b+20u).y<3.||elapsed<t.z-t.x?1.:4.;}
-const uint CMI_DOME_DATA=205552u,CMI_DOME_JOIN=988240u;
+const uint CMI_HELIX_BLOCK_WINDOW=988240u;
+const uint CMI_DOME_DATA=205552u,CMI_DOME_JOIN=1053776u;
 vec4 cmiDomeRing(uint a){return cmiStarVec(CMI_DOME_DATA+8u+cmiMajorRank(a)*16u);}
 // Per-flow clocks are tiny; rank-to-flow lookup is loaded once with v4 metadata.
-const uint CMI_DOME_FLOW_MAP=405252u,CMI_DOME_FLOW_SOURCE=417540u,CMI_DOME_FLOW_STATE=2298968u,CMI_DOME_GATHER_WINDOW=988240u;
+const uint CMI_DOME_FLOW_MAP=405252u,CMI_DOME_FLOW_SOURCE=417540u,CMI_DOME_FLOW_STATE=2364504u,CMI_DOME_GATHER_WINDOW=CMI_DOME_JOIN;
 uint cmiDomeFlow(uint a){return cmiStarWord(CMI_DOME_FLOW_MAP+cmiMajorRank(a));}
 uint cmiDomePauseAssignment=0u;float cmiDomePauseCached=0.;
 float cmiDomePause(uint a){

@@ -49,13 +49,13 @@ mat4 cmiScale4(float s) { return mat4(s,0,0,0, 0,s,0,0, 0,0,s,0, 0,0,0,1); }
 
 // ---- storm swarm shared helpers ------------------------------------------
 // Procedural dance-burst arbitration for storm members: inner-band members
-// (inside 0.55 of the storm radius from the chased center) run full vanilla
+// (inside 0.2 of the storm radius from the chased center) run full vanilla
 // dance cycles regardless of speed -- tangential velocity is constant on the
 // orbit, so a speed gate would never fire; dancers keep orbiting (the pose
 // change does not touch the motion). Everyone else keeps flying. Pure
 // function of its arguments -- no state.
 int cmiStormAnimOverride(float distCenter, float radius, float seed, float timeSec) {
-    if (distCenter >= radius * 0.55)
+    if (distCenter >= radius * 0.2)
         return 0;
     // ~11 s dancing out of each 36 s cycle, phase-staggered per particle
     float cyc = fract(timeSec / 36.0 + cmiHash1(seed * 7.3));

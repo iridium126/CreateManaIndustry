@@ -1,6 +1,6 @@
 # Allay Storm：开发与验收入口
 
-当前协议16、Dome v4。[当前行为](allay-storm-ai.md)维护攻击参数，[同步契约](allay-storm-sync.md)维护数据所有权。本页统一验证方式，不逐版本复制测试总数、日志或发行JAR哈希。历史结果从Git查阅，原始数据写入忽略的 `build/`。
+当前协议17、Dome v4、Helix v1。[当前行为](allay-storm-ai.md)维护攻击参数，[同步契约](allay-storm-sync.md)维护数据所有权。本页统一验证方式，不逐版本复制测试总数、日志或发行JAR哈希。历史结果从Git查阅，原始数据写入忽略的 `build/`。
 
 ## 按改动选择检查
 
@@ -35,6 +35,8 @@ python -m unittest discover -s scripts/allaystorm -p test_dome_v4_tools.py
 ```powershell
 # 三种攻击、姿态、专用碰撞；旧Starfall入口还覆盖共享路径
 python scripts/benchmarks/run.py validateStarfallColumnGpu validateStarfallGpu validateHelixGpu validateDomeGpu validateDomePoseGpu validateStormCollisionGpu --offline
+# 旋转／舞蹈边界、星柱下降入口与Dome高速截获／LOCK交接
+python scripts/benchmarks/run.py validateStormMotionGpu --offline
 # 修改共享绘制／状态边界时追加
 python scripts/benchmarks/run.py validateParticleProgramsGpu validateModelPopulationGpu validateModelShadowGpu validateModelShadowIrisGpu validatePackageGpu validatePackageIrisGpu --offline
 # 修改Dome运动／反馈时追加步频、延迟、环绕矩阵（默认Dome含20Hz）
@@ -42,6 +44,12 @@ python scripts/benchmarks/run.py validateDome30Hz validateDome60Hz validateDome1
 ```
 
 `validateDomeGpu`包含斜坡与台阶的生产集结回归，可用`validateDomeSlopeGpu`单独重跑；检查固定流线相位、部分成员受阻、原截止时间和同帧暂停／就绪快照，原始数据为`build/dome-v15/slope-gather.json`。
+
+`validateHelixGpu`使用真实`update.comp`和风暴碰撞页验证地面受阻（20Hz／60Hz／0.25秒低帧率）、墙面横滑、坡面有效推进、短暂擦碰恢复、未知覆盖、脱嵌、起步、死亡、新攻击和身份重置。检查0.5秒窗口、当帧完成／收剑／无接触，以及下一帧普通归队；另以生产判定函数覆盖裁剪累计0.1秒、预期推进0.05格、实际推进10%和非连续裁剪。候选帧回滚不得发布观察进度，Helix不得分配完整Dome状态。`AllayHelixTest`与`StormMajorAttackGameTests`验证固定12／32速度预算、不同终止距离／时钟下1秒截止余量、初始／瞄准／LOCK一致、提前全完成回收、截止释放与重复反馈隔离。
+
+`validateStormMotionGpu`补充共享舞蹈函数的`0.2R`开区间及原36秒节奏；Starfall真实集结末段、下降首帧和后续速度记录到`starfall-entry-velocity.csv`，直接检查保存的解析初切向3、垂直`−√27`、合速度6，不以整个下降阶段水平恒速3验收。未就位者保留实际入射方向，正常初始化无额外入口阶段；`validateStarfallColumnGpu`检查地形／未知碰撞、四阶段恢复与时钟环绕，下降快照保存方向不被重新匹配。Dome生产更新及最终接触裁剪验证集结可超过6但不超过8，LOCK首帧保留8→6交接；攻击参考仍为6。Helix从实际成员位置连续推进，覆盖60Hz、20Hz与0.25秒步长的旋进方向和32速度上限；接触回归使用0.25秒跨越8格的真实扫掠。模板点间距检查提高至1.4格。
+
+舞蹈阈值后续由`0.1R`调整至`0.2R`，仅同步源码、既有边界用例与说明；按本轮要求未运行任何测试、构建或验证。此前自动化与JAR记录不作为此参数变更的验收结果。
 
 Dome生产生命周期从普通主体初始状态出发，经过移动集结、95%反馈、服务端LOCK、中心接触与实际穿出结束平面，不能直接注入LOCK代替集结。检查rank唯一、旧反馈隔离、速度／姿态连续、死亡／中止／观察者及归队。证据在 `build/dome-v14/gpu-evidence-*.json`；联验实际候选与服务器时，先运行60Hz，再回放：
 
@@ -70,9 +78,29 @@ python scripts/benchmarks/run.py benchmarkStormHelix --offline
 
 输出 `storm-{dome,helix}-combined*.csv`。`-PstormFixedInput=<文件>`给Dome固定输入，比较时验证输入哈希；`-PstormProfile`按需拆分GPU阶段，不在正常验证启用探针。`validateDomePerformance`提供正常／压力各三轮，目录由 `-PdomePerformanceDirectory=...`指定。正常用各版本参考跟随输入，压力使用相同字节输入。
 
+本次最小运动改动的RTX4070 Laptop／581.15同机三轮记录：Helix与Starfall原始基线在`build/benchmarks/20261022T081611Z-f3edc369/`，当前Helix在`20261022T083424Z-aa94b59a/`、当前Starfall在`20261022T083755Z-6115d493/`。下表均为三轮中位数，不是游戏帧率：
+
+| 固定负载 | GPU P50基线→当前（ms） | GPU P95基线→当前（ms） |
+| --- | --- | --- |
+| Helix 4096参与者 | 0.212992→0.205824 | 0.217088→0.211968 |
+| Helix共享池200万／4096参与者 | 1.226752→1.215488 | 1.235968→1.233920 |
+| Starfall 64柱／4096成员 | 0.045056→0.045056 | 0.045056→0.045056 |
+| Dome正常131072成员／4槽／64柱／100玩家 | 1.645568→1.679360 | 1.667072→1.693696 |
+| Dome压力相同规模 | 2.159616→2.171904 | 2.733056→2.194432 |
+
+Dome前后各三轮使用相同字节输入，SHA-256逐轮校验；基线着色器取本次改动前Git暂存区快照，保存于`build/benchmarks/motion-baseline/`及其manifest，Java驱动与状态布局相同。原始结果为`motion-before/`和`motion-after/`，汇总`motion-comparison.json`。正常P95约增加1.6%；压力第三轮当前P95仍达2.695168ms，不据中位数宣称所有尾部改善。Helix与Starfall状态域保持11,774,752字节，完整Dome域保持44,390,880字节；所有这些场景新增稳态GPU主机上传为0，仅参数变化的头部每bank多4字节。未增加网络消息或稳态位置上报。
+
+Starfall一次性4096名弧长初始化P50约0.361472→0.375808ms。初轮改后曾记录稳态0.177152ms、初始化0.951296ms，后续独立重跑未重现；异常日志仍保留在`build/benchmarks/20261022T082251Z-3541ff56/`，不能把单次复测等同所有设备保证。Helix资源本次离线4,194,256次尝试完成，编码后最小间距约1.400002格，资源仍49,160字节；不在运行时生成。
+
+额外使用`validateDomePerformance -PstormFastNeighbors`保留Helix曾出现后的32格／秒邻居上界，仍逐轮匹配相同输入；`build/benchmarks/motion-fast-neighbors/`各三轮正常P50／P95中位数1.480704／1.804288ms，压力2.512896／3.193856ms。相较当前8预算压力P95增加约45.5%，相较修改前压力基线增加约16.9%；这是扩大高速预测范围的可见代价，不宣称性能零影响。正常路径仍有调度波动，不能把更低P50解释为全局加速。该场景状态域仍44,390,880字节、稳态上传0；节点访问上界不变。生产接触用例另检查32格／秒Helix及其释放后成员不会被Dome漏检或改写。
+
+Dome 240Hz动态LOCK交接曾出现最小中心间距约0.3464格、46帧低于0.4格，仍高于现有0.34预测接触阈值；原始证据保留，不能据自动化通过承诺所有动态交接均无剑翼交叠。真实绕转观感、动态交叠与多人同步单独实机验收。
+
+Helix受阻退出的同机三轮微基准使用`validateHelixGpu -PhelixBenchmark`，修改前／后原始数据分别在`build/benchmarks/20261022T070212Z-0233783f/`与`build/benchmarks/20261022T070727Z-a4ba1229/`。RTX4070 Laptop、4096参与者下，更新GPU P50中位数0.209920→0.212992ms，P95中位数0.215040→0.218112ms；共享池200万粒子／4096参与者时，P50中位数1.206272→1.212416ms，P95中位数1.213440→1.228800ms（修改后一轮P95达到1.406976ms，保留波动，不据此宣称所有负载改善）。状态域11,250,464→11,774,752字节，双bank新增512KiB；Helix不分配完整Dome扩展。新增窗口无稳态主机上传，逐帧场景对此设有断言。上述仅为隐藏窗口生产内核微基准，不是实机游戏帧率。
+
 当前32格退出修复的同机对照：RTX4070 Laptop／驱动581.15、131072成员／4个Dome槽／64柱／100玩家，每类前后三轮且输入SHA-256相同。基线为本轮修改前的协议15着色器快照，Java运行时与输入一致。正常GPU批次P95中位数1.687→1.658ms，符合正常路径增量≤5%的预算；压力P95为2.473→2.733ms（约+10.5%），压力P50为2.174→2.146ms。压力尾部耗时没有改善，保留原始结果供复测，不能据此声称所有负载均提升。显存保持43,866,592字节、稳态上传0。原始数据在`build/benchmarks/dome-boundary-{before,after}/`及`dome-boundary-comparison.json`，基线源码在`dome-boundary-baseline/`。初始化与资源发布成本记录于同目录CSV；首次驱动编译和真实客户端冷启动未单独隔离。固定负载GPU批次耗时不能视为游戏帧率。
 
-生产斜坡与台阶场景从主体盘旋位置开始，19条受影响流线暂停，约17–19秒达到可达成员95%门槛；未整圈剔除，未知覆盖为0，20Hz单帧最大实际位移约0.300002格。实际人数及最终时间读取`slope-gather.json`，随GPU线程调度有小幅差异。
+当前生产斜坡与台阶场景从主体盘旋位置开始，19条受影响流线暂停，20Hz约30.2秒达到可达成员95%门槛；未整圈剔除，未知覆盖为0，单帧最大实际位移约0.400002格。上限升高不保证所有受限轨迹更快就绪。实际人数及最终时间读取`slope-gather.json`，随GPU线程调度有小幅差异。
 
 这些只包含网格、更新与Dome接触，不是完整游戏帧时间或服务器吞吐。新的性能改动需重测；历史数据不作当前构建验收。见[性能结果规则](benchmarks/README.md)。
 
@@ -85,14 +113,20 @@ Iris的未定义流线函数已在实际AST／驱动链复现并修复。Dome残
 真实客户端由用户验收，自动化不能代签：
 
 - Dome顶部覆盖、错落集结、贯心可读性、静止中心玩家受击、身体分离和剑翼轻微交叠。
-- Helix外缘下集结、95%后立即冻结发射；Starfall绕柱转速、逐成员触地展开与短回流，主体不漂向原点。
+- 主体种子手性与拖曳图案方向、`0.2R`舞蹈范围；Helix外缘下集结、95%后立即冻结并匹配0.75圈旋进；Starfall绕柱3格／秒、立即加入下降分量、逐成员触地展开与短回流，主体不漂向原点。
 - 坡地、台阶、屋顶、动态障碍、未知／卸载碰撞、死亡／中止；多客户端换维度、观察者及authority离开。
 - 实际Iris光影包的合并路径、重载后MODEL／阴影一致，持续外飞成员是否恢复正常归队，密集多人场景完整CPU／GPU帧时间、显存、上传量和冷启动成本。
 
 当前分发JAR从 `build/libs/` 获取。离线证书在 `src/test/resources/allaystorm/`，只用于校验生产模板，不属于运行时资源。更新模板时同时更新测试证书。发布检查包含内嵌mod JAR：保留当前二进制模板，排除验证证书、旧模板、离线控制点、测试类及GameTest夹具。两端替换并重启，存档与当前配置保留。
 
-## 协议16回归入口
+## 身份与恢复回归入口
 
 `StormStreamClockTest`覆盖旧维度／epoch及倒退时间；`StormPositionsPacketTest`覆盖双向±6／8／12／18／32速度、身份和非法输入。`StarfallSnapshotSyncTest`验证观察者合并、指定来源、超时轮换、断开和旧响应隔离；`StarfallSnapshotPacketTest`验证固定64名／8KiB边界、阶段和非有限值。
 
 `StormMajorAttackGameTests`追加Dome集结／发射后死亡回收及无人模拟星柱清理。`validateHelixGpu`追加真实更新内核中参考进度已通过但实际位置仍在平面前，以及实际过平面当帧完成的对照。`validateStarfallColumnGpu`从生产集结／下降／实际触地／展开／短回流过程中采集快照，在另一套GPU状态bank恢复，检查阶段、位置、进度、重复安装、延迟追赶和恢复帧无剑标记；同时保留六种步频／地形与64柱性能场景。GPU工具验证不代替实际双客户端的接入、换维度与authority交接验收。
+
+Helix受阻退出本轮自动化通过：`test check build`与完整Helix／Dome／姿态／碰撞／Iris／程序生命周期／旧Starfall回归在`build/benchmarks/20261022T071034Z-cfc24b87/`，最终Helix场景在`build/benchmarks/20261022T071250Z-dbf268bc/`（所有受阻步骤均断言尚未达到实际1秒余量截止），星柱恢复及性能联验在`build/benchmarks/20261022T070727Z-a4ba1229/`，服务端回收GameTest日志在`build/storm-review/helix-blocking-gametest.log`。未执行真实双客户端验收；地形视觉、多人接入与authority交接仍由实机单独确认。
+
+本次最小运动方案自动化通过：796项单元测试、38项服务端GameTest（回放本轮60Hz实际GPU证据）、`test check build`，日志为`build/storm-review/motion-{gametest,final-build}.log`。Helix／旧Starfall／原生绘制／阴影／Iris／程序生命周期在`build/benchmarks/20261022T083424Z-aa94b59a/`，完整Dome／姿态／碰撞在`20261022T083203Z-96aed1c2/`，星柱恢复和30／60／144Hz在`20261022T083755Z-6115d493/`，240Hz／不规则／延迟在`20261022T084317Z-32006981/`，时钟环绕最终回归在`20261022T084937Z-13886f8c/`。最终运动专项在`20261022T084847Z-40d87a86/`，按稳定成员身份对应压紧池，独立重算实际初始化曲线的离散参考速度；Dome交接验收读取实际捕获初态和GPU精确时钟，不以有精度差异的计划时钟代替。工具中的旧硬6断言、压紧池索引和vec4读回问题已修正，失败日志保留；这些是验证工具修复，不增加生产阶段或状态。
+
+分发JAR及内嵌mod资源检查记录为`build/storm-review/motion-package-audit.json`：协议17、新Helix v1内容和共享着色器存在，验证证书和GameTest夹具未混入。真实双客户端、实际光影包及绕转观感未运行，仍单独待验收。

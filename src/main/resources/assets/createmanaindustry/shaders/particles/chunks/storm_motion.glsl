@@ -231,6 +231,7 @@
             bool referenceEnded=cmiDomeElapsed(b,uTimeSec)-(cmiStarVec(b+4u).z-cmiStarVec(b+4u).x)>=cmiDomeRecord(a).z;
             vec3 desired=(referenceEnded?vT:(target-domePreviousPoint)/max(uDt,.0001))+correction;
             float currentSpeed=length(vel),u=clamp(age/.5,0.,1.),speedGoal=mix(initialSpeed,6.,u*u*u*(10.-15.*u+6.*u*u));
+            spMaxV=cmiDomeMotionLimit(4u,age,initialSpeed);
             float nextSpeed=clamp(min(speedGoal,length(desired)),max(0.,currentSpeed-18.*uDt),currentSpeed+18.*uDt);
             vec3 direction=length(desired)>.000001?normalize(desired):normalize(vT);
             if(currentSpeed>.0001&&nextSpeed>.0001){float cosine=clamp((currentSpeed*currentSpeed+nextSpeed*nextSpeed-324.*uDt*uDt)/(2.*currentSpeed*nextSpeed),-1.,1.);float rate=min(3.141592654,acos(cosine)/max(uDt,.0001));direction=cmiDomeTurn(vel/currentSpeed,direction,uDt,.0001,rate);}
@@ -244,14 +245,14 @@
             if(errorLength<1.)desired=(target-previous)/max(uDt,.0001)+error*min(6.,.6/max(errorLength,.000001));
             else{
                 vec4 ring=cmiDomeRing(a);vec3 center=cmiDomeCenter(b,uTimeSec)+vec3(0,ring.y-.3,0);
-                float lo=0.,hi=(distance(pos,center)+ring.x+.6)/6.+.1;
-                for(int k=0;k<10;k++){float mid=(lo+hi)*.5;vec3 future,motion;cmiDomeSampleOffset(a,mid-uDt,future,motion);if(distance(pos,future)>6.*mid)lo=mid;else hi=mid;}
+                float lo=0.,hi=(distance(pos,center)+ring.x+.6)/CMI_STORM_INTERCEPT+.1;
+                for(int k=0;k<10;k++){float mid=(lo+hi)*.5;vec3 future,motion;cmiDomeSampleOffset(a,mid-uDt,future,motion);if(distance(pos,future)>CMI_STORM_INTERCEPT*mid)lo=mid;else hi=mid;}
                 vec3 future,motion;cmiDomeSampleOffset(a,max(hi,uDt)-uDt,future,motion);desired=(future-pos)/max(hi,uDt);
             }
             // Avoidance is applied AFTER interception; do not reconstruct the
             // original straight path after choosing a traversable corridor.
             if(cmiStormVoxel&&length(desired)>.0001)desired=cmiDomeGatherAvoid(pos,normalize(desired),min(2.,max(.25,length(desired)*.35)))*length(desired);
-            float desiredSpeed=min(6.,length(desired)),oldSpeed=length(vel),newSpeed=clamp(desiredSpeed,max(0.,oldSpeed-18.*uDt),oldSpeed+18.*uDt);
+            float desiredSpeed=min(CMI_STORM_INTERCEPT,length(desired)),oldSpeed=length(vel),newSpeed=clamp(desiredSpeed,max(0.,oldSpeed-18.*uDt),oldSpeed+18.*uDt);
             vec3 direction=length(desired)>.000001?normalize(desired):vec3(0,0,1);
             if(oldSpeed>.0001&&newSpeed>.0001){float cosine=clamp((oldSpeed*oldSpeed+newSpeed*newSpeed-324.*uDt*uDt)/(2.*oldSpeed*newSpeed),-1.,1.);direction=cmiDomeTurn(vel/oldSpeed,direction,uDt,.0001,min(3.141592654,acos(cosine)/max(uDt,.0001)));}
             vel=direction*newSpeed;

@@ -125,7 +125,7 @@ class StarfallColumnTest {
     @Test void gatheringOrbitsAtAStableHeightAndHasVerticalClearance(){
         for(int rank=0;rank<64;rank++){
             Vec3 p=StarfallColumnRules.gather(Vec3.ZERO,rank,123,0),q=StarfallColumnRules.gather(Vec3.ZERO,rank,123,.1);
-            assertEquals(p.y,q.y);assertTrue(p.distanceTo(q)>.5);
+            assertEquals(p.y,q.y);assertEquals(.3,p.distanceTo(q),.002);
             if(rank<60)assertEquals(.7,StarfallColumnRules.gather(Vec3.ZERO,rank+4,123).y-p.y,1e-9);
         }
     }

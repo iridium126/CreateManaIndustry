@@ -6,6 +6,14 @@ class AllayHelixTest {
  static AllayHelix.Selection roster(int count){return new AllayHelix.Selection(0,3,java.util.stream.IntStream.range(0,count).toArray(),new int[]{count/2,count});}
  static float[] straight(int count){float l=AllayHelix.length(count);return new float[]{-24-l,4,0,-24,4,0,-12,4,0,0,4,0,12,4,0,12+l,4,0};}
  static AllayHelix.Flight flight(int n){return AllayHelix.flight(roster(n),straight(n),12,10,15);}
+ @Test void deadlineIsOneSecondAfterTailForEverySchedule(){
+  for(float launch:new float[]{0,20,104857.5f})for(float exit:new float[]{64,80,128}){
+   var flight=AllayHelix.linearFlight(roster(4096),net.minecraft.world.phys.Vec3.ZERO,new net.minecraft.world.phys.Vec3(0,-1,0),exit,launch);
+   assertEquals(12,flight.speed());assertEquals(32,flight.maxSpeed());
+   assertEquals(1,AllayHelix.deadline(flight)-flight.finish(),.001);
+   var scheduled=flight.schedule(launch+2,launch+3);assertEquals(1,AllayHelix.deadline(scheduled)-scheduled.finish(),.001);
+  }
+ }
  @Test void probabilitiesAndLimits(){
   assertEquals(StormAttack.HELIX,StormAttack.choose(.199,.2,.2));assertEquals(StormAttack.DOME,StormAttack.choose(.2,.2,.2));assertEquals(StormAttack.STARFALL,StormAttack.choose(.4,.2,.2));
   assertEquals(StormAttack.HELIX,StormAttack.choose(.49,.8,.8));assertEquals(StormAttack.DOME,StormAttack.choose(.51,.8,.8));
@@ -62,7 +70,7 @@ class AllayHelixTest {
   dead.clear();int[] available=new int[6];for(int i=0;i<131072;i++){int arm=AllayHelix.arm(123,i);if((arm==0||arm==3)&&available[arm]++<2048)continue;reserved.set(i);}assertEquals(4096,AllayHelix.select(131072,dead,reserved,4096,123,0).members().length);
   for(int i=0;i<131072;i++)if(!reserved.get(i)&&AllayHelix.arm(123,i)==3){reserved.set(i);break;}assertEquals(0,AllayHelix.select(131072,dead,reserved,4096,123,0).members().length);
  }
- @Test void fixedTemplateEnvelopeAndMeshClearance(){assertTrue(HelixTemplate.available());for(int i=0;i<4096;i++){double x=HelixTemplate.coordinate(i,0),y=HelixTemplate.coordinate(i,1),z=HelixTemplate.coordinate(i,2),u=(32-x)/64;assertTrue(u>=0&&u<=1);assertTrue(Math.hypot(y,z)<=.6*Math.pow(32/.6,u)+.0001);for(int j=0;j<i;j++){double a=x-HelixTemplate.coordinate(j,0),b=y-HelixTemplate.coordinate(j,1),c=z-HelixTemplate.coordinate(j,2);assertTrue(a*a+b*b+c*c>=1.43999);}}}
- @Test void threeDimensionalAxisAndBoundedTurn(){var v=new net.minecraft.world.phys.Vec3(0,-1,0);var r=new AllayHelix.Selection(0,3,new int[4096],new int[]{2048,4096});var f=AllayHelix.linearFlight(r,new net.minecraft.world.phys.Vec3(500,200,-900),v,100,12,30);assertEquals(1,AllayHelix.axis(f).dot(v),.00001);assertEquals(30,f.thrust());var t=AllayHelix.turn(v,new net.minecraft.world.phys.Vec3(0,1,0),Math.toRadians(2));assertEquals(Math.toRadians(2),Math.acos(v.dot(t)),.000001);}
- @Test void farCoordinateFlightKeepsUnitAxis(){var axis=new net.minecraft.world.phys.Vec3(.2,-.7,.4).normalize();var roster=new AllayHelix.Selection(0,3,new int[4096],new int[]{2048,4096});var flight=AllayHelix.linearFlight(roster,new net.minecraft.world.phys.Vec3(-28000000,100,29000000),axis,100,12,30);assertEquals(1,axis.dot(AllayHelix.axis(flight)),.0000001);}
+ @Test void fixedTemplateEnvelopeAndMeshClearance(){assertTrue(HelixTemplate.available());for(int i=0;i<4096;i++){double x=HelixTemplate.coordinate(i,0),y=HelixTemplate.coordinate(i,1),z=HelixTemplate.coordinate(i,2),u=(32-x)/64;assertTrue(u>=0&&u<=1);assertTrue(Math.hypot(y,z)<=.6*Math.pow(32/.6,u)+.0001);for(int j=0;j<i;j++){double a=x-HelixTemplate.coordinate(j,0),b=y-HelixTemplate.coordinate(j,1),c=z-HelixTemplate.coordinate(j,2);assertTrue(a*a+b*b+c*c>=1.95999);}}}
+ @Test void threeDimensionalAxisAndBoundedTurn(){var v=new net.minecraft.world.phys.Vec3(0,-1,0);var r=new AllayHelix.Selection(0,3,new int[4096],new int[]{2048,4096});var f=AllayHelix.linearFlight(r,new net.minecraft.world.phys.Vec3(500,200,-900),v,100,30);assertEquals(1,AllayHelix.axis(f).dot(v),.00001);assertEquals(30,f.thrust());var t=AllayHelix.turn(v,new net.minecraft.world.phys.Vec3(0,1,0),Math.toRadians(2));assertEquals(Math.toRadians(2),Math.acos(v.dot(t)),.000001);}
+ @Test void farCoordinateFlightKeepsUnitAxis(){var axis=new net.minecraft.world.phys.Vec3(.2,-.7,.4).normalize();var roster=new AllayHelix.Selection(0,3,new int[4096],new int[]{2048,4096});var flight=AllayHelix.linearFlight(roster,new net.minecraft.world.phys.Vec3(-28000000,100,29000000),axis,100,30);assertEquals(1,axis.dot(AllayHelix.axis(flight)),.0000001);}
 }

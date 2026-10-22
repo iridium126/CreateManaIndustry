@@ -164,6 +164,7 @@ vec2 cmiGauss2(float s) {
 #pragma cmi_include chunks/dome_gather.glsl
 #pragma cmi_include chunks/storm_navigation.glsl
 #pragma cmi_include chunks/dome_completion.glsl
+#pragma cmi_include chunks/helix_blocking.glsl
 #pragma cmi_include chunks/column_motion.glsl
 #ifdef CMI_COLUMN_RECOVERY
 #pragma cmi_include chunks/column_recovery.glsl
@@ -283,19 +284,30 @@ void main() {
     }
     if(cmiColumnExit&&cmiContactSweepValid)vel=cmiColumnExitVelocity;
     age += uDt;
-    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){float limit=cmiAttackSpeed(p0.w,uTimeSec,max(stormA.w,.5))*uDt+.01;if(!cmiContactSweepValid||distance(pos,p0.xyz)>limit)starStateWrite.words[member*2u+1u]|=0x80000000u;}}
+    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){float limit=cmiStormFrameCap*uDt+.01;if(!cmiContactSweepValid||distance(pos,p0.xyz)>limit)starStateWrite.words[member*2u+1u]|=0x80000000u;}}
 
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);
         if(cmiColumnAssignment(a)&&!cmiContactSweepValid){uint member=cmiStarMember(p0.w);if((starStateWrite.words[member*2u+1u]&255u)==4u){roll=5.;starStateWrite.words[member*2u+1u]=5u;starStateWrite.words[328128u+((cmiStarSlot(a)-4u)*64u+cmiStarRank(a))*CMI_COLUMN_ARC_WORDS+43u]=5u;starStateWrite.words[262592u+((cmiStarSlot(a)-4u)*64u+cmiStarRank(a))*16u+3u]=floatBitsToUint(cmiStarTime(cmiStarBase(cmiStarSlot(a)),uTimeSec));}}
     }
 
-    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&cmiStarSlot(a)<4u){
+    if(stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&cmiStarSlot(a)<4u){
         uint member=cmiStarMember(p0.w),b=cmiStarBase(cmiStarSlot(a));
-        if(cmiHelix(b)&&starStateWrite.words[member*2u]==uint(cmiStarVec(b).x+.5)
-                &&(starStateWrite.words[member*2u+1u]&255u)==4u&&cmiHelixPassed(b,pos)){
-            starStateWrite.words[member*2u+1u]=6u;
-            uint rank=cmiMajorRank(a);atomicOr(starStateWrite.words[CMI_COMPLETIONS+cmiCompletionOffset(cmiStarSlot(a))+rank/32u],1u<<(rank&31u));
-            roll=0.;
+        if(cmiHelix(b)&&member<131072u){
+            uint rank=cmiMajorRank(a),windowAt=CMI_HELIX_BLOCK_WINDOW+(cmiStarSlot(a)*4096u+rank)*4u;
+            uint id=uint(cmiStarVec(b).x+.5);
+            bool attacking=!corpse&&starStateWrite.words[member*2u]==id&&(starStateWrite.words[member*2u+1u]&255u)==4u;
+            bool same=starStateRead.words[member*2u]==id&&(starStateRead.words[member*2u+1u]&255u)==4u;
+            vec4 window=vec4(0);bool blocked=false;
+            if(attacking&&cmiContactSweepValid&&(starStateWrite.words[member*2u+1u]&0x80000000u)==0u){
+                if(same)for(uint component=0u;component<4u;component++)window[component]=uintBitsToFloat(starStateRead.words[windowAt+component]);
+                vec3 axis=cmiStarVec(b+308u).xyz;
+                blocked=cmiHelixBlocked(window,cmiTerrainClipped,uDt,dot(cmiBeforeSweepVelocity*uDt,axis),dot(pos-p0.xyz,axis));
+            }
+            if(attacking&&(cmiHelixPassed(b,pos)||blocked)){
+                starStateWrite.words[member*2u+1u]=6u;
+                atomicOr(starStateWrite.words[CMI_COMPLETIONS+cmiCompletionOffset(cmiStarSlot(a))+rank/32u],1u<<(rank&31u));roll=0.;window=vec4(0);
+            }
+            for(uint component=0u;component<4u;component++)starStateWrite.words[windowAt+component]=floatBitsToUint(window[component]);
         }
     }}
 

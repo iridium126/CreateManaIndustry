@@ -3,9 +3,22 @@ package com.iridium126.createmanaindustry.content.allaystorm;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.*;
+import com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers;
 import static org.junit.jupiter.api.Assertions.*;
 
 class StormClientContractTest {
+    @Test void helixWindowLayoutMatchesShaderAndDoesNotRequireDomeStorage() throws Exception {
+        assertEquals(4*4096*4,StarfallGpuBuffers.HELIX_BLOCK_WORDS);
+        assertEquals(StarfallGpuBuffers.GATHER_BLOCKED+StarfallGpuBuffers.ROSTER,StarfallGpuBuffers.HELIX_BLOCK_WINDOW);
+        assertEquals(StarfallGpuBuffers.HELIX_BLOCK_WINDOW+StarfallGpuBuffers.HELIX_BLOCK_WORDS,StarfallGpuBuffers.DOME_JOIN);
+        assertTrue(StarfallGpuBuffers.DOME_JOIN<StarfallGpuBuffers.STATE_WORDS);
+        try(var source=getClass().getResourceAsStream("/assets/createmanaindustry/shaders/particles/chunks/starfall.glsl")){
+            assertNotNull(source);String text=new String(source.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(text.contains("CMI_HELIX_BLOCK_WINDOW="+StarfallGpuBuffers.HELIX_BLOCK_WINDOW+"u"));
+            assertTrue(text.contains("CMI_DOME_JOIN="+StarfallGpuBuffers.DOME_JOIN+"u"));
+            assertTrue(text.contains("CMI_DOME_FLOW_STATE="+StarfallGpuBuffers.DOME_FLOW_STATE+"u"));
+        }
+    }
     @Test void candidatePrecedesSwingAndStormBranchOnlyPredictsSwing() throws Exception {
         // ServerPlayer.swing resets its attack ticker. Inspect the executed early branch without loading GL/client singletons.
         var calls=new ArrayList<String>();var swings=new ArrayList<String>();

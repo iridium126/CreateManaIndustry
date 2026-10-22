@@ -36,6 +36,7 @@ const float CONTACT_R = 1.6;
 
 // the membership test needs no pose math — the pose-free storm chunk suffices
 #pragma cmi_include chunks/allay_storm.glsl
+#pragma cmi_include chunks/dome_motion_budget.glsl
 
 void main() {
     if(uStarfallEnabled){
@@ -120,7 +121,7 @@ void main() {
             uint old= floatBitsToUint(memberMap.slots[member]);if(old==0u||old>previousCount.live||old>uint(previous.data.length())/4u)continue;
             vec4 before=previous.data[(old-1u)*4u],beforeLife=previous.data[(old-1u)*4u+3u];
             if(cmiStarMember(before.w)!=member||beforeLife.y<=0.||floatBitsToUint(beforeLife.w)!=eid)continue;
-            vec3 segment=p0.xyz-before.xyz;float distance2=dot(segment,segment),limit=cmiAttackSpeed(p0.w,uTimeSec,6.)*uDt+.01;
+            vec3 segment=p0.xyz-before.xyz;uint ownerAssignment=cmiStarAssignment(p0.w);float distance2=dot(segment,segment),limit=(cmiDome(b)?CMI_DOME_MOTION_LIMIT(state,ownerAssignment,4u):cmiAttackSpeed(p0.w,uTimeSec,6.))*uDt+.01;
             if(distance2>limit*limit)continue;
             float alpha=distance2>1e-8?clamp(dot(uLocalPlayerPos-before.xyz,segment)/distance2,0.,1.):1.;
             contact=before.xyz+alpha*segment;hitTime=uTimeSec-uDt*(1.-alpha);

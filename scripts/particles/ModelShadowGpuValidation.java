@@ -170,7 +170,7 @@ public class ModelShadowGpuValidation {
                 if(attackKind==2){
                     int[] roster=java.util.stream.IntStream.range(0,4096).toArray();
                     var selection=new com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.Selection(0,3,roster,new int[]{2048,4096});
-                    var flight=com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.linearFlight(selection,new net.minecraft.world.phys.Vec3(-24,4,0),new net.minecraft.world.phys.Vec3(1,0,0),80,12,10);
+                    var flight=com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.linearFlight(selection,new net.minecraft.world.phys.Vec3(-24,4,0),new net.minecraft.world.phys.Vec3(1,0,0),80,10);
                     event=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket(1,37,2,1,1,5,2,2048,0,10,10,40,0,40,0,32,roster,new float[]{0,40,0,-24,4,0},new float[8],2,4,selection.ends(),-24,4,0,0,1,10,0,flight);
                 }
                 var snapshots=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[68];

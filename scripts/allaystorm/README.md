@@ -19,7 +19,7 @@ python -m unittest discover -s scripts/allaystorm -p test_dome_v4_tools.py
 | `dome_v4_space_certificate.py` | 连续时空间距，歧义区间自适应细分 |
 | `dome_v4_gather_certificate.py` | 闭合流线及同／跨流线间距 |
 | `test_dome_v4_tools.py` | 基变换、内部峰值、C2端点、时钟和无损编解码oracle |
-| `generate_helix_template.py` | Helix确定性4096点模板；显式指定 `--output build/...` 试制 |
+| `generate_helix_template.py` | Helix v1：0.75圈、双股各2048、间距1.4；单个同股冲突5%替换，最多800万次，失败不写资源；显式指定 `--output build/...` 试制 |
 
 `data/dome-v4-source.npz` 保存float32五次B样条控制点、knots、结束时间及流线元数据，控制点使用无损XOR字节平面。源SHA256为 `15caaf4c32bdc6310d289a5137bdb75808b5226021f7ce3b7f7bce86b1633d4f`；成品SHA256为 `53456dfd103eb61f5f7dec5022d33f1d2eaf06adfa2ed584e0d4ffcf27f1fe94`。运行时只打包二进制模板；完整证书位于 `src/test/resources/allaystorm/dome-template-v4.validation.json`，由单元测试校验模板哈希与运动约束，不进入发布JAR。
 

@@ -196,6 +196,7 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
     double displacement=0;for(int axis=0;axis<3;axis++){float value=resumed.getFloat(row*64+axis*4);check(Float.isFinite(value),"restore produced nonfinite position");double delta=value-moving.getFloat(original*64+axis*4);displacement+=delta*delta;}
     check(Math.sqrt(displacement)<=6*delay+(wrap?.06:.005),"restore jumped or replay exceeded speed budget");check(resumed.getFloat(row*64+28)==0,"recovery frame equipped a sword");
     int arc=(StarfallGpuBuffers.COLUMN_ARC+member*StarfallGpuBuffers.COLUMN_ARC_WORDS)*4;check(recovered.getInt(arc+39*4)==phase+1,"restore token missing");
+    if(phase==2)for(int axis=0;axis<3;axis++)check(Math.abs(recovered.getFloat(arc+(36+axis)*4)-values[member*30+20+axis])<.00001,"Snapshot rematched the original descent tangent");
     if(delay==0)check(recovered.getInt(arc+43*4)==Math.round(values[member*30]),"restore changed actual stage");
    }
    observer.commit();put(input,resumed);put(counter,bytes(16));observer.prepare(2);observer.bind(update,true);bind(0,input);bind(1,output);bind(3,counter);bind(14,previous);bind(22,packed);f(update,"uTimeSec",(time+delay+.05f)%104857.6f);dispatch(update,1);

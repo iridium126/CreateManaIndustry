@@ -10,6 +10,7 @@ public record AllayStormPhases(float rotation, float conveyor, float conveyorRat
         float duration = growth > 0 ? (float)(64.0 * ((double)rf * rf - (double)r0 * r0) / growth) : 0;
         float post = Math.max(0, age - duration), g = Math.max(growth, 1e-6f);
         double rotation = (double)AllayStormData.SPIN_K * 128 * grown / g + (double)AllayStormData.SPIN_K / rf * post;
+        if((seed&1)!=0&&rotation!=0)rotation=-rotation;
         return new AllayStormPhases((float)(rotation % (2 * Math.PI)), 64 * grown / g + post / (2 * rf),
                 (radius < rf ? 1 / (2 * radius) : 0) + (post > 0 ? 1 / (2 * rf) : 0),
                 AllayStormData.vortexOmega(radius, seed));
