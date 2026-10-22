@@ -47,7 +47,7 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
   }finally{retire(p);}
  }
  static void production()throws Exception{
-  int n=4096,update=compile("update.comp"),contact=compile("wavecontact.comp");
+  int n=4096,update=compile("update.comp"),contact=compile("wavecontact.comp"),snapshot=compile("column_snapshot.comp"),restore=compile("column_restore.comp");
   try(var q=new Fixture(n,n,n);var gpu=new StarfallGpuBuffers();var collision=new StormCollisionGpu()){
    int output=buffer(bytes(n*64)),grid=buffer(bytes((ParticleBuffers.GRID_TABLE+n)*4)),damage=buffer(bytes(16)),players=buffer(bytes(16)),correction=buffer(bytes(n*32)),map=buffer(bytes(n*4));
    int meta=buffer(bytes(8*16)),hits=buffer(bytes(4+16384*24)),stamps=buffer(bytes(n*16));
@@ -131,7 +131,7 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
         var point=StarfallColumnRules.gather(new Vec3(1500,80,-2300),member,1).add(5,3,-2);
         particle(moving,member,2,(float)point.x,(float)point.z,20);moving.putFloat(member*64+4,(float)point.y).putFloat(member*64+12,member+1).putFloat(member*64+16,.5f).putFloat(member*64+24,.5f).putFloat(member*64+56,AllayStormWaves.memberSeed(1,member));
     }
-    var bloomed=new BitSet();var completed=new BitSet();var released=new BitSet();double[] firstTouch=new double[64];Arrays.fill(firstTouch,-1);put(q.previous,bytes(16).putInt(0,64));
+    var restoredPhases=new BitSet();var bloomed=new BitSet();var completed=new BitSet();var released=new BitSet();double[] firstTouch=new double[64];Arrays.fill(firstTouch,-1);put(q.previous,bytes(16).putInt(0,64));
     double descentMin=Double.POSITIVE_INFINITY,descentMax=0;
     double renderTime=0;float[] frameSteps=frameMode>=4?new float[]{1/144f,1/60f,.012f,.028f}:new float[]{1f/new int[]{30,60,144,240}[frameMode]};
     for(int frame=0;renderTime<=41;frame++){
@@ -156,16 +156,52 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
                 check(r<=4.001&&(frameMode==5||Math.abs(moving.getFloat(o+4)-64.02-StarfallColumnRules.height(r))<.3),"actual bloom left parabola");}
             else if(bloomed.get(member))completed.set(member);
         }
-        gpu.commit();if(frameMode==5)collision.submitted();
+        gpu.commit();if(frameMode==5){
+            collision.submitted();int actualPhase=phases.getInt(4)&255;int snapshotPhase=actualPhase==1?0:actualPhase;
+            if((snapshotPhase==0||snapshotPhase==2||snapshotPhase==4||snapshotPhase==5)&&!restoredPhases.get(snapshotPhase)){
+                snapshotRecovery(restore,snapshot,output,q.counter,q.emit,moving,life,gpu,collision,(float)renderTime,snapshotPhase,0,false);
+                if(snapshotPhase==2||snapshotPhase==4)snapshotRecovery(restore,snapshot,output,q.counter,q.emit,moving,life,gpu,collision,(float)renderTime,snapshotPhase,.1f,false);
+                if(snapshotPhase==2)snapshotRecovery(restore,snapshot,output,q.counter,q.emit,moving,life,gpu,collision,(float)renderTime,snapshotPhase,.125f,true);
+                restoredPhases.set(snapshotPhase);
+            }
+        }
     }
     check(frameMode==5?bloomed.cardinality()>0:bloomed.cardinality()==64,"complete lifecycle did not land all members: "+bloomed.cardinality());
     check(released.cardinality()==64,"short return failed to release all members");
     check(completed.cardinality()==bloomed.cardinality(),"members failed to leave bloom at frame mode "+frameMode);
+    if(frameMode==5)for(int phase:new int[]{0,2,4,5})check(restoredPhases.get(phase),"snapshot did not exercise phase "+phase);
     System.out.println("Column full lifecycle frame mode="+frameMode+" landed="+bloomed.cardinality()+" completed="+completed.cardinality()+" free_descent_speed="+descentMin+".."+descentMax);
     }
     GL15.glDeleteQueries(query);Files.write(Path.of(System.getProperty("cmi.benchmark.output","build/benchmarks/current"),"starfall-64-columns.csv"),rows);rows.forEach(System.out::println);
    }finally{for(int b:new int[]{output,grid,damage,players,correction,map,meta,hits,stamps})GL15.glDeleteBuffers(b);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(texture);}
-  }finally{retire(update,contact);}
+  }finally{retire(update,contact,snapshot,restore);}
+ }
+ static void snapshotRecovery(int update,int capture,int sourcePool,int sourceCount,int header,ByteBuffer moving,ClientboundStormColumnPacket column,StarfallGpuBuffers sourceGpu,StormCollisionGpu collision,float time,int phase,float delay,boolean wrap){
+  int packed=buffer(bytes(StarfallColumnSnapshot.BYTES)),input=buffer(moving),output=buffer(bytes(64*64)),counter=buffer(bytes(16)),previous=buffer(bytes(16).putInt(0,64));
+  try(var observer=new StarfallGpuBuffers()){
+   sourceGpu.bind(capture,false);bind(0,sourcePool);bind(3,sourceCount);bind(5,header);bind(22,packed);GL41.glProgramUniform1i(capture,GL20.glGetUniformLocation(capture,"uColumnCount"),1);GL41.glProgramUniform4iv(capture,GL20.glGetUniformLocation(capture,"uColumnSlots"),new int[]{4,-1,-1,-1});dispatch(capture,1);
+   var bytes=read(packed,StarfallColumnSnapshot.BYTES);float[] values=new float[StarfallColumnSnapshot.FLOATS];for(int field=0;field<values.length;field++)values[field]=bytes.getFloat(field*4);
+   if(wrap){
+    float shift=104857.5f-time;time+=shift;
+    for(int rank=0;rank<64;rank++)for(int field=7;field<=9;field++)if(values[rank*30+field]>=0)values[rank*30+field]+=shift;
+    column=new ClientboundStormColumnPacket(column.dimension(),column.epoch(),column.id(),false,column.seed(),column.start()+shift,column.assemble()+shift,column.touch()+shift,column.bloomEnd()+shift,column.end()+shift,column.x(),column.y(),column.z(),column.gatherY(),column.centerX(),column.centerZ(),column.radius(),column.members());
+    var shifted=bytes(StarfallColumnSnapshot.BYTES);for(int field=0;field<values.length;field++)shifted.putFloat(field*4,values[field]);put(packed,shifted);
+   }
+   var snapshot=new StarfallColumnSnapshot(values);check(Math.round(snapshot.values()[0])==phase,"capture restarted source phase");
+   var packets=new ClientboundStormWavePacket[68];packets[4]=column.snapshot();observer.rebuild(packets);observer.columnRestoreToken(4,column.id(),phase+1);observer.prepare(1);observer.bind(update,true);ui(update,"uCapacity",64);ui(update,"uKillEmit",-1);bool(update,"uStormCollisionEnabled",true);collision.bind(update);
+   bind(0,input);bind(1,output);bind(3,counter);bind(5,header);bind(14,previous);bind(22,packed);GL41.glProgramUniform1i(update,GL20.glGetUniformLocation(update,"uColumnRestoreCount"),1);GL41.glProgramUniform4iv(update,GL20.glGetUniformLocation(update,"uColumnRestoreSlots"),new int[]{4,-1,-1,-1});GL41.glProgramUniform4iv(update,GL20.glGetUniformLocation(update,"uColumnRestoreTokens"),new int[]{phase+1,0,0,0});GL41.glProgramUniform4fv(update,GL20.glGetUniformLocation(update,"uColumnRestoreTimes"),new float[]{time,0,0,0});f(update,"uTimeSec",(time+delay)%104857.6f);f(update,"uDt",.05f);dispatch(update,1);
+   var resumed=read(output,64*64);int state=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var recovered=read(state,(StarfallGpuBuffers.COLUMN_ARC+64*StarfallGpuBuffers.COLUMN_ARC_WORDS)*4);
+   for(int row=0;row<64;row++){
+    int member=Math.round(resumed.getFloat(row*64+12))-1;check(member>=0&&member<64,"restore lost member identity");int original=-1;for(int candidate=0;candidate<64;candidate++)if(Math.round(moving.getFloat(candidate*64+12))==member+1)original=candidate;
+    double displacement=0;for(int axis=0;axis<3;axis++){float value=resumed.getFloat(row*64+axis*4);check(Float.isFinite(value),"restore produced nonfinite position");double delta=value-moving.getFloat(original*64+axis*4);displacement+=delta*delta;}
+    check(Math.sqrt(displacement)<=6*delay+(wrap?.06:.005),"restore jumped or replay exceeded speed budget");check(resumed.getFloat(row*64+28)==0,"recovery frame equipped a sword");
+    int arc=(StarfallGpuBuffers.COLUMN_ARC+member*StarfallGpuBuffers.COLUMN_ARC_WORDS)*4;check(recovered.getInt(arc+39*4)==phase+1,"restore token missing");
+    if(delay==0)check(recovered.getInt(arc+43*4)==Math.round(values[member*30]),"restore changed actual stage");
+   }
+   observer.commit();put(input,resumed);put(counter,bytes(16));observer.prepare(2);observer.bind(update,true);bind(0,input);bind(1,output);bind(3,counter);bind(14,previous);bind(22,packed);f(update,"uTimeSec",(time+delay+.05f)%104857.6f);dispatch(update,1);
+   state=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);recovered=read(state,(StarfallGpuBuffers.COLUMN_ARC+64*StarfallGpuBuffers.COLUMN_ARC_WORDS)*4);check(recovered.getInt((StarfallGpuBuffers.COLUMN_ARC+39)*4)==phase+1,"duplicate snapshot reset ownership");
+   if(phase==2||phase==4){var local=read(state,(StarfallGpuBuffers.COLUMN_STATE+16)*4);check(local.getFloat((StarfallGpuBuffers.COLUMN_STATE+15)*4)>=values[10],"duplicate snapshot restarted curve progress");}
+  }finally{GL41.glProgramUniform1i(update,GL20.glGetUniformLocation(update,"uColumnRestoreCount"),0);for(int buffer:new int[]{packed,input,output,counter,previous})GL15.glDeleteBuffers(buffer);}
  }
  static void columnRings(){
   int reserve=compile("starfall_ring_reserve.comp"),emit=compile("emit.comp"),n=64*128;

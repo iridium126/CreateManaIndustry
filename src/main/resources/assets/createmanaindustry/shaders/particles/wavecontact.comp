@@ -80,6 +80,10 @@ void main() {
     uint stableMember=cmiStarMember(p0.w);
     if(stableMember<131072u&&(cmiStarWord(201456u+stableMember/32u)&(1u<<(stableMember&31u)))==0u&&(state.words[stableMember*2u+1u]&255u)==7u){uint o=atomicAdd(result.count,1u);if(o<WAVECONTACT_CAP){o*=6u;result.entries[o]=-3.;result.entries[o+1u]=float(state.words[stableMember*2u]);result.entries[o+2u]=float(stableMember);result.entries[o+3u]=0.;result.entries[o+4u]=0.;result.entries[o+5u]=uTimeSec;}}
     uint assignment=cmiStarAssignment(p0.w);
+    if(cmiColumnAssignment(assignment)){
+        uint slot=cmiStarSlot(assignment),b=cmiStarBase(slot),rank=cmiStarRank(assignment),token=cmiStarWord(b+27u),arc=328128u+((slot-4u)*64u+rank)*96u;
+        if(token!=0u&&state.words[arc+39u]==token&&state.words[arc+44u]==0u){uint outputIndex=atomicAdd(result.count,1u);if(outputIndex<WAVECONTACT_CAP){uint offset=outputIndex*6u;result.entries[offset]=-9.;result.entries[offset+1u]=cmiStarVec(b).x;result.entries[offset+2u]=float(rank);result.entries[offset+3u]=float(token&65535u);result.entries[offset+4u]=float(token>>16u);result.entries[offset+5u]=0.;}}
+    }
     if(uStarfallEnabled&&cmiColumnAssignment(assignment)){
         uint slot=cmiStarSlot(assignment),b=cmiStarBase(slot),member=cmiStarMember(p0.w),id=uint(cmiStarVec(b).x+.5);
         if((uLocalWaveMask&16u)==0u||cmiStarClaim(p0.w,uTimeSec)<0||member>=131072u)return;

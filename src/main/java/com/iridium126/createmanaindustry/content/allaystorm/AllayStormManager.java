@@ -101,8 +101,8 @@ public final class AllayStormManager {
     public static final int CENTER_INTERVAL_TICKS = 20;
     /** Coarse sanity bound for relayed positions (blocks from the anchor). */
     private static final float RELAY_BOUND = 320.0f;
-    /** Coarse sanity bound for relayed velocities (b/s — the wire's byte envelope). */
-    private static final float RELAY_VEL_BOUND = 8.0f;
+    /** Coarse sanity bound for relayed velocities (b/s). */
+    private static final float RELAY_VEL_BOUND = 32.0f;
 
     // ---- dive waves (the storm's offense; see docs/allay-storm-ai.md) --------
 
@@ -185,6 +185,7 @@ public final class AllayStormManager {
         final MajorAttackSchedule schedule=new MajorAttackSchedule();
         final BitSet waveReserved=new BitSet();
         final StarfallColumns columns=new StarfallColumns();
+        final StarfallSnapshotSync columnSnapshots=new StarfallSnapshotSync();
         final StormAttackStats stats=new StormAttackStats();
         int waveIdCounter;
 
@@ -199,6 +200,7 @@ public final class AllayStormManager {
         boolean authority;
         long order;
         final StormMelee.Attempts melee = new StormMelee.Attempts();
+        final StormStreamClock positions = new StormStreamClock();
     }
 
     private AllayStormManager() {
@@ -231,7 +233,7 @@ public final class AllayStormManager {
         AllayStormData data = level.getData(CMIAttachments.STORM_DATA.get());
         Runtime rt = runtime(level);
         if (!data.active) {
-            rt.columns.clear();rt.waves.clear();rt.schedule.reset();rt.waveReserved.clear();
+            rt.columns.clear();rt.columnSnapshots.clear();rt.waves.clear();rt.schedule.reset();rt.waveReserved.clear();
             if (rt.tracks.values().stream().anyMatch(t -> t.active))
                 deactivateAll(level, rt);
             return;
@@ -250,10 +252,11 @@ public final class AllayStormManager {
             if(level.getGameTime()-t.skyTick>=10){t.sky=level.canSeeSky(p.blockPosition());t.skyTick=level.getGameTime();}
             if(t.sky)eligible.add(p);
         }
+        tickColumnSnapshots(level,rt,data,columnPlayers);
         tickWaves(level,rt,data,eligible);
         int first=rt.schedule.ready(level.getGameTime())?rt.schedule.first():0;
         for(int i=0;i<3;i++){int kind=(first+i)%3;
-            if(kind==0)rt.columns.tick(level,data,rt.chaseX,rt.chaseZ,eligible,rt.waveReserved,()->nextAttackId(rt),packet->{for(var p:columnPlayers)PacketDistributor.sendToPlayer(p,packet);});
+            if(kind==0)rt.columns.tick(level,data,rt.chaseX,rt.chaseZ,eligible,rt.waveReserved,()->nextAttackId(rt),packet->{if(!packet.abort())rt.columnSnapshots.created(packet.id(),columnPlayers.stream().map(ServerPlayer::getUUID).toList());for(var p:columnPlayers)PacketDistributor.sendToPlayer(p,packet);});
             else tryMajor(level,rt,data,eligible,kind==1?StormAttack.HELIX:StormAttack.DOME);
         }
         if (++rt.scanCounter >= SCAN_INTERVAL_TICKS) {
@@ -347,7 +350,7 @@ public final class AllayStormManager {
         // Account for 2m/s body motion and worst-case rotating outer-envelope velocity.
         w.assemble=w.start+Math.max(4,(float)((offset+1.15*AllayStormData.vortexRadius(data.count)+46+8)/(12-2-Math.sqrt(2048)*Math.toRadians(8))));
         w.lock=w.assemble;w.helix=AllayHelix.linearFlight(roster,center,axis,Math.max(0,target.getBoundingBox().getCenter().subtract(center).dot(axis))+12,(float)ServerConfig.stormHelixThrustSpeed,w.assemble);
-        w.end=w.helix.finish()+.25f;
+        w.end=w.helix.finish()+5f;
         w.memberColumns.clear();for(int rank=0;rank<w.members.length;rank++)w.memberColumns.put(w.members[rank],rank/2048);
         for(int member:w.members)rt.waveReserved.set(member);rt.waves.add(w);
         rt.stats.count(StormAttackStats.Reason.LAUNCHED);broadcastWave(level,rt,wavePacket(w,AllayStarfall.START,true,target.getId()));return true;
@@ -364,7 +367,7 @@ public final class AllayStormManager {
                 float launch=lock?now:w.assemble;
                 w.helix=AllayHelix.linearFlight(w.helixRoster,center,axis,Math.max(-32,aim.dot(axis))+12,(float)ServerConfig.stormHelixThrustSpeed,launch);
                 if(lock){w.assemble=now;w.lock=now;w.locked=true;w.currentPhase=4;}else w.currentPhase=1;
-                w.end=w.helix.finish()+.25f;
+                w.end=w.helix.finish()+5f;
                 broadcastWave(level,rt,wavePacket(w,lock?AllayStarfall.LOCK:AllayStarfall.UPDATE,false,target.getId()));
             }
         }
@@ -447,7 +450,7 @@ public final class AllayStormManager {
             if (!entry.getValue().active)
                 continue;
             ServerPlayer p = rt.level.getServer().getPlayerList().getPlayer(entry.getKey());
-            if (p != null)
+            if (p != null && p.serverLevel() == rt.level)
                 PacketDistributor.sendToPlayer(p, packet);
         }
     }
@@ -543,6 +546,7 @@ public final class AllayStormManager {
     private static void sendCenter(ServerLevel level, Runtime rt) {
         AllayStormData data = rt.level.getData(CMIAttachments.STORM_DATA.get());
         ClientboundStormCenterPacket packet = new ClientboundStormCenterPacket(
+                level.dimension().location(), StormIdentity.of(level, data).epoch(),
                 (float) rt.chaseX, ServerConfig.stormChaseY, (float) rt.chaseZ,
                 (float) rt.chaseVX, (float) rt.chaseVZ, data.count,
                 rt.level.getGameTime());
@@ -550,7 +554,7 @@ public final class AllayStormManager {
             if (!entry.getValue().active)
                 continue;
             ServerPlayer p = rt.level.getServer().getPlayerList().getPlayer(entry.getKey());
-            if (p != null)
+            if (p != null && p.serverLevel() == rt.level)
                 PacketDistributor.sendToPlayer(p, packet);
         }
     }
@@ -634,7 +638,7 @@ public final class AllayStormManager {
                 t.authority, ServerConfig.stormCorrectionHz, data.dead.toByteArray(),
                 data.creationRadius, data.finalRadius, (float) data.growthPerSecond,
                 data.createdAtGameTime));
-        for(var packet:rt.columns.snapshots()){PacketDistributor.sendToPlayer(player,packet);PacketDistributor.sendToPlayer(player,new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(packet.dimension(),packet.epoch(),packet.id(),rt.columns.completed(packet.id())));}
+        for(var packet:rt.columns.snapshots()){rt.columnSnapshots.observe(packet.id(),player.getUUID());PacketDistributor.sendToPlayer(player,packet.resuming());PacketDistributor.sendToPlayer(player,new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(packet.dimension(),packet.epoch(),packet.id(),rt.columns.completed(packet.id())));}
         // seed the joining client's center stream immediately — without this
         // its interpolation would sit at the (block-quantized) ACTIVATE anchor
         // for up to one interval while the typhoon drifts on
@@ -659,7 +663,7 @@ public final class AllayStormManager {
             t.active = false;t.melee.release();
             t.authority = false;
             ServerPlayer player = rt.level.getServer().getPlayerList().getPlayer(entry.getKey());
-            if (player != null)
+            if (player != null && player.serverLevel() == rt.level)
                 PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.DEACTIVATE(
                         StormIdentity.of(level, level.getData(CMIAttachments.STORM_DATA.get()))));
         }
@@ -686,7 +690,7 @@ public final class AllayStormManager {
             if (t.authority != should) {
                 t.authority = should;
                 ServerPlayer player = rt.level.getServer().getPlayerList().getPlayer(entry.getKey());
-                if (player != null)
+                if (player != null && player.serverLevel() == rt.level)
                     PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.UPDATE(
                             StormIdentity.of(rt.level, data), data.anchor, data.count, data.stormSeed,
                             should, ServerConfig.stormCorrectionHz,
@@ -731,7 +735,7 @@ public final class AllayStormManager {
         for(var entry:rt.tracks.entrySet())if(entry.getValue().active){var observer=level.getServer().getPlayerList().getPlayer(entry.getKey());if(observer!=null&&observer.serverLevel()==level)PacketDistributor.sendToPlayer(observer,packet);}
     }
     private static void retireDeadMember(ServerLevel level,Runtime rt,int member){
-        for(var w:rt.waves)if(w.kind==StormAttack.HELIX&&w.membership.get(member))for(int rank=0;rank<w.members.length;rank++)if(w.members[rank]==member&&!w.completed.get(rank)){
+        for(var w:rt.waves)if(StormAttack.regional(w.kind)&&w.membership.get(member))for(int rank=0;rank<w.members.length;rank++)if(w.members[rank]==member&&!w.completed.get(rank)){
             w.completed.set(rank);w.membership.clear(member);rt.waveReserved.clear(member);broadcastCompletion(level,rt,new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(level.dimension().location(),w.epoch,w.id,w.completed.toLongArray()));break;
         }
         rt.columns.deadMember(member,rt.waveReserved,packet->broadcastCompletion(level,rt,packet));
@@ -762,7 +766,7 @@ public final class AllayStormManager {
         int stride = ServerboundStormPositionsPacket.STRIDE;
         // NaN-safe bound form ("!(x <= bound)" also rejects NaN and both
         // infinities). The wire quantization bounds every value today
-        // (positions short → ±2048 blocks, velocities byte → ±8 b/s), but this
+        // (positions short → ±2048 blocks, velocities short → ±32 b/s), but this
         // check IS the trust boundary: it stays self-sufficient even if the
         // codec ever widens, and the velocity components were previously
         // unchecked outright.
@@ -774,13 +778,14 @@ public final class AllayStormManager {
                     || !(Math.abs(e[i + 7]) <= RELAY_VEL_BOUND))
                 return;
         }
-        ClientboundStormPositionsPacket relay = new ClientboundStormPositionsPacket(packet.gameTime(), e);
+        if (!t.positions.accept(packet.identity(), StormIdentity.of(level, data), level.dimension().location(), packet.gameTime())) return;
+        ClientboundStormPositionsPacket relay = new ClientboundStormPositionsPacket(packet.dimension(), packet.epoch(), packet.gameTime(), e);
         for (var entry : rt.tracks.entrySet()) {
             Track tr = entry.getValue();
             if (!tr.active || entry.getKey().equals(player.getUUID()))
                 continue;
             ServerPlayer p = rt.level.getServer().getPlayerList().getPlayer(entry.getKey());
-            if (p != null)
+            if (p != null && p.serverLevel() == rt.level)
                 PacketDistributor.sendToPlayer(p, relay);
         }
     }
@@ -886,6 +891,37 @@ public final class AllayStormManager {
         if(accepted!=null){var out=new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(packet.dimension(),packet.epoch(),packet.id(),accepted);for(var entry:rt.tracks.entrySet())if(entry.getValue().active){var observer=level.getServer().getPlayerList().getPlayer(entry.getKey());if(observer!=null&&observer.serverLevel()==level)PacketDistributor.sendToPlayer(observer,out);}}
     }
 
+    private static void tickColumnSnapshots(ServerLevel level,Runtime rt,AllayStormData data,List<ServerPlayer> players){
+        if(rt.columns.isEmpty()){rt.columnSnapshots.clear();return;}
+        var active=new java.util.HashSet<UUID>();UUID authority=null;
+        for(var player:players){active.add(player.getUUID());var track=rt.tracks.get(player.getUUID());if(track!=null&&track.authority)authority=player.getUUID();}
+        var ids=new java.util.HashSet<Integer>();for(var packet:rt.columns.snapshots())ids.add(packet.id());
+        rt.columnSnapshots.retain(ids,active);
+        for(int id:rt.columnSnapshots.unavailable())rt.columns.abort(id,rt.waveReserved,packet->{for(var player:players)PacketDistributor.sendToPlayer(player,packet);});
+        var remaining=new java.util.HashSet<Integer>();for(var packet:rt.columns.snapshots())remaining.add(packet.id());rt.columnSnapshots.retain(remaining,active);
+        for(var request:rt.columnSnapshots.poll(level.getGameTime(),authority)){
+            var source=level.getServer().getPlayerList().getPlayer(request.source());
+            if(source!=null&&source.serverLevel()==level)PacketDistributor.sendToPlayer(source,new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnSnapshotRequest(level.dimension().location(),StormIdentity.of(level,data).epoch(),request.id(),request.token(),request.source(),level.getGameTime()));
+        }
+    }
+
+    public static void columnSnapshot(com.iridium126.createmanaindustry.content.allaystorm.network.StormColumnSnapshotPacket packet,IPayloadContext context){
+        if(!(context.player() instanceof ServerPlayer player))return;
+        var level=player.serverLevel();var data=level.getData(CMIAttachments.STORM_DATA.get());var rt=runtime(level);var track=rt.tracks.get(player.getUUID());
+        long now=level.getGameTime();
+        if(!data.active||track==null||!track.active||!player.getUUID().equals(packet.source())||!packet.identity().equals(StormIdentity.of(level,data))||packet.gameTime()>now+1||now-packet.gameTime()>=20)return;
+        if(Math.abs(AllayStarfall.elapsed(packet.sampleSec(),clockSeconds(packet.gameTime())))>.1f)return;
+        com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket column=null;
+        for(var candidate:rt.columns.snapshots())if(candidate.id()==packet.id()){column=candidate;break;}
+        if(column==null)return;
+        var completed=BitSet.valueOf(rt.columns.completed(packet.id()));for(int rank=0;rank<64;rank++)if(data.dead.get(column.members()[rank]))completed.set(rank);
+        var snapshot=packet.snapshot().completed(completed);
+        var recipients=rt.columnSnapshots.accept(packet.id(),packet.token(),player.getUUID(),now);
+        if(recipients.isEmpty())return;
+        var relay=new com.iridium126.createmanaindustry.content.allaystorm.network.StormColumnSnapshotPacket(packet.dimension(),packet.epoch(),packet.id(),packet.token(),packet.source(),packet.gameTime(),packet.sampleSec(),snapshot);
+        for(UUID recipient:recipients){var observer=level.getServer().getPlayerList().getPlayer(recipient);var observerTrack=rt.tracks.get(recipient);if(observer!=null&&observer.serverLevel()==level&&observerTrack!=null&&observerTrack.active)PacketDistributor.sendToPlayer(observer,relay);}
+    }
+
     public static String attackStatus(ServerLevel level){var rt=runtime(level);return "major: "+rt.stats+" columns: "+rt.columns.stats;}
 
     // ---- command surface -------------------------------------------------------
@@ -942,6 +978,7 @@ public final class AllayStormManager {
         }
         Runtime rt = runtime(level);
         rt.columns.clear();
+        rt.columnSnapshots.clear();
         rt.waves.clear();
         rt.schedule.reset();
         rt.waveReserved.clear();
@@ -952,7 +989,7 @@ public final class AllayStormManager {
             t.active = false;t.melee.release();
             t.authority = false;
             ServerPlayer player = rt.level.getServer().getPlayerList().getPlayer(entry.getKey());
-            if (player != null)
+            if (player != null && player.serverLevel() == rt.level)
                 PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.STOP(identity));
         }
     }
@@ -964,7 +1001,7 @@ public final class AllayStormManager {
             if (!t.active)
                 continue;
             ServerPlayer player = rt.level.getServer().getPlayerList().getPlayer(entry.getKey());
-            if (player == null)
+            if (player == null || player.serverLevel() != rt.level)
                 continue;
             if (updateOnly) {
                 PacketDistributor.sendToPlayer(player, ClientboundStormStatePacket.UPDATE(

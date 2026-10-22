@@ -165,6 +165,9 @@ vec2 cmiGauss2(float s) {
 #pragma cmi_include chunks/storm_navigation.glsl
 #pragma cmi_include chunks/dome_completion.glsl
 #pragma cmi_include chunks/column_motion.glsl
+#ifdef CMI_COLUMN_RECOVERY
+#pragma cmi_include chunks/column_recovery.glsl
+#endif
 
 #pragma cmi_include chunks/pool_reservation.glsl
 #pragma cmi_include chunks/death_spawn.glsl
@@ -286,7 +289,19 @@ void main() {
         if(cmiColumnAssignment(a)&&!cmiContactSweepValid){uint member=cmiStarMember(p0.w);if((starStateWrite.words[member*2u+1u]&255u)==4u){roll=5.;starStateWrite.words[member*2u+1u]=5u;starStateWrite.words[328128u+((cmiStarSlot(a)-4u)*64u+cmiStarRank(a))*CMI_COLUMN_ARC_WORDS+43u]=5u;starStateWrite.words[262592u+((cmiStarSlot(a)-4u)*64u+cmiStarRank(a))*16u+3u]=floatBitsToUint(cmiStarTime(cmiStarBase(cmiStarSlot(a)),uTimeSec));}}
     }
 
+    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&cmiStarSlot(a)<4u){
+        uint member=cmiStarMember(p0.w),b=cmiStarBase(cmiStarSlot(a));
+        if(cmiHelix(b)&&starStateWrite.words[member*2u]==uint(cmiStarVec(b).x+.5)
+                &&(starStateWrite.words[member*2u+1u]&255u)==4u&&cmiHelixPassed(b,pos)){
+            starStateWrite.words[member*2u+1u]=6u;
+            uint rank=cmiMajorRank(a);atomicOr(starStateWrite.words[CMI_COMPLETIONS+cmiCompletionOffset(cmiStarSlot(a))+rank/32u],1u<<(rank&31u));
+            roll=0.;
+        }
+    }}
+
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){uint member=cmiStarMember(p0.w);roll=(starStateWrite.words[member*2u+1u]&255u)==4u&&cmiNearPlayer(pos+vec3(0,.3,0),36.)?-4.:0.;}}
+
+    if(cmiColumnRecoveryFrame)roll=0.;
 
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&cmiStarSlot(a)<4u){
         uint b=cmiStarBase(cmiStarSlot(a));if(cmiHelix(b)||cmiDome(b)){

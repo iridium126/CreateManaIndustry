@@ -1,11 +1,7 @@
 package com.iridium126.createmanaindustry.content.allaystorm.network;
 
-import com.iridium126.createmanaindustry.CreateManaIndustry;
-
 import io.netty.handler.codec.DecoderException;
-
 import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -20,16 +16,20 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
  * coordinate/velocity consumer MUST skip it (it is never a value).
  * <p>
  * Wire quantization: position 1/16-block steps (short, ±2048 blocks around
- * the anchor), velocity 1/16-blocks-per-second steps (signed byte, ±8 b/s
- * covers the 6 b/s member speed cap). ~12 bytes per member; the snapshot is
- * capped at 256 members, so a full snapshot is ~3 KB.
+ * the anchor), velocity 1/16-blocks-per-second steps (signed short, validated to ±32 b/s).
+ * Each member uses up to 15 bytes; a 256-member snapshot is about 4 KB.
  * <p>
  * The server cannot validate these positions (no GPU) — it applies a coarse
  * bounds check and relays the payload to the other active clients as a
  * {@link ClientboundStormPositionsPacket} (documented trust surface, same
  * tier as client-reported member hit candidates).
  */
-public record ServerboundStormPositionsPacket(long gameTime, float[] entries) implements CustomPacketPayload {
+public record ServerboundStormPositionsPacket(net.minecraft.resources.ResourceLocation dimension, long epoch,
+        long gameTime, float[] entries) implements CustomPacketPayload {
+
+    public com.iridium126.createmanaindustry.content.allaystorm.StormIdentity identity() {
+        return new com.iridium126.createmanaindustry.content.allaystorm.StormIdentity(dimension, epoch);
+    }
 
     public static final int STRIDE = 8;
 
@@ -47,49 +47,22 @@ public record ServerboundStormPositionsPacket(long gameTime, float[] entries) im
     public static final int MAX_ENTRIES = 256;
 
     public static final CustomPacketPayload.Type<ServerboundStormPositionsPacket> TYPE =
-            new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("storm_positions_up"));
+            new CustomPacketPayload.Type<>(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("createmanaindustry", "storm_positions_up"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ServerboundStormPositionsPacket> STREAM_CODEC =
             StreamCodec.of(ServerboundStormPositionsPacket::encode, ServerboundStormPositionsPacket::decode);
 
-    private static void encode(RegistryFriendlyByteBuf buffer, ServerboundStormPositionsPacket p) {
-        ByteBufCodecs.VAR_LONG.encode(buffer, p.gameTime);
-        int count = p.entries.length / STRIDE;
-        ByteBufCodecs.VAR_INT.encode(buffer, count);
-        for (int i = 0; i < count; i++) {
-            int o = i * STRIDE;
-            ByteBufCodecs.VAR_INT.encode(buffer, (int) p.entries[o]); // memberIdx (offset 1 is padding, skipped)
-            buffer.writeShort(clamp((int) Math.round(p.entries[o + 2] * 16)));
-            buffer.writeShort(clamp((int) Math.round(p.entries[o + 3] * 16)));
-            buffer.writeShort(clamp((int) Math.round(p.entries[o + 4] * 16)));
-            buffer.writeByte(clamp((int) Math.round(p.entries[o + 5] * 16)));
-            buffer.writeByte(clamp((int) Math.round(p.entries[o + 6] * 16)));
-            buffer.writeByte(clamp((int) Math.round(p.entries[o + 7] * 16)));
-        }
+    private static void encode(RegistryFriendlyByteBuf buffer, ServerboundStormPositionsPacket packet) {
+        buffer.writeResourceLocation(packet.dimension());
+        buffer.writeLong(packet.epoch());
+        buffer.writeVarLong(packet.gameTime());
+        StormPositionsCodec.write(buffer, packet.entries());
     }
 
     private static ServerboundStormPositionsPacket decode(RegistryFriendlyByteBuf buffer) {
-        long gameTime = ByteBufCodecs.VAR_LONG.decode(buffer);
-        int count = ByteBufCodecs.VAR_INT.decode(buffer);
-        if (count < 0 || count > MAX_ENTRIES)
-            throw new DecoderException("storm positions snapshot count out of bounds: " + count);
-        float[] entries = new float[count * STRIDE];
-        for (int i = 0; i < count; i++) {
-            int o = i * STRIDE;
-            entries[o] = ByteBufCodecs.VAR_INT.decode(buffer);
-            entries[o + 1] = 0.0f; // padding slot, kept for the GPU staging layout
-            entries[o + 2] = buffer.readShort() / 16.0f;
-            entries[o + 3] = buffer.readShort() / 16.0f;
-            entries[o + 4] = buffer.readShort() / 16.0f;
-            entries[o + 5] = buffer.readByte() / 16.0f;
-            entries[o + 6] = buffer.readByte() / 16.0f;
-            entries[o + 7] = buffer.readByte() / 16.0f;
-        }
-        return new ServerboundStormPositionsPacket(gameTime, entries);
-    }
-
-    static int clamp(int v) {
-        return Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, v));
+        var dimension = buffer.readResourceLocation();
+        long epoch = buffer.readLong(), time = buffer.readVarLong();
+        return new ServerboundStormPositionsPacket(dimension, epoch, time, StormPositionsCodec.read(buffer));
     }
 
     @Override

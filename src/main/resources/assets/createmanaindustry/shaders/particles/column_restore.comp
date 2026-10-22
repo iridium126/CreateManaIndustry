@@ -1,0 +1,2 @@
+#define CMI_COLUMN_RECOVERY
+#pragma cmi_include update.comp

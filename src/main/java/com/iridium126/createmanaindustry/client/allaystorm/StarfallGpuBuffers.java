@@ -23,6 +23,11 @@ public final class StarfallGpuBuffers implements AutoCloseable {
  public void trackReturn(ClientboundStormWavePacket packet,long[] ranks){var mask=java.util.BitSet.valueOf(ranks);for(int rank=mask.nextSetBit(0);rank>=0&&rank<packet.members().length;rank=mask.nextSetBit(rank+1)){int member=packet.members()[rank];returningOwners[member]=packet.waveId();words[HOME_ACK+member/32]&=~(1<<(member&31));}ackVersion++;}
  public void arrived(int id,int member){if(member<0||member>=ROSTER||returningOwners[member]!=id)return;int at=HOME_ACK+member/32,bit=1<<(member&31);if((words[at]&bit)==0){words[at]|=bit;ackVersion++;}}
  private final java.util.Map<Integer,java.util.BitSet> completed=new java.util.HashMap<>();
+ private final int[] columnOwners=new int[64],columnRestoreTokens=new int[64];
+ private final boolean[] columnWaiting=new boolean[64];
+ public void columnWaiting(int slot,int id,boolean waiting){if(columnOwners[slot-4]==id&&columnWaiting[slot-4]==waiting)return;columnOwners[slot-4]=id;columnWaiting[slot-4]=waiting;words[HEADER+ROSTER+slot*WAVE_WORDS+26]=Float.floatToRawIntBits(waiting?1:0);version++;}
+ public boolean columnWaiting(int slot,int id){return columnOwners[slot-4]==id&&columnWaiting[slot-4];}
+ public void columnRestoreToken(int slot,int id,int token){if(columnOwners[slot-4]==id&&columnRestoreTokens[slot-4]==token)return;columnOwners[slot-4]=id;columnRestoreTokens[slot-4]=token;words[HEADER+ROSTER+slot*WAVE_WORDS+27]=token;version++;}
  public void completed(int id,long[] ranks){completed.computeIfAbsent(id,k->new java.util.BitSet()).or(java.util.BitSet.valueOf(ranks));rosterVersion++;version++;java.util.Arrays.fill(previousIds,-1);}
  private final float[] lastAxes=new float[4*3],lastSides=new float[4*3],oldAxes=new float[4*3],axisTimes=new float[4];private final int[] axisIds=new int[4];
  private final int[] gaussianIds=new int[4];private final int[][] gaussianMembers=new int[4][];
@@ -105,6 +110,8 @@ public final class StarfallGpuBuffers implements AutoCloseable {
    if(p.column()){
     put(b+20,3,p.phase(),0,0);
     put(b+24,p.landings()[3],(readyColumns[slot-4]?1:0),0,0);
+     if(columnOwners[slot-4]!=p.waveId()){columnOwners[slot-4]=p.waveId();columnWaiting[slot-4]=false;columnRestoreTokens[slot-4]=0;}
+     words[b+26]=Float.floatToRawIntBits(columnWaiting[slot-4]?1:0);words[b+27]=columnRestoreTokens[slot-4];
     put(b+56,p.landings()[0],p.landings()[1],p.landings()[2],p.lockSec());
     put(b+60,p.landings()[3],64,4,p.startSec());
    }
@@ -218,7 +225,7 @@ public final class StarfallGpuBuffers implements AutoCloseable {
  public int committedBuffer(){return generations[read]>=0&&enabled[read]?data[read]:0;}
  public void commit(){if(pending){read=1-read;pending=false;}}
  public void abort(){pending=false;}
- public void invalidate(){preciseDomeClock=Double.NaN;for(var ids:flowBankIds)Arrays.fill(ids,0);resetFlowSource();Arrays.fill(domeGatherIds,0);Arrays.fill(domeLocalLocks,Float.NaN);Arrays.fill(domeClockValid,false);Arrays.fill(axisIds,0);Arrays.fill(returningOwners,0);Arrays.fill(words,HOME_ACK,DOME_DATA,0);ackVersion++;completed.clear();Arrays.fill(lastAxes,0);Arrays.fill(lastSides,0);Arrays.fill(gaussianIds,0);Arrays.fill(gaussianMembers,null);Arrays.fill(gaussianVersions,-1);words[0]=++domainToken;words[1]=0;words[2]=domeKeyBuffer!=0&&domeKeyUploaded==com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.keyCount()*2?1:0;Arrays.fill(readyColumns,false);readyVersion++;Arrays.fill(readyVersions,-1);clearStates=true;Arrays.fill(generations,-1);Arrays.fill(versions,-1);Arrays.fill(rosterVersions,-1);version++;pending=false;}
+ public void invalidate(){Arrays.fill(columnOwners,0);Arrays.fill(columnRestoreTokens,0);Arrays.fill(columnWaiting,false);preciseDomeClock=Double.NaN;for(var ids:flowBankIds)Arrays.fill(ids,0);resetFlowSource();Arrays.fill(domeGatherIds,0);Arrays.fill(domeLocalLocks,Float.NaN);Arrays.fill(domeClockValid,false);Arrays.fill(axisIds,0);Arrays.fill(returningOwners,0);Arrays.fill(words,HOME_ACK,DOME_DATA,0);ackVersion++;completed.clear();Arrays.fill(lastAxes,0);Arrays.fill(lastSides,0);Arrays.fill(gaussianIds,0);Arrays.fill(gaussianMembers,null);Arrays.fill(gaussianVersions,-1);words[0]=++domainToken;words[1]=0;words[2]=domeKeyBuffer!=0&&domeKeyUploaded==com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.keyCount()*2?1:0;Arrays.fill(readyColumns,false);readyVersion++;Arrays.fill(readyVersions,-1);clearStates=true;Arrays.fill(generations,-1);Arrays.fill(versions,-1);Arrays.fill(rosterVersions,-1);version++;pending=false;}
  public long bytes(){return data[0]==0?0:8L*(DATA_WORDS+allocatedStateWords)+(domeKeyBuffer==0?0:8L*com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.keyCount());}
  @Override public void close(){if(domeKeyTexture!=0)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(domeKeyTexture);if(domeKeyBuffer!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(domeKeyBuffer);domeKeyTexture=0;domeKeyBuffer=0;domeKeyUploaded=0;domeKeyFailed=false;for(int i=0;i<2;i++){if(data[i]!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(data[i]);if(state[i]!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(state[i]);if(textures[i]!=0)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(textures[i]);if(stateTextures[i]!=0)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(stateTextures[i]);data[i]=state[i]=textures[i]=stateTextures[i]=0;}if(upload!=null){MemoryUtil.memFree(upload);upload=null;}invalidate();}
 

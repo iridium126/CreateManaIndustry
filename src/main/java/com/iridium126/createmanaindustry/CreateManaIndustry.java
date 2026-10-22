@@ -167,7 +167,7 @@ public class CreateManaIndustry {
     }
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(MODID).versioned("15");
+        PayloadRegistrar registrar = event.registrar(MODID).versioned("16");
         registrar.playToClient(
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.TYPE,
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.STREAM_CODEC,
@@ -263,6 +263,12 @@ public class CreateManaIndustry {
                 com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket.TYPE,
                 com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket.STREAM_CODEC,
                 com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket::handle);
+        registrar.playToClient(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnSnapshotRequest.TYPE,
+                com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnSnapshotRequest.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnSnapshotRequest::handle);
+        registrar.playBidirectional(com.iridium126.createmanaindustry.content.allaystorm.network.StormColumnSnapshotPacket.TYPE,
+                com.iridium126.createmanaindustry.content.allaystorm.network.StormColumnSnapshotPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.allaystorm.network.StormColumnSnapshotPacket::handle);
         registrar.playToClient(
                 ClientboundStormWavePacket.TYPE,
                 ClientboundStormWavePacket.STREAM_CODEC,

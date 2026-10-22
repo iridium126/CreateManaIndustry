@@ -1,6 +1,6 @@
 # Allay Storm：开发与验收入口
 
-当前协议15、Dome v4。[当前行为](allay-storm-ai.md)维护攻击参数，[同步契约](allay-storm-sync.md)维护数据所有权。本页统一验证方式，不逐版本复制测试总数、日志或发行JAR哈希。历史结果从Git查阅，原始数据写入忽略的 `build/`。
+当前协议16、Dome v4。[当前行为](allay-storm-ai.md)维护攻击参数，[同步契约](allay-storm-sync.md)维护数据所有权。本页统一验证方式，不逐版本复制测试总数、日志或发行JAR哈希。历史结果从Git查阅，原始数据写入忽略的 `build/`。
 
 ## 按改动选择检查
 
@@ -90,3 +90,9 @@ Iris的未定义流线函数已在实际AST／驱动链复现并修复。Dome残
 - 实际Iris光影包的合并路径、重载后MODEL／阴影一致，持续外飞成员是否恢复正常归队，密集多人场景完整CPU／GPU帧时间、显存、上传量和冷启动成本。
 
 当前分发JAR从 `build/libs/` 获取。离线证书在 `src/test/resources/allaystorm/`，只用于校验生产模板，不属于运行时资源。更新模板时同时更新测试证书。发布检查包含内嵌mod JAR：保留当前二进制模板，排除验证证书、旧模板、离线控制点、测试类及GameTest夹具。两端替换并重启，存档与当前配置保留。
+
+## 协议16回归入口
+
+`StormStreamClockTest`覆盖旧维度／epoch及倒退时间；`StormPositionsPacketTest`覆盖双向±6／8／12／18／32速度、身份和非法输入。`StarfallSnapshotSyncTest`验证观察者合并、指定来源、超时轮换、断开和旧响应隔离；`StarfallSnapshotPacketTest`验证固定64名／8KiB边界、阶段和非有限值。
+
+`StormMajorAttackGameTests`追加Dome集结／发射后死亡回收及无人模拟星柱清理。`validateHelixGpu`追加真实更新内核中参考进度已通过但实际位置仍在平面前，以及实际过平面当帧完成的对照。`validateStarfallColumnGpu`从生产集结／下降／实际触地／展开／短回流过程中采集快照，在另一套GPU状态bank恢复，检查阶段、位置、进度、重复安装、延迟追赶和恢复帧无剑标记；同时保留六种步频／地形与64柱性能场景。GPU工具验证不代替实际双客户端的接入、换维度与authority交接验收。

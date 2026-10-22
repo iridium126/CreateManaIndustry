@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.content.allaystorm.network;
 
-import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.infrastructure.network.ClientPayloadHandler;
 
 import io.netty.handler.codec.DecoderException;
@@ -27,59 +26,33 @@ import java.util.function.Consumer;
  * rules, late window = converge). Corrections are soft: if the stream stops
  * (handoff gap, packet loss) local simulation simply continues.
  */
-public record ClientboundStormPositionsPacket(long gameTime, float[] entries) implements CustomPacketPayload {
+public record ClientboundStormPositionsPacket(net.minecraft.resources.ResourceLocation dimension, long epoch,
+        long gameTime, float[] entries) implements CustomPacketPayload {
+
+    public com.iridium126.createmanaindustry.content.allaystorm.StormIdentity identity() {
+        return new com.iridium126.createmanaindustry.content.allaystorm.StormIdentity(dimension, epoch);
+    }
 
     private static final ClientPayloadHandler<ClientboundStormPositionsPacket> CLIENT_HANDLER =
             new ClientPayloadHandler<>();
 
     public static final CustomPacketPayload.Type<ClientboundStormPositionsPacket> TYPE =
-            new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("storm_positions_down"));
+            new CustomPacketPayload.Type<>(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("createmanaindustry", "storm_positions_down"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundStormPositionsPacket> STREAM_CODEC =
             StreamCodec.of(ClientboundStormPositionsPacket::encode, ClientboundStormPositionsPacket::decode);
 
-    private static void encode(RegistryFriendlyByteBuf buffer, ClientboundStormPositionsPacket p) {
-        ByteBufCodecs.VAR_LONG.encode(buffer, p.gameTime);
-        int count = p.entries.length / ServerboundStormPositionsPacket.STRIDE;
-        ByteBufCodecs.VAR_INT.encode(buffer, count);
-        for (int i = 0; i < count; i++) {
-            int o = i * ServerboundStormPositionsPacket.STRIDE;
-            ByteBufCodecs.VAR_INT.encode(buffer, (int) p.entries[o]); // memberIdx (offset 1 is padding, skipped)
-            buffer.writeShort(ServerboundStormPositionsPacket.clamp((int) Math.round(p.entries[o + 2] * 16)));
-            buffer.writeShort(ServerboundStormPositionsPacket.clamp((int) Math.round(p.entries[o + 3] * 16)));
-            buffer.writeShort(ServerboundStormPositionsPacket.clamp((int) Math.round(p.entries[o + 4] * 16)));
-            buffer.writeByte(clampByte((int) Math.round(p.entries[o + 5] * 16)));
-            buffer.writeByte(clampByte((int) Math.round(p.entries[o + 6] * 16)));
-            buffer.writeByte(clampByte((int) Math.round(p.entries[o + 7] * 16)));
-        }
+    private static void encode(RegistryFriendlyByteBuf buffer, ClientboundStormPositionsPacket packet) {
+        buffer.writeResourceLocation(packet.dimension());
+        buffer.writeLong(packet.epoch());
+        buffer.writeVarLong(packet.gameTime());
+        StormPositionsCodec.write(buffer, packet.entries());
     }
 
     private static ClientboundStormPositionsPacket decode(RegistryFriendlyByteBuf buffer) {
-        long gameTime = ByteBufCodecs.VAR_LONG.decode(buffer);
-        int count = ByteBufCodecs.VAR_INT.decode(buffer);
-        // Same cap as the upstream Serverbound packet (the server relays its
-        // payload verbatim, so a legit snapshot can never exceed it). The
-        // count drives the entry array allocation — an out-of-bounds value is
-        // a protocol violation and kills the connection instead.
-        if (count < 0 || count > ServerboundStormPositionsPacket.MAX_ENTRIES)
-            throw new DecoderException("storm positions snapshot count out of bounds: " + count);
-        float[] entries = new float[count * ServerboundStormPositionsPacket.STRIDE];
-        for (int i = 0; i < count; i++) {
-            int o = i * ServerboundStormPositionsPacket.STRIDE;
-            entries[o] = ByteBufCodecs.VAR_INT.decode(buffer);
-            entries[o + 1] = 0.0f; // padding slot, kept for the GPU staging layout
-            entries[o + 2] = buffer.readShort() / 16.0f;
-            entries[o + 3] = buffer.readShort() / 16.0f;
-            entries[o + 4] = buffer.readShort() / 16.0f;
-            entries[o + 5] = buffer.readByte() / 16.0f;
-            entries[o + 6] = buffer.readByte() / 16.0f;
-            entries[o + 7] = buffer.readByte() / 16.0f;
-        }
-        return new ClientboundStormPositionsPacket(gameTime, entries);
-    }
-
-    private static int clampByte(int v) {
-        return Math.max(Byte.MIN_VALUE, Math.min(Byte.MAX_VALUE, v));
+        var dimension = buffer.readResourceLocation();
+        long epoch = buffer.readLong(), time = buffer.readVarLong();
+        return new ClientboundStormPositionsPacket(dimension, epoch, time, StormPositionsCodec.read(buffer));
     }
 
     @Override

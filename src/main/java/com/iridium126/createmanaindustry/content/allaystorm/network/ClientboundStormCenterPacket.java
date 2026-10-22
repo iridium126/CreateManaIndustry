@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.content.allaystorm.network;
 
-import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.infrastructure.network.ClientPayloadHandler;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -37,19 +36,26 @@ import java.util.function.Consumer;
  * stream is the per-second delta channel.
  */
 public record ClientboundStormCenterPacket(
+        net.minecraft.resources.ResourceLocation dimension, long epoch,
         float x, float y, float z, float velX, float velZ,
         int count, long gameTime) implements CustomPacketPayload {
+
+    public com.iridium126.createmanaindustry.content.allaystorm.StormIdentity identity() {
+        return new com.iridium126.createmanaindustry.content.allaystorm.StormIdentity(dimension, epoch);
+    }
 
     private static final ClientPayloadHandler<ClientboundStormCenterPacket> CLIENT_HANDLER =
             new ClientPayloadHandler<>();
 
     public static final CustomPacketPayload.Type<ClientboundStormCenterPacket> TYPE =
-            new CustomPacketPayload.Type<>(CreateManaIndustry.modLoc("storm_center"));
+            new CustomPacketPayload.Type<>(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("createmanaindustry", "storm_center"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundStormCenterPacket> STREAM_CODEC =
             StreamCodec.of(ClientboundStormCenterPacket::encode, ClientboundStormCenterPacket::decode);
 
     private static void encode(RegistryFriendlyByteBuf buffer, ClientboundStormCenterPacket p) {
+        buffer.writeResourceLocation(p.dimension);
+        buffer.writeLong(p.epoch);
         buffer.writeFloat(p.x);
         buffer.writeFloat(p.y);
         buffer.writeFloat(p.z);
@@ -60,6 +66,8 @@ public record ClientboundStormCenterPacket(
     }
 
     private static ClientboundStormCenterPacket decode(RegistryFriendlyByteBuf buffer) {
+        var dimension = buffer.readResourceLocation();
+        long epoch = buffer.readLong();
         float x = buffer.readFloat();
         float y = buffer.readFloat();
         float z = buffer.readFloat();
@@ -67,7 +75,7 @@ public record ClientboundStormCenterPacket(
         float velZ = buffer.readFloat();
         int count = ByteBufCodecs.VAR_INT.decode(buffer);
         long gameTime = buffer.readLong();
-        return new ClientboundStormCenterPacket(x, y, z, velX, velZ, count, gameTime);
+        return new ClientboundStormCenterPacket(dimension, epoch, x, y, z, velX, velZ, count, gameTime);
     }
 
     @Override

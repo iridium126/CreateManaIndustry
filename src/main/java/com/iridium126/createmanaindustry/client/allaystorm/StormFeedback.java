@@ -17,6 +17,8 @@ public final class StormFeedback {
     /** Set when the compute phase dispatched a readback; consumed at fence poll. */
     private boolean stormPosPending = false;
     private long stormPosGameTime = 0;
+    private com.iridium126.createmanaindustry.content.allaystorm.StormIdentity stormPosIdentity;
+    private final com.iridium126.createmanaindustry.content.allaystorm.StormStreamClock correctionClock = new com.iridium126.createmanaindustry.content.allaystorm.StormStreamClock();
 
     /**
      * Applies one relayed position snapshot ({@code entries} stride
@@ -24,8 +26,12 @@ public final class StormFeedback {
      * correction slots — positions are never written directly (no teleports);
      * the update pass eases members toward the extrapolated targets.
      */
-    public void applyCorrections(float[] entries, long gameTime) {
+    public void applyCorrections(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormPositionsPacket packet) {
         var state=AllayStormRuntime.INSTANCE.feedbackState();
+        var level = Minecraft.getInstance().level;
+        if (level == null || !correctionClock.accept(packet.identity(), AllayStormRuntime.INSTANCE.identity(), level.dimension().location(), packet.gameTime())) return;
+        float[] entries = packet.entries();
+        long gameTime = packet.gameTime();
         if (!state.active() || entries == null || entries.length < 8)
             return;
         float arrival = (gameTime & ((1L<<21)-1))*.05f;
@@ -92,6 +98,7 @@ public final class StormFeedback {
         if (!particles.capturePositions(slot, state.center(), state.players())) return;
         this.stormPosPending = true;
         this.stormPosGameTime = now;
+        this.stormPosIdentity = AllayStormRuntime.INSTANCE.identity();
     }
 
     /**
@@ -100,11 +107,15 @@ public final class StormFeedback {
      */
     public boolean positionSnapshotPending() { return this.stormPosPending; }
     public long positionSnapshotTime() { return this.stormPosGameTime; }
+    public com.iridium126.createmanaindustry.content.allaystorm.StormIdentity positionSnapshotIdentity() { return stormPosIdentity; }
     public boolean waveSnapshotPending() { return this.waveContactPending; }
 
-    public void acceptPositionSnapshot(long gameTime, float[] entries) {
+    public void acceptPositionSnapshot(com.iridium126.createmanaindustry.content.allaystorm.StormIdentity identity, long gameTime, float[] entries) {
+        var level = Minecraft.getInstance().level;
+        if (identity == null || level == null || !identity.equals(AllayStormRuntime.INSTANCE.identity())
+                || !identity.dimension().equals(level.dimension().location()) || !AllayStormRuntime.INSTANCE.feedbackState().authority()) return;
         if (entries != null && entries.length >= 8)
-            PacketDistributor.sendToServer(new ServerboundStormPositionsPacket(gameTime, entries));
+            PacketDistributor.sendToServer(new ServerboundStormPositionsPacket(identity.dimension(), identity.epoch(), gameTime, entries));
     }
 
     /** Drops a pending readback (fence WAIT_FAILED; a fresh one is scheduled anyway). */
@@ -155,6 +166,7 @@ public final class StormFeedback {
         var eligible=new java.util.HashMap<Integer,java.util.BitSet>();
         var counts=new java.util.HashMap<Integer,int[]>();
         for(int o=0;o+5<entries.length;o+=6){int member=Math.round(entries[o]),id=Math.round(entries[o+1]);var w=AllayStormRuntime.INSTANCE.contactAuthority(id);
+            if(member== -9){ColumnSnapshotClient.INSTANCE.installed(id,Math.round(entries[o+2]),Math.round(entries[o+3])|(Math.round(entries[o+4])<<16));continue;}
             if(member== -8){if(w!=null)flowVersions.put(id,Math.round(entries[o+2]));continue;}
             if(member== -7){if(w!=null){int flow=Math.round(entries[o+2]);float pause=entries[o+3];if(flow>=0&&flow<66&&Float.isFinite(pause)&&pause>=0&&pause<=600){float[] times=flowTimes.computeIfAbsent(id,k->{float[] t=new float[66];java.util.Arrays.fill(t,-1);return t;});times[flow]=pause;}}continue;}
             if(member== -6){if(w!=null){int[] c={Math.round(entries[o+2]),Math.round(entries[o+3]),Math.round(entries[o+4]),Math.round(entries[o+5])};counts.put(id,c);AllayStormRuntime.INSTANCE.gatherProgress(id,c);}continue;}
@@ -199,7 +211,7 @@ public final class StormFeedback {
     private boolean waveContactPending;
     private final java.util.Map<AllayStormRuntime.ContactAuthority,it.unimi.dsi.fastutil.ints.IntOpenHashSet> reported=new java.util.HashMap<>();
     public StormFeedback(StormParticlePort particles) {this.particles=java.util.Objects.requireNonNull(particles);}
-    public void reset() {stormPosPending=false;lastSnapshotGameTime=Long.MIN_VALUE;waveContactPending=false;reported.clear();gathered.clear();flowRevisions.clear();flowTick=Long.MIN_VALUE;completions.clear();completionTick=Long.MIN_VALUE;}
+    public void reset() {stormPosPending=false;stormPosIdentity=null;correctionClock.reset();lastSnapshotGameTime=Long.MIN_VALUE;waveContactPending=false;reported.clear();gathered.clear();flowRevisions.clear();flowTick=Long.MIN_VALUE;completions.clear();completionTick=Long.MIN_VALUE;}
     public void retireWaves() {
         waveContactPending=false;
         retireWaveReports();

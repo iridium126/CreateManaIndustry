@@ -21,12 +21,12 @@ public class HelixGpuValidation extends DomeGpuValidation {
    int output=buffer(bytes(n*48));bind(10,output);var snap=helix(n,1,2,4,false);stage(gpu,snap,p);ui(p,"uCount",n);var axis=AllayHelix.axis(snap.helix());var side=new net.minecraft.world.phys.Vec3(0,1,0).cross(axis).normalize();var up=axis.cross(side);
    for(float time:new float[]{0,5,9.999f,10,10.001f,12,15,19.5f,20}){
     f(p,"uTimeSec",time);dispatch(p,64);var rows=read(output,n*48);float elapsed=Math.max(0,time-10),progress=12*(elapsed-.075f*(1-(float)Math.pow(1-Math.clamp(elapsed/.15f,0,1),2)));
-    int done=0;for(int i=0;i<n;i++){int o=i*48;assertFinite(rows,o,11);int phase=time<10?1:HelixTemplate.coordinate(i,0)+progress>=80?6:4;if(phase==6)done++;
+    int done=0;for(int i=0;i<n;i++){int o=i*48;assertFinite(rows,o,11);int phase=time<10?1:4;if(phase==6)done++;
      check(rows.getFloat(o+12)==phase,"per-member helix completion");check(rows.getFloat(o+28)==(phase==6?0:1),"completed member still steered");
      if(phase!=6){var expected=new net.minecraft.world.phys.Vec3(-24,28,0).add(axis.scale(HelixTemplate.coordinate(i,0)+(time<10?0:progress))).add(side.scale(HelixTemplate.coordinate(i,1))).add(up.scale(HelixTemplate.coordinate(i,2)));
       check(Math.abs(rows.getFloat(o)-expected.x)<.002&&Math.abs(rows.getFloat(o+4)-expected.y)<.002&&Math.abs(rows.getFloat(o+8)-expected.z)<.002,"cached logarithmic template differs on GPU");}
      float cap=phase==1||phase==4?12:6;check(rows.getFloat(o+40)==cap,"helix phase cap");
-    }if(time==15)check(done>0&&done<n,"head and tail did not finish independently");if(time==20)check(done==n,"tail failed to leave");
+    }check(done==0,"reference progress completed an actual member");
    }
    gpu.commit();int old=gpu.committedBuffer();stage(gpu,helix(n,2,2,4,false),p);gpu.abort();check(gpu.committedBuffer()==old,"failed submission published");GL15.glDeleteBuffers(output);
   }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
@@ -83,7 +83,22 @@ public class HelixGpuValidation extends DomeGpuValidation {
  }
  public static void main(String[] args)throws Exception{
   GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(512,384,"Helix GPU validation",0,0);
-  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));armIdentity();meshClearance();playerGrid();completionReadback();helixFormations();sweep();helixSimulationBanks();helixCarriers();if(Arrays.asList(args).contains("--benchmark"))benchmarkHelix();check(GL11.glGetError()==0,"helix final GL state");System.out.println("Helix GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));armIdentity();actualHelixExit();meshClearance();playerGrid();completionReadback();helixFormations();sweep();helixSimulationBanks();helixCarriers();if(Arrays.asList(args).contains("--benchmark"))benchmarkHelix();check(GL11.glGetError()==0,"helix final GL state");System.out.println("Helix GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+ }
+ static void actualHelixExit(){
+  int update=compile("update.comp"),n=2;
+  try(var fixture=new Fixture(n,n,n);var gpu=new StarfallGpuBuffers()){
+   var packet=helix(n,1,2,4,false);var axis=AllayHelix.axis(packet.helix());var data=bytes(n*64);
+   for(int member=0;member<n;member++){particle(data,member,2,0,0,20);var point=new net.minecraft.world.phys.Vec3(packet.centerX(),packet.centerY(),packet.centerZ()).add(axis.scale(member==0?-100:81));data.putFloat(member*64,(float)point.x).putFloat(member*64+4,(float)point.y).putFloat(member*64+8,(float)point.z).putFloat(member*64+12,member+1).putFloat(member*64+48,9999).putFloat(member*64+56,AllayStormWaves.memberSeed(1,member));}
+   put(fixture.pool,data);put(fixture.previous,bytes(16).putInt(0,n));put(fixture.emit,headers());
+   int output=buffer(bytes(n*64)),grid=buffer(bytes((ParticleBuffers.GRID_TABLE+n)*4)),damage=buffer(bytes(16)),players=buffer(bytes(16)),correction=buffer(bytes(n*32)),map=buffer(bytes(n*4)),identity=buffer(bytes(4+(n*2+ParticleBuffers.DAMAGE_QUEUE_CAP*2)*4));
+   try{
+    bind(0,fixture.pool);bind(1,output);bind(3,fixture.counter);bind(5,fixture.emit);bind(13,grid);bind(14,fixture.previous);bind(16,damage);bind(18,players);bind(19,correction);bind(21,map);bind(31,identity);
+    gpu.rebuild(new ClientboundStormWavePacket[]{packet,null,null,null});gpu.prepare(1);gpu.bind(update,true);ui(update,"uCapacity",n);ui(update,"uKillEmit",-1);ui(update,"uIdentityReadBase",0);ui(update,"uIdentityWriteBase",n);f(update,"uDt",.05f);f(update,"uTimeSec",30);dispatch(update,1);
+    int state=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var words=read(state,(StarfallGpuBuffers.COMPLETIONS+1)*4);check((words.getInt(4)&255)==4,"member before actual plane completed by reference time");check((words.getInt(12)&255)==6,"actual plane crossing did not complete");check(words.getInt(StarfallGpuBuffers.COMPLETIONS*4)==2,"actual completion ranks wrong");
+    var result=read(output,n*64);for(int index=0;index<n;index++)if(Math.round(result.getFloat(index*64+12))==2)check(result.getFloat(index*64+28)==0,"completed helix retained sword marker");
+   }finally{for(int buffer:new int[]{output,grid,damage,players,correction,map,identity})GL15.glDeleteBuffers(buffer);}
+  }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(update);GL20.glDeleteProgram(update);}
  }
  static void helixSimulationBanks(){
   int n=65,update=compile("update.comp");try(var q=new Fixture(n,n,n);var gpu=new StarfallGpuBuffers()){

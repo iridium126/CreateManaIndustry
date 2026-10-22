@@ -29,12 +29,18 @@ public final class StarfallColumns {
     private long nextAttempt=Long.MIN_VALUE;
     private int cursor;
     public List<ClientboundStormColumnPacket> snapshots(){return columns.values().stream().map(a->a.packet).toList();}
+    public boolean isEmpty(){return columns.isEmpty();}
     void reserve(ClientboundStormColumnPacket packet,BitSet reserved){
         if(packet.members().length!=64||columns.size()>=64||columns.containsKey(packet.id()))throw new IllegalArgumentException("Column capacity or roster");
         for(int member:packet.members())if(reserved.get(member))throw new IllegalArgumentException("Member already reserved");
         columns.put(packet.id(),new Active(packet));for(int member:packet.members())reserved.set(member);
     }
     public void clear(){columns.clear();nextAttempt=Long.MIN_VALUE;cursor=0;}
+    public void abort(int id,BitSet reserved,Consumer<ClientboundStormColumnPacket> send){
+        var active=columns.remove(id);if(active==null)return;
+        for(int rank=0;rank<64;rank++)if(!active.completed.get(rank))reserved.clear(active.packet.members()[rank]);
+        send.accept(active.packet.aborted());
+    }
     public static float clock(long tick){return (tick&((1<<21)-1))/20f;}
     private static float time(ClientboundStormColumnPacket p,float now){return p.start()+AllayStarfall.elapsed(now,p.start());}
 

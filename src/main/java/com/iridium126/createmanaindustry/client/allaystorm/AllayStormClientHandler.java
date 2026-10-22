@@ -46,13 +46,12 @@ public final class AllayStormClientHandler {
 
     /** {@link ClientboundStormPositionsPacket}: relayed authority snapshot. */
     public static void onPositions(ClientboundStormPositionsPacket packet) {
-        com.iridium126.createmanaindustry.client.allaystorm.StormFeedback.INSTANCE.applyCorrections(packet.entries(), packet.gameTime());
+        com.iridium126.createmanaindustry.client.allaystorm.StormFeedback.INSTANCE.applyCorrections(packet);
     }
 
     /** {@link ClientboundStormCenterPacket}: continuous chased-center + growth snapshot. */
     public static void onCenter(ClientboundStormCenterPacket packet) {
-        com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.applyStormCenter(packet.x(), packet.y(), packet.z(),
-                packet.velX(), packet.velZ(), packet.count(), packet.gameTime());
+        com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.applyStormCenter(packet);
     }
 
     /** {@link ClientboundStormWavePacket}: dive-wave launch / abort event. */

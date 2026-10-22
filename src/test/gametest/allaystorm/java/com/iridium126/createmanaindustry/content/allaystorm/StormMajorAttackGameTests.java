@@ -90,6 +90,37 @@ public final class StormMajorAttackGameTests {
         call("releaseWave",rt,wave);h.assertTrue(reserved.get(member),"Old wave retirement released a reassigned member");h.succeed();
     }
 
+    @GameTest(template="storm_combat_test",timeoutTicks=40) public static void unattendedColumnsReleaseTheirReservations(GameTestHelper h){
+        var scene=launch(h,StormAttack.DOME,16384);var runtime=scene.runtime();var columns=(StarfallColumns)field(runtime,"columns");columns.clear();
+        var reserved=(BitSet)field(runtime,"waveReserved");reserved.clear();var sync=(StarfallSnapshotSync)field(runtime,"columnSnapshots");sync.clear();
+        int[] members=new int[64];for(int rank=0;rank<64;rank++)members[rank]=rank;
+        var identity=StormIdentity.of(h.getLevel(),scene.data());
+        var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket(identity.dimension(),identity.epoch(),999,false,1,0,4,20,25,40,0,64,0,120,0,0,16,members);
+        columns.reserve(packet,reserved);sync.created(packet.id(),List.of(scene.player().getUUID()));
+        call("tickColumnSnapshots",h.getLevel(),runtime,scene.data(),List.of());
+        h.assertTrue(columns.snapshots().isEmpty()&&reserved.isEmpty(),"Unattended column retained members");
+        h.succeed();
+    }
+
+    @GameTest(template="storm_combat_test",timeoutTicks=40) public static void columnSnapshotsRejectWrongStormSourceAndExpiredToken(GameTestHelper h){
+        var scene=launch(h,StormAttack.DOME,16384);var runtime=scene.runtime();((List<?>)field(runtime,"waves")).clear();
+        var columns=(StarfallColumns)field(runtime,"columns");columns.clear();var reserved=(BitSet)field(runtime,"waveReserved");reserved.clear();
+        var sync=(StarfallSnapshotSync)field(runtime,"columnSnapshots");sync.clear();var identity=StormIdentity.of(h.getLevel(),scene.data());
+        int[] members=new int[64];for(int rank=0;rank<64;rank++)members[rank]=rank;
+        var column=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket(identity.dimension(),identity.epoch(),999,false,1,0,4,20,25,40,0,64,0,120,0,0,16,members);columns.reserve(column,reserved);
+        var observer=UUID.randomUUID();var source=scene.player().getUUID();long tick=h.getLevel().getGameTime();float seconds=StarfallColumns.clock(tick);
+        var snapshot=new StarfallColumnSnapshot(new float[StarfallColumnSnapshot.FLOATS]);
+        var context=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?scene.player():null);
+        for(int mode=0;mode<4;mode++){
+            sync.created(column.id(),List.of(source));sync.observe(column.id(),observer);var request=sync.poll(tick,source).getFirst();
+            var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.StormColumnSnapshotPacket(identity.dimension(),mode==0?identity.epoch()-1:identity.epoch(),column.id(),mode==2?request.token()+1:request.token(),mode==1?UUID.randomUUID():source,tick,seconds,snapshot);
+            AllayStormManager.columnSnapshot(packet,context);
+            var remaining=sync.accept(column.id(),request.token(),source,tick);
+            h.assertTrue(mode==3?remaining.isEmpty():remaining.equals(Set.of(observer)),"Invalid response consumed a pending snapshot or valid source was rejected");
+        }
+        columns.clear();sync.clear();reserved.clear();h.succeed();
+    }
+
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void helixGatherFollowsBodyAndFlightFreezes(GameTestHelper h){
         var scene=launch(h,StormAttack.HELIX,16384);var wave=scene.wave();var rt=scene.runtime();var player=scene.player();long tick=h.getLevel().getGameTime();float clock=(tick&((1<<21)-1))/20f;
         set(wave,"locked",false);set(wave,"gathered",false);set(wave,"assemble",clock+1);set(wave,"lastAimTick",tick);var before=AllayHelix.axis((AllayHelix.Flight)field(wave,"helix"));
@@ -103,6 +134,25 @@ public final class StormMajorAttackGameTests {
     }
 
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void deadHelixMemberDoesNotHoldReservation(GameTestHelper h){var scene=launch(h,StormAttack.HELIX,16384);int member=((int[])field(scene.wave(),"members"))[0];scene.data().dead.set(member);call("retireDeadMember",h.getLevel(),scene.runtime(),member);h.assertTrue(((BitSet)field(scene.wave(),"completed")).get(0),"Dead member blocked completion");h.assertTrue(!((BitSet)field(scene.runtime(),"waveReserved")).get(member),"Dead member stayed reserved");h.succeed();}
+
+    @GameTest(template="storm_combat_test",timeoutTicks=40) public static void domeDeathsRetireDuringGatherAndAfterLock(GameTestHelper h){
+        for(boolean gathering:new boolean[]{true,false}){
+            var scene=launch(h,StormAttack.DOME,16384);var wave=scene.wave();var runtime=scene.runtime();
+            set(wave,"locked",!gathering);set(wave,"gathered",false);
+            int member=((int[])field(wave,"members"))[0];scene.data().dead.set(member);
+            call("retireDeadMember",h.getLevel(),runtime,member);
+            var completed=(BitSet)field(wave,"completed");var reserved=(BitSet)field(runtime,"waveReserved");
+            h.assertTrue(completed.get(0)&&!reserved.get(member)&&!((BitSet)field(wave,"membership")).get(member),"Dome death retained rank or reservation");
+            var snapshot=(ClientboundStormWavePacket)call("wavePacket",wave,0,true,scene.player().getId());
+            h.assertTrue(BitSet.valueOf(snapshot.completedRanks()).get(0),"Observer snapshot revived a dead rank");
+            reserved.set(member);call("retireDeadMember",h.getLevel(),runtime,member);
+            h.assertTrue(reserved.get(member),"Duplicate death released a reassigned member");reserved.clear(member);
+            completed.set(0,((int[])field(wave,"members")).length);
+            call("tickWaves",h.getLevel(),runtime,scene.data(),List.of());
+            h.assertTrue(((List<?>)field(runtime,"waves")).isEmpty(),"Completed Dome retained its major slot");
+        }
+        h.succeed();
+    }
 
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void gatherCannotReleaseAPreviouslyFinishedMembersNewOwner(GameTestHelper h){
         var scene=launch(h,StormAttack.HELIX,16384);var w=scene.wave();var rt=scene.runtime();int[] members=(int[])field(w,"members");var completed=(BitSet)field(w,"completed");int rank=completed.nextSetBit(0),member=members[rank];var reserved=(BitSet)field(rt,"waveReserved");reserved.set(member);

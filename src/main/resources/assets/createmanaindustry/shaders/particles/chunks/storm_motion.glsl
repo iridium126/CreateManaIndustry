@@ -65,7 +65,14 @@
             uint phase=0u;vec3 attackTarget,attackVelocity;
             uint assignment=cmiStarAssignment(p0.w);
             if(cmiColumnAssignment(assignment)){
-                waveEngaged=cmiColumnSteer(assignment,pos,vel,target,vT,attackTarget,attackVelocity,phase,columnMarker);columnEngaged=waveEngaged;columnPhase=phase;
+                #ifdef CMI_COLUMN_RECOVERY
+                cmiColumnRecover(assignment,pos,vel,target,vT);
+                if(cmiColumnRecoveryFrame){uint arc=328128u+((cmiStarSlot(assignment)-4u)*64u+cmiStarRank(assignment))*96u;phase=starStateWrite.words[arc+43u];if(phase==0u)phase=1u;attackTarget=pos;attackVelocity=vec3(0);columnMarker=0.;waveEngaged=true;p0.xyz=pos;}
+                else waveEngaged=cmiColumnSteer(assignment,pos,vel,target,vT,attackTarget,attackVelocity,phase,columnMarker);
+                #else
+                waveEngaged=cmiColumnSteer(assignment,pos,vel,target,vT,attackTarget,attackVelocity,phase,columnMarker);
+                #endif
+                columnEngaged=waveEngaged;columnPhase=phase;
                 roll=columnMarker;
             }else{
                 uint member=cmiStarMember(p0.w);
@@ -73,7 +80,7 @@
                     &&starStateRead.words[member*2u]==uint(cmiStarVec(cmiStarBase(cmiStarSlot(assignment))).x+.5)
                     &&(starStateRead.words[member*2u+1u]&255u)>=6u;
                 // Finished members must not sample an active slot's route again.
-                if(ended)phase=6u;
+                if(ended){phase=6u;if(cmiHelix(cmiStarBase(cmiStarSlot(assignment))))spMaxV=ordinaryCap;}
                 else waveEngaged=cmiStarSteering(p0.w,p3.z,pos,target,spMaxV,attackTarget,attackVelocity,phase);
             }
             if(assignment!=0u){

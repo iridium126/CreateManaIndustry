@@ -15,6 +15,7 @@ final class ParticleReadbacks {
         GpuReadbackBuffer storage;
         long fence, generation, epoch, gameTime;
         boolean positions, waves,published;
+        com.iridium126.createmanaindustry.content.allaystorm.StormIdentity positionIdentity;
         ParticleHitRay hitRay;
         final ByteBuffer data = BufferUtils.createByteBuffer(BYTES);
     }

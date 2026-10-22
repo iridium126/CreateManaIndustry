@@ -1,6 +1,6 @@
 # Allay Storm：同步与资源契约
 
-当前核心协议 **15**、Dome模板 **v4**、Helix模板 **v1**。两端同步升级并重启，拒绝旧协议混连；F3+T不更新Java类。[攻击与配置](allay-storm-ai.md)和[验证入口](allay-storm-validation.md)分别维护，不保留历史协议逐版说明。
+当前核心协议 **16**、Dome模板 **v4**、Helix模板 **v1**。两端同步升级并重启，拒绝旧协议混连；F3+T不更新Java类。[攻击与配置](allay-storm-ai.md)和[验证入口](allay-storm-validation.md)分别维护，不保留历史协议逐版说明。
 
 ## 数据所有权与身份
 
@@ -14,18 +14,20 @@ Iris合并时，CMI自身的注入源码先用Iris内嵌Jcpp解析条件分支�
 
 Dome的32格异常退出只在本地成员阶段字复用`0x10000000`标志，记录同一攻击内是否进入过球体；阶段4且身份匹配时保留，新归属／退出／清理时重置。正常穿出、球外兜底和受阻退出共用计算阶段的终止写入：阶段6、清除持剑标记、清理阶段临时字段并写入现有完成位图。没有新增协议或服务端位置模拟。
 
-Dome普通归队交接仅复用成员阶段字及阶段互斥的临时计时字段；没有新增网络消息、逐成员轨迹、位置上传或服务端模拟。协议15、Dome v4及配置／存档格式不变。
+Dome普通归队交接仅复用成员阶段字及阶段互斥的临时计时字段；没有新增网络消息、逐成员轨迹、位置上传或服务端模拟。Dome v4及其配置／存档格式不变。
 
 ## 消息
 
 | 方向 | 消息类（`content/allaystorm/network/`） | 当前内容与作用 |
 | --- | --- | --- |
 | S→C | `ClientboundStormStatePacket` | 生命周期、dimension／epoch、定义、增长、死亡与稀疏状态 |
-| S→C | `ClientboundStormCenterPacket` | 追击中心、authority及配置 |
+| S→C | `ClientboundStormCenterPacket` | dimension／epoch、追击中心与速度、人数、采样时间 |
 | S→C | `ClientboundStormDamagePacket` | 权威成员伤害／死亡、有限float伤害与击退、绝对double命中坐标及战斗反馈 |
-| 双向各一类 | `ServerboundStormPositionsPacket`／`ClientboundStormPositionsPacket` | authority稀疏校正及转发 |
+| 双向各一类 | `ServerboundStormPositionsPacket`／`ClientboundStormPositionsPacket` | dimension／epoch、采样时间、authority稀疏校正及转发 |
 | S→C | `ClientboundStormWavePacket` | Helix／Dome的START、UPDATE、LOCK、ABORT；开始／观察者快照含名单，阶段更新为紧凑参数 |
 | S→C | `ClientboundStormColumnPacket` | 独立星柱身份、种子、冻结落点与集合参数、阶段时间、精确64名名单；中止紧凑发送 |
+| S→C | `ClientboundStormColumnSnapshotRequest` | 柱身份、请求令牌和指定采集来源；同批观察者合并请求 |
+| 双向 | `StormColumnSnapshotPacket` | 同身份与令牌、来源、采样时间及固定64名实际阶段／运动初值；仅按需采集与转发 |
 | C→S | `StormAttackGatheredPacket` | dimension／epoch／攻击ID、ready与eligible两张rank位图，及Dome流线暂停状态，空位图用于只发布暂停变化 |
 | 双向 | `StormAttackCompletedPacket` | 同身份及完成rank位图；指定客户端每game tick合并反馈，服务端幂等释放／确认 |
 | C→S | `ServerboundStormHitPacket` | 风暴身份、成员、递增attackSeq、绝对double接触点；不携带战斗值 |
@@ -60,3 +62,13 @@ Dome v4共享五次Hermite曲线、闭合流线与离线逆弧长表；稳态不
 每维度attachment保存active、anchor、count、seed、创建时间、冻结增长定义、死亡集合和稀疏HP，不保存GPU位置。`CreationRadius`按半径恢复；长满仍保留原半径、增长率、最终规模与创建时间，确保同tick相位连续。缺失／非法增长字段以当前规模建立零增长、加载时重建相位起点，保留成员、死亡和HP，不产生NaN。
 
 槽位先回收过期、再用空槽，满槽按编号复用ABORT淡出槽，不驱逐有效攻击。替换完整清理名单、圆环、声音、碰撞就绪和反馈身份；有容量保留0.25秒淡出，旧圆环由资源代令牌隔离。
+
+## 协议16补充：快照与观察者恢复
+
+Center与双向Positions统一携带dimension／epoch；异步位置读回保留采集身份，身份变化后丢弃。两端按身份拒绝倒退时间戳，服务端仅接收当前authority的位置上传，广播排除已换维度的track。速度上下行共用signed short编解码，精度1/16格／秒、分量边界±32格／秒，保持最多256名，满包约4KiB。
+
+新增`ClientboundStormColumnSnapshotRequest`及双向`StormColumnSnapshotPacket`。服务端按柱合并等待观察者，令牌绑定指定来源；1秒未完成即重选，旧身份、旧令牌、非指定来源及已结束柱的响应无效。单柱64名固定30-float语义记录，成员数据7680字节，常规身份头合计低于8KiB；包含实际位置／速度、阶段、集结初值、下降曲线初值／进度、展开与回流参数，不传弧长表。位置相对冻结落点，时刻复用共享时钟。
+
+仅有请求时从已提交GPU代异步采集，每帧最多4柱；同批观察者共享结果。接收端等待完整快照，使用候选bank原子恢复并一次重建所需弧长表；每帧最多4个0.1秒碰撞子步追赶，恢复帧不持剑、不产生接触。追赶计算使用独立更新变体，普通帧不编入恢复分支。安装确认复用既有异步反馈，重复快照不重置进度，未进入本地GPU池的成员继续等待。没有新增稳态逐帧上传，服务端不模拟或长期保存成员位置。
+
+最后一个有效模拟来源离开时中止现存星柱并释放成员，新观察者回来后正常调度新柱。authority交接优先复用已持有实际状态的客户端；尚在恢复的来源不能提供未完成的快照。
