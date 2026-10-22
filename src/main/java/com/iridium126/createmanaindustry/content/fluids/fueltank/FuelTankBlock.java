@@ -129,7 +129,7 @@ public class FuelTankBlock extends CopycatBlock {
 	public void onPlace(BlockState state, Level world, BlockPos pos, BlockState oldState, boolean moved) {
 		if (oldState.getBlock() == state.getBlock())
 			return;
-		if (moved)
+		if (moved || FuelTankContraptionBridge.isPlacing(world))
 			return;
 		withBlockEntityDo(world, pos, be -> {
 			if (be instanceof FuelTankBlockEntity tankBE)
@@ -401,11 +401,11 @@ public class FuelTankBlock extends CopycatBlock {
 	private static boolean brightnessUnder(FuelTankBlockEntity controller, BlockPos pos) {
 		if (controller == null || controller.luminosity <= 0)
 			return false;
-		FuelTankConnectivity.BasinData basins = controller.basins;
-		Integer basinId = basins != null ? basins.basinByCell.get(pos) : null;
+		FuelTankFluidState basins = controller.basins;
+		Integer basinId = basins != null ? basins.geometry().basinByCell.get(pos) : null;
 		if (basinId == null)
 			return true;
-		float surface = basins.surfaces[basinId];
+		double surface = basins.surface(basinId);
 		boolean reversed = controller.tankInventory.getFluid()
 			.getFluidType()
 			.isLighterThanAir();
@@ -449,10 +449,11 @@ public class FuelTankBlock extends CopycatBlock {
 			&& controller.tankInventory.getFluid()
 				.getFluidType()
 				.isLighterThanAir();
-		FuelTankConnectivity.BasinData basins = controller.basins;
+		FuelTankFluidState basins = controller.basins;
 		// Drifted-cell bookkeeping: distinct foreign controllers resolved once.
 		Map<BlockPos, FuelTankBlockEntity> driftControllers = null;
 		for (BlockPos pos : cells) {
+			if (!level.isLoaded(pos)) continue;
 			BlockState state = level.getBlockState(pos);
 			if (!isFuelTank(state))
 				continue;
@@ -469,11 +470,11 @@ public class FuelTankBlock extends CopycatBlock {
 				if (luminosity <= 0)
 					lit = false;
 				else {
-					Integer basinId = basins != null ? basins.basinByCell.get(pos) : null;
+					Integer basinId = basins != null ? basins.geometry().basinByCell.get(pos) : null;
 					if (basinId == null)
 						lit = true;
 					else {
-						float surface = basins.surfaces[basinId];
+						double surface = basins.surface(basinId);
 						lit = reversed ? pos.getY() >= (int) Math.floor(surface)
 							: pos.getY() <= (int) Math.floor(surface);
 					}

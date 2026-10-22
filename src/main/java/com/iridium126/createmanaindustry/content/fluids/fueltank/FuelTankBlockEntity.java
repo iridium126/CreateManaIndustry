@@ -1,20 +1,17 @@
 package com.iridium126.createmanaindustry.content.fluids.fueltank;
 
+import java.util.BitSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-
 import org.jetbrains.annotations.Nullable;
-
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.simibubi.create.api.equipment.goggles.IHaveGoggleInformation;
 import com.simibubi.create.content.decoration.copycat.CopycatBlockEntity;
 import com.simibubi.create.foundation.blockEntity.IMultiBlockEntityContainer;
-import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
+import com.simibubi.create.foundation.blockEntity.ComparatorUtil;
 import com.simibubi.create.foundation.fluid.SmartFluidTank;
-
 import net.createmod.catnip.animation.LerpedFloat;
-import net.createmod.catnip.animation.LerpedFloat.Chaser;
 import net.createmod.catnip.nbt.NBTHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -22,410 +19,224 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
-
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.IFluidTank;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler.FluidAction;
 import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 
-/**
- * Block entity of the Molten Salt Fuel Tank — a multi-block fluid storage whose
- * connected group can take any shape (not Create's box constraint).
- * <p>
- * The group is a BFS connected component of face-adjacent fuel tanks. Its
- * {@code controller} is the lexicographically smallest block (Y, then X, then Z)
- * of the group; the controller alone stores the group's fluid and its basin
- * simulation state. See {@link FuelTankConnectivity}.
- * <p>
- * Extends {@code CopycatBlockEntity} so the per-cell copycat material storage,
- * NBT keys ({@code Material}/{@code Item}), validation, {@code getModelData}
- * and creative handling strictly mirror Create's implementation.
- */
-@SuppressWarnings("unchecked") // Preserve Create's concrete controller return type and its generic interface bridge.
+/** World/capability boundary. Only the controller owns a fluid state and group inventory. */
+@SuppressWarnings("unchecked")
 public class FuelTankBlockEntity extends CopycatBlockEntity
-		implements IHaveGoggleInformation, IMultiBlockEntityContainer.Fluid {
+        implements IHaveGoggleInformation, IMultiBlockEntityContainer.Fluid {
+    protected IFluidHandler fluidCapability;
+    protected FluidTank tankInventory;
+    protected BlockPos controller;
+    protected int count = 1;
+    protected BlockPos lastKnownPos;
+    protected boolean updateConnectivity, updateCapability;
+    boolean retryConnectivity, needsDeferredSplitHeal, settleAfterMerge;
+    BlockPos deferredController;
+    protected int luminosity;
+    @Nullable public FuelRodStructure.RodData rodData;
+    @Nullable FuelTankFluidState basins;
+    @Nullable FuelTankFluidState savedBasins;
+    Integer savedCount;
+    private LerpedFloat fluidLevel;
+    private FuelTankVisualState visuals;
+    private int[] lightFloors;
+    private boolean needsLightRefresh = true;
+    private int quietInventory;
+    private BlockPos transactionSeed;
+    private static final int SYNC_RATE = 8;
+    private int syncCooldown;
+    private boolean queuedSync, forceFluidLevelUpdate = true;
+    private boolean needsBasinSync, needsVolumeSync, needsNeighborRefresh;
+    private boolean writingIncremental;
+    private int publishedComparator = -1;
 
-	/** Fluid handler exposed through the capability; re-created on connectivity change. */
-	protected IFluidHandler fluidCapability;
-	/** Group fluid storage — only meaningful on the controller. */
-	protected FluidTank tankInventory;
-	/** Controller of the connected group; {@code null} means this block is the controller. */
-	protected BlockPos controller;
-	/** Number of blocks in the group (controller only). */
-	protected int count = 1;
-	/**
-	 * Position this BE was last ticked at (mirrors Create's tank). A mismatch on
-	 * tick means something moved the block entity: the group membership is
-	 * dropped and re-formed from the new position instead of silently bridging
-	 * two locations.
-	 */
-	@Nullable
-	protected BlockPos lastKnownPos;
-	protected boolean updateConnectivity;
-	protected boolean updateCapability;
-	/** Contextual luminosity materialized into each part's block state. */
-	protected int luminosity;
+    public FuelTankBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
+        super(type, pos, state);
+        tankInventory = new SmartFluidTank(getCapacityPerBlock(), this::onFluidStackChanged);
+        refreshCapability();
+    }
 
-	/**
-	 * Fuel rod structure data; non-null only on a formed rod's bottom-centre
-	 * tank (see {@link FuelRodStructure}). Synced to clients and persisted in
-	 * NBT; cleared when the structure breaks.
-	 */
-	@Nullable
-	public FuelRodStructure.RodData rodData;
-	/** Whether the next client packet must carry the rod "cleared" marker (the rod itself is always written when present). */
-	private boolean needsRodSync;
+    protected void updateConnectivity() {
+        updateConnectivity = false;
+        if (level.isClientSide || FuelTankContraptionBridge.isPlacing(level)) return;
+        FuelTankConnectivity.updateConnectivity(this);
+        FuelRodStructure.validateFor(level, worldPosition);
+    }
 
-	/**
-	 * Basin decomposition + per-basin liquid surfaces. Non-null only on the
-	 * controller (both sides — the server drives it, the client renders from it).
-	 */
-	@Nullable
-	public FuelTankConnectivity.BasinData basins;
+    void refreshCapability() {
+        fluidCapability = new SeedTrackingHandler(this, worldPosition);
+        invalidateCapabilities();
+    }
+    public IFluidHandler getFluidCapability() { return fluidCapability; }
 
-	/**
-	 * Surfaces stashed on load, restored after the group's basins are recomputed from
-	 * the world. {@code savedCount} is the group size the surfaces were saved with; a
-	 * non-null value marks a cross-chunk group load still in progress (see
-	 * {@link FuelTankConnectivity#recomputeBasins}).
-	 */
-	transient float[] savedSurfaces;
-	transient Integer savedCount;
-	/** Deserialized saved basin geometry, used to verify the re-formed group's shape
-	 *  matches the saved one before restoring the saved surfaces (same count with a
-	 *  different shape must not paste surfaces by index). */
-	transient FuelTankConnectivity.BasinData savedBasins;
-	/** Vertical extent of the saved group (maxY - minY + 1), for the renderer fallback. */
-	transient int savedHeight = -1;
-	/** Horizontal footprint of the saved group, for the renderer fallback (group-wide box). */
-	transient BlockPos savedMin;
-	transient BlockPos savedMax;
-	/**
-	 * Armed on every part of a group whose split was deferred over unloaded
-	 * chunks ({@link FuelTankConnectivity#split}); the controller re-runs the
-	 * deferred distribution from its lazy tick once the former group's
-	 * neighbourhood is fully loaded. Never persisted — a save/load in between
-	 * re-runs plain connectivity on load, which converges the same stale state
-	 * (with the documented capacity-clamp semantics).
-	 */
-	transient boolean needsDeferredSplitHeal;
+    @Override public void tick() {
+        super.tick();
+        if (syncCooldown > 0 && --syncCooldown == 0 && queuedSync) sendData();
+        if (lastKnownPos == null) lastKnownPos = worldPosition;
+        else if (!lastKnownPos.equals(worldPosition) && !level.isClientSide) {
+            removeController(true); lastKnownPos = worldPosition;
+        }
+        if (level.isClientSide) tickVisuals();
+        if (updateCapability) { updateCapability = false; refreshCapability(); }
+        if (updateConnectivity) updateConnectivity();
+        if (needsLightRefresh && !level.isClientSide && isController()) finishFluidChange(true);
+    }
 
-	/** Animation helper for the whole-tank fill level (used by contraptions). */
-	private LerpedFloat fluidLevel;
+    @Override public void lazyTick() {
+        super.lazyTick();
+        if (!level.isClientSide) {
+            if (isController() && needsDeferredSplitHeal) FuelTankConnectivity.healDeferredSplit(this);
+            else if (retryConnectivity || (isController() && (basins == null || hasPendingGroupLoad())))
+                FuelTankConnectivity.updateConnectivity(this);
+            if (rodData != null) FuelRodStructure.validateFrom(level, rodData.center);
+        }
+    }
 
-	private static final int SYNC_RATE = 8;
-	protected int syncCooldown;
-	protected boolean queuedSync;
-	private boolean forceFluidLevelUpdate = true;
-	private boolean needsBasinSync;
-	private boolean needsSurfaceSync;
-	private boolean needsNeighborRefresh;
+    public void tickVisuals() {
+        if (fluidLevel != null) fluidLevel.tickChaser();
+        if (basins != null) getVisualState().tick(basins);
+    }
+    public FuelTankVisualState getVisualState() {
+        if (visuals == null || !visuals.matches(basins)) visuals = new FuelTankVisualState(basins);
+        return visuals;
+    }
 
-	public FuelTankBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
-		super(type, pos, state);
-		tankInventory = createInventory();
-		updateConnectivity = false;
-		updateCapability = false;
-		count = 1;
-		refreshCapability();
-	}
+    private static final class SeedTrackingHandler implements IFluidHandler {
+        private final FuelTankBlockEntity part;
+        private final BlockPos seed;
+        SeedTrackingHandler(FuelTankBlockEntity part, BlockPos seed) { this.part = part; this.seed = seed; }
+        private FuelTankBlockEntity owner() { return part.getControllerBE(); }
+        private IFluidHandler delegate() { FuelTankBlockEntity o = owner(); return o == null ? EMPTY : o.tankInventory; }
+        private static final FluidTank EMPTY = new FluidTank(0);
+        @Override public int getTanks() { return 1; }
+        @Override public FluidStack getFluidInTank(int tank) { return delegate().getFluidInTank(tank); }
+        @Override public int getTankCapacity(int tank) { return delegate().getTankCapacity(tank); }
+        @Override public boolean isFluidValid(int tank, FluidStack fluid) { return delegate().isFluidValid(tank, fluid); }
+        private boolean ready(FuelTankBlockEntity o) {
+            return o != null && !o.needsDeferredSplitHeal && !o.hasPendingGroupLoad() && !o.retryConnectivity;
+        }
+        @Override public int fill(FluidStack fluid, FluidAction action) {
+            FuelTankBlockEntity o = owner(); if (!ready(o)) return 0;
+            o.transactionSeed = seed;
+            try { return o.tankInventory.fill(fluid, action); } finally { o.transactionSeed = null; }
+        }
+        @Override public FluidStack drain(FluidStack fluid, FluidAction action) {
+            FuelTankBlockEntity o = owner(); if (!ready(o)) return FluidStack.EMPTY;
+            o.transactionSeed = seed;
+            try { return o.tankInventory.drain(fluid, action); } finally { o.transactionSeed = null; }
+        }
+        @Override public FluidStack drain(int amount, FluidAction action) {
+            FuelTankBlockEntity o = owner(); if (!ready(o)) return FluidStack.EMPTY;
+            o.transactionSeed = seed;
+            try { return o.tankInventory.drain(amount, action); } finally { o.transactionSeed = null; }
+        }
+    }
 
-	protected FluidTank createInventory() {
-		return new SmartFluidTank(getCapacityPerBlock(), this::onFluidStackChanged);
-	}
+    void setInventoryQuietly(int capacity, FluidStack fluid) {
+        quietInventory++;
+        try { tankInventory.setCapacity(capacity); tankInventory.setFluid(fluid.copy()); }
+        finally { quietInventory--; }
+    }
 
-	// ---- connectivity --------------------------------------------------------
+    public void restoreMounted(int capacity, FluidStack fluid) {
+        setInventoryQuietly(capacity, fluid);
+        if (basins != null && basins.total() != fluid.getAmount()) basins.settle(fluid.getAmount());
+        finishFluidChange(false);
+        if (level != null && !level.isClientSide) { markVolumesDirty(); setChanged(); sendData(); }
+    }
 
-	protected void updateConnectivity() {
-		updateConnectivity = false;
-		if (level.isClientSide)
-			return;
-		FuelTankConnectivity.updateConnectivity(this);
-		// This tank may have joined, extended or broken a fuel rod structure.
-		FuelRodStructure.validateFor(level, worldPosition);
-		// Regrouping changes which basin/surface each cell compares against, so
-		// LIT verdicts can flip WITHOUT any fluid stack event; refresh this
-		// group's cells now instead of waiting for the lazy-tick self-heal.
-		if (level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-			FuelTankBlockEntity controllerBE = getControllerBE();
-			Set<BlockPos> cells = controllerBE != null && controllerBE.basins != null
-				? controllerBE.basins.basinByCell.keySet()
-				: Set.of(worldPosition);
-			FuelTankBlock.refreshLitStates(serverLevel, cells,
-				controllerBE != null ? controllerBE : this);
-		}
-	}
+    void restoreCell(FluidStack fluid, boolean rotated) {
+        controller = null; count = 1; lastKnownPos = worldPosition;
+        clearSavedGroupState(); needsDeferredSplitHeal = false; deferredController = null;
+        basins = new FuelTankFluidState(FuelTankGeometry.build(Set.of(worldPosition), getCapacityPerBlock()));
+        basins.settle(fluid.getAmount());
+        setInventoryQuietly(getCapacityPerBlock(), fluid);
+        settleAfterMerge = rotated; updateConnectivity = true; retryConnectivity = false;
+    }
 
-	/** Rebuilds the fluid capability and notifies the capability caches. */
-	void refreshCapability() {
-		fluidCapability = handlerForCapability();
-		invalidateCapabilities();
-	}
+    protected void onFluidStackChanged(FluidStack fluid) {
+        if (quietInventory > 0 || !hasLevel() || !isController()) return;
+        if (basins != null) {
+            long delta = (long) fluid.getAmount() - basins.total();
+            if (transactionSeed == null) basins.settle(fluid.getAmount());
+            else {
+                long leftover = delta > 0 ? basins.fill(transactionSeed, delta) : basins.drain(transactionSeed, -delta);
+                if (leftover != 0) throw new IllegalStateException("Fuel inventory/distribution diverged: " + leftover);
+            }
+        }
+        finishFluidChange(false);
+        markVolumesDirty(); setChanged(); sendData();
+    }
 
-	/** Public accessor for the registered fluid capability. */
-	public IFluidHandler getFluidCapability() {
-		return fluidCapability;
-	}
+    /** Publish effects only after inventory and integer basin volumes agree. */
+    void finishFluidChange(boolean structural) {
+        if (!hasLevel()) return;
+        FluidStack fluid = tankInventory.getFluid();
+        int newLum = (int) (fluid.getFluidType().getLightLevel(fluid) / 1.2f);
+        boolean all = structural || needsLightRefresh || luminosity != newLum;
+        luminosity = newLum;
+        if (level instanceof ServerLevel server) {
+            if (basins == null) {
+                if (all) FuelTankBlock.refreshLitStates(server, List.of(worldPosition), this);
+            } else {
+                FuelTankGeometry geometry = basins.geometry();
+                BitSet changed = basins.takeChanged();
+                if (lightFloors == null || lightFloors.length != geometry.basins.size()) all = true;
+                if (all) {
+                    FuelTankBlock.refreshLitStates(server, geometry.basinByCell.keySet(), this);
+                    lightFloors = new int[geometry.basins.size()];
+                    for (int b = 0; b < lightFloors.length; b++) lightFloors[b] = (int) Math.floor(basins.surface(b));
+                } else if (luminosity > 0) {
+                    for (int b = changed.nextSetBit(0); b >= 0; b = changed.nextSetBit(b + 1)) {
+                        int next = (int) Math.floor(basins.surface(b)), old = lightFloors[b];
+                        if (next == old) continue;
+                        for (var row : geometry.basins.get(b).cellsByLevel()
+                                .subMap(Math.min(old, next), true, Math.max(old, next), true).values())
+                            FuelTankBlock.refreshLitStates(server, row, this);
+                        lightFloors[b] = next;
+                    }
+                }
+            }
+        }
+        needsLightRefresh = false;
+        if (fluidLevel == null) fluidLevel = LerpedFloat.linear().startWithValue(getFillState());
+        fluidLevel.chase(getFillState(), .5, LerpedFloat.Chaser.EXP);
+    }
 
-	/**
-	 * Each block exposes a handler that wraps the controller's inventory and seeds
-	 * basin updates with this block's own position (the cell where a pipe attaches).
-	 */
-	protected IFluidHandler handlerForCapability() {
-		FuelTankBlockEntity controllerBE = getControllerBE();
-		if (controllerBE == null)
-			return new FluidTank(0);
-		return new SeedTrackingHandler(controllerBE, worldPosition);
-	}
-
-	// ---- ticking -------------------------------------------------------------
-
-	@Override
-	public void tick() {
-		super.tick();
-		if (syncCooldown > 0) {
-			syncCooldown--;
-			if (syncCooldown == 0 && queuedSync)
-				sendData();
-		}
-
-		if (lastKnownPos == null)
-			lastKnownPos = getBlockPos();
-		else if (!lastKnownPos.equals(worldPosition) && worldPosition != null) {
-			onPositionChanged();
-			return;
-		}
-
-		if (fluidLevel != null)
-			fluidLevel.tickChaser();
-		if (level.isClientSide && basins != null)
-			basins.tickChasers();
-
-		if (updateCapability) {
-			updateCapability = false;
-			refreshCapability();
-		}
-		if (updateConnectivity)
-			updateConnectivity();
-	}
-
-	/** Drops the group membership after a position change and re-forms from the new spot. */
-	private void onPositionChanged() {
-		removeController(true);
-		lastKnownPos = worldPosition;
-	}
-
-	@Override
-	public void lazyTick() {
-		super.lazyTick();
-		// Keep retrying while a cross-chunk group is still loading (pending) or the
-		// basins have not been computed yet; afterwards resolve a split that was
-		// deferred over unloaded chunks once the former group is fully observable.
-		if (!level.isClientSide && isController()) {
-			if (basins == null || hasPendingGroupLoad())
-				FuelTankConnectivity.updateConnectivity(this);
-			else if (needsDeferredSplitHeal)
-				FuelTankConnectivity.healDeferredSplit(this);
-		}
-		// Self-heal the shader-facing LIT flag: converges paths that bypass
-		// onFluidStackChanged (connectivity rebuilds, chunk loads with stale
-		// blockstates, deferred surface recomputes) within one lazy-tick period.
-		if (!level.isClientSide && isController() && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-			FuelTankBlock.refreshLitStates(serverLevel,
-				basins != null ? basins.basinByCell.keySet() : List.of(worldPosition), this);
-		}
-		// Self-heal the fuel rod structure: while formed, re-validate on every lazy
-		// tick so glass moved by pistons, explosions and other un-triggered changes
-		// converge (and clear stale data) within one lazy-tick period.
-		if (!level.isClientSide && rodData != null)
-			FuelRodStructure.validateFrom(level, rodData.center);
-	}
-
-	// ---- fluid handler (capability) ------------------------------------------
-
-	/**
-	 * Wraps the controller's inventory and records the attaching cell so basin
-	 * surfaces can be re-derived from where the fluid entered.
-	 */
-	private static final class SeedTrackingHandler implements IFluidHandler {
-		private final FuelTankBlockEntity controllerBE;
-		private final BlockPos seed;
-
-		SeedTrackingHandler(FuelTankBlockEntity controllerBE, BlockPos seed) {
-			this.controllerBE = controllerBE;
-			this.seed = seed;
-		}
-
-		private IFluidHandler delegate() {
-			return controllerBE.tankInventory;
-		}
-
-		@Override
-		public int getTanks() {
-			return delegate().getTanks();
-		}
-
-		@Override
-		public FluidStack getFluidInTank(int tank) {
-			return delegate().getFluidInTank(tank);
-		}
-
-		@Override
-		public int getTankCapacity(int tank) {
-			return delegate().getTankCapacity(tank);
-		}
-
-		@Override
-		public boolean isFluidValid(int tank, FluidStack stack) {
-			return delegate().isFluidValid(tank, stack);
-		}
-
-		@Override
-		public int fill(FluidStack resource, FluidAction action) {
-			IFluidHandler inv = delegate();
-			int before = inv.getFluidInTank(0).getAmount();
-			int filled = inv.fill(resource, action);
-			if (action.execute() && filled > 0 && controllerBE.hasLevel() && !controllerBE.getLevel().isClientSide) {
-				int after = inv.getFluidInTank(0).getAmount();
-				FuelTankConnectivity.applyDelta(controllerBE.getLevel(), controllerBE, seed, after - before);
-			}
-			return filled;
-		}
-
-		@Override
-		public FluidStack drain(FluidStack resource, FluidAction action) {
-			IFluidHandler inv = delegate();
-			int before = inv.getFluidInTank(0).getAmount();
-			FluidStack drained = inv.drain(resource, action);
-			if (action.execute() && !drained.isEmpty() && controllerBE.hasLevel()
-					&& !controllerBE.getLevel().isClientSide) {
-				int after = inv.getFluidInTank(0).getAmount();
-				FuelTankConnectivity.applyDelta(controllerBE.getLevel(), controllerBE, seed, after - before);
-			}
-			return drained;
-		}
-
-		@Override
-		public FluidStack drain(int maxDrain, FluidAction action) {
-			IFluidHandler inv = delegate();
-			int before = inv.getFluidInTank(0).getAmount();
-			FluidStack drained = inv.drain(maxDrain, action);
-			if (action.execute() && !drained.isEmpty() && controllerBE.hasLevel()
-					&& !controllerBE.getLevel().isClientSide) {
-				int after = inv.getFluidInTank(0).getAmount();
-				FuelTankConnectivity.applyDelta(controllerBE.getLevel(), controllerBE, seed, after - before);
-			}
-			return drained;
-		}
-	}
-
-	// ---- fluid content -------------------------------------------------------
-
-	protected void onFluidStackChanged(FluidStack newFluidStack) {
-		if (!hasLevel())
-			return;
-
-		if (isController()) {
-			int newLum = (int) (newFluidStack.getFluid().getFluidType().getLightLevel(newFluidStack) / 1.2f);
-			if (luminosity != newLum) {
-				luminosity = newLum;
-			}
-			// Materialize both the shader-facing LIT flag and the numeric vanilla
-			// light level. Surface movement can change which cells are bright
-			// without changing the fluid type or its luminosity.
-			if (!level.isClientSide && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-				FuelTankBlock.refreshLitStates(serverLevel,
-					basins != null ? basins.basinByCell.keySet() : List.of(worldPosition), this);
-			}
-			markSurfacesDirty();
-			setChanged();
-			sendData();
-		}
-
-		if (fluidLevel == null)
-			fluidLevel = LerpedFloat.linear().startWithValue(getFillState());
-		fluidLevel.chase(getFillState(), 0.5f, Chaser.EXP);
-	}
-
-	// ---- group accessors -----------------------------------------------------
-
-	@Override
-	public boolean isController() {
-		return controller == null || worldPosition.equals(controller);
-	}
-
-	@Override
-	public BlockPos getController() {
-		return isController() ? worldPosition : controller;
-	}
-
-	@Override
-	public void setController(BlockPos pos) {
-		if (level.isClientSide && !isVirtual())
-			return;
-		if (Objects.equals(pos, controller))
-			return;
-		controller = pos;
-		refreshCapability();
-		setChanged();
-		// The block model culls faces from the block entity's controller, so push the
-		// new controller to the client immediately instead of waiting out the 8-tick
-		// sync rate (otherwise the last-placed tank keeps its unculled wall until then).
-		sendDataImmediately();
-	}
-
-	@Override
-	public void removeController(boolean keepFluids) {
-		if (level.isClientSide)
-			return;
-		updateConnectivity = true;
-		if (!keepFluids)
-			applyFluidTankSize(1);
-		controller = null;
-		count = 1;
-		basins = null;
-		clearSavedGroupState();
-		updateCapability = true;
-		setChanged();
-		sendData();
-	}
-
-	@Override
-	public void preventConnectivityUpdate() {
-		updateConnectivity = false;
-	}
-
-	@Override
-	public FuelTankBlockEntity getControllerBE() {
-		if (isController() || !hasLevel())
-			return this;
-		BlockEntity be = level.getBlockEntity(controller);
-		if (be instanceof FuelTankBlockEntity)
-			return (FuelTankBlockEntity) be;
-		return null;
-	}
-
-	@Override
-	public BlockPos getLastKnownPos() {
-		return lastKnownPos;
-	}
-
-	@Override
-	public void notifyMultiUpdated() {
-		// The unified model needs no top/bottom blockstate updates: all six faces are
-		// culled per same-group adjacency by FuelTankModel, and re-renders after
-		// connectivity changes are driven by sendDataImmediately/sendBlockUpdated.
-		setChanged();
-	}
-
-	// ---- IMultiBlockEntityContainer (compatibility; connectivity is graph-based) ----
-
+    @Override public boolean isController() { return controller == null || worldPosition.equals(controller); }
+    @Override public BlockPos getController() { return isController() ? worldPosition : controller; }
+    @Override public FuelTankBlockEntity getControllerBE() {
+        if (isController() || !hasLevel()) return this;
+        if (!level.isLoaded(controller)) return null;
+        BlockEntity be = level.getBlockEntity(controller);
+        return be instanceof FuelTankBlockEntity tank && !tank.isRemoved() && tank.isController() ? tank : null;
+    }
+    @Override public void setController(BlockPos pos) {
+        if (level != null && level.isClientSide && !isVirtual()) return;
+        if (Objects.equals(getController(), pos)) return;
+        controller = pos; basins = null; visuals = null;
+        refreshCapability(); setChanged(); markBasinsDirty(); sendDataImmediately();
+    }
+    @Override public void removeController(boolean keepFluids) {
+        if (level.isClientSide) return;
+        controller = null; count = 1; basins = null; visuals = null; clearSavedGroupState();
+        if (!keepFluids) setInventoryQuietly(getCapacityPerBlock(), FluidStack.EMPTY);
+        updateConnectivity = true; markBasinsDirty(); refreshCapability(); setChanged(); sendData();
+    }
+    @Override public void preventConnectivityUpdate() { updateConnectivity = false; }
+    @Override public BlockPos getLastKnownPos() { return lastKnownPos; }
+    @Override public void notifyMultiUpdated() { setChanged(); }
 	@Override
 	public Direction.Axis getMainConnectionAxis() {
 		return Direction.Axis.Y;
@@ -484,361 +295,160 @@ public class FuelTankBlockEntity extends CopycatBlockEntity
 	public FluidStack getFluid(int tank) {
 		return tankInventory.getFluid().copy();
 	}
+    public static int getCapacityPerBlock() { return ServerConfig.fuelTankCapacity * 1000; }
+    public void applyFluidTankSize(int blocks) {
+        int capacity = blocks * getCapacityPerBlock();
+        tankInventory.setCapacity(capacity);
+        if (tankInventory.getFluidAmount() > capacity) tankInventory.drain(tankInventory.getFluidAmount() - capacity, IFluidHandler.FluidAction.EXECUTE);
+        forceFluidLevelUpdate = true;
+    }
+    public FluidTank getTankInventory() { return tankInventory; }
+    public int getCount() { FuelTankBlockEntity o = getControllerBE(); return o == null ? count : o.count; }
+    public float getFillState() { return tankInventory.getCapacity() == 0 ? 0 : (float) tankInventory.getFluidAmount() / tankInventory.getCapacity(); }
+    public boolean hasPendingGroupLoad() { return savedCount != null; }
+    void clearSavedGroupState() { savedCount = null; savedBasins = null; }
+    public int getFallbackHeight() { return basins == null ? 1 : basins.geometry().maxCell.getY() - basins.geometry().minCell.getY() + 1; }
+    @Nullable public BlockPos getFallbackMin() { return basins == null ? null : basins.geometry().minCell; }
+    @Nullable public BlockPos getFallbackMax() { return basins == null ? null : basins.geometry().maxCell; }
+    @Nullable public LerpedFloat getFluidLevel() { return fluidLevel; }
+    public void setFluidLevel(LerpedFloat level) { fluidLevel = level; }
+    @Override public boolean addToGoggleTooltip(List<Component> tooltip, boolean sneaking) {
+        FuelTankBlockEntity o = getControllerBE();
+        return o != null && containedFluidTooltip(tooltip, sneaking, o.tankInventory);
+    }
 
-	// ---- capacity ------------------------------------------------------------
+    @Override public void setMaterial(BlockState material) {
+        super.setMaterial(material); needsLightRefresh = true;
+        FuelTankBlockEntity o = getControllerBE(); if (o != null) o.needsLightRefresh = true;
+    }
 
-	public static int getCapacityPerBlock() {
-		return ServerConfig.fuelTankCapacity * 1000;
-	}
+    @Override public void sendData() {
+        if (syncCooldown > 0) { queuedSync = true; return; }
+        super.sendData(); queuedSync = false; syncCooldown = SYNC_RATE;
+        if (needsNeighborRefresh && level != null && !level.isClientSide) {
+            needsNeighborRefresh = false;
+            int signal = ComparatorUtil.fractionToRedstoneLevel(getFillState());
+            for (BlockPos pos : basins == null ? Set.of(worldPosition) : basins.geometry().basinByCell.keySet()) {
+                if (!level.isLoaded(pos)) continue;
+                FuelTankBlockEntity part = FuelTankConnectivity.partAt(getType(), level, pos);
+                if (part != null) level.updateNeighbourForOutputSignal(pos, part.getBlockState().getBlock());
+            }
+            publishedComparator = signal;
+        }
+    }
+    public void sendDataImmediately() { syncCooldown = 0; sendData(); }
+    public void markBasinsDirty() {
+        needsBasinSync = true; needsVolumeSync = true; forceFluidLevelUpdate = true;
+        needsNeighborRefresh = true; needsLightRefresh = true; lightFloors = null;
+    }
+    public void markVolumesDirty() {
+        needsVolumeSync = true;
+        if (publishedComparator != ComparatorUtil.fractionToRedstoneLevel(getFillState())) needsNeighborRefresh = true;
+    }
+    public void setRodData(@Nullable FuelRodStructure.RodData rod, boolean sync) {
+        if (Objects.equals(rodData, rod)) return;
+        rodData = rod; setChanged(); if (sync) sendDataImmediately();
+    }
+    @Override public void initialize() {
+        super.initialize(); needsLightRefresh = true;
+        if (level.isClientSide) invalidateRenderBoundingBox();
+    }
 
-	public void applyFluidTankSize(int blocks) {
-		int capacity = blocks * getCapacityPerBlock();
-		tankInventory.setCapacity(capacity);
-		if (tankInventory.getFluidAmount() > capacity)
-			tankInventory.drain(tankInventory.getFluidAmount() - capacity, FluidAction.EXECUTE);
-		// A capacity change invalidates the fill fraction's animation baseline
-		// (mirrors Create): the client re-anchors instead of easing across it.
-		forceFluidLevelUpdate = true;
-	}
+    /** Initial tags are complete and side-effect free, independent of incremental dirty flags. */
+    @Override public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+        CompoundTag tag = new CompoundTag(); write(tag, registries, true); return tag;
+    }
+    @Override public ClientboundBlockEntityDataPacket getUpdatePacket() {
+        return ClientboundBlockEntityDataPacket.create(this, (be, registries) -> {
+            CompoundTag tag = new CompoundTag(); writingIncremental = true;
+            try { write(tag, registries, true); }
+            finally { writingIncremental = false; }
+            needsBasinSync = false; needsVolumeSync = false; forceFluidLevelUpdate = false;
+            if (basins != null) basins.clearSyncChanges();
+            return tag;
+        });
+    }
 
-	public FluidTank getTankInventory() {
-		return tankInventory;
-	}
+    private CompoundTag writeBasins() {
+        CompoundTag tag = basins.write(); tag.put("Anchor", NbtUtils.writeBlockPos(worldPosition)); return tag;
+    }
+    private FuelTankFluidState readBasins(CompoundTag tag) {
+        int[] stored = tag.getIntArray("Origin");
+        BlockPos origin = new BlockPos(stored[0], stored[1], stored[2]);
+        BlockPos anchor = NBTHelper.readBlockPos(tag, "Anchor");
+        return FuelTankFluidState.read(tag, origin.offset(worldPosition.subtract(anchor)));
+    }
+    @Override protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
+        super.read(tag, registries, clientPacket);
+        BlockPos previous = getController();
+        controller = tag.contains("Controller") ? NBTHelper.readBlockPos(tag, "Controller") : null;
+        lastKnownPos = tag.contains("LastKnownPos") ? NBTHelper.readBlockPos(tag, "LastKnownPos") : null;
+        luminosity = tag.getInt("Luminosity");
+        if (!Objects.equals(previous, getController()) || !isController()) { basins = null; visuals = null; }
+        if (isController()) {
+            count = Math.max(1, tag.getInt("Count"));
+            quietInventory++;
+            try {
+                tankInventory.setCapacity(count * getCapacityPerBlock());
+                tankInventory.readFromNBT(registries, tag.getCompound("TankContent"));
+            } finally { quietInventory--; }
+            if (tag.contains("GeometryCleared")) { basins = null; visuals = null; }
+            String key = clientPacket ? "BasinGeometry" : "Basins";
+            if (tag.contains(key)) {
+                basins = readBasins(tag.getCompound(key)); visuals = null;
+                if (!clientPacket && (level == null || !level.isClientSide)) { savedBasins = basins; savedCount = count; }
+            } else if (tag.contains("Volumes") && basins != null) basins.readVolumeUpdate(tag);
+        }
+        FuelRodStructure.RodData previousRod = rodData;
+        if (tag.contains("Rod")) rodData = FuelRodStructure.RodData.readFromNBT(tag.getCompound("Rod"));
+        else if (!clientPacket || tag.contains("RodCleared")) rodData = null;
+        if (clientPacket && level != null && level.isClientSide && !Objects.equals(previousRod, rodData))
+            FuelRodSync.notifyClientSync(worldPosition, rodData);
+        if (!clientPacket) {
+            updateConnectivity = true; needsLightRefresh = true;
+            needsDeferredSplitHeal = tag.getBoolean("DeferredSplit");
+            deferredController = tag.contains("DeferredController") ? NBTHelper.readBlockPos(tag, "DeferredController") : null;
+        }
+        if (tag.contains("ForceFluidLevel") || fluidLevel == null)
+            fluidLevel = LerpedFloat.linear().startWithValue(getFillState());
+        fluidLevel.chase(getFillState(), tag.contains("LazySync") ? .125 : .5, LerpedFloat.Chaser.EXP);
+        if (clientPacket && level != null && level.isClientSide) {
+            invalidateRenderBoundingBox();
+            if (!Objects.equals(previous, getController())) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), Block.UPDATE_CLIENTS);
+        }
+        updateCapability = true;
+    }
 
-	public int getCount() {
-		return isController() ? count : getControllerBE() != null ? getControllerBE().count : 1;
-	}
-
-	public float getFillState() {
-		int capacity = tankInventory.getCapacity();
-		return capacity == 0 ? 0 : (float) tankInventory.getFluidAmount() / capacity;
-	}
-
-	/** True while a saved group load has not yet confirmed its full block count. */
-	public boolean hasPendingGroupLoad() {
-		return savedCount != null;
-	}
-
-	/**
-	 * Clears the cross-chunk load-in-progress state ({@code savedSurfaces}/{@code savedCount}/
-	 * {@code savedBasins} and the saved footprint). Only a controller's pending state is ever
-	 * read ({@link FuelTankConnectivity#recomputeBasins}), so it must be dropped once a part is
-	 * absorbed into a resolved group — otherwise the stale {@code savedCount} keeps answering
-	 * {@link #hasPendingGroupLoad()} and can hold later merges hostage until every neighbour
-	 * chunk happens to load.
-	 */
-	void clearSavedGroupState() {
-		savedSurfaces = null;
-		savedCount = null;
-		savedBasins = null;
-		savedHeight = -1;
-		savedMin = null;
-		savedMax = null;
-	}
-
-	/**
-	 * Vertical extent used by the renderer's uniform-level fallback: the saved group's
-	 * real height when one was loaded, otherwise the current group block count.
-	 */
-	public int getFallbackHeight() {
-		return savedHeight > 0 ? savedHeight : Math.max(1, getCount());
-	}
-
-	@Nullable
-	public BlockPos getFallbackMin() {
-		return savedMin;
-	}
-
-	@Nullable
-	public BlockPos getFallbackMax() {
-		return savedMax;
-	}
-
-	@Nullable
-	public LerpedFloat getFluidLevel() {
-		return fluidLevel;
-	}
-
-	public void setFluidLevel(LerpedFloat fluidLevel) {
-		this.fluidLevel = fluidLevel;
-	}
-
-	// ---- goggle tooltip ------------------------------------------------------
-
-	@Override
-	public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
-		FuelTankBlockEntity controllerBE = getControllerBE();
-		if (controllerBE == null)
-			return false;
-		return containedFluidTooltip(tooltip, isPlayerSneaking, controllerBE.tankInventory);
-	}
-
-	// ---- sync ----------------------------------------------------------------
-
-	@Override
-	public void sendData() {
-		if (syncCooldown > 0) {
-			queuedSync = true;
-			return;
-		}
-		super.sendData();
-		queuedSync = false;
-		syncCooldown = SYNC_RATE;
-		if (needsNeighborRefresh) {
-			needsNeighborRefresh = false;
-			if (!level.isClientSide)
-				refreshNeighborSignals();
-		}
-	}
-
-	public void sendDataImmediately() {
-		syncCooldown = 0;
-		queuedSync = false;
-		sendData();
-	}
-
-	/**
-	 * Updates the fuel rod structure state, syncing immediately when the state
-	 * actually changed (forming, extending or breaking a rod).
-	 */
-	public void setRodData(@Nullable FuelRodStructure.RodData rod, boolean syncImmediately) {
-		if (Objects.equals(this.rodData, rod))
-			return;
-		this.rodData = rod;
-		needsRodSync = true;
-		setChanged();
-		if (syncImmediately)
-			sendDataImmediately();
-	}
-
-	/**
-	 * Re-arms comparators next to any part of the group. Mirrors Create's per-part
-	 * {@code updateNeighbourForOutputSignal}; throttled to the sync cadence so a large
-	 * tank does not pay this cost on every pipe fill.
-	 */
-	private void refreshNeighborSignals() {
-		Set<BlockPos> cells = basins != null ? basins.basinByCell.keySet() : Set.of(worldPosition);
-		for (BlockPos p : cells) {
-			FuelTankBlockEntity part = FuelTankConnectivity.partAt(getType(), level, p);
-			if (part == null)
-				continue;
-			level.updateNeighbourForOutputSignal(p, part.getBlockState().getBlock());
-		}
-	}
-
-	/** Marks that the next client packet must carry the full basin geometry. A
-	 * geometry change also invalidates the whole-tank level's animation baseline,
-	 * so the client re-anchors it instead of easing from a stale shape. */
-	public void markBasinsDirty() {
-		needsBasinSync = true;
-		needsSurfaceSync = true;
-		forceFluidLevelUpdate = true;
-		needsNeighborRefresh = true;
-	}
-
-	/** Marks that the next client packet must carry the per-basin surfaces. Deliberately
-	 * does NOT touch {@code forceFluidLevelUpdate}: a plain amount change must keep the
-	 * whole-tank level chaser animating (the anchor flag means "re-snap"), otherwise
-	 * every throttled sync would teleport the level instead of easing toward it. */
-	public void markSurfacesDirty() {
-		needsSurfaceSync = true;
-		needsNeighborRefresh = true;
-	}
-
-	@Override
-	public void initialize() {
-		super.initialize();
-		sendData();
-		if (level.isClientSide)
-			invalidateRenderBoundingBox();
-	}
-
-	// ---- read/write ----------------------------------------------------------
-
-	@Override
-	protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
-		super.read(tag, registries, clientPacket);
-
-		BlockPos controllerBefore = controller;
-		luminosity = tag.getInt("Luminosity");
-
-		lastKnownPos = null;
-		if (tag.contains("LastKnownPos"))
-			lastKnownPos = NBTHelper.readBlockPos(tag, "LastKnownPos");
-
-		controller = null;
-		if (tag.contains("Controller"))
-			controller = NBTHelper.readBlockPos(tag, "Controller");
-
-		if (isController()) {
-			count = tag.getInt("Count");
-			tankInventory.setCapacity(count * getCapacityPerBlock());
-			tankInventory.readFromNBT(registries, tag.getCompound("TankContent"));
-			if (tankInventory.getSpace() < 0)
-				tankInventory.drain(-tankInventory.getSpace(), FluidAction.EXECUTE);
-
-			// Full save (chunk load / contraption): stash the group's surfaces and size so
-			// the load-in-progress logic can restore the distribution once the whole group
-			// is present, and (on the client) rebuild the exact basin geometry directly.
-			if (!clientPacket && tag.contains("Basins")) {
-				CompoundTag basinsTag = tag.getCompound("Basins");
-				savedSurfaces = FuelTankConnectivity.BasinData.readSurfaces(basinsTag, "Surfaces");
-				savedCount = count;
-				// Deserialized for the shape-equality guard in recomputeBasins: the saved
-				// surfaces may only be restored onto an identical decomposition.
-				savedBasins = FuelTankConnectivity.BasinData.readFromNBT(registries, basinsTag, worldPosition);
-				if (basinsTag.contains("Min") && basinsTag.contains("Max")) {
-					BlockPos mn = NBTHelper.readBlockPos(basinsTag, "Min");
-					BlockPos mx = NBTHelper.readBlockPos(basinsTag, "Max");
-					savedHeight = mx.getY() - mn.getY() + 1;
-					savedMin = mn;
-					savedMax = mx;
-				}
-				if (level != null && level.isClientSide) {
-					basins = savedBasins;
-					if (basins.chasers == null)
-						basins.initChasers(basins.surfaces);
-					invalidateRenderBoundingBox();
-					// The client rebuilds the geometry directly from the tag; the
-					// pending-load state is a server-side convergence mechanism
-					// (recomputeBasins / lazyTick) with no client consumer. Clear it
-					// here instead of leaving it set for the BE's whole lifetime.
-					clearSavedGroupState();
-				}
-			}
-		}
-
-		// Fuel rod structure (any tank may be a rod's bottom centre, regardless of
-		// fluid-group controller). Client packets carry it only when it changed,
-		// including an explicit "cleared" marker so removals reach the client.
-		if (clientPacket) {
-			FuelRodStructure.RodData prevRod = rodData;
-			if (tag.contains("Rod"))
-				rodData = FuelRodStructure.RodData.readFromNBT(tag.getCompound("Rod"));
-			else if (tag.contains("RodCleared"))
-				rodData = null;
-			// Notify the client-side bloom handler when the rod state changed.
-			if (level != null && level.isClientSide && !Objects.equals(prevRod, rodData))
-				FuelRodSync.notifyClientSync(worldPosition, rodData);
-		} else if (tag.contains("Rod")) {
-			rodData = FuelRodStructure.RodData.readFromNBT(tag.getCompound("Rod"));
-		}
-
-		// On load, re-form the group from the world (blocks may be loading across chunks).
-		if (!clientPacket)
-			updateConnectivity = true;
-
-		if (clientPacket && isController()) {
-			if (tag.contains("BasinGeometry")) {
-				basins = FuelTankConnectivity.BasinData.readFromNBT(registries, tag.getCompound("BasinGeometry"),
-						worldPosition);
-				invalidateRenderBoundingBox();
-			}
-			if (tag.contains("Surfaces") && basins != null) {
-				basins.surfaces = FuelTankConnectivity.BasinData.readSurfaces(tag, "Surfaces");
-				if (basins.chasers == null)
-					basins.initChasers(basins.surfaces);
-			}
-
-		}
-
-		if (tag.contains("ForceFluidLevel") || fluidLevel == null)
-			fluidLevel = LerpedFloat.linear().startWithValue(getFillState());
-		fluidLevel.chase(getFillState(), 0.5f, Chaser.EXP);
-		// Coalesced sync: keep easing gently toward the same target instead of
-		// moving at full speed between 8-tick packet boundaries.
-		if (tag.contains("LazySync"))
-			fluidLevel.chase(fluidLevel.getChaseTarget(), 0.125f, Chaser.EXP);
-
-		// A controller change means the block model's face-culling data (which reads the
-		// controller) must be rebuilt. The placement block update renders the block before
-		// this BE packet arrives, so force a re-render now that the controller is fresh —
-		// otherwise the last-placed tank keeps its unculled wall until some later re-render.
-		if (clientPacket && level != null && level.isClientSide && !Objects.equals(controllerBefore, controller))
-			level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), Block.UPDATE_CLIENTS);
-
-		updateCapability = true;
-	}
-
-	@Override
-	protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
-		super.write(tag, registries, clientPacket);
-
-		tag.putInt("Luminosity", luminosity);
-		if (lastKnownPos != null)
-			tag.put("LastKnownPos", NbtUtils.writeBlockPos(lastKnownPos));
-		if (!isController())
-			tag.put("Controller", NbtUtils.writeBlockPos(controller));
-		if (isController()) {
-			tag.putInt("Count", count);
-			tag.put("TankContent", tankInventory.writeToNBT(registries, new CompoundTag()));
-			if (!clientPacket) {
-				if (basins != null)
-					tag.put("Basins", basins.writeToNBT(registries, count));
-			} else if (basins != null) {
-				if (needsBasinSync)
-					tag.put("BasinGeometry", basins.writeToNBT(registries, count));
-				else if (needsSurfaceSync)
-					FuelTankConnectivity.BasinData.writeSurfaces(tag, "Surfaces", basins.surfaces);
-			}
-		}
-		needsBasinSync = false;
-		needsSurfaceSync = false;
-
-		// Fuel rod state: persisted on every full save; client packets always
-		// carry the rod when present so a freshly loaded chunk syncs it with the
-		// initial packet (no setRodData runs between the NBT restore and the
-		// first sendData), and the "RodCleared" marker (gated by needsRodSync)
-		// distinguishes a clear from "unchanged".
-		if (!clientPacket) {
-			if (rodData != null)
-				tag.put("Rod", rodData.writeToNBT());
-		} else {
-			if (rodData != null) {
-				tag.put("Rod", rodData.writeToNBT());
-				needsRodSync = false;
-			} else if (needsRodSync) {
-				needsRodSync = false;
-				tag.putBoolean("RodCleared", true);
-			}
-		}
-
-		if (!clientPacket)
-			return;
-		if (forceFluidLevelUpdate)
-			tag.putBoolean("ForceFluidLevel", true);
-		if (queuedSync)
-			// Coalesced (delayed) sync: tell the client to ease slowly toward the
-			// target so the packet cadence does not lurch the animation (mirrors
-			// Create's LazySync).
-			tag.putBoolean("LazySync", true);
-		forceFluidLevelUpdate = false;
-	}
-
-	@Override
-	public void writeSafe(CompoundTag tag, HolderLookup.Provider registries) {
-		// Copycat material safe-NBT (without data components) + the group count.
-		super.writeSafe(tag, registries);
-		if (isController())
-			tag.putInt("Count", count);
-	}
-
-	// ---- render bounding box -------------------------------------------------
-
-	@Override
-	protected AABB createRenderBoundingBox() {
-		if (isController() && basins != null) {
-			BlockPos min = basins.minCell();
-			BlockPos max = basins.maxCell();
-			if (min != null && max != null)
-				return new AABB(min.getX(), min.getY(), min.getZ(), max.getX() + 1D, max.getY() + 1D,
-					max.getZ() + 1D);
-		}
-		return super.createRenderBoundingBox();
-	}
-
-	@Override
-	public void addBehaviours(List<BlockEntityBehaviour> behaviours) {
-		super.addBehaviours(behaviours);
-	}
+    @Override protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
+        super.write(tag, registries, clientPacket);
+        tag.putInt("Luminosity", luminosity);
+        if (lastKnownPos != null) tag.put("LastKnownPos", NbtUtils.writeBlockPos(lastKnownPos));
+        if (!isController()) tag.put("Controller", NbtUtils.writeBlockPos(controller));
+        else {
+            tag.putInt("Count", count); tag.put("TankContent", tankInventory.writeToNBT(registries, new CompoundTag()));
+            if (!clientPacket) {
+                if (basins != null) tag.put("Basins", writeBasins());
+                if (needsDeferredSplitHeal) tag.putBoolean("DeferredSplit", true);
+                if (deferredController != null) tag.put("DeferredController", NbtUtils.writeBlockPos(deferredController));
+            } else if (basins == null) tag.putBoolean("GeometryCleared", true);
+            else if (!writingIncremental || needsBasinSync) tag.put("BasinGeometry", writeBasins());
+            else if (needsVolumeSync) basins.writeVolumeUpdate(tag);
+        }
+        if (rodData != null) tag.put("Rod", rodData.writeToNBT());
+        else if (clientPacket) tag.putBoolean("RodCleared", true);
+        if (clientPacket) {
+            if (!writingIncremental || forceFluidLevelUpdate) tag.putBoolean("ForceFluidLevel", true);
+            if (queuedSync) tag.putBoolean("LazySync", true);
+        }
+    }
+    @Override public void writeSafe(CompoundTag tag, HolderLookup.Provider registries) {
+        super.writeSafe(tag, registries); if (isController()) tag.putInt("Count", count);
+    }
+    @Override protected AABB createRenderBoundingBox() {
+        if (isController() && basins != null) {
+            BlockPos min = basins.geometry().minCell, max = basins.geometry().maxCell;
+            return new AABB(min.getX(), min.getY(), min.getZ(), max.getX() + 1d, max.getY() + 1d, max.getZ() + 1d);
+        }
+        return super.createRenderBoundingBox();
+    }
 }

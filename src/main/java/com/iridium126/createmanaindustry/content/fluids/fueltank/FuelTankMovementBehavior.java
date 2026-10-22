@@ -3,7 +3,6 @@ package com.iridium126.createmanaindustry.content.fluids.fueltank;
 import com.simibubi.create.api.behaviour.movement.MovementBehaviour;
 import com.simibubi.create.content.contraptions.behaviour.MovementContext;
 
-import net.createmod.catnip.animation.LerpedFloat;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 /**
@@ -22,13 +21,7 @@ public class FuelTankMovementBehavior implements MovementBehaviour {
 		if (context.world.isClientSide) {
 			BlockEntity be = context.contraption.getBlockEntityClientSide(context.localPos);
 			if (be instanceof FuelTankBlockEntity tank) {
-				LerpedFloat level = tank.getFluidLevel();
-				if (level != null)
-					level.tickChaser();
-				// The basin surface chasers animate the per-basin liquid; contraption BEs
-				// are not ticked by SmartBlockEntity, so drive them here.
-				if (tank.basins != null)
-					tank.basins.tickChasers();
+				tank.tickVisuals();
 			}
 		}
 	}

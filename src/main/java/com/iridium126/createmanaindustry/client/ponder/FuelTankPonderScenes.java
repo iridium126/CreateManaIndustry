@@ -33,25 +33,14 @@ public final class FuelTankPonderScenes {
                     nbt.put("Controller", net.minecraft.nbt.NbtUtils.writeBlockPos(controller));
                     return;
                 }
-                net.minecraft.nbt.CompoundTag geometry = new net.minecraft.nbt.CompoundTag();
-                net.minecraft.nbt.ListTag positions = new net.minecraft.nbt.ListTag();
-                BlockPos max = controller;
-                for (BlockPos cell : cells) {
-                    positions.add(net.minecraft.nbt.NbtUtils.writeBlockPos(cell.subtract(controller)));
-                    max = new BlockPos(Math.max(max.getX(), cell.getX()), Math.max(max.getY(), cell.getY()), Math.max(max.getZ(), cell.getZ()));
-                }
-                net.minecraft.nbt.CompoundTag basin = new net.minecraft.nbt.CompoundTag();
-                basin.put("Cells", positions);
-                net.minecraft.nbt.ListTag basins = new net.minecraft.nbt.ListTag();
-                basins.add(basin);
-                geometry.put("Basins", basins);
-                geometry.put("Min", net.minecraft.nbt.NbtUtils.writeBlockPos(controller));
-                geometry.put("Max", net.minecraft.nbt.NbtUtils.writeBlockPos(max));
-                com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankConnectivity.BasinData
-                        .writeSurfaces(geometry, "Surfaces", new float[]{controller.getY() + .5f});
+                var state = new com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankFluidState(
+                    com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankGeometry.build(
+                        java.util.Set.of(cells), FuelTankBlockEntity.getCapacityPerBlock()));
+                state.settle((long) cells.length * FuelTankBlockEntity.getCapacityPerBlock() / 2);
+                var geometry = state.write();
+                geometry.put("Anchor", net.minecraft.nbt.NbtUtils.writeBlockPos(controller));
                 nbt.put("Basins", geometry);
                 nbt.put("BasinGeometry", geometry.copy());
-                nbt.put("Surfaces", geometry.get("Surfaces").copy());
             });
         }
     }

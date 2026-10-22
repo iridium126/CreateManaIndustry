@@ -43,6 +43,7 @@
     "fluids.GenericItemFillingMixin",
     "fluids.GenericItemEmptyingMixin",
     "fluids.FluidNetworkMixin",
+    "fluids.FuelTankContraptionMixin",
     "burner.BlazeBurnerBlockEntityAccessor",
     "hexcasting.FillingBySpoutHexMixin",
     "hexcasting.BeltDeployerCallbacksMixin",

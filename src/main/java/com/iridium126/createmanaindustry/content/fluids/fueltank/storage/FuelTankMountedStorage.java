@@ -4,7 +4,7 @@ import org.jetbrains.annotations.Nullable;
 
 import com.iridium126.createmanaindustry.CMIMountedStorageTypes;
 import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankBlockEntity;
-import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankConnectivity;
+import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankContraptionBridge;
 import com.iridium126.createmanaindustry.content.fluids.fueltank.storage.FuelTankMountedStorage.Handler;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -13,10 +13,7 @@ import com.simibubi.create.api.contraption.storage.fluid.MountedFluidStorageType
 import com.simibubi.create.api.contraption.storage.fluid.WrapperMountedFluidStorage;
 import com.simibubi.create.content.contraptions.Contraption;
 
-import net.createmod.catnip.animation.LerpedFloat;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.HolderLookup;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.util.ExtraCodecs;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -49,9 +46,9 @@ public class FuelTankMountedStorage extends WrapperMountedFluidStorage<Handler> 
 
 	@Override
 	public void unmount(Level level, BlockState state, BlockPos pos, @Nullable BlockEntity be) {
+		if (FuelTankContraptionBridge.isPlacing(level)) return;
 		if (be instanceof FuelTankBlockEntity tank && tank.isController()) {
-			FluidTank inventory = tank.getTankInventory();
-			inventory.setFluid(this.wrapped.getFluid());
+			tank.restoreMounted(this.wrapped.getCapacity(), this.wrapped.getFluid());
 		}
 	}
 
@@ -79,32 +76,12 @@ public class FuelTankMountedStorage extends WrapperMountedFluidStorage<Handler> 
 		if (!(be instanceof FuelTankBlockEntity tank))
 			return;
 
-		FluidTank inv = tank.getTankInventory();
-		inv.setFluid(this.getFluid());
-		// The contraption only carries the total fluid, not the per-basin distribution.
-		// Re-derive the surfaces only when the total actually changed; otherwise keep
-		// the serialized dynamic distribution (the chasers animate any change).
-		if (tank.basins != null && !FuelTankConnectivity.surfacesRepresent(tank, inv.getFluidAmount()))
-			FuelTankConnectivity.settle(tank);
-		float fillLevel = inv.getCapacity() == 0 ? 0 : inv.getFluidAmount() / (float) inv.getCapacity();
-		LerpedFloat level = tank.getFluidLevel();
-		if (level == null) {
-			tank.setFluidLevel(LerpedFloat.linear().startWithValue(fillLevel));
-			level = tank.getFluidLevel();
-		}
-		if (level != null)
-			level.chase(fillLevel, 0.5, LerpedFloat.Chaser.EXP);
+		tank.restoreMounted(getCapacity(), getFluid());
 	}
 
 	public static FuelTankMountedStorage fromTank(FuelTankBlockEntity tank) {
 		FluidTank inventory = tank.getTankInventory();
 		return new FuelTankMountedStorage(inventory.getCapacity(), inventory.getFluid().copy());
-	}
-
-	public static FuelTankMountedStorage fromLegacy(HolderLookup.Provider registries, CompoundTag nbt) {
-		int capacity = nbt.getInt("Capacity");
-		FluidStack fluid = FluidStack.parseOptional(registries, nbt);
-		return new FuelTankMountedStorage(capacity, fluid);
 	}
 
 	public static final class Handler extends FluidTank {

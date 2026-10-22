@@ -8,8 +8,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
-import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankConnectivity.Basin;
-import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankConnectivity.BasinData;
+import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankGeometry.Basin;
+
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
@@ -36,7 +36,7 @@ import net.neoforged.neoforge.fluids.FluidType;
 /**
  * Renders the fuel tank's liquid as a few merged boxes per basin instead of one
  * box per cell. Each basin's per-level cell rectangles are greedy-merged once
- * (cached in {@link BasinData#renderCache}) and stacked vertically; only the
+ * (cached in {@link FuelTankVisualState#renderCache}) and stacked vertically; only the
  * surface box's height is animated per frame. Only the controller renders.
  */
 public class FuelTankRenderer extends SafeBlockEntityRenderer<FuelTankBlockEntity> {
@@ -56,7 +56,7 @@ public class FuelTankRenderer extends SafeBlockEntityRenderer<FuelTankBlockEntit
 		int light, int overlay) {
 		if (!be.isController())
 			return;
-		BasinData data = be.basins;
+		FuelTankFluidState data = be.basins;
 		if (data == null) {
 			renderFallbackLevel(be, partialTicks, buffer, ms, light);
 			return;
@@ -66,18 +66,18 @@ public class FuelTankRenderer extends SafeBlockEntityRenderer<FuelTankBlockEntit
 		if (fluid.isEmpty())
 			return;
 
-		RenderCache cache = (RenderCache) data.renderCache;
+		RenderCache cache = (RenderCache) be.getVisualState().renderCache;
 		if (cache == null || cache.controller != be.getBlockPos()) {
 			cache = new RenderCache();
 			cache.controller = be.getBlockPos();
-			data.renderCache = cache;
+			be.getVisualState().renderCache = cache;
 			buildLevelRects(data, cache);
 		}
 
 		BlockPos c = be.getBlockPos();
-		for (int i = 0; i < data.basins.size(); i++) {
-			Basin basin = data.basins.get(i);
-			float surface = chasedSurface(data, i, partialTicks);
+		for (int i = 0; i < data.geometry().basins.size(); i++) {
+			Basin basin = data.geometry().basins.get(i);
+			float surface = be.getVisualState().surface(i, partialTicks);
 			if (surface <= basin.minY)
 				continue;
 
@@ -182,11 +182,6 @@ public class FuelTankRenderer extends SafeBlockEntityRenderer<FuelTankBlockEntit
 			false, true);
 	}
 
-	private float chasedSurface(BasinData data, int basin, float partialTicks) {
-		if (data.chasers != null && basin < data.chasers.length && data.chasers[basin] != null)
-			return data.chasers[basin].getValue(partialTicks);
-		return data.surfaces[basin];
-	}
 
 	private List<Box> stackFullLevels(RenderCache cache, Basin basin, int surfaceLevel) {
 		Map<Integer, List<Rect>> rectsByLevel = cache.levelRects.get(basin.id);
@@ -222,12 +217,12 @@ public class FuelTankRenderer extends SafeBlockEntityRenderer<FuelTankBlockEntit
 
 	/** Per-frame box rendering: face visibility recomputed (the box reaches the surface). */
 	private void renderBox(BlockPos c, FluidStack fluid, Box box, MultiBufferSource buffer,
-		PoseStack ms, int light, BasinData data, int basinId) {
+		PoseStack ms, int light, FuelTankFluidState data, int basinId) {
 		renderBox(c, fluid, box, computeFaces(data, basinId, box), buffer, ms, light, data, basinId);
 	}
 
 	/** Face visibility for a box whose height reaches the (fractional) surface. */
-	private boolean[] computeFaces(BasinData data, int basinId, Box box) {
+	private boolean[] computeFaces(FuelTankFluidState data, int basinId, Box box) {
 		int bx = Mth.floor(box.x1), by = Mth.floor(box.y1), bz = Mth.floor(box.z1);
 		// ceil so the partial surface box (box.y2 fractional) still checks its own level;
 		// floor would give an empty range there and cull the surface's sides entirely.
@@ -241,8 +236,8 @@ public class FuelTankRenderer extends SafeBlockEntityRenderer<FuelTankBlockEntit
 	}
 
 	private void renderBox(BlockPos c, FluidStack fluid, Box box, boolean[] faces, MultiBufferSource buffer,
-		PoseStack ms, int light, BasinData data, int basinId) {
-		boolean saddle = data.basins.get(basinId).ridge;
+		PoseStack ms, int light, FuelTankFluidState data, int basinId) {
+		boolean saddle = data.geometry().basins.get(basinId).ridge;
 		float yMin = box.y1;
 		float yMax = box.y2;
 		if (yMax - yMin <= 0)
@@ -252,14 +247,14 @@ public class FuelTankRenderer extends SafeBlockEntityRenderer<FuelTankBlockEntit
 		// cell is a bottom cell when no same-group cell sits below it (basin-map
 		// derived — no world read, so contraption-local coordinates work too)
 		BlockPos baseCell = new BlockPos(Mth.floor(box.x1), Mth.floor(box.y1), Mth.floor(box.z1));
-		if (!data.basinByCell.containsKey(baseCell.below()))
+		if (!data.geometry().basinByCell.containsKey(baseCell.below()))
 			yMin = Math.max(yMin, box.y1 + CAP);
 
 		// lid inset: stop just below a closed lid so the surface never touches it
 		// (the geometry is grouped by occlusion, so this box's cells share one lid state)
 		int topCell = Mth.floor(box.y2 - 0.001f);
 		BlockPos lidCell = new BlockPos(Mth.floor(box.x1), topCell, Mth.floor(box.z1));
-		if (!data.basinByCell.containsKey(lidCell.above()))
+		if (!data.geometry().basinByCell.containsKey(lidCell.above()))
 			yMax = Math.min(yMax, topCell + 1 - CAP);
 
 		// A little liquid hidden by the floor gap still shows a thin puddle
@@ -271,7 +266,7 @@ public class FuelTankRenderer extends SafeBlockEntityRenderer<FuelTankBlockEntit
 		// draws at its true height. Saddles are never boosted regardless: the
 		// saddle and the legs it absorbed rise as one flat surface, and forcing a
 		// minimum layer there makes it stick above the level.
-		boolean atBottom = data.minCell != null && Mth.floor(box.y1) == data.minCell.getY();
+		boolean atBottom = data.geometry().minCell != null && Mth.floor(box.y1) == data.geometry().minCell.getY();
 		if (atBottom && !saddle && yMax - yMin < PUDDLE && yMax > box.y1)
 			yMax = yMin + PUDDLE;
 		else if (!atBottom && yMax - yMin < PUDDLE)
@@ -303,10 +298,10 @@ public class FuelTankRenderer extends SafeBlockEntityRenderer<FuelTankBlockEntit
 	 * (hidden). If any single layer looks out of the group / into a different basin /
 	 * above the surface, the face must render there.
 	 */
-	private boolean isFaceHidden(BasinData data, int basinId, int x, int yFrom, int yTo, int z) {
+	private boolean isFaceHidden(FuelTankFluidState data, int basinId, int x, int yFrom, int yTo, int z) {
 		for (int yy = yFrom; yy < yTo; yy++) {
-			Integer nb = data.basinByCell.get(new BlockPos(x, yy, z));
-			if (nb == null || nb != basinId || data.surfaces[basinId] <= yy)
+			Integer nb = data.geometry().basinByCell.get(new BlockPos(x, yy, z));
+			if (nb == null || nb != basinId || data.surface(basinId) <= yy)
 				return false;
 		}
 		return true;
@@ -384,9 +379,9 @@ public class FuelTankRenderer extends SafeBlockEntityRenderer<FuelTankBlockEntit
 		boolean[][] faces = new boolean[0][];
 	}
 
-	private void buildLevelRects(BasinData data, RenderCache cache) {
+	private void buildLevelRects(FuelTankFluidState data, RenderCache cache) {
 		cache.levelRects.clear();
-		for (Basin basin : data.basins) {
+		for (Basin basin : data.geometry().basins) {
 			// TreeMap keeps levels ascending, which stackFullLevels relies on when it
 			// breaks on the first level at or above the surface.
 			Map<Integer, List<Rect>> map = new TreeMap<>();
@@ -412,11 +407,11 @@ public class FuelTankRenderer extends SafeBlockEntityRenderer<FuelTankBlockEntit
 	 * encode. Never reads {@code be.getLevel()}, so it also holds for contraption
 	 * block entities whose basin coordinates are contraption-local.
 	 */
-	private static int occlusionKey(BasinData data, BlockPos p) {
+	private static int occlusionKey(FuelTankFluidState data, BlockPos p) {
 		int key = 0;
-		if (!data.basinByCell.containsKey(p.above()))
+		if (!data.geometry().basinByCell.containsKey(p.above()))
 			key |= 1; // TOP
-		if (!data.basinByCell.containsKey(p.below()))
+		if (!data.geometry().basinByCell.containsKey(p.below()))
 			key |= 2; // BOTTOM
 		return key;
 	}
