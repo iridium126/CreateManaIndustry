@@ -160,6 +160,22 @@ public final class StormMajorAttackGameTests {
         float health=victim.getHealth();AllayStormManager.handleWaveContact(packet,ctx);h.assertTrue(victim.getHealth()<health,"Stationary center candidate did not settle damage");health=victim.getHealth();AllayStormManager.handleWaveContact(packet,ctx);h.assertTrue(victim.getHealth()==health,"Center contact applied twice");h.succeed();
     }
 
+    @GameTest(template="storm_combat_test",timeoutTicks=40) public static void domePausedClocksSurviveSnapshotsAndLock(GameTestHelper h){
+        var scene=launch(h,StormAttack.DOME,16384);var w=scene.wave();var rt=scene.runtime();set(w,"locked",false);set(w,"gathered",false);
+        float now=(h.getLevel().getGameTime()&((1<<21)-1))/20f;set(w,"assemble",now+20);float deadline=(float)field(w,"assemble");
+        var ctx=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?scene.player():null);
+        float[] times=new float[66];Arrays.fill(times,-1);times[65]=0;var flows=new DomeGatherState(times);var identity=StormIdentity.of(h.getLevel(),scene.data());int id=(int)field(w,"id");
+        var wrong=new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch()-1,id,new long[0],new long[0],flows);AllayStormManager.gatheredAttack(wrong,ctx);h.assertTrue(((DomeGatherState)field(w,"gatherFlows")).revision()==0,"Old identity paused a current flow");
+        var progress=new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),id,new long[0],new long[0],flows);AllayStormManager.gatheredAttack(progress,ctx);
+        h.assertTrue(!(boolean)field(w,"gathered")&&(float)field(w,"assemble")==deadline,"Pause alone launched or extended the attack");
+        var snapshot=(ClientboundStormWavePacket)call("wavePacket",w,0,true,scene.player().getId());h.assertTrue(snapshot.gatherFlows().pausedAt(65)==0&&snapshot.gatherFlows().revision()==1,"Observer lost pause state");
+        var ready=new BitSet();ready.set(0,12288);ready.andNot((BitSet)field(w,"completed"));
+        AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),id,ready.toLongArray(),ready.toLongArray()),ctx);h.assertTrue(!(boolean)field(w,"gathered"),"A stale flow snapshot authorized launch");
+        AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),id,ready.toLongArray(),ready.toLongArray(),flows),ctx);
+        call("advanceDome",h.getLevel(),rt,w,null,h.getLevel().getGameTime()+1,now+.05f);h.assertTrue((boolean)field(w,"locked"),"Matching clocks did not immediately LOCK");
+        var lock=(ClientboundStormWavePacket)call("wavePacket",w,2,false,-1);h.assertTrue(lock.gatherFlows().pausedAt(65)==0,"LOCK changed frozen phase");h.succeed();
+    }
+
     @GameTest(template="storm_combat_test",timeoutTicks=100) public static void domeProductionGpuFeedbackLocksAndDamagesOnce(GameTestHelper h){
         String path=System.getProperty("cmi.dome.evidence");
         if(path==null){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.info("Dome GPU replay not requested; use -PdomeEvidence=build/dome-v14/gpu-evidence.json");h.succeed();return;}
@@ -177,6 +193,15 @@ public final class StormMajorAttackGameTests {
             var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),(float)field(scene.wave(),"lock")+hit.get(4).getAsFloat(),member,(float)x+hit.get(1).getAsFloat(),(float)y+hit.get(2).getAsFloat(),(float)z+hit.get(3).getAsFloat());
             var context=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?victim:null);
             float health=victim.getHealth();AllayStormManager.handleWaveContact(packet,context);h.assertTrue(victim.getHealth()<health,"Production GPU center contact did not settle server damage");health=victim.getHealth();AllayStormManager.handleWaveContact(packet,context);h.assertTrue(victim.getHealth()==health,"Production GPU contact settled twice");
+            if(evidence.has("injectedBoundaryMember")&&evidence.get("injectedBoundaryMember").getAsInt()>=0){
+                int boundaryRank=evidence.get("injectedBoundaryMember").getAsInt(),boundaryMember=((int[])field(scene.wave(),"members"))[boundaryRank];var completed=new BitSet();completed.set(boundaryRank);
+                var authority=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?scene.player():null);
+                var completion=new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(identity.dimension(),identity.epoch(),id,completed.toLongArray());AllayStormManager.completeAttack(completion,authority);
+                var reserved=(BitSet)field(scene.runtime(),"waveReserved");h.assertTrue(((BitSet)field(scene.wave(),"completed")).get(boundaryRank)&&!reserved.get(boundaryMember)&&!((BitSet)field(scene.wave(),"membership")).get(boundaryMember),"GPU boundary completion did not release server ownership");
+                victim.invulnerableTime=0;float after=victim.getHealth();AllayStormManager.handleWaveContact(new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),packet.sampleSec(),boundaryMember,packet.relX(),packet.relY(),packet.relZ()),context);h.assertTrue(victim.getHealth()==after,"Late boundary-member contact settled damage");
+                reserved.set(boundaryMember);AllayStormManager.completeAttack(completion,authority);h.assertTrue(reserved.get(boundaryMember),"Duplicate boundary completion released a new owner");
+                com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.info("Dome GPU boundary rank={} released; late contact and duplicate completion rejected",boundaryRank);
+            }
             h.succeed();
         }catch(Exception failure){throw new IllegalStateException("Dome GPU evidence replay failed",failure);}
     }

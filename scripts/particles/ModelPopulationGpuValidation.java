@@ -9,7 +9,7 @@ import com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulli
 
 /** Production keygen/dispatch/shadow/pick/damage/emit kernels, with no game-world mutation. */
 public class ModelPopulationGpuValidation {
-    static int checks;static void check(boolean ok,String label){checks++;if(!ok)throw new AssertionError(label);}
+    static long checks;static void check(boolean ok,String label){checks++;if(!ok)throw new AssertionError(label);}
     static ByteBuffer bytes(int n){return BufferUtils.createByteBuffer(n);}
     static String source(String name){String s=ParticleShaderSource.loadParticle(name,p->{try(var in=ModelPopulationGpuValidation.class.getClassLoader().getResourceAsStream("assets/createmanaindustry/"+p)){return new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}catch(Exception e){throw new IllegalStateException(p,e);}});
         for(String phase:List.of("spawn","update"))s=s.replace("#pragma cmi_types "+phase,com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.shaderHooks(phase));return s;}

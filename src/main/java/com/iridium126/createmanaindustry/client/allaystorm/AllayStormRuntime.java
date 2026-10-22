@@ -819,12 +819,13 @@ public final class AllayStormRuntime {
             }
         }
     }
+    public boolean domeGather(int id){var w=findWaveById(id);return w!=null&&w.packet.dome();}
     public void gatherProgress(int id,int[] counts){var w=findWaveById(id);if(w!=null)w.gatherCounts=counts;}
     public String starfallStatus(){
         int stars=0,domes=0,helices=0,helixMembers=0,starMembers=0,domeMembers=0,columns=0;StringBuilder helixStages=new StringBuilder();StringBuilder stages=new StringBuilder(),fallbacks=new StringBuilder();
         for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort()){
             var p=w.packet;
-            if((p.helixAttack()||p.dome())&&!p.locked())stages.append("#").append(w.waveId).append(" ready/eligible/blocked/unknown=").append(java.util.Arrays.toString(w.gatherCounts)).append(" not-arrived=").append(Math.max(0,w.gatherCounts[1]-w.gatherCounts[0])).append(" ");
+            if((p.helixAttack()||p.dome())&&!p.locked())stages.append("#").append(w.waveId).append(" ready/eligible/blocked/unknown=").append(java.util.Arrays.toString(w.gatherCounts)).append(" paused-flows=").append(p.dome()?p.gatherFlows().revision():0).append(" not-arrived=").append(Math.max(0,w.gatherCounts[1]-w.gatherCounts[0])).append(" ");
             if(p.helixAttack()){helices++;helixMembers+=p.members().length;var h=p.helix();float now=p.startSec()+com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.startSec());
                 String stage=now<p.assembleSec()?"assemble":!p.locked()?(now<h.charge()?"approach":"charge"):now<h.thrust()?"locked":now<h.finish()?"thrust":"return";
                 helixStages.append('#').append(w.waveId).append(':').append(stage).append(", arc=").append(h.arcLength()).append(", advanceSpeed=").append(com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.speedAt(h,now)).append(", memberCap=").append(stage.equals("thrust")?h.maxSpeed():6).append(", window=").append(w.windowReady?"ready":"pending").append(' ');

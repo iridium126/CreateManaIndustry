@@ -20,7 +20,8 @@
     if (!corpse && stormA.x > 0.5) {
         // ----- typhoon: world-frame servo onto the circulating arm home point
         vec3 anchor = emitters.u[hb + 19u].xyz;
-        float spMaxV = cmiAttackSpeed(p0.w,uTimeSec,max(stormA.w, 0.5));
+        float ordinaryCap=max(stormA.w,.5);
+        float spMaxV = cmiAttackSpeed(p0.w,uTimeSec,ordinaryCap);
         if(uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);bool returning=a==0u&&member<131072u&&(starStateRead.words[member*2u+1u]&255u)>=6u;
             if(a!=0u&&cmiHelix(cmiStarBase(cmiStarSlot(a)))&&cmiStarPhase(a,uTimeSec)==6.)returning=true;
             if(returning)spMaxV=max(spMaxV,length(vel)-24.*uDt);
@@ -34,7 +35,11 @@
         vec3 target;
         vec3 vT;
         cmiTyphoonHome(p3.z, max(stormA.y, 2.0), uStormOmegaNow, uStormRotPhase,
-                uStormConvPhase, uStormConvRate, spMaxV, anchor, target, vT);
+                uStormConvPhase, uStormConvRate, ordinaryCap, anchor, target, vT);
+        // target/vT hold the ordinary snapshot. Attack out parameters are
+        // separate and replace it ONLY for an engaged member; released members
+        // retain it without keeping a second pair of vectors live in the kernel.
+        bool domeHandoff=false;float handoffAge=0.;
 
         // ---- wave squad override (server brain, event-driven) --------------
         // First matching slot claims the member (deterministic dedupe across
@@ -62,15 +67,48 @@
             if(cmiColumnAssignment(assignment)){
                 waveEngaged=cmiColumnSteer(assignment,pos,vel,target,vT,attackTarget,attackVelocity,phase,columnMarker);columnEngaged=waveEngaged;columnPhase=phase;
                 roll=columnMarker;
-            }else waveEngaged=cmiStarSteering(p0.w,p3.z,pos,target,spMaxV,attackTarget,attackVelocity,phase);
+            }else{
+                uint member=cmiStarMember(p0.w);
+                bool ended=assignment!=0u&&member<131072u
+                    &&starStateRead.words[member*2u]==uint(cmiStarVec(cmiStarBase(cmiStarSlot(assignment))).x+.5)
+                    &&(starStateRead.words[member*2u+1u]&255u)>=6u;
+                // Finished members must not sample an active slot's route again.
+                if(ended)phase=6u;
+                else waveEngaged=cmiStarSteering(p0.w,p3.z,pos,target,spMaxV,attackTarget,attackVelocity,phase);
+            }
             if(assignment!=0u){
                 uint slot=cmiStarSlot(assignment),b=cmiStarBase(slot);
                 if(cmiHelix(b)||cmiDome(b))roll=0.;
-                uint member=cmiStarMember(p0.w);if((cmiHelix(b)||cmiDome(b))&&starStateRead.words[member*2u]==uint(cmiStarVec(b).x+.5)&&(starStateRead.words[member*2u+1u]&255u)>=6u){phase=6u;waveEngaged=false;}
                 if(phase==6u){uint rank=cmiColumnAssignment(assignment)?cmiStarRank(assignment):cmiMajorRank(assignment);atomicOr(starStateWrite.words[CMI_COMPLETIONS+cmiCompletionOffset(slot)+rank/32u],1u<<(rank&31u));}
             }
             if(waveEngaged){target=attackTarget;vT=attackVelocity;}
-            uint member=cmiStarMember(p0.w);if(member<131072u){uint a=cmiStarAssignment(p0.w),id=a==0u?0u:uint(cmiStarVec(cmiStarBase(cmiStarSlot(a))).x+.5);if(!cmiColumnAssignment(a)&&id!=0u&&starStateRead.words[member*2u]==id)phase=max(phase,starStateRead.words[member*2u+1u]&255u);if(a==0u&&starStateRead.words[member*2u]!=0u&&(starStateRead.words[member*2u+1u]&255u)>=1u){id=starStateRead.words[member*2u];phase=distance(pos,target)<2.?7u:6u;}starStateWrite.words[member*2u]=id;starStateWrite.words[member*2u+1u]=phase|((phase==4u&&id==starStateRead.words[member*2u])?(starStateRead.words[member*2u+1u]&0x20000000u):0u);}
+            uint member=cmiStarMember(p0.w);
+            if(member<131072u){
+                uint a=assignment,oldId=starStateRead.words[member*2u],oldFlags=starStateRead.words[member*2u+1u],oldPhase=oldFlags&255u;
+                uint id=a==0u?0u:uint(cmiStarVec(cmiStarBase(cmiStarSlot(a))).x+.5);
+                bool wasDome=(oldFlags&0x100u)!=0u;
+                bool ownsDome=a!=0u&&!cmiColumnAssignment(a)&&cmiDome(cmiStarBase(cmiStarSlot(a)));
+                if(!cmiColumnAssignment(a)&&id!=0u&&oldId==id)phase=max(phase,oldPhase);
+                if(a==0u&&oldId!=0u&&oldPhase>=1u){id=oldId;phase=distance(pos,target)<2.?7u:6u;}
+                bool releasedDome=!waveEngaged&&(ownsDome||(a==0u&&wasDome));
+                if(releasedDome){
+                    spMaxV=ordinaryCap;roll=0.;
+                    if(phase>=6u&&(oldFlags&0x200u)==0u){
+                        // Finish the velocity handoff even when already inside
+                        // the home radius; phase 7 owns the later pose-fade clock.
+                        phase=6u;
+                        handoffAge=oldId==id&&oldPhase==6u?uintBitsToFloat(starStateRead.words[CMI_GATHER_BLOCKED+member]):0.;
+                        domeHandoff=handoffAge<.5;
+                        starStateWrite.words[CMI_GATHER_BLOCKED+member]=floatBitsToUint(min(.5,handoffAge+uDt));
+                    }
+                    if(oldPhase!=phase)starStateWrite.words[CMI_GATHER_STREAK+member]=0u;
+                }
+                // Bit 8 records lifecycle provenance, never display-cache validity.
+                uint kind=(ownsDome||(a==0u&&wasDome))?0x100u:0u;
+                if(releasedDome&&((oldFlags&0x200u)!=0u||phase==7u||handoffAge+uDt>=.5))kind|=0x200u;
+                starStateWrite.words[member*2u]=id;
+                starStateWrite.words[member*2u+1u]=phase|kind|((phase==4u&&id==oldId)?(oldFlags&(CMI_DOME_INSIDE_BOUND|0x20000000u)):0u);
+            }
         }else {
         if ((uint(p0.w + 0.5) & MEMBER_LATCH_BIT) == 0u) {
         for (uint k = 0u; k < 4u && !waveEngaged; k++) {
@@ -108,8 +146,6 @@
         // Certified channels already separate members of this attack. The
         // ordinary grid remains the sole runtime fallback for actual deviations,
         // moving terrain, other attacks and ordinary returning storm members.
-        uint domeIdentity=cmiStarMember(p0.w);
-        bool domeReturning=!waveEngaged&&uDomePoseStorageEnabled&&domeIdentity<131072u&&(starStateRead.words[CMI_DOME_POSE+domeIdentity*2u+1u]&0x80000000u)!=0u;
         float separationRadius=STORM_SEP_R;if(waveEngaged&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))separationRadius=domeMember?.45:1.4;}
         vec3 sepW = vec3(0.0);
         int sepVisits = 0;
@@ -155,7 +191,7 @@
         if(!waveEngaged)repW=cmiPlayerRepel(pos,STORM_PLAYER_R,STORM_PLAYER_W);
         // whisker cone bends the engaged steering around obstacles (player
         // roofs/walls) instead of stalling against them
-        if (waveEngaged && !columnEngaged && (uCollisionOn == 1||cmiStormVoxel) && !(uStarfallEnabled&&(cmiHelix(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))||cmiDome(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w)))))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.)) {
+        if (waveEngaged && !columnEngaged && !domeGather && (uCollisionOn == 1||cmiStormVoxel) && !(uStarfallEnabled&&(cmiHelix(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))||cmiDome(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w)))))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.)) {
             vec3 toT = target - pos;
             float dT = length(toT);
             if (dT > 1e-4) {
@@ -205,19 +241,26 @@
                 for(int k=0;k<10;k++){float mid=(lo+hi)*.5;vec3 future,motion;cmiDomeSampleOffset(a,mid-uDt,future,motion);if(distance(pos,future)>6.*mid)lo=mid;else hi=mid;}
                 vec3 future,motion;cmiDomeSampleOffset(a,max(hi,uDt)-uDt,future,motion);desired=(future-pos)/max(hi,uDt);
             }
+            // Avoidance is applied AFTER interception; do not reconstruct the
+            // original straight path after choosing a traversable corridor.
+            if(cmiStormVoxel&&length(desired)>.0001)desired=cmiDomeGatherAvoid(pos,normalize(desired),min(2.,max(.25,length(desired)*.35)))*length(desired);
             float desiredSpeed=min(6.,length(desired)),oldSpeed=length(vel),newSpeed=clamp(desiredSpeed,max(0.,oldSpeed-18.*uDt),oldSpeed+18.*uDt);
             vec3 direction=length(desired)>.000001?normalize(desired):vec3(0,0,1);
             if(oldSpeed>.0001&&newSpeed>.0001){float cosine=clamp((oldSpeed*oldSpeed+newSpeed*newSpeed-324.*uDt*uDt)/(2.*oldSpeed*newSpeed),-1.,1.);direction=cmiDomeTurn(vel/oldSpeed,direction,uDt,.0001,min(3.141592654,acos(cosine)/max(uDt,.0001)));}
             vel=direction*newSpeed;
-        }else if(domeReturning){
-            // Release preserves momentum. An unready or finished member must
-            // not reverse into the following baked lane in a single frame.
-            vec3 desired=vel+aW*uDt;float oldSpeed=length(vel),desiredSpeed=min(6.,length(desired));
-            float speed=clamp(desiredSpeed,max(0.,oldSpeed-18.*uDt),min(6.,oldSpeed+18.*uDt));
-            vec3 direction=length(desired)>.0001?normalize(desired):(oldSpeed>.0001?vel/oldSpeed:vec3(0,1,0));
-            if(oldSpeed>.0001&&speed>.0001){float cosine=clamp((oldSpeed*oldSpeed+speed*speed-324.*uDt*uDt)/(2.*oldSpeed*speed),-1.,1.);direction=cmiDomeTurn(vel/oldSpeed,direction,uDt,.0001,min(3.141592654,acos(cosine)/max(uDt,.0001)));}
-            vel=direction*speed;
-        }else if(columnEngaged)vel=vT;else vel += aW * uDt;
+        }else if(columnEngaged)vel=vT;else{
+            vec3 candidate=vel+aW*uDt;
+            if(domeHandoff){
+                float speed=length(candidate);if(speed>spMaxV)candidate*=spMaxV/speed;
+                float t=clamp(handoffAge/.5,0.,1.),next=clamp((handoffAge+uDt)/.5,0.,1.);
+                float w=t*t*t*(10.-15.*t+6.*t*t),nw=next*next*next*(10.-15.*next+6.*next*next);
+                // Incremental quintic blend needs only the last actual velocity.
+                // It ends after .5 s regardless of visual pose-cache lifetime.
+                candidate=mix(p1.xyz,candidate,clamp((nw-w)/max(1.-w,.000001),0.,1.));
+            }
+            vel=candidate;
+        }
+        cmiStormFrameCap=spMaxV;
         float spdV = length(vel);
         if (spdV > spMaxV)
             vel *= spMaxV / spdV;

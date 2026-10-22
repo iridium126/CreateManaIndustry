@@ -142,15 +142,21 @@ public final class StormFeedback {
      */
     private final java.util.Map<Integer,java.util.BitSet> completions=new java.util.HashMap<>();
     private final java.util.Map<AllayStormRuntime.ContactAuthority,Long> gathered=new java.util.HashMap<>();
+    private final java.util.Map<AllayStormRuntime.ContactAuthority,Integer> flowRevisions=new java.util.HashMap<>();
+    private long flowTick=Long.MIN_VALUE;
     private long completionTick=Long.MIN_VALUE;
     public void acceptWaveSnapshot(float[] entries) {
         retireWaves();
         if (entries == null)
             return;
+        var flowTimes=new java.util.HashMap<Integer,float[]>();
+        var flowVersions=new java.util.HashMap<Integer,Integer>();
         var ready=new java.util.HashMap<Integer,java.util.BitSet>();
         var eligible=new java.util.HashMap<Integer,java.util.BitSet>();
         var counts=new java.util.HashMap<Integer,int[]>();
         for(int o=0;o+5<entries.length;o+=6){int member=Math.round(entries[o]),id=Math.round(entries[o+1]);var w=AllayStormRuntime.INSTANCE.contactAuthority(id);
+            if(member== -8){if(w!=null)flowVersions.put(id,Math.round(entries[o+2]));continue;}
+            if(member== -7){if(w!=null){int flow=Math.round(entries[o+2]);float pause=entries[o+3];if(flow>=0&&flow<66&&Float.isFinite(pause)&&pause>=0&&pause<=600){float[] times=flowTimes.computeIfAbsent(id,k->{float[] t=new float[66];java.util.Arrays.fill(t,-1);return t;});times[flow]=pause;}}continue;}
             if(member== -6){if(w!=null){int[] c={Math.round(entries[o+2]),Math.round(entries[o+3]),Math.round(entries[o+4]),Math.round(entries[o+5])};counts.put(id,c);AllayStormRuntime.INSTANCE.gatherProgress(id,c);}continue;}
             if(member== -4||member== -5){if(w!=null){int word=Math.round(entries[o+2]),bits=Math.round(entries[o+3])|(Math.round(entries[o+4])<<16);if(word>=0&&word<384){var mask=(member== -4?ready:eligible).computeIfAbsent(id,k->new java.util.BitSet());for(int bit=0;bit<32;bit++)if((bits&(1<<bit))!=0)mask.set(word*32+bit);}}continue;}
             if(member== -3){StormCollisionRuntime.arrived(id,Math.round(entries[o+2]));continue;}
@@ -160,12 +166,19 @@ public final class StormFeedback {
             PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(Minecraft.getInstance().level.dimension().location(),id,w.epoch(),entries[o+5],member,entries[o+2],entries[o+3],entries[o+4]));
         }
         var mc=Minecraft.getInstance();
-        if(mc.level!=null&&AllayStormRuntime.INSTANCE.feedbackState().authority())for(var entry:ready.entrySet()){
-            int id=entry.getKey();var w=AllayStormRuntime.INSTANCE.contactAuthority(id);var e=eligible.get(id);var c=counts.get(id);var r=entry.getValue();
-            if(w!=null&&e!=null&&c!=null&&r.cardinality()==c[0]&&e.cardinality()==c[1]&&com.iridium126.createmanaindustry.content.allaystorm.StormGatherRules.valid(r,e,12288)&&(!gathered.containsKey(w)||mc.level.getGameTime()-gathered.get(w)>=5)){
-                gathered.put(w,mc.level.getGameTime());
-                PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(mc.level.dimension().location(),w.epoch(),id,r.toLongArray(),e.toLongArray()));
-            }
+        if(mc.level!=null&&AllayStormRuntime.INSTANCE.feedbackState().authority()&&flowTick!=mc.level.getGameTime()){
+            var ids=new java.util.HashSet<Integer>(ready.keySet());ids.addAll(flowTimes.keySet());
+            boolean sent=false;
+            for(int id:ids){var w=AllayStormRuntime.INSTANCE.contactAuthority(id);if(w==null)continue;
+                var flows=flowTimes.containsKey(id)?new com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState(flowTimes.get(id)):com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState.EMPTY;
+                if(AllayStormRuntime.INSTANCE.domeGather(id)&&flowVersions.getOrDefault(id,-1)!=flows.revision())continue;
+                var r=ready.get(id);var e=eligible.get(id);var c=counts.get(id);
+                boolean canGather=r!=null&&e!=null&&c!=null&&r.cardinality()==c[0]&&e.cardinality()==c[1]&&com.iridium126.createmanaindustry.content.allaystorm.StormGatherRules.valid(r,e,12288)&&(!gathered.containsKey(w)||mc.level.getGameTime()-gathered.get(w)>=5);
+                if(canGather||flows.revision()>flowRevisions.getOrDefault(w,0)){
+                    if(canGather)gathered.put(w,mc.level.getGameTime());flowRevisions.put(w,flows.revision());sent=true;
+                    PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(mc.level.dimension().location(),w.epoch(),id,canGather?r.toLongArray():new long[0],canGather?e.toLongArray():new long[0],flows));
+                }
+            }if(sent)flowTick=mc.level.getGameTime();
         }
         if(mc.level!=null&&completionTick!=mc.level.getGameTime()){
             completionTick=mc.level.getGameTime();
@@ -186,13 +199,14 @@ public final class StormFeedback {
     private boolean waveContactPending;
     private final java.util.Map<AllayStormRuntime.ContactAuthority,it.unimi.dsi.fastutil.ints.IntOpenHashSet> reported=new java.util.HashMap<>();
     public StormFeedback(StormParticlePort particles) {this.particles=java.util.Objects.requireNonNull(particles);}
-    public void reset() {stormPosPending=false;lastSnapshotGameTime=Long.MIN_VALUE;waveContactPending=false;reported.clear();gathered.clear();completions.clear();completionTick=Long.MIN_VALUE;}
+    public void reset() {stormPosPending=false;lastSnapshotGameTime=Long.MIN_VALUE;waveContactPending=false;reported.clear();gathered.clear();flowRevisions.clear();flowTick=Long.MIN_VALUE;completions.clear();completionTick=Long.MIN_VALUE;}
     public void retireWaves() {
         waveContactPending=false;
         retireWaveReports();
     }
     /** Prune replaced identities without dropping other waves' in-flight GPU feedback. */
     public void retireWaveReports() {
+        flowRevisions.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
         gathered.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
         reported.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
     }

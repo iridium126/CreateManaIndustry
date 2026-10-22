@@ -1,6 +1,6 @@
 # Allay Storm：开发与验收入口
 
-当前协议14、Dome v4。[当前行为](allay-storm-ai.md)维护攻击参数，[同步契约](allay-storm-sync.md)维护数据所有权。本页统一验证方式，不逐版本复制测试总数、日志或发行JAR哈希。历史结果从Git查阅，原始数据写入忽略的 `build/`。
+当前协议15、Dome v4。[当前行为](allay-storm-ai.md)维护攻击参数，[同步契约](allay-storm-sync.md)维护数据所有权。本页统一验证方式，不逐版本复制测试总数、日志或发行JAR哈希。历史结果从Git查阅，原始数据写入忽略的 `build/`。
 
 ## 按改动选择检查
 
@@ -20,7 +20,7 @@ python -m unittest discover -s scripts/allaystorm -p test_dome_v4_tools.py
 | 范围 | 测试／工具 |
 | --- | --- |
 | 存档、增长相位、命令 | `AllayStormPersistenceTest`、`AllayStormCommandTreeTest` |
-| 调度、人数与成员互斥 | `MajorAttackScheduleTest`、`AllayHelixTest`、`AllayDomeTest`、`StarfallColumnTest` |
+| 调度、人数与成员互斥 | `DomeGatherStateTest`、`MajorAttackScheduleTest`、`AllayHelixTest`、`AllayDomeTest`、`StarfallColumnTest` |
 | 身份、包、反馈、槽复用 | `*PacketTest`、`StormWaveSlotsTest`、`StormGatherRulesTest` |
 | GPU资源／客户端契约 | `DomeTemplateTest`、`StormClientContractTest`、客户端碰撞测试 |
 | 武器与区域伤害 | `src/test/gametest/allaystorm/`；含剑、附魔、暴击、重锤、冷却与副作用恰好一次 |
@@ -41,11 +41,19 @@ python scripts/benchmarks/run.py validateParticleProgramsGpu validateModelPopula
 python scripts/benchmarks/run.py validateDome30Hz validateDome60Hz validateDome144Hz validateDome240Hz validateDomeIrregular validateDomeDelayed validateDomeClockWrap --offline
 ```
 
+`validateDomeGpu`包含斜坡与台阶的生产集结回归，可用`validateDomeSlopeGpu`单独重跑；检查固定流线相位、部分成员受阻、原截止时间和同帧暂停／就绪快照，原始数据为`build/dome-v15/slope-gather.json`。
+
 Dome生产生命周期从普通主体初始状态出发，经过移动集结、95%反馈、服务端LOCK、中心接触与实际穿出结束平面，不能直接注入LOCK代替集结。检查rank唯一、旧反馈隔离、速度／姿态连续、死亡／中止／观察者及归队。证据在 `build/dome-v14/gpu-evidence-*.json`；联验实际候选与服务器时，先运行60Hz，再回放：
 
 ```powershell
 .\gradlew.bat -I scripts/allaystorm/gametest.init.gradle runGameTestServer '-PdomeEvidence=build/dome-v14/gpu-evidence-60hz.json' --offline --no-configuration-cache
 ```
+
+归队验证继续运行到全部12288名成员进入各自普通目标2格内，之后观察60秒；目标保持正常旋转，覆盖主体缓慢平移和增长。`validateDomeReturnStatic`补充静止主体，`validateDomeReturnFar`补充百万格坐标。`build/dome-v15/return-*.json`记录到达时间、末帧误差和稳态上传；同名CSV每秒最多采样12名成员的位置、速度、普通目标、攻击身份、阶段及姿态有效位，采样仅存在于验证工具。`validateDomePoseGpu`补充未参战／完成／中止释放、仍在活动的旧槽位、重叠Dome中一部分成员归队而另一部分继续集结、姿态缓存开关与新Dome／Helix／Starfall接管后旧反馈隔离。
+
+`validateDomeExitGpu`覆盖路线耗尽但未记中心经过、首次外缘汇入、32格精确边界、垂直／远坐标／旋转中心、原3格出口、受阻、整场截止及新身份隔离，检查当帧完成位、零持剑实例和零接触报告。原始失败回归在`build/dome-exit-diagnostic/regression-before.log`。`validateDomeExitLifecycle`从真实主体／集结／就绪反馈／LOCK开始，在攻击阶段向一名成员注入球外偏移并清除中心经过标记；必须同帧退出，所有存活成员随后归队并观察60秒。该项是明确的故障注入，不把它描述成自然地形触发。证据为`build/dome-v14/gpu-evidence-60hz-boundary.json`；服务端GameTest使用此文件可追加验证边界完成释放预留、迟到接触不结算及旧完成不释放新归属。
+
+Iris回归经过实际`buildMergedSource → ParticleVertexInjector AST → Iris TransformPatcher → 驱动编译链接`，使用依赖包内的Jcpp与glsl-transformer。覆盖两种受伤覆盖变体、主绘制／阴影uniform路径、交替缓存及资源重载，确认注入源与最终渲染源不含`cmiDomeFlowWord`。这不替代用户实际光影包测试。
 
 普通GameTest可独立运行，但不替代GPU证据链。MODEL／Iris工具使用真实着色器和transformer，仍不代替游戏内光影包／Mixin验收。
 
@@ -62,7 +70,9 @@ python scripts/benchmarks/run.py benchmarkStormHelix --offline
 
 输出 `storm-{dome,helix}-combined*.csv`。`-PstormFixedInput=<文件>`给Dome固定输入，比较时验证输入哈希；`-PstormProfile`按需拆分GPU阶段，不在正常验证启用探针。`validateDomePerformance`提供正常／压力各三轮，目录由 `-PdomePerformanceDirectory=...`指定。正常用各版本参考跟随输入，压力使用相同字节输入。
 
-保留影响实现选择的一次测量：RTX4070 Laptop／驱动581.15、131072成员／4个Dome槽／64柱／100玩家，v13→v14正常GPU批次P95三轮中位数2.859→2.080ms、压力3.090→1.893ms；状态／轨迹显存62.32→41.73MiB，首次上传46.78→24.19MiB，稳态位置上传为0。未缓存首轮初始化约21.65秒，包含编译、夹具与资源准备；后续约0.81–0.88秒，不能当作纯编译时间。
+当前32格退出修复的同机对照：RTX4070 Laptop／驱动581.15、131072成员／4个Dome槽／64柱／100玩家，每类前后三轮且输入SHA-256相同。基线为本轮修改前的协议15着色器快照，Java运行时与输入一致。正常GPU批次P95中位数1.687→1.658ms，符合正常路径增量≤5%的预算；压力P95为2.473→2.733ms（约+10.5%），压力P50为2.174→2.146ms。压力尾部耗时没有改善，保留原始结果供复测，不能据此声称所有负载均提升。显存保持43,866,592字节、稳态上传0。原始数据在`build/benchmarks/dome-boundary-{before,after}/`及`dome-boundary-comparison.json`，基线源码在`dome-boundary-baseline/`。初始化与资源发布成本记录于同目录CSV；首次驱动编译和真实客户端冷启动未单独隔离。固定负载GPU批次耗时不能视为游戏帧率。
+
+生产斜坡与台阶场景从主体盘旋位置开始，19条受影响流线暂停，约17–19秒达到可达成员95%门槛；未整圈剔除，未知覆盖为0，20Hz单帧最大实际位移约0.300002格。实际人数及最终时间读取`slope-gather.json`，随GPU线程调度有小幅差异。
 
 这些只包含网格、更新与Dome接触，不是完整游戏帧时间或服务器吞吐。新的性能改动需重测；历史数据不作当前构建验收。见[性能结果规则](benchmarks/README.md)。
 
@@ -70,11 +80,13 @@ python scripts/benchmarks/run.py benchmarkStormHelix --offline
 
 ## 用户实机与交付
 
+Iris的未定义流线函数已在实际AST／驱动链复现并修复。Dome残留攻击链也已在生产GPU内核定向复现：缺失中心经过标记后，成员在距中心43–46格仍保持阶段4并在玩家靠近时持剑；32格兜底使其当帧退出。正常模板全部能经过中心，具体实机场景中导致偏移或漏记的过程仍由用户复测核实，不以故障注入代替真实地形验收。
+
 真实客户端由用户验收，自动化不能代签：
 
 - Dome顶部覆盖、错落集结、贯心可读性、静止中心玩家受击、身体分离和剑翼轻微交叠。
 - Helix外缘下集结、95%后立即冻结发射；Starfall绕柱转速、逐成员触地展开与短回流，主体不漂向原点。
 - 坡地、台阶、屋顶、动态障碍、未知／卸载碰撞、死亡／中止；多客户端换维度、观察者及authority离开。
-- 实际Iris光影包下MODEL／阴影一致，密集多人场景完整CPU／GPU帧时间、显存、上传量和冷启动成本。
+- 实际Iris光影包的合并路径、重载后MODEL／阴影一致，持续外飞成员是否恢复正常归队，密集多人场景完整CPU／GPU帧时间、显存、上传量和冷启动成本。
 
 当前分发JAR从 `build/libs/` 获取。离线证书在 `src/test/resources/allaystorm/`，只用于校验生产模板，不属于运行时资源。更新模板时同时更新测试证书。发布检查包含内嵌mod JAR：保留当前二进制模板，排除验证证书、旧模板、离线控制点、测试类及GameTest夹具。两端替换并重启，存档与当前配置保留。

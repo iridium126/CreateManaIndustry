@@ -113,11 +113,26 @@ public class ModelShadowGpuValidation {
         }catch(RuntimeException|AssertionError error){GL20.glDeleteProgram(program);throw error;}finally{GL20.glDeleteShader(shader);}
     }
     static void mergedVertices()throws Exception {
-        var compiler=new com.iridium126.createmanaindustry.client.particles.shaderpack.ShaderPackProgramCompiler(ModelShadowGpuValidation::source);
+        var loads=new java.util.concurrent.atomic.AtomicInteger();
+        var compiler=new com.iridium126.createmanaindustry.client.particles.shaderpack.ShaderPackProgramCompiler(name->{if(name.equals("chunks/allay_pose.glsl"))loads.incrementAndGet();return source(name);});
+        for(int generation=0;generation<2;generation++){
+            for(boolean overlay:new boolean[]{false,true})mergedVertices(compiler,overlay);
+            var cached=compiler.getClass().getDeclaredMethod("buildMergedSource",boolean.class);cached.setAccessible(true);
+            Object main=cached.invoke(compiler,true),shadow=cached.invoke(compiler,false);
+            check(main==cached.invoke(compiler,true)&&shadow==cached.invoke(compiler,false),"Main/shadow switching invalidated variant caches");
+            check(loads.get()==(generation+1)*2,"Resource reload did not invalidate both source variants");
+            compiler.reset();
+        }
+    }
+    static void mergedVertices(com.iridium126.createmanaindustry.client.particles.shaderpack.ShaderPackProgramCompiler compiler,boolean overlay)throws Exception {
         var build=compiler.getClass().getDeclaredMethod("buildMergedSource",boolean.class);build.setAccessible(true);
         var injector=new com.iridium126.createmanaindustry.client.particles.shaderpack.ParticleVertexInjector();
         String pack="#version 120\nvarying vec4 probeColor;void main(){gl_Position=gl_Vertex;probeColor=gl_Color;}";
-        String patched=injector.patch(pack,(String)build.invoke(compiler,false),"MODEL shadow validation");
+        String own=(String)build.invoke(compiler,overlay);
+        check(own==build.invoke(compiler,overlay),"CMI source was preprocessed again in the same resource generation");
+        check(!own.contains("cmiDomeFlowWord")&&!own.contains("std430"),"Compute-only branch survived CMI preprocessing");
+        String patched=injector.patch(pack,own,"MODEL shadow validation");
+        check(!patched.contains("cmiDomeFlowWord"),"Compute-only flow read survived Iris AST injection");
         check(patched.contains("cmi_ShadowPass"),"MODEL injection silently failed");
         var nativeStages=net.irisshaders.iris.pipeline.transform.TransformPatcher.patchVanilla("cmi_model_validation",patched,null,null,null,
                 "#version 120\nvarying vec4 probeColor;void main(){gl_FragColor=probeColor;}",net.irisshaders.iris.gl.blending.AlphaTests.ONE_TENTH_ALPHA,false,true,
@@ -186,7 +201,7 @@ public class ModelShadowGpuValidation {
                 }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(nativeProgram);GL20.glDeleteProgram(nativeProgram);}
             }
             // Resource/source rebuild must produce both overlay variants with the same shadow flag.
-            int overlay=vertexProgram(injector.patch(pack,(String)build.invoke(compiler,true),"MODEL overlay validation"));GL20.glDeleteProgram(overlay);
+            int overlayProgram=vertexProgram(injector.patch(pack,(String)build.invoke(compiler,true),"MODEL overlay validation"));GL20.glDeleteProgram(overlayProgram);
         }finally{GL20.glUseProgram(0);for(int id:buffers)GL15.glDeleteBuffers(id);for(int id:textures)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(id);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);GL20.glDeleteProgram(program);}
     }
     static double percentile(double[] input,double q){var copy=input.clone();Arrays.sort(copy);return copy[(int)Math.ceil(copy.length*q)-1];}

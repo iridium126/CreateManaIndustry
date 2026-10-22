@@ -9,6 +9,9 @@ public final class DomeTemplate {
     public static final int VERSION=4,COUNT=12288,RECORD_WORDS=16,NODE_WORDS=12,WORDS=4+COUNT*RECORD_WORDS;
     private static final String RESOURCE="/data/createmanaindustry/dome-template-v4.bin";
     private static final float[] DATA=loadMetadata();
+    private static final int[] FLOW_INDEX=flowIndices();
+    private static int[] flowIndices(){int[] result=new int[COUNT];if(!available())return result;int f=-1;for(int rank=0;rank<COUNT;rank++){if(ringBase(rank)==rank)f++;result[rank]=f;}if(f+1!=DomeGatherState.FLOWS)throw new IllegalStateException("Dome flow metadata count");return result;}
+    public static int flowIndex(int rank){return FLOW_INDEX[rank];}
     private static volatile int[] keys;
     private static volatile boolean keyLoadFailed;
     private static final java.util.concurrent.atomic.AtomicBoolean PRELOADING=new java.util.concurrent.atomic.AtomicBoolean();
@@ -36,18 +39,22 @@ public final class DomeTemplate {
     public static double speedAt(double seconds,double initialSpeed){double u=Math.clamp(seconds/.5,0,1);return initialSpeed+(6-initialSpeed)*u*u*u*(10-15*u+6*u*u);}
     public static Vec3 gatherPoint(int rank,double seconds){return gather(rank,seconds,0);}
     public static Vec3 gatherVelocity(int rank,double seconds){return gather(rank,seconds,1);}
+    public static Vec3 gatherPoint(int rank,double seconds,DomeGatherState flows){return gatherPoint(rank,flows.phaseSeconds(flowIndex(rank),(float)seconds));}
+    public static Vec3 gatherVelocity(int rank,double seconds,DomeGatherState flows){float pause=flows.pausedAt(flowIndex(rank));return pause>=0&&seconds>=pause?Vec3.ZERO:gatherVelocity(rank,seconds);}
     private static Vec3 gather(int rank,double seconds,int derivative){int r=record(rank);double speed=word(r+9),length=word(r+10),phase=(rank-ringBase(rank))/(double)ringCount(rank)+speed*seconds/length;phase-=Math.floor(phase);return lookup((int)word(r+8),(int)word(r+12),phase*length,derivative).scale(Math.pow(speed,derivative));}
     public static Vec3 point(int rank,double distance){return sampleArc(rank,distance,0);}
     public static Vec3 sampleArc(int rank,double distance,int derivative){int r=record(rank);return lookup((int)word(r),(int)word(r+1),Math.clamp(distance,0,length(rank)),derivative);}
-    public static Vec3 lockedPoint(int rank,double seconds,double gatherSeconds){return locked(rank,seconds,gatherSeconds,0);}
-    public static Vec3 lockedVelocity(int rank,double seconds,double gatherSeconds){return locked(rank,seconds,gatherSeconds,1);}
-    private static Vec3 locked(int rank,double seconds,double gatherSeconds,int derivative){
-        int mapped=mappedRank(rank,gatherSeconds);double speed=gatherSpeed(rank),s=distanceAt(seconds,speed);
+    public static Vec3 lockedPoint(int rank,double seconds,double gatherSeconds){return locked(rank,seconds,gatherSeconds,0,DomeGatherState.EMPTY);}
+    public static Vec3 lockedVelocity(int rank,double seconds,double gatherSeconds){return locked(rank,seconds,gatherSeconds,1,DomeGatherState.EMPTY);}
+    public static Vec3 lockedPoint(int rank,double seconds,double gatherSeconds,DomeGatherState flows){return locked(rank,seconds,gatherSeconds,0,flows);}
+    public static Vec3 lockedVelocity(int rank,double seconds,double gatherSeconds,DomeGatherState flows){return locked(rank,seconds,gatherSeconds,1,flows);}
+    private static Vec3 locked(int rank,double seconds,double gatherSeconds,int derivative,DomeGatherState flows){
+        int mapped=mappedRank(rank,flows.phaseSeconds(flowIndex(rank),(float)gatherSeconds));double speed=gatherSpeed(rank),s=distanceAt(seconds,speed);
         Vec3 value=sampleArc(mapped,s,derivative).scale(derivative==0?1:speedAt(seconds,speed));
         double u=Math.clamp(seconds/HANDOFF_SECONDS,0,1);if(u>=1)return value;
-        Vec3 p=gatherPoint(rank,gatherSeconds).subtract(point(mapped,0));
-        Vec3 v=gatherVelocity(rank,gatherSeconds).subtract(sampleArc(mapped,0,1).scale(speed));
-        Vec3 a=gather(rank,gatherSeconds,2).subtract(sampleArc(mapped,0,2).scale(speed*speed));
+        Vec3 p=gatherPoint(rank,gatherSeconds,flows).subtract(point(mapped,0));
+        Vec3 v=gatherVelocity(rank,gatherSeconds,flows).subtract(sampleArc(mapped,0,1).scale(speed));
+        Vec3 a=(flows.pausedAt(flowIndex(rank))>=0&&gatherSeconds>=flows.pausedAt(flowIndex(rank))?Vec3.ZERO:gather(rank,gatherSeconds,2)).subtract(sampleArc(mapped,0,2).scale(speed*speed));
         double u2=u*u,u3=u2*u,u4=u3*u,u5=u4*u;
         return derivative==0?value.add(p.scale(1-10*u3+15*u4-6*u5)).add(v.scale(HANDOFF_SECONDS*(u-6*u3+8*u4-3*u5))).add(a.scale(HANDOFF_SECONDS*HANDOFF_SECONDS*.5*(u2-3*u3+3*u4-u5))):value.add(p.scale((-30*u2+60*u3-30*u4)/HANDOFF_SECONDS)).add(v.scale(1-18*u2+32*u3-15*u4)).add(a.scale(HANDOFF_SECONDS*.5*(2*u-9*u2+12*u3-5*u4)));
     }

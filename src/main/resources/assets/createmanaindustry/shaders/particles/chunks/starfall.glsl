@@ -31,11 +31,27 @@ bool cmiDome(uint b){float kind=cmiStarVec(b+20u).x;return kind>.5&&kind<1.5;}
 #pragma cmi_include chunks/helix_rules.glsl
 uint cmiMajorRank(uint a){uint b=cmiStarBase(cmiStarSlot(a));return cmiStarRank(a)+(cmiHelix(b)?cmiStarGroup(a)*2048u:0u);}
 const uint CMI_COMPLETIONS=721344u,CMI_COMPLETION_WORDS=1664u,CMI_GATHER_STREAK=723008u,CMI_GATHER_COUNTS=854080u,CMI_GATHER_READY=854096u,CMI_GATHER_ELIGIBLE=855632u,CMI_GATHER_BLOCKED=857168u;
+// Per-attack spatial history; independent of the narrower centre-passage latch.
+const uint CMI_DOME_INSIDE_BOUND=0x10000000u;
 uint cmiCompletionOffset(uint slot){return slot<4u?slot*384u:1536u+(slot-4u)*2u;}
 float cmiDomePhase(uint b,uint group,float time){vec4 t=cmiStarVec(b+4u);float elapsed=cmiDomeElapsed(b,time);return cmiStarVec(b).y>2.5||elapsed>t.w-t.x?6.:cmiStarVec(b+20u).y<3.||elapsed<t.z-t.x?1.:4.;}
 const uint CMI_DOME_DATA=205552u,CMI_DOME_JOIN=988240u;
 vec4 cmiDomeRing(uint a){return cmiStarVec(CMI_DOME_DATA+8u+cmiMajorRank(a)*16u);}
-uint cmiDomeMappedRank(uint a){uint b=cmiStarBase(cmiStarSlot(a)),rank=cmiMajorRank(a);vec4 ring=cmiDomeRing(a),r=cmiStarVec(CMI_DOME_DATA+4u+rank*16u);float dt=cmiStarVec(b+4u).z-cmiStarVec(b+4u).x,shift=floor(cmiStarVec(CMI_DOME_DATA+12u+rank*16u).y*dt/cmiStarVec(CMI_DOME_DATA+12u+rank*16u).z*ring.w+.5);// GLSL does not define a negative integer remainder. Reduce only
+// Per-flow clocks are tiny; rank-to-flow lookup is loaded once with v4 metadata.
+const uint CMI_DOME_FLOW_MAP=405252u,CMI_DOME_FLOW_SOURCE=417540u,CMI_DOME_FLOW_STATE=2298968u,CMI_DOME_GATHER_WINDOW=988240u;
+uint cmiDomeFlow(uint a){return cmiStarWord(CMI_DOME_FLOW_MAP+cmiMajorRank(a));}
+uint cmiDomePauseAssignment=0u;float cmiDomePauseCached=0.;
+float cmiDomePause(uint a){
+ if(a==cmiDomePauseAssignment)return cmiDomePauseCached;
+ uint slot=cmiStarSlot(a),f=slot*66u+cmiDomeFlow(a),b=cmiStarBase(slot),id=uint(cmiStarVec(b).x+.5),source=CMI_DOME_FLOW_SOURCE+f*2u;
+ float pause=cmiStarWord(source)==id?uintBitsToFloat(cmiStarWord(source+1u)):uintBitsToFloat(0x7f800000u);
+ #ifdef CMI_DOME_RUNTIME_FLOW
+ if(isinf(pause)&&cmiStarVec(b+20u).y<3.&&cmiDomeFlowWord(CMI_DOME_FLOW_STATE+f*2u)==id)pause=min(pause,uintBitsToFloat(cmiDomeFlowWord(CMI_DOME_FLOW_STATE+f*2u+1u)));
+ #endif
+ cmiDomePauseAssignment=a;cmiDomePauseCached=pause;return pause;
+}
+float cmiDomeFlowSeconds(uint a,float seconds){return min(seconds,cmiDomePause(a));}
+uint cmiDomeMappedRank(uint a){uint b=cmiStarBase(cmiStarSlot(a)),rank=cmiMajorRank(a);vec4 ring=cmiDomeRing(a),r=cmiStarVec(CMI_DOME_DATA+4u+rank*16u);float dt=cmiDomeFlowSeconds(a,cmiStarVec(b+4u).z-cmiStarVec(b+4u).x),shift=floor(cmiStarVec(CMI_DOME_DATA+12u+rank*16u).y*dt/cmiStarVec(CMI_DOME_DATA+12u+rank*16u).z*ring.w+.5);// GLSL does not define a negative integer remainder. Reduce only
  // nonnegative operands, then restore floor-mod semantics explicitly.
  int shifted=int(rank)-int(r.w)+int(shift);uint count=uint(ring.w),offset=uint(abs(shifted))%count;if(shifted<0&&offset!=0u)offset=count-offset;return uint(r.w)+offset;}
 vec4 cmiDomeRecord(uint a){return cmiStarVec(CMI_DOME_DATA+4u+cmiDomeMappedRank(a)*16u);}

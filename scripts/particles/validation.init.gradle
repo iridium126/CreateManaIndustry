@@ -144,7 +144,7 @@ allprojects {
         }
         tasks.register('compileStarfallHarness', JavaCompile) {
             dependsOn tasks.named('classes')
-            source = files('scripts/particles/ModelPopulationGpuValidation.java', 'scripts/particles/StarfallGpuValidation.java', 'scripts/particles/DomeGpuValidation.java', 'scripts/particles/DomePoseGpuValidation.java', 'scripts/particles/HelixGpuValidation.java', 'scripts/particles/StarfallColumnGpuValidation.java', 'scripts/particles/StormCollisionGpuValidation.java', 'scripts/particles/StormBenchmark.java')
+            source = files('scripts/particles/ModelPopulationGpuValidation.java', 'scripts/particles/StarfallGpuValidation.java', 'scripts/particles/DomeGpuValidation.java', 'scripts/particles/DomePoseGpuValidation.java', 'scripts/particles/DomeExitGpuValidation.java', 'scripts/particles/HelixGpuValidation.java', 'scripts/particles/StarfallColumnGpuValidation.java', 'scripts/particles/StormCollisionGpuValidation.java', 'scripts/particles/StormBenchmark.java')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             destinationDirectory = layout.buildDirectory.dir('starfall-harness')
             options.release = 21
@@ -238,10 +238,44 @@ allprojects {
             systemProperty 'cmi.dome.deliveryDelay', '.15'
             workingDir = project.projectDir
         }
+        ['Static','Far'].each { profile ->
+            tasks.register("validateDomeReturn${profile}", JavaExec) {
+                dependsOn 'compileStarfallHarness'
+                classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+                mainClass = 'DomeGpuValidation'
+                systemProperty 'cmi.dome.step', (1d/60).toString()
+                systemProperty 'cmi.dome.lifecycleOnly', 'true'
+                systemProperty 'cmi.dome.returnMotion', profile == 'Static' ? 'false' : 'true'
+                systemProperty 'cmi.dome.returnOffset', profile == 'Far' ? '1000000' : '0'
+                workingDir = project.projectDir
+            }
+        }
+        tasks.register('validateDomeExitLifecycle', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'DomeGpuValidation'
+            systemProperty 'cmi.dome.step', (1d/60).toString()
+            systemProperty 'cmi.dome.lifecycleOnly', 'true'
+            systemProperty 'cmi.dome.exitFault', 'true'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateDomeExitGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'DomeExitGpuValidation'
+            workingDir = project.projectDir
+        }
         tasks.register('validateDomePoseGpu', JavaExec) {
             dependsOn 'compileStarfallHarness'
             classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'DomePoseGpuValidation'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateDomeSlopeGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'DomeGpuValidation'
+            systemProperty 'cmi.dome.slopeOnly', 'true'
             workingDir = project.projectDir
         }
         tasks.register('validateDomeGpu', JavaExec) {
@@ -362,7 +396,7 @@ allprojects {
         def packageIrisTransformer = layout.buildDirectory.file('package-iris-validation/glsl-transformer-3.0.0-pre3.jar')
         tasks.register('extractPackageIrisTransformer', Copy) {
             from({ zipTree(configurations.compileClasspath.files.find { it.name == 'irisshaders-455508-8242804.jar' }) })
-            include 'META-INF/jarjar/glsl-transformer-3.0.0-pre3.jar'
+            include 'META-INF/jarjar/glsl-transformer-3.0.0-pre3.jar', 'META-INF/jarjar/jcpp-1.4.14.jar'
             eachFile { path = name }
             includeEmptyDirs = false
             into layout.buildDirectory.dir('package-iris-validation')
@@ -373,7 +407,7 @@ allprojects {
             // This task cannot stand in for an in-game shaderpack/mixin check.
             classpath = files(layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter {
                 !it.name.startsWith('glsl-transformer-')
-            } + files(packageIrisTransformer)
+            } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
             mainClass = 'scripts/particles/PackageGpuValidation.java'
             args '--shaderpack-only', '--iris-transform'
             if (project.hasProperty('packageGlDebug')) args '--gl-debug'
@@ -383,7 +417,7 @@ allprojects {
             dependsOn tasks.named('classes'), tasks.named('extractPackageIrisTransformer'), 'compilePackageIrisHarness', 'compileHexNativeHarness'
             classpath = files(layout.buildDirectory.dir('hex-native-harness'), layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter {
                 !it.name.startsWith('glsl-transformer-')
-            } + files(packageIrisTransformer)
+            } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
             mainClass = 'scripts/particles/HexSharedGpuValidation.java'
             args '--iris'
             workingDir = project.projectDir
@@ -392,7 +426,7 @@ allprojects {
             dependsOn tasks.named('classes'), tasks.named('extractPackageIrisTransformer'), 'compilePackageIrisHarness'
             classpath = files(layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter {
                 !it.name.startsWith('glsl-transformer-')
-            } + files(packageIrisTransformer)
+            } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
             mainClass = 'scripts/particles/ModelShadowGpuValidation.java'
             args '--iris-transform'
             workingDir = project.projectDir

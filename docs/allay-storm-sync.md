@@ -1,6 +1,6 @@
 # Allay Storm：同步与资源契约
 
-当前核心协议 **14**、Dome模板 **v4**、Helix模板 **v1**。两端同步升级并重启，拒绝旧协议混连；F3+T不更新Java类。[攻击与配置](allay-storm-ai.md)和[验证入口](allay-storm-validation.md)分别维护，不保留历史协议逐版说明。
+当前核心协议 **15**、Dome模板 **v4**、Helix模板 **v1**。两端同步升级并重启，拒绝旧协议混连；F3+T不更新Java类。[攻击与配置](allay-storm-ai.md)和[验证入口](allay-storm-validation.md)分别维护，不保留历史协议逐版说明。
 
 ## 数据所有权与身份
 
@@ -9,6 +9,12 @@
 风暴身份为 `dimension + epoch`。ACTIVATE只接受客户端当前维度；UPDATE／DEACTIVATE／STOP必须匹配活动身份。换维度立即清理本地状态，旧维度服务端track只移除，不向已离开的玩家补发清理。STOP先捕获身份再清理广播；同tick重建也具有不同epoch。
 
 攻击另有稳定ID和名单rank，槽位可复用但不构成身份。旧完成／中止反馈不能释放新攻击成员。稳定成员身份贯穿普通运动、参战、死亡和归队，未参战导航输出保留普通盘旋目标，防止主体漂向原点。
+
+Iris合并时，CMI自身的注入源码先用Iris内嵌Jcpp解析条件分支，明确选择`CMI_STARFALL_TBO`、禁用`CMI_DOME_RUNTIME_FLOW`，再进入AST。光影包的原始源码不重复预处理，后续既有转换流程保留。主渲染／阴影／受伤覆盖共用入口，两个覆盖变体分别缓存，资源重载统一失效。计算着色器继续读取运行时流线状态，所有绘制端读取已提交TBO／姿态。
+
+Dome的32格异常退出只在本地成员阶段字复用`0x10000000`标志，记录同一攻击内是否进入过球体；阶段4且身份匹配时保留，新归属／退出／清理时重置。正常穿出、球外兜底和受阻退出共用计算阶段的终止写入：阶段6、清除持剑标记、清理阶段临时字段并写入现有完成位图。没有新增协议或服务端位置模拟。
+
+Dome普通归队交接仅复用成员阶段字及阶段互斥的临时计时字段；没有新增网络消息、逐成员轨迹、位置上传或服务端模拟。协议15、Dome v4及配置／存档格式不变。
 
 ## 消息
 
@@ -20,14 +26,14 @@
 | 双向各一类 | `ServerboundStormPositionsPacket`／`ClientboundStormPositionsPacket` | authority稀疏校正及转发 |
 | S→C | `ClientboundStormWavePacket` | Helix／Dome的START、UPDATE、LOCK、ABORT；开始／观察者快照含名单，阶段更新为紧凑参数 |
 | S→C | `ClientboundStormColumnPacket` | 独立星柱身份、种子、冻结落点与集合参数、阶段时间、精确64名名单；中止紧凑发送 |
-| C→S | `StormAttackGatheredPacket` | dimension／epoch／攻击ID、ready与eligible两张rank位图，供95%就绪判定 |
+| C→S | `StormAttackGatheredPacket` | dimension／epoch／攻击ID、ready与eligible两张rank位图，及Dome流线暂停状态，空位图用于只发布暂停变化 |
 | 双向 | `StormAttackCompletedPacket` | 同身份及完成rank位图；指定客户端每game tick合并反馈，服务端幂等释放／确认 |
 | C→S | `ServerboundStormHitPacket` | 风暴身份、成员、递增attackSeq、绝对double接触点；不携带战斗值 |
 | C→S | `ServerboundStormWaveContactPacket` | 风暴／攻击身份、成员、采样秒数及绝对接触点；采样时间仅诊断 |
 
 包处理在所属主线程执行，数组和资源有界。就绪／完成位图每张最多192个long，支持12288名；未到达GPU池的名单成员不能凭缺失获得就绪。服务端验证 `ready ⊆ eligible`、非空分母及 `ready×100 ≥ eligible×95`，冻结参战集合；LOCK与观察者START原子携带completedRanks（含未参战成员）。反馈丢失按同步最晚截止时间回收，本地归队不等待网络确认。
 
-Helix同步模板版本、主体相对锚点、独立单位轴向量、阶段时间和冻结终止平面，避免远坐标相减丢精度。Dome复用START／LOCK时钟恢复流线相位，原始rank身份与循环映射通道分离。经历过集结的客户端捕获本地实际相位连续交接；新观察者按同步时钟平滑接入。重复快照不重置交接，身份失效或槽位回收清理缓存。
+Helix同步模板版本、主体相对锚点、独立单位轴向量、阶段时间和冻结终止平面，避免远坐标相减丢精度。Dome每条流线记录相对START的暂停时刻（最多66条，版本为已暂停流线数），本轮只增不减；变化与就绪通过同一异步快照每game tick至多反馈一次。服务端保存并随UPDATE／LOCK／观察者START广播；旧维度、epoch、攻击ID及过期反馈不得修改状态。LOCK原子冻结暂停状态和参战名单，复用START／LOCK时钟及暂停时刻恢复流线相位，原始rank身份与循环映射通道分离。经历过集结的客户端捕获本地实际相位连续交接；新观察者按同步时钟平滑接入。重复快照不重置交接，身份失效或槽位回收清理缓存。
 
 ## 战斗信任边界
 

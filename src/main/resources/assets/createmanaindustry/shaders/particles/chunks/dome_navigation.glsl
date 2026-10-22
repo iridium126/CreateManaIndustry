@@ -16,8 +16,8 @@ void cmiDomeLookup(uint base,uint count,float distanceAlong,out vec3 point,out v
 }
 void cmiDomeGather(uint a,float seconds,out vec3 point,out vec3 velocity,out vec3 acceleration){
  uint rank=cmiMajorRank(a);vec4 ring=cmiDomeRing(a),record=cmiStarVec(CMI_DOME_DATA+4u+rank*16u),flow=cmiStarVec(CMI_DOME_DATA+12u+rank*16u),extra=cmiStarVec(CMI_DOME_DATA+16u+rank*16u);
- float phase=(float(rank)-record.w)/ring.w+flow.y*seconds/flow.z;vec3 tangent,curvature;
- cmiDomeLookup(uint(flow.x),uint(extra.x),fract(phase)*flow.z,point,tangent,curvature);velocity=tangent*flow.y;acceleration=curvature*flow.y*flow.y;
+ float phase=(float(rank)-record.w)/ring.w+flow.y*cmiDomeFlowSeconds(a,seconds)/flow.z;vec3 tangent,curvature;
+ cmiDomeLookup(uint(flow.x),uint(extra.x),fract(phase)*flow.z,point,tangent,curvature);float speed=seconds>=cmiDomePause(a)?0.:flow.y;velocity=tangent*speed;acceleration=curvature*speed*speed;
 }
 float cmiDomeDistance(float seconds,float initialSpeed){float t=max(seconds,0.),u=min(t/.5,1.);return initialSpeed*t+(6.-initialSpeed)*.5*(u*u*u*u*u*u-3.*u*u*u*u*u+2.5*u*u*u*u)+max(t-.5,0.)*(6.-initialSpeed);}
 float cmiDomeSpeed(float seconds,float initialSpeed){float u=clamp(seconds/.5,0.,1.);return initialSpeed+(6.-initialSpeed)*u*u*u*(10.-15.*u+6.*u*u);}

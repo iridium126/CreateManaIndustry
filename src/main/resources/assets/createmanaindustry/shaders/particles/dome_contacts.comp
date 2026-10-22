@@ -14,6 +14,8 @@ layout(std430,binding=28) buffer State {uint words[];} state;
 uniform uint uMode;
 uniform float uDt;
 uniform int uPlayerCount;
+#define CMI_DOME_RUNTIME_FLOW
+uint cmiDomeFlowWord(uint at){return starStateRead.words[at];}
 #pragma cmi_include chunks/allay_storm.glsl
 #pragma cmi_include chunks/storm_players.glsl
 #pragma cmi_include chunks/storm_collision.glsl
@@ -35,6 +37,7 @@ float cmiDomeSweepFraction(vec3 delta,vec3 relative){
  if(cc>=0.&&aa>.00000001&&bb<0.&&disc>=0.){float hit=(-bb-sqrt(disc))/aa;if(hit>=0.&&hit<=1.)return max(0.,hit-.0001);}return 1.;
 }
 shared uint gatherReady,gatherEligible;
+#pragma cmi_include chunks/dome_completion.glsl
 void main(){
  if(uMode==6u){uint slot=gl_WorkGroupID.x,lane=gl_LocalInvocationID.x;if(slot>=4u)return;if(lane==0u){gatherReady=0u;gatherEligible=0u;}barrier();uint ready=0u,eligible=0u;for(uint k=lane;k<384u;k+=64u){ready+=uint(bitCount(state.words[CMI_GATHER_READY+slot*384u+k]));eligible+=uint(bitCount(state.words[CMI_GATHER_ELIGIBLE+slot*384u+k]));}atomicAdd(gatherReady,ready);atomicAdd(gatherEligible,eligible);barrier();if(lane==0u){state.words[CMI_GATHER_COUNTS+slot*4u]=gatherReady;state.words[CMI_GATHER_COUNTS+slot*4u+1u]=gatherEligible;}return;}
 
@@ -49,6 +52,13 @@ void main(){
  if(owner<0||life.y<=0.)return;uint phase=state.words[member*2u+1u]&255u;if(phase!=1u&&phase!=4u&&phase!=6u)return;
  vec3 old;if(!cmiDomeOld(member,old))return;uint record=CMI_DOME_CONTACT_DELTA+member*4u;
  if(uMode==5u){
+  if(phase==1u){uint a=cmiStarAssignment(p.w),flow=uint(owner)*66u+cmiDomeFlow(a),at=CMI_DOME_FLOW_STATE+flow*2u;
+   float published=uintBitsToFloat(cmiStarWord(CMI_DOME_FLOW_SOURCE+flow*2u+1u));
+   if(isinf(published)&&uintBitsToFloat(state.words[at+1u])<cmiDomePause(a)){
+    uint word=uint(owner)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);
+    atomicAnd(state.words[CMI_GATHER_READY+word],~bit);state.words[CMI_GATHER_STREAK+member]=0u;
+   }
+  }
   if(phase==1u&&state.words[CMI_GATHER_STREAK+member]>0u){
    // Verify the final, already clipped positions. An approaching group may
    // be moving apart while still intersecting; that is not a ready formation.
@@ -63,15 +73,31 @@ void main(){
    if(!clear){uint a=cmiStarAssignment(p.w),word=uint(owner)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);if((atomicAnd(state.words[CMI_GATHER_READY+word],~bit)&bit)!=0u)atomicAdd(state.words[CMI_GATHER_COUNTS+uint(owner)*4u],0xffffffffu);state.words[CMI_GATHER_STREAK+member]=0u;}
   }
   if(phase==4u){uint a=cmiStarAssignment(p.w),b=cmiStarBase(uint(owner)),mapped=cmiDomeMappedRank(a);vec4 record=cmiDomeRecord(a),ring=cmiStarVec(CMI_DOME_DATA+8u+mapped*16u),end=cmiStarVec(CMI_DOME_DATA+16u+mapped*16u);
+   if(state.words[member*2u]!=uint(cmiStarVec(b).x+.5))return;
    vec3 delta=p.xyz+vec3(0,.3,0)-cmiStarVec(b+24u).xyz;float heading=cmiStarVec(b+20u).z,c=cos(heading),s=sin(heading);vec3 local=vec3(c*delta.x+s*delta.z,delta.y,-s*delta.x+c*delta.z);
+   float radius2=dot(delta,delta);bool inside=radius2<=1024.;
+   uint previousFlags=state.words[member*2u+1u],flags=previousFlags;
+   if(inside)flags|=CMI_DOME_INSIDE_BOUND;
+   // Normal members remain on the cheap inside path. A fresh outer-shell
+   // ingress has neither spatial history nor an exhausted reference route.
+   bool escaped=false;
+   if(!inside)escaped=(flags&CMI_DOME_INSIDE_BOUND)!=0u||cmiDomeElapsed(b,uTimeSec)-(cmiStarVec(b+4u).z-cmiStarVec(b+4u).x)>=record.z;
    uint base=uint(record.w),count=uint(ring.w);bool core=(base/12u+(mapped-base)%(count/12u))%16u==0u;
-   bool entered=(state.words[member*2u+1u]&0x20000000u)!=0u||length(local)<(core?2.:8.5);
-   if(entered)state.words[member*2u+1u]|=0x20000000u;
+   bool entered=(flags&0x20000000u)!=0u||length(local)<(core?2.:8.5);
+   if(entered)flags|=0x20000000u;
+   if(flags!=previousFlags)state.words[member*2u+1u]=flags;
    bool finished=entered&&dot(local,end.yzw)>=ring.z;
    float blocked=uintBitsToFloat(state.words[CMI_GATHER_BLOCKED+member]);
-   if(distance(p.xyz,old)<.2*uDt)blocked=max(blocked,uintBitsToFloat(starStateRead.words[CMI_GATHER_BLOCKED+member])+uDt);
+   if(distance(p.xyz,old)<.2*uDt){
+    bool sameAttack=starStateRead.words[member*2u]==state.words[member*2u]&&(starStateRead.words[member*2u+1u]&255u)==4u;
+    float previousBlocked=sameAttack?uintBitsToFloat(starStateRead.words[CMI_GATHER_BLOCKED+member]):0.;
+    blocked=max(blocked,previousBlocked+uDt);
+   }
    state.words[CMI_GATHER_BLOCKED+member]=floatBitsToUint(blocked);
-   if(finished||blocked>=.5){uint word=uint(owner)*384u+cmiMajorRank(a)/32u;state.words[member*2u+1u]=6u|(finished?0x20000000u:0x80000000u);atomicOr(state.words[CMI_COMPLETIONS+word],1u<<(cmiMajorRank(a)&31u));pool.data[at+1u].w=0.;}
+   if(finished||escaped||blocked>=.5){
+    uint rank=cmiMajorRank(a),word=uint(owner)*384u+rank/32u;
+    CMI_DOME_COMPLETE(state,member,word,1u<<(rank&31u),finished,pool.data[at+1u].w);
+   }
   }return;
  }
 

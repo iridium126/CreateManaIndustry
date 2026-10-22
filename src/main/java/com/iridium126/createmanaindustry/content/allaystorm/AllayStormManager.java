@@ -150,6 +150,7 @@ public final class AllayStormManager {
         AllayHelix.Flight helix; AllayHelix.Selection helixRoster; long lastObstacleTick;
         final it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap memberColumns=new it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap();
         final float start,crownX,crownY,crownZ; float assemble,radius;
+        DomeGatherState gatherFlows=DomeGatherState.EMPTY;
         float lock,end; float[] route,landings; boolean locked,gathered; long lastAimTick,lastRouteTick;
         Wave(int id,int seed,UUID target,long epoch,long tick,AllayStarfall.Selection selection,int tier,float now,float x,float y,float z,float radius,float[] route){
             this.id=id;this.seed=seed;this.target=target;this.epoch=epoch;launchTick=tick;
@@ -328,7 +329,7 @@ public final class AllayStormManager {
         int id=++rt.waveIdCounter;if(id>=1<<24)rt.waveIdCounter=id=1;return id;
     }
     private static ClientboundStormWavePacket wavePacket(Wave w,int event,boolean roster,int targetId){
-        return new ClientboundStormWavePacket(w.id,w.epoch,event,w.seed,targetId,w.tier,w.columns,w.perColumn,w.start,w.assemble,w.lock,w.end,w.crownX,w.crownY,w.crownZ,w.radius,roster?w.members:new int[0],w.route.clone(),w.landings.clone(),w.kind,w.currentPhase,w.groupEnds.clone(),w.centerX,w.centerY,w.centerZ,w.orientation,w.direction,w.centerSec,w.fallbackReason,w.helix,w.completed.toLongArray());
+        return new ClientboundStormWavePacket(w.id,w.epoch,event,w.seed,targetId,w.tier,w.columns,w.perColumn,w.start,w.assemble,w.lock,w.end,w.crownX,w.crownY,w.crownZ,w.radius,roster?w.members:new int[0],w.route.clone(),w.landings.clone(),w.kind,w.currentPhase,w.groupEnds.clone(),w.centerX,w.centerY,w.centerZ,w.orientation,w.direction,w.centerSec,w.fallbackReason,w.helix,w.completed.toLongArray(),w.gatherFlows);
     }
 
 
@@ -857,6 +858,13 @@ public final class AllayStormManager {
         if(!(ctx.player() instanceof ServerPlayer player))return;var level=player.serverLevel();var data=level.getData(CMIAttachments.STORM_DATA.get());var rt=runtime(level);var track=rt.tracks.get(player.getUUID());
         if(!data.active||track==null||!track.active||!track.authority||!StormIdentity.of(level,data).equals(new StormIdentity(packet.dimension(),packet.epoch())))return;
         for(var w:rt.waves)if(w.id==packet.id()&&StormAttack.regional(w.kind)&&!w.locked&&!w.gathered&&AllayStarfall.elapsed(clockSeconds(level.getGameTime()),w.assemble)<0){
+            if(w.kind==AllayDome.DOME){
+                var flows=packet.flows();
+                // START is scheduled slightly ahead; trust the bounded GPU phase,
+                // retaining the existing identity and gather-deadline checks.
+                if(!flows.extendsState(w.gatherFlows))return;
+                if(flows.revision()!=w.gatherFlows.revision()){w.gatherFlows=flows;broadcastWave(level,rt,wavePacket(w,AllayStarfall.UPDATE,false,-1));}
+            }else if(packet.flows().revision()!=0)return;
             var ready=BitSet.valueOf(packet.ready());var eligible=BitSet.valueOf(packet.eligible());
             if(ready.length()>w.members.length||eligible.length()>w.members.length)return;
             for(int rank=0;rank<w.members.length;rank++)if(data.dead.get(w.members[rank])||w.completed.get(rank)){ready.clear(rank);eligible.clear(rank);}

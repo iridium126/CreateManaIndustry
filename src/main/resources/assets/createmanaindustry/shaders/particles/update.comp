@@ -141,6 +141,8 @@ layout(std430,binding=28) buffer StarStateWrite {uint words[];} starStateWrite;
 uniform bool uDomePoseStorageEnabled;
 #pragma cmi_include chunks/dome_pose_math.glsl
 #pragma cmi_include chunks/particle_identity.glsl
+#define CMI_DOME_RUNTIME_FLOW
+uint cmiDomeFlowWord(uint at){return starStateRead.words[at];}
 #pragma cmi_include chunks/allay_storm.glsl
 #pragma cmi_include chunks/storm_separation.glsl
 
@@ -159,7 +161,9 @@ vec2 cmiGauss2(float s) {
 // polyline end the LIVE target position takes over: the final descent through
 // the open-sky column into the shaft's real collision data. The desired
 // velocity is a critically-damped approach shape (dist-scaled, capped).
+#pragma cmi_include chunks/dome_gather.glsl
 #pragma cmi_include chunks/storm_navigation.glsl
+#pragma cmi_include chunks/dome_completion.glsl
 #pragma cmi_include chunks/column_motion.glsl
 
 #pragma cmi_include chunks/pool_reservation.glsl
@@ -286,7 +290,10 @@ void main() {
 
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&cmiStarSlot(a)<4u){
         uint b=cmiStarBase(cmiStarSlot(a));if(cmiHelix(b)||cmiDome(b)){
-            uint streak=0u;float phase=cmiStarPhase(a,uTimeSec);
+            uint streak=0u;float phase=float(starStateWrite.words[member*2u+1u]&255u);
+            // A pending resource has no motion phase yet, but must still count
+            // as unknown during gathering. Never revive a finished member.
+            if(phase==0.&&cmiDome(b)&&cmiStarWord(2u)==0u&&cmiStarPhase(a,uTimeSec)==1.)phase=1.;
             bool same=starStateRead.words[member*2u]==uint(cmiStarVec(b).x+.5);
             float blockedSeconds=same?uintBitsToFloat(starStateRead.words[CMI_GATHER_BLOCKED+member]):0.;
             if(phase==1.){bool resourceUnknown=cmiDome(b)&&cmiStarWord(2u)==0u;vec3 target=pos,motion=vec3(0);
@@ -295,10 +302,31 @@ void main() {
                     else{target=cmiStarPoint(a,p3.z,uTimeSec,vec3(0));vec3 next=cmiStarPoint(a,p3.z,uTimeSec+.02,vec3(0));motion=(next-target)/.02;}
                 }
                 bool unknown=resourceUnknown||(cmiStormVoxel&&(cmiStormMissing||!cmiStormKnown(target)||!cmiStormKnown(target+vec3(0,.6,0))));
-                bool occupied=!unknown&&cmiStormVoxel&&(cmiStormSolid(target)||cmiStormSolid(target+vec3(0,.6,0)));
+                int bodyTerrain=cmiDome(b)&&cmiStormVoxel?cmiDomeBodyTerrain(target):0;
+                unknown=unknown||bodyTerrain<0||(cmiDome(b)&&cmiDomeNavigationUnknown);
+                bool occupied=!unknown&&cmiStormVoxel&&(cmiDome(b)?bodyTerrain==1:(cmiStormSolid(target)||cmiStormSolid(target+vec3(0,.6,0))));
                 vec3 towards=target-p0.xyz;
                 bool stalled=cmiTerrainClipped&&length(towards)>.4&&dot(pos-p0.xyz,normalize(towards))<max(0.,dot(cmiBeforeSweepVelocity*uDt,normalize(towards)))*.1;
-                blockedSeconds=stalled?blockedSeconds+uDt:0.;
+                if(cmiDome(b)){
+                    uint flow=cmiDomeFlow(a),at=CMI_DOME_FLOW_STATE+(cmiStarSlot(a)*66u+flow)*2u;
+                    // Only the first obstructed frame contends on a flow clock.
+                    // Published clocks are immutable and need no repeated writes.
+                    float published=cmiDomePause(a);
+                    if(occupied&&isinf(published))atomicMin(starStateWrite.words[at+1u],floatBitsToUint(max(0.,cmiDomeElapsed(b,uTimeSec)-uDt)));
+                    uint window=CMI_DOME_GATHER_WINDOW+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u,id=uint(cmiStarVec(b).x+.5)|0x80000000u;
+                    bool sameWindow=starStateRead.words[window]==id;
+                    float elapsed=(sameWindow?uintBitsToFloat(starStateRead.words[window+1u]):0.)+uDt;
+                    float progress=sameWindow?uintBitsToFloat(starStateRead.words[window+2u]):0.;
+                    float terrain=sameWindow?uintBitsToFloat(starStateRead.words[window+3u]):0.;
+                    // Depenetration is not navigation progress. Ordinary body
+                    // avoidance never contributes terrain evidence.
+                    if(cmiContactSweepValid&&length(towards)>.0001)progress+=dot(pos-p0.xyz,normalize(towards));
+                    if(cmiTerrainClipped||cmiDomeNavigationBlocked)terrain+=uDt;
+                    if(!sameWindow)blockedSeconds=0.;
+                    if(elapsed>=.5){blockedSeconds=terrain>=min(.1,elapsed*.2)&&progress<.1*elapsed?.5:0.;elapsed=0.;progress=0.;terrain=0.;}
+                    if(distance(pos,target)<=.4||unknown)blockedSeconds=0.;
+                    starStateWrite.words[window]=id;starStateWrite.words[window+1u]=floatBitsToUint(elapsed);starStateWrite.words[window+2u]=floatBitsToUint(progress);starStateWrite.words[window+3u]=floatBitsToUint(terrain);
+                }else blockedSeconds=stalled?blockedSeconds+uDt:0.;
                 bool blocked=occupied||blockedSeconds>=.5;uint counts=CMI_GATHER_COUNTS+cmiStarSlot(a)*4u,word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);
                 if(unknown||blocked){
                     atomicAdd(starStateWrite.words[counts+(unknown?3u:2u)],1u);
@@ -313,15 +341,13 @@ void main() {
                 streak=starStateWrite.words[CMI_GATHER_STREAK+member];
                 blockedSeconds=cmiTerrainClipped?blockedSeconds+uDt:0.;
                 if(blockedSeconds>=.5){
-                    // World geometry can invalidate a baked channel. Leave it
-                    // without a damaging depenetration or a stalled attack.
-                    starStateWrite.words[member*2u+1u]=6u|0x80000000u;
-                    uint word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u;
-                    atomicOr(starStateWrite.words[CMI_COMPLETIONS+word],1u<<(cmiMajorRank(a)&31u));
-                    roll=0.;
+                    uint rank=cmiMajorRank(a),word=cmiStarSlot(a)*384u+rank/32u;
+                    CMI_DOME_COMPLETE(starStateWrite,member,word,1u<<(rank&31u),false,roll);
+                    blockedSeconds=0.;streak=0u;
                 }
-            }else blockedSeconds=0.;
-            starStateWrite.words[CMI_GATHER_BLOCKED+member]=floatBitsToUint(blockedSeconds);starStateWrite.words[CMI_GATHER_STREAK+member]=streak;
+            }
+            // Released members own this scratch for velocity/pose handoff.
+            if(phase<6.){starStateWrite.words[CMI_GATHER_BLOCKED+member]=floatBitsToUint(blockedSeconds);starStateWrite.words[CMI_GATHER_STREAK+member]=streak;}
         }
     }}
 
@@ -347,8 +373,10 @@ void main() {
     if(!corpse&&stormA.x>.5&&uDomePoseStorageEnabled){uint member=cmiStarMember(p0.w),a=cmiStarAssignment(p0.w);
         if(member<131072u&&CMI_DOME_POSE+member*2u+1u<uint(starStateWrite.words.length())){
             uint at=CMI_DOME_POSE+member*2u,flags=starStateRead.words[at+1u];
-            bool current=a!=0u&&cmiStarSlot(a)<4u&&cmiDome(cmiStarBase(cmiStarSlot(a)));
-            bool returning=a==0u&&(flags&0x80000000u)!=0u;
+            uint actualPhase=starStateWrite.words[member*2u+1u]&255u;
+            bool domeOwner=a!=0u&&cmiStarSlot(a)<4u&&cmiDome(cmiStarBase(cmiStarSlot(a)));
+            bool current=domeOwner&&actualPhase<6u;
+            bool returning=(a==0u||domeOwner)&&actualPhase>=6u&&(flags&0x80000000u)!=0u;
             if(current||returning){
                 float initialYaw=cmiHash1(p3.z*3.7)*6.28318530718+p3.x*.3;
                 vec2 angles=(flags&0x80000000u)!=0u?cmiDomeUnpackPose(starStateRead.words[at]):vec2(length(p1.xz)>.05?atan(p1.x,p1.z):-initialYaw,length(p1.xyz)>.0001?asin(clamp(p1.y/length(p1.xyz),-1.,1.)):0.);
@@ -359,7 +387,7 @@ void main() {
                 float poseSpeed=(flags&0x80000000u)!=0u?float((flags>>16u)&32767u)*(64./32767.):length(p1.xyz);
                 poseSpeed=mix(poseSpeed,length(vel),1.-exp(-uDt/.12));
                 bool keepPose=true;
-                uint phase=max(starStateRead.words[member*2u+1u]&255u,starStateWrite.words[member*2u+1u]&255u);
+                uint phase=actualPhase;
                 if(returning&&phase>=7u){
                     // Existing contact scratch is unused by arrived members.
                     // Fade the cached offsets onto the current ordinary pose,

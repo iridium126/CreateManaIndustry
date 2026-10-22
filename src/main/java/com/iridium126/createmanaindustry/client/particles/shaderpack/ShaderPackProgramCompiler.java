@@ -136,10 +136,8 @@ public final class ShaderPackProgramCompiler {
 
     private final ParticleVertexInjector injector = new ParticleVertexInjector();
 
-    /** Lazily built merged vertex source (SSBO decls + pose chunk + main). */
-    private String mergedVertexSource;
-    /** Which hurt-overlay variant the cached merged source was built for. */
-    private boolean mergedSourceOverlay;
+    /** Preprocessed TBO sources, cached per overlay variant and resource generation. */
+    private final String[] mergedVertexSources = new String[2];
 
     private ShaderInstance entitiesShader;
     private ShaderInstance ghostShader;
@@ -367,8 +365,7 @@ public final class ShaderPackProgramCompiler {
         // buildMergedSource and silently pin the merged path to pre-reload
         // chunk text while the self-drawn path (ParticlePrograms rebuild) picks
         // up the new one.
-        this.mergedVertexSource = null;
-        this.mergedSourceOverlay = false;
+        java.util.Arrays.fill(this.mergedVertexSources, null);
     }
 
     /**
@@ -598,11 +595,11 @@ public final class ShaderPackProgramCompiler {
      * approximation.</p>
      */
     private String buildMergedSource(boolean withEntityColor) {
-        if (this.mergedVertexSource != null && this.mergedSourceOverlay == withEntityColor)
-            return this.mergedVertexSource;
+        int variant = withEntityColor ? 1 : 0;
+        if (this.mergedVertexSources[variant] != null)
+            return this.mergedVertexSources[variant];
 
         String chunk = mergedSources.apply("chunks/allay_pose.glsl");
-        chunk=chunk.replaceAll("(?s)#ifdef CMI_STARFALL_TBO\\s*(.*?)#else.*?#endif","$1");
         if (chunk.isEmpty())
             throw new IllegalStateException("cannot load chunks/allay_pose.glsl");
 
@@ -612,6 +609,7 @@ public final class ShaderPackProgramCompiler {
         // language need in this block is usamplerBuffer/floatBitsToUint
         // (GLSL 330); no SSBOs remain since the TBO migration.
         sb.append("#version 400 core\n");
+        sb.append("#define CMI_STARFALL_TBO\n#undef CMI_DOME_RUNTIME_FLOW\n");
         // constants ride the AST as plain const declarations -- #define lines
         // vanish when declarations transplant across glsl-transformer trees
         sb.append("const uint MODEL_VERTEX_FLOATS = ").append(com.iridium126.createmanaindustry.client.particles.engine.AllayModelGeometry.VERTEX_FLOATS).append("u;\n");
@@ -869,8 +867,11 @@ public final class ShaderPackProgramCompiler {
                 }
                 """);
 
-        this.mergedSourceOverlay = withEntityColor;
-        this.mergedVertexSource = sb.toString();
-        return this.mergedVertexSource;
+        // Resolve our conditional branches BEFORE parsing/transplanting the AST:
+        // preprocessor directives do not survive that operation. Never run this
+        // on the pack source, which Iris has already preprocessed.
+        this.mergedVertexSources[variant] = JcppProcessor.glslPreprocessSource(sb.toString(),
+                java.util.List.of());
+        return this.mergedVertexSources[variant];
     }
 }
