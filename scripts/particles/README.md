@@ -55,6 +55,25 @@ with `-PbenchmarkOutput=build/benchmarks/<experiment>`. Historical raw data,
 logs and screenshots are not tracked. See [result policy](../../docs/benchmarks/README.md)
 and the [test matrix](../../docs/testing.md).
 
+## Shader startup and resource reload
+
+```powershell
+.\gradlew.bat validateParticleStartupGpu validateParticleProgramsGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
+.\gradlew.bat validateParticleStartupGpu -PparticleStartupCold --offline --no-configuration-cache -I scripts/particles/validation.init.gradle -PbenchmarkOutput=build/benchmarks/particle-startup-cold
+```
+
+The startup harness calls the production incremental compiler with expanded
+production sources, polls window events and clears the framebuffer while linking.
+It checks atomic publication, unchanged-source reuse, compile/link failures,
+in-flight cancellation and cleanup. Injected ERROR logs are expected. The cold
+option changes only an unused macro in `update.comp`, using a unique value per
+run; it does not delete the user's driver cache. Initial compilation can still
+take minutes in the background. `-PparticleStartupProbe` separately measures cold
+submission/completion waits for update, Dome contacts and Dome path shaders.
+Both diagnostics require `GL_ARB_parallel_shader_compile`; unsupported drivers
+must not be reported as passing the nonblocking contract. See the
+[startup report](../../docs/benchmarks/particle-shader-startup-2026-10-23.md).
+
 
 ### Allay Storm
 

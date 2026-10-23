@@ -2,6 +2,16 @@ package com.iridium126.createmanaindustry.client.particles.engine;
 
 import java.io.IOException;
 import java.io.Reader;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.function.ObjIntConsumer;
+import com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler;
+import org.lwjgl.opengl.GL;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.ARBParallelShaderCompile;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 
@@ -32,7 +42,8 @@ import org.lwjgl.opengl.GL20;
  * A {@code #version} header is prepended (raw GL requires one; Veil used to
  * inject it). Programs are rebuilt by {@link #rebuild()} — called lazily on the
  * render thread whenever {@link #needsRebuild()} is true, which the resource
- * reload listener flips so F3+T recompiles shaders.
+ * reload listener flips. Changed sources compile incrementally; unchanged
+ * sources reuse the active set, including across world transitions.
  */
 public final class ParticlePrograms {
     public static final ParticlePrograms INSTANCE=new ParticlePrograms();
@@ -40,6 +51,74 @@ public final class ParticlePrograms {
 
     private static final String GLSL_DIR = "shaders/particles/";
     private static final String VERSION = "#version 450 core\n";
+    private record Specification(String vertex,String fragment,ObjIntConsumer<ParticlePrograms> install) {
+        String path(){return GLSL_DIR+vertex;}
+        String key(){return fragment==null?path():path()+"|"+GLSL_DIR+fragment;}
+    }
+    private static final List<Specification> SPECIFICATIONS=List.of(
+        new Specification("prepare_dispatch.comp",null,(owner,id)->owner.prepareDispatch=id),
+        new Specification("reset.comp",null,(owner,id)->owner.reset=id),
+        new Specification("update.comp",null,(owner,id)->owner.update=id),
+        new Specification("emit.comp",null,(owner,id)->owner.emit=id),
+        new Specification("block_emit.comp",null,(owner,id)->owner.blockEmit=id),
+        new Specification("keygen.comp",null,(owner,id)->owner.keygen=id),
+        new Specification("radix_hist.comp",null,(owner,id)->owner.radixHist=id),
+        new Specification("radix_scan.comp",null,(owner,id)->owner.radixScan=id),
+        new Specification("radix_scatter.comp",null,(owner,id)->owner.radixScatter=id),
+        new Specification("capture.comp",null,(owner,id)->owner.capture=id),
+        new Specification("gridbuild.comp",null,(owner,id)->owner.grid=id),
+        new Specification("dome_contacts.comp",null,(owner,id)->owner.domeContacts=id),
+        new Specification("dome_path.comp",null,(owner,id)->owner.domePath=id),
+        new Specification("hit.comp",null,(owner,id)->owner.hit=id),
+        new Specification("damage_prepare.comp",null,(owner,id)->owner.damagePrepare=id),
+        new Specification("stormpos.comp",null,(owner,id)->owner.stormPos=id),
+        new Specification("column_snapshot.comp",null,(owner,id)->owner.columnSnapshot=id),
+        new Specification("column_restore.comp",null,(owner,id)->owner.columnRecovery=id),
+        new Specification("starfall_ring_reserve.comp",null,(owner,id)->owner.ringReserve=id),
+        new Specification("wavecontact.comp",null,(owner,id)->owner.waveContact=id),
+        new Specification("additive.vsh","additive.fsh",(owner,id)->owner.render=id),
+        new Specification("textured.vsh","textured.fsh",(owner,id)->owner.texturedRender=id),
+        new Specification("model.vsh","model.fsh",(owner,id)->owner.modelRender=id));
+
+    private static final class Reload implements AutoCloseable {
+        final Map<String,String> sources;
+        final Map<String,Integer> completed=new HashMap<>();
+        final long started=System.nanoTime();
+        final boolean parallel=GL.getCapabilities().GL_ARB_parallel_shader_compile;
+        final int previousThreads=parallel?GL11.glGetInteger(ARBParallelShaderCompile.GL_MAX_SHADER_COMPILER_THREADS_ARB):0;
+        GpuShaderCompiler.Compilation current;
+        int index;
+        long programStarted,progress;
+        boolean closed;
+        Reload(Map<String,String> sources){
+            this.sources=sources;
+            if(parallel)ARBParallelShaderCompile.glMaxShaderCompilerThreadsARB(2);
+            else LOGGER.warn("[CMI particles] background shader compilation unavailable; compiling one stage per frame synchronously");
+        }
+        boolean advance(){
+            var specification=SPECIFICATIONS.get(index);
+            if(current==null){
+                programStarted=progress=System.nanoTime();
+                LOGGER.info("[CMI particles] shader compilation {}/{} started: {} ({})",index+1,SPECIFICATIONS.size(),specification.path(),parallel?"background":"synchronous fallback");
+                String vertex=VERSION+PRELUDE+sources.get(specification.path());
+                current=specification.fragment==null?GpuShaderCompiler.beginCompute(specification.path(),vertex):GpuShaderCompiler.beginGraphics(specification.path(),vertex,VERSION+PRELUDE+sources.get(GLSL_DIR+specification.fragment));
+                return false;
+            }
+            if(!current.poll()){
+                long now=System.nanoTime();if(now-progress>=5_000_000_000L){progress=now;LOGGER.info("[CMI particles] shader compilation still pending: {} ({}s); retaining active programs",specification.path(),(now-programStarted)/1_000_000_000L);}return false;
+            }
+            completed.put(specification.key(),current.take());current.close();current=null;index++;
+            LOGGER.info("[CMI particles] shader compilation finished: {} ({}ms)",specification.path(),(System.nanoTime()-programStarted)/1_000_000L);
+            return index==SPECIFICATIONS.size();
+        }
+        int take(String key){Integer id=completed.remove(key);return id==null?0:id;}
+        @Override public void close(){
+            if(closed)return;closed=true;
+            if(current!=null){current.close();current=null;}
+            for(int program:completed.values())com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(program);completed.clear();
+            if(parallel&&GL11.glGetInteger(ARBParallelShaderCompile.GL_MAX_SHADER_COMPILER_THREADS_ARB)==2)ARBParallelShaderCompile.glMaxShaderCompilerThreadsARB(previousThreads);
+        }
+    }
 
     /**
      * Common GLSL header injected ahead of every shader source: engine-wide
@@ -174,6 +253,8 @@ public final class ParticlePrograms {
     private int modelRender;     // instanced allay models via one merged multi-draw
 
     private volatile boolean dirty = true;
+    private Map<String,String> committedSources=Map.of();
+    private Reload pendingReload;
 
     /** Marks the programs stale; {@link #rebuild()} is safe to call any time. */
     public void requestRebuild() {
@@ -181,12 +262,37 @@ public final class ParticlePrograms {
     }
 
     public boolean needsRebuild() {
-        return this.dirty;
+        return this.dirty||this.pendingReload!=null;
     }
 
-    /** Compiles/links all programs from the mod's bundled GLSL. Render-thread only. */
+    /** Advances the pending compilation; returns true only on atomic publication. Render-thread only. */
     public boolean rebuild() {
-        return rebuildWithCompiler(ParticlePrograms::compileCompute, ParticlePrograms::link);
+        return rebuildWithSources(ParticlePrograms::load);
+    }
+
+    boolean rebuildWithSources(Function<String,String> loader){
+        try {
+            if(dirty){
+                dirty=false;var sources=new LinkedHashMap<String,String>();
+                for(var specification:SPECIFICATIONS){sources.computeIfAbsent(specification.path(),loader);if(specification.fragment!=null)sources.computeIfAbsent(GLSL_DIR+specification.fragment,loader);}
+                for(var specification:SPECIFICATIONS)if(!sources.containsKey(specification.path())||specification.fragment!=null&&!sources.containsKey(GLSL_DIR+specification.fragment))throw new IllegalStateException("Missing particle shader: "+specification.path());
+                if(pendingReload==null||!pendingReload.sources.equals(sources)){
+                    if(pendingReload!=null){pendingReload.close();pendingReload=null;}
+                    if(ready()&&committedSources.equals(sources)){LOGGER.info("[CMI particles] shader sources unchanged; reusing active programs");return false;}
+                    pendingReload=new Reload(Map.copyOf(sources));
+                }
+            }
+            if(pendingReload==null||!pendingReload.advance())return false;
+            Reload finished=pendingReload;pendingReload=null;
+            try {
+                boolean published=rebuildWithCompiler(finished::take,(vertex,fragment)->finished.take(vertex+"|"+fragment));
+                if(published){committedSources=finished.sources;LOGGER.info("[CMI particles] shader set published atomically ({}ms)",(System.nanoTime()-finished.started)/1_000_000L);}
+                return published;
+            } finally {finished.close();}
+        } catch(RuntimeException failure){
+            if(pendingReload!=null){pendingReload.close();pendingReload=null;}
+            LOGGER.error("[CMI particles] shader reload failed; retaining previous program set",failure);return false;
+        }
     }
 
     /** Package-private injection seam for real-driver reload failure tests. */
@@ -195,29 +301,7 @@ public final class ParticlePrograms {
         this.dirty = false;
         ParticlePrograms candidate = new ParticlePrograms();
         try {
-            candidate.prepareDispatch = compute.applyAsInt(GLSL_DIR + "prepare_dispatch.comp");
-            candidate.reset = compute.applyAsInt(GLSL_DIR + "reset.comp");
-            candidate.update = compute.applyAsInt(GLSL_DIR + "update.comp");
-            candidate.emit = compute.applyAsInt(GLSL_DIR + "emit.comp");
-            candidate.blockEmit = compute.applyAsInt(GLSL_DIR + "block_emit.comp");
-            candidate.keygen = compute.applyAsInt(GLSL_DIR + "keygen.comp");
-            candidate.radixHist = compute.applyAsInt(GLSL_DIR + "radix_hist.comp");
-            candidate.radixScan = compute.applyAsInt(GLSL_DIR + "radix_scan.comp");
-            candidate.radixScatter = compute.applyAsInt(GLSL_DIR + "radix_scatter.comp");
-            candidate.capture = compute.applyAsInt(GLSL_DIR + "capture.comp");
-            candidate.grid = compute.applyAsInt(GLSL_DIR + "gridbuild.comp");
-            candidate.domeContacts=compute.applyAsInt(GLSL_DIR+"dome_contacts.comp");
-            candidate.domePath=compute.applyAsInt(GLSL_DIR+"dome_path.comp");
-            candidate.hit = compute.applyAsInt(GLSL_DIR + "hit.comp");
-            candidate.damagePrepare=compute.applyAsInt(GLSL_DIR+"damage_prepare.comp");
-            candidate.stormPos = compute.applyAsInt(GLSL_DIR + "stormpos.comp");
-            candidate.columnSnapshot = compute.applyAsInt(GLSL_DIR + "column_snapshot.comp");
-            candidate.columnRecovery = compute.applyAsInt(GLSL_DIR + "column_restore.comp");
-            candidate.ringReserve=compute.applyAsInt(GLSL_DIR+"starfall_ring_reserve.comp");
-            candidate.waveContact = compute.applyAsInt(GLSL_DIR + "wavecontact.comp");
-            candidate.render = graphics.apply(GLSL_DIR + "additive.vsh", GLSL_DIR + "additive.fsh");
-            candidate.texturedRender = graphics.apply(GLSL_DIR + "textured.vsh", GLSL_DIR + "textured.fsh");
-            candidate.modelRender = graphics.apply(GLSL_DIR + "model.vsh", GLSL_DIR + "model.fsh");
+            for(var specification:SPECIFICATIONS)specification.install.accept(candidate,specification.fragment==null?compute.applyAsInt(specification.path()):graphics.apply(specification.path(),GLSL_DIR+specification.fragment));
             if (!candidate.ready()) {
                 LOGGER.error("[CMI particles] shader reload failed; retaining previous program set");
                 return false;
@@ -333,29 +417,6 @@ public final class ParticlePrograms {
     // GL helpers
     // ------------------------------------------------------------------
 
-    private static int compileCompute(String path) {
-        String source=load(path);
-        if(source==null)return 0;
-        try {
-            return com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute(path,VERSION+PRELUDE+source);
-        } catch(RuntimeException failure) {
-            LOGGER.error("[CMI particles] compute program failed ({})",path,failure);
-            return 0;
-        }
-    }
-
-    private static int link(String vertexPath,String fragmentPath) {
-        String vertex=load(vertexPath),fragment=load(fragmentPath);
-        if(vertex==null||fragment==null)return 0;
-        try {
-            return com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.graphics(vertexPath,
-                    VERSION+PRELUDE+vertex,VERSION+PRELUDE+fragment);
-        } catch(RuntimeException failure) {
-            LOGGER.error("[CMI particles] render program failed ({})",vertexPath,failure);
-            return 0;
-        }
-    }
-
     /**
      * Public plain-source loader (include-resolved, no PRELUDE/#version) for
      * consumers outside this package -- the shader-pack compiler assembles the
@@ -409,6 +470,8 @@ public final class ParticlePrograms {
 
     /** Deletes all program ids. Render-thread only. */
     public void delete() {
+        if(pendingReload!=null){pendingReload.close();pendingReload=null;}
+        committedSources=Map.of();
         for (int p : new int[] {
                 this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,

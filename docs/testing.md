@@ -49,6 +49,8 @@ python scripts/benchmarks/run.py validateStarfallGpu validateDomeGpu validateHel
 
 实际驱动验证需要 OpenGL 4.5，使用隐藏 GLFW 窗口。Iris 测试使用实际 transformer 和受控启动 facade，仍需游戏内 shaderpack/Mixin 验收。GPU 不可用时报告环境限制，不能把跳过当作通过。
 
+客户端进入世界卡顿的着色器编译回归使用 `validateParticleStartupGpu`；追加 `-PparticleStartupCold` 用每次运行唯一的无语义宏生成冷源码变体，验证分钟级后台链接期间仍能推进渲染循环。覆盖首次失败、热重载回退、在途取消、源码未变复用及原子发布，日志中的注入编译错误是预期结果。命令、驱动计时及限制见[启动编译修复记录](benchmarks/particle-shader-startup-2026-10-23.md)。此项需要 `GL_ARB_parallel_shader_compile`，不能用已缓存的秒级运行替代冷编译验收。
+
 真实客户端验收由用户执行，保持待验收状态；隔离目录的准备／启动命令、全部功能场景及反馈要求见[用户客户端验收清单](gpu-runtime-client-acceptance.md)。`prepareGpuClientValidation` 只准备依赖和配置，不启动客户端；实际画面、交互及实机 shaderpack 结果不由自动回归代签。
 
 性能测量按需添加 benchmark 参数；正确性断言必须通过才能接受测量结果。运行器把命令、版本元数据、退出状态、样本和日志放到独立的 `build/benchmarks/` 目录。直接 Gradle 入口仍兼容，详见 [性能结果规则](benchmarks/README.md) 和 [GPU 工具](../scripts/particles/README.md)。

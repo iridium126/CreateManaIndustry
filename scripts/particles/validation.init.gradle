@@ -107,6 +107,14 @@ allprojects {
             mainClass = 'scripts/particles/ParticleProgramLifecycleGpuValidation.java'
             workingDir = project.projectDir
         }
+        tasks.register('validateParticleStartupGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'ParticleShaderStartupGpuValidation'
+            if(project.hasProperty('particleStartupProbe')) args '--probe'
+            if(project.hasProperty('particleStartupCold')) args '--cold'
+            workingDir = project.projectDir
+        }
         tasks.register('validateHexGpu', JavaExec) {
             dependsOn tasks.named('classes'), 'validateHexSharedGpu'
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
@@ -150,6 +158,7 @@ allprojects {
             destinationDirectory = layout.buildDirectory.dir('starfall-harness')
             source 'scripts/particles/DomeTerrainGpuValidation.java'
             source 'scripts/particles/DomeGatherGpuValidation.java'
+            source 'scripts/particles/ParticleShaderStartupGpuValidation.java'
             options.release = 21
         }
         tasks.register('validateStarfallGpu', JavaExec) {
