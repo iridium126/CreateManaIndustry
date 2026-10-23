@@ -710,6 +710,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             if(StarfallGpuBuffers.INSTANCE.hasDome()){
                 com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(ParticleRuntime.this.programs.domeContacts());
                 DomeBodyContacts.run(ParticleRuntime.this.programs.grid(),ParticleRuntime.this.programs.domeContacts(),ParticleRuntime.this.gpu.particleReadBufferId(),ParticleRuntime.this.gpu.counterBufferId(ParticleRuntime.this.lastGoodSlot),ParticleRuntime.this.gpu.particleWriteBufferId(),ParticleRuntime.this.gpu.counterBufferId(slot),ParticleRuntime.this.gpu.gridBufferId(),AllayStormRuntime.INSTANCE.timeSec(),dt,playerCount,StarfallGpuBuffers.INSTANCE);
+                com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(ParticleRuntime.this.programs.domePath());
+                DomeGatherNavigation.run(ParticleRuntime.this.programs.domePath(),AllayStormRuntime.INSTANCE.timeSec(),StarfallGpuBuffers.INSTANCE,ParticleRuntime.this.gpu.dispatchBufferId());
                 ParticleRuntime.this.gpu.bindParticleRead(0);ParticleRuntime.this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,ParticleRuntime.this.lastGoodSlot);
             }
             // uKillEmit is retired at the SUCCESS TAIL (after the pool swap), not

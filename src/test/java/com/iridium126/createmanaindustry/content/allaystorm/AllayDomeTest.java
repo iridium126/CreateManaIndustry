@@ -5,6 +5,13 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AllayDomeTest {
+ @Test void gatheringBudgetsFlightInterceptionTurnStreakAndFeedback(){
+  for(double distance:new double[]{0,12,40,96,300})for(double radius:new double[]{16,32,64}){
+   double expected=Math.max(8,(distance+1.15*radius+32)/8+32./2+16./18+Math.PI/Math.min(Math.PI,18./8)+.75+1);
+   float actual=AllayDome.gatherSeconds(distance,radius);assertEquals((float)(Math.ceil(expected*20)/20),actual);assertTrue(actual>=expected-.00001);assertEquals(Math.round(actual*20),actual*20,.001);
+  }
+  assertEquals(31.35f,AllayDome.gatherSeconds(40,16));assertThrows(IllegalArgumentException.class,()->AllayDome.gatherSeconds(Double.NaN,16));
+ }
  @Test void fixedCountThresholdAndIdentityGroups(){
   assertEquals(0,AllayDome.quota(16383));assertEquals(12288,AllayDome.quota(16384));
   assertArrayEquals(new int[]{12288},AllayDome.groups(12288));assertEquals(0,AllayDome.group(new int[]{12288},12287));assertEquals(-1,AllayDome.group(new int[]{12288},12288));assertEquals(32,AllayDome.radius(12288));

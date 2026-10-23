@@ -1,6 +1,7 @@
 // Stable member roster, shared by compute, native MODEL and GLSL-330 Iris TBO readers.
 uniform bool uStarfallEnabled;
 #pragma cmi_include chunks/storm_speeds.glsl
+#pragma cmi_include chunks/dome_gather_rules.glsl
 uniform bool uDomePreciseClock;
 uniform vec4 uDomeElapsed;
 #ifdef CMI_STARFALL_TBO

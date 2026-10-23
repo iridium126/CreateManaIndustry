@@ -28,6 +28,19 @@ public final class AllayDome {
     public static int[] columns(int count,int per){int[] ends=new int[(count+per-1)/per];for(int c=0;c<ends.length;c++)ends[c]=Math.min(count,(c+1)*per);return ends;}
     public static float radius(int count){return 32;}
     public static float closeSeconds(float radius){return 60;}
+    public static boolean overlapsStormBody(double horizontalDistance,double verticalOffset,double stormRadius){
+        if(!Double.isFinite(horizontalDistance)||!Double.isFinite(verticalOffset)||!Double.isFinite(stormRadius)||horizontalDistance<0||stormRadius<2||stormRadius>64)throw new IllegalArgumentException("Dome overlap bounds");
+        double band=Math.clamp(.4*stormRadius,3,8),bottom=-1.9-band*.5,top=Math.clamp(.2*stormRadius,2,6)+band*.5+1.3;
+        if(verticalOffset>top)return false;
+        double horizontalGap=Math.max(0,horizontalDistance-(1.15*stormRadius+.75)),verticalGap=Math.max(0,bottom-verticalOffset);
+        return horizontalGap*horizontalGap+verticalGap*verticalGap<=32*32;
+    }
+    public static float gatherSeconds(double targetDistance,double stormRadius){
+        if(!Double.isFinite(targetDistance)||!Double.isFinite(stormRadius)||targetDistance<0||stormRadius<0)throw new IllegalArgumentException("Dome gather distance");
+        double speed=StormMotion.INTERCEPT,acceleration=18,route=targetDistance+1.15*stormRadius+32;
+        double seconds=route/speed+32/(speed-StormMotion.CRUISE)+2*speed/acceleration+Math.PI/Math.min(Math.PI,acceleration/speed)+.75+1;
+        return (float)(Math.ceil(Math.max(8,seconds)*20)/20);
+    }
     public static float warningStart(float lock,float radius,int group){return lock;}
     /** Independent victims can receive the same member's contact once. */
     public static final class Contacts {

@@ -30,6 +30,12 @@ python -m unittest discover -s scripts/allaystorm -p test_dome_v4_tools.py
 
 ## GPU回归
 
+Dome集结专项入口：`validateDomeGatherGpu`在真实身体求解开启时重现密集归队邻居、访问768次耗尽和接触后仍运动合格的情况；位置／速度失配必须重新开始三帧，另测未知、脱嵌、冻结、新归属、双bank回滚和位图／计数一致。`DomeGatherRulesTest`及该GPU工具检查100%→90%整数边界、时钟环绕与截止tick，服务端GameTest回放实际位图，不以计划时钟冒充实际运动。
+
+`DomeOverlapTest`覆盖上半球与主体包络边界、上／下方分离、径向和角点；生产GPU采样主体home公式检查包络覆盖，GameTest验证重叠目标不占槽、不取攻击ID、不预留、不绕过调度重试。矩阵中的重叠案例必须由真实服务端拒绝，不能注入空位图伪装为集结成功。自动化与性能范围见[空地集结报告](benchmarks/dome-gather-2026-10-23.md)。
+
+`validateDomeTerrainGpu`读取`-PdomeTerrainPlans=...`指定的生产服务端START矩阵；空地8组包含高差−16～128、16384／65536／131072人口，其他四类地形各8组。可加`-PdomeFps=10/20/60/144/240`（分别执行）、`-PdomeJitter`或`-PdomeReturningTraffic`（在半球播种普通归队成员，后续完全由生产GPU移动）。`-PdomeTerrainFilter=Air-.*`只跑空地。实际误差、速度差和连续帧数写入`terrain/*-unready.csv`，逐帧计数／队列写入同目录CSV。`-PdomeBodyDiagnostic`仅用于隔离失败来源，不是保留真实碰撞的验收证据。
+
 统一使用 [benchmark运行器](../scripts/benchmarks/run.py)，记录命令、退出状态、元数据及输出：
 
 ```powershell
@@ -43,13 +49,27 @@ python scripts/benchmarks/run.py validateParticleProgramsGpu validateModelPopula
 python scripts/benchmarks/run.py validateDome30Hz validateDome60Hz validateDome144Hz validateDome240Hz validateDomeIrregular validateDomeDelayed validateDomeClockWrap --offline
 ```
 
-`validateDomeGpu`包含斜坡与台阶的生产集结回归，可用`validateDomeSlopeGpu`单独重跑；检查固定流线相位、部分成员受阻、原截止时间和同帧暂停／就绪快照，原始数据为`build/dome-v15/slope-gather.json`。
+`validateDomeGpu`包含斜坡与台阶集结回归，可用`validateDomeSlopeGpu`单独重跑；截止取生产共享公式，不再使用固定90秒。检查固定流线相位、逐成员完成／归队、实际就绪与同帧暂停／就绪快照，原始数据为`build/dome-v15/slope-gather.json`。
+
+地形矩阵先由真实服务端计划器导出START，再运行实际GPU更新／接触／寻路并回放反馈：
+
+```powershell
+.\gradlew.bat -I scripts/allaystorm/gametest.init.gradle runGameTestServer '-PdomeTerrainPlans=build/dome-navigation/production-plans.json' --offline --no-configuration-cache
+python scripts/benchmarks/run.py validateDomePathGpu validateDomeTerrainGpu --offline
+.\gradlew.bat -I scripts/allaystorm/gametest.init.gradle runGameTestServer '-PdomeTerrainEvidence=build/dome-navigation/terrain-evidence.json' --offline --no-configuration-cache
+```
+
+矩阵覆盖空地、少量障碍、坡地／台阶、厚地形及长墙，各8组确定性计划、方向和主体相位，混合16384／65536／131072人口。保留真实计划截止、实际完成与流线状态；服务端重放验证原截止前LOCK或安全中止，不以单独计划时钟测试代替运动。`terrain-evidence.json`保存rank位图、冻结时刻和队列指标，benchmark目录的`terrain/*.csv`保存逐帧结果。`-PdomeTerrainFilter=.+-0`仅供定位单组，不算完整矩阵通过。
+
+`validateDomePathGpu`使用生产BFS验证128在途、8192节点上限、跨帧前沿、1200请求排队与四槽公平、已知／未知／局部无路及提交回滚；用生产最终接触审计验证占位计时、排队／搜索不误退出、未知／脱嵌清窗和有效推进不退出。新增阶段三轮实际GPU时间、内存、节点及上传结果写入`dome-path-performance.csv`；空队列P95目标0.02ms、饱和P95目标0.3ms，必须报告实测及未达项，不能用节点上限替代性能证据。
+
+本轮地形修复的自动化、完整管线增量与冷启动成本见[地形修复实测](benchmarks/dome-terrain-2026-10-23.md)。798项单元测试、42项必需GameTest及`test check build`通过；40组计划中32组按原截止发动，8组长墙安全中止，另验证全封闭及零有效成员。成功和失败场景均保存实际就绪／分母位图，服务端回放不得将失败位图视作已集结。真实双客户端和实际光影包仍单独待验收。
 
 `validateHelixGpu`使用真实`update.comp`和风暴碰撞页验证地面受阻（20Hz／60Hz／0.25秒低帧率）、墙面横滑、坡面有效推进、短暂擦碰恢复、未知覆盖、脱嵌、起步、死亡、新攻击和身份重置。检查0.5秒窗口、当帧完成／收剑／无接触，以及下一帧普通归队；另以生产判定函数覆盖裁剪累计0.1秒、预期推进0.05格、实际推进10%和非连续裁剪。候选帧回滚不得发布观察进度，Helix不得分配完整Dome状态。`AllayHelixTest`与`StormMajorAttackGameTests`验证固定12／32速度预算、不同终止距离／时钟下1秒截止余量、初始／瞄准／LOCK一致、提前全完成回收、截止释放与重复反馈隔离。
 
 `validateStormMotionGpu`补充共享舞蹈函数的`0.2R`开区间及原36秒节奏；Starfall真实集结末段、下降首帧和后续速度记录到`starfall-entry-velocity.csv`，直接检查保存的解析初切向3、垂直`−√27`、合速度6，不以整个下降阶段水平恒速3验收。未就位者保留实际入射方向，正常初始化无额外入口阶段；`validateStarfallColumnGpu`检查地形／未知碰撞、四阶段恢复与时钟环绕，下降快照保存方向不被重新匹配。Dome生产更新及最终接触裁剪验证集结可超过6但不超过8，LOCK首帧保留8→6交接；攻击参考仍为6。Helix从实际成员位置连续推进，覆盖60Hz、20Hz与0.25秒步长的旋进方向和32速度上限；接触回归使用0.25秒跨越8格的真实扫掠。模板点间距检查提高至1.4格。
 
-舞蹈阈值后续由`0.1R`调整至`0.2R`，仅同步源码、既有边界用例与说明；按本轮要求未运行任何测试、构建或验证。此前自动化与JAR记录不作为此参数变更的验收结果。
+舞蹈当前阈值为`0.2R`；仍以共享边界用例及当前整体验证为准，不引用旧`0.1R`结果。
 
 Dome生产生命周期从普通主体初始状态出发，经过移动集结、95%反馈、服务端LOCK、中心接触与实际穿出结束平面，不能直接注入LOCK代替集结。检查rank唯一、旧反馈隔离、速度／姿态连续、死亡／中止／观察者及归队。证据在 `build/dome-v14/gpu-evidence-*.json`；联验实际候选与服务器时，先运行60Hz，再回放：
 
@@ -100,7 +120,7 @@ Helix受阻退出的同机三轮微基准使用`validateHelixGpu -PhelixBenchmar
 
 当前32格退出修复的同机对照：RTX4070 Laptop／驱动581.15、131072成员／4个Dome槽／64柱／100玩家，每类前后三轮且输入SHA-256相同。基线为本轮修改前的协议15着色器快照，Java运行时与输入一致。正常GPU批次P95中位数1.687→1.658ms，符合正常路径增量≤5%的预算；压力P95为2.473→2.733ms（约+10.5%），压力P50为2.174→2.146ms。压力尾部耗时没有改善，保留原始结果供复测，不能据此声称所有负载均提升。显存保持43,866,592字节、稳态上传0。原始数据在`build/benchmarks/dome-boundary-{before,after}/`及`dome-boundary-comparison.json`，基线源码在`dome-boundary-baseline/`。初始化与资源发布成本记录于同目录CSV；首次驱动编译和真实客户端冷启动未单独隔离。固定负载GPU批次耗时不能视为游戏帧率。
 
-当前生产斜坡与台阶场景从主体盘旋位置开始，19条受影响流线暂停，20Hz约30.2秒达到可达成员95%门槛；未整圈剔除，未知覆盖为0，单帧最大实际位移约0.400002格。上限升高不保证所有受限轨迹更快就绪。实际人数及最终时间读取`slope-gather.json`，随GPU线程调度有小幅差异。
+地形寻路修复前的斜坡与台阶场景曾用宽松截止，20Hz约30.2秒达到可达成员95%门槛，不能据此视为通过真实服务端截止。现行验证使用生产截止与逐成员完成反馈，见[地形修复实测](benchmarks/dome-terrain-2026-10-23.md)；上限升高不保证所有受限轨迹更快就绪。
 
 这些只包含网格、更新与Dome接触，不是完整游戏帧时间或服务器吞吐。新的性能改动需重测；历史数据不作当前构建验收。见[性能结果规则](benchmarks/README.md)。
 

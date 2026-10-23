@@ -162,6 +162,8 @@ vec2 cmiGauss2(float s) {
 // the open-sky column into the shaft's real collision data. The desired
 // velocity is a critically-damped approach shape (dist-scaled, capped).
 #pragma cmi_include chunks/dome_gather.glsl
+#pragma cmi_include chunks/dome_path_state.glsl
+#pragma cmi_include chunks/dome_path_follow.glsl
 #pragma cmi_include chunks/storm_navigation.glsl
 #pragma cmi_include chunks/dome_completion.glsl
 #pragma cmi_include chunks/helix_blocking.glsl
@@ -340,30 +342,25 @@ void main() {
                     // Published clocks are immutable and need no repeated writes.
                     float published=cmiDomePause(a);
                     if(occupied&&isinf(published))atomicMin(starStateWrite.words[at+1u],floatBitsToUint(max(0.,cmiDomeElapsed(b,uTimeSec)-uDt)));
-                    uint window=CMI_DOME_GATHER_WINDOW+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u,id=uint(cmiStarVec(b).x+.5)|0x80000000u;
-                    bool sameWindow=starStateRead.words[window]==id;
-                    float elapsed=(sameWindow?uintBitsToFloat(starStateRead.words[window+1u]):0.)+uDt;
-                    float progress=sameWindow?uintBitsToFloat(starStateRead.words[window+2u]):0.;
-                    float terrain=sameWindow?uintBitsToFloat(starStateRead.words[window+3u]):0.;
-                    // Depenetration is not navigation progress. Ordinary body
-                    // avoidance never contributes terrain evidence.
-                    if(cmiContactSweepValid&&length(towards)>.0001)progress+=dot(pos-p0.xyz,normalize(towards));
-                    if(cmiTerrainClipped||cmiDomeNavigationBlocked)terrain+=uDt;
-                    if(!sameWindow)blockedSeconds=0.;
-                    if(elapsed>=.5){blockedSeconds=terrain>=min(.1,elapsed*.2)&&progress<.1*elapsed?.5:0.;elapsed=0.;progress=0.;terrain=0.;}
-                    if(distance(pos,target)<=.4||unknown)blockedSeconds=0.;
-                    starStateWrite.words[window]=id;starStateWrite.words[window+1u]=floatBitsToUint(elapsed);starStateWrite.words[window+2u]=floatBitsToUint(progress);starStateWrite.words[window+3u]=floatBitsToUint(terrain);
+                    uint window=CMI_DOME_GATHER_WINDOW+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u;
+                    starStateWrite.words[window+7u]=(cmiTerrainClipped||cmiDomeNavigationBlocked||cmiDomeNavigationClipped?1u:0u)|(unknown?2u:0u)|(!cmiContactSweepValid?4u:0u);
+                    blockedSeconds=0.;
                 }else blockedSeconds=stalled?blockedSeconds+uDt:0.;
                 bool blocked=occupied||blockedSeconds>=.5;uint counts=CMI_GATHER_COUNTS+cmiStarSlot(a)*4u,word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);
                 if(unknown||blocked){
                     atomicAdd(starStateWrite.words[counts+(unknown?3u:2u)],1u);
-                    if((atomicAnd(starStateWrite.words[CMI_GATHER_ELIGIBLE+word],~bit)&bit)!=0u)atomicAdd(starStateWrite.words[counts+1u],0xffffffffu);
+                    if(!cmiDome(b)&&(atomicAnd(starStateWrite.words[CMI_GATHER_ELIGIBLE+word],~bit)&bit)!=0u)atomicAdd(starStateWrite.words[counts+1u],0xffffffffu);
                 }
-                else{
+                else if(cmiDome(b)){
+                    if(distance(pos,target)<.04&&distance(vel,motion)<=1.)starStateWrite.words[member*2u+1u]|=0x40000000u;
+                }else{
                     if(distance(pos,target)<=.4&&distance(vel,motion)<=1.)streak=same?min(3u,starStateRead.words[CMI_GATHER_STREAK+member]+1u):1u;
-                    if(cmiDome(b)&&distance(pos,target)<.04&&distance(vel,motion)<=1.)starStateWrite.words[member*2u+1u]|=0x40000000u;
                     if(streak==3u){atomicAdd(starStateWrite.words[counts],1u);atomicOr(starStateWrite.words[CMI_GATHER_READY+word],bit);}
                 }
+            }else if(cmiDome(b)&&phase>=6.&&cmiStarVec(b+20u).y==1.){
+                uint word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);
+                atomicAnd(starStateWrite.words[CMI_GATHER_READY+word],~bit);
+                if((atomicAnd(starStateWrite.words[CMI_GATHER_ELIGIBLE+word],~bit)&bit)!=0u)atomicAdd(starStateWrite.words[CMI_GATHER_COUNTS+cmiStarSlot(a)*4u+1u],0xffffffffu);
             }else if(cmiDome(b)&&phase==4.){
                 streak=starStateWrite.words[CMI_GATHER_STREAK+member];
                 blockedSeconds=cmiTerrainClipped?blockedSeconds+uDt:0.;
@@ -374,11 +371,11 @@ void main() {
                 }
             }
             // Released members own this scratch for velocity/pose handoff.
-            if(phase<6.){starStateWrite.words[CMI_GATHER_BLOCKED+member]=floatBitsToUint(blockedSeconds);starStateWrite.words[CMI_GATHER_STREAK+member]=streak;}
+            if(phase<6.){starStateWrite.words[CMI_GATHER_BLOCKED+member]=floatBitsToUint(blockedSeconds);if(!cmiDome(b)||phase!=1.)starStateWrite.words[CMI_GATHER_STREAK+member]=streak;}
         }
     }}
 
-    if(corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&cmiStarSlot(a)<4u){uint b=cmiStarBase(cmiStarSlot(a));if((cmiHelix(b)||cmiDome(b))&&cmiStarVec(b+20u).y<3.){uint word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);if((atomicAnd(starStateWrite.words[CMI_GATHER_ELIGIBLE+word],~bit)&bit)!=0u)atomicAdd(starStateWrite.words[CMI_GATHER_COUNTS+cmiStarSlot(a)*4u+1u],0xffffffffu);}}}
+    if(corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&cmiStarSlot(a)<4u){uint b=cmiStarBase(cmiStarSlot(a));if((cmiHelix(b)||cmiDome(b))&&cmiStarVec(b+20u).y<3.){uint word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);if((atomicAnd(starStateWrite.words[CMI_GATHER_ELIGIBLE+word],~bit)&bit)!=0u)atomicAdd(starStateWrite.words[CMI_GATHER_COUNTS+cmiStarSlot(a)*4u+1u],0xffffffffu);if(cmiDome(b)){starStateWrite.words[cmiDomePathRecord(a)+1u]=0u;if((atomicAnd(starStateWrite.words[CMI_DOME_PATH_REQUESTS+word],~bit)&bit)!=0u)atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+1u],0xffffffffu);uint window=CMI_DOME_GATHER_WINDOW+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u;for(uint component=0u;component<8u;component++)starStateWrite.words[window+component]=0u;}}}}
 
     // DIE_ON_GROUND (cherry): vanilla removes the particle in the same tick it
     // touches ground — BEFORE the frame renders, so the landing position is

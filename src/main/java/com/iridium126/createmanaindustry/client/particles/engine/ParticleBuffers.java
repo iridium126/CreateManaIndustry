@@ -1090,6 +1090,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER, DISPATCH_BB, this.dispatchSSBO);
         GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER, this.dispatchSSBO);
     }
+    public int dispatchBufferId(){return this.dispatchSSBO;}
 
     /** Phase publication owns these inputs, even after external compute passes reuse their bindings. */
     public void bindDispatchInputs(int currentSlot, int previousSlot) {

@@ -145,9 +145,11 @@ allprojects {
         }
         tasks.register('compileStarfallHarness', JavaCompile) {
             dependsOn tasks.named('classes')
-            source = files('scripts/particles/ModelPopulationGpuValidation.java', 'scripts/particles/StarfallGpuValidation.java', 'scripts/particles/DomeGpuValidation.java', 'scripts/particles/DomePoseGpuValidation.java', 'scripts/particles/DomeExitGpuValidation.java', 'scripts/particles/HelixGpuValidation.java', 'scripts/particles/StarfallColumnGpuValidation.java', 'scripts/particles/StormMotionGpuValidation.java', 'scripts/particles/StormCollisionGpuValidation.java', 'scripts/particles/StormBenchmark.java')
+            source = files('scripts/particles/ModelPopulationGpuValidation.java', 'scripts/particles/StarfallGpuValidation.java', 'scripts/particles/DomeGpuValidation.java', 'scripts/particles/DomePathGpuValidation.java', 'scripts/particles/DomePoseGpuValidation.java', 'scripts/particles/DomeExitGpuValidation.java', 'scripts/particles/HelixGpuValidation.java', 'scripts/particles/StarfallColumnGpuValidation.java', 'scripts/particles/StormMotionGpuValidation.java', 'scripts/particles/StormCollisionGpuValidation.java', 'scripts/particles/StormBenchmark.java')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             destinationDirectory = layout.buildDirectory.dir('starfall-harness')
+            source 'scripts/particles/DomeTerrainGpuValidation.java'
+            source 'scripts/particles/DomeGatherGpuValidation.java'
             options.release = 21
         }
         tasks.register('validateStarfallGpu', JavaExec) {
@@ -284,6 +286,35 @@ allprojects {
             classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'DomeGpuValidation'
             systemProperty 'cmi.dome.slopeOnly', 'true'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateDomeGatherGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            if(project.hasProperty('domeGatherBaseline')) {
+                classpath = files('build/dome-start/baseline/resources') + classpath
+                systemProperty 'cmi.dome.gatherBaseline','true'
+            }
+            mainClass = 'DomeGatherGpuValidation'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateDomePathGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'DomePathGpuValidation'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateDomeTerrainGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'DomeTerrainGpuValidation'
+            if(project.hasProperty('domeFps')) systemProperty 'cmi.dome.step',(1d/project.property('domeFps').toDouble()).toString()
+            if(project.hasProperty('domeJitter')) systemProperty 'cmi.dome.jitter','true'
+            if(project.hasProperty('domeReturningTraffic')) systemProperty 'cmi.dome.returningTraffic','true'
+            if(project.hasProperty('domeBodyDiagnostic')) systemProperty 'cmi.dome.bodyDiagnostic','true'
+            if(project.hasProperty('domeTerrainFilter')) systemProperty 'cmi.dome.terrainFilter', project.property('domeTerrainFilter')
+            if(project.hasProperty('domeTerrainPlans')) systemProperty 'cmi.dome.terrainPlans', file(project.property('domeTerrainPlans')).absolutePath
+            if(project.hasProperty('domeTerrainEvidence')) systemProperty 'cmi.dome.terrainEvidence', file(project.property('domeTerrainEvidence')).absolutePath
             workingDir = project.projectDir
         }
         tasks.register('validateDomeGpu', JavaExec) {

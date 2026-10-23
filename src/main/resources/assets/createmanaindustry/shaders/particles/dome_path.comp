@@ -1,0 +1,134 @@
+layout(local_size_x=128) in;
+layout(std430,binding=27) readonly buffer OldState {uint words[];} starStateRead;
+layout(std430,binding=28) buffer State {uint words[];} starStateWrite;
+layout(std430,binding=29) buffer PathDispatch {uint groups,rows,slices;} pathDispatch;
+uniform uint uMode;
+#define CMI_DOME_RUNTIME_FLOW
+uint cmiDomeFlowWord(uint at){return starStateWrite.words[at];}
+#pragma cmi_include chunks/allay_storm.glsl
+#pragma cmi_include chunks/storm_collision.glsl
+#pragma cmi_include chunks/dome_gather.glsl
+#pragma cmi_include chunks/dome_path_state.glsl
+#pragma cmi_include chunks/dome_path_segment.glsl
+bool cmiDomePathActive(uint rank){
+ if(rank>=49152u)return false;
+ uint record=CMI_DOME_PATH_BASE+rank*12u,flags=starStateWrite.words[record+1u],member=flags>>15u,slot=rank/12288u,base=cmiStarBase(slot);
+ uint assignment=member<131072u?cmiStarWord(16u+member):0u;
+ return assignment!=0u&&cmiStarSlot(assignment)==slot&&cmiMajorRank(assignment)==rank%12288u
+  &&cmiDome(base)&&cmiStarVec(base+20u).y==1.&&starStateWrite.words[record]==uint(cmiStarVec(base).x+.5)
+  &&member<131072u&&starStateWrite.words[member*2u]==starStateWrite.words[record]&&(starStateWrite.words[member*2u+1u]&255u)==1u;
+}
+shared uint requestWords[1536],scheduledCount,queuedCount,requestsRemaining;
+bool cmiDomePathTaskValid(uint task,uint rank){
+ uint record=CMI_DOME_PATH_BASE+rank*12u;
+ return cmiDomePathActive(rank)&&starStateWrite.words[record]==starStateWrite.words[task+1u]
+  &&(starStateWrite.words[record+1u]&15u)==CMI_DOME_PATH_SEARCHING&&starStateWrite.words[record+3u]==starStateWrite.words[task+8u]
+  &&starStateWrite.words[record+2u]==starStateWrite.words[task+16u];
+}
+void cmiDomePathSchedule(){
+ uint lane=gl_LocalInvocationID.x,control=CMI_DOME_PATH_CONTROL;
+ if(lane<8u)starStateWrite.words[control+8u+lane]=0u;
+ if(lane==0u){scheduledCount=0u;queuedCount=0u;requestsRemaining=starStateWrite.words[control+1u];starStateWrite.words[control+4u]=0u;starStateWrite.words[control+5u]=1u;starStateWrite.words[control+6u]=1u;pathDispatch.groups=0u;pathDispatch.rows=1u;pathDispatch.slices=1u;}
+ if(starStateWrite.words[control+1u]==0u&&starStateWrite.words[control+2u]==0u)return;
+ bool pending=starStateWrite.words[control+1u]!=0u;
+ for(uint word=lane;word<1536u;word+=128u)requestWords[word]=pending?starStateWrite.words[CMI_DOME_PATH_REQUESTS+word]:0u;
+ memoryBarrierBuffer();barrier();
+ uint task=CMI_DOME_PATH_TASKS+lane*CMI_DOME_PATH_TASK_WORDS;
+ if(starStateWrite.words[task]!=0u&&!cmiDomePathTaskValid(task,starStateWrite.words[task]-1u))starStateWrite.words[task]=0u;
+ memoryBarrierBuffer();barrier();
+ if(starStateWrite.words[task]==0u&&pending){
+  bool selected=false;uint rotation=starStateWrite.words[control]%4u;
+  for(uint pass=0u;pass<4u&&!selected&&requestsRemaining!=0u;pass++){
+   uint slot=(lane+rotation+pass)%4u;
+   for(uint scan=0u;scan<384u&&!selected&&requestsRemaining!=0u;scan++){
+    uint word=(scan+lane/4u+starStateWrite.words[control+16u+slot])%384u,maskAt=slot*384u+word,mask=requestWords[maskAt];
+    while(mask!=0u){
+     uint bit=uint(findLSB(mask)),old=atomicAnd(requestWords[maskAt],~(1u<<bit));if((old&(1u<<bit))==0u){mask=requestWords[maskAt];continue;}
+     atomicAdd(requestsRemaining,0xffffffffu);
+     uint rank=slot*12288u+word*32u+bit,record=CMI_DOME_PATH_BASE+rank*12u;
+     if(!cmiDomePathActive(rank)||(starStateWrite.words[record+1u]&15u)!=CMI_DOME_PATH_QUEUED){mask=requestWords[maskAt];continue;}
+     starStateWrite.words[task]=rank+1u;starStateWrite.words[task+1u]=starStateWrite.words[record];
+     starStateWrite.words[task+2u]=0u;starStateWrite.words[task+3u]=0u;starStateWrite.words[task+4u]=0u;
+     starStateWrite.words[task+8u]=starStateWrite.words[record+3u];starStateWrite.words[task+14u]=0u;
+     starStateWrite.words[task+15u]=uStormCollisionRevision;starStateWrite.words[task+16u]=starStateWrite.words[record+2u];
+     starStateWrite.words[record+1u]=(starStateWrite.words[record+1u]&0xffff8000u)|CMI_DOME_PATH_SEARCHING;
+     float age=cmiDomeElapsed(cmiStarBase(slot),uTimeSec)-uintBitsToFloat(starStateWrite.words[record+2u]);
+     atomicMax(starStateWrite.words[control+11u],floatBitsToUint(max(0.,age)));selected=true;break;
+    }
+   }
+  }
+ }
+ if(starStateWrite.words[task]!=0u)atomicAdd(scheduledCount,1u);
+ memoryBarrierBuffer();barrier();
+ uint queued=0u;for(uint word=lane;word<1536u;word+=128u){starStateWrite.words[CMI_DOME_PATH_REQUESTS+word]=requestWords[word];queued+=uint(bitCount(requestWords[word]));}atomicAdd(queuedCount,queued);
+ barrier();
+ if(lane<4u)starStateWrite.words[control+16u+lane]=(starStateWrite.words[control+16u+lane]+1u)%384u;
+ if(lane==0u){starStateWrite.words[control]++;starStateWrite.words[control+1u]=queuedCount;starStateWrite.words[control+2u]=scheduledCount;starStateWrite.words[control+4u]=scheduledCount==0u?0u:128u;starStateWrite.words[control+8u]=scheduledCount;starStateWrite.words[control+10u]=queuedCount;pathDispatch.groups=scheduledCount==0u?0u:128u;}
+}
+void cmiDomePathFinish(uint task,uint record,uint status){
+ starStateWrite.words[record+1u]=(starStateWrite.words[record+1u]&0xffff8000u)|status;
+ starStateWrite.words[record+8u]=floatBitsToUint(cmiDomeElapsed(cmiStarBase(min(3u,(record-CMI_DOME_PATH_BASE)/12u/12288u)),uTimeSec));
+ starStateWrite.words[task]=0u;
+ atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+2u],0xffffffffu);
+ if(status!=CMI_DOME_PATH_READY)starStateWrite.words[record+4u]=uStormCollisionRevision;
+ if(status==CMI_DOME_PATH_NO_ROUTE)atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+13u],1u);
+ else if(status==CMI_DOME_PATH_UNKNOWN)atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+12u],1u);
+ else if(status==CMI_DOME_PATH_READY)atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+14u],1u);
+ else atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+15u],1u);
+}
+void cmiDomePathResult(uint task,uint record,uint end){
+ uint turns[8];uint count=1u;turns[0]=end;uint current=end,lastDirection=6u;bool overflow=false;
+ for(uint step=0u;step<512u;step++){
+  uint parent=starStateWrite.words[task+24u+current]-1u;if(parent==current)break;
+  ivec3 delta=ivec3(cmiDomePathCell(current))-ivec3(cmiDomePathCell(parent));
+  uint direction=delta.x!=0?uint(delta.x>0?0:1):delta.y!=0?uint(delta.y>0?2:3):uint(delta.z>0?4:5);
+  if(lastDirection!=6u&&direction!=lastDirection){if(count>=8u){overflow=true;break;}turns[count++]=current;}
+  lastDirection=direction;current=parent;
+ }
+ if(overflow){cmiDomePathFinish(task,record,CMI_DOME_PATH_CAPACITY);return;}
+ for(uint point=0u;point<4u;point++)starStateWrite.words[record+4u+point]=0u;
+ for(uint point=0u;point<count;point++)starStateWrite.words[record+4u+point/2u]|=turns[count-1u-point]<<((point&1u)*16u);
+ cmiDomePathFinish(task,record,CMI_DOME_PATH_READY);starStateWrite.words[record+1u]|=count<<4u;
+}
+shared uint batchCells[8],batchCount,batchHead,foundCell,searching,initializeTask,taskPresent;
+void cmiDomePathSearch(uint task){
+ uint lane=gl_LocalInvocationID.x,rank=starStateWrite.words[task]-1u,record=CMI_DOME_PATH_BASE+rank*12u;
+ if(lane==0u){searching=1u;initializeTask=starStateWrite.words[task+14u];if(starStateWrite.words[task+15u]!=uStormCollisionRevision){cmiDomePathFinish(task,record,CMI_DOME_PATH_UNKNOWN);searching=0u;}}
+ memoryBarrierBuffer();barrier();if(searching==0u)return;
+ if(initializeTask==0u){
+  for(uint cell=lane;cell<512u;cell+=128u)starStateWrite.words[task+24u+cell]=0u;
+  memoryBarrierBuffer();barrier();
+  if(lane==0u){starStateWrite.words[task+24u+292u]=293u;starStateWrite.words[task+536u]=292u;starStateWrite.words[task+3u]=1u;starStateWrite.words[task+14u]=1u;for(uint axis=0u;axis<3u;axis++)starStateWrite.words[task+5u+axis]=starStateWrite.words[record+4u+axis];}
+ }
+ memoryBarrierBuffer();barrier();
+ vec3 base=vec3(uintBitsToFloat(starStateWrite.words[record+9u]),uintBitsToFloat(starStateWrite.words[record+10u]),uintBitsToFloat(starStateWrite.words[record+11u]));
+ vec3 goal=vec3(uintBitsToFloat(starStateWrite.words[task+5u]),uintBitsToFloat(starStateWrite.words[task+6u]),uintBitsToFloat(starStateWrite.words[task+7u]));
+ bool inside=all(greaterThanEqual(goal,base))&&all(lessThanEqual(goal,base+7.));float initialDistance=distance(base+vec3(4),goal);
+ for(uint iteration=0u;iteration<8u;iteration++){
+  if(lane==0u){batchHead=starStateWrite.words[task+2u];batchCount=min(8u,starStateWrite.words[task+3u]-batchHead);foundCell=0xffffffffu;
+   for(uint node=0u;node<batchCount;node++)batchCells[node]=starStateWrite.words[task+536u+batchHead+node];
+   if(batchCount==0u)cmiDomePathFinish(task,record,starStateWrite.words[task+4u]!=0u?CMI_DOME_PATH_UNKNOWN:CMI_DOME_PATH_NO_ROUTE);
+  }
+  memoryBarrierBuffer();barrier();if(batchCount==0u)return;
+  if(lane<batchCount){uint cell=batchCells[lane];vec3 point=base+cmiDomePathCell(cell);bool candidate=inside?distance(point,goal)<=1.:initialDistance-distance(point,goal)>=1.;
+   if(candidate){vec3 end=inside?goal:point+normalize(goal-point)*2.;int corridor=cmiDomePathSegment(point,end);if(corridor==0)atomicMin(foundCell,cell);else if(corridor<0)atomicOr(starStateWrite.words[task+4u],1u);}
+  }
+  if(lane<batchCount*6u){uint cell=batchCells[lane/6u],direction=lane%6u;ivec3 coordinate=ivec3(cmiDomePathCell(cell)),next=coordinate;next[direction/2u]+=direction%2u==0u?1:-1;
+   if(all(greaterThanEqual(next,ivec3(0)))&&all(lessThanEqual(next,ivec3(7)))){
+    uint neighbor=uint(next.x+next.y*8+next.z*64);if(starStateWrite.words[task+24u+neighbor]==0u){
+     int terrain=cmiDomePathSegment(base+vec3(coordinate),base+vec3(next));
+     if(terrain<0)atomicOr(starStateWrite.words[task+4u],1u);
+     if(terrain==0&&atomicCompSwap(starStateWrite.words[task+24u+neighbor],0u,cell+1u)==0u){uint tail=atomicAdd(starStateWrite.words[task+3u],1u);starStateWrite.words[task+536u+tail]=neighbor;}
+    }
+   }
+  }
+  memoryBarrierBuffer();barrier();
+  if(lane==0u){starStateWrite.words[task+2u]=batchHead+batchCount;atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+9u],batchCount);if(foundCell!=0xffffffffu)cmiDomePathResult(task,record,foundCell);}
+  memoryBarrierBuffer();barrier();if(foundCell!=0xffffffffu)return;
+ }
+}
+void main(){
+ if(uMode==0u){cmiDomePathSchedule();return;}
+ uint taskIndex=gl_WorkGroupID.x;if(taskIndex>=128u)return;uint task=CMI_DOME_PATH_TASKS+taskIndex*CMI_DOME_PATH_TASK_WORDS;
+ if(gl_LocalInvocationID.x==0u)taskPresent=starStateWrite.words[task];barrier();if(taskPresent!=0u)cmiDomePathSearch(task);
+}

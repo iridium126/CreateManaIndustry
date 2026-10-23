@@ -313,6 +313,7 @@ public final class AllayStormManager {
         for(int i=0;i<candidates.size();i++){var p=candidates.get((first+i)%candidates.size());
             if(Math.hypot(p.getX()-rt.chaseX,p.getZ()-rt.chaseZ)>ServerConfig.stormWaveRange)continue;
             if(rt.waves.stream().anyMatch(w->w.kind==kind&&w.target.equals(p.getUUID())))continue;
+            if(kind==StormAttack.DOME&&domeOverlapsBody(rt,data,p)){rt.stats.count(StormAttackStats.Reason.BODY_OVERLAP);continue;}
             target=p;break;
         }
         if(target==null)return;int seed=level.random.nextInt(1<<24);var track=rt.tracks.get(target.getUUID());
@@ -374,7 +375,12 @@ public final class AllayStormManager {
         w.currentPhase=w.locked?4:1;return true;
     }
 
+    private static boolean domeOverlapsBody(Runtime rt,AllayStormData data,ServerPlayer target){
+        double horizontal=Math.hypot((float)target.getX()-(float)rt.chaseX,(float)target.getZ()-(float)rt.chaseZ),vertical=(float)target.getBoundingBox().getCenter().y-ServerConfig.stormChaseY;
+        return AllayDome.overlapsStormBody(horizontal,vertical,AllayStormData.vortexRadius(data.count));
+    }
     private static boolean launchDome(ServerLevel level,Runtime rt,AllayStormData data,ServerPlayer target,long tick,int seed,int[] roster,Track track){
+        if(domeOverlapsBody(rt,data,target))return false;
         if(!DomeTemplate.available())return false;
         float x=(float)target.getX(),z=(float)target.getZ(),y=(float)target.getBoundingBox().getCenter().y;
         float now=clockSeconds(tick),radius=32,orientation=(AllayStarfall.mix(seed)&65535)*(float)(Math.PI*2/65536);
@@ -384,7 +390,7 @@ public final class AllayStormManager {
             new float[]{(float)from.x,(float)from.y,(float)from.z,x,y,z});
         w.kind=StormAttack.DOME;w.radius=radius;w.groupEnds=new int[]{AllayDome.MAX_MEMBERS};w.orientation=orientation;
         w.centerX=x;w.centerY=y;w.centerZ=z;w.centerSec=now;
-        w.assemble=w.start+(float)Math.max(4,(from.distanceTo(new Vec3(x,y,z))+1.15*AllayStormData.vortexRadius(data.count)+32)/6+8);
+        w.assemble=w.start+AllayDome.gatherSeconds(from.distanceTo(new Vec3(x,y,z)),AllayStormData.vortexRadius(data.count));
         w.lock=w.assemble;w.end=w.assemble+60.25f;
         for(int rank=0;rank<roster.length;rank++){w.memberColumns.put(roster[rank],0);rt.waveReserved.set(roster[rank]);}
         rt.waves.add(w);rt.stats.count(StormAttackStats.Reason.LAUNCHED);
@@ -396,7 +402,7 @@ public final class AllayStormManager {
     private static boolean advanceDome(ServerLevel level,Runtime rt,Wave w,ServerPlayer target,long tick,float clock){
         float now=w.start+AllayStarfall.elapsed(clock,w.start);
         if(!w.locked){
-            if(now>=w.assemble&&!w.gathered){w.abortReason=7;return false;}
+            if(DomeGatherRules.elapsedTicks(clock,w.start)>DomeGatherRules.durationTicks(w.start,w.assemble)&&!w.gathered){w.abortReason=7;return false;}
             if(!w.gathered)return true;
             w.assemble=now;w.lock=now;w.locked=true;w.currentPhase=4;w.end=now+60.25f;
             broadcastWave(level,rt,wavePacket(w,AllayStarfall.LOCK,false,target==null?-1:target.getId()));
@@ -862,7 +868,9 @@ public final class AllayStormManager {
     public static void gatheredAttack(com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket packet,IPayloadContext ctx){
         if(!(ctx.player() instanceof ServerPlayer player))return;var level=player.serverLevel();var data=level.getData(CMIAttachments.STORM_DATA.get());var rt=runtime(level);var track=rt.tracks.get(player.getUUID());
         if(!data.active||track==null||!track.active||!track.authority||!StormIdentity.of(level,data).equals(new StormIdentity(packet.dimension(),packet.epoch())))return;
-        for(var w:rt.waves)if(w.id==packet.id()&&StormAttack.regional(w.kind)&&!w.locked&&!w.gathered&&AllayStarfall.elapsed(clockSeconds(level.getGameTime()),w.assemble)<0){
+        for(var w:rt.waves)if(w.id==packet.id()&&StormAttack.regional(w.kind)&&!w.locked&&!w.gathered){
+            float now=clockSeconds(level.getGameTime());
+            if(w.kind==AllayDome.DOME?DomeGatherRules.elapsedTicks(now,w.start)>DomeGatherRules.durationTicks(w.start,w.assemble):AllayStarfall.elapsed(now,w.assemble)>=0)return;
             if(w.kind==AllayDome.DOME){
                 var flows=packet.flows();
                 // START is scheduled slightly ahead; trust the bounded GPU phase,
@@ -873,7 +881,7 @@ public final class AllayStormManager {
             var ready=BitSet.valueOf(packet.ready());var eligible=BitSet.valueOf(packet.eligible());
             if(ready.length()>w.members.length||eligible.length()>w.members.length)return;
             for(int rank=0;rank<w.members.length;rank++)if(data.dead.get(w.members[rank])||w.completed.get(rank)){ready.clear(rank);eligible.clear(rank);}
-            if(!StormGatherRules.valid(ready,eligible,w.members.length))return;
+            if(w.kind==AllayDome.DOME?!DomeGatherRules.valid(ready,eligible,w.members.length,now,w.start,w.assemble):!StormGatherRules.valid(ready,eligible,w.members.length))return;
             for(int rank=0;rank<w.members.length;rank++)if(!ready.get(rank)&&!w.completed.get(rank)){w.completed.set(rank);w.membership.clear(w.members[rank]);rt.waveReserved.clear(w.members[rank]);}
             w.gathered=true;return;
         }
@@ -883,7 +891,7 @@ public final class AllayStormManager {
         if(!(ctx.player() instanceof ServerPlayer player))return;var level=player.serverLevel();var data=level.getData(CMIAttachments.STORM_DATA.get());var rt=runtime(level);var track=rt.tracks.get(player.getUUID());
         if(!data.active||track==null||!track.active||!track.authority||!StormIdentity.of(level,data).equals(new StormIdentity(packet.dimension(),packet.epoch())))return;
         var ranks=BitSet.valueOf(packet.ranks());long[] accepted=null;
-        for(var w:rt.waves)if(w.id==packet.id()&&StormAttack.regional(w.kind)&&w.locked){if(ranks.length()>w.members.length)return;
+        for(var w:rt.waves)if(w.id==packet.id()&&w.epoch==packet.epoch()&&StormAttack.regional(w.kind)&&(w.locked||w.kind==AllayDome.DOME)){if(ranks.length()>w.members.length)return;
             for(int rank=ranks.nextSetBit(0);rank>=0;rank=ranks.nextSetBit(rank+1))if(!w.completed.get(rank)){w.completed.set(rank);w.membership.clear(w.members[rank]);rt.waveReserved.clear(w.members[rank]);}
             accepted=w.completed.toLongArray();break;
         }

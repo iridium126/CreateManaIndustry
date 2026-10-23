@@ -840,6 +840,7 @@ public final class AllayStormRuntime {
         }
     }
     public boolean domeGather(int id){var w=findWaveById(id);return w!=null&&w.packet.dome();}
+    com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket wavePacket(int id){var wave=findWaveById(id);return wave==null||!wave.alive||wave.packet.abort()?null:wave.packet;}
     public void gatherProgress(int id,int[] counts){var w=findWaveById(id);if(w!=null)w.gatherCounts=counts;}
     public String starfallStatus(){
         int stars=0,domes=0,helices=0,helixMembers=0,starMembers=0,domeMembers=0,columns=0;StringBuilder helixStages=new StringBuilder();StringBuilder stages=new StringBuilder(),fallbacks=new StringBuilder();

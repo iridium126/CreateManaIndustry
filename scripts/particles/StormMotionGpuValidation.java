@@ -76,6 +76,11 @@ public class StormMotionGpuValidation extends StarfallColumnGpuValidation {
  }
  static void domeInterception(){
   try(var probe=new DomeExitGpuValidation.Probe()){
+   var previousTarget=DomeTemplate.gatherPoint(0,1.95);var reference=DomeTemplate.gatherVelocity(0,1.95);Vec3 firstVelocity=null;
+   for(double error:new double[]{.999,1.001}){
+    probe.wave=DomeGpuValidation.domeAt(probe.id,0,1,AllayDome.gatherSeconds(40,16));probe.gpu.rebuild(new ClientboundStormWavePacket[]{probe.wave,null,null,null});probe.seed(previousTarget.add(error,0,0),1,1.95f);var incoming=reference.normalize().scale(-8);probe.data.putFloat(16,(float)incoming.x).putFloat(20,(float)incoming.y).putFloat(24,(float)incoming.z);probe.step(2,.05f);var velocity=new Vec3(probe.data.getFloat(16),probe.data.getFloat(20),probe.data.getFloat(24));check(velocity.distanceTo(incoming)<=18*.05+.003,"Dome near control exceeded acceleration");check(velocity.length()<=8.001,"Dome near control exceeded gather speed");if(firstVelocity!=null)check(firstVelocity.distanceTo(velocity)<.03,"One-metre control handoff is discontinuous");firstVelocity=velocity;
+   }
+   probe.seed(previousTarget.add(3,0,0),1,1.95f);probe.data.putFloat(16,32);probe.step(2,.05f);check(new Vec3(probe.data.getFloat(16),probe.data.getFloat(20),probe.data.getFloat(24)).length()<=8.001,"High-speed takeover escaped the Dome budget");
    probe.wave=DomeGpuValidation.domeAt(probe.id,0,1,90);probe.gpu.rebuild(new ClientboundStormWavePacket[]{probe.wave,null,null,null});probe.seed(new Vec3(100,40,0),1,1);
    double maximum=0;for(int frame=0;frame<20;frame++){check((probe.step(1+frame*.05f,.05f)&255)==1,"Dome interception changed phase");double speed=Math.sqrt(Math.pow(probe.data.getFloat(16),2)+Math.pow(probe.data.getFloat(20),2)+Math.pow(probe.data.getFloat(24),2));maximum=Math.max(maximum,speed);check(speed<=8.001,"Dome interception exceeded eight");}check(maximum>7.9,"Dome final contact pass clipped interception to six");
    probe.wave=DomeGpuValidation.domeAt(probe.id,2,4,10);probe.gpu.rebuild(new ClientboundStormWavePacket[]{probe.wave,null,null,null});

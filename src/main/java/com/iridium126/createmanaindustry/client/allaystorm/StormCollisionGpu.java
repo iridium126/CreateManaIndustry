@@ -96,6 +96,7 @@ public final class StormCollisionGpu implements AutoCloseable {
     public void bind(int program){
         boolean ready=current>=0;
         GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uStormCollisionOn"),ready?1:0);
+        GL41.glProgramUniform1ui(program,GpuUniforms.loc(program,"uStormCollisionRevision"),ready?(int)banks[current].serial:0);
         if(!ready)return;
         GL13.glActiveTexture(GL13.GL_TEXTURE1);GL11.glBindTexture(GL12.GL_TEXTURE_3D,atlas);
         GL13.glActiveTexture(GL13.GL_TEXTURE2);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,banks[current].texture);

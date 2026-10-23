@@ -8,4 +8,9 @@ gradle.projectsEvaluated {
             systemProperty 'cmi.dome.evidence', p.file(p.property('domeEvidence')).absolutePath
         }
     }
+    ['domeTerrainPlans', 'domeTerrainEvidence'].each { property ->
+        if (p.hasProperty(property)) p.tasks.named('runGameTestServer', JavaExec).configure {
+            systemProperty 'cmi.dome.' + property, p.file(p.property(property)).absolutePath
+        }
+    }
 }

@@ -185,7 +185,9 @@ public final class StormFeedback {
                 var flows=flowTimes.containsKey(id)?new com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState(flowTimes.get(id)):com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState.EMPTY;
                 if(AllayStormRuntime.INSTANCE.domeGather(id)&&flowVersions.getOrDefault(id,-1)!=flows.revision())continue;
                 var r=ready.get(id);var e=eligible.get(id);var c=counts.get(id);
-                boolean canGather=r!=null&&e!=null&&c!=null&&r.cardinality()==c[0]&&e.cardinality()==c[1]&&com.iridium126.createmanaindustry.content.allaystorm.StormGatherRules.valid(r,e,12288)&&(!gathered.containsKey(w)||mc.level.getGameTime()-gathered.get(w)>=5);
+                var plan=AllayStormRuntime.INSTANCE.wavePacket(id);
+                boolean valid=r!=null&&e!=null&&plan!=null&&(plan.dome()?com.iridium126.createmanaindustry.content.allaystorm.DomeGatherRules.valid(r,e,12288,AllayStormRuntime.INSTANCE.timeSec(),plan.startSec(),plan.assembleSec()):com.iridium126.createmanaindustry.content.allaystorm.StormGatherRules.valid(r,e,12288));
+                boolean canGather=valid&&c!=null&&r.cardinality()==c[0]&&e.cardinality()==c[1]&&(!gathered.containsKey(w)||mc.level.getGameTime()-gathered.get(w)>=5);
                 if(canGather||flows.revision()>flowRevisions.getOrDefault(w,0)){
                     if(canGather)gathered.put(w,mc.level.getGameTime());flowRevisions.put(w,flows.revision());sent=true;
                     PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(mc.level.dimension().location(),w.epoch(),id,canGather?r.toLongArray():new long[0],canGather?e.toLongArray():new long[0],flows));

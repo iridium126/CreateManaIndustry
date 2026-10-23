@@ -4,6 +4,7 @@ uniform bool uStormCollisionOn;
 layout(binding=1) uniform usampler3D uStormCollisionAtlas;
 layout(binding=2) uniform isamplerBuffer uStormCollisionTable;
 uniform uint uStormCollisionMask;
+uniform uint uStormCollisionRevision;
 bool cmiStormVoxel=false,cmiStormMissing=false;
 ivec3 cmiStormCached=ivec3(2147483647);int cmiStormCachedPage=-1;
 uint cmiStormSectionHash(ivec3 key){uint h=uint(key.x)*0x8da6b343u^uint(key.y)*0xd8163841u^uint(key.z)*0xcb1ab31fu;return h^(h>>16u);}

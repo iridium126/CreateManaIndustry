@@ -17,10 +17,14 @@ uniform int uPlayerCount;
 #define CMI_DOME_RUNTIME_FLOW
 uint cmiDomeFlowWord(uint at){return starStateRead.words[at];}
 #pragma cmi_include chunks/allay_storm.glsl
+#pragma cmi_include chunks/dome_navigation.glsl
 #pragma cmi_include chunks/storm_players.glsl
 #pragma cmi_include chunks/storm_collision.glsl
 #pragma cmi_include chunks/dome_contact_velocity.glsl
 #pragma cmi_include chunks/dome_motion_budget.glsl
+#pragma cmi_include chunks/dome_gather.glsl
+#pragma cmi_include chunks/dome_path_state.glsl
+#pragma cmi_include chunks/dome_path_cache.glsl
 // Runtime swept proxy. The immutable reference has its own .50m proof.
 const float CMI_BODY_RADIUS=.34,CMI_BODY_CELL=2.5;
 int cmiDomeOwner(float identity){
@@ -39,6 +43,7 @@ float cmiDomeSweepFraction(vec3 delta,vec3 relative){
 }
 shared uint gatherReady,gatherEligible;
 #pragma cmi_include chunks/dome_completion.glsl
+#pragma cmi_include chunks/dome_gather_audit.glsl
 void main(){
  if(uMode==6u){uint slot=gl_WorkGroupID.x,lane=gl_LocalInvocationID.x;if(slot>=4u)return;if(lane==0u){gatherReady=0u;gatherEligible=0u;}barrier();uint ready=0u,eligible=0u;for(uint k=lane;k<384u;k+=64u){ready+=uint(bitCount(state.words[CMI_GATHER_READY+slot*384u+k]));eligible+=uint(bitCount(state.words[CMI_GATHER_ELIGIBLE+slot*384u+k]));}atomicAdd(gatherReady,ready);atomicAdd(gatherEligible,eligible);barrier();if(lane==0u){state.words[CMI_GATHER_COUNTS+slot*4u]=gatherReady;state.words[CMI_GATHER_COUNTS+slot*4u+1u]=gatherEligible;}return;}
 
@@ -56,25 +61,17 @@ void main(){
  float neighborBudget=max(CMI_STORM_INTERCEPT,uintBitsToFloat(cmiStarWord(3u)));
  vec3 old;if(!cmiDomeOld(member,old))return;uint record=CMI_DOME_CONTACT_DELTA+member*4u;
  if(uMode==5u){
-  if(phase==1u){uint a=cmiStarAssignment(p.w),flow=uint(owner)*66u+cmiDomeFlow(a),at=CMI_DOME_FLOW_STATE+flow*2u;
-   float published=uintBitsToFloat(cmiStarWord(CMI_DOME_FLOW_SOURCE+flow*2u+1u));
-   if(isinf(published)&&uintBitsToFloat(state.words[at+1u])<cmiDomePause(a)){
-    uint word=uint(owner)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);
-    atomicAnd(state.words[CMI_GATHER_READY+word],~bit);state.words[CMI_GATHER_STREAK+member]=0u;
-   }
-  }
-  if(phase==1u&&state.words[CMI_GATHER_STREAK+member]>0u){
-   // Verify the final, already clipped positions. An approaching group may
-   // be moving apart while still intersecting; that is not a ready formation.
-   bool clear=true;float reach=.5+(speedBudget+neighborBudget)*uDt;ivec3 origin=ivec3(floor(p.xyz/CMI_BODY_CELL));int cells=int(ceil(reach/CMI_BODY_CELL)),visits=0;
-   for(int x=-cells;x<=cells&&clear;x++)for(int y=-cells;y<=cells&&clear;y++)for(int z=-cells;z<=cells&&clear;z++){
-    ivec3 cell=origin+ivec3(x,y,z);vec3 closest=clamp(p.xyz,vec3(cell)*CMI_BODY_CELL,(vec3(cell)+1.)*CMI_BODY_CELL);if(distance(p.xyz,closest)>reach)continue;
-    uint hash=(uint(cell.x)*92837111u^uint(cell.y)*689287499u^uint(cell.z)*283923481u)&(GRID_TABLE-1u);int node=grid.heads[hash];
-    while(node!=0){uint j=uint(node-1);node=grid.next[j];if(++visits>768){clear=false;break;}if(j==i)continue;vec4 other=pool.data[j*4u],otherLife=pool.data[j*4u+3u];if(otherLife.y<=0.||floatBitsToUint(otherLife.w)!=emitter)continue;
-     uint otherMember=cmiStarMember(other.w);bool same=otherMember<131072u&&cmiDomeOwner(other.w)==owner&&state.words[otherMember*2u]==state.words[member*2u];if(distance(p.xyz,other.xyz)<(same?.50:CMI_BODY_RADIUS)){clear=false;break;}
-    }
-   }
-   if(!clear){uint a=cmiStarAssignment(p.w),word=uint(owner)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);if((atomicAnd(state.words[CMI_GATHER_READY+word],~bit)&bit)!=0u)atomicAdd(state.words[CMI_GATHER_COUNTS+uint(owner)*4u],0xffffffffu);state.words[CMI_GATHER_STREAK+member]=0u;}
+  if(phase==1u){
+   vec3 target,motion;cmiDomeSampleOffset(assignment,0.,target,motion);int terrain=uStormCollisionEnabled?cmiDomeBodyTerrain(target):0;
+   if(cmiDomeGatherAudit(assignment,member,p.xyz,target,terrain,pool.data[at+1u].w))return;
+   uint flow=uint(owner)*66u+cmiDomeFlow(assignment),flowAt=CMI_DOME_FLOW_STATE+flow*2u,window=CMI_DOME_GATHER_WINDOW+(uint(owner)*12288u+cmiMajorRank(assignment))*8u;
+   uint word=uint(owner)*384u+cmiMajorRank(assignment)/32u,bit=1u<<(cmiMajorRank(assignment)&31u);
+   float published=uintBitsToFloat(cmiStarWord(CMI_DOME_FLOW_SOURCE+flow*2u+1u));bool changed=isinf(published)&&uintBitsToFloat(state.words[flowAt+1u])<cmiDomePause(assignment);
+   bool valid=cmiStarWord(2u)!=0u&&!changed&&(state.words[window+7u]&6u)==0u&&terrain==0&&distance(p.xyz,target)<=.4&&distance(pool.data[at+1u].xyz,motion)<=1.;
+   bool same=starStateRead.words[member*2u]==state.words[member*2u]&&(starStateRead.words[member*2u+1u]&255u)==1u&&starStateRead.words[window+5u]==floatBitsToUint(cmiDomePause(assignment));
+   uint streak=valid?(same?min(3u,starStateRead.words[CMI_GATHER_STREAK+member]+1u):1u):0u;state.words[CMI_GATHER_STREAK+member]=streak;
+   if(streak==3u)atomicOr(state.words[CMI_GATHER_READY+word],bit);else atomicAnd(state.words[CMI_GATHER_READY+word],~bit);
+   if(valid&&distance(p.xyz,target)<.04)state.words[member*2u+1u]|=0x40000000u;else state.words[member*2u+1u]&=~0x40000000u;
   }
   if(phase==4u){uint a=cmiStarAssignment(p.w),b=cmiStarBase(uint(owner)),mapped=cmiDomeMappedRank(a);vec4 record=cmiDomeRecord(a),ring=cmiStarVec(CMI_DOME_DATA+8u+mapped*16u),end=cmiStarVec(CMI_DOME_DATA+16u+mapped*16u);
    if(state.words[member*2u]!=uint(cmiStarVec(b).x+.5))return;
@@ -142,7 +139,6 @@ void main(){
   if(distance(destination,p.xyz)<.000001)return;
   pool.data[at].xyz=destination;vec3 actualVelocity=(destination-old)/max(uDt,.0001);float actualSpeed=length(actualVelocity);pool.data[at+1u].xyz=actualSpeed>speedBudget?actualVelocity*(speedBudget/actualSpeed):actualVelocity;state.words[member*2u+1u]|=0x80000000u;state.words[member*2u+1u]&=~0x40000000u;
   pool.data[at+1u].w=phase==4u&&cmiNearPlayer(destination+vec3(0,.3,0),36.)?-4.:0.;
-  if(phase==1u){uint a=cmiStarAssignment(p.w),word=uint(owner)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);if((atomicAnd(state.words[CMI_GATHER_READY+word],~bit)&bit)!=0u)atomicAdd(state.words[CMI_GATHER_COUNTS+uint(owner)*4u],0xffffffffu);state.words[CMI_GATHER_STREAK+member]=0u;}
   return;
  }
  vec3 preferred=(p.xyz-old)/max(uDt,.0001),gatherCorrection=vec3(0);float preferredSpeed=length(preferred);if(preferredSpeed>speedBudget)preferred*=speedBudget/preferredSpeed;float gatherWorst=0.;vec4 blockingPlane=vec4(0);float blockingPenalty=0.;bool hazard=false;
@@ -155,7 +151,7 @@ void main(){
    vec4 other=pool.data[j*4u];if(distance(p.xyz,other.xyz)>CMI_BODY_RADIUS+relativeBudget*horizon)continue;
    vec4 otherLife=pool.data[j*4u+3u];if(otherLife.y<=0.||floatBitsToUint(otherLife.w)!=floatBitsToUint(life.w))continue;
    uint otherMember=cmiStarMember(other.w),otherPhase=otherMember<131072u?state.words[otherMember*2u+1u]&255u:0u;
-   bool same=cmiDomeOwner(other.w)==owner&&state.words[otherMember*2u]==state.words[member*2u];
+   bool same=cmiDomeOwner(other.w)==owner&&state.words[otherMember*2u]==state.words[member*2u]&&(phase!=1u||otherPhase==1u);
    bool priority=(state.words[member*2u+1u]&0x40000000u)!=0u,otherPriority=otherMember<131072u&&(state.words[otherMember*2u+1u]&0x40000000u)!=0u;
    // Baked/gathered traffic has right of way. A returning or approaching
    // member yields once, rather than both sides braking a certified lane.

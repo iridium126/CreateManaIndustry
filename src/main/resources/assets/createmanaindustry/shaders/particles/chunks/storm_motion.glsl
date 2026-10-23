@@ -240,18 +240,24 @@
             // Predictively intercept a closed 3-D streamline; once close,
             // integrate its displacement instead of chasing its moving point.
             uint a=cmiStarAssignment(p0.w),b=cmiStarBase(cmiStarSlot(a));
+            cmiDomePathIdentity(a,cmiStarMember(p0.w));
             vec3 previous,previousVelocity;cmiDomeSampleOffset(a,-uDt,previous,previousVelocity);
             vec3 error=previous-pos,desired;float errorLength=length(error);
-            if(errorLength<1.)desired=(target-previous)/max(uDt,.0001)+error*min(6.,.6/max(errorLength,.000001));
-            else{
+            vec3 following=(target-previous)/max(uDt,.0001)+error*min(6.,.6/max(errorLength,.000001));
+            desired=following;
+            if(errorLength>1.){
                 vec4 ring=cmiDomeRing(a);vec3 center=cmiDomeCenter(b,uTimeSec)+vec3(0,ring.y-.3,0);
                 float lo=0.,hi=(distance(pos,center)+ring.x+.6)/CMI_STORM_INTERCEPT+.1;
                 for(int k=0;k<10;k++){float mid=(lo+hi)*.5;vec3 future,motion;cmiDomeSampleOffset(a,mid-uDt,future,motion);if(distance(pos,future)>CMI_STORM_INTERCEPT*mid)lo=mid;else hi=mid;}
-                vec3 future,motion;cmiDomeSampleOffset(a,max(hi,uDt)-uDt,future,motion);desired=(future-pos)/max(hi,uDt);
+                vec3 future,motion;cmiDomeSampleOffset(a,max(hi,uDt)-uDt,future,motion);
+                float transition=max(2.,1.+dot(vel-previousVelocity,vel-previousVelocity)/36.);
+                desired=mix(following,(future-pos)/max(hi,uDt),smoothstep(1.,transition,errorLength));
             }
             // Avoidance is applied AFTER interception; do not reconstruct the
             // original straight path after choosing a traversable corridor.
+            vec3 waypoint;bool cached=cmiStormVoxel&&cmiDomePathFollow(a,pos,waypoint);if(cached){float distanceToWaypoint=distance(waypoint,pos);desired=(waypoint-pos)/max(distanceToWaypoint,.000001)*min(CMI_STORM_INTERCEPT,sqrt(36.*max(.001,distanceToWaypoint-.15)));}
             if(cmiStormVoxel&&length(desired)>.0001)desired=cmiDomeGatherAvoid(pos,normalize(desired),min(2.,max(.25,length(desired)*.35)))*length(desired);
+            if(cached&&(cmiDomeNavigationClipped||cmiDomeNavigationUnknown)){uint record=cmiDomePathRecord(a);starStateWrite.words[record+1u]=(starStateWrite.words[record+1u]&0xffff8000u)|(cmiDomeNavigationUnknown?CMI_DOME_PATH_UNKNOWN:CMI_DOME_PATH_IDLE);}
             float desiredSpeed=min(CMI_STORM_INTERCEPT,length(desired)),oldSpeed=length(vel),newSpeed=clamp(desiredSpeed,max(0.,oldSpeed-18.*uDt),oldSpeed+18.*uDt);
             vec3 direction=length(desired)>.000001?normalize(desired):vec3(0,0,1);
             if(oldSpeed>.0001&&newSpeed>.0001){float cosine=clamp((oldSpeed*oldSpeed+newSpeed*newSpeed-324.*uDt*uDt)/(2.*oldSpeed*newSpeed),-1.,1.);direction=cmiDomeTurn(vel/oldSpeed,direction,uDt,.0001,min(3.141592654,acos(cosine)/max(uDt,.0001)));}

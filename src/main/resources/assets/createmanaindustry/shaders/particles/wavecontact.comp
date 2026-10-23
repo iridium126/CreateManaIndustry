@@ -54,7 +54,8 @@ void main() {
       }
       // Bitmaps come from the same committed frame as the aggregate. Never merge readiness across frames.
       for(uint word=invocation;word<1536u;word+=gl_NumWorkGroups.x*64u){uint slot=word/384u,b=cmiStarBase(slot),c=CMI_GATHER_COUNTS+slot*4u,eligible=state.words[c+1u],ready=state.words[c];
-        if(cmiStarVec(b).x<.5||cmiStarVec(b).y>=1.5||cmiStarVec(b+20u).y>=3.||eligible==0u||ready*100u<eligible*95u)continue;
+        bool gathered=cmiDome(b)?cmiDomeGatherReady(ready,eligible,uTimeSec,cmiStarVec(b+4u).x,cmiStarVec(b+4u).y):eligible>0u&&ready*100u>=eligible*95u;
+        if(cmiStarVec(b).x<.5||cmiStarVec(b).y>=1.5||cmiStarVec(b+20u).y>=3.||!gathered)continue;
         for(uint k=0u;k<2u;k++){uint bits=state.words[(k==0u?CMI_GATHER_READY:CMI_GATHER_ELIGIBLE)+word];if(bits==0u)continue;uint o=atomicAdd(result.count,1u);if(o<WAVECONTACT_CAP){o*=6u;result.entries[o]=k==0u?-4.:-5.;result.entries[o+1u]=cmiStarVec(b).x;result.entries[o+2u]=float(word-slot*384u);result.entries[o+3u]=float(bits&65535u);result.entries[o+4u]=float(bits>>16u);result.entries[o+5u]=uTimeSec;}}
       }
       for(uint word=invocation;word<CMI_COMPLETION_WORDS;word+=gl_NumWorkGroups.x*64u){uint bits=state.words[CMI_COMPLETIONS+word];if(bits==0u)continue;uint slot=word<1536u?word/384u:4u+(word-1536u)/2u,b=cmiStarBase(slot),id=uint(cmiStarVec(b).x+.5);if(id==0u||cmiStarVec(b).y>2.5)continue;

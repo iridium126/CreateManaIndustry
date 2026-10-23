@@ -1,5 +1,5 @@
 // Gather-only body queries. Unknown sections never latch a flow pause.
-bool cmiDomeNavigationBlocked=false,cmiDomeNavigationUnknown=false,cmiDomeProbeUnknown=false;
+bool cmiDomeNavigationBlocked=false,cmiDomeNavigationUnknown=false,cmiDomeProbeUnknown=false,cmiDomeNavigationClipped=false;
 int cmiDomeBodyTerrain(vec3 feet){
  ivec3 lo=ivec3(floor(feet+vec3(-.175,.001,-.175))),hi=ivec3(floor(feet+vec3(.175,.599,.175)));
  // Whole-air/solid section markers are common; avoid eight voxel reads.
@@ -15,6 +15,7 @@ float cmiDomeCorridor(vec3 pos,vec3 direction,float reach){
 }
 vec3 cmiDomeGatherAvoid(vec3 pos,vec3 direction,float reach){
  float forward=cmiDomeCorridor(pos,direction,reach);bool unknown=cmiDomeProbeUnknown;if(forward>=reach)return direction;
+ cmiDomeNavigationClipped=!unknown;
  vec3 side=cross(direction,vec3(0,1,0));if(length(side)<.001)side=vec3(1,0,0);else side=normalize(side);
  vec3 best=direction;float bestClear=forward,bestScore=forward+.3;
  // A short, deterministic fan; upward tangent first on slopes. No global search.
