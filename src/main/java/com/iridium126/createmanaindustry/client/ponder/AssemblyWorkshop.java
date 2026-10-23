@@ -26,6 +26,10 @@ final class AssemblyWorkshop {
 
     AssemblyWorkshop(Workshop w, Fluid liquid) {
         this.w = w;
+        w.build(() -> setup(liquid));
+    }
+
+    private void setup(Fluid liquid) {
         for (int x = 1; x <= 7; x++) {
             BlockPos pos = p(x, 1, 3);
             int index = x - 1;
@@ -62,13 +66,14 @@ final class AssemblyWorkshop {
         w.scene.world().modifyBlockEntityNBT(w.util.select().position(deployer), DeployerBlockEntity.class,
                 nbt -> nbt.put("HeldItem", tool.saveOptional(w.scene.world().getHolderLookupProvider())));
         w.use(deployer, tool);
-        w.scene.world().moveDeployer(deployer, 1, 20); w.scene.idle(25);
+        w.scene.world().moveDeployer(deployer, 1, 25); w.idle(25);
         w.scene.world().changeBeltItemTo(item, result);
-        w.scene.world().moveDeployer(deployer, -1, 20); w.scene.idle(25);
+        w.scene.world().moveDeployer(deployer, -1, 25); w.idle(25);
     }
     void moveTo(BlockPos station, ItemStack stack) {
         w.scene.world().stallBeltItem(item, false);
-        w.scene.idle(32);
+        // 32 RPM moves 2 blocks in 30 ticks (Create's speed / 480 formula).
+        w.idle(30);
         // Restage at the exact processing centre, avoiding timing drift on skipped keyframes.
         clearBelt();
         item = w.scene.world().createItemOnBelt(station.below(2), Direction.UP, stack);
@@ -77,10 +82,10 @@ final class AssemblyWorkshop {
     void fill(Fluid fluid, ItemStack result) {
         w.liquid(spout, fluid, 1000);
         w.scene.world().modifyBlockEntity(spout, SpoutBlockEntity.class, be -> be.processingTicks = 20);
-        w.scene.idle(20);
+        w.idle(20);
         w.liquid(spout, fluid, 0);
         w.scene.world().changeBeltItemTo(item, result);
-        w.scene.idle(20);
+        w.idle(20);
     }
     void press(ItemStack result) {
         w.press(press, false);
@@ -88,7 +93,7 @@ final class AssemblyWorkshop {
         w.scene.effects().indicateSuccess(press.below(2));
     }
     void output(ItemStack stack) {
-        w.scene.world().stallBeltItem(item, false); w.scene.idle(20);
+        w.scene.world().stallBeltItem(item, false); w.idle(20);
         clearBelt();
         w.depot(p(8, 1, 3), stack);
     }

@@ -19,11 +19,11 @@ ASSETS = ROOT / 'src/main/resources/assets/createmanaindustry'
 PREFIX = 'createmanaindustry.ponder.'
 STRING = r'"((?:[^"\\]|\\.)*)"'
 TITLE = re.compile(r'new Workshop\(builder, util, ' + STRING + r', ' + STRING + r', ' + STRING + r'\)')
-TEXT = re.compile(r'w\.text\([^;]*?' + STRING + r',\s*' + STRING + r'\);', re.S)
+TEXT = re.compile(r'w\.(?:text|explain)\(\d+,\s*[^;]*?' + STRING + r',\s*' + STRING + r'\);', re.S)
 REG = re.compile(r'add\(helper, "([a-z_]+)", (\w+)::(\w+), (\w+), ([^;]+)\);')
 TAGS = {
-    'processing': ('The Magic Workshop', '魔法工作站', 'Heat, coat and process materials with Create machinery', '用机械动力机器完成加热、镀层和材料加工'),
-    'mist': ('Working with Mist', '雾场入门', 'Make mist, collect it and use it to power machines', '制造、回收雾，并用雾驱动机器'),
+    'processing': ('The Magic Workshop', '魔法工作站', 'Heat, coat and process materials with Create machinery', '使用机械动力机器加热、镀层与加工材料'),
+    'mist': ('Working with Mist', '雾场', 'Make mist, collect it and use it to power machines', '产生、收集雾并驱动机器'),
     'magic_automation': ('Magic Automation', '魔法自动化', 'Charge, assemble and connect magical items', '为魔法物品充能、组装，并接入自动化系统'),
 }
 
@@ -77,7 +77,9 @@ def scenes():
             assert name not in result, f'Duplicate scene: {name}'
             body = source[match.end():matches[i + 1].start() if i + 1 < len(matches) else len(source)]
             paragraphs = [(unquote(a), unquote(b)) for a, b in TEXT.findall(body)]
-            assert len(paragraphs) == body.count('w.text('), f'Unparsed text: {name}'
+            assert len(paragraphs) == body.count('w.text(') + body.count('w.explain('), f'Unparsed text: {name}'
+            durations = [int(n) for n in re.findall(r'w\.(?:text|explain)\((\d+),', body)]
+            assert len(durations) == len(paragraphs) and all(40 <= n <= 120 for n in durations), f'Unexpected caption duration: {name}'
             assert 4 <= len(paragraphs) <= 7, f'Unexpected pacing: {name}'
             assert 'w.finish();' in body, f'Missing ending: {name}'
             result[name] = (en, zh, paragraphs, path.stem)
@@ -90,6 +92,20 @@ def scenes():
         assert f'void {method}(SceneBuilder builder, SceneBuildingUtil util)' in source
         assert re.findall(STRING, items), f'No component entry point: {name}'
     return result, registrations
+
+
+def editorial_contracts(catalog):
+    """Keep Create terminology and caption punctuation consistent after edits."""
+    protected = {'allay_capture': '为悦灵安个家', 'allay_music': '机器旁的音乐角'}
+    for scene_id, title in protected.items():
+        assert catalog[scene_id][1] == title, f'Protected title changed: {scene_id}'
+    # Names follow .refs/Create/src/main/resources/assets/create/lang/zh_cn.json.
+    # Ponder only: other books and optional mods retain their own style.
+    obsolete = r'机械臂|磨石|显示链接(?!器)|框架玻璃活板门|运动结构|右键|火力等级'
+    for scene_id, (_, title, paragraphs, _) in catalog.items():
+        for text in [title, *(zh for _, zh in paragraphs)]:
+            assert not re.search(obsolete, text), f'Non-Create terminology: {scene_id}: {text}'
+            assert not re.search(r'[。！？；]', text), f'Use concise Create captions: {scene_id}: {text}'
 
 
 def nbt_string(value):
@@ -221,6 +237,7 @@ def main():
     parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
     catalog, registrations = scenes()
+    editorial_contracts(catalog)
     optional_guards()
     recipe_contracts()
     expected = [{}, {}]

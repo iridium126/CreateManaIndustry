@@ -47,52 +47,52 @@ public final class HexPonderScenes {
         focus.set(HexDataComponents.IOTA_HOLDER_IOTA, new PatternIota(HexPattern.fromAngleString("qaq", HexDir.EAST)));
         blank.set(HexDataComponents.PIGMENT, FrozenPigment.DEFAULT.get());
         line.input(blank);
-        w.text(line.deployer, "A Focus in the Deployer supplies the stored pattern to write into a spell item.", "机械手持有的核心提供待写入图案，用于写入施法物品。");
+        w.explain(60, line.deployer, "A Focus in the Deployer supplies the stored pattern to write into a spell item.", "机械手可以将核心中保存的图案写入施法物品");
         ItemStack written = HexItemDataTransfer.applyDeployerIotaAppend(CMIItems.INCOMPLETE_CYPHER.asStack(), blank, focus);
         line.deploy(focus, written);
-        w.text(line.deployer, "Each application appends its stored Iota. The Focus is kept, so you can use it again.", "每次操作会追加核心中的 Iota，核心本身保留，可以重复使用。");
+        w.explain(70, line.deployer, "Each application appends its stored Iota. The Focus is kept, so you can use it again.", "每次操作会追加核心中的 Iota，核心不会被消耗");
         line.moveTo(line.spout, written);
         ItemStack filled = HexItemFillingLogic.fillIncompleteHexItem(written, 1000);
+        w.explain(70, line.spout, "Fill the unfinished item with Liquid Media. Repeated filling increases its stored media up to its limit.", "使用液态媒质可以反复灌注未完成物品，直到达到容量上限");
         line.fill(CMIFluids.LIQUID_MEDIA.get(), filled);
-        w.text(line.spout, "Fill the unfinished item with Liquid Media. Repeated filling increases its stored media up to its limit.", "向未完成物品灌注液态媒质，可以重复灌注，直到达到容量上限。");
         line.moveTo(line.press, filled);
         ItemStack result = HexItemDataTransfer.applyPressTransfer(filled, item("hexcasting:cypher"));
+        w.explain(60, line.press, "The press finishes the item while retaining its written patterns, media and pigment.", "冲压可以完成定型，并保留图案、媒质和颜料");
         line.press(result); line.output(result);
-        w.text(p(8, 1, 3), "The press finishes the item while retaining its written patterns, media and pigment.", "冲压机完成定型，并保留已经写入的图案、媒质和颜料。");
-        w.text(p(8, 1, 3), "Trinkets and Artifacts follow the same steps. Finished Cyphers are single-use and cannot be refilled.", "饰品和造物采用相同流程。成品缀品是一次性的，不能再次灌注补充。");
+        w.text(80, p(8, 1, 3), "Trinkets and Artifacts follow the same steps. Finished Cyphers are single-use and cannot be refilled.", "饰品和造物使用相同流程，成品缀品只能使用一次，且无法再次灌注");
         w.finish();
     }
 
     public static void battery(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "hex_battery", "Making a Media Battery", "制造媒质之瓶");
+        Workshop w = new Workshop(builder, util, "hex_battery", "Making a Media Battery", "制作媒质之瓶");
         AssemblyWorkshop line = new AssemblyWorkshop(w, CMIFluids.LIQUID_MEDIA.get());
         line.input(new ItemStack(Items.GLASS_BOTTLE));
         ItemStack incomplete = CMIItems.INCOMPLETE_MEDIA_BATTERY.asStack();
+        w.explain(80, line.deployer, "Apply the battery-crafting scroll to a Glass Bottle. Other patterns fail; the correct scroll is kept.", "机械手需要持有对应图案的远古卷轴才能加工玻璃瓶，卷轴不会被消耗");
         line.deploy(scroll(), incomplete);
-        w.text(line.deployer, "Apply the battery-crafting scroll to a Glass Bottle. Other patterns fail; the correct scroll is kept.", "对玻璃瓶使用制作媒质之瓶图案的远古卷轴；其他图案无效，正确的卷轴会保留。");
         line.moveTo(line.spout, incomplete);
         ItemStack filled = HexItemFillingLogic.fillIncompleteHexItem(incomplete, 1000);
+        w.explain(60, line.spout, "Fill with Liquid Media before pressing. You may repeat filling to store more media.", "冲压前可以反复灌注液态媒质，增加储存量");
         line.fill(CMIFluids.LIQUID_MEDIA.get(), filled);
-        w.text(line.spout, "Fill with Liquid Media before pressing. You may repeat filling to store more media.", "先灌入液态媒质，再进行冲压。可以重复灌注来储存更多媒质。");
         line.moveTo(line.press, filled);
         ItemStack result = HexItemDataTransfer.applyPressTransfer(filled, item("hexcasting:battery"));
+        w.explain(60, line.press, "The press creates a finished Media Battery containing the media you supplied.", "冲压后得到媒质之瓶，并保留其中的媒质");
         line.press(result); line.output(result);
-        w.text(p(8, 1, 3), "The press creates a finished Media Battery containing the media you supplied.", "冲压后得到成品媒质之瓶，里面保留灌入的媒质。");
-        w.text(p(8, 1, 3), "Its final capacity is set by how much media was filled before pressing.", "成品的容量由冲压定型前实际灌入的媒质量决定。");
+        w.text(60, p(8, 1, 3), "Its final capacity is set by how much media was filled before pressing.", "定型前灌入的媒质量决定成品容量");
         w.finish();
     }
 
     public static void batteryTransfer(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "hex_battery_transfer", "Refilling and emptying a battery", "媒质之瓶的自动存取");
+        Workshop w = new Workshop(builder, util, "hex_battery_transfer", "Refilling and emptying a battery", "提取与补充媒质之瓶中的媒质");
         BlockPos drain = p(3, 1, 3), depot = p(6, 1, 3), spout = depot.above(2);
         ItemStack full = filledBattery();
         ItemStack empty = full.copy();
         MediaBatteryFluidHandler handler = new MediaBatteryFluidHandler(empty);
         int amount = handler.drain(Integer.MAX_VALUE, FluidAction.EXECUTE).getAmount();
         w.place(drain, AllBlocks.ITEM_DRAIN.get()); w.display(drain, full);
-        w.text(drain, "A finished Media Battery can exchange its stored media as Liquid Media.", "成品媒质之瓶可以把内部媒质转换成液态媒质来存取。");
+        w.text(60, drain, "A finished Media Battery can exchange its stored media as Liquid Media.", "媒质之瓶中的媒质可以作为液态媒质存取");
+        w.explain(60, drain, "Use an Item Drain to empty it. The bottle remains; its stored media decreases.", "分液池可以提取其中的媒质，瓶子不会被消耗");
         w.display(drain, empty); w.liquid(drain, CMIFluids.LIQUID_MEDIA.get(), Math.min(1000, amount));
-        w.text(drain, "Use an Item Drain to empty it. The bottle remains; its stored media decreases.", "用分液池抽出媒质。瓶子会保留，只减少内部储量。");
         w.pipe(drain.south(), Direction.NORTH, Direction.SOUTH); w.pump(drain.south(2), Direction.SOUTH);
         w.tank(drain.south(3), CMIFluids.LIQUID_MEDIA.get(), amount);
         w.liquid(drain, CMIFluids.LIQUID_MEDIA.get(), 0);
@@ -102,13 +102,13 @@ public final class HexPonderScenes {
         w.pump(spout.south(2), Direction.NORTH);
         w.pipe(spout.south(), Direction.NORTH, Direction.SOUTH);
         w.liquid(spout, CMIFluids.LIQUID_MEDIA.get(), Math.min(1000, amount));
+        w.explain(60, spout, "A Spout fills the same bottle again with Liquid Media.", "注液器可以向同一个瓶子重新灌入液态媒质");
         w.scene.world().modifyBlockEntity(spout, SpoutBlockEntity.class, be -> be.processingTicks = 20);
-        w.scene.idle(25);
+        w.idle(25);
         ItemStack refilled = empty.copy();
         new MediaBatteryFluidHandler(refilled).fill(new FluidStack(CMIFluids.LIQUID_MEDIA.get(), Math.max(1, amount)), FluidAction.EXECUTE);
         w.display(depot, refilled); w.liquid(spout, CMIFluids.LIQUID_MEDIA.get(), 0);
-        w.text(spout, "A Spout fills the same bottle again with Liquid Media.", "注液器可以把液态媒质重新灌进同一个瓶子。");
-        w.text(depot, "Refilling restores its contents but does not increase the capacity set during crafting.", "再次灌注只会恢复储量，不会提高制作时确定的容量。");
+        w.text(60, depot, "Refilling restores its contents but does not increase the capacity set during crafting.", "再次灌注只会补充储量，不会增加容量");
         w.finish();
     }
 }
