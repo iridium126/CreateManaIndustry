@@ -69,6 +69,15 @@ final class Workshop {
         scene.world().setBlock(pos, Blocks.AIR.defaultBlockState(), false);
     }
 
+    /** Start another demonstration without disturbing the floor or backdrop. */
+    void clearWorkArea() {
+        var area = util.select().fromTo(0, 1, 0, 8, 6, 6);
+        scene.world().hideSection(area, Direction.UP);
+        scene.idle(20);
+        scene.world().setBlocks(area, Blocks.AIR.defaultBlockState(), false);
+        pumps.clear();
+    }
+
     // Chinese is harvested alongside the English text by scripts/ponder/resources.py.
     // Keep each scene's text calls in playback order for Ponder's text_N keys.
     void text(BlockPos pos, String english, String chinese) {

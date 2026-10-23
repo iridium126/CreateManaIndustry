@@ -44,19 +44,18 @@ public final class ProcessingPonderScenes {
         Workshop w = new Workshop(builder, util, "media_conversion", "From Media to Mana", "把媒质转成魔力");
         BlockPos basin = p(4, 2, 3);
         mixer(w, basin, true);
-        w.text(basin, "Use a heated Basin and a powered Mechanical Mixer to convert Liquid Media.", "用有热源的工作盆和有动力的搅拌器，转换液态媒质。");
+        w.text(basin, "Converting Liquid Media into Liquid Mana requires Heated mixing.", "液态媒质转为液态魔力，需要满足普通加热的搅拌条件。");
         w.use(basin, new ItemStack(CMIFluids.LIQUID_MEDIA.get().getBucket()));
-        w.liquid(basin, CMIFluids.LIQUID_MEDIA.get(), 125);
-        w.text(basin, "This recipe takes 125 mB of Liquid Media at a time.", "这个配方每次使用 125 mB 液态媒质。");
+        w.liquid(basin, CMIFluids.LIQUID_MEDIA.get(), 250);
+        w.text(basin, "Each batch consumes 250 mB of Liquid Media.", "每次加工消耗 250 mB 液态媒质。");
         w.mix(basin.above(2));
         w.liquid(basin, CMIFluids.LIQUID_MANA.get(), 125);
-        w.text(basin, "After mixing, the same amount becomes Liquid Mana.", "搅拌完成后，得到等量的液态魔力。");
+        w.text(basin, "Mixing produces 125 mB of Liquid Mana: half the input volume.", "搅拌后得到 125 mB 液态魔力，体积为输入量的一半。");
         w.pipe(basin.east(), Direction.WEST, Direction.EAST);
         w.pump(basin.east(2), Direction.EAST);
         w.tank(basin.east(3), CMIFluids.LIQUID_MANA.get(), 125);
         w.liquid(basin, CMIFluids.LIQUID_MANA.get(), 0);
         w.text(basin.east(3), "Store it for mana-based machines and item filling.", "把液态魔力储存起来，供机器使用或灌注物品。");
-        w.text(basin, "Check the recipe's heat and fluid requirements before connecting the next production step.", "连接下一道工序前，先确认配方要求的热量和液体种类。");
         w.finish();
     }
 
@@ -151,9 +150,8 @@ public final class ProcessingPonderScenes {
         BlockPos basin = p(4, 2, 3);
         press(w, basin, true);
         w.basinItems(basin, AllItems.ROSE_QUARTZ.asStack());
-        w.text(basin, "Put Rose Quartz into a Basin beneath a powered Mechanical Press.", "把玫瑰石英放进工作盆，上方安装有动力的冲压机。");
         w.point(basin.below(), PonderPalette.GREEN);
-        w.text(basin.below(), "Melting needs superheat. A lit Allay Burner can provide it.", "熔化需要超级加热，点燃的悦灵燃烧室可以满足要求。");
+        w.text(basin.below(), "Rose Quartz melts by Superheated compacting. Allay Heat also meets this requirement.", "玫瑰石英通过超级加热冲压熔化，悦灵加热也能满足这个要求。");
         w.press(basin.above(2), true); w.basinItems(basin);
         w.liquid(basin, CMIFluids.MOLTEN_ROSE_QUARTZ.get(), 250);
         w.text(basin, "One Rose Quartz becomes 250 mB of molten liquid.", "1 个玫瑰石英可以熔化成 250 mB 液体。");
@@ -172,8 +170,7 @@ public final class ProcessingPonderScenes {
         press(w, basin, false);
         w.text(basin, "Coolant is the liquid consumed by Condensers when they collect mist.", "冷凝管收集雾时，需要消耗冷却液。");
         w.basinItems(basin, new ItemStack(Items.ICE)); w.use(basin, new ItemStack(Items.ICE));
-        w.text(basin, "Put one block of Ice into a Basin below a powered Mechanical Press.", "把 1 个冰放进工作盆，上方使用有动力的冲压机。");
-        w.text(basin, "This compacting recipe needs no burner underneath.", "这个冲压配方不需要下方的燃烧室。");
+        w.text(basin, "Compacting one block of Ice makes Coolant without any heating requirement.", "冲压 1 个冰即可制作冷却液，不需要加热。");
         w.press(basin.above(2), true); w.basinItems(basin);
         w.liquid(basin, CMIFluids.COOLANT.get(), 1000);
         w.text(basin, "One Ice becomes one bucket of Coolant.", "1 个冰会产出 1 桶冷却液。");
@@ -190,9 +187,8 @@ public final class ProcessingPonderScenes {
         w.text(basin, "Sweet Berries and water can be mixed into Liquid Source.", "甜浆果和水可以搅拌成液态魔源。");
         w.basinItems(basin, new ItemStack(Items.SWEET_BERRIES));
         w.liquid(basin, net.minecraft.world.level.material.Fluids.WATER, 25);
-        w.text(basin, "Each batch uses one Sweet Berry and 25 mB of water.", "每次加工使用 1 个甜浆果和 25 mB 水。");
+        w.text(basin, "Each batch mixes one Sweet Berry with 25 mB of water; no heat is needed.", "每次搅拌使用 1 个甜浆果和 25 mB 水，不需要加热。");
         w.point(basin.above(2), PonderPalette.GREEN);
-        w.text(basin.above(2), "Power the Mixer. This recipe does not need heat.", "给搅拌器接入动力即可，这个配方不需要加热。");
         w.mix(basin.above(2)); w.basinItems(basin);
         w.liquid(basin, CMIFluids.LIQUID_SOURCE.get(), 25);
         w.text(basin, "The finished batch contains 25 mB of Liquid Source.", "完成后得到 25 mB 液态魔源。");

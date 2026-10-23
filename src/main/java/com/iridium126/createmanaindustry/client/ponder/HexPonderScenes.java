@@ -47,7 +47,7 @@ public final class HexPonderScenes {
         focus.set(HexDataComponents.IOTA_HOLDER_IOTA, new PatternIota(HexPattern.fromAngleString("qaq", HexDir.EAST)));
         blank.set(HexDataComponents.PIGMENT, FrozenPigment.DEFAULT.get());
         line.input(blank);
-        w.text(line.deployer, "Give the Deployer a Focus holding the pattern to write, and place a spell item on the belt.", "让机械手拿着保存了待写入图案的核心，再把施法物品放上传送带。");
+        w.text(line.deployer, "A Focus in the Deployer supplies the stored pattern to write into a spell item.", "机械手持有的核心提供待写入图案，用于写入施法物品。");
         ItemStack written = HexItemDataTransfer.applyDeployerIotaAppend(CMIItems.INCOMPLETE_CYPHER.asStack(), blank, focus);
         line.deploy(focus, written);
         w.text(line.deployer, "Each application appends its stored Iota. The Focus is kept, so you can use it again.", "每次操作会追加核心中的 Iota，核心本身保留，可以重复使用。");
@@ -67,10 +67,9 @@ public final class HexPonderScenes {
         Workshop w = new Workshop(builder, util, "hex_battery", "Making a Media Battery", "制造媒质之瓶");
         AssemblyWorkshop line = new AssemblyWorkshop(w, CMIFluids.LIQUID_MEDIA.get());
         line.input(new ItemStack(Items.GLASS_BOTTLE));
-        w.text(line.deployer.below(2), "Start with a Glass Bottle and a scroll for the battery-crafting pattern.", "准备玻璃瓶，以及保存了制作媒质之瓶图案的远古卷轴。");
         ItemStack incomplete = CMIItems.INCOMPLETE_MEDIA_BATTERY.asStack();
         line.deploy(scroll(), incomplete);
-        w.text(line.deployer, "The scroll must contain the correct crafting pattern. Other scrolls will not work, and the scroll is not consumed.", "必须使用对应制作图案的卷轴，其他卷轴无效。加工不会消耗卷轴。");
+        w.text(line.deployer, "Apply the battery-crafting scroll to a Glass Bottle. Other patterns fail; the correct scroll is kept.", "对玻璃瓶使用制作媒质之瓶图案的远古卷轴；其他图案无效，正确的卷轴会保留。");
         line.moveTo(line.spout, incomplete);
         ItemStack filled = HexItemFillingLogic.fillIncompleteHexItem(incomplete, 1000);
         line.fill(CMIFluids.LIQUID_MEDIA.get(), filled);
@@ -97,7 +96,6 @@ public final class HexPonderScenes {
         w.pipe(drain.south(), Direction.NORTH, Direction.SOUTH); w.pump(drain.south(2), Direction.SOUTH);
         w.tank(drain.south(3), CMIFluids.LIQUID_MEDIA.get(), amount);
         w.liquid(drain, CMIFluids.LIQUID_MEDIA.get(), 0);
-        w.text(drain.south(3), "Pump the recovered Liquid Media into a tank for other machines.", "把取出的液态媒质泵入储罐，供其他机器使用。");
         w.display(drain, ItemStack.EMPTY); w.depot(depot, empty);
         w.place(spout, AllBlocks.SPOUT.get());
         w.tank(spout.south(3), CMIFluids.LIQUID_MEDIA.get(), amount);

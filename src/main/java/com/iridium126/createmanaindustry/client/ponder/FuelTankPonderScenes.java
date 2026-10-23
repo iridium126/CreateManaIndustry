@@ -60,17 +60,42 @@ public final class FuelTankPonderScenes {
         Workshop w = new Workshop(builder, util, "fuel_tank_storage", "Storage that fits the workshop", "按工坊形状搭建储液罐");
         BlockPos tank = p(4, 1, 3);
         cell(w, tank);
-        w.text(tank, "Molten Salt Fuel Tanks store fluids and connect to adjacent tanks.", "熔盐燃料罐可以储存液体，与相邻的罐体连接。");
         cell(w, tank.east()); cell(w, tank.east(2)); cell(w, tank.east(2).south());
         w.text(tank.east(2), "Build an L shape to fit around a corner. The group does not have to be a rectangular box.", "沿墙角搭成 L 形也可以，不必组成长方体。");
         w.tank(tank.west(3), CMIFluids.LIQUID_MEDIA.get(), 4000);
         w.pump(tank.west(2), Direction.EAST); w.pipe(tank.west(), Direction.WEST, Direction.EAST);
         group(w, tank, tank, tank.east(), tank.east(2), tank.east(2).south());
         w.liquid(tank, CMIFluids.LIQUID_MEDIA.get(), FuelTankBlockEntity.getCapacityPerBlock() * 2);
-        w.text(tank.west(), "Use pipes and a powered pump to fill the group through one of its tanks.", "通过管道和有动力的泵，从任意一个罐体向整组灌液。");
+        w.text(tank.west(), "Connected tanks share their fluid storage. One pipe connection can fill the whole group.", "连通的罐体共享储液空间，一处管路连接就能向整组灌液。");
         w.point(tank.east(), PonderPalette.GREEN);
         w.text(tank.east(), "Only face-to-face neighbours connect. A diagonal contact is not enough.", "只有面贴面的罐体才能连接，仅对角接触不算相连。");
         w.text(tank, "More tanks add capacity, within the configured group limit. Keep different fluids in separate groups.", "增加罐体可扩大容量，但有配置规定的规模上限。不同液体要分组储存。");
+        w.clearWorkArea();
+        BlockPos bearing = p(4, 2, 3), carried = bearing.above(), port = carried.east();
+        w.place(bearing, AllBlocks.MECHANICAL_BEARING.getDefaultState().setValue(BlockStateProperties.FACING, Direction.UP));
+        w.place(bearing.below(), AllBlocks.CREATIVE_MOTOR.getDefaultState().setValue(BlockStateProperties.FACING, Direction.UP));
+        cell(w, carried);
+        w.liquid(carried, CMIFluids.LIQUID_MEDIA.get(), 1000);
+        w.text(carried, "Fuel Tanks can travel with an assembled Create contraption and carry their fluid.", "熔盐燃料罐可以随机械动力运动结构一起移动，并携带内部液体。");
+        w.place(port, AllBlocks.PORTABLE_FLUID_INTERFACE.getDefaultState().setValue(BlockStateProperties.FACING, Direction.EAST));
+        w.scene.effects().superGlue(carried, Direction.EAST, true);
+        var section = w.scene.world().makeSectionIndependent(w.util.select().fromTo(carried, port));
+        w.scene.world().configureCenterOfRotation(section, Vec3.atCenterOf(bearing));
+        w.scene.world().rotateSection(section, 0, 360, 0, 100);
+        w.scene.world().rotateBearing(bearing, 360, 100);
+        w.scene.idle(110);
+        w.text(carried, "Fixed pipes cannot access a moving tank. Use Portable Fluid Interfaces for the exchange.", "固定管道无法访问移动中的罐体，需要通过移动式流体接口交换液体。");
+        BlockPos fixed = port.east(2);
+        w.place(fixed, AllBlocks.PORTABLE_FLUID_INTERFACE.getDefaultState().setValue(BlockStateProperties.FACING, Direction.WEST));
+        w.scene.world().modifyBlockEntityNBT(w.util.select().fromTo(port, fixed),
+                com.simibubi.create.content.contraptions.actors.psi.PortableFluidInterfaceBlockEntity.class, nbt -> {
+                    nbt.putFloat("Distance", 1); nbt.putFloat("Timer", 14);
+                });
+        w.pipe(fixed.south(), Direction.NORTH, Direction.SOUTH);
+        w.pump(fixed.south(2), Direction.SOUTH);
+        w.tank(fixed.south(3), CMIFluids.LIQUID_MEDIA.get(), 1000);
+        w.liquid(carried, CMIFluids.LIQUID_MEDIA.get(), 0);
+        w.text(fixed, "At a connected stop, a pump on the stationary side transfers the stored fluid.", "接口停靠连接后，由固定端的泵转移储存的液体。");
         w.finish();
     }
 
@@ -91,39 +116,6 @@ public final class FuelTankPonderScenes {
         w.text(tank.above(), "The top window has its own setting. Choose which parts you want to see.", "顶部观察窗可以单独设置，按需要决定哪些位置可见。");
         w.scene.world().modifyBlock(tank, s -> s.setValue(FuelTankBlock.SIDE_OPEN, true), false);
         w.text(tank, "Window and material changes alter the appearance, not the stored fluid.", "开关观察窗或更换外壳，只改变外观，不会改变储存的液体。");
-        w.finish();
-    }
-
-    public static void moving(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "fuel_tank_moving", "Carrying fluid on a contraption", "让运动结构携带液体");
-        BlockPos bearing = p(4, 1, 4), tank = bearing.above(), port = tank.east();
-        w.place(bearing, AllBlocks.MECHANICAL_BEARING.getDefaultState().setValue(BlockStateProperties.FACING, Direction.UP));
-        w.place(bearing.below(), AllBlocks.CREATIVE_MOTOR.getDefaultState().setValue(BlockStateProperties.FACING, Direction.UP));
-        cell(w, tank);
-        w.liquid(tank, CMIFluids.LIQUID_MEDIA.get(), 1000);
-        w.text(tank, "Fuel Tanks can travel with an assembled Create contraption and carry their fluid.", "熔盐燃料罐可以随机械动力运动结构一起移动，并携带内部液体。");
-        w.place(port, AllBlocks.PORTABLE_FLUID_INTERFACE.getDefaultState().setValue(BlockStateProperties.FACING, Direction.EAST));
-        w.scene.effects().superGlue(tank, Direction.EAST, true);
-        w.use(tank, AllItems.SUPER_GLUE.asStack());
-        w.text(port, "Glue a Portable Fluid Interface to the moving tank before assembly.", "组装之前，用强力胶把移动端流体接口粘到罐体上。");
-        var section = w.scene.world().makeSectionIndependent(util.select().fromTo(tank, port));
-        w.scene.world().configureCenterOfRotation(section, Vec3.atCenterOf(bearing));
-        w.scene.world().rotateSection(section, 0, 360, 0, 100);
-        w.scene.world().rotateBearing(bearing, 360, 100);
-        w.scene.idle(110);
-        w.text(tank, "The tank moves as part of the contraption. Fixed pipes cannot follow it.", "罐体会成为运动结构的一部分，固定管道不能跟着它移动。");
-        BlockPos fixed = port.east(2);
-        w.place(fixed, AllBlocks.PORTABLE_FLUID_INTERFACE.getDefaultState().setValue(BlockStateProperties.FACING, Direction.WEST));
-        w.scene.world().modifyBlockEntityNBT(util.select().fromTo(port, fixed),
-                com.simibubi.create.content.contraptions.actors.psi.PortableFluidInterfaceBlockEntity.class, nbt -> {
-                    nbt.putFloat("Distance", 1); nbt.putFloat("Timer", 14);
-                });
-        w.text(fixed, "Face a stationary interface towards it, leaving a one-block gap at the docking position.", "在停靠位置对向放置固定端接口，中间留一格空隙。");
-        w.pipe(fixed.south(), Direction.NORTH, Direction.SOUTH);
-        w.pump(fixed.south(2), Direction.SOUTH);
-        w.tank(fixed.south(3), CMIFluids.LIQUID_MEDIA.get(), 1000);
-        w.liquid(tank, CMIFluids.LIQUID_MEDIA.get(), 0);
-        w.text(fixed, "At a connected stop, a pump on the stationary side transfers the stored fluid.", "接口停靠连接后，由固定端的泵转移储存的液体。");
         w.finish();
     }
 

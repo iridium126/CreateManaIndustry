@@ -38,6 +38,7 @@ public class CMIPonderPlugin implements PonderPlugin {
         add(helper, "allay_capture", AllayBurnerPonderScenes::capture, PROCESSING, "empty_allay_burner", "allay_burner");
         add(helper, "allay_fuel", AllayBurnerPonderScenes::solidFuel, PROCESSING, "allay_burner", "create:mechanical_arm");
         add(helper, "allay_liquid", AllayBurnerPonderScenes::liquidMedia, PROCESSING, "allay_burner", "liquid_media_bucket");
+        add(helper, "allay_heat_levels", AllayBurnerPonderScenes::heatLevels, PROCESSING, "empty_allay_burner", "allay_burner");
         add(helper, "allay_heating", AllayBurnerPonderScenes::heating, PROCESSING, "allay_burner", "liquid_media_bucket");
         add(helper, "allay_music", AllayBurnerPonderScenes::music, PROCESSING, "allay_burner");
         add(helper, "atomizer_setup", MistPonderScenes::atomizing, MIST, "kinetic_atomizer", "liquid_media_bucket", "liquid_mana_bucket");
@@ -45,7 +46,6 @@ public class CMIPonderPlugin implements PonderPlugin {
         add(helper, "soul_recovery", MistPonderScenes::soul, MIST, "allay_burner", "condenser", "liquid_soul_bucket");
         add(helper, "condenser_setup", MistPonderScenes::condenser, MIST, "condenser", "exposed_condenser", "weathered_condenser", "oxidized_condenser", "waxed_condenser", "waxed_exposed_condenser", "waxed_weathered_condenser", "waxed_oxidized_condenser", "coolant_bucket");
         add(helper, "mana_cogwheel", MistPonderScenes::cogwheel, MIST, "mana_cogwheel");
-        add(helper, "mana_reversal", MistPonderScenes::reversal, MIST, "mana_cogwheel");
         add(helper, "amethyst_deposition", ProcessingPonderScenes::amethystDeposition, PROCESSING, "create:framed_glass_trapdoor", "amethyst_deposited_iron_sheet", "amethyst_deposited_copper_sheet", "amethyst_deposited_golden_sheet", "amethyst_deposited_brass_sheet");
         add(helper, "rose_deposition", ProcessingPonderScenes::roseDeposition, PROCESSING, "create:framed_glass_trapdoor", "rose_quartz_deposited_iron_sheet", "rose_quartz_deposited_copper_sheet", "rose_quartz_deposited_golden_sheet", "rose_quartz_deposited_brass_sheet");
         add(helper, "media_conversion", ProcessingPonderScenes::mediaConversion, PROCESSING, "liquid_media_bucket", "liquid_mana_bucket");
@@ -56,14 +56,12 @@ public class CMIPonderPlugin implements PonderPlugin {
         add(helper, "liquid_source", ProcessingPonderScenes::source, PROCESSING, "liquid_source_bucket");
         add(helper, "fuel_tank_storage", FuelTankPonderScenes::storage, PROCESSING, "molten_salt_fuel_tank");
         add(helper, "fuel_tank_windows", FuelTankPonderScenes::decoration, PROCESSING, "molten_salt_fuel_tank");
-        add(helper, "fuel_tank_moving", FuelTankPonderScenes::moving, PROCESSING, "molten_salt_fuel_tank");
         add(helper, "fuel_rod_structure", FuelTankPonderScenes::structure, PROCESSING, "molten_salt_fuel_tank");
         if (ModList.get().isLoaded("trickster") && available("incomplete_emerald_knot", "trickster:emerald_knot", "trickster:cracked_emerald_knot")) {
             add(helper, "trickster_knots", TricksterPonderScenes::knots, MAGIC, "incomplete_emerald_knot", "incomplete_prismatic_knot", "incomplete_diamond_knot", "incomplete_echo_knot", "incomplete_astral_knot", "trickster:emerald_knot");
         }
         if (ModList.get().isLoaded("trickster") && available("kinetic_mana_generator", "trickster:charging_array", "trickster:emerald_knot")) {
-            add(helper, "trickster_charging", TricksterPonderScenes::charging, MAGIC, "kinetic_mana_generator", "trickster:charging_array", "trickster:spell_construct", "trickster:modular_spell_construct");
-            add(helper, "trickster_arm", TricksterPonderScenes::arm, MAGIC, "kinetic_mana_generator", "trickster:charging_array", "trickster:spell_construct", "trickster:modular_spell_construct", "create:mechanical_arm");
+            add(helper, "trickster_charging", TricksterPonderScenes::charging, MAGIC, "kinetic_mana_generator", "trickster:charging_array", "trickster:spell_construct", "trickster:modular_spell_construct", "create:mechanical_arm");
         }
         if (ModList.get().isLoaded("trickster") && available("trickster:spell_construct")) {
             add(helper, "trickster_display", TricksterPonderScenes::display, MAGIC, "trickster:spell_construct", "trickster:modular_spell_construct", "create:display_link");

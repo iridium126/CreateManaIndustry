@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.compat.hextrick.execution;
 
 import at.petrak.hexcasting.api.casting.iota.Iota;
+import at.petrak.hexcasting.api.casting.iota.ListIota;
 import at.petrak.hexcasting.xplat.IXplatAbstractions;
 import com.iridium126.createmanaindustry.compat.hextrick.conversion.FragmentConverter;
 import com.iridium126.createmanaindustry.compat.hextrick.data.IotaFragment;
@@ -23,8 +24,9 @@ import net.minecraft.world.item.ItemStack;
 /**
  * Trickster trick: reads a Hexcasting {@link Iota} from an iota-holding item
  * in the given slot (defaulting to the caster's other hand) and converts it to
- * the corresponding Trickster fragment, falling back to {@link IotaFragment}
- * when needed. Modeled on Trickster's own {@code ReadSpellTrick}.
+ * the corresponding Trickster fragment. Lists are preserved whole in an
+ * {@link IotaFragment} for Hexcasting's display and direct evaluation; other
+ * unmapped values use the same wrapper. Modeled on Trickster's own {@code ReadSpellTrick}.
  * <p>
  * PLACEHOLDER pattern {@code (6, 7, 4, 1, 0, 3, 4, 5, 2, 1)} — verified statically
  * against all vendored Trickster patterns; confirm in-game (a registry
@@ -60,13 +62,16 @@ public class ReadIotaTrick extends Trick<ReadIotaTrick> {
         }
 
         try {
-            return Optional.of(FragmentConverter.iotaToFragment(iota));
-        } catch (RuntimeException conversionFailure) {
-            try {
-                return Optional.of(new IotaFragment(IotaFragment.serializeIota(iota)));
-            } catch (RuntimeException serializationFailure) {
-                throw new InvalidItemBlunder();
+            if (!(iota instanceof ListIota)) {
+                try {
+                    return Optional.of(FragmentConverter.iotaToFragment(iota));
+                } catch (RuntimeException conversionFailure) {
+                    // Keep an unmappable value intact if Hex can still serialize it.
+                }
             }
+            return Optional.of(new IotaFragment(IotaFragment.serializeIota(iota)));
+        } catch (RuntimeException serializationFailure) {
+            throw new InvalidItemBlunder();
         }
     }
 }

@@ -143,7 +143,7 @@ public final class MistPonderScenes {
     }
 
     public static void cogwheel(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "mana_cogwheel", "Mist-powered milling", "用雾驱动磨石");
+        Workshop w = new Workshop(builder, util, "mana_cogwheel", "Mist-powered rotation and reversal", "雾动力、反转与包壳");
         BlockPos a = p(3, 2, 4), cog = p(6, 1, 4), mill = p(7, 1, 4);
         atomizer(w, a, CMIFluids.LIQUID_MANA.get());
         Workshop.Mist mist = w.mist(a, MANA, 3);
@@ -151,42 +151,28 @@ public final class MistPonderScenes {
         w.text(cog, "A Mana Cogwheel generates rotation inside Liquid Mana mist.", "魔力齿轮处于液态魔力雾中时，就能输出旋转动力。");
         w.speed(cog, 256);
         w.scene.effects().rotationDirectionIndicator(cog);
-        w.text(cog, "The mist must reach the cogwheel itself. No mist means no generated power.", "雾必须覆盖齿轮本身，离开雾场就无法继续产生动力。");
         w.place(mill, AllBlocks.MILLSTONE.get()); w.speed(mill, -256);
         w.use(mill, new ItemStack(Items.WHEAT));
         w.scene.world().modifyBlockEntity(mill,
                 com.simibubi.create.content.kinetics.millstone.MillstoneBlockEntity.class,
                 be -> { be.inputInv.setStackInSlot(0, new ItemStack(Items.WHEAT)); be.timer = 200; });
-        w.text(mill, "Mesh the cogwheel with a Millstone and add wheat for a simple flour mill.", "让齿轮与磨石啮合，放入小麦，就是一台简单的面粉机。");
+        w.scene.idle(40);
         w.depot(p(7, 1, 2), AllItems.WHEAT_FLOUR.asStack());
         w.scene.world().modifyBlockEntity(mill,
                 com.simibubi.create.content.kinetics.millstone.MillstoneBlockEntity.class, be -> {
                     be.inputInv.setStackInSlot(0, ItemStack.EMPTY);
                     for (int i = 0; i < be.outputInv.getSlots(); i++) be.outputInv.setStackInSlot(i, ItemStack.EMPTY);
                 });
-        w.text(p(7, 1, 2), "The Millstone produces wheat flour. The same rotation can drive other Create machines.", "磨石产出小麦粉，这股动力也可以传给其他机械动力机器。");
-        w.mistOff(mist); w.speed(cog, 0); w.speed(mill, 0);
-        w.text(cog, "Keep supplying the mist source, and stay within the cogwheel's stress capacity.", "保持雾源供液，并注意机器负载不要超过齿轮的应力容量。");
-        w.finish();
-    }
-
-    public static void reversal(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "mana_reversal", "Changing direction and adding a casing", "反转与包覆机壳");
-        BlockPos a = p(3, 2, 4), cog = p(6, 1, 4);
-        atomizer(w, a, CMIFluids.LIQUID_MANA.get());
-        w.place(cog, CMIBlocks.MANA_COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
-        Workshop.Mist mist = w.mist(a, MANA, 3); w.speed(cog, 256);
-        w.scene.effects().rotationDirectionIndicator(cog);
-        w.text(cog, "Liquid Mana mist turns a Mana Cogwheel in one direction.", "液态魔力雾会让魔力齿轮朝一个方向旋转。");
+        w.text(mill, "This rotation can drive Create machines, such as this Millstone. Keep the total load within the cogwheel's stress capacity.", "这股动力可以驱动磨石等机械动力机器，总负载应保持在齿轮的应力容量以内。");
         contents(w, a, CMIFluids.LIQUID_MEDIA.get(), 1000);
         w.liquid(a.below().west(2), CMIFluids.LIQUID_MEDIA.get(), 2000);
-        w.mistSize(mist, 3, MEDIA); w.speed(cog, -256);
+        w.mistSize(mist, 3, MEDIA); w.speed(cog, -256); w.speed(mill, 256);
         w.scene.effects().rotationDirectionIndicator(cog);
         w.text(cog, "Liquid Media mist reverses that direction. Plan the connected machines accordingly.", "换成液态媒质雾，转向就会反过来。连接机器时要留意方向。");
         w.use(cog, AllBlocks.ANDESITE_CASING.asStack());
         w.place(cog, CMIBlocks.ANDESITE_ENCASED_MANA_COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
         w.speed(cog, -256);
-        w.text(cog, "Right-click with an Andesite Casing to enclose the cogwheel.", "手持安山机壳右键，就能包住魔力齿轮。");
+        w.text(cog, "Andesite and Brass Casings can enclose a Mana Cogwheel without changing its mist-powered operation.", "安山机壳和黄铜机壳都能包住魔力齿轮，不会改变雾驱动的工作方式。");
         w.scene.overlay().showControls(util.vector().topOf(cog), net.createmod.catnip.math.Pointing.DOWN, 45)
                 .rightClick().whileSneaking().withItem(AllItems.WRENCH.asStack());
         w.scene.idle(25);
@@ -194,8 +180,9 @@ public final class MistPonderScenes {
         w.use(cog, AllBlocks.BRASS_CASING.asStack());
         w.place(cog, CMIBlocks.BRASS_ENCASED_MANA_COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
         w.speed(cog, -256);
-        w.text(cog, "Brass Casings are another option. Sneak and right-click with a wrench to remove the casing.", "也可以使用黄铜机壳；潜行时手持扳手右键，能够拆下机壳。");
-        w.text(cog, "A casing does not replace the mist supply. Keep the cogwheel inside the field.", "包上机壳后仍然需要雾场，别切断雾的供应。");
-        w.mistOff(mist); w.finish();
+        w.text(cog, "Sneak and right-click with a wrench to remove either casing.", "潜行时手持扳手右键，可以拆下任一种机壳。");
+        w.mistOff(mist); w.speed(cog, 0); w.speed(mill, 0);
+        w.text(cog, "The mist must reach the cogwheel, even when encased. Losing the mist stops its generated rotation.", "即使包上机壳，雾也必须覆盖齿轮；失去雾后，齿轮就会停止产生动力。");
+        w.finish();
     }
 }

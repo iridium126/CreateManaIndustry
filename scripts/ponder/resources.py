@@ -182,7 +182,7 @@ def recipe_contracts():
     conversion = read('mixing/liquid_media_to_mana')
     assert conversion['heat_requirement'] == 'heated'
     assert conversion['ingredients'][0]['fluid'] == 'createmanaindustry:liquid_media'
-    assert conversion['ingredients'][0]['amount'] == 125
+    assert conversion['ingredients'][0]['amount'] == 250
     assert conversion['results'] == [{'id': 'createmanaindustry:liquid_mana', 'amount': 125}]
     glass = read('mist_mixing/glass_to_amethyst_block')
     assert glass['ingredients'].count({'item': 'minecraft:glass'}) == 32
@@ -236,6 +236,11 @@ def main():
             dest.write_bytes(content)
         assert dest.exists(), f'Missing structure: {name}'
         assert gzip.decompress(dest.read_bytes()) == gzip.decompress(content), f'Stale structure: {name}'
+    structures = {path.stem for path in (ASSETS / 'ponder/workshop').glob('*.nbt')}
+    assert structures == set(catalog), (
+        f'Structure/scene ID mismatch: missing={sorted(set(catalog) - structures)}, '
+        f'orphaned={sorted(structures - set(catalog))}'
+    )
     for name, (en, zh, en_desc, zh_desc) in TAGS.items():
         expected[0][PREFIX + 'tag.' + name] = en
         expected[1][PREFIX + 'tag.' + name] = zh

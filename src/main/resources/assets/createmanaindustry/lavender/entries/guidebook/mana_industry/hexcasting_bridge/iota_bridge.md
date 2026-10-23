@@ -19,9 +19,9 @@
 }
 ```
 
-Hex Casting represents information as **iotas**; the Great Language uses **fragments**. Numbers, Vectors, Booleans, Entities and Lists can convert directly to their corresponding fragments. Other iotas are carried by an **Iota Fragment**.
+Hex Casting represents information as **iotas**; the Great Language uses **fragments**. When read, Numbers, Vectors, Booleans and Entities convert directly to their corresponding fragments. Lists and other iotas are carried by an **Iota Fragment**.
 
-Both Hex Casting null and garbage become void on the Trickster side. The two systems' empty values are not identical.
+When converted directly to fragments, both Hex Casting null and garbage become void; values inside a wrapped list remain intact. The two systems' empty values are not identical.
 
 ;;;;;
 
@@ -29,13 +29,17 @@ Both Hex Casting null and garbage become void on the Trickster side. The two sys
 
 Reads an iota from an item in the given Slot and returns its corresponding fragment. Omitting the Slot selects the other hand.
 
+Lists remain whole in a single **Iota Fragment**, using Hex Casting's display and ready to pass directly to **Eval Iota**. Nested lists and data are preserved; Great Language list operations cannot manipulate the wrapped list directly.
+
 The reading range is **16 blocks**. An item without a readable iota causes a blunder, rather than producing an empty spell.
 
 ;;;;;
 
 <|trick@trickster:templates|trick-id=createmanaindustry:eval_iota|>
 
-Accepts an **Iota Fragment** containing an executable pattern or Hex list. The remaining inputs become the initial Hex Casting stack.
+Accepts an **Iota Fragment** containing an executable iota or Hex list. The remaining inputs become the initial Hex Casting stack.
+
+Runs through **Hermes' Gambit**, following its list evaluation and Halt boundary rules. Only the outermost list supplies instructions; nested lists are not automatically unpacked. An empty list executes no instructions.
 
 On success, returns the top of that stack, or the empty value corresponding to null if the stack is empty. A failed execution returns void. Hex Casting's media supply pays the cost.
 
