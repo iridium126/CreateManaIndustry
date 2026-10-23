@@ -34,7 +34,9 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler.FluidAction;
 final class Workshop {
     final CreateSceneBuilder scene;
     final SceneBuildingUtil util;
-    private int textTicks;
+    private int timelineTicks;
+    private int textEndsAt;
+    private java.util.List<BlockPos> building;
     private final java.util.List<BlockPos> pumps = new java.util.ArrayList<>();
 
     Workshop(SceneBuilder builder, SceneBuildingUtil util, String id, String english, String chinese) {
@@ -45,7 +47,12 @@ final class Workshop {
         scene.scaleSceneView(.72f);
         scene.showBasePlate();
         scene.world().showSection(util.select().fromTo(0, 1, 7, 8, 3, 8), Direction.DOWN);
-        scene.idle(20);
+        idle(20);
+    }
+
+    void idle(int ticks) {
+        scene.idle(ticks);
+        timelineTicks += ticks;
     }
 
     static BlockPos p(int x, int y, int z) { return new BlockPos(x, y, z); }
@@ -53,43 +60,82 @@ final class Workshop {
     static ItemStack item(String id) { return new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(id))); }
     static Fluid fluid(String id) { return BuiltInRegistries.FLUID.get(ResourceLocation.parse(id)); }
 
+    /** Reveal a prebuilt workstation together, as Create's schematic scenes do. */
+    void build(Runnable placements) {
+        building = new java.util.ArrayList<>();
+        placements.run();
+        var positions = building;
+        building = null;
+        if (positions.isEmpty()) return;
+        var selection = util.select().position(positions.getFirst());
+        for (int i = 1; i < positions.size(); i++)
+            selection = selection.add(util.select().position(positions.get(i)));
+        scene.world().showSection(selection, Direction.DOWN);
+        idle(20);
+    }
+
     void place(BlockPos pos, BlockState state) {
         scene.world().setBlock(pos, state, false);
         // Dynamically built machines need the same virtual flag as schematic BEs.
         scene.world().modifyBlockEntity(pos, net.minecraft.world.level.block.entity.BlockEntity.class, be -> {
             if (be instanceof net.createmod.ponder.api.VirtualBlockEntity virtual) virtual.markVirtual();
         });
+        if (building != null) {
+            building.add(pos);
+            return;
+        }
         scene.world().showSection(util.select().position(pos), Direction.DOWN);
-        scene.idle(8);
+        idle(8);
     }
     void place(BlockPos pos, Block block) { place(pos, block.defaultBlockState()); }
     void remove(BlockPos pos) {
         scene.world().hideSection(util.select().position(pos), Direction.UP);
-        scene.idle(15);
+        idle(15);
         scene.world().setBlock(pos, Blocks.AIR.defaultBlockState(), false);
+    }
+
+    /** Start another demonstration without disturbing the floor or backdrop. */
+    void clearWorkArea() {
+        waitForText();
+        var area = util.select().fromTo(0, 1, 0, 8, 6, 6);
+        scene.world().hideSection(area, Direction.UP);
+        idle(20);
+        scene.world().setBlocks(area, Blocks.AIR.defaultBlockState(), false);
+        pumps.clear();
     }
 
     // Chinese is harvested alongside the English text by scripts/ponder/resources.py.
     // Keep each scene's text calls in playback order for Ponder's text_N keys.
-    void text(BlockPos pos, String english, String chinese) {
+    void text(int duration, BlockPos pos, String english, String chinese) {
+        explain(duration, pos, english, chinese);
+        waitForText();
+    }
+
+    /** Caption first, then run the demonstration while it remains on screen. */
+    void explain(int duration, BlockPos pos, String english, String chinese) {
+        waitForText();
         // Rebuild the scene's pipe flow after the staged connections are in place.
         pumps.forEach(scene.world()::propagatePipeChange);
-        scene.overlay().showText(125).attachKeyFrame().text(english)
+        scene.overlay().showText(duration).attachKeyFrame().text(english)
                 .pointAt(Vec3.atCenterOf(pos)).placeNearTarget();
-        scene.idle(135);
-        textTicks += 135;
+        // Ponder adds five ticks of fade-in and fade-out to the supplied duration.
+        textEndsAt = timelineTicks + duration + 10;
+        idle(20);
+    }
+    void waitForText() {
+        if (timelineTicks < textEndsAt) idle(textEndsAt - timelineTicks);
     }
     void point(BlockPos pos, PonderPalette palette) {
         scene.overlay().showOutline(palette, pos, util.select().position(pos), 70);
     }
     void use(BlockPos pos, ItemStack stack) {
-        scene.overlay().showControls(util.vector().topOf(pos), Pointing.DOWN, 45)
+        scene.overlay().showControls(util.vector().topOf(pos), Pointing.DOWN, 60)
                 .rightClick().withItem(stack);
-        scene.idle(25);
+        idle(15);
     }
     void finish() {
-        // Four or five readable instructions plus action time: about 40–75 seconds.
-        scene.idle(Math.max(30, 660 - textTicks));
+        waitForText();
+        idle(20);
         scene.markAsFinished();
     }
     void burner(BlockPos pos, boolean lit) {
@@ -183,29 +229,47 @@ final class Workshop {
         speed(machine, rpm);
     }
     void cogDrive(BlockPos machine) {
+        cogDrive(machine, 32);
+    }
+    void cogDrive(BlockPos machine, float rpm) {
         BlockPos gear = machine.west();
         place(gear, AllBlocks.COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
         place(gear.below(), AllBlocks.CREATIVE_MOTOR.getDefaultState().setValue(BlockStateProperties.FACING, Direction.UP));
-        speed(gear.below(), 32);
-        speed(gear, 32);
-        speed(machine, -32);
+        speed(gear.below(), rpm);
+        speed(gear, rpm);
+        speed(machine, -rpm);
     }
     void press(BlockPos pos, boolean basin) {
         scene.world().modifyBlockEntity(pos, MechanicalPressBlockEntity.class,
                 be -> be.getPressingBehaviour().start(basin ? PressingBehaviour.Mode.BASIN : PressingBehaviour.Mode.BELT));
-        scene.idle(35);
+        // At the workshop's 32 RPM the full 240-step press cycle takes 60 ticks.
+        // Keep the item locked until the head has returned, not just until contact.
+        idle(65);
+        scene.world().modifyBlockEntity(pos, MechanicalPressBlockEntity.class, be -> {
+            var pressing = be.getPressingBehaviour();
+            pressing.running = false;
+            pressing.prevRunningTicks = pressing.runningTicks = 0;
+        });
     }
     void mix(BlockPos pos) {
         scene.world().modifyBlockEntity(pos, MechanicalMixerBlockEntity.class, be -> {
             be.running = true;
             be.runningTicks = 0;
+            // Fixed visual cycle: lower for 20 ticks, mix for 20, then raise.
+            be.processingTicks = 20;
         });
-        scene.idle(65);
+        idle(65);
+        scene.world().modifyBlockEntity(pos, MechanicalMixerBlockEntity.class, be -> {
+            be.running = false;
+            be.runningTicks = 0;
+            be.processingTicks = -1;
+        });
     }
 
     void arm(BlockPos arm, BlockPos input, BlockPos output, String outputType) {
         place(arm, AllBlocks.MECHANICAL_ARM.get());
-        cogDrive(arm);
+        // Match Create's arm scene: 48 RPM reaches each target within 24 ticks.
+        cogDrive(arm, 48);
         scene.world().modifyBlockEntityNBT(util.select().position(arm),
                 com.simibubi.create.content.kinetics.mechanicalArm.ArmBlockEntity.class, nbt -> {
             net.minecraft.nbt.ListTag points = new net.minecraft.nbt.ListTag();
@@ -218,16 +282,16 @@ final class Workshop {
             }
             nbt.put("InteractionPoints", points);
         });
-        scene.idle(20);
+        idle(20);
     }
     void armTransfer(BlockPos arm, BlockPos input, ItemStack stack) {
         scene.world().instructArm(arm, com.simibubi.create.content.kinetics.mechanicalArm.ArmBlockEntity.Phase.MOVE_TO_INPUT, ItemStack.EMPTY, 0);
-        scene.idle(35);
+        idle(24);
         display(input, ItemStack.EMPTY);
         scene.world().instructArm(arm, com.simibubi.create.content.kinetics.mechanicalArm.ArmBlockEntity.Phase.SEARCH_OUTPUTS, stack, -1);
-        scene.idle(10);
+        idle(20);
         scene.world().instructArm(arm, com.simibubi.create.content.kinetics.mechanicalArm.ArmBlockEntity.Phase.MOVE_TO_OUTPUT, stack, 0);
-        scene.idle(35);
+        idle(24);
         scene.world().instructArm(arm, com.simibubi.create.content.kinetics.mechanicalArm.ArmBlockEntity.Phase.SEARCH_INPUTS, ItemStack.EMPTY, -1);
     }
 

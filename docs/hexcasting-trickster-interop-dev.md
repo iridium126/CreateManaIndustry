@@ -1,6 +1,6 @@
 # Hexcasting / Trickster 互操作开发契约
 
-更新：2026-10-17。实现及自动验证见[整改报告](hexcasting-trickster-interop-review-2026-10-16.md)。真实客户端验收由用户执行，未标为通过。
+更新：2026-10-22。整改实现及自动验证见[整改报告](hexcasting-trickster-interop-review-2026-10-16.md)。真实客户端验收由用户执行，未标为通过。
 
 ## 分层及可选依赖
 
@@ -69,6 +69,10 @@ Trickster 在进入新服务端 tick 时恢复当刻额度；Hex 累计额度不
 在注册期调用 `FragmentStructures.register(Class, Adapter)`，实现 `children`、`rebuild`，按需实现 `units`、`references` 和 `visitReferences`。SpellPart 的 glyph/subParts、列表、映射键值和已知引用共用这一结构契约。未知类型不自动展开。
 
 `FragmentConverter.registerIota` / `registerFragment` 注册值转换。两类注册表在 LoadComplete 冻结，重复或过晚注册明确失败。结构 adapter 精确匹配类型；转换保留先精确后可赋值匹配顺序。扩展不要在 tick 中修改注册表。
+
+`ReadIotaTrick` 在物品读取入口将 `ListIota` 整体包装成 `IotaFragment`，保留 Hex 的显示、嵌套层级及内部原值，读取结果可直接用于 `EvalIotaTrick`。通用转换器仍将列表递归转换成 `ListFragment`，用于跨语言参数与返回值；其他读取类型维持原有转换。
+
+`EvalIotaTrick` 接受包装的列表或 `executable()` 为真的 iota，把它放在初始参数栈顶并执行原生赫尔墨斯图案。列表求值、空列表、转义和 Halt 边界均交给 Hex 处理，不自动解包单元素嵌套列表。赫尔墨斯自身的一次操作也计入原生和跨语言根预算；返回协议仍为成功时转换栈顶、运行失败时返回 void。
 
 显式 `visitChildren` 只在子项实际改变时重建；未改变保持对象身份。不额外执行 Trickster 的 ephemeral 清理，不自动解包未知片段。快照缓存统计与叶引用描述，返回法术及字节均为独立对象。
 

@@ -10,6 +10,7 @@ import at.petrak.hexcasting.api.casting.iota.ListIota;
 import at.petrak.hexcasting.api.casting.iota.NullIota;
 import at.petrak.hexcasting.api.casting.iota.PatternIota;
 import at.petrak.hexcasting.api.utils.TreeList;
+import at.petrak.hexcasting.common.lib.hex.HexActions;
 import com.iridium126.createmanaindustry.compat.hextrick.bootstrap.CMITricksterFragmentTypes;
 import com.iridium126.createmanaindustry.compat.hextrick.conversion.FragmentConverter;
 import com.iridium126.createmanaindustry.compat.hextrick.data.IotaFragment;
@@ -35,8 +36,8 @@ import net.minecraft.world.InteractionHand;
 
 /**
  * Trickster trick: runs the Hexcasting spell stored in an {@link IotaFragment}
- * (a {@code PatternIota} for a single op, or a {@code ListIota} for a full
- * spell) in a hex {@link CastingVM}, with the remaining arguments pushed as
+ * (an executable iota or a {@code ListIota} for a full spell) through Hermes
+ * in a hex {@link CastingVM}, with the remaining arguments pushed as
  * the initial stack. The top of the resulting stack is pushed back as a
  * fragment.
  * <p>
@@ -58,14 +59,7 @@ public class EvalIotaTrick extends Trick<EvalIotaTrick> {
     public Optional<Fragment> run(SpellContext ctx, IotaFragment spell, List<Fragment> args) {
         Iota iota = spell.getIota();
 
-        // Unwrap a single-element list (a spell stored as a one-element list).
-        if (iota instanceof ListIota list) {
-            List<Iota> entries = listEntries(list);
-            if (entries.size() == 1 && entries.getFirst() instanceof ListIota nested) {
-                iota = nested;
-            }
-        }
-        if (!(iota instanceof PatternIota) && !(iota instanceof ListIota)) {
+        if (!(iota instanceof ListIota) && !iota.executable()) {
             throw new InvalidInputsBlunder();
         }
 
@@ -87,9 +81,10 @@ public class EvalIotaTrick extends Trick<EvalIotaTrick> {
         // Remaining arguments become the initial hex stack.
         List<Iota> initialStack = new ArrayList<>();
         for (Fragment arg : args) {
-            Iota converted = FragmentConverter.fragmentToIota(arg,level);
+            Iota converted = FragmentConverter.fragmentToIota(arg, level);
             initialStack.add(converted != null ? converted : new NullIota());
         }
+        initialStack.add(iota);
 
         CastingVM vm = new CastingVM(
                 new CastingImage(TreeList.from(initialStack), 0, TreeList.empty(), false, false, 0L, new CompoundTag()),
@@ -98,8 +93,8 @@ public class EvalIotaTrick extends Trick<EvalIotaTrick> {
         var bridge = enclosing == null ? new BridgeExecutionContext(level.getServer(), null) : enclosing;
         ExecutionClientView result;
         try (var scope = bridge.enter(); var crossing = bridge.crossing()) {
-            result = iota instanceof ListIota list ? vm.queueExecuteAndWrapIotas(listEntries(list), level)
-                    : vm.queueExecuteAndWrapIota(iota, level);
+            // Let Hermes handle evaluatable types, list nesting, and Halt boundaries.
+            result = vm.queueExecuteAndWrapIota(new PatternIota(HexActions.EVAL.value().prototype()), level);
         }
 
         if (!result.getResolutionType().getSuccess()) {
@@ -108,14 +103,5 @@ public class EvalIotaTrick extends Trick<EvalIotaTrick> {
         List<Iota> stack = result.getStackDescs();
         Iota top = stack.isEmpty() ? new NullIota() : stack.getLast();
         return Optional.of(FragmentConverter.iotaToFragment(top));
-    }
-
-    private static List<Iota> listEntries(ListIota list) {
-        List<Iota> entries = new ArrayList<>();
-        Iterable<Iota> subIotas = list.subIotas();
-        if (subIotas != null) {
-            subIotas.forEach(entries::add);
-        }
-        return entries;
     }
 }

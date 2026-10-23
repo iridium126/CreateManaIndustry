@@ -7,28 +7,42 @@ import at.petrak.hexcasting.api.casting.eval.vm.CastingImage;
 import at.petrak.hexcasting.api.casting.eval.vm.CastingVM;
 import at.petrak.hexcasting.api.casting.eval.vm.SpellContinuation;
 import at.petrak.hexcasting.api.casting.iota.DoubleIota;
+import at.petrak.hexcasting.api.casting.iota.EntityIota;
 import at.petrak.hexcasting.api.casting.iota.Iota;
 import at.petrak.hexcasting.api.casting.iota.IotaType;
 import at.petrak.hexcasting.api.casting.iota.ListIota;
+import at.petrak.hexcasting.api.casting.iota.NullIota;
 import at.petrak.hexcasting.api.casting.iota.PatternIota;
 import at.petrak.hexcasting.api.utils.TreeList;
 import at.petrak.hexcasting.common.lib.hex.HexActions;
 import at.petrak.hexcasting.xplat.IXplatAbstractions;
+import com.iridium126.createmanaindustry.compat.hextrick.conversion.FragmentConverter;
+import com.iridium126.createmanaindustry.compat.hextrick.data.IotaFragment;
 import com.iridium126.createmanaindustry.compat.hextrick.data.TrickIota;
+import dev.enjarai.trickster.spell.Fragment;
 import dev.enjarai.trickster.spell.PatternGlyph;
+import dev.enjarai.trickster.spell.SpellContext;
 import dev.enjarai.trickster.spell.SpellPart;
+import dev.enjarai.trickster.spell.execution.ExecutionState;
+import dev.enjarai.trickster.spell.execution.TickData;
 import dev.enjarai.trickster.spell.execution.source.PlayerSpellSource;
+import dev.enjarai.trickster.spell.fragment.EntityFragment;
+import dev.enjarai.trickster.spell.fragment.ListFragment;
 import dev.enjarai.trickster.spell.fragment.NumberFragment;
+import dev.enjarai.trickster.spell.fragment.VoidFragment;
 import dev.enjarai.trickster.spell.trick.Tricks;
+import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.common.util.FakePlayerFactory;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -36,6 +50,72 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder("createmanaindustry")
 @PrefixGameTestTemplate(false)
 public final class TrickIotaEvalGameTests {
+    @GameTest(template = "trickster_stock_test")
+    public static void readListStaysWrappedAfterSaveAndRunsThroughSignature(GameTestHelper helper) {
+        var context = trickContext(helper);
+        var code = new ListIota(List.of(escape(), new DoubleIota(42), escape(), new DoubleIota(8), add()));
+        var read = readFocus(helper, context, code);
+        helper.assertTrue(read instanceof IotaFragment, "Reading a Hex list expanded it into native fragments");
+        var saved = (IotaFragment) Fragment.fromBytes(read.toBytes());
+        helper.assertTrue(saved.getIota().equals(code), "Saved list lost its Hex data");
+        // InlinePatternData uses identity equality; compare the serialized text and styles.
+        helper.assertTrue(Component.Serializer.toJson(saved.asText(), helper.getLevel().registryAccess())
+                        .equals(Component.Serializer.toJson(code.display(), helper.getLevel().registryAccess())),
+                "Saved list lost its Hex display");
+        var result = CMITricks.Hexcasting.EVAL_IOTA.activate(context, List.of(saved));
+        helper.assertTrue(result.equals(new NumberFragment(50)), "Read list could not be run directly through the signature");
+
+        var nested = new ListIota(List.of(new DoubleIota(1), new NullIota(),
+                new ListIota(List.of(escape(), new DoubleIota(2)))));
+        var wrapped = (IotaFragment) readFocus(helper, context, nested);
+        helper.assertTrue(wrapped.getIota().equals(nested), "Reading a list changed its nested data");
+        helper.assertTrue(FragmentConverter.iotaToFragment(nested) instanceof ListFragment,
+                "The item reader changed general-purpose list conversion");
+        helper.succeed();
+    }
+
+    @GameTest(template = "trickster_stock_test")
+    public static void readScalarsStillProduceNativeFragments(GameTestHelper helper) {
+        var context = trickContext(helper);
+        helper.assertTrue(readFocus(helper, context, new DoubleIota(42)).equals(new NumberFragment(42)),
+                "Reading a number stopped producing a native NumberFragment");
+        var player = context.source().getPlayer().orElseThrow();
+        helper.assertTrue(readFocus(helper, context, new EntityIota(player))
+                        instanceof EntityFragment entity && entity.uuid().equals(player.getUUID()),
+                "Reading an entity stopped producing a native EntityFragment");
+        helper.succeed();
+    }
+
+    @GameTest(template = "trickster_stock_test")
+    public static void evalMatchesHermesForPatternsListsAndOtherExecutableIotas(GameTestHelper helper) {
+        for (Iota code : List.of(add(), new ListIota(List.of(add())), literal(34), new ListIota(List.of(literal(34))))) {
+            assertEvalMatchesHermes(helper, code, List.of(new NumberFragment(20), new NumberFragment(22)));
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "trickster_stock_test")
+    public static void evalMatchesHermesForEmptyAndNestedLists(GameTestHelper helper) {
+        var empty = new ListIota(List.of());
+        assertEvalMatchesHermes(helper, empty, List.of());
+        assertEvalMatchesHermes(helper, empty, List.of(new NumberFragment(7)));
+        var nested = new ListIota(List.of(add()));
+        assertEvalMatchesHermes(helper, new ListIota(List.of(nested)),
+                List.of(new NumberFragment(20), new NumberFragment(22)));
+        assertEvalMatchesHermes(helper, new ListIota(List.of(escape(), nested)), List.of());
+        helper.succeed();
+    }
+
+    @GameTest(template = "trickster_stock_test")
+    public static void evalUsesHermesHaltBoundaries(GameTestHelper helper) {
+        var halt = new PatternIota(HexActions.HALT.value().prototype());
+        var inner = new ListIota(List.of(escape(), new DoubleIota(42), halt, escape(), new DoubleIota(66)));
+        var outer = new ListIota(List.of(escape(), inner, hermes(), escape(), new DoubleIota(99)));
+        assertEvalMatchesHermes(helper, inner, List.of());
+        assertEvalMatchesHermes(helper, outer, List.of());
+        helper.succeed();
+    }
+
     @GameTest(template = "trickster_stock_test")
     public static void hermesRunsSavedTrickWithoutArguments(GameTestHelper helper) {
         TrickIota original = literal(42.5);
@@ -140,6 +220,54 @@ public final class TrickIotaEvalGameTests {
 
     private static TrickIota literal(double number) {
         return new TrickIota(new SpellPart(new NumberFragment(number)));
+    }
+
+    private static PatternIota escape() {
+        return new PatternIota(HexActions.ESCAPE.value().prototype());
+    }
+
+    private static PatternIota add() {
+        return new PatternIota(HexActions.ADD.value().prototype());
+    }
+
+    private static SpellContext trickContext(GameTestHelper helper) {
+        return new SpellContext(new ExecutionState(List.of()),
+                new PlayerSpellSource(FakePlayerFactory.getMinecraft(helper.getLevel())), new TickData());
+    }
+
+    private static Fragment readFocus(GameTestHelper helper, SpellContext context, Iota iota) {
+        // Use the saved-item codec to avoid Hex's client-only Font setter signature.
+        var saved = new CompoundTag();
+        saved.putString("id", "hexcasting:focus");
+        saved.putInt("count", 1);
+        var components = new CompoundTag();
+        components.put("hexcasting:iota", IotaType.TYPED_CODEC.encodeStart(NbtOps.INSTANCE, iota).getOrThrow());
+        saved.put("components", components);
+        var player = context.source().getPlayer().orElseThrow();
+        var previous = player.getOffhandItem();
+        player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.parseOptional(helper.getLevel().registryAccess(), saved));
+        try {
+            return (Fragment) CMITricks.Hexcasting.READ_IOTA.activate(context, List.of());
+        } finally {
+            player.setItemInHand(InteractionHand.OFF_HAND, previous);
+        }
+    }
+
+    private static void assertEvalMatchesHermes(GameTestHelper helper, Iota code, List<Fragment> args) {
+        var stack = new ArrayList<Iota>();
+        args.forEach(arg -> stack.add(FragmentConverter.fragmentToIota(arg, helper.getLevel())));
+        stack.add(code);
+        var reference = vm(helper, stack).queueExecuteAndWrapIota(hermes(), helper.getLevel());
+        Fragment expected = reference.getResolutionType().getSuccess()
+                ? FragmentConverter.iotaToFragment(reference.getStackDescs().isEmpty()
+                        ? new NullIota() : reference.getStackDescs().getLast())
+                : VoidFragment.INSTANCE;
+        var inputs = new ArrayList<Fragment>();
+        inputs.add(new IotaFragment(IotaFragment.serializeIota(code)));
+        inputs.addAll(args);
+        var actual = CMITricks.Hexcasting.EVAL_IOTA.activate(trickContext(helper), inputs);
+        helper.assertTrue(expected.equals(actual), "Eval Iota differed from Hermes for " + code.display().getString()
+                + ": expected " + expected + ", got " + actual);
     }
 
     private static PatternIota hermes() {
