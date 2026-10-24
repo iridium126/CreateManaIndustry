@@ -41,6 +41,11 @@ public final class AllvrCube {
     public static final int SECTIONS_PER_CUBE = 8;
 
     private final AllvrCubePos pos;
+    private final AllvrScheduledTicks<net.minecraft.world.level.block.Block> blockTicks = new AllvrScheduledTicks<>(this::markDirty);
+    private final AllvrScheduledTicks<net.minecraft.world.level.material.Fluid> fluidTicks = new AllvrScheduledTicks<>(this::markDirty);
+    public AllvrScheduledTicks<net.minecraft.world.level.block.Block> blockTicks() { return blockTicks; }
+    public AllvrScheduledTicks<net.minecraft.world.level.material.Fluid> fluidTicks() { return fluidTicks; }
+
     /**
      * Bumped on every authoritative mutation (block write, BE content
      * change). Monotonic per cube instance; snapshots record the value they
@@ -48,6 +53,9 @@ public final class AllvrCube {
      * state (plan §8.3).
      */
     private long mutationVersion;
+    private long networkRevision;
+    public long networkRevision() { return networkRevision; }
+    public long nextNetworkRevision() { return ++networkRevision; }
     /**
      * Version of the newest snapshot successfully handed to the IO worker.
      * {@code mutationVersion > queuedVersion} ⟺ dirty for saving.
@@ -72,6 +80,11 @@ public final class AllvrCube {
      * aliases positions beyond the vanilla build height.
      */
     private final Int2ObjectOpenHashMap<BlockEntity> blockEntities = new Int2ObjectOpenHashMap<>();
+    private final Int2ObjectOpenHashMap<net.minecraft.nbt.CompoundTag> networkBlockEntityTags = new Int2ObjectOpenHashMap<>();
+    /** Decode workers retain only NBT; mod callbacks run after main-thread publication. */
+    public void stageNetworkBlockEntity(int cell, net.minecraft.nbt.CompoundTag tag) {
+        if (networkBlockEntityTags.putIfAbsent(cell, tag) != null) throw new IllegalArgumentException("Duplicate cube BE cell " + cell);
+    }
     /**
      * Light layers decoded from a persisted record. They stay off the live
      * engine until the cube is published on the server thread, which keeps
@@ -210,11 +223,26 @@ public final class AllvrCube {
             return;
         }
         this.loaded = true;
+        for (var entry : networkBlockEntityTags.int2ObjectEntrySet()) {
+            int cell = entry.getIntKey();
+            BlockPos at = new BlockPos(pos.minBlockX() + (cell & 31), pos.minBlockY() + (cell >> 10), pos.minBlockZ() + ((cell >> 5) & 31));
+            var state = getBlockState(at);
+            if (state.getBlock() instanceof net.minecraft.world.level.block.EntityBlock block) {
+                var be = block.newBlockEntity(at, state);
+                if (be != null) {
+                    be.setLevel(level);
+                    be.handleUpdateTag(entry.getValue(), level.registryAccess());
+                    blockEntities.put(cell, be);
+                }
+            }
+        }
+        networkBlockEntityTags.clear();
         for (BlockEntity be : this.blockEntities.values()) {
             be.setLevel(level);
             be.clearRemoved();
         }
         this.rebindAllTickers(level);
+        level.addFreshBlockEntities(this.blockEntities.values());
     }
 
     /**
@@ -223,8 +251,10 @@ public final class AllvrCube {
      * save snapshot is taken <i>before</i> this runs; plan §7.2).
      */
     public void onUnload() {
+        if (!loaded) return;
         for (BlockEntity be : this.blockEntities.values()) {
             if (be != null) {
+                be.onChunkUnloaded();
                 be.setRemoved();
             }
         }
@@ -334,6 +364,7 @@ public final class AllvrCube {
             if (be != null) {
                 be.setLevel(level);
                 this.blockEntities.put(cell, be);
+                if (loaded) level.addFreshBlockEntities(java.util.List.of(be));
             }
             existing = be;
         }

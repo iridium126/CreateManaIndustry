@@ -36,8 +36,29 @@ public abstract class AllvrPersistentEntitySectionManagerMixin
     @Shadow @Final private Long2ObjectMap<Visibility> chunkVisibility;
     @Shadow @Final private LongSet chunksToUnload;
 
+    @org.spongepowered.asm.mixin.Unique private long allvr$lastRevision = Long.MIN_VALUE;
+    @Shadow protected abstract void ensureChunkQueuedForLoad(long key);
+    @Shadow protected abstract boolean storeChunkSections(long key, java.util.function.Consumer<Entity> consumer);
+    @Override public void allvr$requestEntityColumn(long key) { ensureChunkQueuedForLoad(key); }
+    @org.spongepowered.asm.mixin.Unique
+    private com.iridium126.createmanaindustry.dimension.cube.AllvrSectionCoord allvr$coordinate(long key) {
+        return ((com.iridium126.createmanaindustry.dimension.cube.AllvrEntitySectionStorage<?>) sectionStorage).coordinate(key);
+    }
+    @org.spongepowered.asm.mixin.injection.Inject(method = "processChunkUnload", at = @org.spongepowered.asm.mixin.injection.At("HEAD"), cancellable = true)
+    private void allvr$keepResidentEntities(long key, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        if (!(sectionStorage instanceof com.iridium126.createmanaindustry.dimension.cube.AllvrEntitySectionStorage<?> storage) || !storage.enabled()) return;
+        boolean resident = sectionStorage.getExistingSectionsInChunk(key).flatMap(EntitySection::getEntities).anyMatch(entity -> {
+            if (!(entity.level() instanceof com.iridium126.createmanaindustry.dimension.cube.AllvrServerLevelDuck duck)) return false;
+            var map = duck.allvr$peekCubeMap();
+            return map != null && !map.isClosed() && !AllvrDimensionLimits.isVanillaY(entity.blockPosition().getY()) && map.isLoaded(entity.blockPosition());
+        });
+        if (resident) cir.setReturnValue(storeChunkSections(key, entity -> {}));
+    }
     @Override
     public void allvr$syncCubeEntityTicking(AllvrCubeMap map) {
+        long revision = map.entityRevision() + ((com.iridium126.createmanaindustry.dimension.cube.AllvrEntitySectionStorage<?>) sectionStorage).revision();
+        if (allvr$lastRevision == revision) return;
+        allvr$lastRevision = revision;
         LongSet cubeChunks = new LongOpenHashSet();
         LongSet loadedCubeChunks = new LongOpenHashSet();
         LongSet chunks = this.sectionStorage.getAllChunksWithExistingSections();
@@ -45,11 +66,11 @@ public abstract class AllvrPersistentEntitySectionManagerMixin
             this.sectionStorage.getExistingSectionPositionsInChunk(chunkKey)
                 .forEach(sectionKey -> {
                     if (this.allvr$syncSection(sectionKey, map)) {
-                        long cubeChunk = ChunkPos.asLong(SectionPos.x(sectionKey), SectionPos.z(sectionKey));
+                        long cubeChunk = ChunkPos.asLong(allvr$coordinate(sectionKey).x(), allvr$coordinate(sectionKey).z());
                         cubeChunks.add(cubeChunk);
                         loadedCubeChunks.add(cubeChunk);
                     } else if (this.allvr$isCubeSection(sectionKey)) {
-                        cubeChunks.add(ChunkPos.asLong(SectionPos.x(sectionKey), SectionPos.z(sectionKey)));
+                        cubeChunks.add(ChunkPos.asLong(allvr$coordinate(sectionKey).x(), allvr$coordinate(sectionKey).z()));
                     }
                 });
         }
@@ -75,12 +96,12 @@ public abstract class AllvrPersistentEntitySectionManagerMixin
     }
 
     private boolean allvr$isCubeSection(long sectionKey) {
-        int sectionY = SectionPos.y(sectionKey);
+        int sectionY = allvr$coordinate(sectionKey).y();
         return !AllvrDimensionLimits.isVanillaSection(sectionY);
     }
 
     private boolean allvr$syncSection(long sectionKey, AllvrCubeMap map) {
-        int sectionY = SectionPos.y(sectionKey);
+        int sectionY = allvr$coordinate(sectionKey).y();
         if (!this.allvr$isCubeSection(sectionKey)) {
             return false;
         }
@@ -90,11 +111,11 @@ public abstract class AllvrPersistentEntitySectionManagerMixin
         }
 
         BlockPos sample = new BlockPos(
-            SectionPos.sectionToBlockCoord(SectionPos.x(sectionKey)),
+            SectionPos.sectionToBlockCoord(allvr$coordinate(sectionKey).x()),
             SectionPos.sectionToBlockCoord(sectionY),
-            SectionPos.sectionToBlockCoord(SectionPos.z(sectionKey)));
+            SectionPos.sectionToBlockCoord(allvr$coordinate(sectionKey).z()));
         boolean loaded = map.isLoaded(sample);
-        Visibility desired = loaded ? Visibility.TICKING : Visibility.HIDDEN;
+        Visibility desired = !loaded ? Visibility.HIDDEN : map.isSimulating(sample) ? Visibility.TICKING : Visibility.TRACKED;
         Visibility previous = section.updateChunkStatus(desired);
         if (previous == desired) {
             return loaded;

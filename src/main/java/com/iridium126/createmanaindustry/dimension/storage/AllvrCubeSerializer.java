@@ -133,6 +133,8 @@ public final class AllvrCubeSerializer {
             }
         }
         root.put("block_entities", blockEntities);
+        root.put("block_ticks", cube.blockTicks().save(net.minecraft.core.registries.BuiltInRegistries.BLOCK::getKey));
+        root.put("fluid_ticks", cube.fluidTicks().save(net.minecraft.core.registries.BuiltInRegistries.FLUID::getKey));
         return new AllvrCubeSnapshot(pos, cube.mutationVersion(), cube.lightVersion(), root);
     }
 
@@ -232,6 +234,15 @@ public final class AllvrCubeSerializer {
             }
             cube.installBlockEntity(be);
         }
+        if (!root.contains("block_ticks", Tag.TAG_LIST) || !root.contains("fluid_ticks", Tag.TAG_LIST))
+            throw new AllvrCubeCorruptedException("cube " + pos + ": missing tick containers");
+        if (((ListTag) root.get("block_ticks")).getElementType() != Tag.TAG_COMPOUND && !((ListTag) root.get("block_ticks")).isEmpty()
+            || ((ListTag) root.get("fluid_ticks")).getElementType() != Tag.TAG_COMPOUND && !((ListTag) root.get("fluid_ticks")).isEmpty())
+            throw new AllvrCubeCorruptedException("cube " + pos + ": invalid tick list element type");
+        try {
+            cube.blockTicks().load(root.getList("block_ticks", Tag.TAG_COMPOUND), pos, id -> net.minecraft.core.registries.BuiltInRegistries.BLOCK.getOptional(id).orElse(null));
+            cube.fluidTicks().load(root.getList("fluid_ticks", Tag.TAG_COMPOUND), pos, id -> net.minecraft.core.registries.BuiltInRegistries.FLUID.getOptional(id).orElse(null));
+        } catch (IllegalArgumentException invalid) { throw new AllvrCubeCorruptedException("cube " + pos + ": " + invalid.getMessage()); }
         return cube;
     }
 

@@ -31,7 +31,7 @@ import java.util.function.BooleanSupplier;
  * only flush an existing map, so saving does not initialize an unused store.
  */
 @Mixin(ServerLevel.class)
-public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
+public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck, com.iridium126.createmanaindustry.dimension.cube.AllvrEntityLevelAccess {
 
     @Shadow @Final
     private PersistentEntitySectionManager<Entity> entityManager;
@@ -50,12 +50,32 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
         return allvr$cubeMap;
     }
 
+    @Override public com.iridium126.createmanaindustry.dimension.cube.AllvrEntitySectionStorage<?> allvr$entitySections() {
+        return ((com.iridium126.createmanaindustry.dimension.cube.AllvrEntityManagerAccess) entityManager).allvr$sections();
+    }
+    @Override public void allvr$requestEntityColumn(long key) {
+        ((AllvrEntitySectionManagerDuck) entityManager).allvr$requestEntityColumn(key);
+    }
     @Override
     public void allvr$syncEntityTicking() {
         AllvrCubeMap map = this.allvr$peekCubeMap();
         if (map != null) {
             ((AllvrEntitySectionManagerDuck) (Object) this.entityManager)
                 .allvr$syncCubeEntityTicking(map);
+        }
+    }
+
+    @Inject(method = "<init>", at = @At("RETURN"))
+    private void allvr$bindTickContainers(CallbackInfo ci) {
+        ServerLevel self = (ServerLevel) (Object) this;
+        ((com.iridium126.createmanaindustry.dimension.cube.AllvrTickAccess) self.getBlockTicks()).allvr$bindTicks(self, false);
+        ((com.iridium126.createmanaindustry.dimension.cube.AllvrTickAccess) self.getFluidTicks()).allvr$bindTicks(self, true);
+        if (AllvrDimensions.isAllay(self)) {
+            allvr$entitySections().enable(coord -> {
+                var map = allvr$peekCubeMap();
+                if (map == null || !map.isLoaded(coord.origin())) return net.minecraft.world.level.entity.Visibility.HIDDEN;
+                return map.isSimulating(coord.origin()) ? net.minecraft.world.level.entity.Visibility.TICKING : net.minecraft.world.level.entity.Visibility.TRACKED;
+            });
         }
     }
 
@@ -87,7 +107,7 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck {
             && !AllvrDimensionLimits.isVanillaY(entity.blockPosition().getY())
             && self instanceof AllvrServerLevelDuck duck) {
             AllvrCubeMap map = duck.allvr$peekCubeMap();
-            if (map != null && map.isLoaded(entity.blockPosition())) {
+            if (map != null && map.isSimulating(entity.blockPosition())) {
                 return true;
             }
         }

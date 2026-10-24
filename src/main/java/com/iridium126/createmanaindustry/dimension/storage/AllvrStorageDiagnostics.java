@@ -33,6 +33,7 @@ public final class AllvrStorageDiagnostics {
     public volatile long lastSaveDurationMs = -1;
     public volatile long lastFlushDurationMs = -1;
     public volatile String lastIoError = "";
+    public volatile int pinnedSaveDisabled, pinnedSnapshotFailure, pinnedPendingIo;
 
     /** Records an I/O failure (rate-limited by the caller). */
     public void noteIoError(String message) {
@@ -60,6 +61,8 @@ public final class AllvrStorageDiagnostics {
             + " singleRecordCommits=" + this.singleRecordCommits.get()
             + " lastSaveMs=" + this.lastSaveDurationMs
             + " lastFlushMs=" + this.lastFlushDurationMs
+            + " pinnedNoSave=" + pinnedSaveDisabled + " pinnedSnapshotFailure=" + pinnedSnapshotFailure
+            + " pinnedPendingIo=" + pinnedPendingIo
             + " lastIoError=" + this.lastIoError;
     }
 }

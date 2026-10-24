@@ -1,6 +1,6 @@
 # ALLVR 实现评审清单
 
-状态：⚠ 以下是尚未关闭的风险清单，不是已完成实现的说明。关闭条目必须同时有代码、针对性测试和游戏内复现结果；修复后在提交中引用编号。
+状态：历史 F01–F36 评审归档，包含已删除的 Tier B/C、自研 LOD 协议和 GPU handle 路线，不代表当前待实施清单。本次 R1–R8 修复保留原版中央带、Cube、Sodium 近景及可选 Voxy 远景；不恢复已删除路线。当前代码与测试状态见 [验收记录](allay-dimension-validation.md)。下表仅修正本次相关条目，其他历史问题需要结合现存代码重新评估。
 
 ## P0：会造成错误数据或不可用渲染
 
@@ -35,7 +35,7 @@
 | F14 | resource reload 复用 ID，旧 mesh 与新材质表不匹配 | reload 使旧结果全部失效并重建 |
 | F15 | identity、调度状态持续增长，关闭不完整 | session/identity/token/worker/GL 资源可观测且可回收 |
 | F16 | worker 快照、重试、上传预算未覆盖实际成本 | 每类预算受限，失败留在可重试队列而非静默丢失 |
-| F17 | 近景光照穿墙，边界失效不完整 | block/sky light、遮挡、边界邻居和 dirty 传播有测试 |
+| F17 | 已重构为 2048 核心 + 16 halo；跨带仅方块光连续，独立天空光，见 R1–R8 验收 | block/sky light、遮挡、边界邻居和 dirty 传播有测试 |
 | F18 | 近景垂直覆盖与 LOD 排除区矛盾 | 每个 Y 区间只有一个 owner，边界无洞无双绘 |
 | F19 | 分带计算不一致且没有 readiness handoff | server/client/render 使用同一分带，ready 交接可观测 |
 
@@ -43,13 +43,13 @@
 
 | 编号 | 问题 | 关闭标准 |
 | --- | --- | --- |
-| F20 | Voxy 普通 forget 的 key 编码错误 | 绝对 key 与 virtual key 转换有独立测试 |
+| F20 | 当前 Voxy ingest 队列使用完整坐标，转换 slab 后才 pack；near forget 保留远景 | 绝对 key 与 virtual key 转换有独立测试 |
 | F21 | Voxy section acquire/release 不平衡，leave 不释放 registry | 每次 acquire 有对应 release，换维度/关闭后 registry 为空 |
 | F23 | forget 粗节点会掐断仍存活的细节点 | 父子 resident 引用关系正确，细节点仍可达 |
 | F24 | Voxy rebase 只有阶段名，没有 epoch 闭环 | rebase、ingest、forget、camera、renderer 都检查同一 epoch |
 | F25 | enqueue 被当成 resident，写失败/forget 背压被吞掉 | 状态机区分 queued/written/resident/failed，失败可重试 |
-| F26 | requestId/generation 未真正参与客户端归属校验 | 旧响应不能消费新 pending，重进/forget 后仍安全 |
-| F27 | 服务端 build 失败永久占用 pending | 失败结算并释放/重试 request，客户端有超时 |
+| F26 | 当前 Cube 协议 18 已使用 watch generation + network revision；旧自研 LOD requestId 路线已移除 | 旧响应不能消费新 pending，重进/forget 后仍安全 |
+| F27 | 当前 Cube 临时失败按 20/40/80/160/200 tick 重试，票据丢失取消 | 失败结算并释放/重试 request，客户端有超时 |
 | F28 | 编辑过的天然非 surface 区域永远不进入远景 | dirty 编辑可提升到远景候选并最终可见 |
 | F29 | LOD 邻域依赖未参与 invalidation | 修改一个节点会失效所有依赖它的邻域/祖先 |
 | F30 | Voxy 缺失/禁用/故障的 near-only 未端到端生效 | 三种状态都能稳定游玩且不残留远景资源 |
@@ -60,8 +60,8 @@
 | 编号 | 问题 | 关闭标准 |
 | --- | --- | --- |
 | F33 | `Cube.setBlock` 缺少 block 生命周期回调，同状态判断错误 | 对齐 LevelChunk 的 onRemove/onPlace/同状态语义 |
-| F34 | BE 客户端同步和销毁缺失 | full/update/forget、ticker、渲染器和 unload 有完整通道 |
-| F35 | random tick 和 Cube scheduled tick 尚未实现 | 明确 Cube 所有权、预算、保存和重启恢复 |
+| F34 | 已补 full handleUpdateTag、delta onDataPacket、预测确认、fresh onLoad 和销毁；实机待用户验收 | full/update/forget、ticker、渲染器和 unload 有完整通道 |
+| F35 | 已实现 block/fluid 随机采样和独立计划队列，schema 3 保存剩余延迟 | 明确 Cube 所有权、预算、保存和重启恢复 |
 
 ## P2：优化和维护性
 
@@ -73,5 +73,5 @@
 ## 使用方式
 
 - 新发现先归入现有编号，避免创建同义问题。
-- 关闭顺序优先 F01/F04/F22，再处理 revision/lifecycle，最后处理性能。
+- 当前验收按 R1–R8 及相关缺口执行；不要将 F01/F04/F22 等已删除路线重新作为依赖。
 - 渲染/协议问题的设计背景见 [ALLVR 总览](allay-dimension-dev.md)、[Sodium 路线](allay-dimension-sodium-rendering-parity-plan.md) 和 [Voxy 路线](allay-dimension-voxy-lod-integration-plan.md)。

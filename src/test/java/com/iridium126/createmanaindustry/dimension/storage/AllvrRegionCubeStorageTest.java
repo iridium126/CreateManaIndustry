@@ -126,8 +126,8 @@ class AllvrRegionCubeStorageTest {
         }
         long size = Files.size(folder.resolve(AllvrRegionIndex.fileName(0, 0, 0)));
         // 25 tiny records over the same slot: sector reuse must keep the file
-        // at its initial footprint (2 headers + 1 record sector)
-        assertTrue(size < (AllvrStorageFormat.PAYLOAD_START_SECTOR + 2) * AllvrStorageFormat.SECTOR_BYTES,
+        // bounded by two recovery generations plus one candidate sector.
+        assertTrue(size < (AllvrStorageFormat.PAYLOAD_START_SECTOR + 3) * AllvrStorageFormat.SECTOR_BYTES,
             "file grew without bound: " + size);
     }
 

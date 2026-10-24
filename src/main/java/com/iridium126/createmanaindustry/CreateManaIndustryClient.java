@@ -85,7 +85,7 @@ public class CreateManaIndustryClient {
                 com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache::applyBlockUpdate);
         ClientboundAllvrForgetCubePacket.installClientHandler(
                 packet -> com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache
-                        .forgetCube(packet.cubePos()));
+                        .forgetCube(packet.cubePos(), packet.generation()));
         if (net.neoforged.fml.ModList.get().isLoaded("yes_steve_model")) {
             ClientboundYsmPreviewPacket.installClientHandler(YsmClientPreviews::accept);
             ClientboundYsmArchivePacket.installClientHandler(YsmClientArchives::accept);
@@ -336,4 +336,20 @@ public class CreateManaIndustryClient {
             // Unload; this constructor-time Load is too early for that state.
         }
     }
+    @SubscribeEvent
+    private static void onAllvrNativeChunkLoaded(net.neoforged.neoforge.event.level.ChunkEvent.Load event) {
+        if (event.getLevel() == com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.currentLevel()) {
+            var engine = com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.lightEngine();
+            if (engine != null) engine.onNativeColumnChanged(event.getChunk().getPos().x, event.getChunk().getPos().z);
+        }
+    }
+
+    @SubscribeEvent
+    private static void onAllvrNativeChunkUnloaded(net.neoforged.neoforge.event.level.ChunkEvent.Unload event) {
+        if (event.getLevel() == com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.currentLevel()) {
+            var engine = com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache.lightEngine();
+            if (engine != null) engine.onNativeColumnUnloaded(event.getChunk().getPos().x, event.getChunk().getPos().z);
+        }
+    }
+
 }

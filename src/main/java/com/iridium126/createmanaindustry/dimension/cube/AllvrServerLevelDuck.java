@@ -24,5 +24,6 @@ public interface AllvrServerLevelDuck {
      * This is invoked immediately before the server entity pass.
      */
     void allvr$syncEntityTicking();
+    void allvr$requestEntityColumn(long key);
 
 }

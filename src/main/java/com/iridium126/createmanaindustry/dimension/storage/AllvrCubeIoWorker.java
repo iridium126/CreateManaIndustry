@@ -100,6 +100,15 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
      */
     private final ConcurrentHashMap<Long, PendingWrite> pending = new ConcurrentHashMap<>();
     private volatile State state = State.OPEN;
+    private volatile boolean writesEnabled = true;
+    public void setWritesEnabled(boolean enabled) throws IOException {
+        ensureOpen("save toggle");
+        writesEnabled = enabled;
+        if (!enabled) runBarrier(() -> storage.flush());
+        else if (!pending.isEmpty()) scheduleDrain();
+    }
+    public boolean writesEnabled() { return writesEnabled; }
+
     private volatile long lastIoLogMs;
     private volatile IOException lastIoException;
     private final Object closeLock = new Object();
@@ -171,7 +180,7 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
     /** One batched write pass; failures keep the pending entries for retry. */
     private void drainOnce() {
         this.drainScheduled.set(false);
-        if (this.pending.isEmpty()) return;
+        if (!writesEnabled || this.pending.isEmpty()) return;
         if (this.queuedReads.get() > 0) {
             // Keep the region-file mailbox responsive to loadAsync callers.
             // The delayed retry is still a background task, so a continuous
@@ -188,7 +197,7 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
             // New snapshots may have arrived while the batch was writing.
             // Schedule exactly one follow-up batch instead of one executor
             // task per enqueue call.
-            if (!this.pending.isEmpty() && this.state == State.OPEN) {
+            if (writesEnabled && !this.pending.isEmpty() && this.state == State.OPEN) {
                 this.scheduleDrain();
             }
         }
@@ -373,6 +382,7 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
      */
     public void flush() throws IOException {
         this.ensureOpen("flush");
+        if (!writesEnabled) throw new IOException("Allvr saving is disabled");
         long start = System.nanoTime();
         this.runBarrier(() -> {
             this.drainUntilEmpty();
@@ -463,7 +473,7 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
         try {
             this.executor.execute(() -> {
                 try {
-                    this.drainUntilEmpty();
+                    if (writesEnabled) this.drainUntilEmpty();
                 } catch (Throwable t) {
                     LOGGER.error("[Allvr] final cube drain failed — data may be missing from disk", t);
                     this.diagnostics.noteIoError(t.toString());
@@ -492,8 +502,11 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
             this.executor.shutdownNow();
             Thread.currentThread().interrupt();
         }
+        if (!writesEnabled) this.pending.clear();
         this.state = State.CLOSED;
     }
+
+    public boolean hasPending(long key) { return pending.containsKey(key); }
 
     public int pendingCount() {
         return this.pending.size();

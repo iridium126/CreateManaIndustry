@@ -1,0 +1,42 @@
+// Opt-in automated client smoke test. Every file and world stays under build/.
+gradle.projectsEvaluated {
+    def p = gradle.rootProject
+    def runtime = p.file(p.findProperty('allvrClientRunDir') ?: 'build/allvr-client-validation').canonicalFile
+    def buildRoot = p.layout.buildDirectory.get().asFile.canonicalFile.toPath()
+    if (runtime.toPath() == buildRoot || !runtime.toPath().startsWith(buildRoot))
+        throw new GradleException('allvrClientRunDir must be a dedicated directory under build/')
+    def suite = p.sourceSets.create('allvrClientValidation')
+    suite.java.srcDir(p.file('src/test/client/allvr/java'))
+    suite.resources.srcDir(p.file('build/allvr-worldgen-test-resources-vanilla'))
+    suite.compileClasspath += p.sourceSets.main.output + p.sourceSets.main.compileClasspath
+    suite.runtimeClasspath += p.sourceSets.main.runtimeClasspath
+    p.neoForge.mods.getByName(p.mod_id.toString()).sourceSet(suite)
+    p.neoForge.runs.client.sourceSet.set(suite)
+    p.neoForge.runs.client.gameDirectory.set(runtime)
+    p.neoForge.runs.client.programArguments.addAll('--width', '960', '--height', '540', '--quickPlaySingleplayer', 'AllvrValidation')
+    if (p.hasProperty('allvrAutomatedSmoke')) p.neoForge.runs.client.systemProperty('cmi.allvrClientValidation', 'true')
+    p.tasks.named('copyTricksterToRunMods').configure { into(new File(runtime, 'mods')) }
+    def prepare = p.tasks.register('prepareAllvrClientValidation') {
+        dependsOn(p.tasks.named('copyTricksterToRunMods'))
+        doLast {
+            def fixture = p.file('build/gametest/allvr-regression/world')
+            if (!new File(fixture, 'level.dat').isFile()) throw new GradleException('Run the Allvr regression GameTest suite first')
+            def world = new File(runtime, 'saves/AllvrValidation')
+            if (!new File(world, 'level.dat').isFile()) p.copy { from(fixture); into(world); exclude('session.lock') }
+            p.copy { from(p.configurations.sodiumDistribution); into(new File(runtime, 'mods')) }
+            p.copy { from(p.file('run/mods')); include('*owo*.jar'); into(new File(runtime, 'mods')) }
+            if (p.hasProperty('allvrWithVoxy')) {
+                def voxy = p.file('.gradle/voxy/artifacts/voxy-0.2.15-beta+1.21.1-neoforge.jar')
+                if (!voxy.isFile()) throw new GradleException('Pinned Voxy artifact is missing; prepare it before the Voxy client scenario')
+                p.copy { from(voxy); into(new File(runtime, 'mods')) }
+            }
+            runtime.mkdirs()
+            new File(runtime, 'options.txt').text = 'renderDistance:2\nsimulationDistance:2\npauseOnLostFocus:false\nmaxFps:60\n'
+            logger.lifecycle('Allvr isolated client: ' + runtime)
+        }
+    }
+    p.tasks.named('runClient', JavaExec).configure {
+        dependsOn(prepare, p.tasks.named(suite.classesTaskName))
+        maxHeapSize = '4g'
+    }
+}

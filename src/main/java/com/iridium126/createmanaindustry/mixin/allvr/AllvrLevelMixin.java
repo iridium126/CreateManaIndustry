@@ -371,4 +371,15 @@ public abstract class AllvrLevelMixin {
             ci.cancel();
         }
     }
+    @Inject(method = "setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)Z", at = @At("RETURN"))
+    private void allvr$nativeLightBoundary(BlockPos pos, BlockState state, int flags, int recursion, CallbackInfoReturnable<Boolean> cir) {
+        Level self = (Level) (Object) this;
+        if (!Boolean.TRUE.equals(cir.getReturnValue()) || !AllvrDimensions.isAllay(self) || !AllvrDimensionLimits.isVanillaY(pos.getY())) return;
+        if (pos.getY() < -112 || pos.getY() >= 368) {
+            if (self instanceof AllvrServerLevelDuck duck) {
+                var map = duck.allvr$peekCubeMap(); if (map != null) map.lightEngine().onBlockChanged(pos);
+            } else com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.nativeLightChanged(pos);
+        }
+    }
+
 }

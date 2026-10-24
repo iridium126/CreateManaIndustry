@@ -24,7 +24,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  *       write them;</li>
  *   <li>apply the slot updates onto the <b>inactive</b> header copy with a
  *       bumped generation and its CRC32C, then write it whole;</li>
- *   <li>only now return the replaced sectors to the free list. The file is
+ *   <li>only now reclaim sectors unreferenced by both valid headers. The file is
  *       forced only by {@link #flush()} or {@link #close()}, like vanilla's
  *       RegionFileStorage background saves.</li>
  * </ol>
@@ -70,6 +70,16 @@ public final class AllvrRegion3DFile implements AutoCloseable {
     /** A background commit has changed the file since the last fsync. */
     private boolean dirty;
     private boolean closed;
+    @FunctionalInterface interface WriteOperation { int write(FileChannel channel, ByteBuffer data, long position) throws IOException; }
+    private WriteOperation writer = FileChannel::write;
+    // A failed header may have reached disk completely. Pin its allocations until that header is superseded.
+    private final ArrayList<Run> uncertainAllocations = new ArrayList<>();
+    static AllvrRegion3DFile open(Path path, int rx, int ry, int rz, WriteOperation writer) throws IOException {
+        AllvrRegion3DFile file = open(path, rx, ry, rz);
+        file.writer = writer;
+        return file;
+    }
+
 
     private static final class Run {
         int offset;
@@ -147,23 +157,30 @@ public final class AllvrRegion3DFile implements AutoCloseable {
         System.arraycopy(chosen.slotSectors, 0, this.slotSectors, 0, SLOTS);
         System.arraycopy(chosen.slotLength, 0, this.slotLength, 0, SLOTS);
         System.arraycopy(chosen.slotCrc, 0, this.slotCrc, 0, SLOTS);
+        headers[0] = a; headers[1] = b;
         this.rebuildFreeList(size);
     }
 
+    private final HeaderImage[] headers = new HeaderImage[2];
+
     private void rebuildFreeList(long fileSize) throws AllvrCubeCorruptedException {
+        freeRuns.clear();
         // records are written unpadded, so the file tail can end mid-sector —
         // a partial trailing sector still belongs to its record
         int fileSectors = (int) Math.min(Integer.MAX_VALUE,
             (fileSize + AllvrStorageFormat.SECTOR_BYTES - 1) / AllvrStorageFormat.SECTOR_BYTES);
         this.nextFreeSector = Math.max(AllvrStorageFormat.PAYLOAD_START_SECTOR, fileSectors);
         boolean[] referenced = new boolean[fileSectors];
+        // Both CRC-valid header images remain recovery roots until overwritten.
+        for (var header : headers) {
+        if (header == null) continue;
         for (int slot = 0; slot < SLOTS; slot++) {
-            int count = this.slotSectors[slot];
+            int count = header.slotSectors[slot];
             if (count == 0) {
                 continue;
             }
-            int offset = this.slotOffset[slot];
-            int length = this.slotLength[slot];
+            int offset = header.slotOffset[slot];
+            int length = header.slotLength[slot];
             if (offset < AllvrStorageFormat.PAYLOAD_START_SECTOR || offset + count > fileSectors
                 || length <= 0 || length > count * AllvrStorageFormat.SECTOR_BYTES) {
                 throw new AllvrCubeCorruptedException("region r." + this.rx + "." + this.ry + "." + this.rz
@@ -172,6 +189,7 @@ public final class AllvrRegion3DFile implements AutoCloseable {
             for (int s = 0; s < count; s++) {
                 referenced[offset + s] = true;
             }
+        }
         }
         int runStart = -1;
         for (int s = AllvrStorageFormat.PAYLOAD_START_SECTOR; s <= fileSectors; s++) {
@@ -262,12 +280,18 @@ public final class AllvrRegion3DFile implements AutoCloseable {
         buf.flip();
         long base = (long) this.activeHeader * AllvrStorageFormat.HEADER_SECTORS * AllvrStorageFormat.SECTOR_BYTES;
         while (buf.hasRemaining()) {
-            this.channel.write(buf, base + buf.position());
+            this.writer.write(this.channel, buf, base + buf.position());
         }
         if (force) {
             this.channel.force(true);
         }
         this.generation = newGeneration;
+        var image = new HeaderImage(activeHeader, newGeneration);
+        System.arraycopy(slotOffset, 0, image.slotOffset, 0, SLOTS);
+        System.arraycopy(slotSectors, 0, image.slotSectors, 0, SLOTS);
+        System.arraycopy(slotLength, 0, image.slotLength, 0, SLOTS);
+        System.arraycopy(slotCrc, 0, image.slotCrc, 0, SLOTS);
+        headers[activeHeader] = image;
     }
 
     // ------------------------------------------------------------------
@@ -326,58 +350,48 @@ public final class AllvrRegion3DFile implements AutoCloseable {
         if (payloads.isEmpty()) {
             return;
         }
-        // phase 1: allocate + write payloads (header untouched → crash-safe)
-        int size = payloads.size();
-        int[] slots = new int[size];
-        int[] newOffsets = new int[size];
-        int[] newCounts = new int[size];
-        int[] oldOffsets = new int[size];
-        int[] oldCounts = new int[size];
-        int i = 0;
-        for (Int2ObjectMap.Entry<byte[]> entry : payloads.int2ObjectEntrySet()) {
-            byte[] record = entry.getValue();
-            int count = (record.length + AllvrStorageFormat.SECTOR_BYTES - 1) / AllvrStorageFormat.SECTOR_BYTES;
-            int offset = this.allocate(count);
-            ByteBuffer buf = ByteBuffer.wrap(record);
-            long base = (long) offset * AllvrStorageFormat.SECTOR_BYTES;
-            while (buf.hasRemaining()) {
-                this.channel.write(buf, base + buf.position());
-            }
-            slots[i] = entry.getIntKey();
-            newOffsets[i] = offset;
-            newCounts[i] = count;
-            oldOffsets[i] = this.slotOffset[slots[i]];
-            oldCounts[i] = this.slotSectors[slots[i]];
-            i++;
-        }
-        // phase 2: shadow header commit onto the inactive copy
-        int previousActive = this.activeHeader;
-        this.activeHeader = 1 - previousActive;
+        int[] oldOffsets = slotOffset.clone(), oldCounts = slotSectors.clone(), oldLengths = slotLength.clone();
+        long[] oldCrc = slotCrc.clone();
+        var oldFree = new ArrayList<Run>();
+        for (Run run : freeRuns) oldFree.add(new Run(run.offset, run.count));
+        int oldNext = nextFreeSector;
+        int previousActive = activeHeader;
+        long previousGeneration = generation;
+        var allocations = new ArrayList<Run>();
+        boolean headerStarted = false;
         try {
-            for (int e = 0; e < size; e++) {
-                int slot = slots[e];
-                CRC32C crc = new CRC32C();
-                crc.update(payloads.get(slot));
-                this.slotOffset[slot] = newOffsets[e];
-                this.slotSectors[slot] = newCounts[e];
-                this.slotLength[slot] = payloads.get(slot).length;
-                this.slotCrc[slot] = crc.getValue();
+            for (var entry : payloads.int2ObjectEntrySet()) {
+                int slot = entry.getIntKey();
+                if (slot < 0 || slot >= SLOTS || entry.getValue().length == 0) throw new IOException("invalid region slot/payload");
+                byte[] record = entry.getValue();
+                int count = (record.length + AllvrStorageFormat.SECTOR_BYTES - 1) / AllvrStorageFormat.SECTOR_BYTES;
+                int offset = allocate(count);
+                allocations.add(new Run(offset, count));
+                ByteBuffer data = ByteBuffer.wrap(record);
+                long base = (long) offset * AllvrStorageFormat.SECTOR_BYTES;
+                while (data.hasRemaining()) writer.write(channel, data, base + data.position());
+                CRC32C crc = new CRC32C(); crc.update(record);
+                slotOffset[slot] = offset; slotSectors[slot] = count;
+                slotLength[slot] = record.length; slotCrc[slot] = crc.getValue();
             }
-            writeHeaderCopy(this.generation + 1, false);
-        } catch (IOException e) {
-            // header commit failed — roll the in-memory tables back to the
-            // still-durable old header so a retry starts from a clean state
-            this.activeHeader = previousActive;
-            throw e;
+            activeHeader = 1 - previousActive;
+            headerStarted = true;
+            writeHeaderCopy(previousGeneration + 1, false);
+        } catch (IOException | RuntimeException failure) {
+            System.arraycopy(oldOffsets, 0, slotOffset, 0, SLOTS);
+            System.arraycopy(oldCounts, 0, slotSectors, 0, SLOTS);
+            System.arraycopy(oldLengths, 0, slotLength, 0, SLOTS);
+            System.arraycopy(oldCrc, 0, slotCrc, 0, SLOTS);
+            activeHeader = previousActive;
+            generation = previousGeneration;
+            if (headerStarted) uncertainAllocations.addAll(allocations);
+            else { freeRuns.clear(); freeRuns.addAll(oldFree); nextFreeSector = oldNext; }
+            throw failure;
         }
-
-        // phase 3: release replaced sectors — only after the new header is written
-        for (int e = 0; e < size; e++) {
-            if (oldCounts[e] > 0) {
-                this.free(oldOffsets[e], oldCounts[e]);
-            }
-        }
-        this.dirty = true;
+        uncertainAllocations.clear();
+        // Publish allocator state only after the new header completed. The other header still owns its sectors.
+        rebuildFreeList(channel.size());
+        dirty = true;
     }
 
     private int allocate(int count) {
@@ -397,23 +411,6 @@ public final class AllvrRegion3DFile implements AutoCloseable {
         int offset = this.nextFreeSector;
         this.nextFreeSector += count;
         return offset;
-    }
-
-    private void free(int offset, int count) {
-        int end = offset + count;
-        for (int i = 0; i < this.freeRuns.size(); i++) {
-            Run run = this.freeRuns.get(i);
-            if (run.offset == end) {
-                run.offset = offset;
-                run.count += count;
-                return;
-            }
-            if (run.offset + run.count == offset) {
-                run.count += count;
-                return;
-            }
-        }
-        this.freeRuns.add(new Run(offset, count));
     }
 
     /** {@code channel.force} — flush() part of the storage interface. */

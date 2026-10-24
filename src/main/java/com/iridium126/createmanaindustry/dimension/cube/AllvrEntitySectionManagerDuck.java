@@ -9,5 +9,6 @@ package com.iridium126.createmanaindustry.dimension.cube;
 public interface AllvrEntitySectionManagerDuck {
 
     /** Synchronizes cube entity sections with the currently loaded cubes. */
+    void allvr$requestEntityColumn(long key);
     void allvr$syncCubeEntityTicking(AllvrCubeMap map);
 }

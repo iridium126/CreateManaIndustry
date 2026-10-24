@@ -5,7 +5,6 @@ import java.util.function.Consumer;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
@@ -15,7 +14,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
@@ -40,7 +38,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  * Light is derived from the streamed block states by the client-side vanilla
  * light engine; no auxiliary light data is sent.
  */
-public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implements CustomPacketPayload {
+public record ClientboundAllvrCubePacket(long cubePos, long generation, long revision, byte[] payload) implements CustomPacketPayload {
     private static final ClientPayloadHandler<ClientboundAllvrCubePacket> CLIENT_HANDLER =
             new ClientPayloadHandler<>();
 
@@ -58,11 +56,13 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
 
     private static void encode(RegistryFriendlyByteBuf buffer, ClientboundAllvrCubePacket p) {
         buffer.writeLong(p.cubePos);
+        buffer.writeLong(p.generation);
+        buffer.writeLong(p.revision);
         buffer.writeByteArray(p.payload);
     }
 
     private static ClientboundAllvrCubePacket decode(RegistryFriendlyByteBuf buffer) {
-        return new ClientboundAllvrCubePacket(buffer.readLong(), buffer.readByteArray());
+        return new ClientboundAllvrCubePacket(buffer.readLong(), buffer.readLong(), buffer.readLong(), buffer.readByteArray());
     }
 
     @Override
@@ -74,20 +74,21 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
     public static ClientboundAllvrCubePacket of(AllvrCube cube, RegistryAccess registryAccess) {
         ByteBuf byteBuf = Unpooled.buffer();
         FriendlyByteBuf buf = new FriendlyByteBuf(byteBuf);
-        for (LevelChunkSection section : cube.getSections()) {
-            section.write(buf);
-        }
-        Int2ObjectMap<BlockEntity> bes = cube.getBlockEntities();
-        buf.writeVarInt(bes.size());
-        for (Int2ObjectMap.Entry<BlockEntity> entry : bes.int2ObjectEntrySet()) {
-            buf.writeShort(entry.getIntKey());
-            CompoundTag tag = entry.getValue().getUpdateTag(registryAccess);
-            buf.writeNbt(tag.isEmpty() ? null : tag);
-        }
-        byte[] payload = new byte[byteBuf.readableBytes()];
-        byteBuf.readBytes(payload);
-        byteBuf.release();
-        return new ClientboundAllvrCubePacket(cube.getPos().asLong(), payload);
+        try {
+            for (LevelChunkSection section : cube.getSections()) {
+                section.write(buf);
+            }
+            Int2ObjectMap<BlockEntity> bes = cube.getBlockEntities();
+            buf.writeVarInt(bes.size());
+            for (Int2ObjectMap.Entry<BlockEntity> entry : bes.int2ObjectEntrySet()) {
+                buf.writeShort(entry.getIntKey());
+                CompoundTag tag = entry.getValue().getUpdateTag(registryAccess);
+                buf.writeNbt(tag.isEmpty() ? null : tag);
+            }
+            byte[] payload = new byte[byteBuf.readableBytes()];
+            byteBuf.readBytes(payload);
+            return new ClientboundAllvrCubePacket(cube.getPos().asLong(), 0, cube.networkRevision(), payload);
+        } finally { byteBuf.release(); }
     }
 
     /**
@@ -117,38 +118,27 @@ public record ClientboundAllvrCubePacket(long cubePos, byte[] payload) implement
         AllvrCubePos pos = AllvrCubePos.fromLong(cubePos);
         AllvrCube cube = new AllvrCube(pos, registryAccess.registryOrThrow(Registries.BIOME));
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.wrappedBuffer(payload));
-        LevelChunkSection[] sections = cube.getSections();
-        for (int i = 0; i < sections.length; i++) {
-            sections[i].read(buf);
-        }
-        int baseX = pos.minBlockX();
-        int baseY = pos.minBlockY();
-        int baseZ = pos.minBlockZ();
-        int beCount = buf.readVarInt();
-        if (beCount < 0 || beCount > MAX_BLOCK_ENTRIES) {
-            throw new IllegalArgumentException("cube BE count out of range: " + beCount);
-        }
-        for (int i = 0; i < beCount; i++) {
-            int cell = buf.readShort() & 0xFFFF;
-            requireCell(cell);
-            CompoundTag tag = buf.readNbt();
-            BlockPos worldPos = new BlockPos(baseX + (cell & 31), baseY + (cell >> 10), baseZ + ((cell >> 5) & 31));
-            BlockState state = cube.getBlockState(worldPos);
-            if (state.getBlock() instanceof net.minecraft.world.level.block.EntityBlock entityBlock) {
-                BlockEntity be = entityBlock.newBlockEntity(worldPos, state);
-                if (be != null) {
-                    if (tag != null) {
-                        be.loadWithComponents(tag, registryAccess);
-                    }
-                    cube.putBlockEntity(worldPos, be);
-                }
+        try {
+            LevelChunkSection[] sections = cube.getSections();
+            for (int i = 0; i < sections.length; i++) {
+                sections[i].read(buf);
             }
-        }
-        if (buf.readableBytes() != 0) {
-            throw new IllegalArgumentException("cube payload has " + buf.readableBytes()
-                + " trailing bytes — codec mismatch");
-        }
-        return cube;
+            int beCount = buf.readVarInt();
+            if (beCount < 0 || beCount > MAX_BLOCK_ENTRIES) {
+                throw new IllegalArgumentException("cube BE count out of range: " + beCount);
+            }
+            for (int i = 0; i < beCount; i++) {
+                int cell = buf.readShort() & 0xFFFF;
+                requireCell(cell);
+                CompoundTag tag = buf.readNbt();
+                cube.stageNetworkBlockEntity(cell, tag == null ? new CompoundTag() : tag);
+            }
+            if (buf.readableBytes() != 0) {
+                throw new IllegalArgumentException("cube payload has " + buf.readableBytes()
+                    + " trailing bytes — codec mismatch");
+            }
+            return cube;
+        } finally { buf.release(); }
     }
 
     /**

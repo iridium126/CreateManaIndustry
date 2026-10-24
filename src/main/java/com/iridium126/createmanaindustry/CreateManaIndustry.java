@@ -145,6 +145,10 @@ public class CreateManaIndustry {
         // Allay dimension cube loading driver (block access is routed by the
         // allvr.* mixins; this only ticks the per-level cube map).
         NeoForge.EVENT_BUS.addListener(AllvrServerHandler::onLevelTick);
+        NeoForge.EVENT_BUS.addListener(AllvrServerHandler::onChunkLoaded);
+        NeoForge.EVENT_BUS.addListener(AllvrServerHandler::onEntityJoined);
+        NeoForge.EVENT_BUS.addListener(AllvrServerHandler::onEntityEntered);
+        NeoForge.EVENT_BUS.addListener(AllvrServerHandler::onChunkUnloaded);
         NeoForge.EVENT_BUS.addListener(AllvrServerHandler::onPlayerLoggedOut);
         NeoForge.EVENT_BUS.addListener(AllvrServerHandler::onPlayerChangedDimension);
 
@@ -167,7 +171,7 @@ public class CreateManaIndustry {
     }
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(MODID).versioned("17");
+        PayloadRegistrar registrar = event.registrar(MODID).versioned("18");
         registrar.playToClient(
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.TYPE,
                 com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedFatePacket.STREAM_CODEC,
@@ -285,6 +289,10 @@ public class CreateManaIndustry {
                 ServerboundStormPositionsPacket.TYPE,
                 ServerboundStormPositionsPacket.STREAM_CODEC,
                 ServerboundStormPositionsPacket::handle);
+        registrar.playToServer(
+            com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrResyncPacket.TYPE,
+            com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrResyncPacket.STREAM_CODEC,
+            com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrResyncPacket::handle);
         // Allay dimension cube streaming: block data + block entities; the
         // client-side vanilla light engine derives light from block states.
         registrar.playToClient(
