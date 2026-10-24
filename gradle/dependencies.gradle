@@ -9,9 +9,9 @@ ext.cmiCoordinates = [
         iris: 'curse.maven:irisshaders-455508:8242804',
         sodium: 'curse.maven:sodium-394468:8756580',
         glslTransformer: 'io.github.douira:glsl-transformer:2.0.1',
-        irisVeil: 'curse.maven:iris-veil-compat-1541252:8280410',
+        irisVeil: 'curse.maven:iris-veil-compat-1541252:9059655',
         jei: "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}",
-        hexcasting: 'hexcasting:hexcasting-neoforge-1.21.1-0.12.0-devel-pre-53@jar',
+        hexcasting: 'hexcasting:hexcasting-neoforge-1.21.1-0.12.0-devel-pre-64@jar',
         hexparse: 'maven.modrinth:WjFyIzFj:fFV6HwT2',
         hexOverpowered: 'maven.modrinth:PkhtCPsD:I3vfDCiE',
         paucal: 'paucal:paucal-0.7.1-pre-27+1.21.1-neoforge@jar',
@@ -107,4 +107,5 @@ dependencies {
     // Inspect real APIs/bytecode without initializing the optional mods.
     testRuntimeOnly(coordinates.ponder) { transitive = false }
     testRuntimeOnly(coordinates.iris) { transitive = false }
+    testRuntimeOnly(coordinates.irisVeil) { transitive = false }
 }

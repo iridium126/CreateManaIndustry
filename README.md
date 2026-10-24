@@ -91,9 +91,10 @@ The following mods are optional. Their integration is enabled when the mod is in
 |---|---:|---|
 | [Trickster](https://modrinth.com/mod/trickster) | 2.0.0-beta.56 | Knots, spells, constructs, and kinetic links |
 | [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs) | 2.1.9-beta | Cogwheel-chain data for the Kinetics Spell Core |
-| [Hexcasting](https://modrinth.com/mod/hexcasting) | 0.12.0-devel-pre-53 | Casting-item automation, media storage, and custom actions |
+| [Hexcasting](https://modrinth.com/mod/hexcasting) | 0.12.0-devel-pre-64 | Casting-item automation, media storage, and custom actions |
 | HexParse | 1.21.1-1.11.2.pre53 | Adapters for integration-specific Hexcasting data |
 | [Veil](https://modrinth.com/mod/veil) | 4.1.4 | Volumetric mist and related rendering effects |
+| [Iris Veil Compat](https://github.com/leon-o/iris-veil-compat) | 0.4.0-alpha | Shaderpack integration for mist and fuel-rod glow |
 | [Ars Nouveau](https://modrinth.com/mod/ars-nouveau) | 5.13.0 | Liquid Source and source-jar handling |
 
 ## Configuration

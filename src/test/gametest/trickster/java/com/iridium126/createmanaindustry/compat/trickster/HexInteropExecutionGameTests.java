@@ -48,7 +48,7 @@ public final class HexInteropExecutionGameTests {
         var state = new CircleExecutionState(impetus, Direction.EAST, new HashSet<>(List.of(impetus, slate)),
                 slate, Direction.WEST, new CastingImage(), null, null, 0L,
                 helper.absolutePos(new BlockPos(2, 2, 2)), helper.absolutePos(BlockPos.ZERO)) {};
-        return CastingOrigin.capture(new CircleCastEnv(helper.getLevel(), state));
+        return com.iridium126.createmanaindustry.compat.hextrick.execution.HexCastingOrigins.capture(new CircleCastEnv(helper.getLevel(), state));
     }
 
     private static SlateKnotHolder holder(GameTestHelper helper) { return (SlateKnotHolder) helper.getBlockEntity(SLATE); }

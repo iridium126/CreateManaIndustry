@@ -45,6 +45,7 @@ public class CMIHexActions {
                             OpTick.INSTANCE));
 
     public static void register(IEventBus modEventBus) {
+        CMIHexImageComponents.register(modEventBus);
         ACTIONS.register(modEventBus);
     }
 }

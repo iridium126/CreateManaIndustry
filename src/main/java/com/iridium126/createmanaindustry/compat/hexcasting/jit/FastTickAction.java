@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
+import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
 import at.petrak.hexcasting.api.casting.ParticleSpray;
-import at.petrak.hexcasting.api.HexAPI;
 import at.petrak.hexcasting.api.casting.castables.Action;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
 import at.petrak.hexcasting.api.casting.eval.CastResult;
@@ -220,12 +220,9 @@ public final class FastTickAction {
             // Isolate the caller's input image once, then reuse this private tag after each
             // read-only postExecution callback instead of copying it for every Tick action.
             userData = scope.reuseTickUserData(
-                    image.getUserData(), OpTick.TAG_TIMES_TICKED, HexAPI.RAVENMIND_USERDATA);
-        } else if (mutateUserDataInPlace) {
-            userData = FastCompoundTagCopy.copyForTick(
-                    image.getUserData(), OpTick.TAG_TIMES_TICKED, HexAPI.RAVENMIND_USERDATA);
+                    CMIHexImageComponents.tickData(image));
         } else {
-            userData = FastCompoundTagCopy.copy(image.getUserData());
+            userData = FastCompoundTagCopy.copy(CMIHexImageComponents.tickData(image));
         }
         long cost = action.executeForFastPath(pos, env, userData, mutateUserDataInPlace,
                 currentScope, tickAssets);
@@ -288,7 +285,7 @@ public final class FastTickAction {
             return null;
         }
         CastingImage image2 = image.copy(stackWithoutArgs, image.getParenCount(), image.getParenthesized(),
-                image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed() + 1, userData);
+                image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed() + 1, CMIHexImageComponents.componentsWithTickData(image, userData));
         return new CastResult(cast, continuation, image2, sideEffects, ResolvedPatternType.EVALUATED, sound);
     }
 }

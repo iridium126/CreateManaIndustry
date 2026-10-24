@@ -13,7 +13,7 @@ class CastChainTest {
     }
     @Test void savedStateIsSuspendedUntilAnExecutorActuallyResumes() {
         var chain=new CastChain();chain.bind(UUID.randomUUID());chain.toggle();chain.retain(new Object());
-        var saved=CastChain.decode(chain.encode());
+        var saved=CastChain.restore(chain.snapshot());
         assertEquals(chain.id(),saved.id());assertEquals(chain.player(),saved.player());assertTrue(saved.inverted());assertFalse(saved.live());
         assertThrows(IllegalStateException.class,()->saved.bind(UUID.randomUUID()));
     }

@@ -93,13 +93,13 @@ public class TrickIota extends Iota {
         }
 
         CastingImage nextImage = image.copy(stack, image.getParenCount(), image.getParenthesized(),
-                image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed() + 1, image.getUserData());
+                image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed() + 1, image.getComponents());
         return new CastResult(this, continuation, nextImage, List.of(),
                 ResolvedPatternType.EVALUATED, HexEvalSounds.NORMAL_EXECUTE.get());
     }
 
     @Override
-    public boolean isTruthy() {
+    public boolean isTruthy(at.petrak.hexcasting.api.casting.eval.CastingEnvironment env) {
         return !snapshot.isEmpty();
     }
 

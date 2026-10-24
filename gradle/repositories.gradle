@@ -52,7 +52,7 @@ repositories {
         }
     }
     ivy {
-        url = uri("https://ci.blamejared.com/job/petrakat/job/Hexcasting/job/1.21/53/artifact/Neoforge/build/libs")
+        url = uri("https://ci.blamejared.com/job/petrakat/job/Hexcasting/job/1.21/64/artifact/Neoforge/build/libs")
         
         patternLayout {
             artifact "[artifact].[ext]"

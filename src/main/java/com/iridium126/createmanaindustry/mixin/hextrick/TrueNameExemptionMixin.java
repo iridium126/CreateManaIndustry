@@ -20,7 +20,7 @@ public abstract class TrueNameExemptionMixin {
             if (next instanceof EntityIota entity) {
                 if (CastChains.nameExempt(level.getServer(), entity.getEntityId())) continue;
                 var resolved = entity.getEntity(level);
-                if (resolved == null && entity.isPlayer()) { cir.setReturnValue(new MishapOthersName(null)); return; }
+                if (resolved == null && entity.uuidIsPlayer()) { cir.setReturnValue(new MishapOthersName(null)); return; }
                 if (resolved instanceof Player player && player != caster) { cir.setReturnValue(new MishapOthersName(player)); return; }
             }
             Iterable<Iota> children = next.subIotas();

@@ -1,5 +1,6 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
+import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
 import at.petrak.hexcasting.api.casting.ParticleSpray;
 import at.petrak.hexcasting.api.addldata.ADMediaHolder;
 import at.petrak.hexcasting.api.casting.eval.CastResult;
@@ -1522,7 +1523,7 @@ public final class HexJitReferenceSpellGameTests {
         env.remainingMedia = Long.MAX_VALUE / 4;
         env.getWorld().random.setSeed(9128374L);
         CastingVM vm = new CastingVM(new CastingImage(TreeList.empty(), 0, TreeList.empty(),
-                false, false, 0, new CompoundTag()), env);
+                false, false, 0, java.util.Map.of()), env);
         long startedNanos = System.nanoTime();
         ExecutionClientView view = vm.queueExecuteAndWrapIotas(program, level);
         long elapsedNanos = System.nanoTime() - startedNanos;
@@ -1716,7 +1717,7 @@ public final class HexJitReferenceSpellGameTests {
                 ? new ReferenceSpellEnvironment(player, yjsp.getPattern(), tick.getPattern(), referenceSpell.opLimit()) : null;
         StaffCastEnv env = observerEnv != null ? observerEnv
                 : new BenchmarkSpellEnvironment(player, referenceSpell.opLimit());
-        CastingImage initial = new CastingImage(stack, 0, TreeList.empty(), false, false, 0, new CompoundTag());
+        CastingImage initial = new CastingImage(stack, 0, TreeList.empty(), false, false, 0, java.util.Map.of());
         CastingVM vm = new CastingVM(initial, env);
         int mediaUsedBefore = player.getStats().getValue(Stats.CUSTOM.get(HexStatistics.MEDIA_USED));
         long start = System.nanoTime();
@@ -1730,7 +1731,7 @@ public final class HexJitReferenceSpellGameTests {
         }
         long elapsed = System.nanoTime() - start;
         CastingImage image = vm.getImage();
-        int storedTicks = vm.getImage().getUserData().getCompound(OpTick.TAG_TIMES_TICKED).getInt(target.toShortString());
+        int storedTicks = CMIHexImageComponents.tickData(vm.getImage()).getCompound(OpTick.TAG_TIMES_TICKED).getInt(target.toShortString());
         String result = view.getResolutionType() + ":stackClear=" + view.isStackClear();
         List<net.minecraft.world.level.block.state.BlockState> areaStates = new ArrayList<>(27);
         for (int x = -1; x <= 1; x++) {

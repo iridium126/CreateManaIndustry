@@ -12,7 +12,7 @@ import net.irisshaders.iris.shadows.ShadowRenderer;
 import top.leonx.irisveil.accessors.IrisRenderingPipelineAccessor;
 import net.minecraft.client.Minecraft;
 import top.leonx.irisveil.IrisVeilCompat;
-import top.leonx.irisveil.compat.veil.VeilCompatRegistry;
+import com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
@@ -93,38 +93,34 @@ public final class MistIrisHook {
     }
 
     /**
-     * Registers the world render hook with iris-veil-compat. Safe to call
+     * Registers CMI's late world effect passes. Safe to call
      * multiple times; no-op when iris-veil-compat is not loaded.
      */
     public static void init() {
         if (!CreateManaIndustry.IRISVEIL_ACTIVE || registered)
             return;
         registered = true;
-        VeilCompatRegistry.registerWorldRenderHook(
+        IrisWorldEffects.register(
                 HOOK_ID_SCENE, DRAW_BUFFERS_SCENE,
                 MistIrisHook::shouldRenderScene,
-                (camera, gameRenderer) -> render(camera, gameRenderer,
-                        MistInjectionProfiles.Profile.SCENE_COLOR));
-        // Three hooks share one registration site because the compat registry pins
+                () -> render(MistInjectionProfiles.Profile.SCENE_COLOR));
+        // Four hooks share one registration site because the CMI dispatcher pins
         // the draw buffers per hook; each hook self-gates on the active profile.
         // Only the scene hook ticks the mist — exactly one hook draws per frame.
-        VeilCompatRegistry.registerWorldRenderHook(
+        IrisWorldEffects.register(
                 HOOK_ID_TRANSLUCENT, DRAW_BUFFERS_TRANSLUCENT,
                 MistIrisHook::shouldRenderTranslucent,
-                (camera, gameRenderer) -> render(camera, gameRenderer,
-                        MistInjectionProfiles.Profile.TRANSLUCENT_LAYER));
-        VeilCompatRegistry.registerWorldRenderHook(
+                () -> render(MistInjectionProfiles.Profile.TRANSLUCENT_LAYER));
+        IrisWorldEffects.register(
                 HOOK_ID_HDR, DRAW_BUFFERS_HDR,
                 MistIrisHook::shouldRenderHdr,
-                (camera, gameRenderer) -> render(camera, gameRenderer,
-                        MistInjectionProfiles.Profile.HDR_SCENE));
+                () -> render(MistInjectionProfiles.Profile.HDR_SCENE));
         // Like the other non-scene gates, this one does not tick: the scene
         // hook owns the mist tick every frame regardless of which profile wins.
-        VeilCompatRegistry.registerWorldRenderHook(
+        IrisWorldEffects.register(
                 HOOK_ID_RAW, DRAW_BUFFERS_RAW,
                 MistIrisHook::shouldRenderRawLayer,
-                (camera, gameRenderer) -> render(camera, gameRenderer,
-                        MistInjectionProfiles.Profile.RAW_LAYER));
+                () -> render(MistInjectionProfiles.Profile.RAW_LAYER));
     }
 
     /**
@@ -173,11 +169,10 @@ public final class MistIrisHook {
 
     /**
      * Draws the mist pass into the iris gbuffer. The compat gbuffer framebuffer
-     * (writing to colortex0) is already bound by iris-veil-compat; the main
+     * (writing to colortex0) is already bound by IrisWorldEffects; the main
      * render target is restored by the framework afterwards.
      */
-    private static boolean render(Object camera, Object gameRenderer,
-            MistInjectionProfiles.Profile profile) {
+    private static boolean render(MistInjectionProfiles.Profile profile) {
         try {
             ShaderProgram shader = getProgram();
             if (shader == null)

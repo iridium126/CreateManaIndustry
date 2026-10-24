@@ -6,7 +6,7 @@ import org.objectweb.asm.tree.ClassNode;
 
 /** Bootstrap-safe ABI contracts: inspect bytecode without loading either optional mod. */
 public final class HexInteropContracts {
-    public static final String HEX_VERSION = "0.12.0-devel-pre-53";
+    public static final String HEX_VERSION = "0.12.0-devel-pre-64";
     public static final String TRICKSTER_VERSION = "2.0.0-beta.56";
     public static final Map<String, List<String>> METHODS = Map.of(
             "dev.enjarai.trickster.spell.execution.TickData", List.of("incrementExecutions()V", "isExecutionLimitReached()Z"),

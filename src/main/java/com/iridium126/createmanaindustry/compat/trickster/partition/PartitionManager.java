@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.compat.trickster.partition;
 
-import at.petrak.hexcasting.forge.xplat.ForgeXplatImpl;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime;
 import com.iridium126.createmanaindustry.compat.hextrick.execution.CastingContexts;
@@ -160,16 +159,10 @@ public final class PartitionManager {
         }
         return old;
     }
-    private static void persistStaff(MinecraftServer server,CastChain chain) {
-        if(chain.player()==null)return;
-        var player=server.getPlayerList().getPlayer(chain.player());
-        if(player==null)return;
-        var data=player.getPersistentData().getCompound(ForgeXplatImpl.TAG_VM).getCompound("userData");
-        String encoded=data.getString("cmi_cast_chain");
-        if(encoded.isEmpty()||!CastChain.decode(encoded).id().equals(chain.id()))return;
-        if(chain.partition()==null)data.remove("cmi_partition");
-        else data.putString("cmi_partition",chain.partition().encode());
-        data.putString("cmi_effect_origins",chain.encodeOrigins());
+    private static void persistStaff(MinecraftServer server, CastChain chain) {
+        if (chain.player() == null || !com.iridium126.createmanaindustry.CreateManaIndustry.HEX_ACTIVE) return;
+        var player = server.getPlayerList().getPlayer(chain.player());
+        if (player != null) com.iridium126.createmanaindustry.compat.hexcasting.HexCastChainState.persist(player, chain);
     }
     private static void changed(MinecraftServer server) {
         ExecutionScope.resourceTransition();

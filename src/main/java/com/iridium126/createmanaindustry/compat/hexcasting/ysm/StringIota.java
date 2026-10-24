@@ -26,7 +26,7 @@ public final class StringIota extends Iota {
 
     public String getString() { return value; }
 
-    @Override public boolean isTruthy() { return !getString().isEmpty(); }
+    @Override public boolean isTruthy(at.petrak.hexcasting.api.casting.eval.CastingEnvironment env) { return !getString().isEmpty(); }
     @Override protected boolean toleratesOther(Iota other) {
         return typesMatch(this, other) && other instanceof StringIota string && getString().equals(string.getString());
     }

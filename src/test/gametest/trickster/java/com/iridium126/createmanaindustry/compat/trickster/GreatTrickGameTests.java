@@ -1,5 +1,6 @@
 package com.iridium126.createmanaindustry.compat.trickster;
 
+import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
 import com.iridium126.createmanaindustry.compat.trickster.anima.BatteryAnima;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChain;
 import com.iridium126.createmanaindustry.compat.trickster.casting.CastChains;
@@ -85,7 +86,7 @@ public final class GreatTrickGameTests {
         var player=player(helper);Object owner=new Object();var chain=CastChains.attach(new CastChain(),player,owner);
         chain.retain(chain);chain.toggle();CastChains.release(chain,owner);
         var image=new at.petrak.hexcasting.api.casting.eval.vm.CastingImage();
-        image.getUserData().putString("cmi_cast_chain",chain.encode());
+        image = image.withComponent(CMIHexImageComponents.CAST_CHAIN.get(), chain.snapshot());
         at.petrak.hexcasting.xplat.IXplatAbstractions.INSTANCE.setStaffcastImage(player,image);
         helper.assertTrue(CastChains.nameExempt(helper.getLevel().getServer(),player.getUUID()),"Saving staff image cleared a live session");
         at.petrak.hexcasting.xplat.IXplatAbstractions.INSTANCE.clearCastingData(player);
@@ -201,9 +202,10 @@ public final class GreatTrickGameTests {
             helper.assertTrue(BatteryAnima.available(player)==8000,"Opening inversion did not cost 4 Anima");
             helper.assertTrue(CastChains.nameExempt(helper.getLevel().getServer(),player.getUUID()),"Long spell lost global exemption");
             // UUID-based exemption works even when this entity cannot be resolved in this level.
-            var self=new EntityIota(player.getUUID(),null,true);
+            var self=new EntityIota(player.getUUID(),null);
             helper.assertTrue(MishapOthersName.getTrueNameMishapFromDatum(helper.getLevel(),self,null)==null,"Playerless scan did not skip protected name");
-            var foreign=new EntityIota(UUID.randomUUID(),null,true);
+            var foreign=new EntityIota(UUID.randomUUID(),null);
+            EntityIota.addPlayerUUID(foreign.getEntityId());
             helper.assertTrue(MishapOthersName.getTrueNameMishapFromDatum(helper.getLevel(),new ListIota(List.of(self,foreign)),null)!=null,
                     "Protected name hid another forbidden name");
             Optional<Fragment> result=Optional.empty();for(int i=0;i<5&&result.isEmpty();i++)result=executor.run(source);

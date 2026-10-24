@@ -122,9 +122,16 @@ config="${mod_id}.hexjit.mixins.json"
 [[dependencies.${mod_id}]]
     modId="hexcasting"
     type="optional"
-    versionRange="[0.12.0-devel-pre-53,)"
+    versionRange="[0.12.0-devel-pre-64,)"
     ordering="AFTER"
     side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="irisveil"
+    type="optional"
+    versionRange="[0.4.0,)"
+    ordering="AFTER"
+    side="CLIENT"
 
 [[dependencies.${mod_id}]]
     modId="hexparse"

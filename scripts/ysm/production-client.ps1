@@ -31,10 +31,10 @@ if ($FullCMI) {
     Copy-Item -LiteralPath (Get-CmiArtifact $repo) -Destination "$run/mods"
     if ($FullProbe) { Copy-Item -LiteralPath (Join-Path $repo 'build/ysm-full-integration-probe/libs/cmi-ysm-full-integration-probe.jar') -Destination "$run/mods" }
     $gradleCache = if ($env:GRADLE_USER_HOME) { $env:GRADLE_USER_HOME } else { Join-Path $env:USERPROFILE '.gradle' }
-    $hexCache = Join-Path $gradleCache 'caches/modules-2/files-2.1/hexcasting/hexcasting-neoforge-1.21.1-0.12.0-devel-pre-53'
+    $hexCache = Join-Path $gradleCache 'caches/modules-2/files-2.1/hexcasting/hexcasting-neoforge-1.21.1-0.12.0-devel-pre-64'
     $hexJar = Get-ChildItem -LiteralPath $hexCache -Recurse -Filter '*.jar' -File -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $hexJar) { throw 'The compiled Hexcasting pre-53 dependency is unavailable.' }
-    Copy-Item -LiteralPath $hexJar.FullName -Destination "$run/mods/hexcasting-neoforge-1.21.1-0.12.0-devel-pre-53.jar"
+    if (-not $hexJar) { throw 'The compiled Hexcasting pre-64 dependency is unavailable.' }
+    Copy-Item -LiteralPath $hexJar.FullName -Destination "$run/mods/hexcasting-neoforge-1.21.1-0.12.0-devel-pre-64.jar"
     $sourceMods = Join-Path (Resolve-Path -LiteralPath $ModSource).Path 'mods'
     $required = @('create-1.21.1-6.0.10.jar', 'paucal-0.7.1+1.21.1-neoforge.jar',
         'Patchouli-1.21.1-93-NEOFORGE.jar', 'inline-neoforge-1.21.1-1.2.2.jar',

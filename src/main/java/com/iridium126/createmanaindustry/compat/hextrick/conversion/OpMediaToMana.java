@@ -62,7 +62,7 @@ public final class OpMediaToMana implements SpellAction {
                     return image.copy(
                             image.getStack().appended(new DoubleIota(manaOutput)),
                             image.getParenCount(), image.getParenthesized(), image.getEscapeNext(),
-                            image.getSimulateNext(), image.getOpsConsumed(), image.getUserData());
+                            image.getSimulateNext(), image.getOpsConsumed(), image.getComponents());
                 }
             }, amounts.cost(), List.of(), 1L);
         } catch (ResourceConversionException e) {

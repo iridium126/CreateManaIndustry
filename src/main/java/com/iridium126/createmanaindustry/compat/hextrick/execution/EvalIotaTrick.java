@@ -29,7 +29,6 @@ import dev.enjarai.trickster.spell.type.Signature;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -87,7 +86,7 @@ public class EvalIotaTrick extends Trick<EvalIotaTrick> {
         initialStack.add(iota);
 
         CastingVM vm = new CastingVM(
-                new CastingImage(TreeList.from(initialStack), 0, TreeList.empty(), false, false, 0L, new CompoundTag()),
+                new CastingImage(TreeList.from(initialStack), 0, TreeList.empty(), false, false, 0L, java.util.Map.of()),
                 env);
         var enclosing = BridgeExecutionContext.current();
         var bridge = enclosing == null ? new BridgeExecutionContext(level.getServer(), null) : enclosing;

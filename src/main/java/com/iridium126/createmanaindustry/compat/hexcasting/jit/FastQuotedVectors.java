@@ -40,7 +40,7 @@ public final class FastQuotedVectors {
                     var quoted = current.getParenthesized();
                     for (int j = index; j < count; j++) quoted = scope.appendQuotedVector(quoted, source.get(j));
                     CastingImage output = new CastingImage(current.getStack(), current.getParenCount(), quoted,
-                            current.getEscapeNext(), current.getSimulateNext(), current.getOpsConsumed(), current.getUserData());
+                            current.getEscapeNext(), current.getSimulateNext(), current.getOpsConsumed(), current.getComponents());
                     scope.recordCollapsedQuotes(vm.getEnv(), sound, count - index - 1);
                     return new CastResult(source.get(count - 1), after(source, count, parent, metacasting), output,
                             List.of(), ResolvedPatternType.ESCAPED, sound);

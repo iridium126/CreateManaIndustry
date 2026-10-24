@@ -77,7 +77,7 @@ public final class FragmentStructures {
             public List<Fragment> children(EntityFragment fragment) { return List.of(); }
             public EntityFragment rebuild(EntityFragment original, List<Fragment> children) { return original; }
             public List<Iota> references(EntityFragment fragment) {
-                return List.of(new EntityIota(fragment.uuid(), fragment.name().copy(), true));
+                return List.of(new EntityIota(fragment.uuid(), fragment.name().copy()));
             }
             public Fragment visitReferences(EntityFragment fragment, UnaryOperator<Iota> visitor) {
                 Iota before = references(fragment).getFirst();

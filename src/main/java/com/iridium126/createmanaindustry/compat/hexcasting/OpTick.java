@@ -54,13 +54,13 @@ public final class OpTick implements SpellAction {
 
     @Override
     public Result execute(List<? extends Iota> args, CastingEnvironment env) {
-        throw new IllegalStateException("call executeWithUserdata instead.");
+        throw new IllegalStateException("call executeWithImage instead.");
     }
 
     @Override
-    public Result executeWithUserdata(List<? extends Iota> args, CastingEnvironment env, CompoundTag userData) {
+    public Result executeWithImage(List<? extends Iota> args, CastingEnvironment env, CastingImage image) {
         BlockPos pos = OperatorUtils.getBlockPos(args, 0, getArgc());
-        long cost = prepareTick(pos, env, userData, false, false, null, null);
+        long cost = prepareTick(pos, env, CMIHexImageComponents.tickData(image), false, false, null, null);
         return new Result(new TickSpell(pos, null, false, false, null), cost,
                 List.of(ParticleSpray.cloud(Vec3.atCenterOf(pos), 1.0, 5)), 1L);
     }
@@ -201,8 +201,8 @@ public final class OpTick implements SpellAction {
                 }
             }
             CompoundTag userData = mutateUserDataInPlace
-                    ? image.getUserData()
-                    : fastUserDataCopy ? FastCompoundTagCopy.copy(image.getUserData()) : image.getUserData().copy();
+                    ? CMIHexImageComponents.tickData(image)
+                    : fastUserDataCopy ? FastCompoundTagCopy.copy(CMIHexImageComponents.tickData(image)) : CMIHexImageComponents.tickData(image).copy();
             String key = posKey == null ? pos.toShortString() : posKey;
             boolean appliedFastLoopCounter = scope != null
                     && scope.applyFoldedTickCounterFastUpdate(userData, pos, TAG_TIMES_TICKED, key);
@@ -216,7 +216,7 @@ public final class OpTick implements SpellAction {
             // Preserve every other VM field while returning an image with the updated per-cast counter.
             CastingImage newImage = mutateUserDataInPlace ? image : new CastingImage(
                     image.getStack(), image.getParenCount(), image.getParenthesized(),
-                    image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed(), userData);
+                    image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed(), CMIHexImageComponents.componentsWithTickData(image, userData));
 
             ServerLevel level = env.getWorld();
             boolean fastBuddingRandom = activeScope == null
@@ -354,7 +354,7 @@ public final class OpTick implements SpellAction {
                 }
             }
 
-            CompoundTag userData = image.getUserData();
+            CompoundTag userData = CMIHexImageComponents.tickData(image);
             String key = posKey == null ? pos.toShortString() : posKey;
             boolean appliedFastLoopCounter = scope.applyFoldedTickCounterFastUpdate(
                     userData, pos, TAG_TIMES_TICKED, key);

@@ -1,5 +1,6 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
+import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
 import at.petrak.hexcasting.api.HexAPI;
 import at.petrak.hexcasting.api.casting.PatternShapeMatch;
 import at.petrak.hexcasting.api.casting.eval.CastResult;
@@ -299,7 +300,7 @@ public final class FastLoopTickDispatch {
 
         scope.recordLoopTickBatchFold();
         CastingImage image = new CastingImage(outputStack, inputImage.getParenCount(), inputImage.getParenthesized(),
-                inputImage.getEscapeNext(), inputImage.getSimulateNext(), outputOpsConsumed, userData);
+                inputImage.getEscapeNext(), inputImage.getSimulateNext(), outputOpsConsumed, CMIHexImageComponents.componentsWithTickData(inputImage, userData));
         vm.setImage(image);
         if (scope.postSuccessfulStaffTick(vm.getEnv(), pattern)) {
             // Preserve all standard Staff behavior without constructing an observer result.
@@ -372,8 +373,7 @@ public final class FastLoopTickDispatch {
         TreeList<Iota> cachedStackWithoutArgs = scope.cacheTickStackPopEnabled()
                 ? ExecutionScope.takeTickStackPopSourceOnServerThread(stack) : null;
         TreeList<Iota> stackWithoutArgs = cachedStackWithoutArgs == null ? stack.init() : cachedStackWithoutArgs;
-        var userData = scope.reuseTickUserData(image.getUserData(), OpTick.TAG_TIMES_TICKED,
-                HexAPI.RAVENMIND_USERDATA);
+        var userData = scope.reuseTickUserData(CMIHexImageComponents.tickData(image));
         boolean foldedCounterFast = scope.loopFastTickCounterEnabled()
                 && scope.hasCachedTickCounterFor(
                 userData, OpTick.TAG_TIMES_TICKED, assets.posKey());

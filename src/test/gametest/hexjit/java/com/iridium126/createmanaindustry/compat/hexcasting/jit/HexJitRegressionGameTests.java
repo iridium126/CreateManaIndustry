@@ -1,5 +1,6 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
+import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
 import at.petrak.hexcasting.api.casting.ParticleSpray;
 import at.petrak.hexcasting.api.casting.PatternShapeMatch;
 import at.petrak.hexcasting.api.casting.eval.env.StaffCastEnv;
@@ -87,7 +88,7 @@ public final class HexJitRegressionGameTests {
     }
     private static CastingVM vm(StaffCastEnv env, List<Iota> stack) {
         return new CastingVM(new CastingImage(TreeList.from(stack), 0, TreeList.empty(),
-                false, false, 0, new CompoundTag()), env);
+                false, false, 0, java.util.Map.of()), env);
     }
     @GameTest(template="hex_jit_test", timeoutTicks=1200, batch="hexjit_regression")
     public static void vmBoundaryParity(GameTestHelper helper) throws Exception {
@@ -167,8 +168,8 @@ public final class HexJitRegressionGameTests {
             ServerConfig.hexJitMode = ServerConfig.HexJitMode.AUTO;
             var limitedAutoVm = vm(limitedAuto, loopStack);
             limitedAutoVm.queueExecuteAndWrapIotas(List.of(eval), helper.getLevel());
-            int offTicks = limitedOffVm.getImage().getUserData().getCompound(OpTick.TAG_TIMES_TICKED).getInt(pos.toShortString());
-            int autoTicks = limitedAutoVm.getImage().getUserData().getCompound(OpTick.TAG_TIMES_TICKED).getInt(pos.toShortString());
+            int offTicks = CMIHexImageComponents.tickData(limitedOffVm.getImage()).getCompound(OpTick.TAG_TIMES_TICKED).getInt(pos.toShortString());
+            int autoTicks = CMIHexImageComponents.tickData(limitedAutoVm.getImage()).getCompound(OpTick.TAG_TIMES_TICKED).getInt(pos.toShortString());
             System.out.println("HEXJIT_REVIEW_OP_LIMIT limit=3 offTicks=" + offTicks + " autoTicks=" + autoTicks
                     + " offOps=" + limitedOffVm.getImage().getOpsConsumed() + " autoOps=" + limitedAutoVm.getImage().getOpsConsumed());
             helper.assertTrue(autoTicks == offTicks && autoTicks == 2, "Overridden maxOpCount probe changed");
@@ -222,15 +223,15 @@ public final class HexJitRegressionGameTests {
             for (int i = 0; i < 300; i++) quoting.add(target);
             quoting.add(new PatternIota(HexActions.CLOSE_PAREN.value().prototype()));
             net.minecraft.nbt.Tag quotedOff = null;
-            String quoteChain = com.iridium126.createmanaindustry.CreateManaIndustry.TRICKSTER_ACTIVE
-                    ? new com.iridium126.createmanaindustry.compat.trickster.casting.CastChain().encode() : null;
+            var quoteChain = com.iridium126.createmanaindustry.CreateManaIndustry.TRICKSTER_ACTIVE
+                    ? new com.iridium126.createmanaindustry.compat.trickster.casting.CastChain().snapshot() : null;
             for (var mode : List.of(ServerConfig.HexJitMode.OFF, ServerConfig.HexJitMode.AUTO)) {
                 ServerConfig.hexJitMode = mode;
                 var quoteEnv = new CallbackEnv(player);
                 var quoteVm = vm(quoteEnv, List.of(new ListIota(quoting)));
                 // Compare the same staff-session identity in both modes. New
                 // independent CMI sessions intentionally have different UUIDs.
-                if (quoteChain != null) quoteVm.getImage().getUserData().putString("cmi_cast_chain", quoteChain);
+                if (quoteChain != null) quoteVm.setImage(quoteVm.getImage().withComponent(CMIHexImageComponents.CAST_CHAIN.get(), quoteChain));
                 var quoteView = quoteVm.queueExecuteAndWrapIotas(List.of(eval), helper.getLevel());
                 var encoded = CastingImage.Companion.getCODEC().encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, quoteVm.getImage()).getOrThrow();
                 helper.assertTrue(quoteView.getResolutionType().getSuccess() && quoteEnv.sounds == 100,
@@ -241,7 +242,7 @@ public final class HexJitRegressionGameTests {
                     helper.assertTrue(ExecutionScope.lastSoundsEmitted() == 1 && ExecutionScope.lastSoundsCoalesced() == 99,
                             "Identical Staff sounds were not coalesced within the cast");
             }
-            if (quoteChain != null) com.iridium126.createmanaindustry.compat.trickster.casting.CastChains.resetStaff(player, quoteChain);
+            if (quoteChain != null) com.iridium126.createmanaindustry.compat.trickster.casting.CastChains.resetStaff(player, quoteChain.id());
 
             int interpreterCallbacks = -1;
             for (var mode : List.of(ServerConfig.HexJitMode.OFF, ServerConfig.HexJitMode.AUTO)) {

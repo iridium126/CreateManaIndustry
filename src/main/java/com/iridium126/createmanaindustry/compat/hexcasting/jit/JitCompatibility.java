@@ -180,7 +180,7 @@ public final class JitCompatibility {
                 && directPreflightPlayerEnvironmentVerified && directPreflightStaffEnvironmentVerified;
     }
     public static String status() {
-        String core = failure != null ? failure : ready() ? "verified pre-53" : "waiting for target verification (" + VERIFIED.size() + "/7)";
+        String core = failure != null ? failure : ready() ? "verified pre-64" : "waiting for target verification (" + VERIFIED.size() + "/7)";
         return core + ", staffCallbacks=" + (fastStaffCallbacksReady() ? "verified" : staffCallbackFailure != null
                 ? staffCallbackFailure : "waiting")
                 + (motionBatchingReady() ? ", motionBatch=verified" : motionFailure != null

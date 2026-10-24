@@ -86,7 +86,7 @@ public final class ResourceConversionGameTests {
                     at.petrak.hexcasting.api.casting.math.HexPattern.fromAngleString("dadaw", HexDir.NORTH_EAST)),
                     "Wrong Hex pattern");
             var vm = new CastingVM(new CastingImage(TreeList.from(List.<Iota>of(new DoubleIota(1))),
-                    0, TreeList.empty(), false, false, 0, new CompoundTag()), new Env(player));
+                    0, TreeList.empty(), false, false, 0, java.util.Map.of()), new Env(player));
             var result = vm.queueExecuteAndWrapIota(new PatternIota(entry.prototype()), helper.getLevel());
             helper.assertTrue(result.getResolutionType().getSuccess(), "Forward VM operation failed");
             var forwardStack = vm.getImage().getStack();
@@ -269,7 +269,7 @@ public final class ResourceConversionGameTests {
             };
             expect(helper, MishapNotEnoughMedia.class,
                     () -> OpMediaToMana.INSTANCE.operate(env, new CastingImage(TreeList.from(List.<Iota>of(new DoubleIota(1))),
-                            0, TreeList.empty(), false, false, 0, new CompoundTag()),
+                            0, TreeList.empty(), false, false, 0, java.util.Map.of()),
                             at.petrak.hexcasting.api.casting.eval.vm.SpellContinuation.Done.INSTANCE));
             helper.assertTrue(mana(player.getInventory().getItem(1), helper) == 0, "Failed media precheck charged a knot");
         });

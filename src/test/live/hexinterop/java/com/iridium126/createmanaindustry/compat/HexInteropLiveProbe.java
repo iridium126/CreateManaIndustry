@@ -101,7 +101,7 @@ public final class HexInteropLiveProbe {
     private static CastingOrigin origin(ServerLevel world, UUID owner) {
         var state = new CircleExecutionState(IMPETUS, Direction.EAST, new HashSet<>(List.of(IMPETUS, SLATE)), SLATE,
                 Direction.WEST, new CastingImage(), owner, null, 0L, new BlockPos(8, 88, 8), new BlockPos(-8, 75, -8)) {};
-        var captured = CastingOrigin.capture(new CircleCastEnv(world, state));
+        var captured = com.iridium126.createmanaindustry.compat.hextrick.execution.HexCastingOrigins.capture(new CircleCastEnv(world, state));
         return new CastingOrigin(captured.source(), captured.facing(), captured.minX(), captured.minY(), captured.minZ(),
                 captured.maxX(), captured.maxY(), captured.maxZ(), owner);
     }

@@ -1,0 +1,6 @@
+gradle.projectsEvaluated {
+    def p = gradle.rootProject
+    p.apply from: p.file('scripts/testing/common.gradle')
+    p.configureCmiGameTests(name: 'castchain-benchmark', sources: 'src/test/gametest/castchain/java', structure: 'cast_chain_test', size: 3)
+    p.neoForge.runs.gameTestServer.systemProperty('cmi.castchain.benchmark', p.findProperty('castChainBenchmarkLabel') ?: 'current')
+}

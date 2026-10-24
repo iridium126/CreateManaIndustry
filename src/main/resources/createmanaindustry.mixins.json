@@ -150,6 +150,7 @@
     "basin.TrainTrapdoorBlockSkipRenderingMixin",
     "iris.MixinProgramSamplers",
     "irisveil.MixinIrisShadowRenderer",
+    "irisveil.LevelRendererWorldEffectsMixin",
     "jei.BasinCategoryMixin",
     "jei.CreateHeatedBasinCategoryMixin",
     "iris.ShadowRendererAccessor",

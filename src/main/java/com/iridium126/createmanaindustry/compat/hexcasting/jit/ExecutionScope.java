@@ -1,5 +1,6 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
+import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
 import at.petrak.hexcasting.api.casting.ParticleSpray;
 import at.petrak.hexcasting.api.addldata.ADMediaHolder;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
@@ -349,6 +350,15 @@ public final class ExecutionScope implements AutoCloseable {
         if ((com.iridium126.createmanaindustry.compat.trickster.casting.CastChains.inverted() || com.iridium126.createmanaindustry.compat.trickster.partition.PartitionManager.currentWorldActive())) return null;
         return HexJitRuntime.onServerThread() ? serverCurrent : OTHER_THREADS.get();
     }
+    /** Idempotent boundary shared by the unconditional chain hook and optional JIT hook. */
+    public static void flushBeforePostCast() {
+        ExecutionScope scope = HexJitRuntime.onServerThread() ? serverCurrent : OTHER_THREADS.get();
+        if (scope != null) {
+            scope.flushTickCounterWrites();
+            scope.flushBuddingAmethystRandomTicks();
+            scope.flushAllMotion();
+        }
+    }
     /** Flush resources before changing how subsequent instructions pay or check their reach. */
     public static void resourceTransition() {
         ExecutionScope scope = HexJitRuntime.onServerThread() ? serverCurrent : OTHER_THREADS.get();
@@ -458,7 +468,7 @@ public final class ExecutionScope implements AutoCloseable {
     public CastingImage quoteVector(CastingImage image, Iota vector) {
         var next = appendQuotedVector(image.getParenthesized(), vector);
         return new CastingImage(image.getStack(), image.getParenCount(), next, image.getEscapeNext(),
-                image.getSimulateNext(), image.getOpsConsumed(), image.getUserData());
+                image.getSimulateNext(), image.getOpsConsumed(), image.getComponents());
     }
     public TreeList<CastingImage.ParenthesizedIota> appendQuotedVector(TreeList<CastingImage.ParenthesizedIota> source, Iota vector) {
         if (quotedVectors == null) quotedVectors = new IdentityHashMap<>();
@@ -669,9 +679,9 @@ public final class ExecutionScope implements AutoCloseable {
      * The caller only uses this after verifying that no post-execution observer can retain an
      * intermediate CastingImage.
      */
-    public CompoundTag reuseTickUserData(CompoundTag source, String tickCounterKey, String ravenmindKey) {
+    public CompoundTag reuseTickUserData(CompoundTag source) {
         if (tickUserData == source) return source;
-        tickUserData = FastCompoundTagCopy.copyForTick(source, tickCounterKey, ravenmindKey);
+        tickUserData = FastCompoundTagCopy.copy(source);
         return tickUserData;
     }
 
@@ -1043,7 +1053,7 @@ public final class ExecutionScope implements AutoCloseable {
         CastingImage inputImage = pendingLoopTickInputImage;
         CastingImage outputImage = new CastingImage(pendingLoopTickOutputStack,
                 inputImage.getParenCount(), inputImage.getParenthesized(), inputImage.getEscapeNext(),
-                inputImage.getSimulateNext(), inputImage.getOpsConsumed() + 1, pendingLoopTickUserData);
+                inputImage.getSimulateNext(), inputImage.getOpsConsumed() + 1, CMIHexImageComponents.componentsWithTickData(inputImage, pendingLoopTickUserData));
         CastResult result = new CastResult(pendingLoopTickPattern, pendingLoopTickContinuation,
                 outputImage, pendingLoopTickSideEffects, ResolvedPatternType.EVALUATED,
                 pendingLoopTickSound);

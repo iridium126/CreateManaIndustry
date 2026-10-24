@@ -160,12 +160,12 @@ public final class TrickIotaEvalGameTests {
         var args = new ListIota(List.of(new DoubleIota(12)));
         var vm = vm(helper, List.of(args));
         var initial = vm.getImage();
-        vm.setImage(initial.copy(initial.getStack(), 0, TreeList.empty(), true, false, 0, initial.getUserData()));
+        vm.setImage(initial.copy(initial.getStack(), 0, TreeList.empty(), true, false, 0, initial.getComponents()));
         cast(helper, vm, List.of(trick));
         assertStack(helper, vm, List.of(args, trick));
         helper.assertTrue(vm.getImage().getOpsConsumed() == 0, "Escaped TrickIota executed");
 
-        vm.setImage(initial.copy(initial.getStack(), 1, TreeList.empty(), false, false, 0, initial.getUserData()));
+        vm.setImage(initial.copy(initial.getStack(), 1, TreeList.empty(), false, false, 0, initial.getComponents()));
         var result = vm.executeInner(trick, helper.getLevel(), SpellContinuation.Done.INSTANCE);
         helper.assertTrue(result.getResolutionType() == ResolvedPatternType.ESCAPED,
                 "Parenthesized TrickIota executed");
@@ -275,7 +275,7 @@ public final class TrickIotaEvalGameTests {
     }
 
     private static CastingImage image(List<Iota> stack) {
-        return new CastingImage(TreeList.from(stack), 0, TreeList.empty(), false, false, 0, new CompoundTag());
+        return new CastingImage(TreeList.from(stack), 0, TreeList.empty(), false, false, 0, java.util.Map.of());
     }
 
     private static CastingVM vm(GameTestHelper helper, List<Iota> stack) {

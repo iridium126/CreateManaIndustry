@@ -1,9 +1,7 @@
 package com.iridium126.createmanaindustry.compat.hextrick.execution;
 
-import at.petrak.hexcasting.api.casting.eval.env.CircleCastEnv;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.iridium126.createmanaindustry.compat.hextrick.execution.circle.SlateKnotInventory;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -16,20 +14,10 @@ public record CastingOrigin(CircleSourceDescriptor source, Direction facing,
         int minX, int minY, int minZ, int maxX, int maxY, int maxZ, UUID player) {
     private static final Gson JSON = new GsonBuilder().create();
 
-    public static CastingOrigin capture(CircleCastEnv environment) {
-        var state = environment.circleState();
-        var world = environment.getWorld();
-        var inventory = SlateKnotInventory.forCircle(world, state.reachedPositions);
-        var slots = inventory.positions().stream()
-                .map(pos -> CircleSourceDescriptor.BlockReference.capture(world.getBlockEntity(pos))).toList();
-        var descriptor = new CircleSourceDescriptor(world.dimension().location(),
-                CircleSourceDescriptor.BlockReference.capture(environment.getImpetus()),
-                CircleSourceDescriptor.BlockReference.capture(world.getBlockEntity(state.currentPos)), slots);
-        var bounds = state.bounds;
-        return new CastingOrigin(descriptor, state.enteredFrom.getOpposite(),
-                bounds.min().getX(), bounds.min().getY(), bounds.min().getZ(),
-                bounds.max().getX(), bounds.max().getY(), bounds.max().getZ(),
-                environment.getCastingEntity() instanceof ServerPlayer caster ? caster.getUUID() : null);
+    public CastingOrigin {
+        java.util.Objects.requireNonNull(source, "source");
+        java.util.Objects.requireNonNull(facing, "facing");
+        if (minX > maxX || minY > maxY || minZ > maxZ) throw new IllegalArgumentException("Invalid casting bounds");
     }
 
     public Vec3 position() { return Vec3.atCenterOf(source.anchor().pos()); }

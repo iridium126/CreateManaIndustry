@@ -1,7 +1,6 @@
 package com.iridium126.createmanaindustry.compat.trickster.sharedfate;
 
 import at.petrak.hexcasting.api.casting.eval.env.StaffCastEnv;
-import at.petrak.hexcasting.forge.xplat.ForgeXplatImpl;
 import com.iridium126.createmanaindustry.compat.hextrick.execution.CastingContexts;
 import com.iridium126.createmanaindustry.compat.hextrick.execution.CastingOrigin;
 import com.iridium126.createmanaindustry.compat.hextrick.execution.CircleSourceDescriptor;
@@ -15,8 +14,6 @@ import com.iridium126.createmanaindustry.compat.trickster.net.ClientboundSharedF
 import dev.enjarai.trickster.spell.fragment.EntityFragment;
 import java.lang.ref.WeakReference;
 import java.util.*;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.StringTag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -95,7 +92,7 @@ public final class SharedFateManager {
     public static void endChain(CastChain chain) {
         Runtime runtime = RUNTIMES.get(chain.runtime());
         if (runtime != null) runtime.stop(runtime.links.values().stream().filter(l->l.edge.chain().equals(chain.id())).toList(),true);
-        chain.restoreFateTargets(List.of());
+        chain.clearFateTargets();
     }
     public static void suspend(MinecraftServer server,UUID caster) {
         Runtime runtime=RUNTIMES.get(server);
@@ -260,16 +257,9 @@ public final class SharedFateManager {
             }
         }
     }
-    private static void persistStaffTargets(ServerPlayer player,CastChain chain) {
-        if(player==null)return;
-        var image=player.getPersistentData().getCompound(ForgeXplatImpl.TAG_VM);
-        var data=image.getCompound("userData");
-        String encoded=data.getString("cmi_cast_chain");
-        if(encoded.isEmpty()||!CastChain.decode(encoded).id().equals(chain.id()))return;
-        var targets=new ListTag();
-        chain.fateTargets().forEach(id->targets.add(StringTag.valueOf(id.toString())));
-        data.put("cmi_shared_fate_targets",targets);
-        data.putString("cmi_effect_origins",chain.encodeOrigins());
+    private static void persistStaffTargets(ServerPlayer player, CastChain chain) {
+        if (player != null && com.iridium126.createmanaindustry.CreateManaIndustry.HEX_ACTIVE)
+            com.iridium126.createmanaindustry.compat.hexcasting.HexCastChainState.persist(player, chain);
     }
     private static void send(ServerPlayer player,List<Link> links,List<Pose> poses) {
         for(int li=0,pi=0;li<links.size()||pi<poses.size();) {

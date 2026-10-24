@@ -256,12 +256,7 @@ public abstract class CastingVMMixin {
             "Lat/petrak/hexcasting/api/casting/eval/CastingEnvironment;postCast(" +
                     "Lat/petrak/hexcasting/api/casting/eval/vm/CastingImage;)V"))
     private void cmi$flushBeforePostCast(CastingEnvironment env, CastingImage image, Operation<Void> original) {
-        ExecutionScope scope = ExecutionScope.current();
-        if (scope != null) {
-            scope.flushTickCounterWrites();
-            scope.flushBuddingAmethystRandomTicks();
-            scope.flushAllMotion();
-        }
+        ExecutionScope.flushBeforePostCast();
         original.call(env, image);
     }
 }

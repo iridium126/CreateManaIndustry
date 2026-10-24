@@ -59,8 +59,9 @@
 |---|---:|---|
 | [Trickster](https://modrinth.com/mod/trickster) | 2.0.0-beta.56 | 晶结、法术、构装台与动能链接 |
 | [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs) | 2.1.9-beta | 动力法术核心的齿轮链数据 |
-| [Hexcasting](https://modrinth.com/mod/hexcasting) | 0.12.0-devel-pre-53 | 施法物品自动化、媒质存储与自定义动作 |
+| [Hexcasting](https://modrinth.com/mod/hexcasting) | 0.12.0-devel-pre-64 | 施法物品自动化、媒质存储与自定义动作 |
 | [Veil](https://modrinth.com/mod/veil) | 4.1.4 | 体积雾及相关渲染效果 |
+| [Iris Veil Compat](https://github.com/leon-o/iris-veil-compat) | 0.4.0-alpha | 雾效与燃料棒辉光的光影包适配 |
 | [Ars Nouveau](https://modrinth.com/mod/ars-nouveau) | 5.13.0 | 液态魔源与源质罐处理 |
 
 ## 配置

@@ -30,22 +30,40 @@ public final class CastChains {
     public static CastChain inherit() {
         return current() == null ? new CastChain() : current();
     }
-    public static CastChain find(ServerPlayer player, String encoded) {
-        if (encoded.isEmpty()) return null;
-        var chains=LIVE.get(player.getServer());
-        if(chains==null)return null;
-        CastChain chain=chains.get(CastChain.decode(encoded).id());
-        return chain!=null&&player.getUUID().equals(chain.player())?chain:null;
+    public static CastChain find(ServerPlayer player, UUID id) {
+        if (id == null) return null;
+        var chains = LIVE.get(player.getServer());
+        CastChain chain = chains == null ? null : chains.get(id);
+        return chain != null && chain.live() && chain.runtime() == player.getServer() && player.getUUID().equals(chain.player()) ? chain : null;
+    }
+    public static CastChain attach(CastChainSnapshot snapshot, ServerPlayer player, Object owner) {
+        if (snapshot != null && snapshot.player().isPresent() && !snapshot.player().get().equals(player.getUUID()))
+            throw new IllegalStateException("Cross-player casting snapshot");
+        CastChain live = snapshot == null ? null : find(player, snapshot.id());
+        return attach(live != null ? live : snapshot == null ? new CastChain() : CastChain.restore(snapshot), player, owner);
     }
     public static CastChain attach(CastChain chain, ServerPlayer player, Object owner) {
         chain.bind(player.getUUID());
+        if (chain.runtime() != null && chain.runtime() != player.getServer()) throw new IllegalStateException("Cross-server cast chain");
         var chains = LIVE.computeIfAbsent(player.getServer(), key -> new HashMap<>());
-        CastChain canonical = chains.computeIfAbsent(chain.id(), key -> chain);
+        CastChain canonical = chains.get(chain.id());
+        if (canonical != null) {
+            canonical.bind(player.getUUID());
+            canonical.runtime(player.getServer());
+        }
+        if (canonical == null || !canonical.live()) canonical = chain;
+        canonical.bind(player.getUUID());
         canonical.runtime(player.getServer());
+        chains.put(canonical.id(), canonical);
         canonical.retain(owner);
-        PartitionManager.resume(canonical, player);
-        SharedFateManager.resume(canonical, player);
-        return canonical;
+        try {
+            PartitionManager.resume(canonical, player);
+            SharedFateManager.resume(canonical, player);
+            return canonical;
+        } catch (RuntimeException | Error failure) {
+            release(canonical, owner);
+            throw failure;
+        }
     }
     public static void release(CastChain chain, Object owner) {
         if (chain == null) return;
@@ -57,12 +75,8 @@ public final class CastChains {
         var chains = LIVE.get(chain.runtime());
         if (chains != null && !chain.live()) chains.remove(chain.id(), chain);
     }
-    public static void resetStaff(ServerPlayer player, String encoded) {
-        if (encoded.isEmpty()) return;
-        var chains = LIVE.get(player.getServer());
-        if (chains == null) return;
-        CastChain saved = CastChain.decode(encoded);
-        CastChain live = chains.get(saved.id());
+    public static void resetStaff(ServerPlayer player, UUID id) {
+        CastChain live = find(player, id);
         if (live != null) release(live, live);
     }
     public static boolean nameExempt(MinecraftServer server, UUID player) {
@@ -93,7 +107,7 @@ public final class CastChains {
         chains.values().removeIf(chain -> {
             if (!player.getUUID().equals(chain.player())) return false;
             PartitionManager.end(chain);
-            chain.restoreFateTargets(List.of());
+            chain.clearFateTargets();
             chain.suspend();
             return true;
         });

@@ -94,8 +94,9 @@ public final class HexTrickDataGameTests {
     @GameTest(template = "trickster_stock_test")
     public static void trueNamesInsideNativeAndWrappedFragmentsAreVisible(GameTestHelper helper) {
         UUID foreign = UUID.randomUUID();
+        EntityIota.addPlayerUUID(foreign);
         var entity = new EntityFragment(foreign, Component.literal("foreign player"));
-        var wrapped = new IotaFragment(IotaFragment.serializeIota(new EntityIota(foreign, null, true)));
+        var wrapped = new IotaFragment(IotaFragment.serializeIota(new EntityIota(foreign, null)));
         for (var reference : List.of(entity, wrapped)) {
             var map = new MapFragment(HashMap.of(new NumberFragment(1), new ListFragment(List.of(reference))));
             var iota = new TrickIota(new SpellPart(new SpellPart(map)));

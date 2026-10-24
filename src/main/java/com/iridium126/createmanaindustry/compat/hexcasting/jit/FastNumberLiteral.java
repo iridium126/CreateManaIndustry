@@ -32,7 +32,7 @@ public final class FastNumberLiteral {
         var sideEffects = new ArrayList<OperatorSideEffect>(1);
         sideEffects.add(new OperatorSideEffect.ConsumeMedia(0L));
         CastingImage nextImage = image.copy(stack, image.getParenCount(), image.getParenthesized(),
-                image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed() + 1, image.getUserData());
+                image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed() + 1, image.getComponents());
         return new CastResult(cast, continuation, nextImage, sideEffects,
                 ResolvedPatternType.EVALUATED, HexEvalSounds.NORMAL_EXECUTE.get());
     }

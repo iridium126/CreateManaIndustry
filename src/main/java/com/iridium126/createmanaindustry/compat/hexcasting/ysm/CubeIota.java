@@ -19,7 +19,7 @@ public final class CubeIota extends Iota {
     }
 
     public String key() { return key; }
-    @Override public boolean isTruthy() { return true; }
+    @Override public boolean isTruthy(at.petrak.hexcasting.api.casting.eval.CastingEnvironment env) { return true; }
     @Override protected boolean toleratesOther(Iota other) { return other instanceof CubeIota cube && key.equals(cube.key); }
     @Override public int hashCode() { return key.hashCode(); }
     @Override public Component display() { return YsmIotaDisplay.cube(key,

@@ -279,7 +279,7 @@ public final class PlayerlessTrickIotaGameTests {
     }
 
     private static CastingVM cast(GameTestHelper helper, CastingEnvironment env, List<Iota> stack, List<Iota> expected) {
-        var vm = new CastingVM(new CastingImage(TreeList.from(stack), 0, TreeList.empty(), false, false, 0, new CompoundTag()), env);
+        var vm = new CastingVM(new CastingImage(TreeList.from(stack), 0, TreeList.empty(), false, false, 0, java.util.Map.of()), env);
         var result = vm.queueExecuteAndWrapIota(new PatternIota(HexActions.EVAL.value().prototype()), helper.getLevel());
         helper.assertTrue(result.getResolutionType().getSuccess() && vm.getImage().getStack().equals(expected),
                 "Unexpected playerless cast result: " + vm.getImage().getStack());

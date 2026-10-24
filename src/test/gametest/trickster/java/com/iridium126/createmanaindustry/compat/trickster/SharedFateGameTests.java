@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.compat.trickster;
 
+import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
+import com.iridium126.createmanaindustry.compat.hexcasting.HexCastChainState;
 import com.iridium126.createmanaindustry.compat.hextrick.data.TrickIota;
 
 import com.iridium126.createmanaindustry.compat.trickster.anima.BatteryAnima;
@@ -73,18 +75,18 @@ public final class SharedFateGameTests {
         var image=new CastingImage();
         image=image.copy(at.petrak.hexcasting.api.utils.TreeList.from(List.of(new at.petrak.hexcasting.api.casting.iota.ListIota(
                         List.of(new at.petrak.hexcasting.api.casting.iota.EntityIota(target))))),
-                0,at.petrak.hexcasting.api.utils.TreeList.empty(),false,false,0,image.getUserData());
+                0,at.petrak.hexcasting.api.utils.TreeList.empty(),false,false,0,image.getComponents());
         var vm=new CastingVM(image,new StaffCastEnv(caster,InteractionHand.MAIN_HAND));long balance=BatteryAnima.available(caster);
         try {
             vm.queueExecuteAndWrapIota(new com.iridium126.createmanaindustry.compat.hextrick.data.TrickIota(bind),helper.getLevel());
             helper.assertTrue(BatteryAnima.available(caster)==balance-32000,"Valid Hex entity argument did not reach Shared Fate's Entity signature");
             helper.assertTrue(vm.getImage().getStack().last() instanceof at.petrak.hexcasting.api.casting.iota.EntityIota entity
-                    && entity.getEntityId().equals(target.getUUID())&&!entity.isPlayer(),"Shared Fate returned a wrapped spell instead of the target EntityIota");
+                    && entity.getEntityId().equals(target.getUUID())&&!entity.uuidIsPlayer(),"Shared Fate returned a wrapped spell instead of the target EntityIota");
             helper.assertTrue(SharedFateManager.outgoing(caster.getServer(),caster.getUUID()).equals(List.of(target.getUUID())),"Hex entity argument created no binding");
             incident(caster,halfHealth());
             helper.assertTrue(target.getHealth()==target.getMaxHealth()/2,"Hex argument binding did not transmit mishap");
             helper.succeed();
-        } finally {CastChains.resetStaff(caster,vm.getImage().getUserData().getString("cmi_cast_chain"));}
+        } finally {CastChains.resetStaff(caster,HexCastChainState.get(vm.getImage()).id());}
     }
     @GameTest(template="trickster_stock_test")
     public static void mirrorCanBindEntityReadFromHexFocus(GameTestHelper helper) {
@@ -150,7 +152,7 @@ public final class SharedFateGameTests {
                 var image=resumed.getImage();
                 resumed.setImage(image.copy(at.petrak.hexcasting.api.utils.TreeList.from(List.of(
                         new at.petrak.hexcasting.api.casting.iota.DoubleIota(1),new at.petrak.hexcasting.api.casting.iota.DoubleIota(0))),
-                        0,at.petrak.hexcasting.api.utils.TreeList.empty(),false,false,0,image.getUserData()));
+                        0,at.petrak.hexcasting.api.utils.TreeList.empty(),false,false,0,image.getComponents()));
                 resumed.queueExecuteAndWrapIota(new at.petrak.hexcasting.api.casting.iota.PatternIota(
                         at.petrak.hexcasting.common.lib.hex.HexActions.DIV_CROSS.value().prototype()),helper.getLevel());
                 helper.assertTrue(target.getHealth()==target.getMaxHealth()/2,"Staff binding did not replay the VM's division mishap");
@@ -317,7 +319,7 @@ public final class SharedFateGameTests {
     @GameTest(template="trickster_stock_test")
     public static void replayChangesTargetsOwnSavedAndActiveStacks(GameTestHelper helper) {
         var a=player(helper,false);var b=player(helper,true);Object owner=new Object();var ac=chain(a,owner);
-        var image=new CastingImage(at.petrak.hexcasting.api.utils.TreeList.from(List.of(new at.petrak.hexcasting.api.casting.iota.DoubleIota(37))),0,at.petrak.hexcasting.api.utils.TreeList.empty(),false,false,0,new net.minecraft.nbt.CompoundTag());
+        var image=new CastingImage(at.petrak.hexcasting.api.utils.TreeList.from(List.of(new at.petrak.hexcasting.api.casting.iota.DoubleIota(37))),0,at.petrak.hexcasting.api.utils.TreeList.empty(),false,false,0,java.util.Map.of());
         at.petrak.hexcasting.xplat.IXplatAbstractions.INSTANCE.setStaffcastImage(b,image);
         try {
             SharedFateManager.bind(a,b,ac,32000);incident(a,halfHealth());
@@ -343,14 +345,12 @@ public final class SharedFateGameTests {
             helper.assertTrue(rejected&&BatteryAnima.available(player)==before-32000,"Duplicate target consumed soul");
             rejected=false;try{SharedFateManager.bind(player,player,chain,32000);}catch(SharedFateBlunder expected){rejected=true;}
             helper.assertTrue(rejected&&BatteryAnima.available(player)==before-32000,"Self binding consumed soul");
-            var savedImage=new CastingImage();savedImage.getUserData().putString("cmi_cast_chain",chain.encode());
-            var targets=new net.minecraft.nbt.ListTag();targets.add(net.minecraft.nbt.StringTag.valueOf(cow.getUUID().toString()));
-            savedImage.getUserData().put("cmi_shared_fate_targets",targets);
+            var savedImage = new CastingImage().withComponent(CMIHexImageComponents.CAST_CHAIN.get(), chain.snapshot());
             at.petrak.hexcasting.xplat.IXplatAbstractions.INSTANCE.setStaffcastImage(player,savedImage);
             cow.setPos(player.getX()+100,player.getY(),player.getZ());SharedFateManager.refresh(helper.getLevel().getServer());
             helper.assertTrue(chain.fateTargets().isEmpty(),"Leaving ambit did not permanently detach target");
-            var persisted=player.getPersistentData().getCompound(at.petrak.hexcasting.forge.xplat.ForgeXplatImpl.TAG_VM).getCompound("userData");
-            helper.assertTrue(persisted.getList("cmi_shared_fate_targets",net.minecraft.nbt.Tag.TAG_STRING).isEmpty(),"Detached target remained in staff save and could return after relog");helper.succeed();
+            var persisted=HexCastChainState.saved(player);
+            helper.assertTrue(persisted.targets().isEmpty(),"Detached target remained in staff save and could return after relog");helper.succeed();
         }finally{CastChains.release(chain,owner);}
     }
     @GameTest(template="trickster_stock_test")
@@ -380,10 +380,10 @@ public final class SharedFateGameTests {
         var player=player(helper,false);var cow=helper.spawn(EntityType.COW,new BlockPos(1,1,1));
         Object owner=new Object();var first=chain(player,owner);
         SharedFateManager.bind(player,cow,first,32000);
-        var saved=CastChain.decode(first.encode());saved.restoreFateTargets(first.fateTargets().stream().map(UUID::toString).toList());
+        var saved=CastChain.restore(first.snapshot());
         SharedFateManager.suspend(helper.getLevel().getServer(),player.getUUID());first.suspend();
         long balance=BatteryAnima.available(player);var restored=chain(player,owner);
-        // Resume an actual decoded chain, retaining legacy id and target metadata.
+        // Resume an actual decoded chain, retaining chain id and target metadata.
         CastChains.release(restored,owner);restored=CastChains.attach(saved,player,owner);
         try {
             helper.assertTrue(restored.fateTargets().contains(cow.getUUID()),"Saved target did not resume");

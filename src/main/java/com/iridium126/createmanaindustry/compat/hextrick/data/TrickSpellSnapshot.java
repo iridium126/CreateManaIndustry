@@ -81,8 +81,7 @@ public final class TrickSpellSnapshot {
                 if (iota instanceof EntityIota entity) {
                     var id = entity.getEntityId();
                     var name = entity.getEntityName() == null ? null : entity.getEntityName().copy();
-                    boolean player = entity.isPlayer();
-                    references.add(() -> new EntityIota(id, name == null ? null : name.copy(), player));
+                    references.add(() -> new EntityIota(id, name == null ? null : name.copy()));
                 } else {
                     byte[] encoded = IotaFragment.serializeIota(iota);
                     references.add(() -> new IotaFragment(encoded).getIota());

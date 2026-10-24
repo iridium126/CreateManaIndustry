@@ -16,7 +16,7 @@ import net.irisshaders.iris.Iris;
 import net.minecraft.client.Minecraft;
 import top.leonx.irisveil.IrisVeilCompat;
 import top.leonx.irisveil.accessors.IrisRenderingPipelineAccessor;
-import top.leonx.irisveil.compat.veil.VeilCompatRegistry;
+import com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects;
 
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
@@ -32,7 +32,7 @@ import org.lwjgl.opengl.GL30;
  * the shaderpack's own composite (and bloom, if it has one) then processes the
  * added glow.
  * <p>
- * Three registrations exist because the compat registry pins the draw buffers
+ * Three registrations exist because the CMI dispatcher pins the draw buffers
  * per hook; each hook self-gates on the active mist injection profile
  * ({@link MistInjectionProfiles}):
  * <ul>
@@ -102,7 +102,7 @@ public final class FuelRodBloomIrisHook {
     }
 
     /**
-     * Registers the world render hooks with iris-veil-compat. Safe to call
+     * Registers CMI's late world effect passes. Safe to call
      * multiple times; no-op when iris-veil-compat is not loaded.
      */
     public static void init() {
@@ -112,29 +112,25 @@ public final class FuelRodBloomIrisHook {
         // Only the scene-colour hook ticks the rod animation: its gate runs every
         // frame regardless of which registration draws (the bliss gate runs on
         // the same frames and must not double-step the animations).
-        VeilCompatRegistry.registerWorldRenderHook(
+        IrisWorldEffects.register(
                 HOOK_ID, DRAW_BUFFERS,
                 FuelRodBloomIrisHook::shouldRenderSceneColor,
-                (camera, gameRenderer) -> render(camera, gameRenderer,
-                        MistInjectionProfiles.Profile.SCENE_COLOR));
-        VeilCompatRegistry.registerWorldRenderHook(
+                () -> render(MistInjectionProfiles.Profile.SCENE_COLOR));
+        IrisWorldEffects.register(
                 HOOK_ID_BLISS, DRAW_BUFFERS_BLISS,
                 FuelRodBloomIrisHook::shouldRenderBliss,
-                (camera, gameRenderer) -> render(camera, gameRenderer,
-                        MistInjectionProfiles.Profile.TRANSLUCENT_LAYER));
-        VeilCompatRegistry.registerWorldRenderHook(
+                () -> render(MistInjectionProfiles.Profile.TRANSLUCENT_LAYER));
+        IrisWorldEffects.register(
                 HOOK_ID_HDR, DRAW_BUFFERS_HDR,
                 FuelRodBloomIrisHook::shouldRenderHdr,
-                (camera, gameRenderer) -> render(camera, gameRenderer,
-                        MistInjectionProfiles.Profile.HDR_SCENE));
+                () -> render(MistInjectionProfiles.Profile.HDR_SCENE));
         // Like the other non-scene gates, this one does not tick: the
         // scene-colour gate owns the rod animation tick every frame regardless
         // of which registration draws.
-        VeilCompatRegistry.registerWorldRenderHook(
+        IrisWorldEffects.register(
                 HOOK_ID_RAW, DRAW_BUFFERS_RAW,
                 FuelRodBloomIrisHook::shouldRenderRawLayer,
-                (camera, gameRenderer) -> render(camera, gameRenderer,
-                        MistInjectionProfiles.Profile.RAW_LAYER));
+                () -> render(MistInjectionProfiles.Profile.RAW_LAYER));
     }
 
     /** Whether the active pack uses the Bliss-family translucent-layer profile. */
@@ -218,8 +214,7 @@ public final class FuelRodBloomIrisHook {
      * auto-exposure compensation), HDR_SCENE folds it additively into Sundial's
      * deferred-lit colortex3 (with Sundial auto-exposure compensation).
      */
-    private static boolean render(Object camera, Object gameRenderer,
-            MistInjectionProfiles.Profile profile) {
+    private static boolean render(MistInjectionProfiles.Profile profile) {
         try {
             ShaderProgram shader = getProgram();
             if (shader == null)

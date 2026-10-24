@@ -100,7 +100,10 @@ public final class SharedFateMishaps {
         ?new StaffCastEnv(player,InteractionHand.MAIN_HAND)
         :new SharedFateCastEnv(target);
         CastChain own=vm==null?null:VM_CHAINS.get().get(vm);
-        if(own==null&&target instanceof ServerPlayer player)own=CastChains.find(player,image.getUserData().getString("cmi_cast_chain"));
+        if (own == null && target instanceof ServerPlayer player) {
+            var snapshot = com.iridium126.createmanaindustry.compat.hexcasting.HexCastChainState.get(image);
+            if (snapshot != null) own = CastChains.find(player, snapshot.id());
+        }
         try(var ignored=CastChains.enter(own)) {
             var spray=mishap.particleSpray(environment);
             spray.sprayParticles(environment.getWorld(),mishap.accentColor(environment,error));
@@ -109,7 +112,7 @@ public final class SharedFateMishaps {
             Util.NIL_UUID));
             TreeList<Iota> stack=mishap.execute(environment,error,image.getStack());
                 CastingImage changed=image.copy(stack,image.getParenCount(),image.getParenthesized(),image.getEscapeNext(),
-            image.getSimulateNext(),image.getOpsConsumed(),image.getUserData());
+            image.getSimulateNext(),image.getOpsConsumed(),image.getComponents());
             if(vm!=null)vm.setImage(changed);
             if(target instanceof ServerPlayer player) {
                 if(stored)IXplatAbstractions.INSTANCE.setStaffcastImage(player,stack.isEmpty()?null:changed);

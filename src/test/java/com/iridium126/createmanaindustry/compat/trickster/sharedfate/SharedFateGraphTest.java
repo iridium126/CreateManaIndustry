@@ -32,10 +32,10 @@ class SharedFateGraphTest {
         while(!queue.isEmpty()){UUID node=queue.removeFirst();if(!visited.add(node))continue;graph.outgoing(node).forEach(e->queue.add(e.target()));}
         assertEquals(Set.of(a,b,c,d),visited);assertTrue(graph.outgoing(d).isEmpty());
     }
-    @Test void chainLegacyEncodingRemainsThreeFieldsWithIndependentTargets() {
-        var chain=new CastChain();String old=chain.encode();UUID entity=UUID.randomUUID();chain.addFateTarget(entity);
-        assertEquals(old,chain.encode());assertTrue(CastChain.decode(old).fateTargets().isEmpty());
-        chain.restoreFateTargets(List.of(entity.toString()));assertEquals(List.of(entity),chain.fateTargets());
+    @Test void chainSnapshotsCarryIndependentOrderedTargets() {
+        var chain = new CastChain(); var empty = chain.snapshot(); UUID entity = UUID.randomUUID(); chain.addFateTarget(entity);
+        assertTrue(CastChain.restore(empty).fateTargets().isEmpty());
+        assertEquals(List.of(entity), CastChain.restore(chain.snapshot()).fateTargets());
         assertEquals(GreatPattern.SHARED_FATE,GreatPattern.fromBytes(GreatPattern.SHARED_FATE.bytes()));
         assertNotEquals(GreatPattern.INVERSION,GreatPattern.SHARED_FATE);
     }

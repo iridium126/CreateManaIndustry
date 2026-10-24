@@ -53,8 +53,7 @@ public final class FastAddMotionArguments {
         var stackWithoutArgs = argc == 2
                 ? stack.init().init()
                 : stack.dropRight(argc);
-        var userData = FastCompoundTagCopy.copy(image.getUserData());
-        SpellAction.Result result = spell.executeWithUserdata(args, env, userData);
+        SpellAction.Result result = spell.executeWithImage(args, env, image);
 
         List<ParticleSpray> particles = result.getParticles();
         int particleCount = particles.size();
@@ -74,7 +73,7 @@ public final class FastAddMotionArguments {
         }
 
         CastingImage image2 = image.copy(stackWithoutArgs, image.getParenCount(), image.getParenthesized(),
-                image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed() + result.getOpCount(), userData);
+                image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed() + result.getOpCount(), image.getComponents());
         var sound = spell.hasCastingSound(env) ? HexEvalSounds.SPELL.get() : HexEvalSounds.MUTE.get();
         return new CastResult(cast, continuation, image2, sideEffects, ResolvedPatternType.EVALUATED, sound);
     }

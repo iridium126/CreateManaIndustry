@@ -31,7 +31,11 @@ public final class JitTestAddon {
     static boolean isOrdinaryAction(Action action) { return action instanceof ExtensionAction extension && !extension.throwing; }
     static boolean isThrowingAction(Action action) { return action instanceof ExtensionAction extension && extension.throwing; }
 
+    private static final ImageComponentType<Integer> CALLS = new ImageComponentType<>(
+            com.mojang.serialization.Codec.INT, net.minecraft.network.codec.ByteBufCodecs.VAR_INT, false);
+
     @SubscribeEvent public static void register(RegisterEvent event) {
+        event.register(HexRegistries.IMAGE_COMPONENT, id("calls"), () -> CALLS);
         event.register(HexRegistries.ACTION, id("action"), () -> new ActionRegistryEntry(ORDINARY, new ExtensionAction(false)));
         event.register(HexRegistries.ACTION, id("throw"), () -> new ActionRegistryEntry(THROWING, new ExtensionAction(true)));
         event.register(HexRegistries.SPECIAL_HANDLER, id("dynamic"), () -> (pattern, env) -> {
@@ -52,7 +56,8 @@ public final class JitTestAddon {
         ExtensionAction(boolean throwing) { this.throwing = throwing; }
         @Override public OperationResult operate(CastingEnvironment env, CastingImage image, SpellContinuation continuation) {
             ((HexJitGameTests.TestEnvironment) env).trace.add("extension action");
-            image.getUserData().putInt("addonCalls", image.getUserData().getInt("addonCalls") + 1);
+            Integer calls = image.getComponent(CALLS);
+            image = image.withComponent(CALLS, calls == null ? 1 : calls + 1);
             if (throwing) throw new IllegalStateException("test addon exception");
             return new OperationResult(image.withUsedOps(3), List.of(), continuation.pushFrame(ExtraFrame.INSTANCE), HexEvalSounds.NORMAL_EXECUTE.get());
         }
@@ -80,7 +85,7 @@ public final class JitTestAddon {
 
     static final class ExecutableIota extends Iota {
         ExecutableIota() { super(() -> (IotaType<? extends Iota>) (IotaType<?>) HexIotaTypes.NULL.get()); }
-        public boolean isTruthy() { return true; }
+        public boolean isTruthy(at.petrak.hexcasting.api.casting.eval.CastingEnvironment env) { return true; }
         protected boolean toleratesOther(Iota other) { return other == this; }
         @Override public boolean executable() { return true; }
         @Override public int hashCode() { return System.identityHashCode(this); }

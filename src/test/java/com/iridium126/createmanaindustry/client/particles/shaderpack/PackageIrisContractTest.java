@@ -21,6 +21,21 @@ class PackageIrisContractTest {
         var f=node.fields.stream().filter(v->v.name.equals(name)).findFirst().orElseThrow();
         assertEquals(descriptor,f.desc);assertEquals(immutable,(f.access&Opcodes.ACC_FINAL)!=0);
     }
+    @Test void lateWorldEffectsUseThePublishedIrisVeilFramebufferApi() throws IOException {
+        var accessor = read("top/leonx/irisveil/accessors/IrisRenderingPipelineAccessor");
+        assertTrue(accessor.methods.stream().anyMatch(m -> m.name.equals("irisveil$bindCompatGbufferFramebuffer")
+                && m.desc.equals("([I)V")));
+        var level = read("net/minecraft/client/renderer/LevelRenderer");
+        var render = level.methods.stream().filter(m -> m.name.equals("renderLevel")).findFirst().orElseThrow();
+        // Fabulous and normal transparency branches each contain one call; only one branch executes per frame.
+        assertEquals(2, java.util.Arrays.stream(render.instructions.toArray()).filter(i -> i instanceof MethodInsnNode call
+                && call.owner.equals(level.name) && call.name.equals("renderWorldBorder")
+                && call.desc.equals("(Lnet/minecraft/client/Camera;)V")).count());
+        var effects = read("com/iridium126/createmanaindustry/client/render/shaderpack/IrisWorldEffects");
+        assertTrue(effects.methods.stream().flatMap(m -> java.util.Arrays.stream(m.instructions.toArray()))
+                .anyMatch(i -> i instanceof MethodInsnNode call && call.owner.equals(accessor.name)
+                        && call.name.equals("irisveil$bindCompatGbufferFramebuffer") && call.desc.equals("([I)V")));
+    }
     @Test void shadowHookRunsAfterTheEntityFrustumHasBeenPrepared() throws IOException {
         var shadow=read(IRIS+"shadows/ShadowRenderer");
         field(shadow,"shouldRenderEntities","Z",true);field(shadow,"shouldRenderBlockEntities","Z",true);

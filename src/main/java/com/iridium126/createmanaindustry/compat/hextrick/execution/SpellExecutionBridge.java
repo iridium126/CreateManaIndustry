@@ -74,7 +74,7 @@ public final class SpellExecutionBridge {
                 if (impetus == null) return SpellExecutionResult.failed(env, "missing_impetus");
                 ServerLevel level = env.getWorld();
                 var origin = circleEnv instanceof AnchoredCircleCastEnv anchored
-                        ? anchored.origin() : CastingOrigin.capture(circleEnv);
+                        ? anchored.origin() : com.iridium126.createmanaindustry.compat.hextrick.execution.HexCastingOrigins.capture(circleEnv);
                 context = context.withOrigin(origin);
                 source = new CircleSpellSource(new AnchoredCircleCastEnv(level, origin), origin);
             } else if (env instanceof ConstructCastEnv constructEnv) {

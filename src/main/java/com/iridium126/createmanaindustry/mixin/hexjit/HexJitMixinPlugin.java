@@ -25,8 +25,8 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
     private static final String ATTRIBUTE_INSTANCE = "net/minecraft/world/entity/ai/attributes/AttributeInstance";
     private static final Map<String, String> PURE_QUOTE_HASHES = Map.of(
             ATTRIBUTE_INSTANCE, "18813b9e6efba2c6bfd07d3729ac36cecc2930d89d620db482569b852550a90c",
-            ROOT + "api/casting/eval/vm/CastingImage", "51d0b18e7b40a64df8c8a16f115ef3911d4b190a68297349d7f4f80018f7098c",
-            ROOT + "api/casting/eval/vm/CastingImage$ParenthesizedIota", "ba696c7f8978601d06c3b0a871548570bb76156d71e26d3b7d7e48b721413f17",
+            ROOT + "api/casting/eval/vm/CastingImage", "5bb4ed1754acf839ea7c8b17b5d62e32b3423ccdf2b90a01cf243bacb0081b41",
+            ROOT + "api/casting/eval/vm/CastingImage$ParenthesizedIota", "34a985b37cb2fa590db85438c9f670a3beccefeb804a898a789b41aed1c75dfa",
             ROOT + "api/casting/eval/CastResult", "6b678710743b1f1fbccd584be7a336fda7eb26de88ae4dd0eaaa813556476e4f",
             ROOT + "api/casting/eval/sideeffects/EvalSound", "3281300fd2eb20840d6ccdc8275ca80d69a4c3f314476eb218b92aa9688d9de7");
     private static final String ATTRIBUTE_MAP = "net/minecraft/world/entity/ai/attributes/AttributeMap";
@@ -61,7 +61,7 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
     private static final String SPIRAL_CAST_ENV = ROOT + "api/casting/eval/env/PlayerBasedSpiralPatternCastEnv";
     private static final String STAFF_CAST_ENV = ROOT + "api/casting/eval/env/StaffCastEnv";
     private static final Map<String, String> STAFF_CALLBACK_HASHES = Map.of(
-            PLAYER_CAST_ENV, "60f7f6d942eb84091486a6305493d31c79232d53cac6f7c49abeaa54c348ec79",
+            PLAYER_CAST_ENV, "f1e997657e02e4e567e7575de8a190969e1f39853c069b6db9d0bb525cb9afd6",
             SPIRAL_CAST_ENV, "2bf865fa75646954f9f75b9a4bda820c92042bb1516d3388cd33801472c3489b",
             STAFF_CAST_ENV, "947b515182bd03b25047cdeaa522d86c23e199d6b8cc5503c3a24aa40f85d226");
     private static final String DOUBLE_IOTA = ROOT + "api/casting/iota/DoubleIota";
@@ -69,7 +69,7 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
     private static final String HEX_DIR = ROOT + "api/casting/math/HexDir";
     private static final String HEX_ANGLE = ROOT + "api/casting/math/HexAngle";
     private static final String HEX_UTILS = ROOT + "api/utils/HexUtils";
-    private static final String HEX_UTILS_HASH = "c639728299f4283cf97e21d991a455d910e1ce73c56640b3749cd17819f11bbd";
+    private static final String HEX_UTILS_HASH = "b817d6de59db1134a313bd7d42ba0717c5cc2c714e8c9f6d4df585b5b3642b8b";
     private static final Map<String, String> SPECIAL_HANDLER_MATH_HASHES = Map.of(
             HEX_DIR, "1d1bce98ea4fb3387d2f0b0211725463503ef1fe33a013d1b3eb3ac337f652fe",
             HEX_ANGLE, "1fdf67e5f754ae371391dd15cfce4227473ac781963ad8bb9a44313ae0b97d62");
@@ -84,34 +84,34 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
             Map.entry(TREE_LIST + "$TreeList5", "7276744142983a4568c03b1b537a2767537785dd2b70f0256573a70517b5cabd"),
             Map.entry(TREE_LIST + "$TreeList6", "c4dd9c460203abf84ca6da7879c25d7a168f2e9b10172d19e3691430d03c045f"));
     private static final Map<String, String> FAST_ACTION_HASHES = Map.of(
-            SPELL_ACTION, "acbafdd1ad867a0509ee20b10ae7c72c1774b7171d8d77d8542e44efc21868e2",
-            ADD_MOTION, "341462d61f65dd0a115be14ed3868985d7f91888bd6ecbdab1dd7554e4147e03",
+            SPELL_ACTION, "ce8759a61ccc7aef321498de4e0e0f9dc13053767d1782c067b9eea7d575ff19",
+            ADD_MOTION, "34faa4238aa4011fc87605809081f049f95168f9b8d43002fc7bbde29ee9d6af",
             NBT_COMPOUND, "7616e1f84d10bfad84bd1934fde392bc5ef29a216b25389643cbb2251424f4aa");
     private static final Map<String, String> NUMBER_LITERAL_HASHES = Map.of(
             NUMBER_LITERAL, "d11de498526f9e8ab671d6bcd62fced072c1b0730c8db8b94fb876d96bc6560f",
-            NUMBER_LITERAL_INNER, "802cfd77a6652d509968aa6d7563d90aca84a9da9d56eed5fec72d456eadfec2",
-            CONST_MEDIA_ACTION, "28d1c44cac93ba1cf8ea21e11d6c20e6274ee0296806dc2bd1aae04936067291",
-            DOUBLE_IOTA, "6a07bc3c346b33b39dccc380b96e0d5912a3882eea956880980506760a69d56f");
+            NUMBER_LITERAL_INNER, "887a97dd6523e4a781d8dfd5670dc6a6e6c2c9a14fe7c621a3f2d19d9974b890",
+            CONST_MEDIA_ACTION, "829f52cff42ffab99c54ff91d3aec552f12f878013826ee76d34f5e9518e0218",
+            DOUBLE_IOTA, "a3b018b6721a4f65f7d4b6373d7d4ac2f515377b5551f1da4841465eeef42317");
     private static final String IOTA_TYPE_HASH = "b4f34a58fe271171c9e4a508a04abeca85e6755124d4fd0c19bf5119de64d935";
     private static final Map<String, String> DEFAULT_IOTA_METRIC_HASHES = Map.of(
-            IOTA, "48da3833538c0412c73eacc135bd4014175d1c9a7d6592a58255421b3b9f3a99",
-            ROOT + "api/casting/iota/BooleanIota", "b4c9fda11824dc99e7b4cb18beaf74144796cd1dcd2a3e03fd97ff907387428b",
-            ROOT + "api/casting/iota/ContinuationIota", "7e25d88bd3ac10af9ed7d78c554d7eba9837a5d158b128f4d7d02c631e8b54ff",
-            ROOT + "api/casting/iota/DoubleIota", "6a07bc3c346b33b39dccc380b96e0d5912a3882eea956880980506760a69d56f",
-            ROOT + "api/casting/iota/EntityIota", "3e43789075dfbc1eeccc783eff95908db9b6252ee828932d51ed78b6bdbdfd0f",
-            ROOT + "api/casting/iota/GarbageIota", "2e02b7a088a60dc03fecad7d59d35515f5d17f7aad8d0f1a144e2c0682170915",
-            ROOT + "api/casting/iota/ListIota", "4113c0837f879a5e4be13b2568c3429f42980addb21841ce545ba9330762c291",
-            ROOT + "api/casting/iota/NullIota", "0495054c5b93e3791918c7a3d7b8186cb30b40c3602d1ca8a08bdbdc4c3500fb",
-            ROOT + "api/casting/iota/PatternIota", "86bffa9188bc1ff836409d9ed5b2e3806f2efe309f658e3374595fe7f274a69a",
-            ROOT + "api/casting/iota/Vec3Iota", "08d7b68e05c2d51004756d564e84fd7fd16e0b92f7c40339373f26b004520bf1");
+            IOTA, "d1511f0d3dba826aa9306784ba6e9e59436cd9020f83b2fa5a7b3a7870155c81",
+            ROOT + "api/casting/iota/BooleanIota", "918e6b8f89f5b7a6c24465a94153b56879739e2aa2aa1fca16ead734646f19f4",
+            ROOT + "api/casting/iota/ContinuationIota", "d3206b5507ac135a6d5b5b0de3d6ce685ac00d0b878037368e6b74a199a00663",
+            ROOT + "api/casting/iota/DoubleIota", "a3b018b6721a4f65f7d4b6373d7d4ac2f515377b5551f1da4841465eeef42317",
+            ROOT + "api/casting/iota/EntityIota", "dc65e7648dbbdf0d17e428366a992ce5a75879583752083f97094430d6c39253",
+            ROOT + "api/casting/iota/GarbageIota", "03fb840574b4dafdf200c8e75333a9e36af89742abbbbe846e5e4b56756bd8ef",
+            ROOT + "api/casting/iota/ListIota", "a8d361a3e843fb98b6c38434f3f086d7a94d2ba8702f8389ee4dbfcc3d6f1510",
+            ROOT + "api/casting/iota/NullIota", "203b4725d44f7f998b976e894d5d59d77f4617141c211c568d798c906fd126de",
+            ROOT + "api/casting/iota/PatternIota", "1d1fa51bbabd644f228715168ffbb2c847002c7de546dc99e2cfdbf4c1287667",
+            ROOT + "api/casting/iota/Vec3Iota", "13739719715a7a5a4d1f614004d89d110cfe650bbf125f4e1d759d3a8281c85e");
     private static final Map<String, String> HASHES = Map.of(
             ENTITY, "6a5a5b7db211b144fe88f3079a0e1d93a0c31db069acab4ac593dce8d144e8cb",
             ROOT + "api/casting/arithmetic/engine/ArithmeticEngine", "6efec13888ffe53b9775a0374d1e337cd7f41e9d483070ca903e315288795e05",
             ROOT + "api/casting/arithmetic/engine/ArithmeticEngine$OpCandidates", "1c599f3b7122543adb70396eedd2af74a68f166fbe78181fc649497e6858a587",
-            ROOT + "api/casting/iota/PatternIota", "86bffa9188bc1ff836409d9ed5b2e3806f2efe309f658e3374595fe7f274a69a",
-            ROOT + "api/casting/eval/vm/CastingVM", "bf614cb94518113138c1e876566ff63a0b7d257e13151dad81d270e7cea2ab99",
+            ROOT + "api/casting/iota/PatternIota", "1d1fa51bbabd644f228715168ffbb2c847002c7de546dc99e2cfdbf4c1287667",
+            ROOT + "api/casting/eval/vm/CastingVM", "072b25efec941d5f77e16a8bed44fd5f9f63ad4b4b74509f49acb1a6812c3e4f",
             ROOT + "api/casting/eval/vm/FrameEvaluate", "302d66e09e6a6a3495333458ceeca3f33f2acc00dd25f3a0235abe0b742bb174",
-            ROOT + "api/casting/eval/CastingEnvironment", "8df7b477388e046409bb59c9adbdd4beb6b9a55aa40518a352abfaa65c6d8909",
+            ROOT + "api/casting/eval/CastingEnvironment", "dbac596213a7a706735bc60d08253f9a0899c553819bbf7e6c3a6134ca48216c",
             ROOT + "common/casting/PatternRegistryManifest", "67ac1443a874c89e7c75657965110456ea08180fc1837a25f5ca073666fc7ac3",
             HEX_DIR, "1d1bce98ea4fb3387d2f0b0211725463503ef1fe33a013d1b3eb3ac337f652fe");
     private static final Map<String, Set<String>> EXECUTION_PATHS = Map.of(
@@ -253,7 +253,7 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
         var file = FMLLoader.getLoadingModList().getModFileById("hexcasting");
         if (file == null) return false;
         boolean version = file.getMods().stream().anyMatch(mod -> mod.getModId().equals("hexcasting")
-                && mod.getVersion().toString().equals("0.12.0-devel-pre-53"));
+                && mod.getVersion().toString().equals("0.12.0-devel-pre-64"));
         if (!version) { JitCompatibility.disable("unsupported Hexcasting version"); return false; }
         // Validate the actual jar, not only a version string. Do not install signature-sensitive hooks on an unknown ABI.
         String internal = target.replace('.', '/');
@@ -678,8 +678,8 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
                 else JitCompatibility.specialHandlerLookupTargetVerified();
             }
             if (SPELL_ACTION.equals(node.name)) {
-                if (hasForeignMixin(node, Set.of("operate", "executeWithUserdata")))
-                    JitCompatibility.disableFastAction("foreign Mixin changed SpellAction.operate/executeWithUserdata");
+                if (hasForeignMixin(node, Set.of("operate", "executeWithImage")))
+                    JitCompatibility.disableFastAction("foreign Mixin changed SpellAction.operate/executeWithImage");
                 return;
             }
             if (ADD_MOTION.equals(node.name)) {

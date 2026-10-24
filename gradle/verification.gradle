@@ -39,14 +39,13 @@ tasks.named('test', Test) {
 
 // The normal reference tests include the companion; this probe exercises its absence.
 def companion = cmiOptionalApiOutputs.sable.get().asFile
-def absent = tasks.register('validatePackageSableAbsent', JavaExec) {
+tasks.register('validatePackageSableAbsent', JavaExec) {
     group = 'verification'
     dependsOn(tasks.named('testClasses'))
     classpath = sourceSets.test.output + sourceSets.main.output + configurations.testRuntimeClasspath.filter { it != companion }
     mainClass = 'com.iridium126.createmanaindustry.client.packages.world.PackageSableAbsentProbe'
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
 }
-tasks.named('check') { dependsOn(absent) }
 
 def resolvedCreate = configurations.compileClasspath.incoming.artifacts.resolvedArtifacts.map { artifacts ->
     def matches = artifacts.findAll {

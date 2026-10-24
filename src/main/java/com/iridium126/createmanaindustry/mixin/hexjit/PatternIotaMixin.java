@@ -76,7 +76,7 @@ public abstract class PatternIotaMixin implements PatternIotaLoopDispatchAccess 
     }
 
     /**
-     * Mirrors Hexcasting pre-53 lookup semantics while resolving the display name only on mishap.
+     * Mirrors Hexcasting pre-64 lookup semantics while resolving the display name only on mishap.
      * The upstream method allocates a capturing Supplier for every successful normal pattern.
      */
     @Overwrite

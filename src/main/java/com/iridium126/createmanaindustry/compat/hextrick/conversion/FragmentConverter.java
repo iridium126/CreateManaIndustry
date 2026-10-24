@@ -12,7 +12,6 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
@@ -51,8 +50,7 @@ public final class FragmentConverter {
         registerFragment(VectorFragment.class, (value, world) -> new Vec3Iota(new Vec3(
                 value.vector().x(), value.vector().y(), value.vector().z())));
         registerFragment(EntityFragment.class, (value, world) -> {
-            var entity = world == null ? null : world.getEntity(value.uuid());
-            return new EntityIota(value.uuid(), value.name().copy(), entity == null || entity instanceof Player);
+            return new EntityIota(value.uuid(), value.name().copy());
         });
         registerFragment(ListFragment.class, (value, world) -> new ListIota(FragmentStructures.children(value).stream()
                 .map(child -> {

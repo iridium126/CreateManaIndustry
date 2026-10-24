@@ -245,7 +245,7 @@ public final class ResourceConversionAutomationGameTests {
 
     private static CastingImage input() {
         return new CastingImage(TreeList.from(List.of(new DoubleIota(1))), 0, TreeList.empty(),
-                false, false, 0, new CompoundTag());
+                false, false, 0, java.util.Map.of());
     }
 
     private static SpellContext context(GameTestHelper helper, SpellConstructBlockEntity construct) {
