@@ -6,3 +6,5 @@ float cmiDomeMotionLimit(uint phase,float age,float initialSpeed){
  float blend=clamp(age/.5,0.,1.);blend=blend*blend*blend*(10.-15.*blend+6.*blend*blend);
  return max(CMI_STORM_CRUISE,mix(clamp(initialSpeed,0.,CMI_STORM_INTERCEPT),CMI_STORM_CRUISE,blend));
 }
+
+float cmiStormElapsed(float now,float then){float d=now-then;return d< -52428.8?d+104857.6:d>52428.8?d-104857.6:d;}

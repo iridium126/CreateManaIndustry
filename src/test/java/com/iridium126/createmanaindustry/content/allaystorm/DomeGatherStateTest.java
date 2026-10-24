@@ -15,7 +15,7 @@ class DomeGatherStateTest {
         var p=paused(7,2);assertEquals(1,p.revision());assertEquals(2,p.phaseSeconds(7,20));assertEquals(20,p.phaseSeconds(8,20));
         assertTrue(p.extendsState(DomeGatherState.EMPTY));assertFalse(DomeGatherState.EMPTY.extendsState(p));assertFalse(paused(7,3).extendsState(p));
         var ready=new java.util.BitSet();var eligible=new java.util.BitSet();eligible.set(1,101);ready.set(1,96);
-        assertTrue(StormGatherRules.valid(ready,eligible,12288)); // One blocked slot does not remove its flow mates.
+        assertTrue(StormGatherRules.valid(ready,eligible,12288,1,0,2)); // One blocked slot does not remove its flow mates.
         assertThrows(IllegalArgumentException.class,()->paused(0,Float.NaN));assertThrows(IllegalArgumentException.class,()->paused(0,-.5f));
     }
     @Test void snapshotAndFeedbackKeepTheSameClocksAndVersion() {

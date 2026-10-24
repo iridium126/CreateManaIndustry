@@ -21,7 +21,15 @@ vec3 cmiHelixOffset(vec3 tangent,float u,uint group,vec2 scatter,float radius,fl
  return radial*r+(normal*scatter.x+binormal*scatter.y)*(.2*radius);
 }
 vec3 cmiHelixPoint(uint assignment,float seed,float time,vec3 home){
- uint b=cmiStarBase(cmiStarSlot(assignment));vec3 axis=normalize(cmiStarVec(b+308u).xyz);
+ uint b=cmiStarBase(cmiStarSlot(assignment));
+ if(cmiHelixHasReference(b)){
+  if(cmiHelixPhase(b,time)==1.){vec3 point,velocity;cmiHelixGatherSample(assignment,time,point,velocity);return point;}
+  vec3 origin,motion,omega;vec4 rotation;cmiHelixReference(b,time,origin,motion,rotation,omega);
+  float progress=cmiHelixProgress(b,time),angle=-cmiHelixPitch()*progress;vec3 local=cmiHelixLocal(assignment);
+  vec2 radial=mat2(cos(angle),sin(angle),-sin(angle),cos(angle))*local.yz;
+  return origin+cmiHelixRotate(rotation,vec3(local.x+progress,radial));
+ }
+ vec3 axis=normalize(cmiStarVec(b+308u).xyz);
  vec3 center=cmiStarVec(b+24u).xyz;
  if(cmiStarVec(b+20u).y<3.){float t=clamp((time-cmiStarVec(b+28u).w)/.25,0.,1.);axis=normalize(mix(cmiStarVec(b+300u).xyz,axis,t));center=mix(cmiStarVec(b+28u).xyz,center,t);}
  vec3 side=cmiStarVec(b+304u).xyz;side=normalize(side-axis*dot(axis,side));vec3 up=cross(axis,side),local=cmiHelixLocal(assignment);
@@ -31,6 +39,7 @@ vec3 cmiHelixPoint(uint assignment,float seed,float time,vec3 home){
 }
 vec3 cmiHelixVelocity(uint assignment,float time){
  uint base=cmiStarBase(cmiStarSlot(assignment));vec3 axis=normalize(cmiStarVec(base+308u).xyz),side=cmiStarVec(base+304u).xyz;
+ if(cmiHelixHasReference(base)){vec3 center,motion,omega;vec4 rotation;cmiHelixReference(base,time,center,motion,rotation,omega);axis=cmiHelixRotate(rotation,vec3(1,0,0));side=cmiHelixRotate(rotation,vec3(0,1,0));}
  side=normalize(side-axis*dot(axis,side));vec3 up=cross(axis,side),local=cmiHelixLocal(assignment);
  float angle=-cmiHelixPitch()*cmiHelixProgress(base,time),speed=cmiHelixAdvanceSpeed(base,time);
  vec2 rotated=mat2(cos(angle),sin(angle),-sin(angle),cos(angle))*local.yz;

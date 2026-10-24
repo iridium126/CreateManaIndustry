@@ -1,6 +1,5 @@
 layout(std430,binding=28) readonly buffer StarStateWrite {uint words[];} starState;
 #pragma cmi_include chunks/starfall.glsl
-uniform float uTimeSec;
 // Additive billboard particle vertex shader. Draws via glDrawArraysIndirect:
 // 6 vertices per instance (2 triangles), corner derived from gl_VertexID.
 // Instances walk the additive permutation (orderAdd) written by keygen.comp —

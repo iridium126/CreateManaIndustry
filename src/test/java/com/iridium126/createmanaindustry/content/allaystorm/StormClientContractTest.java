@@ -7,12 +7,13 @@ import com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers;
 import static org.junit.jupiter.api.Assertions.*;
 
 class StormClientContractTest {
-    @Test void domePathStateIsAppendOnlyAndFitsSixMiB() throws Exception {
+    @Test void sharedPathStateIsMemberKeyedAndBounded() throws Exception {
         assertEquals(StarfallGpuBuffers.DOME_FLOW_STATE+StarfallGpuBuffers.DOME_FLOW_WORDS,StarfallGpuBuffers.DOME_PATH_BASE);
         assertEquals(128,StarfallGpuBuffers.DOME_PATH_TASK_COUNT);
         assertEquals(12,StarfallGpuBuffers.DOME_PATH_RECORD_WORDS);
-        assertTrue(StarfallGpuBuffers.DOME_PATH_BYTES<=6*1024*1024);
-        assertEquals(5804300,StarfallGpuBuffers.DOME_PATH_BYTES);
+        assertTrue(StarfallGpuBuffers.DOME_PATH_BYTES<=32*1024*1024);
+        assertEquals(131072,StarfallGpuBuffers.DOME_PATH_RECORDS);
+        assertEquals(16,StarfallGpuBuffers.NAV_EXTRA_WORDS);
         try(var source=getClass().getResourceAsStream("/assets/createmanaindustry/shaders/particles/chunks/dome_path_state.glsl")){
             assertNotNull(source);String text=new String(source.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
             assertTrue(text.contains("CMI_DOME_PATH_BASE="+StarfallGpuBuffers.DOME_PATH_BASE+"u"));

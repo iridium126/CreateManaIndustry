@@ -165,7 +165,11 @@ public final class StormFeedback {
         var ready=new java.util.HashMap<Integer,java.util.BitSet>();
         var eligible=new java.util.HashMap<Integer,java.util.BitSet>();
         var counts=new java.util.HashMap<Integer,int[]>();
+        var references=new java.util.HashMap<Integer,float[]>();
         for(int o=0;o+5<entries.length;o+=6){int member=Math.round(entries[o]),id=Math.round(entries[o+1]);var w=AllayStormRuntime.INSTANCE.contactAuthority(id);
+            if(member== -11){AllayStormRuntime.INSTANCE.navigationProgress(0,entries[o+2],entries[o+3],entries[o+4],entries[o+5]);continue;}
+            if(member== -12){AllayStormRuntime.INSTANCE.navigationProgress(4,entries[o+2],entries[o+3],0,0);continue;}
+            if(member== -10){if(w!=null)references.put(id,new float[]{entries[o+2],entries[o+3]});continue;}
             if(member== -9){ColumnSnapshotClient.INSTANCE.installed(id,Math.round(entries[o+2]),Math.round(entries[o+3])|(Math.round(entries[o+4])<<16));continue;}
             if(member== -8){if(w!=null)flowVersions.put(id,Math.round(entries[o+2]));continue;}
             if(member== -7){if(w!=null){int flow=Math.round(entries[o+2]);float pause=entries[o+3];if(flow>=0&&flow<66&&Float.isFinite(pause)&&pause>=0&&pause<=600){float[] times=flowTimes.computeIfAbsent(id,k->{float[] t=new float[66];java.util.Arrays.fill(t,-1);return t;});times[flow]=pause;}}continue;}
@@ -178,22 +182,7 @@ public final class StormFeedback {
             PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(Minecraft.getInstance().level.dimension().location(),id,w.epoch(),entries[o+5],member,entries[o+2],entries[o+3],entries[o+4]));
         }
         var mc=Minecraft.getInstance();
-        if(mc.level!=null&&AllayStormRuntime.INSTANCE.feedbackState().authority()&&flowTick!=mc.level.getGameTime()){
-            var ids=new java.util.HashSet<Integer>(ready.keySet());ids.addAll(flowTimes.keySet());
-            boolean sent=false;
-            for(int id:ids){var w=AllayStormRuntime.INSTANCE.contactAuthority(id);if(w==null)continue;
-                var flows=flowTimes.containsKey(id)?new com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState(flowTimes.get(id)):com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState.EMPTY;
-                if(AllayStormRuntime.INSTANCE.domeGather(id)&&flowVersions.getOrDefault(id,-1)!=flows.revision())continue;
-                var r=ready.get(id);var e=eligible.get(id);var c=counts.get(id);
-                var plan=AllayStormRuntime.INSTANCE.wavePacket(id);
-                boolean valid=r!=null&&e!=null&&plan!=null&&(plan.dome()?com.iridium126.createmanaindustry.content.allaystorm.DomeGatherRules.valid(r,e,12288,AllayStormRuntime.INSTANCE.timeSec(),plan.startSec(),plan.assembleSec()):com.iridium126.createmanaindustry.content.allaystorm.StormGatherRules.valid(r,e,12288));
-                boolean canGather=valid&&c!=null&&r.cardinality()==c[0]&&e.cardinality()==c[1]&&(!gathered.containsKey(w)||mc.level.getGameTime()-gathered.get(w)>=5);
-                if(canGather||flows.revision()>flowRevisions.getOrDefault(w,0)){
-                    if(canGather)gathered.put(w,mc.level.getGameTime());flowRevisions.put(w,flows.revision());sent=true;
-                    PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(mc.level.dimension().location(),w.epoch(),id,canGather?r.toLongArray():new long[0],canGather?e.toLongArray():new long[0],flows));
-                }
-            }if(sent)flowTick=mc.level.getGameTime();
-        }
+        // Publish confirmed exits before readiness from the same GPU snapshot.
         if(mc.level!=null&&completionTick!=mc.level.getGameTime()){
             completionTick=mc.level.getGameTime();
             for(var entry:completions.entrySet()){var w=AllayStormRuntime.INSTANCE.contactAuthority(entry.getKey());if(w==null)continue;
@@ -202,6 +191,23 @@ public final class StormFeedback {
                 AllayStormRuntime.INSTANCE.completeAttack(packet);
             }completions.clear();
         }
+        if(mc.level!=null&&AllayStormRuntime.INSTANCE.feedbackState().authority()&&flowTick!=mc.level.getGameTime()){
+            var ids=new java.util.HashSet<Integer>(ready.keySet());ids.addAll(flowTimes.keySet());
+            boolean sent=false;
+            for(int id:ids){var w=AllayStormRuntime.INSTANCE.contactAuthority(id);if(w==null)continue;
+                var flows=flowTimes.containsKey(id)?new com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState(flowTimes.get(id)):com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState.EMPTY;
+                if(AllayStormRuntime.INSTANCE.domeGather(id)&&flowVersions.getOrDefault(id,-1)!=flows.revision())continue;
+                var r=ready.get(id);var e=eligible.get(id);var c=counts.get(id);
+                var plan=AllayStormRuntime.INSTANCE.wavePacket(id);
+                boolean valid=r!=null&&e!=null&&plan!=null&&com.iridium126.createmanaindustry.content.allaystorm.StormGatherRules.valid(r,e,12288,AllayStormRuntime.INSTANCE.timeSec(),plan.startSec(),plan.assembleSec());
+                boolean canGather=valid&&(!plan.helixAttack()||references.containsKey(id))&&c!=null&&r.cardinality()==c[0]&&e.cardinality()==c[1]&&(!gathered.containsKey(w)||mc.level.getGameTime()-gathered.get(w)>=5);
+                if(canGather||flows.revision()>flowRevisions.getOrDefault(w,0)){
+                    if(canGather)gathered.put(w,mc.level.getGameTime());flowRevisions.put(w,flows.revision());sent=true;
+                    PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(mc.level.dimension().location(),w.epoch(),id,canGather?r.toLongArray():new long[0],canGather?e.toLongArray():new long[0],flows,references.containsKey(id)?Math.round(references.get(id)[0]):0,references.containsKey(id)?references.get(id)[1]:0));
+                }
+            }if(sent)flowTick=mc.level.getGameTime();
+        }
+
     }
 
     /** Drops a pending wave-contact readback (fence WAIT_FAILED; a fresh one is scheduled anyway). */

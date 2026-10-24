@@ -84,7 +84,7 @@ public class DomeGpuValidation extends StarfallGpuValidation {
     ByteBuffer counts=null;
     for(int frame=0;frame<3;frame++){put(q.pool,data);put(q.counter,bytes(16));bind(0,q.pool);bind(1,out);bind(3,q.counter);bind(5,q.emit);bind(13,grid);bind(14,q.previous);bind(16,damage);bind(18,players);bind(19,corrections);bind(21,map);gpu.prepare(frame+1);gpu.bind(program,true);collision.bind(program);f(program,"uTimeSec",1+frame*.05f);dispatch(program,192);if(scenario!=5){collision.bind(bodies);DomeBodyContacts.run(gridProgram,bodies,q.pool,q.previous,out,q.counter,grid,1+frame*.05f,.05f,0,gpu);}int state=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);counts=bytes(16);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,state);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,StarfallGpuBuffers.GATHER_COUNTS*4L,counts);data=read(out,n*64);gpu.commit();}
     int ready=counts.getInt(0),eligible=counts.getInt(4),blocked=counts.getInt(8),unknown=counts.getInt(12);
-    if(scenario==0)check(eligible==n&&ready<=live&&!StormGatherRules.ready(ready,eligible),"Unspawned members vanished from gather denominator");
+    if(scenario==0)check(eligible==n&&ready<=live&&!StormGatherRules.ready(ready,eligible,1,2),"Unspawned members vanished from gather denominator");
     if(scenario==1)check(!DomeGatherRules.ready(ready,eligible,22,40),"94 percent fired before its threshold");
     if(scenario==2)check(ready<n&&DomeGatherRules.ready(ready,eligible,22,40),"96 percent waited for all members at midpoint");
     if(scenario==3)check(eligible==n&&blocked==n&&ready==0,"Solid terrain retired ranks before the observation window");

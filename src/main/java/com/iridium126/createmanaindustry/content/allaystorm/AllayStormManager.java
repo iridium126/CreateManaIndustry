@@ -147,7 +147,7 @@ public final class AllayStormManager {
         int kind=AllayDome.STARFALL, fallbackReason, checkedPetal=-1, currentPhase=1; int[] groupEnds;
         float centerX,centerY,centerZ,orientation,centerSec; int direction=1;
         int abortReason;
-        AllayHelix.Flight helix; AllayHelix.Selection helixRoster; long lastObstacleTick;
+        AllayHelix.Flight helix; final java.util.ArrayDeque<HelixGatherFrame> helixFrames=new java.util.ArrayDeque<>(); HelixGatherFrame.Sample lockedReference; float referenceSample; int referenceVersion; AllayHelix.Selection helixRoster; long lastObstacleTick;
         final it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap memberColumns=new it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap();
         final float start,crownX,crownY,crownZ; float assemble,radius;
         DomeGatherState gatherFlows=DomeGatherState.EMPTY;
@@ -333,7 +333,7 @@ public final class AllayStormManager {
         int id=++rt.waveIdCounter;if(id>=1<<24)rt.waveIdCounter=id=1;return id;
     }
     private static ClientboundStormWavePacket wavePacket(Wave w,int event,boolean roster,int targetId){
-        return new ClientboundStormWavePacket(w.id,w.epoch,event,w.seed,targetId,w.tier,w.columns,w.perColumn,w.start,w.assemble,w.lock,w.end,w.crownX,w.crownY,w.crownZ,w.radius,roster?w.members:new int[0],w.route.clone(),w.landings.clone(),w.kind,w.currentPhase,w.groupEnds.clone(),w.centerX,w.centerY,w.centerZ,w.orientation,w.direction,w.centerSec,w.fallbackReason,w.helix,w.completed.toLongArray(),w.gatherFlows);
+        return new ClientboundStormWavePacket(w.id,w.epoch,event,w.seed,targetId,w.tier,w.columns,w.perColumn,w.start,w.assemble,w.lock,w.end,w.crownX,w.crownY,w.crownZ,w.radius,roster?w.members:new int[0],w.route.clone(),w.landings.clone(),w.kind,w.currentPhase,w.groupEnds.clone(),w.centerX,w.centerY,w.centerZ,w.orientation,w.direction,w.centerSec,w.fallbackReason,w.helix,w.completed.toLongArray(),w.gatherFlows,w.lockedReference!=null&&w.currentPhase>=3?new HelixGatherFrame[]{HelixGatherFrame.frozen(w.referenceVersion,w.referenceSample,w.lockedReference)}:w.helixFrames.toArray(HelixGatherFrame[]::new));
     }
 
 
@@ -349,9 +349,10 @@ public final class AllayStormManager {
         w.kind=StormAttack.HELIX;w.helixRoster=roster;w.radius=32;w.groupEnds=roster.ends();w.offsetX=ox;w.offsetZ=oz;
         w.centerX=(float)center.x;w.centerY=(float)center.y;w.centerZ=(float)center.z;w.centerSec=clockSeconds(tick);
         // Account for 2m/s body motion and worst-case rotating outer-envelope velocity.
-        w.assemble=w.start+Math.max(4,(float)((offset+1.15*AllayStormData.vortexRadius(data.count)+46+8)/(12-2-Math.sqrt(2048)*Math.toRadians(8))));
+        w.assemble=w.start+AllayHelix.gatherSeconds(AllayStormData.vortexRadius(data.count));
         w.lock=w.assemble;w.helix=AllayHelix.linearFlight(roster,center,axis,Math.max(0,target.getBoundingBox().getCenter().subtract(center).dot(axis))+12,w.assemble);
         w.end=AllayHelix.deadline(w.helix);
+        w.helixFrames.add(HelixGatherFrame.initial(center,axis,new Vec3(rt.chaseVX,0,rt.chaseVZ)));
         w.memberColumns.clear();for(int rank=0;rank<w.members.length;rank++)w.memberColumns.put(w.members[rank],rank/2048);
         for(int member:w.members)rt.waveReserved.set(member);rt.waves.add(w);
         rt.stats.count(StormAttackStats.Reason.LAUNCHED);broadcastWave(level,rt,wavePacket(w,AllayStarfall.START,true,target.getId()));return true;
@@ -359,17 +360,23 @@ public final class AllayStormManager {
     private static boolean advanceHelix(ServerLevel level,Runtime rt,Wave w,ServerPlayer target,long tick,float clock){
         float now=w.start+AllayStarfall.elapsed(clock,w.start);
         if(!w.locked){
-            if(target==null){w.abortReason=6;return false;}if(now>=w.assemble&&!w.gathered){w.abortReason=7;return false;}boolean lock=w.gathered;
-            if(lock||tick-w.lastAimTick>=5){
-                double seconds=(tick-w.lastAimTick)/20.;w.lastAimTick=tick;
-                Vec3 center=new Vec3(rt.chaseX+w.offsetX,ServerConfig.stormChaseY-8,rt.chaseZ+w.offsetZ);
-                Vec3 aim=target.getBoundingBox().getCenter().subtract(center),axis=AllayHelix.turn(AllayHelix.axis(w.helix),aim,Math.toRadians(8)*seconds);
+            if(target==null){w.abortReason=6;return false;}
+            if(StormGatherRules.elapsedTicks(clock,w.start)>StormGatherRules.durationTicks(w.start,w.assemble)&&!w.gathered){w.abortReason=7;return false;}
+            if(w.gathered){
+                var reference=w.lockedReference;Vec3 center=reference.center(),axis=reference.axis();
+                w.centerX=(float)center.x;w.centerY=(float)center.y;w.centerZ=(float)center.z;w.centerSec=w.start+w.referenceSample;
+                w.helix=AllayHelix.linearFlight(w.helixRoster,center,axis,Math.max(-32,target.getBoundingBox().getCenter().subtract(center).dot(axis))+12,now);
+                w.assemble=now;w.lock=now;w.locked=true;w.currentPhase=4;w.end=AllayHelix.deadline(w.helix);
+                broadcastWave(level,rt,wavePacket(w,AllayStarfall.LOCK,false,target.getId()));
+            }else if(tick-w.lastAimTick>=5){
+                w.lastAimTick=tick;
+                HelixGatherFrame frame=w.helixFrames.getLast().next(target.getBoundingBox().getCenter(),new Vec3(rt.chaseVX,0,rt.chaseVZ),new Vec3(rt.chaseX+w.offsetX,ServerConfig.stormChaseY-8,rt.chaseZ+w.offsetZ));
+                w.helixFrames.add(frame);while(w.helixFrames.size()>9)w.helixFrames.removeFirst();
+                var reference=frame.sample(frame.seconds());Vec3 center=reference.center(),axis=reference.axis();
                 w.centerX=(float)center.x;w.centerY=(float)center.y;w.centerZ=(float)center.z;w.centerSec=now;
-                float launch=lock?now:w.assemble;
-                w.helix=AllayHelix.linearFlight(w.helixRoster,center,axis,Math.max(-32,aim.dot(axis))+12,launch);
-                if(lock){w.assemble=now;w.lock=now;w.locked=true;w.currentPhase=4;}else w.currentPhase=1;
+                w.helix=AllayHelix.linearFlight(w.helixRoster,center,axis,Math.max(-32,target.getBoundingBox().getCenter().subtract(center).dot(axis))+12,w.assemble);
                 w.end=AllayHelix.deadline(w.helix);
-                broadcastWave(level,rt,wavePacket(w,lock?AllayStarfall.LOCK:AllayStarfall.UPDATE,false,target.getId()));
+                broadcastWave(level,rt,wavePacket(w,AllayStarfall.UPDATE,false,target.getId()));
             }
         }
         w.currentPhase=w.locked?4:1;return true;
@@ -870,7 +877,7 @@ public final class AllayStormManager {
         if(!data.active||track==null||!track.active||!track.authority||!StormIdentity.of(level,data).equals(new StormIdentity(packet.dimension(),packet.epoch())))return;
         for(var w:rt.waves)if(w.id==packet.id()&&StormAttack.regional(w.kind)&&!w.locked&&!w.gathered){
             float now=clockSeconds(level.getGameTime());
-            if(w.kind==AllayDome.DOME?DomeGatherRules.elapsedTicks(now,w.start)>DomeGatherRules.durationTicks(w.start,w.assemble):AllayStarfall.elapsed(now,w.assemble)>=0)return;
+            if(StormGatherRules.elapsedTicks(now,w.start)>StormGatherRules.durationTicks(w.start,w.assemble))return;
             if(w.kind==AllayDome.DOME){
                 var flows=packet.flows();
                 // START is scheduled slightly ahead; trust the bounded GPU phase,
@@ -878,11 +885,22 @@ public final class AllayStormManager {
                 if(!flows.extendsState(w.gatherFlows))return;
                 if(flows.revision()!=w.gatherFlows.revision()){w.gatherFlows=flows;broadcastWave(level,rt,wavePacket(w,AllayStarfall.UPDATE,false,-1));}
             }else if(packet.flows().revision()!=0)return;
+            HelixGatherFrame.Sample accepted=null;
+            if(w.kind==StormAttack.HELIX){
+                float age=AllayStarfall.elapsed(now,w.start)-packet.sampleSec();
+                if(age<-.001f||age>1||packet.sampleSec()<0||packet.referenceVersion()<=0)return;
+                for(var frame:w.helixFrames)if(frame.version()==packet.referenceVersion()&&packet.sampleSec()>=frame.seconds()-.001f&&packet.sampleSec()<=frame.seconds()+HelixGatherFrame.STEP+HelixGatherFrame.EXTRAPOLATE+.001f)accepted=frame.sample(packet.sampleSec());
+                if(accepted==null)return;
+            }
             var ready=BitSet.valueOf(packet.ready());var eligible=BitSet.valueOf(packet.eligible());
             if(ready.length()>w.members.length||eligible.length()>w.members.length)return;
-            for(int rank=0;rank<w.members.length;rank++)if(data.dead.get(w.members[rank])||w.completed.get(rank)){ready.clear(rank);eligible.clear(rank);}
-            if(w.kind==AllayDome.DOME?!DomeGatherRules.valid(ready,eligible,w.members.length,now,w.start,w.assemble):!StormGatherRules.valid(ready,eligible,w.members.length))return;
+            var expectedEligible=new BitSet(w.members.length);
+            for(int rank=0;rank<w.members.length;rank++)if(data.dead.get(w.members[rank])||w.completed.get(rank)){ready.clear(rank);eligible.clear(rank);}else expectedEligible.set(rank);
+            // Only server-confirmed death or exit can reduce the denominator.
+            if(!eligible.equals(expectedEligible))return;
+            if(!StormGatherRules.valid(ready,eligible,w.members.length,now,w.start,w.assemble))return;
             for(int rank=0;rank<w.members.length;rank++)if(!ready.get(rank)&&!w.completed.get(rank)){w.completed.set(rank);w.membership.clear(w.members[rank]);rt.waveReserved.clear(w.members[rank]);}
+            if(accepted!=null){w.lockedReference=accepted;w.referenceSample=packet.sampleSec();w.referenceVersion=packet.referenceVersion();}
             w.gathered=true;return;
         }
     }

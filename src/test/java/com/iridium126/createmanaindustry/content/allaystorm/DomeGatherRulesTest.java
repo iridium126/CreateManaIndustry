@@ -30,7 +30,7 @@ class DomeGatherRulesTest {
     @Test void masksRemainExactAndHelixKeepsItsFixedRule(){
         var eligible=new BitSet();eligible.set(0,12288);var ready=new BitSet();ready.set(0,11060);
         assertFalse(DomeGatherRules.valid(ready,eligible,12288,0,0,30));assertTrue(DomeGatherRules.valid(ready,eligible,12288,30,0,30));
-        assertFalse(StormGatherRules.valid(ready,eligible,12288));ready.set(12288);assertFalse(DomeGatherRules.valid(ready,eligible,12288,30,0,30));
+        assertFalse(StormGatherRules.valid(ready,eligible,12288,1,0,2));ready.set(12288);assertFalse(DomeGatherRules.valid(ready,eligible,12288,30,0,30));
         ready.clear(12288);eligible.clear(0);assertFalse(DomeGatherRules.valid(ready,eligible,12288,30,0,30));
     }
 }

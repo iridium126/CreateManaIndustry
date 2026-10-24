@@ -147,7 +147,9 @@ bool cmiStarSteering(float identity,float seed,vec3 pos,vec3 home,float cap,out 
  target=home;velocity=vec3(0.);phase=0u;
  uint assignment=cmiStarAssignment(identity);if(assignment==0u)return false;
  if(cmiStarClaim(identity,uTimeSec)<0){uint b=cmiStarBase(cmiStarSlot(assignment));if((cmiDome(b)||cmiHelix(b))&&cmiStarPhase(assignment,uTimeSec)>=6.)phase=6u;return false;}
- phase=uint(cmiStarPhase(assignment,uTimeSec));if(phase==6u&&(cmiHelix(cmiStarBase(cmiStarSlot(assignment)))||cmiDome(cmiStarBase(cmiStarSlot(assignment)))))return false;target=cmiStarPoint(assignment,seed,uTimeSec,home);
+ phase=uint(cmiStarPhase(assignment,uTimeSec));if(phase==6u&&(cmiHelix(cmiStarBase(cmiStarSlot(assignment)))||cmiDome(cmiStarBase(cmiStarSlot(assignment)))))return false;
+ if(cmiHelix(cmiStarBase(cmiStarSlot(assignment)))&&phase==1u&&cmiHelixHasReference(cmiStarBase(cmiStarSlot(assignment)))){vec3 point,motion;cmiHelixGatherSample(assignment,uTimeSec,point,motion);target=point;velocity=motion;return true;}
+ target=cmiStarPoint(assignment,seed,uTimeSec,home);
  if(cmiDome(cmiStarBase(cmiStarSlot(assignment)))){velocity=cmiDomeVelocity(assignment,uTimeSec);return true;}
  if(cmiHelix(cmiStarBase(cmiStarSlot(assignment)))&&phase==4u){velocity=cmiHelixVelocity(assignment,cmiStarTime(cmiStarBase(cmiStarSlot(assignment)),uTimeSec));return true;}
  vec3 next=cmiStarPoint(assignment,seed,uTimeSec+.02,home);velocity=(next-target)/.02;

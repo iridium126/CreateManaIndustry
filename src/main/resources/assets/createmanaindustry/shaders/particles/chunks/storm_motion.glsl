@@ -147,6 +147,7 @@
         bool domeMember=waveEngaged&&domeAssignment!=0u&&cmiDome(cmiStarBase(cmiStarSlot(domeAssignment)));
         bool domeFlow=domeMember&&cmiStarPhase(domeAssignment,uTimeSec)==4.;
         bool domeGather=domeMember&&!domeFlow;
+        if(waveEngaged&&!domeGather&&uStarfallEnabled){uint member=cmiStarMember(p0.w);if(member<131072u&&starStateWrite.words[cmiNavigationExtra(member)]!=0u)cmiNavigationCancel(member);}
         if(domeGather){cmiDomeGatherSampleValid=true;cmiDomeFollowingPoint=target;cmiDomePoseTangent=vT;}
         vec3 domePreviousPoint=pos,domePreviousVelocity=vel;
         if(domeFlow)cmiDomeSampleOffset(domeAssignment,-uDt,domePreviousPoint,domePreviousVelocity);
@@ -198,7 +199,7 @@
         if(!waveEngaged)repW=cmiPlayerRepel(pos,STORM_PLAYER_R,STORM_PLAYER_W);
         // whisker cone bends the engaged steering around obstacles (player
         // roofs/walls) instead of stalling against them
-        if (waveEngaged && !columnEngaged && !domeGather && (uCollisionOn == 1||cmiStormVoxel) && !(uStarfallEnabled&&(cmiHelix(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))||cmiDome(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w)))))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.)) {
+        if (waveEngaged && !columnEngaged && !domeGather && !(uStarfallEnabled&&cmiHelix(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w)))) ) && (uCollisionOn == 1||cmiStormVoxel) && !(uStarfallEnabled&&(cmiHelix(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))||cmiDome(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w)))))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.)) {
             vec3 toT = target - pos;
             float dT = length(toT);
             if (dT > 1e-4) {
@@ -243,7 +244,7 @@
             cmiDomePathIdentity(a,cmiStarMember(p0.w));
             vec3 previous,previousVelocity;cmiDomeSampleOffset(a,-uDt,previous,previousVelocity);
             vec3 error=previous-pos,desired;float errorLength=length(error);
-            vec3 following=(target-previous)/max(uDt,.0001)+error*min(6.,.6/max(errorLength,.000001));
+            vec3 following=cmiGatherFollowing(pos,previous,(target-previous)/max(uDt,.0001));
             desired=following;
             if(errorLength>1.){
                 vec4 ring=cmiDomeRing(a);vec3 center=cmiDomeCenter(b,uTimeSec)+vec3(0,ring.y-.3,0);
@@ -255,13 +256,27 @@
             }
             // Avoidance is applied AFTER interception; do not reconstruct the
             // original straight path after choosing a traversable corridor.
-            vec3 waypoint;bool cached=cmiStormVoxel&&cmiDomePathFollow(a,pos,waypoint);if(cached){float distanceToWaypoint=distance(waypoint,pos);desired=(waypoint-pos)/max(distanceToWaypoint,.000001)*min(CMI_STORM_INTERCEPT,sqrt(36.*max(.001,distanceToWaypoint-.15)));}
-            if(cmiStormVoxel&&length(desired)>.0001)desired=cmiDomeGatherAvoid(pos,normalize(desired),min(2.,max(.25,length(desired)*.35)))*length(desired);
-            if(cached&&(cmiDomeNavigationClipped||cmiDomeNavigationUnknown)){uint record=cmiDomePathRecord(a);starStateWrite.words[record+1u]=(starStateWrite.words[record+1u]&0xffff8000u)|(cmiDomeNavigationUnknown?CMI_DOME_PATH_UNKNOWN:CMI_DOME_PATH_IDLE);}
-            float desiredSpeed=min(CMI_STORM_INTERCEPT,length(desired)),oldSpeed=length(vel),newSpeed=clamp(desiredSpeed,max(0.,oldSpeed-18.*uDt),oldSpeed+18.*uDt);
-            vec3 direction=length(desired)>.000001?normalize(desired):vec3(0,0,1);
-            if(oldSpeed>.0001&&newSpeed>.0001){float cosine=clamp((oldSpeed*oldSpeed+newSpeed*newSpeed-324.*uDt*uDt)/(2.*oldSpeed*newSpeed),-1.,1.);direction=cmiDomeTurn(vel/oldSpeed,direction,uDt,.0001,min(3.141592654,acos(cosine)/max(uDt,.0001)));}
-            vel=direction*newSpeed;
+            if(cmiStormVoxel){desired=cmiNavigationSteer(cmiStarMember(p0.w),pos,target,desired,CMI_STORM_INTERCEPT);cmiDomeNavigationClipped=cmiNavigationKnownBlocked;cmiDomeNavigationUnknown=cmiNavigationCoverageUnknown;}
+            vel=cmiGatherVelocity(vel,desired,CMI_STORM_INTERCEPT,uDt);
+        }else if(waveEngaged&&uStarfallEnabled&&cmiHelix(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==1.){
+            uint a=cmiStarAssignment(p0.w),b=cmiStarBase(cmiStarSlot(a));vec3 previous=target-vT*uDt,previousVelocity=vT;
+            if(cmiHelixHasReference(b))cmiHelixGatherSample(a,uTimeSec-uDt,previous,previousVelocity);
+            vec3 following=cmiGatherFollowing(pos,previous,vT),error=previous-pos;
+            float transition=max(2.,1.+dot(vel-previousVelocity,vel-previousVelocity)/36.);
+            vec3 desired=mix(following,vT+error*2.,smoothstep(1.,transition,length(error)))+sepW/6.;
+            vel=cmiGatherVelocity(vel,desired,12.,uDt);
+        }else if(waveEngaged&&uStarfallEnabled&&cmiHelix(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.&&cmiHelixHasReference(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))){
+            uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w),b=cmiStarBase(cmiStarSlot(a)),id=uint(cmiStarVec(b).x+.5);
+            uint j=CMI_DOME_JOIN+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u;
+            bool fresh=starStateRead.words[j]!=id;float began=fresh?cmiDomeElapsed(b,uTimeSec)-uDt:uintBitsToFloat(starStateRead.words[j+1u]);
+            vec3 previous=cmiHelixPoint(a,p3.z,cmiStarTime(b,uTimeSec-uDt),target),offset=pos-previous,delta=vel-cmiHelixVelocity(a,cmiStarTime(b,uTimeSec-uDt));
+            if(!fresh){offset=vec3(uintBitsToFloat(starStateRead.words[j+2u]),uintBitsToFloat(starStateRead.words[j+3u]),uintBitsToFloat(starStateRead.words[j+4u]));delta=vec3(uintBitsToFloat(starStateRead.words[j+5u]),uintBitsToFloat(starStateRead.words[j+6u]),uintBitsToFloat(starStateRead.words[j+7u]));}
+            starStateWrite.words[j]=id;starStateWrite.words[j+1u]=floatBitsToUint(began);for(uint k=0u;k<3u;k++){starStateWrite.words[j+2u+k]=floatBitsToUint(offset[k]);starStateWrite.words[j+5u+k]=floatBitsToUint(delta[k]);}
+            float u=clamp((cmiDomeElapsed(b,uTimeSec)-began)/.5,0.,1.),h=1.-u*u*u*(10.-15.*u+6.*u*u),g=.5*(u-6.*u*u*u+8.*u*u*u*u-3.*u*u*u*u*u);
+            vec3 joinTarget=target+offset*h+delta*g;
+            vec3 joinVelocity=vT+offset*((-30.*u*u+60.*u*u*u-30.*u*u*u*u)/.5)+delta*(1.-18.*u*u+32.*u*u*u-15.*u*u*u*u);
+            vec3 acceleration=(joinTarget-pos)*24.+(joinVelocity-vel)*6.+sepW;
+            vel+=acceleration*uDt;
         }else if(columnEngaged)vel=vT;else{
             vec3 candidate=vel+aW*uDt;
             if(domeHandoff){
@@ -272,6 +287,10 @@
                 // It ends after .5 s regardless of visual pose-cache lifetime.
                 candidate=mix(p1.xyz,candidate,clamp((nw-w)/max(1.-w,.000001),0.,1.));
             }
+            if(uStarfallEnabled&&cmiStormVoxel){uint member=cmiStarMember(p0.w);if(member<131072u){uint actual=starStateWrite.words[member*2u+1u]&255u,id=starStateWrite.words[member*2u];
+                if(!waveEngaged&&actual==6u&&id!=0u&&(cmiStarWord(201456u+member/32u)&(1u<<(member&31u)))==0u){cmiNavigationReturnIdentity(member,id);vec3 navigated=cmiNavigationSteer(member,pos,target,candidate,ordinaryCap);candidate=cmiNavigationApplied?cmiGatherVelocity(vel,navigated,ordinaryCap,uDt):navigated;}
+                else if(starStateWrite.words[cmiNavigationExtra(member)]!=0u)cmiNavigationCancel(member);
+            }}
             vel=candidate;
         }
         cmiStormFrameCap=spMaxV;

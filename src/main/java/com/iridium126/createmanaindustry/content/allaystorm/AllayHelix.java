@@ -17,6 +17,8 @@ public final class AllayHelix {
   public Flight schedule(float charge,float thrust){float duration=(arcLength()-length)/speed+RAMP;return new Flight(armA,armB,length,radius,maxSpeed,speed,charge,thrust,thrust+duration,curvature,targetArc,controls,samples,axisX,axisY,axisZ);}
  }
  private AllayHelix() {}
+ public static float gatherSeconds(double radius){double speed=12,acceleration=18,relative=speed-2-Math.sqrt(2048)*Math.toRadians(8);double seconds=(radius+1.15*radius+46+8)/relative+2*speed/acceleration+Math.PI/Math.min(Math.PI,acceleration/speed)+.75+1;return (float)(Math.ceil(Math.max(4,seconds)*20)/20);}
+
  public static float deadline(Flight flight){return flight.finish()+FAULT_GRACE;}
  public static int arm(int stormSeed,int member){float seed=AllayStormWaves.memberSeed(stormSeed,member);return Math.min(5,(int)Math.floor(AllayStormWaves.hash1(seed*5.7f)*6));}
  public static Selection select(int generated,BitSet dead,BitSet reserved,int quota,int stormSeed,int waveSeed){

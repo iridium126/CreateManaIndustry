@@ -1,6 +1,6 @@
 # Allay Storm：开发与验收入口
 
-当前协议17、Dome v4、Helix v1。[当前行为](allay-storm-ai.md)维护攻击参数，[同步契约](allay-storm-sync.md)维护数据所有权。本页统一验证方式，不逐版本复制测试总数、日志或发行JAR哈希。历史结果从Git查阅，原始数据写入忽略的 `build/`。
+当前协议18、Dome v4、Helix v1。[当前行为](allay-storm-ai.md)维护攻击参数，[同步契约](allay-storm-sync.md)维护数据所有权。本页统一验证方式，不逐版本复制测试总数、日志或发行JAR哈希。历史结果从Git查阅，原始数据写入忽略的 `build/`。
 
 ## 按改动选择检查
 
@@ -133,7 +133,7 @@ Iris的未定义流线函数已在实际AST／驱动链复现并修复。Dome残
 真实客户端由用户验收，自动化不能代签：
 
 - Dome顶部覆盖、错落集结、贯心可读性、静止中心玩家受击、身体分离和剑翼轻微交叠。
-- 主体种子手性与拖曳图案方向、`0.2R`舞蹈范围；Helix外缘下集结、95%后立即冻结并匹配0.75圈旋进；Starfall绕柱3格／秒、立即加入下降分量、逐成员触地展开与短回流，主体不漂向原点。
+- 主体种子手性与拖曳图案方向、`0.2R`舞蹈范围；Helix外缘下集结、100%→90%线性动态门槛通过后冻结并匹配0.75圈旋进；Starfall绕柱3格／秒、立即加入下降分量、逐成员触地展开与短回流，主体不漂向原点。
 - 坡地、台阶、屋顶、动态障碍、未知／卸载碰撞、死亡／中止；多客户端换维度、观察者及authority离开。
 - 实际Iris光影包的合并路径、重载后MODEL／阴影一致，持续外飞成员是否恢复正常归队，密集多人场景完整CPU／GPU帧时间、显存、上传量和冷启动成本。
 
@@ -149,4 +149,14 @@ Helix受阻退出本轮自动化通过：`test check build`与完整Helix／Dome
 
 本次最小运动方案自动化通过：796项单元测试、38项服务端GameTest（回放本轮60Hz实际GPU证据）、`test check build`，日志为`build/storm-review/motion-{gametest,final-build}.log`。Helix／旧Starfall／原生绘制／阴影／Iris／程序生命周期在`build/benchmarks/20261022T083424Z-aa94b59a/`，完整Dome／姿态／碰撞在`20261022T083203Z-96aed1c2/`，星柱恢复和30／60／144Hz在`20261022T083755Z-6115d493/`，240Hz／不规则／延迟在`20261022T084317Z-32006981/`，时钟环绕最终回归在`20261022T084937Z-13886f8c/`。最终运动专项在`20261022T084847Z-40d87a86/`，按稳定成员身份对应压紧池，独立重算实际初始化曲线的离散参考速度；Dome交接验收读取实际捕获初态和GPU精确时钟，不以有精度差异的计划时钟代替。工具中的旧硬6断言、压紧池索引和vec4读回问题已修正，失败日志保留；这些是验证工具修复，不增加生产阶段或状态。
 
-分发JAR及内嵌mod资源检查记录为`build/storm-review/motion-package-audit.json`：协议17、新Helix v1内容和共享着色器存在，验证证书和GameTest夹具未混入。真实双客户端、实际光影包及绕转观感未运行，仍单独待验收。
+此前分发JAR及内嵌mod资源检查记录为`build/storm-review/motion-package-audit.json`：协议17、新Helix v1内容和共享着色器存在，验证证书和GameTest夹具未混入。真实双客户端、实际光影包及绕转观感未运行，仍单独待验收。
+
+## 协议18集结与共享导航
+
+使用`./gradlew.bat --no-configuration-cache --max-workers=1 -I scripts/particles/validation.init.gradle validateStormNavigationGpu`运行生产`update.comp`移动Helix矩阵（横移／绕圈／折返，10／20／60／144／240Hz，0／50／100／200ms延迟及抖动），检查实际就绪和完整分母。`-PnavigationQuick`运行一个60Hz／100ms快速案例，`-PnavigationFallbackOnly`仅运行队列回退、无Dome寻路和混合配额检查。输出目录用`-PbenchmarkOutput=...`指定。
+
+`validateDomePathGpu`继续覆盖搜索、地形变化、名单释放和GPU回滚；`validateDomeGatherGpu`及原Dome地形／归队矩阵验证身体修正后的真实就绪。性能前后使用`validateDomePerformance -PdomePerformanceDirectory=...`分别保存三轮coherent／pressure产物；该任务覆盖自己的输出目录，不能只用`benchmarkOutput`区分性能前后。记录完整分配、上传和GPU P95，首次驱动编译与稳态计时分开。
+
+协议18需要双端重启。隐藏GLFW生产内核验证不代替真实双客户端、真实光影包或Minecraft完整帧率验收。
+
+本轮实现、自动化结果、相同输入三轮性能、资源增量和实机边界见[协议18集结与共享导航验收](benchmarks/allay-storm-navigation-2026-10-23.md)。GPU回归必须与会改写`build/classes`的构建串行执行，避免运行中的Java进程丢失共享类输出。

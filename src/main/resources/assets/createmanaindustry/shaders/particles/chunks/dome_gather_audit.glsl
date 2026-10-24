@@ -1,6 +1,6 @@
 bool cmiDomeGatherAudit(uint assignment,uint member,vec3 pos,vec3 target,int terrain,inout float marker){
  uint rank=cmiStarSlot(assignment)*12288u+cmiMajorRank(assignment),window=CMI_DOME_GATHER_WINDOW+rank*8u;
- uint id=state.words[member*2u],tag=id|0x80000000u,record=CMI_DOME_PATH_BASE+rank*12u;
+ uint id=state.words[member*2u],tag=id|0x80000000u,record=cmiNavigationRecord(member);
  uint pause=floatBitsToUint(cmiDomePause(assignment)),frame=state.words[window+7u];
  float error=distance(pos,target);
  int cached=cmiDomePathCache(assignment,pos,target);bool valid=(frame&6u)==0u&&terrain>=0&&cached>=0;
@@ -28,17 +28,17 @@ bool cmiDomeGatherAudit(uint assignment,uint member,vec3 pos,vec3 target,int ter
    state.words[record]=id;state.words[record+1u]=(member<<15u)|CMI_DOME_PATH_QUEUED;
    state.words[record+2u]=floatBitsToUint(now);state.words[record+3u]=pause;
    for(uint axis=0u;axis<3u;axis++){state.words[record+4u+axis]=floatBitsToUint(target[axis]);state.words[record+9u+axis]=floatBitsToUint(pos[axis]-4.);}
-   if((atomicOr(state.words[CMI_DOME_PATH_REQUESTS+rank/32u],1u<<(rank&31u))&(1u<<(rank&31u)))==0u)atomicAdd(state.words[CMI_DOME_PATH_CONTROL+1u],1u);
+   if((atomicOr(state.words[CMI_DOME_PATH_REQUESTS+member/32u],1u<<(member&31u))&(1u<<(member&31u)))==0u)atomicAdd(state.words[CMI_DOME_PATH_CONTROL+1u],1u);
   }
  }
  state.words[window]=tag;state.words[window+1u]=floatBitsToUint(elapsed);state.words[window+2u]=floatBitsToUint(initialError);
  state.words[window+3u]=floatBitsToUint(blocked);state.words[window+4u]=floatBitsToUint(occupied);state.words[window+5u]=pause;state.words[window+6u]=floatBitsToUint(evidence);
  if((state.words[record+1u]&15u)==CMI_DOME_PATH_QUEUED)for(uint axis=0u;axis<3u;axis++)state.words[record+9u+axis]=floatBitsToUint(pos[axis]-4.);
- if(!valid){state.words[record+1u]=(member<<15u)|CMI_DOME_PATH_UNKNOWN;if((atomicAnd(state.words[CMI_DOME_PATH_REQUESTS+rank/32u],~(1u<<(rank&31u)))&(1u<<(rank&31u)))!=0u)atomicAdd(state.words[CMI_DOME_PATH_CONTROL+1u],0xffffffffu);}
+ if(!valid){state.words[record+1u]=(member<<15u)|CMI_DOME_PATH_UNKNOWN;if((atomicAnd(state.words[CMI_DOME_PATH_REQUESTS+member/32u],~(1u<<(member&31u)))&(1u<<(member&31u)))!=0u)atomicAdd(state.words[CMI_DOME_PATH_CONTROL+1u],0xffffffffu);}
  if(!retire)return false;
  uint word=rank/32u,bit=1u<<(rank&31u);
  atomicAnd(state.words[CMI_GATHER_READY+word],~bit);atomicAnd(state.words[CMI_GATHER_ELIGIBLE+word],~bit);
  CMI_DOME_COMPLETE(state,member,word,bit,false,marker);
  for(uint component=0u;component<8u;component++)state.words[window+component]=0u;
- state.words[record+1u]=member<<15u;if((atomicAnd(state.words[CMI_DOME_PATH_REQUESTS+word],~bit)&bit)!=0u)atomicAdd(state.words[CMI_DOME_PATH_CONTROL+1u],0xffffffffu);return true;
+ state.words[record+1u]=member<<15u;if((atomicAnd(state.words[CMI_DOME_PATH_REQUESTS+member/32u],~(1u<<(member&31u)))&(1u<<(member&31u)))!=0u)atomicAdd(state.words[CMI_DOME_PATH_CONTROL+1u],0xffffffffu);return true;
 }

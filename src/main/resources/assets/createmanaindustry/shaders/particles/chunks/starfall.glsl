@@ -1,5 +1,6 @@
 // Stable member roster, shared by compute, native MODEL and GLSL-330 Iris TBO readers.
 uniform bool uStarfallEnabled;
+uniform float uTimeSec;
 #pragma cmi_include chunks/storm_speeds.glsl
 #pragma cmi_include chunks/dome_gather_rules.glsl
 uniform bool uDomePreciseClock;
@@ -11,7 +12,16 @@ uint cmiStarWord(uint i){return texelFetch(cmi_Starfall,int(i)).r;}
 layout(std430,binding=26) readonly buffer StarfallData {uint words[];} starfall;
 uint cmiStarWord(uint i){return starfall.words[i];}
 #endif
-vec4 cmiStarVec(uint word){return vec4(uintBitsToFloat(cmiStarWord(word)),uintBitsToFloat(cmiStarWord(word+1u)),uintBitsToFloat(cmiStarWord(word+2u)),uintBitsToFloat(cmiStarWord(word+3u)));}
+// Read the raw vector before bitcasting. Composing four scalar helper results
+// can lose return lanes in NVIDIA's merged Dome/Helix navigation optimizer.
+vec4 cmiStarVec(uint word){
+#ifdef CMI_STARFALL_TBO
+ uvec4 raw=uvec4(texelFetch(cmi_Starfall,int(word)).r,texelFetch(cmi_Starfall,int(word+1u)).r,texelFetch(cmi_Starfall,int(word+2u)).r,texelFetch(cmi_Starfall,int(word+3u)).r);
+#else
+ uvec4 raw=uvec4(starfall.words[word],starfall.words[word+1u],starfall.words[word+2u],starfall.words[word+3u]);
+#endif
+ return uintBitsToFloat(raw);
+}
 uint cmiStarBase(uint slot){return 131088u+slot*312u;}
 float cmiStarTime(uint b,float now){float start=cmiStarVec(b+4u).x,d=now-start;if(d< -52428.8)d+=104857.6;else if(d>52428.8)d-=104857.6;return start+d;}
 // Other instants must use cmiDomeSampleOffset, never a large-world float subtraction.
@@ -31,6 +41,7 @@ float cmiStarCarry(int slot,float time){uint b=cmiStarBase(uint(slot));time=cmiS
 float cmiStarTier(int slot){return cmiStarVec(cmiStarBase(uint(slot))+16u).x;}
 bool cmiDome(uint b){float kind=cmiStarVec(b+20u).x;return kind>.5&&kind<1.5;}
 #pragma cmi_include chunks/helix_rules.glsl
+#pragma cmi_include chunks/helix_gather.glsl
 uint cmiMajorRank(uint a){uint b=cmiStarBase(cmiStarSlot(a));return cmiStarRank(a)+(cmiHelix(b)?cmiStarGroup(a)*2048u:0u);}
 const uint CMI_COMPLETIONS=721344u,CMI_COMPLETION_WORDS=1664u,CMI_GATHER_STREAK=723008u,CMI_GATHER_COUNTS=854080u,CMI_GATHER_READY=854096u,CMI_GATHER_ELIGIBLE=855632u,CMI_GATHER_BLOCKED=857168u;
 // Per-attack spatial history; independent of the narrower centre-passage latch.

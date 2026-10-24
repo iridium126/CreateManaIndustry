@@ -789,7 +789,7 @@ public final class AllayStormRuntime {
         StormFeedback.INSTANCE.retireWaveReports();
     }
     private WaveClient findWaveById(int id){for(var w:waveSlots)if(w!=null&&w.alive&&w.waveId==id)return w;return null;}
-    public void clearWaveState(){ColumnSnapshotClient.INSTANCE.clear();StormCollisionRuntime.clearReturns();waveLifecycle.clear();lastHelixAbort="none";lastGatherId=0;lastGatherAbort=0;java.util.Arrays.fill(lastGatherCounts,0);java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);StormFeedback.INSTANCE.retireWaves();starfallDirty=true;starfallGpu.invalidate();}
+    public void clearWaveState(){java.util.Arrays.fill(navigationStats,0);ColumnSnapshotClient.INSTANCE.clear();StormCollisionRuntime.clearReturns();waveLifecycle.clear();lastHelixAbort="none";lastGatherId=0;lastGatherAbort=0;java.util.Arrays.fill(lastGatherCounts,0);java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);StormFeedback.INSTANCE.retireWaves();starfallDirty=true;starfallGpu.invalidate();}
     private long columnSoundTick=Long.MIN_VALUE;private int columnSounds;
     public void refreshWaves(){
         waveLifecycle.retire(timeSec);
@@ -839,6 +839,8 @@ public final class AllayStormRuntime {
             }
         }
     }
+    private final float[] navigationStats=new float[6];
+    public void navigationProgress(int offset,float a,float b,float c,float d){navigationStats[offset]=a;navigationStats[offset+1]=b;if(offset==0){navigationStats[2]=c;navigationStats[3]=d;}}
     public boolean domeGather(int id){var w=findWaveById(id);return w!=null&&w.packet.dome();}
     com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket wavePacket(int id){var wave=findWaveById(id);return wave==null||!wave.alive||wave.packet.abort()?null:wave.packet;}
     public void gatherProgress(int id,int[] counts){var w=findWaveById(id);if(w!=null)w.gatherCounts=counts;}
@@ -855,7 +857,7 @@ public final class AllayStormRuntime {
             }else{stars++;starMembers+=p.members().length;columns+=p.columns();}
             if(p.fallbackReason()!=0)fallbacks.append('#').append(w.waveId).append(':').append(p.fallbackReason()==1?"too-few":p.fallbackReason()==2?"terrain":p.fallbackReason()==3?"helix-arms":p.fallbackReason()==4?"helix-route":"helix-blocked").append(' ');
         }
-        return "Starfall: waves="+stars+", columns="+columns+", members="+starMembers+"; Helix: waves="+helices+", members="+helixMembers+", stages="+helixStages+", lastAbort="+lastHelixAbort+"; Dome: waves="+domes+", members="+domeMembers+", phases="+stages+", fallback="+fallbacks+", uploadedBytes="+starfallGpu.uploadedBytes()+"; "+starfallGpu.domeResourceStatus()+"; lastGatherAbort="+lastGatherId+"/"+lastGatherKind+"/"+lastGatherAbort+" counts="+java.util.Arrays.toString(lastGatherCounts)+"; "+StormCollisionRuntime.status();
+        return "Starfall: waves="+stars+", columns="+columns+", members="+starMembers+"; Helix: waves="+helices+", members="+helixMembers+", stages="+helixStages+", lastAbort="+lastHelixAbort+"; Dome: waves="+domes+", members="+domeMembers+", phases="+stages+", fallback="+fallbacks+", uploadedBytes="+starfallGpu.uploadedBytes()+"; "+starfallGpu.domeResourceStatus()+"; navigation[q,nodes,fallback,reconnect,wait,active]="+java.util.Arrays.toString(navigationStats)+"; lastGatherAbort="+lastGatherId+"/"+lastGatherKind+"/"+lastGatherAbort+" counts="+java.util.Arrays.toString(lastGatherCounts)+"; "+StormCollisionRuntime.status();
     }
     public int carrierCount(){int count=0;for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort())count+=w.packet.members().length;return count;}
     public boolean ringsRequested(){for(var w:waveSlots)if(w!=null&&w.alive&&w.ringCommittedMask!=(w.packet.columns()==32?-1:(1<<w.packet.columns())-1)&&w.packet.event()==2&&w.packet.starfall())return true;return false;}

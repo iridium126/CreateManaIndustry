@@ -4,6 +4,7 @@ import com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall;
 import com.iridium126.createmanaindustry.content.allaystorm.AllayDome;
 import com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState;
 import com.iridium126.createmanaindustry.content.allaystorm.AllayHelix;
+import com.iridium126.createmanaindustry.content.allaystorm.HelixGatherFrame;
 import com.iridium126.createmanaindustry.content.allaystorm.StormAttack;
 import com.iridium126.createmanaindustry.infrastructure.network.ClientPayloadHandler;
 import io.netty.handler.codec.DecoderException;
@@ -18,7 +19,12 @@ public record ClientboundStormWavePacket(int waveId,long epoch,int event,int wav
  int columns,int perColumn,float startSec,float assembleSec,float lockSec,float diveUntilSec,
  float crownX,float crownY,float crownZ,float crownRadius,int[] members,float[] path,float[] landings,
  int attackType,int phase,int[] groupEnds,float centerX,float centerY,float centerZ,float orientation,int direction,
- float centerSec,int fallbackReason,AllayHelix.Flight helix,long[] completedRanks,DomeGatherState gatherFlows) implements CustomPacketPayload {
+ float centerSec,int fallbackReason,AllayHelix.Flight helix,long[] completedRanks,DomeGatherState gatherFlows,HelixGatherFrame[] gatherFrames) implements CustomPacketPayload {
+ public ClientboundStormWavePacket(int waveId,long epoch,int event,int waveSeed,int targetEntityId,int swordTier,
+ int columns,int perColumn,float startSec,float assembleSec,float lockSec,float diveUntilSec,
+ float crownX,float crownY,float crownZ,float crownRadius,int[] members,float[] path,float[] landings,
+ int attackType,int phase,int[] groupEnds,float centerX,float centerY,float centerZ,float orientation,int direction,
+ float centerSec,int fallbackReason,AllayHelix.Flight helix,long[] completedRanks,DomeGatherState gatherFlows){this(waveId,epoch,event,waveSeed,targetEntityId,swordTier,columns,perColumn,startSec,assembleSec,lockSec,diveUntilSec,crownX,crownY,crownZ,crownRadius,members,path,landings,attackType,phase,groupEnds,centerX,centerY,centerZ,orientation,direction,centerSec,fallbackReason,helix,completedRanks,gatherFlows,new HelixGatherFrame[0]);}
  public ClientboundStormWavePacket(int waveId,long epoch,int event,int waveSeed,int targetEntityId,int swordTier,
  int columns,int perColumn,float startSec,float assembleSec,float lockSec,float diveUntilSec,
  float crownX,float crownY,float crownZ,float crownRadius,int[] members,float[] path,float[] landings,
@@ -49,13 +55,14 @@ public record ClientboundStormWavePacket(int waveId,long epoch,int event,int wav
  public boolean column(){return attackType==com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnRules.COLUMN_KIND;}
  public static ClientboundStormWavePacket abort(int id,long epoch){return new ClientboundStormWavePacket(id,epoch,3,0,0,0,0,0,0,0,0,0,0,0,0,0,new int[0],new float[0],new float[0]);}
  public static ClientboundStormWavePacket abort(int id,long epoch,int reason){return abort(id,epoch).reason(reason);}
- public ClientboundStormWavePacket reason(int value){return new ClientboundStormWavePacket(waveId,epoch,event,waveSeed,targetEntityId,swordTier,columns,perColumn,startSec,assembleSec,lockSec,diveUntilSec,crownX,crownY,crownZ,crownRadius,members,path,landings,attackType,phase,groupEnds,centerX,centerY,centerZ,orientation,direction,centerSec,value,helix,completedRanks,gatherFlows);}
+ public ClientboundStormWavePacket reason(int value){return new ClientboundStormWavePacket(waveId,epoch,event,waveSeed,targetEntityId,swordTier,columns,perColumn,startSec,assembleSec,lockSec,diveUntilSec,crownX,crownY,crownZ,crownRadius,members,path,landings,attackType,phase,groupEnds,centerX,centerY,centerZ,orientation,direction,centerSec,value,helix,completedRanks,gatherFlows,gatherFrames);}
  public boolean abort(){return event==AllayStarfall.ABORT;}
  public boolean locked(){return phase>=3&&phase<=5;}
  public boolean dome(){return attackType==AllayDome.DOME;}
  public ClientboundStormWavePacket withMembers(int[] roster){return copy(event,phase,lockSec,diveUntilSec,roster);}
- public ClientboundStormWavePacket copy(int event,int phase,float lock,float end,int[] roster){return new ClientboundStormWavePacket(waveId,epoch,event,waveSeed,targetEntityId,swordTier,columns,perColumn,startSec,assembleSec,lock,end,crownX,crownY,crownZ,crownRadius,roster,path,landings,attackType,phase,groupEnds,centerX,centerY,centerZ,orientation,direction,centerSec,fallbackReason,helix,completedRanks,gatherFlows);}
- public ClientboundStormWavePacket withGatherFlows(DomeGatherState flows){return new ClientboundStormWavePacket(waveId,epoch,event,waveSeed,targetEntityId,swordTier,columns,perColumn,startSec,assembleSec,lockSec,diveUntilSec,crownX,crownY,crownZ,crownRadius,members,path,landings,attackType,phase,groupEnds,centerX,centerY,centerZ,orientation,direction,centerSec,fallbackReason,helix,completedRanks,flows);}
+ public ClientboundStormWavePacket copy(int event,int phase,float lock,float end,int[] roster){return new ClientboundStormWavePacket(waveId,epoch,event,waveSeed,targetEntityId,swordTier,columns,perColumn,startSec,assembleSec,lock,end,crownX,crownY,crownZ,crownRadius,roster,path,landings,attackType,phase,groupEnds,centerX,centerY,centerZ,orientation,direction,centerSec,fallbackReason,helix,completedRanks,gatherFlows,gatherFrames);}
+ public ClientboundStormWavePacket withGatherFlows(DomeGatherState flows){return new ClientboundStormWavePacket(waveId,epoch,event,waveSeed,targetEntityId,swordTier,columns,perColumn,startSec,assembleSec,lockSec,diveUntilSec,crownX,crownY,crownZ,crownRadius,members,path,landings,attackType,phase,groupEnds,centerX,centerY,centerZ,orientation,direction,centerSec,fallbackReason,helix,completedRanks,flows,gatherFrames);}
+ public ClientboundStormWavePacket withGatherFrames(HelixGatherFrame[] frames){return new ClientboundStormWavePacket(waveId,epoch,event,waveSeed,targetEntityId,swordTier,columns,perColumn,startSec,assembleSec,lockSec,diveUntilSec,crownX,crownY,crownZ,crownRadius,members,path,landings,attackType,phase,groupEnds,centerX,centerY,centerZ,orientation,direction,centerSec,fallbackReason,helix,completedRanks,gatherFlows,frames.clone());}
  private static void encode(RegistryFriendlyByteBuf b,ClientboundStormWavePacket p){
   b.writeVarInt(p.waveId);b.writeLong(p.epoch);b.writeByte(p.event);if(p.abort()){b.writeByte(p.fallbackReason);return;}
   b.writeByte(p.attackType);b.writeByte(p.phase);b.writeVarInt(p.waveSeed);b.writeVarInt(p.targetEntityId);b.writeByte(p.swordTier);b.writeByte(p.columns);b.writeVarInt(p.perColumn);
@@ -65,6 +72,7 @@ public record ClientboundStormWavePacket(int waveId,long epoch,int event,int wav
   b.writeByte(p.path.length/3);for(float f:p.path)b.writeFloat(f);for(float f:p.landings)b.writeFloat(f);
   if(p.dome()){b.writeVarInt(com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.VERSION);p.gatherFlows.write(b);}
   if(p.helixAttack()){b.writeVarInt(com.iridium126.createmanaindustry.content.allaystorm.HelixTemplate.VERSION);var h=p.helix;b.writeByte(h.armA());b.writeByte(h.armB());for(float f:new float[]{h.length(),h.radius(),h.maxSpeed(),h.speed(),h.charge(),h.thrust(),h.finish(),h.curvature(),h.targetArc(),h.axisX(),h.axisY(),h.axisZ()})b.writeFloat(f);b.writeByte(h.controls().length/3);for(float f:h.controls())b.writeFloat(f);for(float f:h.samples())b.writeFloat(f);}
+  if(p.helixAttack()){b.writeByte(p.gatherFrames.length);for(var frame:p.gatherFrames)frame.write(b);}
   if(p.dome()||p.helixAttack())b.writeLongArray(p.completedRanks);
  }
  private static ClientboundStormWavePacket decode(RegistryFriendlyByteBuf b){
@@ -99,8 +107,9 @@ public record ClientboundStormWavePacket(int waveId,long epoch,int event,int wav
    if(previousArc<=0||previousArc>1024||h[8]<-32||h[8]>=previousArc||h[4]<f[1]||h[5]<h[4]||h[6]<=h[5]||h[6]>f[3])throw new DecoderException("Invalid helix schedule");
    helix=new AllayHelix.Flight(a,other,h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],h[8],controls,samples,h[9],h[10],h[11]);
   }
+  HelixGatherFrame[] frames=new HelixGatherFrame[0];if(kind==2){int size=b.readUnsignedByte();if(size>9)throw new DecoderException("Helix reference history");frames=new HelixGatherFrame[size];for(int i=0;i<size;i++){frames[i]=HelixGatherFrame.read(b);if(i>0&&(frames[i].version()!=frames[i-1].version()+1||Math.abs(frames[i].seconds()-frames[i-1].seconds()-.25f)>.001))throw new DecoderException("Helix reference order");}}
   long[] completed=kind==1||kind==2?b.readLongArray(new long[0],192):new long[0];if(java.util.BitSet.valueOf(completed).length()>previous)throw new DecoderException("Invalid finished roster");
-  return new ClientboundStormWavePacket(id,epoch,event,seed,target,tier,columns,per,f[0],f[1],f[2],f[3],f[4],f[5],f[6],f[7],members,path,land,kind,phase,ends,f[8],f[9],f[10],f[11],direction,f[12],fallback,helix,completed,gatherFlows);
+  return new ClientboundStormWavePacket(id,epoch,event,seed,target,tier,columns,per,f[0],f[1],f[2],f[3],f[4],f[5],f[6],f[7],members,path,land,kind,phase,ends,f[8],f[9],f[10],f[11],direction,f[12],fallback,helix,completed,gatherFlows,frames);
  }
  private static float finite(RegistryFriendlyByteBuf b){float f=b.readFloat();if(!Float.isFinite(f))throw new DecoderException("Nonfinite attack parameter");return f;}
  @Override public Type<? extends CustomPacketPayload> type(){return TYPE;}

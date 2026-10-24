@@ -158,8 +158,17 @@ allprojects {
             destinationDirectory = layout.buildDirectory.dir('starfall-harness')
             source 'scripts/particles/DomeTerrainGpuValidation.java'
             source 'scripts/particles/DomeGatherGpuValidation.java'
+            source 'scripts/particles/StormNavigationGpuValidation.java'
             source 'scripts/particles/ParticleShaderStartupGpuValidation.java'
             options.release = 21
+        }
+        tasks.register('validateStormNavigationGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'StormNavigationGpuValidation'
+            if (project.hasProperty('navigationQuick')) args '--quick'
+            if (project.hasProperty('navigationFallbackOnly')) args '--fallback-only'
+            workingDir = project.projectDir
         }
         tasks.register('validateStarfallGpu', JavaExec) {
             dependsOn 'compileStarfallHarness'
@@ -343,6 +352,7 @@ allprojects {
             classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'HelixGpuValidation'
             if (project.hasProperty('helixBenchmark')) args '--benchmark'
+            if (project.hasProperty('helixFormationOnly')) args '--formation-only'
             workingDir = project.projectDir
         }
         tasks.register('validateModelPopulationGpu', JavaExec) {

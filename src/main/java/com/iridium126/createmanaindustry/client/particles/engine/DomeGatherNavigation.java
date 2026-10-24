@@ -10,7 +10,7 @@ public final class DomeGatherNavigation {
         run(program,time,stars,GL11.glGetInteger(GL43.GL_DISPATCH_INDIRECT_BUFFER_BINDING));
     }
     public static void run(int program,float time,StarfallGpuBuffers stars,int previousIndirect) {
-        if(!stars.hasDome()||!stars.domeReady())return;
+        if(!stars.navigationReady())return;
         stars.bind(program,true);
         stars.bindPathDispatch();
         GL41.glProgramUniform1f(program,GpuUniforms.loc(program,"uTimeSec"),time);

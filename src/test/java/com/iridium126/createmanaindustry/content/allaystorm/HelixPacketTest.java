@@ -18,11 +18,11 @@ class HelixPacketTest {
  @Test void fixedSpeedBudgetRejectsOldOrInvalidPlans(){
   for(float invalid:new float[]{6,18,31.99f,32.01f,Float.NaN}){
    var packet=packet(0,1,true);var buffer=new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY,ConnectionType.OTHER);
-   try{ClientboundStormWavePacket.STREAM_CODEC.encode(buffer,packet);int initial=buffer.writerIndex()-1-(packet.helix().samples().length+packet.helix().controls().length)*4-1-12*4;buffer.setFloat(initial+8,invalid);assertThrows(DecoderException.class,()->ClientboundStormWavePacket.STREAM_CODEC.decode(buffer));}finally{buffer.release();}
+   try{ClientboundStormWavePacket.STREAM_CODEC.encode(buffer,packet);int initial=buffer.writerIndex()-2-(packet.helix().samples().length+packet.helix().controls().length)*4-1-12*4;buffer.setFloat(initial+8,invalid);assertThrows(DecoderException.class,()->ClientboundStormWavePacket.STREAM_CODEC.decode(buffer));}finally{buffer.release();}
   }
   for(float invalid:new float[]{6,11.99f,12.01f,18,Float.POSITIVE_INFINITY}){
    var packet=packet(0,1,true);var buffer=new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY,ConnectionType.OTHER);
-   try{ClientboundStormWavePacket.STREAM_CODEC.encode(buffer,packet);int initial=buffer.writerIndex()-1-(packet.helix().samples().length+packet.helix().controls().length)*4-1-12*4;buffer.setFloat(initial+12,invalid);assertThrows(DecoderException.class,()->ClientboundStormWavePacket.STREAM_CODEC.decode(buffer));}finally{buffer.release();}
+   try{ClientboundStormWavePacket.STREAM_CODEC.encode(buffer,packet);int initial=buffer.writerIndex()-2-(packet.helix().samples().length+packet.helix().controls().length)*4-1-12*4;buffer.setFloat(initial+12,invalid);assertThrows(DecoderException.class,()->ClientboundStormWavePacket.STREAM_CODEC.decode(buffer));}finally{buffer.release();}
   }
  }
 }

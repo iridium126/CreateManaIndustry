@@ -24,7 +24,11 @@ uint cmiDomeFlowWord(uint at){return starStateRead.words[at];}
 #pragma cmi_include chunks/dome_motion_budget.glsl
 #pragma cmi_include chunks/dome_gather.glsl
 #pragma cmi_include chunks/dome_path_state.glsl
+#pragma cmi_include chunks/dome_path_segment.glsl
+#define starStateWrite state
+#pragma cmi_include chunks/dome_path_follow.glsl
 #pragma cmi_include chunks/dome_path_cache.glsl
+#undef starStateWrite
 // Runtime swept proxy. The immutable reference has its own .50m proof.
 const float CMI_BODY_RADIUS=.34,CMI_BODY_CELL=2.5;
 int cmiDomeOwner(float identity){

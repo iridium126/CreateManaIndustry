@@ -32,7 +32,6 @@
 // re-declare them (duplicate declarations are a compile error under the
 // text-splice include). Unused in a consumer is fine — the compiler strips
 // them and the engine simply never sets those locations.
-uniform float uTimeSec;      // shared simulation clock, seconds ((gameTime mod 2^21)/20)
 uniform vec4  uWave[4];      // x waveSeed, y fraction, z assembleSec, w diveUntilSec
 uniform vec4  uWaveTarget[4]; // xyz live target aim point (feet + 0.5), w waveId (0 = inactive slot)
 

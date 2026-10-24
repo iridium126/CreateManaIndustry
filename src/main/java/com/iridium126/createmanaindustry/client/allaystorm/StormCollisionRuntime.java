@@ -45,10 +45,10 @@ public final class StormCollisionRuntime implements AutoCloseable {
     public static void claimed(ClientboundStormWavePacket packet){if(current==null)return;for(var it=current.returning.values().iterator();it.hasNext();){var record=it.next();if(record.packet.waveId()==packet.waveId())continue;for(int m:packet.members())record.members.remove(m);if(record.members.isEmpty())it.remove();}current.bounds=null;}
     public static void dead(int member){if(current==null)return;for(var it=current.returning.values().iterator();it.hasNext();){var r=it.next();if(r.members.remove(member)&&r.members.isEmpty())it.remove();}current.bounds=null;}
     private void demand(Vec3 center,float radius,ClientboundStormWavePacket[] attacks){
-        double pad=radius*1.15+12,minX=center.x-pad,maxX=center.x+pad,minZ=center.z-pad,maxZ=center.z+pad,minY=center.y-20,maxY=center.y+20;
+        double pad=radius*1.15+20,minX=center.x-pad,maxX=center.x+pad,minZ=center.z-pad,maxZ=center.z+pad,minY=center.y-20,maxY=center.y+20;
         var coverage=new ArrayList<ClientboundStormWavePacket>();for(var p:attacks)if(p!=null&&!p.abort())coverage.add(p);for(var record:returning.values())coverage.add(record.packet);
         for(var p:coverage){
-            double attackPad=p.helixAttack()?p.helix().radius()*1.6+12:p.column()?16:p.crownRadius()+12;
+            double attackPad=p.helixAttack()?p.helix().radius()*1.6+20:p.column()?24:p.crownRadius()+20;
             minX=Math.min(minX,p.centerX()-attackPad);maxX=Math.max(maxX,p.centerX()+attackPad);
             minZ=Math.min(minZ,p.centerZ()-attackPad);maxZ=Math.max(maxZ,p.centerZ()+attackPad);
             minY=Math.min(minY,p.column()?p.landings()[1]-12:p.centerY()-12);maxY=Math.max(maxY,p.crownY()+20);
