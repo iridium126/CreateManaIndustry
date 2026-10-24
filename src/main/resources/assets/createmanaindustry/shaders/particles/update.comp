@@ -143,7 +143,7 @@ uniform bool uDomePoseStorageEnabled;
 #pragma cmi_include chunks/gather_motion.glsl
 #pragma cmi_include chunks/particle_identity.glsl
 #define CMI_DOME_RUNTIME_FLOW
-uint cmiDomeFlowWord(uint at){return starStateRead.words[at];}
+uint cmiDomeFlowWord(uint at){return CMI_STATE(starStateRead,at);}
 #pragma cmi_include chunks/allay_storm.glsl
 #pragma cmi_include chunks/storm_separation.glsl
 
@@ -171,9 +171,6 @@ vec2 cmiGauss2(float s) {
 #pragma cmi_include chunks/dome_completion.glsl
 #pragma cmi_include chunks/helix_blocking.glsl
 #pragma cmi_include chunks/column_motion.glsl
-#ifdef CMI_COLUMN_RECOVERY
-#pragma cmi_include chunks/column_recovery.glsl
-#endif
 
 #pragma cmi_include chunks/pool_reservation.glsl
 #pragma cmi_include chunks/death_spawn.glsl
@@ -276,24 +273,25 @@ void main() {
     bool cmiContactSweepValid=true,cmiTerrainClipped=false;
     vec3 cmiBeforeSweepVelocity=vel;
 #pragma cmi_include chunks/collision_sweep.glsl
+    if(cmiStormEmbedded)vel=p1.xyz;
 
     if (!swept)
         pos += vel * uDt;
     if(cmiStormVoxel&&cmiStormMissing)cmiContactSweepValid=false;
-    if(uStarfallEnabled&&stormA.x>.5){uint member=cmiStarMember(p0.w);if(member<131072u){if(corpse)cmiNavigationCancel(member);else if(cmiNavigationCurrentMember==member&&starStateWrite.words[cmiNavigationExtra(member)]==2u)cmiNavigationReturnAudit(member,pos,cmiTerrainClipped,cmiContactSweepValid,uDt);}}
+    if(uStarfallEnabled&&stormA.x>.5){uint member=cmiStarMember(p0.w);if(member<131072u){if(corpse)cmiNavigationCancel(member);else if(cmiNavigationCurrentMember==member&&CMI_STATE(starStateWrite,cmiNavigationExtra(member))==2u)cmiNavigationReturnAudit(member,pos,cmiTerrainClipped,cmiContactSweepValid,uDt);}}
     if(cmiDomeFollowing){uint member=cmiStarMember(p0.w);float error=distance(pos,cmiDomeFollowingPoint);
-        uint assignment=cmiStarAssignment(p0.w);bool same=starStateRead.words[member*2u]==uint(cmiStarVec(cmiStarBase(cmiStarSlot(assignment))).x+.5);
-        bool wasFollowing=same&&(starStateRead.words[member*2u+1u]&0x40000000u)!=0u;
-        uint streak=cmiContactSweepValid&&!cmiTerrainClipped&&error<.04?min(3u,(same?starStateRead.words[CMI_GATHER_STREAK+member]:0u)+1u):0u;
-        starStateWrite.words[CMI_GATHER_STREAK+member]=streak;
-        if(cmiContactSweepValid&&!cmiTerrainClipped&&error<=.10&&(wasFollowing||streak>=3u))starStateWrite.words[member*2u+1u]|=0x40000000u;
+        uint assignment=cmiStarAssignment(p0.w);bool same=CMI_STATE(starStateRead,member*2u)==uint(cmiStarVec(cmiStarBase(cmiStarSlot(assignment))).x+.5);
+        bool wasFollowing=same&&(CMI_STATE(starStateRead,member*2u+1u)&0x40000000u)!=0u;
+        uint streak=cmiContactSweepValid&&!cmiTerrainClipped&&error<.04?min(3u,(same?CMI_STATE(starStateRead,CMI_GATHER_STREAK+member):0u)+1u):0u;
+        CMI_STATE(starStateWrite,CMI_GATHER_STREAK+member)=streak;
+        if(cmiContactSweepValid&&!cmiTerrainClipped&&error<=.10&&(wasFollowing||streak>=3u))CMI_STATE(starStateWrite,member*2u+1u)|=0x40000000u;
     }
     if(cmiColumnExit&&cmiContactSweepValid)vel=cmiColumnExitVelocity;
     age += uDt;
-    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){float limit=cmiStormFrameCap*uDt+.01;if(!cmiContactSweepValid||distance(pos,p0.xyz)>limit)starStateWrite.words[member*2u+1u]|=0x80000000u;}}
+    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){float limit=cmiStormFrameCap*uDt+.01;if(!cmiContactSweepValid||distance(pos,p0.xyz)>limit)CMI_STATE(starStateWrite,member*2u+1u)|=0x80000000u;}}
 
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);
-        if(cmiColumnAssignment(a)&&!cmiContactSweepValid){uint member=cmiStarMember(p0.w);if((starStateWrite.words[member*2u+1u]&255u)==4u){roll=5.;starStateWrite.words[member*2u+1u]=5u;starStateWrite.words[328128u+((cmiStarSlot(a)-4u)*64u+cmiStarRank(a))*CMI_COLUMN_ARC_WORDS+43u]=5u;starStateWrite.words[262592u+((cmiStarSlot(a)-4u)*64u+cmiStarRank(a))*16u+3u]=floatBitsToUint(cmiStarTime(cmiStarBase(cmiStarSlot(a)),uTimeSec));}}
+        if(cmiColumnAssignment(a)&&!cmiContactSweepValid){uint member=cmiStarMember(p0.w);if((CMI_STATE(starStateWrite,member*2u+1u)&255u)==4u){roll=5.;CMI_STATE(starStateWrite,member*2u+1u)=5u;CMI_STATE(starStateWrite,328128u+((cmiStarSlot(a)-4u)*64u+cmiStarRank(a))*CMI_COLUMN_ARC_WORDS+43u)=5u;CMI_STATE(starStateWrite,262592u+((cmiStarSlot(a)-4u)*64u+cmiStarRank(a))*16u+3u)=floatBitsToUint(cmiStarTime(cmiStarBase(cmiStarSlot(a)),uTimeSec));}}
     }
 
     if(stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&cmiStarSlot(a)<4u){
@@ -301,34 +299,34 @@ void main() {
         if(cmiHelix(b)&&member<131072u){
             uint rank=cmiMajorRank(a),windowAt=CMI_HELIX_BLOCK_WINDOW+(cmiStarSlot(a)*4096u+rank)*4u;
             uint id=uint(cmiStarVec(b).x+.5);
-            bool attacking=!corpse&&starStateWrite.words[member*2u]==id&&(starStateWrite.words[member*2u+1u]&255u)==4u;
-            bool same=starStateRead.words[member*2u]==id&&(starStateRead.words[member*2u+1u]&255u)==4u;
+            bool attacking=!corpse&&CMI_STATE(starStateWrite,member*2u)==id&&(CMI_STATE(starStateWrite,member*2u+1u)&255u)==4u;
+            bool same=CMI_STATE(starStateRead,member*2u)==id&&(CMI_STATE(starStateRead,member*2u+1u)&255u)==4u;
             vec4 window=vec4(0);bool blocked=false;
-            if(attacking&&cmiContactSweepValid&&(starStateWrite.words[member*2u+1u]&0x80000000u)==0u){
-                if(same)for(uint component=0u;component<4u;component++)window[component]=uintBitsToFloat(starStateRead.words[windowAt+component]);
+            if(attacking&&cmiContactSweepValid&&(CMI_STATE(starStateWrite,member*2u+1u)&0x80000000u)==0u){
+                if(same)for(uint component=0u;component<4u;component++)window[component]=uintBitsToFloat(CMI_STATE(starStateRead,windowAt+component));
                 vec3 axis=cmiStarVec(b+308u).xyz;
                 blocked=cmiHelixBlocked(window,cmiTerrainClipped,uDt,dot(cmiBeforeSweepVelocity*uDt,axis),dot(pos-p0.xyz,axis));
             }
             if(attacking&&(cmiHelixPassed(b,pos)||blocked)){
-                starStateWrite.words[member*2u+1u]=6u;
-                atomicOr(starStateWrite.words[CMI_COMPLETIONS+cmiCompletionOffset(cmiStarSlot(a))+rank/32u],1u<<(rank&31u));roll=0.;window=vec4(0);
+                CMI_STATE(starStateWrite,member*2u+1u)=6u;
+                atomicOr(CMI_STATE(starStateWrite,CMI_COMPLETIONS+cmiCompletionOffset(cmiStarSlot(a))+rank/32u),1u<<(rank&31u));roll=0.;window=vec4(0);
             }
-            for(uint component=0u;component<4u;component++)starStateWrite.words[windowAt+component]=floatBitsToUint(window[component]);
+            for(uint component=0u;component<4u;component++)CMI_STATE(starStateWrite,windowAt+component)=floatBitsToUint(window[component]);
         }
     }}
 
-    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){uint member=cmiStarMember(p0.w);roll=(starStateWrite.words[member*2u+1u]&255u)==4u&&cmiNearPlayer(pos+vec3(0,.3,0),36.)?-4.:0.;}}
+    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){uint member=cmiStarMember(p0.w);roll=(CMI_STATE(starStateWrite,member*2u+1u)&255u)==4u&&cmiNearPlayer(pos+vec3(0,.3,0),36.)?-4.:0.;}}
 
     if(cmiColumnRecoveryFrame)roll=0.;
 
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&cmiStarSlot(a)<4u){
         uint b=cmiStarBase(cmiStarSlot(a));if(cmiHelix(b)||cmiDome(b)){
-            uint streak=0u;float phase=float(starStateWrite.words[member*2u+1u]&255u);
+            uint streak=0u;float phase=float(CMI_STATE(starStateWrite,member*2u+1u)&255u);
             // A pending resource has no motion phase yet, but must still count
             // as unknown during gathering. Never revive a finished member.
             if(phase==0.&&cmiDome(b)&&cmiStarWord(2u)==0u&&cmiStarPhase(a,uTimeSec)==1.)phase=1.;
-            bool same=starStateRead.words[member*2u]==uint(cmiStarVec(b).x+.5);
-            float blockedSeconds=same?uintBitsToFloat(starStateRead.words[CMI_GATHER_BLOCKED+member]):0.;
+            bool same=CMI_STATE(starStateRead,member*2u)==uint(cmiStarVec(b).x+.5);
+            float blockedSeconds=same?uintBitsToFloat(CMI_STATE(starStateRead,CMI_GATHER_BLOCKED+member)):0.;
             if(phase==1.){bool resourceUnknown=(cmiDome(b)&&cmiStarWord(2u)==0u)||(cmiHelix(b)&&!cmiHelixReferenceValid(b,uTimeSec));vec3 target=pos,motion=vec3(0);
                 if(!resourceUnknown){
                     if(cmiDome(b)&&cmiDomeGatherSampleValid){target=cmiDomeFollowingPoint;motion=cmiDomePoseTangent;}
@@ -346,28 +344,28 @@ void main() {
                     // Only the first obstructed frame contends on a flow clock.
                     // Published clocks are immutable and need no repeated writes.
                     float published=cmiDomePause(a);
-                    if(occupied&&isinf(published))atomicMin(starStateWrite.words[at+1u],floatBitsToUint(max(0.,cmiDomeElapsed(b,uTimeSec)-uDt)));
+                    if(occupied&&isinf(published))atomicMin(CMI_STATE(starStateWrite,at+1u),floatBitsToUint(max(0.,cmiDomeElapsed(b,uTimeSec)-uDt)));
                     uint window=CMI_DOME_GATHER_WINDOW+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u;
-                    starStateWrite.words[window+7u]=(cmiTerrainClipped||cmiDomeNavigationBlocked||cmiDomeNavigationClipped?1u:0u)|(unknown?2u:0u)|(!cmiContactSweepValid?4u:0u);
+                    CMI_STATE(starStateWrite,window+7u)=(cmiTerrainClipped||cmiDomeNavigationBlocked||cmiDomeNavigationClipped?1u:0u)|(unknown?2u:0u)|(!cmiContactSweepValid?4u:0u);
                     blockedSeconds=0.;
                 }else blockedSeconds=stalled?blockedSeconds+uDt:0.;
                 bool blocked=occupied||blockedSeconds>=.5;uint counts=CMI_GATHER_COUNTS+cmiStarSlot(a)*4u,word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);
                 if(unknown||blocked){
-                    atomicAdd(starStateWrite.words[counts+(unknown?3u:2u)],1u);
+                    atomicAdd(CMI_STATE(starStateWrite,counts+(unknown?3u:2u)),1u);
                     // Unknown/blocked members remain in the denominator until an explicit exit.
                 }
                 else if(cmiDome(b)){
-                    if(distance(pos,target)<.04&&distance(vel,motion)<=1.)starStateWrite.words[member*2u+1u]|=0x40000000u;
+                    if(distance(pos,target)<.04&&distance(vel,motion)<=1.)CMI_STATE(starStateWrite,member*2u+1u)|=0x40000000u;
                 }else{
-                    if(distance(pos,target)<=.4&&distance(vel,motion)<=1.)streak=same?min(3u,starStateRead.words[CMI_GATHER_STREAK+member]+1u):1u;
-                    if(streak==3u){atomicAdd(starStateWrite.words[counts],1u);atomicOr(starStateWrite.words[CMI_GATHER_READY+word],bit);}
+                    if(!cmiStormEmbedded&&distance(pos,target)<=.4&&distance(vel,motion)<=1.)streak=same?min(3u,CMI_STATE(starStateRead,CMI_GATHER_STREAK+member)+1u):1u;
+                    if(streak==3u){atomicAdd(CMI_STATE(starStateWrite,counts),1u);atomicOr(CMI_STATE(starStateWrite,CMI_GATHER_READY+word),bit);}
                 }
             }else if(cmiDome(b)&&phase>=6.&&cmiStarVec(b+20u).y==1.){
                 uint word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);
-                atomicAnd(starStateWrite.words[CMI_GATHER_READY+word],~bit);
-                if((atomicAnd(starStateWrite.words[CMI_GATHER_ELIGIBLE+word],~bit)&bit)!=0u)atomicAdd(starStateWrite.words[CMI_GATHER_COUNTS+cmiStarSlot(a)*4u+1u],0xffffffffu);
+                atomicAnd(CMI_STATE(starStateWrite,CMI_GATHER_READY+word),~bit);
+                if((atomicAnd(CMI_STATE(starStateWrite,CMI_GATHER_ELIGIBLE+word),~bit)&bit)!=0u)atomicAdd(CMI_STATE(starStateWrite,CMI_GATHER_COUNTS+cmiStarSlot(a)*4u+1u),0xffffffffu);
             }else if(cmiDome(b)&&phase==4.){
-                streak=starStateWrite.words[CMI_GATHER_STREAK+member];
+                streak=CMI_STATE(starStateWrite,CMI_GATHER_STREAK+member);
                 blockedSeconds=cmiTerrainClipped?blockedSeconds+uDt:0.;
                 if(blockedSeconds>=.5){
                     uint rank=cmiMajorRank(a),word=cmiStarSlot(a)*384u+rank/32u;
@@ -376,11 +374,11 @@ void main() {
                 }
             }
             // Released members own this scratch for velocity/pose handoff.
-            if(phase<6.){starStateWrite.words[CMI_GATHER_BLOCKED+member]=floatBitsToUint(blockedSeconds);if(!cmiDome(b)||phase!=1.)starStateWrite.words[CMI_GATHER_STREAK+member]=streak;}
+            if(phase<6.){CMI_STATE(starStateWrite,CMI_GATHER_BLOCKED+member)=floatBitsToUint(blockedSeconds);if(!cmiDome(b)||phase!=1.)CMI_STATE(starStateWrite,CMI_GATHER_STREAK+member)=streak;}
         }
     }}
 
-    if(corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&cmiStarSlot(a)<4u){uint b=cmiStarBase(cmiStarSlot(a));if((cmiHelix(b)||cmiDome(b))&&cmiStarVec(b+20u).y<3.){uint word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);if((atomicAnd(starStateWrite.words[CMI_GATHER_ELIGIBLE+word],~bit)&bit)!=0u)atomicAdd(starStateWrite.words[CMI_GATHER_COUNTS+cmiStarSlot(a)*4u+1u],0xffffffffu);if(cmiDome(b)){starStateWrite.words[cmiDomePathRecord(a)+1u]=0u;if((atomicAnd(starStateWrite.words[CMI_DOME_PATH_REQUESTS+member/32u],~(1u<<(member&31u)))&(1u<<(member&31u)))!=0u)atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+1u],0xffffffffu);uint window=CMI_DOME_GATHER_WINDOW+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u;for(uint component=0u;component<8u;component++)starStateWrite.words[window+component]=0u;}}}}
+    if(corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&cmiStarSlot(a)<4u){uint b=cmiStarBase(cmiStarSlot(a));if((cmiHelix(b)||cmiDome(b))&&cmiStarVec(b+20u).y<3.){uint word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);if((atomicAnd(CMI_STATE(starStateWrite,CMI_GATHER_ELIGIBLE+word),~bit)&bit)!=0u)atomicAdd(CMI_STATE(starStateWrite,CMI_GATHER_COUNTS+cmiStarSlot(a)*4u+1u),0xffffffffu);if(cmiDome(b)){CMI_STATE(starStateWrite,cmiDomePathRecord(a)+1u)=0u;if((atomicAnd(CMI_STATE(starStateWrite,CMI_DOME_PATH_REQUESTS+member/32u),~(1u<<(member&31u)))&(1u<<(member&31u)))!=0u)atomicAdd(CMI_STATE(starStateWrite,CMI_DOME_PATH_CONTROL+1u),0xffffffffu);uint window=CMI_DOME_GATHER_WINDOW+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u;for(uint component=0u;component<8u;component++)CMI_STATE(starStateWrite,window+component)=0u;}}}}
 
     // DIE_ON_GROUND (cherry): vanilla removes the particle in the same tick it
     // touches ground — BEFORE the frame renders, so the landing position is
@@ -401,14 +399,14 @@ void main() {
     // Publish once per simulation frame. Drawing and shadow collection never integrate pose.
     if(!corpse&&stormA.x>.5&&uDomePoseStorageEnabled){uint member=cmiStarMember(p0.w),a=cmiStarAssignment(p0.w);
         if(member<131072u&&CMI_DOME_POSE+member*2u+1u<uint(starStateWrite.words.length())){
-            uint at=CMI_DOME_POSE+member*2u,flags=starStateRead.words[at+1u];
-            uint actualPhase=starStateWrite.words[member*2u+1u]&255u;
+            uint at=CMI_DOME_POSE+member*2u,flags=CMI_STATE(starStateRead,at+1u);
+            uint actualPhase=CMI_STATE(starStateWrite,member*2u+1u)&255u;
             bool domeOwner=a!=0u&&cmiStarSlot(a)<4u&&cmiDome(cmiStarBase(cmiStarSlot(a)));
             bool current=domeOwner&&actualPhase<6u;
             bool returning=(a==0u||domeOwner)&&actualPhase>=6u&&(flags&0x80000000u)!=0u;
             if(current||returning){
                 float initialYaw=cmiHash1(p3.z*3.7)*6.28318530718+p3.x*.3;
-                vec2 angles=(flags&0x80000000u)!=0u?cmiDomeUnpackPose(starStateRead.words[at]):vec2(length(p1.xz)>.05?atan(p1.x,p1.z):-initialYaw,length(p1.xyz)>.0001?asin(clamp(p1.y/length(p1.xyz),-1.,1.)):0.);
+                vec2 angles=(flags&0x80000000u)!=0u?cmiDomeUnpackPose(CMI_STATE(starStateRead,at)):vec2(length(p1.xz)>.05?atan(p1.x,p1.z):-initialYaw,length(p1.xyz)>.0001?asin(clamp(p1.y/length(p1.xyz),-1.,1.)):0.);
                 vec3 navigation=current&&cmiStarPhase(a,uTimeSec)==4.?cmiDomePoseTangent:vel;
                 angles=cmiDomeAdvancePose(angles,navigation,uDt);
                 float blend=(flags&0x80000000u)!=0u?float(flags&65535u)/65535.:0.;
@@ -423,18 +421,18 @@ void main() {
                     // including when the last attack has already disappeared.
                     uint scratch=CMI_DOME_CONTACT_DELTA+member*4u;
                     float ordinarySpeed=length(vel),ordinaryYaw=length(vel.xz)>.05?atan(vel.x,vel.z):-(cmiHash1(p3.z*3.7)*6.28318530718+age*.3),ordinaryPitch=ordinarySpeed>.0001?asin(clamp(vel.y/ordinarySpeed,-1.,1.)):0.;
-                    bool fresh=(starStateRead.words[CMI_GATHER_STREAK+member]&0x80000000u)==0u;
+                    bool fresh=(CMI_STATE(starStateRead,CMI_GATHER_STREAK+member)&0x80000000u)==0u;
                     vec4 offsets;float elapsed;
-                    if(fresh){vec2 previous=cmiDomeUnpackPose(starStateRead.words[at]);float yaw=previous.x;offsets=vec4(mod(yaw-ordinaryYaw+3.141592654,6.28318530718)-3.141592654,previous.y-ordinaryPitch,float((flags>>16u)&32767u)*(64./32767.)-ordinarySpeed,float(flags&65535u)/65535.);elapsed=0.;}
-                    else{offsets=vec4(uintBitsToFloat(starStateRead.words[scratch]),uintBitsToFloat(starStateRead.words[scratch+1u]),uintBitsToFloat(starStateRead.words[scratch+2u]),uintBitsToFloat(starStateRead.words[scratch+3u]));elapsed=uintBitsToFloat(starStateRead.words[CMI_GATHER_BLOCKED+member])+uDt;}
-                    for(uint k=0u;k<4u;k++)starStateWrite.words[scratch+k]=floatBitsToUint(offsets[k]);starStateWrite.words[CMI_GATHER_STREAK+member]=0x80000000u;starStateWrite.words[CMI_GATHER_BLOCKED+member]=floatBitsToUint(elapsed);
+                    if(fresh){vec2 previous=cmiDomeUnpackPose(CMI_STATE(starStateRead,at));float yaw=previous.x;offsets=vec4(mod(yaw-ordinaryYaw+3.141592654,6.28318530718)-3.141592654,previous.y-ordinaryPitch,float((flags>>16u)&32767u)*(64./32767.)-ordinarySpeed,float(flags&65535u)/65535.);elapsed=0.;}
+                    else{offsets=vec4(uintBitsToFloat(CMI_STATE(starStateRead,scratch)),uintBitsToFloat(CMI_STATE(starStateRead,scratch+1u)),uintBitsToFloat(CMI_STATE(starStateRead,scratch+2u)),uintBitsToFloat(CMI_STATE(starStateRead,scratch+3u)));elapsed=uintBitsToFloat(CMI_STATE(starStateRead,CMI_GATHER_BLOCKED+member))+uDt;}
+                    for(uint k=0u;k<4u;k++)CMI_STATE(starStateWrite,scratch+k)=floatBitsToUint(offsets[k]);CMI_STATE(starStateWrite,CMI_GATHER_STREAK+member)=0x80000000u;CMI_STATE(starStateWrite,CMI_GATHER_BLOCKED+member)=floatBitsToUint(elapsed);
                     float u=clamp(elapsed/.5,0.,1.),fade=1.-u*u*u*(10.-15.*u+6.*u*u);
-                    angles=cmiDomePoseAngles(cmiDomeUnpackPose(starStateRead.words[at]),ordinaryYaw+offsets.x*fade,ordinaryPitch+offsets.y*fade,uDt,0.);poseSpeed=max(0.,ordinarySpeed+offsets.z*fade);blend=offsets.w*fade;
+                    angles=cmiDomePoseAngles(cmiDomeUnpackPose(CMI_STATE(starStateRead,at)),ordinaryYaw+offsets.x*fade,ordinaryPitch+offsets.y*fade,uDt,0.);poseSpeed=max(0.,ordinarySpeed+offsets.z*fade);blend=offsets.w*fade;
                     float error=abs(mod(angles.x-ordinaryYaw+3.141592654,6.28318530718)-3.141592654)+abs(angles.y-ordinaryPitch);
                     keepPose=elapsed<.5||error>.001;
                 }
-                starStateWrite.words[at]=cmiDomePackPose(angles);starStateWrite.words[at+1u]=(keepPose?0x80000000u:0u)|uint(round(clamp(blend,0.,1.)*65535.))|(uint(round(clamp(poseSpeed/64.,0.,1.)*32767.))<<16u);
-            }else{starStateWrite.words[at]=starStateRead.words[at];starStateWrite.words[at+1u]=0u;}
+                CMI_STATE(starStateWrite,at)=cmiDomePackPose(angles);CMI_STATE(starStateWrite,at+1u)=(keepPose?0x80000000u:0u)|uint(round(clamp(blend,0.,1.)*65535.))|(uint(round(clamp(poseSpeed/64.,0.,1.)*32767.))<<16u);
+            }else{CMI_STATE(starStateWrite,at)=CMI_STATE(starStateRead,at);CMI_STATE(starStateWrite,at+1u)=0u;}
         }
     }
     uint slot = cmiReserveParticle();
@@ -442,6 +440,19 @@ void main() {
         return;
 
     if (isModel && stormA.x < 0.5) cmiCopyIdentity(idx, slot);
+    if(isModel&&stormA.x>.5&&uDomePoseStorageEnabled){
+        uint member=cmiStarMember(p0.w);
+        if(member<131072u){uint extra=cmiNavigationExtra(member),mask=CMI_DEPEN_MASK+member/32u,bit=1u<<(member&31u);
+            bool pending=(CMI_STATE(starStateWrite,mask)&bit)!=0u;
+            if(!corpse&&cmiStormEmbedded){
+                bool fresh=!pending||CMI_STATE(starStateRead,member*2u)!=CMI_STATE(starStateWrite,member*2u);
+                if(fresh){CMI_STATE(starStateWrite,extra+3u)=floatBitsToUint(uTimeSec);CMI_STATE(starStateWrite,extra+11u)=floatBitsToUint(uTimeSec);}
+                CMI_STATE(starStateWrite,extra+1u)=slot+1u;CMI_STATE(starStateWrite,extra+15u)=uStormFrame;
+                if(!pending){atomicOr(CMI_STATE(starStateWrite,mask),bit);atomicAdd(CMI_STATE(starStateWrite,CMI_DEPEN_CONTROL+9u),1u);}
+                roll=0.;CMI_STATE(starStateWrite,CMI_GATHER_STREAK+member)=0u;
+            }else if(pending){atomicAnd(CMI_STATE(starStateWrite,mask),~bit);atomicAdd(CMI_STATE(starStateWrite,CMI_DEPEN_CONTROL+9u),0xffffffffu);}
+        }
+    }
     uint wb = slot * 4u;
     writeBuf.data[wb + 0u] = vec4(pos, waveContactLatched
             ? p0.w + float(MEMBER_LATCH_BIT)

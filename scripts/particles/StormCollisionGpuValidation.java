@@ -52,7 +52,7 @@ public class StormCollisionGpuValidation extends StarfallGpuValidation {
    gpu.bind(p);dispatch(p,(n+63)/64);result=read(output,n*4);check(result.getInt(0)==0,"replacement did not publish");check(result.getInt(4)==-1,"unloaded section kept stale data");gpu.submitted();
    List<String> rows=List.of("sections,mixed_pages,atlas_and_tables_bytes,host_upload_bytes,pump_passes,cold_wall_ms", "20000,9000,"+gpu.bytes()+","+gpu.uploaded()+","+passes+","+coldWallMs);
    Files.write(Path.of(System.getProperty("cmi.benchmark.output","build/benchmarks/current"),"storm-collision-atlas.csv"),rows);rows.forEach(System.out::println);
-  }finally{GL15.glDeleteBuffers(output);GL15.glDeleteBuffers(input);GL20.glDeleteProgram(p);}
+  }finally{GL15.glDeleteBuffers(output);GL15.glDeleteBuffers(input);deleteProgram(p);}
  }
 
  static void production()throws Exception{
@@ -84,7 +84,7 @@ public class StormCollisionGpuValidation extends StarfallGpuValidation {
     }
     check(unknownMoved,"unknown coverage froze visual motion");
    }finally{for(int b:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(b);}
-  }finally{GL20.glUseProgram(0);GL20.glDeleteProgram(update);}
+  }finally{GL20.glUseProgram(0);deleteProgram(update);}
  }
  public static void main(String[] args)throws Exception{
   GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(128,128,"Storm collision validation",0,0);

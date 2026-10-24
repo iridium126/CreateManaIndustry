@@ -14,18 +14,18 @@ void main(){
  uint assignment=cmiStarAssignment(point.w);if(!cmiColumnAssignment(assignment))return;uint slot=cmiStarSlot(assignment),batch=4u;
  for(uint entry=0u;entry<uint(uColumnCount);entry++)if(uint(uColumnSlots[entry])==slot)batch=entry;
  if(batch==4u)return;
- uint rank=cmiStarRank(assignment),waveBase=cmiStarBase(slot),stateBase=262592u+(slot-4u)*1024u+rank*16u,arc=328128u+((slot-4u)*64u+rank)*96u;
- uint id=uint(cmiStarVec(waveBase).x+.5);if(state.words[stateBase]!=id||state.words[arc+44u]!=0u||cmiStarVec(waveBase+24u).z>.5)return;
+ uint rank=cmiStarRank(assignment),waveBase=cmiStarBase(slot),stateBase=262592u+(slot-4u)*1024u+rank*16u,arc=328128u+((slot-4u)*64u+rank)*CMI_COLUMN_ARC_WORDS;
+ uint id=uint(cmiStarVec(waveBase).x+.5);if(CMI_STATE(state,stateBase)!=id||CMI_STATE(state,arc+CMI_COLUMN_CATCHUP)!=0u||cmiStarVec(waveBase+24u).z>.5)return;
  uint offset=(batch*64u+rank)*30u;for(uint field=0u;field<30u;field++)snapshot.values[offset+field]=0.;
- snapshot.values[offset]=float(state.words[arc+43u]);vec3 origin=cmiStarLanding(waveBase,0u).xyz;vec4 velocity=pool.data[index*4u+1u];
+ snapshot.values[offset]=float(CMI_STATE(state,arc+CMI_COLUMN_PHASE));vec3 origin=cmiStarLanding(waveBase,0u).xyz;vec4 velocity=pool.data[index*4u+1u];
  for(uint axis=0u;axis<3u;axis++){
   snapshot.values[offset+1u+axis]=point[axis]-origin[axis];snapshot.values[offset+4u+axis]=velocity[axis];
-  snapshot.values[offset+11u+axis]=uintBitsToFloat(state.words[stateBase+4u+axis])-origin[axis];
-  snapshot.values[offset+14u+axis]=uintBitsToFloat(state.words[stateBase+8u+axis]);
-  snapshot.values[offset+17u+axis]=state.words[arc+43u]==0u?0.:uintBitsToFloat(state.words[arc+33u+axis])-origin[axis];
-  snapshot.values[offset+20u+axis]=uintBitsToFloat(state.words[arc+36u+axis]);
-  snapshot.values[offset+23u+axis]=uintBitsToFloat(state.words[arc+40u+axis]);
+  snapshot.values[offset+11u+axis]=uintBitsToFloat(CMI_STATE(state,stateBase+4u+axis))-origin[axis];
+  snapshot.values[offset+14u+axis]=uintBitsToFloat(CMI_STATE(state,stateBase+8u+axis));
+  snapshot.values[offset+17u+axis]=CMI_STATE(state,arc+CMI_COLUMN_PHASE)==0u?0.:uintBitsToFloat(CMI_STATE(state,arc+CMI_COLUMN_ORIGIN+axis))-origin[axis];
+  snapshot.values[offset+20u+axis]=uintBitsToFloat(CMI_STATE(state,arc+CMI_COLUMN_DIRECTION+axis));
+  snapshot.values[offset+23u+axis]=uintBitsToFloat(CMI_STATE(state,arc+CMI_COLUMN_TANGENT+axis));
  }
- snapshot.values[offset+7u]=uintBitsToFloat(state.words[stateBase+2u]);snapshot.values[offset+8u]=uintBitsToFloat(state.words[stateBase+1u]);snapshot.values[offset+9u]=uintBitsToFloat(state.words[stateBase+3u]);snapshot.values[offset+10u]=uintBitsToFloat(state.words[stateBase+15u]);
- snapshot.values[offset+26u]=uintBitsToFloat(state.words[arc+45u]);snapshot.values[offset+27u]=uintBitsToFloat(state.words[arc+46u]);
+ snapshot.values[offset+7u]=uintBitsToFloat(CMI_STATE(state,stateBase+2u));snapshot.values[offset+8u]=uintBitsToFloat(CMI_STATE(state,stateBase+1u));snapshot.values[offset+9u]=uintBitsToFloat(CMI_STATE(state,stateBase+3u));snapshot.values[offset+10u]=uintBitsToFloat(CMI_STATE(state,stateBase+15u));
+ snapshot.values[offset+26u]=uintBitsToFloat(CMI_STATE(state,arc+CMI_COLUMN_BLOOM_RADIUS));snapshot.values[offset+27u]=uintBitsToFloat(CMI_STATE(state,arc+CMI_COLUMN_BLOOM_ANGLE));
 }

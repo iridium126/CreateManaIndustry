@@ -110,7 +110,7 @@ void main() {
     if (uint(emitters.u[hb + 7u].x + .5) == CMI_MATERIAL_PACKAGE) return;
     if(uStarfallEnabled&&emitters.u[hb+17u].y>6.5&&emitters.u[hb+17u].y<7.5){
         vec4 tint=pool.data[base+2u];uint tag=floatBitsToUint(p3.z),slot=cmiMarkerSlot(tag),column=cmiMarkerColumn(tag);
-        if(floatBitsToUint(tint.x)==cmiStarWord(0u)&&uint(cmiStarVec(cmiStarBase(slot)).x+.5)==cmiMarkerId(tag))atomicAdd(starState.words[cmiMarkerCensus(tag)],1u);
+        if(floatBitsToUint(tint.x)==cmiStarWord(0u)&&uint(cmiStarVec(cmiStarBase(slot)).x+.5)==cmiMarkerId(tag))atomicAdd(CMI_STATE(starState,cmiMarkerCensus(tag)),1u);
     }
 
 

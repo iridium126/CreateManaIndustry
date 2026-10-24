@@ -46,7 +46,7 @@ public class DomeExitGpuValidation extends DomeGpuValidation {
             bind(0,q.pool);bind(1,output);bind(14,q.previous);bind(21,map);bind(22,reports);bind(30,stamps);put(reports,bytes(4+16384*24));gpu.bind(contact,false);ui(contact,"uLocalWaveMask",1);f(contact,"uTimeSec",40);f(contact,"uDt",.05f);GL41.glProgramUniform3f(contact,GL20.glGetUniformLocation(contact,"uLocalPlayerPos"),data.getFloat(0),data.getFloat(4),data.getFloat(8));GL41.glProgramUniform4fv(contact,GL20.glGetUniformLocation(contact,"uWaveTarget"),new float[]{0,0,0,id,0,0,0,0,0,0,0,0,0,0,0,0});dispatch(contact,1);
             var hits=read(reports,4+16384*24);for(int k=0;k<hits.getInt(0);k++)check(hits.getFloat(4+k*24)<0,label+": contact reported after release");
         }
-        public void close(){gpu.close();q.close();for(int p:new int[]{update,gridProgram,body,contact}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}}
+        public void close(){gpu.close();q.close();for(int p:new int[]{update,gridProgram,body,contact}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);deleteProgram(p);}}
     }
     static void gates(){
         try(var p=new Probe()){

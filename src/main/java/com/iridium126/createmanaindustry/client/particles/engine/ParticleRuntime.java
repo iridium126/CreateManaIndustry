@@ -147,7 +147,6 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
     private final Set<Long> cancelledStreamIds = new HashSet<>();
     final ParticleBuffers gpu = ParticleBuffers.INSTANCE;
     final ParticlePrograms programs = ParticlePrograms.INSTANCE;
-    private int updateProgram() { return com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient.INSTANCE.restoring() ? programs.columnRecovery() : programs.update(); }
     private final com.iridium126.createmanaindustry.client.gpu.frame.GpuWriteReservations writes=new com.iridium126.createmanaindustry.client.gpu.frame.GpuWriteReservations();
     private final CollisionBake collisionBake = new CollisionBake();
     private final ParticleAtlas spriteAtlas = ParticleAtlas.SPRITE;
@@ -658,60 +657,65 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             }
             ParticleDiagnostics.INSTANCE.mark("update");
-            GL20.glUseProgram(ParticleRuntime.this.updateProgram());
-            ParticleRuntime.this.gpu.bindIdentities(ParticleRuntime.this.updateProgram());
-            ParticleRuntime.this.gpu.bindParticleRead(0);
-            ParticleRuntime.this.gpu.bindParticleWrite(1);
-            ParticleRuntime.this.gpu.bindGrid();
-            ParticleRuntime.this.gpu.bindCounter(3, slot);
-            // NOT slot - 1: an aborted previous frame leaves its own counter
-            // slot half-written; the read pool still belongs to the last
-            // swapped (good) frame, so gate compaction on THAT frame's slot.
-            ParticleRuntime.this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING, ParticleRuntime.this.lastGoodSlot);
-            ParticleRuntime.this.gpu.bindEmitters(5);
-            ParticleRuntime.this.gpu.bindDamage(); // melee damage queue (update.comp scans it)
-            ParticleRuntime.this.gpu.bindPlayers(); // all-player repulsion source
-            ParticleRuntime.this.gpu.bindCorrections(); // network correction slots (storm sync)
-            ParticleRuntime.this.gpu.bindMemberMap(); // member identity -> pool-slot map (this pass rebuilds it)
-            if (ParticleRuntime.this.collisionBake.ready()) {
-                ParticleRuntime.this.collisionBake.bind(0);
-                ParticleRuntime.this.gpu.bindBakeMeta();
-                setIntUniform(ParticleRuntime.this.updateProgram(), "uCollision", 0);
-                setIntUniform(ParticleRuntime.this.updateProgram(), "uCollisionOn", 1);
-            } else {
-                setIntUniform(ParticleRuntime.this.updateProgram(), "uCollisionOn", 0);
-            }
+            int playerCount=AllayStormRuntime.INSTANCE.needsGridPass()?AllayStormRuntime.INSTANCE.collectSyncedPlayers():0;
+            if(playerCount>0)ParticleRuntime.this.gpu.uploadPlayers(AllayStormRuntime.INSTANCE.playerScratch(),playerCount);
+            com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.prepare(ParticleRuntime.this.programs.update());
+            for(int pass=com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient.INSTANCE.restoring()?0:1;pass<2;pass++){
+                int updateProgram=pass==0?ParticleRuntime.this.programs.columnRecovery():ParticleRuntime.this.programs.update();
+                GL20.glUseProgram(updateProgram);
+                ParticleRuntime.this.gpu.bindIdentities(updateProgram);
+                ParticleRuntime.this.gpu.bindParticleRead(0);
+                ParticleRuntime.this.gpu.bindParticleWrite(1);
+                ParticleRuntime.this.gpu.bindGrid();
+                ParticleRuntime.this.gpu.bindCounter(3, slot);
+                // NOT slot - 1: an aborted previous frame leaves its own counter
+                // slot half-written; the read pool still belongs to the last
+                // swapped (good) frame, so gate compaction on THAT frame's slot.
+                ParticleRuntime.this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING, ParticleRuntime.this.lastGoodSlot);
+                ParticleRuntime.this.gpu.bindEmitters(5);
+                ParticleRuntime.this.gpu.bindDamage(); // melee damage queue (update.comp scans it)
+                ParticleRuntime.this.gpu.bindPlayers(); // all-player repulsion source
+                ParticleRuntime.this.gpu.bindCorrections(); // network correction slots (storm sync)
+                ParticleRuntime.this.gpu.bindMemberMap(); // member identity -> pool-slot map (this pass rebuilds it)
+                if (ParticleRuntime.this.collisionBake.ready()) {
+                    ParticleRuntime.this.collisionBake.bind(0);
+                    ParticleRuntime.this.gpu.bindBakeMeta();
+                    setIntUniform(updateProgram, "uCollision", 0);
+                    setIntUniform(updateProgram, "uCollisionOn", 1);
+                } else {
+                    setIntUniform(updateProgram, "uCollisionOn", 0);
+                }
 
-            com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.prepare(ParticleRuntime.this.updateProgram());
-            setFloatUniform(ParticleRuntime.this.updateProgram(), "uDt", dt);
-            setUIntUniform(ParticleRuntime.this.updateProgram(),"uHexCurrentTick",hexTick);
-            setIntUniform(ParticleRuntime.this.updateProgram(),"uHexTickReady",1);
-            setFloatUniform(ParticleRuntime.this.updateProgram(), "uTimeSec", AllayStormRuntime.INSTANCE.timeSec());
-            // all synced players feed the repulsion (vanilla entity sync — no
-            // extra packets); nearest 16 by distance to the storm anchor
-            int playerCount = AllayStormRuntime.INSTANCE.needsGridPass() ? AllayStormRuntime.INSTANCE.collectSyncedPlayers() : 0;
-            if (playerCount > 0) ParticleRuntime.this.gpu.uploadPlayers(AllayStormRuntime.INSTANCE.playerScratch(), playerCount);
-            setIntUniform(ParticleRuntime.this.updateProgram(), "uPlayerCount", playerCount);
-            setUIntUniform(ParticleRuntime.this.updateProgram(), "uKillEmit", AllayStormRuntime.INSTANCE.killEmitId());
-            // typhoon growth-law phases (see AllayStormRuntime's field doc):
-            // the CPU integrates the R-dependent rates into two shared phase
-            // scalars + their rates, so the shader never multiplies an
-            // accumulated clock by a radius-dependent coefficient
-            setFloatUniform(ParticleRuntime.this.updateProgram(), "uStormOmegaNow", AllayStormRuntime.INSTANCE.omegaNow());
-            setFloatUniform(ParticleRuntime.this.updateProgram(), "uStormRotPhase", AllayStormRuntime.INSTANCE.rotPhase());
-            setFloatUniform(ParticleRuntime.this.updateProgram(), "uStormConvPhase", AllayStormRuntime.INSTANCE.convPhase());
-            setFloatUniform(ParticleRuntime.this.updateProgram(), "uStormConvRate", AllayStormRuntime.INSTANCE.convRate());
-            // dive-wave squads (staging rebuilt by refreshWaves above)
-            com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bind(ParticleRuntime.this.updateProgram(),true);
-            com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.uploadUniforms(ParticleRuntime.this.updateProgram());
-            com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient.INSTANCE.bind(ParticleRuntime.this.updateProgram());
-            ParticleRuntime.this.gpu.dispatch(0);
-            GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+                com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(updateProgram);
+                setFloatUniform(updateProgram, "uDt", dt);
+                setUIntUniform(updateProgram,"uHexCurrentTick",hexTick);
+                setIntUniform(updateProgram,"uHexTickReady",1);
+                setFloatUniform(updateProgram, "uTimeSec", AllayStormRuntime.INSTANCE.timeSec());
+                // all synced players feed the repulsion (vanilla entity sync — no
+                // extra packets); nearest 16 by distance to the storm anchor
+                setIntUniform(updateProgram, "uPlayerCount", playerCount);
+                setUIntUniform(updateProgram, "uKillEmit", AllayStormRuntime.INSTANCE.killEmitId());
+                // typhoon growth-law phases (see AllayStormRuntime's field doc):
+                // the CPU integrates the R-dependent rates into two shared phase
+                // scalars + their rates, so the shader never multiplies an
+                // accumulated clock by a radius-dependent coefficient
+                setFloatUniform(updateProgram, "uStormOmegaNow", AllayStormRuntime.INSTANCE.omegaNow());
+                setFloatUniform(updateProgram, "uStormRotPhase", AllayStormRuntime.INSTANCE.rotPhase());
+                setFloatUniform(updateProgram, "uStormConvPhase", AllayStormRuntime.INSTANCE.convPhase());
+                setFloatUniform(updateProgram, "uStormConvRate", AllayStormRuntime.INSTANCE.convRate());
+                // dive-wave squads (staging rebuilt by refreshWaves above)
+                com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bind(updateProgram,true);
+                com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.uploadUniforms(updateProgram);
+                com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient.INSTANCE.bind(updateProgram);
+                ParticleRuntime.this.gpu.dispatch(0);
+                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+            }
             if(StarfallGpuBuffers.INSTANCE.hasDome()){
                 com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(ParticleRuntime.this.programs.domeContacts());
                 DomeBodyContacts.run(ParticleRuntime.this.programs.grid(),ParticleRuntime.this.programs.domeContacts(),ParticleRuntime.this.gpu.particleReadBufferId(),ParticleRuntime.this.gpu.counterBufferId(ParticleRuntime.this.lastGoodSlot),ParticleRuntime.this.gpu.particleWriteBufferId(),ParticleRuntime.this.gpu.counterBufferId(slot),ParticleRuntime.this.gpu.gridBufferId(),AllayStormRuntime.INSTANCE.timeSec(),dt,playerCount,StarfallGpuBuffers.INSTANCE);
                 ParticleRuntime.this.gpu.bindParticleRead(0);ParticleRuntime.this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,ParticleRuntime.this.lastGoodSlot);
             }
+            StormDepenetration.run(ParticleRuntime.this.programs.depenetrationPrepare(),ParticleRuntime.this.programs.depenetrationSchedule(),ParticleRuntime.this.programs.depenetration(),AllayStormRuntime.INSTANCE.timeSec(),StarfallGpuBuffers.INSTANCE);
             if(StarfallGpuBuffers.INSTANCE.navigationReady()){
                 com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(ParticleRuntime.this.programs.domePath());
                 DomeGatherNavigation.run(ParticleRuntime.this.programs.domePath(),AllayStormRuntime.INSTANCE.timeSec(),StarfallGpuBuffers.INSTANCE,ParticleRuntime.this.gpu.dispatchBufferId());
@@ -1442,7 +1446,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setFloatUniform(program, "uTimeSec", time);
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setFloatUniform(program, "uDt", dt);
         state.uploadUniforms(program);
-        pool.dispatch(ParticleBuffers.STORM_DISPATCH);
+        if(localMask==0){ParticleDiagnostics.INSTANCE.call();GL43.glDispatchCompute(1,1,1);}
+        else pool.dispatch(ParticleBuffers.STORM_DISPATCH);
         feedbackBarrier();
         return true;
     }

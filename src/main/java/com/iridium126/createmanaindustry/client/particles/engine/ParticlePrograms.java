@@ -68,7 +68,13 @@ public final class ParticlePrograms {
         new Specification("capture.comp",null,(owner,id)->owner.capture=id),
         new Specification("gridbuild.comp",null,(owner,id)->owner.grid=id),
         new Specification("dome_contacts.comp",null,(owner,id)->owner.domeContacts=id),
+        new Specification("dome_contact_control.comp",null,(owner,id)->owner.domeControl=id),
+        new Specification("dome_contact_apply.comp",null,(owner,id)->owner.domeApply=id),
+        new Specification("dome_contact_audit.comp",null,(owner,id)->owner.domeAudit=id),
         new Specification("dome_path.comp",null,(owner,id)->owner.domePath=id),
+        new Specification("storm_depenetration_prepare.comp",null,(owner,id)->owner.depenetrationPrepare=id),
+        new Specification("storm_depenetration_schedule.comp",null,(owner,id)->owner.depenetrationSchedule=id),
+        new Specification("storm_depenetration.comp",null,(owner,id)->owner.depenetration=id),
         new Specification("hit.comp",null,(owner,id)->owner.hit=id),
         new Specification("damage_prepare.comp",null,(owner,id)->owner.damagePrepare=id),
         new Specification("stormpos.comp",null,(owner,id)->owner.stormPos=id),
@@ -134,11 +140,22 @@ public final class ParticlePrograms {
 
     private static String buildPrelude() {
         StringBuilder sb = new StringBuilder(768);
-        sb.append("#define CMI_DOME_CONTACT_DELTA ").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_CONTACT_DELTA).append("u\n");
-        sb.append("#define CMI_DOME_CONTACT_QUEUE ").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_CONTACT_QUEUE).append("u\n");
-        sb.append("#define CMI_DOME_CONTACT_ARGS ").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_CONTACT_ARGS).append("u\n");
+        // A uniform zero origin prevents pathological cold linking of large constant
+        // SSBO ranges on tested NVIDIA drivers. Apply it once at every access, so
+        // relative addresses remain visible to alias analysis in the update kernel.
+        sb.append("#ifndef CMI_STORM_STATE_BASE_DECLARED\n#define CMI_STORM_STATE_BASE_DECLARED\nuniform uint uStormStateBase;\n#define CMI_STATE(pool,index) pool.words[uStormStateBase+(index)]\n#endif\n");
+        sb.append(com.iridium126.createmanaindustry.client.allaystorm.ColumnGpuLayout.glsl());
+        sb.append("#define CMI_NAV_EXTRA_BASE (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.NAV_EXTRA).append("u)\n");
+        sb.append("#define CMI_DEPEN_STREAK_BASE (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.GATHER_STREAK).append("u)\n");
+        sb.append("#define CMI_DEPEN_READY_BASE (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.GATHER_READY).append("u)\n");
+        sb.append("#define CMI_DEPEN_MASK (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DEPEN_MASK).append("u)\n");
+        sb.append("#define CMI_DEPEN_CONTROL (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DEPEN_CONTROL).append("u)\n");
+        sb.append("#define CMI_DEPEN_JOBS (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DEPEN_JOBS).append("u)\n");
+        sb.append("#define CMI_DOME_CONTACT_DELTA (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_CONTACT_DELTA).append("u)\n");
+        sb.append("#define CMI_DOME_CONTACT_QUEUE (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_CONTACT_QUEUE).append("u)\n");
+        sb.append("#define CMI_DOME_CONTACT_ARGS (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_CONTACT_ARGS).append("u)\n");
         sb.append("#define CMI_DOME_HANDOFF_SECONDS ").append(com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.HANDOFF_SECONDS).append("\n");
-        sb.append("#define CMI_DOME_POSE ").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_POSE).append("u\n");
+        sb.append("#define CMI_DOME_POSE (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_POSE).append("u)\n");
         sb.append("// ==== CMI particle engine common constants ====\n");
         sb.append("// ==== GENERATED from ParticleBuffers by ParticlePrograms -- edit THERE, not here ====\n");
         sb.append("#define BIND_IDENTITY ").append(ParticleBuffers.IDENTITY_BB).append('\n');
@@ -233,8 +250,12 @@ public final class ParticlePrograms {
     private int radixScatter;
     private int capture;
     private int grid;           // boids spatial-hash build (storm swarms)
-    private int domeContacts;
+    private int domeContacts,domeControl,domeApply,domeAudit;
     public int domeContacts(){return domeContacts;}
+    private int depenetrationPrepare,depenetrationSchedule,depenetration;
+    public int depenetrationPrepare(){return depenetrationPrepare;}
+    public int depenetrationSchedule(){return depenetrationSchedule;}
+    public int depenetration(){return depenetration;}
     private int domePath;
     public int domePath(){return domePath;}
     private int hit;            // per-frame crosshair hit query (melee targeting)
@@ -319,6 +340,9 @@ public final class ParticlePrograms {
             this.capture = candidate.capture; candidate.capture = 0;
             this.grid = candidate.grid; candidate.grid = 0;
             this.domeContacts = candidate.domeContacts; candidate.domeContacts = 0;
+            this.domeControl=candidate.domeControl;candidate.domeControl=0;this.domeApply=candidate.domeApply;candidate.domeApply=0;this.domeAudit=candidate.domeAudit;candidate.domeAudit=0;
+            DomeBodyContacts.register(new DomeBodyContacts.Programs(domeControl,domeContacts,domeApply,domeAudit));
+            this.depenetrationPrepare=candidate.depenetrationPrepare;candidate.depenetrationPrepare=0;this.depenetration=candidate.depenetration;candidate.depenetration=0;this.depenetrationSchedule=candidate.depenetrationSchedule;candidate.depenetrationSchedule=0;
             this.domePath = candidate.domePath; candidate.domePath = 0;
             this.hit = candidate.hit; candidate.hit = 0;
             this.damagePrepare=candidate.damagePrepare;candidate.damagePrepare=0;
@@ -348,7 +372,7 @@ public final class ParticlePrograms {
                 && this.texturedRender != 0 && this.modelRender != 0
                 && this.keygen != 0 && this.radixHist != 0 && this.radixScan != 0
                 && this.radixScatter != 0 && this.capture != 0 && this.grid != 0
-                && this.hit != 0 && this.damagePrepare!=0 && this.stormPos != 0 && this.columnSnapshot != 0 && this.columnRecovery != 0 && this.waveContact != 0 && this.ringReserve!=0 && this.domeContacts!=0 && this.domePath!=0;
+                && this.hit != 0 && this.damagePrepare!=0 && this.stormPos != 0 && this.columnSnapshot != 0 && this.columnRecovery != 0 && this.waveContact != 0 && this.ringReserve!=0 && this.domeContacts!=0 && this.domeControl!=0 && this.domeApply!=0 && this.domeAudit!=0 && this.domePath!=0 && this.depenetration!=0 && this.depenetrationSchedule!=0 && this.depenetrationPrepare!=0;
     }
 
     public int reset() {
@@ -470,19 +494,20 @@ public final class ParticlePrograms {
 
     /** Deletes all program ids. Render-thread only. */
     public void delete() {
+        DomeBodyContacts.unregister(domeContacts);
         if(pendingReload!=null){pendingReload.close();pendingReload=null;}
         committedSources=Map.of();
         for (int p : new int[] {
                 this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
-                this.grid, this.hit, this.damagePrepare,this.stormPos,this.columnSnapshot,this.columnRecovery, this.waveContact, this.ringReserve,this.domeContacts,this.domePath,
+                this.grid, this.hit, this.damagePrepare,this.stormPos,this.columnSnapshot,this.columnRecovery, this.waveContact, this.ringReserve,this.domeContacts,this.domeControl,this.domeApply,this.domeAudit,this.domePath,this.depenetration,this.depenetrationSchedule,this.depenetrationPrepare,
                 this.render, this.texturedRender, this.modelRender }) {
             if (p != 0){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(p);}
         }
         this.prepareDispatch = this.reset = this.update = this.emit = this.blockEmit = this.keygen = 0;
         this.radixHist = this.radixScan = this.radixScatter = this.capture = 0;
         this.grid = this.hit = this.damagePrepare = this.stormPos = this.waveContact = this.ringReserve = 0;
-        this.domeContacts=0;this.domePath=0;this.columnSnapshot=0;this.columnRecovery=0;
+        this.domeContacts=0;this.domeControl=0;this.domeApply=0;this.domeAudit=0;this.domePath=0;this.depenetration=0;this.depenetrationSchedule=0;this.depenetrationPrepare=0;this.columnSnapshot=0;this.columnRecovery=0;
         this.render = this.texturedRender = this.modelRender = 0;
     }
 }

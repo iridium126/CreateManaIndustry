@@ -6,6 +6,10 @@ allprojects {
         def benchmarkDir = file(findProperty('benchmarkOutput') ?: 'build/benchmarks/current')
         if (project.hasProperty('domeDraft')) { sourceSets.main.resources.srcDir(file(project.property('domeDraft'))); tasks.named('processResources') { duplicatesStrategy = DuplicatesStrategy.EXCLUDE } }
         tasks.withType(JavaExec).configureEach {
+            if(name.startsWith('validateDome') && project.hasProperty('domeFrozenBaseline')) doFirst {
+                def baseline=file(project.property('domeFrozenBaseline'))
+                classpath=files(new File(baseline,'harness'),new File(baseline,'classes'),new File(baseline,'resources'))+classpath
+            }
             if (name.startsWith('validate') || name.startsWith('benchmark')) {
                 systemProperty 'cmi.benchmark.output', benchmarkDir.absolutePath
                 if (project.hasProperty('stormFastNeighbors')) systemProperty 'cmi.storm.fastNeighbors', 'true'
@@ -160,7 +164,34 @@ allprojects {
             source 'scripts/particles/DomeGatherGpuValidation.java'
             source 'scripts/particles/StormNavigationGpuValidation.java'
             source 'scripts/particles/ParticleShaderStartupGpuValidation.java'
+            source 'scripts/particles/ShaderColdCompileValidation.java'
+            source 'scripts/particles/ShaderFirstExecutionValidation.java'
+            source 'scripts/particles/StormDepenetrationGpuValidation.java'
             options.release = 21
+        }
+        tasks.register('validateStormDepenetrationGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'StormDepenetrationGpuValidation'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateShaderFirstExecutionGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'ShaderFirstExecutionValidation'
+            systemProperty 'cmi.compiler.csv', file(project.findProperty('compilerCsv') ?: 'build/cold-escape/after-cold/shader-cold.csv').absolutePath
+            if (project.hasProperty('firstExecutionBaseline')) doFirst { classpath = files(layout.buildDirectory.dir('starfall-harness'),file(project.property('firstExecutionBaseline')+'/classes'),file(project.property('firstExecutionBaseline')+'/resources')) + classpath }
+            workingDir = project.projectDir
+        }
+        tasks.register('validateShaderColdGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'ShaderColdCompileValidation'
+            if (project.hasProperty('compilerShadowOnly')) args '--shadow-only'
+            if (project.hasProperty('compilerWarmOnly')) args '--warm-only'
+            if (project.hasProperty('compilerSupplementBaseline')) doFirst { classpath = files(layout.buildDirectory.dir('starfall-harness'),file(project.property('compilerSupplementBaseline')+'/classes'),file(project.property('compilerSupplementBaseline')+'/resources')) + classpath }
+            if (project.hasProperty('coldBaseline')) doFirst { classpath = files(file(project.property('coldBaseline')+'/harness'),file(project.property('coldBaseline')+'/classes'),file(project.property('coldBaseline')+'/resources')) + classpath }
+            workingDir = project.projectDir
         }
         tasks.register('validateStormNavigationGpu', JavaExec) {
             dependsOn 'compileStarfallHarness'
@@ -195,8 +226,11 @@ allprojects {
             dependsOn 'compileStarfallHarness'
             classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'StormBenchmark'
+            if (project.hasProperty('stormProfileBaseline')) doFirst { classpath = files(file(project.property('stormProfileBaseline')+'/harness'),file(project.property('stormProfileBaseline')+'/classes'),file(project.property('stormProfileBaseline')+'/resources')) + classpath }
             if (project.hasProperty('stormFixedInput')) systemProperty 'cmi.storm.fixedInput', project.property('stormFixedInput').toString()
             if (project.hasProperty('stormProfile')) systemProperty 'cmi.storm.profile', 'true'
+            if (project.hasProperty('stormShaderBaseline')) systemProperty 'cmi.storm.shaderBaseline', 'true'
+            if (project.hasProperty('stormCollision')) systemProperty 'cmi.storm.collision', 'true'
             if (project.hasProperty('stormCoherent')) systemProperty 'cmi.storm.coherent', 'true'
             args '--dome'
             workingDir = project.projectDir

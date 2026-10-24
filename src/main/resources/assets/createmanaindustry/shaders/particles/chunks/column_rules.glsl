@@ -1,9 +1,6 @@
-const uint CMI_COLUMN_ARC_WORDS=96u;
+// Logical nodes 0..64 retain the historical metadata hole at words 33..47.
+uint cmiColumnArcNode(uint arc,uint node){return arc+(node<33u?node:node+15u);}
 // Column assignment uses a separate high-bit tag, preserving the four legacy attack slots.
-bool cmiColumnAssignment(uint a){return (a&0x40000000u)!=0u;}
-uint cmiStarSlot(uint a){return cmiColumnAssignment(a)?4u+((a>>1u)&63u):((a>>1u)&3u);}
-uint cmiStarGroup(uint a){return cmiColumnAssignment(a)?0u:((a>>3u)&31u);}
-uint cmiStarRank(uint a){return (a&0x3fffffffu)>>8u;}
 bool cmiColumn(uint b){return cmiStarVec(b+20u).x>2.5;}
 float cmiColumnSmooth(float t){t=clamp(t,0.,1.);return t*t*t*(10.+t*(-15.+6.*t));}
 float cmiColumnHeight(float r){return .0625*r*r;}

@@ -1,0 +1,18 @@
+// One invocation per member; no serial scan, nested loop or barrier analysis.
+layout(local_size_x=128) in;
+layout(std430,binding=28) buffer State {uint words[];} state;
+uniform float uTimeSec;
+uniform uint uStormFrame;
+#pragma cmi_include chunks/storm_speeds.glsl
+void main(){
+ uint rank=gl_GlobalInvocationID.x;if(rank>=131072u)return;
+ uint member=(CMI_STATE(state,CMI_DEPEN_CONTROL+10u)+rank)&131071u,word=CMI_DEPEN_MASK+member/32u,bit=1u<<(member&31u);
+ if((CMI_STATE(state,word)&bit)==0u)return;
+ uint extra=CMI_NAV_EXTRA_BASE+member*16u;
+ if((CMI_STATE(state,extra+15u)&0x7fffffffu)!=uStormFrame){atomicAnd(CMI_STATE(state,word),~bit);atomicAdd(CMI_STATE(state,CMI_DEPEN_CONTROL+9u),0xffffffffu);atomicAdd(CMI_STATE(state,CMI_DEPEN_CONTROL+2u),0xffffffffu);return;}
+ float waited=max(0.,cmiStormElapsed(uTimeSec,uintBitsToFloat(CMI_STATE(state,extra+11u))));
+ atomicMax(CMI_STATE(state,CMI_DEPEN_CONTROL+6u),floatBitsToUint(waited));
+ if(cmiStormElapsed(uTimeSec,uintBitsToFloat(CMI_STATE(state,extra+3u)))>=0.){
+  uint at=atomicAdd(CMI_STATE(state,CMI_DEPEN_CONTROL+1u),1u);if(at<16u)CMI_STATE(state,CMI_DEPEN_JOBS+at)=member;
+ }
+}

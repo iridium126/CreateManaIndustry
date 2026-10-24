@@ -107,9 +107,15 @@ public final class StormCollisionRuntime implements AutoCloseable {
     }
     /** Reuse this frame's immutable publication without a second capture budget. */
     public static void bindCurrent(int program){
-        org.lwjgl.opengl.GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormCollisionEnabled"),current==null?0:1);
-        if(current!=null&&current.error.isEmpty())current.gpu.bind(program);else org.lwjgl.opengl.GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormCollisionOn"),0);
+        boolean available=current!=null&&current.error.isEmpty();
+        for(int part:com.iridium126.createmanaindustry.client.particles.engine.DomeBodyContacts.related(program)){
+            org.lwjgl.opengl.GL41.glProgramUniform1i(part,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(part,"uStormCollisionEnabled"),current==null?0:1);
+            if(!available)org.lwjgl.opengl.GL41.glProgramUniform1i(part,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(part,"uStormCollisionOn"),0);
+        }
+        // The GPU owner already fans the immutable publication out to all parts.
+        if(available)current.gpu.bind(program);
     }
+    public static boolean active(){return current!=null;}
     public static void submitted(){if(current!=null)current.gpu.submitted();}
     public static String status(){return current==null?"storm collision idle":current.cache.stats()+" demandMs="+current.demandNanos/1e6+" "+current.gpu.stats()+" error="+current.error;}
     public static void blockChanged(ClientLevel level,BlockPos pos){if(current==null||current.level!=level)return;int x=pos.getX()>>4,y=pos.getY()>>4,z=pos.getZ()>>4;for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++)current.cache.dirty(new Section(x+dx,y+dy,z+dz));}

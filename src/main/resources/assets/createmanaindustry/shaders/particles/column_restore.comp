@@ -1,2 +1,31 @@
-#define CMI_COLUMN_RECOVERY
-#pragma cmi_include update.comp
+// Recovery installs candidate state; the normal update alone compacts particles.
+layout(local_size_x=64) in;
+const int SX=48,SY=32,SZ=48,BAKE_SLICES=8;
+layout(std430,binding=0) readonly buffer Particles {vec4 data[];} readBuf;
+layout(std430,binding=14) readonly buffer Count {uint live;} prevCounter;
+layout(std430,binding=5) readonly buffer Emitters {vec4 u[];} emitters;
+layout(std430,binding=11) readonly buffer BakeMeta {vec4 m[];} bakeMeta;
+layout(std430,binding=27) readonly buffer OldState {uint words[];} starStateRead;
+layout(std430,binding=28) buffer State {uint words[];} starStateWrite;
+uniform float uDt,uStormOmegaNow,uStormRotPhase,uStormConvPhase,uStormConvRate;
+uniform int uCollisionOn;
+layout(binding=0) uniform sampler3D uCollision;
+#pragma cmi_include chunks/allay_storm.glsl
+#pragma cmi_include chunks/collision_queries.glsl
+#pragma cmi_include chunks/column_motion.glsl
+#pragma cmi_include chunks/column_recovery.glsl
+void main(){
+ uint row=gl_GlobalInvocationID.x;if(row>=min(prevCounter.live,uint(readBuf.data.length())/4u)||!uStarfallEnabled)return;
+ vec4 p=readBuf.data[row*4u],life=readBuf.data[row*4u+3u];uint assignment=cmiStarAssignment(p.w);
+ if(life.y<=0.||!cmiColumnAssignment(assignment))return;
+ uint header=floatBitsToUint(life.w)*VEC4_PER_EMITTER;if(header+19u>=uint(emitters.u.length()))return;
+ vec4 storm=emitters.u[header+18u];if(storm.x<.5)return;
+ vec3 pos=p.xyz,velocity=readBuf.data[row*4u+1u].xyz,home,homeVelocity;
+ cmiStormVoxel=uStormCollisionEnabled;
+ cmiTyphoonHome(life.z,max(storm.y,2.),uStormOmegaNow,uStormRotPhase,uStormConvPhase,uStormConvRate,max(storm.w,.5),emitters.u[header+19u].xyz,home,homeVelocity);
+ uint arc=328128u+((cmiStarSlot(assignment)-4u)*64u+cmiStarRank(assignment))*CMI_COLUMN_ARC_WORDS;
+ CMI_STATE(starStateWrite,arc+CMI_COLUMN_RECOVER_GENERATION)=0u;
+ cmiColumnRecover(assignment,pos,velocity,home,homeVelocity);
+ if(!cmiColumnRecoveryFrame)return;
+ cmiColumnStore3(arc+CMI_COLUMN_RECOVER_POS,pos);cmiColumnStore3(arc+CMI_COLUMN_RECOVER_VEL,velocity);CMI_STATE(starStateWrite,arc+CMI_COLUMN_RECOVER_GENERATION)=uStormFrame;
+}

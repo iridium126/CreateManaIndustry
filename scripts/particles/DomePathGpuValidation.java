@@ -106,11 +106,11 @@ public final class DomePathGpuValidation extends DomeGpuValidation {
    var metrics=range(state,StarfallGpuBuffers.DOME_PATH_CONTROL,16);check(metrics.getInt(32)==0&&metrics.getInt(40)==0,"Reused attack slot retained stale queued or in-flight work");check(range(state,StarfallGpuBuffers.COMPLETIONS,384).asIntBuffer().get(0)==0,"Old navigation state completed a new attack");
    int initialize=compileText("Dome path stable-rank identity","layout(std430,binding=27)readonly buffer OldState{uint words[];}starStateRead;layout(std430,binding=28)buffer State{uint words[];}starStateWrite;\n"+source("chunks/allay_storm.glsl")+source("chunks/dome_path_state.glsl")+source("chunks/dome_path_identity.glsl")+"layout(local_size_x=64)in;void main(){uint slot=gl_GlobalInvocationID.x;if(slot>=4u)return;uint member=slot*12288u;cmiDomePathIdentity(cmiStarAssignment(float(member+1u)),member);}");
    gpu.bind(initialize,true);dispatch(initialize,1);for(int slot=0;slot<4;slot++){var record=range(state,StarfallGpuBuffers.DOME_PATH_BASE+slot*12288*12,4);check(record.getInt(0)==180+slot&&(record.getInt(4)&15)==0&&record.getInt(4)>>>15==slot*12288,"Old path or cooldown survived new stable-member ownership");}
-   com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(initialize);GL20.glUseProgram(0);GL20.glDeleteProgram(initialize);
+   com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(initialize);GL20.glUseProgram(0);deleteProgram(initialize);
   }
  }
  static void auditWindows()throws Exception{
-  int program=compile("dome_contacts.comp");
+  int program=compile("dome_contact_audit.comp");
   for(int scenario=0;scenario<8;scenario++)try(var fixture=new Fixture(1,1,1);var gpu=new StarfallGpuBuffers();var collision=new StormCollisionGpu()){
    var packet=plan(0);int member=scenario==7?31:0;if(scenario==7){int[] shuffled=packet.members().clone();shuffled[0]=31;shuffled[31]=0;packet=packet.withMembers(shuffled);}float[] frozen=new float[66];Arrays.fill(frozen,0);packet=packet.withGatherFlows(new DomeGatherState(frozen));gpu.rebuild(new ClientboundStormWavePacket[]{packet,null,null,null});warmDome(gpu,program);
    var goal=DomeTemplate.gatherPoint(0,0).add(0,-.3,0);var data=bytes(64);particle(data,0,2,(float)goal.x,(float)goal.z,20);data.putFloat(4,(float)goal.y+3).putFloat(12,member+1);fixture.build(data,1);put(fixture.previous,bytes(16).putInt(0,1));
@@ -132,7 +132,7 @@ public final class DomePathGpuValidation extends DomeGpuValidation {
    if(retired){check(read(fixture.pool,64).getFloat(28)==0,"Gather retirement retained a sword");check((range(state,StarfallGpuBuffers.GATHER_ELIGIBLE,1).getInt(0)&1)==0,"Retired rank remained eligible");}
    GL15.glDeleteBuffers(grid);GL15.glDeleteBuffers(memberMap);
   }
-  GL20.glUseProgram(0);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(program);GL20.glDeleteProgram(program);
+  GL20.glUseProgram(0);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(program);deleteProgram(program);
  }
  static void performance(int program)throws Exception{
   var rows=new ArrayList<String>();rows.add("round,kind,p95Milliseconds,maxNodes,stateBytes,uploadBytes");
@@ -153,7 +153,7 @@ public final class DomePathGpuValidation extends DomeGpuValidation {
  }
  public static void main(String[] arguments)throws Exception{
   GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"Dome navigation",0,0);
-  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));int program=compile("dome_path.comp");try{search(program,false,false,1);search(program,true,false,300);search(program,false,true,1);detour(program);completedOwnership(program);invalidation(program);auditWindows();performance(program);check(GL11.glGetError()==0,"Navigation GL error");System.out.println("Dome navigation GPU: "+checks+" assertions passed");}finally{GL20.glUseProgram(0);GL20.glDeleteProgram(program);}}
+  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));int program=compile("dome_path.comp");try{search(program,false,false,1);search(program,true,false,300);search(program,false,true,1);detour(program);completedOwnership(program);invalidation(program);auditWindows();performance(program);check(GL11.glGetError()==0,"Navigation GL error");System.out.println("Dome navigation GPU: "+checks+" assertions passed");}finally{GL20.glUseProgram(0);deleteProgram(program);}}
   finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
  }
 }

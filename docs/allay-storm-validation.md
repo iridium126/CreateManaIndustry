@@ -2,6 +2,8 @@
 
 当前协议18、Dome v4、Helix v1。[当前行为](allay-storm-ai.md)维护攻击参数，[同步契约](allay-storm-sync.md)维护数据所有权。本页统一验证方式，不逐版本复制测试总数、日志或发行JAR哈希。历史结果从Git查阅，原始数据写入忽略的 `build/`。
 
+首次冷编译、星柱独立恢复及完整身体脱嵌的实现、三轮对照和最终验收记录见[冷编译与脱嵌报告](benchmarks/allay-storm-cold-escape-2026-10-24.md)。驱动缓存命中、冷源码键编译、首次空提交和首次非零工作组分别报告；不能相互替代。
+
 ## 按改动选择检查
 
 从仓库根目录运行，不并发启动复用main或GameTest输出的Gradle进程。GPU任务需要实际OpenGL 4.5驱动，使用隐藏GLFW窗口，不启动Minecraft客户端；GPU不可用报告环境限制，跳过不算通过。
@@ -29,6 +31,10 @@ python -m unittest discover -s scripts/allaystorm -p test_dome_v4_tools.py
 旧人口阶梯、多柱选员和历史眼位辅助类的孤立测试已删除，不再当作现行需求。仍被共享生产路径调用的旧归属编码、圆环、转向输出和原点漂移回归保留。按功能扩展已有测试，不新建版本号测试集合。
 
 ## GPU回归
+
+`validateStormDepenetrationGpu`覆盖头部／侧面、墙角、低顶、台阶、负坐标、页接缝、动态方块、未知覆盖、对角出口、封闭及超过8格出口；复现旧脚点检测持续制动，再验证少量任务0.5秒内纠正及30秒稳定观察。另测排队／搜索中的纠正、无Dome归队、身份变化、死亡、时钟环绕及没有发布屏障的候选帧回滚。`validateStarfallColumnGpu`覆盖恢复输入池不可变、正常更新只消费一次、拒绝帧复用generation及延迟跨越集结结束。
+
+`validateShaderColdGpu`使用唯一无语义源码键串行测量全部生产程序，`-PcompilerWarmOnly`单独测缓存命中；`validateShaderFirstExecutionGpu -PcompilerCsv=...`在新上下文复用相同键测首次非零工作组／绘制。前后基线必须冻结类和资源，不清除用户驱动缓存。`python scripts/particles/validate_column_arc.py`检查下降曲线离线误差；`python scripts/particles/audit_storm_package.py`审计实际分发JAR中的生产类、着色器、协议和模板。
 
 Dome集结专项入口：`validateDomeGatherGpu`在真实身体求解开启时重现密集归队邻居、访问768次耗尽和接触后仍运动合格的情况；位置／速度失配必须重新开始三帧，另测未知、脱嵌、冻结、新归属、双bank回滚和位图／计数一致。`DomeGatherRulesTest`及该GPU工具检查100%→90%整数边界、时钟环绕与截止tick，服务端GameTest回放实际位图，不以计划时钟冒充实际运动。
 

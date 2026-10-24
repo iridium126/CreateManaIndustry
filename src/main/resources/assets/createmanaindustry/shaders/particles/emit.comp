@@ -176,7 +176,7 @@ void main() {
     float spawnStyle = emitters.u[eid * VEC4_PER_EMITTER + 17u].y;
 
     if(spawnStyle>6.5&&spawnStyle<7.5){
-        if(!uStarfallEnabled)return;uint slotBase=starStateWrite.words[262144u+lo];if(slotBase==0xffffffffu)return;
+        if(!uStarfallEnabled)return;uint slotBase=CMI_STATE(starStateWrite,262144u+lo);if(slotBase==0xffffffffu)return;
         uint wave=uint(emitCmd.entries[eb+8u]),ws=uint(emitCmd.entries[eb+9u]),col=uint(emitCmd.entries[eb+10u]),b=cmiStarBase(ws);
         vec4 meta=cmiStarVec(b),landing=cmiStarLanding(b,col),column=cmiStarColumn(b,col);if(uint(meta.x+.5)!=wave||meta.y<1.5||meta.y>2.5)return;
         float angle=6.2831853*float(inner)/128.;float ringRadius=cmiColumn(b)?4.:column.z+1.6;vec3 pos=landing.xyz+vec3(cos(angle)*ringRadius,cmiColumn(b)?.18:-.3,sin(angle)*ringRadius);

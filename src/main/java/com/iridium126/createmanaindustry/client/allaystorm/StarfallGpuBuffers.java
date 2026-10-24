@@ -11,14 +11,14 @@ import java.util.Arrays;
 public final class StarfallGpuBuffers implements AutoCloseable {
  public static final StarfallGpuBuffers INSTANCE=new StarfallGpuBuffers();
  public static final int DATA_BINDING=26, STATE_READ=27, STATE_WRITE=28, HEADER=16, WAVE_WORDS=312, ROSTER=131072;
- public static final int GAUSSIAN=HEADER+ROSTER+68*WAVE_WORDS, GAUSSIAN_WORDS=4*4096*3, HOME_ACK=GAUSSIAN+GAUSSIAN_WORDS, DOME_DATA=HOME_ACK+ROSTER/32, GATHER_SOURCE=DOME_DATA+com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.WORDS, GATHER_SOURCE_WORDS=16+2*1536, DOME_FLOW_MAP=GATHER_SOURCE+GATHER_SOURCE_WORDS, DOME_FLOW_SOURCE=DOME_FLOW_MAP+12288, HELIX_GATHER_FRAMES=DOME_FLOW_SOURCE+4*66*2, HELIX_FRAME_WORDS=4+9*32, NAV_MEMBER_BY_RANK=HELIX_GATHER_FRAMES+4*HELIX_FRAME_WORDS, HELIX_RECOVERY=NAV_MEMBER_BY_RANK+4*12288, DATA_WORDS=HELIX_RECOVERY+4*20, COLUMN_STATE=ROSTER*2+256+128+64, COLUMN_ARC=COLUMN_STATE+64*64*16, COLUMN_ARC_WORDS=96, COMPLETIONS=COLUMN_ARC+64*64*COLUMN_ARC_WORDS, COMPLETION_WORDS=4*384+64*2, GATHER_STREAK=COMPLETIONS+COMPLETION_WORDS, GATHER_COUNTS=GATHER_STREAK+ROSTER, GATHER_READY=GATHER_COUNTS+16, GATHER_ELIGIBLE=GATHER_READY+4*384, GATHER_BLOCKED=GATHER_ELIGIBLE+4*384, HELIX_BLOCK_WINDOW=GATHER_BLOCKED+ROSTER, HELIX_BLOCK_WORDS=4*4096*4, DOME_JOIN=HELIX_BLOCK_WINDOW+HELIX_BLOCK_WORDS, DOME_CONTACT_DELTA=DOME_JOIN+4*12288*8, DOME_CONTACT_QUEUE=DOME_CONTACT_DELTA+ROSTER*4, DOME_CONTACT_ARGS=DOME_CONTACT_QUEUE+ROSTER, STATE_CORE_WORDS=DOME_CONTACT_ARGS+8;
+ public static final int GAUSSIAN=HEADER+ROSTER+68*WAVE_WORDS, GAUSSIAN_WORDS=4*4096*3, HOME_ACK=GAUSSIAN+GAUSSIAN_WORDS, DOME_DATA=HOME_ACK+ROSTER/32, GATHER_SOURCE=DOME_DATA+com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.WORDS, GATHER_SOURCE_WORDS=16+2*1536, DOME_FLOW_MAP=GATHER_SOURCE+GATHER_SOURCE_WORDS, DOME_FLOW_SOURCE=DOME_FLOW_MAP+12288, HELIX_GATHER_FRAMES=DOME_FLOW_SOURCE+4*66*2, HELIX_FRAME_WORDS=4+9*32, NAV_MEMBER_BY_RANK=HELIX_GATHER_FRAMES+4*HELIX_FRAME_WORDS, HELIX_RECOVERY=NAV_MEMBER_BY_RANK+4*12288, DATA_WORDS=HELIX_RECOVERY+4*20, COLUMN_STATE=ROSTER*2+256+128+64, COLUMN_ARC=COLUMN_STATE+64*64*16, COLUMN_ARC_WORDS=ColumnGpuLayout.WORDS, COMPLETIONS=COLUMN_ARC+64*64*COLUMN_ARC_WORDS, COMPLETION_WORDS=4*384+64*2, GATHER_STREAK=COMPLETIONS+COMPLETION_WORDS, GATHER_COUNTS=GATHER_STREAK+ROSTER, GATHER_READY=GATHER_COUNTS+16, GATHER_ELIGIBLE=GATHER_READY+4*384, GATHER_BLOCKED=GATHER_ELIGIBLE+4*384, HELIX_BLOCK_WINDOW=GATHER_BLOCKED+ROSTER, HELIX_BLOCK_WORDS=4*4096*4, DOME_JOIN=HELIX_BLOCK_WINDOW+HELIX_BLOCK_WORDS, DOME_CONTACT_DELTA=DOME_JOIN+4*12288*8, DOME_CONTACT_QUEUE=DOME_CONTACT_DELTA+ROSTER*4, DOME_CONTACT_ARGS=DOME_CONTACT_QUEUE+ROSTER, STATE_CORE_WORDS=DOME_CONTACT_ARGS+8;
  /** Two packed words per stable member, per bank: yaw/pitch direction and arm blend/speed/flags.
   * Gather windows reuse the join record with a high-bit identity tag; LOCK initializes a fresh join. */
  public static final int DOME_POSE=STATE_CORE_WORDS, DOME_POSE_WORDS=ROSTER*2, DOME_FLOW_STATE=DOME_POSE+DOME_POSE_WORDS, DOME_FLOW_WORDS=4*66*2, DOME_GATHER_WINDOW=DOME_JOIN;
  public static final int DOME_PATH_BASE=DOME_FLOW_STATE+DOME_FLOW_WORDS, DOME_PATH_RECORD_WORDS=12, DOME_PATH_RECORDS=ROSTER,
   DOME_PATH_REQUESTS=DOME_PATH_BASE+DOME_PATH_RECORDS*DOME_PATH_RECORD_WORDS, DOME_PATH_CONTROL=DOME_PATH_REQUESTS+ROSTER/32,
   DOME_PATH_TASKS=DOME_PATH_CONTROL+32, DOME_PATH_TASK_WORDS=1048, DOME_PATH_TASK_COUNT=128,
-  NAV_EXTRA=DOME_PATH_TASKS+DOME_PATH_TASK_COUNT*DOME_PATH_TASK_WORDS, NAV_EXTRA_WORDS=16, STATE_WORDS=NAV_EXTRA+ROSTER*NAV_EXTRA_WORDS;
+  NAV_EXTRA=DOME_PATH_TASKS+DOME_PATH_TASK_COUNT*DOME_PATH_TASK_WORDS, NAV_EXTRA_WORDS=16, DEPEN_MASK=NAV_EXTRA+ROSTER*NAV_EXTRA_WORDS, DEPEN_CONTROL=DEPEN_MASK+ROSTER/32, DEPEN_JOBS=DEPEN_CONTROL+16, STATE_WORDS=DEPEN_JOBS+16;
  public static final long DOME_PATH_BYTES=8L*(STATE_WORDS-DOME_PATH_BASE)+12;
  private int domePathDispatch;
  public int domePathDispatchBuffer(){return domePathDispatch;}
@@ -213,7 +213,11 @@ public final class StarfallGpuBuffers implements AutoCloseable {
   }finally{com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(scratch);}
   GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
  }
- public void prepare(long generation){if(data[0]==0&&!hasWaves&&!com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.keysReady())return;ensure();ensureDomeStateCapacity();ensureDomeKeys();if(clearStates){for(int buffer:state){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);}clearStates=false;}int write=1-read;
+ public void prepare(long generation){if(data[0]==0&&!hasWaves&&!StormCollisionRuntime.active()&&!com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.keysReady())return;
+  // Rejected frames may not reach the publication barrier. Buffer clears and
+  // bank copies must wait for their earlier shader-storage writes as well.
+  GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+  ensure();ensureDomeStateCapacity();ensureDomeKeys();if(clearStates){for(int buffer:state){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);}clearStates=false;}int write=1-read;
   if(versions[write]!=version){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);
    if(rosterVersions[write]!=rosterVersion){upload.clear();upload.put(words,0,HEADER+ROSTER).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,upload);rosterVersions[write]=rosterVersion;uploadedBytes+=4L*(HEADER+ROSTER);upload.clear();upload.put(words,NAV_MEMBER_BY_RANK,4*12288).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,NAV_MEMBER_BY_RANK*4L,upload);uploadedBytes+=16L*12288;}
    if(gaussianVersions[write]!=gaussianVersion){gaussianVersions[write]=gaussianVersion;upload.clear();upload.put(words,GAUSSIAN,GAUSSIAN_WORDS).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,4L*GAUSSIAN,upload);uploadedBytes+=4L*GAUSSIAN_WORDS;}
@@ -223,7 +227,11 @@ public final class StarfallGpuBuffers implements AutoCloseable {
   }prepareRecovery(write);if(readyVersions[write]!=readyVersion){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);upload.clear();upload.put(words,1,3).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,4,upload);uploadedBytes+=12;readyVersions[write]=readyVersion;}
   if(domeLoaded&&!domeUploaded[write]){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);upload.clear();upload.put(words,DOME_DATA,GATHER_SOURCE-DOME_DATA).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,DOME_DATA*4L,upload);uploadedBytes+=4L*(GATHER_SOURCE-DOME_DATA);upload.clear();upload.put(words,DOME_FLOW_MAP,12288).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,DOME_FLOW_MAP*4L,upload);uploadedBytes+=4L*12288;domeUploaded[write]=true;}
   if(ackVersions[write]!=ackVersion){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);upload.clear();upload.put(words,HOME_ACK,ROSTER/32).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,HOME_ACK*4L,upload);ackVersions[write]=ackVersion;uploadedBytes+=ROSTER/8;}
-  GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,state[write]);GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,COMPLETIONS*4L,COMPLETION_WORDS*4L,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);
+  GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,state[write]);
+  // A rejected frame may reuse its generation. Invalidate recovery scratch
+  // before any consumer; live curves/metadata are rebuilt or copied from read.
+  GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,COLUMN_ARC*4L,(COMPLETIONS-COLUMN_ARC)*4L,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);
+  GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,COMPLETIONS*4L,COMPLETION_WORDS*4L,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);
   GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,data[write]);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,state[write]);GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,GATHER_SOURCE*4L,GATHER_COUNTS*4L,GATHER_SOURCE_WORDS*4L);
   if(allocatedStateWords>=STATE_WORDS){
 
@@ -245,14 +253,22 @@ public final class StarfallGpuBuffers implements AutoCloseable {
   return valid;
  }
  /** Standalone validation entry; shared-pool owners use bind(staged) and their own program cache. */
- public void bind(int program,boolean staged){boolean valid=bind(staged);if(program!=0){GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStarfallEnabled"),valid?1:0);
+ public void bind(int program,boolean staged){bind(staged);bindUniforms(program,staged);}
+ /** Set per-program values after the candidate bank has already been bound. */
+ public void bindUniforms(int program,boolean staged){int i=staged?1-read:read;boolean valid=data[i]!=0&&enabled[i]&&(staged?pending:generations[i]>=0);if(program!=0){
+  bindFrame(program,staged);
+  GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStarfallEnabled"),valid?1:0);
   GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uDomePoseStorageEnabled"),allocatedStateWords>=STATE_WORDS?1:0);
   int location=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"cmiDomeKeys");if(location>=0){GL13.glActiveTexture(GL13.GL_TEXTURE0+15);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,domeKeyTexture);GL41.glProgramUniform1i(program,location,15);GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"cmi_DomePoseBase"),DOME_POSE);GL13.glActiveTexture(GL13.GL_TEXTURE0);}
   bindDomeClock(program,staged?1-read:read);bindPoseState(program);
  }}
+ public void bindFrame(int program,boolean staged){
+  GL41.glProgramUniform1ui(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormStateBase"),0);
+  GL41.glProgramUniform1ui(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormFrame"),((int)generations[staged?1-read:read]&0x3fffffff)+1);
+ }
  /** Native MODEL, shadow and GLSL 330 Iris all read the same committed bank. */
  public void bindPose(int program){bindDomeClock(program,read);bindPoseState(program);}
- private void bindPoseState(int program){int location=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"cmi_DomePose");if(location<0)return;
+ private void bindPoseState(int program){GL41.glProgramUniform1ui(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormStateBase"),0);int location=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"cmi_DomePose");if(location<0)return;
   int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);bindPoseTexture(15);GL41.glProgramUniform1i(program,location,15);GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"cmi_DomePoseBase"),DOME_POSE);GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uDomePoseEnabled"),poseReady()?1:0);GL13.glActiveTexture(active);
  }
  private boolean poseReady(){return allocatedStateWords>=DOME_POSE+DOME_POSE_WORDS&&generations[read]>=0;}

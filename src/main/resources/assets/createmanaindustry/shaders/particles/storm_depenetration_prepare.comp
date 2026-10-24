@@ -1,0 +1,11 @@
+layout(local_size_x=1) in;
+layout(std430,binding=28) buffer State {uint words[];} state;
+layout(std430,binding=29) buffer Dispatch {uint groups,rows,slices;} dispatchArgs;
+void main(){
+ uint base=CMI_DEPEN_CONTROL;
+ CMI_STATE(state,base+10u)=CMI_STATE(state,base);CMI_STATE(state,base)=(CMI_STATE(state,base)+16u)&131071u;
+ CMI_STATE(state,base+1u)=0u;CMI_STATE(state,base+2u)=CMI_STATE(state,base+9u);
+ CMI_STATE(state,base+3u)=0u;CMI_STATE(state,base+4u)=0u;CMI_STATE(state,base+5u)=0u;
+ CMI_STATE(state,base+6u)=0u;CMI_STATE(state,base+7u)=0u;CMI_STATE(state,base+8u)=32u;
+ dispatchArgs.groups=CMI_STATE(state,base+9u)==0u?0u:1024u;dispatchArgs.rows=1u;dispatchArgs.slices=1u;
+}

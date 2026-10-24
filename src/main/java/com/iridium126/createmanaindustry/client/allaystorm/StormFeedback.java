@@ -125,14 +125,15 @@ public final class StormFeedback {
 
     /**
      * Wave-contact detection dispatch (render thread, after the stormpos
-     * readback — the same freshly written pool + counter slot): runs ONLY when
-     * a live wave targets the local player; the tiny staging buffer rides the
+     * readback — the same freshly written pool + counter slot). Cruise uses
+     * one workgroup for aggregate correction diagnostics; waves and returns
+     * additionally audit members. The tiny staging buffer rides the
      * frame fence back and {@link #acceptWaveSnapshot} ships the reports.
      */
     public void dispatchWaveContactReadback(int slot, int upper,float dt) {
         if(!AllayStormRuntime.INSTANCE.active())return;
         var state=AllayStormRuntime.INSTANCE.feedbackState();
-        if (!state.active() || state.waveMask()==0)
+        if (!state.active() || (state.waveMask()==0&&!StarfallGpuBuffers.INSTANCE.navigationReady()))
             return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null)
@@ -168,6 +169,8 @@ public final class StormFeedback {
         var references=new java.util.HashMap<Integer,float[]>();
         for(int o=0;o+5<entries.length;o+=6){int member=Math.round(entries[o]),id=Math.round(entries[o+1]);var w=AllayStormRuntime.INSTANCE.contactAuthority(id);
             if(member== -11){AllayStormRuntime.INSTANCE.navigationProgress(0,entries[o+2],entries[o+3],entries[o+4],entries[o+5]);continue;}
+            if(member== -13){AllayStormRuntime.INSTANCE.depenetrationProgress(0,entries[o+2],entries[o+3],entries[o+4],entries[o+5]);continue;}
+            if(member== -14){AllayStormRuntime.INSTANCE.depenetrationProgress(4,entries[o+2],entries[o+3],0,0);continue;}
             if(member== -12){AllayStormRuntime.INSTANCE.navigationProgress(4,entries[o+2],entries[o+3],0,0);continue;}
             if(member== -10){if(w!=null)references.put(id,new float[]{entries[o+2],entries[o+3]});continue;}
             if(member== -9){ColumnSnapshotClient.INSTANCE.installed(id,Math.round(entries[o+2]),Math.round(entries[o+3])|(Math.round(entries[o+4])<<16));continue;}

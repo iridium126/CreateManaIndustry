@@ -22,7 +22,7 @@
         vec3 anchor = emitters.u[hb + 19u].xyz;
         float ordinaryCap=max(stormA.w,.5);
         float spMaxV = cmiAttackSpeed(p0.w,uTimeSec,ordinaryCap);
-        if(uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);bool returning=a==0u&&member<131072u&&(starStateRead.words[member*2u+1u]&255u)>=6u;
+        if(uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);bool returning=a==0u&&member<131072u&&(CMI_STATE(starStateRead,member*2u+1u)&255u)>=6u;
             if(a!=0u&&cmiHelix(cmiStarBase(cmiStarSlot(a)))&&cmiStarPhase(a,uTimeSec)==6.)returning=true;
             if(returning)spMaxV=max(spMaxV,length(vel)-24.*uDt);
         }cmiStormFrameCap=spMaxV;
@@ -65,20 +65,15 @@
             uint phase=0u;vec3 attackTarget,attackVelocity;
             uint assignment=cmiStarAssignment(p0.w);
             if(cmiColumnAssignment(assignment)){
-                #ifdef CMI_COLUMN_RECOVERY
-                cmiColumnRecover(assignment,pos,vel,target,vT);
-                if(cmiColumnRecoveryFrame){uint arc=328128u+((cmiStarSlot(assignment)-4u)*64u+cmiStarRank(assignment))*96u;phase=starStateWrite.words[arc+43u];if(phase==0u)phase=1u;attackTarget=pos;attackVelocity=vec3(0);columnMarker=0.;waveEngaged=true;p0.xyz=pos;}
+                if(cmiColumnConsumeRecovery(assignment,pos,vel)){uint arc=328128u+((cmiStarSlot(assignment)-4u)*64u+cmiStarRank(assignment))*CMI_COLUMN_ARC_WORDS;phase=CMI_STATE(starStateWrite,arc+43u);if(phase==0u)phase=1u;attackTarget=pos;attackVelocity=vec3(0);columnMarker=0.;waveEngaged=true;p0.xyz=pos;}
                 else waveEngaged=cmiColumnSteer(assignment,pos,vel,target,vT,attackTarget,attackVelocity,phase,columnMarker);
-                #else
-                waveEngaged=cmiColumnSteer(assignment,pos,vel,target,vT,attackTarget,attackVelocity,phase,columnMarker);
-                #endif
                 columnEngaged=waveEngaged;columnPhase=phase;
                 roll=columnMarker;
             }else{
                 uint member=cmiStarMember(p0.w);
                 bool ended=assignment!=0u&&member<131072u
-                    &&starStateRead.words[member*2u]==uint(cmiStarVec(cmiStarBase(cmiStarSlot(assignment))).x+.5)
-                    &&(starStateRead.words[member*2u+1u]&255u)>=6u;
+                    &&CMI_STATE(starStateRead,member*2u)==uint(cmiStarVec(cmiStarBase(cmiStarSlot(assignment))).x+.5)
+                    &&(CMI_STATE(starStateRead,member*2u+1u)&255u)>=6u;
                 // Finished members must not sample an active slot's route again.
                 if(ended){phase=6u;if(cmiHelix(cmiStarBase(cmiStarSlot(assignment))))spMaxV=ordinaryCap;}
                 else waveEngaged=cmiStarSteering(p0.w,p3.z,pos,target,spMaxV,attackTarget,attackVelocity,phase);
@@ -86,12 +81,12 @@
             if(assignment!=0u){
                 uint slot=cmiStarSlot(assignment),b=cmiStarBase(slot);
                 if(cmiHelix(b)||cmiDome(b))roll=0.;
-                if(phase==6u){uint rank=cmiColumnAssignment(assignment)?cmiStarRank(assignment):cmiMajorRank(assignment);atomicOr(starStateWrite.words[CMI_COMPLETIONS+cmiCompletionOffset(slot)+rank/32u],1u<<(rank&31u));}
+                if(phase==6u){uint rank=cmiColumnAssignment(assignment)?cmiStarRank(assignment):cmiMajorRank(assignment);atomicOr(CMI_STATE(starStateWrite,CMI_COMPLETIONS+cmiCompletionOffset(slot)+rank/32u),1u<<(rank&31u));}
             }
             if(waveEngaged){target=attackTarget;vT=attackVelocity;}
             uint member=cmiStarMember(p0.w);
             if(member<131072u){
-                uint a=assignment,oldId=starStateRead.words[member*2u],oldFlags=starStateRead.words[member*2u+1u],oldPhase=oldFlags&255u;
+                uint a=assignment,oldId=CMI_STATE(starStateRead,member*2u),oldFlags=CMI_STATE(starStateRead,member*2u+1u),oldPhase=oldFlags&255u;
                 uint id=a==0u?0u:uint(cmiStarVec(cmiStarBase(cmiStarSlot(a))).x+.5);
                 bool wasDome=(oldFlags&0x100u)!=0u;
                 bool ownsDome=a!=0u&&!cmiColumnAssignment(a)&&cmiDome(cmiStarBase(cmiStarSlot(a)));
@@ -104,17 +99,17 @@
                         // Finish the velocity handoff even when already inside
                         // the home radius; phase 7 owns the later pose-fade clock.
                         phase=6u;
-                        handoffAge=oldId==id&&oldPhase==6u?uintBitsToFloat(starStateRead.words[CMI_GATHER_BLOCKED+member]):0.;
+                        handoffAge=oldId==id&&oldPhase==6u?uintBitsToFloat(CMI_STATE(starStateRead,CMI_GATHER_BLOCKED+member)):0.;
                         domeHandoff=handoffAge<.5;
-                        starStateWrite.words[CMI_GATHER_BLOCKED+member]=floatBitsToUint(min(.5,handoffAge+uDt));
+                        CMI_STATE(starStateWrite,CMI_GATHER_BLOCKED+member)=floatBitsToUint(min(.5,handoffAge+uDt));
                     }
-                    if(oldPhase!=phase)starStateWrite.words[CMI_GATHER_STREAK+member]=0u;
+                    if(oldPhase!=phase)CMI_STATE(starStateWrite,CMI_GATHER_STREAK+member)=0u;
                 }
                 // Bit 8 records lifecycle provenance, never display-cache validity.
                 uint kind=(ownsDome||(a==0u&&wasDome))?0x100u:0u;
                 if(releasedDome&&((oldFlags&0x200u)!=0u||phase==7u||handoffAge+uDt>=.5))kind|=0x200u;
-                starStateWrite.words[member*2u]=id;
-                starStateWrite.words[member*2u+1u]=phase|kind|((phase==4u&&id==oldId)?(oldFlags&(CMI_DOME_INSIDE_BOUND|0x20000000u)):0u);
+                CMI_STATE(starStateWrite,member*2u)=id;
+                CMI_STATE(starStateWrite,member*2u+1u)=phase|kind|((phase==4u&&id==oldId)?(oldFlags&(CMI_DOME_INSIDE_BOUND|0x20000000u)):0u);
             }
         }else {
         if ((uint(p0.w + 0.5) & MEMBER_LATCH_BIT) == 0u) {
@@ -147,7 +142,7 @@
         bool domeMember=waveEngaged&&domeAssignment!=0u&&cmiDome(cmiStarBase(cmiStarSlot(domeAssignment)));
         bool domeFlow=domeMember&&cmiStarPhase(domeAssignment,uTimeSec)==4.;
         bool domeGather=domeMember&&!domeFlow;
-        if(waveEngaged&&!domeGather&&uStarfallEnabled){uint member=cmiStarMember(p0.w);if(member<131072u&&starStateWrite.words[cmiNavigationExtra(member)]!=0u)cmiNavigationCancel(member);}
+        if(waveEngaged&&!domeGather&&uStarfallEnabled){uint member=cmiStarMember(p0.w);if(member<131072u&&CMI_STATE(starStateWrite,cmiNavigationExtra(member))!=0u)cmiNavigationCancel(member);}
         if(domeGather){cmiDomeGatherSampleValid=true;cmiDomeFollowingPoint=target;cmiDomePoseTangent=vT;}
         vec3 domePreviousPoint=pos,domePreviousVelocity=vel;
         if(domeFlow)cmiDomeSampleOffset(domeAssignment,-uDt,domePreviousPoint,domePreviousVelocity);
@@ -214,9 +209,9 @@
         vec3 aW = (target - pos) * STORM_VORTEX_K + (vT - vel) * STORM_VORTEX_C + sepW + repW;
         if(domeFlow){
             uint member=cmiStarMember(p0.w),a=cmiStarAssignment(p0.w),b=cmiStarBase(cmiStarSlot(a)),j=CMI_DOME_JOIN+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u,id=uint(cmiStarVec(b).x+.5);
-            bool fresh=starStateRead.words[j]!=id;vec3 offset=vec3(0),delta=vec3(0);float started,initialSpeed;
-            if(fresh){offset=pos-domePreviousPoint;delta=vel-domePreviousVelocity;started=cmiDomeElapsed(b,uTimeSec)-uDt;initialSpeed=length(vel);}else{offset=vec3(uintBitsToFloat(starStateRead.words[j+1u]),uintBitsToFloat(starStateRead.words[j+2u]),uintBitsToFloat(starStateRead.words[j+3u]));vec2 xy=unpackHalf2x16(starStateRead.words[j+4u]);delta=vec3(xy,uintBitsToFloat(starStateRead.words[j+5u]));initialSpeed=uintBitsToFloat(starStateRead.words[j+6u]);started=uintBitsToFloat(starStateRead.words[j+7u]);}
-            starStateWrite.words[j]=id;for(uint k=0u;k<3u;k++)starStateWrite.words[j+1u+k]=floatBitsToUint(offset[k]);starStateWrite.words[j+4u]=packHalf2x16(delta.xy);starStateWrite.words[j+5u]=floatBitsToUint(delta.z);starStateWrite.words[j+6u]=floatBitsToUint(initialSpeed);starStateWrite.words[j+7u]=floatBitsToUint(started);
+            bool fresh=CMI_STATE(starStateRead,j)!=id;vec3 offset=vec3(0),delta=vec3(0);float started,initialSpeed;
+            if(fresh){offset=pos-domePreviousPoint;delta=vel-domePreviousVelocity;started=cmiDomeElapsed(b,uTimeSec)-uDt;initialSpeed=length(vel);}else{offset=vec3(uintBitsToFloat(CMI_STATE(starStateRead,j+1u)),uintBitsToFloat(CMI_STATE(starStateRead,j+2u)),uintBitsToFloat(CMI_STATE(starStateRead,j+3u)));vec2 xy=unpackHalf2x16(CMI_STATE(starStateRead,j+4u));delta=vec3(xy,uintBitsToFloat(CMI_STATE(starStateRead,j+5u)));initialSpeed=uintBitsToFloat(CMI_STATE(starStateRead,j+6u));started=uintBitsToFloat(CMI_STATE(starStateRead,j+7u));}
+            CMI_STATE(starStateWrite,j)=id;for(uint k=0u;k<3u;k++)CMI_STATE(starStateWrite,j+1u+k)=floatBitsToUint(offset[k]);CMI_STATE(starStateWrite,j+4u)=packHalf2x16(delta.xy);CMI_STATE(starStateWrite,j+5u)=floatBitsToUint(delta.z);CMI_STATE(starStateWrite,j+6u)=floatBitsToUint(initialSpeed);CMI_STATE(starStateWrite,j+7u)=floatBitsToUint(started);
             float age=clamp(cmiDomeElapsed(b,uTimeSec)-started,0.,1.),previousAge=clamp(age-uDt,0.,1.);
             float h=1.-age*age*age*(10.-15.*age+6.*age*age),g=age-age*age*age*(6.-8.*age+3.*age*age);
             float ph=1.-previousAge*previousAge*previousAge*(10.-15.*previousAge+6.*previousAge*previousAge),pg=previousAge-previousAge*previousAge*previousAge*(6.-8.*previousAge+3.*previousAge*previousAge);
@@ -268,10 +263,10 @@
         }else if(waveEngaged&&uStarfallEnabled&&cmiHelix(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))&&cmiStarPhase(cmiStarAssignment(p0.w),uTimeSec)==4.&&cmiHelixHasReference(cmiStarBase(cmiStarSlot(cmiStarAssignment(p0.w))))){
             uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w),b=cmiStarBase(cmiStarSlot(a)),id=uint(cmiStarVec(b).x+.5);
             uint j=CMI_DOME_JOIN+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u;
-            bool fresh=starStateRead.words[j]!=id;float began=fresh?cmiDomeElapsed(b,uTimeSec)-uDt:uintBitsToFloat(starStateRead.words[j+1u]);
+            bool fresh=CMI_STATE(starStateRead,j)!=id;float began=fresh?cmiDomeElapsed(b,uTimeSec)-uDt:uintBitsToFloat(CMI_STATE(starStateRead,j+1u));
             vec3 previous=cmiHelixPoint(a,p3.z,cmiStarTime(b,uTimeSec-uDt),target),offset=pos-previous,delta=vel-cmiHelixVelocity(a,cmiStarTime(b,uTimeSec-uDt));
-            if(!fresh){offset=vec3(uintBitsToFloat(starStateRead.words[j+2u]),uintBitsToFloat(starStateRead.words[j+3u]),uintBitsToFloat(starStateRead.words[j+4u]));delta=vec3(uintBitsToFloat(starStateRead.words[j+5u]),uintBitsToFloat(starStateRead.words[j+6u]),uintBitsToFloat(starStateRead.words[j+7u]));}
-            starStateWrite.words[j]=id;starStateWrite.words[j+1u]=floatBitsToUint(began);for(uint k=0u;k<3u;k++){starStateWrite.words[j+2u+k]=floatBitsToUint(offset[k]);starStateWrite.words[j+5u+k]=floatBitsToUint(delta[k]);}
+            if(!fresh){offset=vec3(uintBitsToFloat(CMI_STATE(starStateRead,j+2u)),uintBitsToFloat(CMI_STATE(starStateRead,j+3u)),uintBitsToFloat(CMI_STATE(starStateRead,j+4u)));delta=vec3(uintBitsToFloat(CMI_STATE(starStateRead,j+5u)),uintBitsToFloat(CMI_STATE(starStateRead,j+6u)),uintBitsToFloat(CMI_STATE(starStateRead,j+7u)));}
+            CMI_STATE(starStateWrite,j)=id;CMI_STATE(starStateWrite,j+1u)=floatBitsToUint(began);for(uint k=0u;k<3u;k++){CMI_STATE(starStateWrite,j+2u+k)=floatBitsToUint(offset[k]);CMI_STATE(starStateWrite,j+5u+k)=floatBitsToUint(delta[k]);}
             float u=clamp((cmiDomeElapsed(b,uTimeSec)-began)/.5,0.,1.),h=1.-u*u*u*(10.-15.*u+6.*u*u),g=.5*(u-6.*u*u*u+8.*u*u*u*u-3.*u*u*u*u*u);
             vec3 joinTarget=target+offset*h+delta*g;
             vec3 joinVelocity=vT+offset*((-30.*u*u+60.*u*u*u-30.*u*u*u*u)/.5)+delta*(1.-18.*u*u+32.*u*u*u-15.*u*u*u*u);
@@ -287,9 +282,9 @@
                 // It ends after .5 s regardless of visual pose-cache lifetime.
                 candidate=mix(p1.xyz,candidate,clamp((nw-w)/max(1.-w,.000001),0.,1.));
             }
-            if(uStarfallEnabled&&cmiStormVoxel){uint member=cmiStarMember(p0.w);if(member<131072u){uint actual=starStateWrite.words[member*2u+1u]&255u,id=starStateWrite.words[member*2u];
+            if(uStarfallEnabled&&cmiStormVoxel){uint member=cmiStarMember(p0.w);if(member<131072u){uint actual=CMI_STATE(starStateWrite,member*2u+1u)&255u,id=CMI_STATE(starStateWrite,member*2u);
                 if(!waveEngaged&&actual==6u&&id!=0u&&(cmiStarWord(201456u+member/32u)&(1u<<(member&31u)))==0u){cmiNavigationReturnIdentity(member,id);vec3 navigated=cmiNavigationSteer(member,pos,target,candidate,ordinaryCap);candidate=cmiNavigationApplied?cmiGatherVelocity(vel,navigated,ordinaryCap,uDt):navigated;}
-                else if(starStateWrite.words[cmiNavigationExtra(member)]!=0u)cmiNavigationCancel(member);
+                else if(CMI_STATE(starStateWrite,cmiNavigationExtra(member))!=0u)cmiNavigationCancel(member);
             }}
             vel=candidate;
         }

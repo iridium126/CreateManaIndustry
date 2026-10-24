@@ -29,7 +29,7 @@ public final class DomePoseGpuValidation extends DomeGpuValidation {
             check(Math.abs(second.getFloat(0)-1)<.0001&&second.getFloat(12)==1,"Commit did not publish next pose bank");
             gpu.rebuild(new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[4]);gpu.prepare(100003);gpu.bind(probe,true);gpu.bindPose(probe);dispatch(probe,1);check(read(output,16).equals(second),"Last wave removal discarded the return pose");gpu.abort();
             gpu.invalidate();gpu.prepare(100004);gpu.commit();gpu.bind(probe,false);dispatch(probe,1);check(read(output,16).getFloat(0)==-9,"A new storm identity inherited an old pose");
-        }finally{GL15.glDeleteBuffers(output);GL20.glDeleteProgram(probe);}
+        }finally{GL15.glDeleteBuffers(output);deleteProgram(probe);}
     }
     static void foreignBindings(){
         int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE),texture=GL11.glGenTextures(),buffer=buffer(bytes(16)),foreign=GL11.glGenTextures();
@@ -54,7 +54,7 @@ public final class DomePoseGpuValidation extends DomeGpuValidation {
     }
     static void orientation(){
         int probe=compileText("Dome bounded heading",source("chunks/dome_pose_math.glsl")+"layout(local_size_x=1)in;layout(std430,binding=10)buffer R{vec4 value[6];}r;void main(){float steps[6]=float[6](.05,.033333333,.016666667,.006944444,.004166667,.037);for(int k=0;k<6;k++){float dt=steps[k],worst=0.;vec2 direction=vec2(0);for(int i=0;i<500;i++){vec3 target=i<100?vec3(6,0,0):i<200?vec3(0,6,0):i<300?vec3(0):i<400?vec3(-6,0,0):vec3(.001,-6,.001);vec2 next=cmiDomeUnpackPose(cmiDomePackPose(cmiDomeAdvancePose(direction,target,dt)));float yaw=direction.x,ny=next.x,angle=abs(mod(ny-yaw+3.141592654,6.28318530718)-3.141592654);worst=max(worst,length(vec2(angle,next.y-direction.y))/max(dt,.00001));if(i>=100&&i<300&&angle>.001)worst=1000.;direction=next;}r.value[k]=vec4(cmiDomePoseDirection(direction),worst);}}");
-        int out=buffer(bytes(96));try{bind(10,out);dispatch(probe,1);var values=read(out,96);for(int i=0;i<6;i++){check(values.getFloat(i*16+12)<=3.1418,"Dome pose yaw exceeded 180 degrees per second or reset near vertical/idle");double norm=0;for(int j=0;j<3;j++)norm+=Math.pow(values.getFloat(i*16+j*4),2);check(Math.abs(norm-1)<.0001,"Pose compression lost a unit direction");}}finally{GL15.glDeleteBuffers(out);GL20.glDeleteProgram(probe);}
+        int out=buffer(bytes(96));try{bind(10,out);dispatch(probe,1);var values=read(out,96);for(int i=0;i<6;i++){check(values.getFloat(i*16+12)<=3.1418,"Dome pose yaw exceeded 180 degrees per second or reset near vertical/idle");double norm=0;for(int j=0;j<3;j++)norm+=Math.pow(values.getFloat(i*16+j*4),2);check(Math.abs(norm-1)<.0001,"Pose compression lost a unit direction");}}finally{GL15.glDeleteBuffers(out);deleteProgram(probe);}
     }
     // Focused release/ownership fixtures complement the full production lifecycle.
     // Two runs differ ONLY in their render pose flags; their physical rows must match.
@@ -63,7 +63,7 @@ public final class DomePoseGpuValidation extends DomeGpuValidation {
         try(var q=new Fixture(n,n,n);var gpu=new StarfallGpuBuffers()){
             var data=bytes(n*64);for(int i=0;i<n;i++){particle(data,i,2,24+i*.01f,0,20);data.putFloat(i*64+4,40).putFloat(i*64+12,i+1).putFloat(i*64+16,6).putFloat(i*64+56,.123f+i*.001f);}
             q.build(data,n);
-            if(reason==4){int initialize=compileText("released at ordinary home",source("chunks/allay_storm.glsl")+"layout(local_size_x=64)in;layout(std430,binding=10)buffer P{vec4 rows[];}p;void main(){uint i=gl_GlobalInvocationID.x;vec3 point,motion;cmiTyphoonHome(p.rows[i*4u+3u].z,16.,0.,0.,0.,0.,10.,vec3(0,40,0),point,motion);p.rows[i*4u].xyz=point;}");bind(10,q.pool);dispatch(initialize,1);data=read(q.pool,n*64);GL20.glDeleteProgram(initialize);}
+            if(reason==4){int initialize=compileText("released at ordinary home",source("chunks/allay_storm.glsl")+"layout(local_size_x=64)in;layout(std430,binding=10)buffer P{vec4 rows[];}p;void main(){uint i=gl_GlobalInvocationID.x;vec3 point,motion;cmiTyphoonHome(p.rows[i*4u+3u].z,16.,0.,0.,0.,0.,10.,vec3(0,40,0),point,motion);p.rows[i*4u].xyz=point;}");bind(10,q.pool);dispatch(initialize,1);data=read(q.pool,n*64);deleteProgram(initialize);}
             put(q.previous,bytes(16).putInt(0,n));var h=headers();h.putFloat(2*320+18*16+4,16).putFloat(2*320+18*16+12,10).putFloat(2*320+19*16+4,40);put(q.emit,h);
             var wave=domeAt(27,2,4,10);
             var overlap=reason==5?new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket(26,37,0,1,1,5,1,12288,0,90,90,150.25f,0,40,0,32,java.util.stream.IntStream.range(32,12320).toArray(),new float[]{0,40,0,0,0,0},new float[4],1,1,new int[]{12288},0,0,0,0,1,0,0):null;
@@ -91,7 +91,7 @@ public final class DomePoseGpuValidation extends DomeGpuValidation {
                 for(int i=0;i<n;i++){check(claimed.getInt(i*8)==next.waveId(),"Old completion cleared new assignment");int flags=claimed.getInt(i*8+4);check((flags&255)==1&&(flags&(0x200|DomeExitGpuValidation.INSIDE))==0,"New attack inherited Dome handoff/phase");}gpu.commit();
             }
             return data;
-        }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(update);GL20.glDeleteProgram(update);}
+        }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(update);deleteProgram(update);}
     }
     static void putRange(int buffer,long offset,ByteBuffer data){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,offset,data);}
     static void returnPhysics()throws Exception{

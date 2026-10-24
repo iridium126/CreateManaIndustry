@@ -37,7 +37,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
    put(counter,bytes(16));f(update,"uTimeSec",12.3f);dispatch(update,2);check(read(counter,16).getInt(0)==0,"aborted ring survived");
    // Render the real additive shaders with conjure-sized camera-facing particles.
    stage(gpu,packet(65,1,2,0),emit);gpu.commit();gpu.bind(0,false);var census=bytes(StarfallGpuBuffers.DOME_JOIN*4).putInt(262400*4,128);put(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28),census);renderRing(gpu,pool,h);gpu.invalidate();stage(gpu,packet(65,1,2,0),update);bind(0,pool);bind(1,output);bind(3,counter);bind(14,previous);put(counter,bytes(16));f(update,"uTimeSec",12);f(update,"uDt",.1f);dispatch(update,2);check(read(counter,16).getInt(0)==128,"cross-generation rings lack fade");check(Math.abs(read(output,8192).getFloat(44)-.6)<.001,"old ring followed restarted wave");
-  }finally{for(int p:new int[]{reserve,emit,update}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}for(int b:new int[]{h,counter,pool,output,previous,cmd})GL15.glDeleteBuffers(b);}
+  }finally{for(int p:new int[]{reserve,emit,update}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);deleteProgram(p);}for(int b:new int[]{h,counter,pool,output,previous,cmd})GL15.glDeleteBuffers(b);}
  }
  static int graphicsStage(String name,int type){int s=GL20.glCreateShader(type);GL20.glShaderSource(s,"#version 450 core\n"+ParticlePrograms.commonPrelude()+source(name));GL20.glCompileShader(s);check(GL20.glGetShaderi(s,GL20.GL_COMPILE_STATUS)!=0,GL20.glGetShaderInfoLog(s));return s;}
  static void renderRing(StarfallGpuBuffers gpu,int pool,int header)throws Exception{
@@ -50,7 +50,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
   var pixels=bytes(128*128*4);GL11.glReadPixels(0,0,128,128,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);int lit=0;var image=new java.awt.image.BufferedImage(128,128,java.awt.image.BufferedImage.TYPE_INT_RGB);
   for(int y=0;y<128;y++)for(int x=0;x<128;x++){int o=(y*128+x)*4,r=pixels.get(o)&255,g=pixels.get(o+1)&255,b=pixels.get(o+2)&255;if(b>8)lit++;image.setRGB(x,127-y,(r<<16)|(g<<8)|b);}
   check(lit>100,"ring missing from framebuffer");check((pixels.get((64*128+64)*4+2)&255)==0,"ring filled center");javax.imageio.ImageIO.write(image,"png",Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-ring-framebuffer.png").toFile());int currentState=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var census=bytes(StarfallGpuBuffers.DOME_JOIN*4).putInt(262400*4,127);put(currentState,census);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES,0,6,128);GL11.glReadPixels(0,0,128,128,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);for(int i=2;i<pixels.capacity();i+=4)check(pixels.get(i)==0,"partial circle rendered");census.putInt(262400*4,128);put(currentState,census);
-  GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL11.glDisable(GL11.GL_BLEND);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(tex);GL30.glDeleteFramebuffers(fb);GL15.glDeleteBuffers(order);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}GL20.glDeleteShader(vs);GL20.glDeleteShader(fs);GL20.glUseProgram(0);
+  GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL11.glDisable(GL11.GL_BLEND);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(tex);GL30.glDeleteFramebuffers(fb);GL15.glDeleteBuffers(order);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);deleteProgram(p);}GL20.glDeleteShader(vs);GL20.glDeleteShader(fs);GL20.glUseProgram(0);
  }
  static void contacts(){int p=compile("wavecontact.comp");try(var gpu=new StarfallGpuBuffers()){
   for(int n:new int[]{0,1,63,64,65}){int capacity=Math.max(1,n);var particles=bytes(capacity*64);for(int i=0;i<n;i++){particle(particles,i,2,0,0,20);particles.putFloat(i*64+4,.5f).putFloat(i*64+12,i+1);}
@@ -62,8 +62,12 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
    stage(gpu,packet(n,18,2,0),p);GL41.glProgramUniform4fv(p,GL20.glGetUniformLocation(p,"uWaveTarget"),new float[]{0,.5f,0,18,0,0,0,0,0,0,0,0,0,0,0,0});dispatch(p,Math.max(1,(n+63)/64));check(read(out,4).getInt(0)==0,"old phase accepted by new wave");for(int i=0;i<n;i++)phaseState.putInt(i*8,18);put(stateBuffer,phaseState);dispatch(p,Math.max(1,(n+63)/64));check(read(out,4).getInt(0)==n,"next wave suppressed");
    for(int id:new int[]{pool,counter,header,out,stamps})GL15.glDeleteBuffers(id);
   }
- }finally{{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}}}
+ }finally{{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);deleteProgram(p);}}}
  static int compileText(String name,String text){int shader=GL20.glCreateShader(GL43.GL_COMPUTE_SHADER);GL20.glShaderSource(shader,"#version 450 core\n"+ParticlePrograms.commonPrelude()+text);GL20.glCompileShader(shader);check(GL20.glGetShaderi(shader,GL20.GL_COMPILE_STATUS)!=0,name+GL20.glGetShaderInfoLog(shader));int p=GL20.glCreateProgram();GL20.glAttachShader(p,shader);GL20.glLinkProgram(p);check(GL20.glGetProgrami(p,GL20.GL_LINK_STATUS)!=0,GL20.glGetProgramInfoLog(p));GL20.glDeleteShader(shader);return p;}
+ static int compileDomeVariant(String label,java.util.function.UnaryOperator<String> transform){
+  int control=compileText(label+" control",transform.apply(source("dome_contact_control.comp"))),solve=compileText(label+" solve",transform.apply(source("dome_contacts.comp"))),apply=compileText(label+" apply",transform.apply(source("dome_contact_apply.comp"))),audit=compileText(label+" audit",transform.apply(source("dome_contact_audit.comp")));
+  DomeBodyContacts.register(new DomeBodyContacts.Programs(control,solve,apply,audit));return solve;
+ }
  static void formations(){String nav=source("chunks/storm_navigation.glsl");nav=nav.substring(nav.indexOf("vec3 cmiStarRoute"));int p=compileText("formation",source("chunks/allay_storm.glsl")+nav+"\nlayout(local_size_x=64) in;layout(std430,binding=10) buffer Output{vec4 rows[];} result;uniform uint uCount;void main(){uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;vec3 target,velocity;uint phase=0u;bool engaged=cmiStarSteering(float(i+1u),float(i)*.0001,vec3(0),vec3(99,0,0),6.,target,velocity,phase);result.rows[i*2u]=vec4(target,float(phase));result.rows[i*2u+1u]=vec4(velocity,engaged?1.:0.);}");
   try(var gpu=new StarfallGpuBuffers()){for(int n:new int[]{1,63,64,65,8192,16384}){int out=buffer(bytes((n+1)*32));bind(10,out);stage(gpu,packet(n,1,2,0),p);ui(p,"uCount",n+1);
    for(float time:new float[]{0,5,10.5f,12,15,17}){f(p,"uTimeSec",time);dispatch(p,(n+64)/64);var result=read(out,(n+1)*32);for(int i=0;i<n;i++){for(int j=0;j<7;j++)check(Float.isFinite(result.getFloat(i*32+j*4)),"nonfinite formation");float vx=result.getFloat(i*32+16),vy=result.getFloat(i*32+20),vz=result.getFloat(i*32+24);check(vx*vx+vy*vy+vz*vz<=36.001,"formation velocity cap");if(i==0){int expected=time==0?1:time==5?2:time==10.5?3:time==12?4:time==15?5:6;check(result.getFloat(12)==expected,"formation phase");}}
@@ -72,7 +76,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
     for(int word=3;word<8;word++)check(result.getFloat(fallback+word*4)==0,"unassigned velocity/phase/engagement fallback");
    }
    GL15.glDeleteBuffers(out);
-  }}finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
+  }}finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);deleteProgram(p);}
   try(var q=new Fixture(20000,20000,20000);var gpu=new StarfallGpuBuffers();var shadow=new ModelShadowGpu(20000,36384,StarfallGpuValidation::source)){
    var data=bytes(20000*64);for(int i=0;i<20000;i++){particle(data,i,2,0,0,20);data.putFloat(i*64+12,i+1);}q.build(data,20000);
    // An upper-size fixture uses five 4096-member columns, preserving the same exact roster format.
@@ -125,7 +129,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
      }
     }
    }finally{for(int id:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(id);}
-  }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(update);GL20.glDeleteProgram(update);}
+  }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(update);deleteProgram(update);}
  }
  static void benchmarkStarfall()throws Exception{
   var rows=new ArrayList<String>();rows.add("pool_live,participants,mode,run,update_gpu_p50_ms,update_gpu_p95_ms,shadow_gpu_p50_ms,shadow_gpu_p95_ms,cpu_wall_p50_ms,cpu_wall_p95_ms,thread_cpu_p50_ms,thread_cpu_p95_ms,allocated_bytes_p50,roster_upload_bytes,state_domain_bytes");
@@ -162,7 +166,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
      }
      check(GL11.glGetError()==0,"benchmark GL error");String row=total+","+members+","+(star?"starfall":"legacy_dive")+","+run+","+p(ug,.5)+","+p(ug,.95)+","+p(sg,.5)+","+p(sg,.95)+","+p(cw,.5)+","+p(cw,.95)+","+p(tc,.5)+","+p(tc,.95)+","+p(alloc,.5)+","+gpu.uploadedBytes()+","+gpu.bytes();rows.add(row);System.out.println(row);
     }
-    GL15.glDeleteQueries(updateQuery);GL15.glDeleteQueries(shadowQuery);for(int id:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(id);for(int p:new int[]{build,update}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}
+    GL15.glDeleteQueries(updateQuery);GL15.glDeleteQueries(shadowQuery);for(int id:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(id);for(int p:new int[]{build,update}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);deleteProgram(p);}
    }
   }
   Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-benchmark.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-benchmark-samples.csv"),raw);
@@ -189,7 +193,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
      check(read(counter,16).getInt(0)==n,"ring benchmark incomplete reservation");check(GL11.glGetError()==0,"ring benchmark GL error");String row=columns+","+n+","+run+","+p(bt,.5)+","+p(bt,.95)+","+p(dt,.5)+","+p(dt,.95)+","+p(ct,.5)+","+p(ct,.95)+","+p(at,.5)+","+(columns*48);rows.add(row);System.out.println(row);
     }GL15.glDeleteQueries(birth);GL15.glDeleteQueries(draw);
    }finally{for(int id:new int[]{pool,counter,commands,indices})GL15.glDeleteBuffers(id);}
-  }}finally{GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL11.glDisable(GL11.GL_BLEND);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(tex);GL30.glDeleteFramebuffers(fb);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);GL15.glDeleteBuffers(header);for(int p:new int[]{reserve,emit,render}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}GL20.glDeleteShader(vs);GL20.glDeleteShader(fs);}
+  }}finally{GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,0);GL11.glDisable(GL11.GL_BLEND);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(tex);GL30.glDeleteFramebuffers(fb);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);GL15.glDeleteBuffers(header);for(int p:new int[]{reserve,emit,render}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);deleteProgram(p);}GL20.glDeleteShader(vs);GL20.glDeleteShader(fs);}
   Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-ring-benchmark.csv"),rows);
  }
  public static void main(String[] args)throws Exception{GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(128,128,"Starfall GPU validation",0,0);

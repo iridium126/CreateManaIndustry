@@ -18,7 +18,7 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
   return new ClientboundStormColumnPacket(Level.OVERWORLD.location(),37,100+index,false,123,0,4,24,31.28f,70,x,64.02f,z,120,1500,-2300,64,IntStream.range(index*64,index*64+64).toArray());
  }
  static ClientboundStormWavePacket[] columns(){var result=new ClientboundStormWavePacket[68];for(int i=0;i<64;i++)result[4+i]=column(i).snapshot();return result;}
- static void retire(int... programs){GL20.glUseProgram(0);for(int p:programs){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);GL20.glDeleteProgram(p);}}
+ static void retire(int... programs){GL20.glUseProgram(0);for(int p:programs){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);deleteProgram(p);}}
  static void reference(){
   int p=compileText("column-reference",source("chunks/allay_storm.glsl")+"""
    layout(local_size_x=64) in;layout(std430,binding=10) buffer Output{vec4 rows[];} result;
@@ -132,7 +132,7 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
         particle(moving,member,2,(float)point.x,(float)point.z,20);moving.putFloat(member*64+4,(float)point.y).putFloat(member*64+12,member+1).putFloat(member*64+16,.5f).putFloat(member*64+24,.5f).putFloat(member*64+56,AllayStormWaves.memberSeed(1,member));
     }
     var restoredPhases=new BitSet();var bloomed=new BitSet();var completed=new BitSet();var released=new BitSet();double[] firstTouch=new double[64];Arrays.fill(firstTouch,-1);put(q.previous,bytes(16).putInt(0,64));
-    double descentMin=Double.POSITIVE_INFINITY,descentMax=0;
+    double descentMin=Double.POSITIVE_INFINITY,descentMax=0;boolean crossedGather=false;
     double renderTime=0;float[] frameSteps=frameMode>=4?new float[]{1/144f,1/60f,.012f,.028f}:new float[]{1f/new int[]{30,60,144,240}[frameMode]};
     for(int frame=0;renderTime<=41;frame++){
         float frameDt=frameSteps[frame%frameSteps.length];renderTime+=frameDt;f(update,"uDt",frameDt);
@@ -158,10 +158,13 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
         }
         gpu.commit();if(frameMode==5){
             collision.submitted();int actualPhase=phases.getInt(4)&255;int snapshotPhase=actualPhase==1?0:actualPhase;
+            if(snapshotPhase==0&&!crossedGather&&renderTime>=life.assemble()-.1){
+                snapshotRecovery(restore,update,snapshot,output,q.counter,q.emit,moving,life,gpu,collision,(float)renderTime,0,.2f,false);crossedGather=true;
+            }
             if((snapshotPhase==0||snapshotPhase==2||snapshotPhase==4||snapshotPhase==5)&&!restoredPhases.get(snapshotPhase)){
-                snapshotRecovery(restore,snapshot,output,q.counter,q.emit,moving,life,gpu,collision,(float)renderTime,snapshotPhase,0,false);
-                if(snapshotPhase==2||snapshotPhase==4)snapshotRecovery(restore,snapshot,output,q.counter,q.emit,moving,life,gpu,collision,(float)renderTime,snapshotPhase,.1f,false);
-                if(snapshotPhase==2)snapshotRecovery(restore,snapshot,output,q.counter,q.emit,moving,life,gpu,collision,(float)renderTime,snapshotPhase,.125f,true);
+                snapshotRecovery(restore,update,snapshot,output,q.counter,q.emit,moving,life,gpu,collision,(float)renderTime,snapshotPhase,0,false);
+                if(snapshotPhase==2||snapshotPhase==4)snapshotRecovery(restore,update,snapshot,output,q.counter,q.emit,moving,life,gpu,collision,(float)renderTime,snapshotPhase,.1f,false);
+                if(snapshotPhase==2)snapshotRecovery(restore,update,snapshot,output,q.counter,q.emit,moving,life,gpu,collision,(float)renderTime,snapshotPhase,.125f,true);
                 restoredPhases.set(snapshotPhase);
             }
         }
@@ -169,14 +172,14 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
     check(frameMode==5?bloomed.cardinality()>0:bloomed.cardinality()==64,"complete lifecycle did not land all members: "+bloomed.cardinality());
     check(released.cardinality()==64,"short return failed to release all members");
     check(completed.cardinality()==bloomed.cardinality(),"members failed to leave bloom at frame mode "+frameMode);
-    if(frameMode==5)for(int phase:new int[]{0,2,4,5})check(restoredPhases.get(phase),"snapshot did not exercise phase "+phase);
+    if(frameMode==5){for(int phase:new int[]{0,2,4,5})check(restoredPhases.get(phase),"snapshot did not exercise phase "+phase);check(crossedGather,"Delayed snapshot did not cross gathering completion");}
     System.out.println("Column full lifecycle frame mode="+frameMode+" landed="+bloomed.cardinality()+" completed="+completed.cardinality()+" free_descent_speed="+descentMin+".."+descentMax);
     }
     GL15.glDeleteQueries(query);Files.write(Path.of(System.getProperty("cmi.benchmark.output","build/benchmarks/current"),"starfall-64-columns.csv"),rows);rows.forEach(System.out::println);
    }finally{for(int b:new int[]{output,grid,damage,players,correction,map,meta,hits,stamps})GL15.glDeleteBuffers(b);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(texture);}
   }finally{retire(update,contact,snapshot,restore);}
  }
- static void snapshotRecovery(int update,int capture,int sourcePool,int sourceCount,int header,ByteBuffer moving,ClientboundStormColumnPacket column,StarfallGpuBuffers sourceGpu,StormCollisionGpu collision,float time,int phase,float delay,boolean wrap){
+ static void snapshotRecovery(int update,int normal,int capture,int sourcePool,int sourceCount,int header,ByteBuffer moving,ClientboundStormColumnPacket column,StarfallGpuBuffers sourceGpu,StormCollisionGpu collision,float time,int phase,float delay,boolean wrap){
   int packed=buffer(bytes(StarfallColumnSnapshot.BYTES)),input=buffer(moving),output=buffer(bytes(64*64)),counter=buffer(bytes(16)),previous=buffer(bytes(16).putInt(0,64));
   try(var observer=new StarfallGpuBuffers()){
    sourceGpu.bind(capture,false);bind(0,sourcePool);bind(3,sourceCount);bind(5,header);bind(22,packed);GL41.glProgramUniform1i(capture,GL20.glGetUniformLocation(capture,"uColumnCount"),1);GL41.glProgramUniform4iv(capture,GL20.glGetUniformLocation(capture,"uColumnSlots"),new int[]{4,-1,-1,-1});dispatch(capture,1);
@@ -189,7 +192,20 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
    }
    var snapshot=new StarfallColumnSnapshot(values);check(Math.round(snapshot.values()[0])==phase,"capture restarted source phase");
    var packets=new ClientboundStormWavePacket[68];packets[4]=column.snapshot();observer.rebuild(packets);observer.columnRestoreToken(4,column.id(),phase+1);observer.prepare(1);observer.bind(update,true);ui(update,"uCapacity",64);ui(update,"uKillEmit",-1);bool(update,"uStormCollisionEnabled",true);collision.bind(update);
-   bind(0,input);bind(1,output);bind(3,counter);bind(5,header);bind(14,previous);bind(22,packed);GL41.glProgramUniform1i(update,GL20.glGetUniformLocation(update,"uColumnRestoreCount"),1);GL41.glProgramUniform4iv(update,GL20.glGetUniformLocation(update,"uColumnRestoreSlots"),new int[]{4,-1,-1,-1});GL41.glProgramUniform4iv(update,GL20.glGetUniformLocation(update,"uColumnRestoreTokens"),new int[]{phase+1,0,0,0});GL41.glProgramUniform4fv(update,GL20.glGetUniformLocation(update,"uColumnRestoreTimes"),new float[]{time,0,0,0});f(update,"uTimeSec",(time+delay)%104857.6f);f(update,"uDt",.05f);dispatch(update,1);
+   bind(0,input);bind(1,output);bind(3,counter);bind(5,header);bind(14,previous);bind(22,packed);GL41.glProgramUniform1i(update,GL20.glGetUniformLocation(update,"uColumnRestoreCount"),1);GL41.glProgramUniform4iv(update,GL20.glGetUniformLocation(update,"uColumnRestoreSlots"),new int[]{4,-1,-1,-1});GL41.glProgramUniform4iv(update,GL20.glGetUniformLocation(update,"uColumnRestoreTokens"),new int[]{phase+1,0,0,0});GL41.glProgramUniform4fv(update,GL20.glGetUniformLocation(update,"uColumnRestoreTimes"),new float[]{time,0,0,0});f(update,"uTimeSec",(time+delay)%104857.6f);f(update,"uDt",.05f);
+   if(phase==2&&delay==0&&!wrap){
+    // Reject before publication, without the fixture's readback/buffer barrier.
+    GL20.glUseProgram(update);GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+    observer.abort();observer.prepare(1);
+    int stamp=StarfallGpuBuffers.COLUMN_ARC+ColumnGpuLayout.RECOVER_GENERATION;
+    check(DomePathGpuValidation.range(observer.candidateStateBuffer(),stamp,1).getInt(0)==0,"Aborted recovery leaked into a reused frame generation");
+    observer.bind(update,true);
+   }
+   dispatch(update,1);
+   // The recovery kernel must leave the input pool and compaction counter untouched.
+   check(read(counter,16).getInt(0)==0,"Recovery compacted the particle pool");
+   var unchanged=read(input,moving.capacity());for(int index=0;index<moving.capacity();index++)check(unchanged.get(index)==moving.get(index),"Recovery mutated the committed particle pool");
+   observer.bind(normal,true);ui(normal,"uCapacity",64);ui(normal,"uKillEmit",-1);bool(normal,"uStormCollisionEnabled",true);collision.bind(normal);f(normal,"uTimeSec",(time+delay)%104857.6f);f(normal,"uDt",.05f);dispatch(normal,1);
    var resumed=read(output,64*64);int state=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var recovered=read(state,(StarfallGpuBuffers.COLUMN_ARC+64*StarfallGpuBuffers.COLUMN_ARC_WORDS)*4);
    for(int row=0;row<64;row++){
     int member=Math.round(resumed.getFloat(row*64+12))-1;check(member>=0&&member<64,"restore lost member identity");int original=-1;for(int candidate=0;candidate<64;candidate++)if(Math.round(moving.getFloat(candidate*64+12))==member+1)original=candidate;
@@ -198,8 +214,10 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
     int arc=(StarfallGpuBuffers.COLUMN_ARC+member*StarfallGpuBuffers.COLUMN_ARC_WORDS)*4;check(recovered.getInt(arc+39*4)==phase+1,"restore token missing");
     if(phase==2)for(int axis=0;axis<3;axis++)check(Math.abs(recovered.getFloat(arc+(36+axis)*4)-values[member*30+20+axis])<.00001,"Snapshot rematched the original descent tangent");
     if(delay==0)check(recovered.getInt(arc+43*4)==Math.round(values[member*30]),"restore changed actual stage");
+    if(phase==0&&delay>0){check(recovered.getInt(arc+43*4)==2,"Delayed gathering did not enter descent");double originError=0;for(int axis=0;axis<3;axis++){double delta=recovered.getFloat(arc+(33+axis)*4)-moving.getFloat(original*64+axis*4);originError+=delta*delta;}check(Math.sqrt(originError)<=.801,"Cross-gather recovery initialized from a fictitious position");}
    }
    observer.commit();put(input,resumed);put(counter,bytes(16));observer.prepare(2);observer.bind(update,true);bind(0,input);bind(1,output);bind(3,counter);bind(14,previous);bind(22,packed);f(update,"uTimeSec",(time+delay+.05f)%104857.6f);dispatch(update,1);
+   observer.bind(normal,true);f(normal,"uTimeSec",(time+delay+.05f)%104857.6f);dispatch(normal,1);
    state=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);recovered=read(state,(StarfallGpuBuffers.COLUMN_ARC+64*StarfallGpuBuffers.COLUMN_ARC_WORDS)*4);check(recovered.getInt((StarfallGpuBuffers.COLUMN_ARC+39)*4)==phase+1,"duplicate snapshot reset ownership");
    if(phase==2||phase==4){var local=read(state,(StarfallGpuBuffers.COLUMN_STATE+16)*4);check(local.getFloat((StarfallGpuBuffers.COLUMN_STATE+15)*4)>=values[10],"duplicate snapshot restarted curve progress");}
   }finally{GL41.glProgramUniform1i(update,GL20.glGetUniformLocation(update,"uColumnRestoreCount"),0);for(int buffer:new int[]{packed,input,output,counter,previous})GL15.glDeleteBuffers(buffer);}

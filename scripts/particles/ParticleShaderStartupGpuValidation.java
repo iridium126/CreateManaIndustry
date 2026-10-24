@@ -66,7 +66,7 @@ public final class ParticleShaderStartupGpuValidation extends StarfallGpuValidat
  static void probe(String name)throws Exception{
   String text="#version 450 core\n#define CMI_STARTUP_PROBE_"+COLD_VARIANT+"\n"+ParticlePrograms.commonPrelude()+source(name);
   int shader=GL20.glCreateShader(GL43.GL_COMPUTE_SHADER);GL20.glShaderSource(shader,text);long begin=System.nanoTime();System.out.println("SUBMIT compile "+name);System.out.flush();GL20.glCompileShader(shader);System.out.println("compile submit ms="+(System.nanoTime()-begin)/1e6);waitShader(shader,false);check(GL20.glGetShaderi(shader,GL20.GL_COMPILE_STATUS)!=0,GL20.glGetShaderInfoLog(shader));
-  int program=GL20.glCreateProgram();GL20.glAttachShader(program,shader);begin=System.nanoTime();System.out.println("SUBMIT link "+name);System.out.flush();GL20.glLinkProgram(program);System.out.println("link submit ms="+(System.nanoTime()-begin)/1e6);waitShader(program,true);check(GL20.glGetProgrami(program,GL20.GL_LINK_STATUS)!=0,GL20.glGetProgramInfoLog(program));GL20.glDeleteShader(shader);GL20.glDeleteProgram(program);
+  int program=GL20.glCreateProgram();GL20.glAttachShader(program,shader);begin=System.nanoTime();System.out.println("SUBMIT link "+name);System.out.flush();GL20.glLinkProgram(program);System.out.println("link submit ms="+(System.nanoTime()-begin)/1e6);waitShader(program,true);check(GL20.glGetProgrami(program,GL20.GL_LINK_STATUS)!=0,GL20.glGetProgramInfoLog(program));GL20.glDeleteShader(shader);deleteProgram(program);
  }
  static void waitShader(int object,boolean program)throws Exception{
   long begin=System.nanoTime(),logged=begin;double maximum=0;int frames=0;

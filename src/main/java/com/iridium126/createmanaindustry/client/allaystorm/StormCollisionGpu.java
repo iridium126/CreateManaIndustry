@@ -94,6 +94,9 @@ public final class StormCollisionGpu implements AutoCloseable {
         GL13.glActiveTexture(GL13.GL_TEXTURE0);lastUpload=System.nanoTime()-began;if(lastUpload>nanos)overruns++;
     }
     public void bind(int program){
+        for(int part:com.iridium126.createmanaindustry.client.particles.engine.DomeBodyContacts.related(program))bindSingle(part);
+    }
+    private void bindSingle(int program){
         boolean ready=current>=0;
         GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uStormCollisionOn"),ready?1:0);
         GL41.glProgramUniform1ui(program,GpuUniforms.loc(program,"uStormCollisionRevision"),ready?(int)banks[current].serial:0);

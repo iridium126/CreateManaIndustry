@@ -49,7 +49,7 @@ public class StormMotionGpuValidation extends StarfallColumnGpuValidation {
      int arc=StarfallGpuBuffers.COLUMN_ARC+rank*96,phase=state.getInt((arc+43)*4);rows.add(time+","+rank+","+phase+","+tangential+","+vertical+","+speed);
      check(speed<=(time<4?8.001:6.001),"Starfall phase speed budget violated");
      if(time<4)check(Math.abs(tangential-3)<.02,"Settled Starfall orbit is not three m/s");
-     if(phase==2){double travel=state.getFloat((StarfallGpuBuffers.COLUMN_STATE+rank*16+15)*4);var expected=entryCurve(state,arc,packet,rank,entryParameter(state,arc,travel)).subtract(entryCurve(state,arc,packet,rank,entryParameter(state,arc,Math.max(0,travel-6*dt)))).normalize().scale(6);var actual=new Vec3(probe.data.getFloat(offset+16),vertical,probe.data.getFloat(offset+24));check(expected.distanceTo(actual)<.02,"Discrete Starfall velocity departed from its actual initialized curve: "+expected+" / "+actual);}
+     if(phase==2){double travel=state.getFloat((StarfallGpuBuffers.COLUMN_STATE+rank*16+15)*4);var expected=entryCurve(state,arc,packet,rank,entryParameter(state,arc,travel,packet)).subtract(entryCurve(state,arc,packet,rank,entryParameter(state,arc,Math.max(0,travel-6*dt),packet))).normalize().scale(6);var actual=new Vec3(probe.data.getFloat(offset+16),vertical,probe.data.getFloat(offset+24));check(expected.distanceTo(actual)<.02,"Discrete Starfall velocity departed from its actual initialized curve: "+expected+" / "+actual);}
      if(phase==2&&!entered){double startX=state.getFloat((arc+33)*4)-packet.x(),startZ=state.getFloat((arc+35)*4)-packet.z(),startRadius=Math.hypot(startX,startZ);double tangent=(-startZ*state.getFloat((arc+36)*4)+startX*state.getFloat((arc+38)*4))/startRadius;check(Math.abs(tangent*6-3)<.005,"Descent entry tangent does not match gathering");check(Math.abs(state.getFloat((arc+37)*4)*6+Math.sqrt(27))<.005,"Descent entry vertical component wrong");}
     }
     if(state.getInt((StarfallGpuBuffers.COLUMN_ARC+43)*4)==2)entered=true;
@@ -58,14 +58,15 @@ public class StormMotionGpuValidation extends StarfallColumnGpuValidation {
   }
   Files.write(Path.of(System.getProperty("cmi.benchmark.output","build/benchmarks/current"),"starfall-entry-velocity.csv"),rows);
  }
- static double entryParameter(ByteBuffer state,int arc,double distance){
-  if(distance<=0)return 0;if(distance>=state.getFloat((arc+32)*4))return 1;int low=0,high=32;
-  for(int iteration=0;iteration<5;iteration++){int middle=(low+high)/2;if(state.getFloat((arc+middle)*4)<distance)low=middle;else high=middle;}
-  double start=state.getFloat((arc+low)*4),delta=Math.max(state.getFloat((arc+high)*4)-start,.000001),goal=distance-start,progress=Math.clamp(goal/delta,0,1);
-  double first=Math.clamp(state.getFloat((arc+48+low)*4)/32.,.000001,3*delta),last=Math.clamp(state.getFloat((arc+48+high)*4)/32.,.000001,3*delta),cubic=first+last-2*delta,quadratic=3*delta-2*first-last;
-  for(int iteration=0;iteration<3;iteration++){double value=((cubic*progress+quadratic)*progress+first)*progress,derivative=(3*cubic*progress+2*quadratic)*progress+first;progress=Math.clamp(progress-(value-goal)/Math.max(derivative,.000001),0,1);}
-  return (low+progress)/32.;
+ static double entryParameter(ByteBuffer state,int arc,double distance,ClientboundStormColumnPacket packet){
+  if(distance<=0)return 0;if(distance>=state.getFloat((arc+ColumnGpuLayout.node(64))*4))return 1;int low=0,high=64;
+  for(int iteration=0;iteration<6;iteration++){int middle=(low+high)/2;if(state.getFloat((arc+ColumnGpuLayout.node(middle))*4)<distance)low=middle;else high=middle;}
+  double start=state.getFloat((arc+ColumnGpuLayout.node(low))*4),delta=Math.max(state.getFloat((arc+ColumnGpuLayout.node(high))*4)-start,.000001),progress=Math.clamp((distance-start)/delta,0,1);
+  double radius=Math.max(.2,Math.hypot(state.getFloat((arc+33)*4)-packet.x(),state.getFloat((arc+35)*4)-packet.z())),ratio=Math.max(0,state.getFloat((arc+34)*4)-packet.y())/radius;
+  double t=Math.clamp((ratio-1)/3,0,1),strength=.1+.1*t*t*(3-2*t);
+  return entryGrid(low/64.,strength)*(1-progress)+entryGrid(high/64.,strength)*progress;
  }
+ static double entryGrid(double t,double strength){return t+strength*t*(1-t)*(1-2*t)*(1-7*t+7*t*t);}
  static Vec3 entryCurve(ByteBuffer state,int arc,ClientboundStormColumnPacket packet,int rank,double progress){
   double startX=state.getFloat((arc+33)*4)-packet.x(),startY=state.getFloat((arc+34)*4)-packet.y(),startZ=state.getFloat((arc+35)*4)-packet.z(),radius=Math.max(Math.hypot(startX,startZ),.2),root=StarfallColumnRules.root(rank),angle=Math.atan2(startZ,startX);
   double terminal=angle+.7*(packet.touch()+StarfallColumnRules.delay(rank)-packet.assemble()),goal=((rank*27)&63)*Math.PI/32+packet.seed()*.0001f;terminal+=Math.atan2(Math.sin(goal-terminal),Math.cos(goal-terminal));

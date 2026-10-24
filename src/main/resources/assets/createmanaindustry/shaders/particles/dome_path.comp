@@ -4,130 +4,130 @@ layout(std430,binding=28) buffer State {uint words[];} starStateWrite;
 layout(std430,binding=29) buffer PathDispatch {uint groups,rows,slices;} pathDispatch;
 uniform uint uMode;
 #define CMI_DOME_RUNTIME_FLOW
-uint cmiDomeFlowWord(uint at){return starStateWrite.words[at];}
+uint cmiDomeFlowWord(uint at){return CMI_STATE(starStateWrite,at);}
 #pragma cmi_include chunks/allay_storm.glsl
 #pragma cmi_include chunks/storm_collision.glsl
 #pragma cmi_include chunks/dome_gather.glsl
 #pragma cmi_include chunks/dome_path_state.glsl
 #pragma cmi_include chunks/dome_path_segment.glsl
-uint cmiNavigationMode(uint member){uint mode=starStateWrite.words[cmiNavigationExtra(member)];if(mode!=0u)return mode;uint a=cmiStarWord(16u+member);return a!=0u&&cmiDome(cmiStarBase(cmiStarSlot(a)))?1u:0u;}
+uint cmiNavigationMode(uint member){uint mode=CMI_STATE(starStateWrite,cmiNavigationExtra(member));if(mode!=0u)return mode;uint a=cmiStarWord(16u+member);return a!=0u&&cmiDome(cmiStarBase(cmiStarSlot(a)))?1u:0u;}
 bool cmiDomePathActive(uint member){
- if(member>=131072u)return false;uint record=cmiNavigationRecord(member),assignment=cmiStarWord(16u+member),phase=starStateWrite.words[member*2u+1u]&255u,mode=cmiNavigationMode(member);
- if(starStateWrite.words[member*2u]!=starStateWrite.words[record])return false;
- if(mode==2u)return phase==6u&&(cmiStarWord(201456u+member/32u)&(1u<<(member&31u)))==0u&&(assignment==0u||(uint(cmiStarVec(cmiStarBase(cmiStarSlot(assignment))).x+.5)==starStateWrite.words[record]));
- return mode==1u&&assignment!=0u&&cmiDome(cmiStarBase(cmiStarSlot(assignment)))&&cmiStarVec(cmiStarBase(cmiStarSlot(assignment))+20u).y==1.&&phase==1u&&uint(cmiStarVec(cmiStarBase(cmiStarSlot(assignment))).x+.5)==starStateWrite.words[record];
+ if(member>=131072u)return false;uint record=cmiNavigationRecord(member),assignment=cmiStarWord(16u+member),phase=CMI_STATE(starStateWrite,member*2u+1u)&255u,mode=cmiNavigationMode(member);
+ if(CMI_STATE(starStateWrite,member*2u)!=CMI_STATE(starStateWrite,record))return false;
+ if(mode==2u)return phase==6u&&(cmiStarWord(201456u+member/32u)&(1u<<(member&31u)))==0u&&(assignment==0u||(uint(cmiStarVec(cmiStarBase(cmiStarSlot(assignment))).x+.5)==CMI_STATE(starStateWrite,record)));
+ return mode==1u&&assignment!=0u&&cmiDome(cmiStarBase(cmiStarSlot(assignment)))&&cmiStarVec(cmiStarBase(cmiStarSlot(assignment))+20u).y==1.&&phase==1u&&uint(cmiStarVec(cmiStarBase(cmiStarSlot(assignment))).x+.5)==CMI_STATE(starStateWrite,record);
 }
 shared uint requestWords[4096],scheduledCount,queuedCount,requestsRemaining,classCount[2];
 bool cmiDomePathTaskValid(uint task,uint member){
  uint record=cmiNavigationRecord(member),extra=cmiNavigationExtra(member);
- vec3 goal=vec3(uintBitsToFloat(starStateWrite.words[extra+8u]),uintBitsToFloat(starStateWrite.words[extra+9u]),uintBitsToFloat(starStateWrite.words[extra+10u]));
- vec3 saved=vec3(uintBitsToFloat(starStateWrite.words[task+5u]),uintBitsToFloat(starStateWrite.words[task+6u]),uintBitsToFloat(starStateWrite.words[task+7u]));
- return cmiDomePathActive(member)&&starStateWrite.words[record]==starStateWrite.words[task+1u]
-  &&(starStateWrite.words[record+1u]&15u)==CMI_DOME_PATH_SEARCHING&&starStateWrite.words[record+3u]==starStateWrite.words[task+8u]
-  &&starStateWrite.words[record+2u]==starStateWrite.words[task+16u]&&(cmiNavigationMode(member)!=2u||distance(goal,saved)<=2.);
+ vec3 goal=vec3(uintBitsToFloat(CMI_STATE(starStateWrite,extra+8u)),uintBitsToFloat(CMI_STATE(starStateWrite,extra+9u)),uintBitsToFloat(CMI_STATE(starStateWrite,extra+10u)));
+ vec3 saved=vec3(uintBitsToFloat(CMI_STATE(starStateWrite,task+5u)),uintBitsToFloat(CMI_STATE(starStateWrite,task+6u)),uintBitsToFloat(CMI_STATE(starStateWrite,task+7u)));
+ return cmiDomePathActive(member)&&CMI_STATE(starStateWrite,record)==CMI_STATE(starStateWrite,task+1u)
+  &&(CMI_STATE(starStateWrite,record+1u)&15u)==CMI_DOME_PATH_SEARCHING&&CMI_STATE(starStateWrite,record+3u)==CMI_STATE(starStateWrite,task+8u)
+  &&CMI_STATE(starStateWrite,record+2u)==CMI_STATE(starStateWrite,task+16u)&&(cmiNavigationMode(member)!=2u||distance(goal,saved)<=2.);
 }
 void cmiDomePathSchedule(){
  uint lane=gl_LocalInvocationID.x,control=CMI_DOME_PATH_CONTROL;
- if(lane<8u)starStateWrite.words[control+8u+lane]=0u;
- if(lane==0u){scheduledCount=0u;queuedCount=0u;requestsRemaining=starStateWrite.words[control+1u];classCount[0]=0u;classCount[1]=0u;starStateWrite.words[control+4u]=0u;starStateWrite.words[control+5u]=1u;starStateWrite.words[control+6u]=1u;pathDispatch.groups=0u;pathDispatch.rows=1u;pathDispatch.slices=1u;}
+ if(lane<8u)CMI_STATE(starStateWrite,control+8u+lane)=0u;
+ if(lane==0u){scheduledCount=0u;queuedCount=0u;requestsRemaining=CMI_STATE(starStateWrite,control+1u);classCount[0]=0u;classCount[1]=0u;CMI_STATE(starStateWrite,control+4u)=0u;CMI_STATE(starStateWrite,control+5u)=1u;CMI_STATE(starStateWrite,control+6u)=1u;pathDispatch.groups=0u;pathDispatch.rows=1u;pathDispatch.slices=1u;}
  barrier();
- if(starStateWrite.words[control+1u]==0u&&starStateWrite.words[control+2u]==0u)return;
- bool pending=starStateWrite.words[control+1u]!=0u;
- for(uint word=lane;word<4096u;word+=128u){uint mask=pending?starStateWrite.words[CMI_DOME_PATH_REQUESTS+word]:0u;requestWords[word]=mask;while(mask!=0u){uint bit=uint(findLSB(mask)),member=word*32u+bit;mask&=mask-1u;if(!cmiDomePathActive(member)){requestWords[word]&=~(1u<<bit);continue;}uint mode=cmiNavigationMode(member);if(mode>0u&&mode<=2u)atomicAdd(classCount[mode-1u],1u);}}
+ if(CMI_STATE(starStateWrite,control+1u)==0u&&CMI_STATE(starStateWrite,control+2u)==0u)return;
+ bool pending=CMI_STATE(starStateWrite,control+1u)!=0u;
+ for(uint word=lane;word<4096u;word+=128u){uint mask=pending?CMI_STATE(starStateWrite,CMI_DOME_PATH_REQUESTS+word):0u;requestWords[word]=mask;while(mask!=0u){uint bit=uint(findLSB(mask)),member=word*32u+bit;mask&=mask-1u;if(!cmiDomePathActive(member)){requestWords[word]&=~(1u<<bit);continue;}uint mode=cmiNavigationMode(member);if(mode>0u&&mode<=2u)atomicAdd(classCount[mode-1u],1u);}}
  memoryBarrierBuffer();barrier();if(lane==0u)requestsRemaining=classCount[0]+classCount[1];barrier();
  uint task=CMI_DOME_PATH_TASKS+lane*CMI_DOME_PATH_TASK_WORDS;
- if(starStateWrite.words[task]!=0u&&!cmiDomePathTaskValid(task,starStateWrite.words[task]-1u)){uint record=cmiNavigationRecord(starStateWrite.words[task]-1u);starStateWrite.words[record+1u]&=0xffff8000u;starStateWrite.words[task]=0u;}
+ if(CMI_STATE(starStateWrite,task)!=0u&&!cmiDomePathTaskValid(task,CMI_STATE(starStateWrite,task)-1u)){uint record=cmiNavigationRecord(CMI_STATE(starStateWrite,task)-1u);CMI_STATE(starStateWrite,record+1u)&=0xffff8000u;CMI_STATE(starStateWrite,task)=0u;}
  memoryBarrierBuffer();barrier();
- if(starStateWrite.words[task]==0u&&pending){
-  bool selected=false;uint preferred=classCount[0]>0u&&classCount[1]>0u?(lane<min(96u,classCount[0])?1u:lane>=96u&&lane<96u+min(32u,classCount[1])?2u:classCount[0]>96u?1u:2u):(classCount[0]>0u?1u:2u),rotation=starStateWrite.words[control]%4u;
+ if(CMI_STATE(starStateWrite,task)==0u&&pending){
+  bool selected=false;uint preferred=classCount[0]>0u&&classCount[1]>0u?(lane<min(96u,classCount[0])?1u:lane>=96u&&lane<96u+min(32u,classCount[1])?2u:classCount[0]>96u?1u:2u):(classCount[0]>0u?1u:2u),rotation=CMI_STATE(starStateWrite,control)%4u;
   for(uint pass=0u;pass<4u&&!selected&&requestsRemaining!=0u;pass++){
    uint slot=(lane+rotation+pass)%4u;
    for(uint scan=0u;scan<4096u&&!selected&&requestsRemaining!=0u;scan++){
-    uint word=(scan+lane/4u+starStateWrite.words[control+16u+slot])%4096u,mask=requestWords[word];
+    uint word=(scan+lane/4u+CMI_STATE(starStateWrite,control+16u+slot))%4096u,mask=requestWords[word];
     while(mask!=0u){uint bit=uint(findLSB(mask)),member=word*32u+bit;mask&=mask-1u;uint mode=cmiNavigationMode(member),a=cmiStarWord(16u+member);
      if(mode!=preferred||(mode==1u&&(a==0u||cmiStarSlot(a)!=slot)))continue;
      uint old=atomicAnd(requestWords[word],~(1u<<bit));if((old&(1u<<bit))==0u)continue;atomicAdd(requestsRemaining,0xffffffffu);
-     uint record=cmiNavigationRecord(member);if(!cmiDomePathActive(member)||(starStateWrite.words[record+1u]&15u)!=CMI_DOME_PATH_QUEUED)continue;
-     starStateWrite.words[task]=member+1u;starStateWrite.words[task+1u]=starStateWrite.words[record];starStateWrite.words[task+2u]=0u;starStateWrite.words[task+3u]=0u;starStateWrite.words[task+4u]=0u;
-     starStateWrite.words[task+8u]=starStateWrite.words[record+3u];starStateWrite.words[task+14u]=0u;starStateWrite.words[task+15u]=uStormCollisionRevision;starStateWrite.words[task+16u]=starStateWrite.words[record+2u];
-     for(uint k=0u;k<3u;k++){starStateWrite.words[task+5u+k]=starStateWrite.words[record+4u+k];starStateWrite.words[cmiNavigationExtra(member)+12u+k]=starStateWrite.words[record+4u+k];}
-     starStateWrite.words[record+1u]=(starStateWrite.words[record+1u]&0xffff8000u)|CMI_DOME_PATH_SEARCHING;
-     float clock=mode==1u?cmiDomeElapsed(cmiStarBase(cmiStarSlot(a)),uTimeSec):uTimeSec;float age=max(0.,cmiStormElapsed(clock,uintBitsToFloat(starStateWrite.words[record+2u])));atomicMax(starStateWrite.words[control+11u],floatBitsToUint(age));selected=true;break;
+     uint record=cmiNavigationRecord(member);if(!cmiDomePathActive(member)||(CMI_STATE(starStateWrite,record+1u)&15u)!=CMI_DOME_PATH_QUEUED)continue;
+     CMI_STATE(starStateWrite,task)=member+1u;CMI_STATE(starStateWrite,task+1u)=CMI_STATE(starStateWrite,record);CMI_STATE(starStateWrite,task+2u)=0u;CMI_STATE(starStateWrite,task+3u)=0u;CMI_STATE(starStateWrite,task+4u)=0u;
+     CMI_STATE(starStateWrite,task+8u)=CMI_STATE(starStateWrite,record+3u);CMI_STATE(starStateWrite,task+14u)=0u;CMI_STATE(starStateWrite,task+15u)=uStormCollisionRevision;CMI_STATE(starStateWrite,task+16u)=CMI_STATE(starStateWrite,record+2u);
+     for(uint k=0u;k<3u;k++){CMI_STATE(starStateWrite,task+5u+k)=CMI_STATE(starStateWrite,record+4u+k);CMI_STATE(starStateWrite,cmiNavigationExtra(member)+12u+k)=CMI_STATE(starStateWrite,record+4u+k);}
+     CMI_STATE(starStateWrite,record+1u)=(CMI_STATE(starStateWrite,record+1u)&0xffff8000u)|CMI_DOME_PATH_SEARCHING;
+     float clock=mode==1u?cmiDomeElapsed(cmiStarBase(cmiStarSlot(a)),uTimeSec):uTimeSec;float age=max(0.,cmiStormElapsed(clock,uintBitsToFloat(CMI_STATE(starStateWrite,record+2u))));atomicMax(CMI_STATE(starStateWrite,control+11u),floatBitsToUint(age));selected=true;break;
     }
    }
   }
  }
- if(starStateWrite.words[task]!=0u)atomicAdd(scheduledCount,1u);
+ if(CMI_STATE(starStateWrite,task)!=0u)atomicAdd(scheduledCount,1u);
  memoryBarrierBuffer();barrier();uint queued=0u;
- for(uint word=lane;word<4096u;word+=128u){starStateWrite.words[CMI_DOME_PATH_REQUESTS+word]=requestWords[word];queued+=uint(bitCount(requestWords[word]));}atomicAdd(queuedCount,queued);barrier();
- if(lane<4u)starStateWrite.words[control+16u+lane]=(starStateWrite.words[control+16u+lane]+1u)%4096u;
- if(lane==0u){starStateWrite.words[control]++;starStateWrite.words[control+1u]=queuedCount;starStateWrite.words[control+2u]=scheduledCount;starStateWrite.words[control+4u]=scheduledCount==0u?0u:128u;starStateWrite.words[control+8u]=scheduledCount;starStateWrite.words[control+10u]=queuedCount;pathDispatch.groups=scheduledCount==0u?0u:128u;}
+ for(uint word=lane;word<4096u;word+=128u){CMI_STATE(starStateWrite,CMI_DOME_PATH_REQUESTS+word)=requestWords[word];queued+=uint(bitCount(requestWords[word]));}atomicAdd(queuedCount,queued);barrier();
+ if(lane<4u)CMI_STATE(starStateWrite,control+16u+lane)=(CMI_STATE(starStateWrite,control+16u+lane)+1u)%4096u;
+ if(lane==0u){CMI_STATE(starStateWrite,control)++;CMI_STATE(starStateWrite,control+1u)=queuedCount;CMI_STATE(starStateWrite,control+2u)=scheduledCount;CMI_STATE(starStateWrite,control+4u)=scheduledCount==0u?0u:128u;CMI_STATE(starStateWrite,control+8u)=scheduledCount;CMI_STATE(starStateWrite,control+10u)=queuedCount;pathDispatch.groups=scheduledCount==0u?0u:128u;}
 }
 void cmiDomePathFinish(uint task,uint record,uint status){
- starStateWrite.words[record+1u]=(starStateWrite.words[record+1u]&0xffff8000u)|status;
+ CMI_STATE(starStateWrite,record+1u)=(CMI_STATE(starStateWrite,record+1u)&0xffff8000u)|status;
  uint member=(record-CMI_DOME_PATH_BASE)/12u,a=cmiStarWord(16u+member);float time=cmiNavigationMode(member)==1u?cmiDomeElapsed(cmiStarBase(cmiStarSlot(a)),uTimeSec):uTimeSec;
- starStateWrite.words[record+8u]=floatBitsToUint(time);
- starStateWrite.words[task]=0u;
- atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+2u],0xffffffffu);
- if(status!=CMI_DOME_PATH_READY)starStateWrite.words[record+4u]=uStormCollisionRevision;
- if(status==CMI_DOME_PATH_NO_ROUTE)atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+13u],1u);
- else if(status==CMI_DOME_PATH_UNKNOWN)atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+12u],1u);
- else if(status==CMI_DOME_PATH_READY)atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+14u],1u);
- else atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+15u],1u);
+ CMI_STATE(starStateWrite,record+8u)=floatBitsToUint(time);
+ CMI_STATE(starStateWrite,task)=0u;
+ atomicAdd(CMI_STATE(starStateWrite,CMI_DOME_PATH_CONTROL+2u),0xffffffffu);
+ if(status!=CMI_DOME_PATH_READY)CMI_STATE(starStateWrite,record+4u)=uStormCollisionRevision;
+ if(status==CMI_DOME_PATH_NO_ROUTE)atomicAdd(CMI_STATE(starStateWrite,CMI_DOME_PATH_CONTROL+13u),1u);
+ else if(status==CMI_DOME_PATH_UNKNOWN)atomicAdd(CMI_STATE(starStateWrite,CMI_DOME_PATH_CONTROL+12u),1u);
+ else if(status==CMI_DOME_PATH_READY)atomicAdd(CMI_STATE(starStateWrite,CMI_DOME_PATH_CONTROL+14u),1u);
+ else atomicAdd(CMI_STATE(starStateWrite,CMI_DOME_PATH_CONTROL+15u),1u);
 }
 void cmiDomePathResult(uint task,uint record,uint end){
  uint turns[8];uint count=1u;turns[0]=end;uint current=end,lastDirection=6u;bool overflow=false;
  for(uint step=0u;step<512u;step++){
-  uint parent=starStateWrite.words[task+24u+current]-1u;if(parent==current)break;
+  uint parent=CMI_STATE(starStateWrite,task+24u+current)-1u;if(parent==current)break;
   ivec3 delta=ivec3(cmiDomePathCell(current))-ivec3(cmiDomePathCell(parent));
   uint direction=delta.x!=0?uint(delta.x>0?0:1):delta.y!=0?uint(delta.y>0?2:3):uint(delta.z>0?4:5);
   if(lastDirection!=6u&&direction!=lastDirection){if(count>=8u){overflow=true;break;}turns[count++]=current;}
   lastDirection=direction;current=parent;
  }
  if(overflow){cmiDomePathFinish(task,record,CMI_DOME_PATH_CAPACITY);return;}
- for(uint point=0u;point<4u;point++)starStateWrite.words[record+4u+point]=0u;
- for(uint point=0u;point<count;point++)starStateWrite.words[record+4u+point/2u]|=turns[count-1u-point]<<((point&1u)*16u);
- cmiDomePathFinish(task,record,CMI_DOME_PATH_READY);starStateWrite.words[record+1u]|=count<<4u;
+ for(uint point=0u;point<4u;point++)CMI_STATE(starStateWrite,record+4u+point)=0u;
+ for(uint point=0u;point<count;point++)CMI_STATE(starStateWrite,record+4u+point/2u)|=turns[count-1u-point]<<((point&1u)*16u);
+ cmiDomePathFinish(task,record,CMI_DOME_PATH_READY);CMI_STATE(starStateWrite,record+1u)|=count<<4u;
 }
 shared uint batchCells[8],batchCount,batchHead,foundCell,searching,initializeTask,taskPresent;
 void cmiDomePathSearch(uint task){
- uint lane=gl_LocalInvocationID.x,rank=starStateWrite.words[task]-1u,record=cmiNavigationRecord(rank);
- if(lane==0u){searching=1u;initializeTask=starStateWrite.words[task+14u];if(starStateWrite.words[task+15u]!=uStormCollisionRevision){cmiDomePathFinish(task,record,CMI_DOME_PATH_UNKNOWN);searching=0u;}}
+ uint lane=gl_LocalInvocationID.x,rank=CMI_STATE(starStateWrite,task)-1u,record=cmiNavigationRecord(rank);
+ if(lane==0u){searching=1u;initializeTask=CMI_STATE(starStateWrite,task+14u);if(CMI_STATE(starStateWrite,task+15u)!=uStormCollisionRevision){cmiDomePathFinish(task,record,CMI_DOME_PATH_UNKNOWN);searching=0u;}}
  memoryBarrierBuffer();barrier();if(searching==0u)return;
  if(initializeTask==0u){
-  for(uint cell=lane;cell<512u;cell+=128u)starStateWrite.words[task+24u+cell]=0u;
+  for(uint cell=lane;cell<512u;cell+=128u)CMI_STATE(starStateWrite,task+24u+cell)=0u;
   memoryBarrierBuffer();barrier();
-  if(lane==0u){starStateWrite.words[task+24u+292u]=293u;starStateWrite.words[task+536u]=292u;starStateWrite.words[task+3u]=1u;starStateWrite.words[task+14u]=1u;for(uint axis=0u;axis<3u;axis++)starStateWrite.words[task+5u+axis]=starStateWrite.words[record+4u+axis];}
+  if(lane==0u){CMI_STATE(starStateWrite,task+24u+292u)=293u;CMI_STATE(starStateWrite,task+536u)=292u;CMI_STATE(starStateWrite,task+3u)=1u;CMI_STATE(starStateWrite,task+14u)=1u;for(uint axis=0u;axis<3u;axis++)CMI_STATE(starStateWrite,task+5u+axis)=CMI_STATE(starStateWrite,record+4u+axis);}
  }
  memoryBarrierBuffer();barrier();
- vec3 base=vec3(uintBitsToFloat(starStateWrite.words[record+9u]),uintBitsToFloat(starStateWrite.words[record+10u]),uintBitsToFloat(starStateWrite.words[record+11u]));
- vec3 goal=vec3(uintBitsToFloat(starStateWrite.words[task+5u]),uintBitsToFloat(starStateWrite.words[task+6u]),uintBitsToFloat(starStateWrite.words[task+7u]));
+ vec3 base=vec3(uintBitsToFloat(CMI_STATE(starStateWrite,record+9u)),uintBitsToFloat(CMI_STATE(starStateWrite,record+10u)),uintBitsToFloat(CMI_STATE(starStateWrite,record+11u)));
+ vec3 goal=vec3(uintBitsToFloat(CMI_STATE(starStateWrite,task+5u)),uintBitsToFloat(CMI_STATE(starStateWrite,task+6u)),uintBitsToFloat(CMI_STATE(starStateWrite,task+7u)));
  bool inside=all(greaterThanEqual(goal,base))&&all(lessThanEqual(goal,base+7.));float initialDistance=distance(base+vec3(4),goal);
  for(uint iteration=0u;iteration<8u;iteration++){
-  if(lane==0u){batchHead=starStateWrite.words[task+2u];batchCount=min(8u,starStateWrite.words[task+3u]-batchHead);foundCell=0xffffffffu;
-   for(uint node=0u;node<batchCount;node++)batchCells[node]=starStateWrite.words[task+536u+batchHead+node];
-   if(batchCount==0u)cmiDomePathFinish(task,record,starStateWrite.words[task+4u]!=0u?CMI_DOME_PATH_UNKNOWN:CMI_DOME_PATH_NO_ROUTE);
+  if(lane==0u){batchHead=CMI_STATE(starStateWrite,task+2u);batchCount=min(8u,CMI_STATE(starStateWrite,task+3u)-batchHead);foundCell=0xffffffffu;
+   for(uint node=0u;node<batchCount;node++)batchCells[node]=CMI_STATE(starStateWrite,task+536u+batchHead+node);
+   if(batchCount==0u)cmiDomePathFinish(task,record,CMI_STATE(starStateWrite,task+4u)!=0u?CMI_DOME_PATH_UNKNOWN:CMI_DOME_PATH_NO_ROUTE);
   }
   memoryBarrierBuffer();barrier();if(batchCount==0u)return;
   if(lane<batchCount){uint cell=batchCells[lane];vec3 point=base+cmiDomePathCell(cell);bool candidate=inside?distance(point,goal)<=1.:initialDistance-distance(point,goal)>=1.;
-   if(candidate){vec3 end=inside?goal:point+normalize(goal-point)*2.;int corridor=cmiDomePathSegment(point,end);if(corridor==0)atomicMin(foundCell,cell);else if(corridor<0)atomicOr(starStateWrite.words[task+4u],1u);}
+   if(candidate){vec3 end=inside?goal:point+normalize(goal-point)*2.;int corridor=cmiDomePathSegment(point,end);if(corridor==0)atomicMin(foundCell,cell);else if(corridor<0)atomicOr(CMI_STATE(starStateWrite,task+4u),1u);}
   }
   if(lane<batchCount*6u){uint cell=batchCells[lane/6u],direction=lane%6u;ivec3 coordinate=ivec3(cmiDomePathCell(cell)),next=coordinate;next[direction/2u]+=direction%2u==0u?1:-1;
    if(all(greaterThanEqual(next,ivec3(0)))&&all(lessThanEqual(next,ivec3(7)))){
-    uint neighbor=uint(next.x+next.y*8+next.z*64);if(starStateWrite.words[task+24u+neighbor]==0u){
+    uint neighbor=uint(next.x+next.y*8+next.z*64);if(CMI_STATE(starStateWrite,task+24u+neighbor)==0u){
      int terrain=cmiDomePathSegment(base+vec3(coordinate),base+vec3(next));
-     if(terrain<0)atomicOr(starStateWrite.words[task+4u],1u);
-     if(terrain==0&&atomicCompSwap(starStateWrite.words[task+24u+neighbor],0u,cell+1u)==0u){uint tail=atomicAdd(starStateWrite.words[task+3u],1u);starStateWrite.words[task+536u+tail]=neighbor;}
+     if(terrain<0)atomicOr(CMI_STATE(starStateWrite,task+4u),1u);
+     if(terrain==0&&atomicCompSwap(CMI_STATE(starStateWrite,task+24u+neighbor),0u,cell+1u)==0u){uint tail=atomicAdd(CMI_STATE(starStateWrite,task+3u),1u);CMI_STATE(starStateWrite,task+536u+tail)=neighbor;}
     }
    }
   }
   memoryBarrierBuffer();barrier();
-  if(lane==0u){starStateWrite.words[task+2u]=batchHead+batchCount;atomicAdd(starStateWrite.words[CMI_DOME_PATH_CONTROL+9u],batchCount);if(foundCell!=0xffffffffu)cmiDomePathResult(task,record,foundCell);}
+  if(lane==0u){CMI_STATE(starStateWrite,task+2u)=batchHead+batchCount;atomicAdd(CMI_STATE(starStateWrite,CMI_DOME_PATH_CONTROL+9u),batchCount);if(foundCell!=0xffffffffu)cmiDomePathResult(task,record,foundCell);}
   memoryBarrierBuffer();barrier();if(foundCell!=0xffffffffu)return;
  }
 }
 void main(){
  if(uMode==0u){cmiDomePathSchedule();return;}
  uint taskIndex=gl_WorkGroupID.x;if(taskIndex>=128u)return;uint task=CMI_DOME_PATH_TASKS+taskIndex*CMI_DOME_PATH_TASK_WORDS;
- if(gl_LocalInvocationID.x==0u)taskPresent=starStateWrite.words[task];barrier();if(taskPresent!=0u)cmiDomePathSearch(task);
+ if(gl_LocalInvocationID.x==0u)taskPresent=CMI_STATE(starStateWrite,task);barrier();if(taskPresent!=0u)cmiDomePathSearch(task);
 }

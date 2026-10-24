@@ -1,0 +1,91 @@
+layout(local_size_x=32) in;
+layout(std430,binding=1) buffer Pool {vec4 data[];} pool;
+layout(std430,binding=3) readonly buffer Counter {uint live;} counter;
+layout(std430,binding=5) readonly buffer Emitters {vec4 u[];} emitters;
+layout(std430,binding=28) buffer State {uint words[];} state;
+uniform float uTimeSec;
+uniform uint uStormFrame;
+uniform bool uStarfallEnabled;
+layout(std430,binding=26) readonly buffer StarfallData {uint words[];} starfall;
+uint cmiStarWord(uint at){return starfall.words[at];}
+#pragma cmi_include chunks/starfall_identity.glsl
+uint cmiStarBase(uint slot){return 131088u+slot*312u;}
+uint cmiMajorRank(uint a){return cmiMajorRankFromKind(a,uintBitsToFloat(cmiStarWord(cmiStarBase(cmiStarSlot(a))+20u)));}
+#pragma cmi_include chunks/storm_speeds.glsl
+#pragma cmi_include chunks/dome_path_state.glsl
+#pragma cmi_include chunks/storm_collision.glsl
+bool unknownExit=false;
+// Starting in solid is intentional. Stop at the first free body, never cross
+// an unknown section or a second obstacle after leaving the embedded region.
+float cmiExitDistance(vec3 origin,vec3 direction,float limit){
+ int steps=min(int(ceil(limit*4.)),int(CMI_STATE(state,CMI_DEPEN_CONTROL+8u)));
+ for(int step=1;step<=steps;step++){
+  float distance=min(float(step)*.25,limit);CmiStormBody body=cmiStormBody(origin+direction*distance);
+  if(!body.complete){unknownExit=true;return 0.;}
+  if(!body.occupied)return distance;
+ }
+ return 0.;
+}
+shared uint jobValid,bodyComplete,hasUnknown,memberIndex,outputIndex;
+shared vec3 origin;
+shared float candidates[32],bestDistance;
+shared vec3 bestDirection;
+void cmiDepenClear(uint member){uint bit=1u<<(member&31u);if((atomicAnd(CMI_STATE(state,CMI_DEPEN_MASK+member/32u),~bit)&bit)!=0u)atomicAdd(CMI_STATE(state,CMI_DEPEN_CONTROL+9u),0xffffffffu);}
+vec3 cmiExitDirection(uint direction){uint cell=direction>=13u?direction+1u:direction;return normalize(vec3(int(cell%3u)-1,int((cell/3u)%3u)-1,int(cell/9u)-1));}
+void main(){
+ uint job=gl_WorkGroupID.x,lane=gl_LocalInvocationID.x;
+ if(job>=min(16u,CMI_STATE(state,CMI_DEPEN_CONTROL+1u))||!uStormCollisionEnabled)return;
+ if(lane==0u){
+  jobValid=0u;bodyComplete=0u;hasUnknown=0u;bestDistance=9.;bestDirection=vec3(0);
+  uint member=CMI_STATE(state,CMI_DEPEN_JOBS+job);
+  if(member<131072u){uint extra=cmiNavigationExtra(member),row=CMI_STATE(state,extra+1u);
+   if(row>0u&&row<=min(counter.live,uint(pool.data.length())/4u)&&(CMI_STATE(state,extra+15u)&0x7fffffffu)==uStormFrame){
+    uint at=(row-1u)*4u;vec4 particle=pool.data[at],life=pool.data[at+3u];uint emitter=floatBitsToUint(life.w);
+    if(cmiStarMember(particle.w)==member&&life.y>0.&&emitter*VEC4_PER_EMITTER+18u<uint(emitters.u.length())&&emitters.u[emitter*VEC4_PER_EMITTER+18u].x>.5){
+     CmiStormBody initial=cmiStormBody(particle.xyz);
+     if(initial.occupied){jobValid=1u;bodyComplete=initial.complete?1u:0u;hasUnknown=initial.complete?0u:1u;memberIndex=member;outputIndex=at;origin=particle.xyz;CMI_STATE(state,extra+3u)=floatBitsToUint(uTimeSec+.1);}
+     else cmiDepenClear(member);
+    }else cmiDepenClear(member);
+   }else cmiDepenClear(member);
+  }
+ }
+ memoryBarrierBuffer();barrier();if(jobValid==0u)return;
+ float distance=0.;vec3 direction=vec3(0);
+ if(bodyComplete!=0u&&lane<6u){
+  int axis=int(lane/2u);float sign=(lane&1u)==0u?-1.:1.;direction[axis]=sign;
+  ivec3 lo=ivec3(floor(origin+vec3(-.17499,.00001,-.17499))),hi=ivec3(floor(origin+vec3(.17499,.59999,.17499)));
+  float push=0.;
+  for(int x=lo.x;x<=hi.x;x++)for(int y=lo.y;y<=hi.y;y++)for(int z=lo.z;z<=hi.z;z++){
+   ivec3 cell=ivec3(x,y,z);int page=cmiStormLookupPage(cell>>4);if(page!=-3&&(page<0||!cmiStormSolidInPage(cell,page)))continue;
+   float lower=axis==1?0.:-.175,upper=axis==1?.6:.175;
+   float candidate=sign>0.?float(cell[axis]+1)-origin[axis]-lower+.00002:origin[axis]+upper-float(cell[axis])+.00002;
+   push=max(push,candidate);
+  }
+  if(push>0.&&push<=8.)distance=cmiExitDistance(origin,direction,push);
+ }
+ candidates[lane]=distance;if(unknownExit)atomicOr(hasUnknown,1u);barrier();
+ if(lane==0u)for(uint k=0u;k<6u;k++)if(candidates[k]>0.&&candidates[k]<bestDistance){bestDistance=candidates[k];bestDirection=vec3(0);bestDirection[k/2u]=(k&1u)==0u?-1.:1.;}
+ barrier();
+ bool diagonal=bestDistance>8.;distance=0.;
+ if(diagonal&&bodyComplete!=0u&&lane<26u)distance=cmiExitDistance(origin,cmiExitDirection(lane),8.);
+ candidates[lane]=distance;if(unknownExit)atomicOr(hasUnknown,1u);barrier();
+ if(lane!=0u)return;
+ if(diagonal)for(uint k=0u;k<26u;k++)if(candidates[k]>0.&&candidates[k]<bestDistance){bestDistance=candidates[k];bestDirection=cmiExitDirection(k);}
+ uint member=memberIndex,at=outputIndex,extra=cmiNavigationExtra(member);vec4 particle=pool.data[at];
+ if(bestDistance<=8.){
+  vec3 corrected=origin+bestDirection*bestDistance;CmiStormBody end=cmiStormBody(corrected);
+  if(!end.complete||end.occupied){bestDistance=9.;hasUnknown=end.complete?hasUnknown:1u;}
+  else{
+   pool.data[at].xyz=corrected;vec3 velocity=pool.data[at+1u].xyz;pool.data[at+1u].xyz=velocity-bestDirection*dot(velocity,bestDirection);pool.data[at+1u].w=0.;
+   CMI_STATE(state,extra+15u)=uStormFrame|0x80000000u;CMI_STATE(state,CMI_DEPEN_STREAK_BASE+member)=0u;
+   for(uint k=4u;k<=7u;k++)CMI_STATE(state,extra+k)=0u;
+   uint record=cmiNavigationRecord(member),status=CMI_STATE(state,record+1u)&15u;
+   if(status==CMI_DOME_PATH_READY)CMI_STATE(state,record+1u)=member<<15u;
+   if(status==CMI_DOME_PATH_QUEUED)for(uint k=0u;k<3u;k++)CMI_STATE(state,record+9u+k)=floatBitsToUint(corrected[k]-4.);
+   uint assignment=cmiStarAssignment(particle.w);
+   if(assignment!=0u&&cmiStarSlot(assignment)<4u){uint word=cmiStarSlot(assignment)*384u+cmiMajorRank(assignment)/32u;atomicAnd(CMI_STATE(state,CMI_DEPEN_READY_BASE+word),~(1u<<(cmiMajorRank(assignment)&31u)));}
+   cmiDepenClear(member);atomicAdd(CMI_STATE(state,CMI_DEPEN_CONTROL+3u),1u);atomicMax(CMI_STATE(state,CMI_DEPEN_CONTROL+7u),floatBitsToUint(bestDistance));
+  }
+ }
+ if(bestDistance>8.){pool.data[at+1u]=vec4(0);atomicAdd(CMI_STATE(state,CMI_DEPEN_CONTROL+(hasUnknown!=0u?5u:4u)),1u);}
+}

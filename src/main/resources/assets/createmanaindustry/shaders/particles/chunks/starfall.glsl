@@ -1,5 +1,11 @@
 // Stable member roster, shared by compute, native MODEL and GLSL-330 Iris TBO readers.
+#ifndef CMI_STORM_STATE_BASE_DECLARED
+#define CMI_STORM_STATE_BASE_DECLARED
+uniform uint uStormStateBase;
+#define CMI_STATE(pool,index) pool.words[uStormStateBase+(index)]
+#endif
 uniform bool uStarfallEnabled;
+uniform uint uStormFrame;
 uniform float uTimeSec;
 #pragma cmi_include chunks/storm_speeds.glsl
 #pragma cmi_include chunks/dome_gather_rules.glsl
@@ -28,9 +34,8 @@ float cmiStarTime(uint b,float now){float start=cmiStarVec(b+4u).x,d=now-start;i
 float cmiDomeElapsed(uint b,float time){return uDomePreciseClock?uDomeElapsed[(b-131088u)/312u]:cmiStarTime(b,time)-cmiStarVec(b+4u).x;}
 vec4 cmiStarLanding(uint b,uint column){return cmiStarVec(b+56u+column*8u);}
 vec4 cmiStarColumn(uint b,uint column){return cmiStarVec(b+60u+column*8u);}
+#pragma cmi_include chunks/starfall_identity.glsl
 #pragma cmi_include chunks/column_rules.glsl
-uint cmiStarMember(float identity){return (uint(identity+.5)&262143u)-1u;}
-uint cmiStarAssignment(float identity){uint member=cmiStarMember(identity);return uStarfallEnabled&&member<131072u?cmiStarWord(16u+member):0u;}
 int cmiStarClaim(float identity,float time){
  uint a=cmiStarAssignment(identity);if(a==0u)return -1;uint slot=cmiStarSlot(a),b=cmiStarBase(slot);
  float kind=cmiStarVec(b+20u).x;if(kind>.5&&kind<1.5&&cmiStarWord(2u)==0u)return -1;
@@ -42,17 +47,28 @@ float cmiStarTier(int slot){return cmiStarVec(cmiStarBase(uint(slot))+16u).x;}
 bool cmiDome(uint b){float kind=cmiStarVec(b+20u).x;return kind>.5&&kind<1.5;}
 #pragma cmi_include chunks/helix_rules.glsl
 #pragma cmi_include chunks/helix_gather.glsl
-uint cmiMajorRank(uint a){uint b=cmiStarBase(cmiStarSlot(a));return cmiStarRank(a)+(cmiHelix(b)?cmiStarGroup(a)*2048u:0u);}
-const uint CMI_COMPLETIONS=721344u,CMI_COMPLETION_WORDS=1664u,CMI_GATHER_STREAK=723008u,CMI_GATHER_COUNTS=854080u,CMI_GATHER_READY=854096u,CMI_GATHER_ELIGIBLE=855632u,CMI_GATHER_BLOCKED=857168u;
+uint cmiMajorRank(uint a){uint b=cmiStarBase(cmiStarSlot(a));return cmiMajorRankFromKind(a,cmiStarVec(b+20u).x);}
+// A dynamic zero base avoids pathological linking of high constant SSBO
+// indices on affected drivers. The Java/GLSL record offsets and bound buffers agree.
+#define CMI_COMPLETIONS (721344u)
+const uint CMI_COMPLETION_WORDS=1664u;
+#define CMI_GATHER_STREAK (723008u)
+#define CMI_GATHER_COUNTS (854080u)
+#define CMI_GATHER_READY (854096u)
+#define CMI_GATHER_ELIGIBLE (855632u)
+#define CMI_GATHER_BLOCKED (857168u)
 // Per-attack spatial history; independent of the narrower centre-passage latch.
 const uint CMI_DOME_INSIDE_BOUND=0x10000000u;
 uint cmiCompletionOffset(uint slot){return slot<4u?slot*384u:1536u+(slot-4u)*2u;}
 float cmiDomePhase(uint b,uint group,float time){vec4 t=cmiStarVec(b+4u);float elapsed=cmiDomeElapsed(b,time);return cmiStarVec(b).y>2.5||elapsed>t.w-t.x?6.:cmiStarVec(b+20u).y<3.||elapsed<t.z-t.x?1.:4.;}
-const uint CMI_HELIX_BLOCK_WINDOW=988240u;
-const uint CMI_DOME_DATA=205552u,CMI_DOME_JOIN=1053776u;
+#define CMI_HELIX_BLOCK_WINDOW (988240u)
+const uint CMI_DOME_DATA=205552u;
+#define CMI_DOME_JOIN (1053776u)
 vec4 cmiDomeRing(uint a){return cmiStarVec(CMI_DOME_DATA+8u+cmiMajorRank(a)*16u);}
 // Per-flow clocks are tiny; rank-to-flow lookup is loaded once with v4 metadata.
-const uint CMI_DOME_FLOW_MAP=405252u,CMI_DOME_FLOW_SOURCE=417540u,CMI_DOME_FLOW_STATE=2364504u,CMI_DOME_GATHER_WINDOW=CMI_DOME_JOIN;
+const uint CMI_DOME_FLOW_MAP=405252u,CMI_DOME_FLOW_SOURCE=417540u;
+#define CMI_DOME_FLOW_STATE (2364504u)
+#define CMI_DOME_GATHER_WINDOW CMI_DOME_JOIN
 uint cmiDomeFlow(uint a){return cmiStarWord(CMI_DOME_FLOW_MAP+cmiMajorRank(a));}
 uint cmiDomePauseAssignment=0u;float cmiDomePauseCached=0.;
 float cmiDomePause(uint a){

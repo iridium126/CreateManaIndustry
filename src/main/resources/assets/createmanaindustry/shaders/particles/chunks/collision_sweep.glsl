@@ -7,9 +7,31 @@
     // exactly vel*uDt (the old code integrated first and then swept from the
     // already-moved position, doubling the speed and tunnelling into blocks).
     bool swept = false;
+#ifndef CMI_COLUMN_REPLAY
+    swept=cmiColumnRecoveryFrame;
+#endif
     bool landed = false;
     float collideMode = matMotion.y;
-    if ((cmiStormVoxel||uCollisionOn == 1) && collideMode > 0.5) {
+    if(!swept&&cmiStormVoxel&&isModel&&collideMode>.5){
+        swept=true;
+        if(cmiStormAirSweep(pos,pos+vel*uDt))pos+=vel*uDt;
+        else{
+        CmiStormBody body=cmiStormBody(pos);
+        cmiStormMissing=cmiStormMissing||!body.complete;
+        if(body.occupied){cmiStormEmbedded=true;cmiTerrainClipped=true;cmiContactSweepValid=false;vel=vec3(0);}
+        else{
+            float span=max(abs(vel.x),max(abs(vel.y),abs(vel.z)))*uDt;
+            int steps=1+int(clamp(span/.5,0.,15.));float step=uDt/float(steps);
+            for(int i=0;i<steps;i++)for(int axis=0;axis<3;axis++){
+                float movement=vel[axis]*step;if(movement==0.)continue;
+                vec3 next=pos;next[axis]+=movement;CmiStormBody probe=cmiStormBody(next);
+                cmiStormMissing=cmiStormMissing||!probe.complete;
+                if(probe.occupied){cmiTerrainClipped=true;vel[axis]=0.;if(axis==1&&movement<0.)landed=true;}
+                else pos=next;
+            }
+        }
+        }
+    }else if (!swept&&(cmiStormVoxel||uCollisionOn == 1) && collideMode > 0.5) {
         // Slice selection is position-owned, not emitter-owned: the first baked
         // volume that CONTAINS the particle wins (presence gates unbuilt
         // slices). Two emitters sharing one spec at distant sites can never

@@ -13,14 +13,16 @@ public class ModelPopulationGpuValidation {
     static ByteBuffer bytes(int n){return BufferUtils.createByteBuffer(n);}
     static String source(String name){String s=ParticleShaderSource.loadParticle(name,p->{try(var in=ModelPopulationGpuValidation.class.getClassLoader().getResourceAsStream("assets/createmanaindustry/"+p)){return new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}catch(Exception e){throw new IllegalStateException(p,e);}});
         for(String phase:List.of("spawn","update"))s=s.replace("#pragma cmi_types "+phase,com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.shaderHooks(phase));return s;}
-    static int compile(String name){long began=System.nanoTime();System.out.println("Compiling "+name+" at "+java.time.Instant.now());int s=GL20.glCreateShader(GL43.GL_COMPUTE_SHADER);GL20.glShaderSource(s,"#version 450 core\n"+ParticlePrograms.commonPrelude()+source(name));GL20.glCompileShader(s);check(GL20.glGetShaderi(s,GL20.GL_COMPILE_STATUS)!=0,name+": "+GL20.glGetShaderInfoLog(s));int p=GL20.glCreateProgram();GL20.glAttachShader(p,s);GL20.glLinkProgram(p);check(GL20.glGetProgrami(p,GL20.GL_LINK_STATUS)!=0,GL20.glGetProgramInfoLog(p));GL20.glDeleteShader(s);System.out.println("Compiled "+name+" in "+((System.nanoTime()-began)/1e9)+" s");return p;}
+    static int compile(String name){long began=System.nanoTime();System.out.println("Compiling "+name+" at "+java.time.Instant.now());String text=source(name);int s=GL20.glCreateShader(GL43.GL_COMPUTE_SHADER);GL20.glShaderSource(s,"#version 450 core\n"+ParticlePrograms.commonPrelude()+text);GL20.glCompileShader(s);check(GL20.glGetShaderi(s,GL20.GL_COMPILE_STATUS)!=0,name+": "+GL20.glGetShaderInfoLog(s));int p=GL20.glCreateProgram();GL20.glAttachShader(p,s);GL20.glLinkProgram(p);check(GL20.glGetProgrami(p,GL20.GL_LINK_STATUS)!=0,GL20.glGetProgramInfoLog(p));GL20.glDeleteShader(s);System.out.println("Compiled "+name+" in "+((System.nanoTime()-began)/1e9)+" s");if(name.equals("dome_contacts.comp")&&text.contains("#define CMI_DOME_PASS"))DomeBodyContacts.register(new DomeBodyContacts.Programs(compile("dome_contact_control.comp"),p,compile("dome_contact_apply.comp"),compile("dome_contact_audit.comp")));return p;}
+    static void deleteProgram(int program){var parts=DomeBodyContacts.unregister(program);if(parts!=null)for(int part:new int[]{parts.control(),parts.apply(),parts.audit()}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(part);org.lwjgl.opengl.GL20.glDeleteProgram(part);}com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(program);org.lwjgl.opengl.GL20.glDeleteProgram(program);}
+
     static int buffer(ByteBuffer b){int id=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,b,GL15.GL_DYNAMIC_COPY);return id;}
     static void bind(int slot,int id){GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,slot,id);}
     static void put(int id,ByteBuffer b){GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,b);}
     static ByteBuffer read(int id,int n){GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);var b=bytes(n);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);GL15.glGetBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,0,b);return b;}
-    static void ui(int p,String n,int v){GL41.glProgramUniform1ui(p,GL20.glGetUniformLocation(p,n),v);}
-    static void bool(int p,String n,boolean v){GL41.glProgramUniform1i(p,GL20.glGetUniformLocation(p,n),v?1:0);}
-    static void f(int p,String n,float v){GL41.glProgramUniform1f(p,GL20.glGetUniformLocation(p,n),v);}
+    static void ui(int p,String n,int v){for(int part:DomeBodyContacts.related(p))GL41.glProgramUniform1ui(part,GL20.glGetUniformLocation(part,n),v);}
+    static void bool(int p,String n,boolean v){for(int part:DomeBodyContacts.related(p))GL41.glProgramUniform1i(part,GL20.glGetUniformLocation(part,n),v?1:0);}
+    static void f(int p,String n,float v){for(int part:DomeBodyContacts.related(p))GL41.glProgramUniform1f(part,GL20.glGetUniformLocation(part,n),v);}
     static void gen(int p,String n,int v){GL41.glProgramUniform2ui(p,GL20.glGetUniformLocation(p,n),v,0);}
     static void dispatch(int p,int groups){GL20.glUseProgram(p);GL43.glDispatchCompute(groups,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);check(GL11.glGetError()==0,"dispatch "+p);}
     static void particle(ByteBuffer b,int slot,int header,float x,float z,float hp){int o=slot*64;b.putFloat(o,x).putFloat(o+8,z).putFloat(o+12,1).putFloat(o+48,1).putFloat(o+52,hp).putInt(o+60,header);}
@@ -33,7 +35,7 @@ public class ModelPopulationGpuValidation {
             for(int p:new int[]{reset,keygen,prepare}){ui(p,"uCapacity",n);bool(p,"uPopulationWriteEnabled",true);gen(p,"uPopulationWriteGeneration",7);ui(p,"uPopulationModelCapacity",m);ui(p,"uPopulationStormCapacity",s);}ui(keygen,"uUpper",n);ui(keygen,"uCarrierBase",n);f(keygen,"uMaxDepth",128);f(keygen,"uDepthLogRange",7);GL41.glProgramUniformMatrix4fv(keygen,GL20.glGetUniformLocation(keygen,"uView"),false,new org.joml.Matrix4f().get(new float[16]));}
         void bindings(){bind(0,pool);bind(1,pool);bind(2,commands);bind(3,counter);bind(5,emit);bind(7,sorted);bind(8,add);bind(15,opaque);bind(17,hit);bind(23,carriers);bind(24,pop);bind(25,pop);bind(29,args);bind(14,previous);}
         void build(ByteBuffer data,int live){put(pool,data);bindings();dispatch(reset,1);put(counter,bytes(16).putInt(0,live));dispatch(keygen,(live+63)/64);bool(prepare,"uPopulationReadEnabled",true);gen(prepare,"uPopulationGeneration",7);ui(prepare,"uPhase",2);dispatch(prepare,1);}
-        public void close(){GL20.glUseProgram(0);for(int id:resources)GL15.glDeleteBuffers(id);for(int p:new int[]{reset,keygen,prepare})GL20.glDeleteProgram(p);}
+        public void close(){GL20.glUseProgram(0);for(int id:resources)GL15.glDeleteBuffers(id);for(int p:new int[]{reset,keygen,prepare})deleteProgram(p);}
     }
     static void lists(){for(int n:new int[]{0,1,63,64,65,4097})for(boolean overflow:new boolean[]{false,true})try(var q=new Fixture(Math.max(1,n),overflow?1:Math.max(1,n),overflow?1:Math.max(1,n))){
         var data=bytes(Math.max(1,n)*64);int models=0,storm=0;for(int i=0;i<n;i++){int h=i%3;particle(data,i,h,i%2==0?5:-5,2,h==1?-.5f:20);if(h!=0)models++;if(h==2)storm++;}
@@ -68,7 +70,7 @@ public class ModelPopulationGpuValidation {
             dispatch(emit,1);check(read(q.counter,16).getInt(0)==1,"accepted stable combat effect not emitted");var effect=read(output,64);check(Math.abs(effect.getFloat(0)+4)<.6,"combat effect resolved to wrong source");
             // Rejected click token must suppress cosmetic damage as well.
             put(q.counter,bytes(16));cmd.putInt(28,202);put(commands,cmd);put(identity,bytes(4+(65*2+ParticleBuffers.DAMAGE_QUEUE_CAP*2)*4).putInt(4,202).putInt(8,101).putInt(4+130*4,202));dispatch(emit,1);check(read(q.counter,16).getInt(0)==0,"rejected click produced wrong-target effects");
-        }finally{GL20.glUseProgram(0);for(int id:scratch)GL15.glDeleteBuffers(id);for(int id:new int[]{identity,damage,output})GL15.glDeleteBuffers(id);for(int p:new int[]{pick,capture,validate,update,emit})GL20.glDeleteProgram(p);}
+        }finally{GL20.glUseProgram(0);for(int id:scratch)GL15.glDeleteBuffers(id);for(int id:new int[]{identity,damage,output})GL15.glDeleteBuffers(id);for(int p:new int[]{pick,capture,validate,update,emit})deleteProgram(p);}
     }}
     static void stormQueries(){try(var q=new Fixture(65,65,65)){
         var data=bytes(65*64);int living=0,all=0;for(int i=0;i<65;i++){int h=i%3;float hp=h==2&&i%9==2?0:20;particle(data,i,h,h==2?0:5,h==2?0:2,hp);if(h==2){data.putFloat(i*64+12,i+1);all++;if(hp>0)living++;}}
@@ -77,7 +79,7 @@ public class ModelPopulationGpuValidation {
             q.bindings();bind(13,grid);bool(build,"uPopulationReadEnabled",true);gen(build,"uPopulationGeneration",7);dispatch(build,1);
             var links=read(grid,(ParticleBuffers.GRID_TABLE+65)*4);int visited=0;var seen=new BitSet();for(int bucket=0;bucket<ParticleBuffers.GRID_TABLE;bucket++){int slot=links.getInt(bucket*4);while(slot!=0){int i=slot-1;check(i<65&&i%3==2&&!seen.get(i),"grid included non-Storm or duplicate slot");seen.set(i);visited++;slot=links.getInt((ParticleBuffers.GRID_TABLE+i)*4);}}check(visited==all,"grid dropped Storm corpse/member");
             q.bindings();bind(18,players);bind(20,positions);bool(query,"uPopulationReadEnabled",true);gen(query,"uPopulationGeneration",7);GL41.glProgramUniform1i(query,GL20.glGetUniformLocation(query,"uPlayerCount"),1);dispatch(query,1);check(read(positions,4).getInt(0)==living,"indexed Storm readback included foreign MODEL or corpse");
-        }finally{GL20.glUseProgram(0);for(int id:new int[]{grid,positions,players})GL15.glDeleteBuffers(id);GL20.glDeleteProgram(build);GL20.glDeleteProgram(query);}
+        }finally{GL20.glUseProgram(0);for(int id:new int[]{grid,positions,players})GL15.glDeleteBuffers(id);deleteProgram(build);deleteProgram(query);}
     }}
     static double p(double[] a,double quantile){var b=a.clone();Arrays.sort(b);return b[(int)Math.ceil(quantile*b.length)-1];}
     static void benchmark()throws Exception{
@@ -92,7 +94,7 @@ public class ModelPopulationGpuValidation {
                     check(read(shadow.commands(),(ParticleBuffers.INDIRECT_UINTS+4)*4).getInt(ParticleBuffers.IDX_CNT_MODELOP*4)==m,"benchmark lost MODEL");String row=n+","+m+","+(indexed?"indexed":"full_scan")+","+run+","+p(gt,.5)+","+p(gt,.95)+","+p(ct,.5)+","+p(ct,.95)+","+(2L*(32+4L*(q.modelCap+q.stormCap)));rows.add(row);System.out.println(row);
                 }
             }
-        }}}finally{GL20.glUseProgram(0);GL20.glDeleteProgram(liveProgram);}
+        }}}finally{GL20.glUseProgram(0);deleteProgram(liveProgram);}
         Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-population-benchmark.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-population-benchmark-samples.csv"),raw);
     }
     public static void main(String[] args)throws Exception{GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"MODEL population validation",0,0);try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));lists();attack();stormQueries();if(Arrays.asList(args).contains("--benchmark"))benchmark();check(GL11.glGetError()==0,"final GL error");System.out.println("MODEL population GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}}

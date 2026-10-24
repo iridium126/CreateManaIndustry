@@ -1,0 +1,2 @@
+#define CMI_DOME_PASS 5
+#pragma cmi_include chunks/dome_contacts.glsl
