@@ -80,4 +80,8 @@ public final class AllvrClientBlockHook {
     }
 
     private AllvrClientBlockHook() {}
+    private static java.util.function.Consumer<net.minecraft.core.BlockPos> nativeLightChange;
+    public static void setNativeLightChange(java.util.function.Consumer<net.minecraft.core.BlockPos> handler) { nativeLightChange = handler; }
+    public static void nativeLightChanged(net.minecraft.core.BlockPos pos) { if (nativeLightChange != null) nativeLightChange.accept(pos); }
+
 }

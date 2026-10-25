@@ -58,8 +58,8 @@ public final class AllvrVoxyClientIngest {
         ThreadLocal.withInitial(() -> false);
     private static boolean residentScanQueued;
     private static long prewarmedSlab = Long.MIN_VALUE;
-    private static final ArrayDeque<Long> SECTION_QUEUE = new ArrayDeque<>();
-    private static final HashSet<Long> QUEUED_SECTIONS = new HashSet<>();
+    private static final ArrayDeque<com.iridium126.createmanaindustry.dimension.cube.AllvrSectionCoord> SECTION_QUEUE = new ArrayDeque<>();
+    private static final HashSet<com.iridium126.createmanaindustry.dimension.cube.AllvrSectionCoord> QUEUED_SECTIONS = new HashSet<>();
 
     private AllvrVoxyClientIngest() {}
 
@@ -178,10 +178,10 @@ public final class AllvrVoxyClientIngest {
             if (engine == null) return;
             int budget = SECTION_BUDGET_PER_TICK;
             while (budget-- > 0 && !SECTION_QUEUE.isEmpty()) {
-                long sectionKey = SECTION_QUEUE.removeFirst();
+                var sectionKey = SECTION_QUEUE.removeFirst();
                 QUEUED_SECTIONS.remove(sectionKey);
                 try {
-                    ingestSection(engine, SectionPos.of(sectionKey));
+                    ingestSection(engine, sectionKey.sectionPos());
                 } catch (Throwable sectionFailure) {
                     // Renderer/engine reloads can invalidate the engine between
                     // lookup and rawIngest. Preserve this section for the next
@@ -281,7 +281,7 @@ public final class AllvrVoxyClientIngest {
 
     private static void enqueueSection(int sx, int sy, int sz) {
         if (!AllvrVoxyYSlab.containsSectionY(slabId, sy)) return;
-        long key = SectionPos.asLong(sx, sy, sz);
+        var key = new com.iridium126.createmanaindustry.dimension.cube.AllvrSectionCoord(sx, sy, sz);
         if (QUEUED_SECTIONS.add(key)) {
             SECTION_QUEUE.addLast(key);
         }

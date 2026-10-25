@@ -269,4 +269,55 @@ class AllvrCubeIoWorkerTest {
             worker.close();
         }
     }
+    @Test void pauseIsAnIoBarrierAndCloseDoesNotCommitPausedSnapshots() throws Exception {
+        var storage = new FakeStorage();
+        var worker = new AllvrCubeIoWorker(storage, new AllvrStorageDiagnostics());
+        worker.setWritesEnabled(false);
+        worker.enqueue(snapshot("paused", 1));
+        assertThrows(IOException.class, worker::flush);
+        assertEquals(0, storage.writeCalls.get());
+        assertEquals(1, worker.pendingCount());
+        worker.close();
+        assertEquals(0, storage.writeCalls.get());
+    }
+    @Test void resumeCommitsTheLatestPausedSnapshot() throws Exception {
+        var storage = new FakeStorage();
+        try (var worker = new AllvrCubeIoWorker(storage, new AllvrStorageDiagnostics())) {
+            worker.setWritesEnabled(false);
+            worker.enqueue(snapshot("a", 1)); worker.enqueue(snapshot("a", 2));
+            worker.setWritesEnabled(true); worker.flush();
+            assertEquals(1, storage.disk.size());
+            assertEquals(2, storage.disk.values().iterator().next().getInt("v"));
+        }
+    }
+
+    @Test void pauseWaitsForInflightCommitAndDefersTheNextCommit() throws Exception {
+        var storage = new FakeStorage();
+        var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
+        storage.beforeWrite = () -> {
+            if (storage.writeCalls.get() == 1) {
+                entered.countDown();
+                try { if (!release.await(5, TimeUnit.SECONDS)) throw new AssertionError("gate timed out"); }
+                catch (InterruptedException e) { throw new RuntimeException(e); }
+            }
+        };
+        var worker = new AllvrCubeIoWorker(storage, new AllvrStorageDiagnostics());
+        var pauseExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            worker.enqueue(snapshot("a", 1));
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            var paused = pauseExecutor.submit(() -> { worker.setWritesEnabled(false); return null; });
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (worker.writesEnabled() && System.nanoTime() < deadline) Thread.onSpinWait();
+            assertFalse(worker.writesEnabled());
+            assertFalse(paused.isDone(), "save-off must await the current commit");
+            worker.enqueue(snapshot("b", 2));
+            release.countDown(); paused.get(5, TimeUnit.SECONDS);
+            assertEquals(1, storage.disk.values().iterator().next().getInt("v"));
+            assertEquals(1, worker.pendingCount());
+            worker.setWritesEnabled(true); worker.flush();
+            assertEquals(2, storage.disk.values().iterator().next().getInt("v"));
+        } finally { release.countDown(); pauseExecutor.shutdownNow(); worker.close(); }
+    }
+
 }

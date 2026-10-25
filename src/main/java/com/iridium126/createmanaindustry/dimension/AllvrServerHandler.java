@@ -28,7 +28,8 @@ public final class AllvrServerHandler {
     public static void onLevelTick(LevelTickEvent.Post event) {
         if (event.getLevel() instanceof ServerLevel serverLevel
             && serverLevel.dimension() == AllvrDimensions.ALLAY_LEVEL) {
-            AllvrCubeMap map = ((AllvrServerLevelDuck) serverLevel).allvr$getCubeMap();
+            AllvrServerLevelDuck duck = (AllvrServerLevelDuck) serverLevel;
+            AllvrCubeMap map = serverLevel.players().isEmpty() ? duck.allvr$peekCubeMap() : duck.allvr$getCubeMap();
             if (map != null) {
                 map.tick();
             }
@@ -54,7 +55,35 @@ public final class AllvrServerHandler {
         ServerLevel allayLevel = server.getLevel(AllvrDimensions.ALLAY_LEVEL);
         if (allayLevel != null) {
             UUID uuid = player.getUUID();
-            ((AllvrServerLevelDuck) allayLevel).allvr$getCubeMap().resetPlayer(uuid);
+            var map = ((AllvrServerLevelDuck) allayLevel).allvr$peekCubeMap();
+            if (map != null) map.resetPlayer(uuid);
+        }
+    }
+
+    public static void onChunkLoaded(net.neoforged.neoforge.event.level.ChunkEvent.Load event) {
+        if (event.getLevel() instanceof ServerLevel server && AllvrDimensions.isAllay(server)) {
+            var map = ((AllvrServerLevelDuck) server).allvr$peekCubeMap();
+            if (map != null) map.lightEngine().onNativeColumnChanged(event.getChunk().getPos().x, event.getChunk().getPos().z);
+        }
+    }
+
+    public static void onChunkUnloaded(net.neoforged.neoforge.event.level.ChunkEvent.Unload event) {
+        if (event.getLevel() instanceof ServerLevel server && AllvrDimensions.isAllay(server)) {
+            var map = ((AllvrServerLevelDuck) server).allvr$peekCubeMap();
+            if (map != null) map.lightEngine().onNativeColumnUnloaded(event.getChunk().getPos().x, event.getChunk().getPos().z);
+        }
+    }
+
+    public static void onEntityJoined(net.neoforged.neoforge.event.entity.EntityJoinLevelEvent event) {
+        if (event.getLevel() instanceof ServerLevel level && AllvrDimensions.isAllay(level)) {
+            var map = ((AllvrServerLevelDuck) level).allvr$peekCubeMap();
+            if (map != null) map.entityEntered(event.getEntity().blockPosition());
+        }
+    }
+    public static void onEntityEntered(net.neoforged.neoforge.event.entity.EntityEvent.EnteringSection event) {
+        if (event.getEntity().level() instanceof ServerLevel level && AllvrDimensions.isAllay(level)) {
+            var map = ((AllvrServerLevelDuck) level).allvr$peekCubeMap();
+            if (map != null) map.entityEntered(event.getEntity().blockPosition());
         }
     }
 

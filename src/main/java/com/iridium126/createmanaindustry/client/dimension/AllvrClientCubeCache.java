@@ -56,6 +56,13 @@ public final class AllvrClientCubeCache {
     public static final Object LOCK = new Object();
 
     private static ClientLevel level;
+    private static final java.util.Map<Long, com.iridium126.createmanaindustry.dimension.net.AllvrStreamState<ClientboundAllvrBlockUpdatePacket>> STREAMS = new java.util.HashMap<>();
+    private static final java.util.Map<Long, java.util.Map<Integer, ClientboundAllvrBlockUpdatePacket>> PENDING_BE = new java.util.HashMap<>();
+    private static final java.util.Map<Long, Long> FORGOTTEN = new java.util.LinkedHashMap<>() {
+        @Override protected boolean removeEldestEntry(java.util.Map.Entry<Long, Long> eldest) { return size() > 32_768; }
+    };
+    private static final java.util.Map<Long, Long> RESYNC_TIMES = new java.util.HashMap<>();
+
     /**
      * Packet section/BE decoding is deliberately outside the client game
      * thread.  The vanilla chunk path decodes packet data before publishing a
@@ -67,17 +74,7 @@ public final class AllvrClientCubeCache {
     private static final ThreadPoolExecutor CUBE_DECODE_EXECUTOR = new ThreadPoolExecutor(
         CUBE_DECODE_WORKERS, CUBE_DECODE_WORKERS,
         0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(256),
-        CMIThreadFactory.daemonFactory("allvr-client-cube-decode"), (task, executor) -> {
-            if (executor.isShutdown()) throw new java.util.concurrent.RejectedExecutionException("Cube decoder is shut down");
-            try {
-                // Preserve every cube packet without decoding on the submitting
-                // (client game) thread when the bounded worker queue is full.
-                executor.getQueue().put(task);
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-                throw new java.util.concurrent.RejectedExecutionException("Interrupted while queueing cube decode", interrupted);
-            }
-        });
+        CMIThreadFactory.daemonFactory("allvr-client-cube-decode"), new ThreadPoolExecutor.AbortPolicy());
     private static final AtomicLong NEXT_PACKET_SEQUENCE = new AtomicLong();
     /** Keep packet publication within the normal client tick budget. A burst
      * of streamed air cubes must not make the render thread apply thousands
@@ -102,6 +99,8 @@ public final class AllvrClientCubeCache {
         new ConcurrentLinkedQueue<>();
     /** Monotonic ALLVR content revision used by immutable Sodium snapshots. */
     private static volatile long contentRevision;
+    private static long residencyRevision;
+    public static long residencyRevision() { return residencyRevision; }
     private static final Long2ObjectOpenHashMap<AllvrCube> cubes = new Long2ObjectOpenHashMap<>();
     private static AllvrLightEngine lightEngine;
     /** Cubes that hold block entities — the client ticking worklist (mirrors
@@ -110,9 +109,11 @@ public final class AllvrClientCubeCache {
     private static final LongOpenHashSet tickingBeCubeKeys = new LongOpenHashSet();
     private static boolean simulationTicketsDirty = true;
     private static long simulationCenter = Long.MIN_VALUE;
+    private static int simulationDistance = -1, simulationChunkX, simulationChunkZ;
+    private static boolean simulationSpectator;
 
     private record DecodedCube(ClientLevel targetLevel, long sessionEpoch, long cubePos,
-                               int payloadBytes, AllvrCube cube, long sequence,
+                               int payloadBytes, AllvrCube cube, long sequence, long generation, long revision,
                                Throwable failure) {}
 
     /** Binds the installed client level before its renderers are initialized. */
@@ -125,14 +126,18 @@ public final class AllvrClientCubeCache {
             ? new AllvrLightEngine(clientLevel, new AllvrLightEngine.Access() {
                 @Override
                 public BlockState getBlockState(BlockPos pos) {
+                    if (com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaY(pos.getY())) {
+                        var chunk = clientLevel.getChunkSource().getChunk(pos.getX() >> 4, pos.getZ() >> 4, false);
+                        return chunk == null ? Blocks.VOID_AIR.defaultBlockState() : chunk.getBlockState(pos);
+                    }
                     return AllvrClientCubeCache.getBlockState(pos);
                 }
 
                 @Override
                 public boolean isLoaded(BlockPos pos) {
-                    synchronized (LOCK) {
-                        return cubes.containsKey(AllvrCubePos.asLong(pos));
-                    }
+                    // Only the game thread advances the engine. Readers of published light never enter Access.
+                    return com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaY(pos.getY())
+                        ? clientLevel.getChunkSource().getChunk(pos.getX() >> 4, pos.getZ() >> 4, false) != null : cubes.containsKey(AllvrCubePos.asLong(pos));
                 }
 
                 @Override
@@ -144,6 +149,7 @@ public final class AllvrClientCubeCache {
             (type, pos) -> type == net.minecraft.world.level.LightLayer.BLOCK
                 ? sampleBlockLight(pos) : sampleSkyLight(pos),
             (pos, amount) -> Math.max(sampleBlockLight(pos), sampleSkyLight(pos) - amount));
+        com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setNativeLightChange(pos -> { if (lightEngine != null) lightEngine.onBlockChanged(pos); });
         com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setBiomeResolver(AllvrClientCubeCache::getNoiseBiome);
         com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setLoadedResolver(
             AllvrClientCubeCache::isLoaded);
@@ -208,15 +214,20 @@ public final class AllvrClientCubeCache {
                 cube.onUnload();
             }
             cubes.clear();
+            residencyRevision++;
             beCubes.clear();
             tickingBeCubeKeys.clear();
             simulationTicketsDirty = true;
             simulationCenter = Long.MIN_VALUE;
             contentRevision++;
+            STREAMS.clear(); FORGOTTEN.clear(); PENDING_BE.clear();
+            RESYNC_TIMES.clear();
+            CUBE_DECODE_EXECUTOR.getQueue().clear();
             LATEST_PACKET_SEQUENCE.clear();
             COMPLETED_CUBES.clear();
             level = null;
             lightEngine = null;
+            com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setNativeLightChange(null);
             com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setLightResolver(null, null);
             com.iridium126.createmanaindustry.dimension.AllvrClientBlockHook.setLoadedResolver(null);
         }
@@ -234,12 +245,17 @@ public final class AllvrClientCubeCache {
         if (clientLevel == null || clientLevel.dimension() != AllvrDimensions.ALLAY_LEVEL) {
             return;
         }
+        if (packet.generation() <= FORGOTTEN.getOrDefault(packet.cubePos(), -1L)) return;
+        var stream = STREAMS.computeIfAbsent(packet.cubePos(), key -> new com.iridium126.createmanaindustry.dimension.net.AllvrStreamState<>());
+        if (!stream.begin(packet.generation(), packet.revision())) return;
         RegistryAccess registryAccess = clientLevel.registryAccess();
         long sequence = NEXT_PACKET_SEQUENCE.incrementAndGet();
         long sessionEpoch = CLIENT_SESSION_EPOCH.get();
         rememberPacketSequence(packet.cubePos(), sequence);
-        CUBE_DECODE_EXECUTOR.execute(() -> decodeAndQueueApply(
-            packet, clientLevel, registryAccess, sequence, sessionEpoch));
+        try {
+            CUBE_DECODE_EXECUTOR.execute(() -> decodeAndQueueApply(packet, clientLevel, registryAccess, sequence, sessionEpoch));
+        } catch (java.util.concurrent.RejectedExecutionException rejected) { stream.fail(); }
+
     }
 
     private static void decodeAndQueueApply(ClientboundAllvrCubePacket packet,
@@ -269,7 +285,7 @@ public final class AllvrClientCubeCache {
             return;
         }
         COMPLETED_CUBES.add(new DecodedCube(targetLevel, sessionEpoch, packet.cubePos(),
-            packet.payload().length, cube, sequence, failure));
+            packet.payload().length, cube, sequence, packet.generation(), packet.revision(), failure));
     }
 
     /** Applies a bounded batch of completed packet decodes on the client game
@@ -284,8 +300,21 @@ public final class AllvrClientCubeCache {
             && (applied == 0 || System.nanoTime() < deadline)
             && (decoded = COMPLETED_CUBES.poll()) != null) {
             applyDecodedCube(decoded.targetLevel(), decoded.sessionEpoch(), decoded.cubePos(),
-                decoded.payloadBytes(), decoded.cube(), decoded.sequence(), decoded.failure());
+                decoded.payloadBytes(), decoded.cube(), decoded.sequence(), decoded.generation(), decoded.revision(), decoded.failure());
             applied++;
+        }
+        applyPendingBlockEntities();
+        var connection = Minecraft.getInstance().getConnection();
+        long now = level == null ? 0 : level.getGameTime();
+        int requestBudget = 4;
+        for (var entry : STREAMS.entrySet()) {
+            if (requestBudget <= 0) break;
+            if (connection != null && entry.getValue().needsResync()
+                && now - RESYNC_TIMES.getOrDefault(entry.getKey(), now - 40) >= 40) {
+                connection.send(new com.iridium126.createmanaindustry.dimension.net.ServerboundAllvrResyncPacket(entry.getKey(), entry.getValue().generation()));
+                RESYNC_TIMES.put(entry.getKey(), now);
+                requestBudget--;
+            }
         }
         if (lightEngine != null) {
             lightEngine.tick(CLIENT_LIGHT_BUDGET);
@@ -304,7 +333,7 @@ public final class AllvrClientCubeCache {
      */
     private static void applyDecodedCube(ClientLevel targetLevel, long sessionEpoch,
                                          long cubePos, int payloadBytes, AllvrCube cube,
-                                         long sequence, Throwable failure) {
+                                         long sequence, long generation, long revision, Throwable failure) {
         ClientLevel clientLevel = Minecraft.getInstance().level;
         if (clientLevel == null || clientLevel != targetLevel
             || CLIENT_SESSION_EPOCH.get() != sessionEpoch
@@ -315,21 +344,37 @@ public final class AllvrClientCubeCache {
         if (latest != null && latest.longValue() != sequence) {
             return;
         }
+        var stream = STREAMS.get(cubePos);
+        if (stream == null || !stream.canComplete(generation, revision)) return;
         if (failure != null) {
+            stream.fail();
             CreateManaIndustry.LOGGER.warn("[Allvr] malformed cube packet for {} — dropped",
                 com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(cubePos), failure);
             return;
         }
         level = clientLevel;
+        AllvrCube old;
         synchronized (LOCK) {
-            AllvrCube old = cubes.put(cubePos, cube);
+            old = cubes.put(cubePos, cube);
+            residencyRevision++;
             if (old != null) {
                 old.onUnload();
             }
             refreshBeCube(cubePos, cube);
             contentRevision++;
         }
-        cube.onLoad(clientLevel);
+        PENDING_BE.remove(cubePos);
+        try { cube.onLoad(clientLevel); }
+        catch (Throwable error) {
+            cube.onUnload();
+            synchronized (LOCK) { cubes.remove(cubePos); beCubes.remove(cubePos); contentRevision++; residencyRevision++; }
+            if (old != null && lightEngine != null) lightEngine.onCubeUnloaded(old);
+            stream.fail();
+            CreateManaIndustry.LOGGER.warn("[Allvr] cube BE publication failed; requesting a new snapshot", error);
+            return;
+        }
+        synchronized (LOCK) { refreshBeCube(cubePos, cube); }
+        stream.complete(generation, revision, AllvrClientCubeCache::applyOrderedBlockUpdate);
         if (lightEngine != null) {
             lightEngine.onCubeLoaded(cube);
         } else {
@@ -357,23 +402,34 @@ public final class AllvrClientCubeCache {
             return;
         }
         try {
+            if (packet.generation() <= FORGOTTEN.getOrDefault(packet.cubePos(), -1L)) return;
+        var stream = STREAMS.computeIfAbsent(packet.cubePos(), key -> new com.iridium126.createmanaindustry.dimension.net.AllvrStreamState<>());
+            if (!stream.begin(packet.generation(), packet.revision())) return;
             long sequence = NEXT_PACKET_SEQUENCE.incrementAndGet();
             rememberPacketSequence(packet.cubePos(), sequence);
             applyDecodedCube(clientLevel, CLIENT_SESSION_EPOCH.get(), packet.cubePos(), packet.payload().length,
-                packet.decodeCube(clientLevel.registryAccess()), sequence, null);
+                packet.decodeCube(clientLevel.registryAccess()), sequence, packet.generation(), packet.revision(), null);
         } catch (Throwable error) {
             applyDecodedCube(clientLevel, CLIENT_SESSION_EPOCH.get(), packet.cubePos(), packet.payload().length, null,
-                LATEST_PACKET_SEQUENCE.getOrDefault(packet.cubePos(), Long.MIN_VALUE), error);
+                LATEST_PACKET_SEQUENCE.getOrDefault(packet.cubePos(), Long.MIN_VALUE), packet.generation(), packet.revision(), error);
         }
     }
 
-    public static void forgetCube(long cubePos) {
+    public static void forgetCube(long cubePos, long generation) {
+        var stream = STREAMS.get(cubePos);
+        if (stream == null || !stream.accepts(generation)) return;
+        stream.forget(generation);
+        FORGOTTEN.put(cubePos, generation);
+        // Decode tasks retain sequence identities; removing watch state cannot resurrect a forgotten cube.
+        STREAMS.remove(cubePos);
+        RESYNC_TIMES.remove(cubePos); PENDING_BE.remove(cubePos);
         // Keep a tombstone sequence so a decode that was already queued cannot
         // resurrect a cube after the vanilla-style forget packet is applied.
         rememberPacketSequence(cubePos, NEXT_PACKET_SEQUENCE.incrementAndGet());
         AllvrCube unloaded;
         synchronized (LOCK) {
             unloaded = cubes.remove(cubePos);
+            residencyRevision++;
             if (unloaded != null) {
                 unloaded.onUnload();
             }
@@ -443,7 +499,7 @@ public final class AllvrClientCubeCache {
      */
     public static void tickBlockEntities() {
         ClientLevel clientLevel = level;
-        if (clientLevel == null || beCubes.isEmpty()) {
+        if (clientLevel == null || beCubes.isEmpty() || !clientLevel.tickRateManager().runsNormally()) {
             return;
         }
         LocalPlayer player = Minecraft.getInstance().player;
@@ -452,8 +508,9 @@ public final class AllvrClientCubeCache {
         }
         AllvrCubePos pc = AllvrCubePos.of(player.blockPosition());
         long center = pc.asLong();
-        if (center != simulationCenter) {
-            simulationCenter = center;
+        int distance = clientLevel.getServerSimulationDistance(), px = player.getBlockX() >> 4, pz = player.getBlockZ() >> 4;
+        if (center != simulationCenter || distance != simulationDistance || px != simulationChunkX || pz != simulationChunkZ || player.isSpectator() != simulationSpectator) {
+            simulationCenter = center; simulationDistance = distance; simulationChunkX = px; simulationChunkZ = pz; simulationSpectator = player.isSpectator();
             simulationTicketsDirty = true;
         }
         if (simulationTicketsDirty) {
@@ -462,8 +519,8 @@ public final class AllvrClientCubeCache {
                 AllvrCube cube = beCubes.get(key);
                 if (cube == null) continue;
                 AllvrCubePos cpos = cube.getPos();
-                if (Math.abs(cpos.getX() - pc.getX()) <= 8 && Math.abs(cpos.getZ() - pc.getZ()) <= 8
-                    && Math.abs(cpos.getY() - pc.getY()) <= 8) {
+                if (!simulationSpectator && com.iridium126.createmanaindustry.dimension.cube.AllvrVanillaRenderDistance.isCubeWithinCylinder(
+                    cpos.getX(), cpos.getY(), cpos.getZ(), px, pz, pc.getY(), distance, (distance + 1) / 2)) {
                     tickingBeCubeKeys.add(key);
                 }
             }
@@ -493,6 +550,11 @@ public final class AllvrClientCubeCache {
      * change (another player, /setblock).
      */
     public static void applyBlockUpdate(ClientboundAllvrBlockUpdatePacket packet) {
+        var stream = STREAMS.get(packet.cubePos());
+        if (stream != null) stream.update(packet.generation(), packet.revision(), packet, AllvrClientCubeCache::applyOrderedBlockUpdate);
+    }
+
+    private static void applyOrderedBlockUpdate(ClientboundAllvrBlockUpdatePacket packet) {
         ClientLevel clientLevel = level;
         if (clientLevel == null || clientLevel.dimension() != AllvrDimensions.ALLAY_LEVEL) {
             return; // level switched — the streamed cube died with it
@@ -512,10 +574,36 @@ public final class AllvrClientCubeCache {
         BlockPos blockPos = new BlockPos(pos.minBlockX() + (cell & 31),
             pos.minBlockY() + (cell >> 10), pos.minBlockZ() + ((cell >> 5) & 31));
         clientLevel.setServerVerifiedBlockState(blockPos, state, 19);
-        BlockEntity blockEntity = getBlockEntity(blockPos);
-        if (blockEntity != null && packet.blockEntityTag() != null) {
-            blockEntity.loadWithComponents(packet.blockEntityTag(), clientLevel.registryAccess());
-            blockEntity.setChanged();
+        var pending = PENDING_BE.computeIfAbsent(packet.cubePos(), key -> new java.util.HashMap<>());
+        if (state.hasBlockEntity() && packet.blockEntityTag() != null) pending.put(packet.cellIndex(), packet);
+        else pending.remove(packet.cellIndex());
+        if (pending.size() > com.iridium126.createmanaindustry.dimension.net.AllvrStreamState.MAX_BUFFERED_UPDATES) {
+            pending.clear(); STREAMS.get(packet.cubePos()).fail();
+        }
+    }
+    private static void applyPendingBlockEntities() {
+        if (level == null) return;
+        var cubesPending = PENDING_BE.entrySet().iterator();
+        while (cubesPending.hasNext()) {
+            var entry = cubesPending.next(); var stream = STREAMS.get(entry.getKey());
+            var updates = entry.getValue().values().iterator();
+            while (updates.hasNext()) {
+                var packet = updates.next();
+                if (stream == null || !stream.accepts(packet.generation())) { updates.remove(); continue; }
+                var cube = AllvrCubePos.fromLong(packet.cubePos()); int cell = packet.cellIndex();
+                var pos = new BlockPos(cube.minBlockX() + (cell & 31), cube.minBlockY() + (cell >> 10), cube.minBlockZ() + ((cell >> 5) & 31));
+                var state = net.minecraft.world.level.block.Block.stateById(packet.stateId());
+                var blockEntity = getBlockEntity(pos);
+                // Prediction may still own this position until its ACK. Apply NBT after the real BE exists.
+                if (blockEntity == null || getBlockState(pos) != state) continue;
+                if (packet.dataPacket()) {
+                    var connection = Minecraft.getInstance().getConnection();
+                    if (connection == null) continue;
+                    blockEntity.onDataPacket(connection.getConnection(), net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket.create(blockEntity, (be, provider) -> packet.blockEntityTag()), level.registryAccess());
+                } else blockEntity.handleUpdateTag(packet.blockEntityTag(), level.registryAccess());
+                blockEntity.setChanged(); updates.remove();
+            }
+            if (entry.getValue().isEmpty()) cubesPending.remove();
         }
     }
 
@@ -609,6 +697,7 @@ public final class AllvrClientCubeCache {
     }
 
     public static BlockState getBlockState(BlockPos pos) {
+        if (!com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isInBounds(pos)) return Blocks.VOID_AIR.defaultBlockState();
         AllvrCube cube = cubes.get(com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.asLong(pos));
         return cube == null ? Blocks.VOID_AIR.defaultBlockState() : cube.getBlockState(pos);
     }

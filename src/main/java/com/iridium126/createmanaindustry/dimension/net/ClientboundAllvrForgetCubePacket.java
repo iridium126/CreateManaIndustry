@@ -15,7 +15,7 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
  * subscription range, hysteresis margin included). Position is
  * {@code AllvrCubePos.asLong()}.
  */
-public record ClientboundAllvrForgetCubePacket(long cubePos) implements CustomPacketPayload {
+public record ClientboundAllvrForgetCubePacket(long cubePos, long generation) implements CustomPacketPayload {
     private static final ClientPayloadHandler<ClientboundAllvrForgetCubePacket> CLIENT_HANDLER =
             new ClientPayloadHandler<>();
 
@@ -28,10 +28,11 @@ public record ClientboundAllvrForgetCubePacket(long cubePos) implements CustomPa
 
     private static void encode(RegistryFriendlyByteBuf buffer, ClientboundAllvrForgetCubePacket p) {
         buffer.writeLong(p.cubePos);
+        buffer.writeLong(p.generation);
     }
 
     private static ClientboundAllvrForgetCubePacket decode(RegistryFriendlyByteBuf buffer) {
-        return new ClientboundAllvrForgetCubePacket(buffer.readLong());
+        return new ClientboundAllvrForgetCubePacket(buffer.readLong(), buffer.readLong());
     }
 
     @Override

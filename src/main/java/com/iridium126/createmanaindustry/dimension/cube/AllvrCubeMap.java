@@ -82,7 +82,7 @@ import com.iridium126.createmanaindustry.dimension.light.AllvrLightEngine;
  */
 public final class AllvrCubeMap {
 
-    /** Per-player server-memory/simulation shell, in cubes. */
+    /** Minimum resident/prefetch shell; gameplay uses independent simulation tickets. */
     private static final int GEN_RADIUS = 8;
     /**
      * Per-player vertical client subscription radius. Horizontal subscription
@@ -133,6 +133,8 @@ public final class AllvrCubeMap {
     private static final int LOAD_RETRY_TICKS = 200;
 
     private final ServerLevel level;
+    private final com.iridium126.createmanaindustry.dimension.net.AllvrCubeBroadcaster broadcaster = new com.iridium126.createmanaindustry.dimension.net.AllvrCubeBroadcaster(this);
+    public com.iridium126.createmanaindustry.dimension.net.AllvrCubeBroadcaster broadcaster() { return broadcaster; }
     private final Registry<net.minecraft.world.level.biome.Biome> biomeRegistry;
     private final AllvrIslandFieldGenerator generator;
     private final AllvrLightEngine lightEngine;
@@ -153,21 +155,32 @@ public final class AllvrCubeMap {
     /** Cubes with a simulation ticket for at least one current player. */
     private final LongOpenHashSet tickingBeCubeKeys = new LongOpenHashSet();
     /**
-     * Fluid ticks for cube-backed positions. Vanilla's LevelTicks is backed
-     * by the column ChunkMap ticking predicate and therefore cannot see the
-     * cube-only Y ranges. Keep vanilla ScheduledTick ordering and dedupe here.
+     * Simulation is independent from resident and watch tickets. Each Cube owns its block/fluid queues;
+     * these components only coordinate which queues advance and when maintenance runs.
      */
-    private static final int MAX_FLUID_TICKS_PER_TICK = 65_536;
-    private final PriorityQueue<ScheduledTick<Fluid>> fluidTicks =
-        new PriorityQueue<>(ScheduledTick.DRAIN_ORDER);
-    private final Set<FluidTickKey> scheduledFluidTicks = new HashSet<>();
-
-    private record FluidTickKey(Fluid fluid, int x, int y, int z) {
-        static FluidTickKey of(ScheduledTick<Fluid> tick) {
-            BlockPos pos = tick.pos();
-            return new FluidTickKey(tick.type(), pos.getX(), pos.getY(), pos.getZ());
-        }
+    private final AllvrSimulationTickets simulation = new AllvrSimulationTickets();
+    private final AllvrEntityColumnTickets entityColumns = new AllvrEntityColumnTickets();
+    public void entityEntered(BlockPos pos) {
+        if (AllvrDimensionLimits.isInBounds(pos) && !AllvrDimensionLimits.isVanillaY(pos.getY())
+            && !isLoaded(pos) && isNeededByAnyPlayer(AllvrCubePos.of(pos), level.players())) getOrGenerate(AllvrCubePos.of(pos));
     }
+    private final AllvrCubeTicking ticking = new AllvrCubeTicking(this);
+    private int lastSimulationDistance = -1;
+    private long residencyRevision;
+    public AllvrCubeTicking ticking() { return ticking; }
+    public long entityRevision() { return residencyRevision + simulation.revision(); }
+    public boolean isSimulating(BlockPos pos) { return simulation.contains(AllvrCubePos.asLong(pos)); }
+    private final AllvrRetryQueue retries = new AllvrRetryQueue();
+    private final AllvrUnloadQueue unloads = new AllvrUnloadQueue();
+    private int unloadSnapshotsRemaining;
+    private final it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap unloadPins = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
+    private void pinUnload(long key, int reason) {
+        int old = reason == 0 ? unloadPins.remove(key) : unloadPins.put(key, reason);
+        if (old == reason) return;
+        if (old == 1) diagnostics.pinnedSaveDisabled--; else if (old == 2) diagnostics.pinnedSnapshotFailure--; else if (old == 3) diagnostics.pinnedPendingIo--;
+        if (reason == 1) diagnostics.pinnedSaveDisabled++; else if (reason == 2) diagnostics.pinnedSnapshotFailure++; else if (reason == 3) diagnostics.pinnedPendingIo++;
+    }
+    private boolean emptyCleanupRequested;
     private boolean simulationTicketsDirty = true;
     private final Map<UUID, Subscription> subscriptions = new java.util.HashMap<>();
     private final AllvrCubeIoWorker worker;
@@ -212,6 +225,16 @@ public final class AllvrCubeMap {
     private boolean loggedCapWarning;
     private int unloadScanTicks;
     private boolean closed;
+    private boolean savingEnabled = true;
+    public void syncSavingState() {
+        boolean enabled = !level.noSave;
+        if (savingEnabled == enabled) return;
+        try { worker.setWritesEnabled(enabled); }
+        catch (IOException failure) { throw new IllegalStateException("Allvr save toggle failed", failure); }
+        savingEnabled = enabled;
+        if (enabled) { saveAll(false); unloads.clear(); unloads.request(cubes.keySet().toLongArray()); }
+    }
+
 
     /** Per-player client subscription state: which cube keys have been streamed. */
     private static final class Subscription {
@@ -224,6 +247,8 @@ public final class AllvrCubeMap {
         int scanRadius;
         int scanIndex;
         int renderDistanceChunks = AllvrVanillaRenderDistance.MIN_CHUNKS;
+        int simulationDistance = -1;
+        boolean spectator;
         int sendYRadius = DEFAULT_SEND_Y_RADIUS;
         /** A stable player must not rescan the full shell every tick. */
         boolean scanDirty = true;
@@ -250,12 +275,16 @@ public final class AllvrCubeMap {
         this.lightEngine = new AllvrLightEngine(level, new AllvrLightEngine.Access() {
             @Override
             public BlockState getBlockState(BlockPos pos) {
+                if (AllvrDimensionLimits.isVanillaY(pos.getY())) {
+                    var chunk = level.getChunkSource().getChunk(pos.getX() >> 4, pos.getZ() >> 4, net.minecraft.world.level.chunk.status.ChunkStatus.FULL, false);
+                    return chunk == null ? net.minecraft.world.level.block.Blocks.VOID_AIR.defaultBlockState() : chunk.getBlockState(pos);
+                }
                 return AllvrCubeMap.this.getBlockState(pos);
             }
 
             @Override
             public boolean isLoaded(BlockPos pos) {
-                return cubes.containsKey(AllvrCubePos.asLong(pos));
+                return AllvrDimensionLimits.isVanillaY(pos.getY()) ? level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4) : cubes.containsKey(AllvrCubePos.asLong(pos));
             }
 
             @Override
@@ -279,47 +308,51 @@ public final class AllvrCubeMap {
             this.persistedIndex.size(), folder);
     }
 
+    public boolean isClosed() { return closed; }
     public ServerLevel getLevel() {
         return level;
     }
 
     /** Schedules a vanilla fluid tick for a cube-backed position. */
-    public void scheduleFluidTick(BlockPos pos, Fluid fluid, int delay, TickPriority priority) {
-        if (!AllvrDimensionLimits.isInBounds(pos)
-            || AllvrDimensionLimits.isVanillaY(pos.getY())) {
-            return;
-        }
-        ScheduledTick<Fluid> tick = new ScheduledTick<>(fluid, pos,
-            this.level.getGameTime() + Math.max(0, delay), priority,
-            this.level.nextSubTickCount());
-        if (this.scheduledFluidTicks.add(FluidTickKey.of(tick))) {
-            this.fluidTicks.add(tick);
-        }
+    public void scheduleFluidTick(BlockPos pos, Fluid fluid, long delay, TickPriority priority) {
+        scheduleFluidTick(pos, fluid, delay, priority, level.nextSubTickCount());
     }
-
-    public void scheduleFluidTick(BlockPos pos, Fluid fluid, int delay) {
-        this.scheduleFluidTick(pos, fluid, delay, TickPriority.NORMAL);
+    public void scheduleFluidTick(BlockPos pos, Fluid fluid, long delay, TickPriority priority, long order) {
+        if (!AllvrDimensionLimits.isInBounds(pos) || AllvrDimensionLimits.isVanillaY(pos.getY())) return;
+        var cube = getOrGenerate(AllvrCubePos.of(pos));
+        if (cube != null && cube.fluidTicks().schedule(fluid, pos, delay, priority, order)) queueSnapshot(cube.getPos().asLong(), false);
     }
-
-    /** Runs the cube fluid queue with vanilla's 65,536 tick safety cap. */
-    public void tickFluids() {
-        long gameTime = this.level.getGameTime();
-        int processed = 0;
-        while (processed < MAX_FLUID_TICKS_PER_TICK
-            && !this.fluidTicks.isEmpty()
-            && this.fluidTicks.peek().triggerTick() <= gameTime) {
-            ScheduledTick<Fluid> tick = this.fluidTicks.poll();
-            this.scheduledFluidTicks.remove(FluidTickKey.of(tick));
-            processed++;
-            BlockPos pos = tick.pos();
-            AllvrCube cube = this.cubes.get(AllvrCubePos.asLong(pos));
-            if (cube == null || !cube.isLoaded()) {
-                continue;
-            }
-            FluidState state = this.level.getFluidState(pos);
-            if (state.is(tick.type())) {
-                state.tick(this.level, pos);
-            }
+    public void scheduleFluidTick(BlockPos pos, Fluid fluid, long delay) { scheduleFluidTick(pos, fluid, delay, TickPriority.NORMAL); }
+    public void scheduleBlockTick(BlockPos pos, net.minecraft.world.level.block.Block block, long delay, TickPriority priority) {
+        scheduleBlockTick(pos, block, delay, priority, level.nextSubTickCount());
+    }
+    public void scheduleBlockTick(BlockPos pos, net.minecraft.world.level.block.Block block, long delay, TickPriority priority, long order) {
+        if (!AllvrDimensionLimits.isInBounds(pos) || AllvrDimensionLimits.isVanillaY(pos.getY())) return;
+        var cube = getOrGenerate(AllvrCubePos.of(pos));
+        if (cube != null && cube.blockTicks().schedule(block, pos, delay, priority, order)) queueSnapshot(cube.getPos().asLong(), false);
+    }
+    public void clearTicks(net.minecraft.world.level.levelgen.structure.BoundingBox area, boolean fluids) {
+        for (var cube : cubes.values()) { if (fluids) cube.fluidTicks().clear(area); else cube.blockTicks().clear(area); }
+        ticking.clear(area, fluids);
+    }
+    public int tickCount(boolean fluids) {
+        int count = 0; for (var cube : cubes.values()) count += fluids ? cube.fluidTicks().size() : cube.blockTicks().size(); return count;
+    }
+    public void copyTicksTo(ServerLevel destination, net.minecraft.world.level.levelgen.structure.BoundingBox area, net.minecraft.core.Vec3i offset, boolean fluids) {
+        if (fluids) {
+            var copied = new java.util.ArrayList<ScheduledTick<Fluid>>();
+            for (var cube : cubes.values()) for (var tick : cube.fluidTicks().snapshot())
+                if (area.isInside(tick.pos())) copied.add(new ScheduledTick<>(tick.type(), tick.pos().offset(offset), cube.fluidTicks().remaining(tick), tick.priority(), tick.subTickOrder()));
+            for (var tick : ticking.copySelected(area, true)) copied.add(new ScheduledTick<>((Fluid) tick.type(), tick.pos().offset(offset), 0, tick.priority(), tick.subTickOrder()));
+            copied.sort(java.util.Comparator.comparingLong(ScheduledTick::subTickOrder));
+            for (var tick : copied) destination.getFluidTicks().schedule(new ScheduledTick<>(tick.type(), tick.pos(), destination.getGameTime() + tick.triggerTick(), tick.priority(), destination.nextSubTickCount()));
+        } else {
+            var copied = new java.util.ArrayList<ScheduledTick<net.minecraft.world.level.block.Block>>();
+            for (var cube : cubes.values()) for (var tick : cube.blockTicks().snapshot())
+                if (area.isInside(tick.pos())) copied.add(new ScheduledTick<>(tick.type(), tick.pos().offset(offset), cube.blockTicks().remaining(tick), tick.priority(), tick.subTickOrder()));
+            for (var tick : ticking.copySelected(area, false)) copied.add(new ScheduledTick<>((net.minecraft.world.level.block.Block) tick.type(), tick.pos().offset(offset), 0, tick.priority(), tick.subTickOrder()));
+            copied.sort(java.util.Comparator.comparingLong(ScheduledTick::subTickOrder));
+            for (var tick : copied) destination.getBlockTicks().schedule(new ScheduledTick<>(tick.type(), tick.pos(), destination.getGameTime() + tick.triggerTick(), tick.priority(), destination.nextSubTickCount()));
         }
     }
 
@@ -384,7 +417,7 @@ public final class AllvrCubeMap {
             // vanilla sendBlockUpdated equivalent: authoritative per-block push
             // to subscribed clients (the initiating player's own prediction
             // re-applies the same state idempotently)
-            sendBlockUpdate(pos, newState);
+            level.sendBlockUpdated(pos, oldState, newState, flags);
         }
         if ((flags & 1) != 0) {
             level.blockUpdated(pos, oldState.getBlock());
@@ -513,19 +546,20 @@ public final class AllvrCubeMap {
 
     /** Authoritative per-block push to every client subscribed to this cube
      *  (one packet build, N sends; level.players() is the allay dimension). */
-    private void sendBlockUpdate(BlockPos pos, BlockState state) {
-        long cubeKey = AllvrCubePos.asLong(pos);
-        BlockEntity blockEntity = this.cubes.get(cubeKey).getBlockEntity(pos);
-        net.minecraft.nbt.CompoundTag tag = blockEntity == null ? null
-            : blockEntity.getUpdateTag(this.level.registryAccess());
-        ClientboundAllvrBlockUpdatePacket packet = new ClientboundAllvrBlockUpdatePacket(
-            cubeKey, AllvrCube.localIndex(pos), net.minecraft.world.level.block.Block.getId(state), tag);
-        for (ServerPlayer player : level.players()) {
-            Subscription sub = subscriptions.get(player.getUUID());
-            if (sub != null && sub.sent.contains(cubeKey)) {
-                player.connection.send(packet);
-            }
-        }
+    public void markForClientUpdate(BlockPos pos) {
+        AllvrCube cube = peek(pos);
+        if (cube == null) return;
+        cube.markDirty();
+        cubePacketCache.remove(cube.getPos().asLong());
+        queueSnapshot(cube.getPos().asLong(), false);
+        broadcaster.changed(pos);
+    }
+
+    private boolean sendCube(ServerPlayer player, AllvrCube cube, ClientboundAllvrCubePacket packet) {
+        if (broadcaster.watch(player, cube, packet)) return true;
+        var sub = subscriptions.get(player.getUUID());
+        if (sub != null) { sub.sent.remove(cube.getPos().asLong()); sub.scanDirty = true; }
+        return false;
     }
 
     private ClientboundAllvrCubePacket packetFor(AllvrCube cube) {
@@ -560,7 +594,7 @@ public final class AllvrCubeMap {
                 center.getY(), sub.renderDistanceChunks, sub.sendYRadius)
                 && sub.sent.add(key)) {
                 if (packet == null) packet = packetFor(cube);
-                player.connection.send(packet);
+                sendCube(player, cube, packet);
             }
         }
     }
@@ -570,7 +604,7 @@ public final class AllvrCubeMap {
         for (ServerPlayer player : players) {
             Subscription sub = subscriptions.get(player.getUUID());
             if (sub != null && sub.sent.remove(key)) {
-                player.connection.send(new ClientboundAllvrForgetCubePacket(key));
+                broadcaster.forget(player, key);
             }
         }
     }
@@ -655,7 +689,8 @@ public final class AllvrCubeMap {
                 pendingGenerations.remove(key, pending);
             } catch (java.util.concurrent.CompletionException e) {
                 pendingGenerations.remove(key, pending);
-                throw e;
+                retries.failed(key, level.getGameTime());
+                return null;
             }
         }
         CompletableFuture<AllvrCube> pendingLoad = pendingPersistedLoads.get(key);
@@ -673,8 +708,8 @@ public final class AllvrCubeMap {
                 if (cause instanceof java.util.concurrent.CancellationException) {
                     return null;
                 }
-                quarantinePersistedLoad(key, cause != null ? cause : e);
-                throw e;
+                if (!quarantinePersistedLoad(key, cause != null ? cause : e)) retries.failed(key, level.getGameTime());
+                return null;
             }
         }
         if (this.persistedIndex.contains(key)) {
@@ -685,16 +720,36 @@ public final class AllvrCubeMap {
         }
         cube = new AllvrCube(AllvrCubePos.of(cubeX, cubeY, cubeZ), biomeRegistry);
         generator.generate(cube);
-        cubes.put(key, cube);
-        refreshBeCube(cube);
-        cube.onLoad(level);
-        this.lightEngine.onCubeLoaded(cube);
-        announceCubeLoaded(cube);
+        publishCube(cube);
         // Generated terrain is itself the authoritative result of worldgen.
         // Persist it through the bounded snapshot queue so the next session
         // restores the complete cube without repeating noise/features.
         this.markGeneratedForPersistence(cube);
         this.diagnostics.cubesGenerated.incrementAndGet();
+        return cube;
+    }
+
+    /** Single publication point shared by generated and restored cubes. */
+    AllvrCube publishCube(AllvrCube cube) {
+        long key = cube.getPos().asLong();
+        if (closed || AllvrDimensionLimits.isVanillaCube(cube.getPos().getY())) throw new IllegalStateException("Invalid cube publication");
+        var existing = cubes.get(key); if (existing != null) return existing;
+        retries.succeeded(key);
+        cubes.put(key, cube);
+        simulationTicketsDirty = true; residencyRevision++;
+        refreshBeCube(cube);
+        try {
+            cube.onLoad(level);
+            this.lightEngine.onCubeLoaded(cube);
+        } catch (Throwable failure) {
+            cubes.remove(key); beCubes.remove(key); tickingBeCubeKeys.remove(key);
+            cube.onUnload(); lightEngine.onCubeUnloaded(cube);
+            residencyRevision++; simulationTicketsDirty = true;
+            throw failure;
+        }
+        for (int x = 0; x < 2; x++) for (int z = 0; z < 2; z++)
+            ((AllvrServerLevelDuck) level).allvr$requestEntityColumn(net.minecraft.world.level.ChunkPos.asLong((cube.getPos().getX() << 1) + x, (cube.getPos().getZ() << 1) + z));
+        announceCubeLoaded(cube);
         return cube;
     }
 
@@ -720,6 +775,7 @@ public final class AllvrCubeMap {
             }
             if (completed.failure() != null) {
                 pendingGenerations.remove(completed.key(), completed.request());
+                retries.failed(completed.key(), level.getGameTime());
                 if (completed.failure() instanceof java.util.concurrent.CancellationException) {
                     continue;
                 }
@@ -727,8 +783,13 @@ public final class AllvrCubeMap {
                     AllvrCubePos.fromLong(completed.key()), completed.failure());
                 continue;
             }
-            installGenerated(completed.key(), completed.request(), completed.cube());
-            installed++;
+            try {
+                installGenerated(completed.key(), completed.request(), completed.cube());
+                installed++;
+            } catch (Throwable failure) {
+                retries.failed(completed.key(), level.getGameTime());
+                CreateManaIndustry.LOGGER.error("[Allvr] generated cube publication failed for {}", AllvrCubePos.fromLong(completed.key()), failure);
+            }
         }
     }
 
@@ -740,11 +801,7 @@ public final class AllvrCubeMap {
         AllvrCube existing = cubes.get(key);
         if (existing != null) return existing;
         if (closed || persistedIndex.contains(key)) return null;
-        cubes.put(key, cube);
-        refreshBeCube(cube);
-        cube.onLoad(level);
-        this.lightEngine.onCubeLoaded(cube);
-        announceCubeLoaded(cube);
+        publishCube(cube);
         this.markGeneratedForPersistence(cube);
         diagnostics.cubesGenerated.incrementAndGet();
         return cube;
@@ -785,10 +842,12 @@ public final class AllvrCubeMap {
         } catch (java.util.concurrent.RejectedExecutionException failure) {
             pendingGenerations.remove(key, future);
             future.completeExceptionally(failure);
+            retries.failed(key, level.getGameTime());
             return;
         } catch (Throwable failure) {
             pendingGenerations.remove(key, future);
             future.completeExceptionally(failure);
+            retries.failed(key, level.getGameTime());
             return;
         }
         future.whenComplete((cube, failure) -> {
@@ -842,6 +901,7 @@ public final class AllvrCubeMap {
 
     /** Mirrors CubicChunks' dropQueuedCubeLoad: abandoned shells must not burn CPU. */
     private void cancelGenerationsOutside(List<ServerPlayer> players) {
+        retries.retain(key -> isNeededByAnyPlayer(AllvrCubePos.fromLong(key), players));
         for (Map.Entry<Long, CompletableFuture<AllvrCube>> entry : pendingGenerations.entrySet()) {
             AllvrCubePos pending = AllvrCubePos.fromLong(entry.getKey());
             boolean needed = isNeededByAnyPlayer(pending, players);
@@ -859,6 +919,7 @@ public final class AllvrCubeMap {
         }
     }
 
+    public AllvrLightEngine lightEngine() { return lightEngine; }
     public int light(LightLayer type, BlockPos pos) {
         return type == LightLayer.BLOCK
             ? this.lightEngine.blockLight(pos) : this.lightEngine.skyLight(pos);
@@ -903,7 +964,7 @@ public final class AllvrCubeMap {
         } catch (Exception e) {
             this.diagnostics.persistedLoadNanos.addAndGet(System.nanoTime() - start);
             this.diagnostics.persistedLoadFailures.incrementAndGet();
-            quarantinePersistedLoad(key, e);
+            if (!quarantinePersistedLoad(key, e)) retries.failed(key, level.getGameTime());
             this.diagnostics.noteIoError(e.toString());
             CreateManaIndustry.LOGGER.error(
                 "[Allvr] failed to load persisted cube {} — stays unloaded; regeneration suppressed", pos, e);
@@ -935,7 +996,7 @@ public final class AllvrCubeMap {
                 .thenApplyAsync(nbt -> decodePersistedCube(pos, nbt), this.persistenceDecodeExecutor);
         } catch (Throwable failure) {
             this.diagnostics.persistedLoadFailures.incrementAndGet();
-            quarantinePersistedLoad(key, failure);
+            if (!quarantinePersistedLoad(key, failure)) retries.failed(key, level.getGameTime());
             this.diagnostics.persistedLoadNanos.addAndGet(System.nanoTime() - start);
             this.diagnostics.noteIoError(failure.toString());
             return;
@@ -967,11 +1028,7 @@ public final class AllvrCubeMap {
         }
         cube.markPersistedOverride();
         cube.markQueued(cube.mutationVersion(), cube.lightVersion());
-        this.cubes.put(key, cube);
-        refreshBeCube(cube);
-        cube.onLoad(this.level);
-        this.lightEngine.onCubeLoaded(cube);
-        announceCubeLoaded(cube);
+        publishCube(cube);
         this.loadCooldown.remove(key);
         this.diagnostics.cubesLoadedFromDisk.incrementAndGet();
         return cube;
@@ -1010,13 +1067,11 @@ public final class AllvrCubeMap {
     public void tick() {
         // Drain before the players.isEmpty() early-return: an empty server
         // still owes its queued snapshots (vanilla autosave parity).
+        syncSavingState();
         this.drainSnapshotQueue();
         this.drainCompletedGenerations();
         this.drainCompletedPersistedLoads();
-        // Run fluid ticks after completed cube publications so a tick queued
-        // for a cube that finished loading this frame is not discarded as a
-        // cache miss. The light pass below then sees all fluid block writes.
-        this.tickFluids();
+
         this.lightEngine.tick(16_384);
         // Light changes are persisted through the same coalescing queue as
         // block mutations. The engine only reports cubes whose published
@@ -1026,6 +1081,7 @@ public final class AllvrCubeMap {
                 this.queueSnapshot(key, false);
             }
         }
+        broadcaster.flush();
         List<ServerPlayer> players = level.players();
         if (players.isEmpty()) {
             if (!subscriptions.isEmpty() || !pendingGenerations.isEmpty()
@@ -1033,11 +1089,25 @@ public final class AllvrCubeMap {
                 subscriptions.clear();
                 cancelGenerationsOutside(players);
             }
+            simulation.clear(); entityColumns.clear();
+            broadcaster.clear();
+            retries.clear();
+            if (!emptyCleanupRequested || ++unloadScanTicks >= UNLOAD_SCAN_TICKS) { unloadFarCubes(players); emptyCleanupRequested = true; unloadScanTicks = 0; }
+            processUnloads(players);
             tickingBeCubeKeys.clear();
             simulationTicketsDirty = true;
             return;
         }
 
+        emptyCleanupRequested = false;
+        for (long key : retries.poll(level.getGameTime(), 16)) {
+            if (!isNeededByAnyPlayer(AllvrCubePos.fromLong(key), players)) { retries.succeeded(key); continue; }
+            loadCooldown.remove(key);
+            var pos = AllvrCubePos.fromLong(key);
+            var loaded = getOrRequest(pos.getX(), pos.getY(), pos.getZ());
+            if (loaded != null) retries.succeeded(key);
+            else if (!pendingGenerations.containsKey(key) && !pendingPersistedLoads.containsKey(key) && !failedPersistedLoads.contains(key)) retries.failed(key, level.getGameTime());
+        }
         // A pending generation/read only needs revalidation when the player
         // ticket set changes. Vanilla's DistanceManager updates ticket
         // holders on movement/distance changes; scanning every pending future
@@ -1071,7 +1141,7 @@ public final class AllvrCubeMap {
                 if (cube != null) {
                     long key = cube.getPos().asLong();
                     if (sub.sent.add(key)) {
-                        player.connection.send(packetFor(cube));
+                        sendCube(player, cube, packetFor(cube));
                     }
                 }
                 sub.lastCube = pc;
@@ -1080,6 +1150,7 @@ public final class AllvrCubeMap {
             }
         }
         if (subscriptionsChanged) {
+            entityColumns.rebuild(players, Math.max(level.getServer().getPlayerList().getViewDistance(), level.getServer().getPlayerList().getSimulationDistance()));
             simulationTicketsDirty = true;
             cancelGenerationsOutside(players);
         }
@@ -1101,8 +1172,8 @@ public final class AllvrCubeMap {
             int sentCount = 0;
             int horizontalScanRadius = AllvrVanillaRenderDistance
                 .cubeScanRadiusForChunks(sub.renderDistanceChunks);
-            int horizontalShellRadius = Math.max(GEN_RADIUS, horizontalScanRadius);
-            int verticalShellRadius = Math.max(GEN_RADIUS, sub.sendYRadius);
+            int horizontalShellRadius = Math.max(Math.max(GEN_RADIUS, (sub.simulationDistance + 1) / 2 + 1), horizontalScanRadius);
+            int verticalShellRadius = Math.max(Math.max(GEN_RADIUS, (sub.simulationDistance + 1) / 2), sub.sendYRadius);
             int streamRadius = Math.max(horizontalShellRadius, verticalShellRadius);
             int scanRadius = sub.scanRadius;
             int scanIndex = sub.scanIndex;
@@ -1166,7 +1237,7 @@ public final class AllvrCubeMap {
                     }
                     if (inSendRange && !sub.sent.contains(key)) {
                         if (sentCount < SEND_BUDGET_PER_TICK && sub.sent.add(key)) {
-                            player.connection.send(packetFor(cube));
+                            if (!sendCube(player, cube, packetFor(cube))) sendPending = true;
                             sentCount++;
                         } else {
                             // Keep the subscription dirty after a complete
@@ -1199,12 +1270,15 @@ public final class AllvrCubeMap {
             }
         }
 
+        entityColumns.tick(key -> ((AllvrServerLevelDuck) level).allvr$requestEntityColumn(key));
         rebuildSimulationTickets(players);
-        this.tickBlockEntities();
+        ticking.tick(simulation.keys());
+        if (level.tickRateManager().runsNormally()) this.tickBlockEntities();
         if (subscriptionsChanged || ++this.unloadScanTicks >= UNLOAD_SCAN_TICKS) {
             this.unloadScanTicks = 0;
             this.unloadFarCubes(players);
         }
+        processUnloads(players);
     }
 
     /**
@@ -1216,21 +1290,12 @@ public final class AllvrCubeMap {
      * unload-distance equivalent of vanilla's simulation-distance gating.
      */
     private void rebuildSimulationTickets(List<ServerPlayer> players) {
-        if (!simulationTicketsDirty) {
-            return;
-        }
+        int distance = level.getServer().getPlayerList().getSimulationDistance();
+        if (!simulationTicketsDirty && lastSimulationDistance == distance) return;
+        lastSimulationDistance = distance;
+        simulation.rebuild(players, distance, cubes);
         tickingBeCubeKeys.clear();
-        for (long key : beCubes.keySet()) {
-            AllvrCube cube = beCubes.get(key);
-            if (cube == null) continue;
-            AllvrCubePos cpos = cube.getPos();
-            for (ServerPlayer player : players) {
-                if (chebyshev(AllvrCubePos.of(player.blockPosition()), cpos) <= GEN_RADIUS) {
-                    tickingBeCubeKeys.add(key);
-                    break;
-                }
-            }
-        }
+        for (long key : simulation.keys()) if (beCubes.containsKey(key)) tickingBeCubeKeys.add(key);
         simulationTicketsDirty = false;
     }
 
@@ -1273,6 +1338,7 @@ public final class AllvrCubeMap {
     }
 
     private void drainSnapshotQueue() {
+        if (level.noSave) return;
         if (this.snapshotQueue.isEmpty()) {
             return;
         }
@@ -1302,6 +1368,7 @@ public final class AllvrCubeMap {
      * never a silently dropped cube (plan §7.3).
      */
     private boolean trySnapshot(AllvrCube cube) {
+        if (level.noSave) return false;
         long start = System.nanoTime();
         try {
             AllvrCubeSnapshot snapshot = AllvrCubeSerializer.snapshot(cube, this.level, this.lightEngine);
@@ -1349,6 +1416,7 @@ public final class AllvrCubeMap {
                 }
                 diagnostics.persistedLoadFailures.incrementAndGet();
                 boolean quarantined = quarantinePersistedLoad(completed.key(), completed.failure());
+                if (!quarantined) retries.failed(completed.key(), level.getGameTime());
                 diagnostics.noteIoError(completed.failure().toString());
                 CreateManaIndustry.LOGGER.error("[Allvr] async load failed for persisted cube {} — {}",
                     AllvrCubePos.fromLong(completed.key()),
@@ -1362,7 +1430,7 @@ public final class AllvrCubeMap {
                 installed++;
             } catch (Throwable failure) {
                 diagnostics.persistedLoadFailures.incrementAndGet();
-                quarantinePersistedLoad(completed.key(), failure);
+                if (!quarantinePersistedLoad(completed.key(), failure)) retries.failed(completed.key(), level.getGameTime());
                 diagnostics.noteIoError(failure.toString());
                 CreateManaIndustry.LOGGER.error("[Allvr] async cube install failed for {} — "
                     + "regeneration suppressed", AllvrCubePos.fromLong(completed.key()), failure);
@@ -1425,6 +1493,8 @@ public final class AllvrCubeMap {
      * whether everything reached the pending map (and, when flushing, disk).
      */
     public boolean saveAll(boolean flush) {
+        syncSavingState();
+        if (level.noSave) return false;
         long start = System.nanoTime();
         boolean ok = true;
         if (flush) {
@@ -1434,6 +1504,7 @@ public final class AllvrCubeMap {
                 }
             }
             try {
+                if (!ok) throw new java.io.IOException("Allvr snapshot failed; dirty cubes retained");
                 this.worker.flush();
             } catch (java.io.IOException e) {
                 // never pretend success (§8): /save-all flush must see the failure
@@ -1460,6 +1531,7 @@ public final class AllvrCubeMap {
         if (this.closed) {
             return true;
         }
+        syncSavingState();
         this.closed = true;
         for (CompletableFuture<AllvrCube> generation : pendingGenerations.values()) {
             generation.cancel(true);
@@ -1487,11 +1559,14 @@ public final class AllvrCubeMap {
         }
         pendingPersistedLoads.clear();
         completedPersistedLoads.clear();
-        this.fluidTicks.clear();
-        this.scheduledFluidTicks.clear();
+        simulation.clear();
         this.cubePacketCache.clear();
+        broadcaster.clear();
+        retries.clear(); unloads.clear(); entityColumns.clear();
         this.lightEngine.clear();
         this.worker.close();
+        for (var cube : cubes.values()) cube.onUnload();
+        cubes.clear(); beCubes.clear(); tickingBeCubeKeys.clear();
         CreateManaIndustry.LOGGER.info("[Allvr] cube persistence closed ({}): {}",
             ok ? "clean" : "with errors", this.diagnostics);
         return ok;
@@ -1509,63 +1584,33 @@ public final class AllvrCubeMap {
      * clean and edited cubes share the same disk/pending reload path.
      */
     private void unloadFarCubes(List<ServerPlayer> players) {
-        if (this.cubes.isEmpty()) {
-            return;
-        }
-        boolean noSave = this.level.noSave;
-        LongList unload = null;
-        LongIterator it = this.cubes.keySet().iterator();
-        while (it.hasNext()) {
-            long key = it.nextLong();
-            AllvrCubePos cpos = AllvrCubePos.fromLong(key);
-            boolean nearAnyPlayer = false;
-            for (ServerPlayer player : players) {
-                if (isNeededByPlayer(cpos, player)) {
-                    nearAnyPlayer = true;
-                    break;
-                }
+        unloads.request(cubes.keySet().toLongArray());
+    }
+    private void processUnloads(List<ServerPlayer> players) {
+        unloadSnapshotsRemaining = SNAPSHOT_QUEUE_BUDGET;
+        unloads.tick(level.getGameTime(), key -> {
+            boolean needed = isNeededByAnyPlayer(AllvrCubePos.fromLong(key), players);
+            if (needed) pinUnload(key, 0);
+            return needed;
+        }, key -> {
+            var cube = cubes.get(key);
+            if (cube == null) { pinUnload(key, 0); return -1; }
+            if (cube.needsSnapshot()) {
+                if (level.noSave) { pinUnload(key, 1); return 200; }
+                if (unloadSnapshotsRemaining <= 0) return 1;
+                unloadSnapshotsRemaining--;
+                if (!trySnapshot(cube)) { pinUnload(key, 2); return 200; }
             }
-            if (!nearAnyPlayer) {
-                if (unload == null) {
-                    unload = new LongArrayList();
-                }
-                unload.add(key);
-            }
-        }
-        if (unload != null) {
-            int dropped = 0;
-            for (long key : unload) {
-                AllvrCube cube = this.cubes.get(key);
-                if (cube == null) {
-                    continue;
-                }
-                if (cube.needsSnapshot()) {
-                    if (noSave) {
-                        continue; // dirty cubes are pinned while saving is off (§10.2)
-                    }
-                    if (!this.trySnapshot(cube)) {
-                        continue; // snapshot failure → keep in memory, retry next scan
-                    }
-                }
-                forgetCubeForPlayers(key, players);
-                cube.onUnload();
-                this.cubes.remove(key);
-                this.beCubes.remove(key);
-                this.tickingBeCubeKeys.remove(key);
-                // Cooldown bookkeeping is only meaningful while a cube is
-                // resident.  Discard it with the cube so exploration cannot
-                // grow a map entry for every unloaded coordinate.
-                this.lastSnapshotTick.remove(key);
-                this.loadCooldown.remove(key);
-                this.lightEngine.onCubeUnloaded(cube);
-                dropped++;
-                // persistedIndex keeps the key: record/pending exist ⟹ override
-            }
-            if (dropped > 0) {
-                CreateManaIndustry.LOGGER.debug("[Allvr] unloaded {} far cubes ({} remain)",
-                    dropped, this.cubes.size());
-            }
-        }
+            if (worker.hasPending(key)) { pinUnload(key, 3); return level.noSave ? 200 : 1; }
+            pinUnload(key, 0);
+            forgetCubeForPlayers(key, players);
+            cube.onUnload();
+            cubes.remove(key); beCubes.remove(key); tickingBeCubeKeys.remove(key);
+            cubePacketCache.remove(key); lastSnapshotTick.remove(key); loadCooldown.remove(key);
+            residencyRevision++; simulationTicketsDirty = true;
+            lightEngine.onCubeUnloaded(cube);
+            return -1;
+        });
     }
 
     private static AllvrCubePos playerCubeCenter(Subscription sub) {
@@ -1595,15 +1640,18 @@ public final class AllvrCubeMap {
         if (forget != null) {
             for (long key : forget) {
                 sub.sent.remove(key);
-                player.connection.send(new ClientboundAllvrForgetCubePacket(key));
+                broadcaster.forget(player, key);
             }
         }
     }
 
     /** Drops one player's subscription so cubes are re-streamed from scratch. */
     public void resetPlayer(UUID uuid) {
-        if (subscriptions.remove(uuid) != null) {
-            simulationTicketsDirty = true;
+        broadcaster.reset(uuid);
+        if (subscriptions.remove(uuid) != null) simulationTicketsDirty = true;
+        if (level.players().stream().noneMatch(player -> !player.getUUID().equals(uuid))) {
+            simulation.clear(); tickingBeCubeKeys.clear(); entityColumns.clear(); retries.clear();
+            cancelGenerationsOutside(java.util.List.of()); emptyCleanupRequested = false;
         }
     }
 
@@ -1621,10 +1669,13 @@ public final class AllvrCubeMap {
         return false;
     }
 
-    /** Keeps both the fixed simulation shell and the dynamic render cylinder alive. */
+    /** Resident ownership covers prefetch, simulation, and the dynamic watch cylinder. */
     private boolean isNeededByPlayer(AllvrCubePos cube, ServerPlayer player) {
         AllvrCubePos center = AllvrCubePos.of(player.blockPosition());
-        if (chebyshev(cube, center) <= GEN_RADIUS) {
+        if (chebyshev(cube, center) <= GEN_RADIUS || !player.isSpectator() && AllvrVanillaRenderDistance.isCubeWithinCylinder(
+            cube.getX(), cube.getY(), cube.getZ(), AllvrVanillaRenderDistance.blockToChunk(player.getX()),
+            AllvrVanillaRenderDistance.blockToChunk(player.getZ()), center.getY(),
+            level.getServer().getPlayerList().getSimulationDistance(), (level.getServer().getPlayerList().getSimulationDistance() + 1) / 2)) {
             return true;
         }
         Subscription sub = subscriptions.computeIfAbsent(player.getUUID(), k -> new Subscription());
@@ -1644,6 +1695,11 @@ public final class AllvrCubeMap {
      */
     private boolean prepareSubscription(ServerPlayer player, AllvrCubePos center, Subscription sub) {
         boolean changed = updateRenderDistance(player, sub);
+        int simulationDistance = level.getServer().getPlayerList().getSimulationDistance();
+        if (sub.simulationDistance != simulationDistance || sub.spectator != player.isSpectator()) {
+            sub.simulationDistance = simulationDistance; sub.spectator = player.isSpectator();
+            sub.scanRadius = 0; sub.scanIndex = 0; sub.scanDirty = true; changed = true;
+        }
         int playerChunkX = AllvrVanillaRenderDistance.blockToChunk(player.getX());
         int playerChunkZ = AllvrVanillaRenderDistance.blockToChunk(player.getZ());
         boolean cubeCenterChanged = sub.lastCube == null || !center.equals(sub.lastCube);

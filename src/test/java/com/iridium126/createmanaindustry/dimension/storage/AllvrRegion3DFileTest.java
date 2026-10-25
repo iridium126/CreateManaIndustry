@@ -82,9 +82,7 @@ class AllvrRegion3DFileTest {
         try (AllvrRegion3DFile file = AllvrRegion3DFile.open(path, 0, 0, 0)) {
             file.commit(v1);
             long s1 = Files.size(path);
-            // the replaced sectors are freed only AFTER the header commit (crash
-            // safety), so the directly following commit may append — but the
-            // merged free run must be reused by the commit after that
+            // Two headers retain two generations. A candidate cannot reuse either recovery root.
             file.commit(v2);
             long s2 = Files.size(path);
             assertTrue(s2 > s1);
@@ -93,7 +91,11 @@ class AllvrRegion3DFileTest {
             long s3 = Files.size(path);
             assertTrue(s3 > s2, "2-sector record must extend the file here");
             file.commit(v4);
-            assertEquals(s3, Files.size(path), "merged free run was not reused");
+            long s4 = Files.size(path);
+            assertTrue(s4 > s3, "previous header still owns a sector needed by this candidate");
+            for (int n = 0; n < 20; n++) file.commit(v4);
+            assertTrue(Files.size(path) <= (long) (AllvrStorageFormat.PAYLOAD_START_SECTOR + 8) * AllvrStorageFormat.SECTOR_BYTES,
+                "unreferenced sectors were not reused");
             assertArrayEquals(v4.get(0), file.read(0));
         }
     }
@@ -225,4 +227,68 @@ class AllvrRegion3DFileTest {
             assertEquals(batch.size(), count.get());
         }
     }
+    @Test void failedPartialHeaderRestoresLiveIndexesAndRetryRemainsReadable() throws Exception {
+        Path path = temp.resolve(file());
+        var fail = new java.util.concurrent.atomic.AtomicBoolean();
+        try (var region = AllvrRegion3DFile.open(path, 0, 0, 0, (channel, data, position) -> {
+            if (position < (long) AllvrStorageFormat.PAYLOAD_START_SECTOR * AllvrStorageFormat.SECTOR_BYTES && fail.getAndSet(false)) {
+                var part = data.duplicate(); part.limit(Math.min(part.limit(), part.position() + 64));
+                channel.write(part, position);
+                throw new IOException("injected partial header");
+            }
+            return channel.write(data, position);
+        })) {
+            var batch = new Int2ObjectOpenHashMap<byte[]>();
+            batch.put(0, record("old")); region.commit(batch);
+            long generation = region.generation();
+            batch.put(0, record("new")); batch.put(7, record("added")); fail.set(true);
+            assertThrows(IOException.class, () -> region.commit(batch));
+            assertEquals(generation, region.generation());
+            assertArrayEquals(record("old"), region.read(0));
+            assertFalse(region.has(7));
+            region.commit(batch);
+            assertArrayEquals(record("new"), region.read(0));
+        }
+        try (var region = AllvrRegion3DFile.open(path, 0, 0, 0)) {
+            assertArrayEquals(record("new"), region.read(0));
+            assertArrayEquals(record("added"), region.read(7));
+        }
+    }
+    @Test void failedPayloadDoesNotPublishOrLoseReusableAllocation() throws Exception {
+        var fail = new java.util.concurrent.atomic.AtomicBoolean(true);
+        Path path = temp.resolve(file());
+        try (var region = AllvrRegion3DFile.open(path, 0, 0, 0, (channel, data, position) -> {
+            if (fail.getAndSet(false)) throw new IOException("injected payload failure");
+            return channel.write(data, position);
+        })) {
+            var batch = new Int2ObjectOpenHashMap<byte[]>(); batch.put(8, record("retry"));
+            assertThrows(IOException.class, () -> region.commit(batch));
+            assertFalse(region.has(8));
+            region.commit(batch);
+            assertEquals((long) AllvrStorageFormat.PAYLOAD_START_SECTOR * AllvrStorageFormat.SECTOR_BYTES + record("retry").length, Files.size(path));
+        }
+    }
+
+    @Test void payloadFailureCannotOverwriteSectorsOwnedByTheOtherValidHeader() throws Exception {
+        Path path = temp.resolve(file());
+        var fail = new java.util.concurrent.atomic.AtomicBoolean();
+        try (var region = AllvrRegion3DFile.open(path, 0, 0, 0, (channel, data, position) -> {
+            if (position >= (long) AllvrStorageFormat.PAYLOAD_START_SECTOR * AllvrStorageFormat.SECTOR_BYTES && fail.getAndSet(false)) {
+                channel.write(data, position);
+                throw new IOException("payload written but commit failed");
+            }
+            return channel.write(data, position);
+        })) {
+            var batch = new Int2ObjectOpenHashMap<byte[]>();
+            batch.put(0, record("v1")); region.commit(batch); // B owns v1
+            batch.put(0, record("v2")); region.commit(batch); // A owns v2; B must retain v1
+            batch.clear(); batch.put(7, record("overwrite-attempt")); fail.set(true);
+            assertThrows(IOException.class, () -> region.commit(batch));
+            assertArrayEquals(record("v2"), region.read(0));
+        }
+        // Lose the newest header: the other valid recovery root must still read its original payload.
+        try (var channel = FileChannel.open(path, StandardOpenOption.WRITE)) { channel.write(ByteBuffer.wrap(new byte[8]), 0); }
+        try (var region = AllvrRegion3DFile.open(path, 0, 0, 0)) { assertArrayEquals(record("v1"), region.read(0)); }
+    }
+
 }

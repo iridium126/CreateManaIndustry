@@ -27,8 +27,8 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
  * write. When the new state has a block entity, its update tag is carried in
  * the same packet so high-Y machines do not wait for a full cube resend.
  */
-public record ClientboundAllvrBlockUpdatePacket(long cubePos, int cellIndex, int stateId,
-                                                CompoundTag blockEntityTag)
+public record ClientboundAllvrBlockUpdatePacket(long cubePos, long generation, long revision, int cellIndex, int stateId,
+                                                CompoundTag blockEntityTag, boolean dataPacket)
         implements CustomPacketPayload {
     private static final ClientPayloadHandler<ClientboundAllvrBlockUpdatePacket> CLIENT_HANDLER =
             new ClientPayloadHandler<>();
@@ -42,14 +42,17 @@ public record ClientboundAllvrBlockUpdatePacket(long cubePos, int cellIndex, int
 
     private static void encode(RegistryFriendlyByteBuf buffer, ClientboundAllvrBlockUpdatePacket p) {
         buffer.writeLong(p.cubePos);
+        buffer.writeLong(p.generation);
+        buffer.writeLong(p.revision);
         buffer.writeShort(p.cellIndex);
         buffer.writeVarInt(p.stateId);
         buffer.writeNbt(p.blockEntityTag);
+        buffer.writeBoolean(p.dataPacket);
     }
 
     private static ClientboundAllvrBlockUpdatePacket decode(RegistryFriendlyByteBuf buffer) {
-        return new ClientboundAllvrBlockUpdatePacket(buffer.readLong(), buffer.readShort() & 0xFFFF,
-            buffer.readVarInt(), buffer.readNbt());
+        return new ClientboundAllvrBlockUpdatePacket(buffer.readLong(), buffer.readLong(), buffer.readLong(), buffer.readShort() & 0xFFFF,
+            buffer.readVarInt(), buffer.readNbt(), buffer.readBoolean());
     }
 
     @Override
