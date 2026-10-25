@@ -2,7 +2,7 @@
 // storm/Hex branches, CPU spawn list, visibility readback or per-particle atomic.
 layout(local_size_x = 64) in;
 layout(std430, binding = BIND_POOL_WRITE) buffer ParticleWrite { vec4 data[]; } writeBuf;
-layout(std430, binding = BIND_COUNTER) buffer CounterBuf { uint writeSlot; uint spare; uint translucentCensus; } counter;
+layout(std430, binding = BIND_COUNTER) buffer CounterBuf { uint writeSlot; uint spare; uint translucentCensus; uint sortItems; } counter;
 layout(std430, binding = BIND_EMITTER) readonly buffer EmitterBuf { vec4 u[]; } emitters;
 struct BlockEmitter { vec4 originRate; vec4 params; }; // eid, phase, conservative cull radius, reserved
 layout(std430, binding = BIND_EMITCMD) buffer BlockEmitters { BlockEmitter data[]; } blocks;
@@ -36,11 +36,12 @@ vec3 randomDir(float s) {
 
 #define CMI_BLOCK_EMISSION
 #pragma cmi_include chunks/particle_identity.glsl
+#pragma cmi_include chunks/allay_animation_state.glsl
+#pragma cmi_include chunks/model_spawn.glsl
 #pragma cmi_include chunks/classic_spawn.glsl
 
 #pragma cmi_include chunks/frustum_culling.glsl
 
-#pragma cmi_include chunks/pool_reservation.glsl
 void main() {
     uint cluster = gl_LocalInvocationID.x / 16u;
     uint lane = gl_LocalInvocationID.x % 16u;
@@ -65,7 +66,10 @@ void main() {
                 if (count > 0u) {
                     // One reservation for all particles from this emitter.
                     uint granted;
-                    uint base = cmiReservePool(count,false,granted);
+                    uint id=uint(e.params.x);float material=emitters.u[id*VEC4_PER_EMITTER+7u].x;
+                    bool model=uModelMembersEnabled&&material>=1.5&&material<2.5;
+                    uint base=model?0xffffffffu:cmiReservePool(count,false,granted);
+                    if(model)granted=count;
                     counts[cluster] = granted;
                     bases[cluster] = base;
                     origins[cluster] = e.originRate;
@@ -78,6 +82,7 @@ void main() {
     barrier(); // Every lane reaches this, including the partial final group.
     for (uint inner = lane; inner < counts[cluster]; inner += 16u) {
         float seed = hash1(float(index) * 17.17 + uSeed) * 100000.0 + float(inner) * 317.0;
-        cmiSpawnClassic(specs[cluster], seed, origins[cluster].xyz, 0.0, bases[cluster] + inner);
+        uint slot=bases[cluster]==0xffffffffu?cmiReserveEmitterParticle(specs[cluster]):bases[cluster]+inner;
+        if(slot<uCapacity)cmiSpawnClassic(specs[cluster], seed, origins[cluster].xyz, 0.0, slot);
     }
 }

@@ -198,6 +198,19 @@ public class ModelShadowGpuValidation {
                     float[] identity=new org.joml.Matrix4f().get(new float[16]);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(nativeProgram,"ModelViewMat"),false,identity);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(nativeProgram,"ProjMat"),false,identity);GL20.glUniform1f(GL20.glGetUniformLocation(nativeProgram,"uTimeSec"),12);GL20.glUniform1f(GL20.glGetUniformLocation(nativeProgram,"uFadeDist"),1000);
                     GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL30.glBeginTransformFeedback(GL11.GL_POINTS);GL31.glDrawArraysInstanced(GL11.GL_POINTS,0,1,1);GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);var nativePose=read(buffers[4],16);
                     for(int component=0;component<4;component++)check(Math.abs(merged.getFloat(component*4)-nativePose.getFloat(component*4))<.0001,"attack native/Iris pose mismatch kind="+attackKind);
+                    // The shared animation TBO replaces the Dome view on the same reserved unit.
+                    try(var animation=new com.iridium126.createmanaindustry.client.particles.engine.AllayAnimationGpu()){
+                        animation.ensure(1);var pose=bytes(64);
+                        pose.putInt(0,0x80008000).putInt(4,0x6000a000).putInt(8,0x40008000).putInt(12,0xc000a000);
+                        pose.putFloat(16,1.25f).putFloat(20,2.5f).putInt(24,0xcccc3333).putInt(28,63|(63<<6)).putInt(40,0x80000000).putInt(44,20);
+                        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,animation.buffer(0));GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,262143L*64,pose);put(buffers[3],bytes(16).putInt(0,262143<<9).putInt(8,1));
+                        particle.putFloat(48,1.025f);put(buffers[1],particle);GL20.glUseProgram(program);animation.bindDraw(program,0);
+                        GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL30.glBeginTransformFeedback(GL11.GL_POINTS);GL31.glDrawArraysInstanced(GL11.GL_POINTS,0,1,1);GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);var mergedAnimated=read(buffers[4],16);
+                        GL20.glUseProgram(nativeProgram);animation.bindDraw(nativeProgram,0);
+                        GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL30.glBeginTransformFeedback(GL11.GL_POINTS);GL31.glDrawArraysInstanced(GL11.GL_POINTS,0,1,1);GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);var nativeAnimated=read(buffers[4],16);
+                        double changed=0;for(int component=0;component<4;component++){check(Math.abs(mergedAnimated.getFloat(component*4)-nativeAnimated.getFloat(component*4))<.0001,"Animated native/Iris pose mismatch kind="+attackKind);changed+=Math.abs(nativeAnimated.getFloat(component*4)-nativePose.getFloat(component*4));}
+                        check(changed>.001,"MODEL rendering ignored committed animation state");
+                    }finally{GL41.glProgramUniform1i(program,GL20.glGetUniformLocation(program,"uAllayAnimationEnabled"),0);GL41.glProgramUniform1i(nativeProgram,GL20.glGetUniformLocation(nativeProgram,"uAllayAnimationEnabled"),0);particle.putFloat(48,1);put(buffers[1],particle);put(buffers[3],bytes(16).putInt(8,1));}
                 }finally{com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(nativeProgram);GL20.glDeleteProgram(nativeProgram);}
             }
             // Resource/source rebuild must produce both overlay variants with the same shadow flag.

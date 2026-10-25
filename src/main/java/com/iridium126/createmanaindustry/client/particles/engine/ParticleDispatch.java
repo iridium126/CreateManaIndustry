@@ -5,6 +5,14 @@ import org.lwjgl.opengl.*;
 /** GPU-owned phase boundaries. Slot 0 = committed pool, 1 = output pool, 2 = sort items. */
 final class ParticleDispatch {
     private ParticleDispatch() {}
+    /** Publish or refresh the candidate roster while emission/foreign compute may still be current. */
+    static void prepareModelPublication(ParticlePrograms programs, boolean packageStaged, boolean publishMembers) {
+        int program = programs.prepareDispatch();
+        org.lwjgl.opengl.GL41.glProgramUniform1i(program,
+                com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program, "uModelMembersPublish"),
+                publishMembers ? 1 : 0);
+        prepare(programs, 1, packageStaged);
+    }
     static void prepare(ParticlePrograms programs, int phase) {
         prepare(programs,phase,false);
     }

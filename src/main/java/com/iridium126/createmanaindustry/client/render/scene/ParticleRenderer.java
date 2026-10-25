@@ -138,6 +138,7 @@ public final class ParticleRenderer {
             com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bind(prog,false);
             setFloatUniform(prog,"uTimeSec",AllayStormRuntime.INSTANCE.timeSec());
             gpu.bindModelDrawInputs(mainPermutation());
+            gpu.bindAllayAnimation(prog);
 
             setMat4Uniform(prog, "ModelViewMat", view);
             setMat4Uniform(prog, "ProjMat", projectionMatrix);

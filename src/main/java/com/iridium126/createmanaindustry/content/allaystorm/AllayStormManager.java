@@ -301,8 +301,9 @@ public final class AllayStormManager {
 
     }
     private static void tryMajor(ServerLevel level,Runtime rt,AllayStormData data,List<ServerPlayer> eligible,int kind){
-        double interval=kind==StormAttack.HELIX?ServerConfig.stormHelixInterval:ServerConfig.stormDomeInterval;
-        if(!rt.schedule.due(kind,level.getGameTime(),interval))return;
+        double min=kind==StormAttack.HELIX?ServerConfig.stormHelixIntervalMin:ServerConfig.stormDomeIntervalMin;
+        double max=kind==StormAttack.HELIX?ServerConfig.stormHelixIntervalMax:ServerConfig.stormDomeIntervalMax;
+        if(!rt.schedule.due(kind,level.getGameTime(),min,max,level.random::nextDouble))return;
         double chance=kind==StormAttack.HELIX?ServerConfig.stormHelixChance:ServerConfig.stormDomeChance;
         if(level.random.nextDouble()>=chance){rt.stats.count(StormAttackStats.Reason.DRAW_MISSED);return;}
         if(rt.waves.size()>=MAX_WAVES){rt.stats.count(StormAttackStats.Reason.CAPACITY);return;}

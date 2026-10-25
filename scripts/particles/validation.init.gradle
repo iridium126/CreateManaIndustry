@@ -163,11 +163,33 @@ allprojects {
             source 'scripts/particles/DomeTerrainGpuValidation.java'
             source 'scripts/particles/DomeGatherGpuValidation.java'
             source 'scripts/particles/StormNavigationGpuValidation.java'
+            source 'scripts/particles/AllayAnimationGpuValidation.java'
+            source 'scripts/particles/ModelAnimationStorageGpuValidation.java'
+            source 'scripts/particles/ModelAnimationStorageBenchmark.java'
             source 'scripts/particles/ParticleShaderStartupGpuValidation.java'
             source 'scripts/particles/ShaderColdCompileValidation.java'
             source 'scripts/particles/ShaderFirstExecutionValidation.java'
             source 'scripts/particles/StormDepenetrationGpuValidation.java'
             options.release = 21
+        }
+        tasks.register('benchmarkModelAnimationStorage', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'ModelAnimationStorageBenchmark'
+            if(project.hasProperty('modelAnimationBaseline')) systemProperty 'cmi.modelAnimation.baseline', file(project.property('modelAnimationBaseline')).absolutePath
+            workingDir = project.projectDir
+        }
+        tasks.register('validateModelAnimationStorageGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'ModelAnimationStorageGpuValidation'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateAllayAnimationGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'AllayAnimationGpuValidation'
+            workingDir = project.projectDir
         }
         tasks.register('validateStormDepenetrationGpu', JavaExec) {
             dependsOn 'compileStarfallHarness'

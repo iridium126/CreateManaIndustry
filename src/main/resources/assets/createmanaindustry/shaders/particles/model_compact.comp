@@ -1,0 +1,10 @@
+// Reuse the candidate sort arena; no extra list-sized buffer or in-place read/write race.
+layout(local_size_x=64)in;
+layout(std430,binding=3)buffer C{uint live,ordinary,models,storms;}counter;
+layout(std430,binding=7)readonly buffer Scratch{uvec2 rows[];}scratch;
+#pragma cmi_include chunks/model_members_write.glsl
+void main(){uint row=gl_GlobalInvocationID.x;if(row>=counter.models)return;
+ uvec2 entry=scratch.rows[row];uint slot=entry.x&0x7fffffffu;
+ imageStore(cmi_ModelMembersWrite,int(8u+row*2u),uvec4(slot));imageStore(cmi_ModelMembersWrite,int(9u+row*2u),uvec4(entry.y));
+ if((entry.x&0x80000000u)!=0u){uint storm=atomicAdd(counter.storms,1u);if(storm<uPopulationStormCapacity)imageStore(cmi_ModelMembersWrite,int(8u+2u*uPopulationModelCapacity+storm),uvec4(slot));}
+}

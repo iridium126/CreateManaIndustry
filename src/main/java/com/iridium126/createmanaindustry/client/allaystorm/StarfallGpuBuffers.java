@@ -43,6 +43,8 @@ public final class StarfallGpuBuffers implements AutoCloseable {
  private final float[] headings=new float[68],previousHeadings=new float[68];
  private final int[] centerWaveIds=new int[68];
  private final int[][] previousMembers=new int[68][];private final int[] previousIds=new int[68];private int read;private IntBuffer upload;
+ private final int[] lookTargets=new int[68];
+ public int lookTarget(int slot){return lookTargets[slot];}
  private final boolean[] enabled={false,false};private boolean hasWaves;
  private boolean pending,clearStates;private int domainToken=1;
  public StarfallGpuBuffers(){words[0]=domainToken;words[3]=Float.floatToRawIntBits(com.iridium126.createmanaindustry.content.allaystorm.StormMotion.INTERCEPT);resetFlowSource();}
@@ -109,7 +111,7 @@ public final class StarfallGpuBuffers implements AutoCloseable {
   Arrays.fill(words,HEADER+ROSTER,GAUSSIAN,0);if(rosterChanged){Arrays.fill(words,HEADER,HEADER+ROSTER,0);rosterVersion++;}
   resetFlowSource();
   for(int slot=0;slot<68;slot++){
-   var p=slot<waves.length?waves[slot]:null;if(p==null){if(slot<4){domeGatherIds[slot]=0;domeLocalLocks[slot]=Float.NaN;}continue;}int b=HEADER+ROSTER+slot*WAVE_WORDS;
+   var p=slot<waves.length?waves[slot]:null;lookTargets[slot]=p==null||p.abort()?0:p.targetEntityId();if(p==null){if(slot<4){domeGatherIds[slot]=0;domeLocalLocks[slot]=Float.NaN;}continue;}int b=HEADER+ROSTER+slot*WAVE_WORDS;
    put(b,p.waveId(),p.abort()?3:p.locked()?2:p.event(),p.columns(),p.perColumn());float lock=p.lockSec();if(slot<4){
     if(!p.dome()||p.abort()){domeGatherIds[slot]=0;domeLocalLocks[slot]=Float.NaN;}
     else if(!p.locked()){domeGatherIds[slot]=p.waveId();domeLocalLocks[slot]=Float.NaN;}

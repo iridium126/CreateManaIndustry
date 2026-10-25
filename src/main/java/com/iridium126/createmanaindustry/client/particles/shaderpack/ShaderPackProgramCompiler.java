@@ -790,6 +790,7 @@ public final class ShaderPackProgramCompiler {
                         anim = 3;
                     float sinceDeath = corpse ? -p3.y : 0.0;
                     float yaw;
+                    cmiLoadAllayAnimation((item.x>>9u)&262143u,p3.x);
                     mat4 M = gone ? mat4(1.0) : cmiAllayAttackPartTransform(p3.x, p3.z,p0.w, p0.xyz, p1.xyz, anim, pid, yaw, carryRamp, p1.w, !corpse && stormA.x > .5);
 
                     vec3 local = gone ? vec3(0.0) : vec3(texelFetch(cmi_Geo, int(vb)).x, texelFetch(cmi_Geo, int(vb + 1u)).x, texelFetch(cmi_Geo, int(vb + 2u)).x);

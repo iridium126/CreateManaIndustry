@@ -23,6 +23,7 @@ layout(std430, binding = BIND_STORMPOS) buffer StormPosBuf { uint count; float e
 
 uniform vec3 uAnchor;     // storm anchor (world space)
 uniform int  uPlayerCount;
+#pragma cmi_include chunks/storm_players.glsl
 
 const float NEAR_R = 4.0;
 const float NEAR_R_SQ = NEAR_R * NEAR_R;
@@ -49,7 +50,7 @@ void main() {
 
     bool near = false;
     for (int pi = 0; pi < uPlayerCount && !near; pi++) {
-        vec3 d = p0.xyz - players.pl[pi].xyz;
+        vec3 d = p0.xyz - cmiPlayerCenter(pi);
         near = dot(d, d) <= NEAR_R_SQ;
     }
     if (!near)

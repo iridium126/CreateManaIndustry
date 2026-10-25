@@ -154,7 +154,7 @@ void main(){
   }
   if(distance(destination,p.xyz)<.000001)return;
   pool.data[at].xyz=destination;vec3 actualVelocity=(destination-old)/max(uDt,.0001);float actualSpeed=length(actualVelocity);pool.data[at+1u].xyz=actualSpeed>speedBudget?actualVelocity*(speedBudget/actualSpeed):actualVelocity;CMI_STATE(state,member*2u+1u)|=0x80000000u;CMI_STATE(state,member*2u+1u)&=~0x40000000u;
-  pool.data[at+1u].w=phase==4u&&cmiNearPlayer(destination+vec3(0,.3,0),36.)?-4.:0.;
+  pool.data[at+1u].w=phase==4u&&cmiNearPlayerFeet(destination)?-4.:0.;
   return;
  }
  vec3 preferred=(p.xyz-old)/max(uDt,.0001),gatherCorrection=vec3(0);float preferredSpeed=length(preferred);if(preferredSpeed>speedBudget)preferred*=speedBudget/preferredSpeed;float gatherWorst=0.;vec4 blockingPlane=vec4(0);float blockingPenalty=0.;bool hazard=false;

@@ -8,11 +8,11 @@
 // Vanilla class: net.minecraft.client.model.AllayModel
 //
 // The pose-free storm math (hash, wave rolls/claim, typhoon home) lives in
-// chunks/allay_storm.glsl, top-included below — the ONLY nested include in
-// the chunk tree. Compute passes that need no pose math include that chunk
+// chunks/allay_storm.glsl, top-included below. Compute passes that need no pose math include that chunk
 // directly instead of this one.
 
 #pragma cmi_include chunks/allay_storm.glsl
+#pragma cmi_include chunks/allay_animation_read.glsl
 
 // NOTE: plain const declarations, NOT #define -- the shader-pack merger
 // splices this chunk through glsl-transformer ASTs, where preprocessor
@@ -36,11 +36,11 @@ mat4 cmiRotX(float a) { return mat4(1,0,0,0, 0,cos(a),sin(a),0, 0,-sin(a),cos(a)
 mat4 cmiRotY(float a) { return mat4(cos(a),0,-sin(a),0, 0,1,0,0, sin(a),0,cos(a),0, 0,0,0,1); }
 mat4 cmiRotZ(float a) { return mat4(cos(a),sin(a),0,0, -sin(a),cos(a),0,0, 0,0,1,0, 0,0,0,1); }
 
-// ModelPart.translateAndRotate: translate(pivot) then rotationZYX = Rx*Ry*Rz
+// ModelPart.translateAndRotate: translate(pivot), then Quaternionf.rotationZYX(z,y,x).
 mat4 cmiPart(vec3 pivot, float xr, float yr, float zr) {
     mat4 t = mat4(1.0);
     t[3].xyz = pivot;
-    return t * cmiRotX(xr) * cmiRotY(yr) * cmiRotZ(zr);
+    return t * cmiRotZ(zr) * cmiRotY(yr) * cmiRotX(xr);
 }
 
 // plain PoseStack.translate/scale stand-ins for the hand chain below
@@ -123,33 +123,31 @@ vec3 cmiDeathRoll(vec3 v, float sinceDeathSec) {
 //           ITEM-MODEL space [0,1] — CMI_HELD_DISPLAY maps them into the hand
 //           frame; injected by the prelude / the pack merged source)
 //   yaw     out: body facing yaw (radians)
-//   carryRamp  vanilla carrying ramp f6 for NON-HOLD anims (the dive-wave
-//           carrying predicate; HOLD keeps its age-based ramp, other paths
-//           pass 0) — vanilla raises the arms whenever an item is held,
-//           regardless of the base animation
+//   carryRamp  fallback carrying ramp when no committed animation state is
+//           available; stateful callers use the actual held-item condition
+//           regardless of the base animation.
 mat4 cmiAllayPartTransform(float ageSec, float seed, vec3 vel, int anim, int pid, out float yaw,
         float carryRamp) {
     // ---- animation inputs (procedural stand-ins for the entity values) ----
     float animAge = ageSec + cmiHash1(seed * 1.7) * 7.0;
     float ticks = animAge * 20.0;
     float hSpeed = length(vel.xz);
-    float lsa = min(hSpeed / 1.5, 1.0);
-    float limbSwing = 0.0;
+    float lsa = anim==3?0.:cmiAllayAnimationValid?cmiAnimationAmount:min(hSpeed / 5.0, 1.0);
+    float limbSwing = anim==3?0.:cmiAllayAnimationValid?cmiAnimationPhase:0.;
     yaw = hSpeed > 0.05
         ? atan(-vel.x, vel.z)
-        : (cmiHash1(seed * 3.7) * 2.0 * CMI_PI + ageSec * 0.3);
-    float headPitch = clamp(vel.y * 40.0, -45.0, 45.0);
+        : (cmiHash1(seed * 3.7) * 2.0 * CMI_PI);
+    if(cmiAllayAnimationValid)yaw=cmiAnimationBodyYaw;
+    float headPitch = cmiAllayAnimationValid?cmiAnimationPitch:0.;
 
     float f = ticks * (20.0 * CMI_PI / 180.0) + limbSwing;
     float f1 = cos(f) * CMI_PI * 0.15 + lsa;
     float f3 = ticks * 9.0 * (CMI_PI / 180.0);
     float f4 = min(lsa / 0.3, 1.0);
     float f5 = 1.0 - f4;
-    // HOLD ramp -- vanilla getHoldingItemAnimationProgress lerps its tick
-    // counter LINEARLY over five ticks (lerp(...)/5); mirror that linear shape
-    // (the symmetric release needs a hold-end event particles never observe).
-    // Non-HOLD anims take the external carrying ramp (the wave predicate).
-    float f6 = (anim == 2) ? clamp(ageSec / 0.25, 0.0, 1.0) : carryRamp;
+    // Committed state supplies the symmetric five-tick carrying ramp.
+    // The age/external ramps are retained for callers without a sidecar.
+    float f6 = cmiAllayAnimationValid?cmiAnimationCarry:(anim == 2) ? clamp(ageSec / 0.25, 0.0, 1.0) : carryRamp;
     bool dance = (anim == 1); // full vanilla jukebox dance incl. the spin rhythm
 
     float rootYBob = cos(f3) * 0.25 * f5;
@@ -164,7 +162,7 @@ mat4 cmiAllayPartTransform(float ageSec, float seed, vec3 vel, int anim, int pid
         // decays for one further window length before resting at zero. The
         // root YAW is driven only inside the window (resetPose zeroes it in
         // the tail); the wobble below stays suppressed through the whole tail.
-        float cyclePhase = fract(ageSec / CMI_SPIN_CYCLE_S);
+        float cyclePhase = cmiAllayAnimationValid?max(cmiAnimationDance,0.)/55.:fract(ageSec / CMI_SPIN_CYCLE_S);
         float w = CMI_SPIN_WINDOW_FRACTION;
         float f9;
         if (cyclePhase < w) {
@@ -174,12 +172,14 @@ mat4 cmiAllayPartTransform(float ageSec, float seed, vec3 vel, int anim, int pid
         } else {
             f9 = 0.0;
         }
+        if(cmiAllayAnimationValid)f9=cmiAnimationSpinProgress;
         rootYRot = (cyclePhase < w) ? (CMI_PI * 4.0) * f9 : 0.0;
         rootZRot = cos(f7) * 16.0 * (CMI_PI / 180.0) * (1.0 - f9);
         headYRot = cos(f7) * 30.0 * (CMI_PI / 180.0) * (1.0 - f9);
         headZRot = cos(f7) * 14.0 * (CMI_PI / 180.0) * (1.0 - f9);
     } else {
-        headXRot = headPitch * (CMI_PI / 180.0);
+        headXRot = headPitch;
+        headYRot = cmiAllayAnimationValid?cmiAnimationHeadYaw:0.;
     }
     float wingXR = 0.43633232 * (1.0 - f4);
     float bodyXR = f4 * (CMI_PI / 4.0);
@@ -188,10 +188,10 @@ mat4 cmiAllayPartTransform(float ageSec, float seed, vec3 vel, int anim, int pid
     float f14 = 0.43633232 - cos(f3 + CMI_PI * 1.5) * CMI_PI * 0.075 * f13;
 
     // ---- part chain: build ONLY the matrix this vertex's part needs ----
-    // (root: translate(0, 23.5+bob, 0) * Ry * Rz; pivots from createBodyLayer)
+    // (root: translate(0, 23.5+bob, 0) * Rz * Ry; pivots from createBodyLayer)
     mat4 t = mat4(1.0);
     t[3].xyz = vec3(0.0, 23.5 + rootYBob, 0.0);
-    mat4 rootM = t * cmiRotY(rootYRot) * cmiRotZ(rootZRot);
+    mat4 rootM = t * cmiRotZ(rootZRot) * cmiRotY(rootYRot);
     if (pid == 0) {
         return rootM * cmiPart(vec3(0.0, -3.99, 0.0), headXRot, headYRot, headZRot);
     }
@@ -242,23 +242,25 @@ mat4 cmiAllayStarPartTransform(float age,float seed,vec3 velocity,int animation,
 }
 #pragma cmi_include chunks/dome_pose.glsl
 mat4 cmiAllayAttackPartTransform(float age,float seed,float identity,vec3 position,vec3 velocity,int animation,int part,out float yaw,float carry,float marker,bool attack){
+ if(cmiAllayAnimationValid){carry=cmiAnimationCarry;animation=animation==3?3:cmiAnimationDance>=0.?1:0;}
  int slot=attack&&uStarfallEnabled?cmiStarClaim(identity,uTimeSec):-1;
  bool helix=slot>=0&&(cmiHelix(cmiStarBase(uint(slot)))||cmiDome(cmiStarBase(uint(slot))));
  bool column=slot>=4&&cmiColumn(cmiStarBase(uint(slot)))&&marker<5.5;
+ if(column&&cmiAllayAnimationValid)cmiAnimationAmount=1.;
  if(helix||column)animation=0;
  // Column flight has one stable pose. Do not switch to idle yaw/head/wing inputs at tiny velocities.
  vec3 poseVelocity=column?vec3(1.5,0,0):velocity;
- vec3 domeDirection;float domeCarry,domeSpeed,domeYaw;bool domePose=attack&&animation!=3&&cmiDomeCommittedPose(identity,domeDirection,domeCarry,domeSpeed,domeYaw);
+ vec3 domeDirection;float domeCarry,domeSpeed,domeYaw;bool domePose=!cmiAllayAnimationValid&&attack&&animation!=3&&cmiDomeCommittedPose(identity,domeDirection,domeCarry,domeSpeed,domeYaw);
  if(domePose){poseVelocity=domeDirection*domeSpeed;carry=domeCarry;animation=0;}
  // Helix raises carrying arms without tilting the whole body: keep the checked body/wing envelope.
  mat4 transform=helix||domePose?cmiAllayPartTransform(age,seed,poseVelocity,animation,part,yaw,carry):cmiAllayStarPartTransform(age,seed,poseVelocity,animation,part,yaw,carry,attack);
  if(domePose)yaw=-domeYaw;
- if(column){uint a=cmiStarAssignment(identity),b=cmiStarBase(uint(slot)),rank=cmiStarRank(a);
+ if(column&&!cmiAllayAnimationValid){uint a=cmiStarAssignment(identity),b=cmiStarBase(uint(slot)),rank=cmiStarRank(a);
   vec2 radial=position.xz-cmiStarLanding(b,0u).xz;float angle=length(radial)>.1?atan(radial.y,radial.x):cmiColumnAngle(b,rank);
   float u=marker<0.?1.:marker>=4.&&marker<5.?marker-4.:marker>=5.?1.:0.;
   float heading=angle+1.570796327*(1.-max(cmiColumnSmooth(u),carry));yaw=atan(-cos(heading),sin(heading));
  }
- if(helix&&carry>0.){uint b=cmiStarBase(uint(slot));float time=cmiStarTime(b,uTimeSec);
+ if(helix&&!domePose&&!cmiAllayAnimationValid&&carry>0.){uint b=cmiStarBase(uint(slot));float time=cmiStarTime(b,uTimeSec);
   if(cmiHelix(b)&&(cmiHelixPhase(b,time)!=4.||length(velocity.xz)<.05)){float angle=cmiHelixHeading(b,time);yaw=atan(-cos(angle),sin(angle));}
   // Arm pose only; a whole-body tilt would invalidate the 1.4m body/wing clearance.
  }return transform;

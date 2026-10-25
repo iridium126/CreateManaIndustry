@@ -59,6 +59,10 @@ public final class ParticlePrograms {
         new Specification("prepare_dispatch.comp",null,(owner,id)->owner.prepareDispatch=id),
         new Specification("reset.comp",null,(owner,id)->owner.reset=id),
         new Specification("update.comp",null,(owner,id)->owner.update=id),
+        new Specification("allay_animate.comp",null,(owner,id)->owner.allayAnimate=id),
+        new Specification("model_prepare.comp",null,(owner,id)->owner.modelPrepare=id),
+        new Specification("model_filter.comp",null,(owner,id)->owner.modelFilter=id),
+        new Specification("model_compact.comp",null,(owner,id)->owner.modelCompact=id),
         new Specification("emit.comp",null,(owner,id)->owner.emit=id),
         new Specification("block_emit.comp",null,(owner,id)->owner.blockEmit=id),
         new Specification("keygen.comp",null,(owner,id)->owner.keygen=id),
@@ -242,6 +246,11 @@ public final class ParticlePrograms {
     public int prepareDispatch() { return prepareDispatch; }
     private int reset;
     private int update;
+    private int allayAnimate,modelPrepare,modelFilter,modelCompact;
+    public int modelFilter(){return modelFilter;}
+    public int modelCompact(){return modelCompact;}
+    public int modelPrepare(){return modelPrepare;}
+    public int allayAnimate(){return allayAnimate;}
     private int emit;
     private int blockEmit;
     private int keygen;
@@ -331,6 +340,7 @@ public final class ParticlePrograms {
             this.prepareDispatch = candidate.prepareDispatch; candidate.prepareDispatch = 0;
             this.reset = candidate.reset; candidate.reset = 0;
             this.update = candidate.update; candidate.update = 0;
+            this.modelFilter=candidate.modelFilter;candidate.modelFilter=0;this.modelCompact=candidate.modelCompact;candidate.modelCompact=0;this.modelPrepare=candidate.modelPrepare;candidate.modelPrepare=0;this.allayAnimate=candidate.allayAnimate;candidate.allayAnimate=0;
             this.emit = candidate.emit; candidate.emit = 0;
             this.blockEmit = candidate.blockEmit; candidate.blockEmit = 0;
             this.keygen = candidate.keygen; candidate.keygen = 0;
@@ -368,7 +378,7 @@ public final class ParticlePrograms {
     }
 
     public boolean ready() {
-        return this.prepareDispatch != 0 && this.blockEmit != 0 && this.reset != 0 && this.update != 0 && this.emit != 0 && this.render != 0
+        return this.modelFilter!=0&&this.modelCompact!=0&&this.allayAnimate!=0&&this.modelPrepare!=0&&this.prepareDispatch != 0 && this.blockEmit != 0 && this.reset != 0 && this.update != 0 && this.emit != 0 && this.render != 0
                 && this.texturedRender != 0 && this.modelRender != 0
                 && this.keygen != 0 && this.radixHist != 0 && this.radixScan != 0
                 && this.radixScatter != 0 && this.capture != 0 && this.grid != 0
@@ -498,12 +508,13 @@ public final class ParticlePrograms {
         if(pendingReload!=null){pendingReload.close();pendingReload=null;}
         committedSources=Map.of();
         for (int p : new int[] {
-                this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
+                this.modelFilter,this.modelCompact,this.modelPrepare,this.allayAnimate,this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
                 this.grid, this.hit, this.damagePrepare,this.stormPos,this.columnSnapshot,this.columnRecovery, this.waveContact, this.ringReserve,this.domeContacts,this.domeControl,this.domeApply,this.domeAudit,this.domePath,this.depenetration,this.depenetrationSchedule,this.depenetrationPrepare,
                 this.render, this.texturedRender, this.modelRender }) {
             if (p != 0){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(p);}
         }
+        this.modelFilter=this.modelCompact=this.modelPrepare=this.allayAnimate=0;
         this.prepareDispatch = this.reset = this.update = this.emit = this.blockEmit = this.keygen = 0;
         this.radixHist = this.radixScan = this.radixScatter = this.capture = 0;
         this.grid = this.hit = this.damagePrepare = this.stormPos = this.waveContact = this.ringReserve = 0;

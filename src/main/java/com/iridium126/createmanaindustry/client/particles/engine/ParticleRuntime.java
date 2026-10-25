@@ -376,7 +376,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         private boolean partitionActive;
         private boolean createsParticles;
         private boolean sorted;
-        private boolean packageStaged;
+        private boolean packageStaged,modelMembersPrepared;
         private int finalPerm;
         private long nextGeneration;
         private long stormVersion;
@@ -596,7 +596,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         }
         sorted= true;
         ParticleRuntime.this.frameSorted = true;
-        packageStaged=false;
+        packageStaged=false;modelMembersPrepared=false;
 
             return true;
         }
@@ -606,7 +606,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             ParticleRuntime.this.gpu.ensureCarrierCapacity(AllayStormRuntime.INSTANCE.carrierCount());
             if(AllayStormRuntime.INSTANCE.active()||com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bytes()>0)com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.prepare(ParticleRuntime.this.committedGeneration+1);
             ParticleDiagnostics.INSTANCE.mark("reset_grid");
-            ParticleRuntime.this.gpu.beginComputeFrame();
+            ParticleRuntime.this.gpu.beginComputeFrame(dt);
+            gpu.allayAnimation().prepareAllocator(programs.modelPrepare());
             ParticleRuntime.this.gpu.bindDispatch();
             ParticleRuntime.this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING, ParticleRuntime.this.lastGoodSlot);
             ParticleRuntime.this.gpu.bindCounter(3, slot);
@@ -657,8 +658,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             }
             ParticleDiagnostics.INSTANCE.mark("update");
-            int playerCount=AllayStormRuntime.INSTANCE.needsGridPass()?AllayStormRuntime.INSTANCE.collectSyncedPlayers():0;
-            if(playerCount>0)ParticleRuntime.this.gpu.uploadPlayers(AllayStormRuntime.INSTANCE.playerScratch(),playerCount);
+            int playerCount=AllayStormRuntime.INSTANCE.needsGridPass()||gpu.allayAnimation().allocated()?AllayStormRuntime.INSTANCE.collectSyncedPlayers():0;
+            if(AllayStormRuntime.INSTANCE.needsGridPass()||gpu.allayAnimation().allocated())gpu.uploadPlayerSnapshot(AllayStormRuntime.INSTANCE,playerCount);
             com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.prepare(ParticleRuntime.this.programs.update());
             for(int pass=com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient.INSTANCE.restoring()?0:1;pass<2;pass++){
                 int updateProgram=pass==0?ParticleRuntime.this.programs.columnRecovery():ParticleRuntime.this.programs.update();
@@ -707,8 +708,14 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bind(updateProgram,true);
                 com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.uploadUniforms(updateProgram);
                 com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient.INSTANCE.bind(updateProgram);
+                if(pass==1)setUIntUniform(updateProgram,"uModelPass",1);
                 ParticleRuntime.this.gpu.dispatch(0);
-                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+                AllayAnimationGpu.barrier();
+                if(pass==1){
+                    setUIntUniform(updateProgram,"uModelPass",2);
+                    ParticleRuntime.this.gpu.dispatch(ParticleBuffers.MODEL_DISPATCH);
+                    AllayAnimationGpu.barrier();
+                }
             }
             if(StarfallGpuBuffers.INSTANCE.hasDome()){
                 com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(ParticleRuntime.this.programs.domeContacts());
@@ -822,6 +829,10 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 ParticleRuntime.this.partition.generate(ParticleRuntime.this,slot,view,projectionMatrix,ParticleRuntime.this.frustumPlanes,(float)ParticleRuntime.this.scale);
                 ParticleRuntime.this.gpu.beginBindings();
             }
+            if(PackageRuntime.INSTANCE.hasInput()){
+                gpu.bindDispatchInputs(slot,lastGoodSlot);gpu.bindPopulationWrite(programs.prepareDispatch(),committedGeneration+1);gpu.bindModelMembers(programs.prepareDispatch());gpu.bindPopulationRead(programs.prepareDispatch(),true,committedGeneration+1);
+                AllayAnimationGpu.barrier();ParticleDispatch.prepareModelPublication(programs,false,true);modelMembersPrepared=true;
+            }
             packageVersion=PackageRuntime.INSTANCE.stage(ParticleRuntime.this.frustumPlanes,camera,(float)renderDistanceBlocks());
             packageStaged=packageVersion>=0;
             if(packageStaged) {
@@ -837,6 +848,28 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
 
             step=2;
         }
+        private void filterPackageModels(){
+            if(!packageStaged||!gpu.allayAnimation().allocated())return;
+            for(int program:new int[]{programs.modelFilter(),programs.modelCompact()}){
+                GL20.glUseProgram(program);gpu.bindModelMembers(program);gpu.bindPopulationRead(program,true,committedGeneration+1);gpu.bindParticleWrite(0);gpu.bindCounter(3,slot);gpu.bindEmitters(5);gpu.bindSort(7,gpu.sortBuffer(0));gpu.bindDispatch();gpu.dispatch(ParticleBuffers.MODEL_FILTER_DISPATCH);AllayAnimationGpu.barrier();
+            }
+            gpu.bindDispatchInputs(slot,lastGoodSlot);gpu.bindPopulationWrite(programs.prepareDispatch(),committedGeneration+1);gpu.bindPopulationRead(programs.prepareDispatch(),true,committedGeneration+1);
+            ParticleDispatch.prepare(programs,4,true);
+        }
+        private void finishModelAnimation(){
+            if(!gpu.allayAnimation().allocated())return;
+            if(!gpu.allayAnimation().tickPending())return;
+            int animate=programs.allayAnimate();GL20.glUseProgram(animate);gpu.bindModelMembers(animate);
+            gpu.bindPopulationRead(animate,true,committedGeneration+1);
+            gpu.bindParticleWrite(0);gpu.bindCounter(3,slot);gpu.bindEmitters(5);gpu.bindPlayers();
+            if(collisionBake.ready()){collisionBake.bind(0);gpu.bindBakeMeta();setIntUniform(animate,"uCollisionOn",1);}else setIntUniform(animate,"uCollisionOn",0);
+            setIntUniform(animate,"uPlayerCount",AllayStormRuntime.INSTANCE.lastPlayerCount());
+            setFloatUniform(animate,"uTimeSec",AllayStormRuntime.INSTANCE.timeSec());
+            StarfallGpuBuffers.INSTANCE.bind(animate,true);StarfallGpuBuffers.INSTANCE.uploadUniforms(animate);
+            com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(animate);
+            gpu.bindDispatch();gpu.dispatch(ParticleBuffers.CANDIDATE_MODEL_DISPATCH);AllayAnimationGpu.barrier();
+        }
+
         public void cullSort() {require(2);
 
             finalPerm= -1;
@@ -844,7 +877,12 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             // Shared Fate and package compute passes reuse the counter/indirect SSBO slots.
             // Publish from the actual particle counters, never their temporary state buffers.
             ParticleRuntime.this.gpu.bindDispatchInputs(slot, ParticleRuntime.this.lastGoodSlot);
-            ParticleDispatch.prepare(ParticleRuntime.this.programs, 1,packageStaged);
+            ParticleRuntime.this.gpu.bindPopulationWrite(programs.prepareDispatch(),committedGeneration+1);
+            ParticleRuntime.this.gpu.bindModelMembers(programs.prepareDispatch());
+            ParticleRuntime.this.gpu.bindPopulationRead(programs.prepareDispatch(),true,committedGeneration+1);
+            AllayAnimationGpu.barrier();
+            ParticleDispatch.prepareModelPublication(programs,packageStaged,!modelMembersPrepared);
+            filterPackageModels();finishModelAnimation();
             int aliveEstimate = cap; // Draw counts and dispatch bounds live on the GPU.
             ParticleRuntime.this.frameAliveEstimate = aliveEstimate; // draw-phase handoff
             {
@@ -855,7 +893,9 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 // ALPHA sprites -> sortData[7] upper partition (type bit 1)
                 int kg = ParticleRuntime.this.programs.keygen();
                 GL20.glUseProgram(kg);
+                ParticleRuntime.this.gpu.bindDispatch();
                 ParticleRuntime.this.gpu.bindPopulationWrite(kg,committedGeneration+1);
+                ParticleRuntime.this.gpu.bindPopulationRead(kg,true,committedGeneration+1);
                 ParticleRuntime.this.gpu.bindParticleWrite(0);
                 ParticleRuntime.this.gpu.bindIndirect(2);
                 ParticleRuntime.this.gpu.bindCounter(3, slot);
@@ -885,7 +925,11 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 int frustumLoc = loc(kg, "uFrustum");
                 if (frustumLoc >= 0)
                     GL20.glUniform4fv(frustumLoc, ParticleRuntime.this.frustumPlanes);
+                setUIntUniform(kg,"uModelPass",1);
                 ParticleRuntime.this.gpu.dispatch(1);
+                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                setUIntUniform(kg,"uModelPass",2);
+                ParticleRuntime.this.gpu.dispatch(ParticleBuffers.CANDIDATE_MODEL_DISPATCH);
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT
                         | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT
                         | GL42.GL_COMMAND_BARRIER_BIT);

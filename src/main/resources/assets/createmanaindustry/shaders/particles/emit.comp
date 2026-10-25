@@ -38,7 +38,7 @@ layout(std430, binding = BIND_POOL_WRITE) buffer ParticleWrite { vec4 data[]; } 
 // Read pool: combat styles resolve originRef against the committed pool.
 layout(std430, binding = BIND_POOL_READ) readonly buffer ParticleRead { vec4 data[]; } readBuf;
 layout(std430,binding=BIND_PREV_COUNTER) readonly buffer CombatPrevious {uint live;} combatPrevious;
-layout(std430, binding = BIND_COUNTER) buffer CounterBuf { uint writeSlot; uint spare; uint translucentCensus; } counter;
+layout(std430, binding = BIND_COUNTER) buffer CounterBuf { uint writeSlot; uint spare; uint translucentCensus; uint sortItems; } counter;
 layout(std430, binding = BIND_EMITCMD) readonly buffer EmitCmdBuf { float entries[]; } emitCmd;
 layout(std430, binding = BIND_EMITTER) readonly buffer EmitterBuf { vec4 u[]; } emitters;
 // Storm member identity -> pool-slot map (write side: update.comp, THIS same
@@ -63,6 +63,7 @@ uniform float uStormConvRate;  // d(convPhase)/dt — drives the target-velocity
 
 // the analytic spawn needs the storm chunk only (cmiTyphoonHome) — no pose math
 #pragma cmi_include chunks/particle_identity.glsl
+#pragma cmi_include chunks/allay_animation_state.glsl
 #pragma cmi_include chunks/population_read.glsl
 #pragma cmi_include chunks/allay_storm.glsl
 
@@ -139,9 +140,9 @@ void sourceMetrics(uint srcIdx, out vec3 feet, out float width, out float height
     height = 0.6 * sscale;  // vanilla Allay bbHeight × render scale
 }
 
+#pragma cmi_include chunks/model_spawn.glsl
 #pragma cmi_include chunks/classic_spawn.glsl
 
-#pragma cmi_include chunks/pool_reservation.glsl
 void main() {
     uint g = gl_GlobalInvocationID.x;
     if (g >= uTotalSpawn)
@@ -268,7 +269,7 @@ void main() {
             spos = home;
             svel = homeVel;
         }
-        uint slot = cmiReserveParticle();
+        uint slot = cmiReserveEmitterParticle(eid);
         if (slot >= uCapacity)
             return;
         uint wb = slot * 4u;
@@ -278,6 +279,7 @@ void main() {
         writeBuf.data[wb + 1u] = vec4(svel, 0.0);
         writeBuf.data[wb + 2u] = vec4(1.0, 1.0, 1.0, 0.0); // p2.w: hurt timer
         writeBuf.data[wb + 3u] = vec4(0.0, 20.0, mseed, uintBitsToFloat(eid));
+        cmiRegisterModelSpawn(slot,spos,svel,mseed,true);
         return;
     }
     if (spawnStyle > 4.5) {
@@ -307,7 +309,7 @@ void main() {
         advanceHexTicks(origin,vel,directGravity,elapsed);
         // SingleQuadParticle default [0.1, 0.2) × .9 = [0.09, .18).
         float baseSize = mix(2.0 / 3.0, 4.0 / 3.0, hash1(seed + 13.1));
-        uint slot = cmiReserveParticle();
+        uint slot = cmiReserveEmitterParticle(eid);
         if (slot >= uCapacity)
             return;
         uint wb = slot * 4u;
@@ -317,6 +319,7 @@ void main() {
         // as the per-particle gravity bit; additive.vsh uses abs() for alpha.
         writeBuf.data[wb + 2u] = vec4(directColor, directGravity ? -1.0 : 1.0);
         writeBuf.data[wb + 3u] = vec4(float(elapsed)*.05, maxLife, uHexTickReady?uintBitsToFloat(uHexCurrentTick):seed, uintBitsToFloat(eid));
+        if(cmiSpawnAnimationSlot<CMI_MODEL_LIMIT){cmiNewIdentity(slot);cmiRegisterModelSpawn(slot,origin,vel,seed,false);}
         return;
     }
     if (spawnStyle > 3.5 && spawnStyle < 4.5) {
@@ -368,7 +371,7 @@ void main() {
         // quadSize = SingleQuadParticle default [0.1, 0.2) × 0.9 = [0.09, 0.18)
         // — the .27 full-width spec base × this [2/3, 4/3] hash range
         float baseSize = mix(2.0 / 3.0, 4.0 / 3.0, hash1(seed + 13.1));
-        uint slot = cmiReserveParticle();
+        uint slot = cmiReserveEmitterParticle(eid);
         if (slot >= uCapacity)
             return;
         uint wb = slot * 4u;
@@ -376,6 +379,7 @@ void main() {
         writeBuf.data[wb + 1u] = vec4(vel, roll);
         writeBuf.data[wb + 2u] = vec4(hexPigment(lo,velUnlen),gravity?-1.:1.);
         writeBuf.data[wb + 3u] = vec4(float(elapsed)*.05, maxLife, uHexTickReady?uintBitsToFloat(uHexCurrentTick):seed, uintBitsToFloat(eid));
+        if(cmiSpawnAnimationSlot<CMI_MODEL_LIMIT){cmiNewIdentity(slot);cmiRegisterModelSpawn(slot,pos,vel,seed,false);}
         return;
     }
     if (spawnStyle > 0.5) {
@@ -447,7 +451,7 @@ void main() {
             float maxLife = max(mix(emitters.u[eid * VEC4_PER_EMITTER + 5u].x,
                                     emitters.u[eid * VEC4_PER_EMITTER + 5u].y,
                                     hash1(seed + 12.1)), 0.1);
-            uint slot = cmiReserveParticle();
+            uint slot = cmiReserveEmitterParticle(eid);
             if (slot >= uCapacity)
                 return;
             uint wb = slot * 4u;
@@ -455,6 +459,7 @@ void main() {
             writeBuf.data[wb + 1u] = vec4(vel, 0.0);
             writeBuf.data[wb + 2u] = vec4(1.0, 1.0, 1.0, lightOut);
             writeBuf.data[wb + 3u] = vec4(0.0, maxLife, seed, uintBitsToFloat(eid));
+            if(cmiSpawnAnimationSlot<CMI_MODEL_LIMIT){cmiNewIdentity(slot);cmiRegisterModelSpawn(slot,pos,vel,seed,false);}
             return;
         } else {
             // damage-indicator heart: packet offsets gaussian·0.1 (x/z) at the
@@ -473,7 +478,7 @@ void main() {
             float maxLife = max(mix(emitters.u[eid * VEC4_PER_EMITTER + 5u].x,
                                     emitters.u[eid * VEC4_PER_EMITTER + 5u].y,
                                     hash1(seed + 12.1)), 0.1);
-            uint slot = cmiReserveParticle();
+            uint slot = cmiReserveEmitterParticle(eid);
             if (slot >= uCapacity)
                 return;
             uint wb = slot * 4u;
@@ -481,11 +486,12 @@ void main() {
             writeBuf.data[wb + 1u] = vec4(vel, 0.0);
             writeBuf.data[wb + 2u] = vec4(1.0, 1.0, 1.0, lightOut);
             writeBuf.data[wb + 3u] = vec4(0.0, maxLife, seed, uintBitsToFloat(eid));
+            if(cmiSpawnAnimationSlot<CMI_MODEL_LIMIT){cmiNewIdentity(slot);cmiRegisterModelSpawn(slot,pos,vel,seed,false);}
             return;
         }
     }
 
-    uint slot = cmiReserveParticle();
+    uint slot = cmiReserveEmitterParticle(eid);
     if (slot >= uCapacity) return;
     vec3 origin = vec3(emitCmd.entries[eb], emitCmd.entries[eb + 1u], emitCmd.entries[eb + 2u]);
     cmiSpawnClassic(eid, seed, origin, lightPacked, slot);

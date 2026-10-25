@@ -9,7 +9,7 @@ uniform uint uPopulationModelCapacity,uPopulationStormCapacity;
 void cmiPopulationRecord(uint slot,bool storm){
     if(!uPopulationWriteEnabled)return;
     uint row=atomicAdd(populationWrite.modelCount,1u);
-    if(row<populationWrite.modelCapacity)populationWrite.slots[row]=slot;
+    if(row<populationWrite.modelCapacity){populationWrite.slots[row*2u]=slot;populationWrite.slots[row*2u+1u]=slot;}
     if(storm){row=atomicAdd(populationWrite.stormCount,1u);
-        if(row<populationWrite.stormCapacity)populationWrite.slots[populationWrite.modelCapacity+row]=slot;}
+        if(row<populationWrite.stormCapacity)populationWrite.slots[populationWrite.modelCapacity*2u+row]=slot;}
 }

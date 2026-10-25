@@ -28,7 +28,7 @@ const int BAKE_SLICES = 8; // CollisionBake.MAX_SLICES
 
 layout(std430, binding = BIND_POOL_READ) readonly buffer ParticleRead { vec4 data[]; } readBuf;
 layout(std430, binding = BIND_POOL_WRITE) buffer ParticleWrite { vec4 data[]; } writeBuf;
-layout(std430, binding = BIND_COUNTER) buffer CounterBuf { uint writeSlot; uint spare; uint translucentCensus; } counter;
+layout(std430, binding = BIND_COUNTER) buffer CounterBuf { uint writeSlot; uint spare; uint translucentCensus; uint sortItems; } counter;
 layout(std430, binding = BIND_EMITTER) readonly buffer EmitterBuf { vec4 u[]; } emitters;
 layout(std430, binding = BIND_BAKEMETA) readonly buffer BakeMetaBuf { vec4 m[]; } bakeMeta;
 // previous frame's counter slot: its writeSlot is the read buffer's EXACT live
@@ -142,6 +142,7 @@ uniform bool uDomePoseStorageEnabled;
 #pragma cmi_include chunks/dome_pose_math.glsl
 #pragma cmi_include chunks/gather_motion.glsl
 #pragma cmi_include chunks/particle_identity.glsl
+#pragma cmi_include chunks/allay_animation_state.glsl
 #define CMI_DOME_RUNTIME_FLOW
 uint cmiDomeFlowWord(uint at){return CMI_STATE(starStateRead,at);}
 #pragma cmi_include chunks/allay_storm.glsl
@@ -178,9 +179,18 @@ vec2 cmiGauss2(float s) {
 #pragma cmi_types update
 
 #pragma cmi_include chunks/hex_motion.glsl
+#pragma cmi_include chunks/population_read.glsl
+#define CMI_MODEL_APPEND
+#pragma cmi_include chunks/model_members_write.glsl
+uniform uint uModelPass;
 
 void main() {
-    uint idx = gl_GlobalInvocationID.x;
+    uint idx=gl_GlobalInvocationID.x,animationSlot=idx;
+    if(uModelPass==2u){
+        uint live=min(prevCounter.live,uCapacity);
+        if(!cmiPopulationIndexed(live,false)||idx>=populationRead.modelCount)return;
+        animationSlot=cmiPopulationAnimation(idx);idx=cmiPopulationSlot(idx,live,false);
+    }
     if (idx >= min(prevCounter.live, uCapacity))
         return;
 
@@ -195,9 +205,11 @@ void main() {
     bool waveContactLatched = false;
 
     uint eid = floatBitsToUint(p3.w);
-    if (eid == uKillEmit)
-        return; // storm stopped: drop out of the compacted output immediately
+    if (eid == uKillEmit) {if(uModelPass==2u)cmiModelRetire(animationSlot);return;} // storm stopped: drop out of the compacted output immediately
     uint hb = eid * VEC4_PER_EMITTER;
+    bool modelMaterial=emitters.u[hb+7u].x>=1.5&&emitters.u[hb+7u].x<2.5;
+    if(uModelPass==1u&&modelMaterial)return;
+    if(uModelPass==2u&&!modelMaterial){cmiModelRetire(animationSlot);return;}
     // Package poses are imported after ordinary emission from dedicated GPU physics.
     // Replacing the previous frame's records avoids lifetime/death-chain integration
     // and makes common-pool compaction independent of persistent package identities.
@@ -228,7 +240,7 @@ void main() {
         if (mi < uint(memberMap.m.length()))
             memberMap.m[mi] = uintBitsToFloat(idx + 1u);
     }
-    if(updateHexParticle(hb,p0,p1,p2,p3))return;
+    if(!modelMaterial&&updateHexParticle(hb,p0,p1,p2,p3))return;
     float matId = matMotion.x;
     bool isModel = matId >= 1.5 && matId < 2.5;
 
@@ -240,7 +252,7 @@ void main() {
         // frame it crosses spawns the vanilla death poof burst first (exactly
         // once: the particle compacts away right after).
         if (hp <= -1.0) {
-            spawnDeathPoof(hb, p0, p1, p3);
+            spawnDeathPoof(hb, p0, p1, p3);if(uModelPass==2u)cmiModelRetire(animationSlot);
             return;
         }
     } else if (age >= hp) {
@@ -315,7 +327,7 @@ void main() {
         }
     }}
 
-    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){uint member=cmiStarMember(p0.w);roll=(CMI_STATE(starStateWrite,member*2u+1u)&255u)==4u&&cmiNearPlayer(pos+vec3(0,.3,0),36.)?-4.:0.;}}
+    if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(a!=0u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){uint member=cmiStarMember(p0.w);roll=(CMI_STATE(starStateWrite,member*2u+1u)&255u)==4u&&cmiNearPlayerFeet(pos)?-4.:0.;}}
 
     if(cmiColumnRecoveryFrame)roll=0.;
 
@@ -397,37 +409,51 @@ void main() {
     }
 
     // Publish once per simulation frame. Drawing and shadow collection never integrate pose.
-    if(!corpse&&stormA.x>.5&&uDomePoseStorageEnabled){uint member=cmiStarMember(p0.w),a=cmiStarAssignment(p0.w);
+    if(stormA.x>.5&&uDomePoseStorageEnabled){uint member=cmiStarMember(p0.w),a=cmiStarAssignment(p0.w);
         if(member<131072u&&CMI_DOME_POSE+member*2u+1u<uint(starStateWrite.words.length())){
             uint at=CMI_DOME_POSE+member*2u,flags=CMI_STATE(starStateRead,at+1u);
-            uint actualPhase=CMI_STATE(starStateWrite,member*2u+1u)&255u;
+            uint lifecycle=CMI_STATE(starStateWrite,member*2u+1u),actualPhase=lifecycle&255u;
+            bool same=CMI_STATE(starStateRead,member*2u)==CMI_STATE(starStateWrite,member*2u);
+            bool valid=same&&(flags&0x80000000u)!=0u;
+            bool ordinaryOwner=a==0u||!cmiColumnAssignment(a);
             bool domeOwner=a!=0u&&cmiStarSlot(a)<4u&&cmiDome(cmiStarBase(cmiStarSlot(a)));
-            bool current=domeOwner&&actualPhase<6u;
-            bool returning=(a==0u||domeOwner)&&actualPhase>=6u&&(flags&0x80000000u)!=0u;
+            bool current=!corpse&&domeOwner&&actualPhase<6u;
+            bool localReturn=cmiNavigationApplied&&cmiNavigationCurrentMember==member&&actualPhase==6u&&CMI_STATE(starStateWrite,cmiNavigationExtra(member))==2u;
+            bool returning=!corpse&&ordinaryOwner&&actualPhase>=6u&&CMI_STATE(starStateWrite,member*2u)!=0u&&(valid||localReturn);
             if(current||returning){
-                float initialYaw=cmiHash1(p3.z*3.7)*6.28318530718+p3.x*.3;
-                vec2 angles=(flags&0x80000000u)!=0u?cmiDomeUnpackPose(CMI_STATE(starStateRead,at)):vec2(length(p1.xz)>.05?atan(p1.x,p1.z):-initialYaw,length(p1.xyz)>.0001?asin(clamp(p1.y/length(p1.xyz),-1.,1.)):0.);
+                float initialYaw=cmiHash1(p3.z*3.7)*6.28318530718;
+                bool previousPose=valid;
+                vec2 angles=previousPose?cmiDomeUnpackPose(CMI_STATE(starStateRead,at)):vec2(length(p1.xz)>.05?atan(p1.x,p1.z):-initialYaw,length(p1.xyz)>.0001?asin(clamp(p1.y/length(p1.xyz),-1.,1.)):0.);
+                float previousCarry=returning&&!previousPose?cmiAttackCarry(p0.w,uTimeSec-uDt,p1.w):0.;
+                if(returning&&!previousPose&&a!=0u){uint b=cmiStarBase(cmiStarSlot(a));float time=cmiStarTime(b,uTimeSec-uDt);if(cmiHelix(b)&&previousCarry>0.&&(cmiHelixPhase(b,time)!=4.||length(p1.xz)<.05))angles.x=1.570796327-cmiHelixHeading(b,time);}
+                if(returning&&!previousPose&&uAllayAnimationWriteEnabled){uvec4 prior=cmiAnimationReadRow(animationSlot*4u),meta=cmiAnimationReadRow(animationSlot*4u+2u);if((meta.z&0x80000000u)!=0u){vec2 before=cmiAnimationAngles(prior.x),after=cmiAnimationAngles(prior.y);angles.x=-(before.x+cmiAnimationAngle(before.x,after.x)*(uAllayAnimationAlpha>=0.?uAllayAnimationAlpha:clamp(p3.x*20.-float(meta.w),0.,1.)));}}
+                vec2 previousAngles=angles;
                 vec3 navigation=current&&cmiStarPhase(a,uTimeSec)==4.?cmiDomePoseTangent:vel;
                 angles=cmiDomeAdvancePose(angles,navigation,uDt);
-                float blend=(flags&0x80000000u)!=0u?float(flags&65535u)/65535.:0.;
-                blend=mix(blend,roll< -3.5&&roll> -4.5?1.:0.,1.-exp(-uDt/.12));
-                float poseSpeed=(flags&0x80000000u)!=0u?float((flags>>16u)&32767u)*(64./32767.):length(p1.xyz);
+                float blend=previousPose?float(flags&65535u)/65535.:previousCarry;
+                blend=mix(blend,current&&roll< -3.5&&roll> -4.5?1.:0.,1.-exp(-uDt/.12));
+                float poseSpeed=previousPose?float((flags>>16u)&32767u)*(64./32767.):length(p1.xyz);
                 poseSpeed=mix(poseSpeed,length(vel),1.-exp(-uDt/.12));
                 bool keepPose=true;
                 uint phase=actualPhase;
-                if(returning&&phase>=7u){
+                // Only actual local navigation starts/retains a generic return
+                // pose. A clear corridor fades it out even before arrival.
+                bool domeReturn=domeOwner||(lifecycle&0x100u)!=0u;
+                bool fading=returning&&(phase>=7u||(!domeReturn&&!localReturn));
+                if(returning&&!fading)CMI_STATE(starStateWrite,CMI_GATHER_STREAK+member)=0u;
+                if(fading){
                     // Existing contact scratch is unused by arrived members.
                     // Fade the cached offsets onto the current ordinary pose,
                     // including when the last attack has already disappeared.
                     uint scratch=CMI_DOME_CONTACT_DELTA+member*4u;
-                    float ordinarySpeed=length(vel),ordinaryYaw=length(vel.xz)>.05?atan(vel.x,vel.z):-(cmiHash1(p3.z*3.7)*6.28318530718+age*.3),ordinaryPitch=ordinarySpeed>.0001?asin(clamp(vel.y/ordinarySpeed,-1.,1.)):0.;
-                    bool fresh=(CMI_STATE(starStateRead,CMI_GATHER_STREAK+member)&0x80000000u)==0u;
+                    float ordinarySpeed=length(vel),ordinaryYaw=length(vel.xz)>.05?atan(vel.x,vel.z):-cmiHash1(p3.z*3.7)*6.28318530718,ordinaryPitch=ordinarySpeed>.0001?asin(clamp(vel.y/ordinarySpeed,-1.,1.)):0.;
+                    bool fresh=!valid||(CMI_STATE(starStateRead,CMI_GATHER_STREAK+member)&0x80000000u)==0u;
                     vec4 offsets;float elapsed;
-                    if(fresh){vec2 previous=cmiDomeUnpackPose(CMI_STATE(starStateRead,at));float yaw=previous.x;offsets=vec4(mod(yaw-ordinaryYaw+3.141592654,6.28318530718)-3.141592654,previous.y-ordinaryPitch,float((flags>>16u)&32767u)*(64./32767.)-ordinarySpeed,float(flags&65535u)/65535.);elapsed=0.;}
+                    if(fresh){offsets=vec4(mod(previousAngles.x-ordinaryYaw+3.141592654,6.28318530718)-3.141592654,previousAngles.y-ordinaryPitch,(previousPose?float((flags>>16u)&32767u)*(64./32767.):length(p1.xyz))-ordinarySpeed,previousPose?float(flags&65535u)/65535.:previousCarry);elapsed=0.;}
                     else{offsets=vec4(uintBitsToFloat(CMI_STATE(starStateRead,scratch)),uintBitsToFloat(CMI_STATE(starStateRead,scratch+1u)),uintBitsToFloat(CMI_STATE(starStateRead,scratch+2u)),uintBitsToFloat(CMI_STATE(starStateRead,scratch+3u)));elapsed=uintBitsToFloat(CMI_STATE(starStateRead,CMI_GATHER_BLOCKED+member))+uDt;}
                     for(uint k=0u;k<4u;k++)CMI_STATE(starStateWrite,scratch+k)=floatBitsToUint(offsets[k]);CMI_STATE(starStateWrite,CMI_GATHER_STREAK+member)=0x80000000u;CMI_STATE(starStateWrite,CMI_GATHER_BLOCKED+member)=floatBitsToUint(elapsed);
                     float u=clamp(elapsed/.5,0.,1.),fade=1.-u*u*u*(10.-15.*u+6.*u*u);
-                    angles=cmiDomePoseAngles(cmiDomeUnpackPose(CMI_STATE(starStateRead,at)),ordinaryYaw+offsets.x*fade,ordinaryPitch+offsets.y*fade,uDt,0.);poseSpeed=max(0.,ordinarySpeed+offsets.z*fade);blend=offsets.w*fade;
+                    angles=cmiDomePoseAngles(previousAngles,ordinaryYaw+offsets.x*fade,ordinaryPitch+offsets.y*fade,uDt,0.);poseSpeed=max(0.,ordinarySpeed+offsets.z*fade);blend=offsets.w*fade;
                     float error=abs(mod(angles.x-ordinaryYaw+3.141592654,6.28318530718)-3.141592654)+abs(angles.y-ordinaryPitch);
                     keepPose=elapsed<.5||error>.001;
                 }
@@ -436,10 +462,10 @@ void main() {
         }
     }
     uint slot = cmiReserveParticle();
-    if (slot >= uCapacity)
-        return;
+    if (slot >= uCapacity) {if(uModelPass==2u)cmiModelRetire(animationSlot);return;}
 
     if (isModel && stormA.x < 0.5) cmiCopyIdentity(idx, slot);
+    if(uModelPass==2u)cmiModelAppend(slot,animationSlot,stormA.x>.5);
     if(isModel&&stormA.x>.5&&uDomePoseStorageEnabled){
         uint member=cmiStarMember(p0.w);
         if(member<131072u){uint extra=cmiNavigationExtra(member),mask=CMI_DEPEN_MASK+member/32u,bit=1u<<(member&31u);

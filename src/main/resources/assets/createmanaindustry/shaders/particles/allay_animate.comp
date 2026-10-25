@@ -1,0 +1,48 @@
+layout(local_size_x=64)in;
+const int SX=48,SY=32,SZ=48,BAKE_SLICES=8;
+layout(std430,binding=0)readonly buffer P{vec4 data[];}pool;
+layout(std430,binding=3)readonly buffer C{uint writeSlot;}counter;
+layout(std430,binding=5)readonly buffer E{vec4 u[];}emitters;
+layout(std430,binding=BIND_BAKEMETA)readonly buffer B{vec4 m[];}bakeMeta;
+layout(std430,binding=18)readonly buffer Players{vec4 pl[];}players;
+layout(std430,binding=28)readonly buffer S{uint words[];}starStateWrite;
+layout(binding=0)uniform sampler3D uCollision;
+uniform int uCollisionOn,uPlayerCount;
+uniform bool uDomePoseStorageEnabled;
+#pragma cmi_include chunks/population_read.glsl
+#pragma cmi_include chunks/model_members_write.glsl
+#pragma cmi_include chunks/allay_animation_state.glsl
+#pragma cmi_include chunks/allay_storm.glsl
+#pragma cmi_include chunks/storm_players.glsl
+#pragma cmi_include chunks/dome_pose_math.glsl
+#pragma cmi_include chunks/collision_queries.glsl
+#pragma cmi_include chunks/allay_animation_update.glsl
+void main(){
+ uint rank=gl_GlobalInvocationID.x;if(rank>=populationRead.modelCount)return;
+ uint idx=populationRead.slots[rank*2u],animationSlot=populationRead.slots[rank*2u+1u],base=idx*4u;
+ vec4 p0=pool.data[base],p1=pool.data[base+1u],p3=pool.data[base+3u];
+ uint hb=floatBitsToUint(p3.w)*VEC4_PER_EMITTER;vec4 stormA=emitters.u[hb+18u];
+ vec3 pos=p0.xyz,vel=p1.xyz;float age=p3.x,roll=p1.w;bool corpse=p3.y<=0.;
+ cmiStormVoxel=stormA.x>.5&&uStormCollisionEnabled;
+    {
+        int animation=int(emitters.u[hb+17u].x);bool storm=stormA.x>.5;
+        if(storm){float cycle=fract(uTimeSec/36.+cmiHash1(p3.z*7.3));animation=distance(pos,emitters.u[hb+19u].xyz)<stormA.y*.2&&cycle<.3?1:0;}
+        float carry=emitters.u[hb+17u].z>.5?1.:0.;bool overrideBody=false;float bodyYaw=0.;
+        uint assignment=storm?cmiStarAssignment(p0.w):0u;
+        if(!corpse&&assignment!=0u&&cmiStarClaim(p0.w,uTimeSec)>=0){uint b=cmiStarBase(cmiStarSlot(assignment));
+            if(cmiHelix(b)||cmiDome(b)||cmiColumnAssignment(assignment))animation=0;
+            carry=cmiAttackCarry(p0.w,uTimeSec,roll)>0.?1.:0.;
+            if(cmiColumnAssignment(assignment)){
+                float priorCarry=cmiAnimationUnpack(cmiAnimationReadRow(animationSlot*4u+1u).z).y;
+                float ticks=max(0.,float(uAllayAnimationTick-cmiAnimationReadRow(animationSlot*4u+2u).w));
+                float poseCarry=clamp(priorCarry+(carry>priorCarry?1.:-1.)*ticks/5.,min(carry,priorCarry),max(carry,priorCarry));
+                vec2 radial=pos.xz-cmiStarLanding(b,0u).xz;float angle=length(radial)>.1?atan(radial.y,radial.x):cmiColumnAngle(b,cmiStarRank(assignment));float u=roll<0.?1.:roll>=4.&&roll<5.?roll-4.:roll>=5.?1.:0.;float heading=angle+1.570796327*(1.-max(cmiColumnSmooth(u),poseCarry));bodyYaw=atan(-cos(heading),sin(heading));overrideBody=true;
+            }
+            else if(cmiHelix(b)&&carry>0.&&(cmiHelixPhase(b,cmiStarTime(b,uTimeSec))!=4.||length(vel.xz)<.05)){bodyYaw=atan(-cos(cmiHelixHeading(b,cmiStarTime(b,uTimeSec))),sin(cmiHelixHeading(b,cmiStarTime(b,uTimeSec))));overrideBody=true;}
+        }
+        uint member=cmiStarMember(p0.w);
+        if(storm&&member<131072u&&uDomePoseStorageEnabled&&(CMI_STATE(starStateWrite,CMI_DOME_POSE+member*2u+1u)&0x80000000u)!=0u){bodyYaw=-cmiDomeUnpackPose(CMI_STATE(starStateWrite,CMI_DOME_POSE+member*2u)).x;overrideBody=true;}
+        cmiUpdateAllayAnimation(animationSlot,animationSlot,p0,p1,p3,pos,vel,age,storm,corpse,corpse?3:animation,corpse?0.:carry,overrideBody,bodyYaw);
+    }
+ if(uAllayAnimationCountWrites)imageAtomicAdd(cmi_ModelAllocator,0,1u);
+}

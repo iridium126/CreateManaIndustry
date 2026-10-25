@@ -218,6 +218,7 @@ public final class CMIPackEntityMergeHook {
         setSamplers(progId);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindPose(progId);
+        ParticleBuffers.INSTANCE.bindAllayAnimation(progId);
         setInt(progId,"uStarfallEnabled",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         uploadStormItemUniforms(progId);
     }
@@ -365,6 +366,7 @@ public final class CMIPackEntityMergeHook {
         setFloat(progId, "uTimeSec", com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindPose(progId);
+        ParticleBuffers.INSTANCE.bindAllayAnimation(progId);
         setInt(progId,"uStarfallEnabled",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         uploadStormItemUniforms(progId);
     }

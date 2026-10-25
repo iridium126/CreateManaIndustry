@@ -33,7 +33,10 @@ public final class ParticleProgramLifecycleGpuValidation {
         Compiler(String fail) { this.fail = fail; }
         int compute(String name) {
             if (fail != null && name.endsWith(fail)) return 0;
-            int id = GpuShaderCompiler.compute(name, source(name));
+            String text=source(name);int id;
+            try{id=GpuShaderCompiler.compute(name,text);}catch(RuntimeException failure){
+                try{var directory=java.nio.file.Path.of("build/model-animation-shaders");java.nio.file.Files.createDirectories(directory);java.nio.file.Files.writeString(directory.resolve(java.nio.file.Path.of(name).getFileName()),text);}catch(java.io.IOException suppressed){failure.addSuppressed(suppressed);}throw failure;
+            }
             created.add(id);
             return id;
         }

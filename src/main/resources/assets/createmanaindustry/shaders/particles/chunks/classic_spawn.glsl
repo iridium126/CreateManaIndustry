@@ -59,14 +59,8 @@ void cmiSpawnClassic(uint eid, float seed, vec3 origin, float lightPacked, uint 
     }
 
     vec3 vel = velDir * speed;
-#ifdef CMI_BLOCK_EMISSION
-    // The registry validates additive-only sources. Constant-fold model/HP
-    // branches out of the block kernel without duplicating the spawn math.
-    const bool isModel = false;
-#else
     float spawnMatId = emitters.u[hb + 7u].x;
     bool isModel = spawnMatId >= 1.5 && spawnMatId < 2.5;
-#endif
     // MODEL particles are vanilla allays: the maxLife slot carries HIT POINTS
     // (Allay.createAttributes MAX_HEALTH = 20.0) instead of a lifetime -- they
     // are immortal and die only when the HP reaches zero. Every other material
@@ -102,7 +96,7 @@ void cmiSpawnClassic(uint eid, float seed, vec3 origin, float lightPacked, uint 
     // it per emit command into lightPacked, word c.x) or 1.0 fullbright
     // (vanilla particles spawn at alpha 1).
 #ifdef CMI_BLOCK_EMISSION
-    const float spawnLight = 1.0;
+    float spawnLight = isModel ? 0.0 : 1.0;
 #else
     float spawnLight = isModel ? 0.0
             : (emitters.u[hb + 17u].z > 0.5 ? max(lightPacked, 0.0) : 1.0);
@@ -117,4 +111,5 @@ void cmiSpawnClassic(uint eid, float seed, vec3 origin, float lightPacked, uint 
     writeBuf.data[wb + 3u] = vec4(0.0, maxLife, seed, uintBitsToFloat(eid));
     cmiType_spawn(uint(emitters.u[hb].x), hb, writeBuf.data[wb], writeBuf.data[wb+1u],
                   writeBuf.data[wb+2u], writeBuf.data[wb+3u]);
+    if(isModel)cmiRegisterModelSpawn(slot,pos,vel,seed,false);
 }

@@ -174,6 +174,7 @@ void main() {
         anim = 3;
     float sinceDeath = corpse ? -p3.y : 0.0;
     float yaw;
+    cmiLoadAllayAnimation((item.x>>9u)&262143u,p3.x);
     mat4 M = cmiAllayAttackPartTransform(p3.x, p3.z,p0.w, p0.xyz, p1.xyz, anim, pid, yaw, carryRamp, p1.w, !corpse && stormA.x > .5);
 
     // ---- vertex transform to world ----

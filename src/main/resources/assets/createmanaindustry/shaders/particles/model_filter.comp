@@ -1,0 +1,14 @@
+// Package admission may overwrite an ordinary-pool suffix after MODEL movement/emission.
+layout(local_size_x=64)in;
+layout(std430,binding=0)readonly buffer P{vec4 data[];}pool;
+layout(std430,binding=3)buffer C{uint live,ordinary,models,storms;}counter;
+layout(std430,binding=5)readonly buffer E{vec4 u[];}emitters;
+layout(std430,binding=7)writeonly buffer Scratch{uvec2 rows[];}scratch;
+#pragma cmi_include chunks/population_read.glsl
+#pragma cmi_include chunks/model_members_write.glsl
+void main(){uint rank=gl_GlobalInvocationID.x;if(rank>=populationRead.modelCount)return;
+ uint slot=populationRead.slots[rank*2u],animation=populationRead.slots[rank*2u+1u];
+ if(slot>=counter.ordinary){cmiModelRetire(animation);return;}
+ uint emitter=floatBitsToUint(pool.data[slot*4u+3u].w);bool storm=emitters.u[emitter*VEC4_PER_EMITTER+18u].x>.5;
+ uint row=atomicAdd(counter.models,1u);scratch.rows[row]=uvec2(slot|(storm?0x80000000u:0u),animation);
+}

@@ -76,6 +76,8 @@ uniform vec4 uFrustum[6]; // normalized planes, distances vs camera-relative poi
 
 #pragma cmi_include chunks/frustum_culling.glsl
 #pragma cmi_include chunks/population_write.glsl
+#pragma cmi_include chunks/population_read.glsl
+uniform uint uModelPass;
 
 bool sphereVisible(vec3 rel, float r) {
     for (int i = 0; i < 6; i++) {
@@ -96,7 +98,10 @@ uint depthKey(vec3 position,bool relative) {
 }
 
 void main() {
-    uint g = gl_GlobalInvocationID.x;
+    uint rank=gl_GlobalInvocationID.x;
+    if(uModelPass==2u&&rank>=populationRead.modelCount)return;
+    uint g=uModelPass==2u?populationRead.slots[rank*2u]:rank;
+    uint animationSlot=uModelPass==2u?populationRead.slots[rank*2u+1u]:g;
     uint ordinary = uPackageStaged!=0u ? min(counter.spare,counter.writeSlot) : counter.writeSlot;
     if (g >= uUpper || g >= ordinary)
         return;
@@ -107,7 +112,10 @@ void main() {
 
     uint eid = floatBitsToUint(p3.w);
     uint hb = eid * VEC4_PER_EMITTER;
-    if (uint(emitters.u[hb + 7u].x + .5) == CMI_MATERIAL_PACKAGE) return;
+    float material=emitters.u[hb+7u].x;
+    if(uModelPass==1u&&material>=1.5&&material<2.5)return;
+    if(uModelPass==2u&&(material<1.5||material>=2.5))return;
+    if (uint(material + .5) == CMI_MATERIAL_PACKAGE) return;
     if(uStarfallEnabled&&emitters.u[hb+17u].y>6.5&&emitters.u[hb+17u].y<7.5){
         vec4 tint=pool.data[base+2u];uint tag=floatBitsToUint(p3.z),slot=cmiMarkerSlot(tag),column=cmiMarkerColumn(tag);
         if(floatBitsToUint(tint.x)==cmiStarWord(0u)&&uint(cmiStarVec(cmiStarBase(slot)).x+.5)==cmiMarkerId(tag))atomicAdd(CMI_STATE(starState,cmiMarkerCensus(tag)),1u);
@@ -123,7 +131,7 @@ void main() {
     float matId = emitters.u[hb + 7u].x;
     bool storm = emitters.u[hb + 18u].x > 0.5;
     // Capture ALL MODEL records before camera/distance culling, including corpses.
-    if(matId>=1.5&&matId<2.5)cmiPopulationRecord(g,storm);
+    if(uModelPass==0u&&matId>=1.5&&matId<2.5)cmiPopulationRecord(g,storm);
     float keySize = max(emitters.u[hb + 5u].z, emitters.u[hb + 5u].w) * (storm ? 1.0 : p0.w);
     float radius = matId >= 1.5 && matId < 2.5 ? keySize * 1.5 : keySize;
 
@@ -161,7 +169,7 @@ void main() {
         // as its partition start offset.
         uint dkey = depthKey(p0.xyz,sharedFate);
         uint slot = atomicAdd(counter.sortItems, 1u);
-        sortOut.kv[slot] = uvec2(dkey, (g << 2) | 0u);
+        sortOut.kv[slot] = uvec2(dkey | (animationSlot<<9u), (g << 2) | 0u);
         atomicAdd(indirect.cmd[IDX_CNT_GHOST], 1u);
         atomicAdd(indirect.cmd[IDX_CNT_MODELOP], 1u);
 
@@ -184,7 +192,7 @@ void main() {
                 // dual-write: whichever buffer the draw phase commits (buf0 on
                 // the fast path, buf1 after the radix scatter) carries the
                 // same-generation carrier region
-                uvec2 entry = uvec2(dkey, (g << 2) | 0u);
+                uvec2 entry = uvec2(dkey | (animationSlot<<9u), (g << 2) | 0u);
                 sortOut.kv[uCarrierBase + cpos] = entry;
                 carrierSink.kv[uCarrierBase + cpos] = entry;
             }

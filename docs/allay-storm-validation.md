@@ -32,6 +32,8 @@ python -m unittest discover -s scripts/allaystorm -p test_dome_v4_tools.py
 
 ## GPU回归
 
+`validateAllayAnimationGpu`用实际`AllayModel.setupAnim`、`ModelPart.translateAndRotate`及`translateToHand`对照GPU矩阵，覆盖正负俯仰、多轴旋转、持物与跳舞。另检查玩家眼位／脚点／身体中心、6格包含边界、超过16人和缩放后的空间索引、稳定目标身份及退出、10–240Hz和不规则步长、暂停、死亡、压紧和候选帧隔离。配合`validateDomePoseGpu`、`validateStormNavigationGpu`、Dome／Helix／星雨及`validateModelShadowIrisGpu`运行；动画插值状态必须同时进入原生和Iris主绘制／阴影路径。实现、显存成本及更新核测量见[GPU悦灵动画报告](benchmarks/allay-animation-2026-10-25.md)。
+
 `validateStormDepenetrationGpu`覆盖头部／侧面、墙角、低顶、台阶、负坐标、页接缝、动态方块、未知覆盖、对角出口、封闭及超过8格出口；复现旧脚点检测持续制动，再验证少量任务0.5秒内纠正及30秒稳定观察。另测排队／搜索中的纠正、无Dome归队、身份变化、死亡、时钟环绕及没有发布屏障的候选帧回滚。`validateStarfallColumnGpu`覆盖恢复输入池不可变、正常更新只消费一次、拒绝帧复用generation及延迟跨越集结结束。
 
 `validateShaderColdGpu`使用唯一无语义源码键串行测量全部生产程序，`-PcompilerWarmOnly`单独测缓存命中；`validateShaderFirstExecutionGpu -PcompilerCsv=...`在新上下文复用相同键测首次非零工作组／绘制。前后基线必须冻结类和资源，不清除用户驱动缓存。`python scripts/particles/validate_column_arc.py`检查下降曲线离线误差；`python scripts/particles/audit_storm_package.py`审计实际分发JAR中的生产类、着色器、协议和模板。
@@ -166,3 +168,9 @@ Helix受阻退出本轮自动化通过：`test check build`与完整Helix／Dome
 协议18需要双端重启。隐藏GLFW生产内核验证不代替真实双客户端、真实光影包或Minecraft完整帧率验收。
 
 本轮实现、自动化结果、相同输入三轮性能、资源增量和实机边界见[协议18集结与共享导航验收](benchmarks/allay-storm-navigation-2026-10-23.md)。GPU回归必须与会改写`build/classes`的构建串行执行，避免运行中的Java进程丢失共享类输出。
+
+## MODEL 独立动画存储
+
+`validateModelAnimationStorageGpu`验证262144稳定动画槽、所有 MODEL 生成入口的限额、尸体占额、主池压紧与列表重排、提交／撤销、退休槽下一帧复用、包裹覆盖、独立20 Hz时钟和非采样帧写入计数。另运行 `validateModelPopulationGpu`、`validateAllayAnimationGpu`及上述导航／攻击／原生／阴影／Iris／重载回归。
+
+`benchmarkModelAnimationStorage -PmodelAnimationBaseline=<修改前 particles 着色器目录>`记录无 MODEL、65536风暴、262144 MODEL 和混合负载的 GPU／CPU提交 p95、p99，以及动画写入与实际核心缓冲大小。基线不保存在生产资源中；缺失时需显式提供。存储布局、数据与计时边界见[悦灵动画报告](benchmarks/allay-animation-2026-10-25.md)。实际客户端视觉和完整帧性能仍需实机验收。

@@ -48,6 +48,26 @@ memory costs, coverage and remaining in-game acceptance work.
 
 ## Result management
 
+`validateAllayAnimationGpu` compares GPU Allay part and held-item matrices with
+the actual Minecraft `AllayModel`, checks the shared eye/feet/centre player table,
+and exercises animation cadence, observation, death, compaction and candidate
+isolation. `validateModelAnimationStorageGpu` additionally exercises stable MODEL
+slots, the hard capacity, independent animation publication, aborted candidates,
+retirement/reuse, package overwrites, real radix payloads and GPU write counters.
+It also calls the production MODEL publication boundary while an emitter,
+external compute program or no program is current, then checks pool admission,
+draw counts and next-frame retention for ordinary, block and analytic Storm births.
+Run the attack, navigation and MODEL/Iris suites alongside both tasks.
+
+`benchmarkModelAnimationStorage` compares the complete storage/update path against
+an explicitly retained pre-change shader snapshot, supplied with
+`-PmodelAnimationBaseline=<particles directory>`. The default is
+`build/model-animation-before/particles`; missing sources fail the task. It writes
+`model-animation-storage.csv`, `model-animation-storage-samples.csv` and
+`model-animation-storage-memory.csv`, with three alternating warmed trials and
+separate animation/list/allocator costs. See the [Allay animation report](../../docs/benchmarks/allay-animation-2026-10-25.md)
+for allocation costs, measurement scope and remaining in-game acceptance.
+
 Use `python scripts/benchmarks/run.py <task> <Gradle flags>` to capture the command,
 exit status, actual driver log and samples in an independent `build/benchmarks/`
 directory. Direct Gradle runs default to `build/benchmarks/current/`; override

@@ -312,8 +312,14 @@ public final class AllayStormRuntime {
 
     /** Scratch for per-frame synced player positions (xyz per player). */
     private float[] playerScratch = new float[ParticleBuffers.MAX_STORM_PLAYERS * 3];
+    private float[] playerEyes=new float[ParticleBuffers.MAX_STORM_PLAYERS*3],playerFeet=new float[ParticleBuffers.MAX_STORM_PLAYERS*3];
+    private int[] playerIds=new int[ParticleBuffers.MAX_STORM_PLAYERS];
+    private final float[] attackEyes=new float[68*4];
+    public float[] playerEyes(){return playerEyes;}public float[] playerFeet(){return playerFeet;}public int[] playerIds(){return playerIds;}
+    public float[] attackEyes(){return attackEyes;}
     /** Player count uploaded with the last collectSyncedPlayers (pass handoff). */
     private int lastPlayerCount = 0;
+    public int lastPlayerCount(){return lastPlayerCount;}
 
     // ---- public protocol API (called directly by the network handler) -------
 
@@ -599,9 +605,13 @@ public final class AllayStormRuntime {
             return 0;
         }
         int size=mc.level.players().size();if(playerScratch.length<size*3)playerScratch=new float[Integer.highestOneBit(Math.max(1,size*3-1))<<1];
+        if(playerEyes.length<playerScratch.length){playerEyes=new float[playerScratch.length];playerFeet=new float[playerScratch.length];playerIds=new int[playerScratch.length/3];}
         int count=0;for(var p:mc.level.players()){if(!p.isAlive()||p.isSpectator())continue;
             playerScratch[count*3]=(float)p.getX();playerScratch[count*3+1]=(float)p.getBoundingBox().getCenter().y;playerScratch[count*3+2]=(float)p.getZ();count++;
+            int i=count-1;playerEyes[i*3]=(float)p.getX();playerEyes[i*3+1]=(float)p.getEyeY();playerEyes[i*3+2]=(float)p.getZ();
+            playerFeet[i*3]=(float)p.getX();playerFeet[i*3+1]=(float)p.getY();playerFeet[i*3+2]=(float)p.getZ();playerIds[i]=p.getId();
         }
+        java.util.Arrays.fill(attackEyes,0);for(int slot=0;slot<68;slot++){int id=starfallGpu.lookTarget(slot);var target=id==0?null:mc.level.getEntity(id);if(target!=null&&target.isAlive()){int b=slot*4;attackEyes[b]=(float)target.getX();attackEyes[b+1]=(float)target.getEyeY();attackEyes[b+2]=(float)target.getZ();attackEyes[b+3]=1;}}
         this.lastPlayerCount = count;
         return count;
     }

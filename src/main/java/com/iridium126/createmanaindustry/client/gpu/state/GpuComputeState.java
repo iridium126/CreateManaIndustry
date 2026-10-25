@@ -17,6 +17,8 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
     private final int[] ssbo=new int[BINDINGS],renderTextures=new int[UNITS];
     private final long[] offsets=new long[BINDINGS],sizes=new long[BINDINGS];
     private final int[][] textures;
+    private static final int[] IMAGE_STATE={GL42.GL_IMAGE_BINDING_NAME,GL42.GL_IMAGE_BINDING_LEVEL,GL42.GL_IMAGE_BINDING_LAYERED,GL42.GL_IMAGE_BINDING_LAYER,GL42.GL_IMAGE_BINDING_ACCESS,GL42.GL_IMAGE_BINDING_FORMAT};
+    private final int[][] images=new int[4][6];
     public GpuComputeState(){this(false);}
     public GpuComputeState(boolean shaderSamplers){
         units=shaderSamplers?Math.max(UNITS,GL11.glGetInteger(GL20.GL_MAX_TEXTURE_IMAGE_UNITS)):UNITS;
@@ -35,6 +37,7 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
         storage=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_BINDING);draw=GL11.glGetInteger(GL40.GL_DRAW_INDIRECT_BUFFER_BINDING);
         dispatch=GL11.glGetInteger(GL43.GL_DISPATCH_INDIRECT_BUFFER_BINDING);read=GL11.glGetInteger(GL31.GL_COPY_READ_BUFFER);write=GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER);
         active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);textureBuffer=GL11.glGetInteger(GL31.GL_TEXTURE_BUFFER);
+        for(int unit=0;unit<images.length;unit++)for(int i=0;i<6;i++)images[unit][i]=GL30.glGetIntegeri(IMAGE_STATE[i],unit);
         unpackBuffer=GL11.glGetInteger(GL21.GL_PIXEL_UNPACK_BUFFER_BINDING);for(int i=0;i<UNPACK.length;i++)unpack[i]=GL11.glGetInteger(UNPACK[i]);
         for(int i=0;i<BINDINGS;i++){ssbo[i]=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,i);offsets[i]=ssbo[i]==0?0:GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,i);sizes[i]=ssbo[i]==0?0:GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,i);}
         for(int i=0;i<units;i++){if(i<UNITS)renderTextures[i]=RenderSystem.getShaderTexture(i);GL13.glActiveTexture(GL13.GL_TEXTURE0+i);for(int j=0;j<bindings.length;j++)textures[i][j]=GL11.glGetInteger(bindings[j]);}
@@ -55,11 +58,13 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
     }
     @Override public void forgetProgram(int id){if(program==id)program=0;}
     @Override public void forgetTexture(int id){
+        for(int[] image:images)if(image[0]==id)image[0]=0;
         for(int i=0;i<units;i++)for(int j=0;j<targets.length;j++)if(textures[i][j]==id)textures[i][j]=0;
         for(int i=0;i<UNITS;i++)if(renderTextures[i]==id)renderTextures[i]=0;
     }
     @Override public void forgetVertexArray(int id){if(vao==id){vao=0;element=0;}}
     private void forgetDeletedResources(){
+        for(int[] image:images)image[0]=liveTexture(image[0]);
         for(int i=0;i<BINDINGS;i++)ssbo[i]=liveBuffer(ssbo[i]);
         array=liveBuffer(array);element=liveBuffer(element);storage=liveBuffer(storage);draw=liveBuffer(draw);
         dispatch=liveBuffer(dispatch);read=liveBuffer(read);write=liveBuffer(write);textureBuffer=liveBuffer(textureBuffer);unpackBuffer=liveBuffer(unpackBuffer);
@@ -74,6 +79,7 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
         if(activeBoundary==this)activeBoundary=parent;
         else for(var state=activeBoundary;state!=null;state=state.parent)if(state.parent==this){state.parent=parent;break;}
         parent=null;
+        for(int unit=0;unit<images.length;unit++){int[] image=images[unit];GL42.glBindImageTexture(unit,image[0],image[1],image[2]!=0,image[3],image[4],image[5]);}
         try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(ssbo));}
         for(int i=0;i<BINDINGS;i++)if(ssbo[i]!=0&&sizes[i]>0)GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,i,ssbo[i],offsets[i],sizes[i]);
         GL30.glBindVertexArray(vao);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,array);if(vao!=0)GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER,element);
