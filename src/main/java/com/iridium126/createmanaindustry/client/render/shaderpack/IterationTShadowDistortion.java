@@ -80,7 +80,7 @@ final class IterationTShadowDistortion implements ShadowDistortionConvention {
         }
         // Both halves must be present: matching the curve without the margin
         // (or the reverse) would sample consistently wrong texels.
-        if (!signature || !margin)
+        if (!signature || !margin || definedBias == null)
             return null;
 
         float shippedBias = definedBias != null ? definedBias : DEFAULT_BIAS;

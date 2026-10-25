@@ -107,8 +107,8 @@ public final class FuelRodBloomHandler {
 
         // Iris shaderpack path: draw the same glow into the iris gbuffer via the
         // iris-veil-compat world render hook (see FuelRodBloomIrisHook).
-        if (CreateManaIndustry.IRISVEIL_ACTIVE) {
-            FuelRodBloomIrisHook.init();
+        FuelRodBloomIrisHook.init();
+        if (CreateManaIndustry.IRIS_ACTIVE) {
             // Reconcile the vanilla post pipeline every frame even while iris has
             // taken over the world rendering (the AFTER_LEVEL stage fires on both
             // paths): toggling a shaderpack off stops the iris hook, and without

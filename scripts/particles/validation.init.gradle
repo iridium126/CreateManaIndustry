@@ -76,6 +76,12 @@ allprojects {
             mainClass = 'scripts/particles/SceneFrameGpuValidation.java'
             workingDir = project.projectDir
         }
+        tasks.register('validateWorldEffectsGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/WorldEffectsGpuValidation.java'
+            workingDir = project.projectDir
+        }
         tasks.register('benchmarkParticlePipeline', JavaExec) {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
@@ -525,6 +531,14 @@ allprojects {
             mainClass = 'scripts/particles/PackageGpuValidation.java'
             args '--shaderpack-only', '--iris-transform'
             if (project.hasProperty('packageGlDebug')) args '--gl-debug'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateShaderPackPatches', JavaExec) {
+            dependsOn tasks.named('classes'), tasks.named('extractPackageIrisTransformer'), 'compilePackageIrisHarness'
+            classpath = files(layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter {
+                !it.name.startsWith('glsl-transformer-')
+            } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
+            mainClass = 'scripts/particles/ShaderPackPatchValidation.java'
             workingDir = project.projectDir
         }
         tasks.register('validateHexSharedIrisGpu', JavaExec) {

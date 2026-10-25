@@ -65,7 +65,7 @@ final class SundialShadowDistortion implements ShadowDistortionConvention {
             if (strength == null)
                 strength = floatValue(STRENGTH, text);
         }
-        if (!signature)
+        if (!signature || strength == null)
             return null;
 
         float defined = strength != null ? strength : DEFAULT_STRENGTH;

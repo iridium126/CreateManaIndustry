@@ -1,58 +1,11 @@
 package com.iridium126.createmanaindustry.client.render.shaderpack;
 
-import java.util.List;
-import java.util.Map;
-
-import com.iridium126.createmanaindustry.CreateManaIndustry;
-
-import net.irisshaders.iris.shaderpack.materialmap.BlockEntry;
-import net.irisshaders.iris.shaderpack.materialmap.NamespacedId;
-
-/**
- * iterationT adapter for the molten salt fuel tank's lit glow.
- * <p>
- * iterationT routes terrain emissives through a fixed material-id table, not a
- * floodfilled light-propagation volume (the pack has no voxel pipeline at all):
- * block.properties ids reach Terrain_VS.glsl as mc_Entity.x, where a switch maps
- * them to v_materialIDs (MATID_* defines in Lib/Settings.glsl); the id survives
- * in colortex5 and CalculateMasks() in GbufferData.glsl turns it back into
- * per-material flags that Blocklight.glsl consumes — a slot in lightSourceMask
- * so sources are not darkened by their own lightmap clamp, and per-mask weights
- * in TextureLighting() whose emission colour is the global colorTorchlight.
- * <p>
- * The pack's own modern-emissive cluster (soul fire 7100, amethyst 7101,
- * oxidized bulb 7102) shows exactly which hooks an emissive needs, and this
- * adapter mirrors them for the tank with fresh values:
- * <ul>
- *   <li>block id 7110 — first free id above the 710x cluster;</li>
- *   <li>material id 29 — first free slot after MATID_OXIDIZED_BULB (28) and
- *       below the particle range (40);</li>
- *   <li>a mask.tank flag next to its siblings in both the struct and
- *       CalculateMasks();</li>
- *   <li>a lightSourceMask term, a texture-emission weight between the torch and
- *       glowstone tiers, and a pink override of the otherwise global torch
- *       colour so the glowing salt reads as this mod's rose pink.</li>
- * </ul>
- * Scope note: without a floodfill there is no way to tint neighbours' lighting,
- * so the adaptation covers the tank's own surface emission only — everything
- * the pack itself offers an emissive hook for.
- * <p>
- * This adapter additionally carries the volumetric-layer bridge for the pack:
- * iterationT's gbuffer colour holds unlit albedo and its lighting pass writes
- * the lit frame elsewhere, so scene-colour draws of this mod's effects would
- * be relit as surface albedo (visually collapsing in shade and crushed by the
- * RGBA8 precision). Instead both effects render into unused spare buffers —
- * the mist layer into colortex9 and the fuel rod ring into colortex10 — and a
- * pair of pure insertions teaches {@code composite.fsh} to declare the
- * samplers and merge those layers over its finished lit image, routing them
- * through the pack's bloom, TAA, auto-exposure and AgX tonemap like native
- * radiance.
- * <p>
- * All shader edits are pure insertions anchored on unique lines; any anchor
- * drift across pack versions fails open.
- */
-public final class IterationTColoredLightAdapter implements ShaderColoredLightAdapter {
-
+/** Pure curve-encoded source transformer. Candidate validation and ID maps belong to ShaderPatchPlan. */
+final class CurveEncodedSourcePatch {
+ private final int blockId;
+ private final float materialId;
+ private final int mistBuffer,glowBuffer;
+ CurveEncodedSourcePatch(int blockId,float materialId,int mistBuffer,int glowBuffer){this.blockId=blockId;this.materialId=materialId;this.mistBuffer=mistBuffer;this.glowBuffer=glowBuffer;}
 	/** Fresh block.properties id claimed by the tank's lit states. */
 	public static final int TANK_BLOCK_ID = 7110;
 	/** Fresh MATID the block id converts to (Settings.glsl table slot). */
@@ -114,48 +67,16 @@ public final class IterationTColoredLightAdapter implements ShaderColoredLightAd
 			+ "\t}\n"
 			+ "\t// [CMI] layer merge — end";
 
-	private static final NamespacedId TANK_ID =
-		new NamespacedId("createmanaindustry", "molten_salt_fuel_tank");
-
-	@Override
-	public boolean appliesTo(String shaderPackName) {
-		return shaderPackName.toLowerCase().contains("iterationt");
-	}
-
-	@Override
-	public void patchBlockIdMap(BlockIdMapContext ctx) {
-		var blocks = ctx.blockProperties();
-		if (blocks == null || blocks.isEmpty()) {
-			CreateManaIndustry.LOGGER.warn("Fuel tank pink light compat skipped: no block.properties map");
-			return;
-		}
-		if (blocks.containsKey(TANK_BLOCK_ID)) {
-			CreateManaIndustry.LOGGER.warn(
-				"Fuel tank pink light compat skipped: block id {} is already assigned in this pack", TANK_BLOCK_ID);
-			return;
-		}
-		blocks.put(TANK_BLOCK_ID, List.of(new BlockEntry(TANK_ID, Map.of("lit", "true"))));
-
-		// No handheld-light mapping on purpose: the carried tank item is an
-		// empty container — only the placed, lit block holds glowing molten
-		// salt — so it must not cast held-item light.
-
-		CreateManaIndustry.LOGGER.info(
-			"Mapped molten_salt_fuel_tank[lit=true] to iterationT block id {} (material id {})",
-			TANK_BLOCK_ID, TANK_MATID);
-	}
-
-	@Override
 	public String transformShader(String fileName, String source) {
 		switch (fileName) {
 			case "Settings.glsl":
 				return insertBefore(source, "#define MATID_OXIDIZED_BULB",
-					"\t#define MATID_TANK\t\t\t\t" + matIdLiteral(TANK_MATID)
+					"\t#define MATID_TANK\t\t\t\t" + matIdLiteral(materialId)
 						+ " // Molten Salt Fuel Tank [CMI]\n",
 					"MATID_TANK define");
 			case "Terrain_VS.glsl":
 				return insertBefore(source, "case 7102:",
-					"\t\tcase " + TANK_BLOCK_ID + ":\n"
+					"\t\tcase " + blockId + ":\n"
 						+ "\t\t\tv_materialIDs = MATID_TANK;\n"
 						+ "\t\t\tbreak;\n\n",
 					"block id material mapping");
@@ -214,15 +135,22 @@ public final class IterationTColoredLightAdapter implements ShaderColoredLightAd
 	 * sky and solid pixels composite alike. Any anchor surprise leaves the
 	 * whole file untouched.
 	 */
-	private static String patchComposite(String source) {
+	private String patchComposite(String source) {
 		String declared = insertAfter(source, OUTPUT_DECL_ANCHOR,
-			"\nuniform sampler2D colortex9; // [CMI] mist layer\n"
-				+ "uniform sampler2D colortex10; // [CMI] fuel rod ring layer\n",
+			"\nuniform sampler2D colortex"+mistBuffer+"; // [CMI] mist layer\n"
+				+ "uniform sampler2D colortex"+glowBuffer+"; // [CMI] fuel rod ring layer\n"
+                + layerDirectives(mistBuffer)+layerDirectives(glowBuffer),
 			"layer sampler declarations");
 		if (declared == null)
 			return null;
-		return insertAfterMatch(declared, COMPOSITE_TAIL_ANCHOR, MIST_MERGE_BLOCK, "layer merge");
+		String merge=MIST_MERGE_BLOCK.replace("colortex10","cmiGlowLayer").replace("colortex9","colortex"+mistBuffer).replace("cmiGlowLayer","colortex"+glowBuffer);
+		return insertAfterMatch(declared, COMPOSITE_TAIL_ANCHOR, merge, "layer merge");
 	}
+    private static String layerDirectives(int buffer){
+        return "/*\nconst int colortex"+buffer+"Format = RGBA16F;\n"
+                +"const bool colortex"+buffer+"Clear = true;\n"
+                +"const vec4 colortex"+buffer+"ClearColor = vec4(0.0, 0.0, 0.0, 0.0);\n*/\n";
+    }
 
 	/**
 	 * Inserts {@code insertion} directly after the END of the (exactly once
@@ -236,10 +164,10 @@ public final class IterationTColoredLightAdapter implements ShaderColoredLightAd
 		if (at < 0)
 			return null;
 
-		int insertAt = at + anchor.length();
+		int insertAt = endOfAnchor(source, anchor);
 		String newline = source.contains("\r\n") ? "\r\n" : "\n";
 		String anchoredInsertion = insertion.replace("\n", newline);
-		CreateManaIndustry.LOGGER.info("Patched iterationT {} for the molten salt fuel tank", label);
+
 		return source.substring(0, insertAt) + anchoredInsertion + source.substring(insertAt);
 	}
 
@@ -264,7 +192,7 @@ public final class IterationTColoredLightAdapter implements ShaderColoredLightAd
 			return null;
 
 		int lineStart = source.lastIndexOf("\n", at) + 1;
-		CreateManaIndustry.LOGGER.info("Patched iterationT {} for the molten salt fuel tank", label);
+
 		return source.substring(0, lineStart) + insertion + source.substring(lineStart);
 	}
 
@@ -279,23 +207,21 @@ public final class IterationTColoredLightAdapter implements ShaderColoredLightAd
 
 		int lineEnd = source.indexOf("\n", at);
 		int insertAt = lineEnd < 0 ? source.length() : lineEnd + 1;
-		CreateManaIndustry.LOGGER.info("Patched iterationT {} for the molten salt fuel tank", label);
+
 		return source.substring(0, insertAt) + insertion + source.substring(insertAt);
 	}
 
 	/** Index of the anchor when it occurs exactly once, else -1 with a warning. */
-	private static int uniqueIndexOf(String source, String anchor, String label) {
-		int first = source.indexOf(anchor);
-		if (first < 0) {
-			CreateManaIndustry.LOGGER.warn(
-				"Fuel tank pink light compat skipped: iterationT {} anchor not found", label);
-			return -1;
-		}
-		if (source.indexOf(anchor, first + 1) >= 0) {
-			CreateManaIndustry.LOGGER.warn(
-				"Fuel tank pink light compat skipped: iterationT {} anchor is ambiguous", label);
-			return -1;
-		}
-		return first;
-	}
+	private static java.util.regex.Matcher matchAnchor(String source,String anchor) {
+        var tokens=java.util.regex.Pattern.compile("[A-Za-z_][A-Za-z_0-9]*|[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|[^\\s]").matcher(ShaderPackInventory.code(anchor));
+        var regex=new StringBuilder();while(tokens.find())regex.append(java.util.regex.Pattern.quote(tokens.group())).append("\\s*");
+        // Do not consume whitespace after the last token: the following newline
+        // must survive insertion when the injected block ends in a line comment.
+        if(regex.length()>=3)regex.setLength(regex.length()-3);
+        return java.util.regex.Pattern.compile(regex.toString()).matcher(ShaderPackInventory.code(source));
+    }
+    private static int uniqueIndexOf(String source,String anchor,String label) {
+        var matcher=matchAnchor(source,anchor);if(!matcher.find())return -1;int start=matcher.start();return matcher.find()?-1:start;
+    }
+    private static int endOfAnchor(String source,String anchor) {var m=matchAnchor(source,anchor);return m.find()?m.end():-1;}
 }

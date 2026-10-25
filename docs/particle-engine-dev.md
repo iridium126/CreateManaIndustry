@@ -71,6 +71,8 @@ Allay Storm 的成员使用 `MODEL` 粒子表示，身份、生命值、姿态�
 
 ## 5. shaderpack 接入
 
+当前会话、完整路径补丁、八包验证及世界效果基础合成见[通用光影集成](shaderpack-integration.md)。光影包版本只作验证样本，MODEL／包裹／Hex编译器共享加载代次；源码矩阵通过不等于新路径客户端视觉已验收。
+
 `shaderPackIntegration` 只保证 `MODEL` 粒子接入 shaderpack 的实体/阴影轨道；`ADDITIVE`、`ALPHA`、`OPAQUE` 仍由本项目自己的粒子 pass 绘制。入口为：
 
 - `ParticleVertexInjector`：注入粒子顶点所需的 TBO/实例数据访问。

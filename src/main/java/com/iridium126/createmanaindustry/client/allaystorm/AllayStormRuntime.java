@@ -539,6 +539,9 @@ public final class AllayStormRuntime {
     public float rotPhase() {
         return this.stormRotPhase;
     }
+    public com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualFrame visualFrame(long frame,long generation){
+        return new com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualFrame(identity(),frame,generation,timeSec,center(),stormRadius,rotPhase(),convPhase());
+    }
 
     public float convPhase() {
         return this.stormConvPhase;

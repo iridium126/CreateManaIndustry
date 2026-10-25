@@ -32,6 +32,7 @@ public final class PackageShaderCompiler implements AutoCloseable {
     private Object attemptedPipeline;
     private boolean attemptedShadows;
     private long revision,attemptedRevision=-1;
+    private long sessionGeneration=-1;
     private String error="";
     /** Resource-manager reload, even when Iris retains the same pipeline instance. */
     public void invalidate(){revision=Math.incrementExact(revision);}
@@ -50,6 +51,8 @@ public final class PackageShaderCompiler implements AutoCloseable {
     }
 
     public boolean ensureCompiled() {
+        long session=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().generation();
+        if(session!=sessionGeneration){invalidate();sessionGeneration=session;}
         var pipeline=Iris.getPipelineManager().getPipelineNullable();
         if(!(pipeline instanceof IrisRenderingPipeline))return false;
         CMIPackageIrisPipeline bridge=(CMIPackageIrisPipeline)pipeline;

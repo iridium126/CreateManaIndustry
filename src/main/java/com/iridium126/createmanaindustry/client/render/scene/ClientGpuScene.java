@@ -129,6 +129,13 @@ public final class ClientGpuScene {
     }
 
     public long renderFrameToken(){return levelFrame.token();}
+    public boolean applyWorldEffectCamera(foundry.veil.api.client.render.shader.program.UniformAccess shader){
+        if(!levelFrame.primary()||levelCamera==null||frameLevel!=Minecraft.getInstance().level)return false;
+        var projection=shader.getUniform("CmiWorldCamera.IProjMat");if(projection!=null)projection.setMatrix(new org.joml.Matrix4f(levelProjection).invert());
+        var view=shader.getUniform("CmiWorldCamera.IViewMat");if(view!=null)view.setMatrix(new org.joml.Matrix4f(levelView).invert());
+        var camera=shader.getUniform("CmiWorldCamera.CameraPosition");var p=levelCamera.getPosition();if(camera!=null)camera.setVector((float)p.x,(float)p.y,(float)p.z);
+        return true;
+    }
     public boolean currentFrameReady(){return levelFrame.ready()&&frameCoordinator.publication()!=null&&frameLevel==Minecraft.getInstance().level;}
     /** Called after Iris pipeline setup but before any shadow camera/state is installed. */
     public boolean prepareCurrentFrame(){
@@ -184,6 +191,7 @@ public final class ClientGpuScene {
                     ScenePublicationPolicy.validate(publication,publication.generation(),
                             com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.candidateGeneration(),work.packageVersion());
                     renderInput=work.commit();frameCoordinator.publish(publication);work.consumeInputs();
+                    com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualFrame.publish(AllayStormRuntime.INSTANCE.visualFrame(renderFrameToken(),publication.generation()));
                     frameArmed=true;
                 } else frameCoordinator.abort();
             }
@@ -260,6 +268,7 @@ public final class ClientGpuScene {
         return currentFrameReady()?frameCoordinator.publication():null;
     }
     public void requestProgramRebuild() {
+        com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects.reload();
         frameCoordinator.abort();frameArmed=false;
         com.iridium126.createmanaindustry.client.greattrick.sharedfate.SharedFateGpu.INSTANCE.close();
         com.iridium126.createmanaindustry.client.greattrick.partition.PartitionGpu.INSTANCE.close();
@@ -270,6 +279,9 @@ public final class ClientGpuScene {
         particles.reloadPrograms();
     }
     public void onLevelChanged() {
+        com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects.clear();
+        com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualFrame.clear();
+        com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.clear();
         frameCoordinator.abort();frameArmed=frameAttempted=false;
         resetMeasurements();
         if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.requestReload();
@@ -280,6 +292,9 @@ public final class ClientGpuScene {
         particles.resetWorld();
     }
     public void close() {
+        com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects.clear();
+        com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualFrame.clear();
+        com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.clear();
         frameCoordinator.abort();frameArmed=frameAttempted=false;
         resetMeasurements();
         com.iridium126.createmanaindustry.client.greattrick.sharedfate.SharedFateGpu.INSTANCE.close();

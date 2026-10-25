@@ -12,7 +12,7 @@
 // vanilla post pipeline after a shaderpack switch (red screen). Keeping a
 // dedicated program isolates all hook-side state.
 
-#include veil:space_helper
+#include createmanaindustry:world_effect_space
 
 uniform sampler2D DiffuseSampler0;
 uniform sampler2D DiffuseDepthSampler;
@@ -227,7 +227,7 @@ vec3 sampleSunTransmission(vec3 worldPos) {
     if (ShadowMapBound == 0 || ShadowMapResolution < 1.0)
         return vec3(1.0);
 
-    vec3 shadowViewPos = mat3(ShadowModelView) * (worldPos - VeilCamera.CameraPosition)
+    vec3 shadowViewPos = mat3(ShadowModelView) * (worldPos - CmiWorldCamera.CameraPosition)
                        + ShadowModelView[3].xyz;
     vec3 shadowClipPos = vec3(ShadowProjection[0].x, ShadowProjection[1].y, ShadowProjection[2].z)
                        * shadowViewPos + ShadowProjection[3].xyz;
@@ -316,12 +316,12 @@ void main() {
     vec3 worldEnd;
     if (sceneDepth >= 1.0) {
         vec3 viewDir = viewDirFromUv(texCoord);
-        worldEnd = VeilCamera.CameraPosition + viewDir * 48.0;
+        worldEnd = CmiWorldCamera.CameraPosition + viewDir * 48.0;
     } else {
         worldEnd = screenToWorldSpace(texCoord, sceneDepth).xyz;
     }
 
-    vec3 rayStart = VeilCamera.CameraPosition;
+    vec3 rayStart = CmiWorldCamera.CameraPosition;
     vec3 rayDir = worldEnd - rayStart;
     float rayLengthSq = dot(rayDir, rayDir);
     float invRayLength = inversesqrt(rayLengthSq);
@@ -507,7 +507,7 @@ void main() {
     vec3 mistRadiance = accumulatedMist.rgb;
     if (ExposureMode == 2)
         mistRadiance *= ExposureParams.x;
-    fragColor = sceneColor * transmittance + vec4(mistRadiance, accumulatedMist.a);
+    fragColor = vec4(cmiEncodeScene(cmiDecodeScene(sceneColor.rgb) * transmittance + mistRadiance), accumulatedMist.a);
     fragColor.a = sceneColor.a;
     gl_FragDepth = sceneDepth;
 }

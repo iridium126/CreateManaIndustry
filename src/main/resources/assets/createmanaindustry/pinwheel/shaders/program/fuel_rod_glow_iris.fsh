@@ -1,4 +1,4 @@
-#include veil:space_helper
+#include createmanaindustry:world_effect_space
 
 uniform sampler2D DiffuseSampler0;
 uniform sampler2D DiffuseDepthSampler;
@@ -87,11 +87,11 @@ void main() {
 
     vec3 worldEnd;
     if (sceneDepth >= 1.0) {
-        worldEnd = VeilCamera.CameraPosition + viewDirFromUv(texCoord) * 64.0;
+        worldEnd = CmiWorldCamera.CameraPosition + viewDirFromUv(texCoord) * 64.0;
     } else {
         worldEnd = screenToWorldSpace(texCoord, sceneDepth).xyz;
     }
-    vec3 rayStart = VeilCamera.CameraPosition;
+    vec3 rayStart = CmiWorldCamera.CameraPosition;
     vec3 rayDir = worldEnd - rayStart;
     float rayLength = length(rayDir);
     if (rayLength < 1e-5) {
@@ -241,7 +241,7 @@ void main() {
     if (ExposureMode == 2)
         glowAdd *= ExposureParams.x;
     fragColor = sceneColor;
-    fragColor.rgb += glowAdd;
+    fragColor.rgb = cmiEncodeScene(cmiDecodeScene(sceneColor.rgb) + glowAdd);
     fragColor.a = sceneColor.a;
     gl_FragDepth = sceneDepth;
 }

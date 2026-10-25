@@ -119,8 +119,8 @@ public final class MistClientHandler {
         // pipeline every frame so the two paths never run simultaneously.
         // AFTER_LEVEL fires every frame even when Iris has taken over the
         // world rendering, covering the gap where the hook is silent.
-        if (CreateManaIndustry.IRISVEIL_ACTIVE) {
-            MistIrisHook.init();
+        MistIrisHook.init();
+        if (CreateManaIndustry.IRIS_ACTIVE) {
             VeilEventPlatform.INSTANCE.onVeilRenderLevelStage((stage, levelRenderer, bufferSource,
                     matrixStack, frustumMatrix, projectionMatrix, renderTick, deltaTracker, camera, frustum) -> {
                 if (stage == VeilRenderLevelStageEvent.Stage.AFTER_LEVEL)
@@ -312,9 +312,9 @@ public final class MistClientHandler {
         if (sunUniform != null) {
             if (Minecraft.getInstance().level != null) {
                 Vector3f sunDir = getSunDirectionWorld();
-                sunUniform.setVector(sunDir.x, sunDir.y, sunDir.z, 0.0f);
+                sunUniform.setVector(sunDir.x, sunDir.y, sunDir.z);
             } else {
-                sunUniform.setVector(-0.7f, 0.5f, 0.3f, 0.0f);
+                sunUniform.setVector(-0.7f, 0.5f, 0.3f);
             }
         }
     }

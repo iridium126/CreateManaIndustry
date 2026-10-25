@@ -80,7 +80,7 @@ final class LogShadowDistortion implements ShadowDistortionConvention {
             if (d1 == null)
                 d1 = floatValue(D1, text);
         }
-        if (!signature || !enabled)
+        if (!signature || !enabled || k == null || d1 == null)
             return null;
 
         float kVal = k != null ? k : DEFAULT_K;

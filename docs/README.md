@@ -42,6 +42,9 @@
 | [allay-storm-ai.md](allay-storm-ai.md) | Allay Storm 当前攻击、参数与配置 | 🟡 |
 | [allay-storm-validation.md](allay-storm-validation.md) | 资源重建、单元／GPU／服务端验证和用户验收 | 🟡 |
 | [allay-storm-art-direction-plan.md](allay-storm-art-direction-plan.md) | 悦灵风暴“天穹灵潮”美术设计、百万粒子预算、天空／光影适配与分批验收方案 | 📐 |
+| [allay-storm-sky-rift-plan.md](allay-storm-sky-rift-plan.md) | 主世界风暴16384名后撕裂天幕、共用悦灵天空、高空传送条件与安全到达方案 | 📐 |
+| [allay-storm-visual-development-order.md](allay-storm-visual-development-order.md) | 美术与裂口方案统一开发顺序、逐项依赖、交付边界和验证节奏 | 📐 |
+| [shaderpack-integration.md](shaderpack-integration.md) | 通用光影会话、原子彩光候选、八包矩阵与顺序1～2探针 | 🟡 |
 | [allay-particle-vanilla-alignment.md](allay-particle-vanilla-alignment.md) | 原版粒子视觉对齐范围和验收项 | 🟡 |
 | [g-self-design.md](g-self-design.md) | G-self/Iris shaderpack 的 MODEL 粒子接入 | 🟡 |
 | [trickster-stock-ticker-fix.md](trickster-stock-ticker-fix.md) | 晶结组件相等性与实际仓库出库回归 | ✅ |

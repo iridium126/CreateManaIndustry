@@ -30,7 +30,7 @@ abstract class AuditResolvedJar extends DefaultTask {
 }
 
 tasks.named('test', Test) {
-    useJUnitPlatform()
+    useJUnitPlatform { excludeTags 'shaderpack-samples' }
     testLogging {
         events 'failed'
         exceptionFormat = 'full'
@@ -60,4 +60,15 @@ tasks.register('preparePackageNativeAudit', AuditResolvedJar) {
     binary.set(layout.file(resolvedCreate.map { it.file }))
     coordinate.set(resolvedCreate.map { it.id.componentIdentifier.displayName })
     report.set(layout.buildDirectory.file('package-native/resolved-create.json'))
+}
+
+// Explicit, local eight-pack matrix. Normal tests/builds do not require third-party shader archives.
+tasks.register('validateShaderPackSamples', Test) {
+    dependsOn tasks.named('testClasses')
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform { includeTags 'shaderpack-samples' }
+    systemProperty 'cmi.shaderpack.samples', file('run/shaderpacks').absolutePath
+    inputs.dir('run/shaderpacks')
+    outputs.upToDateWhen { false }
 }

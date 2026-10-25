@@ -45,6 +45,12 @@ public final class IrisShadowTextures {
     private static volatile float sunPathRotation = DEFAULT_SUN_PATH_ROTATION;
 
     private IrisShadowTextures() {}
+    public static void clear() {
+        shadowDepthTextureId=opaqueDepthTextureId=-1;
+        shadowTargets=null;
+        sunPathRotation=DEFAULT_SUN_PATH_ROTATION;
+    }
+    public static void clearIfOwned(Object targets) { if(shadowTargets==targets)clear(); }
 
     /** Called by {@code ShadowRendererAccessor} whenever iris builds a shadow renderer. */
     public static void setShadowDepthTextureId(int id) {

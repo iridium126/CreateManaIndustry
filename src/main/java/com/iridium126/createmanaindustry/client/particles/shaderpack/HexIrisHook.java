@@ -28,6 +28,7 @@ public final class HexIrisHook {
     private static final com.iridium126.createmanaindustry.client.gpu.shader.GpuUniformCache uniforms=new com.iridium126.createmanaindustry.client.gpu.shader.GpuUniformCache();
     private static CMIPackageIrisPipeline owner;private static ShaderInstance shader;private static Uniform placeholder;
     private static Object attempted;private static boolean tessellation;private static final Deque<Set<Player>> accepted=new ArrayDeque<>();
+    private static long sessionGeneration=-1;
     private static final HexPassState state=new HexPassState();private static String status="off";
     private HexIrisHook(){}
     public static boolean inShadow(){return ShadowRenderer.ACTIVE;}
@@ -37,6 +38,8 @@ public final class HexIrisHook {
     public static void end(){if(accepted.isEmpty())throw new IllegalStateException("Hex shadow scope");accepted.pop();}
     public static void invalidate(){uniforms.clear();if(shader!=null)HexPatternService.retireProgram(shader.getId());if(owner!=null&&shader!=null)owner.cmi$discardPackageShader(shader);if(placeholder!=null)placeholder.close();owner=null;shader=null;placeholder=null;attempted=null;}
     private static boolean ensure() {
+        long session=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().generation();
+        if(sessionGeneration!=session){invalidate();sessionGeneration=session;}
         Object pipeline=Iris.getPipelineManager().getPipelineNullable();if(attempted==pipeline)return shader!=null&&owner==pipeline;
         invalidate();attempted=pipeline;if(!(pipeline instanceof CMIPackageIrisPipeline bridge)||!bridge.cmi$packageHasShadows())return false;
         try{

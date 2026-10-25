@@ -147,6 +147,7 @@ public final class ShaderPackProgramCompiler {
     private int shadowGtextureUnit = -1;
     private String shadowLastError = "";
     private Object owningPipeline; // identity of the pipeline the shaders belong to
+    private long sessionGeneration=-1;
     /** Fired whenever compilation restarts: previously returned program ids go stale. */
     private Runnable onRebuild;
     /** Texture unit Iris assigned to each merged program's gtexture sampler. */
@@ -188,13 +189,15 @@ public final class ShaderPackProgramCompiler {
         // Sticky per-pipeline state: ready -> reuse, failed -> stay failed until
         // the pipeline INSTANCE changes (pack switch / reload). Prevents re-running
         // the expensive AST/jcpp attempt every frame against the same broken pack.
-        if (this.owningPipeline == pipeline)
+        long session=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().generation();
+        if (this.owningPipeline == pipeline && sessionGeneration==session)
             return this.isReady();
 
         this.reset();
         this.failed = false;
         this.lastError = "";
         this.owningPipeline = pipeline; // claimed up front for the sticky semantics above
+        sessionGeneration=session;
         if (this.onRebuild != null)
             this.onRebuild.run(); // old program ids are gone from here on
         try {

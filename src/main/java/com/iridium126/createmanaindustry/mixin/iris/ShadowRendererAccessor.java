@@ -36,7 +36,7 @@ public abstract class ShadowRendererAccessor {
     @Shadow
     private float sunPathRotation;
 
-    @Inject(method = "<init>", at = @At("RETURN"))
+    @Inject(method = {"<init>", "renderShadows"}, at = @At("RETURN"))
     private void createmanaindustry$captureShadowDepthTexture(CallbackInfo ci) {
         IrisShadowTextures.setShadowDepthTextureId(this.targets.getDepthTexture().getTextureId());
         IrisShadowTextures.setOpaqueDepthTextureId(
@@ -47,4 +47,6 @@ public abstract class ShadowRendererAccessor {
         IrisShadowTextures.setShadowTargets(this.targets);
         IrisShadowTextures.setSunPathRotation(this.sunPathRotation);
     }
+    @Inject(method="destroy",at=@At("HEAD"))
+    private void cmi$releaseShadowTextures(CallbackInfo ci){IrisShadowTextures.clearIfOwned(this.targets);}
 }

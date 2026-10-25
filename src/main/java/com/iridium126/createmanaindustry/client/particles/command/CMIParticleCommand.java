@@ -143,7 +143,13 @@ public final class CMIParticleCommand {
                                         .executes(CMIParticleCommand::budget)))
                         .then(Commands.literal("shaderpack")
                                 .then(Commands.literal("status")
-                                        .executes(CMIParticleCommand::shaderPackStatus))));
+                                        .executes(CMIParticleCommand::shaderPackStatus))
+                                .then(Commands.literal("probe")
+                                        .then(Commands.literal("on").executes(ctx->visualProbe(ctx,true)))
+                                        .then(Commands.literal("off").executes(ctx->visualProbe(ctx,false)))
+                                        .then(Commands.literal("mode")
+                                                .then(Commands.literal("auto").executes(ctx->visualProbeMode(ctx,false)))
+                                                .then(Commands.literal("baseline").executes(ctx->visualProbeMode(ctx,true)))))));
     }
 
     // ------------------------------------------------------------------
@@ -349,8 +355,8 @@ public final class CMIParticleCommand {
     }
 
     private static int shaderPackStatus(CommandContext<CommandSourceStack> ctx) {
-        if (!engine(ctx))
-            return 0;
+        if (!CreateManaIndustry.VEIL_ACTIVE) { tell(ctx,"Veil unavailable; world effects disabled.");return 0; }
+        tell(ctx,com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects.report());
         String integration = ClientConfig.shaderPackIntegration ? "auto" : "off";
         tell(ctx, "", "§b[CMI particles]§r shader-pack path:"
                 + " config=§e" + integration + "§r"
@@ -362,6 +368,15 @@ public final class CMIParticleCommand {
         if (!com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackErrorStatus.isEmpty())
             tell(ctx, "§7", "last fallback reason: §c" + com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackErrorStatus + "§r");
         return Command.SINGLE_SUCCESS;
+    }
+    private static int visualProbe(CommandContext<CommandSourceStack> ctx,boolean enabled){
+        if(!CreateManaIndustry.VEIL_ACTIVE){tell(ctx,"Veil unavailable.");return 0;}
+        com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.setEnabled(enabled);
+        tell(ctx,com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.status());return Command.SINGLE_SUCCESS;
+    }
+    private static int visualProbeMode(CommandContext<CommandSourceStack> ctx,boolean baseline){
+        com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.baseline(baseline);
+        tell(ctx,com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.status());return Command.SINGLE_SUCCESS;
     }
 
     // ------------------------------------------------------------------

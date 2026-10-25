@@ -12,8 +12,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.iridium126.createmanaindustry.client.render.shaderpack.BlockIdMapContext;
-import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderColoredLightAdapter;
-import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderColoredLightAdapters;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
@@ -24,10 +22,9 @@ import net.irisshaders.iris.shaderpack.materialmap.NamespacedId;
 import net.irisshaders.iris.shaderpack.option.ShaderPackOptions;
 
 /**
- * Generic dispatcher: lets every registered {@link ShaderColoredLightAdapter}
- * adjust Iris' parsed block/item ID maps for its pack at construction tail,
- * before the rendering pipeline consumes them. Pack knowledge lives in the
- * adapters only.
+ * Publishes the session's preflighted block/item map copies at construction tail,
+ * before the rendering pipeline consumes them. Rejected candidates leave the
+ * original maps intact and fail loading so the unmodified pack can be retried.
  */
 @Mixin(value = IdMap.class, remap = false)
 public class IrisIdMapMixin {
@@ -45,17 +42,9 @@ public class IrisIdMapMixin {
 	@Inject(method = "<init>", at = @At("RETURN"), remap = false, require = 0)
 	private void cmi$applyColoredLightIdMaps(Path shaderPath, ShaderPackOptions shaderPackOptions,
 		Iterable<StringPair> environmentDefines, CallbackInfo ci) {
-		String packName = ShaderColoredLightAdapters.activePackName();
-		BlockIdMapContext ctx = new BlockIdMapContext(blockPropertiesMap, itemIdMap);
-
-		boolean touched = false;
-		for (ShaderColoredLightAdapter adapter : ShaderColoredLightAdapters.ALL) {
-			if (adapter.appliesTo(packName)) {
-				adapter.patchBlockIdMap(ctx);
-				touched = true;
-			}
-		}
-		if (touched)
-			itemIdMap = ctx.itemIds();
+		BlockIdMapContext ctx = com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current()
+                .apply(new BlockIdMapContext(blockPropertiesMap, itemIdMap));
+        blockPropertiesMap=ctx.blockProperties();
+        itemIdMap=ctx.itemIds();
 	}
 }
