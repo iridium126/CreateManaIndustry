@@ -71,6 +71,15 @@ public final class CMIPackEntityMergeHook {
     private static ModelShadowGpu MODEL_SHADOW;
     private static final PackageDrawCulling SHADOW_CULLING=new PackageDrawCulling();
     private static final GpuPassTelemetry SHADOW_TIMING=new GpuPassTelemetry();
+    private static boolean timingEnabled,detailed;
+    public static void measurementMode(boolean timing,boolean details) {
+        if(timingEnabled!=timing||detailed!=details)MERGE_TIMER.close();
+        timingEnabled=timing;detailed=details;SHADOW_TIMING.configure(timing,details);
+    }
+    public static void resetMeasurements(){MERGE_TIMER.close();SHADOW_TIMING.close();timingEnabled=detailed=false;}
+    public static void discardPendingMeasurements(){MERGE_TIMER.close();SHADOW_TIMING.discardPending();}
+    public static String profilingReport(){return SHADOW_TIMING.cpuSamples()==0?"":"MODEL shadow: "+SHADOW_TIMING.report();}
+    public static String profilingSummary(){return SHADOW_TIMING.cpuSamples()==0?"":"MODEL shadow: "+SHADOW_TIMING.summary();}
     private static GpuComputeState shadowComputeState;
     private static PackageRenderState shadowDrawState;
     private static final com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState mergedTboState=
@@ -159,7 +168,7 @@ public final class CMIPackEntityMergeHook {
                 var gpu=ParticleBuffers.INSTANCE;
                 if(MODEL_SHADOW==null||MODEL_SHADOW.capacity()!=gpu.capacity()||MODEL_SHADOW.carrierCapacity()!=gpu.carrierCapacity()){invalidateShadow();MODEL_SHADOW=new ModelShadowGpu(gpu.capacity(),gpu.carrierCapacity(),ParticlePrograms::loadParticlePlain);}
                 com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.addExternalGpuMs(SHADOW_TIMING.poll());
-                SHADOW_TIMING.begin(ClientConfig.particleAutoThrottle||com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled());
+                SHADOW_TIMING.begin(timingEnabled,detailed);
                 boolean shadowSucceeded=false;
                 try{MODEL_SHADOW.starfall(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer());var p=camera.getPosition();MODEL_SHADOW.prepare(gpu.particleReadBufferId(),gpu.emitterBufferId(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().counter(),SHADOW_CULLING,
                         (float)p.x,(float)p.y,(float)p.z,EntityType.ALLAY.getWidth(),EntityType.ALLAY.getHeight(),(float)net.minecraft.world.entity.Entity.getViewScale(),com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec(),null,null,null,gpu.populationBufferId(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation()),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation());
@@ -172,7 +181,7 @@ public final class CMIPackEntityMergeHook {
                 }finally{if(applied)shader.clear();}
                 shadowSucceeded=true;
                 }finally{SHADOW_TIMING.end(shadowSucceeded);}
-                com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="active (frame="+com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken()+", generation="+com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation()+", age=0; "+SHADOW_TIMING.report()+")";
+                com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="active (current frame, age=0)";
             }finally{
                 if(depth)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();if(blend)RenderSystem.enableBlend();else RenderSystem.disableBlend();if(cull)RenderSystem.enableCull();else RenderSystem.disableCull();RenderSystem.depthMask(depthMask);
                 captured.setCurrentAlphaTest(alpha);
@@ -413,8 +422,7 @@ public final class CMIPackEntityMergeHook {
     // ------------------------------------------------------------------
 
     private static boolean beginTimer() {
-        MERGE_TIMER.poll();
-        return MERGE_TIMER.begin();
+        return timingEnabled&&MERGE_TIMER.begin();
     }
 
     private static void endTimer(boolean publish) {MERGE_TIMER.end(publish);}

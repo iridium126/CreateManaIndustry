@@ -857,19 +857,33 @@ public final class AllayStormRuntime {
     com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket wavePacket(int id){var wave=findWaveById(id);return wave==null||!wave.alive||wave.packet.abort()?null:wave.packet;}
     public void gatherProgress(int id,int[] counts){var w=findWaveById(id);if(w!=null)w.gatherCounts=counts;}
     public String starfallStatus(){
-        int stars=0,domes=0,helices=0,helixMembers=0,starMembers=0,domeMembers=0,columns=0;StringBuilder helixStages=new StringBuilder();StringBuilder stages=new StringBuilder(),fallbacks=new StringBuilder();
+        int stars=0,domes=0,helices=0,members=0;
+        var stages=new StringBuilder();
         for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort()){
-            var p=w.packet;
-            if((p.helixAttack()||p.dome())&&!p.locked())stages.append("#").append(w.waveId).append(" ready/eligible/blocked/unknown=").append(java.util.Arrays.toString(w.gatherCounts)).append(" paused-flows=").append(p.dome()?p.gatherFlows().revision():0).append(" not-arrived=").append(Math.max(0,w.gatherCounts[1]-w.gatherCounts[0])).append(" ");
-            if(p.helixAttack()){helices++;helixMembers+=p.members().length;var h=p.helix();float now=p.startSec()+com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.startSec());
+            var p=w.packet;members+=p.members().length;
+            stages.append("\nStorm #").append(w.waveId).append(": ");
+            if(p.helixAttack()){helices++;var h=p.helix();float now=p.startSec()+com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.startSec());
                 String stage=now<p.assembleSec()?"assemble":!p.locked()?(now<h.charge()?"approach":"charge"):now<h.thrust()?"locked":now<h.finish()?"thrust":"return";
-                helixStages.append('#').append(w.waveId).append(':').append(stage).append(", arc=").append(h.arcLength()).append(", advanceSpeed=").append(com.iridium126.createmanaindustry.content.allaystorm.AllayHelix.speedAt(h,now)).append(", memberCap=").append(stage.equals("thrust")?h.maxSpeed():6).append(", window=").append(w.windowReady?"ready":"pending").append(' ');
-            }else if(p.dome()){domes++;domeMembers+=p.members().length;
-                stages.append('#').append(w.waveId).append(':').append(p.locked()?"contract":"assemble").append(' ');
-            }else{stars++;starMembers+=p.members().length;columns+=p.columns();}
-            if(p.fallbackReason()!=0)fallbacks.append('#').append(w.waveId).append(':').append(p.fallbackReason()==1?"too-few":p.fallbackReason()==2?"terrain":p.fallbackReason()==3?"helix-arms":p.fallbackReason()==4?"helix-route":"helix-blocked").append(' ');
+                stages.append("helix ").append(stage).append("; window=").append(w.windowReady?"ready":"pending");
+            }else if(p.dome()){domes++;stages.append("dome ").append(p.locked()?"contract":"assemble");}
+            else{stars++;stages.append("starfall; columns=").append(p.columns());}
+            if((p.helixAttack()||p.dome())&&!p.locked())stages.append("; gather ready/eligible/blocked/unknown=")
+                    .append(w.gatherCounts[0]).append('/').append(w.gatherCounts[1]).append('/').append(w.gatherCounts[2]).append('/').append(w.gatherCounts[3]);
+            if(p.fallbackReason()!=0)stages.append("; fallback=").append(p.fallbackReason()==1?"too-few":p.fallbackReason()==2?"terrain":p.fallbackReason()==3?"helix-arms":p.fallbackReason()==4?"helix-route":"helix-blocked");
         }
-        return "Starfall: waves="+stars+", columns="+columns+", members="+starMembers+"; Helix: waves="+helices+", members="+helixMembers+", stages="+helixStages+", lastAbort="+lastHelixAbort+"; Dome: waves="+domes+", members="+domeMembers+", phases="+stages+", fallback="+fallbacks+", uploadedBytes="+starfallGpu.uploadedBytes()+"; "+starfallGpu.domeResourceStatus()+"; navigation[q,nodes,fallback,reconnect,wait,active]="+java.util.Arrays.toString(navigationStats)+"; depenetration[embedded,corrected,noExit,unknown,wait,distance]="+java.util.Arrays.toString(depenetrationStats)+"; lastGatherAbort="+lastGatherId+"/"+lastGatherKind+"/"+lastGatherAbort+" counts="+java.util.Arrays.toString(lastGatherCounts)+"; "+StormCollisionRuntime.status();
+        String navigation=com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.namedValues(new String[]{"queries","nodes","fallback","reconnect","wait","active"},navigationStats);
+        String escape=com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.namedValues(new String[]{"embedded","corrected","noExit","unknown","wait","distance"},depenetrationStats);
+        if(members==0&&navigation.isEmpty()&&escape.isEmpty()&&lastHelixAbort.equals("none")&&lastGatherAbort==0&&!StormCollisionRuntime.active())return "";
+        var out=new StringBuilder("Storm live: waves starfall/helix/dome=").append(stars).append('/').append(helices).append('/').append(domes)
+                .append("; members=").append(members).append("; upload total=").append(com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.bytes(starfallGpu.uploadedBytes())).append(stages);
+        if(!navigation.isEmpty())out.append("\nStorm navigation: ").append(navigation);
+        if(!escape.isEmpty())out.append("\nStorm depenetration: ").append(escape);
+        if(!lastHelixAbort.equals("none"))out.append("\nStorm last helix abort: ").append(lastHelixAbort);
+        if(lastGatherAbort!=0)out.append("\nStorm last gather abort: wave=").append(lastGatherId).append("; kind=").append(lastGatherKind).append("; reason=").append(lastGatherAbort)
+                .append("; ready/eligible/blocked/unknown=").append(lastGatherCounts[0]).append('/').append(lastGatherCounts[1]).append('/').append(lastGatherCounts[2]).append('/').append(lastGatherCounts[3]);
+        if(domes>0)out.append("\nStorm dome: ").append(starfallGpu.domeResourceStatus());
+        if(StormCollisionRuntime.active())out.append('\n').append(StormCollisionRuntime.profilingReport());
+        return out.toString();
     }
     public int carrierCount(){int count=0;for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort())count+=w.packet.members().length;return count;}
     public boolean ringsRequested(){for(var w:waveSlots)if(w!=null&&w.alive&&w.ringCommittedMask!=(w.packet.columns()==32?-1:(1<<w.packet.columns())-1)&&w.packet.event()==2&&w.packet.starfall())return true;return false;}

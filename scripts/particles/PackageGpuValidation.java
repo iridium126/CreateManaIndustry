@@ -6504,6 +6504,40 @@ public class PackageGpuValidation {
                 timing.begin(true);timing.end();GL11.glFinish();timing.poll();check(timing.gpuSamples()==5,"draw timestamp ring did not recover");
                 timing.close();check(timing.pending()==0 && timing.cpuSamples()==0 && timing.gpuSamples()==0,"draw timing close retained old world samples");
                 timing.begin(true);timing.end();GL11.glFinish();timing.poll();check(timing.gpuSamples()==1,"draw timing did not recreate after close");
+                // Four in-game collection modes: detailed profiling and throttle GPU timing are independent.
+                for(boolean details:new boolean[]{false,true})for(boolean throttle:new boolean[]{false,true}) {
+                    timing.close();timing.configure(throttle,details);
+                    var ledger=new com.iridium126.createmanaindustry.client.gpu.profile.GpuBudgetLedger();
+                    ledger.begin(1,details);
+                    for(int frame=0;frame<6;frame++) {
+                        timing.begin(throttle,details);
+                        try(var scope=ledger.prepare()) {
+                            com.iridium126.createmanaindustry.client.gpu.profile.GpuBudgetLedger.uploaded(64);
+                            com.iridium126.createmanaindustry.client.gpu.profile.GpuBudgetLedger.downloaded(16);
+                        }finally{timing.end();}
+                    }
+                    check(timing.pending()==(details||throttle?4:0),"collection mode submitted the wrong number of timestamp pairs");
+                    check(timing.cpuSamples()==(details?6:0),"lightweight mode collected CPU percentiles");
+                    check(timing.skipped()==(details?2:0),"lightweight mode collected skipped-query statistics");
+                    GL11.glFinish();double measured=timing.poll();ledger.gpu(measured);
+                    check(timing.gpuSamples()==(details?4:0),"lightweight samples entered detailed GPU percentiles");
+                    check(measured>=0&&timing.poll()==0,"GPU costs were not consumed exactly once");
+                    check(ledger.snapshot().uploadedBytes()==(details?384:0),"disabled ledger collected upload bytes");
+                    check(ledger.snapshot().readbackBytes()==(details?96:0),"disabled ledger collected readback bytes");
+                    check(details||ledger.snapshot().cpuNanos()==0,"disabled ledger collected CPU time");
+                }
+                timing.close();timing.begin(true,false);timing.end();
+                timing.configure(true,true);GL11.glFinish();
+                check(timing.pending()==0&&timing.poll()==0&&timing.gpuSamples()==0,"old lightweight query entered a new profile session");
+                timing.begin(true,true);timing.end(false);GL11.glFinish();
+                check(timing.poll()==0&&timing.cpuSamples()==0&&timing.gpuSamples()==0,"failed pass published profiling data");
+                timing.begin(true,true);timing.end();String lastReport=timing.report();
+                timing.configure(false,false);GL11.glFinish();
+                check(timing.pending()==0&&timing.poll()==0,"stopped timing retained pending GPU work");
+                check(lastReport.equals(timing.report()),"stopping discarded the last CPU capture");
+                timing.begin(true,true);check(timing.cpuSamples()==0&&timing.gpuSamples()==0,"restarting retained the previous profile window");
+                timing.end();timing.close();
+                check(timing.pending()==0&&timing.poll()==0,"world boundary retained old query cost");
                 check(GL11.glGetError()==GL11.GL_NO_ERROR,"draw timestamp GL error");
             }finally{if(GL15.glGetQueryi(GL33.GL_TIME_ELAPSED,GL15.GL_CURRENT_QUERY)==foreign)GL15.glEndQuery(GL33.GL_TIME_ELAPSED);GL15.glDeleteQueries(foreign);}
         }

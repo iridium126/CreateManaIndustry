@@ -39,13 +39,26 @@ public final class PackageShaderHook {
     private static final Set<ChainConveyorBlockEntity> VISIBLE_CONVEYORS=Collections.newSetFromMap(new IdentityHashMap<>());
     private static final NamespacedId PACKAGE_ID=new NamespacedId("create","package");
     private static final GpuPassTelemetry MAIN_TIMING=new GpuPassTelemetry(),SHADOW_TIMING=new GpuPassTelemetry();
+    private static boolean timingEnabled,detailed;
+    public static void measurementMode(boolean timing,boolean details){timingEnabled=timing;detailed=details;MAIN_TIMING.configure(timing,details);SHADOW_TIMING.configure(timing,details);}
+    public static void resetMeasurements(){MAIN_TIMING.close();SHADOW_TIMING.close();timingEnabled=detailed=false;}
+    public static void discardPendingMeasurements(){MAIN_TIMING.discardPending();SHADOW_TIMING.discardPending();}
+    public static String profilingReport(){
+        String main=MAIN_TIMING.cpuSamples()==0?"":"Package main: "+MAIN_TIMING.report();
+        String shadow=SHADOW_TIMING.cpuSamples()==0?"":"Package shadow: "+SHADOW_TIMING.report();
+        return main.isEmpty()?shadow:shadow.isEmpty()?main:main+"\n"+shadow;
+    }
+    public static String profilingSummary(){
+        String main=MAIN_TIMING.cpuSamples()==0?"":"Package main: "+MAIN_TIMING.summary();
+        String shadow=SHADOW_TIMING.cpuSamples()==0?"":"Package shadow: "+SHADOW_TIMING.summary();
+        return main.isEmpty()?shadow:shadow.isEmpty()?main:main+"\n"+shadow;
+    }
     private static PackageRenderState state;
     private static Object failedPipeline;
     private static volatile boolean reloadRequested;
     private static String mainStatus="off",shadowStatus="off";
     private PackageShaderHook() {}
-    public static String status(){return mainStatus+"; shadow="+shadowStatus+(COMPILER.error().isEmpty()?"":"; "+COMPILER.error())
-            +"; main draw "+MAIN_TIMING.report()+"; shadow draw "+SHADOW_TIMING.report();}
+    public static String status(){return mainStatus+"; shadow="+shadowStatus+(COMPILER.error().isEmpty()?"":"; "+COMPILER.error());}
     public static void reload(){reloadRequested=true;}
     /** Identity-only world boundary check; never compiles or mutates GL state. */
     public static Object pipelineBoundary(){return Iris.getPipelineManager().getPipelineNullable();}
@@ -107,7 +120,7 @@ public final class PackageShaderHook {
             }finally{VISIBLE_CONVEYORS.clear();}
             VIEW.set(ShadowRenderer.MODELVIEW);PROJECTION.set(ShadowRenderer.PROJECTION);
             timedDraw(SHADOW_TIMING,pool,PackagePoolGpu.DrawPass.SHADOW,COMPILER.shadow(),camera,entities,blockEntities,CHAIN_VISIBILITY_MASK);
-            shadowStatus="active (current frame="+com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken()+", generation="+com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation()+", age=0)";
+            shadowStatus="active (current frame, age=0)";
         }catch(RuntimeException|LinkageError failure){fail(failure);}
     }
     private static void fail(Throwable failure) {
@@ -119,9 +132,11 @@ public final class PackageShaderHook {
             PackageShaderCompiler.Program program,Camera camera,boolean ground,boolean chain,int[] chainVisibility) {
         com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.addExternalGpuMs(timing.poll());
         try(var accounting=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.budgets.prepare()) {
-            timing.begin(ClientConfig.particleAutoThrottle || com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled());
-            draw(pool,pass,program,camera,ground,chain,chainVisibility);
-        }finally{timing.end();}
+            timing.begin(timingEnabled,detailed);
+            boolean succeeded=false;
+            try{draw(pool,pass,program,camera,ground,chain,chainVisibility);succeeded=true;}
+            finally{timing.end(succeeded);}
+        }
     }
     private static void draw(PackagePoolGpu pool,PackagePoolGpu.DrawPass pass,
             PackageShaderCompiler.Program program,Camera camera,boolean ground,boolean chain,int[] chainVisibility) {

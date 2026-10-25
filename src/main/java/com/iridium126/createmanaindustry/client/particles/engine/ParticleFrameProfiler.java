@@ -31,12 +31,12 @@ public final class ParticleFrameProfiler {
 
     /** Records one frame's engine cost and updates the emission scale. */
     public void record(double frameMs, boolean autoThrottle) {
-        this.emaMs = this.initialized ? this.emaMs * 0.9 + frameMs * 0.1 : frameMs;
-        this.initialized = true;
         if (!autoThrottle) {
-            this.emissionScale = 1.0f;
+            reset();
             return;
         }
+        this.emaMs = this.initialized ? this.emaMs * 0.9 + frameMs * 0.1 : frameMs;
+        this.initialized = true;
         if (this.emaMs > this.userBudgetMs) {
             this.emissionScale *= COOL_DOWN;
         } else if (this.emaMs < this.userBudgetMs * 0.5) {
@@ -56,5 +56,6 @@ public final class ParticleFrameProfiler {
     public void reset() {
         this.emaMs = 0;
         this.initialized = false;
+        this.emissionScale = 1.0f;
     }
 }

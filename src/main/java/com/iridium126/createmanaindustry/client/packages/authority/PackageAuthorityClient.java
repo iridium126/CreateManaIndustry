@@ -188,22 +188,34 @@ public final class PackageAuthorityClient {
             closeAll("Package admission capture failed: "+failure.getMessage(),true);
         }
     }
-    public static String report() {
-        if(channels.isEmpty())return "Package transport: active regions=0; world runtime="+PackageWorldRuntime.status()+"; capabilities="+advertised
-                +"; "+com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageNetworkBudget.status();
-        var result=new StringBuilder("Package transport:");
+    public static String profilingSummary() {
+        if(channels.isEmpty())return "";
+        long active=0,pending=0,sent=0,acked=0,readback=0,wire=0;
         for(var entry:channels.entrySet()) {
-            var channel=entry.getValue();if(channel.closed()){result.append("\n").append(entry.getKey()).append(" retiring");continue;}
-            var stats=channel.stats();var timing=channel.timings();
+            var channel=entry.getValue();if(channel.closed())continue;
             var acquisition=acquisitions.get(entry.getKey());
-            if(acquisition!=null)result.append(String.format(java.util.Locale.ROOT,"%nAcquisition %s: active=%d pending=%d",
-                    entry.getKey(),acquisition.activeCount(),acquisition.pendingCount()));
-            result.append(String.format(java.util.Locale.ROOT,"%n%s epoch=%d; captures=%d skipped=%d; readback=%d B; wire bodies=%d B; packets sent/acked=%d/%d; ACK dispatches=%d; capture CPU p50/p95=%.3f/%.3f ms; pump CPU p50/p95=%.3f/%.3f ms; packet preparation p50/p95=%.3f/%.3f ms; ACK RTT p50/p95=%.3f/%.3f ms",
-                    entry.getKey(),channel.epoch(),stats.captures(),stats.skippedCaptures(),stats.headerBytes()+stats.payloadBytes(),stats.wireBytes(),stats.sentPackets(),stats.ackedPackets(),stats.ackDispatches(),
-                    timing.capture().p50Millis(),timing.capture().p95Millis(),timing.pump().p50Millis(),timing.pump().p95Millis(),timing.packetPreparation().p50Millis(),timing.packetPreparation().p95Millis(),timing.roundTrip().p50Millis(),timing.roundTrip().p95Millis()));
+            if(acquisition!=null){active+=acquisition.activeCount();pending+=acquisition.pendingCount();}
+            var stats=channel.stats();sent+=stats.sentPackets();acked+=stats.ackedPackets();
+            readback+=stats.headerBytes()+stats.payloadBytes();wire+=stats.wireBytes();
         }
-        return result.append("\nControl batching: ").append(controls.stats()).append("\nWorld runtime: ").append(PackageWorldRuntime.status())
-                .append("\n").append(com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageNetworkBudget.status()).toString();
+        return "Package transport (live totals): regions="+channels.size()+"; active/pending="+active+"/"+pending
+                +"; packets sent/acked="+sent+"/"+acked
+                +"; readback="+com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.bytes(readback)
+                +"; wire="+com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.bytes(wire);
+    }
+    public static String report() {
+        if(channels.isEmpty())return "";
+        var result=new StringBuilder(profilingSummary());
+        for(var entry:channels.entrySet()) {
+            var channel=entry.getValue();if(channel.closed())continue;
+            var stats=channel.stats();var timing=channel.timings();
+            if(stats.captures()==0&&stats.sentPackets()==0&&stats.skippedCaptures()==0)continue;
+            var region=entry.getKey();
+            result.append(String.format(java.util.Locale.ROOT,"%nPackage region (%d,%d,%d): capture/pump/encode p95=%.3f/%.3f/%.3f ms; ACK RTT p95=%.3f ms; captures=%d",
+                    region.x(),region.y(),region.z(),timing.capture().p95Millis(),timing.pump().p95Millis(),timing.packetPreparation().p95Millis(),timing.roundTrip().p95Millis(),stats.captures()));
+            if(stats.skippedCaptures()>0)result.append("; skipped=").append(stats.skippedCaptures());
+        }
+        return result.toString();
     }
     public static void closeAll(String reason,boolean notifyServer) {
         if(closing)return;

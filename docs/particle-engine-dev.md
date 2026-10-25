@@ -104,11 +104,14 @@ Allay Storm 的成员使用 `MODEL` 粒子表示，身份、生命值、姿态�
 /cmi particle stats
 /cmi particle profile on
 /cmi particle profile
+/cmi particle profile details
 /cmi particle profile off
 /cmi particle budget <ms>
 /cmi particle shaderpack status
 /cmi particle clear
 ```
+
+详细性能统计默认关闭，使用 `profile on/off` 在主渲染帧边界切换。`stats` 只显示一行 `[CMI particles] live=… streams=… emission=… throttle gpu=… (budget …)`，不附加包裹、风暴等报告。`profile` 显示 CPU/GPU、传输、队列及已采样模块摘要；`profile details` 展开全部 GPU 阶段、活跃 CPU 阶段、区域传输与风暴诊断，也会隐藏空项、统一单位，不输出原始数组或对象。关闭后保留并标记上次采样结果，重新开启清空旧窗口。`autoThrottle=true` 时仍保留每帧轻量 GPU 计时；两者均关闭时不再提交或轮询性能计时查询。验证结果与用户实机检查步骤见 [测量记录](particle-engine-performance.md#2026-10-25性能统计按需采集)。
 
 `emit` 不带时长时，preset 的 `amount` 是单次粒子数，pigment 的 `amount` 是 Hex 喷发数；带时长时，preset 的 `amount` 是每秒速率，秒数范围为 `0.1..3600`，`forever` 表示持续到清除。Pigment 不支持持续发射。preset 单次数量上限为 4,000,000，流速上限为 1,000,000/s；pigment 喷发上限为 2,000。Hex pigment 仅在 Hexcasting 已加载时提供。
 

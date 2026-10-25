@@ -42,6 +42,12 @@ class CMIParticleCommandTreeTest {
         assertNull(particle.getChild("spray"));
         assertNull(particle.getChild("bench"));
     }
+    @Test void profilingSummaryAndOrganizedDetailsParse(){
+        var dispatcher=dispatcher();
+        accepts(dispatcher,"cmi particle profile");accepts(dispatcher,"cmi particle profile details");
+        accepts(dispatcher,"cmi particle profile on");accepts(dispatcher,"cmi particle profile off");
+        rejects(dispatcher,"cmi particle profile details on");
+    }
     @Test void packagePreviewAndCollisionPreparationCommandsParse() {
         var dispatcher=dispatcher();
         accepts(dispatcher,"cmi particle packagepreview 0");accepts(dispatcher,"cmi particle packagepreview 131072");

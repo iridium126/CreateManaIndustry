@@ -118,6 +118,8 @@ public final class StormCollisionRuntime implements AutoCloseable {
     public static boolean active(){return current!=null;}
     public static void submitted(){if(current!=null)current.gpu.submitted();}
     public static String status(){return current==null?"storm collision idle":current.cache.stats()+" demandMs="+current.demandNanos/1e6+" "+current.gpu.stats()+" error="+current.error;}
+    public static String profilingReport(){return current==null?"":"Storm collision: "+String.format(java.util.Locale.ROOT,"demand=%.3f ms; ",current.demandNanos/1e6)
+            +current.cache.profilingReport()+"\nStorm collision GPU: "+current.gpu.profilingReport()+(current.error.isEmpty()?"":"; error="+current.error);}
     public static void blockChanged(ClientLevel level,BlockPos pos){if(current==null||current.level!=level)return;int x=pos.getX()>>4,y=pos.getY()>>4,z=pos.getZ()>>4;for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++)current.cache.dirty(new Section(x+dx,y+dy,z+dz));}
     public static void cubeChanged(long packed){if(current==null)return;var cube=com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(packed);int size=com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.DIAMETER_IN_BLOCKS;int n=size/16;for(int x=0;x<n;x++)for(int y=0;y<n;y++)for(int z=0;z<n;z++)current.cache.unavailable(new Section(cube.getX()*n+x,cube.getY()*n+y,cube.getZ()*n+z));}
     @SubscribeEvent public static void loaded(ChunkEvent.Load event){changed(event);}

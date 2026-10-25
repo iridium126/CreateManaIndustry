@@ -37,7 +37,7 @@ public final class ParticleRenderer {
             poseTboState.capture();
             boolean queryActive = false;
             try {
-                if (drawTimer.begin())
+                if (drawTimer!=null&&drawTimer.begin())
                     queryActive = true;
 
                 // Repeat of the compute section's empty-guard from the handoff

@@ -37,6 +37,7 @@ public final class ClientGpuScene {
     /** beginFrame submission clock; endFrame falls back to it before timer samples flow. */
     private long frameStartNanos = 0;
     private long computeSubmitNanos;
+    private boolean frameTiming,frameDetails,frameThrottle,cpuFallback;
 
     // Fixed owners keep independent clocks; this root sequences their render transaction.
     private long lastErrorTime = 0;
@@ -45,8 +46,31 @@ public final class ClientGpuScene {
 
     /** Accumulates one completed hook-side timer query (GPU ms, lagged). */
     public synchronized void addExternalGpuMs(double ms) {
-        this.externalHookGpuMs += Math.max(0.0, ms);
+        if(frameThrottle)this.externalHookGpuMs += Math.max(0.0, ms);
         budgets.gpu(Math.max(0,ms));
+    }
+
+    /** Latch all collection modes once, before primary world rendering. */
+    private void measurementBoundary() {
+        ParticleDiagnostics.INSTANCE.applyRequestedState();
+        boolean details=ClientConfig.particleEnabled&&ParticleDiagnostics.INSTANCE.enabled();
+        boolean throttle=ClientConfig.particleEnabled&&ClientConfig.particleAutoThrottle;
+        boolean timing=details||throttle;
+        if(frameTiming!=timing||frameDetails!=details||frameThrottle!=throttle) {
+            computeTimer.close();drawTimer.close();externalHookGpuMs=0;
+        }
+        if(frameThrottle!=throttle) {
+            profiler.reset();
+            if(CreateManaIndustry.IRISVEIL_ACTIVE)
+                com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.discardPendingMeasurements();
+            if(CreateManaIndustry.IRIS_ACTIVE)
+                com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.discardPendingMeasurements();
+        }
+        frameTiming=timing;frameDetails=details;frameThrottle=throttle;
+        if(CreateManaIndustry.IRISVEIL_ACTIVE)
+            com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.measurementMode(timing,details);
+        if(CreateManaIndustry.IRIS_ACTIVE)
+            com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.measurementMode(timing,details);
     }
 
     // ------------------------------------------------------------------
@@ -68,6 +92,7 @@ public final class ClientGpuScene {
     public void enterLevelFrame(boolean mainRenderer) {
         var mc = Minecraft.getInstance();
         if (levelFrame.enter(mainRenderer && mc.level != null)) {
+            measurementBoundary();
             levelCamera = null;
             levelDelta = null;
             frameLevel = mc.level;
@@ -131,21 +156,23 @@ public final class ClientGpuScene {
             if(!levelFrame.claim())return;
             computeFrame(levelCamera,levelView,levelProjection,levelDelta);levelFrame.complete(frameArmed);return;
         }
+        measurementBoundary();
         computeFrame(camera,view,projectionMatrix,deltaTracker);
     }
     private void computeFrame(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix, DeltaTracker deltaTracker) {
         this.frameAttempted = false;
         this.frameArmed = false;
         this.frameCoordinator.abort();
-        budgets.begin(renderFrameToken());
+        budgets.begin(renderFrameToken(),frameDetails);
         if(!ClientConfig.particleEnabled) { particles.clearParticles();return; }
         if(Minecraft.getInstance().level==null)return;
         try(var accounting=budgets.prepare()){if(!particles.prepareResources())return;}
         profiler.setBudget((float)ClientConfig.particleBudgetMs);
         this.frameAttempted = true;
-        this.frameStartNanos = System.nanoTime();
+        this.cpuFallback=frameThrottle&&!computeTimer.sampled();
+        if(cpuFallback)this.frameStartNanos = System.nanoTime();
         ParticleDiagnostics.INSTANCE.begin();
-        boolean timedCompute=this.computeTimer.begin(), computeSucceeded=false;
+        boolean timedCompute=frameTiming&&this.computeTimer.begin(), computeSucceeded=false;
         try(var accounting=budgets.prepare()) {
             frameCoordinator.begin(renderFrameToken());
             try(var work=particles.prepareInput(camera,view,projectionMatrix,deltaTracker,frameCoordinator,profiler.emissionScale())) {
@@ -173,7 +200,7 @@ public final class ClientGpuScene {
             }
         } finally {
             if(timedCompute)this.computeTimer.end(computeSucceeded);
-            this.computeSubmitNanos = System.nanoTime() - this.frameStartNanos;
+            if(cpuFallback)this.computeSubmitNanos = System.nanoTime() - this.frameStartNanos;
             ParticleDiagnostics.INSTANCE.mark("world");
             ParticleDiagnostics.INSTANCE.pauseCpu();
         }
@@ -189,7 +216,7 @@ public final class ClientGpuScene {
         if(camera!=Minecraft.getInstance().gameRenderer.getMainCamera()||levelFrame.active()&&!levelFrame.primary())return;
         if (!particles.available() || !ClientConfig.particleEnabled || !this.frameAttempted)
             return;
-        long drawStartNanos = System.nanoTime();
+        long drawStartNanos = cpuFallback?System.nanoTime():0;
         ParticleDiagnostics.INSTANCE.resumeCpu();
         ParticleDiagnostics.INSTANCE.mark("draw");
         try {
@@ -197,7 +224,7 @@ public final class ClientGpuScene {
             // committed generation simply persists one more frame undrawn.
             if (this.frameArmed) {
                 this.frameCoordinator.draw();
-                try(var accounting=budgets.prepare()) { ParticleRenderer.INSTANCE.draw(renderInput,frameCoordinator.publication(),camera,view,projectionMatrix,drawTimer); }
+                try(var accounting=budgets.prepare()) { ParticleRenderer.INSTANCE.draw(renderInput,frameCoordinator.publication(),camera,view,projectionMatrix,frameTiming?drawTimer:null); }
                 finally { this.frameCoordinator.finishDraw(); }
             }
         } finally {
@@ -206,16 +233,18 @@ public final class ClientGpuScene {
             // time across beginFrame..endFrame until samples flow. Hook-side
             // GPU work (shader-pack MODEL draw) is measured by its own timer
             // ring and folded in so the throttle sees the full per-frame cost.
-            double baseMs;
-            if (this.computeTimer.sampled())
-                baseMs = this.computeTimer.lastMs() + (particles.idle()?0:this.drawTimer.lastMs());
-            else
-                baseMs = (this.computeSubmitNanos + System.nanoTime() - drawStartNanos) / 1_000_000.0;
-            synchronized (this) {
-                baseMs += this.externalHookGpuMs;
-                this.externalHookGpuMs = 0;
+            if(frameThrottle) {
+                double baseMs;
+                if (this.computeTimer.sampled())
+                    baseMs = this.computeTimer.lastMs() + (particles.idle()?0:this.drawTimer.lastMs());
+                else
+                    baseMs = (this.computeSubmitNanos + System.nanoTime() - drawStartNanos) / 1_000_000.0;
+                synchronized (this) {
+                    baseMs += this.externalHookGpuMs;
+                    this.externalHookGpuMs = 0;
+                }
+                this.profiler.record(baseMs, true);
             }
-            this.profiler.record(baseMs, ClientConfig.particleAutoThrottle);
 
             ParticleDiagnostics.INSTANCE.end();
             this.frameAttempted = false;
@@ -242,15 +271,17 @@ public final class ClientGpuScene {
     }
     public void onLevelChanged() {
         frameCoordinator.abort();frameArmed=frameAttempted=false;
+        resetMeasurements();
         if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.requestReload();
         com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.resetStormState();
         com.iridium126.createmanaindustry.client.allaystorm.StormFeedback.INSTANCE.reset();
         com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.reset();
         com.iridium126.createmanaindustry.client.packages.render.PackageRuntime.INSTANCE.reset();
-        profiler.reset();particles.resetWorld();
+        particles.resetWorld();
     }
     public void close() {
         frameCoordinator.abort();frameArmed=frameAttempted=false;
+        resetMeasurements();
         com.iridium126.createmanaindustry.client.greattrick.sharedfate.SharedFateGpu.INSTANCE.close();
         com.iridium126.createmanaindustry.client.greattrick.partition.PartitionGpu.INSTANCE.close();
         com.iridium126.createmanaindustry.client.greattrick.SharedFateClient.clear();
@@ -262,6 +293,21 @@ public final class ClientGpuScene {
             com.iridium126.createmanaindustry.client.packages.render.PackageRuntime.INSTANCE.close();
         try { particles.closeResources(); } finally { computeTimer.close();drawTimer.close(); }
 
+    }
+
+    private void resetMeasurements() {
+        computeTimer.close();drawTimer.close();externalHookGpuMs=0;profiler.reset();
+        frameTiming=frameDetails=frameThrottle=cpuFallback=false;
+        budgets.reset();
+        ParticleDiagnostics.INSTANCE.close();
+        com.iridium126.createmanaindustry.client.gpu.profile.GpuQueueAccounting.collecting(false);
+        com.iridium126.createmanaindustry.client.gpu.profile.GpuQueueAccounting.collecting(ParticleDiagnostics.INSTANCE.enabled());
+        com.iridium126.createmanaindustry.client.packages.feedback.PackageCpuDiagnostics.reset();
+        if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexMetrics.close();
+        if(CreateManaIndustry.IRISVEIL_ACTIVE)
+            com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.resetMeasurements();
+        if(CreateManaIndustry.IRIS_ACTIVE)
+            com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.resetMeasurements();
     }
 
 }

@@ -132,7 +132,8 @@ public final class CMIParticleCommand {
                                     tell(ctx,"Package collision coverage revoked.");return 1;
                                 })))
                         .then(Commands.literal("profile")
-                                .executes(ctx -> { tell(ctx, com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.report());tell(ctx,com.iridium126.createmanaindustry.client.packages.authority.PackageAuthorityClient.report());return 1; })
+                                .executes(CMIParticleCommand::profile)
+                                .then(Commands.literal("details").executes(CMIParticleCommand::profileDetails))
                                 .then(Commands.literal("on").executes(ctx -> { com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled(true); tell(ctx,"Particle profiling enabled"); return 1; }))
                                 .then(Commands.literal("off").executes(ctx -> { com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled(false); tell(ctx,"Particle profiling disabled"); return 1; })))
                         .then(Commands.literal("stats")
@@ -303,14 +304,37 @@ public final class CMIParticleCommand {
         tell(ctx, "", "§b[CMI particles]§r live=§e" + statistics.live() + "§r/" + statistics.capacity()
                 + "  streams=" + statistics.streams()
                 + "  emission=" + Math.round(statistics.emissionScale() * 100) + "%"
-                + "  gpu=" + String.format("%.2f", profiler.emaMs()) + "ms (budget " + profiler.budget() + "ms)");
-        tell(ctx,"Package preview: "+com.iridium126.createmanaindustry.client.packages.render.PackageRuntime.INSTANCE.packagePreviewStatus()+"; live includes admitted package slots (asynchronous GPU snapshot).");
-        tell(ctx,"Package shaderpack: "+com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.status());
-        tell(ctx,com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.starfallStatus());
-        var frame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.budgets.snapshot();
-        tell(ctx,String.format(java.util.Locale.ROOT,"Frame accounting: CPU prepare %.3f ms; completed GPU %.3f ms; upload %d B; readback %d B; queue accepted/deferred/rejected/backlog %d/%d/%d/%d",
-                frame.cpuNanos()/1e6,frame.gpuMillis(),frame.uploadedBytes(),frame.readbackBytes(),frame.accepted(),frame.deferred(),frame.rejected(),frame.backlog()));
+                + (ClientConfig.particleAutoThrottle?"  throttle gpu=" + String.format(java.util.Locale.ROOT,"%.2f", profiler.emaMs()) + "ms (budget " + profiler.budget() + "ms)":"  auto throttle=off"));
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static int profile(CommandContext<CommandSourceStack> ctx) {
+        return showProfile(ctx,false);
+    }
+
+    private static int profileDetails(CommandContext<CommandSourceStack> ctx) {
+        return showProfile(ctx,true);
+    }
+
+    private static int showProfile(CommandContext<CommandSourceStack> ctx,boolean details) {
+        var diagnostics=com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE;
+        var frame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.budgets.snapshot();
+        var report=new StringBuilder(details?diagnostics.report(frame):diagnostics.summary(frame));
+        if(diagnostics.hasSamples()) {
+            appendReport(report,details?com.iridium126.createmanaindustry.client.packages.feedback.PackageCpuDiagnostics.report():com.iridium126.createmanaindustry.client.packages.feedback.PackageCpuDiagnostics.summary());
+            appendReport(report,details?com.iridium126.createmanaindustry.client.packages.world.PackageWorldRuntime.profilingReport():com.iridium126.createmanaindustry.client.packages.world.PackageWorldRuntime.profilingSummary());
+            appendReport(report,details?com.iridium126.createmanaindustry.client.packages.authority.PackageAuthorityClient.report():com.iridium126.createmanaindustry.client.packages.authority.PackageAuthorityClient.profilingSummary());
+            if(CreateManaIndustry.HEX_ACTIVE)appendReport(report,details?com.iridium126.createmanaindustry.client.hex.pattern.HexMetrics.report():com.iridium126.createmanaindustry.client.hex.pattern.HexMetrics.summary());
+            if(CreateManaIndustry.IRISVEIL_ACTIVE)appendReport(report,details?com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.profilingReport():com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.profilingSummary());
+            if(CreateManaIndustry.IRIS_ACTIVE)appendReport(report,details?com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.profilingReport():com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.profilingSummary());
+            if(details)appendReport(report,com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.starfallStatus());
+        }
+        tell(ctx,report.toString());
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static void appendReport(StringBuilder report,String section) {
+        if(!section.isBlank())report.append('\n').append(section);
     }
 
     private static int budget(CommandContext<CommandSourceStack> ctx) {

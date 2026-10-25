@@ -41,6 +41,7 @@
 | [allay-storm-sync.md](allay-storm-sync.md) | Allay Storm 服务端权威与客户端 GPU 同步 | 🟡 |
 | [allay-storm-ai.md](allay-storm-ai.md) | Allay Storm 当前攻击、参数与配置 | 🟡 |
 | [allay-storm-validation.md](allay-storm-validation.md) | 资源重建、单元／GPU／服务端验证和用户验收 | 🟡 |
+| [allay-storm-art-direction-plan.md](allay-storm-art-direction-plan.md) | 悦灵风暴“天穹灵潮”美术设计、百万粒子预算、天空／光影适配与分批验收方案 | 📐 |
 | [allay-particle-vanilla-alignment.md](allay-particle-vanilla-alignment.md) | 原版粒子视觉对齐范围和验收项 | 🟡 |
 | [g-self-design.md](g-self-design.md) | G-self/Iris shaderpack 的 MODEL 粒子接入 | 🟡 |
 | [trickster-stock-ticker-fix.md](trickster-stock-ticker-fix.md) | 晶结组件相等性与实际仓库出库回归 | ✅ |

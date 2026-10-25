@@ -28,6 +28,22 @@ public final class HexMetrics {
         return ()->{try {sample.timer.end();sample.thread[sample.cursor]=cpu<0?-1:(cpu()-cpu)/1e6;sample.bytes[sample.cursor]=bytes<0?-1:alloc()-bytes;sample.cursor=(sample.cursor+1)%240;sample.count=Math.min(240,sample.count+1);}finally{sample.open=false;accounting.close();}};
     }
     private static double p95(double[] a,int n){if(n==0)return 0;var b=Arrays.copyOf(a,n);Arrays.sort(b);return b[Math.min(n-1,(int)(n*.95))];}
-    public static String report(){var b=new StringBuilder();for(var e:samples.entrySet()){var s=e.getValue();b.append("\nHex ").append(e.getKey()).append(": ").append(s.timer.report()).append(String.format(Locale.ROOT,", thread CPU p95=%.3fms, allocation p95=%.0fB",p95(s.thread,s.count),p95(s.bytes,s.count)));}return b.toString();}
+    public static String report(){
+        var b=new java.util.StringJoiner("\n");
+        for(var e:samples.entrySet()){
+            var s=e.getValue();if(s.count==0)continue;
+            b.add("Hex "+e.getKey()+": "+s.timer.report()+String.format(Locale.ROOT,"; thread CPU p95=%s; alloc p95=%s",
+                    p95(s.thread,s.count)<0?"n/a":String.format(Locale.ROOT,"%.3f ms",p95(s.thread,s.count)),
+                    p95(s.bytes,s.count)<0?"n/a":com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.bytes(p95(s.bytes,s.count))));
+        }
+        return b.toString();
+    }
+    public static String summary(){
+        return samples.entrySet().stream().filter(e->e.getValue().count>0)
+                .sorted(java.util.Comparator.comparingDouble((Map.Entry<String,Sample> e)->e.getValue().timer.cpuP95Millis()).reversed())
+                .limit(3).map(e->"Hex "+e.getKey()+": "+e.getValue().timer.summary())
+                .collect(java.util.stream.Collectors.joining("\n"));
+    }
+    public static void collecting(boolean enabled){if(enabled)close();else for(var s:samples.values())s.timer.configure(false,false);}
     public static void close(){for(var s:samples.values())s.timer.close();samples.clear();}
 }

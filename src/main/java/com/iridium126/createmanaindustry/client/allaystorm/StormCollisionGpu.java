@@ -114,6 +114,9 @@ public final class StormCollisionGpu implements AutoCloseable {
     public long uploaded(){return uploaded;}
     public long bytes(){long bytes=(long)capacity*BYTES;for(var bank:banks)bytes+=(long)(bank.mask+1)*16;return atlas==0?0:bytes;}
     public String stats(){return "gpuReady="+ready()+" pages="+occupied.cardinality()+" bytes="+bytes()+" uploadBytes="+uploaded+" uploadNs="+lastUpload+" overruns="+overruns;}
+    public String profilingReport(){return "ready="+ready()+"; pages="+occupied.cardinality()+"; memory="+com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.bytes(bytes())
+            +"; uploaded total="+com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.bytes(uploaded)
+            +String.format(java.util.Locale.ROOT,"; upload latest=%.3f ms",lastUpload/1e6)+(overruns==0?"":"; overruns="+overruns);}
     @Override public void close(){
         for(var bank:banks){if(bank.fence!=0)GL32.glDeleteSync(bank.fence);if(bank.staging!=null)MemoryUtil.memFree(bank.staging);if(bank.buffer!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(bank.buffer);if(bank.texture!=0)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(bank.texture);}
         if(atlas!=0)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(atlas);MemoryUtil.memFree(pageUpload);

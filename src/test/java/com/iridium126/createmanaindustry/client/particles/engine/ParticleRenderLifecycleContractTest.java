@@ -23,6 +23,28 @@ class ParticleRenderLifecycleContractTest {
         for(var insn:method.instructions)if(insn instanceof MethodInsnNode call&&call.owner.equals(owner)&&call.name.equals(name))return true;
         return false;
     }
+    @Test void reportsAreOnlyBuiltOnDemandAndModesAreLatchedBeforeRendering()throws IOException {
+        var hook=read("com/iridium126/createmanaindustry/client/particles/shaderpack/CMIPackEntityMergeHook");
+        assertFalse(calls(method(hook,"renderShadow"),"com/iridium126/createmanaindustry/client/gpu/profile/GpuPassTelemetry","report"));
+        var command=read("com/iridium126/createmanaindustry/client/particles/command/CMIParticleCommand");
+        assertFalse(calls(method(command,"stats"),"com/iridium126/createmanaindustry/client/gpu/profile/GpuBudgetLedger","snapshot"));
+        assertTrue(calls(method(command,"showProfile"),"com/iridium126/createmanaindustry/client/gpu/profile/GpuBudgetLedger","snapshot"));
+        String storm="com/iridium126/createmanaindustry/client/allaystorm/AllayStormRuntime";
+        assertFalse(calls(method(command,"stats"),storm,"starfallStatus"),"Basic stats must not include the full storm diagnostic report, even with profiling enabled");
+        int messages=0,successMessages=0;
+        for(var insn:method(command,"stats").instructions)if(insn instanceof MethodInsnNode call&&call.owner.equals(command.name)&&call.name.equals("tell")){
+            messages++;if(call.desc.contains("Ljava/lang/String;Ljava/lang/String;"))successMessages++;
+        }
+        assertEquals(1,successMessages,"stats must send exactly the requested single-line particle summary");
+        assertEquals(2,messages,"Only the unavailable-engine error and the single success line may send a message");
+        assertTrue(calls(method(command,"showProfile"),storm,"starfallStatus"));
+        assertFalse(calls(method(read(storm),"starfallStatus"),"com/iridium126/createmanaindustry/client/allaystorm/StormCollisionRuntime","status"),"Detailed reports must not append the old unformatted collision dump");
+        var scene=read(SCENE+"ClientGpuScene");
+        assertTrue(calls(method(scene,"enterLevelFrame"),SCENE+"ClientGpuScene","measurementBoundary"));
+        assertTrue(calls(method(scene,"measurementBoundary"),ENGINE+"ParticleDiagnostics","applyRequestedState"));
+        assertTrue(calls(method(scene,"onLevelChanged"),SCENE+"ClientGpuScene","resetMeasurements"));
+        assertTrue(calls(method(scene,"close"),SCENE+"ClientGpuScene","resetMeasurements"));
+    }
     @Test void irisShadowAccountingIncludesPreparationAndEveryDrawWithoutAddingTheDetailTwice()throws IOException {
         var shadow=method(read("com/iridium126/createmanaindustry/client/particles/shaderpack/CMIPackEntityMergeHook"),"renderShadow");
         int begin=-1,prepare=-1,lastDraw=-1,end=Integer.MAX_VALUE;

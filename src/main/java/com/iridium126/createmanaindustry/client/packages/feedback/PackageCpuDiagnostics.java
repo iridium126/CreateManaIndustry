@@ -18,7 +18,7 @@ public final class PackageCpuDiagnostics {
     private static long downloads,lastDownloads;
     private static String waiting="none",lastWaiting="none";
     private PackageCpuDiagnostics(){}
-    public static void enabled(boolean next){enabled=next;clear();}
+    public static void enabled(boolean next){if(next&&!enabled)clear();enabled=next;}
     public static long begin(Phase phase){
         if(!enabled)return 0;
         int i=phase.ordinal();startedCpu[i]=threadCpu();startedAlloc[i]=allocated();return System.nanoTime();
@@ -44,11 +44,33 @@ public final class PackageCpuDiagnostics {
         steps=moving=dispatches=0;downloads=0;
     }
     private static long percentile(long[] input,double q){var sorted=Arrays.copyOf(input,samples);Arrays.sort(sorted);return sorted[Math.max(0,(int)Math.ceil(q*samples)-1)];}
-    public static String report(){
-        if(samples==0)return "Package CPU phases: "+(enabled?"collecting":"off");
-        var out=new StringBuilder("Package CPU phases (inclusive ms/frame wall p50/p95/p99, thread CPU p95, allocation p95 B):");
-        for(var phase:Phase.values()){int i=phase.ordinal();out.append(String.format(Locale.ROOT,"\n%s %.3f/%.3f/%.3f cpu=%s alloc=%s",phase,percentile(wall[i],.5)/1e6,percentile(wall[i],.95)/1e6,percentile(wall[i],.99)/1e6,threadCpu()<0?"unavailable":String.format(Locale.ROOT,"%.3f",percentile(cpu[i],.95)/1e6),allocated()<0?"unavailable":Long.toString(percentile(alloc[i],.95))));}
-        return out.append("\nsteps=").append(lastSteps).append(" live/indices=").append(lastLive).append('/').append(lastIndices).append(" moving=").append(lastMoving).append(" compute submissions=").append(lastDispatches).append(" downloaded=").append(lastDownloads).append(" B waiting=").append(lastWaiting).toString();
+    public static String summary(){
+        if(samples==0)return "";
+        var phases=new java.util.LinkedHashMap<String,Double>();
+        for(var phase:Phase.values()){
+            long nanos=percentile(wall[phase.ordinal()],.95);
+            if(nanos>0)phases.put(phase.name(),nanos/1e6);
+        }
+        if(phases.isEmpty())return "";
+        return "Package CPU p95 (inclusive ms, top 3): "+com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.slowest(phases,3);
     }
-    private static void clear(){cursor=samples=steps=moving=dispatches=0;downloads=0;Arrays.fill(pendingWall,0);Arrays.fill(pendingCpu,0);Arrays.fill(pendingAlloc,0);}
+    public static String report(){
+        if(samples==0)return "";
+        var out=new StringBuilder();
+        for(var phase:Phase.values()){
+            int i=phase.ordinal();if(Arrays.stream(wall[i],0,samples).noneMatch(n->n>0))continue;
+            out.append(String.format(Locale.ROOT,"%sPackage CPU %s: wall p50/p95=%.3f/%.3f ms; CPU p95=%s; alloc p95=%s",
+                    out.isEmpty()?"":"\n",phase,percentile(wall[i],.5)/1e6,percentile(wall[i],.95)/1e6,
+                    threadCpu()<0?"n/a":String.format(Locale.ROOT,"%.3f ms",percentile(cpu[i],.95)/1e6),
+                    allocated()<0?"n/a":com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.bytes(percentile(alloc[i],.95))));
+        }
+        if((lastSteps|lastLive|lastIndices|lastMoving|lastDispatches|lastDownloads)!=0||!lastWaiting.equals("none"))
+            out.append(out.isEmpty()?"":"\n").append("Package work: steps=").append(lastSteps).append("; live/indices=").append(lastLive).append('/').append(lastIndices)
+                    .append("; moving=").append(lastMoving).append("; dispatches=").append(lastDispatches)
+                    .append("; readback=").append(com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.bytes(lastDownloads))
+                    .append(lastWaiting.equals("none")?"":"; waiting="+lastWaiting);
+        return out.toString();
+    }
+    public static void reset(){clear();}
+    private static void clear(){cursor=samples=steps=live=indices=moving=dispatches=lastSteps=lastLive=lastIndices=lastMoving=lastDispatches=0;downloads=lastDownloads=0;waiting=lastWaiting="none";Arrays.fill(pendingWall,0);Arrays.fill(pendingCpu,0);Arrays.fill(pendingAlloc,0);}
 }

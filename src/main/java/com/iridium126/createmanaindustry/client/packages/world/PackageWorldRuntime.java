@@ -68,6 +68,9 @@ public final class PackageWorldRuntime {
     private final it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<PackageFreeAcquisitionGpu> environmentOwners=new it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<>();
     private final PackageEnvironmentUplink environmentUplink=new PackageEnvironmentUplink(MAX_REGIONS,packet->PacketDistributor.sendToServer(packet));
     private final com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry prepareTiming=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry();
+    public static void profiling(boolean enabled){if(current!=null)current.prepareTiming.configure(enabled,enabled);}
+    public static String profilingReport(){return current==null||current.prepareTiming.cpuSamples()==0?"":"Package prepare: "+current.prepareTiming.report();}
+    public static String profilingSummary(){return current==null||current.prepareTiming.cpuSamples()==0?"":"Package prepare: "+current.prepareTiming.summary();}
     private final PackageSimulationClock clock=new PackageSimulationClock();
     private final PackagePrefetchSchedule prefetchSchedule=new PackagePrefetchSchedule();
     private final PackageSimulationClock chainClock=new PackageSimulationClock();
@@ -155,7 +158,6 @@ public final class PackageWorldRuntime {
     public static boolean forceReady(){var r=current;return r!=null&&r.forceCapture!=null&&r.forceCapture.ready();}
     public static void chainInteraction(ClientboundChainInteractionPacket packet){var runtime=current;if(runtime!=null && runtime.chainInteraction!=null)runtime.chainInteraction.acknowledge(packet);}
     public static String status(){var runtime=current;return runtime==null?"off":runtime.status
-            +(com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled()?"; prepare "+runtime.prepareTiming.report():"")
             +(runtime.chainInteraction==null?"":"; pickup ACK round trip="+runtime.chainInteraction.networkNanos()/1_000_000.0+"ms")
             +(runtime.pool==null?"":"; light "+runtime.pool.lightFeedbackReport())
             +(runtime.chainCheckpoints==null?"":"; chain checkpoint bytes="+runtime.chainCheckpoints.readbackBytes()+", pending="+runtime.chainCheckpoints.pending()

@@ -49,4 +49,6 @@ public final class StormCollisionCache {
     public int pending(){return pending.size();}
     public long spent(){return spent;}
     public String stats(){long known=entries.values().stream().filter(e->e.page!=null).count();return "requested="+entries.size()+" covered="+known+" unknown="+(entries.size()-known)+" pending="+pending.size()+" captureNs="+spent+" overruns="+overruns+" captured="+captured+" reused="+reused;}
+    public String profilingReport(){long known=entries.values().stream().filter(e->e.page!=null).count();return String.format(java.util.Locale.ROOT,
+            "coverage=%d/%d; pending=%d; capture=%.3f ms; captured/reused=%d/%d",known,entries.size(),pending.size(),spent/1e6,captured,reused)+(overruns==0?"":"; overruns="+overruns);}
 }

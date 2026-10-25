@@ -4,6 +4,18 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class GpuBudgetLedgerTest {
+    @Test void disabledAccountingReusesScopesAndRetainsTheLastCapture() {
+        var ledger=new GpuBudgetLedger();ledger.begin(1);
+        try(var scope=ledger.prepare()){GpuBudgetLedger.uploaded(64);}
+        ledger.gpu(2);var captured=ledger.snapshot();ledger.begin(2,false);
+        var first=ledger.prepare();var second=ledger.prepare();assertSame(first,second);
+        GpuBudgetLedger.uploaded(128);GpuBudgetLedger.downloaded(32);GpuBudgetLedger.queued(1,2,3,4);
+        ledger.gpu(10);ledger.queue(1,2,3,4);first.close();second.close();
+        assertEquals(captured,ledger.snapshot());
+        ledger.begin(3,true);assertEquals(0,ledger.snapshot().uploadedBytes());
+        try(var scope=ledger.prepare()){GpuBudgetLedger.uploaded(8);}
+        assertEquals(8,ledger.snapshot().uploadedBytes());
+    }
     @Test void fiveCategoriesAndNestedCpuAreCountedOnce() {
         var ledger=new GpuBudgetLedger();ledger.begin(17);
         try(var outer=ledger.prepare()) {
