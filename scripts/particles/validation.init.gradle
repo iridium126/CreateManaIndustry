@@ -35,12 +35,12 @@ allprojects {
                         }
                         java.util.HexFormat.of().formatHex(digest.digest())
                     }
-                    def gpuJava=fileTree('src/main/java') {
+                    def gpuJava=project.fileTree('src/main/java') {
                         include '**/client/gpu/**','**/client/particles/**','**/client/packages/**','**/client/render/scene/**','**/client/allaystorm/**','**/client/greattrick/**','**/client/hex/**','**/mixin/hexcasting/**'
                     }
-                    def gpuShaders=fileTree('src/main/resources/assets/createmanaindustry/shaders')
-                    def packageServerJava=fileTree('src/main/java') { include '**/content/logistics/gpupackage/**' }
-                    def validationSources=fileTree('scripts/particles') { include '**/*.java','**/*.gradle','**/*.py' }
+                    def gpuShaders=project.fileTree('src/main/resources/assets/createmanaindustry/shaders')
+                    def packageServerJava=project.fileTree('src/main/java') { include '**/content/logistics/gpupackage/**' }
+                    def validationSources=project.fileTree('scripts/particles') { include '**/*.java','**/*.gradle','**/*.py' }
                     def metadata = [task: name, arguments: args, properties: project.gradle.startParameter.projectProperties,
                             startedAt: java.time.Instant.now().toString(),
                             gpuJavaSha256: fingerprint(gpuJava), shaderSha256: fingerprint(gpuShaders),
@@ -80,6 +80,12 @@ allprojects {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/WorldEffectsGpuValidation.java'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateRiftSkyGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/RiftSkyGpuValidation.java'
             workingDir = project.projectDir
         }
         tasks.register('benchmarkParticlePipeline', JavaExec) {
@@ -539,6 +545,14 @@ allprojects {
                 !it.name.startsWith('glsl-transformer-')
             } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
             mainClass = 'scripts/particles/ShaderPackPatchValidation.java'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateNativeRiftPacks', JavaExec) {
+            dependsOn tasks.named('classes'), tasks.named('extractPackageIrisTransformer'), 'compilePackageIrisHarness'
+            classpath = files(layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter {
+                !it.name.startsWith('glsl-transformer-')
+            } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
+            mainClass = 'scripts/particles/NativeRiftPackValidation.java'
             workingDir = project.projectDir
         }
         tasks.register('validateHexSharedIrisGpu', JavaExec) {

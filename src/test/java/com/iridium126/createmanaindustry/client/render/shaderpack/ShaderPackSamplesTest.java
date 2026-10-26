@@ -28,6 +28,8 @@ class ShaderPackSamplesTest {
             for(var entry:inv.sources().entrySet()){Path dest=folder.resolve(entry.getKey());Files.createDirectories(dest.getParent());Files.writeString(dest,entry.getValue());}
             var unpacked=ShaderPackInventory.readPack(folder);assertEquals(inv.digest(),unpacked.digest());
             assertEquals(caps,PackCapabilities.detect(unpacked,ShaderPatchPlan.prepare(unpacked)));
+            var sky=NativeRiftPatchPlan.prepare(inv);assertTrue(sky.enabled(),file+": "+sky.reason());
+            assertEquals(sky.edits(),NativeRiftPatchPlan.prepare(other).edits());assertEquals(sky.edits(),NativeRiftPatchPlan.prepare(unpacked).edits());
             report.append('|').append(file.getFileName()).append('|').append(inv.digest()).append('|').append(plan.family()).append('|').append(plan.reason()).append('|').append(caps.worldPath()).append('|').append(inv.colorBuffers()).append("|\n");
             if(inv.sources().containsKey("include/lighting/lpv/light_colors.glsl"))assertTrue(plan.enabled(),file+": "+plan.reason());
             for(var edit:plan.edits().entrySet()){assertTrue(inv.sources().containsKey(edit.getKey()));assertNotEquals(inv.source(edit.getKey()),edit.getValue());}

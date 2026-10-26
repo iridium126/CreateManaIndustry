@@ -1,0 +1,15 @@
+{
+  "vertex": "createmanaindustry:allay_sky",
+  "fragment": "createmanaindustry:allay_sky",
+  "attributes": ["Position"],
+  "samplers": [],
+  "uniforms": [
+    {"name":"CmiView","type":"matrix4x4","count":16,"values":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},
+    {"name":"CmiProjection","type":"matrix4x4","count":16,"values":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},
+    {"name":"CmiInverseView","type":"matrix4x4","count":16,"values":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},
+    {"name":"CmiInverseProjection","type":"matrix4x4","count":16,"values":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},
+    {"name":"CmiSkyContext","type":"float","count":4,"values":[0.25,0,0,0]},
+    {"name":"CmiRift","type":"float","count":4,"values":[0,0,0,-1]},
+    {"name":"CmiSkyDimension","type":"int","count":1,"values":[0]}
+  ]
+}

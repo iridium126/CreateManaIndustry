@@ -355,6 +355,7 @@ public final class CMIParticleCommand {
     }
 
     private static int shaderPackStatus(CommandContext<CommandSourceStack> ctx) {
+        tell(ctx,com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.report());
         if (!CreateManaIndustry.VEIL_ACTIVE) { tell(ctx,"Veil unavailable; world effects disabled.");return 0; }
         tell(ctx,com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects.report());
         String integration = ClientConfig.shaderPackIntegration ? "auto" : "off";

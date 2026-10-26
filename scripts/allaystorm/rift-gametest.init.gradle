@@ -1,0 +1,37 @@
+// Isolated real-engine rift tests. Does not read or modify run/saves.
+gradle.projectsEvaluated {
+    def p = gradle.rootProject
+    p.apply from: p.file('scripts/testing/common.gradle')
+    def runName=p.findProperty('riftRun') ?: 'rift'
+    if (!(runName ==~ /[a-zA-Z0-9_-]+/)) throw new GradleException('Invalid isolated rift test directory name')
+    def suite = p.configureCmiGameTests(name: 'rift', sources: 'src/test/gametest/rift/java', runDir:"build/gametest/${runName}",
+            structure: 'rift_transport_test', size: 8, trickster: false)
+    def fixtureDir = p.layout.buildDirectory.dir('gametest/rift-preset')
+    suite.resources.srcDir(fixtureDir)
+    def preset = p.tasks.register('riftDimensionFixture') {
+        outputs.dir(fixtureDir)
+        doLast {
+            def target = new File(fixtureDir.get().asFile, 'data/minecraft/worldgen/world_preset/flat.json')
+            target.parentFile.mkdirs()
+            def generator = [type:'minecraft:flat', settings:[layers:[[height:1,block:'minecraft:bedrock']],biome:'minecraft:plains',structure_overrides:[]]]
+            target.text = groovy.json.JsonOutput.toJson([dimensions:['minecraft:overworld':[type:'minecraft:overworld',generator:generator], 'createmanaindustry:allay_dimension':[type:'createmanaindustry:allay',generator:generator]]])
+        }
+    }
+    p.tasks.named(suite.processResourcesTaskName).configure { dependsOn(preset) }
+    p.neoForge.runs.gameTestServer.logLevel = org.slf4j.event.Level.INFO
+    ['riftFault','riftFaultMode','riftFaultVehicle'].each { key -> if(p.hasProperty(key))p.neoForge.runs.gameTestServer.systemProperty("cmi.test.${key}",p.property(key).toString()) }
+    p.tasks.named('runGameTestServer').configure {
+        doLast {
+            def log = p.file("build/gametest/${runName}/logs/latest.log")
+            if (!log.isFile() || !(log.text =~ /All \d+ required tests passed/).find())
+                throw new GradleException('Rift GameTest server did not report successful tests; inspect build/gametest/rift/logs/latest.log')
+        }
+    }
+    if (p.hasProperty('riftSable')) {
+        ['sable-neoforge-1.21.1-2.0.6.jar', 'create-aeronautics-bundled-1.21.1-1.3.2.jar'].each { name ->
+            def jar = p.file('run/mods/' + name)
+            if (!jar.isFile()) throw new GradleException('Missing installed transport sample: ' + name)
+            p.dependencies.add('localRuntime', p.files(jar))
+        }
+    }
+}

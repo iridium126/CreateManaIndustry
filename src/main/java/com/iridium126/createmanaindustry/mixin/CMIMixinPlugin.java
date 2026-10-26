@@ -54,6 +54,8 @@ public class CMIMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if(mixinClassName.contains(".allaystorm.create."))return isSupportedVersion("create","6.0.10");
+        if(mixinClassName.contains(".allaystorm.sable."))return isSupportedVersion("sable","2.0.6");
         if (mixinClassName.contains(".packages.sable."))
             return isSupportedVersion("sable", "2.0.5");
         if (mixinClassName.contains(".packages."))

@@ -19,6 +19,7 @@ public final class ShaderPackSession {
     private final Path root;
     private final ShaderPackInventory inventory;
     private final ShaderPatchPlan patch;
+    private final NativeRiftPatchPlan rift;
     private final PackCapabilities capabilities;
     private ShaderPackOptions options;
     private Object pipeline;
@@ -30,9 +31,13 @@ public final class ShaderPackSession {
     private boolean nativeReady;
     private float nativeGamma=1;
     private String nativeReason="active programs not checked";
+    private boolean riftReady;
+    private String riftReason="effective sky programs not checked";
     private ShaderPackSession(Path root,ShaderPackInventory inventory,boolean bypass) {
         this.root=root;this.inventory=inventory;
         patch=bypass?ShaderPatchPlan.disabled("unmodified retry"):ShaderPatchPlan.prepare(inventory);
+        var combined=new TreeMap<>(inventory.sources());combined.putAll(patch.edits());
+        rift=bypass?NativeRiftPatchPlan.disabled("unmodified retry"):NativeRiftPatchPlan.prepare(ShaderPackInventory.of(combined));
         capabilities=PackCapabilities.detect(inventory,patch);
     }
     private static ShaderPackSession empty(){return new ShaderPackSession(null,ShaderPackInventory.of(Map.of()),true);}
@@ -52,6 +57,25 @@ public final class ShaderPackSession {
     public long revision(){return generation*1_000_003L+revision;}
     public ShaderPackInventory inventory(){return inventory;}
     public ShaderPatchPlan patch(){return patch;}
+    public NativeRiftPatchPlan rift(){return rift;}
+    public boolean riftReady(){return rift.enabled()&&riftReady;}
+    public String riftReason(){return rift.enabled()?riftReason:rift.reason();}
+    public void verifyRiftPrograms(net.irisshaders.iris.shaderpack.programs.ProgramSet programs) {
+        riftReady=false;
+        if(!rift.enabled()){riftReason=rift.reason();return;}
+        for(var requirement:rift.programs()) {
+            var sources=programs.getComposite(net.irisshaders.iris.shaderpack.loading.ProgramArrayId.valueOf(requirement.array()));
+            var source=requirement.index()<sources.length?sources[requirement.index()]:null;
+            if(source==null||!source.isValid()) {
+                if(!requirement.required())continue;
+                riftReason="required sky "+requirement.array()+requirement.index()+" disabled/unavailable";return;
+            }
+            if(!source.getFragmentSource().orElse("").contains(requirement.marker())) {
+                riftReason="active "+requirement.array()+requirement.index()+" lacks rift contract "+requirement.marker();return;
+            }
+        }
+        riftReady=true;riftReason="native "+rift.family()+" sky/celestial/cloud programs confirmed";
+    }
     public PackCapabilities capabilities(){return capabilities;}
     public ShaderPackOptions options(){return options;}
     public void observe(Object pipeline,int width,int height) {
@@ -76,7 +100,8 @@ public final class ShaderPackSession {
     public String nativeReason(){return nativeReason;}
     public String transform(Path path,String original) {
         if(root==null||!path.getFileSystem().equals(root.getFileSystem())||!path.normalize().startsWith(root.normalize()))return original;
-        return patch.transform(root.relativize(path).toString(),original);
+        String relative=root.relativize(path).toString();
+        return rift.transform(relative,patch.transform(relative,original));
     }
     /** Copies maps before validation. A rejection aborts this candidate, never publishes a partial map. */
     public BlockIdMapContext apply(BlockIdMapContext original) {
@@ -95,7 +120,7 @@ public final class ShaderPackSession {
     }
     private IllegalStateException reject(String reason){failure=reason;return new IllegalStateException("CMI shader patch rejected: "+reason);}
     public boolean requestUnmodifiedRetry() {
-        if(!patch.enabled()||retryUsed)return false;
+        if((!patch.enabled()&&!rift.enabled())||retryUsed)return false;
         retryUsed=true;bypassNext=true;retryCause="candidate source/material loading failed; see Iris log";return true;
     }
     public static void finishRetry(){bypassNext=false;retryCause="";}
@@ -103,12 +128,13 @@ public final class ShaderPackSession {
         return "session="+generation+"/"+revision+" source="+inventory.digest().substring(0,12)
                 +" family="+capabilities.family()+" world="+capabilities.worldPath()
                 +" colortex="+inventory.colorBuffers()+"\ncolored-light="+(mapsApplied?"candidate applied":patch.reason())
-                +"; "+capabilities.evidence()+(capabilities.nativeScene()==null?"":"; native-program="+nativeReason)+(failure.isEmpty()?"":"; failure="+failure);
+                +"; "+capabilities.evidence()+(capabilities.nativeScene()==null?"":"; native-program="+nativeReason)
+                +"\nrift-sky="+rift.family()+"; "+riftReason()+(failure.isEmpty()?"":"; failure="+failure);
     }
     /** Iris calls this factory later than source loading; compiled-program failure retries the original pack once. */
     public static void pipelineFailed() {
         ShaderPackSession failed=current;
-        if(!failed.patch.enabled()||failed.retryUsed)return;
+        if((!failed.patch.enabled()&&!failed.rift.enabled())||failed.retryUsed)return;
         failed.retryUsed=true;
         net.minecraft.client.Minecraft.getInstance().tell(()->{
             if(current!=failed||Iris.getCurrentPack().isEmpty())return;

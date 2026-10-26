@@ -233,6 +233,7 @@ public final class AllayStormManager {
         AllayStormData data = level.getData(CMIAttachments.STORM_DATA.get());
         Runtime rt = runtime(level);
         if (!data.active) {
+            com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftServer.stop(level);
             rt.columns.clear();rt.columnSnapshots.clear();rt.waves.clear();rt.schedule.reset();rt.waveReserved.clear();
             if (rt.tracks.values().stream().anyMatch(t -> t.active))
                 deactivateAll(level, rt);
@@ -241,6 +242,7 @@ public final class AllayStormManager {
         regen(level, data);
         chase(level, data);
         grow(level, rt, data);
+        com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftServer.tick(level,data,rt.chaseX,rt.chaseZ);
         var columnPlayers=new ArrayList<ServerPlayer>();
         var eligible=new ArrayList<ServerPlayer>();
         for(var entry:rt.tracks.entrySet())if(entry.getValue().active){
@@ -995,6 +997,7 @@ public final class AllayStormManager {
 
     /** Ends the storm: clients disperse and forget; persisted state clears. */
     public static void stopStorm(ServerLevel level) {
+        com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftServer.stop(level);
         AllayStormData data = level.getData(CMIAttachments.STORM_DATA.get());
         StormIdentity identity = StormIdentity.of(level, data);
         if (data.active || !data.dead.isEmpty() || !data.hp.isEmpty()) {
@@ -1056,6 +1059,7 @@ public final class AllayStormManager {
         dst.finalCount = src.finalCount;
         dst.growthPerSecond = src.growthPerSecond;
         dst.createdAtGameTime = src.createdAtGameTime;
+        dst.riftOpenedAt=src.riftOpenedAt;
         dst.dead.clear();
         dst.hp.clear();
     }

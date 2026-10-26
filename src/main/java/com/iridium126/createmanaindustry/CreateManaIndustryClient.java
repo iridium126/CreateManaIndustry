@@ -55,6 +55,9 @@ public class CreateManaIndustryClient {
         // Common payload handlers expose typed installation points instead of
         // linking client-only implementations into classes loaded on servers.
         ClientboundStormStatePacket.installClientHandler(AllayStormClientHandler::onState);
+        com.iridium126.createmanaindustry.content.allaystorm.rift.RiftSnapshotPacket.install(com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider::snapshot);
+        com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket.install(com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider::context);
+        com.iridium126.createmanaindustry.content.allaystorm.rift.RiftArrivalPacket.install(com.iridium126.createmanaindustry.client.allaystorm.rift.RiftArrivalClient::receive);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackagePacket.installClientHandler(
                 com.iridium126.createmanaindustry.client.packages.authority.PackageAuthorityClient::receive);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundPackageAckPacket.installClientHandler(
@@ -291,6 +294,8 @@ public class CreateManaIndustryClient {
      */
     @SubscribeEvent
     private static void onLevelUnload(LevelEvent.Unload event) {
+        if (event.getLevel() instanceof net.minecraft.client.multiplayer.ClientLevel) com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.clear();
+        if (event.getLevel() instanceof net.minecraft.client.multiplayer.ClientLevel) com.iridium126.createmanaindustry.client.allaystorm.rift.RiftArrivalClient.clear();
         // In single-player the integrated server posts Unload for its ServerLevels
         // on the same bus — only react to the CLIENT's own level so a server
         // dimension unload (e.g. the nether timing out) doesn't clear the

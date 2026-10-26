@@ -80,6 +80,8 @@ public final class AllayStormData {
     public double growthPerSecond;
     /** Raw creation gameTime — the age clock of the post-growth phase terms. */
     public long createdAtGameTime;
+    /** -1 unopened, 0 mature legacy state, otherwise first-open server tick. */
+    public long riftOpenedAt=-1;
 
     /** Dead members; alive population = count - cardinality. */
     public final BitSet dead = new BitSet();
@@ -182,6 +184,7 @@ public final class AllayStormData {
             d.growthPerSecond = tag.getDouble("GrowthRate");
             d.finalCount = Math.max(d.count, Math.min(MAX_COUNT, tag.getInt("FinalCount")));
             d.createdAtGameTime = tag.getLong("CreatedAt");
+            d.riftOpenedAt=tag.contains("RiftOpenedAt")?tag.getLong("RiftOpenedAt"):(d.count>=16384?0:-1);
             float savedRadius = tag.getFloat("CreationRadius");
             boolean validLaw = tag.contains("CreationRadius") && tag.contains("GrowthRate")
                     && tag.contains("FinalCount") && tag.contains("CreatedAt")
@@ -227,6 +230,7 @@ public final class AllayStormData {
             tag.putInt("FinalCount", d.finalCount);
             tag.putDouble("GrowthRate", d.growthPerSecond);
             tag.putLong("CreatedAt", d.createdAtGameTime);
+            tag.putLong("RiftOpenedAt",d.riftOpenedAt);
             if (!d.dead.isEmpty()) {
                 int[] idx = new int[d.dead.cardinality()];
                 int o = 0;
