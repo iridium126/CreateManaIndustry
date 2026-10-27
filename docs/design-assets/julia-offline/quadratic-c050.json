@@ -1,0 +1,21 @@
+{
+  "degree": 2,
+  "c": [
+    -0.5,
+    0,
+    0,
+    0
+  ],
+  "slice": "q0=(x,y,z,0)",
+  "iterations": 192,
+  "grid": [
+    2049,
+    1025
+  ],
+  "extent": 1.3660254037844386,
+  "segments": 4662,
+  "radially_disconnected_columns": 126,
+  "method": "all marching-square contours; ambiguous cells use independent center escape test",
+  "max_grid_spacing": 0.0013340091833833334,
+  "deformation": false
+}

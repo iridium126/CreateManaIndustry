@@ -24,31 +24,32 @@ public final class VanillaRiftRenderer {
     }
     @SubscribeEvent public static void stage(RenderLevelStageEvent event) {
         if (event.getStage()!=RenderLevelStageEvent.Stage.AFTER_SKY || nativePack() || AllaySkyProvider.dimension()) return;
-        draw(false, event.getModelViewMatrix(), event.getProjectionMatrix(), event.getCamera(), event.getPartialTick().getGameTimeDeltaPartialTick(false));
+        JuliaProjection.draw(event.getModelViewMatrix(),event.getProjectionMatrix(),event.getPartialTick().getGameTimeDeltaPartialTick(false));
+        VanillaSkyView.draw(event.getModelViewMatrix(),event.getProjectionMatrix(),event.getPartialTick().getGameTimeDeltaPartialTick(false));
+        draw(event.getModelViewMatrix(), event.getProjectionMatrix(), event.getCamera(), event.getPartialTick().getGameTimeDeltaPartialTick(false));
     }
-    public static boolean dimension(Matrix4f view, Matrix4f projection, Camera camera, float partial) {
-        if (nativePack() || !AllaySkyProvider.dimension()) return false;
-        return draw(true, view, projection, camera, partial);
-    }
-    private static boolean draw(boolean dimension, Matrix4f view, Matrix4f projection, Camera camera, float partial) {
+    private static boolean draw(Matrix4f view, Matrix4f projection, Camera camera, float partial) {
         var shader=AllaySkyShaders.shader;
         if (shader==null || Minecraft.getInstance().level==null) return false;
         var rift=AllaySkyProvider.rift(camera.getPosition(), partial);
-        if (!dimension && rift.w<0) return false;
+        if (rift.w<0) return false;
         var previous=RenderSystem.getShader();
         boolean depth=GL11.glIsEnabled(GL11.GL_DEPTH_TEST), mask=GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK), cull=GL11.glIsEnabled(GL11.GL_CULL_FACE), blend=GL11.glIsEnabled(GL11.GL_BLEND);
         int program=GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM), depthFunction=GL11.glGetInteger(GL11.GL_DEPTH_FUNC);
         try {
             RenderSystem.disableCull(); RenderSystem.disableBlend(); RenderSystem.depthMask(false);
-            if (dimension) RenderSystem.disableDepthTest(); else { RenderSystem.enableDepthTest(); RenderSystem.depthFunc(GL11.GL_LEQUAL); }
+            RenderSystem.enableDepthTest(); RenderSystem.depthFunc(GL11.GL_LEQUAL);
             RenderSystem.setShader(()->shader);
             shader.safeGetUniform("CmiView").set(view);
             shader.safeGetUniform("CmiProjection").set(projection);
             shader.safeGetUniform("CmiInverseView").set(new Matrix4f(view).invert());
             shader.safeGetUniform("CmiInverseProjection").set(new Matrix4f(projection).invert());
-            shader.safeGetUniform("CmiSkyDimension").set(dimension?1:0);
+            shader.safeGetUniform("CmiSkyDimension").set(0);
             shader.safeGetUniform("CmiRift").set(rift);
             shader.safeGetUniform("CmiSkyContext").set(AllaySkyProvider.sky(partial));
+            shader.setSampler("CmiJuliaHit",JuliaProjection.texture());
+            shader.setSampler("CmiTargetSky",VanillaSkyView.texture());
+            shader.safeGetUniform("CmiSkyViewProjection").set(JuliaProjection.viewProjection());
             BufferBuilder buffer=Tesselator.getInstance().begin(VertexFormat.Mode.QUADS,DefaultVertexFormat.POSITION);
             buffer.addVertex(-1,-1,0); buffer.addVertex(1,-1,0); buffer.addVertex(1,1,0); buffer.addVertex(-1,1,0);
             BufferUploader.drawWithShader(buffer.buildOrThrow());
@@ -66,6 +67,8 @@ public final class VanillaRiftRenderer {
         if (shader==null || nativePack()) return;
         shader.safeGetUniform("CmiInverseCameraView").set(new Matrix4f(cameraView).invert());
         shader.safeGetUniform("CmiRift").set(AllaySkyProvider.rift(Minecraft.getInstance().gameRenderer.getMainCamera().getPosition(),partial));
+        shader.setSampler("CmiJuliaHit",JuliaProjection.texture());
+        shader.safeGetUniform("CmiSkyViewProjection").set(JuliaProjection.viewProjection());
     }
     public static net.minecraft.client.renderer.ShaderInstance clouds() {
         if (nativePack() || AllaySkyShaders.clouds==null || AllaySkyProvider.rift()==null

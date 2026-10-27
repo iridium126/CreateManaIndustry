@@ -37,63 +37,30 @@ public final class AllayStormRuntime {
      * uniform, shader-pack merge hook) — hence "shared".
      */
     private float timeSec = 0f;
+    private float renderPartial;
 
     /** Advances the shared clock from the level's game time (render thread). */
     public void tickClock(long gameTime) {tickClock(gameTime,0);}
     public void tickClock(long gameTime,float partialTick) {
         this.gameTimeNow = gameTime;
+        this.renderPartial = partialTick;
         starfallGpu.clock(((gameTime&((1L<<21)-1))+Math.clamp(partialTick,0,1))/20.0);
         this.timeSec = com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnRules.renderSeconds(gameTime,partialTick);
-        refreshInterpolatedCenter();
-        refreshInterpolatedCount();
+        refreshVisualFrame();
     }
 
-    /**
-     * Re-evaluates the interpolated center for this frame: render time sits
-     * one interval behind the newest snapshot; before the first center packet
-     * (and after deactivation) it falls back to the raw packet anchor.
-     */
-    private void refreshInterpolatedCenter() {
-        if (!this.centerValid) {
-            this.center = this.stormAnchor;
-            return;
-        }
-        float renderT = this.timeSec - CENTER_LAG_SECONDS;
-        float span = this.centerCurrT - this.centerPrevT;
-        float alpha = span <= 0.0f ? 1.0f : (renderT - this.centerPrevT) / span;
-        alpha = Math.max(0.0f, Math.min(1.0f, alpha));
-        this.center = new Vec3(
-                this.centerPrevX + (this.centerCurrX - this.centerPrevX) * alpha,
-                this.centerPrevY + (this.centerCurrY - this.centerPrevY) * alpha,
-                this.centerPrevZ + (this.centerCurrZ - this.centerPrevZ) * alpha);
-    }
-
-    /**
-     * Re-evaluates the interpolated generated count for this frame — the same
-     * double-snapshot scheme as {@link #refreshInterpolatedCenter} (shared
-     * clock, one interval behind, clamped alpha): bit-identical on every
-     * client. The storm radius DERIVES from it every frame
-     * ({@code sqrt(count)/8}, unquantized) and ω follows ({@code SPIN_K/radius}),
-     * so the expanding typhoon shell grows smoothly instead of jumping at
-     * packet or quantization steps. Before the first center packet (and
-     * after ACTIVATE resets validity) the count falls back to the raw packet
-     * integer — an ACTIVATE-time derivation is already exact.
-     */
-    private void refreshInterpolatedCount() {
-        if (!this.countValid) {
-            this.countInterp = this.stormCount;
-        } else {
-            float renderT = this.timeSec - CENTER_LAG_SECONDS;
-            float span = this.countCurrT - this.countPrevT;
-            float alpha = span <= 0.0f ? 1.0f : (renderT - this.countPrevT) / span;
-            alpha = Math.max(0.0f, Math.min(1.0f, alpha));
-            this.countInterp = this.countPrev + (this.countCurr - this.countPrev) * alpha;
-        }
+    /** One canonical sample for both motion and growth, shared with the rift and native clouds. */
+    private void refreshVisualFrame() {
+        var timeline=com.iridium126.createmanaindustry.client.allaystorm.visual.StormCenterView.timeline();
+        var frame=timeline.contains(stormIdentity)?timeline.sample(gameTimeNow,renderPartial):null;
+        this.center=frame==null?stormAnchor:new Vec3(frame.x(),frame.y(),frame.z());
+        double generated=frame==null?stormCount:frame.count();
+        this.countInterp=(float)generated;
         if (this.stormActive) {
-            this.stormRadius = AllayStormData.vortexRadius(this.countInterp);
+            this.stormRadius = AllayStormData.vortexRadius(generated);
             var phases = com.iridium126.createmanaindustry.content.allaystorm.AllayStormPhases.evaluate(
                     stormCreationRadius, stormFinalRadius, stormGrowthPerSecond, stormCreatedAtGameTime,
-                    gameTimeNow, countInterp, stormSeed);
+                    gameTimeNow, generated, stormSeed);
             stormRotPhase = phases.rotation();
             stormConvPhase = phases.conveyor();
             stormConvRate = phases.conveyorRate();
@@ -120,44 +87,16 @@ public final class AllayStormRuntime {
 
     public void applyStormCenter(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormCenterPacket packet) {
         var level = Minecraft.getInstance().level;
+        if(level!=null&&level.dimension().location().equals(packet.dimension()))
+            com.iridium126.createmanaindustry.client.allaystorm.visual.StormCenterView.timeline().offer(packet.identity(),packet.sample());
         if (level == null || !centerClock.accept(packet.identity(), identity(), level.dimension().location(), packet.gameTime())) return;
         applyStormCenter(packet.x(), packet.y(), packet.z(), packet.velX(), packet.velZ(), packet.count(), packet.gameTime());
     }
 
-    private void applyStormCenter(float x, float y, float z, float velX, float velZ,
+    private void applyStormCenter(double x, double y, double z, float velX, float velZ,
             int count, long gameTime) {
         if (!this.stormActive)
             return;
-        float t = clockSeconds(gameTime);
-        if (!this.centerValid) {
-            this.centerPrevX = x;
-            this.centerPrevY = y;
-            this.centerPrevZ = z;
-            this.centerPrevT = t;
-        } else if (this.centerCurrT != t) {
-            this.centerPrevX = this.centerCurrX;
-            this.centerPrevY = this.centerCurrY;
-            this.centerPrevZ = this.centerCurrZ;
-            this.centerPrevT = this.centerCurrT;
-        }
-        this.centerCurrX = x;
-        this.centerCurrY = y;
-        this.centerCurrZ = z;
-        this.centerCurrT = t;
-        this.centerValid = true;
-
-        // count snapshot (same double-buffer scheme as the center above)
-        if (!this.countValid) {
-            this.countPrev = count;
-            this.countPrevT = t;
-        } else if (this.countCurrT != t) {
-            this.countPrev = this.countCurr;
-            this.countPrevT = this.countCurrT;
-        }
-        this.countCurr = count;
-        this.countCurrT = t;
-        this.countValid = true;
-
         // growth delta: the server's generated population advanced — the new
         // indices join the spawn backlog (members cannot be removed by this
         // stream; only ACTIVATE/STOP reshape the population)
@@ -203,36 +142,8 @@ public final class AllayStormRuntime {
      * under a second instead of teleporting; the wire's velocity fields are
      * carried for diagnostics and any future extrapolation path.
      */
-    private static final float CENTER_LAG_SECONDS = AllayStormManager.CENTER_INTERVAL_TICKS / 20.0f;
-    private float centerPrevX;
-    private float centerPrevY;
-    private float centerPrevZ;
-    private float centerCurrX;
-    private float centerCurrY;
-    private float centerCurrZ;
-    private float centerPrevT;
-    private float centerCurrT;
-    private boolean centerValid = false;
-    /** Interpolated center, refreshed every {@link #tickClock}; all consumers read this. */
     private Vec3 center = Vec3.ZERO;
-
-    // ---- continuous generated-count interpolation (growth channel) ----------
-    /**
-     * The generated population arrives as center-packet integers at 1 Hz; the
-     * vortex radius/omega derive from it CONTINUOUSLY through the same
-     * double-snapshot scheme as the chased center (shared-clock alpha, so
-     * every client computes bit-identical values — no per-client divergence,
-     * no packet-step or 0.5-quantization jumps in the expanding shell). The
-     * raw integer {@link #stormCount} stays the spawn-backlog authority; this
-     * interpolated float feeds only the geometry derivation.
-     */
-    private float countPrev;
-    private float countCurr;
-    private float countPrevT;
-    private float countCurrT;
-    private boolean countValid = false;
-    /** Interpolated generated count, refreshed every {@link #tickClock}. */
-    private float countInterp = 0f;
+    private float countInterp;
 
     private double stormRadius = 8.0;
 
@@ -377,9 +288,7 @@ public final class AllayStormRuntime {
                 // the immediate center packet on the server's activation path
                 // seeds the interpolation; until then consumers read the raw
                 // (block-quantized) anchor
-                this.centerValid = false;
                 this.center = anchor;
-                this.countValid = false; // new generation: the count restarts from the packet
                 this.stormSeed = seed & AllayStormSpec.SEED_MASK_CLIENT;
                 // the FROZEN growth law rides the state packet (the phase
                 // integrals' constants — identical on every client); the
@@ -436,8 +345,6 @@ public final class AllayStormRuntime {
                 this.pendingStormSpawns = 0;
                 this.stormHeaderWritten = false;
                 this.stormDead.clear();
-                this.centerValid = false;
-                this.countValid = false;
                 this.stormRotPhase = 0f;
                 this.stormConvPhase = 0f;
                 this.stormConvRate = 0f;
@@ -493,9 +400,7 @@ public final class AllayStormRuntime {
         this.stormCount = 0;
         this.stormAnalyticUpTo = 0;
         StormFeedback.INSTANCE.reset();
-        this.centerValid = false;
         this.center = Vec3.ZERO;
-        this.countValid = false;
         this.countInterp = 0f;
         this.stormRotPhase = 0f;
         this.stormConvPhase = 0f;

@@ -11,7 +11,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import java.util.function.Consumer;
 
 /**
- * Continuous storm-center snapshot, server → clients (~24 bytes), broadcast
+ * Continuous storm-center snapshot, server → clients, broadcast
  * every {@code AllayStormManager.CENTER_INTERVAL_TICKS} (20 ticks) and once
  * immediately on activation. The chased center integrates as doubles
  * server-side at {@code AllayStormManager.CHASE_SPEED}; clients lerp the last
@@ -37,8 +37,10 @@ import java.util.function.Consumer;
  */
 public record ClientboundStormCenterPacket(
         net.minecraft.resources.ResourceLocation dimension, long epoch,
-        float x, float y, float z, float velX, float velZ,
+        double x, double y, double z, float velX, float velZ,
         int count, long gameTime) implements CustomPacketPayload {
+
+    public com.iridium126.createmanaindustry.content.allaystorm.StormCenterSample sample() { return new com.iridium126.createmanaindustry.content.allaystorm.StormCenterSample(x,y,z,count,gameTime); }
 
     public com.iridium126.createmanaindustry.content.allaystorm.StormIdentity identity() {
         return new com.iridium126.createmanaindustry.content.allaystorm.StormIdentity(dimension, epoch);
@@ -56,9 +58,9 @@ public record ClientboundStormCenterPacket(
     private static void encode(RegistryFriendlyByteBuf buffer, ClientboundStormCenterPacket p) {
         buffer.writeResourceLocation(p.dimension);
         buffer.writeLong(p.epoch);
-        buffer.writeFloat(p.x);
-        buffer.writeFloat(p.y);
-        buffer.writeFloat(p.z);
+        buffer.writeDouble(p.x);
+        buffer.writeDouble(p.y);
+        buffer.writeDouble(p.z);
         buffer.writeFloat(p.velX);
         buffer.writeFloat(p.velZ);
         ByteBufCodecs.VAR_INT.encode(buffer, p.count);
@@ -68,9 +70,9 @@ public record ClientboundStormCenterPacket(
     private static ClientboundStormCenterPacket decode(RegistryFriendlyByteBuf buffer) {
         var dimension = buffer.readResourceLocation();
         long epoch = buffer.readLong();
-        float x = buffer.readFloat();
-        float y = buffer.readFloat();
-        float z = buffer.readFloat();
+        double x = buffer.readDouble();
+        double y = buffer.readDouble();
+        double z = buffer.readDouble();
         float velX = buffer.readFloat();
         float velZ = buffer.readFloat();
         int count = ByteBufCodecs.VAR_INT.decode(buffer);

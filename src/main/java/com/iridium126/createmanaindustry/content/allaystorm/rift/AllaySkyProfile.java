@@ -12,7 +12,7 @@ public final class AllaySkyProfile extends SavedData {
     private AllaySkyProfile(CompoundTag tag){seed=tag.getLong("VisualSeed");}
     public static AllaySkyContext context(ServerLevel level){
         var profile=level.getDataStorage().computeIfAbsent(new Factory<>(AllaySkyProfile::new,(tag,registries)->new AllaySkyProfile(tag)),"cmi_allay_sky");
-        return new AllaySkyContext(profile.seed,level.getDayTime(),level.getGameTime(),level.getRainLevel(1),level.getThunderLevel(1),1,level.getGameRules().getBoolean(net.minecraft.world.level.GameRules.RULE_DAYLIGHT));
+        return new AllaySkyContext(profile.seed,level.getDayTime(),level.getGameTime(),level.getRainLevel(1),level.getThunderLevel(1),2,level.getGameRules().getBoolean(net.minecraft.world.level.GameRules.RULE_DAYLIGHT),level.getDayTimeFraction(),level.getDayTimePerTick());
     }
     @Override public CompoundTag save(CompoundTag tag,HolderLookup.Provider registries){tag.putLong("VisualSeed",seed);return tag;}
 }

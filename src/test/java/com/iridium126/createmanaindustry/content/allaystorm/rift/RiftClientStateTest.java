@@ -8,7 +8,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class RiftClientStateTest {
     StormRiftSnapshot snapshot(long epoch,long sequence,int state) {
-        return new StormRiftSnapshot(new StormIdentity(ResourceLocation.withDefaultNamespace("overworld"),epoch),sequence,30_000_000.125,-29_999_000.25,384,16384,10,100,state,AllaySkyContext.EMPTY);
+        var sample=new com.iridium126.createmanaindustry.content.allaystorm.StormCenterSample(30_000_000.125,128,-29_999_000.25,16384,100);
+        return new StormRiftSnapshot(new StormIdentity(ResourceLocation.withDefaultNamespace("overworld"),epoch),sequence,sample,sample,384,10,state,AllaySkyContext.EMPTY,StormVisualDefinition.EMPTY);
     }
     @Test void stopTombstoneRejectsLateUpdatesAndResubscriptionRequiresNewSequence() {
         var state=new RiftClientState();assertTrue(state.accept(snapshot(1,3,StormRiftSnapshot.OPEN)));

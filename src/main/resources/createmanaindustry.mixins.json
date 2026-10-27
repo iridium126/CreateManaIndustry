@@ -4,6 +4,7 @@
   "plugin": "com.iridium126.createmanaindustry.mixin.CMIMixinPlugin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "allaystorm.AllayLevelTimeMixin",
     "allaystorm.RiftDimensionTravelMixin",
     "allaystorm.RiftExternalTravelMixin",
     "allaystorm.RiftDismountMixin",
@@ -148,6 +149,10 @@
     "allvr.AllvrEntityMixin"
   ],
   "client": [
+    "allaystorm.AllayScopedSkyTimeMixin",
+    "allaystorm.AllayClientTimeMixin",
+    "allaystorm.AllayTimePacketMixin",
+    "iris.AllayWorldTimeMixin",
     "allaystorm.AllayDimensionSkyMixin",
     "allaystorm.RiftCloudShaderMixin",
     "packages.ContraptionCollisionMixin",
@@ -198,6 +203,13 @@
     "basin.TrainTrapdoorBlockSkipRenderingMixin",
     "iris.MixinProgramSamplers",
     "iris.RiftPipelineMixin",
+    "iris.JuliaSamplerMixin",
+    "iris.NativeSkySourceAccess",
+    "iris.NativeSkyPipelineAccess",
+    "iris.NativeSkySamplerScopeMixin",
+    "iris.NativeSkyImageScopeMixin",
+    "iris.NativeSkyShaderMapMixin",
+    "iris.StormCloudProgramMixin",
     "iris.RiftCommonUniformsMixin",
     "iris.RiftDimensionProgramsMixin",
     "irisveil.MixinIrisShadowRenderer",

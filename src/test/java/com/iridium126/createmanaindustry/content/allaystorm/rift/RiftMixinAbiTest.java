@@ -41,4 +41,17 @@ class RiftMixinAbiTest {
         var uniforms=read("net/irisshaders/iris/uniforms/CommonUniforms");assertEquals(1,uniforms.methods.stream().filter(m->m.name.equals("addNonDynamicUniforms")&&m.desc.equals("(Lnet/irisshaders/iris/gl/uniform/UniformHolder;Lnet/irisshaders/iris/shaderpack/IdMap;Lnet/irisshaders/iris/shaderpack/properties/PackDirectives;Lnet/irisshaders/iris/uniforms/FrameUpdateNotifier;)V")).count());
         var pack=read("net/irisshaders/iris/shaderpack/ShaderPack");assertEquals(1,pack.methods.stream().filter(m->m.name.equals("getProgramSet")&&m.desc.equals("(Lnet/irisshaders/iris/shaderpack/materialmap/NamespacedId;)Lnet/irisshaders/iris/shaderpack/programs/ProgramSet;")).count());
     }
+    @Test void stageSevenTimeAndNativeViewTargetsMatchInstalledBinaries()throws Exception {
+        var server=read("net/minecraft/server/MinecraftServer");
+        var create=server.methods.stream().filter(m->m.name.equals("createLevels")).findFirst().orElseThrow();
+        assertEquals(2,Arrays.stream(create.instructions.toArray()).filter(i->i instanceof TypeInsnNode t&&t.getOpcode()==org.objectweb.asm.Opcodes.NEW&&t.desc.equals("net/minecraft/server/level/ServerLevel")).count());
+        var client=read("net/minecraft/client/multiplayer/ClientLevel");
+        assertTrue(client.fields.stream().anyMatch(f->f.name.equals("clientLevelData")&&f.desc.equals("Lnet/minecraft/client/multiplayer/ClientLevel$ClientLevelData;")));
+        var source=read("net/irisshaders/iris/shaderpack/programs/ProgramSource");
+        assertTrue(source.methods.stream().anyMatch(m->m.name.equals("<init>")&&m.desc.equals("(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lnet/irisshaders/iris/shaderpack/properties/ProgramDirectives;Lnet/irisshaders/iris/shaderpack/programs/ProgramSet;)V")));
+        var pipeline=read("net/irisshaders/iris/pipeline/IrisRenderingPipeline");
+        for(String field:new String[]{"renderTargets","customTextureManager","shadowTargetsSupplier","customImages","shaderStorageBufferHolder","flippedAfterPrepare"})assertTrue(pipeline.fields.stream().anyMatch(f->f.name.equals(field)),field);
+        for(String method:new String[]{"beginTranslucents","destroy"})assertTrue(pipeline.methods.stream().anyMatch(m->m.name.equals(method)&&m.desc.equals("()V")),method);
+        var builder=read("net/irisshaders/iris/gl/program/ProgramBuilder");assertTrue(builder.methods.stream().anyMatch(m->m.name.equals("build")&&m.desc.equals("()Lnet/irisshaders/iris/gl/program/Program;")));
+    }
 }

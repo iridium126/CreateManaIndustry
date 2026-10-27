@@ -14,7 +14,9 @@ class RiftPayloadTest {
     RegistryFriendlyByteBuf buffer() { return new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY,net.neoforged.neoforge.network.connection.ConnectionType.OTHER); }
     @Test void summaryPreservesDoubleCenterIdentityOpeningClockAndTargetContext() {
         var context=new AllaySkyContext(8912,6000,300,.2f,.3f,1,false);
-        var snapshot=new StormRiftSnapshot(new StormIdentity(ResourceLocation.withDefaultNamespace("overworld"),814),21,29_000_000.125,-27_000_000.375,384,16384,22,88,StormRiftSnapshot.OPEN,context);
+        var before=new com.iridium126.createmanaindustry.content.allaystorm.StormCenterSample(29_000_000.125,177.25,-27_000_000.375,16384,68);
+        var current=new com.iridium126.createmanaindustry.content.allaystorm.StormCenterSample(29_000_001.125,177.25,-27_000_000.375,16390,88);
+        var snapshot=new StormRiftSnapshot(new StormIdentity(ResourceLocation.withDefaultNamespace("overworld"),814),21,before,current,384,22,StormRiftSnapshot.OPEN,context,StormVisualDefinition.EMPTY);
         var b=buffer();try {
             RiftSnapshotPacket.STREAM_CODEC.encode(b,new RiftSnapshotPacket(snapshot));
             assertEquals(snapshot,RiftSnapshotPacket.STREAM_CODEC.decode(b).snapshot());assertFalse(b.isReadable());

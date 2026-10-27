@@ -24,11 +24,16 @@ import java.util.UUID;
 public final class StormRiftServer {
     private static final Map<ServerLevel, Subscription> LEVELS = new HashMap<>();
     private static final Map<ServerLevel, Long> SEQUENCES = new HashMap<>();
+    private static final Map<ServerLevel, com.iridium126.createmanaindustry.content.allaystorm.StormCenterTimeline> CENTERS=new HashMap<>();
+    public static void centerSample(ServerLevel level,com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormCenterPacket packet) {
+        CENTERS.computeIfAbsent(level,k->new com.iridium126.createmanaindustry.content.allaystorm.StormCenterTimeline()).offer(packet.identity(),packet.sample());
+    }
     private static final Set<UUID> SKY_RECIPIENTS = new HashSet<>();
     private static final class Subscription {
         final ServerLevel source;
         StormRiftSnapshot snapshot;
         long sequence;
+        boolean targetAvailable;
         final HashSet<UUID> recipients = new HashSet<>();
         Subscription(ServerLevel source) { this.source=source; }
     }
@@ -47,12 +52,20 @@ public final class StormRiftServer {
         if (data.count >= RiftRules.OPEN_COUNT && data.riftOpenedAt < 0) data.riftOpenedAt = source.getGameTime();
         int state = data.count < RiftRules.OPEN_COUNT ? StormRiftSnapshot.GROWING
                 : target == null ? StormRiftSnapshot.UNAVAILABLE : StormRiftSnapshot.OPEN;
-        boolean changed = subscription.snapshot == null || subscription.snapshot.state() != state;
-        boolean update = changed || source.getGameTime() % 10 == 0;
+        boolean changed = subscription.snapshot == null || subscription.snapshot.state() != state || subscription.targetAvailable != (target != null);
         // Sample the target world's clock and weather, never the source world's sky state.
-        if (update) subscription.snapshot = new StormRiftSnapshot(identity, sequence(subscription), x, z,
-                source.getMaxBuildHeight() + 64.0, data.count, data.riftOpenedAt, source.getGameTime(), state,
-                target == null ? AllaySkyContext.EMPTY : AllaySkyProfile.context(target));
+        var centers=CENTERS.get(source);
+        if(centers==null||!centers.contains(identity)) {
+            centerSample(source,new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormCenterPacket(
+                    identity.dimension(),identity.epoch(),x,com.iridium126.createmanaindustry.infrastructure.config.ServerConfig.stormChaseY,z,0,0,data.count,source.getGameTime()));
+            centers=CENTERS.get(source);
+        }
+        // One periodic source: delivery follows the canonical center stream, not a second timer.
+        boolean update=changed||subscription.snapshot.tick()!=centers.current().tick();
+        if (update) subscription.snapshot = new StormRiftSnapshot(identity, sequence(subscription),centers.previous(),centers.current(),
+                source.getMaxBuildHeight() + 64.0,data.riftOpenedAt,state,
+                target == null ? AllaySkyContext.EMPTY : AllaySkyProfile.context(target),StormVisualDefinition.of(data));
+        subscription.targetAvailable = target != null;
         var present = new HashSet<UUID>();
         for (var player : source.players()) {
             UUID id = player.getUUID();
@@ -72,12 +85,12 @@ public final class StormRiftServer {
     }
 
     private static void next(Subscription subscription) {
-        var old = subscription.snapshot;
-        subscription.snapshot = new StormRiftSnapshot(old.identity(), sequence(subscription), old.x(), old.z(), old.planeY(), old.count(), old.openedAt(), old.tick(), old.state(), old.sky());
+        subscription.snapshot = subscription.snapshot.resequence(sequence(subscription));
     }
     private static long sequence(Subscription subscription) { return subscription.sequence=SEQUENCES.merge(subscription.source,1L,Long::sum); }
 
     public static void stop(ServerLevel level) {
+        CENTERS.remove(level);
         Subscription old = LEVELS.remove(level);
         if (old == null || old.snapshot == null) return;
         var removal = new RiftSnapshotPacket(old.snapshot.removal(sequence(old)));
@@ -100,5 +113,5 @@ public final class StormRiftServer {
         }
         SKY_RECIPIENTS.clear(); SKY_RECIPIENTS.addAll(present);
     }
-    @SubscribeEvent public static void stopped(ServerStoppedEvent event) { LEVELS.clear(); SEQUENCES.clear(); SKY_RECIPIENTS.clear(); }
+    @SubscribeEvent public static void stopped(ServerStoppedEvent event) { LEVELS.clear(); SEQUENCES.clear(); CENTERS.clear(); SKY_RECIPIENTS.clear(); }
 }

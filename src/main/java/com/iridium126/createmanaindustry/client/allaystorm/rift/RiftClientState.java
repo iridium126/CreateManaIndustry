@@ -11,7 +11,8 @@ public final class RiftClientState {
     private long sequence = -1;
     private final Set<StormIdentity> retired = new HashSet<>();
     public boolean accept(StormRiftSnapshot snapshot) {
-        if (!Double.isFinite(snapshot.x()) || !Double.isFinite(snapshot.z()) || !Double.isFinite(snapshot.planeY())
+        if (!snapshot.previous().valid() || !snapshot.current().valid() || snapshot.previous().tick()>snapshot.current().tick()
+                || !Double.isFinite(snapshot.x()) || !Double.isFinite(snapshot.z()) || !Double.isFinite(snapshot.planeY())
                 || snapshot.sequence() < 0 || snapshot.state() < 0 || snapshot.state() > StormRiftSnapshot.UNAVAILABLE) return false;
         if (retired.contains(snapshot.identity())) return false;
         if (current != null && current.identity().equals(snapshot.identity()) && snapshot.sequence() <= sequence) return false;

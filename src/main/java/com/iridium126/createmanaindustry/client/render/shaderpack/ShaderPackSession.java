@@ -33,6 +33,8 @@ public final class ShaderPackSession {
     private String nativeReason="active programs not checked";
     private boolean riftReady;
     private String riftReason="effective sky programs not checked";
+    private int cloudPrograms;
+    public void linkedCloudProgram(){cloudPrograms++;}
     private ShaderPackSession(Path root,ShaderPackInventory inventory,boolean bypass) {
         this.root=root;this.inventory=inventory;
         patch=bypass?ShaderPatchPlan.disabled("unmodified retry"):ShaderPatchPlan.prepare(inventory);
@@ -129,7 +131,10 @@ public final class ShaderPackSession {
                 +" family="+capabilities.family()+" world="+capabilities.worldPath()
                 +" colortex="+inventory.colorBuffers()+"\ncolored-light="+(mapsApplied?"candidate applied":patch.reason())
                 +"; "+capabilities.evidence()+(capabilities.nativeScene()==null?"":"; native-program="+nativeReason)
-                +"\nrift-sky="+rift.family()+"; "+riftReason()+(failure.isEmpty()?"":"; failure="+failure);
+                +"\nrift-sky="+rift.family()+"; "+riftReason()+(failure.isEmpty()?"":"; failure="+failure)
+                +"\ntarget-sky="+(net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable() instanceof RiftIrisPipeline p?p.cmi$targetSkyReport():"no active Iris pipeline")
+                +"\ntarget-cloud=native pack definitions/options in isolated target sky; no replacement cloud layer"
+                +"\nstorm-cloud="+(cloudPrograms>0?"native linked programs="+cloudPrograms:"no active native cloud uniforms; clouds may be disabled")+"; visibility follows effective pack cloud options; height=pack native; phase=integrated x0.1; radius=clamp(8R,96,384)";
     }
     /** Iris calls this factory later than source loading; compiled-program failure retries the original pack once. */
     public static void pipelineFailed() {

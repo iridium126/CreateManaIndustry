@@ -177,6 +177,7 @@ public final class AllayStormManager {
         double chaseVX;
         double chaseVZ;
         int centerTimer;
+        ClientboundStormCenterPacket publishedCenter;
         /** Fractional member accumulator of the growth clock (rate/20 per tick). */
         double growthAcc;
         final Map<UUID, Track> tracks = new HashMap<>();
@@ -552,20 +553,23 @@ public final class AllayStormManager {
             rt.chaseX += vx / 20.0;
             rt.chaseZ += vz / 20.0;
         }
-        if (++rt.centerTimer >= CENTER_INTERVAL_TICKS) {
+        if (++rt.centerTimer >= CENTER_INTERVAL_TICKS || rt.publishedCenter == null || !rt.publishedCenter.identity().equals(StormIdentity.of(level, data))) {
             rt.centerTimer = 0;
-            sendCenter(level, rt);
+            sendCenter(level, rt, true);
         }
     }
 
     /** Broadcasts the continuous center + chase velocity + growth state to every active client. */
-    private static void sendCenter(ServerLevel level, Runtime rt) {
+    private static void sendCenter(ServerLevel level, Runtime rt, boolean sample) {
         AllayStormData data = rt.level.getData(CMIAttachments.STORM_DATA.get());
-        ClientboundStormCenterPacket packet = new ClientboundStormCenterPacket(
+        if (sample || rt.publishedCenter == null || !rt.publishedCenter.identity().equals(StormIdentity.of(level, data)))
+            rt.publishedCenter = new ClientboundStormCenterPacket(
                 level.dimension().location(), StormIdentity.of(level, data).epoch(),
-                (float) rt.chaseX, ServerConfig.stormChaseY, (float) rt.chaseZ,
+                rt.chaseX, ServerConfig.stormChaseY, rt.chaseZ,
                 (float) rt.chaseVX, (float) rt.chaseVZ, data.count,
                 rt.level.getGameTime());
+        ClientboundStormCenterPacket packet = rt.publishedCenter;
+        com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftServer.centerSample(level,packet);
         for (var entry : rt.tracks.entrySet()) {
             if (!entry.getValue().active)
                 continue;
@@ -658,7 +662,8 @@ public final class AllayStormManager {
         // seed the joining client's center stream immediately — without this
         // its interpolation would sit at the (block-quantized) ACTIVATE anchor
         // for up to one interval while the typhoon drifts on
-        sendCenter(level, rt);
+        // Reuse the canonical sample: joining after grow() must not publish another count at the same tick.
+        sendCenter(level, rt, false);
         for(Wave w:rt.waves){ServerPlayer target=level.getServer().getPlayerList().getPlayer(w.target);if(target!=null||w.kind==StormAttack.DOME||StormAttack.regional(w.kind)&&w.locked){PacketDistributor.sendToPlayer(player,wavePacket(w,AllayStarfall.START,true,target==null?-1:target.getId()));PacketDistributor.sendToPlayer(player,new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(level.dimension().location(),w.epoch,w.id,w.completed.toLongArray()));}}
     }
 

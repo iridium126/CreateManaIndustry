@@ -15,6 +15,7 @@ public final class AllaySkyShaders {
     static ShaderInstance clouds;
     private AllaySkyShaders() {}
     @SubscribeEvent public static void register(RegisterShadersEvent event) throws IOException {
+        JuliaProjection.reload(event.getResourceProvider());
         com.iridium126.createmanaindustry.client.render.shaderpack.RiftShaderSources.reload(event.getResourceProvider());
         event.registerShader(new ShaderInstance(event.getResourceProvider(), CreateManaIndustry.modLoc("allay_sky"), DefaultVertexFormat.POSITION), loaded -> shader = loaded);
         event.registerShader(new ShaderInstance(event.getResourceProvider(), CreateManaIndustry.modLoc("allay_clouds"), DefaultVertexFormat.POSITION_TEX_COLOR_NORMAL), loaded -> clouds = loaded);

@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.content.allaystorm;
 
 /** Frozen-law phase evaluation, shared by the runtime and persistence regression tests. */
-public record AllayStormPhases(float rotation, float conveyor, float conveyorRate, float omega) {
+public record AllayStormPhases(float rotation, float conveyor, float conveyorRate, float omega, float cloudRotation) {
     public static AllayStormPhases evaluate(float r0, float finalRadius, float growth, long created,
             long now, double count, int seed) {
         float rf = Math.max(finalRadius, .5f), radius = AllayStormData.vortexRadius(count);
@@ -13,6 +13,6 @@ public record AllayStormPhases(float rotation, float conveyor, float conveyorRat
         if((seed&1)!=0&&rotation!=0)rotation=-rotation;
         return new AllayStormPhases((float)(rotation % (2 * Math.PI)), 64 * grown / g + post / (2 * rf),
                 (radius < rf ? 1 / (2 * radius) : 0) + (post > 0 ? 1 / (2 * rf) : 0),
-                AllayStormData.vortexOmega(radius, seed));
+                AllayStormData.vortexOmega(radius, seed),(float)(rotation*.1));
     }
 }

@@ -1,5 +1,6 @@
 #version 150
 #moj_import <createmanaindustry:allay_sky.glsl>
+uniform sampler2D CmiTargetSky;
 uniform int CmiSkyDimension;
 uniform vec4 CmiSkyContext;
 uniform vec4 CmiRift;
@@ -17,5 +18,6 @@ void main() {
         if (clip.w <= 0.0) discard;
         gl_FragDepth = clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);
     }
-    fragColor = vec4(pow(cmiAllaySky(normalize(cmiRay), CmiSkyContext), vec3(1.0/2.2)), 1.0);
+    vec4 clip=CmiSkyViewProjection*vec4(cmiRay,0.0);
+    fragColor=vec4(texture(CmiTargetSky,clip.xy/clip.w*.5+.5).rgb,1.0);
 }

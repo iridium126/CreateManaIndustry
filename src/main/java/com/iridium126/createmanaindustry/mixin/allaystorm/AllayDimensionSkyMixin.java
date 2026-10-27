@@ -13,11 +13,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(LevelRenderer.class)
 public abstract class AllayDimensionSkyMixin {
-    @Inject(method="renderSky",at=@At("HEAD"),cancellable=true)
-    private void cmi$sky(Matrix4f view,Matrix4f projection,float partial,Camera camera,boolean foggy,Runnable fog,CallbackInfo ci) {
-        if (foggy || camera.getFluidInCamera()!=net.minecraft.world.level.material.FogType.NONE) return;
-        if (VanillaRiftRenderer.dimension(view,projection,camera,partial)) { fog.run(); ci.cancel(); }
-    }
     @Inject(method="renderClouds",at=@At("HEAD"),cancellable=true)
     private void cmi$clouds(PoseStack pose,Matrix4f view,Matrix4f projection,float partial,double x,double y,double z,CallbackInfo ci) {
         VanillaRiftRenderer.prepareClouds(view,partial);

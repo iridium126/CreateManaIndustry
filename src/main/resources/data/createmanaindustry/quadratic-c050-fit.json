@@ -1,0 +1,8 @@
+{
+  "revision": 2,
+  "projection": "object-centred weak perspective; physical perspective within 128 blocks",
+  "front_inscribed_radius": 0.7065225475591042,
+  "entrance_scale": 90.70519059540862,
+  "inscribed_radius": 0.7069937186510479,
+  "method": "original quadratic front silhouette inscribed radius; no perspective lookup or shape deformation"
+}

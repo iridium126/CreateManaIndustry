@@ -49,6 +49,7 @@ public final class NativeRiftPatchPlan {
                 case "sundial-lite" -> sundial(builder);
                 default -> throw new IllegalStateException(family);
             }
+            stormClouds(builder,family);
             return new NativeRiftPatchPlan(family,"complete sky/celestial/cloud source preflight",inventory.sources(),builder.edits,builder.programs);
         } catch(RuntimeException error) {
             return new NativeRiftPatchPlan(family,"disabled: "+error.getMessage(),Map.of(),Map.of(),List.of());
@@ -60,13 +61,20 @@ public final class NativeRiftPatchPlan {
         void edit(String path,UnaryOperator<String> transform){String input=edits.getOrDefault(path,inventory.source(path));ShaderPatchPlan.require(!input.isEmpty(),"missing "+path);edits.put(path,transform.apply(input));}
         void main(String path,String array,int sampleIndex,String marker){
             edit(path,s->mainPrelude(s,marker));
+            register(path,array,marker,marker.contains("Main"));
+        }
+        void producer(String path,String array,String anchor) {
+            ShaderPatchPlan.require(inventory.containsCode(path,anchor),"missing native sky producer contract "+path);
+            register(path,array,"",false);
+        }
+        void register(String path,String array,String marker,boolean required) {
             String prefix=array.toLowerCase(Locale.ROOT);
             List<String> entries=inventory.sources().keySet().stream().filter(p->p.matches("world0/"+prefix+"\\d*\\.fsh")).toList();
             if(entries.isEmpty())entries=inventory.sources().keySet().stream().filter(p->p.matches(prefix+"\\d*\\.fsh")).toList();
             int found=0;
             for(String entry:entries)if(includes(entry,path,new HashSet<>())) {
                 String name=entry.substring(entry.lastIndexOf('/')+1,entry.length()-4).substring(prefix.length());
-                programs.add(new Program(array,name.isEmpty()?0:Integer.parseInt(name),marker,marker.contains("Main")));found++;
+                programs.add(new Program(array,name.isEmpty()?0:Integer.parseInt(name),marker,required));found++;
             }
             ShaderPatchPlan.require(found>0,"no actual "+array+" entry includes "+path);
         }
@@ -80,7 +88,89 @@ public final class NativeRiftPatchPlan {
             }
             return false;
         }
-        void helper(String path,String function){edit(path,s->before(s,"\\b(?:vec[234]|float|void)\\s+"+function+"\\s*\\(",RiftShaderSources.source()+"\n"));}
+        void helper(String path,String function){edit(path,s->before(s,"\\b(?:vec[234]|float|bool|void)\\s+"+function+"\\s*\\(",RiftShaderSources.source()+"\n"));}
+        void wrap(String path,String name,String body) {
+            edit(path,source->{
+                String code=ShaderPackInventory.code(source);
+                var match=ShaderPatchPlan.unique(code,"\\b(?:float|bool|vec[234])\\s+"+name+"\\s*\\([^)]*\\)\\s*\\{");
+                int open=match.end()-1,end=open,depth=1;
+                while(++end<code.length()&&depth>0){char c=code.charAt(end);if(c=='{')depth++;else if(c=='}')depth--;}
+                ShaderPatchPlan.require(depth==0,"unbalanced cloud function "+name);end--;
+                String header=source.substring(match.start(),open+1);
+                String stock=header.replaceFirst("\\b"+name+"\\b","cmiStock_"+name);
+                return source.substring(0,match.start())+RiftShaderSources.source()+"\n"+stock+source.substring(open+1,end+1)
+                        +"\n"+header+"\n"+body+"\n}\n"+source.substring(end+1);
+            });
+        }
+    }
+
+    private static void stormClouds(Builder b,String family) {
+        switch(family) {
+            case "complementary" -> {
+                String main="lib/atmospherics/clouds/mainClouds.glsl";b.helper(main,"GetClouds");
+                b.edit(main,s->after(s,"cameraPos\\s*\\+=\\s*cameraPosOffset\\s*;","cmiCloudCamera = cameraPos;\n"));
+                b.wrap("lib/atmospherics/clouds/unboundClouds.glsl","GetCloudNoise",
+                        "vec3 relative=tracePos-cmiCloudCamera;\nreturn cmiStock_GetCloudNoise(cmiStormCloudPosition(relative)+cmiCloudCamera,cloudAltitude,lTracePosXZ,cloudPlayerPosY)*cmiStormCloudDensity(relative.xz);");
+                String reimagined="lib/atmospherics/clouds/reimaginedClouds.glsl";
+                b.helper(reimagined,"GetCloudNoise");
+                b.edit(reimagined,s->after(s,"bool\\s+GetCloudNoise\\s*\\([^)]*\\)\\s*\\{","vec3 cmiPoint=tracePos-cmiCloudCamera;\ntracePos=cmiStormCloudPosition(cmiPoint)+cmiCloudCamera;\n"));
+                b.edit(reimagined,s->replace(s,"return\\s+noise\\s*>\\s*threshold\\s*\\*\\s*0\\.5\\s*\\+\\s*0\\.25\\s*;","return noise * cmiStormCloudDensity(cmiPoint.xz) > threshold * 0.5 + 0.25;"));
+            }
+            case "bsl" -> b.wrap("lib/atmospherics/clouds.glsl","CloudSample",
+                    "vec2 relative=coord*CLOUD_SCALE-cameraPosition.xz;\ncoord=(cmiStormCloudPosition(relative)+cameraPosition.xz)/CLOUD_SCALE;\nreturn cmiStock_CloudSample(coord,wind,cloudGradient,sunCoverage,dither)*cmiStormCloudDensity(relative);");
+            case "bliss" -> {
+                String path="lib/volumetricClouds.glsl";
+                b.wrap(path,"GetAltostratusDensity","vec2 relative=pos.xz-cameraPosition.xz;\npos.xz=cmiStormCloudPosition(relative)+cameraPosition.xz;\nreturn cmiStock_GetAltostratusDensity(pos)*cmiStormCloudDensity(relative);");
+                b.wrap(path,"GetCumulusDensity","vec2 relative=pos.xz-cameraPosition.xz;\npos.xz=cmiStormCloudPosition(relative)+cameraPosition.xz;\nreturn cmiStock_GetCumulusDensity(layer,pos,LoD,minHeight,maxHeight)*cmiStormCloudDensity(relative);");
+            }
+            case "solas" -> {
+                String path="lib/atmosphere/volumetricClouds.glsl";
+                b.edit(path,s->after(s,"vec2\\s+cloudCoord\\s*=\\s*rayPos\\.xz\\s*/\\s*scale\\s*;","cmiCloudUnitScale=scale;\n"));
+                for(String name:List.of("CloudSample","CloudSampleLowDetail"))b.wrap(path,name,
+                        "vec2 relative=coord*cmiCloudUnitScale-cameraPosition.xz;\ncoord=(cmiStormCloudPosition(relative)+cameraPosition.xz)/cmiCloudUnitScale;\nreturn cmiStock_"+name+"(coord,wind,sampleAltitude,thickness,amount,density)*cmiStormCloudDensity(relative);");
+                String planar=b.inventory.uniqueSuffix("planarClouds.glsl");
+                b.edit(planar,s->after(s,"vec3\\s+planeCoord\\s*=[^;]+;","vec2 cmiPoint=planeCoord.xz*1000.0;\n"));
+                b.edit(planar,s->after(s,"planeCoord\\s*\\*=\\s*2\\.0\\s*-\\s*distanceFactor\\s*;","planeCoord.xz+=(cmiStormCloudPosition(cmiPoint)-cmiPoint)*0.001*(2.0-distanceFactor);\n"));
+                b.edit(planar,s->after(s,"float\\s+noise\\s*=\\s*samplePlanarCloudNoise\\(coord\\)\\s*;","noise*=cmiStormCloudDensity(cmiPoint);\n"));
+            }
+            case "iteration" -> {
+                String path="Lib/IndividualFounctions/NUBIS.glsl";
+                b.wrap(path,"SetCloudPos","vec4 result=cmiStock_SetCloudPos(marchingPos,cloudAltitude,planetRadius,cloudScale,windDirection);\nvec2 relative=marchingPos.xz-cameraPosition.xz;\nresult.xz+=(cmiStormCloudPosition(relative)-relative)*cloudScale;\ncmiCloudDensityFactor=cmiStormCloudDensity(relative);\nreturn result;");
+                b.wrap(path,"SampleDensity","return cmiStock_SampleDensity(cloudPos,windDirection,sampleDetail)*(cmiStormCloudActive()?cmiCloudDensityFactor:1.0);");
+                String planar="Lib/IndividualFounctions/PlanarClouds.glsl";
+                for(String name:List.of("GetPlanarCloudsDensity","GetPlanarCloudsLightingDensity"))b.wrap(planar,name,
+                        "vec2 relative=position-cameraPosition.xz;\nposition=cmiStormCloudPosition(relative)+cameraPosition.xz;\nreturn cmiStock_"+name+"(position,windDirection)*cmiStormCloudDensity(relative);");
+            }
+            case "photon" -> {
+                b.edit("program/d1_clouds.fsh",s->mainStart(s,"cmiMainView=true;\n"));
+                for(String layer:List.of("cumulus","altocumulus","cumulus_congestus")) {
+                    String path="include/sky/clouds/"+layer+".glsl",name="clouds_"+layer+"_density";
+                    b.wrap(path,name,"vec2 relative=pos.xz/CLOUDS_SCALE;\npos.xz=cmiStormCloudPosition(relative)*CLOUDS_SCALE;\nreturn cmiStock_"+name+"(pos)*cmiStormCloudDensity(relative);");
+                }
+                b.wrap("include/sky/clouds/cirrus.glsl","clouds_cirrus_density","vec2 relative=coord/CLOUDS_SCALE;\ncoord=cmiStormCloudPosition(relative)*CLOUDS_SCALE;\nreturn cmiStock_clouds_cirrus_density(coord,altitude_fraction)*cmiStormCloudDensity(relative);");
+                b.wrap("include/sky/blocky_clouds.glsl","blocky_clouds_density","vec2 relative=world_pos.xz-cameraPosition.xz;\nworld_pos.xz=cmiStormCloudPosition(relative)+cameraPosition.xz;\nreturn cmiStock_blocky_clouds_density(world_pos,altitude_fraction,layer_offset)*cmiStormCloudDensity(relative);");
+            }
+            case "sildur" -> {
+                String path="deferred.fsh";
+                b.edit(path,s->after(s,"vec3\\s+intersection\\s*=\\s*tpos\\s*\\*\\s*\\(\\s*heightA[^;]+;","intersection.xz=cmiStormCloudPosition(intersection.xz);\n"));
+                b.edit(path,s->after(s,"float\\s+cl\\s*=\\s*max[^;]+;","cl*=cmiStormCloudDensity(intersection.xz);\n"));
+                b.edit(path,s->replace(s,"vec3\\s+samplePos\\s*=\\s*progress_view\\s*\\*\\s*0\\.175\\s*\\+\\s*frameTimeCounter\\s*\\*\\s*timeVec\\s*;","vec3 samplePos=(cmiStormCloudPosition(progress_view-cameraPosition)+cameraPosition)*0.175+frameTimeCounter*timeVec;"));
+                b.edit(path,s->after(s,"float\\s+cloud\\s*=\\s*\\(1\\.0\\s*-\\s*pow\\(0\\.4[^;]+;","cloud*=cmiStormCloudDensity((progress_view-cameraPosition).xz);\n"));
+            }
+            case "sundial-lite" -> {
+                String path="libs/Cloud.glsl";
+                b.helper(path,"blockyCloudDensity");
+                // Keep the native DDA geometry and cloud altitude. Warp only its periodic noise lookup.
+                b.edit(path,s->before(s,"vec4\\s+blockyCloud\\s*\\(","float cmiBlockyDensity(ivec2 tile,vec2 relative) {\nvec2 delta=(cmiStormCloudPosition(relative)-relative)*cloudNoiseScale;\nfloat noise=texelFetch(noisetex,ivec2(floor(vec2(tile)+delta))&63,0).z;\nreturn step(1.0-CLOUD_BLOCKY_AMOUNT,noise*cmiStormCloudDensity(relative));\n}\n"));
+                b.edit(path,s->replace(s,"blockyCloudDensity\\(sampleCloudTexel\\)","cmiBlockyDensity(sampleCloudTexel,cloudOffset+stepDir.xz*totalRayLength/cloudNoiseScale)"));
+                b.edit(path,s->after(s,"float\\s+shadowOpticalDepth\\s*=\\s*0\\.0\\s*;","float cmiShadowDistance=0.0;\n"));
+                b.edit(path,s->replace(s,"blockyCloudDensity\\(cloudTexel\\)(?=;\\s*shadowOpticalDepth)","cmiBlockyDensity(cloudTexel,cloudPos.xz/cloudNoiseScale-cameraPosition.xz-wind+stepDir.xz*cmiShadowDistance/cloudNoiseScale)"));
+                b.edit(path,s->after(s,"shadowOpticalDepth\\s*\\+=\\s*rayLength\\s*\\*\\s*step\\(0\\.5,\\s*sampleCloudDensity\\)\\s*;","cmiShadowDistance+=rayLength;\n"));
+                b.wrap(path,"realisticCloudDensity","vec2 origin=cameraPosition.xz+vec2(CLOUD_REALISTIC_OFFSET_X,CLOUD_REALISTIC_OFFSET_Z);\nvec2 relative=cloudPos.xz-origin;\ncloudPos.xz=cmiStormCloudPosition(relative)+origin;\nreturn cmiStock_realisticCloudDensity(cloudPos,wind,cloudDistance,octaves,weights)*cmiStormCloudDensity(relative);");
+                b.edit(path,s->after(s,"vec2\\s+cloudPos\\s*=\\s*worldPos\\.xz\\s*\\+\\s*worldDir\\.xz\\s*\\*\\s*intersection\\s*\\+\\s*cameraPosition\\.xz\\s*\\+\\s*wind\\s*;","vec2 cmiPoint=worldPos.xz+worldDir.xz*intersection;\ncloudPos=cmiStormCloudPosition(cmiPoint)+cameraPosition.xz+wind;\n"));
+                b.edit(path,s->after(s,"cloudDensity\\s*=\\s*clamp\\(cloudDensity\\s*\\+\\s*PLANE_CLOUD_AMOUNT[^;]+;","cloudDensity*=cmiStormCloudDensity(cmiPoint);\n"));
+            }
+        }
     }
     private static String mainPrelude(String source,String marker) {
         Matcher main=Pattern.compile("\\bvoid\\s+main\\s*\\(\\s*(?:void)?\\s*\\)\\s*\\{").matcher(ShaderPackInventory.code(source));
@@ -129,7 +219,6 @@ public final class NativeRiftPatchPlan {
         // The planar function gets its own check through its actual intersection, not an assumed height.
         String planar=b.inventory.uniqueSuffix("planarClouds.glsl");ShaderPatchPlan.require(planar!=null,"missing planar cloud source");
         b.helper(planar,"drawPlanarClouds");
-        b.edit(planar,s->after(s,"void\\s+drawPlanarClouds\\s*\\([^)]*\\)\\s*\\{","if (cmiMainView && CmiRiftEnabled > 0.5 && CmiSkyDimension != 0) return;\n"));
         b.edit(planar,s->before(s,"float\\s+coordLength\\s*=\\s*length\\s*\\(\\s*planeCoord\\.xz\\s*\\)\\s*;","if (!cmiCloudVisible(planeCoord * 1000.0)) return;\n"));
     }
     private static void sildur(Builder b) {
@@ -151,6 +240,8 @@ public final class NativeRiftPatchPlan {
         b.edit(planar,s->after(s,"float\\s+intersection\\s*=\\s*RaySphereIntersection[^;]+;","if (!cmiCloudVisible(worldDir * intersection)) return;\n"));
     }
     private static void bliss(Builder b) {
+        b.producer("dimensions/deferred.fsh","Deferred","calculateAtmosphere");
+        b.producer("dimensions/composite3.fsh","Composite","cloudAlpha");
         String main="dimensions/composite1.fsh";b.main(main,"Composite",1,"cmiRiftMain_bliss");
         b.edit(main,s->before(s,"#if\\s+defined\\s+OVERWORLD_SHADER\\s*&&\\s*defined\\s+VOLUMETRIC_CLOUDS\\s*&&\\s*!defined\\s+CLOUDS_INTERSECT_TERRAIN(?=\\s*vec4\\s+Clouds)","Background = cmiNativeSky(Background, feetPlayerPos_normalized, 1.0, 1.0);\n"));
         // This statement is outside the conditional cloud option, preserving a visible window with clouds disabled.
@@ -170,18 +261,19 @@ public final class NativeRiftPatchPlan {
         b.edit(main,s->mainStart(s,"cmiMainView = true;\n"));
         b.edit(main,s->after(s,"solidColor\\.rgb\\s*=\\s*singleAtmosphereScattering[^;]+;","solidColor.rgb = cmiNativeSky(solidColor.rgb, worldDir, 1.0, 1.0);\nif (cmiRayActive(worldDir)) backColor = solidColor.rgb;\n"));
         String clouds="libs/Cloud.glsl";b.helper(clouds,"sampleClouds");
-        b.edit(clouds,s->after(s,"vec4\\s+sampleClouds\\s*\\([^)]*\\)\\s*\\{","if (cmiMainView && CmiRiftEnabled > 0.5) {\n if (CmiSkyDimension != 0) { cloudDepth = -1.0; return vec4(baseColor, 0.0); }\n float cmiLimit = cmiRiftDistance(normalize(worldDir), CmiRift);\n if (cmiLimit > 0.0) backDepth = backDepth > 0.00001 ? min(backDepth, cmiLimit) : cmiLimit;\n}\n"));
+        b.edit(clouds,s->after(s,"vec4\\s+sampleClouds\\s*\\([^)]*\\)\\s*\\{","if (cmiMainView && CmiRiftEnabled > 0.5 && CmiSkyDimension == 0) {\n float cmiLimit = cmiRiftDistance(normalize(worldDir), CmiRift);\n if (cmiLimit > 0.0) backDepth = backDepth > 0.00001 ? min(backDepth, cmiLimit) : cmiLimit;\n}\n"));
         b.helper(clouds,"planeClouds");
         b.edit(clouds,s->after(s,"float\\s+intersection\\s*=[^;]*planeCloudHeight[^;]*;","if (!cmiCloudVisible(worldDir * intersection)) return vec4(0.0);\n"));
     }
     private static void photon(Builder b) {
+        b.producer("program/d0_sky_map.fsh","Deferred","draw_sky");
         String main="program/d4_deferred_shading.fsh";b.main(main,"Deferred",4,"cmiRiftMain_photon");
         b.edit(main,s->mainStart(s,"cmiMainView = true;\n"));
         b.edit(main,s->before(s,"#if\\s+defined\\s+WORLD_OVERWORLD\\s*&&\\s*defined\\s+BLOCKY_CLOUDS(?=\\s*fragment_color)","if (cmiRayActive(direction_world)) {\n fragment_color = cmiNativeSky(fragment_color, direction_world, 1.0, 1.0);\n #if defined WORLD_OVERWORLD\n fragment_color = fragment_color * clouds_and_aurora.w + clouds_and_aurora.xyz;\n #endif\n}\n"));
         b.edit(main,s->after(s,"vec3\\s+world_end_pos\\s*=\\s*position_world\\s*;","if (cmiRayActive(direction_world)) world_end_pos = world_start_pos + direction_world * cmiCloudLimit(direction_world, length(world_end_pos-world_start_pos));\n"));
         b.edit(main,s->{String code=ShaderPackInventory.code(s);Matcher m=Pattern.compile("(raymarch_blocky_clouds\\s*\\(\\s*world_start_pos\\s*,\\s*world_end_pos\\s*,\\s*)depth\\s*==\\s*1\\.0").matcher(code);var out=new StringBuilder(s);var ranges=new ArrayList<int[]>();while(m.find())ranges.add(new int[]{m.end(1),m.end()});ShaderPatchPlan.require(ranges.size()==2,"blocky cloud call structure");for(int i=ranges.size()-1;i>=0;i--)out.replace(ranges.get(i)[0],ranges.get(i)[1],"(depth == 1.0 && !cmiRayActive(direction_world))");return out.toString();});
         String cloud="program/d1_clouds.fsh";b.main(cloud,"Deferred",1,"cmiRiftClouds_photon");
-        b.edit(cloud,s->after(s,"float\\s+distance_to_terrain\\s*=[^;]+;","if (CmiRiftEnabled > 0.5) {\n if (CmiSkyDimension != 0) { clouds_data = vec2(1e6, 0.0); return; }\n float cmiLimit = cmiRiftDistance(normalize(ray_dir), CmiRift);\n if (cmiLimit > 0.0) distance_to_terrain = distance_to_terrain < 0.0 ? cmiLimit * CLOUDS_SCALE : min(distance_to_terrain, cmiLimit * CLOUDS_SCALE);\n}\n"));
+        b.edit(cloud,s->after(s,"float\\s+distance_to_terrain\\s*=[^;]+;","if (CmiRiftEnabled > 0.5 && CmiSkyDimension == 0) {\n float cmiLimit = cmiRiftDistance(normalize(ray_dir), CmiRift);\n if (cmiLimit > 0.0) distance_to_terrain = distance_to_terrain < 0.0 ? cmiLimit * CLOUDS_SCALE : min(distance_to_terrain, cmiLimit * CLOUDS_SCALE);\n}\n"));
         b.edit(cloud,s->before(s,"clouds\\.xyz\\s*\\+=\\s*draw_aurora","if (!cmiRayActive(ray_dir))\n"));
         String upscale="program/d2_clouds_upscaling.fsh";b.main(upscale,"Deferred",2,"cmiRiftHistory_photon");
         b.edit(upscale,s->after(s,"disocclusion\\s*=\\s*disocclusion\\s*\\|\\|\\s*world_age_changed\\s*;","disocclusion = disocclusion || CmiRiftReactive > 0.5 || cmiRayActive(mat3(gbufferModelViewInverse) * screen_to_view_space(vec3(uv, 1.0), false, false));\n"));

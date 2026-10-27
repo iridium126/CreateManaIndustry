@@ -1,0 +1,121 @@
+{
+  "reference_eye_y": 64,
+  "geometry": "boundary of the bounded-orbit set in the unmodified quaternion slice",
+  "quaternion_order": [
+    "real",
+    "i",
+    "j",
+    "k"
+  ],
+  "iteration": "q[n+1] = q[n]*q[n] + c",
+  "slice": "q[0] = (x,y,z,0)",
+  "surface_render": {
+    "resolution": [
+      1600,
+      1600
+    ],
+    "max_iterations": 128,
+    "max_ray_steps": 1100,
+    "epsilon": 0.00045,
+    "orthographic_half_height": 1.85,
+    "camera_positions": [
+      [
+        0,
+        0,
+        4
+      ],
+      [
+        2.2,
+        1.3,
+        3.1
+      ],
+      [
+        3.6,
+        0.8,
+        0.8
+      ]
+    ],
+    "target": [
+      0,
+      0,
+      0
+    ],
+    "camera_up_hint": [
+      0,
+      1,
+      0
+    ],
+    "camera_roll": 0
+  },
+  "allowed_display_operations": [
+    "lighting",
+    "uniform material color",
+    "orthographic camera",
+    "background framing",
+    "uniform image resizing"
+  ],
+  "not_used": [
+    "diamond envelope",
+    "CSG",
+    "coordinate folding",
+    "nonuniform scaling",
+    "displacement",
+    "center hole",
+    "AI image generation"
+  ],
+  "candidates": [
+    {
+      "id": "012",
+      "power": "2",
+      "c_real": "-0.449999988",
+      "c_i": "0.000000000",
+      "c_j": "0.000000000",
+      "c_k": "0.000000000",
+      "slice_w": "0.000000000",
+      "roll_radians": "0.000000000"
+    },
+    {
+      "id": "049",
+      "power": "2",
+      "c_real": "-0.349999994",
+      "c_i": "0.000000000",
+      "c_j": "0.000000000",
+      "c_k": "0.000000000",
+      "slice_w": "0.000000000",
+      "roll_radians": "0.000000000"
+    }
+  ],
+  "independent_silhouette_verification": [
+    {
+      "id": 12,
+      "c": -0.449999988,
+      "power": 2,
+      "slice_w": 0,
+      "cpu_iterations": 192,
+      "radial_samples": 4097,
+      "gpu_epsilon": 0.00035,
+      "silhouette_iou": 0.9972181906144171,
+      "max_column_edge_error_pixels": 5,
+      "p99_column_edge_error_pixels": 2.0,
+      "gpu_pixels": 165360,
+      "cpu_pixels": 164900,
+      "cpu_closed_form_escape_trap_radius": 0.3263532813133175
+    },
+    {
+      "id": 49,
+      "c": -0.349999994,
+      "power": 2,
+      "slice_w": 0,
+      "cpu_iterations": 192,
+      "radial_samples": 4097,
+      "gpu_epsilon": 0.00035,
+      "silhouette_iou": 0.9978540772532188,
+      "max_column_edge_error_pixels": 3,
+      "p99_column_edge_error_pixels": 2.0,
+      "gpu_pixels": 173352,
+      "cpu_pixels": 172980,
+      "cpu_closed_form_escape_trap_radius": 0.45035586259373694
+    }
+  ],
+  "rendering_limit": "finite-iteration/finite-epsilon approximation; microscopic surface features are not an exact infinite-set proof"
+}

@@ -1,0 +1,11 @@
+// Opt-in offline mathematical rendering. No game launch, assets or production shaders are changed.
+gradle.projectsEvaluated {
+    def p=gradle.rootProject
+    p.tasks.register('renderJuliaOffline', JavaExec) {
+        classpath=p.sourceSets.main.runtimeClasspath+p.configurations.compileClasspath
+        mainClass='scripts/art/JuliaOfflineRender.java'
+        workingDir=p.projectDir
+        if(p.hasProperty('juliaMode'))args p.property('juliaMode').toString()
+        jvmArgs '-Xmx2g'
+    }
+}

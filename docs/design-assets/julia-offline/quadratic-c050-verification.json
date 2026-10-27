@@ -1,0 +1,49 @@
+{
+  "degree": 2,
+  "c": [
+    -0.5,
+    0,
+    0,
+    0
+  ],
+  "slice": "q0=(x,y,z,0)",
+  "deformation": false,
+  "presentation": "coverage only; no material or thickness shading",
+  "offline_reference": {
+    "id": 51,
+    "c": -0.5,
+    "power": 2,
+    "slice_w": 0,
+    "cpu_iterations": 192,
+    "radial_samples": 4097,
+    "gpu_epsilon": 0.00035,
+    "silhouette_iou": 0.9970860003486837,
+    "max_column_edge_error_pixels": 5,
+    "p99_column_edge_error_pixels": 2.0,
+    "gpu_pixels": 160604,
+    "cpu_pixels": 160136,
+    "cpu_closed_form_escape_trap_radius": 0.2676812432386917
+  },
+  "runtime_boundary": {
+    "degree": 2,
+    "c": [
+      -0.5,
+      0,
+      0,
+      0
+    ],
+    "slice": "q0=(x,y,z,0)",
+    "iterations": 192,
+    "grid": [
+      2049,
+      1025
+    ],
+    "extent": 1.3660254037844386,
+    "segments": 4662,
+    "radially_disconnected_columns": 126,
+    "method": "all marching-square contours; ambiguous cells use independent center escape test",
+    "max_grid_spacing": 0.0013340091833833334,
+    "deformation": false
+  },
+  "runtime_gpu_vs_original_iou": 0.995669504453521
+}
