@@ -6,6 +6,23 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AllayStormPersistenceTest {
+    @Test void initialMatureStormIsOpenWithoutReloadAndKeepsItsFirstOpenTime(){
+        for(int count:new int[]{16383,16384,20000}){
+            var d=AllayStormData.create(BlockPos.ZERO,count,1234,17);
+            assertEquals(count>=16384?1234:-1,d.riftOpenedAt);
+            var restored=serializer.readAt(serializer.write(d,null),2000);
+            assertEquals(d.riftOpenedAt,restored.riftOpenedAt);
+        }
+    }
+    @Test void matureAndNoGrowthPhasesAdvanceInsideEachTick(){
+        for(float growth:new float[]{0,20}){
+            var a=AllayStormPhases.evaluate(16,16,growth,100,200,.1f,16384,18);
+            var b=AllayStormPhases.evaluate(16,16,growth,100,200,.9f,16384,18);
+            assertTrue(b.rotation()>a.rotation());assertTrue(b.conveyor()>a.conveyor());
+            assertEquals(AllayStormPhases.evaluate(16,16,growth,100,200,16384,18),
+                    AllayStormPhases.evaluate(16,16,growth,100,200,0,16384,18));
+        }
+    }
     private final AllayStormData.Serializer serializer = new AllayStormData.Serializer();
     private AllayStormData storm(int count, double rate) {
         var d = new AllayStormData();

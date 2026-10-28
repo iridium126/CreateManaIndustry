@@ -74,9 +74,11 @@ public final class RiftSkyGpuValidation {
             vector(sky,"CmiRift",0,10,0,-1);clear();GL11.glDrawArrays(GL11.GL_TRIANGLE_STRIP,0,4);check(covered(pixels())==0,"STOP removes sky window");
             GL20.glUseProgram(clouds);matrix(clouds,"ModelViewMat",up);matrix(clouds,"ProjMat",projection);matrix(clouds,"CmiInverseCameraView",new Matrix4f(up).invert());matrix(clouds,"CmiSkyViewProjection",new Matrix4f(projection).mul(up));vector(clouds,"CmiRift",0,10,0,2);vector(clouds,"ColorModulator",1,1,1,1);GL20.glUniform1f(GL20.glGetUniformLocation(clouds,"FogStart"),10000);GL20.glUniform1f(GL20.glGetUniformLocation(clouds,"FogEnd"),20000);GL20.glUniform1i(GL20.glGetUniformLocation(clouds,"FogShape"),0);GL20.glUniform1i(GL20.glGetUniformLocation(clouds,"Sampler0"),0);GL20.glUniform1i(GL20.glGetUniformLocation(clouds,"CmiJuliaHit"),1);
             GL13.glActiveTexture(GL13.GL_TEXTURE0);GL11.glBindTexture(GL11.GL_TEXTURE_2D,white);GL20.glDisableVertexAttribArray(1);GL20.glVertexAttrib2f(1,.5f,.5f);GL20.glDisableVertexAttribArray(2);GL20.glVertexAttrib4f(2,1,1,1,1);
-            for(float height:new float[]{5,20}){
+            for(int targetCloud:new int[]{0,1})for(float height:new float[]{5,20}){
+                GL20.glUniform1i(GL20.glGetUniformLocation(clouds,"CmiCloudTarget"),targetCloud);
                 geometry(vbo,new float[]{-30,height,-30,30,height,-30,-30,height,30,30,height,30});clear();GL11.glDrawArrays(GL11.GL_TRIANGLE_STRIP,0,4);scene=pixels();
-                check(height==5?scene.get(middle+1)>.9:scene.get(middle+1)<.1,height==5?"foreground vanilla cloud retained":"source cloud behind Julia excluded");
+                boolean visible=targetCloud==0?height==5:height==20;
+                check(visible?scene.get(middle+1)>.9:scene.get(middle+1)<.1,"source/target cloud distance ownership "+targetCloud+"/"+height);
             }
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"no GL errors");
         }finally{GL20.glDeleteProgram(sky);GL20.glDeleteProgram(clouds);GL15.glDeleteBuffers(vbo);GL30.glDeleteVertexArrays(vao);GL30.glDeleteFramebuffers(fbo);for(int t:new int[]{color,depth,white,target,hit})GL11.glDeleteTextures(t);}
@@ -96,22 +98,34 @@ public final class RiftSkyGpuValidation {
         GL30.glGetBooleani_v(GL11.GL_COLOR_WRITEMASK,1,stateMask);check(stateMask.get(0)==0&&stateMask.get(1)!=0&&stateMask.get(2)==0,"per-attachment color mask restored");
         check(GL30.glGetIntegeri(GL14.GL_BLEND_SRC_RGB,1)==GL11.GL_ONE&&GL30.glGetIntegeri(GL14.GL_BLEND_DST_ALPHA,1)==GL11.GL_ONE,"per-attachment blend function restored");
         com.mojang.blaze3d.systems.RenderSystem.disableScissor();com.mojang.blaze3d.systems.RenderSystem.disableBlend();GL11.glColorMask(true,true,true,true);
-        String fragment="#version 330 core\nuniform vec3 Point;uniform bool MainView;out vec4 Color;\n"+resource("include/allay_sky.glsl")+resource("include/native_rift.glsl")+"\nvoid main(){cmiMainView=MainView;vec3 point=cmiStormCloudPosition(Point);Color=vec4(point.x,point.y,point.z,cmiStormCloudDensity(Point.xz));}";
+        String fragment="#version 330 core\nuniform vec3 Point;uniform bool MainView;uniform bool OpacityTest;uniform vec2 Opacity;out vec4 Color;\n"+resource("include/allay_sky.glsl")+resource("include/native_rift.glsl")+"\nvoid main(){cmiMainView=MainView;Color=vec4(Point,OpacityTest?cmiCloudOpacity(Opacity.x,Opacity.y):cmiStormCloudDensity(Point));}";
         int v=compile(GL20.GL_VERTEX_SHADER,"#version 330 core\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.-1.,0.,1.);}"),f=compile(GL20.GL_FRAGMENT_SHADER,fragment),p=GL20.glCreateProgram();
         GL20.glAttachShader(p,v);GL20.glAttachShader(p,f);GL20.glLinkProgram(p);check(GL20.glGetProgrami(p,GL20.GL_LINK_STATUS)!=0,GL20.glGetProgramInfoLog(p));GL20.glDeleteShader(v);GL20.glDeleteShader(f);
         int fb=GL30.glGenFramebuffers(),tex=texture(GL30.GL_RGBA32F,1,1,GL11.GL_RGBA),vao=GL30.glGenVertexArrays();
         try {
             GL30.glBindVertexArray(vao);GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,fb);GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL11.GL_TEXTURE_2D,tex,0);GL11.glDrawBuffer(GL30.GL_COLOR_ATTACHMENT0);
             GL11.glViewport(0,0,1,1);GL11.glDisable(GL11.GL_DEPTH_TEST);GL11.glDisable(GL11.GL_BLEND);GL20.glUseProgram(p);
-            vector(p,"CmiStormCenter",0,128,0,16);GL20.glUniform2f(GL20.glGetUniformLocation(p,"CmiStormCloud"),2,1);GL20.glUniform1i(GL20.glGetUniformLocation(p,"CmiSkyDimension"),0);GL20.glUniform1i(GL20.glGetUniformLocation(p,"MainView"),1);
-            for(float[] sample:new float[][]{{0,0,.3f},{64,0,1.6f},{200,0,1f}}){
-                GL20.glUniform3f(GL20.glGetUniformLocation(p,"Point"),sample[0],499,sample[1]);GL11.glDrawArrays(GL11.GL_TRIANGLES,0,3);var value=BufferUtils.createFloatBuffer(4);GL11.glReadPixels(0,0,1,1,GL11.GL_RGBA,GL11.GL_FLOAT,value);
-                check(Math.abs(value.get(3)-sample[2])<.0001,"native cloud density field");check(value.get(1)==499,"native cloud height unchanged");
-                if(sample[0]==200)check(value.get(0)==200&&value.get(2)==0,"outside disk remains native");
+            vector(p,"CmiStormCenter",0,128,0,16);vector(p,"CmiStormCloud",.5f,320,1,0);
+            GL20.glUniform1i(GL20.glGetUniformLocation(p,"CmiSkyDimension"),0);GL20.glUniform1i(GL20.glGetUniformLocation(p,"MainView"),1);
+            var oracle=new com.iridium126.createmanaindustry.client.allaystorm.rift.StormCloudFrame(0,192,0,16,.5,384,1,"GPU oracle");
+            for(float height:new float[]{0,64,200,304,312,319.99f,320,500})for(int i=0;i<=250;i++){
+                GL20.glUniform3f(GL20.glGetUniformLocation(p,"Point"),i,height,0);GL11.glDrawArrays(GL11.GL_TRIANGLES,0,3);
+                var value=BufferUtils.createFloatBuffer(4);GL11.glReadPixels(0,0,1,1,GL11.GL_RGBA,GL11.GL_FLOAT,value);
+                check(Math.abs(value.get(3)-oracle.density(i,height+64,0))<.00001,"CPU/GPU cloud density and height gate agree");
+                check(value.get(0)==i&&value.get(1)==height&&value.get(2)==0,"all stock sample coordinates unchanged");
             }
             for(int target:new int[]{0,1}){
-                GL20.glUniform1i(GL20.glGetUniformLocation(p,"CmiSkyDimension"),target);GL20.glUniform1i(GL20.glGetUniformLocation(p,"MainView"),target);GL20.glUniform3f(GL20.glGetUniformLocation(p,"Point"),64,499,0);GL11.glDrawArrays(GL11.GL_TRIANGLES,0,3);
-                var value=BufferUtils.createFloatBuffer(4);GL11.glReadPixels(0,0,1,1,GL11.GL_RGBA,GL11.GL_FLOAT,value);check(value.get(0)==64&&value.get(2)==0&&value.get(3)==1,"target/cloud caches do not acquire storm warp");
+                GL20.glUniform1i(GL20.glGetUniformLocation(p,"CmiSkyDimension"),target);GL20.glUniform1i(GL20.glGetUniformLocation(p,"MainView"),target);
+                GL20.glUniform3f(GL20.glGetUniformLocation(p,"Point"),130,200,0);GL11.glDrawArrays(GL11.GL_TRIANGLES,0,3);
+                var value=BufferUtils.createFloatBuffer(4);GL11.glReadPixels(0,0,1,1,GL11.GL_RGBA,GL11.GL_FLOAT,value);
+                check(value.get(0)==130&&value.get(1)==200&&value.get(3)==1,"target and environment cache queries remain stock");
+            }
+            GL20.glUniform1i(GL20.glGetUniformLocation(p,"OpacityTest"),1);
+            for(float opacity:new float[]{0,.5f,1})for(float multiplier:new float[]{0,.5f,1,2}){
+                GL20.glUniform2f(GL20.glGetUniformLocation(p,"Opacity"),opacity,multiplier);GL11.glDrawArrays(GL11.GL_TRIANGLES,0,3);
+                var value=BufferUtils.createFloatBuffer(4);GL11.glReadPixels(0,0,1,1,GL11.GL_RGBA,GL11.GL_FLOAT,value);
+                double expected=multiplier==0?0:1-Math.pow(1-opacity,multiplier);
+                check(Float.isFinite(value.get(3))&&Math.abs(value.get(3)-expected)<.00001,"encoded cloud opacity has no 0^0, negative light or overshoot");
             }
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"state/cloud field GL errors");
         }finally{GL20.glDeleteProgram(p);GL30.glDeleteFramebuffers(fb);GL30.glDeleteVertexArrays(vao);GL11.glDeleteTextures(tex);}

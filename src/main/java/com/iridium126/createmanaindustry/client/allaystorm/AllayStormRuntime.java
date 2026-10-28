@@ -60,7 +60,7 @@ public final class AllayStormRuntime {
             this.stormRadius = AllayStormData.vortexRadius(generated);
             var phases = com.iridium126.createmanaindustry.content.allaystorm.AllayStormPhases.evaluate(
                     stormCreationRadius, stormFinalRadius, stormGrowthPerSecond, stormCreatedAtGameTime,
-                    gameTimeNow, generated, stormSeed);
+                    gameTimeNow, renderPartial, generated, stormSeed);
             stormRotPhase = phases.rotation();
             stormConvPhase = phases.conveyor();
             stormConvRate = phases.conveyorRate();
@@ -87,7 +87,8 @@ public final class AllayStormRuntime {
 
     public void applyStormCenter(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormCenterPacket packet) {
         var level = Minecraft.getInstance().level;
-        if(level!=null&&level.dimension().location().equals(packet.dimension()))
+        if(level!=null&&level.dimension().location().equals(packet.dimension())
+                &&(packet.identity().equals(stormIdentity)||packet.identity().equals(com.iridium126.createmanaindustry.client.allaystorm.visual.StormCenterView.timeline().identity())))
             com.iridium126.createmanaindustry.client.allaystorm.visual.StormCenterView.timeline().offer(packet.identity(),packet.sample());
         if (level == null || !centerClock.accept(packet.identity(), identity(), level.dimension().location(), packet.gameTime())) return;
         applyStormCenter(packet.x(), packet.y(), packet.z(), packet.velX(), packet.velZ(), packet.count(), packet.gameTime());
@@ -252,7 +253,12 @@ public final class AllayStormRuntime {
      */
     public void applyStormState(ClientboundStormStatePacket p, net.minecraft.resources.ResourceLocation currentDimension) {
         if (!p.identity().acceptsLifecycle(p.action(), currentDimension, stormIdentity)) return;
-        if (p.action() == ClientboundStormStatePacket.ACTION_ACTIVATE) stormIdentity = p.identity();
+        if (p.action() == ClientboundStormStatePacket.ACTION_ACTIVATE) {
+            if(!com.iridium126.createmanaindustry.client.allaystorm.visual.StormCenterView.timeline().select(p.identity()))return;
+            stormIdentity = p.identity();
+        }
+        if(p.action()==ClientboundStormStatePacket.ACTION_STOP)
+            com.iridium126.createmanaindustry.client.allaystorm.visual.StormCenterView.timeline().retire(p.identity());
         applyStormState(p.action(), p.authority(), p.correctionHz(), Vec3.atLowerCornerOf(p.anchor()),
                 p.count(), p.stormSeed(), p.creationRadius(), p.finalRadius(), p.growthPerSecond(), p.createdAt(), p.deadBitmap());
     }

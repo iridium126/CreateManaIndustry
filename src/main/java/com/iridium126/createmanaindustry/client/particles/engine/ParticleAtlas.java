@@ -61,6 +61,9 @@ public final class ParticleAtlas {
     /** Whether to generate mipmaps and minify through them on this atlas. */
     private final boolean mipmap;
     private int textureId = -1;
+    private int width,height;
+    public int width(){return width;}
+    public int height(){return height;}
 
     private ParticleAtlas(String[] files, int cols, int rows, boolean mipmap) {
         this.files = files.clone();
@@ -165,6 +168,7 @@ public final class ParticleAtlas {
                 pixels.flip();
 
                 textureId = GL11.glGenTextures();
+                width=texW;height=texH;
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
                 GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
                 GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
@@ -213,6 +217,7 @@ public final class ParticleAtlas {
         if (textureId >= 0) {
             com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(textureId);
             textureId = -1;
+            width=height=0;
         }
     }
 }

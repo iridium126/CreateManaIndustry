@@ -118,6 +118,7 @@ public final class AllayStormData {
         d.count = Math.max(1, Math.min(MAX_COUNT, count));
         d.stormSeed = seed & SEED_MASK;
         d.createdAtGameTime = createdAtGameTime;
+        if(d.count>=com.iridium126.createmanaindustry.content.allaystorm.rift.RiftRules.OPEN_COUNT)d.riftOpenedAt=createdAtGameTime;
         d.growthPerSecond = Math.max(0.0, ServerConfig.stormGrowthPerSecond);
         d.finalCount = (int) Math.min(MAX_COUNT, Math.max(d.count, ServerConfig.stormMaxCount));
         d.creationRadius = vortexRadius(d.count);

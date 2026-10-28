@@ -15,9 +15,9 @@ public final class RiftClientState {
                 || !Double.isFinite(snapshot.x()) || !Double.isFinite(snapshot.z()) || !Double.isFinite(snapshot.planeY())
                 || snapshot.sequence() < 0 || snapshot.state() < 0 || snapshot.state() > StormRiftSnapshot.UNAVAILABLE) return false;
         if (retired.contains(snapshot.identity())) return false;
-        if (current != null && current.identity().equals(snapshot.identity()) && snapshot.sequence() <= sequence) return false;
+        if (snapshot.sequence() <= sequence) return false;
         if (current != null && !current.identity().equals(snapshot.identity())) {
-            retired.add(current.identity()); sequence = -1;
+            retired.add(current.identity());
         }
         current = snapshot; sequence = snapshot.sequence();
         return true;

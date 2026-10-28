@@ -4,6 +4,13 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class NativeSkySourcesTest {
+    @Test void targetCloudDistanceClipPreservesExtensionOrderAndOriginalOutputs(){
+        String source="#version 330 compatibility\n#extension GL_ARB_gpu_shader5 : enable\nlayout(location=0) out vec4 result;void main(){result=vec4(1);}";
+        String target=NativeSkySources.targetCloudFragment(source);
+        assertTrue(target.indexOf("#extension")<target.indexOf("uniform mat4"));
+        assertTrue(target.contains("result=vec4(1)"));assertTrue(target.contains("cmiTargetCloudStock();"));
+        assertTrue(target.contains("hit*hit*p.w*p.w"));
+    }
     @Test void targetVariantCannotSampleItselfOrWriteSourceImages() {
         String input="uniform sampler2D CmiTargetSky;\n"
                 +"bool cmiRayActive(vec3 direction) { if(direction.x>0.0){ return true; } return false; }\n"

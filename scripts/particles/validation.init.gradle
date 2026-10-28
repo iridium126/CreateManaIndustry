@@ -94,6 +94,18 @@ allprojects {
             mainClass = 'scripts/particles/RiftSkyGpuValidation.java'
             workingDir = project.projectDir
         }
+        tasks.register('validateVanillaRiftHighLevel', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/VanillaRiftHighLevelValidation.java'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateRiftReplayGpu', JavaExec) {
+            dependsOn tasks.named('classes'), 'compilePackageIrisHarness', 'extractPackageIrisTransformer'
+            classpath = files(layout.buildDirectory.dir('package-iris-validation/harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin + files(layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
+            mainClass = 'scripts/particles/RiftReplayGpuValidation.java'
+            workingDir = project.projectDir
+        }
         tasks.register('benchmarkParticlePipeline', JavaExec) {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
@@ -568,6 +580,14 @@ allprojects {
             } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
             mainClass = 'scripts/particles/HexSharedGpuValidation.java'
             args '--iris'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateModelMaterialGpu', JavaExec) {
+            dependsOn tasks.named('classes'), tasks.named('extractPackageIrisTransformer'), 'compilePackageIrisHarness'
+            classpath = files(layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter {
+                !it.name.startsWith('glsl-transformer-')
+            } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
+            mainClass = 'scripts/particles/ModelMaterialGpuValidation.java'
             workingDir = project.projectDir
         }
         tasks.register('validateModelShadowIrisGpu', JavaExec) {

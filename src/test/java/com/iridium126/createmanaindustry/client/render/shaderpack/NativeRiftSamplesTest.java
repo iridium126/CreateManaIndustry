@@ -18,6 +18,16 @@ class NativeRiftSamplesTest {
             report.append('|').append(sample.getFileName()).append('|').append(plan.family()).append('|').append(plan.reason()).append('|').append(plan.edits().keySet()).append("|\n");
             if(!plan.enabled())failures.add(sample.getFileName()+": "+plan.reason());
             else {
+                var skySources=new TreeMap<>(combined);skySources.putAll(plan.edits());
+                var density=StormCloudDensityPatchPlan.prepare(ShaderPackInventory.of(skySources),plan.family());
+                assertTrue(density.enabled(),sample+": "+density.reason());
+                for(var entry:density.edits().entrySet()){
+                    assertFalse(entry.getValue().contains("cmiStormCloudPosition"));
+                    var broken=new TreeMap<>(skySources);broken.remove(entry.getKey());
+                    var rejectedDensity=StormCloudDensityPatchPlan.prepare(ShaderPackInventory.of(broken),plan.family());
+                    assertFalse(rejectedDensity.enabled(),sample+" partial density candidate");assertTrue(rejectedDensity.edits().isEmpty());
+                    assertTrue(NativeRiftPatchPlan.prepare(ShaderPackInventory.of(combined)).enabled(),"density rejection must not disable sky");
+                }
                 var formatted=new TreeMap<String,String>();combined.forEach((p,s)->formatted.put(p,"/* loader/version annotation is not an identity */\n"+s.replace("\r\n","\n").replace("\n","\r\n").replace("\t","    ")));
                 var formatPlan=NativeRiftPatchPlan.prepare(ShaderPackInventory.of(formatted));assertTrue(formatPlan.enabled(),sample+": "+formatPlan.reason());assertEquals(plan.family(),formatPlan.family());
                 for(String path:plan.edits().keySet()) {var ambiguous=new TreeMap<>(combined);ambiguous.put(path,combined.get(path)+"\n"+combined.get(path));var rejected=NativeRiftPatchPlan.prepare(ShaderPackInventory.of(ambiguous));assertFalse(rejected.enabled(),sample+" accepted duplicated anchors in "+path);assertTrue(rejected.edits().isEmpty());}

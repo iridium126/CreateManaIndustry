@@ -7,6 +7,23 @@ import static org.junit.jupiter.api.Assertions.*;
 class StormCenterTimelineTest {
     private final StormIdentity id=new StormIdentity(ResourceLocation.withDefaultNamespace("overworld"),7);
     private StormCenterSample point(double x,int count,long tick){return new StormCenterSample(x,128,30_000_000.125,count,tick);}
+    @Test void smallerHashedEpochStartsImmediatelyAndOldPacketsCannotReviveIt(){
+        long created=1;while(AllayStarfall.epoch(created+1,17)>AllayStarfall.epoch(created,17))created++;
+        var old=new StormIdentity(id.dimension(),AllayStarfall.epoch(created,17));
+        var next=new StormIdentity(id.dimension(),AllayStarfall.epoch(created+1,17));
+        assertTrue(next.epoch()<old.epoch());
+        var t=new StormCenterTimeline();t.offer(old,point(1,16383,100));
+        assertTrue(t.select(next));assertTrue(t.offer(next,point(10,20000,120)));
+        assertFalse(t.offer(old,point(20,32768,160)));assertEquals(20000,t.sample(120,0).count());
+        t.offer(next,point(12,20020,140));
+        assertTrue(t.sample(150,.75f).count()>t.sample(150,.25f).count());
+        var previous=t.previous();assertTrue(t.select(next));assertSame(previous,t.previous());
+        t.retire(next);assertFalse(t.offer(next,point(0,1,200)));
+        var stopped=new StormCenterTimeline();var last=point(10,20000,140);stopped.offer(next,last);stopped.retire(next);
+        stopped.offer(next,point(9,19980,120),last);assertSame(last,stopped.previous());
+        assertEquals(20000,stopped.sample(200,0).count());
+        t.clear();assertTrue(t.offer(next,point(0,1,200)));
+    }
     @Test void centerAndSummaryArrivalOrderProduceTheSameDelayedFrame() {
         var a=new StormCenterTimeline();var b=new StormCenterTimeline();
         var p=point(29_000_000.125,16384,100);var c=point(29_000_002.125,32768,120);

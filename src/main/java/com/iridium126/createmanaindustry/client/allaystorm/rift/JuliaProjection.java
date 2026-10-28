@@ -13,6 +13,8 @@ public final class JuliaProjection {
     private static JuliaShape shape;
     private static int program,segments,segmentTexture,vao,fbo,color,depth,width,height;
     private static final Matrix4f VIEW_PROJECTION=new Matrix4f();
+    private static RiftRenderFrame published;
+    public static boolean ready(RiftRenderFrame frame){return frame!=null&&published==frame&&color!=0&&frame.matches(frame.generation(),width,height);}
     private JuliaProjection() {}
     public static Matrix4f viewProjection() { return VIEW_PROJECTION; }
     public static JuliaShape shape() { return shape; }
@@ -36,6 +38,7 @@ public final class JuliaProjection {
         if(GL20.glGetShaderi(shader,GL20.GL_COMPILE_STATUS)==0) {String log=GL20.glGetShaderInfoLog(shader);GL20.glDeleteShader(shader);throw new IOException(log);}return shader;
     }
     public static void draw(org.joml.Matrix4fc view,org.joml.Matrix4fc projection,float partial) {
+        published=null;
         if(shape==null||program==0)return;
         var mc=Minecraft.getInstance();var state=AllaySkyProvider.rift();
         if(mc.level==null||state==null||state.state()!=com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftSnapshot.OPEN||AllaySkyProvider.dimension())return;
@@ -44,7 +47,7 @@ public final class JuliaProjection {
         int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE),oldBuffer=GL11.glGetInteger(GL31.GL_TEXTURE_BUFFER),oldFunction=GL11.glGetInteger(GL11.GL_DEPTH_FUNC);
         boolean blend=GL11.glIsEnabled(GL11.GL_BLEND),cull=GL11.glIsEnabled(GL11.GL_CULL_FACE),test=GL11.glIsEnabled(GL11.GL_DEPTH_TEST),mask=GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK),scissor=GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
         int[] viewport=new int[4];GL11.glGetIntegerv(GL11.GL_VIEWPORT,viewport);
-        GL13.glActiveTexture(GL13.GL_TEXTURE0);int oldTexture=GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER),old2d=GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D),oldRbo=GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.activate(0);int oldTexture=GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER),old2d=GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D),oldRbo=GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
         try(var stateGuard=new SkyRenderState()) {
             stateGuard.prepare();
             prepare(mc.getMainRenderTarget().width,mc.getMainRenderTarget().height);
@@ -65,10 +68,11 @@ public final class JuliaProjection {
             var style=JuliaShape.projection(Math.sqrt((double)rift.x*rift.x+(double)rift.y*rift.y+(double)rift.z*rift.z));
             GL20.glUniform2f(GL20.glGetUniformLocation(program,"ProjectionStyle"),style.weak(),style.gain());
             GL31.glDrawArraysInstanced(GL11.GL_TRIANGLE_STRIP,0,258,shape.segments.length/4);
+            published=RiftRenderFrame.current();
         } finally {
             GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,oldFbo);GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,oldRead);GL11.glViewport(viewport[0],viewport[1],viewport[2],viewport[3]);
             GL20.glUseProgram(oldProgram);GL30.glBindVertexArray(oldVao);GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,oldBuffer);
-            GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,oldTexture);GL11.glBindTexture(GL11.GL_TEXTURE_2D,old2d);GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER,oldRbo);GL13.glActiveTexture(active);
+            GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,oldTexture);com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.bind(0,old2d);GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER,oldRbo);com.mojang.blaze3d.systems.RenderSystem.activeTexture(active);GL13.glActiveTexture(active);
             enabled(GL11.GL_CULL_FACE,cull);enabled(GL11.GL_DEPTH_TEST,test);enabled(GL11.GL_SCISSOR_TEST,scissor);GL11.glDepthMask(mask);GL11.glDepthFunc(oldFunction);
         }
     }
@@ -92,5 +96,6 @@ public final class JuliaProjection {
         if(program!=0)GL20.glDeleteProgram(program);if(segments!=0)GL15.glDeleteBuffers(segments);if(segmentTexture!=0)GL11.glDeleteTextures(segmentTexture);
         if(vao!=0)GL30.glDeleteVertexArrays(vao);if(fbo!=0)GL30.glDeleteFramebuffers(fbo);if(color!=0)GL11.glDeleteTextures(color);if(depth!=0)GL30.glDeleteRenderbuffers(depth);
         program=segments=segmentTexture=vao=fbo=color=depth=width=height=0;shape=null;
+        published=null;RiftRenderFrame.clear();
     }
 }

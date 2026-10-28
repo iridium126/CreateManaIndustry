@@ -7,6 +7,21 @@ import java.util.regex.Pattern;
 /** Isolated native sky variants keep the pack's math but cannot recurse into or publish the source rift. */
 public final class NativeSkySources {
     private NativeSkySources() {}
+    public static ProgramSource targetClouds(ProgramSource source,String family){
+        var isolated=isolate(source,family);
+        return com.iridium126.createmanaindustry.mixin.iris.NativeSkySourceAccess.cmi$copy(isolated.getName(),isolated.getVertexSource().orElse(null),
+                isolated.getGeometrySource().orElse(null),isolated.getTessControlSource().orElse(null),isolated.getTessEvalSource().orElse(null),
+                targetCloudFragment(isolated.getFragmentSource().orElseThrow()),isolated.getDirectives(),isolated.getParent());
+    }
+    /** Apply distance ownership after the pack's normal cloud shader without changing its outputs. */
+    public static String targetCloudFragment(String source){
+        String declarations="\nuniform mat4 CmiTargetInverseViewProjection;\n";
+        if(!Pattern.compile("uniform\\s+sampler2D\\s+CmiJuliaHit\\s*;").matcher(ShaderPackInventory.code(source)).find())declarations+="uniform sampler2D CmiJuliaHit;\n";
+        var main=ShaderPatchPlan.unique(ShaderPackInventory.code(source),"void\\s+main\\s*\\(\\s*(?:void)?\\s*\\)");
+        // Keep #extension directives before all added declarations on strict GLSL drivers.
+        String next=source.substring(0,main.start())+declarations+"void cmiTargetCloudStock()"+source.substring(main.end());
+        return next+"\nvoid main(){\nvec2 uv=gl_FragCoord.xy/vec2(textureSize(CmiJuliaHit,0)); float hit=texture(CmiJuliaHit,uv).r;\nvec4 p=CmiTargetInverseViewProjection*vec4(uv*2.0-1.0,gl_FragCoord.z*2.0-1.0,1.0);\nif(hit<=0.0||dot(p.xyz,p.xyz)<=hit*hit*p.w*p.w)discard;\ncmiTargetCloudStock();\n}\n";
+    }
     public static ProgramSource isolate(ProgramSource source,String family) {
         return com.iridium126.createmanaindustry.mixin.iris.NativeSkySourceAccess.cmi$copy("cmi_target_"+source.getName(),source.getVertexSource().map(NativeSkySources::readOnly).orElse(null),
                 source.getGeometrySource().map(NativeSkySources::readOnly).orElse(null),source.getTessControlSource().map(NativeSkySources::readOnly).orElse(null),source.getTessEvalSource().map(NativeSkySources::readOnly).orElse(null),
@@ -14,11 +29,11 @@ public final class NativeSkySources {
     }
     public static String isolate(String source,String family) {
         String next=readOnly(source);
+        next=body(next,"cmiStormCloudActive","return false;");
         next=body(next,"cmiRayActive","return false;");
         next=body(next,"cmiCloudVisible","return true;");
         next=body(next,"cmiCloudLimit","return maximum;");
         next=body(next,"cmiNativeSky","return original;");
-        next=body(next,"cmiRiftDistance","return -1.0;");
         // Camera effects are applied once by the source scene after the portal composition.
         next=next.replaceAll("\\buniform\\s+(float|int)\\s+(blindness|nightVision|darknessFactor|darknessLightFactor)\\s*;","const $1 $2 = 0;");
         // Deliberately unbound uniform defaults to zero. A constant zero would make otherwise guarded

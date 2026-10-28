@@ -49,7 +49,10 @@ public final class StormRiftServer {
             subscription = LEVELS.computeIfAbsent(source, Subscription::new);
         }
         ServerLevel target = source.getServer().getLevel(AllvrDimensions.ALLAY_LEVEL);
-        if (data.count >= RiftRules.OPEN_COUNT && data.riftOpenedAt < 0) data.riftOpenedAt = source.getGameTime();
+        if (data.count >= RiftRules.OPEN_COUNT && data.riftOpenedAt < 0) {
+            data.riftOpenedAt = source.getGameTime();
+            source.setData(com.iridium126.createmanaindustry.CMIAttachments.STORM_DATA.get(),data);
+        }
         int state = data.count < RiftRules.OPEN_COUNT ? StormRiftSnapshot.GROWING
                 : target == null ? StormRiftSnapshot.UNAVAILABLE : StormRiftSnapshot.OPEN;
         boolean changed = subscription.snapshot == null || subscription.snapshot.state() != state || subscription.targetAvailable != (target != null);

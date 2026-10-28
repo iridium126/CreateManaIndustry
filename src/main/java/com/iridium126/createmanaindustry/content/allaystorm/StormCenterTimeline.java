@@ -8,22 +8,31 @@ public final class StormCenterTimeline {
         public double envelopeRadius() { return 1.2 * radius(); }
     }
     private StormIdentity identity;
+    private final java.util.Set<StormIdentity> retired=new java.util.HashSet<>();
     private StormCenterSample previous,current;
     public StormIdentity identity() { return identity; }
     public StormCenterSample previous() { return previous; }
     public StormCenterSample current() { return current; }
+    /** Epochs are hashes, not ordered generation counters. Selection comes from server lifecycle. */
+    public boolean select(StormIdentity id) {
+        if(id==null||retired.contains(id))return false;
+        if(identity!=null&&!identity.equals(id)){retired.add(identity);previous=current=null;}
+        identity=id;return true;
+    }
+    public void retire(StormIdentity id) {
+        if(id==null)return;
+        retired.add(id);
+        // Keep the last bounded samples for the existing STOP cloud fade. Retired packets
+        // cannot advance them, and selecting a new generation replaces both samples.
+    }
     public boolean offer(StormIdentity id,StormCenterSample sample) {
-        if(id==null||sample==null||!sample.valid())return false;
-        if(identity!=null&&!identity.equals(id)) {
-            if(identity.dimension().equals(id.dimension())&&id.epoch()<=identity.epoch())return false;
-            clear();
-        }
+        if(id==null||sample==null||!sample.valid()||!select(id))return false;
         if(current!=null&&sample.tick()<=current.tick())return false;
         identity=id;previous=current==null?sample:current;current=sample;return true;
     }
     public void offer(StormIdentity id,StormCenterSample before,StormCenterSample after) {
         // A late subscription needs both canonical samples, not a sample invented on arrival.
-        if(before==null||after==null||!before.valid()||!after.valid()||before.tick()>after.tick())return;
+        if(id==null||retired.contains(id)||before==null||after==null||!before.valid()||!after.valid()||before.tick()>after.tick())return;
         if(contains(id)&&current.tick()==after.tick()&&previous.tick()==current.tick()&&before.tick()<current.tick()) {
             previous=before;return;
         }
@@ -39,5 +48,5 @@ public final class StormCenterTimeline {
                 previous.y()+(current.y()-previous.y())*alpha,previous.z()+(current.z()-previous.z())*alpha,
                 previous.count()+(current.count()-previous.count())*alpha);
     }
-    public void clear() { identity=null;previous=null;current=null; }
+    public void clear() { identity=null;previous=null;current=null;retired.clear(); }
 }

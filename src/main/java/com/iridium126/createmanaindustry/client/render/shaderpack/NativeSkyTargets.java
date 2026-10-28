@@ -28,5 +28,10 @@ public final class NativeSkyTargets extends RenderTargets {
         });
     }
     @Override public RenderTarget get(int index) { return writes==null||writes.contains(index)?super.get(index):getOrCreate(index); }
+    @Override public net.irisshaders.iris.gl.framebuffer.GlFramebuffer createColorFramebuffer(ImmutableSet<Integer> main,int[] buffers){
+        if(source!=null)for(int buffer:buffers)if(!writes.contains(buffer))
+            throw new IllegalStateException("Target sky cannot attach readonly source buffer "+buffer+" for writing");
+        return super.createColorFramebuffer(main,buffers);
+    }
     @Override public void destroy(){super.destroy();references.values().forEach(RenderTarget::destroy);references.clear();}
 }

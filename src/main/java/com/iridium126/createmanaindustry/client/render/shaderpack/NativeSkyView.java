@@ -34,6 +34,9 @@ public final class NativeSkyView {
     private final FrameUpdateNotifier notifier=new FrameUpdateNotifier();
     private final Map<ShaderKey,ShaderInstance> skyShaders=new EnumMap<>(ShaderKey.class);
     private final List<CompositeRenderer> renderers=new ArrayList<>();
+    private final TargetVanillaClouds clouds=new TargetVanillaClouds();
+    private int deferredCount;
+    private boolean vanillaClouds;
     private record Clear(int buffer,boolean main,GlFramebuffer framebuffer,boolean integer,boolean unsigned,org.joml.Vector4f color) {}
     private final List<Clear> clears=new ArrayList<>();
     private record History(int buffer,GlFramebuffer source) {}
@@ -51,11 +54,12 @@ public final class NativeSkyView {
     private CenterDepthSampler centerDepth;
     private int width,height,depthVersion;
     private boolean initialized,rendered;
+    private RiftRenderFrame published;
 
     public static ShaderInstance override(ShaderKey key){return active==null?null:active.skyShaders.get(key);}
-    public boolean ready(){return rendered;}
+    public boolean ready(){var frame=RiftRenderFrame.current();return rendered&&frame!=null&&published==frame&&frame.matches(((RiftIrisPipeline)pipeline).cmi$riftGeneration(),width,height)&&JuliaProjection.ready(frame);}
     public int texture(){var target=targets.getOrCreate(output);return flipped.contains(output)?target.getAltTexture():target.getMainTexture();}
-    public String report(){return "native "+family+" isolated sky; buffers="+writes+"; "+(rendered?"rendered":"prepared");}
+    public String report(){return clouds.report()+"; native "+family+" isolated sky; buffers="+writes+"; "+(ready()?"current frame ready":rendered?"awaiting current frame":"prepared")+"; published="+(published==null?"none":published.number());}
 
     public NativeSkyView(IrisRenderingPipeline pipeline,ProgramSet programs,NativeRiftPatchPlan contract) throws IOException {
         this.programs=programs;this.pipeline=pipeline;family=contract.family();
@@ -78,14 +82,17 @@ public final class NativeSkyView {
         output=main.getDirectives().getDrawBuffers()[0];
         var keys=List.of(ShaderKey.SKY_BASIC,ShaderKey.SKY_BASIC_COLOR,ShaderKey.SKY_TEXTURED,ShaderKey.SKY_TEXTURED_COLOR);
         for(var key:keys)for(int buffer:resolver.resolve(key.getProgram()).orElseThrow(()->new IOException("Missing native "+key)).getDirectives().getDrawBuffers()){writes.add(buffer);skyWrites.add(buffer);}
+        vanillaClouds=programs.getPackDirectives().getCloudSetting()!=net.irisshaders.iris.shaderpack.properties.CloudSetting.OFF;
+        var cloudKeys=vanillaClouds?List.of(ShaderKey.CLOUDS):List.<ShaderKey>of();
+        for(var key:cloudKeys)for(int buffer:resolver.resolve(key.getProgram()).orElseThrow().getDirectives().getDrawBuffers()){writes.add(buffer);skyWrites.add(buffer);}
         var flipper=new BufferFlipper();
         skyFlips.forEach(flipper::flip);
-        try(var state=new SkyRenderState()) {
+        try(var textureState=new SkyTextureState();var state=new SkyRenderState()) {
         depth=new DepthTexture("cmi_target_sky_depth",width,height,DepthBufferFormat.DEPTH24);
         targets=new NativeSkyTargets(width,height,depth.getTextureId(),programs.getPackDirectives(),access.cmi$targets(),access.cmi$sourceFlips(),writes);
         centerDepth=new CenterDepthSampler(targets::getDepthTexture,programs.getPackDirectives().getCenterDepthHalfLife());
         uniforms=programs.getPack().customUniforms.build(holder->CommonUniforms.addNonDynamicUniforms(holder,programs.getPack().getIdMap(),programs.getPackDirectives(),notifier));
-        skyFramebuffer=targets.createFramebufferWritingToMain(new int[]{0});
+        skyFramebuffer=targets.createFramebufferWritingToMain(new int[]{skyWrites.stream().min(Integer::compare).orElseThrow()});
         NativeSkyBuildScope.enter(access.cmi$targets(),targets);
             for(var key:keys) {
                 var source=NativeSkySources.isolate(resolver.resolve(key.getProgram()).orElseThrow(),family);
@@ -97,6 +104,18 @@ public final class NativeSkyView {
                 skyShaders.put(key,shader);
             }
             for(var array:List.of(ProgramArrayId.Deferred,ProgramArrayId.Composite)) {
+                if(array==ProgramArrayId.Composite){
+                    deferredCount=renderers.size();
+                    var cloudFlips=flipper.snapshot();
+                    for(var key:cloudKeys){
+                        var source=NativeSkySources.targetClouds(resolver.resolve(key.getProgram()).orElseThrow(),family);
+                        var framebuffer=targets.createGbufferFramebuffer(cloudFlips,source.getDirectives().getDrawBuffers());
+                        boolean fullbright=key.shouldIgnoreLightmap();var format=key.getVertexFormat();
+                        var inputs=new ShaderAttributeInputs(format,fullbright,false,false,false,false);
+                        skyShaders.put(key,ShaderCreator.create(pipeline,"cmi_target_"+key.getName(),source,key.getProgram(),framebuffer,framebuffer,
+                                key.getAlphaTest(),format,inputs,notifier,pipeline,()->cloudFlips,key.getFogMode(),key.isIntensity(),fullbright,false,false,uniforms));
+                    }
+                }
                 var sources=selected.get(array);if(sources==null)continue;
                 var stage=array==ProgramArrayId.Deferred?TextureStage.DEFERRED:TextureStage.COMPOSITE_AND_FINAL;
                 renderers.add(new CompositeRenderer(pipeline,array==ProgramArrayId.Deferred?CompositePass.DEFERRED:CompositePass.COMPOSITE,
@@ -131,6 +150,7 @@ public final class NativeSkyView {
         int depthFunction=GL11.glGetInteger(GL11.GL_DEPTH_FUNC);
         var phase=pipeline.getPhase();
         float[] shaderColor=RenderSystem.getShaderColor().clone();
+        var textureState=new SkyTextureState();
         try(var state=new SkyRenderState()) {
             state.prepare();
             resize();
@@ -148,18 +168,24 @@ public final class NativeSkyView {
             skyFramebuffer.bind();RenderSystem.viewport(0,0,width,height);RenderSystem.depthMask(true);GL30.glClearBufferfv(GL11.GL_DEPTH,0,new float[]{1});
             SkyRenderScope.enter(snapshot.sky(),Math.max(0,mc.level.getGameTime()-snapshot.sky().gameTime()));
             notifier.onNewFrame();uniforms.update();active=this;
+            // renderSky's FIRST dome uses RenderSystem.getShader(), unlike its later sun/stars.
+            // Reusing the incoming terrain/entity shader would write the dome into SOURCE gbuffers.
+            pipeline.setPhase(WorldRenderingPhase.SKY);
+            RenderSystem.setShader(()->skyShaders.get(ShaderKey.SKY_BASIC));
             mc.levelRenderer.renderSky(view,projection,partial,mc.gameRenderer.getMainCamera(),false,()->{});
             active=null;
             pipeline.setPhase(phase);
             targets.copyPreHandDepth();targets.copyPreTranslucentDepth();
-            for(var renderer:renderers)renderer.renderAll();
+            for(int i=0;i<deferredCount;i++)renderers.get(i).renderAll();
+            if(vanillaClouds){active=this;pipeline.setPhase(WorldRenderingPhase.CLOUDS);clouds.draw(view,projection,partial,null);active=null;pipeline.setPhase(phase);}
+            for(int i=deferredCount;i<renderers.size();i++)renderers.get(i).renderAll();
             // Iris final-pass semantics: persistent flipped results become next frame's main history.
             for(var history:histories) {
                 var target=targets.getOrCreate(history.buffer());history.source().bind();
                 RenderSystem.bindTexture(target.getMainTexture());
                 GlStateManager._glCopyTexSubImage2D(GL11.GL_TEXTURE_2D,0,0,0,0,0,target.getWidth(),target.getHeight());
             }
-            rendered=true;
+            rendered=true;published=RiftRenderFrame.current();
         } finally {
             active=null;SkyRenderScope.leave();
             pipeline.setPhase(phase);
@@ -170,6 +196,7 @@ public final class NativeSkyView {
             RenderSystem.depthMask(mask);RenderSystem.depthFunc(depthFunction);
             if(depthTest)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();
             if(cull)RenderSystem.enableCull();else RenderSystem.disableCull();
+            textureState.close();
         }
     }
     private void resize() {
@@ -179,5 +206,5 @@ public final class NativeSkyView {
         targets.resizeIfNeeded(++depthVersion,depth.getTextureId(),width,height,DepthBufferFormat.DEPTH24,programs.getPackDirectives());old.destroy();
         renderers.forEach(CompositeRenderer::recalculateSizes);initialized=rendered=false;
     }
-    public void destroy(){renderers.forEach(CompositeRenderer::destroy);renderers.clear();skyShaders.values().forEach(ShaderInstance::close);skyShaders.clear();if(centerDepth!=null){centerDepth.destroy();centerDepth=null;}if(targets!=null){targets.destroy();targets=null;}if(depth!=null){depth.destroy();depth=null;}rendered=false;}
+    public void destroy(){clouds.close();renderers.forEach(CompositeRenderer::destroy);renderers.clear();skyShaders.values().forEach(ShaderInstance::close);skyShaders.clear();if(centerDepth!=null){centerDepth.destroy();centerDepth=null;}if(targets!=null){targets.destroy();targets=null;}if(depth!=null){depth.destroy();depth=null;}rendered=false;}
 }

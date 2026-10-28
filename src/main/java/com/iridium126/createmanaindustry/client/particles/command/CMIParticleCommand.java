@@ -144,6 +144,12 @@ public final class CMIParticleCommand {
                         .then(Commands.literal("shaderpack")
                                 .then(Commands.literal("status")
                                         .executes(CMIParticleCommand::shaderPackStatus))
+                                .then(Commands.literal("stormcloud")
+                                        .then(Commands.literal("on").executes(ctx->stormCloud(ctx,true,false)))
+                                        .then(Commands.literal("off").executes(ctx->stormCloud(ctx,false,false)))
+                                        .then(Commands.literal("profile")
+                                                .then(Commands.literal("on").executes(ctx->stormCloud(ctx,true,true)))
+                                                .then(Commands.literal("off").executes(ctx->stormCloud(ctx,false,true)))))
                                 .then(Commands.literal("probe")
                                         .then(Commands.literal("on").executes(ctx->visualProbe(ctx,true)))
                                         .then(Commands.literal("off").executes(ctx->visualProbe(ctx,false)))
@@ -356,7 +362,7 @@ public final class CMIParticleCommand {
 
     private static int shaderPackStatus(CommandContext<CommandSourceStack> ctx) {
         tell(ctx,com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.report());
-        if (!CreateManaIndustry.VEIL_ACTIVE) { tell(ctx,"Veil unavailable; world effects disabled.");return 0; }
+        if (!CreateManaIndustry.VEIL_ACTIVE) { if(CreateManaIndustry.IRIS_ACTIVE)tell(ctx,com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().report());tell(ctx,"Veil unavailable; world effects disabled; sky/cloud paths remain independent.");return 0; }
         tell(ctx,com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects.report());
         String integration = ClientConfig.shaderPackIntegration ? "auto" : "off";
         tell(ctx, "", "§b[CMI particles]§r shader-pack path:"
@@ -368,6 +374,19 @@ public final class CMIParticleCommand {
         tell(ctx, "§7", "permutation: §e" + com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackPermStatus);
         if (!com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackErrorStatus.isEmpty())
             tell(ctx, "§7", "last fallback reason: §c" + com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackErrorStatus + "§r");
+        return Command.SINGLE_SUCCESS;
+    }
+    private static int stormCloud(CommandContext<CommandSourceStack> ctx,boolean enabled,boolean profile){
+        if(profile){
+            tell(ctx,com.iridium126.createmanaindustry.client.allaystorm.rift.VanillaSkyView.cloudReport());
+            if(CreateManaIndustry.IRIS_ACTIVE){var session=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current();tell(ctx,session.cloudTimingReport());session.cloudProfiling(enabled);}
+            com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.cloudProfiling(enabled);
+        }else{
+            com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.cloudEnabled(enabled);
+            com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.cloudProfiling(false);
+            if(CreateManaIndustry.IRIS_ACTIVE){var session=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current();tell(ctx,session.cloudTimingReport());session.cloudProfiling(false);}
+        }
+        tell(ctx,profile?"Native stage GPU profiling: "+enabled:"Storm cloud density: "+(enabled?"on":"bypassed")+"; local only; re-enable profiling after switching A/B");
         return Command.SINGLE_SUCCESS;
     }
     private static int visualProbe(CommandContext<CommandSourceStack> ctx,boolean enabled){

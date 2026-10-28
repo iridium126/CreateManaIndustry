@@ -12,7 +12,7 @@ import java.util.*;
 /** One loading/pipeline generation. All source IO is performed by begin(), never by draw callers. */
 public final class ShaderPackSession {
     private static long sequence;
-    private static boolean bypassNext;
+    private static boolean bypassNext,omitCloudsNext;
     private static String retryCause="";
     private static ShaderPackSession current=empty();
     private final long generation=++sequence;
@@ -20,6 +20,7 @@ public final class ShaderPackSession {
     private final ShaderPackInventory inventory;
     private final ShaderPatchPlan patch;
     private final NativeRiftPatchPlan rift;
+    private final StormCloudDensityPatchPlan clouds;
     private final PackCapabilities capabilities;
     private ShaderPackOptions options;
     private Object pipeline;
@@ -34,24 +35,47 @@ public final class ShaderPackSession {
     private boolean riftReady;
     private String riftReason="effective sky programs not checked";
     private int cloudPrograms;
+    private boolean cloudProfiling;
+    private final Map<Object,com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry> cloudTimers=new IdentityHashMap<>();
+    public boolean beginCloudTiming(Object stage){
+        if(!cloudProfiling||com.iridium126.createmanaindustry.client.allaystorm.rift.SkyRenderScope.active())return false;
+        var timer=cloudTimers.get(stage);
+        if(timer==null){if(cloudTimers.size()>=8)return false;timer=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry();cloudTimers.put(stage,timer);}
+        timer.poll();timer.begin(true,true);return true;
+    }
+    public void endCloudTiming(Object stage,boolean publish){var timer=cloudTimers.get(stage);if(timer!=null)timer.end(publish);}
+    public void cloudProfiling(boolean enabled){com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.cloudProfiling(enabled);cloudTimers.values().forEach(com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry::close);cloudTimers.clear();cloudProfiling=enabled;}
+    public String cloudTimingReport(){
+        var out=new StringBuilder("native whole stages (not cloud-only), profiling="+cloudProfiling);int i=0;
+        for(var timer:cloudTimers.values())out.append("; stage ").append(++i).append(": ").append(timer.report());
+        return out.toString();
+    }
     public void linkedCloudProgram(){cloudPrograms++;}
-    private ShaderPackSession(Path root,ShaderPackInventory inventory,boolean bypass) {
+    public void compilationFailed(String program,RuntimeException error){
+        String message=Objects.toString(error.getMessage(),error.getClass().getSimpleName()).lines().findFirst().orElse("compile failed");
+        failure="program="+program+" "+message.substring(0,Math.min(message.length(),240));
+    }
+    private ShaderPackSession(Path root,ShaderPackInventory inventory,boolean bypass){this(root,inventory,bypass,false);}
+    private ShaderPackSession(Path root,ShaderPackInventory inventory,boolean bypass,boolean omitClouds) {
         this.root=root;this.inventory=inventory;
         patch=bypass?ShaderPatchPlan.disabled("unmodified retry"):ShaderPatchPlan.prepare(inventory);
         var combined=new TreeMap<>(inventory.sources());combined.putAll(patch.edits());
         rift=bypass?NativeRiftPatchPlan.disabled("unmodified retry"):NativeRiftPatchPlan.prepare(ShaderPackInventory.of(combined));
+        combined.putAll(rift.edits());
+        clouds=(bypass||omitClouds)?StormCloudDensityPatchPlan.disabled(omitClouds?"density candidate excluded after compilation failure; sky retained":"unmodified retry"):StormCloudDensityPatchPlan.prepare(ShaderPackInventory.of(combined),rift.family());
         capabilities=PackCapabilities.detect(inventory,patch);
     }
     private static ShaderPackSession empty(){return new ShaderPackSession(null,ShaderPackInventory.of(Map.of()),true);}
     public static ShaderPackSession current(){return current;}
     static ShaderPackSession candidate(ShaderPackInventory inventory){return new ShaderPackSession(null,inventory,false);}
     public static void begin(Path root) {
-        boolean bypass=bypassNext;bypassNext=false;
+        boolean bypass=bypassNext,omitClouds=omitCloudsNext;bypassNext=omitCloudsNext=false;
         String cause=retryCause;retryCause="";
+        current.cloudProfiling(false);
         IrisShadowTextures.clear();
-        try {current=new ShaderPackSession(root,ShaderPackInventory.read(root),bypass);}
+        try {current=new ShaderPackSession(root,ShaderPackInventory.read(root),bypass,omitClouds);}
         catch(Exception failure){current=empty();current.failure="inventory unavailable: "+failure.getMessage();}
-        if(bypass)current.failure=cause;
+        if(bypass||omitClouds)current.failure=cause;
         CreateManaIndustry.LOGGER.info("[CMI shaderpack] generation {}: {} ({})",current.generation,current.capabilities.family(),current.patch.reason());
     }
     public static void options(ShaderPackOptions options){current.options=options;}
@@ -60,6 +84,7 @@ public final class ShaderPackSession {
     public ShaderPackInventory inventory(){return inventory;}
     public ShaderPatchPlan patch(){return patch;}
     public NativeRiftPatchPlan rift(){return rift;}
+    public StormCloudDensityPatchPlan clouds(){return clouds;}
     public boolean riftReady(){return rift.enabled()&&riftReady;}
     public String riftReason(){return rift.enabled()?riftReason:rift.reason();}
     public void verifyRiftPrograms(net.irisshaders.iris.shaderpack.programs.ProgramSet programs) {
@@ -103,7 +128,7 @@ public final class ShaderPackSession {
     public String transform(Path path,String original) {
         if(root==null||!path.getFileSystem().equals(root.getFileSystem())||!path.normalize().startsWith(root.normalize()))return original;
         String relative=root.relativize(path).toString();
-        return rift.transform(relative,patch.transform(relative,original));
+        return clouds.transform(relative,rift.transform(relative,patch.transform(relative,original)));
     }
     /** Copies maps before validation. A rejection aborts this candidate, never publishes a partial map. */
     public BlockIdMapContext apply(BlockIdMapContext original) {
@@ -122,10 +147,10 @@ public final class ShaderPackSession {
     }
     private IllegalStateException reject(String reason){failure=reason;return new IllegalStateException("CMI shader patch rejected: "+reason);}
     public boolean requestUnmodifiedRetry() {
-        if((!patch.enabled()&&!rift.enabled())||retryUsed)return false;
+        if((!patch.enabled()&&!rift.enabled()&&!clouds.enabled())||retryUsed)return false;
         retryUsed=true;bypassNext=true;retryCause="candidate source/material loading failed; see Iris log";return true;
     }
-    public static void finishRetry(){bypassNext=false;retryCause="";}
+    public static void finishRetry(){bypassNext=omitCloudsNext=false;retryCause="";}
     public String report() {
         return "session="+generation+"/"+revision+" source="+inventory.digest().substring(0,12)
                 +" family="+capabilities.family()+" world="+capabilities.worldPath()
@@ -134,17 +159,24 @@ public final class ShaderPackSession {
                 +"\nrift-sky="+rift.family()+"; "+riftReason()+(failure.isEmpty()?"":"; failure="+failure)
                 +"\ntarget-sky="+(net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable() instanceof RiftIrisPipeline p?p.cmi$targetSkyReport():"no active Iris pipeline")
                 +"\ntarget-cloud=native pack definitions/options in isolated target sky; no replacement cloud layer"
-                +"\nstorm-cloud="+(cloudPrograms>0?"native linked programs="+cloudPrograms:"no active native cloud uniforms; clouds may be disabled")+"; visibility follows effective pack cloud options; height=pack native; phase=integrated x0.1; radius=clamp(8R,96,384)";
+                +"; preview geometry only beyond Julia hit; actual dimension unchanged"
+                +"\nrift-frame="+com.iridium126.createmanaindustry.client.allaystorm.rift.RiftRenderFrame.current()
+                +"\nstorm-cloud="+clouds.family()+"; "+clouds.reason()+"; linked programs="+cloudPrograms
+                +"; only linked is not visual acceptance; shape=long-half-axis circular ring; max density=2; history=stock; height=actual world Y below rift"
+                +"; "+com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.stormCloudFrame(0).reason()+"\ncloud-timing="+cloudTimingReport();
     }
     /** Iris calls this factory later than source loading; compiled-program failure retries the original pack once. */
     public static void pipelineFailed() {
         ShaderPackSession failed=current;
-        if((!failed.patch.enabled()&&!failed.rift.enabled())||failed.retryUsed)return;
+        if((!failed.patch.enabled()&&!failed.rift.enabled()&&!failed.clouds.enabled())||failed.retryUsed)return;
         failed.retryUsed=true;
         net.minecraft.client.Minecraft.getInstance().tell(()->{
             if(current!=failed||Iris.getCurrentPack().isEmpty())return;
-            bypassNext=true;
-            retryCause="candidate pipeline compilation failed; original pack restored (see Iris log)";
+            if(failed.clouds.enabled()){
+                omitCloudsNext=true;retryCause="density candidate pipeline compilation failed; retry sky without density; "+failed.failure;
+            }else{
+                bypassNext=true;retryCause="candidate pipeline compilation failed; original pack restored; "+failed.failure;
+            }
             try {Iris.reload();}catch(Exception failure){CreateManaIndustry.LOGGER.warn("[CMI shaderpack] unmodified reload failed",failure);}
             finally {finishRetry();}
         });

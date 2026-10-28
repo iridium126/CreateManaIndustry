@@ -104,15 +104,19 @@ public final class CMIPackEntityMergeHook {
                 return; // sticky failure recorded; the engine's plain AFTER_LEVEL path takes over
 
             boolean timed=beginTimer(),succeeded=false;
-            mergedTboState.capture();
-            try {drawEntities();succeeded=true;}
-            finally {mergedTboState.restore();if(timed)endTimer(succeeded);}
+            try(var drawState=new ModelRenderState();
+                var state=new com.iridium126.createmanaindustry.client.allaystorm.rift.SkyRenderState();
+                var materialState=com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.withSamplerRange(net.irisshaders.iris.gl.IrisRenderSystem::bindSamplerToUnit,net.irisshaders.iris.gl.sampler.SamplerLimits.get().getMaxTextureUnits(),0,1,2,COMPILER.gtextureUnit(),COMPILER.ghostGtextureUnit())){
+                mergedTboState.capture();
+                try {drawEntities();succeeded=true;}
+                finally {net.irisshaders.iris.gl.blending.BlendModeStorage.restoreBlend();mergedTboState.restore();if(timed)endTimer(succeeded);}
+            }
 
             // Latch even when this frame's instance count is zero: skipping the
             // L0 drawModels then costs nothing (it would submit the same empty
             // commands), while a CPU-side per-type readback would be a stall.
             com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.markHookModelDrawn();
-            com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackPathStatus = "pack entity merge (cutout+ghost dual, model near-first, current-frame perm)";
+            com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackPathStatus = "pack entity merge (allayId="+COMPILER.entityContext().allayId()+", "+COMPILER.blendPlan().report()+", atlas="+com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY.width()+"x"+com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY.height()+")";
             com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackDepthStatus = "hardware (gbuffer)";
             com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackErrorStatus = "";
             com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackPermStatus = "gbuffer permutation age " + com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.lastFinalPermAgeFrames()
@@ -153,7 +157,7 @@ public final class CMIPackEntityMergeHook {
             if(!PackageShadowPolicy.copy(frustum,SHADOW_CULLING)){com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="unsupported shadow frustum: "+(frustum==null?"null":frustum.getClass().getName());return;}
             if(shadowComputeState==null){shadowComputeState=new GpuComputeState();shadowDrawState=new PackageRenderState();}
             shadowComputeState.capture();
-            try {
+            try(var modelState=new ModelRenderState()) {
             shadowDrawState.capture();
             var captured=CapturedRenderingState.INSTANCE;
             float alpha=captured.getCurrentAlphaTest();
@@ -174,11 +178,12 @@ public final class CMIPackEntityMergeHook {
                         (float)p.x,(float)p.y,(float)p.z,EntityType.ALLAY.getWidth(),EntityType.ALLAY.getHeight(),(float)net.minecraft.world.entity.Entity.getViewScale(),com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec(),null,null,null,gpu.populationBufferId(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation()),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation());
                 gpu.bindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleReadBufferId(),MODEL_SHADOW.instances());gpu.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,MODEL_SHADOW.commands());
                 ShaderInstance shader=COMPILER.shadowShader();boolean applied=false;
-                try{
-                    applied=true;shader.apply();uploadShadowUniforms(shader.getId());setInt(shader.getId(),"cmi_ShadowPass",1);
+                try(var textures=com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.withSamplerRange(net.irisshaders.iris.gl.IrisRenderSystem::bindSamplerToUnit,net.irisshaders.iris.gl.sampler.SamplerLimits.get().getMaxTextureUnits(),0,1,2,COMPILER.shadowGtextureUnit())){
+                    try{bindAtlas(COMPILER.shadowGtextureUnit());applied=true;shader.apply();uploadShadowUniforms(shader.getId());setInt(shader.getId(),"cmi_ShadowPass",1);
                     RenderSystem.enableDepthTest();RenderSystem.disableBlend();RenderSystem.depthMask(true);RenderSystem.enableCull();bindAtlas(COMPILER.shadowGtextureUnit());
-                    uploadSegmentMode(shader.getId(),0);gpu.drawModelCutout();uploadSegmentMode(shader.getId(),2);gpu.drawModelCarrier();uploadSegmentMode(shader.getId(),0);gpu.drawModelGhost();
-                }finally{if(applied)shader.clear();}
+                    uploadSegmentMode(shader.getId(),0);gpu.drawModelCutout();uploadSegmentMode(shader.getId(),2);COMPILER.entityContext().upload(shader.getId(),true);gpu.drawModelCarrier();uploadSegmentMode(shader.getId(),0);COMPILER.entityContext().upload(shader.getId(),false);gpu.drawModelGhost();
+                    }finally{if(applied)shader.clear();}
+                }
                 shadowSucceeded=true;
                 }finally{SHADOW_TIMING.end(shadowSucceeded);}
                 com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="active (current frame, age=0)";
@@ -246,7 +251,8 @@ public final class CMIPackEntityMergeHook {
         // writes everywhere (early-Z feeder for later passes). The program
         // inherits the pack's entity directives wholesale.
         ShaderInstance shader = COMPILER.entitiesShader();
-        shader.apply();
+        bindAtlas(COMPILER.gtextureUnit());
+        try {shader.apply();
         int progId = shader.getId();
         uploadSegmentUniforms(progId);
         // Nearest-first cutout: early-Z rejects occluded fragments before the
@@ -254,7 +260,7 @@ public final class CMIPackEntityMergeHook {
         uploadSegmentMode(progId, 1);
         RenderSystem.enableDepthTest();
         GL11.glEnable(GL11.GL_CULL_FACE);
-        RenderSystem.disableBlend();
+        if(!net.irisshaders.iris.gl.blending.BlendModeStorage.isBlendLocked())RenderSystem.disableBlend();
         RenderSystem.depthMask(true);
         bindAtlas(COMPILER.gtextureUnit());
         gpu.drawModelCutout();
@@ -262,30 +268,30 @@ public final class CMIPackEntityMergeHook {
         // writes, no blending), so it rides the body's shader state — drawn
         // after the body, before the blended ghost, mirroring the L0 order.
         uploadSegmentMode(progId, 2);
+        COMPILER.entityContext().upload(progId,true);
         gpu.drawModelCarrier();
-        shader.clear();
+        }finally{shader.clear();}
 
-        // Ghost segment: same geometry stream and inherited alpha test, but the
-        // pinned translucent blend applies (ExtendedShader.apply() overrides GL
-        // blend state itself; we mirror it through RenderSystem so the state
-        // tracker stays consistent). Depth writes stay ON -- the documented L0
-        // tradeoff lets ghost surfaces occlude later translucent passes.
+        // Native MRT blend directives keep encoded metadata as overwrite outputs.
+        // Packs without an attachment contract retain the legacy alpha fallback.
         ShaderInstance ghost = COMPILER.ghostShader();
-        ghost.apply();
-        progId = ghost.getId();
+        bindAtlas(COMPILER.ghostGtextureUnit());
+        try {ghost.apply();
+        int progId = ghost.getId();
         uploadSegmentUniforms(progId);
         // Ghost keeps forward reads: back-to-front order is load-bearing for
         // correct translucent compositing of overlapping shells.
         uploadSegmentMode(progId, 0);
         RenderSystem.enableDepthTest();
         GL11.glEnable(GL11.GL_CULL_FACE);
-        RenderSystem.enableBlend();
-        RenderSystem.blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
-                GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        if(!COMPILER.blendPlan().nativeAttachments()&&!net.irisshaders.iris.gl.blending.BlendModeStorage.isBlendLocked()){
+            RenderSystem.enableBlend();
+            RenderSystem.blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        }
         RenderSystem.depthMask(true);
         bindAtlas(COMPILER.ghostGtextureUnit());
         gpu.drawModelGhost();
-        ghost.clear();
+        }finally{ghost.clear();}
 
         RenderSystem.depthMask(true);
         RenderSystem.defaultBlendFunc();
@@ -300,8 +306,7 @@ public final class CMIPackEntityMergeHook {
     /**
      * Per-program uniform refresh for one merged segment: the iris_* matrices
      * are NOT refreshed outside Iris's own draw stream, so supply the current
-     * gbuffer matrices ourselves (same protocol as flw-compat), then neutralise
-     * the stale entity uniforms and push our data uniforms.
+     * gbuffer matrices ourselves, then publish this segment's entity context.
      */
     private static void uploadSegmentUniforms(int progId) {
         Matrix4f projection = new Matrix4f(CapturedRenderingState.INSTANCE.getGbufferProjection());
@@ -341,15 +346,14 @@ public final class CMIPackEntityMergeHook {
     /**
      * Iris supplies {@code entityId}/{@code entityColor} only during its own
      * entity stream; outside it they hold stale values from the last rendered
-     * entity. Zero them so pack-side id-keyed branches (sign text, end portal,
-     * hurt flash...) cannot misfire on our instances. The mask-40 glow we WANT
-     * comes from the full-bright lightmap rule, not from these.
+     * entity. Replace them with the effective allay identity and actual atlas
+     * dimensions after apply; held items switch to a separate neutral identity.
      */
     private static void uploadNeutralEntityUniforms(int progId) {
-        setInt(progId, "entityId", 0);
-        setInt(progId, "blockEntityId", 0);
-        setInt(progId, "currentRenderedItemId", 0);
-        setFloat4(progId, "entityColor", 0f, 0f, 0f, 0f);
+        COMPILER.entityContext().upload(progId,false);
+        var atlas=com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY;
+        int size=loc(progId,"atlasSize");if(size>=0)GL20.glUniform2i(size,atlas.width(),atlas.height());
+        size=loc(progId,"gtextureSize");if(size>=0)GL20.glUniform2i(size,atlas.width(),atlas.height());
     }
 
     private static void uploadIrisMatrices(int progId, Matrix4f projection, Matrix4f modelView) {
@@ -413,8 +417,9 @@ public final class CMIPackEntityMergeHook {
     private static void bindAtlas( int unit) {
         if (unit < 0)
             return;
-        RenderSystem.activeTexture(GL13.GL_TEXTURE0 + unit);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY.textureId());
+        int texture=com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY.textureId();
+        RenderSystem.setShaderTexture(0,texture);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.bind(unit,texture);
     }
 
     // ------------------------------------------------------------------

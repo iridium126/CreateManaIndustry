@@ -6,6 +6,9 @@ import org.lwjgl.opengl.*;
 
 /** Additional state touched by sky replay and Iris framebuffer construction. Render-thread only. */
 public final class SkyRenderState implements AutoCloseable {
+    private final float[] fogColor=RenderSystem.getShaderFogColor().clone();
+    private final float fogStart=RenderSystem.getShaderFogStart(),fogEnd=RenderSystem.getShaderFogEnd();
+    private final com.mojang.blaze3d.shaders.FogShape fogShape=RenderSystem.getShaderFogShape();
     private final int draw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING),read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
     private final int vao=GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING),buffer=GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
     private final int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE),renderbuffer=GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
@@ -31,6 +34,8 @@ public final class SkyRenderState implements AutoCloseable {
     }
     public void prepare(){RenderSystem.disableScissor();GL11.glDisable(GL11.GL_SCISSOR_TEST);GL11.glDisable(GL11.GL_STENCIL_TEST);RenderSystem.colorMask(true,true,true,true);GL11.glColorMask(true,true,true,true);}
     @Override public void close(){
+        RenderSystem.setShaderFogColor(fogColor[0],fogColor[1],fogColor[2],fogColor[3]);
+        RenderSystem.setShaderFogStart(fogStart);RenderSystem.setShaderFogEnd(fogEnd);RenderSystem.setShaderFogShape(fogShape);
         GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,draw);GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,read);
         RenderSystem.viewport(viewport[0],viewport[1],viewport[2],viewport[3]);
         GL30.glBindVertexArray(vao);GlStateManager._glBindBuffer(GL15.GL_ARRAY_BUFFER,buffer);GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER,renderbuffer);

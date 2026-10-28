@@ -21,8 +21,9 @@ class RiftClientStateTest {
     }
     @Test void replacementRetiresTheOldEpochUntilWorldIsCleared() {
         var state=new RiftClientState();assertTrue(state.accept(snapshot(1,50,StormRiftSnapshot.OPEN)));
-        assertTrue(state.accept(snapshot(2,1,StormRiftSnapshot.OPEN)));
-        assertFalse(state.accept(snapshot(1,51,StormRiftSnapshot.OPEN)));
+        assertFalse(state.accept(snapshot(2,49,StormRiftSnapshot.OPEN)));
+        assertTrue(state.accept(snapshot(-2,51,StormRiftSnapshot.OPEN)));
+        assertFalse(state.accept(snapshot(1,52,StormRiftSnapshot.OPEN)));
         state.clear();assertTrue(state.accept(snapshot(1,1,StormRiftSnapshot.OPEN)));
     }
 }

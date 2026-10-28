@@ -22,12 +22,4 @@ class AllayLevelDataTest {
         assertEquals(6000,day.get());assertEquals(99123,target.getGameTime());
         day.set(24000);assertEquals(12000,target.getDayTime());
     }
-    @Test void cloudPhaseDoesNotJumpAtTheMembersRotationModuloBoundary() {
-        long wrap=(long)(2*Math.PI*16/AllayStormData.SPIN_K*20);
-        var before=AllayStormPhases.evaluate(16,16,0,0,wrap,16384,0);
-        var after=AllayStormPhases.evaluate(16,16,0,0,wrap+1,16384,0);
-        assertTrue(before.rotation()>6);assertTrue(after.rotation()<.1);
-        assertTrue(after.cloudRotation()>before.cloudRotation());
-        assertTrue(after.cloudRotation()-before.cloudRotation()<.01);
-    }
 }

@@ -8,10 +8,13 @@ import java.nio.charset.StandardCharsets;
 public final class JuliaShape {
     public final float[] segments;
     private final double frontRadius;
+    private final double longHalfAxis;
     public final double entranceScale;
     public record ProjectionStyle(float weak,float gain) {}
     private JuliaShape(float[] segments,double frontRadius,double entranceScale) {
         this.segments=segments;this.frontRadius=frontRadius;this.entranceScale=entranceScale;
+        double extent=0;for(int i=0;i<segments.length;i+=2)extent=Math.max(extent,Math.abs(segments[i]));
+        longHalfAxis=extent;
     }
     private static InputStream open(String name) throws IOException {
         String path="data/createmanaindustry/"+name;
@@ -41,10 +44,14 @@ public final class JuliaShape {
         double ratio=64/distance;
         return new ProjectionStyle((float)weak,(float)(1/Math.sqrt(1-ratio*ratio*weak*(2-weak))));
     }
-    public boolean referenceValid(double radius,double stormY,double planeY) { return Double.isFinite(radius)&&radius>0&&stormY>64&&planeY>=320; }
+    public boolean referenceValid(double radius,double stormY,double planeY) { return Double.isFinite(radius)&&radius>0&&Double.isFinite(stormY)&&Double.isFinite(planeY)&&stormY>64&&planeY>=320; }
     public static double referenceScale(double radius,double stormY,double planeY,double frontRadius) {
         double distance=planeY-64;
         return distance*(1.2*radius/(stormY-64))/frontRadius/projection(distance).gain()*1.01;
+    }
+    public double cloudConeSlope(double radius,double stormY,double planeY) {
+        return referenceValid(radius,stormY,planeY)
+                ?longHalfAxis*scale(radius,stormY,planeY,2)*projection(planeY-64).gain()/(planeY-64):0;
     }
     public double scale(double radius,double stormY,double planeY,float age) {
         double target=entranceScale;

@@ -36,7 +36,7 @@ import org.lwjgl.opengl.GL20;
 /**
  * Compiles the CMI MODEL-particle draw into the active shader pack's ENTITY
  * pipeline: resolves the pack's {@code gbuffers_entities} program via Iris's
- * own fallback chain, injects the SSBO-driven allay vertex program with
+ * own fallback chain, injects the TBO-driven allay vertex program with
  * {@link ParticleVertexInjector}, and keeps the PACK FRAGMENT otherwise
  * verbatim (the one exception: the hurt-overlay conversion below).
  *
@@ -65,9 +65,9 @@ import org.lwjgl.opengl.GL20;
  *
  * <p>TWO merged {@link ShaderInstance}s serve the model segments from the same
  * injected sources: the cutout program inherits the pack's entity directives
- * untouched (native solid-entity look), while the ghost program pins the
- * standard translucent blend over the SAME inherited directives so cloak/wings
- * keep their L0 gradient semantics. The alpha test is NOT pinned on either:
+ * untouched, while the ghost program preserves explicit per-attachment blend
+ * contracts and only uses the legacy alpha fallback in their absence.
+ * The alpha test is NOT pinned on either:
  * the resolved Entities directives are copied onto our synthetic ProgramSources
  * via {@code withDirectiveOverride}, so name-keyed pack directives
  * ({@code alphaTest.gbuffers_entities}, ...) win inside {@code ShaderCreator}
@@ -117,9 +117,8 @@ public final class ShaderPackProgramCompiler {
             new AlphaTest(AlphaTestFunction.GREATER, 0.1f);
     private static final AlphaTest FALLBACK_ALPHA_TEST_SHADOW_PLAIN = AlphaTest.ALWAYS;
 
-    /** L0 ghost semantics pinned onto the ghost program regardless of what the
-     * pack's entity blend directive carries (design doc §12.2): standard
-     * translucent blend WITH alpha components, depth writes stay on elsewhere. */
+    /** Legacy fallback only when the effective entity program has no per-target
+     * contract. Native encoded MRT outputs must never receive this global pin. */
     private static final BlendModeOverride GHOST_BLEND_OVERRIDE = new BlendModeOverride(new BlendMode(
             GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
             GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA));
@@ -143,6 +142,10 @@ public final class ShaderPackProgramCompiler {
     private ShaderInstance ghostShader;
     /** Tri-state: true compiled, false sticky-failed/unavailable, null pending. */
     private Boolean shadowReady;
+    private ModelEntityContext entityContext=ModelEntityContext.NEUTRAL;
+    private ModelBlendPlan blendPlan=ModelBlendPlan.LEGACY;
+    public ModelEntityContext entityContext(){return entityContext;}
+    public ModelBlendPlan blendPlan(){return blendPlan;}
     private ShaderInstance shadowShader;
     private int shadowGtextureUnit = -1;
     private String shadowLastError = "";
@@ -203,6 +206,7 @@ public final class ShaderPackProgramCompiler {
         try {
             var accessor = (IrisRenderingPipelineAccessor) pipeline;
             ProgramSet programSet = accessor.getProgramSet();
+            entityContext=ModelEntityContext.resolve(programSet.getPack().getIdMap());
 
             var resolver = new ProgramFallbackResolver(programSet);
             var refProgram = resolver.resolve(ProgramId.Entities).orElse(null);
@@ -285,15 +289,13 @@ public final class ShaderPackProgramCompiler {
                 return fail("Iris returned no shader instance");
             this.gtextureUnit = findSamplerUnit(this.entitiesShader);
 
-            // Ghost segment: same sources and directive inheritance, but the
-            // standard translucent blend is PINNED so cloak/wings keep their L0
-            // gradient semantics regardless of the pack's entity blend. The pin
-            // targets a PRIVATE directives copy -- withDirectiveOverride hands
-            // every source the same original instance otherwise.
+            // Preserve explicit MRT blending. Otherwise pin the legacy alpha
+            // fallback on a private copy, without mutating the native directives.
             var ghostDirectives = refProgram.getDirectives()
                     .withOverriddenDrawBuffers(refProgram.getDirectives().getDrawBuffers());
+            blendPlan=ModelBlendPlan.resolve(ghostDirectives);
             this.ghostShader = this.compileMerged(accessor, programSet, properties,
-                    patched, fragResolved, refProgram, GHOST_SHADER_NAME, ghostDirectives, GHOST_BLEND_OVERRIDE);
+                    patched, fragResolved, refProgram, GHOST_SHADER_NAME, ghostDirectives, blendPlan.nativeAttachments()?null:GHOST_BLEND_OVERRIDE);
             if (this.ghostShader == null)
                 return fail("Iris returned no ghost shader instance");
             this.ghostGtextureUnit = findSamplerUnit(this.ghostShader);
@@ -306,6 +308,7 @@ public final class ShaderPackProgramCompiler {
                     "[CMI particles] pack entity merge ready ({}+{}, gtexture {}/{}, inherited alphaTest={})",
                     SHADER_NAME, GHOST_SHADER_NAME, this.gtextureUnit, this.ghostGtextureUnit,
                     inheritedAlpha);
+            CreateManaIndustry.LOGGER.info("[CMI particles] model entity context: allayId={}, {}",entityContext.allayId(),blendPlan.report());
             return true;
         } catch (Exception e) {
             this.entitiesShader = null;
@@ -354,6 +357,7 @@ public final class ShaderPackProgramCompiler {
 
     /** Drops compiled state (pipeline changed, reload, or failure). */
     public void reset() {
+        entityContext=ModelEntityContext.NEUTRAL;blendPlan=ModelBlendPlan.LEGACY;
         this.entitiesShader = null;
         this.ghostShader = null;
         this.gtextureUnit = -1;
