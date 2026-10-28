@@ -171,7 +171,9 @@ public class CreateManaIndustry {
     }
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(MODID).versioned("20");
+        PayloadRegistrar registrar = event.registrar(MODID).versioned("21");
+        registrar.playToClient(com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPacket::handle);
+        registrar.playToServer(com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPreferencePacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPreferencePacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPreferencePacket::handle);
         registrar.playToClient(com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket::handle);
         registrar.playToClient(com.iridium126.createmanaindustry.content.allaystorm.rift.RiftSnapshotPacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.rift.RiftSnapshotPacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.rift.RiftSnapshotPacket::handle);
         registrar.playToClient(com.iridium126.createmanaindustry.content.allaystorm.rift.RiftArrivalPacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.rift.RiftArrivalPacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.rift.RiftArrivalPacket::handle);

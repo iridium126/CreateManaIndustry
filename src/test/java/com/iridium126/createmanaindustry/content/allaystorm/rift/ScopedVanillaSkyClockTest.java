@@ -21,7 +21,7 @@ class ScopedVanillaSkyClockTest {
         if(net.neoforged.fml.loading.LoadingModList.get()==null)net.neoforged.fml.loading.LoadingModList.of(java.util.List.of(),java.util.List.of(),java.util.List.of(),java.util.List.of(),java.util.Map.of());
         net.minecraft.SharedConstants.tryDetectVersion();net.minecraft.server.Bootstrap.bootStrap();
     }
-    private static Level fixture(boolean patched,boolean client,AtomicLong source)throws Exception {
+    private static Level fixture(boolean client,AtomicLong source)throws Exception {
         String name="cmi/validation/SkyClock"+(names++);var writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);
         writer.visit(Opcodes.V21,Opcodes.ACC_PUBLIC,name,null,"net/minecraft/world/level/Level",new String[]{"net/minecraft/world/level/LevelAccessor"});
         writer.visitField(Opcodes.ACC_PUBLIC,"data","Lnet/minecraft/world/level/storage/LevelData;",null,null).visitEnd();
@@ -29,12 +29,8 @@ class ScopedVanillaSkyClockTest {
         for(String[] getter:new String[][]{{"getLevelData","data","net/minecraft/world/level/storage/LevelData"},{"dimensionType","type","net/minecraft/world/level/dimension/DimensionType"}}){
             var method=writer.visitMethod(Opcodes.ACC_PUBLIC,getter[0],"()L"+getter[2]+";",null,null);method.visitCode();method.visitVarInsn(Opcodes.ALOAD,0);method.visitFieldInsn(Opcodes.GETFIELD,name,getter[1],"L"+getter[2]+";");method.visitInsn(Opcodes.ARETURN);method.visitMaxs(0,0);method.visitEnd();
         }
-        // Both old and repaired worlds expose the scoped getDayTime() hook.
-        var get=writer.visitMethod(Opcodes.ACC_PUBLIC,"getDayTime","()J",null,null);get.visitCode();get.visitMethodInsn(Opcodes.INVOKESTATIC,Type.getInternalName(SkyRenderScope.class),"dayTime","()J",false);get.visitInsn(Opcodes.LRETURN);get.visitMaxs(0,0);get.visitEnd();
-        if(patched){
-            var node=new ClassNode();try(var input=ScopedVanillaSkyClockTest.class.getClassLoader().getResourceAsStream("com/iridium126/createmanaindustry/mixin/allaystorm/AllayScopedSkyTimeMixin.class")){new ClassReader(input.readAllBytes()).accept(node,0);}
-            var method=node.methods.stream().filter(m->m.name.equals("dayTime")&&m.desc.equals("()J")).findFirst().orElseThrow();method.accept(writer);
-        }
+        var node=new ClassNode();try(var input=ScopedVanillaSkyClockTest.class.getClassLoader().getResourceAsStream("com/iridium126/createmanaindustry/mixin/allaystorm/AllayScopedSkyTimeMixin.class")){new ClassReader(input.readAllBytes()).accept(node,0);}
+        var clock=node.methods.stream().filter(m->m.name.equals("dayTime")&&m.desc.equals("()J")).findFirst().orElseThrow();clock.accept(writer);
         writer.visitEnd();byte[] bytes=writer.toByteArray();
         var loader=new ClassLoader(ScopedVanillaSkyClockTest.class.getClassLoader()){Class<?> define(){return defineClass(name.replace('/','.'),bytes,0,bytes.length);}};
         var unsafeField=sun.misc.Unsafe.class.getDeclaredField("theUnsafe");unsafeField.setAccessible(true);var unsafe=(sun.misc.Unsafe)unsafeField.get(null);
@@ -46,16 +42,8 @@ class ScopedVanillaSkyClockTest {
         var type=new DimensionType(OptionalLong.empty(),true,false,false,true,1,true,false,-64,384,384,null,null,0,null);
         level.getClass().getField("type").set(level,type);return level;
     }
-    @Test void oldGetterHookLeavesVanillaSkyIdenticalToTheSource()throws Exception {
-        var day=new AtomicLong(6000);var old=fixture(false,true,day);
-        try {SkyRenderScope.enter(new AllaySkyContext(0,-6000,0,0,0,1,true),0);
-            assertEquals(-6000,old.getDayTime());assertEquals(6000,old.dayTime());
-            assertEquals(old.dimensionType().timeOfDay(6000),old.getTimeOfDay(0));
-            assertNotEquals(old.dimensionType().timeOfDay(-6000),old.getTimeOfDay(0));
-        }finally{SkyRenderScope.leave();}
-    }
     @Test void shippedClockOverrideFeedsAllVanillaCelestialQueriesAndRestoresSource()throws Exception {
-        var day=new AtomicLong(6000);var client=fixture(true,true,day);var server=fixture(true,false,day);
+        var day=new AtomicLong(6000);var client=fixture(true,day);var server=fixture(false,day);
         for(long source:new long[]{0,6000,12000,18000,-6000,24000,1000000000})for(boolean cycle:new boolean[]{false,true})for(float rate:new float[]{0,.5f,1,2}){
             day.set(source);long target=source-12000;
             assertEquals(source,client.dayTime());assertEquals(123456,client.getLevelData().getGameTime());

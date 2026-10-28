@@ -48,6 +48,22 @@ precise float cmiHash1(float p) {
     return result;
 }
 
+precise float cmiStormMemberSeed(float stormSeed, uint memberIdx) {
+    precise float s0 = cmiHash1(stormSeed + 31.7);  // [0,1), one value per storm
+    precise float shift = s0 * 97.0;
+    precise float t = float(memberIdx) * 0.6123;
+    precise float p = t + 0.7;
+    precise float q = p + shift;             // spans ~[0.7, 80360] -> ~8285 folds
+    precise float hA = cmiHash1(q);
+    precise float q2 = q * 7.31;             // second pass, decorrelated input
+    precise float hB = cmiHash1(q2);
+    precise float mA = hA * 0.618;
+    precise float mB = hB * 0.382;
+    precise float mseed = mA + mB;           // [0,1); 2048 members: exact, 131072: ~95% distinct
+    return mseed;
+}
+
+
 // ---- storm wave squads (server-launched dive waves) ------------------------
 // Membership + launch-stagger rolls. SAME hash discipline as emit.comp's
 // identity chain: NAMED single-mul statements only — an inline a*b+c may

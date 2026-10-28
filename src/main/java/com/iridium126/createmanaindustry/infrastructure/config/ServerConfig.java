@@ -138,6 +138,7 @@ public final class ServerConfig {
 
     private static ModConfigSpec.DoubleValue STORM_CORRECTION_HZ;
     private static ModConfigSpec.IntValue STORM_MAX_COUNT;
+    private static ModConfigSpec.IntValue STORM_LOD_MAX_DISTANCE;
     private static ModConfigSpec.DoubleValue STORM_GROWTH_PER_SECOND;
     private static ModConfigSpec.DoubleValue STORM_STARFALL_INTERVAL, STORM_STARFALL_CHANCE;
     private static ModConfigSpec.IntValue STORM_STARFALL_ACTIVE, STORM_STARFALL_COLUMN_MEMBERS;
@@ -296,6 +297,7 @@ public final class ServerConfig {
         STORM_CORRECTION_HZ = BUILDER
                 .comment("Authoritative-client position correction snapshots per second for storm members near players. Higher = tighter cross-player position agreement, more bandwidth (~4 KB/s per snapshot at the 256-member cap). Delivered to the authority client with its assignment; changes apply from the next snapshot.")
                 .defineInRange("stormCorrectionHz", 5.0, 0.5, 20.0);
+        STORM_LOD_MAX_DISTANCE = BUILDER.comment("Maximum storm visual-only LOD subscription distance. 0 disables LOD synchronization.").defineInRange("stormLodMaxDistance",8192,0,8192);
         STORM_MAX_COUNT = BUILDER
                 .comment("Maximum generated member population of a storm. The command's count argument is the INITIAL population; the storm then grows toward this ceiling (members killed along the way stay dead and keep consuming budget — the total number of members a storm ever generates is capped here). Also hard-clamps the command's initial count. Hard engine ceiling is 131072.")
                 .defineInRange("stormMaxCount", 65536, 1, 131072);
@@ -565,6 +567,7 @@ public final class ServerConfig {
     public static boolean fuelRodStrictStacking = true;
     public static double stormCorrectionHz = 5.0;
     public static int stormMaxCount = 65536;
+    public static int stormLodMaxDistance=8192;
     public static double stormGrowthPerSecond = 20.0;
     public static double stormHelixIntervalMin=30,stormHelixIntervalMax=60,stormDomeIntervalMin=60,stormDomeIntervalMax=90;
     private static final ModConfigSpec.DoubleValue STORM_HELIX_INTERVAL_MIN,STORM_HELIX_INTERVAL_MAX,STORM_DOME_INTERVAL_MIN,STORM_DOME_INTERVAL_MAX;
@@ -667,6 +670,7 @@ public final class ServerConfig {
             packageGpuAuthority=PACKAGE_GPU_AUTHORITY.get();
             packageMainThreadBudgetMs=PACKAGE_MAIN_THREAD_BUDGET_MS.get();
             stormMaxCount = STORM_MAX_COUNT.get();
+            stormLodMaxDistance=STORM_LOD_MAX_DISTANCE.get();
             stormGrowthPerSecond = STORM_GROWTH_PER_SECOND.get();
             stormHelixIntervalMin=Math.min(STORM_HELIX_INTERVAL_MIN.get(),STORM_HELIX_INTERVAL_MAX.get());stormHelixIntervalMax=Math.max(STORM_HELIX_INTERVAL_MIN.get(),STORM_HELIX_INTERVAL_MAX.get());
             stormDomeIntervalMin=Math.min(STORM_DOME_INTERVAL_MIN.get(),STORM_DOME_INTERVAL_MAX.get());stormDomeIntervalMax=Math.max(STORM_DOME_INTERVAL_MIN.get(),STORM_DOME_INTERVAL_MAX.get());

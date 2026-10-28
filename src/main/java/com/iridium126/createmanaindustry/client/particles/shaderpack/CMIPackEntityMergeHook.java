@@ -209,6 +209,7 @@ public final class CMIPackEntityMergeHook {
      * path feeds, and our vertex main needs no shadow variant at all.
      */
     private static void uploadShadowUniforms(int progId) {
+        setInt(progId,"cmi_LodPass",0);
         Matrix4f projection = new Matrix4f(ShadowRenderer.PROJECTION);
         Matrix4f modelView = new Matrix4f(ShadowRenderer.MODELVIEW);
         uploadIrisMatrices(progId, projection, modelView);
@@ -264,6 +265,18 @@ public final class CMIPackEntityMergeHook {
         RenderSystem.depthMask(true);
         bindAtlas(COMPILER.gtextureUnit());
         gpu.drawModelCutout();
+        var lod=com.iridium126.createmanaindustry.client.particles.engine.StormLodGpu.INSTANCE;
+        var publication=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication();
+        var captured=CapturedRenderingState.INSTANCE;
+        if(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.currentFrameReady())lod.drawNative(publication.generation(),captured.getGbufferModelView(),captured.getGbufferProjection(),projection->{
+            uploadIrisMatrices(progId,projection,new Matrix4f(captured.getGbufferModelView()));
+            lod.bindNative();
+            setMat(progId,"cmi_LodInverseView",new Matrix4f(captured.getGbufferModelView()).invert());
+            RenderSystem.enableDepthTest();RenderSystem.depthMask(true);RenderSystem.disableCull();
+            setInt(progId,"cmi_LodPass",1);lod.drawBody();setInt(progId,"cmi_LodPass",2);lod.drawPixel();
+        });
+        gpu.beginBindings();bindSharedResources(gpu);gpu.bindDrawIndirect();
+        uploadSegmentUniforms(progId);
         // Held-item carrier segment: same cutout class as the body (depth
         // writes, no blending), so it rides the body's shader state — drawn
         // after the body, before the blended ghost, mirroring the L0 order.
@@ -372,6 +385,7 @@ public final class CMIPackEntityMergeHook {
     }
 
     private static void uploadCmiUniforms(int progId) {
+        setInt(progId,"cmi_LodPass",0);
         setInt(progId,"cmi_ShadowPass",0);
         var camPos = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
         setFloat3(progId, "cmi_CameraPos", (float) camPos.x, (float) camPos.y, (float) camPos.z);

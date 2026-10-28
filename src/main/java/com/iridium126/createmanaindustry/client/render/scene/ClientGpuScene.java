@@ -187,10 +187,16 @@ public final class ClientGpuScene {
                     frameCoordinator.simulate();work.simulate();
                     frameCoordinator.generate();work.generate();
                     frameCoordinator.cullSort();work.cullSort();
+                    ParticleDiagnostics.INSTANCE.mark("storm_lod_compute");
+                    com.iridium126.createmanaindustry.client.particles.engine.StormLodGpu.INSTANCE.prepare(particles.currentGeneration()+1,camera,view,projectionMatrix,deltaTracker.getGameTimeDeltaPartialTick(false));
+                    ParticleDiagnostics.INSTANCE.mark("storm_lod_publish");
+                    com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.INSTANCE.beginBindings();
                     var publication=work.preparePublication();
                     ScenePublicationPolicy.validate(publication,publication.generation(),
                             com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.candidateGeneration(),work.packageVersion());
-                    renderInput=work.commit();frameCoordinator.publish(publication);work.consumeInputs();
+                    renderInput=work.commit();
+                    com.iridium126.createmanaindustry.client.particles.engine.StormLodGpu.INSTANCE.commit(publication.generation());
+                    frameCoordinator.publish(publication);work.consumeInputs();
                     com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualFrame.publish(AllayStormRuntime.INSTANCE.visualFrame(renderFrameToken(),publication.generation()));
                     frameArmed=true;
                 } else frameCoordinator.abort();

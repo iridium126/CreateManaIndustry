@@ -5,12 +5,10 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.nio.*;
 import java.nio.file.*;
-import java.util.*;
 
 /** Unwarped quaternion polynomial Julia slices. Only the camera changes across views. */
 public final class JuliaOfflineRender {
     record Candidate(String id,int power,float a,float b,float c,float d,float w,float roll){}
-    static final List<Candidate> candidates=new ArrayList<>();
     static int program,vao,framebuffer,texture;
     static long window;
     static void uniform(String key,int value){GL20.glUniform1i(GL20.glGetUniformLocation(program,key),value);}
@@ -35,23 +33,15 @@ public final class JuliaOfflineRender {
         BufferedImage image=new BufferedImage(size,size,BufferedImage.TYPE_INT_ARGB);for(int y=0;y<size;y++)for(int x=0;x<size;x++){int offset=((size-1-y)*size+x)*4;int r=Byte.toUnsignedInt(rgba.get(offset)),g=Byte.toUnsignedInt(rgba.get(offset+1)),b=Byte.toUnsignedInt(rgba.get(offset+2)),a=Byte.toUnsignedInt(rgba.get(offset+3));image.setRGB(x,y,a<<24|r<<16|g<<8|b);}
         Files.createDirectories(path.getParent());ImageIO.write(image,"png",path.toFile());System.out.println(path);
     }
-    static void candidate(int power,float a,float b,float c,float d,float w,float roll){candidates.add(new Candidate(String.format(Locale.ROOT,"%03d",candidates.size()),power,a,b,c,d,w,roll));}
-    static void populate(){
-        for(float a:new float[]{-1.7f,-1.4f,-1.1f,-.8f,-.45f,.15f})for(float b:new float[]{0,.08f,.3f})candidate(2,a,b,0,0,0,0);
-        for(float a:new float[]{.20f,.35f,.43f,.46f,.468f,.472f,-.25f,-.50f})for(float b:new float[]{0,.015f,.06f})candidate(4,a,b,0,0,0,(float)(Math.PI/4));
-        for(float a:new float[]{-.2f,-.45f,-.7f})for(float b:new float[]{.5f,.7f})candidate(2,a,b,.05f,.02f,0,0);
-        for(float a:new float[]{-.30f,-.35f,-.40f,-.50f,-.55f,-.60f,-.65f,-.70f})candidate(2,a,0,0,0,0,0);
-    }
     public static void main(String[] args)throws Exception {
-        populate();String mode=args.length==0?"scan":args[0];Path output=Path.of("build/julia-offline");Files.createDirectories(output);
-        StringBuilder csv=new StringBuilder("id,power,c_real,c_i,c_j,c_k,slice_w,roll_radians\n");for(var c:candidates)csv.append(String.format(Locale.ROOT,"%s,%d,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f%n",c.id,c.power,c.a,c.b,c.c,c.d,c.w,c.roll));Files.writeString(output.resolve("candidates.csv"),csv);
+        var c=new Candidate("051",2,-.5f,0,0,0,0,0);Path output=Path.of("build/julia-offline");Files.createDirectories(output);
+        Files.writeString(output.resolve("parameters.json"),"{\"id\":51,\"power\":2,\"c_real\":-0.5,\"slice_w\":0}\n");
         initialize();try{
-            if(mode.equals("scan")){for(var c:candidates)draw(c,240,48,350,.0025f,1.85f,0,0,4,0,output.resolve("scan/"+c.id+".png"));}
-            else {
-                int id=Integer.parseInt(mode);var c=candidates.get(id);
-                for(int view=0;view<3;view++){float[] camera=switch(view){case 0->new float[]{0,0,4};case 1->new float[]{2.2f,1.3f,3.1f};default->new float[]{3.6f,.8f,.8f};};draw(c,1600,128,1100,.00045f,1.85f,camera[0],camera[1],camera[2],0,output.resolve("render/"+c.id+"-view"+view+".png"));draw(c,900,192,1200,.00035f,1.85f,camera[0],camera[1],camera[2],1,output.resolve("render/"+c.id+"-silhouette"+view+".png"));}
-                draw(c,900,192,1200,.00035f,1.85f,0,0,4,1,output.resolve("render/"+c.id+"-mask192.png"));
+            for(int view=0;view<3;view++){
+                float[] camera=switch(view){case 0->new float[]{0,0,4};case 1->new float[]{2.2f,1.3f,3.1f};default->new float[]{3.6f,.8f,.8f};};
+                draw(c,900,192,1200,.00035f,1.85f,camera[0],camera[1],camera[2],1,output.resolve("render/"+c.id+"-silhouette"+view+".png"));
             }
+            draw(c,900,192,1200,.00035f,1.85f,0,0,4,1,output.resolve("render/"+c.id+"-mask192.png"));
         }finally{GL20.glDeleteProgram(program);GL30.glDeleteVertexArrays(vao);GL30.glDeleteFramebuffers(framebuffer);GL11.glDeleteTextures(texture);GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
     }
 }

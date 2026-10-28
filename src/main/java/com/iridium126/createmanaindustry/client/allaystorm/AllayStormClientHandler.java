@@ -25,6 +25,7 @@ public final class AllayStormClientHandler {
 
     /** {@link ClientboundStormStatePacket}: lifecycle + authority flips. */
     public static void onState(ClientboundStormStatePacket packet) {
+        com.iridium126.createmanaindustry.client.allaystorm.lod.StormLodClient.state(packet);
         AllayStormRuntime e = AllayStormRuntime.INSTANCE;
         var level = net.minecraft.client.Minecraft.getInstance().level;
         if (level != null) e.applyStormState(packet, level.dimension().location());
@@ -32,6 +33,7 @@ public final class AllayStormClientHandler {
 
     /** {@link ClientboundStormDamagePacket}: authoritative damage + hit correction. */
     public static void onDamage(ClientboundStormDamagePacket packet) {
+        com.iridium126.createmanaindustry.client.allaystorm.lod.StormLodClient.damage(packet);
         AllayStormRuntime e = AllayStormRuntime.INSTANCE;
         var mc = net.minecraft.client.Minecraft.getInstance();
         if (mc.level == null || !packet.dimension().equals(mc.level.dimension().location()) || !packet.identity().equals(e.identity())) return;
@@ -51,6 +53,7 @@ public final class AllayStormClientHandler {
 
     /** {@link ClientboundStormCenterPacket}: continuous chased-center + growth snapshot. */
     public static void onCenter(ClientboundStormCenterPacket packet) {
+        com.iridium126.createmanaindustry.client.allaystorm.lod.StormLodClient.center(packet);
         com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.applyStormCenter(packet);
     }
 

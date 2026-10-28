@@ -1,6 +1,6 @@
 # Allay Storm：同步与资源契约
 
-当前核心协议 **18**、Dome模板 **v4**、Helix模板 **v1**。两端同步升级并重启，拒绝旧协议混连；F3+T不更新Java类。Helix v1仍为0.75圈，离线模板二进制布局、存档和Dome v4格式不变。[攻击与配置](allay-storm-ai.md)和[验证入口](allay-storm-validation.md)分别维护，不保留历史协议逐版说明。
+当前核心协议 **21**、Dome模板 **v4**、Helix模板 **v1**。两端同步升级并重启，拒绝旧协议混连；F3+T不更新Java类。Helix v1仍为0.75圈，离线模板二进制布局、存档和Dome v4格式不变。[攻击与配置](allay-storm-ai.md)和[验证入口](allay-storm-validation.md)分别维护，不保留历史协议逐版说明。
 
 ## 数据所有权与身份
 
@@ -33,9 +33,11 @@ Dome普通归队交接仅复用成员阶段字及阶段互斥的临时计时字�
 | C→S | `ServerboundStormHitPacket` | 风暴身份、成员、递增attackSeq、绝对double接触点；不携带战斗值 |
 | C→S | `ServerboundStormWaveContactPacket` | 风暴／攻击身份、成员、采样秒数及绝对接触点；采样时间仅诊断 |
 
+裂口／天空摘要和LOD是独立视觉流，不启动完整成员模拟或授予authority。两者复用规范双精度中心及20tick延迟；LOD复用已收到的中心包并只同步必要死亡增量。字段、限额和生命周期分别见[裂口](allay-storm-rift.md)及[LOD](allay-storm-lod.md)。
+
 包处理在所属主线程执行，数组和资源有界。就绪／完成位图每张最多192个long，支持12288名；未到达GPU池的名单成员不能凭缺失获得就绪。服务端验证 `ready ⊆ eligible`、非空分母，且eligible必须等于完整名单减去服务端已确认死亡／退出；同一GPU反馈先发送退出确认，再发送就绪，避免缩小分母先于确认到达；Helix／Dome共同使用固定START预算D tick与已过e tick的整数规则`10D×ready ≥ (10D−e)×eligible`，GPU反馈筛选、客户端发送和服务端验收保持一致，冻结参战集合；LOCK与观察者START原子携带completedRanks（含未参战成员）。反馈丢失按同步最晚截止时间回收，本地归队不等待网络确认。
 
-当前authority也可在Dome集结阶段提交既有完成rank位图，服务端按维度／epoch／攻击ID验证、幂等释放预留并广播确认；Helix仍需已LOCK。确认后的rank保存在completedRanks中，观察者接入／authority交接不得复活，旧完成不能释放已接管成员。全员完成时提前回收槽位，未就绪者不增加截止宽限。完成反馈保持原布局；集结反馈的参考身份见协议18说明。
+当前authority也可在Dome集结阶段提交既有完成rank位图，服务端按维度／epoch／攻击ID验证、幂等释放预留并广播确认；Helix仍需已LOCK。确认后的rank保存在completedRanks中，观察者接入／authority交接不得复活，旧完成不能释放已接管成员。全员完成时提前回收槽位，未就绪者不增加截止宽限。完成反馈保持原布局；集结反馈携带参考版本与攻击内采样时间。
 
 Dome动态门槛复用START／assemble时间字段，D按绝对时间各自转换为tick后相减，e按当前游戏tick与START tick作环绕差；避免大float时钟相减让截止下一tick被误当作截止tick。GPU、客户端、服务端共用同一整数不等式，乘积有界。最终身体接触后的位图统一重新计数；连续帧历史只从已提交bank继承，候选回滚不累计，冻结参考相位变化重新计数。没有新增消息、快照字段或稳态上传。
 

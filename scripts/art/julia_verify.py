@@ -4,18 +4,17 @@ For real c, a quaternion's imaginary direction is invariant (up to sign), so its
 orbit is isomorphic to the complex orbit (real(q), norm(imag(q))). Revolving the
 complex filled Julia set about its real axis gives the 3D slice. No shape edit.
 """
-import csv
 import json
 from pathlib import Path
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 
 ROOT=Path('build/julia-offline')
-rows=list(csv.DictReader((ROOT/'candidates.csv').open()))
+entry=json.loads((ROOT/'parameters.json').read_text())
 reports=[]
-for index in (12,49,51):
-    entry=rows[index]; c=float(entry['c_real'])
-    assert entry['power']=='2' and all(float(entry[k])==0 for k in ('c_i','c_j','c_k','slice_w','roll_radians'))
+for index in (entry['id'],):
+    c=float(entry['c_real'])
+    assert entry['power']==2 and c==-.5 and entry['slice_w']==0
     gpu=np.asarray(Image.open(ROOT/f'render/{index:03d}-mask192.png'))[:,:,3]>0
     n=gpu.shape[0]; scale=1.85
     xs=(2*(np.arange(n)+.5)-n)/n*scale

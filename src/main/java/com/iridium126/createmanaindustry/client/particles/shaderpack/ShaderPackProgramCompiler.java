@@ -691,8 +691,29 @@ public final class ShaderPackProgramCompiler {
         }
         sb.append(mergedSources.apply("chunks/model_size.glsl")).append('\n');
         sb.append(chunk).append('\n');
+        sb.append(mergedSources.apply("chunks/storm_lod_vertex.glsl")).append('\n');
         sb.append("""
                 void main() {
+                    if(cmi_LodPass!=0){
+                        uint index=texelFetch(cmi_Sorted,(cmi_LodPass==1?0:131072)+gl_InstanceID).x;
+                        vec4 position=texelFetch(cmi_Pool,int(index*2u));
+                        vec4 motion=texelFetch(cmi_Pool,int(index*2u+1u));
+                        int vb=gl_VertexID*int(MODEL_VERTEX_FLOATS);
+                        vec3 local=vec3(0);vec2 sourceUv=vec2(0);int part=0,axis=4;
+                        if(cmi_LodPass==1){
+                            local=vec3(texelFetch(cmi_Geo,vb).x,texelFetch(cmi_Geo,vb+1).x,texelFetch(cmi_Geo,vb+2).x);
+                            sourceUv=vec2(texelFetch(cmi_Geo,vb+3).x,texelFetch(cmi_Geo,vb+4).x);
+                            part=int(texelFetch(cmi_Geo,vb+5).x);axis=int(texelFetch(cmi_Geo,vb+6).x);
+                        }
+                        vec3 vertex,normal;vec2 uv;
+                        cmiLodVertex(position,motion,local,sourceUv,part,axis,vertex,normal,uv);
+                        cmi_VertexLevel=vec4(vertex,1);cmi_NormalLevel=normal;
+                        cmi_TexCoord0v=vec4(uv,0,1);cmi_LightCoordv=vec4(240,240,0,1);cmi_Tint=vec4(1);
+                """);
+        if(withEntityColor)sb.append("entityColor=vec4(0);\n");
+        sb.append("""
+                    }else {
+
                     // Resolve this instance through the MODEL partition of the
                     // sort array. The partition is depth-ordered far -> near (far
                     // items carry the small key); the cutout segment reverses its
@@ -736,7 +757,7 @@ public final class ShaderPackProgramCompiler {
                     uint hb = eid * VEC4_PER_EMITTER;
 
                     // per-instance fade early-out: collapse offscreen consistently per triangle
-                    gone = gone || (!cmi_ShadowPass && distance(p0.xyz, cmi_CameraPos) > cmi_FadeDist + 24.0);
+                    gone = gone || (!cmi_ShadowPass && distance(p0.xyz, cmi_CameraPos) >= cmi_FadeDist + 24.0);
 
                     float sizeStart = gone ? 0.0 : texelFetch(cmi_Emitters, int(hb + 5u)).z;
                     float sizeEnd = gone ? 0.0 : texelFetch(cmi_Emitters, int(hb + 5u)).w;
@@ -872,6 +893,7 @@ public final class ShaderPackProgramCompiler {
                     """);
         }
         sb.append("""
+                    }
                 }
                 """);
 

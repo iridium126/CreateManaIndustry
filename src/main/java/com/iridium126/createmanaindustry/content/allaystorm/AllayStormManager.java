@@ -235,6 +235,7 @@ public final class AllayStormManager {
         Runtime rt = runtime(level);
         if (!data.active) {
             com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftServer.stop(level);
+            com.iridium126.createmanaindustry.content.allaystorm.lod.StormLodServer.stop(level);
             rt.columns.clear();rt.columnSnapshots.clear();rt.waves.clear();rt.schedule.reset();rt.waveReserved.clear();
             if (rt.tracks.values().stream().anyMatch(t -> t.active))
                 deactivateAll(level, rt);
@@ -461,6 +462,8 @@ public final class AllayStormManager {
         broadcastWave(level,rt,wavePacket(w,AllayStarfall.LOCK,false,target.getId()));return true;
     }
 
+    public static boolean fullObserver(ServerLevel level,java.util.UUID id){var t=runtime(level).tracks.get(id);return t!=null&&t.active;}
+
     /** Broadcasts a wave event to every active-track player (all must render the same attack). */
     private static void broadcastWave(ServerLevel level, Runtime rt, ClientboundStormWavePacket packet) {
         for (var entry : rt.tracks.entrySet()) {
@@ -570,6 +573,7 @@ public final class AllayStormManager {
                 rt.level.getGameTime());
         ClientboundStormCenterPacket packet = rt.publishedCenter;
         com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftServer.centerSample(level,packet);
+        com.iridium126.createmanaindustry.content.allaystorm.lod.StormLodServer.center(level,packet);
         for (var entry : rt.tracks.entrySet()) {
             if (!entry.getValue().active)
                 continue;
@@ -756,6 +760,7 @@ public final class AllayStormManager {
         for(var entry:rt.tracks.entrySet())if(entry.getValue().active){var observer=level.getServer().getPlayerList().getPlayer(entry.getKey());if(observer!=null&&observer.serverLevel()==level)PacketDistributor.sendToPlayer(observer,packet);}
     }
     private static void retireDeadMember(ServerLevel level,Runtime rt,int member){
+        com.iridium126.createmanaindustry.content.allaystorm.lod.StormLodServer.death(level,member);
         for(var w:rt.waves)if(StormAttack.regional(w.kind)&&w.membership.get(member))for(int rank=0;rank<w.members.length;rank++)if(w.members[rank]==member&&!w.completed.get(rank)){
             w.completed.set(rank);w.membership.clear(member);rt.waveReserved.clear(member);broadcastCompletion(level,rt,new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(level.dimension().location(),w.epoch,w.id,w.completed.toLongArray()));break;
         }

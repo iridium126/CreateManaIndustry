@@ -1,6 +1,6 @@
 # Allay Storm：当前行为与配置
 
-核心协议 **18**，Dome模板 **v4**、Helix模板 **v1**。真实客户端验收由用户执行。[同步契约](allay-storm-sync.md)记录身份与数据所有权，[验证说明](allay-storm-validation.md)记录运行入口与验收边界。行为以当前源码为准，不按协议版本维护重复说明。
+核心协议 **21**，Dome模板 **v4**、Helix模板 **v1**。真实客户端验收由用户执行。[同步契约](allay-storm-sync.md)记录身份与数据所有权，[验证说明](allay-storm-validation.md)记录运行入口与验收边界。行为以当前源码为准，不按协议版本维护重复说明。
 
 ## 主体与调度
 

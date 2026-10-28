@@ -40,6 +40,10 @@ public final class ParticleRenderer {
                 if (drawTimer!=null&&drawTimer.begin())
                     queryActive = true;
 
+                ParticleDiagnostics.INSTANCE.mark("draw_storm_lod");
+                StormLodGpu.INSTANCE.fallback(publication.generation(),view,projectionMatrix);
+                gpu.beginBindings();
+
                 // Repeat of the compute section's empty-guard from the handoff
                 // values: nothing alive and nothing spawned skips vertex work while
                 // keeping bindings correct for a valid buffer anyway.

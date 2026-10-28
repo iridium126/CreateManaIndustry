@@ -200,6 +200,7 @@ allprojects {
             source 'scripts/particles/ShaderColdCompileValidation.java'
             source 'scripts/particles/ShaderFirstExecutionValidation.java'
             source 'scripts/particles/StormDepenetrationGpuValidation.java'
+            source 'scripts/particles/StormLodGpuValidation.java'
             options.release = 21
         }
         tasks.register('benchmarkModelAnimationStorage', JavaExec) {
@@ -259,6 +260,19 @@ allprojects {
             mainClass = 'StarfallGpuValidation'
             if (project.hasProperty('starfallBenchmark')) args '--benchmark'
             if (project.hasProperty('starfallRingBenchmark')) args '--ring-benchmark'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateStormLodGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'StormLodGpuValidation'
+            workingDir = project.projectDir
+        }
+        tasks.register('benchmarkStormLodGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'StormLodGpuValidation'
+            args '--benchmark'
             workingDir = project.projectDir
         }
         tasks.register('validateStormMotionGpu', JavaExec) {

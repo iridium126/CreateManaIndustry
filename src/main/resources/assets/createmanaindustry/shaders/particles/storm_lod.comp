@@ -1,0 +1,29 @@
+layout(local_size_x=64) in;
+layout(std430,binding=0) buffer LodRecords { vec4 records[]; };
+layout(std430,binding=1) buffer LodOrder { uvec2 order[]; };
+layout(std430,binding=2) buffer LodCommands { uint command[]; };
+layout(std430,binding=3) readonly buffer LodDead { uint dead[]; };
+layout(std430,binding=4) readonly buffer LodCovered { uint covered[]; };
+uniform uint uCount;
+uniform float uSeed, uRadius, uOmega, uRotation, uCirculation, uCirculationRate;
+uniform float uNear, uMiddle, uFar;
+uniform vec3 uCenter;
+uniform vec4 uFrustum[6];
+#pragma cmi_include chunks/allay_storm.glsl
+void main(){
+    uint id=gl_GlobalInvocationID.x;
+    if(id>=uCount || ((dead[id>>5u]|covered[id>>5u])&(1u<<(id&31u)))!=0u)return;
+    precise float seed=cmiStormMemberSeed(uSeed,id);
+    vec3 position,velocity;
+    cmiTyphoonHome(seed,uRadius,uOmega,uRotation,uCirculation,uCirculationRate,6.,uCenter,position,velocity);
+    float distance=length(position);
+    if(distance<uNear || distance>=uFar)return;
+    // .3 centre offset + sqrt(2)*.3 corner reach < .75, including camera roll.
+    float bound=distance<uMiddle?.65:.75;
+    for(int plane=0;plane<6;plane++)if(dot(uFrustum[plane].xyz,position)+uFrustum[plane].w < -bound)return;
+    records[id*2u]=vec4(position,.3);
+    records[id*2u+1u]=vec4(velocity,seed);
+    bool body=distance<uMiddle;
+    uint rank=atomicAdd(command[body?1:6],1u);
+    order[(body?0u:131072u)+rank]=uvec2(id,0);
+}

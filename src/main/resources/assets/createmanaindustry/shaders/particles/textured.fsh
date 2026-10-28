@@ -2,7 +2,7 @@
 //   0 — ALPHA blended: samples the sprite atlas, applies tint/intensity and a
 //       distance fade, outputs normal alpha so the sorted back-to-front draw
 //       composites overlapping translucent sprites correctly.
-//   1 — OPAQUE cutout: hard discard at 0.5 with an opaque output and depth
+//   1 — OPAQUE cutout: intrinsic alpha discard at 0.1 with an opaque output and depth
 //       writes (blend off) — order-independent, like the MODEL opaque segment.
 uniform sampler2D uSprite;
 uniform float uFadeDist;
@@ -33,7 +33,7 @@ void main() {
         // vanilla PARTICLE_SHEET_OPAQUE alpha test (particle.fsh: a < 0.1
         // discard, no blend, depth write); 0.1 (not 0.5) keeps the soft
         // edge texels of the crit/heart stars visible exactly like vanilla
-        if (tex.a * farFade < 0.1)
+        if (tex.a < 0.1)
             discard;
         fragColor = vec4(vColor * tex.rgb, 1.0);
     } else {

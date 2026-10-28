@@ -31,4 +31,12 @@ class JuliaProjectionMathTest {
             assertEquals(referenceCircle*1.01,footprint,1e-9);
         }
     }
+    @Test void bundledShapeHasValidSegmentsAndReferenceScale() throws Exception {
+        var shape=JuliaShape.load();
+        assertTrue(shape.segments.length>0);assertEquals(0,shape.segments.length%4);
+        assertTrue(shape.referenceValid(16,128,384));
+        assertEquals(shape.entranceScale,shape.scale(16,128,384,0));
+        assertTrue(Double.isFinite(shape.scale(16,128,384,2)));
+        assertTrue(shape.scale(16,128,384,2)>shape.entranceScale);
+    }
 }

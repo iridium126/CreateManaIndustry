@@ -13,6 +13,7 @@ uniform mat4 ProjMat;
 uniform vec3 uCamPos;
 uniform vec3 uCamRight;
 uniform vec3 uCamUp;
+uniform float uFadeDist;
 uniform float uAtlasCols;
 uniform float uAtlasRows;
 uniform int uMode; // 0 = blended (sorted walk), 1 = opaque cutout permutation
@@ -82,6 +83,8 @@ void main() {
     float life = clamp(p3.x / max(p3.y, 1e-5), 0.0, 1.0);
     uint eid = floatBitsToUint(p3.w);
     uint hb = eid * VEC4_PER_EMITTER;
+    bool relativeCentre=abs(emitters.u[hb+17u].y-8.0)<.25;
+    if(uMode==1 && length(relativeCentre?p0.xyz:p0.xyz-uCamPos)>=uFadeDist+24.0){gl_Position=vec4(0,0,2,1);return;}
     if(abs(emitters.u[hb+17u].y-9.0)<.25){cmiDrawFateRibbon(p1,false,quadCorner(gl_VertexID));return;}
 
     float sizeStart = emitters.u[hb + 5u].z;

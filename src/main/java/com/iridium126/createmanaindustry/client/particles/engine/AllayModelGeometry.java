@@ -80,7 +80,7 @@ public final class AllayModelGeometry {
      * only for carrier instances); the remainder = translucent blended
      * segment (cmd4).
      */
-    static final int BODY_OPAQUE_INDEX_COUNT;
+    public static final int BODY_OPAQUE_INDEX_COUNT;
     static final int OPAQUE_INDEX_COUNT;
 
     /**

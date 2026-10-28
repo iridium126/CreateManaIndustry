@@ -34,6 +34,7 @@ public final class ClientConfig {
     private static ModConfigSpec.DoubleValue PARTICLE_BUDGET_MS;
     private static ModConfigSpec.BooleanValue PARTICLE_AUTO_THROTTLE;
     private static ModConfigSpec.IntValue PARTICLE_FADE_DISTANCE;
+    private static ModConfigSpec.IntValue STORM_LOD_1_DISTANCE, STORM_LOD_DISTANCE;
     private static ModConfigSpec.BooleanValue PARTICLE_SHADER_PACK_INTEGRATION;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_PATTERN_REDIRECT;
@@ -82,8 +83,10 @@ public final class ClientConfig {
                 .comment("Auto throttle emission when budget exceeded.")
                 .define("autoThrottle", true);
         PARTICLE_FADE_DISTANCE = BUILDER
-                .comment("Particle fade distance in blocks.")
+                .comment("ALPHA/ADDITIVE fade starts here; MODEL/OPAQUE disappear as whole particles 24 blocks farther away.")
                 .defineInRange("fadeDistance", 96, 16, 256);
+        STORM_LOD_1_DISTANCE = BUILDER.comment("Storm opaque body LOD ends here; world-sized square billboard LOD starts here.").defineInRange("stormLod1Distance",1024,120,8192);
+        STORM_LOD_DISTANCE = BUILDER.comment("Storm LOD display and subscription limit. 0 disables distant members.").defineInRange("stormLodDistance",8192,0,8192);
         PARTICLE_SHADER_PACK_INTEGRATION = BUILDER
                 .comment("Enable shader pack integration for model particles.")
                 .define("shaderPackIntegration", true);
@@ -123,6 +126,7 @@ public final class ClientConfig {
     public static double particleBudgetMs = 15.0;
     public static boolean particleAutoThrottle = true;
     public static int particleFadeDistance = 96;
+    public static int stormLod1Distance=1024, stormLodDistance=8192;
     public static boolean shaderPackIntegration = true;
     public static boolean hexParticleRedirect = true;
     public static boolean hexPatternRedirect = true;
@@ -149,6 +153,7 @@ public final class ClientConfig {
             particleBudgetMs = PARTICLE_BUDGET_MS.get();
             particleAutoThrottle = PARTICLE_AUTO_THROTTLE.get();
             particleFadeDistance = PARTICLE_FADE_DISTANCE.get();
+            stormLod1Distance=STORM_LOD_1_DISTANCE.get();stormLodDistance=STORM_LOD_DISTANCE.get();
             shaderPackIntegration = PARTICLE_SHADER_PACK_INTEGRATION.get();
             hexParticleRedirect = PARTICLE_HEX_REDIRECT.get();
             hexPatternRedirect = PARTICLE_HEX_PATTERN_REDIRECT.get();

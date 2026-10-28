@@ -282,6 +282,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         }
         this.hexDirectStorage.close();
         this.directHexEmitter=this.sprayHexEmitter=-1;
+        StormLodGpu.INSTANCE.close();
         this.programs.delete();
         ParticleDiagnostics.INSTANCE.close();
         try {
@@ -589,7 +590,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         partitionActive= ParticleRuntime.this.partition.prepare(camera.getPosition());
         createsParticles= totalSpawn > 0 || directHexCount>0 || blockSpawnBound > 0 || fateActive || partitionActive
                 || PackageRuntime.INSTANCE.hasInput();
-        if (!ParticleRuntime.this.poolMayBeAlive && !createsParticles) {
+        if (!ParticleRuntime.this.poolMayBeAlive && !createsParticles && !com.iridium126.createmanaindustry.client.allaystorm.lod.StormLodClient.active()) {
             ParticleRuntime.this.frameIdle = true;
                 commitFrameInputs();writes.retire();
             return false;
@@ -925,6 +926,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 int frustumLoc = loc(kg, "uFrustum");
                 if (frustumLoc >= 0)
                     GL20.glUniform4fv(frustumLoc, ParticleRuntime.this.frustumPlanes);
+                StormLodGpu.INSTANCE.keygen(kg);
                 setUIntUniform(kg,"uModelPass",1);
                 ParticleRuntime.this.gpu.dispatch(1);
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);

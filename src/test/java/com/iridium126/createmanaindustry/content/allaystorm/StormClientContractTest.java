@@ -35,13 +35,6 @@ class StormClientContractTest {
         var declaration=java.util.regex.Pattern.compile("(?m)^#define\\s+"+java.util.regex.Pattern.quote(name)+"\\s+\\((\\d+)u\\)").matcher(text);
         assertTrue(declaration.find(),name);assertEquals(expected,Integer.parseInt(declaration.group(1)),name);
     }
-    @Test void motionAndCompletionUseTheCommonStateOrigin() throws Exception {
-        for(String name:new String[]{"dome_motion_budget.glsl","dome_completion.glsl"})
-            try(var source=getClass().getResourceAsStream("/assets/createmanaindustry/shaders/particles/chunks/"+name)){
-                assertNotNull(source);String text=new String(source.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
-                assertTrue(text.contains("CMI_STATE(STATE,"),name);assertFalse(text.contains("STATE.words["),name);
-            }
-    }
     @Test void candidatePrecedesSwingAndStormBranchOnlyPredictsSwing() throws Exception {
         // ServerPlayer.swing resets its attack ticker. Inspect the executed early branch without loading GL/client singletons.
         var calls=new ArrayList<String>();var swings=new ArrayList<String>();

@@ -40,7 +40,7 @@ const float BASE_BRIGHTNESS = 1.0;
 
 void main() {
     vec4 tex = texture(uSprite, vUv);
-    float farFade = 1.0 - smoothstep(uFadeDist, uFadeDist + 24.0, vDist);
+    // MODEL distance is a whole-instance cutoff in the vertex/cull paths.
     // double-wound shells expose either winding; orient the normal against the
     // real facing so both sides of wings/cloak shade identically
     vec3 n = normalize(vNormalView);
@@ -66,12 +66,12 @@ void main() {
     if (vOverlay > 0.5)
         shaded.rgb = mix(shaded.rgb, vec3(1.0, 0.0, 0.0), 77.0 / 255.0);
     if (vSeg < 0.5) {
-        if (tex.a * farFade < 0.5)
+        if (tex.a < 0.5)
             discard;
         fragColor = vec4(shaded, 1.0);
     } else {
         if (tex.a < 0.02)
             discard;
-        fragColor = vec4(shaded, tex.a * farFade);
+        fragColor = vec4(shaded, tex.a);
     }
 }

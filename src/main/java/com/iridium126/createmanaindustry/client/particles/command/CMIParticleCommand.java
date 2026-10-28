@@ -341,6 +341,7 @@ public final class CMIParticleCommand {
             if(CreateManaIndustry.IRIS_ACTIVE)appendReport(report,details?com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.profilingReport():com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.profilingSummary());
             if(details)appendReport(report,com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.starfallStatus());
         }
+        appendReport(report,com.iridium126.createmanaindustry.client.particles.engine.StormLodGpu.INSTANCE.report());
         tell(ctx,report.toString());
         return Command.SINGLE_SUCCESS;
     }

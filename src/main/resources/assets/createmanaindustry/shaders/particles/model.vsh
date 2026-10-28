@@ -99,7 +99,7 @@ void main() {
 
     // per-INSTANCE fade early-out (p0 is shared by every vertex of the
     // instance, so whole triangles drop out consistently)
-    if (distance(p0.xyz, uCamPos) > uFadeDist + 24.0) {
+    if (distance(p0.xyz, uCamPos) >= uFadeDist + 24.0) {
         gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
         return;
     }

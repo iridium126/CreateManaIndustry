@@ -92,6 +92,8 @@ public final class StormRiftServer {
     }
     private static long sequence(Subscription subscription) { return subscription.sequence=SEQUENCES.merge(subscription.source,1L,Long::sum); }
 
+    public static boolean centerObserver(ServerLevel level,UUID player){var state=LEVELS.get(level);return state!=null&&state.recipients.contains(player);}
+
     public static void stop(ServerLevel level) {
         CENTERS.remove(level);
         Subscription old = LEVELS.remove(level);

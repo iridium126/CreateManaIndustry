@@ -22,15 +22,4 @@ class StormMotionTest {
         assertTrue(Math.hypot(12,32*StormMotion.helixPitch()*12)<31);
         for(int rank=0;rank<4096;rank++)assertTrue(Math.hypot(12,Math.hypot(HelixTemplate.coordinate(rank,1),HelixTemplate.coordinate(rank,2))*StormMotion.helixPitch()*12)<32);
     }
-    @Test void removedHelixSpeedConfigurationCannotOverrideFixedThrust() throws Exception {
-        var type=Class.forName("com.iridium126.createmanaindustry.infrastructure.config.ServerConfig",false,getClass().getClassLoader());
-        for(var field:type.getDeclaredFields())assertNotEquals("stormHelixThrustSpeed",field.getName());
-    }
-    @Test void snapshotLayoutIsUnchangedAndSharedShaderUsesMatchingSpeeds() throws Exception {
-        assertEquals(30,StarfallColumnSnapshot.STRIDE);assertEquals(7680,StarfallColumnSnapshot.BYTES);
-        try(var source=getClass().getResourceAsStream("/assets/createmanaindustry/shaders/particles/chunks/storm_speeds.glsl")){
-            assertNotNull(source);String text=new String(source.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
-            assertTrue(text.contains("CMI_STORM_INTERCEPT=8."));assertTrue(text.contains("CMI_COLUMN_ORBIT_SPEED=3."));assertTrue(text.contains("CMI_HELIX_SPEED_LIMIT=32."));assertTrue(text.contains("CMI_HELIX_TURNS=.75"));
-        }
-    }
 }

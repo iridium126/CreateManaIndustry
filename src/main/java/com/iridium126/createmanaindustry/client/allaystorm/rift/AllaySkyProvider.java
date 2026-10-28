@@ -36,8 +36,10 @@ public final class AllaySkyProvider {
 
         if (RIFT.accept(packet.snapshot())) {
             if(packet.snapshot().state()==StormRiftSnapshot.REMOVE)removedAt=world.getGameTime();
-            if(packet.snapshot().state()!=StormRiftSnapshot.REMOVE)
+            if(packet.snapshot().state()!=StormRiftSnapshot.REMOVE){
                 com.iridium126.createmanaindustry.client.allaystorm.visual.StormCenterView.timeline().offer(packet.snapshot().identity(),packet.snapshot().previous(),packet.snapshot().current());
+                com.iridium126.createmanaindustry.client.allaystorm.lod.StormLodClient.center(packet.snapshot().identity(),packet.snapshot().previous(),packet.snapshot().current());
+            }
             context = packet.snapshot().sky(); receivedAt = world.getGameTime();
         }
     }

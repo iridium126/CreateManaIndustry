@@ -97,8 +97,19 @@ must not be reported as passing the nonblocking contract. See the
 
 ### Allay Storm
 
-攻击、姿态、阴影、Iris、碰撞、资源及服务端验证统一见
-[Allay Storm 验证说明](../../docs/allay-storm-validation.md)。
-独立星柱使用 `validateStarfallColumnGpu`；`validateStarfallGpu` 保留共享旧路径、
-圆环和未参战主体不漂向原点的生产核回归，不能因名称相近删除。
-不要并发运行会重编译 main 输出的多个 Gradle／GPU 进程。
+行为、资源、GPU／服务端及实机回归统一见
+[悦灵风暴验证入口](../../docs/allay-storm-validation.md)。
+
+```powershell
+.\gradlew.bat validateStormLodGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
+.\gradlew.bat benchmarkStormLodGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
+```
+
+前者仅检查当前实现的成员身份／死亡／覆盖、硬切、透视尺寸和遮挡；
+后者才采集计算、常驻OPAQUE基线、两档绘制与合成数据。
+两者都不需要旧版源码或Git HEAD。已验收的固定像素对照与截图生成入口已移除，
+性能选择保留在[LOD尺寸报告](../../docs/benchmarks/storm-lod-perspective-2026-10-28.md)。
+
+Starfall两个工具分别覆盖独立星柱与共享旧路径，Dome、Helix、动画、阴影、
+真实ShaderInstance及传送恢复各有独立覆盖；不能仅按名称相近删除。
+不要并发启动重编译main输出的Gradle／GPU进程。

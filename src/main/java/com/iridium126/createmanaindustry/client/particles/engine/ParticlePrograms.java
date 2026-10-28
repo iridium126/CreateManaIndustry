@@ -66,6 +66,10 @@ public final class ParticlePrograms {
         new Specification("emit.comp",null,(owner,id)->owner.emit=id),
         new Specification("block_emit.comp",null,(owner,id)->owner.blockEmit=id),
         new Specification("keygen.comp",null,(owner,id)->owner.keygen=id),
+        new Specification("storm_lod.comp",null,(owner,id)->owner.lodCompute=id),
+        new Specification("storm_lod.vsh","model.fsh",(owner,id)->owner.lodRender=id),
+        new Specification("storm_lod.vsh","textured.fsh",(owner,id)->owner.lodPixel=id),
+        new Specification("storm_lod_composite.vsh","storm_lod_composite.fsh",(owner,id)->owner.lodComposite=id),
         new Specification("radix_hist.comp",null,(owner,id)->owner.radixHist=id),
         new Specification("radix_scan.comp",null,(owner,id)->owner.radixScan=id),
         new Specification("radix_scatter.comp",null,(owner,id)->owner.radixScatter=id),
@@ -253,6 +257,11 @@ public final class ParticlePrograms {
     public int allayAnimate(){return allayAnimate;}
     private int emit;
     private int blockEmit;
+    private int lodCompute,lodRender,lodComposite,lodPixel;
+    public int lodPixel(){return lodPixel;}
+    public int lodCompute(){return lodCompute;}
+    public int lodRender(){return lodRender;}
+    public int lodComposite(){return lodComposite;}
     private int keygen;
     private int radixHist;
     private int radixScan;
@@ -344,6 +353,7 @@ public final class ParticlePrograms {
             this.emit = candidate.emit; candidate.emit = 0;
             this.blockEmit = candidate.blockEmit; candidate.blockEmit = 0;
             this.keygen = candidate.keygen; candidate.keygen = 0;
+            this.lodCompute=candidate.lodCompute;candidate.lodCompute=0;this.lodRender=candidate.lodRender;candidate.lodRender=0;this.lodComposite=candidate.lodComposite;candidate.lodComposite=0;this.lodPixel=candidate.lodPixel;candidate.lodPixel=0;
             this.radixHist = candidate.radixHist; candidate.radixHist = 0;
             this.radixScan = candidate.radixScan; candidate.radixScan = 0;
             this.radixScatter = candidate.radixScatter; candidate.radixScatter = 0;
@@ -378,7 +388,7 @@ public final class ParticlePrograms {
     }
 
     public boolean ready() {
-        return this.modelFilter!=0&&this.modelCompact!=0&&this.allayAnimate!=0&&this.modelPrepare!=0&&this.prepareDispatch != 0 && this.blockEmit != 0 && this.reset != 0 && this.update != 0 && this.emit != 0 && this.render != 0
+        return lodPixel!=0&&lodCompute!=0&&lodRender!=0&&lodComposite!=0&&this.modelFilter!=0&&this.modelCompact!=0&&this.allayAnimate!=0&&this.modelPrepare!=0&&this.prepareDispatch != 0 && this.blockEmit != 0 && this.reset != 0 && this.update != 0 && this.emit != 0 && this.render != 0
                 && this.texturedRender != 0 && this.modelRender != 0
                 && this.keygen != 0 && this.radixHist != 0 && this.radixScan != 0
                 && this.radixScatter != 0 && this.capture != 0 && this.grid != 0
@@ -511,7 +521,7 @@ public final class ParticlePrograms {
                 this.modelFilter,this.modelCompact,this.modelPrepare,this.allayAnimate,this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
                 this.grid, this.hit, this.damagePrepare,this.stormPos,this.columnSnapshot,this.columnRecovery, this.waveContact, this.ringReserve,this.domeContacts,this.domeControl,this.domeApply,this.domeAudit,this.domePath,this.depenetration,this.depenetrationSchedule,this.depenetrationPrepare,
-                this.render, this.texturedRender, this.modelRender }) {
+                this.render, this.texturedRender, this.modelRender, this.lodCompute,this.lodRender,this.lodComposite,this.lodPixel }) {
             if (p != 0){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(p);}
         }
         this.modelFilter=this.modelCompact=this.modelPrepare=this.allayAnimate=0;
@@ -520,5 +530,6 @@ public final class ParticlePrograms {
         this.grid = this.hit = this.damagePrepare = this.stormPos = this.waveContact = this.ringReserve = 0;
         this.domeContacts=0;this.domeControl=0;this.domeApply=0;this.domeAudit=0;this.domePath=0;this.depenetration=0;this.depenetrationSchedule=0;this.depenetrationPrepare=0;this.columnSnapshot=0;this.columnRecovery=0;
         this.render = this.texturedRender = this.modelRender = 0;
+        this.lodCompute=this.lodRender=this.lodComposite=this.lodPixel=0;
     }
 }
