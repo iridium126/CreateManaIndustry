@@ -41,6 +41,8 @@ GPU 资源由 `ParticleBuffers` 管理，程序由 `ParticlePrograms` 管理，s
 
 ## 3. 原版粒子与 Hexcasting
 
+悦灵羽毛的配置、GPU 更新/碰撞复用、光影边界及实机验收步骤见 [悦灵羽毛](allay-feather-particles.md)。
+
 ### 3.1 Hexcasting 覆盖范围
 
 `particles.hexParticleRedirect` 开启且 GPU 引擎可用时，以下两个入口都重定向：

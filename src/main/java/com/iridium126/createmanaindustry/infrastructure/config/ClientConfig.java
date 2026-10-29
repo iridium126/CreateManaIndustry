@@ -34,6 +34,7 @@ public final class ClientConfig {
     private static ModConfigSpec.DoubleValue PARTICLE_BUDGET_MS;
     private static ModConfigSpec.BooleanValue PARTICLE_AUTO_THROTTLE;
     private static ModConfigSpec.IntValue PARTICLE_FADE_DISTANCE;
+    private static ModConfigSpec.IntValue ALLAY_FEATHER_RATE;
     private static ModConfigSpec.IntValue STORM_LOD_1_DISTANCE, STORM_LOD_DISTANCE;
     private static ModConfigSpec.BooleanValue PARTICLE_SHADER_PACK_INTEGRATION;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT;
@@ -70,6 +71,8 @@ public final class ClientConfig {
         PARTICLE_ENABLED = BUILDER
                 .comment("Master switch for GPU particles.")
                 .define("enabled", true);
+        ALLAY_FEATHER_RATE = BUILDER.comment("Maximum allay feather spawn rate per second at or inside the storm radius. 0 stops new feathers; existing feathers finish their 60-second lifetime.")
+                .defineInRange("allayFeatherMaxSpawnPerSecond", 1000, 0, 2000);
         PARTICLE_MAX_COUNT = BUILDER
                 .comment("Maximum live particles allocated.")
                 .defineInRange("maxParticles", 2_000_000, 1_000, 4_000_000);
@@ -126,6 +129,7 @@ public final class ClientConfig {
     public static double particleBudgetMs = 15.0;
     public static boolean particleAutoThrottle = true;
     public static int particleFadeDistance = 96;
+    public static int allayFeatherMaxSpawnPerSecond = 1000;
     public static int stormLod1Distance=1024, stormLodDistance=8192;
     public static boolean shaderPackIntegration = true;
     public static boolean hexParticleRedirect = true;
@@ -147,6 +151,7 @@ public final class ClientConfig {
             fuelRodBloomRingStrength = FUEL_ROD_BLOOM_RING_STRENGTH.get();
             gridSnapThreshold = GRID_SNAP_THRESHOLD.get();
             particleEnabled = PARTICLE_ENABLED.get();
+            allayFeatherMaxSpawnPerSecond = ALLAY_FEATHER_RATE.get();
             particleMaxCount = PARTICLE_MAX_COUNT.get();
             partitionMaxParticles = PARTITION_MAX_PARTICLES.get();
             sameFateMaxParticles = SAME_FATE_MAX_PARTICLES.get();

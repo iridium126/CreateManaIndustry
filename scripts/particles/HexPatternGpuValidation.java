@@ -534,7 +534,6 @@ public class HexPatternGpuValidation {
                     GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program,"ModelViewMat"),false,identity);GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program,"ProjMat"),false,identity);
                     GL20.glUniform3f(GL20.glGetUniformLocation(program,"uCamRight"),1,0,0);GL20.glUniform3f(GL20.glGetUniformLocation(program,"uCamUp"),0,1,0);
                     GL20.glUniform1f(GL20.glGetUniformLocation(program,"uFadeDist"),100);GL20.glUniform1f(GL20.glGetUniformLocation(program,"uGlow"),1);
-                    GL20.glUniform1f(GL20.glGetUniformLocation(program,"uAtlasCols"),1);GL20.glUniform1f(GL20.glGetUniformLocation(program,"uAtlasRows"),1);
                     GL20.glUniform1i(GL20.glGetUniformLocation(program,"uMode"),mode==1?1:0);GL20.glUniform1i(GL20.glGetUniformLocation(program,"uSprite"),1);
                     GL13.glActiveTexture(GL13.GL_TEXTURE1);GL11.glBindTexture(GL11.GL_TEXTURE_2D,white);
                     GL11.glClearColor(0,0,0,0);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);gpu.drawIndirect(new int[]{0,1,5}[mode]);

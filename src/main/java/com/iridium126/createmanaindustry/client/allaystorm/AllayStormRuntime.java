@@ -227,6 +227,9 @@ public final class AllayStormRuntime {
     private float[] playerEyes=new float[ParticleBuffers.MAX_STORM_PLAYERS*3],playerFeet=new float[ParticleBuffers.MAX_STORM_PLAYERS*3];
     private int[] playerIds=new int[ParticleBuffers.MAX_STORM_PLAYERS];
     private final float[] attackEyes=new float[68*4];
+    private float[] featherMovements=new float[0];
+    public float[] featherMovements(){return featherMovements;}
+    public double radius(){return stormRadius;}
     public float[] playerEyes(){return playerEyes;}public float[] playerFeet(){return playerFeet;}public int[] playerIds(){return playerIds;}
     public float[] attackEyes(){return attackEyes;}
     /** Player count uploaded with the last collectSyncedPlayers (pass handoff). */
@@ -520,10 +523,15 @@ public final class AllayStormRuntime {
         }
         int size=mc.level.players().size();if(playerScratch.length<size*3)playerScratch=new float[Integer.highestOneBit(Math.max(1,size*3-1))<<1];
         if(playerEyes.length<playerScratch.length){playerEyes=new float[playerScratch.length];playerFeet=new float[playerScratch.length];playerIds=new int[playerScratch.length/3];}
+        boolean featherMotion=com.iridium126.createmanaindustry.client.particles.engine.AllayFeatherGpu.INSTANCE.needsPlayers();
+        if(featherMotion&&featherMovements.length<size*4)featherMovements=new float[Math.max(16,size*4)];
         int count=0;for(var p:mc.level.players()){if(!p.isAlive()||p.isSpectator())continue;
             playerScratch[count*3]=(float)p.getX();playerScratch[count*3+1]=(float)p.getBoundingBox().getCenter().y;playerScratch[count*3+2]=(float)p.getZ();count++;
             int i=count-1;playerEyes[i*3]=(float)p.getX();playerEyes[i*3+1]=(float)p.getEyeY();playerEyes[i*3+2]=(float)p.getZ();
             playerFeet[i*3]=(float)p.getX();playerFeet[i*3+1]=(float)p.getY();playerFeet[i*3+2]=(float)p.getZ();playerIds[i]=p.getId();
+            if(featherMotion){double dx=p.getX()-p.xo,dz=p.getZ()-p.zo,speed=Math.sqrt(dx*dx+dz*dz)*20;
+            featherMovements[i*4]=(float)p.getX();featherMovements[i*4+1]=(float)p.getY();featherMovements[i*4+2]=(float)p.getZ();
+            featherMovements[i*4+3]=p.onGround()&&speed>.1&&speed<32?(float)Math.min(3.5,.7+speed*.15):0;}
         }
         java.util.Arrays.fill(attackEyes,0);for(int slot=0;slot<68;slot++){int id=starfallGpu.lookTarget(slot);var target=id==0?null:mc.level.getEntity(id);if(target!=null&&target.isAlive()){int b=slot*4;attackEyes[b]=(float)target.getX();attackEyes[b+1]=(float)target.getEyeY();attackEyes[b+2]=(float)target.getZ();attackEyes[b+3]=1;}}
         this.lastPlayerCount = count;

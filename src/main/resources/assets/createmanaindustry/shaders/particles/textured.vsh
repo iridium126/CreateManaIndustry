@@ -14,8 +14,6 @@ uniform vec3 uCamPos;
 uniform vec3 uCamRight;
 uniform vec3 uCamUp;
 uniform float uFadeDist;
-uniform float uAtlasCols;
-uniform float uAtlasRows;
 uniform int uMode; // 0 = blended (sorted walk), 1 = opaque cutout permutation
 // Vanilla lightmap (Minecraft's LightTexture): combat OPAQUE particles sample
 // it with the spawn-time packed light (p2.w = blockLight + 16·skyLight, header
@@ -175,28 +173,19 @@ void main() {
     } else {
         frame = (sc > 1.0) ? min(uint(sc) - 1u, uint(floor(hash1(p3.z * 7.13) * sc))) : 0u;
     }
-    uint fcol = frame % uint(uAtlasCols);
-    uint frow = frame / uint(uAtlasCols);
-    vec2 frameSize = vec2(1.0) / vec2(uAtlasCols, uAtlasRows);
-    vec2 frameOrigin = vec2(uAtlasCols > 0.0 ? float(fcol) : 0.0, uAtlasRows > 0.0 ? float(frow) : 0.0) * frameSize;
+    vec4 frameRect = CMI_SPRITE_RECTS[min(frame,22u)];
 
     // billboard corner with roll; vanilla cherry spins over life (spin header 7.w)
     vec2 cornerUn = quadCorner(gl_VertexID) - 0.5;
     float roll;
     if (emitters.u[hb + 7u].w > 0.5) {
-        // Vanilla CherryParticle rolls by rotSpeed/20 per tick (rotSpeed starts
-        // at ±30 DEG — the roll RATE is ±1.5 deg/tick = ±30 deg/s) and rotSpeed
-        // grows by spinAcceleration/20 per tick (±5 DEG/20 = ±0.25 deg/t per
-        // tick), i.e. the roll rate accelerates by ±5 deg/s per second:
-        //   roll(t) = ±30 deg/s · t + 2.5 deg/s² · t²
-        // (300 ticks: 30·15 + 2.5·225 ≈ 1012 deg total, matching the per-tick
-        // sum 1.5·300 + 0.25/2·300² ≈ 1011 deg). The earlier conversion read
-        // the 30/5 as the per-tick rate/acceleration and scaled ×20/×400 — a
-        // 20x/400x overshoot that turned the petals into a spin blur.
+        // CherryParticle increments rotSpeed before adding rotSpeed/20 to roll.
+        // Summing n ticks, with t=n/20, gives v0*t + a0*t*(t+0.05)/2.
+        // Keep the discrete correction in this closed form; no extra state.
         float t = p3.x;
         float v0 = (hash1(p3.z * 1.31) > 0.5 ? 30.0 : -30.0); // deg/s
         float a0 = (hash1(p3.z * 2.47) > 0.5 ? 5.0 : -5.0);   // deg/s^2
-        roll = p1.w + radians(v0) * t + 0.5 * radians(a0) * t * t;
+        roll = p1.w + (radians(v0) + 0.5 * radians(a0) * (t + 0.05)) * t;
     } else {
         roll = p1.w;
     }
@@ -212,7 +201,7 @@ void main() {
     // against the corner y or every sprite stands upside down (cherry blobs
     // hide it; the damage heart exposes it)
     vec2 localUv = vec2(cornerUn.x + 0.5, 0.5 - cornerUn.y);
-    vUv = frameOrigin + localUv * frameSize;
+    vUv = frameRect.xy + localUv * frameRect.zw;
     vDist = length(worldPos - uCamPos);
     // constant alpha over life (vanilla petals do not fade); sprite alpha in fsh.
     // lightMode particles carry the PACKED LIGHT in p2.w (not an intensity) —

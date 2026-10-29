@@ -51,6 +51,7 @@ public final class ParticleRenderer {
                         || PackageRuntime.INSTANCE.populated()) {
                     ParticleDiagnostics.INSTANCE.mark("draw_opaque");
                     drawPass(1, view, projectionMatrix, camera);
+                    AllayFeatherGpu.INSTANCE.draw(publication.generation(),view,projectionMatrix,camera);gpu.beginBindings();
                     ParticleDiagnostics.INSTANCE.mark("draw_packages");
                     PackageRuntime.INSTANCE.drawPackages(view,projectionMatrix,camera,publication);gpu.beginBindings();
                     ParticleDiagnostics.INSTANCE.mark("draw_models");
@@ -221,8 +222,6 @@ public final class ParticleRenderer {
             if (textured) {
                 spriteAtlas.bind(1);
                 setIntUniform(prog, "uSprite", 1);
-                setFloatUniform(prog, "uAtlasCols", spriteAtlas.cols());
-                setFloatUniform(prog, "uAtlasRows", spriteAtlas.rows());
                 setIntUniform(prog, "uMode", mode == 1 ? 1 : 0);
                 // unit 2: the real vanilla lightmap — combat OPAQUE particles turn
                 // their spawn-time packed light into a lightmap sample (header

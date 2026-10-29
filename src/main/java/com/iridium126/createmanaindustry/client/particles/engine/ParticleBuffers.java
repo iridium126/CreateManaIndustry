@@ -365,6 +365,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     private int modelGeoSSBO = -1;
     private int orderOpaqueSSBO = -1;
     private int gridSSBO = -1;
+    private int gridExtraBase=-1,gridExtraWords,gridExtraAlignment;
     private int damageSSBO = -1;
     private int hitSSBO = -1;
     private int playersSSBO = -1;
@@ -862,6 +863,20 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.zero2048);
     }
 
+    /** Aligns a range inside the existing grid buffer; queried only on first use. */
+    public int alignGridWords(int words) {
+        if(gridExtraAlignment==0)gridExtraAlignment=Math.max(64,GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT)/4);
+        return (words+gridExtraAlignment-1)/gridExtraAlignment*gridExtraAlignment;
+    }
+    public int ensureGridExtra(int words) {
+        if(gridExtraWords>=words)return gridExtraBase;
+        int prefix=GRID_TABLE+capacity,base=alignGridWords(prefix);
+        int next=createBuffer((long)(base+words)*4,null);
+        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,gridSSBO);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,next);
+        GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,(long)prefix*4);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(gridSSBO);
+        gridSSBO=next;gridExtraBase=base;gridExtraWords=words;beginBindings();return base;
+    }
     /** Binds the boids spatial-hash buffer at its fixed binding. */
     public void bindGrid() {
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER, GRID_BB, this.gridSSBO);
@@ -897,8 +912,9 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         playerGrid.build(xyz,count);uploadPlayerGrid();
     }
     public void uploadPlayerSnapshot(com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime runtime,int count){
-        playerGrid.build(runtime.playerScratch(),runtime.playerEyes(),runtime.playerFeet(),runtime.playerIds(),count,runtime.attackEyes());uploadPlayerGrid();
+        playerGrid.build(runtime.playerScratch(),runtime.playerEyes(),runtime.playerFeet(),runtime.playerIds(),count,runtime.attackEyes(),AllayFeatherGpu.INSTANCE.needsPlayers()?runtime.featherMovements():null);uploadPlayerGrid();
     }
+    public int featherMovementBase(){return playerGrid.movementBase();}
     private void uploadPlayerGrid(){int length=playerGrid.words();float[] packed=playerGrid.data();
         if(playersTmp.capacity()<length){playersTmp=BufferUtils.createFloatBuffer(Integer.highestOneBit(length-1)<<1);GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,playersSSBO);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,playersTmp.capacity()*4L,GL15.GL_DYNAMIC_DRAW);}
         playersTmp.clear();playersTmp.put(packed,0,length).flip();GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,playersSSBO);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,playersTmp);
@@ -1280,6 +1296,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         for (int[] t : this.mergedTbos) java.util.Arrays.fill(t, -1);
         this.emitterSSBO = this.indirectSSBO = this.orderAddSSBO = this.orderOpaqueSSBO = -1;
         this.modelGeoSSBO = this.histSSBO = this.offsetSSBO = this.bakeMetaSSBO = -1;
+        this.gridExtraBase=-1;this.gridExtraWords=0;
         this.gridSSBO = this.damageSSBO = this.hitSSBO = this.playersSSBO = -1;
         this.stormPosSSBO = this.waveContactSSBO = this.modelIndexBuffer = this.vao = -1;
         this.capacity = this.maxEmitters = this.readIndex = this.ringIndex = this.renderIndex = 0;

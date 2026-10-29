@@ -97,7 +97,8 @@ public final class CMIPackEntityMergeHook {
         try(var accounting=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.budgets.prepare()) {
             if (!ClientConfig.shaderPackIntegration
                     || !IrisVeilCompat.isShaderPackInUse()
-                    || com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication()==null)
+                    || com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication()==null
+                    || !com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY.ready())
                 return;
 
             if (!ensureCompiledWithListener())
@@ -153,6 +154,7 @@ public final class CMIPackEntityMergeHook {
 
         if(!com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.currentFrameReady()){com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="current frame unavailable";return;}
         if(!ClientConfig.shaderPackIntegration||!IrisVeilCompat.isShaderPackInUse()||com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication()==null)return;
+        if(!com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY.ready())return;
         try(var accounting=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.budgets.prepare()){
             if(!PackageShadowPolicy.copy(frustum,SHADOW_CULLING)){com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="unsupported shadow frustum: "+(frustum==null?"null":frustum.getClass().getName());return;}
             if(shadowComputeState==null){shadowComputeState=new GpuComputeState();shadowDrawState=new PackageRenderState();}
@@ -209,7 +211,7 @@ public final class CMIPackEntityMergeHook {
      * path feeds, and our vertex main needs no shadow variant at all.
      */
     private static void uploadShadowUniforms(int progId) {
-        setInt(progId,"cmi_LodPass",0);
+        setInt(progId,"cmi_FeatherPass",0);setInt(progId,"cmi_LodPass",0);
         Matrix4f projection = new Matrix4f(ShadowRenderer.PROJECTION);
         Matrix4f modelView = new Matrix4f(ShadowRenderer.MODELVIEW);
         uploadIrisMatrices(progId, projection, modelView);
@@ -265,6 +267,9 @@ public final class CMIPackEntityMergeHook {
         RenderSystem.depthMask(true);
         bindAtlas(COMPILER.gtextureUnit());
         gpu.drawModelCutout();
+        var feather=com.iridium126.createmanaindustry.client.particles.engine.AllayFeatherGpu.INSTANCE;
+        if(feather.generation()==com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation())feather.drawMerged(progId);
+        bindSharedResources(gpu);gpu.bindDrawIndirect();
         var lod=com.iridium126.createmanaindustry.client.particles.engine.StormLodGpu.INSTANCE;
         var publication=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication();
         var captured=CapturedRenderingState.INSTANCE;
@@ -432,6 +437,7 @@ public final class CMIPackEntityMergeHook {
         if (unit < 0)
             return;
         int texture=com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY.textureId();
+        if(texture<=0)return;
         RenderSystem.setShaderTexture(0,texture);
         com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.bind(unit,texture);
     }

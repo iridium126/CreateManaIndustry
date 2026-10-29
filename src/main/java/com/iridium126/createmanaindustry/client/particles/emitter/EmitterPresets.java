@@ -95,8 +95,9 @@ public final class EmitterPresets {
      * spinAcceleration/400, both derived per-particle from the seed), and the
      * world lightmap sampled at the spawn point (lightmap flag → header 17.z,
      * the combat-particle mechanism). Vanilla's 50/50 quadSize pick of
-     * 0.05/0.075 lives in emit.comp, keyed on flutter > 0 (this preset is the
-     * only flutter user). Removed on ground contact just like vanilla
+     * 0.05/0.075 is reproduced by the spawn size multiplier and a 0.15 base
+     * diameter (the renderer uses +/-0.5 corners rather than vanilla's +/-1).
+     * Removed on ground contact or blocked horizontal motion just like vanilla
      * (DIE_ON_GROUND). The sprites are pure 0/255 alpha, so the emitter uses
      * the OPAQUE material (cutout + depth write) and never enters the sorted
      * path.
@@ -105,7 +106,7 @@ public final class EmitterPresets {
             .shape(EmitterShape.POINT)
             .speed(0, 0)
             .life(15.0, 15.0)
-            .sizeOverLife(0.075, 0.075, 1.0)
+            .sizeOverLife(0.15, 0.15, 1.0)
             .gravity(0, -0.3, 0)
             .drag(0)
             .type(ParticleTypes.standard(ParticleTypes.Material.OPAQUE))
@@ -200,6 +201,7 @@ public final class EmitterPresets {
             case "soul_flame" -> SOUL_FLAME;
             case "mana_burst" -> MANA_BURST;
             case "cherry_leaves" -> CHERRY_LEAVES;
+            case "allay_feather" -> AllayFeatherSpecs.FEATHER;
             case "flood" -> FLOOD;
             case "allay_fly" -> ALLAY_FLY;
             case "allay_dance" -> ALLAY_DANCE;
@@ -210,7 +212,7 @@ public final class EmitterPresets {
 
     /** Names registered for the command argument suggestions. */
     public static String[] names() {
-        return new String[] { "mana_spark", "ember", "ash", "soul_flame", "mana_burst", "cherry_leaves", "flood",
+        return new String[] { "mana_spark", "ember", "ash", "soul_flame", "mana_burst", "cherry_leaves", "allay_feather", "flood",
                 "allay_fly", "allay_dance", "allay_hold" };
     }
 

@@ -689,12 +689,25 @@ public final class ShaderPackProgramCompiler {
             // EntityPatcher: (overlayColor.rgb, 1 - overlayColor.a).
             sb.append("out vec4 entityColor;\n\n");
         }
+        sb.append(com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlasLayout.shaderPrelude());
         sb.append(mergedSources.apply("chunks/model_size.glsl")).append('\n');
         sb.append(chunk).append('\n');
         sb.append(mergedSources.apply("chunks/storm_lod_vertex.glsl")).append('\n');
+        sb.append(mergedSources.apply("chunks/feather_record.glsl")).append('\n');
+        sb.append("uniform int cmi_FeatherPass,cmi_FeatherWordBase; uniform vec3 cmi_FeatherRight,cmi_FeatherUp;\n");
+        sb.append("const int cmi_FeatherVisibleOffset = ").append(com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.VISIBLE).append(";\n");
         sb.append("""
                 void main() {
-                    if(cmi_LodPass!=0){
+                    if(cmi_FeatherPass!=0){
+                        uvec2 indices=texelFetch(cmi_Sorted,(cmi_FeatherWordBase+cmi_FeatherVisibleOffset)/2+gl_InstanceID/2).xy;
+                        uint index=indices[gl_InstanceID&1];int base=int(index)*4;vec3 vertex,normal;vec2 uv;
+                        cmiFeatherVertex(texelFetch(cmi_Pool,base),texelFetch(cmi_Pool,base+1),texelFetch(cmi_Pool,base+2),texelFetch(cmi_Pool,base+3),cmi_FeatherRight,cmi_FeatherUp,gl_VertexID,vertex,normal,uv);
+                        cmi_VertexLevel=vec4(vertex-cmi_CameraPos,1);cmi_NormalLevel=normal;
+                        cmi_TexCoord0v=vec4(uv,0,1);cmi_LightCoordv=vec4(240,240,0,1);cmi_Tint=vec4(1);
+                """);
+        if(withEntityColor)sb.append("entityColor=vec4(0);\n");
+        sb.append("""
+                    }else if(cmi_LodPass!=0){
                         uint index=texelFetch(cmi_Sorted,(cmi_LodPass==1?0:131072)+gl_InstanceID).x;
                         vec4 position=texelFetch(cmi_Pool,int(index*2u));
                         vec4 motion=texelFetch(cmi_Pool,int(index*2u+1u));

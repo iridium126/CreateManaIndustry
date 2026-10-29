@@ -7,14 +7,16 @@ import org.lwjgl.opengl.*;
 
 /** Independent staging storage: simulation counters may be reused while a snapshot is pending. */
 final class ParticleReadbacks {
-    static final int STORM_OFFSET = 32;
+    static final int STORM_OFFSET = 48;
     static final int WAVE_OFFSET = STORM_OFFSET + 4 + ParticleBuffers.STORMPOS_CAP * ParticleBuffers.STORMPOS_ENTRY_FLOATS * 4;
-    static final int BYTES = WAVE_OFFSET + 4 + ParticleBuffers.WAVECONTACT_CAP * ParticleBuffers.WAVECONTACT_ENTRY_FLOATS * 4;
+    static final int FEATHER_REQUEST_OFFSET = WAVE_OFFSET + 4 + ParticleBuffers.WAVECONTACT_CAP * ParticleBuffers.WAVECONTACT_ENTRY_FLOATS * 4;
+    static final int BYTES = FEATHER_REQUEST_OFFSET + com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.READBACK_BYTES;
     static final class Slot {
         int buffer;
         GpuReadbackBuffer storage;
         long fence, generation, epoch, gameTime;
-        boolean positions, waves,published;
+        boolean positions, waves,published,feathers,featherRequests;
+        final ByteBuffer featherData=BufferUtils.createByteBuffer(com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.READBACK_BYTES);
         com.iridium126.createmanaindustry.content.allaystorm.StormIdentity positionIdentity;
         ParticleHitRay hitRay;
         final ByteBuffer data = BufferUtils.createByteBuffer(BYTES);
@@ -43,9 +45,10 @@ final class ParticleReadbacks {
             throw new IllegalStateException("Particle readback fence failed; failed slot retired");
         }
         oldest.data.clear();
-        oldest.data.limit(oldest.waves ? BYTES : oldest.positions ? WAVE_OFFSET : STORM_OFFSET);
+        oldest.data.limit(oldest.waves ? FEATHER_REQUEST_OFFSET : oldest.positions ? WAVE_OFFSET : STORM_OFFSET);
         oldest.storage.readCompleted(0,oldest.data.remaining(),oldest.data);
         oldest.data.position(0);
+        if(oldest.featherRequests){oldest.featherData.clear();oldest.storage.readCompleted(FEATHER_REQUEST_OFFSET,oldest.featherData.remaining(),oldest.featherData);oldest.featherData.position(0);}
         return oldest;
     }
     void release(Slot slot) {

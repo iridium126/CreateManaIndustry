@@ -177,6 +177,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
 
     private final SharedFateGpu sharedFate = SharedFateGpu.INSTANCE;
     private final PartitionGpu partition = PartitionGpu.INSTANCE;
+    private final AllayFeatherGpu feathers=AllayFeatherGpu.INSTANCE;
 
     void replayHexParticle(ClientLevel world,double x,double y,double z,double vx,double vy,double vz,int color) {
         boolean previous=replayingHex;replayingHex=true;
@@ -282,7 +283,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         }
         this.hexDirectStorage.close();
         this.directHexEmitter=this.sprayHexEmitter=-1;
-        StormLodGpu.INSTANCE.close();
+        StormLodGpu.INSTANCE.close();feathers.close();
         this.programs.delete();
         ParticleDiagnostics.INSTANCE.close();
         try {
@@ -331,6 +332,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
     }
 
     private void resetPoolState() {
+        feathers.reset();
         this.sharedFate.reset();
         this.partition.reset();
         PackageRuntime.INSTANCE.reset();
@@ -557,6 +559,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         ParticleRuntime.this.emitCommands.limitParticles(cap,AllayStormRuntime.INSTANCE.ringsRequested());
         entryCount=ParticleRuntime.this.emitCommands.size();totalSpawn=ParticleRuntime.this.emitCommands.particles();
 
+        feathers.prepare(dt,ParticleRuntime.this.scale,ParticleRuntime.this,deltaTracker.getGameTimeDeltaPartialTick(false));
         // CPU limits submission work only; GPU allocation and dispatch determine the exact live set.
         blockSpawnBound= ParticleRuntime.this.blockEmitters.spawnBound(dt, Math.max(0.0, Math.min(1.0, ParticleRuntime.this.scale)), cap);
         // Handoff for runDraws' empty-guard: final count after free-pool capping.
@@ -588,11 +591,11 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         // Every material submits indirect draws. Empty GPU counts perform no particle work.
         fateActive= ParticleRuntime.this.sharedFate.prepare(camera.getPosition(), deltaTracker.getGameTimeDeltaPartialTick(false));
         partitionActive= ParticleRuntime.this.partition.prepare(camera.getPosition());
-        createsParticles= totalSpawn > 0 || directHexCount>0 || blockSpawnBound > 0 || fateActive || partitionActive
+        createsParticles= feathers.creates() || totalSpawn > 0 || directHexCount>0 || blockSpawnBound > 0 || fateActive || partitionActive
                 || PackageRuntime.INSTANCE.hasInput();
         if (!ParticleRuntime.this.poolMayBeAlive && !createsParticles && !com.iridium126.createmanaindustry.client.allaystorm.lod.StormLodClient.active()) {
             ParticleRuntime.this.frameIdle = true;
-                commitFrameInputs();writes.retire();
+                commitFrameInputs();feathers.idle();writes.retire();
             return false;
         }
         sorted= true;
@@ -659,8 +662,9 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             }
             ParticleDiagnostics.INSTANCE.mark("update");
-            int playerCount=AllayStormRuntime.INSTANCE.needsGridPass()||gpu.allayAnimation().allocated()?AllayStormRuntime.INSTANCE.collectSyncedPlayers():0;
-            if(AllayStormRuntime.INSTANCE.needsGridPass()||gpu.allayAnimation().allocated())gpu.uploadPlayerSnapshot(AllayStormRuntime.INSTANCE,playerCount);
+            int playerCount=AllayStormRuntime.INSTANCE.needsGridPass()||gpu.allayAnimation().allocated()||feathers.needsPlayers()?AllayStormRuntime.INSTANCE.collectSyncedPlayers():0;
+            if(AllayStormRuntime.INSTANCE.needsGridPass()||gpu.allayAnimation().allocated()||feathers.needsPlayers())gpu.uploadPlayerSnapshot(AllayStormRuntime.INSTANCE,playerCount);
+            feathers.begin();feathers.players(playerCount);
             com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.prepare(ParticleRuntime.this.programs.update());
             for(int pass=com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient.INSTANCE.restoring()?0:1;pass<2;pass++){
                 int updateProgram=pass==0?ParticleRuntime.this.programs.columnRecovery():ParticleRuntime.this.programs.update();
@@ -689,6 +693,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 }
 
                 com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(updateProgram);
+                feathers.bind(updateProgram);
                 setFloatUniform(updateProgram, "uDt", dt);
                 setUIntUniform(updateProgram,"uHexCurrentTick",hexTick);
                 setIntUniform(updateProgram,"uHexTickReady",1);
@@ -737,6 +742,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             step=1;
         }
         public void generate() {require(1);
+            feathers.emit(slot,cap,camera,ParticleRuntime.this.frustumPlanes,ParticleRuntime.this.frameSeed);
 
             ParticleDiagnostics.INSTANCE.mark("emit");
             if (entryCount > 0) {
@@ -746,7 +752,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                     setUIntUniform(reserve,"uEmitCount",entryCount);setUIntUniform(reserve,"uCapacity",cap);setFloatUniform(reserve,"uTimeSec",AllayStormRuntime.INSTANCE.timeSec());
                     GL43.glDispatchCompute((entryCount+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
                 }
-                GL20.glUseProgram(ParticleRuntime.this.programs.emit());
+                GL20.glUseProgram(ParticleRuntime.this.programs.emit());feathers.bind(ParticleRuntime.this.programs.emit());
                 com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bind(ParticleRuntime.this.programs.emit(),true);
                 setFloatUniform(ParticleRuntime.this.programs.emit(),"uTimeSec",AllayStormRuntime.INSTANCE.timeSec());
             ParticleRuntime.this.gpu.bindIdentities(ParticleRuntime.this.programs.emit());
@@ -893,7 +899,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 // MODEL items -> sortData[7] lower partition (type bit 0),
                 // ALPHA sprites -> sortData[7] upper partition (type bit 1)
                 int kg = ParticleRuntime.this.programs.keygen();
-                GL20.glUseProgram(kg);
+                GL20.glUseProgram(kg);feathers.bind(kg);
                 ParticleRuntime.this.gpu.bindDispatch();
                 ParticleRuntime.this.gpu.bindPopulationWrite(kg,committedGeneration+1);
                 ParticleRuntime.this.gpu.bindPopulationRead(kg,true,committedGeneration+1);
@@ -1000,6 +1006,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             // bookkeeping stays on the skeleton side of the seam.
             int stormUpper = cap;
             com.iridium126.createmanaindustry.client.allaystorm.StormFeedback.INSTANCE.dispatchStormPosReadback(slot, cap, stormUpper);
+            feathers.ground();ParticleRuntime.this.gpu.beginBindings();
             // 6d. Wave-contact detection: only while a wave targets the LOCAL
             // player; the staging buffer rides the same frame fence back.
             com.iridium126.createmanaindustry.client.allaystorm.StormFeedback.INSTANCE.dispatchWaveContactReadback(slot, stormUpper,dt);
@@ -1071,7 +1078,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 snapshot.gameTime=com.iridium126.createmanaindustry.client.allaystorm.StormFeedback.INSTANCE.positionSnapshotTime();
                 snapshot.positionIdentity=com.iridium126.createmanaindustry.client.allaystorm.StormFeedback.INSTANCE.positionSnapshotIdentity();
                 try {
-                    ParticleRuntime.this.gpu.copySnapshot(slot,snapshot);
+                    ParticleRuntime.this.gpu.copySnapshot(slot,snapshot);feathers.copySnapshot(snapshot);
                     snapshot.fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);
                     if(snapshot.fence==0)throw new IllegalStateException("Particle snapshot fence failed");
                     if(snapshot.waves)ParticleRuntime.this.gpu.clearWaveContactCount();
@@ -1125,6 +1132,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 ParticleRuntime.this.poolMayBeAlive = true;
             }
 
+            feathers.commit(ParticleRuntime.this.committedGeneration);
             committed=true;step=5;
             return drawInput;
         }
@@ -1265,7 +1273,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             try {
                 if (snapshot.epoch != this.gpu.identityEpoch()) continue;
                 ParticleDiagnostics.INSTANCE.readback(this.committedGeneration - snapshot.generation);
-                ByteBuffer data = snapshot.data;
+                ByteBuffer data = snapshot.data;feathers.observe(snapshot);
                 this.liveDisplay = Math.max(0, Math.min(cap, data.getInt(0)));
                 // Only an empty snapshot covering every subsequent creation proves idle.
                 this.poolMayBeAlive = this.liveDisplay > 0 || snapshot.generation < this.lastCreationGeneration;
@@ -1396,12 +1404,13 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
      * bake slice per particle, so one spec can serve many spawn sites.
      */
     private void ensureEmitterRuntime(int id, EmitterSpec spec, Vec3 origin) {
+        if(spec.type.id()==com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.TYPE)feathers.source(spec,origin);
         if (spec.type.features().contains(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Feature.SPRITE_ATLAS)) {
             this.spriteAtlas.ensureLoaded();
         } else if (spec.type.features().contains(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Feature.MODEL_ATLAS)) {
             this.allayAtlas.ensureLoaded();
         }
-        if (spec.collideMode != EmitterSpec.CollideMode.NONE && origin != null)
+        if (spec.type.id()!=com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.TYPE && spec.collideMode != EmitterSpec.CollideMode.NONE && origin != null)
             this.collisionBake.ensure(origin);
     }
 
@@ -1493,7 +1502,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setFloatUniform(program, "uDt", dt);
         state.uploadUniforms(program);
         if(localMask==0){ParticleDiagnostics.INSTANCE.call();GL43.glDispatchCompute(1,1,1);}
-        else pool.dispatch(ParticleBuffers.STORM_DISPATCH);
+        else {pool.bindDispatch();pool.dispatch(ParticleBuffers.STORM_DISPATCH);}
         feedbackBarrier();
         return true;
     }

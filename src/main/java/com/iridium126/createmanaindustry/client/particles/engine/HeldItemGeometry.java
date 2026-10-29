@@ -54,16 +54,6 @@ import org.joml.Quaternionf;
  */
 public final class HeldItemGeometry {
 
-    /** MODEL atlas cells: frame 0 = allay body, frames 1..6 = the tiers in
-     * {@link com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.HeldItem}
-     * order (wooden, stone, golden, iron, diamond, netherite). 4x2 of 32x32
-     * cells = 128x64; the 16x16 sword sprites nearest-upscale 2x to fill their
-     * cells (the atlas builder's small-frame rule), keeping frame 0's texels —
-     * and therefore the allay body's atlas-space UVs — at their original
-     * positions. */
-    public static final int ATLAS_COLS = 4;
-    public static final int ATLAS_ROWS = 2;
-    public static final int ATLAS_CELL = 32;
 
     /** The silhouette source: the first sword tier, whose PNG defines the
      * shared side-shell silhouette (see the class javadoc). */
@@ -420,8 +410,7 @@ public final class HeldItemGeometry {
     /**
      * Per-tier atlas UV rects for the vertex-shader remap
      * {@code uv = mix(uvMin, uvMax, canonical)} — {@code uHeldItemUV[t]} with
-     * t the held-item id (1..6; slot 0 unused). Rects cover the tier's FULL
-     * atlas cell (the small-frame fill-upscale maps the whole cell per frame).
+     * t the held-item id (1..6; slot 0 unused). Rects cover each native 16x16 sprite.
      */
     public static float[] uvTable() {
         return UV_TABLE;
@@ -429,15 +418,8 @@ public final class HeldItemGeometry {
 
     private static float[] buildUvTable() {
         float[] t = new float[7 * 4];
-        float cw = (float) ATLAS_CELL / (ATLAS_COLS * ATLAS_CELL);
-        float ch = (float) ATLAS_CELL / (ATLAS_ROWS * ATLAS_CELL);
         for (int tier = 1; tier <= 6; tier++) {
-            int col = tier % ATLAS_COLS;
-            int row = tier / ATLAS_COLS;
-            t[tier * 4 + 0] = col * cw;
-            t[tier * 4 + 1] = row * ch;
-            t[tier * 4 + 2] = (col + 1) * cw;
-            t[tier * 4 + 3] = (row + 1) * ch;
+            System.arraycopy(ParticleAtlasLayout.model(tier).uv(ParticleAtlasLayout.ALLAY_WIDTH,ParticleAtlasLayout.ALLAY_HEIGHT),0,t,tier*4,4);
         }
         return t;
     }

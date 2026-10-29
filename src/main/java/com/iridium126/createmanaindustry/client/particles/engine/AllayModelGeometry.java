@@ -42,8 +42,6 @@ import java.util.List;
  */
 public final class AllayModelGeometry {
 
-    /** 32x32 texture (LayerDefinition.create(..., 32, 32)). */
-    private static final float TEX_SIZE = 32f;
     /**
      * Vertex stride in floats: pos.xyz, uv.xy, partId, normalAxis. Injected
      * into every shader source as MODEL_VERTEX_FLOATS by ParticlePrograms —
@@ -56,18 +54,6 @@ public final class AllayModelGeometry {
     static final int AXIS_EAST = 0, AXIS_WEST = 1, AXIS_UP = 2,
             AXIS_DOWN = 3, AXIS_SOUTH = 4, AXIS_NORTH = 5;
 
-    /**
-     * MODEL atlas layout (shared with {@link ParticleAtlas#ALLAY}, whose frame
-     * grid is sized from these): frame 0 = the allay body texture, frames
-     * 1..6 = the held-item sword tiers ({@link HeldItemGeometry}). The cell
-     * equals the 32x32 allay texture; the 16x16 sword sprites upscale to fill.
-     */
-    public static final int ATLAS_COLS = HeldItemGeometry.ATLAS_COLS;
-    public static final int ATLAS_ROWS = HeldItemGeometry.ATLAS_ROWS;
-    public static final int ATLAS_CELL = HeldItemGeometry.ATLAS_CELL;
-    /** Atlas-space UV scale for frame 0 (the allay, cell (0,0)). */
-    private static final float UV_SCALE_U = (float) ATLAS_CELL / (ATLAS_COLS * ATLAS_CELL);
-    private static final float UV_SCALE_V = (float) ATLAS_CELL / (ATLAS_ROWS * ATLAS_CELL);
 
     /** Flat vertex array (pos.xyz model units / uv normalised / partId). */
     static final float[] VERTICES;
@@ -235,10 +221,9 @@ public final class AllayModelGeometry {
             out.add(p[0]);
             out.add(p[1]);
             out.add(p[2]);
-            // atlas-space UV: frame-0 (allay) texel UVs scaled into the frame's
-            // atlas cell — the MODEL atlas is a 4x2 grid, allay at cell (0,0)
-            out.add(us[t] / TEX_SIZE * UV_SCALE_U);
-            out.add(vs[t] / TEX_SIZE * UV_SCALE_V);
+            // Native allay pixels stay at the compact atlas origin.
+            out.add(us[t] / ParticleAtlasLayout.ALLAY_WIDTH);
+            out.add(vs[t] / ParticleAtlasLayout.ALLAY_HEIGHT);
             out.add((float) partId);
             out.add((float) normalAxis);
         }

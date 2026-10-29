@@ -22,6 +22,8 @@ public final class StormCollisionRuntime implements AutoCloseable {
     private final StormCollisionCache cache=new StormCollisionCache();
     private final StormCollisionGpu gpu=new StormCollisionGpu();
     private long offered=-1,lastActive;
+    private final Map<Section,Long> featherDemand=new HashMap<>();
+    private long featherExpiry=Long.MAX_VALUE;
     private int[] bounds;
     private final StormCollisionDemand leases=new StormCollisionDemand();
     private Set<Section> activeDemand=Set.of();
@@ -32,9 +34,13 @@ public final class StormCollisionRuntime implements AutoCloseable {
     public static void refresh(boolean active,Vec3 center,float radius,ClientboundStormWavePacket[] attacks){
         var level=Minecraft.getInstance().level;if(current!=null&&current.level!=level)reset();
         if(level==null)return;
-        if(!active){if(current!=null&&level.getGameTime()-current.lastActive>20)reset();return;}
+        if(current!=null&&level.getGameTime()>=current.featherExpiry){
+            if(current.featherDemand.entrySet().removeIf(e->e.getValue()<=level.getGameTime()))current.bounds=null;
+            current.featherExpiry=current.featherDemand.values().stream().mapToLong(Long::longValue).min().orElse(Long.MAX_VALUE);
+        }
+        if(!active&&(current==null||current.featherDemand.isEmpty())){if(current!=null&&level.getGameTime()-current.lastActive>20)reset();return;}
         if(current==null)current=new StormCollisionRuntime(level);
-        current.lastActive=level.getGameTime();current.demand(center,radius,attacks);
+        current.lastActive=level.getGameTime();current.demand(active,center,radius,attacks);
     }
     private static final class Returning {final ClientboundStormWavePacket packet;final java.util.Set<Integer> members=new java.util.HashSet<>();Returning(ClientboundStormWavePacket p){packet=p;}}
     private final Map<Integer,Returning> returning=new HashMap<>();
@@ -44,7 +50,18 @@ public final class StormCollisionRuntime implements AutoCloseable {
     public static void arrived(int id,int member){StarfallGpuBuffers.INSTANCE.arrived(id,member);if(current==null)return;var record=current.returning.get(id);if(record!=null&&record.members.remove(member)){if(record.members.isEmpty())current.returning.remove(id);current.bounds=null;}}
     public static void claimed(ClientboundStormWavePacket packet){if(current==null)return;for(var it=current.returning.values().iterator();it.hasNext();){var record=it.next();if(record.packet.waveId()==packet.waveId())continue;for(int m:packet.members())record.members.remove(m);if(record.members.isEmpty())it.remove();}current.bounds=null;}
     public static void dead(int member){if(current==null)return;for(var it=current.returning.values().iterator();it.hasNext();){var r=it.next();if(r.members.remove(member)&&r.members.isEmpty())it.remove();}current.bounds=null;}
-    private void demand(Vec3 center,float radius,ClientboundStormWavePacket[] attacks){
+    public static void retainFeathers(Collection<Section> sections,long ticks){
+        var level=Minecraft.getInstance().level;if(level==null||sections.isEmpty())return;
+        if(current!=null&&current.level!=level)reset();if(current==null)current=new StormCollisionRuntime(level);
+        long expiry=level.getGameTime()+ticks;boolean changed=false;
+        for(var section:sections)changed|=current.featherDemand.put(section,expiry)==null;
+        current.featherExpiry=Math.min(current.featherExpiry,expiry);if(changed)current.bounds=null;
+    }
+    public static void releaseFeathers(){
+        if(current==null||current.featherDemand.isEmpty())return;
+        current.featherDemand.clear();current.featherExpiry=Long.MAX_VALUE;current.bounds=null;
+    }
+    private void demand(boolean active,Vec3 center,float radius,ClientboundStormWavePacket[] attacks){
         double pad=radius*1.15+20,minX=center.x-pad,maxX=center.x+pad,minZ=center.z-pad,maxZ=center.z+pad,minY=center.y-20,maxY=center.y+20;
         var coverage=new ArrayList<ClientboundStormWavePacket>();for(var p:attacks)if(p!=null&&!p.abort())coverage.add(p);for(var record:returning.values())coverage.add(record.packet);
         for(var p:coverage){
@@ -57,6 +74,7 @@ public final class StormCollisionRuntime implements AutoCloseable {
             for(int i=0;i<route.length;i+=3){minX=Math.min(minX,route[i]-attackPad);maxX=Math.max(maxX,route[i]+attackPad);minY=Math.min(minY,route[i+1]-attackPad);maxY=Math.max(maxY,route[i+1]+attackPad);minZ=Math.min(minZ,route[i+2]-attackPad);maxZ=Math.max(maxZ,route[i+2]+attackPad);}
         }
         int[] next={(int)Math.floor(minX/16),(int)Math.floor(minY/16),(int)Math.floor(minZ/16),(int)Math.floor(maxX/16),(int)Math.floor(maxY/16),(int)Math.floor(maxZ/16)};
+        if(!active)next=new int[]{0,0,0,-1,-1,-1};
         long tick=level.getGameTime();boolean changed=!Arrays.equals(bounds,next);
         if(!changed&&!leases.due(tick))return;
         long begin=System.nanoTime();
@@ -64,7 +82,7 @@ public final class StormCollisionRuntime implements AutoCloseable {
             bounds=next;var keys=new LinkedHashSet<Section>();
             // A whole swept envelope also covers every member's return to the moving body.
             for(int y=next[1];y<=next[4];y++)for(int z=next[2];z<=next[5];z++)for(int x=next[0];x<=next[3];x++)keys.add(new Section(x,y,z));
-            activeDemand=keys;
+            keys.addAll(featherDemand.keySet());activeDemand=keys;
         }
         List<Section> requested=new ArrayList<>(leases.update(activeDemand,tick));
         Vec3 eye=Minecraft.getInstance().player==null?center:Minecraft.getInstance().player.getEyePosition();

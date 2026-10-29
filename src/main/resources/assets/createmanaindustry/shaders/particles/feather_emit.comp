@@ -1,0 +1,23 @@
+layout(local_size_x=64) in;
+layout(std430,binding=1) buffer Pool {vec4 data[];} writeBuf;
+layout(std430,binding=3) buffer Counter {uint writeSlot;} counter;
+uniform uint uCapacity,uCount,uEmitter;uniform vec3 uPlayer,uCamPos;uniform float uTop,uSeed;
+uniform vec4 uFrustum[6];
+#pragma cmi_include chunks/pool_reservation.glsl
+#pragma cmi_include chunks/feather_state.glsl
+#pragma cmi_include chunks/feather_record.glsl
+#pragma cmi_include chunks/storm_collision.glsl
+void main(){
+    uint index=gl_GlobalInvocationID.x;if(index>=uCount)return;
+    float seed=uSeed+float(index)*317.;vec3 p=vec3(0);bool accepted=false;
+    for(int attempt=0;attempt<8;attempt++){
+        float s=seed+float(attempt)*91.7,a=cmiFeatherHash(s)*6.2831853;
+        float r=sqrt(mix(36.,576.,cmiFeatherHash(s+1.)));
+        p=uPlayer+vec3(cos(a)*r,mix(4.,min(16.,uTop-uPlayer.y),cmiFeatherHash(s+2.)),sin(a)*r);
+        bool outside=false;for(int plane=0;plane<6;plane++)outside=outside||dot(uFrustum[plane].xyz,p-uCamPos)+uFrustum[plane].w<-.15;
+        cmiFeatherRequest(p);if(!outside||!cmiStormKnown(p)||cmiStormSolid(p))continue;accepted=true;break;
+    }
+    if(!accepted||!cmiFeatherReserve(false))return;uint slot=cmiReserveParticle();if(slot>=uCapacity)return;
+    vec4 p0=vec4(p,1),p1=vec4(0),p2=vec4(1),p3=vec4(0,60,seed,uintBitsToFloat(uEmitter));cmiFeatherInit(p0,p1,p2,p3);
+    uint b=slot*4u;writeBuf.data[b]=p0;writeBuf.data[b+1u]=p1;writeBuf.data[b+2u]=p2;writeBuf.data[b+3u]=p3;
+}

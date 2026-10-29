@@ -16,7 +16,9 @@
         // 1 tick = 0.05 s, so the equivalent continuous acceleration is
         // A * f^1.25 * (0.0025 * 20 * 20) = A * f^1.25 * 1.0 blocks/s^2.
         float flutter = matMotion.z;
-        if (flutter > 0.0) {
+        if (isFeather) {
+            vel.xz += p2.xy * (pow(clamp(age / max(hp, 1e-5),0.,1.),1.25)*uDt);
+        } else if (flutter > 0.0) {
             // hp holds maxLife for non-MODEL materials (flutter is sprite-only)
             float fr = clamp(age / max(hp, 1e-5), 0.0, 1.0);
             // flutter phase: vanilla uses nextFloat·60°. The stored seed is the

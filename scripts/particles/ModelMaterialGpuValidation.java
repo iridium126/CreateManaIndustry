@@ -96,8 +96,67 @@ public final class ModelMaterialGpuValidation {
             }
         }finally{for(int t:targets)GL11.glDeleteTextures(t);for(int t:textures)GL11.glDeleteTextures(t);GL30.glDeleteFramebuffers(fbo);GL30.glDeleteVertexArrays(vao);GL20.glDeleteProgram(p);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clear();}
     }
+    static void atlasBindings()throws Exception{
+        var atlas=com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY;
+        var field=atlas.getClass().getDeclaredField("textureId");field.setAccessible(true);int original=field.getInt(atlas);
+        var bind=CMIPackEntityMergeHook.class.getDeclaredMethod("bindAtlas",int.class);bind.setAccessible(true);
+        int sentinel=texture(1,1,1,1),loaded=texture(.2f,.65f,.8f,1);
+        try{
+            for(int missing:new int[]{-1,0}){
+                field.setInt(atlas,missing);
+                com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.bind(0,sentinel);
+                com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(0,sentinel);
+                bind.invoke(null,0);
+                check(GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D)==sentinel,"unallocated atlas must not bind a texture name");
+                check(com.mojang.blaze3d.systems.RenderSystem.getShaderTexture(0)==sentinel,"unallocated atlas must not poison Iris's engine texture table");
+                check(GL11.glGetError()==0,"unallocated atlas GL error");
+            }
+            field.setInt(atlas,loaded);bind.invoke(null,0);
+            check(GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D)==loaded,"loaded atlas GL binding");
+            check(com.mojang.blaze3d.systems.RenderSystem.getShaderTexture(0)==loaded,"loaded atlas engine binding");
+            // Iris ExtendedShader.setupTextures uses these DSA operations on the engine table.
+            int current=com.mojang.blaze3d.systems.RenderSystem.getShaderTexture(0);
+            GL45.glBindTextureUnit(0,current);GL45.glTextureParameteriv(current,GL33.GL_TEXTURE_SWIZZLE_RGBA,new int[]{GL11.GL_RED,GL11.GL_GREEN,GL11.GL_BLUE,GL11.GL_ALPHA});
+            check(GL11.glGetError()==0,"Iris DSA atlas operations");
+        }finally{field.setInt(atlas,original);com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(0,0);com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.bind(0,0);GL11.glDeleteTextures(sentinel);GL11.glDeleteTextures(loaded);}
+    }
+    static void mergedFeatherVertices(String vertex,String fragment,String label)throws Exception{
+        var patched=TransformPatcher.patchVanilla(label,vertex,null,null,null,fragment,net.irisshaders.iris.gl.blending.AlphaTests.ONE_TENTH_ALPHA,false,true,new net.irisshaders.iris.gl.state.ShaderAttributeInputs(true,true,false,true,true),new it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap<>());
+        // Capture CMI's actual output before pack projection/temporal uniforms, which require a live world.
+        String input=patched.get(PatchShaderType.VERTEX);check(input.contains("vec4 cmi_VertexLevel;"),"CMI feedback anchor");input=input.replace("vec4 cmi_VertexLevel;","out vec4 cmi_VertexLevel;");
+        int shader=GL20.glCreateShader(GL20.GL_VERTEX_SHADER);GL20.glShaderSource(shader,input);GL20.glCompileShader(shader);check(GL20.glGetShaderi(shader,GL20.GL_COMPILE_STATUS)!=0,label+GL20.glGetShaderInfoLog(shader));
+        int program=GL20.glCreateProgram();GL20.glAttachShader(program,shader);GL30.glTransformFeedbackVaryings(program,new String[]{"cmi_VertexLevel"},GL30.GL_INTERLEAVED_ATTRIBS);GL20.glLinkProgram(program);GL20.glDeleteShader(shader);check(GL20.glGetProgrami(program,GL20.GL_LINK_STATUS)!=0,label+GL20.glGetProgramInfoLog(program));
+        int prefix=16384+4096,stride=com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.WORDS,visible=com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.VISIBLE;
+        var particles=org.lwjgl.BufferUtils.createByteBuffer(3*64);
+        for(int i=0;i<3;i++){int at=i*64;particles.putFloat(at,i==0?0:(i==1?.25f:-.25f)).putFloat(at+12,i==0?100000:1).putFloat(at+52,60);}
+        var metadata=org.lwjgl.BufferUtils.createByteBuffer((prefix+stride*2)*4);
+        for(int bank=0;bank<2;bank++){int base=prefix+bank*stride;metadata.putInt((base+11)*4,6).putInt((base+12)*4,2);metadata.putInt((base+visible)*4,bank==0?1:2).putInt((base+visible+1)*4,bank==0?2:1);}
+        int pool=GL15.glGenBuffers(),state=GL15.glGenBuffers(),feedback=GL15.glGenBuffers(),vao=GL30.glGenVertexArrays(),poolTex=GL11.glGenTextures(),stateTex=GL11.glGenTextures();
+        try{
+            GL30.glBindVertexArray(vao);GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,pool);GL15.glBufferData(GL31.GL_TEXTURE_BUFFER,particles,GL15.GL_STATIC_DRAW);GL13.glActiveTexture(GL13.GL_TEXTURE11);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,poolTex);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_RGBA32F,pool);
+            GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,state);GL15.glBufferData(GL31.GL_TEXTURE_BUFFER,metadata,GL15.GL_STATIC_DRAW);GL13.glActiveTexture(GL13.GL_TEXTURE13);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,stateTex);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL32.GL_RG32UI,state);
+            GL15.glBindBuffer(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,feedback);GL15.glBufferData(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,192,GL15.GL_DYNAMIC_READ);GL30.glBindBufferBase(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,0,feedback);GL20.glUseProgram(program);
+            int active=GL20.glGetProgrami(program,GL20.GL_ACTIVE_UNIFORMS);
+            for(int i=0;i<active;i++)try(var stack=org.lwjgl.system.MemoryStack.stackPush()){
+                var size=stack.mallocInt(1);var type=stack.mallocInt(1);String name=GL20.glGetActiveUniform(program,i,size,type);int location=GL20.glGetUniformLocation(program,name),kind=type.get(0);
+                if(kind==GL20.GL_FLOAT_MAT4)GL20.glUniformMatrix4fv(location,false,new org.joml.Matrix4f().get(new float[16]));
+                if(kind==GL20.GL_FLOAT_MAT3)GL20.glUniformMatrix3fv(location,false,new org.joml.Matrix3f().get(new float[9]));
+                if(kind==GL31.GL_SAMPLER_BUFFER)GL20.glUniform1i(location,11);
+                if(kind==GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER)GL20.glUniform1i(location,13);
+            }
+            integer(program,"cmi_FeatherPass",1);integer(program,"cmi_LodPass",0);GL20.glUniform3f(GL20.glGetUniformLocation(program,"cmi_FeatherRight"),1,0,0);GL20.glUniform3f(GL20.glGetUniformLocation(program,"cmi_FeatherUp"),0,1,0);
+            GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,state);
+            for(int bank=0;bank<2;bank++){
+                int base=prefix+bank*stride;integer(program,"cmi_FeatherWordBase",base);GL30.glBeginTransformFeedback(GL11.GL_TRIANGLES);GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,(base+11)*4L);GL30.glEndTransformFeedback();GL42.glMemoryBarrier(GL42.GL_TRANSFORM_FEEDBACK_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+                var result=org.lwjgl.BufferUtils.createByteBuffer(192);GL15.glBindBuffer(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,feedback);GL15.glGetBufferSubData(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,0,result);
+                for(int i=0;i<48;i++){float value=result.getFloat(i*4);check(Float.isFinite(value)&&Math.abs(value)<2,label+" read a MODEL sentinel through the feather index: "+value);}
+                check(GL11.glGetError()==0,label+" indirect/TBO draw GL error");
+            }
+        }finally{GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);GL20.glUseProgram(0);GL20.glDeleteProgram(program);GL30.glDeleteVertexArrays(vao);for(int t:new int[]{poolTex,stateTex})GL11.glDeleteTextures(t);for(int b:new int[]{pool,state,feedback})GL15.glDeleteBuffers(b);}
+    }
     static void run()throws Exception{
         com.mojang.blaze3d.systems.RenderSystem.initRenderThread();DEFINES.add(new StringPair("MC_NORMAL_MAP","1"));DEFINES.add(new StringPair("MC_SPECULAR_MAP","1"));for(var phase:net.irisshaders.iris.pipeline.WorldRenderingPhase.values())DEFINES.add(new StringPair("MC_RENDER_STAGE_"+phase.name(),Integer.toString(phase.ordinal())));
+        atlasBindings();
         var compiler=new ShaderPackProgramCompiler(name->com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{try{return Files.readString(Path.of("src/main/resources/assets/createmanaindustry",path));}catch(Exception e){throw new RuntimeException(e);}}));
         var method=ShaderPackProgramCompiler.class.getDeclaredMethod("buildMergedSource",boolean.class);method.setAccessible(true);var uniform=Pattern.compile("\\buniform\\s+vec4\\s+entityColor\\s*;");int packs=0;
         try(var samples=Files.list(Path.of("run/shaderpacks"))){for(Path sample:samples.filter(p->p.toString().endsWith(".zip")).sorted().toList()){
@@ -107,6 +166,7 @@ public final class ModelMaterialGpuValidation {
             int nativeProgram=compile(v,g,f,"native",root);GL20.glDeleteProgram(nativeProgram);
             boolean exact=g==null&&!uniform.matcher(v).replaceAll("").contains("entityColor");String own=(String)method.invoke(compiler,exact);String merged=new ParticleVertexInjector().patch(exact?uniform.matcher(v).replaceAll(""):v,own,"model-material");check(merged.contains("cmi_ShadowPass"),"CMI injection succeeded "+sample);merged=JcppProcessor.glslPreprocessSource(merged,DEFINES);
             int model=compile(merged,g,exact?uniform.matcher(f).replaceAll("in vec4 entityColor;"):f,"model",root);GL20.glDeleteProgram(model);
+            if(g==null)mergedFeatherVertices(merged,exact?uniform.matcher(f).replaceAll("in vec4 entityColor;"):f,sample.getFileName().toString());
             if(sample.getFileName().toString().startsWith("iterationT"))materials(f,true,0,root,false);
             if(sample.getFileName().toString().startsWith("Complementary")){
                 var graph=new IncludeGraph(root,ImmutableList.of(AbsolutePackPath.fromAbsolutePath("/"+base+".vsh"),AbsolutePackPath.fromAbsolutePath("/"+base+".fsh")),false);

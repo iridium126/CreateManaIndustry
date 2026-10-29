@@ -142,6 +142,7 @@ void sourceMetrics(uint srcIdx, out vec3 feet, out float width, out float height
 
 #pragma cmi_include chunks/model_spawn.glsl
 #pragma cmi_include chunks/classic_spawn.glsl
+#pragma cmi_include chunks/feather_state.glsl
 
 void main() {
     uint g = gl_GlobalInvocationID.x;
@@ -481,6 +482,7 @@ void main() {
         }
     }
 
+    if(uint(emitters.u[eid*VEC4_PER_EMITTER].x)==CMI_FEATHER_TYPE&&!cmiFeatherReserve(false))return;
     uint slot = cmiReserveEmitterParticle(eid);
     if (slot >= uCapacity) return;
     vec3 origin = vec3(emitCmd.entries[eb], emitCmd.entries[eb + 1u], emitCmd.entries[eb + 2u]);

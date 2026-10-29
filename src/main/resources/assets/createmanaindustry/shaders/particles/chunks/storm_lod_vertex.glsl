@@ -14,7 +14,7 @@ void cmiLodVertex(vec4 position,vec4 motion,vec3 local,vec2 sourceUv,int part,in
         // Perspective alone determines its screen coverage, including subpixel sizes.
         vertex=centre+cmi_LodInverseView[0].xyz*(corner.x*position.w)+cmi_LodInverseView[1].xyz*(corner.y*position.w);
         normal=cmi_LodInverseView[2].xyz;
-        uv=vec2(7.5/128.,12.5/64.);
+        uv=vec2(7.5,12.5)*CMI_ALLAY_INV_SIZE;
         return;
     }
     vec3 pivot=part==0?vec3(0,19.51,0):vec3(0,19.5,0);

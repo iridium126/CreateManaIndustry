@@ -67,6 +67,8 @@ public final class StormLodGpu implements AutoCloseable {
         float envelope=(float)(sample.radius()*1.2+16),distance=(float)Math.sqrt(cx*cx+cy*cy+cz*cz);
         Matrix4f vp=extended(projection,far+2).mul(view);
         if(distance+envelope<near||distance-envelope>=far||!coarseFrustum.set(vp).testSphere(cx,cy,cz,envelope))return;
+        // A client may first see a storm through the analytic LOD without any MODEL emitter.
+        ParticleAtlas.ALLAY.ensureLoaded();if(!ParticleAtlas.ALLAY.ready())return;
         projectedBounds(vp,cx,cy,cz,envelope);
         if(uploadedRevision!=StormLodClient.revision){
             mask.clear();long[] words=StormLodClient.DEAD.toLongArray();

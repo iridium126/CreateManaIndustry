@@ -175,6 +175,8 @@ vec2 cmiGauss2(float s) {
 
 #pragma cmi_include chunks/pool_reservation.glsl
 #pragma cmi_include chunks/death_spawn.glsl
+#define CMI_FEATHER_GRID
+#pragma cmi_include chunks/feather_update.glsl
 
 #pragma cmi_types update
 
@@ -243,6 +245,15 @@ void main() {
     if(!modelMaterial&&updateHexParticle(hb,p0,p1,p2,p3))return;
     float matId = matMotion.x;
     bool isModel = matId >= 1.5 && matId < 2.5;
+    bool isFeather = uint(emitters.u[hb].x)==CMI_FEATHER_TYPE;
+    if(isFeather&&cmiFeatherEarly(p0,p1,p2,p3))return;
+    if(isFeather){
+        cmiStormVoxel=uStormCollisionEnabled;
+        if(!cmiStormKnown(p0.xyz)||!cmiStormKnown(p0.xyz+p1.xyz*uDt+vec3(0,-.02,0))){
+            uint slot=cmiReserveParticle();if(slot>=uCapacity)return;uint b=slot*4u;
+            writeBuf.data[b]=p0;writeBuf.data[b+1u]=p1;writeBuf.data[b+2u]=p2;writeBuf.data[b+3u]=vec4(p3.x+uDt,p3.yzw);return;
+        }
+    }
 
     float age = p3.x;  // animation clock -- NEVER reset, even on death
     float hp = p3.y;   // MODEL: hit points; every other material: max life
@@ -286,6 +297,12 @@ void main() {
     vec3 cmiBeforeSweepVelocity=vel;
 #pragma cmi_include chunks/collision_sweep.glsl
     if(cmiStormEmbedded)vel=p1.xyz;
+    if(isFeather&&cmiStormMissing){pos=p0.xyz;vel=p1.xyz;swept=true;landed=false;}
+    if(isModel&&landed)cmiFeatherDisturb(pos,clamp(-cmiBeforeSweepVelocity.y*.25+.5,0.,3.5));
+    if(isFeather&&landed){
+        p0.w=-abs(p0.w);vel=vec3(0);roll=cmiFeatherRoll(p1,p2,p3.x+uDt);
+        p3.z=uintBitsToFloat(floatBitsToUint(p3.z)|32768u);
+    }
 
     if (!swept)
         pos += vel * uDt;
@@ -398,7 +415,10 @@ void main() {
     // Skipping the output write below does exactly that: the particle compacts
     // out this frame. hp holds maxLife for non-MODEL materials; MODEL never
     // uses DIE_ON_GROUND (corpses expire through the countdown instead).
-    if (!isModel && collideMode > 1.5 && landed)
+    // CherryParticle also dies when either horizontal velocity is zero after
+    // its first tick (remaining lifetime < 299). Flutter gates this to leaves.
+    if (!isModel && collideMode > 1.5 && (landed
+            || (matMotion.z > 0.0 && age > 0.05 && (vel.x == 0.0 || vel.z == 0.0))))
         return;
     // corpse countdown advances AFTER the age bookkeeping; the hurt overlay
     // decays over vanilla's hurtTime (10 ticks = 0.5 s)

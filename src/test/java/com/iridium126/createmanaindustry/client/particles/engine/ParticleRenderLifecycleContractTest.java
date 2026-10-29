@@ -23,6 +23,41 @@ class ParticleRenderLifecycleContractTest {
         for(var insn:method.instructions)if(insn instanceof MethodInsnNode call&&call.owner.equals(owner)&&call.name.equals(name))return true;
         return false;
     }
+    @Test void feathersUseEntityMergeButNeverModelShadowDraw() throws IOException {
+        var hook=read("com/iridium126/createmanaindustry/client/particles/shaderpack/CMIPackEntityMergeHook");
+        assertTrue(calls(method(hook,"drawEntities"),ENGINE+"AllayFeatherGpu","drawMerged"));
+        assertFalse(calls(method(hook,"renderShadow"),ENGINE+"AllayFeatherGpu","drawMerged"));
+        var renderer=read(SCENE+"ParticleRenderer");
+        assertTrue(calls(method(renderer,"draw"),ENGINE+"AllayFeatherGpu","draw"));
+        assertFalse(calls(method(renderer,"drawModels"),ENGINE+"AllayFeatherGpu","draw"));
+    }
+    @Test void featherUniformsFollowProgramSelectionAndUnloadedAtlasesNeverEnterMerge() throws IOException {
+        var cull=method(read(ENGINE+"ParticleRuntime$FrameCandidate"),"cullSort");
+        int program=-1,feather=-1;
+        for(int i=0;i<cull.instructions.size();i++)if(cull.instructions.get(i) instanceof MethodInsnNode call){
+            if(call.owner.equals("org/lwjgl/opengl/GL20")&&call.name.equals("glUseProgram"))program=i;
+            if(call.owner.equals(ENGINE+"AllayFeatherGpu")&&call.name.equals("bind")){
+                feather=i;assertTrue(program>=0&&program<i,"Feather glUniform calls require the keygen program to be current");
+            }
+        }
+        assertTrue(feather>=0);
+        var hook=read("com/iridium126/createmanaindustry/client/particles/shaderpack/CMIPackEntityMergeHook");
+        for(String entry:new String[]{"render","renderShadow"})
+            assertTrue(calls(method(hook,entry),ENGINE+"ParticleAtlas","ready"),entry+" must skip the unallocated atlas");
+        var lod=method(read(ENGINE+"StormLodGpu"),"prepare");
+        assertTrue(calls(lod,ENGINE+"ParticleAtlas","ensureLoaded"),"LOD-only storms need the atlas without a MODEL emitter");
+    }
+    @Test void featherGroundRestoresDispatchCommandsAndWaveFeedbackBindsItsOwn() throws IOException {
+        var ground=method(read(ENGINE+"AllayFeatherGpu"),"ground");
+        assertTrue(calls(ground,ENGINE+"ParticleBuffers","bindDispatch"));
+        assertTrue(ground.tryCatchBlocks.stream().anyMatch(block->block.type==null),"Dispatch binding must also be restored on failure");
+        var wave=method(read(ENGINE+"ParticleRuntime"),"captureWaveContacts");int binding=-1,dispatch=-1;
+        for(int i=0;i<wave.instructions.size();i++)if(wave.instructions.get(i) instanceof MethodInsnNode call&&call.owner.equals(ENGINE+"ParticleBuffers")){
+            if(call.name.equals("bindDispatch"))binding=i;
+            if(call.name.equals("dispatch"))dispatch=i;
+        }
+        assertTrue(binding>=0&&dispatch>binding,"Storm feedback must not inherit the feather grid as indirect command storage");
+    }
     @Test void reportsAreOnlyBuiltOnDemandAndModesAreLatchedBeforeRendering()throws IOException {
         var hook=read("com/iridium126/createmanaindustry/client/particles/shaderpack/CMIPackEntityMergeHook");
         assertFalse(calls(method(hook,"renderShadow"),"com/iridium126/createmanaindustry/client/gpu/profile/GpuPassTelemetry","report"));

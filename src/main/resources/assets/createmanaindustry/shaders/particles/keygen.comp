@@ -47,6 +47,7 @@ uniform float uOpaqueCutoff;
 // by the draw sequence alone and stays deterministic regardless of intra-band
 // arrival order.
 layout(local_size_x = 64) in;
+#pragma cmi_include chunks/feather_state.glsl
 
 layout(std430, binding = BIND_POOL_READ) readonly buffer ParticleRead { vec4 data[]; } pool;
 layout(std430, binding = BIND_INDIRECT) buffer IndirectBuf { uint cmd[INDIRECT_UINTS]; } indirect;
@@ -135,8 +136,16 @@ void main() {
     bool storm = emitters.u[hb + 18u].x > 0.5;
     // Capture ALL MODEL records before camera/distance culling, including corpses.
     if(uModelPass==0u&&matId>=1.5&&matId<2.5)cmiPopulationRecord(g,storm);
-    float keySize = max(emitters.u[hb + 5u].z, emitters.u[hb + 5u].w) * (storm ? 1.0 : p0.w);
+    bool isFeather=uint(emitters.u[hb].x)==CMI_FEATHER_TYPE;
+    if(uFeatherEnabled){
+        if(isFeather){
+            if(p0.w<0.){uint at=uint(atomicAdd(CMI_FEATHER_WORD(2),1));if(at<CMI_FEATHER_MAX)CMI_FEATHER_WORD(CMI_FEATHER_GROUND+at)=int(g);}
+            atomicAdd(CMI_FEATHER_WORD(0),1);
+        }else if(uint(emitters.u[hb].x)==CMI_FEATHER_SPARK_TYPE)atomicAdd(CMI_FEATHER_WORD(1),1);
+    }
+    float keySize = max(emitters.u[hb + 5u].z, emitters.u[hb + 5u].w) * (storm ? 1.0 : (isFeather?abs(p0.w):p0.w));
     float radius = matId >= 1.5 && matId < 2.5 ? keySize * 1.5 : keySize;
+    if(isFeather)radius+=.02;
 
     // translucent census BEFORE the cull test: every live ALPHA/MODEL particle
     // counts (off-screen included) so the dual-mode decision and the radix
@@ -152,6 +161,7 @@ void main() {
     bool sharedFate = (abs(emitters.u[hb + 17u].y - 8.0) < .25 || abs(emitters.u[hb + 17u].y - 9.0) < .25);
     if (!sphereVisible(sharedFate ? p0.xyz : p0.xyz - uCamPos, radius))
         return;
+    if(isFeather){if(uFeatherEnabled){uint at=uint(atomicAdd(CMI_FEATHER_WORD(3),1));if(at<CMI_FEATHER_MAX)CMI_FEATHER_WORD(CMI_FEATHER_VISIBLE+at)=int(g);}return;}
 
     if (matId < 0.5) {
         // ADDITIVE: dense permutation, order irrelevant

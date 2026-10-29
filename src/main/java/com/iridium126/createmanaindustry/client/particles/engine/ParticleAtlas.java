@@ -22,8 +22,8 @@ import org.lwjgl.opengl.GL30;
  * path plus the combat frames — vanilla {@code critical_hit}, {@code
  * enchanted_hit}, {@code damage} and {@code generic_0..7} (poof order 7→0) as
  * {@code combat_*} — for the OPAQUE combat emitters ({@code CombatSpecs});
- * 23 frames in an 8×3 grid. The atlas id is owned here; the render shaders
- * sample it by frame index.
+ * 23 native-resolution rectangles in 32x27 pixels. The atlas id is owned here;
+ * rectangles and shader frame indices share {@link ParticleAtlasLayout}.
  */
 public final class ParticleAtlas {
 
@@ -38,25 +38,22 @@ public final class ParticleAtlas {
     };
 
     /** Shared ALPHA-sprite + OPAQUE-combat atlas (see class doc). */
-    public static final ParticleAtlas SPRITE = new ParticleAtlas(SPRITE_FILES, 8, 3, false);
+    public static final ParticleAtlas SPRITE = new ParticleAtlas(SPRITE_FILES, false);
     /**
      * MODEL atlas: frame 0 is the vanilla allay entity texture, frames 1..6
      * the held-item sword tiers ({@code EmitterSpec.HeldItem} order) — ONE
-     * texture so the shader-pack merged path (whose fragment stage only sees
-     * the pinned gtexture sampler) can sample both. Mipmapped like the vanilla
-     * entity atlas; a 4x2 grid of 32x32 cells keeps mip blocks within one cell
-     * through level 5 (level 6 blends frames, far past the visibility fade).
+     * texture so the shader-pack merged path can sample all three kinds.
+     * Native 32x32 allay, six 16x16 swords and twelve 3x3 recolored feathers
+     * occupy 64x48 pixels. Mip levels stop at 4, before 16px material regions mix.
      */
     public static final ParticleAtlas ALLAY = new ParticleAtlas(new String[] {
             "allay_0",
             "sword_wooden", "sword_stone", "sword_golden", "sword_iron",
             "sword_diamond", "sword_netherite" },
-            AllayModelGeometry.ATLAS_COLS, AllayModelGeometry.ATLAS_ROWS, true);
+            true);
 
     private final String name;
     private final String[] files;
-    private final int cols;
-    private final int rows;
     private final int frames;
     /** Whether to generate mipmaps and minify through them on this atlas. */
     private final boolean mipmap;
@@ -65,25 +62,15 @@ public final class ParticleAtlas {
     public int width(){return width;}
     public int height(){return height;}
 
-    private ParticleAtlas(String[] files, int cols, int rows, boolean mipmap) {
+    private ParticleAtlas(String[] files, boolean mipmap) {
         this.files = files.clone();
         this.name = files[0].split("_")[0];
-        this.cols = cols;
-        this.rows = rows;
         this.frames = files.length;
         this.mipmap = mipmap;
     }
 
     public int frames() {
         return frames;
-    }
-
-    public int cols() {
-        return cols;
-    }
-
-    public int rows() {
-        return rows;
     }
 
     /** Whether the atlas is loaded (texture id valid). */
@@ -97,8 +84,7 @@ public final class ParticleAtlas {
 
     /**
      * Decodes {@code frames} PNGs from the mod's assets and uploads them as a
-     * {@code cols x rows} atlas. Called once on the render thread when the first
-     * ALPHA emitter becomes live. No-op if already loaded.
+     * compact native-resolution atlas. Lazy on the render thread; no-op if loaded.
      */
     public void ensureLoaded() {
         if (textureId >= 0)
@@ -109,11 +95,7 @@ public final class ParticleAtlas {
             if (rm == null)
                 return;
 
-            int[] fw = new int[frames];
-            int[] fh = new int[frames];
             NativeImage[] imgs = new NativeImage[frames];
-            int maxW = 0;
-            int maxH = 0;
             for (int i = 0; i < frames; i++) {
                 ResourceLocation id = CreateManaIndustry.modLoc("textures/particle/" + files[i] + ".png");
                 try (InputStream in = rm.open(id)) {
@@ -125,40 +107,17 @@ public final class ParticleAtlas {
                             imgs[j].close();
                     return;
                 }
-                fw[i] = imgs[i].getWidth();
-                fh[i] = imgs[i].getHeight();
-                maxW = Math.max(maxW, fw[i]);
-                maxH = Math.max(maxH, fh[i]);
             }
 
-            int texW = cols * maxW;
-            int texH = rows * maxH;
+            int texW = this==ALLAY?ParticleAtlasLayout.ALLAY_WIDTH:ParticleAtlasLayout.SPRITE_WIDTH;
+            int texH = this==ALLAY?ParticleAtlasLayout.ALLAY_HEIGHT:ParticleAtlasLayout.SPRITE_HEIGHT;
             NativeImage canvas = new NativeImage(texW, texH, true);
             try {
                 for (int i = 0; i < frames; i++) {
-                    int col = i % cols;
-                    int row = i / cols;
-                    // cell-sized frames copy 1:1; smaller frames (the 8x8 combat
-                    // sprites in the 16x16 cherry cells) are nearest-upscaled to
-                    // FILL the cell first — the render shaders map a full cell per
-                    // frame, so a partially-filled cell would draw the sprite at
-                    // the wrong world size
-                    if (fw[i] == maxW && fh[i] == maxH) {
-                        // this=img (read), arg=canvas (write) — see NativeImage.copyRect overload
-                        imgs[i].copyRect(canvas, 0, 0, col * maxW, row * maxH,
-                                fw[i], fh[i], false, false);
-                    } else {
-                        for (int y = 0; y < maxH; y++) {
-                            int sy = Math.min(fh[i] - 1, y * fh[i] / maxH);
-                            for (int x = 0; x < maxW; x++) {
-                                int sx = Math.min(fw[i] - 1, x * fw[i] / maxW);
-                                canvas.setPixelRGBA(col * maxW + x, row * maxH + y,
-                                        imgs[i].getPixelRGBA(sx, sy));
-                            }
-                        }
-                    }
+                    ParticleAtlasLayout.copy(canvas,imgs[i],this==ALLAY?ParticleAtlasLayout.model(i):ParticleAtlasLayout.sprite(i));
                 }
 
+                if (this == ALLAY) AllayFeatherAppearance.bake(canvas, rm);
                 int[] rgba = canvas.getPixelsRGBA();
                 int texelCount = rgba.length;
                 ByteBuffer pixels = ByteBuffer.allocateDirect(texelCount * 4)
@@ -177,8 +136,8 @@ public final class ParticleAtlas {
                 GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, texW, texH, 0,
                         GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, pixels);
                 if (this.mipmap) {
-                    // vanilla-entity-atlas-style distance behaviour; a single-frame
-                    // atlas cannot bleed neighbouring sprites at high mip levels
+                    // Stop before the aligned 16x16 sword/body/feather regions mix.
+                    GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL12.GL_TEXTURE_MAX_LEVEL,ParticleAtlasLayout.ALLAY_MAX_MIP);
                     GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
                     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER,
                             GL30.GL_NEAREST_MIPMAP_LINEAR);

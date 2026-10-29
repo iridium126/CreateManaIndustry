@@ -114,14 +114,18 @@ public class StormLodGpuValidation extends ModelPopulationGpuValidation {
  }
  static int assetTexture()throws Exception{
   var image=javax.imageio.ImageIO.read(StormLodGpuValidation.class.getResourceAsStream("/assets/createmanaindustry/textures/particle/allay_0.png"));
-  var pixels=bytes(128*64*4);for(int y=0;y<32;y++)for(int x=0;x<32;x++){int c=image.getRGB(x,y),offset=(y*128+x)*4;pixels.put(offset,(byte)(c>>16)).put(offset+1,(byte)(c>>8)).put(offset+2,(byte)c).put(offset+3,(byte)(c>>>24));}
-  int texture=GL11.glGenTextures();GL11.glBindTexture(GL11.GL_TEXTURE_2D,texture);GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,GL11.GL_RGBA8,128,64,0,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MIN_FILTER,GL11.GL_NEAREST);GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MAG_FILTER,GL11.GL_NEAREST);return texture;
+  int width=ParticleAtlasLayout.ALLAY_WIDTH,height=ParticleAtlasLayout.ALLAY_HEIGHT;
+  var pixels=bytes(width*height*4);for(int y=0;y<32;y++)for(int x=0;x<32;x++){int c=image.getRGB(x,y),offset=(y*width+x)*4;pixels.put(offset,(byte)(c>>16)).put(offset+1,(byte)(c>>8)).put(offset+2,(byte)c).put(offset+3,(byte)(c>>>24));}
+  int texture=GL11.glGenTextures();GL11.glBindTexture(GL11.GL_TEXTURE_2D,texture);GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,GL11.GL_RGBA8,width,height,0,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MIN_FILTER,GL11.GL_NEAREST);GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MAG_FILTER,GL11.GL_NEAREST);return texture;
  }
  static void hardCutoff()throws Exception{
   int fbo=GL30.glGenFramebuffers(),color=texture(GL30.GL_RGBA32F),depth=texture(GL30.GL_DEPTH_COMPONENT32F),vao=GL30.glGenVertexArrays();GL30.glBindVertexArray(vao);GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,fbo);GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL11.GL_TEXTURE_2D,color,0);GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,GL11.GL_TEXTURE_2D,depth,0);GL20.glDrawBuffers(new int[]{GL30.GL_COLOR_ATTACHMENT0});GL11.glViewport(0,0,16,16);
   var field=AllayModelGeometry.class.getDeclaredField("VERTICES");field.setAccessible(true);float[] vertices=(float[])field.get(null);var geo=bytes(vertices.length*4);geo.asFloatBuffer().put(vertices);int geometry=buffer(geo);
   field=AllayModelGeometry.class.getDeclaredField("INDICES");field.setAccessible(true);int[] indices=(int[])field.get(null);int ebo=GL15.glGenBuffers();GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER,ebo);GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER,indices,GL15.GL_STATIC_DRAW);
   int pool=buffer(bytes(64)),emit=buffer(bytes(320)),sorted=buffer(bytes(8)),order=buffer(bytes(4)),command=buffer(bytes(120)),atlas=assetTexture();
+  // Opaque billboard coverage is independent of atlas art; use an opaque atlas-sized input.
+  int sprite=GL11.glGenTextures();GL11.glBindTexture(GL11.GL_TEXTURE_2D,sprite);byte[] white=new byte[ParticleAtlasLayout.SPRITE_WIDTH*ParticleAtlasLayout.SPRITE_HEIGHT*4];java.util.Arrays.fill(white,(byte)255);
+  GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,GL11.GL_RGBA8,ParticleAtlasLayout.SPRITE_WIDTH,ParticleAtlasLayout.SPRITE_HEIGHT,0,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,bytes(white.length).put(white).flip());GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MIN_FILTER,GL11.GL_NEAREST);GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MAG_FILTER,GL11.GL_NEAREST);
   bind(ParticleBuffers.MODELGEO_BINDING,geometry);bind(ParticleBuffers.PARTICLE_BB_WRITE,pool);bind(ParticleBuffers.EMITTER_BB,emit);bind(ParticleBuffers.SORTWRITE_BINDING,sorted);bind(ParticleBuffers.ORDEROPAQUE_BINDING,order);bind(ParticleBuffers.INDIRECT_BB,command);
   float[] distances={96,108,116,119.9f,120};
   for(boolean model:new boolean[]{false,true}){
@@ -130,10 +134,10 @@ public class StormLodGpuValidation extends ModelPopulationGpuValidation {
    int previousPixels=-1;
    for(int column=0;column<distances.length;column++){
     int p=current;GL20.glUseProgram(p);GL20.glUniform1i(GL20.glGetUniformLocation(p,"uMode"),1);GL20.glUniform1i(GL20.glGetUniformLocation(p,"uSprite"),1);GL20.glUniform1i(GL20.glGetUniformLocation(p,"cmi_AllayAnimation"),3);GL20.glUniform1i(GL20.glGetUniformLocation(p,"uLightmap"),2);
-    f(p,"uFadeDist",96);f(p,"uAtlasCols",4);f(p,"uAtlasRows",2);GL41.glProgramUniform3f(p,GL20.glGetUniformLocation(p,"uCamRight"),1,0,0);GL41.glProgramUniform3f(p,GL20.glGetUniformLocation(p,"uCamUp"),0,1,0);
+    f(p,"uFadeDist",96);GL41.glProgramUniform3f(p,GL20.glGetUniformLocation(p,"uCamRight"),1,0,0);GL41.glProgramUniform3f(p,GL20.glGetUniformLocation(p,"uCamUp"),0,1,0);
     GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(p,"ModelViewMat"),false,new Matrix4f().get(new float[16]));GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(p,"ProjMat"),false,new Matrix4f().ortho(-.4f,.4f,-.1f,.7f,.01f,200).get(new float[16]));
     var particle=bytes(64);particle.putFloat(8,-distances[column]).putFloat(12,1).putFloat(32,1).putFloat(36,1).putFloat(40,1).putFloat(44,model?0:1).putFloat(48,1).putFloat(52,20);put(pool,particle);
-    GL13.glActiveTexture(GL13.GL_TEXTURE1);GL11.glBindTexture(GL11.GL_TEXTURE_2D,atlas);GL11.glEnable(GL11.GL_DEPTH_TEST);GL11.glDepthMask(true);GL11.glDisable(GL11.GL_CULL_FACE);GL11.glEnable(GL11.GL_BLEND);GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA,GL11.GL_ONE_MINUS_SRC_ALPHA,GL11.GL_ONE,GL11.GL_ZERO);GL30.glClearBufferfv(GL11.GL_COLOR,0,new float[]{0,0,0,0});GL30.glClearBufferfv(GL11.GL_DEPTH,0,new float[]{1});
+    GL13.glActiveTexture(GL13.GL_TEXTURE1);GL11.glBindTexture(GL11.GL_TEXTURE_2D,model?atlas:sprite);GL11.glEnable(GL11.GL_DEPTH_TEST);GL11.glDepthMask(true);GL11.glDisable(GL11.GL_CULL_FACE);GL11.glEnable(GL11.GL_BLEND);GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA,GL11.GL_ONE_MINUS_SRC_ALPHA,GL11.GL_ONE,GL11.GL_ZERO);GL30.glClearBufferfv(GL11.GL_COLOR,0,new float[]{0,0,0,0});GL30.glClearBufferfv(GL11.GL_DEPTH,0,new float[]{1});
     if(model)GL31.glDrawElementsInstanced(GL11.GL_TRIANGLES,indices.length,GL11.GL_UNSIGNED_INT,0L,1);else GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES,0,6,1);
     var pixels=bytes(16*16*4);GL11.glReadPixels(0,0,16,16,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);int lit=0;
     for(int y=0;y<16;y++)for(int x=0;x<16;x++){int o=(y*16+x)*4,r=pixels.get(o)&255,g=pixels.get(o+1)&255,b=pixels.get(o+2)&255;if(r+g+b>0)lit++;}
@@ -141,7 +145,7 @@ public class StormLodGpuValidation extends ModelPopulationGpuValidation {
    }
    GL20.glUseProgram(0);deleteProgram(current);
   }
-  for(int b:new int[]{geometry,ebo,pool,emit,sorted,order,command})GL15.glDeleteBuffers(b);for(int t:new int[]{color,depth,atlas})GL11.glDeleteTextures(t);GL30.glDeleteFramebuffers(fbo);GL30.glDeleteVertexArrays(vao);
+  for(int b:new int[]{geometry,ebo,pool,emit,sorted,order,command})GL15.glDeleteBuffers(b);for(int t:new int[]{color,depth,atlas,sprite})GL11.glDeleteTextures(t);GL30.glDeleteFramebuffers(fbo);GL30.glDeleteVertexArrays(vao);
  }
  static void renderBenchmark()throws Exception{
   int width=1280,height=720;

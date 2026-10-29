@@ -177,6 +177,13 @@ allprojects {
             if (project.hasProperty('hexSharedLongBenchmark')) args '--long-benchmark'
             workingDir = project.projectDir
         }
+        tasks.register('validateAllayFeatherGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'AllayFeatherGpuValidation'
+            if (project.hasProperty('allayFeatherBenchmark')) args '--benchmark'
+            workingDir = project.projectDir
+        }
         tasks.register('validateModelShadowGpu', JavaExec) {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
@@ -201,6 +208,7 @@ allprojects {
             source 'scripts/particles/ShaderFirstExecutionValidation.java'
             source 'scripts/particles/StormDepenetrationGpuValidation.java'
             source 'scripts/particles/StormLodGpuValidation.java'
+            source 'scripts/particles/AllayFeatherGpuValidation.java'
             options.release = 21
         }
         tasks.register('benchmarkModelAnimationStorage', JavaExec) {

@@ -1,0 +1,30 @@
+layout(local_size_x=64) in;
+#pragma cmi_include chunks/feather_state.glsl
+#pragma cmi_include chunks/feather_record.glsl
+#pragma cmi_include chunks/storm_collision.glsl
+layout(std430,binding=1) buffer Pool {vec4 data[];} pool;
+layout(std430,binding=18) readonly buffer Players {vec4 data[];} players;
+uniform uint uPhase,uPlayerCount,uMovementBase;
+void main(){
+    uint rank=gl_GlobalInvocationID.x;
+    if(uPhase==0u){
+        if(rank==0u){CMI_FEATHER_WORD(8)=(CMI_FEATHER_WORD(2)+63)/64;CMI_FEATHER_WORD(9)=1;CMI_FEATHER_WORD(10)=1;
+            CMI_FEATHER_WORD(11)=6;CMI_FEATHER_WORD(12)=CMI_FEATHER_WORD(3);CMI_FEATHER_WORD(13)=0;CMI_FEATHER_WORD(14)=0;}return;
+    }
+    if(uPhase==1u){
+        if(rank>=uPlayerCount)return;vec4 movement=players.data[uMovementBase+rank];if(movement.w<=0.)return;
+        cmiFeatherDisturb(movement.xyz,movement.w);return;
+    }
+    if(rank>=uint(CMI_FEATHER_WORD(2)))return;uint slot=uint(CMI_FEATHER_WORD(CMI_FEATHER_GROUND+rank)),b=slot*4u;
+    vec4 p0=pool.data[b],p1=pool.data[b+1u],p2=pool.data[b+2u],p3=pool.data[b+3u];if(p0.w>=0.)return;
+    uint tag=floatBitsToUint(p3.z);
+    if((tag&32768u)!=0u){p0.y+=.002+.004*cmiFeatherHash(p2.x*91.31+p2.y*47.17+float(tag&15u));tag&=~32768u;}
+    vec3 support=p0.xyz-vec3(0,.02,0);cmiFeatherRequest(support);
+    bool known=cmiStormKnown(support),supported=known&&cmiStormSolid(support);
+    vec3 lift=known&&supported&&p3.x*20.>=float((tag>>4u)&2047u)?cmiFeatherLift(p0.xyz):vec3(0);
+    if(known&&(!supported||lift.y>0.)){
+        p0.w=abs(p0.w);p1.xyz=lift;p1.w-=(p2.z+p2.w*(p3.x+.05))*p3.x;
+        tag=(tag&15u)|(uint(ceil((p3.x+.5)*20.))<<4u);
+    }
+    pool.data[b]=p0;pool.data[b+1u]=p1;pool.data[b+3u].z=uintBitsToFloat(tag);
+}
