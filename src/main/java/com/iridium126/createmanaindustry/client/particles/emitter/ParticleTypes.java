@@ -41,7 +41,6 @@ public final class ParticleTypes {
         registerStandard(new Type(6, "package", Material.PACKAGE, null, null, Set.of(Feature.PACKAGE,Feature.COLLISION)));
         register(new Type(AllayFeatherLayout.TYPE, "allay_feather", Material.OPAQUE,
                 "chunks/feather_spawn.glsl", null, Set.of(Feature.MODEL_ATLAS,Feature.COLLISION)));
-        register(new Type(AllayFeatherLayout.SPARK_TYPE, "allay_feather_spark", Material.ADDITIVE, null, null, Set.of()));
     }
     private ParticleTypes() {}
     private static void registerStandard(Type type) {
@@ -63,7 +62,6 @@ public final class ParticleTypes {
         return type;
     }
     public static Type allayFeather() { return TYPES.get(AllayFeatherLayout.TYPE); }
-    public static Type allayFeatherSpark() { return TYPES.get(AllayFeatherLayout.SPARK_TYPE); }
     public static synchronized void requireRegistered(Type type) {
         if (!type.equals(TYPES.get(type.id()))) throw new IllegalArgumentException("Unregistered particle type");
     }

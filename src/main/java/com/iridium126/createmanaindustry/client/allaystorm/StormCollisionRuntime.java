@@ -47,6 +47,11 @@ public final class StormCollisionRuntime implements AutoCloseable {
     public static void clearReturns(){if(current!=null){current.returning.clear();current.bounds=null;}}
     public static boolean returning(){return current!=null&&!current.returning.isEmpty();}
     public static void completed(ClientboundStormWavePacket packet,long[] ranks){if(current==null)return;var set=java.util.BitSet.valueOf(ranks);for(int rank=set.nextSetBit(0);rank>=0;rank=set.nextSetBit(rank+1))if(rank>=packet.members().length||!AllayStormRuntime.INSTANCE.livingMember(packet.members()[rank]))set.clear(rank);if(set.isEmpty())return;StarfallGpuBuffers.INSTANCE.trackReturn(packet,set.toLongArray());var record=current.returning.computeIfAbsent(packet.waveId(),k->new Returning(packet));for(int rank=set.nextSetBit(0);rank>=0;rank=set.nextSetBit(rank+1))record.members.add(packet.members()[rank]);current.bounds=null;}
+    /** Transfer ownership to the outer loop without fabricating a home-arrival ACK. */
+    public static void detachReturn(int member){
+        if(current==null)return;
+        for(var it=current.returning.values().iterator();it.hasNext();){var record=it.next();if(record.members.remove(member)){if(record.members.isEmpty())it.remove();current.bounds=null;}}
+    }
     public static void arrived(int id,int member){StarfallGpuBuffers.INSTANCE.arrived(id,member);if(current==null)return;var record=current.returning.get(id);if(record!=null&&record.members.remove(member)){if(record.members.isEmpty())current.returning.remove(id);current.bounds=null;}}
     public static void claimed(ClientboundStormWavePacket packet){if(current==null)return;for(var it=current.returning.values().iterator();it.hasNext();){var record=it.next();if(record.packet.waveId()==packet.waveId())continue;for(int m:packet.members())record.members.remove(m);if(record.members.isEmpty())it.remove();}current.bounds=null;}
     public static void dead(int member){if(current==null)return;for(var it=current.returning.values().iterator();it.hasNext();){var r=it.next();if(r.members.remove(member)&&r.members.isEmpty())it.remove();}current.bounds=null;}

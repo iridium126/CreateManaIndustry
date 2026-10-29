@@ -171,7 +171,7 @@ public class CreateManaIndustry {
     }
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(MODID).versioned("21");
+        PayloadRegistrar registrar = event.registrar(MODID).versioned("22");
         registrar.playToClient(com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPacket::handle);
         registrar.playToServer(com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPreferencePacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPreferencePacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPreferencePacket::handle);
         registrar.playToClient(com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket::handle);
@@ -276,6 +276,10 @@ public class CreateManaIndustry {
         registrar.playToClient(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnSnapshotRequest.TYPE,
                 com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnSnapshotRequest.STREAM_CODEC,
                 com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnSnapshotRequest::handle);
+        registrar.playBidirectional(
+                com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket.TYPE,
+                com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket.STREAM_CODEC,
+                com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket::handle);
         registrar.playBidirectional(com.iridium126.createmanaindustry.content.allaystorm.network.StormColumnSnapshotPacket.TYPE,
                 com.iridium126.createmanaindustry.content.allaystorm.network.StormColumnSnapshotPacket.STREAM_CODEC,
                 com.iridium126.createmanaindustry.content.allaystorm.network.StormColumnSnapshotPacket::handle);

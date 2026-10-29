@@ -185,6 +185,7 @@ public final class AllayStormManager {
         final List<Wave> waves = new ArrayList<>();
         final MajorAttackSchedule schedule=new MajorAttackSchedule();
         final BitSet waveReserved=new BitSet();
+        final StormOuterLoop outer=new StormOuterLoop();
         final StarfallColumns columns=new StarfallColumns();
         final StarfallSnapshotSync columnSnapshots=new StarfallSnapshotSync();
         final StormAttackStats stats=new StormAttackStats();
@@ -236,7 +237,7 @@ public final class AllayStormManager {
         if (!data.active) {
             com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftServer.stop(level);
             com.iridium126.createmanaindustry.content.allaystorm.lod.StormLodServer.stop(level);
-            rt.columns.clear();rt.columnSnapshots.clear();rt.waves.clear();rt.schedule.reset();rt.waveReserved.clear();
+            rt.columns.clear();rt.columnSnapshots.clear();rt.waves.clear();rt.schedule.reset();rt.waveReserved.clear();rt.outer.clear();
             if (rt.tracks.values().stream().anyMatch(t -> t.active))
                 deactivateAll(level, rt);
             return;
@@ -244,6 +245,9 @@ public final class AllayStormManager {
         regen(level, data);
         chase(level, data);
         grow(level, rt, data);
+        rt.outer.configure(data.count,data.finalCount,data.aliveCount(),data.growthPerSecond);
+        var batch=rt.outer.tick(member->member<data.count&&!data.dead.get(member),rt.waveReserved,(float)rt.chaseX,ServerConfig.stormChaseY,(float)rt.chaseZ,AllayStormData.vortexRadius(data.count));
+        if(!batch.isEmpty())broadcastOuter(level,rt,com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket.batch(level.dimension().location(),StormIdentity.of(level,data).epoch(),0,batch));
         com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftServer.tick(level,data,rt.chaseX,rt.chaseZ);
         var columnPlayers=new ArrayList<ServerPlayer>();
         var eligible=new ArrayList<ServerPlayer>();
@@ -260,7 +264,7 @@ public final class AllayStormManager {
         tickWaves(level,rt,data,eligible);
         int first=rt.schedule.ready(level.getGameTime())?rt.schedule.first():0;
         for(int i=0;i<3;i++){int kind=(first+i)%3;
-            if(kind==0)rt.columns.tick(level,data,rt.chaseX,rt.chaseZ,eligible,rt.waveReserved,()->nextAttackId(rt),packet->{if(!packet.abort())rt.columnSnapshots.created(packet.id(),columnPlayers.stream().map(ServerPlayer::getUUID).toList());for(var p:columnPlayers)PacketDistributor.sendToPlayer(p,packet);});
+            if(kind==0)rt.columns.tick(level,data,rt.chaseX,rt.chaseZ,eligible,rt.waveReserved,()->nextAttackId(rt),packet->{if(!packet.abort())rt.columnSnapshots.created(packet.id(),columnPlayers.stream().map(ServerPlayer::getUUID).toList());for(var p:columnPlayers)PacketDistributor.sendToPlayer(p,packet);},member->{if(!data.dead.get(member))rt.outer.offer(member,rt.waveReserved);});
             else tryMajor(level,rt,data,eligible,kind==1?StormAttack.HELIX:StormAttack.DOME);
         }
         if (++rt.scanCounter >= SCAN_INTERVAL_TICKS) {
@@ -291,6 +295,7 @@ public final class AllayStormManager {
                     || tt == null || !tt.active || !tp.isAlive();
             if (w.completed.cardinality()==w.members.length || AllayStarfall.elapsed(nowSec,w.end)>0 || now-w.launchTick>12000) {
                 releaseWave(rt,w);
+                if(w.locked)for(int rank=0;rank<w.members.length;rank++)if(!w.completed.get(rank)&&!data.dead.get(w.members[rank]))rt.outer.offer(w.members[rank],rt.waveReserved);
                 it.remove();
 
             } else if ((invalid && AllayDome.targetRequired(w.kind,w.locked)) || !data.active) {
@@ -662,6 +667,8 @@ public final class AllayStormManager {
                 t.authority, ServerConfig.stormCorrectionHz, data.dead.toByteArray(),
                 data.creationRadius, data.finalRadius, (float) data.growthPerSecond,
                 data.createdAtGameTime));
+        var outerFlights=new java.util.ArrayList<>(rt.outer.flights());
+        for(int offset=0;offset<outerFlights.size();offset+=1024)PacketDistributor.sendToPlayer(player,com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket.batch(level.dimension().location(),StormIdentity.of(level,data).epoch(),0,outerFlights.subList(offset,Math.min(offset+1024,outerFlights.size()))));
         for(var packet:rt.columns.snapshots()){rt.columnSnapshots.observe(packet.id(),player.getUUID());PacketDistributor.sendToPlayer(player,packet.resuming());PacketDistributor.sendToPlayer(player,new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(packet.dimension(),packet.epoch(),packet.id(),rt.columns.completed(packet.id())));}
         // seed the joining client's center stream immediately — without this
         // its interpolation would sit at the (block-quantized) ACTIVATE anchor
@@ -760,6 +767,8 @@ public final class AllayStormManager {
         for(var entry:rt.tracks.entrySet())if(entry.getValue().active){var observer=level.getServer().getPlayerList().getPlayer(entry.getKey());if(observer!=null&&observer.serverLevel()==level)PacketDistributor.sendToPlayer(observer,packet);}
     }
     private static void retireDeadMember(ServerLevel level,Runtime rt,int member){
+        var flight=rt.outer.dead(member,rt.waveReserved);
+        if(flight!=null)broadcastOuter(level,rt,com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket.batch(level.dimension().location(),StormIdentity.of(level,level.getData(CMIAttachments.STORM_DATA.get())).epoch(),1,java.util.List.of(flight)));
         com.iridium126.createmanaindustry.content.allaystorm.lod.StormLodServer.death(level,member);
         for(var w:rt.waves)if(StormAttack.regional(w.kind)&&w.membership.get(member))for(int rank=0;rank<w.members.length;rank++)if(w.members[rank]==member&&!w.completed.get(rank)){
             w.completed.set(rank);w.membership.clear(member);rt.waveReserved.clear(member);broadcastCompletion(level,rt,new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(level.dimension().location(),w.epoch,w.id,w.completed.toLongArray()));break;
@@ -923,11 +932,23 @@ public final class AllayStormManager {
         if(!data.active||track==null||!track.active||!track.authority||!StormIdentity.of(level,data).equals(new StormIdentity(packet.dimension(),packet.epoch())))return;
         var ranks=BitSet.valueOf(packet.ranks());long[] accepted=null;
         for(var w:rt.waves)if(w.id==packet.id()&&w.epoch==packet.epoch()&&StormAttack.regional(w.kind)&&(w.locked||w.kind==AllayDome.DOME)){if(ranks.length()>w.members.length)return;
-            for(int rank=ranks.nextSetBit(0);rank>=0;rank=ranks.nextSetBit(rank+1))if(!w.completed.get(rank)){w.completed.set(rank);w.membership.clear(w.members[rank]);rt.waveReserved.clear(w.members[rank]);}
+            for(int rank=ranks.nextSetBit(0);rank>=0;rank=ranks.nextSetBit(rank+1))if(!w.completed.get(rank)){w.completed.set(rank);w.membership.clear(w.members[rank]);rt.waveReserved.clear(w.members[rank]);if(w.locked&&!data.dead.get(w.members[rank]))rt.outer.offer(w.members[rank],rt.waveReserved);}
             accepted=w.completed.toLongArray();break;
         }
-        if(accepted==null&&rt.columns.complete(packet.id(),ranks,rt.waveReserved))accepted=rt.columns.completed(packet.id());
+        if(accepted==null&&rt.columns.complete(packet.id(),ranks,rt.waveReserved,member->{if(!data.dead.get(member))rt.outer.offer(member,rt.waveReserved);}))accepted=rt.columns.completed(packet.id());
         if(accepted!=null){var out=new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(packet.dimension(),packet.epoch(),packet.id(),accepted);for(var entry:rt.tracks.entrySet())if(entry.getValue().active){var observer=level.getServer().getPlayerList().getPlayer(entry.getKey());if(observer!=null&&observer.serverLevel()==level)PacketDistributor.sendToPlayer(observer,out);}}
+    }
+
+    private static void broadcastOuter(ServerLevel level,Runtime rt,com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket packet){
+        for(var entry:rt.tracks.entrySet())if(entry.getValue().active){var observer=level.getServer().getPlayerList().getPlayer(entry.getKey());if(observer!=null&&observer.serverLevel()==level)PacketDistributor.sendToPlayer(observer,packet);}
+    }
+    public static void outerArrived(com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket packet,IPayloadContext context){
+        if(packet.operation()!=2||!(context.player() instanceof ServerPlayer player))return;
+        var level=player.serverLevel();var data=level.getData(CMIAttachments.STORM_DATA.get());var rt=runtime(level);var track=rt.tracks.get(player.getUUID());
+        if(!data.active||track==null||!track.active||!track.authority||!StormIdentity.of(level,data).equals(new StormIdentity(packet.dimension(),packet.epoch())))return;
+        var released=new java.util.ArrayList<StormOuterLoop.Flight>();
+        for(int i=0;i<packet.members().length;i++)if(rt.outer.arrived(packet.members()[i],packet.cycles()[i],rt.waveReserved))released.add(new StormOuterLoop.Flight(packet.members()[i],packet.cycles()[i],0,0,0));
+        if(!released.isEmpty())broadcastOuter(level,rt,com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket.batch(packet.dimension(),packet.epoch(),1,released));
     }
 
     private static void tickColumnSnapshots(ServerLevel level,Runtime rt,AllayStormData data,List<ServerPlayer> players){
@@ -1021,7 +1042,7 @@ public final class AllayStormManager {
         rt.columnSnapshots.clear();
         rt.waves.clear();
         rt.schedule.reset();
-        rt.waveReserved.clear();
+        rt.waveReserved.clear();rt.outer.clear();
         for (var entry : rt.tracks.entrySet()) {
             Track t = entry.getValue();
             if (!t.active)

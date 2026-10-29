@@ -222,33 +222,11 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
    if(phase==2||phase==4){var local=read(state,(StarfallGpuBuffers.COLUMN_STATE+16)*4);check(local.getFloat((StarfallGpuBuffers.COLUMN_STATE+15)*4)>=values[10],"duplicate snapshot restarted curve progress");}
   }finally{GL41.glProgramUniform1i(update,GL20.glGetUniformLocation(update,"uColumnRestoreCount"),0);for(int buffer:new int[]{packed,input,output,counter,previous})GL15.glDeleteBuffers(buffer);}
  }
- static void columnRings(){
-  int reserve=compile("starfall_ring_reserve.comp"),emit=compile("emit.comp"),n=64*128;
-  int counter=buffer(bytes(16)),pool=buffer(bytes(n*64)),cmd=buffer(bytes(64*48));
-  var header=bytes(320);header.putFloat(17*16+4,7).putFloat(5*16+8,.135f).putFloat(5*16+12,.135f).putFloat(6*16,1);int h=buffer(header);
-  try(var gpu=new StarfallGpuBuffers()){
-   gpu.rebuild(columns());gpu.prepare(1);gpu.bind(reserve,true);var commands=bytes(64*48);
-   for(int i=0;i<64;i++)commands.putFloat(i*48+12,128).putFloat(i*48+24,i*128).putFloat(i*48+32,100+i).putFloat(i*48+36,4+i);
-   put(cmd,commands);bind(3,counter);bind(4,cmd);bind(5,h);ui(reserve,"uEmitCount",64);ui(reserve,"uCapacity",n);f(reserve,"uTimeSec",1);dispatch(reserve,1);check(read(counter,16).getInt(0)==n,"64 circles failed whole reservation");
-   gpu.bind(emit,true);bind(1,pool);ui(emit,"uCapacity",n);ui(emit,"uTotalSpawn",n);ui(emit,"uEmitCount",64);f(emit,"uTimeSec",1);dispatch(emit,n/64);
-   var particles=read(pool,n*64);for(int i=0;i<n;i++){
-    int o=i*64;uintTag(particles.getInt(o+56),i/128);
-    var c=column(i/128);check(Math.abs(Math.hypot(particles.getFloat(o)-c.x(),particles.getFloat(o+8)-c.z())-4)<.001,"column circle radius");
-    check(Math.abs(particles.getFloat(o+4)-c.y()-.18)<.001,"column circle height");float size=particles.getFloat(o+12)*.135f;check(size>=.09&&size<.18,"column marker not half size");
-   }
-   try(var census=new Fixture(n,0,0)){
-    put(census.emit,header);gpu.bind(census.reset,true);gpu.bind(census.keygen,true);census.build(particles,n);
-    int state=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);var counts=read(state,StarfallGpuBuffers.DOME_JOIN*4);
-    for(int slot=0;slot<64;slot++)check(counts.getInt((262528+slot)*4)==128,"high-slot circle census");
-    census.build(particles,n-1);check(read(state,StarfallGpuBuffers.DOME_JOIN*4).getInt((262528+63)*4)==127,"partial last-column census");
-    com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(census.reset);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(census.keygen);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(census.prepare);
-   }
-  }finally{for(int id:new int[]{counter,pool,cmd,h})GL15.glDeleteBuffers(id);retire(reserve,emit);}
- }
- static void uintTag(int tag,int slot){check((tag&0x80000000)!=0&&(tag&63)==slot&&((tag&0x3fffffff)>>>6)==100+slot,"column circle feedback identity alias");}
+
+
  public static void main(String[] args)throws Exception{
   GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(128,128,"Column GPU validation",0,0);
-  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));reference();columnRings();production();check(GL11.glGetError()==0,"final column GL state");System.out.println("Starfall column GPU: "+checks+" assertions passed");}
+  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));reference();production();check(GL11.glGetError()==0,"final column GL state");System.out.println("Starfall column GPU: "+checks+" assertions passed");}
   finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
  }
 }

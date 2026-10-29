@@ -20,10 +20,10 @@ class ParticleAtlasLayoutTest {
         var model=new boolean[ParticleAtlasLayout.ALLAY_WIDTH*ParticleAtlasLayout.ALLAY_HEIGHT];
         for(int i=0;i<7;i++){
             var r=ParticleAtlasLayout.model(i);assertEquals(i==0?32:16,r.width());assertEquals(r.width(),r.height());
-            assertEquals(0,r.x()%16);assertEquals(0,r.y()%16);occupy(model,64,48,r,0);
+            assertEquals(0,r.x()%16);assertEquals(0,r.y()%16);occupy(model,64,64,r,0);
         }
-        for(int i=0;i<12;i++){
-            var r=ParticleAtlasLayout.feather(i);assertEquals(3,r.width());assertEquals(3,r.height());occupy(model,64,48,r,1);
+        for(int i=0;i<36;i++){
+            var r=ParticleAtlasLayout.feather(i);assertEquals(3,r.width());assertEquals(3,r.height());occupy(model,64,64,r,1);
         }
         assertTrue(sprite.length<64*24);assertTrue(model.length<128*64);
     }
@@ -31,9 +31,9 @@ class ParticleAtlasLayoutTest {
         var uv=HeldItemGeometry.uvTable();
         for(int tier=1;tier<=6;tier++){
             var rect=ParticleAtlasLayout.model(tier);
-            assertArrayEquals(rect.uv(64,48),Arrays.copyOfRange(uv,tier*4,tier*4+4));
+            assertArrayEquals(rect.uv(64,64),Arrays.copyOfRange(uv,tier*4,tier*4+4));
             assertEquals(16,(uv[tier*4+2]-uv[tier*4])*64,.00001);
-            assertEquals(16,(uv[tier*4+3]-uv[tier*4+1])*48,.00001);
+            assertEquals(16,(uv[tier*4+3]-uv[tier*4+1])*64,.00001);
         }
     }
 }

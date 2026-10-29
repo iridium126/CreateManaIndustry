@@ -107,12 +107,3 @@ float cmiAttackCarry(float identity,float time,float marker){
  uint a=cmiStarAssignment(identity);if(a!=0u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a)))))return marker< -3.5&&marker> -4.5&&cmiStarPhase(a,time)==4.&&cmiStarClaim(identity,time)>=0?1.:0.;if(a!=0u&&cmiColumnAssignment(a))return cmiStarClaim(identity,time)<0?0.:cmiColumnCarry(marker);
  return cmiAttackCarry(identity,time);
 }
-uint cmiMarkerSlot(uint tag){return (tag&0x80000000u)!=0u?4u+(tag&63u):(tag&3u);}
-uint cmiMarkerColumn(uint tag){return (tag&0x80000000u)!=0u?0u:((tag>>2u)&31u);}
-uint cmiMarkerId(uint tag){return (tag&0x80000000u)!=0u?((tag&0x3fffffffu)>>6u):(tag>>7u);}
-uint cmiMarkerCensus(uint tag){return (tag&0x80000000u)!=0u?262528u+(tag&63u):262400u+(tag&3u)*32u+((tag>>2u)&31u);}
-float cmiStarMarkerFade(uint tag,float time){uint slot=cmiMarkerSlot(tag),column=cmiMarkerColumn(tag);uint b=cmiStarBase(slot);time=cmiStarTime(b,time);vec4 m=cmiStarVec(b),t=cmiStarVec(b+4u);
- if(!cmiColumn(b)&&cmiStarVec(b+20u).x>.5)return -1.;
- if(uint(m.x+.5)!=cmiMarkerId(tag))return -1.;if(m.y>2.5)return clamp(1.-(time-t.z)/.25,0.,1.);
- return clamp(1.-(time-cmiStarColumn(b,column).x)/.25,0.,1.);
-}

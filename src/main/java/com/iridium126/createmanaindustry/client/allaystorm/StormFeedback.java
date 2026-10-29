@@ -152,6 +152,9 @@ public final class StormFeedback {
      * same frame the melee hit reports use (the server's +8 reach margin
      * absorbs the sub-2-block anchor skew).
      */
+    private final java.util.Map<Integer,Integer> outerReported=new java.util.HashMap<>();
+    public void clearOuterReports(){outerReported.clear();}
+    public void outerReleased(com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket packet){for(int i=0;i<packet.members().length;i++)outerReported.remove(packet.members()[i],packet.cycles()[i]);}
     private final java.util.Map<Integer,java.util.BitSet> completions=new java.util.HashMap<>();
     private final java.util.Map<AllayStormRuntime.ContactAuthority,Long> gathered=new java.util.HashMap<>();
     private final java.util.Map<AllayStormRuntime.ContactAuthority,Integer> flowRevisions=new java.util.HashMap<>();
@@ -167,7 +170,9 @@ public final class StormFeedback {
         var eligible=new java.util.HashMap<Integer,java.util.BitSet>();
         var counts=new java.util.HashMap<Integer,int[]>();
         var references=new java.util.HashMap<Integer,float[]>();
+        var outerArrivals=new java.util.ArrayList<com.iridium126.createmanaindustry.content.allaystorm.StormOuterLoop.Flight>();
         for(int o=0;o+5<entries.length;o+=6){int member=Math.round(entries[o]),id=Math.round(entries[o+1]);var w=AllayStormRuntime.INSTANCE.contactAuthority(id);
+            if(member== -15){int cycle=Math.round(entries[o+2])|(Math.round(entries[o+3])<<16),domain=Math.round(entries[o+4])|(Math.round(entries[o+5])<<16);if(StarfallGpuBuffers.INSTANCE.outerFeedback(id,cycle,domain)&&outerReported.getOrDefault(id,0)!=cycle)outerArrivals.add(new com.iridium126.createmanaindustry.content.allaystorm.StormOuterLoop.Flight(id,cycle,0,0,0));continue;}
             if(member== -11){AllayStormRuntime.INSTANCE.navigationProgress(0,entries[o+2],entries[o+3],entries[o+4],entries[o+5]);continue;}
             if(member== -13){AllayStormRuntime.INSTANCE.depenetrationProgress(0,entries[o+2],entries[o+3],entries[o+4],entries[o+5]);continue;}
             if(member== -14){AllayStormRuntime.INSTANCE.depenetrationProgress(4,entries[o+2],entries[o+3],0,0);continue;}
@@ -185,6 +190,10 @@ public final class StormFeedback {
             PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(Minecraft.getInstance().level.dimension().location(),id,w.epoch(),entries[o+5],member,entries[o+2],entries[o+3],entries[o+4]));
         }
         var mc=Minecraft.getInstance();
+        if(mc.level!=null&&AllayStormRuntime.INSTANCE.feedbackState().authority()){
+            var identity=AllayStormRuntime.INSTANCE.identity();
+            for(int offset=0;offset<outerArrivals.size();offset+=1024){var batch=outerArrivals.subList(offset,Math.min(offset+1024,outerArrivals.size()));PacketDistributor.sendToServer(com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket.batch(identity.dimension(),identity.epoch(),2,batch));for(var flight:batch)outerReported.put(flight.member(),flight.cycle());}
+        }
         // Publish confirmed exits before readiness from the same GPU snapshot.
         if(mc.level!=null&&completionTick!=mc.level.getGameTime()){
             completionTick=mc.level.getGameTime();
@@ -222,13 +231,14 @@ public final class StormFeedback {
     private boolean waveContactPending;
     private final java.util.Map<AllayStormRuntime.ContactAuthority,it.unimi.dsi.fastutil.ints.IntOpenHashSet> reported=new java.util.HashMap<>();
     public StormFeedback(StormParticlePort particles) {this.particles=java.util.Objects.requireNonNull(particles);}
-    public void reset() {stormPosPending=false;stormPosIdentity=null;correctionClock.reset();lastSnapshotGameTime=Long.MIN_VALUE;waveContactPending=false;reported.clear();gathered.clear();flowRevisions.clear();flowTick=Long.MIN_VALUE;completions.clear();completionTick=Long.MIN_VALUE;}
+    public void reset() {outerReported.clear();stormPosPending=false;stormPosIdentity=null;correctionClock.reset();lastSnapshotGameTime=Long.MIN_VALUE;waveContactPending=false;reported.clear();gathered.clear();flowRevisions.clear();flowTick=Long.MIN_VALUE;completions.clear();completionTick=Long.MIN_VALUE;}
     public void retireWaves() {
         waveContactPending=false;
         retireWaveReports();
     }
     /** Prune replaced identities without dropping other waves' in-flight GPU feedback. */
     public void retireWaveReports() {
+        completions.keySet().removeIf(id->AllayStormRuntime.INSTANCE.contactAuthority(id)==null);
         flowRevisions.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
         gathered.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
         reported.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));

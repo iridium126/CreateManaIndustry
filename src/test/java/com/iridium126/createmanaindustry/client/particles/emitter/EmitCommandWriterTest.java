@@ -48,7 +48,7 @@ class EmitCommandWriterTest {
         writer.parameterized(2,5,1,2,3,4,5,6,7,parameters(500));
         writer.tracked(3,1,0x7fa12345,67,123); // drops to zero
         writer.parameterized(4,10,8,9,10,11,12,13,14,parameters(600));
-        writer.limitParticles(8,false);
+        writer.limitParticles(8);
         var data=writer.encode(1);
         assertEquals(2,writer.size());assertEquals(6,writer.particles());
         assertEquals(2,data.get(4));assertEquals(2,data.get(3));
@@ -63,12 +63,7 @@ class EmitCommandWriterTest {
         for(int i:new int[]{7,9,10,11})assertEquals(0,data.get(i));
     }
 
-    @Test void wholeRingColumnIsNeverPartiallyEncoded() {
-        var writer=new EmitCommandWriter();writer.ring(1,2,3,4);writer.basic(2,128,Vec3.ZERO,0);
-        writer.limitParticles(128,true);
-        assertEquals(1,writer.size());assertEquals(64,writer.particles());
-        assertEquals(2,writer.encode(1).get(4));
-    }
+
 
     @Test void fullWriterRejectsWithoutMutatingAcceptedRowsAndCanBeReused() {
         var writer=new EmitCommandWriter();

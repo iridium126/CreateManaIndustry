@@ -46,6 +46,10 @@ public final class StarfallColumns {
 
     public void tick(ServerLevel level,AllayStormData data,double cx,double cz,List<ServerPlayer> players,
                      BitSet reserved,IntSupplier ids,Consumer<ClientboundStormColumnPacket> send){
+        tick(level,data,cx,cz,players,reserved,ids,send,member->{});
+    }
+    public void tick(ServerLevel level,AllayStormData data,double cx,double cz,List<ServerPlayer> players,
+                     BitSet reserved,IntSupplier ids,Consumer<ClientboundStormColumnPacket> send,java.util.function.IntConsumer expiredMember){
         long tick=level.getGameTime();float now=clock(tick);
         var currentIdentity=StormIdentity.of(level,data);
         var it=columns.values().iterator();
@@ -53,7 +57,7 @@ public final class StarfallColumns {
             var a=it.next();var p=a.packet;float at=time(p,now);
             boolean expired=at>p.end()||a.completed.cardinality()==64;
             // Frozen footprints remain independent of their triggering player.
-            if(expired||!data.active||p.epoch()!=currentIdentity.epoch()||!p.dimension().equals(currentIdentity.dimension())){if(!expired)send.accept(p.aborted());for(int rank=0;rank<64;rank++)if(!a.completed.get(rank))reserved.clear(p.members()[rank]);it.remove();}
+            if(expired||!data.active||p.epoch()!=currentIdentity.epoch()||!p.dimension().equals(currentIdentity.dimension())){if(!expired)send.accept(p.aborted());for(int rank=0;rank<64;rank++)if(!a.completed.get(rank)){reserved.clear(p.members()[rank]);if(expired&&data.active&&p.epoch()==currentIdentity.epoch()&&p.dimension().equals(currentIdentity.dimension()))expiredMember.accept(p.members()[rank]);}it.remove();}
         }
         int interval=Math.max(1,(int)Math.round(ServerConfig.stormStarfallInterval*20));
         if(nextAttempt!=Long.MIN_VALUE&&tick<nextAttempt)return;
@@ -92,7 +96,8 @@ public final class StarfallColumns {
     }
 
     public long[] completed(int id){var a=columns.get(id);return a==null?new long[0]:a.completed.toLongArray();}
-    public boolean complete(int id,BitSet ranks,BitSet reserved){var a=columns.get(id);if(a==null||ranks.length()>64)return false;for(int rank=ranks.nextSetBit(0);rank>=0;rank=ranks.nextSetBit(rank+1))if(!a.completed.get(rank)){a.completed.set(rank);reserved.clear(a.packet.members()[rank]);}return true;}
+    public boolean complete(int id,BitSet ranks,BitSet reserved){return complete(id,ranks,reserved,member->{});}
+    public boolean complete(int id,BitSet ranks,BitSet reserved,java.util.function.IntConsumer finished){var a=columns.get(id);if(a==null||ranks.length()>64)return false;for(int rank=ranks.nextSetBit(0);rank>=0;rank=ranks.nextSetBit(rank+1))if(!a.completed.get(rank)){a.completed.set(rank);reserved.clear(a.packet.members()[rank]);finished.accept(a.packet.members()[rank]);}return true;}
     public void deadMember(int member,BitSet reserved,Consumer<com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket> send){
         for(var a:columns.values())for(int rank=0;rank<64;rank++)if(a.packet.members()[rank]==member&&!a.completed.get(rank)){
             a.completed.set(rank);reserved.clear(member);send.accept(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(a.packet.dimension(),a.packet.epoch(),a.packet.id(),a.completed.toLongArray()));return;

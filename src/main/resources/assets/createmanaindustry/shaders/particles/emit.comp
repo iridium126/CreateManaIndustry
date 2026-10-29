@@ -177,17 +177,7 @@ void main() {
     float lightPacked = emitCmd.entries[eb + 8u]; // blockLight + 16*skyLight (combat styles + lightmap specs)
     float spawnStyle = emitters.u[eid * VEC4_PER_EMITTER + 17u].y;
 
-    if(spawnStyle>6.5&&spawnStyle<7.5){
-        if(!uStarfallEnabled)return;uint slotBase=CMI_STATE(starStateWrite,262144u+lo);if(slotBase==0xffffffffu)return;
-        uint wave=uint(emitCmd.entries[eb+8u]),ws=uint(emitCmd.entries[eb+9u]),col=uint(emitCmd.entries[eb+10u]),b=cmiStarBase(ws);
-        vec4 meta=cmiStarVec(b),landing=cmiStarLanding(b,col),column=cmiStarColumn(b,col);if(uint(meta.x+.5)!=wave||meta.y<1.5||meta.y>2.5)return;
-        float angle=6.2831853*float(inner)/128.;float ringRadius=cmiColumn(b)?4.:column.z+1.6;vec3 pos=landing.xyz+vec3(cos(angle)*ringRadius,cmiColumn(b)?.18:-.3,sin(angle)*ringRadius);
-        uint slot=slotBase+inner,wb=slot*4u;uint tag=ws>=4u?0x80000000u|(ws-4u)|(wave<<6u):ws|(col<<2u)|(wave<<7u);
-        writeBuf.data[wb]=vec4(pos,mix(2./3.,4./3.,hash1(seed+13.1)));
-        writeBuf.data[wb+1u]=vec4(0,0,angle,hash1(seed+74.1)*6.2831853);
-        writeBuf.data[wb+2u]=vec4(uintBitsToFloat(cmiStarWord(0u)),.8,1.,max(0.,cmiStarMarkerFade(tag,uTimeSec)));
-        writeBuf.data[wb+3u]=vec4(0,max(column.x-uTimeSec+.25,.25),uintBitsToFloat(tag),uintBitsToFloat(eid));return;
-    }
+
     vec3 pos;
     vec3 velDir;
     // Vanilla particles spawn at billboard roll 0 (cherry petals start
@@ -482,7 +472,7 @@ void main() {
         }
     }
 
-    if(uint(emitters.u[eid*VEC4_PER_EMITTER].x)==CMI_FEATHER_TYPE&&!cmiFeatherReserve(false))return;
+    if(uint(emitters.u[eid*VEC4_PER_EMITTER].x)==CMI_FEATHER_TYPE&&!cmiFeatherReserve())return;
     uint slot = cmiReserveEmitterParticle(eid);
     if (slot >= uCapacity) return;
     vec3 origin = vec3(emitCmd.entries[eb], emitCmd.entries[eb + 1u], emitCmd.entries[eb + 2u]);

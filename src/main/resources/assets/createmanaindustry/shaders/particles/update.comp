@@ -186,6 +186,8 @@ vec2 cmiGauss2(float s) {
 #pragma cmi_include chunks/model_members_write.glsl
 uniform uint uModelPass;
 
+uniform bool uStormOuterEnabled;
+uniform uint uStormOuterData,uStormOuterArrivals;
 void main() {
     uint idx=gl_GlobalInvocationID.x,animationSlot=idx;
     if(uModelPass==2u){
@@ -222,12 +224,7 @@ void main() {
     // correction block) and row 7's y/z (collide mode, flutter) much later —
     // hoisting the vec4 loads keeps every consumer on one SSBO read instead
     // of depending on the compiler to CSE across the early-return ladder.
-    if(emitters.u[hb+17u].y>6.5&&emitters.u[hb+17u].y<7.5){
-        float fade=uStarfallEnabled&&floatBitsToUint(p2.x)==cmiStarWord(0u)?cmiStarMarkerFade(floatBitsToUint(p3.z),uTimeSec):-1.;
-        if(fade<0.){p2.w=max(0.,p2.w-uDt/.25);}else p2.w=min(p2.w,fade);
-        if(p2.w<=0.)return;uint slot=cmiReserveParticle();if(slot>=uCapacity)return;
-        uint wb=slot*4u;writeBuf.data[wb]=p0;writeBuf.data[wb+1u]=p1;writeBuf.data[wb+2u]=p2;writeBuf.data[wb+3u]=vec4(p3.x+uDt,p3.yzw);return;
-    }
+
     cmiStormVoxel=emitters.u[hb+18u].x>.5&&uStormCollisionEnabled;
     vec4 stormA = emitters.u[hb + 18u]; // x storm gate (0 none | 2 vortex), y radius, z reserved (was wander), w maxSpeed
     vec4 matMotion = emitters.u[hb + 7u]; // x matId, y collide mode, z flutter
@@ -288,6 +285,11 @@ void main() {
 #pragma cmi_include chunks/model_damage.glsl
 
     bool corpse = isModel && hp <= 0.0;
+    uint cmiOuterMember=isModel&&stormA.x>.5?cmiStarMember(p0.w):131072u;
+    uint cmiOuterCycle=uStormOuterEnabled&&cmiOuterMember<131072u?cmiStarWord(uStormOuterData+cmiOuterMember*4u):0u;
+    bool cmiOuterFlight=!corpse&&cmiOuterCycle!=0u&&CMI_STATE(starStateRead,uStormOuterArrivals+cmiOuterMember)!=cmiOuterCycle;
+    if(cmiOuterFlight){CMI_STATE(starStateWrite,cmiOuterMember*2u)=0u;CMI_STATE(starStateWrite,cmiOuterMember*2u+1u)=0u;}
+
 
 #pragma cmi_include chunks/basic_motion.glsl
 
@@ -295,6 +297,11 @@ void main() {
 
     bool cmiContactSweepValid=true,cmiTerrainClipped=false;
     vec3 cmiBeforeSweepVelocity=vel;
+    if(cmiOuterFlight&&cmiStormVoxel){
+        CmiStormBody before=cmiStormBody(pos),after=cmiStormBody(pos+vel*uDt);
+        if(!before.complete||!after.complete){cmiStormVoxel=false;matMotion.y=0.;}
+    }
+
 #pragma cmi_include chunks/collision_sweep.glsl
     if(cmiStormEmbedded)vel=p1.xyz;
     if(isFeather&&cmiStormMissing){pos=p0.xyz;vel=p1.xyz;swept=true;landed=false;}
@@ -306,6 +313,12 @@ void main() {
 
     if (!swept)
         pos += vel * uDt;
+    if(cmiOuterFlight){
+        uint at=uStormOuterData+cmiOuterMember*4u;
+        vec3 destination=vec3(uintBitsToFloat(cmiStarWord(at+1u)),uintBitsToFloat(cmiStarWord(at+2u)),uintBitsToFloat(cmiStarWord(at+3u)));
+        if(distance(pos,destination)<=2.)CMI_STATE(starStateWrite,uStormOuterArrivals+cmiOuterMember)=cmiOuterCycle;
+    }
+
     if(cmiStormVoxel&&cmiStormMissing)cmiContactSweepValid=false;
     if(uStarfallEnabled&&stormA.x>.5){uint member=cmiStarMember(p0.w);if(member<131072u){if(corpse)cmiNavigationCancel(member);else if(cmiNavigationCurrentMember==member&&CMI_STATE(starStateWrite,cmiNavigationExtra(member))==2u)cmiNavigationReturnAudit(member,pos,cmiTerrainClipped,cmiContactSweepValid,uDt);}}
     if(cmiDomeFollowing){uint member=cmiStarMember(p0.w);float error=distance(pos,cmiDomeFollowingPoint);

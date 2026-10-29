@@ -26,7 +26,7 @@ class AllayFeatherContractTest {
         assertEquals(2000,AllayFeatherLayout.rate(3000,20,20,50,60,true));
         assertEquals(0,AllayFeatherLayout.rate(0,20,20,50,60,true));
     }
-    @Test void finiteOpaqueAndWhiteUncollidedSpecsKeepParticleAbi() {
+    @Test void finiteOpaqueSpecKeepsParticleAbi() {
         var feather=EmitterPresets.byName("allay_feather");assertSame(AllayFeatherSpecs.FEATHER,feather);
         assertEquals(ParticleTypes.Material.OPAQUE,feather.type.material());
         assertNotEquals(ParticleTypes.standard(ParticleTypes.Material.MODEL),feather.type);
@@ -34,9 +34,6 @@ class AllayFeatherContractTest {
         assertEquals(EmitterPresets.CHERRY_LEAVES.sizeStart,feather.sizeStart);
         assertEquals(EmitterPresets.CHERRY_LEAVES.gravity,feather.gravity);
         assertEquals(EmitterSpec.CollideMode.REST,feather.collideMode);
-        assertEquals(EmitterSpec.CollideMode.NONE,AllayFeatherSpecs.SPARK.collideMode);
-        for(int i=0;i<AllayFeatherSpecs.SPARK.colors.length;i+=4)
-            assertArrayEquals(new float[]{1,1,1},Arrays.copyOfRange(AllayFeatherSpecs.SPARK.colors,i,i+3));
         assertEquals(64,ParticleLayout.PARTICLE_BYTES);assertEquals(320,ParticleLayout.HEADER_BYTES);
         assertEquals(0,AllayFeatherLayout.BYTES%256);
     }

@@ -10,8 +10,8 @@ public final class ParticleAtlasLayout {
         }
     }
     public static final int SPRITE_WIDTH=32,SPRITE_HEIGHT=27,SPRITE_FRAMES=23;
-    public static final int ALLAY_WIDTH=64,ALLAY_HEIGHT=48,ALLAY_FRAMES=7,ALLAY_MAX_MIP=4;
-    public static final int FEATHER_FRAMES=12;
+    public static final int ALLAY_WIDTH=64,ALLAY_HEIGHT=64,ALLAY_FRAMES=7,ALLAY_MAX_MIP=4;
+    public static final int FEATHER_FRAMES=36;
     private static final Rect[] SPRITES=new Rect[SPRITE_FRAMES],MODELS=new Rect[ALLAY_FRAMES],FEATHERS=new Rect[FEATHER_FRAMES];
     static {
         // Eleven 8x8 combat tiles; use their last vacant slot and a 3px strip for cherries.
@@ -20,7 +20,7 @@ public final class ParticleAtlasLayout {
         MODELS[0]=new Rect(0,0,32,32);
         for(int tier=1;tier<=4;tier++)MODELS[tier]=new Rect(32+((tier-1)%2)*16,((tier-1)/2)*16,16,16);
         MODELS[5]=new Rect(0,32,16,16);MODELS[6]=new Rect(16,32,16,16);
-        // Six columns x two rows, each 3x3 source has a one-pixel gutter on all sides.
+        // Six columns x six rows: three palettes, native 3x3 sources and one-pixel gutters.
         for(int i=0;i<FEATHER_FRAMES;i++)FEATHERS[i]=new Rect(33+(i%6)*5,33+(i/6)*5,3,3);
     }
     private ParticleAtlasLayout() {}

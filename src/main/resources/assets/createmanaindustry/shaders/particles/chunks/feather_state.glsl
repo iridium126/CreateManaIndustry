@@ -10,12 +10,11 @@ layout(std430,binding=20) buffer FeatherState {int words[];} feather;
 #endif
 uniform bool uFeatherEnabled;
 uniform bool uFeatherRequestFrame;
-uniform uint uFeatherSparkEmitter;
 uint cmiFeatherCellHash(ivec3 key){uint h=uint(key.x)*0x8da6b343u^uint(key.y)*0xd8163841u^uint(key.z)*0xcb1ab31fu;return h^(h>>16u);}
-bool cmiFeatherReserve(bool spark){
+bool cmiFeatherReserve(){
     if(!uFeatherEnabled)return false;
-    int prior=CMI_FEATHER_WORD(spark?5:4),slot=atomicAdd(CMI_FEATHER_WORD(spark?7:6),1);
-    return prior+slot<int(spark?CMI_FEATHER_MAX_SPARKS:CMI_FEATHER_MAX);
+    int prior=CMI_FEATHER_WORD(4),slot=atomicAdd(CMI_FEATHER_WORD(6),1);
+    return prior+slot<int(CMI_FEATHER_MAX);
 }
 void cmiFeatherRequest(vec3 p){
     if(!uFeatherEnabled||!uFeatherRequestFrame)return;ivec3 key=ivec3(floor(p/16.));uint hash=cmiFeatherCellHash(key);

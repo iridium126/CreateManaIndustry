@@ -91,7 +91,6 @@ public final class ParticlePrograms {
         new Specification("stormpos.comp",null,(owner,id)->owner.stormPos=id),
         new Specification("column_snapshot.comp",null,(owner,id)->owner.columnSnapshot=id),
         new Specification("column_restore.comp",null,(owner,id)->owner.columnRecovery=id),
-        new Specification("starfall_ring_reserve.comp",null,(owner,id)->owner.ringReserve=id),
         new Specification("wavecontact.comp",null,(owner,id)->owner.waveContact=id),
         new Specification("additive.vsh","additive.fsh",(owner,id)->owner.render=id),
         new Specification("textured.vsh","textured.fsh",(owner,id)->owner.texturedRender=id),
@@ -205,9 +204,7 @@ public final class ParticlePrograms {
         sb.append("#define IDX_CNT_GHOST ").append(ParticleBuffers.IDX_CNT_GHOST).append('\n');
         sb.append("#define IDX_CNT_ALPHA ").append(ParticleBuffers.IDX_CNT_ALPHA).append('\n');
         var featherConstants=java.util.Map.of("TYPE",com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.TYPE,
-                "SPARK_TYPE",com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.SPARK_TYPE,
                 "MAX",com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.MAX_FEATHERS,
-                "MAX_SPARKS",com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.MAX_SPARKS,
                 "GROUND",com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.GROUND,
                 "VISIBLE",com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.VISIBLE,
                 "IMPULSES",com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.IMPULSES,
@@ -298,8 +295,6 @@ public final class ParticlePrograms {
     private int columnSnapshot;
     public int columnSnapshot() { return columnSnapshot; }
     private int stormPos;       // authority readback: near-player members (storm sync)
-    private int ringReserve;
-    public int ringReserve(){return ringReserve;}
     private int waveContact;    // dive-wave contact self-report detection (storm waves)
     private int render;          // additive billboards (soft circle)
     private int texturedRender;  // textured sprite billboards: uMode 0 blended / 1 OPAQUE cutout
@@ -388,7 +383,6 @@ public final class ParticlePrograms {
             this.stormPos = candidate.stormPos; candidate.stormPos = 0;
             this.columnSnapshot = candidate.columnSnapshot; candidate.columnSnapshot = 0;
             this.columnRecovery = candidate.columnRecovery; candidate.columnRecovery = 0;
-            this.ringReserve=candidate.ringReserve;candidate.ringReserve=0;
             this.waveContact = candidate.waveContact; candidate.waveContact = 0;
             this.render = candidate.render; candidate.render = 0;
             this.texturedRender = candidate.texturedRender; candidate.texturedRender = 0;
@@ -411,7 +405,7 @@ public final class ParticlePrograms {
                 && this.texturedRender != 0 && this.modelRender != 0
                 && this.keygen != 0 && this.radixHist != 0 && this.radixScan != 0
                 && this.radixScatter != 0 && this.capture != 0 && this.grid != 0
-                && this.hit != 0 && this.damagePrepare!=0 && this.stormPos != 0 && this.columnSnapshot != 0 && this.columnRecovery != 0 && this.waveContact != 0 && this.ringReserve!=0 && this.domeContacts!=0 && this.domeControl!=0 && this.domeApply!=0 && this.domeAudit!=0 && this.domePath!=0 && this.depenetration!=0 && this.depenetrationSchedule!=0 && this.depenetrationPrepare!=0;
+                && this.hit != 0 && this.damagePrepare!=0 && this.stormPos != 0 && this.columnSnapshot != 0 && this.columnRecovery != 0 && this.waveContact != 0 && this.domeContacts!=0 && this.domeControl!=0 && this.domeApply!=0 && this.domeAudit!=0 && this.domePath!=0 && this.depenetration!=0 && this.depenetrationSchedule!=0 && this.depenetrationPrepare!=0;
     }
 
     public int reset() {
@@ -539,14 +533,14 @@ public final class ParticlePrograms {
         for (int p : new int[] {
                 this.modelFilter,this.modelCompact,this.modelPrepare,this.allayAnimate,this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
-                this.grid, this.hit, this.damagePrepare,this.stormPos,this.columnSnapshot,this.columnRecovery, this.waveContact, this.ringReserve,this.domeContacts,this.domeControl,this.domeApply,this.domeAudit,this.domePath,this.depenetration,this.depenetrationSchedule,this.depenetrationPrepare,
+                this.grid, this.hit, this.damagePrepare,this.stormPos,this.columnSnapshot,this.columnRecovery, this.waveContact,this.domeContacts,this.domeControl,this.domeApply,this.domeAudit,this.domePath,this.depenetration,this.depenetrationSchedule,this.depenetrationPrepare,
                 this.featherTools,this.featherEmit,this.featherRender,this.render, this.texturedRender, this.modelRender, this.lodCompute,this.lodRender,this.lodComposite,this.lodPixel }) {
             if (p != 0){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(p);}
         }
         this.modelFilter=this.modelCompact=this.modelPrepare=this.allayAnimate=0;
         this.prepareDispatch = this.reset = this.update = this.emit = this.blockEmit = this.keygen = 0;
         this.radixHist = this.radixScan = this.radixScatter = this.capture = 0;
-        this.grid = this.hit = this.damagePrepare = this.stormPos = this.waveContact = this.ringReserve = 0;
+        this.grid = this.hit = this.damagePrepare = this.stormPos = this.waveContact = 0;
         this.domeContacts=0;this.domeControl=0;this.domeApply=0;this.domeAudit=0;this.domePath=0;this.depenetration=0;this.depenetrationSchedule=0;this.depenetrationPrepare=0;this.columnSnapshot=0;this.columnRecovery=0;
         this.featherTools=this.featherEmit=this.featherRender=0;
         this.render = this.texturedRender = this.modelRender = 0;

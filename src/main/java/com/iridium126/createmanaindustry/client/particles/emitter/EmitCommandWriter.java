@@ -44,9 +44,7 @@ public final class EmitCommandWriter {
     public boolean members(int emitter, int count, Vec3 center, int memberBase, boolean ring) {
         return append(emitter, count, center.x, center.y, center.z, 0, 0, memberBase, 0, ring ? 1 : 0, null);
     }
-    public boolean ring(int emitter, int wave, int slot, int column) {
-        return append(emitter, 128, 0, 0, 0, 0, wave, slot, column, 1, null);
-    }
+
     public boolean parameterized(int emitter, int count, float x, float y, float z,
                                  float vx, float vy, float vz, float packed, Parameters input) {
         return append(emitter, count, x, y, z, 0, vx, vy, vz, packed,
@@ -71,8 +69,8 @@ public final class EmitCommandWriter {
         return true;
     }
 
-    /** Legacy proportional launch bound, including whole-column ring reservations. Domain admission is handled separately. */
-    public void limitParticles(int capacity, boolean atomicRings) {
+    /** Proportional launch bound. Domain admission is handled separately. */
+    public void limitParticles(int capacity) {
         if (capacity < 0) throw new IllegalArgumentException("Particle capacity");
         if (particles <= capacity) return;
         double scale = (double)capacity / particles;
@@ -81,8 +79,6 @@ public final class EmitCommandWriter {
         for (int read = 0; read < oldSize; read++) {
             int b = read * WORDS;
             int count = (int)(rows[b+ParticleLayout.COMMAND_COUNT] * scale);
-            if (atomicRings && parameters[read] == null && rows[b+11] == 1 && rows[b+ParticleLayout.COMMAND_COUNT] == 128
-                    && rows[b+8] > 0 && rows[b+10] >= 0) count = count >= 128 ? 128 : 0;
             if (count == 0) continue;
             if (read != write) {
                 System.arraycopy(rows, b, rows, write * WORDS, WORDS);

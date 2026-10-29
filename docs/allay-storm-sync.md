@@ -1,6 +1,6 @@
 # Allay Storm：同步与资源契约
 
-当前核心协议 **21**、Dome模板 **v4**、Helix模板 **v1**。两端同步升级并重启，拒绝旧协议混连；F3+T不更新Java类。Helix v1仍为0.75圈，离线模板二进制布局、存档和Dome v4格式不变。[攻击与配置](allay-storm-ai.md)和[验证入口](allay-storm-validation.md)分别维护，不保留历史协议逐版说明。
+当前核心协议 **22**、Dome模板 **v4**、Helix模板 **v1**。两端同步升级并重启，拒绝旧协议混连；F3+T不更新Java类。Helix v1仍为0.75圈，离线模板二进制布局、存档和Dome v4格式不变。[攻击与配置](allay-storm-ai.md)和[验证入口](allay-storm-validation.md)分别维护，不保留历史协议逐版说明。
 
 ## 数据所有权与身份
 

@@ -267,7 +267,7 @@ allprojects {
             classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'StarfallGpuValidation'
             if (project.hasProperty('starfallBenchmark')) args '--benchmark'
-            if (project.hasProperty('starfallRingBenchmark')) args '--ring-benchmark'
+            if (project.hasProperty('outerBenchmark')) args '--outer-benchmark'
             workingDir = project.projectDir
         }
         tasks.register('validateStormLodGpu', JavaExec) {

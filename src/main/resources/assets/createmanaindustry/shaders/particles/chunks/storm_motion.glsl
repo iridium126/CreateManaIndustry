@@ -34,7 +34,8 @@
         // the pattern whenever the growing radius moves.
         vec3 target;
         vec3 vT;
-        cmiTyphoonHome(p3.z, max(stormA.y, 2.0), uStormOmegaNow, uStormRotPhase,
+        if(cmiOuterFlight){uint at=uStormOuterData+cmiOuterMember*4u;target=vec3(uintBitsToFloat(cmiStarWord(at+1u)),uintBitsToFloat(cmiStarWord(at+2u)),uintBitsToFloat(cmiStarWord(at+3u)));vT=vec3(0);}
+        else cmiTyphoonHome(p3.z, max(stormA.y, 2.0), uStormOmegaNow, uStormRotPhase,
                 uStormConvPhase, uStormConvRate, ordinaryCap, anchor, target, vT);
         // target/vT hold the ordinary snapshot. Attack out parameters are
         // separate and replace it ONLY for an engaged member; released members
@@ -58,7 +59,7 @@
         // frame therefore latches MEMBER_LATCH_BIT into p0.w (survives pool
         // compaction; cleared only by a new storm generation killing the
         // pool), and a latched member never engages again.
-        if(uStarfallEnabled){
+        if(uStarfallEnabled&&!cmiOuterFlight){
             // Only a claimed member may replace its typhoon home servo. Do not
             // alias that home with an out parameter: a rejected attack must
             // preserve both the home position and its orbital feed-forward velocity.
@@ -112,7 +113,7 @@
                 CMI_STATE(starStateWrite,member*2u+1u)=phase|kind|((phase==4u&&id==oldId)?(oldFlags&(CMI_DOME_INSIDE_BOUND|0x20000000u)):0u);
             }
         }else {
-        if ((uint(p0.w + 0.5) & MEMBER_LATCH_BIT) == 0u) {
+        if (!cmiOuterFlight&&(uint(p0.w + 0.5) & MEMBER_LATCH_BIT) == 0u) {
         for (uint k = 0u; k < 4u && !waveEngaged; k++) {
             vec4 wt = uWaveTarget[k];
             if (wt.w < 0.5)
@@ -282,7 +283,7 @@
                 // It ends after .5 s regardless of visual pose-cache lifetime.
                 candidate=mix(p1.xyz,candidate,clamp((nw-w)/max(1.-w,.000001),0.,1.));
             }
-            if(uStarfallEnabled&&cmiStormVoxel){uint member=cmiStarMember(p0.w);if(member<131072u){uint actual=CMI_STATE(starStateWrite,member*2u+1u)&255u,id=CMI_STATE(starStateWrite,member*2u);
+            if(uStarfallEnabled&&cmiStormVoxel&&!cmiOuterFlight){uint member=cmiStarMember(p0.w);if(member<131072u){uint actual=CMI_STATE(starStateWrite,member*2u+1u)&255u,id=CMI_STATE(starStateWrite,member*2u);
                 if(!waveEngaged&&actual==6u&&id!=0u&&(cmiStarWord(201456u+member/32u)&(1u<<(member&31u)))==0u){cmiNavigationReturnIdentity(member,id);vec3 navigated=cmiNavigationSteer(member,pos,target,candidate,ordinaryCap);candidate=cmiNavigationApplied?cmiGatherVelocity(vel,navigated,ordinaryCap,uDt):navigated;}
                 else if(CMI_STATE(starStateWrite,cmiNavigationExtra(member))!=0u)cmiNavigationCancel(member);
             }}

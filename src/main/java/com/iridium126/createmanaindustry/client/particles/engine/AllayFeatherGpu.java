@@ -25,10 +25,10 @@ public final class AllayFeatherGpu implements AutoCloseable {
     private final Set<StormCollisionPages.Section> requests=new LinkedHashSet<>();
     private final Set<StormCollisionPages.Section> prewarmKeys=new LinkedHashSet<>();
     private final Set<Integer> armedPrograms=new HashSet<>();
-    private int bank,candidate,featherId=-1,sparkId=-1,spawn,frames;
+    private int bank,candidate,featherId=-1,spawn,frames;
     private long generation,lastCreationGeneration;
     private double remainder,candidateRemainder;
-    private boolean mayLive,mayFeathers,manual,candidateBirth,enabled,nativeDrawn,requestFrame;
+    private boolean mayFeathers,manual,candidateBirth,enabled,nativeDrawn,requestFrame;
     private float top;
     private Vec3 origin=Vec3.ZERO;
     private Object world;
@@ -41,7 +41,7 @@ public final class AllayFeatherGpu implements AutoCloseable {
     private boolean hasFeathers(){return mayFeathers||candidateBirth;}
     public boolean creates(){return spawn>0||manual;}
     public int candidateBuffer(){return enabled?ParticleBuffers.INSTANCE.gridBufferId():0;}
-    public int committedBuffer(){return mayLive?ParticleBuffers.INSTANCE.gridBufferId():0;}
+    public int committedBuffer(){return mayFeathers?ParticleBuffers.INSTANCE.gridBufferId():0;}
     public long generation(){return generation;}
     public void source(EmitterSpec spec,Vec3 position){
         if(spec.type.id()!=TYPE)return;
@@ -70,10 +70,10 @@ public final class AllayFeatherGpu implements AutoCloseable {
                     ||warmX!=((int)Math.floor(origin.x)>>4)||warmY!=((int)Math.floor(origin.y)>>4)||warmZ!=((int)Math.floor(origin.z)>>4)){
                 prewarm(origin);prewarmTick=mc.level.getGameTime();}}
         else candidateRemainder=0;
-        enabled=mayLive||candidateBirth;requestFrame=(frames&7)==0;
+        enabled=mayFeathers||candidateBirth;requestFrame=(frames&7)==0;
         if(!enabled)return;
         allocate();candidate=1-bank;
-        featherId=runtime.ensureEmitter(AllayFeatherSpecs.FEATHER);sparkId=runtime.ensureEmitter(AllayFeatherSpecs.SPARK);
+        featherId=runtime.ensureEmitter(AllayFeatherSpecs.FEATHER);
         ParticleAtlas.ALLAY.ensureLoaded();
     }
     private void prewarm(Vec3 p){
@@ -90,20 +90,20 @@ public final class AllayFeatherGpu implements AutoCloseable {
         if(!enabled)return;
         GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer());
-        GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,offset(candidate),hasFeathers()?BYTES:HEADER*4,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,new int[]{0});
+        GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,offset(candidate),BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,new int[]{0});
         initial.clear();for(int i=0;i<HEADER;i++)initial.putInt(i*4,0);
         initial.putInt(9*4,1).putInt(10*4,1).putInt(11*4,6);
         for(int i=0;i<3;i++){initial.putInt((16+i)*4,Integer.MAX_VALUE);initial.putInt((19+i)*4,Integer.MIN_VALUE);}
         GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,offset(candidate),initial);
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,buffer());GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,buffer());
-        if(generation>0)GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,offset(bank),offset(candidate)+16,8);
+        if(generation>0)GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,offset(bank),offset(candidate)+16,4);
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
     }
     public void bind(int program){
         if(!enabled){if(armedPrograms.remove(program)){setIntUniform(program,"uFeatherEnabled",0);setIntUniform(program,"uFeatherRequestFrame",0);}return;}
         armedPrograms.add(program);setIntUniform(program,"uFeatherEnabled",1);
         setIntUniform(program,"uFeatherRequestFrame",requestFrame()?1:0);
-        if(enabled){GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,BINDING,buffer(),offset(candidate),BYTES);setUIntUniform(program,"uFeatherGridBase",state[candidate]-ParticleBuffers.GRID_TABLE);setUIntUniform(program,"uFeatherSparkEmitter",Math.max(0,sparkId));}
+        if(enabled){GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,BINDING,buffer(),offset(candidate),BYTES);setUIntUniform(program,"uFeatherGridBase",state[candidate]-ParticleBuffers.GRID_TABLE);}
     }
     public void players(int count){
         if(!hasFeathers()||count==0)return;int p=ParticlePrograms.INSTANCE.featherTools();GL20.glUseProgram(p);bind(p);
@@ -111,13 +111,13 @@ public final class AllayFeatherGpu implements AutoCloseable {
         setUIntUniform(p,"uMovementBase",ParticleBuffers.INSTANCE.featherMovementBase());
         GL43.glDispatchCompute((count+63)/64,1,1);barrier();
     }
-    public void emit(int slot,int capacity,Camera camera,float[] frustum,int seed){
+    public void emit(int slot,int capacity,int seed){
         if(!enabled||spawn==0||featherId<0)return;var gpu=ParticleBuffers.INSTANCE;int p=ParticlePrograms.INSTANCE.featherEmit();
         GL20.glUseProgram(p);gpu.bindParticleWrite(1);gpu.bindCounter(3,slot);bind(p);StormCollisionRuntime.bindCurrent(p);
         setUIntUniform(p,"uCapacity",capacity);setUIntUniform(p,"uCount",spawn);setUIntUniform(p,"uEmitter",featherId);
-        setFloatUniform(p,"uPlayer",(float)origin.x,(float)origin.y,(float)origin.z);var eye=camera.getPosition();setFloatUniform(p,"uCamPos",(float)eye.x,(float)eye.y,(float)eye.z);
+        setFloatUniform(p,"uPlayer",(float)origin.x,(float)origin.y,(float)origin.z);
         setFloatUniform(p,"uTop",top);setFloatUniform(p,"uSeed",(float)(seed&65535));
-        GL20.glUniform4fv(loc(p,"uFrustum"),frustum);GL43.glDispatchCompute((spawn+63)/64,1,1);barrier();
+        GL43.glDispatchCompute((spawn+63)/64,1,1);barrier();
     }
     public void ground(){
         if(!hasFeathers())return;int p=ParticlePrograms.INSTANCE.featherTools();GL20.glUseProgram(p);bind(p);
@@ -134,7 +134,7 @@ public final class AllayFeatherGpu implements AutoCloseable {
     }
     public void idle(){remainder=candidateRemainder;frames++;}
     public void commit(long nextGeneration){
-        if(enabled){bank=candidate;generation=nextGeneration;mayLive=true;}
+        if(enabled){bank=candidate;generation=nextGeneration;mayFeathers=true;}
         if(candidateBirth){lastCreationGeneration=nextGeneration;mayFeathers=true;}
         remainder=candidateRemainder;manual=false;nativeDrawn=false;frames++;
     }
@@ -149,9 +149,8 @@ public final class AllayFeatherGpu implements AutoCloseable {
     }
     public void observe(ParticleReadbacks.Slot slot){
         if(!slot.feathers)return;
-        int alive=slot.data.getInt(32),sparks=slot.data.getInt(36);
+        int alive=slot.data.getInt(32);
         if(zeroCovers(slot.generation,lastCreationGeneration,alive))mayFeathers=false;
-        if(zeroCovers(slot.generation,lastCreationGeneration,alive+sparks))mayLive=false;
         if(slot.featherRequests){
             var data=slot.featherData;int n=Math.clamp(data.getInt(0),0,MAX_REQUESTS);requests.clear();
             for(int i=0;i<n;i++){int b=16+i*16;if(data.getInt(b+12)!=1)continue;requests.add(new StormCollisionPages.Section(data.getInt(b),data.getInt(b+4),data.getInt(b+8)));}
@@ -181,7 +180,7 @@ public final class AllayFeatherGpu implements AutoCloseable {
         com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();com.mojang.blaze3d.systems.RenderSystem.depthMask(true);com.mojang.blaze3d.systems.RenderSystem.disableBlend();GL11.glDisable(GL11.GL_CULL_FACE);
         ParticleBuffers.INSTANCE.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,buffer());GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,offset(bank)+11L*4);GL11.glEnable(GL11.GL_CULL_FACE);
     }
-    public void reset(){StormCollisionRuntime.releaseFeathers();mayLive=mayFeathers=manual=enabled=candidateBirth=nativeDrawn=false;spawn=0;remainder=candidateRemainder=0;lastCreationGeneration=generation=0;prewarmTick=Long.MIN_VALUE;frames=0;world=null;warmX=warmY=warmZ=Integer.MAX_VALUE;prewarmKeys.clear();requests.clear();}
-    @Override public void close(){state[0]=state[1]=0;reset();armedPrograms.clear();featherId=sparkId=-1;}
+    public void reset(){StormCollisionRuntime.releaseFeathers();mayFeathers=manual=enabled=candidateBirth=nativeDrawn=false;spawn=0;remainder=candidateRemainder=0;lastCreationGeneration=generation=0;prewarmTick=Long.MIN_VALUE;frames=0;world=null;warmX=warmY=warmZ=Integer.MAX_VALUE;prewarmKeys.clear();requests.clear();}
+    @Override public void close(){state[0]=state[1]=0;reset();armedPrograms.clear();featherId=-1;}
     private static void barrier(){GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);}
 }

@@ -3,8 +3,8 @@ package com.iridium126.createmanaindustry.client.particles.emitter;
 /** Frame-local feather metadata. Particle records retain the shared 64-byte ABI. */
 public final class AllayFeatherLayout {
     private AllayFeatherLayout() {}
-    public static final int TYPE = 7, SPARK_TYPE = 8;
-    public static final int MAX_FEATHERS = 131072, MAX_SPARKS = 65536;
+    public static final int TYPE = 7;
+    public static final int MAX_FEATHERS = 131072;
     public static final int BINDING = 20;
     public static final int HEADER = 32;
     public static final int GROUND = HEADER, VISIBLE = GROUND + MAX_FEATHERS;

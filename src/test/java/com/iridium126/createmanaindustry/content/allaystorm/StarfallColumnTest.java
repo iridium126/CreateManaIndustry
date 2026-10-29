@@ -17,6 +17,14 @@ class StarfallColumnTest {
     private static ClientboundStormColumnPacket packet(int id) {
         return new ClientboundStormColumnPacket(Level.OVERWORLD.location(),87,id,false,123,0,8,32,36.34f,80,1500,64.02f,-2300,120,1500,-2300,32,IntStream.range(0,64).toArray());
     }
+    @Test void completionTransfersReservationToOuterQueueOnlyOnce(){
+        var columns=new StarfallColumns();var reserved=new BitSet();var queue=new StormOuterLoop();queue.configure(64,64,64,20);
+        columns.reserve(packet(1),reserved);var done=new BitSet();done.set(0);done.set(31);done.set(63);
+        assertTrue(columns.complete(1,done,reserved,member->queue.offer(member,reserved)));
+        assertEquals(3,queue.waiting());assertEquals(64,reserved.cardinality());
+        assertTrue(columns.complete(1,done,reserved,member->queue.offer(member,reserved)));assertEquals(3,queue.waiting());
+        for(int member:new int[]{0,31,63}){var flight=queue.tick(m->true,reserved,0,80,0,32).getFirst();assertEquals(member,flight.member());assertTrue(reserved.get(member));assertTrue(queue.arrived(member,flight.cycle(),reserved));assertFalse(reserved.get(member));}
+    }
     @Test void sixtyFourSlotsRemainIndependentOfFourMajorAttacks(){
         var slots=new StormWaveSlots(68);
         for(int i=0;i<64;i++){var update=slots.apply(packet(i+1).snapshot(),0);assertNotNull(update);assertEquals(4+i,update.slot());}

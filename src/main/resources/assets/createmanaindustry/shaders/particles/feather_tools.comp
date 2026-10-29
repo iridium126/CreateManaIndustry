@@ -24,7 +24,7 @@ void main(){
     vec3 lift=known&&supported&&p3.x*20.>=float((tag>>4u)&2047u)?cmiFeatherLift(p0.xyz):vec3(0);
     if(known&&(!supported||lift.y>0.)){
         p0.w=abs(p0.w);p1.xyz=lift;p1.w-=(p2.z+p2.w*(p3.x+.05))*p3.x;
-        tag=(tag&15u)|(uint(ceil((p3.x+.5)*20.))<<4u);
+        tag=(tag&0x3000fu)|(uint(ceil((p3.x+.5)*20.))<<4u);
     }
     pool.data[b]=p0;pool.data[b+1u]=p1;pool.data[b+3u].z=uintBitsToFloat(tag);
 }

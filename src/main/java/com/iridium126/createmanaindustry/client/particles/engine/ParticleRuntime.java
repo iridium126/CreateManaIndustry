@@ -498,7 +498,6 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         AllayStormRuntime.INSTANCE.refreshWaves();
         com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient.INSTANCE.poll(ParticleRuntime.this.gpu.identityEpoch());
         com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient.INSTANCE.prepare();
-        AllayStormRuntime.INSTANCE.scheduleRings(ParticleRuntime.this.emitCommands);
 
         for (Burst b : bursts) {
             int id = ensureEmitter(b.spec);
@@ -556,7 +555,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         ParticleRuntime.this.streamCount = ParticleRuntime.this.streams.size();
 
 
-        ParticleRuntime.this.emitCommands.limitParticles(cap,AllayStormRuntime.INSTANCE.ringsRequested());
+        ParticleRuntime.this.emitCommands.limitParticles(cap);
         entryCount=ParticleRuntime.this.emitCommands.size();totalSpawn=ParticleRuntime.this.emitCommands.particles();
 
         feathers.prepare(dt,ParticleRuntime.this.scale,ParticleRuntime.this,deltaTracker.getGameTimeDeltaPartialTick(false));
@@ -742,16 +741,11 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             step=1;
         }
         public void generate() {require(1);
-            feathers.emit(slot,cap,camera,ParticleRuntime.this.frustumPlanes,ParticleRuntime.this.frameSeed);
+            feathers.emit(slot,cap,ParticleRuntime.this.frameSeed);
 
             ParticleDiagnostics.INSTANCE.mark("emit");
             if (entryCount > 0) {
-                if(AllayStormRuntime.INSTANCE.ringsRequested()){
-                    int reserve=ParticleRuntime.this.programs.ringReserve();GL20.glUseProgram(reserve);com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bind(reserve,true);
-                    ParticleRuntime.this.gpu.bindCounter(3,slot);ParticleRuntime.this.gpu.bindEmitBuffer(4,ringId);ParticleRuntime.this.gpu.bindEmitters(5);
-                    setUIntUniform(reserve,"uEmitCount",entryCount);setUIntUniform(reserve,"uCapacity",cap);setFloatUniform(reserve,"uTimeSec",AllayStormRuntime.INSTANCE.timeSec());
-                    GL43.glDispatchCompute((entryCount+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-                }
+
                 GL20.glUseProgram(ParticleRuntime.this.programs.emit());feathers.bind(ParticleRuntime.this.programs.emit());
                 com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bind(ParticleRuntime.this.programs.emit(),true);
                 setFloatUniform(ParticleRuntime.this.programs.emit(),"uTimeSec",AllayStormRuntime.INSTANCE.timeSec());

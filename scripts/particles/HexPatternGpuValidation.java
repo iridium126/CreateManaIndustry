@@ -281,7 +281,7 @@ public class HexPatternGpuValidation {
                         check(writer.parameterized(0,3,i,0,0,0,0,0,0,target->palette.write(target,0,0)),"mixed writer parameter admission");
                     }
                 }
-                if(compact)writer.limitParticles(writer.particles()/2,false);
+                if(compact)writer.limitParticles(writer.particles()/2);
                 var encoded=writer.encode(37);var raw=bytes(encoded.remaining()*4);raw.asFloatBuffer().put(encoded);
                 if(commands!=0)GL15.glDeleteBuffers(commands);commands=buffer(4,raw);
                 upload(counts,bytes(16));for(int b=cap*64;b<pool.capacity();b+=4)pool.putInt(b,0x5a5a5a5a);upload(output,pool);

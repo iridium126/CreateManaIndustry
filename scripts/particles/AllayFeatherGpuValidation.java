@@ -29,9 +29,9 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
             cap=capacity;prefix=ParticleBuffers.GRID_TABLE+cap;
             input=alloc(cap*64);output=alloc(cap*64);grid=alloc(prefix*4+BYTES);header=alloc(960);counter=alloc(16);previous=alloc(16);
             commands=alloc(ParticleBuffers.INDIRECT_UINTS*4);sort=alloc(Math.max(64,cap*8));opaque=alloc(Math.max(4,cap*4));
-            var h=bytes(960);float[] f=AllayFeatherSpecs.FEATHER.packed(),s=AllayFeatherSpecs.SPARK.packed();h.asFloatBuffer().put(f).put(s).put(EmitterPresets.CHERRY_LEAVES.packed());put(header,h);
+            var h=bytes(960);float[] f=AllayFeatherSpecs.FEATHER.packed();h.asFloatBuffer().put(f).put(new float[80]).put(EmitterPresets.CHERRY_LEAVES.packed());put(header,h);
             update=compile("update.comp");key=compile("keygen.comp");tools=compile("feather_tools.comp");emit=compile("feather_emit.comp");
-            for(int p:new int[]{update,key,tools,emit}){bool(p,"uFeatherEnabled",true);bool(p,"uStormCollisionEnabled",true);ui(p,"uCapacity",cap);ui(p,"uFeatherSparkEmitter",1);}
+            for(int p:new int[]{update,key,tools,emit}){bool(p,"uFeatherEnabled",true);bool(p,"uStormCollisionEnabled",true);ui(p,"uCapacity",cap);}
             ui(update,"uKillEmit",-1);ui(update,"uFeatherGridBase",cap);ui(key,"uUpper",cap);ui(emit,"uEmitter",0);
             GL41.glProgramUniformMatrix4fv(key,GL20.glGetUniformLocation(key,"uView"),false,new org.joml.Matrix4f().get(new float[16]));f(key,"uMaxDepth",1024);f(key,"uDepthLogRange",10);
             for(int x=-2;x<=2;x++)for(int y=-2;y<=2;y++)for(int z=-2;z<=2;z++)pages.put(new StormCollisionPages.Section(x,y,z),new StormCollisionPages.Page(1,StormCollisionPages.AIR,null));
@@ -124,7 +124,7 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
                 meta=q.metadata();check(meta.getInt(8)>=0&&meta.getInt(8)<=initial,"manual lifecycle bounded ground index");q.ground();
                 if(frame%200==0)System.out.println("Manual feather frame "+frame+" live="+count+" ground="+meta.getInt(8));
             }
-            check(count==0,"manual feather and dissolution expire");
+            check(count==0,"manual feather expires without children");
         }finally{deleteProgram(program);}
     }}
     static void field(Object owner,String name,Object value)throws Exception{var f=owner.getClass().getDeclaredField(name);f.setAccessible(true);f.set(owner,value);}
@@ -157,9 +157,9 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
         }finally{tex.setInt(ParticleAtlas.ALLAY,previousTexture);GL11.glDeleteTextures(texture);owner.close();field(programs,"featherTools",previousTools);field(programs,"featherRender",previousRender);gpu.free();for(int p:new int[]{key,tools,render})deleteProgram(p);GL30.glBindVertexArray(GL30.glGenVertexArrays());}
     }
     static void behavior(){try(var q=new FeatherFixture(1024)){
-        q.emit(256,false);check(read(q.counter,16).getInt(0)==256,"offscreen rain generation");var born=read(q.output,256*64);boolean small=false,large=false;
+        q.emit(256,false);check(read(q.counter,16).getInt(0)==256,"rain generation");var born=read(q.output,256*64);boolean small=false,large=false;
         for(int i=0;i<256;i++){int b=i*64;double r=Math.hypot(born.getFloat(b),born.getFloat(b+8));check(r>=5.999&&r<=24.001,"spawn ring");check(born.getFloat(b+4)>=6&&born.getFloat(b+4)<=18,"spawn height");check(born.getFloat(b+52)==60,"birth life");small|=born.getFloat(b+12)<.9;large|=born.getFloat(b+12)>.9;check((born.getInt(b+56)&15)<12,"sprite selection");}
-        check(small&&large,"both cherry size classes");q.clear();q.emit(64,true);check(read(q.counter,16).getInt(0)==0,"inside-frustum births rejected");
+        check(small&&large,"both cherry size classes");q.clear();q.emit(64,true);check(read(q.counter,16).getInt(0)==64,"inside-frustum births accepted");
         q.clear();q.word(4,MAX_FEATHERS);q.emit(16,false);check(read(q.counter,16).getInt(0)==0,"feather cap");
         q.clear();q.simulate(one(2,6,2,0,false),1,.05f);var air=read(q.output,64);near(air.getFloat(4),6-.00075,1e-6,"air gravity");check(air.getFloat(12)>0,"airborne state");
         q.clear();q.simulate(one(2,1.001f,2,1,false).putFloat(20,-1),1,.05f);var landed=read(q.output,64);check(landed.getFloat(12)<0,"landed survives");near(landed.getFloat(20),0,0,"landing stops velocity");
@@ -172,10 +172,7 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
         q.clear();var cooling=one(2,1.003f,2,1,true).putInt(56,3|(30<<4));q.simulate(cooling,1,.05f);q.lists(1);q.disturb(2,1.003f,2,2);q.ground();check(read(q.output,64).getFloat(12)<0,"lift cooldown");
         q.floor(false);q.clear();q.simulate(one(2,1.003f,2,1,true),1,.05f);q.lists(1);q.ground();check(read(q.output,64).getFloat(12)>0,"removed support resumes falling");q.floor(true);
         q.clear();q.simulate(one(2,80,2,1,false).putFloat(20,-4),1,.05f);var unknown=read(q.output,64);near(unknown.getFloat(4),80,0,"unknown coverage holds position");near(unknown.getFloat(48),1.05,1e-6,"unknown coverage still ages");
-        q.clear();q.simulate(one(2,.5f,2,60,true),1,.05f);check(read(q.counter,16).getInt(0)==12,"single dissolution burst");var spark=read(q.output,12*64);
-        for(int i=0;i<12;i++){int b=i*64;check(spark.getInt(b+60)==1,"spark emitter");check(spark.getFloat(b+20)>0,"upward spark");for(int j=32;j<=44;j+=4)near(spark.getFloat(b+j),1,0,"white spark");check(spark.getFloat(b+52)>=.8&&spark.getFloat(b+52)<=1.6,"spark lifetime");}
-        q.clear();q.simulate(spark,12,.05f);check(read(q.counter,16).getInt(0)==12,"sparks do not chain or collide inside floor");check(read(q.output,64).getFloat(4)>.5,"sparks pass upward through floor");
-        q.clear();q.word(5,MAX_SPARKS);q.simulate(one(2,1,2,60,true),1,.05f);check(read(q.counter,16).getInt(0)==0,"spark capacity saturation");
+        q.clear();q.simulate(one(2,.5f,2,60,true),1,.05f);check(read(q.counter,16).getInt(0)==0,"expiration removes feather without children");
         q.clear();q.ground();check(q.metadata().getInt(32)==0,"zero ground yields zero workgroups");
         q.clear();q.requestBatch(4096,true);check(q.metadata().getInt(88)==1,"GPU section requests deduplicate concurrent identical keys");
         q.clear();q.word(REQUESTS+MAX_REQUESTS*4,0x12345678);q.requestBatch(8192,false);
@@ -184,18 +181,23 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
         var unique=new HashSet<String>();for(int i=0;i<MAX_REQUESTS;i++){int b=i*16;check(requested.getInt(b+12)==1,"retained request initialized");check(unique.add(requested.getInt(b)+":"+requested.getInt(b+4)+":"+requested.getInt(b+8)),"retained requests unique");}
         check(requested.getInt(MAX_REQUESTS*16)==0x12345678,"request overflow does not write beyond retained capacity");
     }}
+    static void paletteDistribution(){try(var q=new FeatherFixture(65536)){
+        q.emit(60000,false);int count=read(q.counter,16).getInt(0);check(count==60000,"palette population");var data=read(q.output,count*64);int[] colors=new int[3];
+        for(int i=0;i<count;i++){int palette=(data.getInt(i*64+56)>>>16)&3;check(palette<3,"valid stable palette");colors[palette]++;}
+        for(int palette=0;palette<3;palette++)near(colors[palette]/(double)count,new double[]{.60,.32,.08}[palette],.012,"birth palette proportion");
+    }}
     static void appearance()throws Exception{
         nativeAtlasPixels(ParticleAtlas.SPRITE,false);nativeAtlasPixels(ParticleAtlas.ALLAY,true);
         try(var atlas=new com.mojang.blaze3d.platform.NativeImage(ParticleAtlasLayout.ALLAY_WIDTH,ParticleAtlasLayout.ALLAY_HEIGHT,true)){
             int sentinel=0xff123456;atlas.fillRect(0,0,atlas.getWidth(),atlas.getHeight(),sentinel);
             for(int frame=0;frame<12;frame++)try(var stream=Files.newInputStream(Path.of("src/main/resources/assets/createmanaindustry/textures/particle/cherry_"+frame+".png"));var image=com.mojang.blaze3d.platform.NativeImage.read(stream)){
                 AllayFeatherAppearance.bakeFrame(atlas,image,frame);
-                var rect=ParticleAtlasLayout.feather(frame);
+                for(int palette=0;palette<3;palette++){var rect=ParticleAtlasLayout.feather(frame+palette*12);
                 for(int y=-1;y<=3;y++)for(int x=-1;x<=3;x++){
                     int original=image.getPixelRGBA(Math.clamp(x,0,2),Math.clamp(y,0,2));
-                    int expected=AllayFeatherAppearance.recolor(original),actual=atlas.getPixelRGBA(rect.x()+x,rect.y()+y);
+                    int expected=AllayFeatherAppearance.recolor(original,palette),actual=atlas.getPixelRGBA(rect.x()+x,rect.y()+y);
                     check(actual==expected,"native palette pixels and edge gutter");check((actual>>>24)==(original>>>24),"original alpha footprint");
-                }
+                }}
             }
             for(int y=0;y<atlas.getHeight();y++)for(int x=0;x<atlas.getWidth();x++)if(x<32||y<32)check(atlas.getPixelRGBA(x,y)==sentinel,"model/sword atlas region untouched");
         }
@@ -222,8 +224,8 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
                     canvas.fillRect(32,32,32,16,0xff00ff00);pixels.clear();for(int rgba:canvas.getPixelsRGBA())pixels.putInt(rgba);pixels.flip();
                     GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D,0,0,0,width,height,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);
                     GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL12.GL_TEXTURE_MAX_LEVEL,ParticleAtlasLayout.ALLAY_MAX_MIP);GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
-                    check(GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D,4,GL11.GL_TEXTURE_WIDTH)==4&&GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D,4,GL11.GL_TEXTURE_HEIGHT)==3,"compact mip dimensions");
-                    var mip=bytes(4*3*4);GL11.glGetTexImage(GL11.GL_TEXTURE_2D,4,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,mip);
+                    check(GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D,4,GL11.GL_TEXTURE_WIDTH)==4&&GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D,4,GL11.GL_TEXTURE_HEIGHT)==4,"compact mip dimensions");
+                    var mip=bytes(4*4*4);GL11.glGetTexImage(GL11.GL_TEXTURE_2D,4,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,mip);
                     for(int frame=0;frame<7;frame++){var r=ParticleAtlasLayout.model(frame);check(mip.getInt(((r.y()/16)*4+r.x()/16)*4)==(0xff000000|(frame+1)*24),"allay/sword material isolation through mip 4");}
                     check(mip.getInt((2*4+2)*4)==0xff00ff00,"feather mip region does not sample swords");
                 }
@@ -235,9 +237,9 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
         GL15.glBindBuffer(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,feedback);GL15.glBufferData(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,6*24,GL15.GL_DYNAMIC_READ);GL30.glBindBufferBase(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,0,feedback);
         bind(1,pool);bind(20,state);GL20.glUseProgram(p);float[] matrix=new org.joml.Matrix4f().get(new float[16]);for(String n:new String[]{"ModelViewMat","ProjMat"})GL41.glProgramUniformMatrix4fv(p,GL20.glGetUniformLocation(p,n),false,matrix);
         vec(p,"uCamRight",1,0,0);vec(p,"uCamUp",0,1,0);GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);
-        for(int frame=0;frame<12;frame++)for(float scale:new float[]{1,2f/3})for(int ticks:new int[]{0,1,2,20,300,1199})for(int signs=0;signs<4;signs++){
+        for(int frame=0;frame<36;frame++)for(float scale:new float[]{1,2f/3})for(int ticks:new int[]{0,1,2,20,300,1199})for(int signs=0;signs<4;signs++){
             float v=(float)Math.toRadians((signs&1)==0?30:-30),a=(float)Math.toRadians((signs&2)==0?5:-5),t=ticks/20f;
-            var b=one(0,0,0,t,false).putFloat(12,scale).putFloat(40,v).putFloat(44,a/2).putInt(56,frame);put(pool,b);
+            var b=one(0,0,0,t,false).putFloat(12,scale).putFloat(40,v).putFloat(44,a/2).putInt(56,(frame%12)|((frame/12)<<16));put(pool,b);
             GL30.glBeginTransformFeedback(GL11.GL_TRIANGLES);GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES,0,6,1);GL30.glEndTransformFeedback();GL42.glMemoryBarrier(GL42.GL_TRANSFORM_FEEDBACK_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
             var result=bytes(144);GL15.glBindBuffer(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,feedback);GL15.glGetBufferSubData(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,0,result);
             double angle=0;for(int n=1;n<=ticks;n++)angle+=v/20.+a*n/400.;double half=scale==1?.075:.05;
@@ -292,7 +294,7 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
             errors.set();check(GLFW.glfwInit(),"GLFW init");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,GLFW.GLFW_OPENGL_CORE_PROFILE);
             long window=GLFW.glfwCreateWindow(64,64,"Allay feather validation",0,0);check(window!=0,"GL context");
             try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();GL30.glBindVertexArray(GL30.glGenVertexArrays());System.out.println(GL11.glGetString(GL11.GL_RENDERER));
-                com.mojang.blaze3d.systems.RenderSystem.initRenderThread();productionOwnership();try(var stress=new FeatherFixture(65536)){stress.modelImpact();}manualLifecycle();if(!Arrays.asList(args).contains("--manual-only")){appearance();behavior();vertex();spriteVertices();}if(Arrays.asList(args).contains("--benchmark"))benchmark();check(GL11.glGetError()==0,"GL errors");System.out.println("Allay feather GPU: "+checks+" assertions passed");
+                com.mojang.blaze3d.systems.RenderSystem.initRenderThread();productionOwnership();try(var stress=new FeatherFixture(65536)){stress.modelImpact();}manualLifecycle();if(!Arrays.asList(args).contains("--manual-only")){appearance();behavior();paletteDistribution();vertex();spriteVertices();}if(Arrays.asList(args).contains("--benchmark"))benchmark();check(GL11.glGetError()==0,"GL errors");System.out.println("Allay feather GPU: "+checks+" assertions passed");
             }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
         }
     }

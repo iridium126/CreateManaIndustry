@@ -651,7 +651,7 @@ public final class AllayStormRuntime {
         com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket packet;
         final java.util.BitSet completed=new java.util.BitSet();
         final float[] bounds=new float[6];boolean windowReady;
-        int ringCommittedMask,ringScheduledMask,columnSoundMask;boolean startSound,lockSound;
+        int columnSoundMask;boolean startSound,lockSound;
     }
     private final WaveClient[] waveSlots=new WaveClient[MAX_WAVES];
     private final com.iridium126.createmanaindustry.content.allaystorm.StormWaveSlots waveLifecycle = new com.iridium126.createmanaindustry.content.allaystorm.StormWaveSlots(MAX_WAVES);
@@ -672,6 +672,10 @@ public final class AllayStormRuntime {
         return dx*dx+dz*dz<=r*r&&me.getY()>=p.centerY()-3&&me.getY()<=p.centerY()+p.crownRadius()+4;
     }
     public boolean anyWaveTargetingLocalPlayer(){for(var w:waveSlots)if(locallyRelevant(w))return true;return false;}
+    public void outer(com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket packet){
+        var identity=identity();if(identity==null||!identity.dimension().equals(packet.dimension())||identity.epoch()!=packet.epoch())return;
+        starfallGpu.outer(packet);if(packet.operation()==1)StormFeedback.INSTANCE.outerReleased(packet);
+    }
     public void completeAttack(com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket packet){
         var identity=identity();if(identity==null||!identity.dimension().equals(packet.dimension())||identity.epoch()!=packet.epoch())return;
         var wave=findWaveById(packet.id());if(wave==null)return;
@@ -721,7 +725,7 @@ public final class AllayStormRuntime {
         StormFeedback.INSTANCE.retireWaveReports();
     }
     private WaveClient findWaveById(int id){for(var w:waveSlots)if(w!=null&&w.alive&&w.waveId==id)return w;return null;}
-    public void clearWaveState(){java.util.Arrays.fill(navigationStats,0);java.util.Arrays.fill(depenetrationStats,0);ColumnSnapshotClient.INSTANCE.clear();StormCollisionRuntime.clearReturns();waveLifecycle.clear();lastHelixAbort="none";lastGatherId=0;lastGatherAbort=0;java.util.Arrays.fill(lastGatherCounts,0);java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);StormFeedback.INSTANCE.retireWaves();starfallDirty=true;starfallGpu.invalidate();}
+    public void clearWaveState(){StormFeedback.INSTANCE.clearOuterReports();java.util.Arrays.fill(navigationStats,0);java.util.Arrays.fill(depenetrationStats,0);ColumnSnapshotClient.INSTANCE.clear();StormCollisionRuntime.clearReturns();waveLifecycle.clear();lastHelixAbort="none";lastGatherId=0;lastGatherAbort=0;java.util.Arrays.fill(lastGatherCounts,0);java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);StormFeedback.INSTANCE.retireWaves();starfallDirty=true;starfallGpu.invalidate();}
     private long columnSoundTick=Long.MIN_VALUE;private int columnSounds;
     public void refreshWaves(){
         waveLifecycle.retire(timeSec);
@@ -731,7 +735,7 @@ public final class AllayStormRuntime {
         for(int slot=0;slot<MAX_WAVES;slot++){
             var w=waveSlots[slot];if(w==null||!w.alive){starfallSnapshots[slot]=null;continue;}
             if(com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,w.packet.diveUntilSec())>0){if(w.simulated&&!w.packet.abort()&&(w.packet.helixAttack()||w.packet.dome()||w.packet.column())){var all=new java.util.BitSet();all.set(0,w.packet.members().length);all.andNot(w.completed);StormCollisionRuntime.completed(w.packet,all.toLongArray());}w.alive=false;starfallDirty=true;starfallSnapshots[slot]=null;continue;}
-            w.ringScheduledMask=0;var p=w.packet;starfallSnapshots[slot]=p;
+            var p=w.packet;starfallSnapshots[slot]=p;
             var mc=Minecraft.getInstance();
             if(!p.column()&&!p.abort()&&mc.level!=null){
                 float startAge=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.startSec());
@@ -759,18 +763,7 @@ public final class AllayStormRuntime {
         mc.level.playLocalSound(x,y,z,net.minecraft.sounds.SoundEvents.AMETHYST_BLOCK_CHIME,net.minecraft.sounds.SoundSource.HOSTILE,.35f,.9f+(w.packet.waveSeed()&7)*.03f,false);
     }
 
-    private static final com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec STARFALL_RING_SPEC=
-        com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.builder().speed(0,0).life(180,180).sizeOverLife(.135,.135,1).gravity(0,0,0).drag(0).glow(1).color(.3f,.8f,1,1).spawnStyle(7).type(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.standard(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Material.ADDITIVE)).build();
-    public void scheduleRings(EmitCommandWriter schedule){
-        int emitter=-1;for(var w:waveSlots){if(w==null||!w.alive||w.ringCommittedMask==(w.packet.columns()==32?-1:(1<<w.packet.columns())-1)||w.packet.event()!=2||!w.packet.starfall())continue;
-            if(emitter<0){emitter=particles.ensureEmitter(STARFALL_RING_SPEC);if(emitter<0)return;particles.header(emitter,STARFALL_RING_SPEC.packed());}
-            for(int c=0;c<w.packet.columns()&&!schedule.full();c++){
-                if((w.ringCommittedMask&(1<<c))!=0)continue;
-                if (!schedule.ring(emitter,w.waveId,w.slotIdx,c)) break;
-                w.ringScheduledMask|=1<<c;
-            }
-        }
-    }
+
     private final float[] depenetrationStats=new float[6];
     public void depenetrationProgress(int offset,float a,float b,float c,float d){depenetrationStats[offset]=a;depenetrationStats[offset+1]=b;if(offset==0){depenetrationStats[2]=c;depenetrationStats[3]=d;}}
     private final float[] navigationStats=new float[6];
@@ -808,8 +801,8 @@ public final class AllayStormRuntime {
         return out.toString();
     }
     public int carrierCount(){int count=0;for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort())count+=w.packet.members().length;return count;}
-    public boolean ringsRequested(){for(var w:waveSlots)if(w!=null&&w.alive&&w.ringCommittedMask!=(w.packet.columns()==32?-1:(1<<w.packet.columns())-1)&&w.packet.event()==2&&w.packet.starfall())return true;return false;}
-    public void commitStarfall(){starfallGpu.commit();for(var w:waveSlots)if(w!=null&&w.alive){w.simulated=true;if(w.packet.event()==2&&!w.packet.dome())w.ringCommittedMask|=w.ringScheduledMask;}}
+
+    public void commitStarfall(){starfallGpu.commit();for(var w:waveSlots)if(w!=null&&w.alive){w.simulated=true;}}
 
     private int candidateSpawnCursor,candidatePendingSpawns;
     public void checkpointSpawnInputs() {candidateSpawnCursor=stormSpawnCursor;candidatePendingSpawns=pendingStormSpawns;}
@@ -818,7 +811,7 @@ public final class AllayStormRuntime {
     record FeedbackState(boolean active,boolean authority,double correctionHz,Vec3 center,float time,int players,int waveMask) {}
     FeedbackState feedbackState() {
         int mask=0;for(int i=0;i<MAX_WAVES;i++)if(locallyRelevant(waveSlots[i]))mask|=i<4?1<<i:16;
-        if((stormAuthority&&anyWaveActive())||StormCollisionRuntime.returning()||ColumnSnapshotClient.INSTANCE.restoring())mask|=31;
+        if((stormAuthority&&anyWaveActive())||StormCollisionRuntime.returning()||starfallGpu.hasOuter()||ColumnSnapshotClient.INSTANCE.restoring())mask|=31;
         return new FeedbackState(stormActive,stormAuthority,stormCorrectionHz,center,timeSec,lastPlayerCount,mask);
     }
     public record ContactAuthority(int id,long epoch) {}
