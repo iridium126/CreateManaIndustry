@@ -1,4 +1,6 @@
 bool cmiColumnExit=false,cmiColumnRestored=false,cmiColumnRecoveryFrame=false;vec3 cmiColumnExitVelocity=vec3(0);
+// Consumed only by live update; recovery replay never publishes feather impulses.
+bool cmiColumnBloomStarted=false;vec3 cmiColumnBloomPoint=vec3(0);
 // Identity-keyed member state; immutable curve lengths are initialized once on departure.
 vec3 cmiColumnState3(uint s){return vec3(uintBitsToFloat(CMI_STATE(starStateWrite,s)),uintBitsToFloat(CMI_STATE(starStateWrite,s+1u)),uintBitsToFloat(CMI_STATE(starStateWrite,s+2u)));}
 void cmiColumnStore3(uint s,vec3 v){CMI_STATE(starStateWrite,s)=floatBitsToUint(v.x);CMI_STATE(starStateWrite,s+1u)=floatBitsToUint(v.y);CMI_STATE(starStateWrite,s+2u)=floatBitsToUint(v.z);}
@@ -53,6 +55,7 @@ vec3 cmiColumnTurn(vec3 from,vec3 to,float radians){
  float a=min(angle,radians);return normalize(from*cos(a)+cross(axis,from)*sin(a)+axis*dot(axis,from)*(1.-cos(a)));
 }
 void cmiColumnBloomInit(uint s,uint arc,uint b,vec3 point,float time){
+ cmiColumnBloomStarted=true;cmiColumnBloomPoint=point;
  vec3 landing=cmiStarLanding(b,0u).xyz;vec2 delta=point.xz-landing.xz;float r=clamp(length(delta),0.,4.);
  cmiColumnStore(s+1u,time);cmiColumnStore3(s+12u,point);cmiColumnStore(s+15u,0.);
  cmiColumnStore(arc+CMI_COLUMN_BLOOM_RADIUS,r);cmiColumnStore(arc+CMI_COLUMN_BLOOM_ANGLE,atan(delta.y,delta.x));CMI_STATE(starStateWrite,arc+CMI_COLUMN_PHASE)=4u;

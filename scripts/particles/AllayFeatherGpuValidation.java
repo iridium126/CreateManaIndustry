@@ -185,6 +185,36 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
         var unique=new HashSet<String>();for(int i=0;i<MAX_REQUESTS;i++){int b=i*16;check(requested.getInt(b+12)==1,"retained request initialized");check(unique.add(requested.getInt(b)+":"+requested.getInt(b+4)+":"+requested.getInt(b+8)),"retained requests unique");}
         check(requested.getInt(MAX_REQUESTS*16)==0x12345678,"request overflow does not write beyond retained capacity");
     }}
+    static void starfallBloomDisturbance(){
+        for(int mode=0;mode<4;mode++)try(var q=new FeatherFixture(1024);var star=new StarfallGpuBuffers()){
+            // Exercise both confirmed transition branches, absent ground and disabled feather work.
+            boolean confirmed=mode!=2,enabled=mode!=3;float y=mode==0?1.02f:1.10f;
+            if(!confirmed)q.floor(false);
+            var h=headers();h.putFloat(640+7*16+4,1).putFloat(640+18*16+4,32).putFloat(640+18*16+12,6).putFloat(640+19*16,2).putFloat(640+19*16+4,8).putFloat(640+19*16+8,2);
+            var modelHeader=h.duplicate();modelHeader.position(640).limit(960);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,q.header);GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,640,modelHeader);
+            for(int binding:new int[]{11,16,18,19,21,31})bind(binding,q.alloc(binding==19?1024*32:1024*16));
+            var columns=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[68];
+            columns[4]=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket(net.minecraft.world.level.Level.OVERWORLD.location(),37,100,false,123,0,4,24,31.28f,70,2,1.02f,2,10,2,2,32,java.util.stream.IntStream.range(0,64).toArray()).snapshot();
+            star.rebuild(columns);star.columnReady(4,true);star.prepare(1);star.bind(q.update,true);
+            var state=bytes((StarfallGpuBuffers.COLUMN_ARC+StarfallGpuBuffers.COLUMN_ARC_WORDS)*4);state.putInt(StarfallGpuBuffers.COLUMN_STATE*4,100).putInt((StarfallGpuBuffers.COLUMN_ARC+43)*4,2);
+            put(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,27),state);
+            bool(q.update,"uFeatherEnabled",enabled);f(q.update,"uTimeSec",25);
+            var model=one(2,y,2,1,false).putFloat(12,1).putFloat(20,-3).putFloat(32,1).putFloat(36,1).putFloat(40,1).putFloat(44,0).putFloat(52,20).putInt(60,2);
+            q.simulate(model,1,.05f);var modelOut=read(q.output,64);int impulses=q.metadata().getInt(60);
+            check((impulses>0)==(confirmed&&enabled),"Starfall confirmed first bloom impulse mode="+mode);
+            if(confirmed&&enabled){
+                check(impulses==1,"one member transition deposits exactly one impulse");
+                var impulsesData=read(q.grid,q.prefix*4+BYTES);float strength=0;for(int row=0;row<16384;row++){int at=(q.prefix+IMPULSES+row*8)*4;if(impulsesData.getInt(at)==2)strength=impulsesData.getFloat(at+28);}
+                near(strength,1.25,.00001,"bloom impulse retains incoming downward speed");
+                for(float distance:new float[]{1.9f,2.1f}){
+                    put(q.counter,bytes(16));q.simulate(one(2+distance,1.003f,2,1,true),1,.05f);q.lists(1);q.ground();
+                    check((read(q.output,64).getFloat(12)>0)==(distance<2),"Starfall bloom lifts only nearby ground feathers distance="+distance);
+                }
+                star.commit();q.clear();star.prepare(2);star.bind(q.update,true);f(q.update,"uTimeSec",25.05f);q.simulate(modelOut,1,.05f);
+                check(q.metadata().getInt(60)==0,"continued bloom does not repeat first-entry impulse");
+            }
+        }
+    }
     static void paletteDistribution(){try(var q=new FeatherFixture(65536)){
         q.emit(60000);int count=read(q.counter,16).getInt(0);check(count>34000&&count<36000,"palette population");var data=read(q.output,count*64);int[] colors=new int[3];
         for(int i=0;i<count;i++){int palette=(data.getInt(i*64+56)>>>16)&3;check(palette<3,"valid stable palette");colors[palette]++;}
@@ -473,7 +503,7 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
             runBenchmark=Arrays.asList(args).contains("--benchmark");errors.set();check(GLFW.glfwInit(),"GLFW init");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,GLFW.GLFW_OPENGL_CORE_PROFILE);
             long window=GLFW.glfwCreateWindow(64,64,"Allay feather validation",0,0);check(window!=0,"GL context");
             try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();GL30.glBindVertexArray(GL30.glGenVertexArrays());System.out.println(GL11.glGetString(GL11.GL_RENDERER));
-                com.mojang.blaze3d.systems.RenderSystem.initRenderThread();productionOwnership();try(var stress=new FeatherFixture(65536)){stress.modelImpact();}manualLifecycle();if(!Arrays.asList(args).contains("--manual-only")){appearance();behavior();paletteDistribution();surfaceAndGold();hybridSurface();surfaceSnapshots();manualGold();radialDensity();goldDrawing();vertex();spriteVertices();}if(runBenchmark){benchmark();benchmarkGoldEmission();benchmarkHybridSurface();}check(GL11.glGetError()==0,"GL errors");System.out.println("Allay feather GPU: "+checks+" assertions passed");
+                com.mojang.blaze3d.systems.RenderSystem.initRenderThread();productionOwnership();try(var stress=new FeatherFixture(65536)){stress.modelImpact();}manualLifecycle();if(!Arrays.asList(args).contains("--manual-only")){appearance();behavior();starfallBloomDisturbance();paletteDistribution();surfaceAndGold();hybridSurface();surfaceSnapshots();manualGold();radialDensity();goldDrawing();vertex();spriteVertices();}if(runBenchmark){benchmark();benchmarkGoldEmission();benchmarkHybridSurface();}check(GL11.glGetError()==0,"GL errors");System.out.println("Allay feather GPU: "+checks+" assertions passed");
             }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
         }
     }
