@@ -1,22 +1,33 @@
 layout(local_size_x=64) in;
 layout(std430,binding=1) buffer Pool {vec4 data[];} writeBuf;
 layout(std430,binding=3) buffer Counter {uint writeSlot;} counter;
-uniform uint uCapacity,uCount,uEmitter;uniform vec3 uPlayer;uniform float uTop,uSeed;
-
+layout(std430,binding=9) readonly buffer Surface {uint words[];} surface;
+#pragma cmi_include chunks/surface_state.glsl
+uniform uint uCapacity,uCount,uGoldCount,uEmitter,uGoldEmitter,uSeed;
+uniform vec3 uCenter;uniform float uRadius;uniform ivec2 uSurfaceOrigin;uniform bool uSurfaceReady;
 #pragma cmi_include chunks/pool_reservation.glsl
 #pragma cmi_include chunks/feather_state.glsl
 #pragma cmi_include chunks/feather_record.glsl
+#pragma cmi_include chunks/gold_record.glsl
 #pragma cmi_include chunks/storm_collision.glsl
 void main(){
-    uint index=gl_GlobalInvocationID.x;if(index>=uCount)return;
-    float seed=uSeed+float(index)*317.;vec3 p=vec3(0);bool accepted=false;
-    for(int attempt=0;attempt<8;attempt++){
-        float s=seed+float(attempt)*91.7,a=cmiFeatherHash(s)*6.2831853;
-        float r=sqrt(mix(36.,576.,cmiFeatherHash(s+1.)));
-        p=uPlayer+vec3(cos(a)*r,mix(4.,min(16.,uTop-uPlayer.y),cmiFeatherHash(s+2.)),sin(a)*r);
-        cmiFeatherRequest(p);if(!cmiStormKnown(p)||cmiStormSolid(p))continue;accepted=true;break;
+    uint index=gl_GlobalInvocationID.x;if(index>=uCount+uGoldCount||uRadius<=0.)return;
+    bool gold=index>=uCount;uint seed=cmiGoldHash(uSeed^(index*0x9e3779b9u));
+    float angle=cmiGoldUnit(seed+1u)*6.2831853,r=2.*uRadius*sqrt(cmiGoldUnit(seed+2u));
+    // A uniform disk proposal is accepted with f(r); mean acceptance is 7/12.
+    if(cmiGoldUnit(seed+3u)>=clamp(2.-r/uRadius,0.,1.))return;
+    vec3 p=uCenter+vec3(cos(angle)*r,0,sin(angle)*r);
+    if(gold){
+        if(!uSurfaceReady)return;ivec2 column=ivec2(floor(p.xz))-uSurfaceOrigin;
+        if(any(lessThan(column,ivec2(0)))||any(greaterThanEqual(column,ivec2(256))))return;
+        uint code=surface.words[cmiSurfaceCell(ivec2(floor(p.xz)))];if((code&0xc0000000u)==0u)return;int top=cmiSurfaceHeight(code);
+        p.y=float(top)+.02;if(!cmiGoldReserve())return;
+    }else{
+        p.y-=8.*cmiGoldUnit(seed+4u);cmiFeatherRequest(p);
+        if(!cmiStormKnown(p)||cmiStormSolid(p)||!cmiFeatherReserve())return;
     }
-    if(!accepted||!cmiFeatherReserve())return;uint slot=cmiReserveParticle();if(slot>=uCapacity)return;
-    vec4 p0=vec4(p,1),p1=vec4(0),p2=vec4(1),p3=vec4(0,60,seed,uintBitsToFloat(uEmitter));cmiFeatherInit(p0,p1,p2,p3);
+    uint slot=cmiReserveParticle();if(slot>=uCapacity)return;
+    vec4 p0=vec4(p,1),p1=vec4(0),p2=vec4(1),p3=vec4(0,60,cmiGoldUnit(seed+5u)*1000.,uintBitsToFloat(gold?uGoldEmitter:uEmitter));
+    if(gold)cmiGoldInit(p0,p1,p2,p3);else cmiFeatherInit(p0,p1,p2,p3);
     uint b=slot*4u;writeBuf.data[b]=p0;writeBuf.data[b+1u]=p1;writeBuf.data[b+2u]=p2;writeBuf.data[b+3u]=p3;
 }

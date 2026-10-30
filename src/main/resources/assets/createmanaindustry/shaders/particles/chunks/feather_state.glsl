@@ -16,6 +16,11 @@ bool cmiFeatherReserve(){
     int prior=CMI_FEATHER_WORD(4),slot=atomicAdd(CMI_FEATHER_WORD(6),1);
     return prior+slot<int(CMI_FEATHER_MAX);
 }
+bool cmiGoldReserve(){
+    if(!uFeatherEnabled)return false;
+    int prior=CMI_FEATHER_WORD(5),slot=atomicAdd(CMI_FEATHER_WORD(7),1);
+    return prior+slot<int(CMI_GOLD_MAX);
+}
 void cmiFeatherRequest(vec3 p){
     if(!uFeatherEnabled||!uFeatherRequestFrame)return;ivec3 key=ivec3(floor(p/16.));uint hash=cmiFeatherCellHash(key);
     for(uint probe=0u;probe<8u;probe++){

@@ -12,6 +12,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import com.iridium126.createmanaindustry.client.packages.world.*;
 import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket;
+import com.iridium126.createmanaindustry.client.particles.engine.StormSurfaceCapture;
 import static com.iridium126.createmanaindustry.client.allaystorm.StormCollisionPages.*;
 
 /** Complete active geometry demand; independent capacity and compact GPU storage. */
@@ -113,16 +114,21 @@ public final class StormCollisionRuntime implements AutoCloseable {
         }
         public boolean solid(Section key,int index){position.set(key.x()*16+(index&15),key.y()*16+(index>>>8),key.z()*16+((index>>>4)&15));return !level.getBlockState(position).getCollisionShape(level,position).isEmpty();}
     };
+    private static int surfaceUploadBudget=131072;
+    public static int surfaceUploadBudget(){return surfaceUploadBudget;}
+    public static Page surfacePage(Section section){return current==null?null:current.cache.fresh(section);}
     public static void prepare(int program){
-        if(current==null){org.lwjgl.opengl.GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormCollisionEnabled"),0);return;}
+        long surfaceBegin=StormSurfaceCapture.enabled()?System.nanoTime():0;surfaceUploadBudget=131072;
+        if(current==null){org.lwjgl.opengl.GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormCollisionEnabled"),0);StormSurfaceCapture.captureRemaining(1_000_000);return;}
         org.lwjgl.opengl.GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormCollisionEnabled"),1);
         if(!current.error.isEmpty()){
-            org.lwjgl.opengl.GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormCollisionOn"),0);return;
+            org.lwjgl.opengl.GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormCollisionOn"),0);StormSurfaceCapture.captureRemaining(1_000_000);return;
         }
         try{
             current.cache.capture(current.source,1_000_000);
             if(current.offered!=current.cache.version()){current.gpu.offer(current.cache.ready());current.offered=current.cache.version();}
-            current.gpu.pump(131072,500_000);current.gpu.bind(program);
+            if(surfaceBegin!=0)StormSurfaceCapture.captureRemaining(Math.max(0,1_000_000-(System.nanoTime()-surfaceBegin)));
+            long before=current.gpu.uploaded();current.gpu.pump(131072,500_000);surfaceUploadBudget=(int)Math.max(0,131072-(current.gpu.uploaded()-before));current.gpu.bind(program);
         }catch(RuntimeException|LinkageError failure){
             if(current.error.isEmpty())com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("Storm collision resource unavailable",failure);
             current.error=failure.toString();org.lwjgl.opengl.GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormCollisionOn"),0);
@@ -138,16 +144,18 @@ public final class StormCollisionRuntime implements AutoCloseable {
         // The GPU owner already fans the immutable publication out to all parts.
         if(available)current.gpu.bind(program);
     }
+    /** Existing immutable publication, without capture, demand or transfer. */
+    public static StormCollisionGpu publication(){return current!=null&&current.error.isEmpty()?current.gpu:null;}
     public static boolean active(){return current!=null;}
     public static void submitted(){if(current!=null)current.gpu.submitted();}
     public static String status(){return current==null?"storm collision idle":current.cache.stats()+" demandMs="+current.demandNanos/1e6+" "+current.gpu.stats()+" error="+current.error;}
     public static String profilingReport(){return current==null?"":"Storm collision: "+String.format(java.util.Locale.ROOT,"demand=%.3f ms; ",current.demandNanos/1e6)
             +current.cache.profilingReport()+"\nStorm collision GPU: "+current.gpu.profilingReport()+(current.error.isEmpty()?"":"; error="+current.error);}
-    public static void blockChanged(ClientLevel level,BlockPos pos){if(current==null||current.level!=level)return;int x=pos.getX()>>4,y=pos.getY()>>4,z=pos.getZ()>>4;for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++)current.cache.dirty(new Section(x+dx,y+dy,z+dz));}
-    public static void cubeChanged(long packed){if(current==null)return;var cube=com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(packed);int size=com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.DIAMETER_IN_BLOCKS;int n=size/16;for(int x=0;x<n;x++)for(int y=0;y<n;y++)for(int z=0;z<n;z++)current.cache.unavailable(new Section(cube.getX()*n+x,cube.getY()*n+y,cube.getZ()*n+z));}
+    public static void blockChanged(ClientLevel level,BlockPos pos){StormSurfaceCapture.blockChanged(level,pos);if(current==null||current.level!=level)return;int x=pos.getX()>>4,y=pos.getY()>>4,z=pos.getZ()>>4;for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++)current.cache.dirty(new Section(x+dx,y+dy,z+dz));}
+    public static void cubeChanged(long packed){var cube=com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(packed);int size=com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.DIAMETER_IN_BLOCKS;StormSurfaceCapture.cubeChanged(cube.getX()*size,cube.getZ()*size,size);if(current==null)return;int n=size/16;for(int x=0;x<n;x++)for(int y=0;y<n;y++)for(int z=0;z<n;z++)current.cache.unavailable(new Section(cube.getX()*n+x,cube.getY()*n+y,cube.getZ()*n+z));}
     @SubscribeEvent public static void loaded(ChunkEvent.Load event){changed(event);}
     @SubscribeEvent public static void unloaded(ChunkEvent.Unload event){changed(event);}
-    private static void changed(ChunkEvent event){if(current!=null&&event.getLevel()==current.level){var pos=event.getChunk().getPos();current.cache.dirtyColumn(pos.x,pos.z);}}
+    private static void changed(ChunkEvent event){if(event.getLevel() instanceof ClientLevel level){var p=event.getChunk().getPos();StormSurfaceCapture.changed(level,p.x,p.z);}if(current!=null&&event.getLevel()==current.level){var pos=event.getChunk().getPos();current.cache.dirtyColumn(pos.x,pos.z);}}
     public static void reset(){if(current!=null){current.close();current=null;}}
     @Override public void close(){gpu.close();}
 }

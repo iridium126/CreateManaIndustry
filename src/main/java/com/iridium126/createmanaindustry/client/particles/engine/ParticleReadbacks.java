@@ -10,12 +10,15 @@ final class ParticleReadbacks {
     static final int STORM_OFFSET = 48;
     static final int WAVE_OFFSET = STORM_OFFSET + 4 + ParticleBuffers.STORMPOS_CAP * ParticleBuffers.STORMPOS_ENTRY_FLOATS * 4;
     static final int FEATHER_REQUEST_OFFSET = WAVE_OFFSET + 4 + ParticleBuffers.WAVECONTACT_CAP * ParticleBuffers.WAVECONTACT_ENTRY_FLOATS * 4;
-    static final int BYTES = FEATHER_REQUEST_OFFSET + com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.READBACK_BYTES;
+    static final int GOLD_SURFACE_OFFSET=FEATHER_REQUEST_OFFSET + com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.READBACK_BYTES;
+    static final int BYTES = GOLD_SURFACE_OFFSET+StormSurfaceCache.FEEDBACK_BYTES;
     static final class Slot {
         int buffer;
         GpuReadbackBuffer storage;
         long fence, generation, epoch, gameTime;
-        boolean positions, waves,published,feathers,featherRequests;
+        boolean positions, waves,published,feathers,featherRequests,goldSurface;
+        long goldSurfaceEpoch;
+        ByteBuffer goldData;
         final ByteBuffer featherData=BufferUtils.createByteBuffer(com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.READBACK_BYTES);
         com.iridium126.createmanaindustry.content.allaystorm.StormIdentity positionIdentity;
         ParticleHitRay hitRay;
@@ -49,6 +52,7 @@ final class ParticleReadbacks {
         oldest.storage.readCompleted(0,oldest.data.remaining(),oldest.data);
         oldest.data.position(0);
         if(oldest.featherRequests){oldest.featherData.clear();oldest.storage.readCompleted(FEATHER_REQUEST_OFFSET,oldest.featherData.remaining(),oldest.featherData);oldest.featherData.position(0);}
+        if(oldest.goldSurface){if(oldest.goldData==null)oldest.goldData=BufferUtils.createByteBuffer(StormSurfaceCache.FEEDBACK_BYTES);oldest.goldData.clear();oldest.storage.readCompleted(GOLD_SURFACE_OFFSET,oldest.goldData.remaining(),oldest.goldData);oldest.goldData.position(0);}
         return oldest;
     }
     void release(Slot slot) {

@@ -24,6 +24,19 @@ class AllayFeatherLifecycleTest {
             snapshot.data.putInt(36,0);owner.observe(snapshot);assertEquals(0,owner.committedBuffer());
         } finally {owner.reset();}
     }
+    @Test void goldOnlyTailNeverSubmitsGroundOrOpaqueDraws() throws Exception {
+        var owner=AllayFeatherGpu.INSTANCE;owner.reset();
+        try{
+            set(owner,"enabled",true);set(owner,"mayGold",true);set(owner,"lastGoldCreationGeneration",101L);
+            var snapshot=new ParticleReadbacks.Slot();snapshot.feathers=true;snapshot.generation=100;
+            snapshot.data.putInt(32,0).putInt(36,0);owner.observe(snapshot);assertTrue(flag(owner,"mayGold"));
+            snapshot.generation=101;snapshot.data.putInt(36,12);owner.observe(snapshot);assertTrue(flag(owner,"mayGold"));
+            assertFalse(owner.needsPlayers());assertFalse(owner.requestFrame());assertEquals(0,owner.committedBuffer());
+            assertDoesNotThrow(owner::ground);assertDoesNotThrow(()->owner.players(100));assertDoesNotThrow(()->owner.drawMerged(0));
+            snapshot.data.putInt(36,0);owner.observe(snapshot);assertFalse(flag(owner,"mayGold"));
+            set(owner,"manualGold",true);set(owner,"candidateGoldBirth",true);owner.reset();assertFalse(owner.creates());
+        }finally{owner.reset();}
+    }
     @Test void resetDropsGenerationAndUncommittedEmissionState() throws Exception {
         var owner=AllayFeatherGpu.INSTANCE;
         set(owner,"manual",true);set(owner,"candidateBirth",true);set(owner,"mayFeathers",true);

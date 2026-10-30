@@ -23,6 +23,12 @@ class ParticleRenderLifecycleContractTest {
         for(var insn:method.instructions)if(insn instanceof MethodInsnNode call&&call.owner.equals(owner)&&call.name.equals(name))return true;
         return false;
     }
+    @Test void goldManualCommandsArmTheSharedAmbientOwner()throws IOException{
+        var runtime=method(read(ENGINE+"ParticleRuntime"),"ensureEmitterRuntime");
+        assertTrue(calls(runtime,ENGINE+"AllayFeatherGpu","source"));boolean gold=false;
+        for(var insn:runtime.instructions)if(insn instanceof IntInsnNode literal&&literal.operand==9)gold=true;
+        assertTrue(gold,"manual allay_gold must arm counters before GPU emission");
+    }
     @Test void feathersUseEntityMergeButNeverModelShadowDraw() throws IOException {
         var hook=read("com/iridium126/createmanaindustry/client/particles/shaderpack/CMIPackEntityMergeHook");
         assertTrue(calls(method(hook,"drawEntities"),ENGINE+"AllayFeatherGpu","drawMerged"));

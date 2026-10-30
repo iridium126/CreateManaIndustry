@@ -473,6 +473,7 @@ void main() {
     }
 
     if(uint(emitters.u[eid*VEC4_PER_EMITTER].x)==CMI_FEATHER_TYPE&&!cmiFeatherReserve())return;
+    if(uint(emitters.u[eid*VEC4_PER_EMITTER].x)==CMI_GOLD_TYPE&&!cmiGoldReserve())return;
     uint slot = cmiReserveEmitterParticle(eid);
     if (slot >= uCapacity) return;
     vec3 origin = vec3(emitCmd.entries[eb], emitCmd.entries[eb + 1u], emitCmd.entries[eb + 2u]);

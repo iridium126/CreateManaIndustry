@@ -15,16 +15,34 @@ class AllayFeatherContractTest {
         assertTrue(AllayFeatherLayout.zeroCovers(11,11,0));
         assertTrue(AllayFeatherLayout.zeroCovers(12,11,0));
     }
-    @Test void stormRateBoundariesAndStrictHeight() {
-        assertEquals(1000,AllayFeatherLayout.rate(1000,20,0,50,60,true));
-        assertEquals(1000,AllayFeatherLayout.rate(1000,20,20,50,60,true));
-        assertEquals(500,AllayFeatherLayout.rate(1000,20,30,50,60,true));
-        assertEquals(0,AllayFeatherLayout.rate(1000,20,40,50,60,true));
-        assertEquals(0,AllayFeatherLayout.rate(1000,20,20,52,60,true));
-        assertEquals(0,AllayFeatherLayout.rate(1000,20,20,50,60,false));
-        assertEquals(0,AllayFeatherLayout.rate(1000,0,0,0,60,true));
-        assertEquals(2000,AllayFeatherLayout.rate(3000,20,20,50,60,true));
-        assertEquals(0,AllayFeatherLayout.rate(0,20,20,50,60,true));
+    @Test void stormRateScalesWithAreaAndRadiusWeightsAreLocal() {
+        assertEquals(250,AllayFeatherLayout.rate(1000,16));assertEquals(1000,AllayFeatherLayout.rate(1000,32));
+        assertEquals(2000,AllayFeatherLayout.rate(1000,Math.sqrt(2048)),.001);
+        assertEquals(4000,AllayFeatherLayout.rate(2000,Math.sqrt(2048)),.001);
+        assertEquals(4000,AllayFeatherLayout.rate(4000,32));assertEquals(8000,AllayFeatherLayout.rate(4000,Math.sqrt(2048)),.001);
+        assertEquals(0,AllayFeatherLayout.rate(1000,0));assertEquals(0,AllayFeatherLayout.rate(0,32));
+        assertEquals(1,AllayFeatherLayout.weight(32,0));assertEquals(1,AllayFeatherLayout.weight(32,32));
+        assertEquals(.5,AllayFeatherLayout.weight(32,48));assertEquals(0,AllayFeatherLayout.weight(32,64));
+        assertEquals(1000,AllayFeatherLayout.proposals(1000,32)*7/12,.000001);
+    }
+    @Test void goldUsesIndependentUncollidedAdditiveTypeAndSharedAbi(){
+        var gold=EmitterPresets.byName("allay_gold");assertSame(AllayGoldSpecs.GOLD,gold);
+        assertEquals(ParticleTypes.Material.ADDITIVE,gold.type.material());assertEquals(9,gold.type.id());
+        assertEquals(8,gold.lifeMin);assertEquals(12,gold.lifeMax);assertEquals(EmitterSpec.CollideMode.NONE,gold.collideMode);
+    }
+    @Test void newDefaultsDoNotRequireConfigMigration()throws Exception{
+        var client=com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.SPEC;
+        var field=com.iridium126.createmanaindustry.infrastructure.config.ServerConfig.class.getDeclaredField("STORM_LOD_MAX_DISTANCE");field.setAccessible(true);
+        var server=(net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>)field.get(null);
+        assertEquals(4096,((net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>)client.getValues().get("particles.stormLodDistance")).getDefault());
+        assertEquals(4096,server.getDefault());
+        assertEquals(2000,((net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>)client.getValues().get("particles.allayGoldMaxSpawnPerSecond")).getDefault());
+        var gold=client.getSpec().get("particles.allayGoldMaxSpawnPerSecond");
+        var feather=client.getSpec().get("particles.allayFeatherMaxSpawnPerSecond");
+        assertTrue(((net.neoforged.neoforge.common.ModConfigSpec.ValueSpec)gold).test(4000));
+        assertFalse(((net.neoforged.neoforge.common.ModConfigSpec.ValueSpec)gold).test(4001));
+        assertTrue(((net.neoforged.neoforge.common.ModConfigSpec.ValueSpec)feather).test(2000));
+        assertFalse(((net.neoforged.neoforge.common.ModConfigSpec.ValueSpec)feather).test(2001));
     }
     @Test void finiteOpaqueSpecKeepsParticleAbi() {
         var feather=EmitterPresets.byName("allay_feather");assertSame(AllayFeatherSpecs.FEATHER,feather);

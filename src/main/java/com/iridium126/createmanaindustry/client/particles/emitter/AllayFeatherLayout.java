@@ -22,9 +22,10 @@ public final class AllayFeatherLayout {
         return count == 0 && snapshot >= lastCreation;
     }
 
-    public static double rate(double maximum, double radius, double distance, double playerY,
-                              double centerY, boolean exposed) {
-        if (!exposed || radius <= 0 || playerY >= centerY - 8 || distance >= radius * 2) return 0;
-        return Math.clamp(maximum, 0, 2000) * Math.clamp((2 * radius - distance) / radius, 0, 1);
+    /** Desired total rate over the full radial distribution, before coverage/budget rejection. */
+    public static double rate(double reference,double radius) {
+        return radius>0?Math.max(reference,0)*radius*radius/1024.:0;
     }
+    public static double proposals(double reference,double radius){return rate(reference,radius)*12./7.;}
+    public static double weight(double radius,double distance){return radius>0?Math.clamp((2*radius-distance)/radius,0,1):0;}
 }

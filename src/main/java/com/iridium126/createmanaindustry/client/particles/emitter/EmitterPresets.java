@@ -201,6 +201,7 @@ public final class EmitterPresets {
             case "soul_flame" -> SOUL_FLAME;
             case "mana_burst" -> MANA_BURST;
             case "cherry_leaves" -> CHERRY_LEAVES;
+            case "allay_gold" -> AllayGoldSpecs.GOLD;
             case "allay_feather" -> AllayFeatherSpecs.FEATHER;
             case "flood" -> FLOOD;
             case "allay_fly" -> ALLAY_FLY;
@@ -212,7 +213,7 @@ public final class EmitterPresets {
 
     /** Names registered for the command argument suggestions. */
     public static String[] names() {
-        return new String[] { "mana_spark", "ember", "ash", "soul_flame", "mana_burst", "cherry_leaves", "allay_feather", "flood",
+        return new String[] { "mana_spark", "ember", "ash", "soul_flame", "mana_burst", "cherry_leaves", "allay_feather", "allay_gold", "flood",
                 "allay_fly", "allay_dance", "allay_hold" };
     }
 

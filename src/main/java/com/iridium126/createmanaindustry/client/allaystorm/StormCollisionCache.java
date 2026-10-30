@@ -43,6 +43,7 @@ public final class StormCollisionCache {
         spent=clock.getAsLong()-begin;if(spent>nanos)overruns++;
     }
     public Map<Section,Page> ready(){var out=new HashMap<Section,Page>();entries.forEach((key,e)->{if(e.page!=null)out.put(key,e.page);});return out;}
+    public Page fresh(Section key){var e=entries.get(key);return e==null||e.dirty?null:e.page;}
     public Page get(Section key){var e=entries.get(key);return e==null?null:e.page;}
     public long version(){return version;}
     public int requested(){return entries.size();}

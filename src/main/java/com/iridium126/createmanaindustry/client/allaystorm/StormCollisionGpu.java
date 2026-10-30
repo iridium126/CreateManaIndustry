@@ -11,7 +11,7 @@ import static com.iridium126.createmanaindustry.client.allaystorm.StormCollision
 /** Independent bit atlas, versioned replacement pages and four nonblocking table banks. */
 public final class StormCollisionGpu implements AutoCloseable {
     private record Resident(Page page,int slot) {}
-    private static final class Bank {int buffer,texture,mask,progress,rows;long fence,serial;ByteBuffer staging;final BitSet references=new BitSet();}
+    private static final class Bank {int buffer,texture,mask,progress,rows;long fence,serial;ByteBuffer staging;final BitSet references=new BitSet();java.util.List<Section> surfaceChanges=java.util.List.of();}
     private final Bank[] banks={new Bank(),new Bank(),new Bank(),new Bank()};
     private final Map<Section,Resident> residents=new HashMap<>();
     private final LinkedHashMap<Section,Page> pending=new LinkedHashMap<>();
@@ -19,6 +19,15 @@ public final class StormCollisionGpu implements AutoCloseable {
     private final ByteBuffer pageUpload=MemoryUtil.memAlloc(BYTES).order(ByteOrder.nativeOrder());
     private int atlas,capacity=8192,current=-1,building=-1;
     private long serial,published=-1,uploaded,overruns,lastUpload;
+    private final Map<Section,Long> surfaceChanges=new HashMap<>();
+    private java.util.function.Consumer<Section> surfaceListener;
+    public void surfaceListener(java.util.function.Consumer<Section> listener){surfaceListener=listener;}
+    private void changed(Section section){surfaceChanges.put(section,++serial);}
+    private void surfacePublished(Bank next){
+        if(surfaceListener!=null)for(var section:next.surfaceChanges)surfaceListener.accept(section);
+        for(var section:next.surfaceChanges){Long version=surfaceChanges.get(section);if(version!=null&&version<=next.serial)surfaceChanges.remove(section);}
+        next.surfaceChanges=java.util.List.of();
+    }
     private void ensure(){
         if(atlas!=0)return;
         atlas=texture(capacity);
@@ -34,11 +43,11 @@ public final class StormCollisionGpu implements AutoCloseable {
         return texture;
     }
     public void offer(Map<Section,Page> ready){
-        boolean removed=residents.keySet().removeIf(key->!ready.containsKey(key));pending.keySet().removeIf(key->!ready.containsKey(key));if(removed)serial++;
+        residents.keySet().removeIf(key->{if(ready.containsKey(key))return false;changed(key);return true;});pending.keySet().removeIf(key->!ready.containsKey(key));
         for(var item:ready.entrySet()){
             var old=residents.get(item.getKey());if(old!=null&&old.page.revision()==item.getValue().revision())continue;
             Page page=item.getValue();
-            if(page.kind()<0){residents.put(item.getKey(),new Resident(page,page.kind()));pending.remove(item.getKey());serial++;}
+            if(page.kind()<0){residents.put(item.getKey(),new Resident(page,page.kind()));pending.remove(item.getKey());changed(item.getKey());}
             else pending.put(item.getKey(),page);
         }
     }
@@ -59,6 +68,7 @@ public final class StormCollisionGpu implements AutoCloseable {
         for(int i=0;i<banks.length;i++)if(i!=current&&complete(banks[i])){
             var bank=banks[i];var rows=new HashMap<Section,Integer>();bank.references.clear();
             residents.forEach((key,resident)->{rows.put(key,resident.slot);if(resident.slot>=0)bank.references.set(resident.slot);});
+            bank.surfaceChanges=java.util.List.copyOf(surfaceChanges.keySet());
             bank.rows=rows.size();int[] table=table(rows);bank.staging=MemoryUtil.memAlloc(table.length*4).order(ByteOrder.nativeOrder());bank.staging.asIntBuffer().put(table);
             bank.mask=table.length/4-1;bank.serial=serial;bank.progress=0;
             try{
@@ -75,7 +85,7 @@ public final class StormCollisionGpu implements AutoCloseable {
         if(building>=0){
             var bank=banks[building];int n=Math.min(left/2,bank.staging.capacity()-bank.progress);n-=n%16;
             if(n>0){var part=bank.staging.duplicate();part.position(bank.progress).limit(bank.progress+n);GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,bank.buffer);GpuTransfers.upload(GL31.GL_TEXTURE_BUFFER,bank.progress,part);bank.progress+=n;left-=n;uploaded+=n;}
-            if(bank.progress==bank.staging.capacity()){MemoryUtil.memFree(bank.staging);bank.staging=null;published=bank.serial;current=building;building=-1;}
+            if(bank.progress==bank.staging.capacity()){MemoryUtil.memFree(bank.staging);bank.staging=null;published=bank.serial;surfacePublished(bank);current=building;building=-1;}
         }
         while(left>=BYTES&&!pending.isEmpty()&&System.nanoTime()-began<nanos){
             var iterator=pending.entrySet().iterator();var item=iterator.next();int slot=occupied.nextClearBit(0);
@@ -88,7 +98,7 @@ public final class StormCollisionGpu implements AutoCloseable {
             GL13.glActiveTexture(GL13.GL_TEXTURE1);GL11.glBindTexture(GL12.GL_TEXTURE_3D,atlas);
             com.iridium126.createmanaindustry.client.particles.engine.ParticleGLUtil.prepareClientUpload();
             GpuTransfers.texture3d(GL12.GL_TEXTURE_3D,0,(slot&31)*4,((slot>>>5)&31)*4,(slot>>>10)*8,4,4,8,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,pageUpload);
-            residents.put(item.getKey(),new Resident(item.getValue(),slot));iterator.remove();serial++;left-=BYTES;uploaded+=BYTES;
+            residents.put(item.getKey(),new Resident(item.getValue(),slot));iterator.remove();changed(item.getKey());left-=BYTES;uploaded+=BYTES;
         }
         GL42.glMemoryBarrier(GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);lastUpload=System.nanoTime()-began;if(lastUpload>nanos)overruns++;
@@ -109,6 +119,8 @@ public final class StormCollisionGpu implements AutoCloseable {
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
     }
     public void submitted(){if(current<0)return;var bank=banks[current];if(bank.fence!=0)GL32.glDeleteSync(bank.fence);bank.fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);}
+    public long revision(){return current<0?-1:banks[current].serial;}
+    public int tableSize(){return current<0?0:banks[current].mask+1;}
     public int ready(){return current<0?0:banks[current].rows;}
     public boolean settled(){return pending.isEmpty()&&building<0&&published==serial;}
     public long uploaded(){return uploaded;}

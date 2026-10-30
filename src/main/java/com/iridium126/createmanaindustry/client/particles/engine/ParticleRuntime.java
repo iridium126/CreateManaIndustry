@@ -1398,7 +1398,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
      * bake slice per particle, so one spec can serve many spawn sites.
      */
     private void ensureEmitterRuntime(int id, EmitterSpec spec, Vec3 origin) {
-        if(spec.type.id()==com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.TYPE)feathers.source(spec,origin);
+        if(spec.type.id()==com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.TYPE||spec.type.id()==com.iridium126.createmanaindustry.client.particles.emitter.AllayGoldSpecs.TYPE)feathers.source(spec,origin);
         if (spec.type.features().contains(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Feature.SPRITE_ATLAS)) {
             this.spriteAtlas.ensureLoaded();
         } else if (spec.type.features().contains(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Feature.MODEL_ATLAS)) {

@@ -138,7 +138,7 @@ void main() {
         if(isFeather){
             if(p0.w<0.){uint at=uint(atomicAdd(CMI_FEATHER_WORD(2),1));if(at<CMI_FEATHER_MAX)CMI_FEATHER_WORD(CMI_FEATHER_GROUND+at)=int(g);}
             atomicAdd(CMI_FEATHER_WORD(0),1);
-        }
+        }else if(uint(emitters.u[hb].x)==CMI_GOLD_TYPE)atomicAdd(CMI_FEATHER_WORD(1),1);
     }
     float keySize = max(emitters.u[hb + 5u].z, emitters.u[hb + 5u].w) * (storm ? 1.0 : (isFeather?abs(p0.w):p0.w));
     float radius = matId >= 1.5 && matId < 2.5 ? keySize * 1.5 : keySize;

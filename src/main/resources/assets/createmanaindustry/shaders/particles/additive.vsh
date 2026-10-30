@@ -69,6 +69,7 @@ void main() {
     vec4 p2 = particles.data[base + 2u];
     vec4 p3 = particles.data[base + 3u];
 
+    bool gold=uint(emitters.u[floatBitsToUint(p3.w)*VEC4_PER_EMITTER].x)==CMI_GOLD_TYPE;
     float life = clamp(p3.x / max(p3.y, 1e-5), 0.0, 1.0);
     uint eid = floatBitsToUint(p3.w);
     uint hb = eid * VEC4_PER_EMITTER;
@@ -143,7 +144,7 @@ void main() {
     }
     // Style 4 uses white keyframes multiplied by p2.rgb; style 5 already put
     // its direct RGB in col and must not square the color.
-    if (colorMode < 4.5)
+    if (colorMode < 4.5&&!gold)
         col *= p2.rgb;
 
     // per-emitter glow multiplier (header u[hb+6].w) — the additive brightness
@@ -173,8 +174,9 @@ void main() {
     // (additive allows >1.0 here; brightness is trimmed per-emitter in the headers)
     // Direct style uses the sign of p2.w for its per-particle gravity bit.
     // That sign is not visual data, so recover the original intensity here.
-    float intensity = colorMode > 4.5 ? abs(p2.w) : p2.w;
+    float intensity = gold?p3.z:colorMode > 4.5 ? abs(p2.w) : p2.w;
     vAlpha = intensity * keyA * (1.0 - life) * emitterGlow;
     vColor = col;
-    vHex=hexShape;
+    if(gold)vAlpha*=smoothstep(0.,.08,life);
+    vHex=gold?(p0.w>.07?3.:4.):hexShape;
 }

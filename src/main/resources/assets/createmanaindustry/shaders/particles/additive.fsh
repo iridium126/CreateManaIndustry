@@ -22,6 +22,17 @@ out vec4 fragColor;
 #pragma cmi_include chunks/hex_shape.glsl
 
 void main() {
+    if(vHex>2.5){
+        vec2 q=(vUv-.5)*2.,a=abs(q);float r2=dot(q,q);
+        float profile=exp(-6.*r2);
+        if(vHex<3.5){vec2 taper=max(vec2(0),1.-a);taper=taper*taper*taper;
+            float rays=max(exp(-80.*a.x*a.x)*taper.y,exp(-80.*a.y*a.y)*taper.x);
+            profile=max(rays,profile*.22);
+        }
+        profile*=1.-smoothstep(.75,1.,max(a.x,a.y));
+        float fade=(1.-smoothstep(uFadeDist,uFadeDist+24.,vDist))*smoothstep(.15,.8,vDist);
+        fragColor=vec4(vColor*(vAlpha*profile*uGlow*fade),0.);return;
+    }
     if(vHex>1.5){
         float x=abs(vUv.y*2.0-1.0);
         float profile=exp(-4.0*x*x)*(1.0-smoothstep(.7,1.0,x));

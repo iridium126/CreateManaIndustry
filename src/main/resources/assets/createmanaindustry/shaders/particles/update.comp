@@ -177,6 +177,7 @@ vec2 cmiGauss2(float s) {
 #pragma cmi_include chunks/death_spawn.glsl
 #define CMI_FEATHER_GRID
 #pragma cmi_include chunks/feather_update.glsl
+#pragma cmi_include chunks/gold_update.glsl
 
 #pragma cmi_types update
 
@@ -243,6 +244,7 @@ void main() {
     float matId = matMotion.x;
     bool isModel = matId >= 1.5 && matId < 2.5;
     bool isFeather = uint(emitters.u[hb].x)==CMI_FEATHER_TYPE;
+    if(uint(emitters.u[hb].x)==CMI_GOLD_TYPE){cmiGoldUpdate(p0,p1,p2,p3);return;}
     if(isFeather&&cmiFeatherEarly(p0,p1,p2,p3))return;
     if(isFeather){
         cmiStormVoxel=uStormCollisionEnabled;

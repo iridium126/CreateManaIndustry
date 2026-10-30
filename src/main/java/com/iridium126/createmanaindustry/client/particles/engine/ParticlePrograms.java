@@ -67,6 +67,7 @@ public final class ParticlePrograms {
         new Specification("block_emit.comp",null,(owner,id)->owner.blockEmit=id),
         new Specification("keygen.comp",null,(owner,id)->owner.keygen=id),
         new Specification("feather_tools.comp",null,(owner,id)->owner.featherTools=id),
+        new Specification("gold_surface.comp",null,(owner,id)->owner.goldSurface=id),
         new Specification("feather_emit.comp",null,(owner,id)->owner.featherEmit=id),
         new Specification("feather.vsh","textured.fsh",(owner,id)->owner.featherRender=id),
         new Specification("storm_lod.comp",null,(owner,id)->owner.lodCompute=id),
@@ -151,6 +152,7 @@ public final class ParticlePrograms {
     private static String buildPrelude() {
         StringBuilder sb = new StringBuilder(768);
         sb.append(ParticleAtlasLayout.shaderPrelude());
+        sb.append("#define CMI_GOLD_TYPE ").append(com.iridium126.createmanaindustry.client.particles.emitter.AllayGoldSpecs.TYPE).append("u\n#define CMI_GOLD_MAX ").append(com.iridium126.createmanaindustry.client.particles.emitter.AllayGoldSpecs.MAX_COUNT).append("u\n");
         // A uniform zero origin prevents pathological cold linking of large constant
         // SSBO ranges on tested NVIDIA drivers. Apply it once at every access, so
         // relative addresses remain visible to alias analysis in the update kernel.
@@ -298,7 +300,8 @@ public final class ParticlePrograms {
     private int waveContact;    // dive-wave contact self-report detection (storm waves)
     private int render;          // additive billboards (soft circle)
     private int texturedRender;  // textured sprite billboards: uMode 0 blended / 1 OPAQUE cutout
-    private int featherTools,featherEmit,featherRender;
+    private int featherTools,featherEmit,featherRender,goldSurface;
+    public int goldSurface(){return goldSurface;}
     public int featherTools(){return featherTools;}
     public int featherEmit(){return featherEmit;}
     public int featherRender(){return featherRender;}
@@ -366,7 +369,7 @@ public final class ParticlePrograms {
             this.emit = candidate.emit; candidate.emit = 0;
             this.blockEmit = candidate.blockEmit; candidate.blockEmit = 0;
             this.keygen = candidate.keygen; candidate.keygen = 0;
-            this.featherTools=candidate.featherTools;candidate.featherTools=0;this.featherEmit=candidate.featherEmit;candidate.featherEmit=0;this.featherRender=candidate.featherRender;candidate.featherRender=0;
+            this.goldSurface=candidate.goldSurface;candidate.goldSurface=0;this.featherTools=candidate.featherTools;candidate.featherTools=0;this.featherEmit=candidate.featherEmit;candidate.featherEmit=0;this.featherRender=candidate.featherRender;candidate.featherRender=0;
             this.lodCompute=candidate.lodCompute;candidate.lodCompute=0;this.lodRender=candidate.lodRender;candidate.lodRender=0;this.lodComposite=candidate.lodComposite;candidate.lodComposite=0;this.lodPixel=candidate.lodPixel;candidate.lodPixel=0;
             this.radixHist = candidate.radixHist; candidate.radixHist = 0;
             this.radixScan = candidate.radixScan; candidate.radixScan = 0;
@@ -401,7 +404,7 @@ public final class ParticlePrograms {
     }
 
     public boolean ready() {
-        return featherTools!=0&&featherEmit!=0&&featherRender!=0&&lodPixel!=0&&lodCompute!=0&&lodRender!=0&&lodComposite!=0&&this.modelFilter!=0&&this.modelCompact!=0&&this.allayAnimate!=0&&this.modelPrepare!=0&&this.prepareDispatch != 0 && this.blockEmit != 0 && this.reset != 0 && this.update != 0 && this.emit != 0 && this.render != 0
+        return goldSurface!=0&&featherTools!=0&&featherEmit!=0&&featherRender!=0&&lodPixel!=0&&lodCompute!=0&&lodRender!=0&&lodComposite!=0&&this.modelFilter!=0&&this.modelCompact!=0&&this.allayAnimate!=0&&this.modelPrepare!=0&&this.prepareDispatch != 0 && this.blockEmit != 0 && this.reset != 0 && this.update != 0 && this.emit != 0 && this.render != 0
                 && this.texturedRender != 0 && this.modelRender != 0
                 && this.keygen != 0 && this.radixHist != 0 && this.radixScan != 0
                 && this.radixScatter != 0 && this.capture != 0 && this.grid != 0
@@ -534,7 +537,7 @@ public final class ParticlePrograms {
                 this.modelFilter,this.modelCompact,this.modelPrepare,this.allayAnimate,this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
                 this.grid, this.hit, this.damagePrepare,this.stormPos,this.columnSnapshot,this.columnRecovery, this.waveContact,this.domeContacts,this.domeControl,this.domeApply,this.domeAudit,this.domePath,this.depenetration,this.depenetrationSchedule,this.depenetrationPrepare,
-                this.featherTools,this.featherEmit,this.featherRender,this.render, this.texturedRender, this.modelRender, this.lodCompute,this.lodRender,this.lodComposite,this.lodPixel }) {
+                this.goldSurface,this.featherTools,this.featherEmit,this.featherRender,this.render, this.texturedRender, this.modelRender, this.lodCompute,this.lodRender,this.lodComposite,this.lodPixel }) {
             if (p != 0){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(p);com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(p);}
         }
         this.modelFilter=this.modelCompact=this.modelPrepare=this.allayAnimate=0;
@@ -542,7 +545,7 @@ public final class ParticlePrograms {
         this.radixHist = this.radixScan = this.radixScatter = this.capture = 0;
         this.grid = this.hit = this.damagePrepare = this.stormPos = this.waveContact = 0;
         this.domeContacts=0;this.domeControl=0;this.domeApply=0;this.domeAudit=0;this.domePath=0;this.depenetration=0;this.depenetrationSchedule=0;this.depenetrationPrepare=0;this.columnSnapshot=0;this.columnRecovery=0;
-        this.featherTools=this.featherEmit=this.featherRender=0;
+        this.goldSurface=this.featherTools=this.featherEmit=this.featherRender=0;
         this.render = this.texturedRender = this.modelRender = 0;
         this.lodCompute=this.lodRender=this.lodComposite=this.lodPixel=0;
     }
