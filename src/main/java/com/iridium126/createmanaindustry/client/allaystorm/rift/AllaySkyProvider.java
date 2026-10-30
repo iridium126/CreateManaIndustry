@@ -24,6 +24,16 @@ public final class AllaySkyProvider {
     public static boolean cloudProfiling(){return cloudProfiling;}
     public static void cloudProfiling(boolean enabled){cloudProfiling=enabled;if(enabled)cloudProfileRevision++;}
     public static boolean cloudEnabled(){return cloudEnabled;}
+    public static java.util.List<com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport.Field> diagnosticsFields(){
+        var fields=new java.util.ArrayList<com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport.Field>();
+        var snapshot=world==Minecraft.getInstance().level?RIFT.current():null;
+        fields.add(com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport.field("rift",snapshot==null?"inactive":
+                snapshot.identity().dimension()+" / epoch="+snapshot.identity().epoch()+"; sequence="+snapshot.sequence()+"; state="+
+                        switch(snapshot.state()){case StormRiftSnapshot.REMOVE->"removed";case StormRiftSnapshot.GROWING->"growing";case StormRiftSnapshot.OPEN->"open";default->"unavailable";}));
+        fields.add(com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport.field("storm cloud",cloudEnabled?"on":"off"));
+        if(snapshot!=null)fields.add(com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport.field("center samples",snapshot.previous().tick()+" / "+snapshot.tick()));
+        return java.util.List.copyOf(fields);
+    }
     public static void cloudEnabled(boolean enabled){cloudEnabled=enabled;}
     private AllaySkyProvider() {}
     private static void world() {
@@ -95,17 +105,5 @@ public final class AllaySkyProvider {
         return new Vector4f((float)(x-camera.x), (float)(snapshot.planeY()-camera.y), (float)(z-camera.z), age);
     }
     public static void clear() { VanillaSkyView.clear();cloudTime=Double.NaN;cloudSnapshot=null;cloudFrame=StormCloudFrame.EMPTY;world = null; RIFT.clear(); context = AllaySkyContext.EMPTY; }
-    public static String report() {
-        var snapshot=rift();
-        var frame=world==null?null:com.iridium126.createmanaindustry.client.allaystorm.visual.StormCenterView.timeline().sample(world.getGameTime(),0);
-        var shape=JuliaProjection.shape();
-        String fit=snapshot==null||frame==null?"awaiting canonical samples":shape==null?"Julia resources unavailable":shape.referenceValid(frame.radius(),frame.y(),snapshot.planeY())?"1.2R frontal circle fitted; uniform scale="+shape.scale(frame.radius(),frame.y(),snapshot.planeY(),2):"entrance coverage only: reference height invalid or outside full weak-perspective range";
-        return "rift-summary="+(snapshot==null?"none":snapshot.identity()+" sequence="+snapshot.sequence()+" state="+snapshot.state()+" samples="+snapshot.previous().tick()+"/"+snapshot.tick())
-                +"; center=shared delayed-20tick timeline; envelope=1.2R circle; Julia=q^2-0.5 projection"
-                +"\ncircle-fit="+fit
-                +"\nJulia-projection="+(shape==null?"resources unavailable":"original boundary; object-centred weak perspective; near physical transition=128..256; shared hit-distance texture")
-                +"; sky="+(VanillaRiftRenderer.nativePack()?com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().riftReason():"vanilla")
-                +"; storm-cloud="+(cloudEnabled?"on":"bypassed")+"; allay-cloud=stock; source vanilla cloud=rift clipping only; target vanilla="+VanillaSkyView.cloudReport()
-                +"; vanilla-path="+VanillaRiftRenderer.report()+"; transfer=server-coordinated group transaction (protocol 20)";
-    }
+
 }

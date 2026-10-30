@@ -279,12 +279,13 @@ public final class ClientGpuScene {
         com.iridium126.createmanaindustry.client.greattrick.sharedfate.SharedFateGpu.INSTANCE.close();
         com.iridium126.createmanaindustry.client.greattrick.partition.PartitionGpu.INSTANCE.close();
         if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.requestReload();
-        if(CreateManaIndustry.IRISVEIL_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.invalidateShadow();
+        if(CreateManaIndustry.IRISVEIL_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.invalidatePrograms();
         if(CreateManaIndustry.IRIS_ACTIVE)com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.reload();
         com.iridium126.createmanaindustry.client.packages.render.PackageRuntime.INSTANCE.reload();
         particles.reloadPrograms();
     }
     public void onLevelChanged() {
+        if(CreateManaIndustry.IRISVEIL_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.invalidatePrograms();
         com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects.clear();
         com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualFrame.clear();
         com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.clear();
@@ -310,7 +311,7 @@ public final class ClientGpuScene {
         if(CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.close();
         com.iridium126.createmanaindustry.client.packages.authority.PackageAuthorityClient.closeAll("Particle engine closed",false);
             if(CreateManaIndustry.IRIS_ACTIVE)com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.close();
-            if(CreateManaIndustry.IRISVEIL_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.invalidateShadow();
+            if(CreateManaIndustry.IRISVEIL_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.invalidatePrograms();
             com.iridium126.createmanaindustry.client.packages.render.PackageRuntime.INSTANCE.close();
         try { particles.closeResources(); } finally { computeTimer.close();drawTimer.close(); }
 

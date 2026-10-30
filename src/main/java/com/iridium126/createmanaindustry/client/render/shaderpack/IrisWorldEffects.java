@@ -77,19 +77,22 @@ public final class IrisWorldEffects {
             }
         }
     }
-    public static String report(){
-        StringBuilder result=new StringBuilder(ShaderPackSession.current().report());
-        result.append(" active=").append(shaderPackActive());
-        for(Entry e:passes.values())result.append("\n").append(e.pass.id()).append("=").append(e.path)
-                .append(" reason=").append(e.reason)
-                .append(" prepare=").append(e.prepareNanos/1000).append("us GPU(copy+draw)=").append(String.format(Locale.ROOT,"%.3f",WorldEffectRenderer.gpuMs(e.pass.id()))).append("ms")
-                .append(e.error.isEmpty()?"":"; "+e.error);
-        if(CreateManaIndustry.IRIS_ACTIVE){
-            result.append("\npackages: ").append(com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.status());
-            if(CreateManaIndustry.HEX_ACTIVE)result.append("\nHex shadow: ").append(com.iridium126.createmanaindustry.client.particles.shaderpack.HexIrisHook.status());
-            result.append("\nworld shadow sampling: ").append(ShadowDistortionRegistry.recognized()?"recognized":"disabled (unproven/ambiguous)");
+    public static ShaderPackStatusReport.Section diagnostics(){
+        var fields=new ArrayList<ShaderPackStatusReport.Field>();var paths=new ArrayList<String>();var reasons=new ArrayList<String>();
+        boolean active=false,pending=false,fallback=false;
+        for(Entry e:passes.values()){
+            if(e.pass.probe())continue;
+            boolean current=e.session==ShaderPackSession.current().generation();
+            String path=current?e.path:"pending";
+            paths.add(e.pass.id()+"="+path);
+            boolean running=current&&e.drawn>=0&&!path.equals("inactive");active|=running;pending|=path.equals("pending");
+            if(current&&!path.equals("inactive")&&(!e.error.isEmpty()||running&&path.equals("BASELINE"))){fallback=true;reasons.add(e.pass.id()+": "+(e.error.isEmpty()?e.reason:e.error));}
+            fields.add(ShaderPackStatusReport.field(e.pass.id()+" reason",current?e.reason:"awaiting current session"));
+            fields.add(ShaderPackStatusReport.field(e.pass.id()+" CPU prepare",ShaderPackStatusReport.milliseconds(current&&e.updated>=0,e.prepareNanos/1e6)));
+            fields.add(ShaderPackStatusReport.field(e.pass.id()+" GPU copy+draw",ShaderPackStatusReport.milliseconds(current&&WorldEffectRenderer.gpuSampled(e.pass.id()),WorldEffectRenderer.gpuMs(e.pass.id()))));
         }
-        return result.append("\n").append(StormVisualProbe.status()).toString();
+        return new ShaderPackStatusReport.Section("World",fallback?ShaderPackStatusReport.State.FALLBACK:active?ShaderPackStatusReport.State.ACTIVE:pending?ShaderPackStatusReport.State.PENDING:ShaderPackStatusReport.State.INACTIVE,
+                String.join("; ",paths),String.join("; ",reasons),fields);
     }
     public static void reload(){WorldEffectRenderer.close();for(Entry e:passes.values()){e.updated=e.drawn=e.failed=-1;e.path="reloading";e.error="";e.reason="resource reload";e.lastReport="";}}
     public static void clear(){reload();}

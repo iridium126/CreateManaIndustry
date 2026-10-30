@@ -143,7 +143,8 @@ public final class CMIParticleCommand {
                                         .executes(CMIParticleCommand::budget)))
                         .then(Commands.literal("shaderpack")
                                 .then(Commands.literal("status")
-                                        .executes(CMIParticleCommand::shaderPackStatus))
+                                        .executes(ctx->shaderPackStatus(ctx,false))
+                                        .then(Commands.literal("details").executes(ctx->shaderPackStatus(ctx,true))))
                                 .then(Commands.literal("stormcloud")
                                         .then(Commands.literal("on").executes(ctx->stormCloud(ctx,true,false)))
                                         .then(Commands.literal("off").executes(ctx->stormCloud(ctx,false,false)))
@@ -361,20 +362,9 @@ public final class CMIParticleCommand {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static int shaderPackStatus(CommandContext<CommandSourceStack> ctx) {
-        tell(ctx,com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.report());
-        if (!CreateManaIndustry.VEIL_ACTIVE) { if(CreateManaIndustry.IRIS_ACTIVE)tell(ctx,com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().report());tell(ctx,"Veil unavailable; world effects disabled; sky/cloud paths remain independent.");return 0; }
-        tell(ctx,com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects.report());
-        String integration = ClientConfig.shaderPackIntegration ? "auto" : "off";
-        tell(ctx, "", "§b[CMI particles]§r shader-pack path:"
-                + " config=§e" + integration + "§r"
-                + "  irisveil=§e" + (CreateManaIndustry.IRISVEIL_ACTIVE ? "loaded" : "absent") + "§r"
-                + "  path=§e" + com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackPathStatus + "§r"
-                + "  depth=§e" + com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackDepthStatus + "§r"
-                + "  shadow=§e" + com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus);
-        tell(ctx, "§7", "permutation: §e" + com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackPermStatus);
-        if (!com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackErrorStatus.isEmpty())
-            tell(ctx, "§7", "last fallback reason: §c" + com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackErrorStatus + "§r");
+    private static int shaderPackStatus(CommandContext<CommandSourceStack> ctx,boolean details) {
+        var snapshot=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusSnapshot.capture();
+        for(String line:snapshot.lines(details))tell(ctx,line);
         return Command.SINGLE_SUCCESS;
     }
     private static int stormCloud(CommandContext<CommandSourceStack> ctx,boolean enabled,boolean profile){

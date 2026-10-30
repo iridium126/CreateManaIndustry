@@ -37,8 +37,8 @@ import org.lwjgl.opengl.GL20;
  * Compiles the CMI MODEL-particle draw into the active shader pack's ENTITY
  * pipeline: resolves the pack's {@code gbuffers_entities} program via Iris's
  * own fallback chain, injects the TBO-driven allay vertex program with
- * {@link ParticleVertexInjector}, and keeps the PACK FRAGMENT otherwise
- * verbatim (the one exception: the hurt-overlay conversion below).
+ * {@link ParticleVertexInjector}. {@link ModelShaderOptimization} specializes
+ * immutable context while preserving the native fragment/material contract.
  *
  * <p>Hurt overlay: the merged vertex block declares {@code out vec4
  * entityColor;} carrying the per-instance vanilla overlay state (red texel
@@ -63,8 +63,8 @@ import org.lwjgl.opengl.GL20;
  * native entity at their usual in-shader timing. Either way the particles get
  * exactly the surface treatment the pack gives a real allay.</p>
  *
- * <p>TWO merged {@link ShaderInstance}s serve the model segments from the same
- * injected sources: the cutout program inherits the pack's entity directives
+ * <p>The body and ghost programs use the allay context; held items have a neutral
+ * context (and share the body program when sources are identical). The cutout program inherits the pack's entity directives
  * untouched, while the ghost program preserves explicit per-attachment blend
  * contracts and only uses the legacy alpha fallback in their absence.
  * The alpha test is NOT pinned on either:
@@ -105,6 +105,7 @@ public final class ShaderPackProgramCompiler {
     public ShaderPackProgramCompiler(java.util.function.Function<String,String> sources){mergedSources=java.util.Objects.requireNonNull(sources);}
     private static final String SHADER_NAME = "cmi_model_entities";
     private static final String GHOST_SHADER_NAME = "cmi_model_entities_ghost";
+    private static final String CARRIER_SHADER_NAME = "cmi_model_entities_carrier";
     private static final String SHADOW_SHADER_NAME = "cmi_model_shadow";
 
     /** Shadow-path alpha-test fallbacks, PER RESOLVED VARIANT. The entities
@@ -140,6 +141,11 @@ public final class ShaderPackProgramCompiler {
 
     private ShaderInstance entitiesShader;
     private ShaderInstance ghostShader;
+    private ShaderInstance carrierShader;
+    private final java.util.Map<ShaderInstance,Uniform> placeholderUniforms=new java.util.IdentityHashMap<>();
+    private int carrierGtextureUnit=-1;
+    private String optimizationReport="pending";
+    private String sourceProgram="pending";
     /** Tri-state: true compiled, false sticky-failed/unavailable, null pending. */
     private Boolean shadowReady;
     private ModelEntityContext entityContext=ModelEntityContext.NEUTRAL;
@@ -162,7 +168,7 @@ public final class ShaderPackProgramCompiler {
     private boolean blendPinWarned;
 
     public boolean isReady() {
-        return entitiesShader != null && ghostShader != null;
+        return entitiesShader != null && ghostShader != null && carrierShader != null;
     }
 
     /**
@@ -178,6 +184,15 @@ public final class ShaderPackProgramCompiler {
     public String lastError() {
         return this.lastError;
     }
+    /** Snapshot-only check: does not compile or refresh the owning session. */
+    public boolean currentSession() {
+        return owningPipeline==Iris.getPipelineManager().getPipelineNullable()
+                &&sessionGeneration==com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().generation();
+    }
+    public String optimizationReport(){return optimizationReport;}
+    public String sourceProgram(){return sourceProgram;}
+    public ShaderInstance carrierShader(){return carrierShader;}
+    public int carrierGtextureUnit(){return carrierGtextureUnit;}
 
     /**
      * Builds (or rebuilds, after a pipeline change) the merged program.
@@ -212,6 +227,7 @@ public final class ShaderPackProgramCompiler {
             var refProgram = resolver.resolve(ProgramId.Entities).orElse(null);
             if (refProgram == null)
                 return fail("pack has no Entities program source (fallback chain exhausted)");
+            sourceProgram=refProgram.getName();
             var vertRef = refProgram.getVertexSource().orElse(null);
             var fragRef = refProgram.getFragmentSource().orElse(null);
             if (vertRef == null || fragRef == null)
@@ -276,6 +292,13 @@ public final class ShaderPackProgramCompiler {
                     .map(String::valueOf)
                     .orElse("none -> fallback " + FALLBACK_ALPHA_TEST);
 
+            var stages=new ModelShaderOptimization.Stages(patched,refProgram.getGeometrySource().orElse(null),
+                    refProgram.getTessControlSource().orElse(null),refProgram.getTessEvalSource().orElse(null),fragResolved);
+            var atlas=com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY;
+            var bodyPlan=ModelShaderOptimization.prepare(stages,entityContext.allayId(),atlas.width(),atlas.height());
+            var carrierPlan=ModelShaderOptimization.prepare(stages,0,atlas.width(),atlas.height());
+            optimizationReport=bodyPlan.report()+"; carrier="+(bodyPlan.applied().equals(carrierPlan.applied())&&bodyPlan.skipped().equals(carrierPlan.skipped())?"same rules, neutral identity":carrierPlan.report());
+
             // Route-A directive inheritance: the synthetic names never match
             // name-keyed pack properties (ProgramDirectives resolves
             // alphaTest.<name>/blend.<name> against source.getName()), so both
@@ -284,10 +307,18 @@ public final class ShaderPackProgramCompiler {
             // absent fields fall through unchanged (alpha -> FALLBACK_ALPHA_TEST,
             // blend -> ProgramId.Entities' built-in default).
             this.entitiesShader = this.compileMerged(accessor, programSet, properties,
-                    patched, fragResolved, refProgram, SHADER_NAME, refProgram.getDirectives(), null);
+                    bodyPlan.stages(), refProgram, SHADER_NAME, refProgram.getDirectives(), null);
             if (this.entitiesShader == null)
                 return fail("Iris returned no shader instance");
             this.gtextureUnit = findSamplerUnit(this.entitiesShader);
+
+            // Identical contexts share the entity program; a distinct neutral
+            // item program is compiled only when specialization changes a stage.
+            this.carrierShader=carrierPlan.stages().equals(bodyPlan.stages())?this.entitiesShader:
+                    this.compileMerged(accessor,programSet,properties,carrierPlan.stages(),refProgram,
+                            CARRIER_SHADER_NAME,refProgram.getDirectives(),null);
+            if(this.carrierShader==null)return fail("Iris returned no carrier shader instance");
+            this.carrierGtextureUnit=findSamplerUnit(this.carrierShader);
 
             // Preserve explicit MRT blending. Otherwise pin the legacy alpha
             // fallback on a private copy, without mutating the native directives.
@@ -295,7 +326,7 @@ public final class ShaderPackProgramCompiler {
                     .withOverriddenDrawBuffers(refProgram.getDirectives().getDrawBuffers());
             blendPlan=ModelBlendPlan.resolve(ghostDirectives);
             this.ghostShader = this.compileMerged(accessor, programSet, properties,
-                    patched, fragResolved, refProgram, GHOST_SHADER_NAME, ghostDirectives, blendPlan.nativeAttachments()?null:GHOST_BLEND_OVERRIDE);
+                    bodyPlan.stages(), refProgram, GHOST_SHADER_NAME, ghostDirectives, blendPlan.nativeAttachments()?null:GHOST_BLEND_OVERRIDE);
             if (this.ghostShader == null)
                 return fail("Iris returned no ghost shader instance");
             this.ghostGtextureUnit = findSamplerUnit(this.ghostShader);
@@ -311,8 +342,7 @@ public final class ShaderPackProgramCompiler {
             CreateManaIndustry.LOGGER.info("[CMI particles] model entity context: allayId={}, {}",entityContext.allayId(),blendPlan.report());
             return true;
         } catch (Exception e) {
-            this.entitiesShader = null;
-            this.ghostShader = null;
+            releasePrograms();
             this.gtextureUnit = -1;
             this.ghostGtextureUnit = -1;
             return fail(describeCompileFailure(e));
@@ -357,9 +387,11 @@ public final class ShaderPackProgramCompiler {
 
     /** Drops compiled state (pipeline changed, reload, or failure). */
     public void reset() {
+        releasePrograms();optimizationReport="pending";sourceProgram="pending";
         entityContext=ModelEntityContext.NEUTRAL;blendPlan=ModelBlendPlan.LEGACY;
         this.entitiesShader = null;
         this.ghostShader = null;
+        this.carrierShader=null;this.carrierGtextureUnit=-1;
         this.gtextureUnit = -1;
         this.ghostGtextureUnit = -1;
         this.shadowReady = null;
@@ -373,6 +405,22 @@ public final class ShaderPackProgramCompiler {
         // chunk text while the self-drawn path (ParticlePrograms rebuild) picks
         // up the new one.
         java.util.Arrays.fill(this.mergedVertexSources, null);
+    }
+
+    /** Iris owns successful instances. Remove them from its set before closing,
+     * including same-pipeline session rebuilds; aliases are retired only once. */
+    private void releasePrograms(){
+        var unique=java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<ShaderInstance,Boolean>());
+        for(var shader:new ShaderInstance[]{entitiesShader,ghostShader,carrierShader,shadowShader})if(shader!=null)unique.add(shader);
+        unique.addAll(placeholderUniforms.keySet());
+        try{
+            if(owningPipeline instanceof com.iridium126.createmanaindustry.accessor.CMIPackageIrisPipeline owner)
+                unique.forEach(owner::cmi$discardPackageShader);
+        }finally{
+            // These injected uniforms are absent from ShaderInstance.uniforms.
+            placeholderUniforms.values().forEach(Uniform::close);placeholderUniforms.clear();
+            entitiesShader=ghostShader=carrierShader=shadowShader=null;carrierGtextureUnit=-1;
+        }
     }
 
     /**
@@ -425,6 +473,7 @@ public final class ShaderPackProgramCompiler {
             CreateManaIndustry.LOGGER.warn("[CMI particles] pack entity merge unavailable: {}; staying on the self-drawn path", reason);
         this.failed = true;
         this.lastError = reason;
+        releasePrograms();this.gtextureUnit=this.ghostGtextureUnit=-1;
         return false;
     }
 
@@ -512,10 +561,11 @@ public final class ShaderPackProgramCompiler {
      */
     private ShaderInstance compileMerged(IrisRenderingPipelineAccessor accessor, ProgramSet programSet,
                                          net.irisshaders.iris.shaderpack.properties.ShaderProperties properties,
-                                         String patchedVertex, String fragRef, ProgramSource refProgram, String name,
+                                         ModelShaderOptimization.Stages stages, ProgramSource refProgram, String name,
                                          net.irisshaders.iris.shaderpack.properties.ProgramDirectives directives,
                                          BlendModeOverride pinBlend) throws IOException {
-        var source = this.makeSource(programSet, properties, patchedVertex, fragRef, refProgram)
+        var source = new ProgramSource(SHADER_NAME,stages.vertex(),stages.geometry(),stages.tessControl(),stages.tessEval(),
+                stages.fragment(),programSet,properties,null)
                 .withDirectiveOverride(directives);
         if (pinBlend != null) {
             if (source.getDirectives() instanceof CMIProgramDirectivesAccessor mutable) {
@@ -566,9 +616,11 @@ public final class ShaderPackProgramCompiler {
      * blaze3d's abstracted matrix4x4 with 16 floats -- apply() uploads the real
      * values on every use.
      */
-    private static void seedDummyModelViewUniform(ShaderInstance shader) {
-        if (shader.MODEL_VIEW_MATRIX == null)
-            shader.MODEL_VIEW_MATRIX = new Uniform("ModelViewMat", 10, 16, shader);
+    private void seedDummyModelViewUniform(ShaderInstance shader) {
+        if (shader.MODEL_VIEW_MATRIX == null){
+            var placeholder=new Uniform("ModelViewMat",10,16,shader);
+            shader.MODEL_VIEW_MATRIX=placeholder;placeholderUniforms.put(shader,placeholder);
+        }
     }
 
     /** Finds which texture unit Iris bound the pack fragment's main sampler to. */

@@ -151,19 +151,33 @@ public final class ShaderPackSession {
         retryUsed=true;bypassNext=true;retryCause="candidate source/material loading failed; see Iris log";return true;
     }
     public static void finishRetry(){bypassNext=omitCloudsNext=false;retryCause="";}
-    public String report() {
-        return "session="+generation+"/"+revision+" source="+inventory.digest().substring(0,12)
-                +" family="+capabilities.family()+" world="+capabilities.worldPath()
-                +" colortex="+inventory.colorBuffers()+"\ncolored-light="+(mapsApplied?"candidate applied":patch.reason())
-                +"; "+capabilities.evidence()+(capabilities.nativeScene()==null?"":"; native-program="+nativeReason)
-                +"\nrift-sky="+rift.family()+"; "+riftReason()+(failure.isEmpty()?"":"; failure="+failure)
-                +"\ntarget-sky="+(net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable() instanceof RiftIrisPipeline p?p.cmi$targetSkyReport():"no active Iris pipeline")
-                +"\ntarget-cloud=native pack definitions/options in isolated target sky; no replacement cloud layer"
-                +"; preview geometry only beyond Julia hit; actual dimension unchanged"
-                +"\nrift-frame="+com.iridium126.createmanaindustry.client.allaystorm.rift.RiftRenderFrame.current()
-                +"\nstorm-cloud="+clouds.family()+"; "+clouds.reason()+"; linked programs="+cloudPrograms
-                +"; only linked is not visual acceptance; shape=long-half-axis circular ring; max density=2; history=stock; height=actual world Y below rift"
-                +"; "+com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.stormCloudFrame(0).reason()+"\ncloud-timing="+cloudTimingReport();
+    public ShaderPackStatusReport.Section packStatus(boolean active) {
+        var state=!active?(Iris.getCurrentPack().isPresent()?ShaderPackStatusReport.State.PENDING:ShaderPackStatusReport.State.OFF):
+                !failure.isEmpty()?ShaderPackStatusReport.State.FALLBACK:ShaderPackStatusReport.State.ACTIVE;
+        return new ShaderPackStatusReport.Section("Pack",state,state==ShaderPackStatusReport.State.OFF?"none":Iris.getCurrentPackName(),active?failure:"",
+                ShaderPackStatusReport.field("session",generation+" / revision "+revision),
+                ShaderPackStatusReport.field("source",inventory.digest().substring(0,12)),
+                ShaderPackStatusReport.field("capability",capabilities.family()),
+                ShaderPackStatusReport.field("colored light",mapsApplied?"applied":patch.reason()),
+                ShaderPackStatusReport.field("attachments",inventory.colorBuffers().stream().map(ShaderPackStatusReport::buffer).collect(java.util.stream.Collectors.joining(", "))),
+                ShaderPackStatusReport.field("scene encoding",capabilities.worldPath()+"; scene="+ShaderPackStatusReport.buffer(capabilities.sceneBuffer())+"; gamma="+nativeGamma),
+                ShaderPackStatusReport.field("native program",nativeReason));
+    }
+    public ShaderPackStatusReport.Section skyStatus(boolean active) {
+        boolean failed=active&&!failure.isEmpty();
+        var fields=new ArrayList<ShaderPackStatusReport.Field>(List.of(
+                ShaderPackStatusReport.field("sky",riftReason()),
+                ShaderPackStatusReport.field("cloud",clouds.reason()),
+                ShaderPackStatusReport.field("linked cloud programs",cloudPrograms),
+                ShaderPackStatusReport.field("cloud timing",cloudTimers.isEmpty()?"unmeasured":cloudTimingReport())));
+        fields.addAll(com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.diagnosticsFields());
+        var frame=com.iridium126.createmanaindustry.client.allaystorm.rift.RiftRenderFrame.current();
+        if(frame!=null)fields.add(ShaderPackStatusReport.field("render frame",frame.number()+"; generation="+frame.generation()+"; "+frame.width()+"x"+frame.height()));
+        if(active&&Iris.getPipelineManager().getPipelineNullable() instanceof RiftIrisPipeline p)
+            fields.add(ShaderPackStatusReport.field("target sky",p.cmi$targetSkyReport()));
+        return new ShaderPackStatusReport.Section("Sky/Cloud",failed||active&&!rift.enabled()?ShaderPackStatusReport.State.FALLBACK:
+                active&&riftReady()?ShaderPackStatusReport.State.ACTIVE:active?ShaderPackStatusReport.State.PENDING:ShaderPackStatusReport.State.INACTIVE,
+                active?rift.family()+" / "+clouds.family():"vanilla",failed?failure:active&&!rift.enabled()?riftReason():"",fields);
     }
     /** Iris calls this factory later than source loading; compiled-program failure retries the original pack once. */
     public static void pipelineFailed() {

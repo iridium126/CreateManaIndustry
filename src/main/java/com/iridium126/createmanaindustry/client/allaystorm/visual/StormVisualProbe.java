@@ -35,6 +35,12 @@ public final class StormVisualProbe {
     public static boolean baseline(){return baseline;}
     public static void clear(){enabled=false;dimension=null;}
     public static String status(){return "probe="+(enabled()?"on":"off")+" mode="+(baseline?"baseline":"auto")+" anchor="+anchor;}
+    public static ShaderPackStatusReport.Section diagnostics(){
+        var level=Minecraft.getInstance().level;
+        boolean active=enabled&&level!=null&&level.dimension().location().equals(dimension);
+        return new ShaderPackStatusReport.Section("Probe",active?ShaderPackStatusReport.State.ACTIVE:ShaderPackStatusReport.State.OFF,
+                baseline?"baseline":"auto","",ShaderPackStatusReport.field("anchor",active?String.format(java.util.Locale.ROOT,"%.2f, %.2f, %.2f",anchor.x,anchor.y,anchor.z):""));
+    }
     private static void uniforms(UniformAccess shader){
         var a=shader.getUniform("ProbeAnchor");if(a!=null)a.setVector((float)anchor.x,(float)anchor.y,(float)anchor.z,24);
         var mc=Minecraft.getInstance();float time=0;

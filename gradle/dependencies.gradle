@@ -104,6 +104,7 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testRuntimeOnly coordinates.hexOverpowered
     testRuntimeOnly coordinates.modlauncher
+    testRuntimeOnly coordinates.glslTransformer
     // Inspect real APIs/bytecode without initializing the optional mods.
     testRuntimeOnly(coordinates.ponder) { transitive = false }
     testRuntimeOnly(coordinates.iris) { transitive = false }

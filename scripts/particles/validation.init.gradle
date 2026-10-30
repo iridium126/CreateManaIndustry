@@ -612,6 +612,35 @@ allprojects {
             mainClass = 'scripts/particles/ModelMaterialGpuValidation.java'
             workingDir = project.projectDir
         }
+        def modelMergeReferenceFile = layout.buildDirectory.file('model-merge-reference/FrozenModelProgramCompiler.java')
+        def modelMergeReference = tasks.register('prepareModelMergeReference') {
+            def snapshot=file('scripts/particles/reference/model-merge/ShaderPackProgramCompiler.java.txt')
+            inputs.file(snapshot); outputs.file(modelMergeReferenceFile)
+            doLast {
+                def target=modelMergeReferenceFile.get().asFile
+                target.parentFile.mkdirs()
+                target.setText(snapshot.getText('UTF-8').replace('ShaderPackProgramCompiler','FrozenModelProgramCompiler'),'UTF-8')
+            }
+        }
+        def modelMergeHarness = tasks.register('compileModelMergeHarness', JavaCompile) {
+            dependsOn tasks.named('classes'), 'extractPackageIrisTransformer', modelMergeReference
+            source = files('scripts/particles/ModelMaterialGpuValidation.java', 'scripts/particles/ModelMergeGpuValidation.java', 'scripts/particles/ModelMergeProductionFixture.java', modelMergeReferenceFile)
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin + files(packageIrisTransformer)
+            destinationDirectory = layout.buildDirectory.dir('model-merge-harness')
+            options.encoding = 'UTF-8'
+        }
+        ['validateModelMergeGpu', 'benchmarkModelMergeGpu'].each { taskName ->
+            tasks.register(taskName, JavaExec) {
+                dependsOn modelMergeHarness, 'compilePackageIrisHarness'
+                classpath = files(layout.buildDirectory.dir('model-merge-harness'), layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter {
+                    !it.name.startsWith('glsl-transformer-')
+                } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
+                mainClass = 'ModelMergeGpuValidation'
+                if(project.hasProperty('modelMergeExclude')) systemProperty 'cmi.model.merge.exclude', project.property('modelMergeExclude')
+                if (taskName.startsWith('benchmark')) args '--benchmark'
+                workingDir = project.projectDir
+            }
+        }
         tasks.register('validateModelShadowIrisGpu', JavaExec) {
             dependsOn tasks.named('classes'), tasks.named('extractPackageIrisTransformer'), 'compilePackageIrisHarness'
             classpath = files(layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter {

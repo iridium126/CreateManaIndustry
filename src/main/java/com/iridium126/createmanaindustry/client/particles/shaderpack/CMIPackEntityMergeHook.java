@@ -1,5 +1,8 @@
 package com.iridium126.createmanaindustry.client.particles.shaderpack;
 
+import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport;
+import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport.State;
+
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
@@ -71,21 +74,53 @@ public final class CMIPackEntityMergeHook {
     private static ModelShadowGpu MODEL_SHADOW;
     private static final PackageDrawCulling SHADOW_CULLING=new PackageDrawCulling();
     private static final GpuPassTelemetry SHADOW_TIMING=new GpuPassTelemetry();
+    private static final ModelMergeTelemetry DRAW_TIMING=new ModelMergeTelemetry();
     private static boolean timingEnabled,detailed;
     public static void measurementMode(boolean timing,boolean details) {
         if(timingEnabled!=timing||detailed!=details)MERGE_TIMER.close();
-        timingEnabled=timing;detailed=details;SHADOW_TIMING.configure(timing,details);
+        timingEnabled=timing;detailed=details;SHADOW_TIMING.configure(timing,details);DRAW_TIMING.configure(details);
     }
-    public static void resetMeasurements(){MERGE_TIMER.close();SHADOW_TIMING.close();timingEnabled=detailed=false;}
-    public static void discardPendingMeasurements(){MERGE_TIMER.close();SHADOW_TIMING.discardPending();}
-    public static String profilingReport(){return SHADOW_TIMING.cpuSamples()==0?"":"MODEL shadow: "+SHADOW_TIMING.report();}
-    public static String profilingSummary(){return SHADOW_TIMING.cpuSamples()==0?"":"MODEL shadow: "+SHADOW_TIMING.summary();}
+    public static void resetMeasurements(){MERGE_TIMER.close();SHADOW_TIMING.close();DRAW_TIMING.close();timingEnabled=detailed=false;}
+    public static void discardPendingMeasurements(){MERGE_TIMER.close();SHADOW_TIMING.discardPending();DRAW_TIMING.discardPending();}
+    public static String profilingReport(){return mergeReport(true);}
+    public static String profilingSummary(){return mergeReport(false);}
+    private static String mergeReport(boolean details){String draw=DRAW_TIMING.report(details);return draw+(SHADOW_TIMING.cpuSamples()==0?"":(draw.isEmpty()?"":"\n")+"MODEL shadow: "+(details?SHADOW_TIMING.report():SHADOW_TIMING.summary()));}
     private static GpuComputeState shadowComputeState;
     private static PackageRenderState shadowDrawState;
     private static final com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState mergedTboState=
             new com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState(10,6);
-    public static void invalidateShadow(){if(MODEL_SHADOW!=null)MODEL_SHADOW.close();MODEL_SHADOW=null;SHADOW_TIMING.close();MERGE_TIMER.close();}
+    public static void invalidateShadow(){if(MODEL_SHADOW!=null)MODEL_SHADOW.close();MODEL_SHADOW=null;SHADOW_TIMING.close();MERGE_TIMER.close();DRAW_TIMING.close();DRAW_TIMING.configure(detailed);}
+    public static void invalidatePrograms(){
+        invalidateShadow();COMPILER.reset();com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clear();
+        var renderer=com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE;
+        renderer.shaderPackPathStatus="self-drawn";renderer.shaderPackDepthStatus="pending";
+        renderer.shaderPackShadowStatus="pending";renderer.shaderPackPermStatus="pending";renderer.shaderPackErrorStatus="";
+    }
     private CMIPackEntityMergeHook() {}
+    public static ShaderPackStatusReport.Section diagnostics(){
+        var renderer=com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE;
+        boolean current=COMPILER.currentSession();
+        String error=current?(COMPILER.lastError().isEmpty()?renderer.shaderPackErrorStatus:COMPILER.lastError()):"";
+        if(current&&!COMPILER.shadowLastError().isEmpty())error+=(error.isEmpty()?"":"; ")+"shadow: "+COMPILER.shadowLastError();
+        else if(current&&renderer.shaderPackShadowStatus.startsWith("draw failed"))error+=(error.isEmpty()?"":"; ")+renderer.shaderPackShadowStatus;
+        if(!ClientConfig.particleEnabled||!ClientConfig.shaderPackIntegration)error="";
+        var state=!ClientConfig.particleEnabled||!ClientConfig.shaderPackIntegration?State.OFF:
+                !current?State.PENDING:
+                !COMPILER.isReady()||!error.isEmpty()?State.FALLBACK:
+                State.ACTIVE;
+        var atlas=com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY;
+        return new ShaderPackStatusReport.Section("MODEL",state,
+                !ClientConfig.particleEnabled?"disabled":ClientConfig.shaderPackIntegration&&current&&COMPILER.isReady()?"pack entity merge":"self-drawn",error,
+                ShaderPackStatusReport.field("depth",current?renderer.shaderPackDepthStatus:"pending"),
+                ShaderPackStatusReport.field("shadow",current?renderer.shaderPackShadowStatus:"pending"),
+                ShaderPackStatusReport.field("identity",current?"allay="+COMPILER.entityContext().allayId()+"; carrier=0":"pending"),
+                ShaderPackStatusReport.field("atlas",atlas.width()+"x"+atlas.height()),
+                ShaderPackStatusReport.field("blend",current?COMPILER.blendPlan().report():"pending"),
+                ShaderPackStatusReport.field("optimization",current?COMPILER.optimizationReport():"pending"),
+                ShaderPackStatusReport.field("source program",current?COMPILER.sourceProgram():"pending"),
+                ShaderPackStatusReport.field("programs",current&&COMPILER.isReady()?"body="+COMPILER.entitiesShader().getId()+"; carrier="+COMPILER.carrierShader().getId()+"; ghost="+COMPILER.ghostShader().getId():"pending"),
+                ShaderPackStatusReport.field("generation",current?renderer.shaderPackPermStatus:"pending"));
+    }
 
     // ------------------------------------------------------------------
     // Entry point (mixin, render thread)
@@ -107,7 +142,7 @@ public final class CMIPackEntityMergeHook {
             boolean timed=beginTimer(),succeeded=false;
             try(var drawState=new ModelRenderState();
                 var state=new com.iridium126.createmanaindustry.client.allaystorm.rift.SkyRenderState();
-                var materialState=com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.withSamplerRange(net.irisshaders.iris.gl.IrisRenderSystem::bindSamplerToUnit,net.irisshaders.iris.gl.sampler.SamplerLimits.get().getMaxTextureUnits(),0,1,2,COMPILER.gtextureUnit(),COMPILER.ghostGtextureUnit())){
+                var materialState=com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.withSamplerRange(net.irisshaders.iris.gl.IrisRenderSystem::bindSamplerToUnit,net.irisshaders.iris.gl.sampler.SamplerLimits.get().getMaxTextureUnits(),0,1,2,COMPILER.gtextureUnit(),COMPILER.ghostGtextureUnit(),COMPILER.carrierGtextureUnit())){
                 mergedTboState.capture();
                 try {drawEntities();succeeded=true;}
                 finally {net.irisshaders.iris.gl.blending.BlendModeStorage.restoreBlend();mergedTboState.restore();if(timed)endTimer(succeeded);}
@@ -197,7 +232,7 @@ public final class CMIPackEntityMergeHook {
                 shadowDrawState.restore();
             }
             } finally {shadowComputeState.restore();}
-        }catch(RuntimeException|LinkageError error){com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="draw failed";CreateManaIndustry.LOGGER.warn("[CMI particles] current-frame model shadow failed",error);}
+        }catch(RuntimeException|LinkageError error){com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="draw failed: "+error;CreateManaIndustry.LOGGER.warn("[CMI particles] current-frame model shadow failed",error);}
     }
 
     /**
@@ -266,9 +301,13 @@ public final class CMIPackEntityMergeHook {
         if(!net.irisshaders.iris.gl.blending.BlendModeStorage.isBlendLocked())RenderSystem.disableBlend();
         RenderSystem.depthMask(true);
         bindAtlas(COMPILER.gtextureUnit());
-        gpu.drawModelCutout();
+        DRAW_TIMING.begin(ModelMergeTelemetry.Segment.BODY);boolean bodyDrawn=false;
+        try{gpu.drawModelCutout();bodyDrawn=true;}finally{DRAW_TIMING.end(ModelMergeTelemetry.Segment.BODY,bodyDrawn);}
         var feather=com.iridium126.createmanaindustry.client.particles.engine.AllayFeatherGpu.INSTANCE;
-        if(feather.generation()==com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation())feather.drawMerged(progId);
+        if(feather.generation()==com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation()){
+            DRAW_TIMING.begin(ModelMergeTelemetry.Segment.FEATHER);boolean featherDrawn=false;
+            try{feather.drawMerged(progId);featherDrawn=true;}finally{DRAW_TIMING.end(ModelMergeTelemetry.Segment.FEATHER,featherDrawn);}
+        }
         bindSharedResources(gpu);gpu.bindDrawIndirect();
         var lod=com.iridium126.createmanaindustry.client.particles.engine.StormLodGpu.INSTANCE;
         var publication=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication();
@@ -278,17 +317,23 @@ public final class CMIPackEntityMergeHook {
             lod.bindNative();
             setMat(progId,"cmi_LodInverseView",new Matrix4f(captured.getGbufferModelView()).invert());
             RenderSystem.enableDepthTest();RenderSystem.depthMask(true);RenderSystem.disableCull();
-            setInt(progId,"cmi_LodPass",1);lod.drawBody();setInt(progId,"cmi_LodPass",2);lod.drawPixel();
+            setInt(progId,"cmi_LodPass",1);DRAW_TIMING.begin(ModelMergeTelemetry.Segment.LOD1);boolean lod1Drawn=false;
+            try{lod.drawBody();lod1Drawn=true;}finally{DRAW_TIMING.end(ModelMergeTelemetry.Segment.LOD1,lod1Drawn);}
+            setInt(progId,"cmi_LodPass",2);DRAW_TIMING.begin(ModelMergeTelemetry.Segment.LOD2);boolean lod2Drawn=false;
+            try{lod.drawPixel();lod2Drawn=true;}finally{DRAW_TIMING.end(ModelMergeTelemetry.Segment.LOD2,lod2Drawn);}
         });
-        gpu.beginBindings();bindSharedResources(gpu);gpu.bindDrawIndirect();
-        uploadSegmentUniforms(progId);
-        // Held-item carrier segment: same cutout class as the body (depth
-        // writes, no blending), so it rides the body's shader state — drawn
-        // after the body, before the blended ghost, mirroring the L0 order.
-        uploadSegmentMode(progId, 2);
-        COMPILER.entityContext().upload(progId,true);
-        gpu.drawModelCarrier();
+        if(COMPILER.carrierShader()==shader){
+            gpu.beginBindings();bindSharedResources(gpu);gpu.bindDrawIndirect();uploadSegmentUniforms(progId);
+            drawCarrier(gpu,progId,COMPILER.gtextureUnit());
+        }
         }finally{shader.clear();}
+        // A separate apply is necessary only for a distinct neutral specialization.
+        ShaderInstance carrier=COMPILER.carrierShader();
+        if(carrier!=shader){
+            gpu.beginBindings();bindSharedResources(gpu);gpu.bindDrawIndirect();bindAtlas(COMPILER.carrierGtextureUnit());
+            try{carrier.apply();int progId=carrier.getId();uploadSegmentUniforms(progId);drawCarrier(gpu,progId,COMPILER.carrierGtextureUnit());}
+            finally{carrier.clear();}
+        }
 
         // Native MRT blend directives keep encoded metadata as overwrite outputs.
         // Packs without an attachment contract retain the legacy alpha fallback.
@@ -308,7 +353,8 @@ public final class CMIPackEntityMergeHook {
         }
         RenderSystem.depthMask(true);
         bindAtlas(COMPILER.ghostGtextureUnit());
-        gpu.drawModelGhost();
+        DRAW_TIMING.begin(ModelMergeTelemetry.Segment.GHOST);boolean ghostDrawn=false;
+        try{gpu.drawModelGhost();ghostDrawn=true;}finally{DRAW_TIMING.end(ModelMergeTelemetry.Segment.GHOST,ghostDrawn);}
         }finally{ghost.clear();}
 
         RenderSystem.depthMask(true);
@@ -319,6 +365,14 @@ public final class CMIPackEntityMergeHook {
 
         gpu.unbindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE);
         RenderSystem.activeTexture(GL13.GL_TEXTURE0);
+    }
+
+    private static void drawCarrier(ParticleBuffers gpu,int program,int textureUnit){
+        uploadSegmentMode(program,2);COMPILER.entityContext().upload(program,true);bindAtlas(textureUnit);
+        RenderSystem.enableDepthTest();RenderSystem.depthMask(true);
+        if(!net.irisshaders.iris.gl.blending.BlendModeStorage.isBlendLocked())RenderSystem.disableBlend();
+        DRAW_TIMING.begin(ModelMergeTelemetry.Segment.CARRIER);boolean success=false;
+        try{gpu.drawModelCarrier();success=true;}finally{DRAW_TIMING.end(ModelMergeTelemetry.Segment.CARRIER,success);}
     }
 
     /**

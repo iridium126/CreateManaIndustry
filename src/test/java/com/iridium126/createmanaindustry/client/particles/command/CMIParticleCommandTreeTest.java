@@ -48,6 +48,10 @@ class CMIParticleCommandTreeTest {
         accepts(dispatcher,"cmi particle profile on");accepts(dispatcher,"cmi particle profile off");
         rejects(dispatcher,"cmi particle profile details on");
     }
+    @Test void shaderpackSummaryAndDetailsParse(){
+        var dispatcher=dispatcher();accepts(dispatcher,"cmi particle shaderpack status");
+        accepts(dispatcher,"cmi particle shaderpack status details");rejects(dispatcher,"cmi particle shaderpack status details on");
+    }
     @Test void packagePreviewAndCollisionPreparationCommandsParse() {
         var dispatcher=dispatcher();
         accepts(dispatcher,"cmi particle packagepreview 0");accepts(dispatcher,"cmi particle packagepreview 131072");

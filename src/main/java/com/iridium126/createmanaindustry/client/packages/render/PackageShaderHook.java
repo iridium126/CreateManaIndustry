@@ -1,4 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.render;
+
+import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport;
+import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport.State;
 import com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry;
 import com.iridium126.createmanaindustry.client.particles.shaderpack.*;
 
@@ -57,12 +60,22 @@ public final class PackageShaderHook {
     private static Object failedPipeline;
     private static volatile boolean reloadRequested;
     private static String mainStatus="off",shadowStatus="off";
+    private static String drawError="";
     private PackageShaderHook() {}
     public static String status(){return mainStatus+"; shadow="+shadowStatus+(COMPILER.error().isEmpty()?"":"; "+COMPILER.error());}
-    public static void reload(){reloadRequested=true;}
+    public static ShaderPackStatusReport.Section diagnostics(){
+        var status=!ClientConfig.shaderPackIntegration?State.OFF:
+                terminalFailure()||!reloadRequested&&!COMPILER.needsCompile()&&!COMPILER.error().isEmpty()?State.FALLBACK:
+                reloadRequested||COMPILER.needsCompile()?State.PENDING:
+                usable()?State.ACTIVE:State.INACTIVE;
+        String error=failedPipeline==Iris.getPipelineManager().getPipelineNullable()&&!drawError.isEmpty()?drawError:COMPILER.error();
+        return new ShaderPackStatusReport.Section("Packages",status,status==State.ACTIVE?"pack entities":status==State.PENDING?"pending":"Create",
+                status==State.FALLBACK?error:"",ShaderPackStatusReport.field("main",mainStatus),ShaderPackStatusReport.field("shadow",shadowStatus));
+    }
+    public static void reload(){reloadRequested=true;drawError="";}
     /** Identity-only world boundary check; never compiles or mutates GL state. */
     public static Object pipelineBoundary(){return Iris.getPipelineManager().getPipelineNullable();}
-    public static void close(){try{COMPILER.close();}finally{try{MAIN_TIMING.close();}finally{SHADOW_TIMING.close();state=null;failedPipeline=null;reloadRequested=false;mainStatus=shadowStatus="off";}}}
+    public static void close(){try{COMPILER.close();}finally{try{MAIN_TIMING.close();}finally{SHADOW_TIMING.close();state=null;failedPipeline=null;reloadRequested=false;mainStatus=shadowStatus="off";drawError="";}}}
     public static boolean usable(){return !reloadRequested && ClientConfig.shaderPackIntegration && failedPipeline!=Iris.getPipelineManager().getPipelineNullable() && COMPILER.usable();}
     /** Distinguish a completed compile failure from the short pipeline-swap window. */
     public static boolean terminalFailure() {
@@ -124,6 +137,7 @@ public final class PackageShaderHook {
         }catch(RuntimeException|LinkageError failure){fail(failure);}
     }
     private static void fail(Throwable failure) {
+        drawError=failure.toString();
         failedPipeline=Iris.getPipelineManager().getPipelineNullable();mainStatus=shadowStatus="draw failed; Create fallback";
         CreateManaIndustry.LOGGER.warn("[CMI packages] Iris draw failed",failure);
         PackageAuthorityClient.closeAll("Iris package draw failed",true);

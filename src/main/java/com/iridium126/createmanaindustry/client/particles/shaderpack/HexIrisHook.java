@@ -1,5 +1,8 @@
 package com.iridium126.createmanaindustry.client.particles.shaderpack;
 
+import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport;
+import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport.State;
+
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.accessor.*;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms;
@@ -34,6 +37,18 @@ public final class HexIrisHook {
     public static boolean inShadow(){return ShadowRenderer.ACTIVE;}
     public static boolean accepted(Player player){return ShadowRenderer.ACTIVE&&!accepted.isEmpty()&&accepted.peek().contains(player);}
     public static String status(){return status;}
+    public static ShaderPackStatusReport.Section diagnostics(){
+        var current=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current();
+        boolean stale=sessionGeneration!=current.generation()||attempted!=Iris.getPipelineManager().getPipelineNullable();
+        var state=!ClientConfig.hexPatternRedirect?State.OFF:
+                stale?State.PENDING:
+                status.startsWith("native fallback")?State.FALLBACK:
+                shader!=null?State.ACTIVE:
+                State.INACTIVE;
+        return new ShaderPackStatusReport.Section("Hex",state,"shadow",
+                !stale&&status.startsWith("native fallback")?status:"",
+                ShaderPackStatusReport.field("shadow",stale?"awaiting current session":status));
+    }
     public static void begin(){accepted.push(new HashSet<>());}
     public static void end(){if(accepted.isEmpty())throw new IllegalStateException("Hex shadow scope");accepted.pop();}
     public static void invalidate(){uniforms.clear();if(shader!=null)HexPatternService.retireProgram(shader.getId());if(owner!=null&&shader!=null)owner.cmi$discardPackageShader(shader);if(placeholder!=null)placeholder.close();owner=null;shader=null;placeholder=null;attempted=null;}
