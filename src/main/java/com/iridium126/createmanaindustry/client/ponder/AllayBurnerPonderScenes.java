@@ -93,13 +93,13 @@ public final class AllayBurnerPonderScenes {
         BlockPos b = p(4, 1, 3), basin = b.above();
         w.place(b, CMIBlocks.ALLAY_BURNER.getDefaultState().setValue(AllayBurnerBlock.HEAT_LEVEL, AllayBurnerBlock.HeatLevel.NONE));
         w.text(60, b, "An empty burner has no Allay and supplies no processing heat.", "空燃烧室无法提供加工所需的热量");
-        w.remove(b); w.burner(b, false);
-        w.text(70, b, "A captured Allay without fuel stays idle. This state also supplies no heat.", "没有燃料时，悦灵燃烧室处于待机状态，无法供热");
-        w.explain(90, b, "Both fuel types give Allay Heat. Extra fuel extends burning time; running out returns the burner to idle.", "固态和液态燃料都可提供悦灵加热，燃料耗尽后回到待机状态");
-        w.use(b, new ItemStack(Items.AMETHYST_SHARD)); w.light(b, true);
+        w.replace(b, CMIBlocks.ALLAY_BURNER.getDefaultState().setValue(AllayBurnerBlock.HEAT_LEVEL, AllayBurnerBlock.HeatLevel.IDLE));
+        w.text(70, b, "Without fuel, an Allay Burner cannot provide heat for processing.", "没有燃料时，悦灵燃烧室无法提供加工所需的热量");
+        w.explain(120, b, "Both fuel types provide Allay Heat. When the fuel runs out, the burner stops providing heat.", "固态和液态燃料都可提供悦灵加热，燃料耗尽后便会停止供热");
+        w.use(b, new ItemStack(Items.AMETHYST_SHARD), 40); w.light(b, true);
         w.idle(25);
         w.light(b, false); w.idle(20);
-        w.use(b, new ItemStack(CMIFluids.LIQUID_MEDIA.get().getBucket()));
+        w.use(b, new ItemStack(CMIFluids.LIQUID_MEDIA.get().getBucket()), 40);
         w.liquid(b, CMIFluids.LIQUID_MEDIA.get(), 1000); w.light(b, true);
         w.idle(20);
 
@@ -123,12 +123,12 @@ public final class AllayBurnerPonderScenes {
         w.place(b, AllBlocks.BLAZE_BURNER.getDefaultState().setValue(BlazeBurnerBlock.HEAT_LEVEL, BlazeBurnerBlock.HeatLevel.SEETHING));
         w.place(basin, AllBlocks.BASIN.get());
         w.liquid(basin, CMIFluids.MOLTEN_ROSE_QUARTZ.get(), 125);
-        ProcessingPonderScenes.lid(w, basin, false);
+        ProcessingPonderScenes.lid(w, basin, true);
         w.point(b, PonderPalette.RED);
         // No liquid consumption or mist on this failed, superheated attempt.
         w.text(90, b, "Allay Heat is the next tier above Superheated. A superheated Blaze Burner cannot vaporize this liquid.", "悦灵加热高于超级加热，烈焰人燃烧室无法满足这一要求");
         w.explain(90, basin, "A burning Allay Burner vaporizes the 125 mB. Its Allay Heat covers Heated, Superheated and Allay-heated recipes.", "换用悦灵燃烧室，便可将 125 mB 熔融玫瑰石英汽化");
-        w.burner(b, true);
+        w.replace(b, CMIBlocks.ALLAY_BURNER.getDefaultState().setValue(AllayBurnerBlock.HEAT_LEVEL, AllayBurnerBlock.HeatLevel.ALLAYHEATED));
         w.liquid(basin, CMIFluids.MOLTEN_ROSE_QUARTZ.get(), 0);
         Workshop.Mist mist = w.mist(basin, MistPonderScenes.ROSE, 3);
         w.point(b, PonderPalette.GREEN);

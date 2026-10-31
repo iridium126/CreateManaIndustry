@@ -1,0 +1,7 @@
+// Farmland hydration through the real FarmBlock random tick and mist field store.
+gradle.projectsEvaluated {
+    def p = gradle.rootProject
+    p.apply from: p.file('scripts/testing/common.gradle')
+    p.configureCmiGameTests(name: 'mist', sources: 'src/test/gametest/mist/java',
+            structure: 'mist_irrigation_test', size: 32)
+}

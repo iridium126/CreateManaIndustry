@@ -102,14 +102,14 @@ public final class TricksterPonderScenes {
         w.scene.world().flashDisplayLink(link);
         w.scene.world().modifyBlockEntity(target, BlockEntity.class,
                 be -> SpellConstructDisplayArguments.storeArgument(be, 0, List.of(Component.literal("32"))));
-        w.scene.overlay().showControls(util.vector().topOf(target), net.createmod.catnip.math.Pointing.DOWN, 80)
-                .withItem(new ItemStack(Items.AMETHYST_SHARD, 32));
+        w.controls(target, 50).withItem(new ItemStack(Items.AMETHYST_SHARD, 32));
         w.waitForText();
         w.explain(70, target, "Updated counts replace the argument. On a Modular Spell Construct, also choose the intended executor.", "库存变化会更新参数，模块化法术组构台还需要指定执行器");
         slot(w, chest, 0, new ItemStack(Items.AMETHYST_SHARD, 16));
         w.scene.world().flashDisplayLink(link);
         w.scene.world().modifyBlockEntity(target, BlockEntity.class,
                 be -> SpellConstructDisplayArguments.storeArgument(be, 0, List.of(Component.literal("16"))));
+        w.controls(target, 50).withItem(new ItemStack(Items.AMETHYST_SHARD, 16));
         w.finish();
     }
 }

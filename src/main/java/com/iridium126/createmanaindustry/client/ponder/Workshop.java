@@ -14,6 +14,7 @@ import com.simibubi.create.foundation.blockEntity.behaviour.fluid.SmartFluidTank
 import com.simibubi.create.foundation.ponder.CreateSceneBuilder;
 import net.createmod.catnip.math.Pointing;
 import net.createmod.ponder.api.PonderPalette;
+import net.createmod.ponder.api.element.InputElementBuilder;
 import net.createmod.ponder.api.scene.SceneBuilder;
 import net.createmod.ponder.api.scene.SceneBuildingUtil;
 import net.minecraft.core.BlockPos;
@@ -36,6 +37,7 @@ final class Workshop {
     final SceneBuildingUtil util;
     private int timelineTicks;
     private int textEndsAt;
+    private int controlsEndAt;
     private java.util.List<BlockPos> building;
     private final java.util.List<BlockPos> pumps = new java.util.ArrayList<>();
 
@@ -75,19 +77,24 @@ final class Workshop {
     }
 
     void place(BlockPos pos, BlockState state) {
-        scene.world().setBlock(pos, state, false);
-        // Dynamically built machines need the same virtual flag as schematic BEs.
-        scene.world().modifyBlockEntity(pos, net.minecraft.world.level.block.entity.BlockEntity.class, be -> {
-            if (be instanceof net.createmod.ponder.api.VirtualBlockEntity virtual) virtual.markVirtual();
-        });
+        replace(pos, state);
         if (building != null) {
-            building.add(pos);
+            building.add(pos.immutable());
             return;
         }
         scene.world().showSection(util.select().position(pos), Direction.DOWN);
         idle(8);
     }
     void place(BlockPos pos, Block block) { place(pos, block.defaultBlockState()); }
+
+    /** Update an already visible position without creating another animated section. */
+    void replace(BlockPos pos, BlockState state) {
+        scene.world().setBlock(pos, state, false);
+        // Dynamically built machines need the same virtual flag as schematic BEs.
+        scene.world().modifyBlockEntity(pos, net.minecraft.world.level.block.entity.BlockEntity.class, be -> {
+            if (be instanceof net.createmod.ponder.api.VirtualBlockEntity virtual) virtual.markVirtual();
+        });
+    }
     void remove(BlockPos pos) {
         scene.world().hideSection(util.select().position(pos), Direction.UP);
         idle(15);
@@ -97,6 +104,7 @@ final class Workshop {
     /** Start another demonstration without disturbing the floor or backdrop. */
     void clearWorkArea() {
         waitForText();
+        waitForControls();
         var area = util.select().fromTo(0, 1, 0, 8, 6, 6);
         scene.world().hideSection(area, Direction.UP);
         idle(20);
@@ -114,9 +122,11 @@ final class Workshop {
     /** Caption first, then run the demonstration while it remains on screen. */
     void explain(int duration, BlockPos pos, String english, String chinese) {
         waitForText();
+        waitForControls();
         // Rebuild the scene's pipe flow after the staged connections are in place.
         pumps.forEach(scene.world()::propagatePipeChange);
-        scene.overlay().showText(duration).attachKeyFrame().text(english)
+        // Use the formatting overload in editing mode as well, so %% renders as %.
+        scene.overlay().showText(duration).attachKeyFrame().text(english, new Object[0])
                 .pointAt(Vec3.atCenterOf(pos)).placeNearTarget();
         // Ponder adds five ticks of fade-in and fade-out to the supplied duration.
         textEndsAt = timelineTicks + duration + 10;
@@ -129,12 +139,24 @@ final class Workshop {
         scene.overlay().showOutline(palette, pos, util.select().position(pos), 70);
     }
     void use(BlockPos pos, ItemStack stack) {
-        scene.overlay().showControls(util.vector().topOf(pos), Pointing.DOWN, 60)
-                .rightClick().withItem(stack);
+        use(pos, stack, 60);
+    }
+    void use(BlockPos pos, ItemStack stack, int duration) {
+        controls(pos, duration).rightClick().withItem(stack);
         idle(15);
+    }
+    InputElementBuilder controls(BlockPos pos, int duration) {
+        waitForControls();
+        // Like text, input windows include five ticks of fade-in and fade-out.
+        controlsEndAt = timelineTicks + duration + 10;
+        return scene.overlay().showControls(util.vector().topOf(pos), Pointing.DOWN, duration);
+    }
+    void waitForControls() {
+        if (timelineTicks < controlsEndAt) idle(controlsEndAt - timelineTicks);
     }
     void finish() {
         waitForText();
+        waitForControls();
         idle(20);
         scene.markAsFinished();
     }
