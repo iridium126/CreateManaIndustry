@@ -30,4 +30,29 @@ class ParticleDiagnosticsReportTest {
         assertTrue(details.contains("stage0=0.000"));assertTrue(details.contains("\n  stage2="));assertFalse(details.contains("{stage"));
         assertEquals(1,details.split("CPU submit",-1).length-1,"Do not repeat the frame ledger as a second CPU report");
     }
+    @Test void submissionCountsRetainTheirOwnFrameAndGeneration()throws Exception{
+        var d=new ParticleDiagnostics();field(d,"samples",1);field(d,"enabled",true);field(d,"firstFrame",20L);
+        d.modelCounts(19,8,999,999,999,999,999,999);
+        assertTrue(d.report(new GpuBudgetLedger().snapshot()).contains("MODEL submitted counts: unmeasured"));
+        d.modelCounts(21,9,100,3,100,4,5,6);
+        String report=d.report(new GpuBudgetLedger().snapshot());
+        assertTrue(report.contains("body/carrier/ghost/feather/LOD1/LOD2=100/3/100/4/5/6; frame=21; generation=9"));
+        assertFalse(d.summary(new GpuBudgetLedger().snapshot()).contains("submitted counts"));
+    }
+    @Test void changedContextAndReplacementWorldStartFreshWindows()throws Exception{
+        var d=new ParticleDiagnostics();Object world=new Object();
+        d.captureContext("1920x1080; pack=photon; options=a",10,world);field(d,"samples",4);
+        d.captureContext("1920x1080; pack=photon; options=a",11,world);assertEquals(4,field(d,"samples"));
+        d.captureContext("2560x1506; pack=photon; options=a",12,world);assertEquals(0,field(d,"samples"));
+        field(d,"samples",4);d.captureContext("2560x1506; pack=photon; options=b",13,world);assertEquals(0,field(d,"samples"));
+        field(d,"samples",4);d.captureContext("2560x1506; pack=photon; options=b",14,new Object());assertEquals(0,field(d,"samples"));
+        assertEquals(14L,field(d,"firstFrame"));assertEquals(-1L,field(d,"countFrame"));
+    }
+    @Test void simulationAndVisibleCountsRemainDistinct()throws Exception{
+        var d=new ParticleDiagnostics();field(d,"samples",1);field(d,"enabled",true);field(d,"firstFrame",100L);
+        d.simulationCounts(99,50,1000,900);assertTrue(d.report(new GpuBudgetLedger().snapshot()).contains("Simulation input counts: unmeasured"));
+        d.simulationCounts(101,51,1000,900);d.modelCounts(102,52,19,0,19,2,0,0);
+        String report=d.report(new GpuBudgetLedger().snapshot());assertTrue(report.contains("live=1000; MODEL=900; non-model=100; frame=101; input generation=50"));
+        assertTrue(report.contains("body/carrier/ghost/feather/LOD1/LOD2=19/0/19/2/0/0"));
+    }
 }

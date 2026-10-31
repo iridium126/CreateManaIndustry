@@ -9,8 +9,9 @@ final class ModelMergeTelemetry implements AutoCloseable {
     private final EnumMap<Segment,GpuPassTelemetry> passes=new EnumMap<>(Segment.class);
     private boolean detailed;
     ModelMergeTelemetry(){for(var segment:Segment.values())passes.put(segment,new GpuPassTelemetry());}
-    void configure(boolean details){if(detailed==details)return;detailed=details;passes.values().forEach(timer->timer.configure(details,details));}
-    void begin(Segment segment){if(detailed){var timer=passes.get(segment);timer.poll();timer.begin(true,true);}}
+    void configure(boolean details){if(details)passes.values().forEach(GpuPassTelemetry::poll);if(detailed==details)return;detailed=details;passes.values().forEach(timer->timer.configure(details,details));}
+    void begin(Segment segment){if(detailed){var timer=passes.get(segment);timer.poll();var scene=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE;
+        timer.begin(true,true,scene.renderFrameToken(),scene.publication().generation());}}
     void end(Segment segment,boolean success){if(detailed)passes.get(segment).end(success);}
     void discardPending(){passes.values().forEach(GpuPassTelemetry::discardPending);}
     String report(boolean details){
@@ -18,7 +19,7 @@ final class ModelMergeTelemetry implements AutoCloseable {
         for(var entry:passes.entrySet())if(entry.getValue().cpuSamples()>0){
             if(!result.isEmpty())result.append('\n');
             result.append("MODEL ").append(entry.getKey().name().toLowerCase(java.util.Locale.ROOT)).append(": ")
-                    .append(details?entry.getValue().report():entry.getValue().summary());
+                    .append(com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.timing(entry.getValue(),details));
         }
         return result.toString();
     }

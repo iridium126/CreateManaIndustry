@@ -40,6 +40,8 @@ repo/
 !**/src/**/repo/
 
 .refs
+# Frozen particle benchmark inputs stay local and survive Gradle clean.
+/.local/particle-baselines/
 .claude
 .agents
 loom-remap/remapped-libs/

@@ -1102,11 +1102,18 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER, 0);
     }
 
-    void copySnapshot(int counterSlot, ParticleReadbacks.Slot slot) {
+    void copySnapshot(int counterSlot,int previousCounterSlot,long frameToken, ParticleReadbacks.Slot slot) {
         org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER, slot.buffer);
         copySnapshotPart(this.counterSSBOs[counterSlot], 0, 16);
         copySnapshotPart(this.hitSSBO, 16, 16);
+        slot.profile=ParticleDiagnostics.INSTANCE.enabled();
+        slot.profileFrame=frameToken;
+        if(slot.profile){
+            copySnapshotPart(this.indirectSSBO,ParticleReadbacks.PROFILE_OFFSET,INDIRECT_COMMANDS * INDIRECT_STRIDE);
+            copySnapshotPart(this.counterSSBOs[previousCounterSlot],ParticleReadbacks.PROFILE_SIM_OFFSET,4);
+            copySnapshotPart(this.populationSSBOs[readIndex],ParticleReadbacks.PROFILE_SIM_OFFSET+16,POPULATION_HEADER_BYTES);
+        }
         if (slot.positions) copySnapshotPart(this.stormPosSSBO, ParticleReadbacks.STORM_OFFSET,
                 4L + STORMPOS_CAP * STORMPOS_ENTRY_FLOATS * 4L);
         if (slot.waves) copySnapshotPart(this.waveContactSSBO, ParticleReadbacks.WAVE_OFFSET,

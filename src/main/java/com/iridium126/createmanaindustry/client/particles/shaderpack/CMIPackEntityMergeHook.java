@@ -80,11 +80,16 @@ public final class CMIPackEntityMergeHook {
         if(timingEnabled!=timing||detailed!=details)MERGE_TIMER.close();
         timingEnabled=timing;detailed=details;SHADOW_TIMING.configure(timing,details);DRAW_TIMING.configure(details);
     }
+    /** A pack/options/viewport change starts a fresh, internally consistent profile window. */
+    public static void restartMeasurementWindow(){
+        MERGE_TIMER.close();SHADOW_TIMING.close();DRAW_TIMING.close();
+        SHADOW_TIMING.configure(timingEnabled,detailed);DRAW_TIMING.configure(detailed);
+    }
     public static void resetMeasurements(){MERGE_TIMER.close();SHADOW_TIMING.close();DRAW_TIMING.close();timingEnabled=detailed=false;}
     public static void discardPendingMeasurements(){MERGE_TIMER.close();SHADOW_TIMING.discardPending();DRAW_TIMING.discardPending();}
     public static String profilingReport(){return mergeReport(true);}
     public static String profilingSummary(){return mergeReport(false);}
-    private static String mergeReport(boolean details){String draw=DRAW_TIMING.report(details);return draw+(SHADOW_TIMING.cpuSamples()==0?"":(draw.isEmpty()?"":"\n")+"MODEL shadow: "+(details?SHADOW_TIMING.report():SHADOW_TIMING.summary()));}
+    private static String mergeReport(boolean details){String draw=DRAW_TIMING.report(details);return draw+(SHADOW_TIMING.cpuSamples()==0?"":(draw.isEmpty()?"":"\n")+"MODEL shadow: "+(com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.timing(SHADOW_TIMING,details)));}
     private static GpuComputeState shadowComputeState;
     private static PackageRenderState shadowDrawState;
     private static final com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState mergedTboState=
@@ -117,6 +122,7 @@ public final class CMIPackEntityMergeHook {
                 ShaderPackStatusReport.field("atlas",atlas.width()+"x"+atlas.height()),
                 ShaderPackStatusReport.field("blend",current?COMPILER.blendPlan().report():"pending"),
                 ShaderPackStatusReport.field("optimization",current?COMPILER.optimizationReport():"pending"),
+                ShaderPackStatusReport.field("feather",current?COMPILER.featherOptimization():"pending"),
                 ShaderPackStatusReport.field("source program",current?COMPILER.sourceProgram():"pending"),
                 ShaderPackStatusReport.field("programs",current&&COMPILER.isReady()?"body="+COMPILER.entitiesShader().getId()+"; carrier="+COMPILER.carrierShader().getId()+"; ghost="+COMPILER.ghostShader().getId():"pending"),
                 ShaderPackStatusReport.field("generation",current?renderer.shaderPackPermStatus:"pending"));
@@ -209,7 +215,7 @@ public final class CMIPackEntityMergeHook {
                 var gpu=ParticleBuffers.INSTANCE;
                 if(MODEL_SHADOW==null||MODEL_SHADOW.capacity()!=gpu.capacity()||MODEL_SHADOW.carrierCapacity()!=gpu.carrierCapacity()){invalidateShadow();MODEL_SHADOW=new ModelShadowGpu(gpu.capacity(),gpu.carrierCapacity(),ParticlePrograms::loadParticlePlain);}
                 com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.addExternalGpuMs(SHADOW_TIMING.poll());
-                SHADOW_TIMING.begin(timingEnabled,detailed);
+                SHADOW_TIMING.begin(timingEnabled,detailed,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation());
                 boolean shadowSucceeded=false;
                 try{MODEL_SHADOW.starfall(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer());var p=camera.getPosition();MODEL_SHADOW.prepare(gpu.particleReadBufferId(),gpu.emitterBufferId(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().counter(),SHADOW_CULLING,
                         (float)p.x,(float)p.y,(float)p.z,EntityType.ALLAY.getWidth(),EntityType.ALLAY.getHeight(),(float)net.minecraft.world.entity.Entity.getViewScale(),com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec(),null,null,null,gpu.populationBufferId(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation()),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation());
@@ -444,6 +450,7 @@ public final class CMIPackEntityMergeHook {
     }
 
     private static void uploadCmiUniforms(int progId) {
+        setInt(progId,"cmi_FeatherPass",0);
         setInt(progId,"cmi_LodPass",0);
         setInt(progId,"cmi_ShadowPass",0);
         var camPos = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();

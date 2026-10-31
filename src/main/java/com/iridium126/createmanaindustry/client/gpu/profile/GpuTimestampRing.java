@@ -6,7 +6,10 @@ import org.lwjgl.opengl.*;
 
 /** Non-blocking timestamp pairs, safe inside a foreign GL_TIME_ELAPSED query. */
 public final class GpuTimestampRing implements AutoCloseable {
+    @FunctionalInterface public interface SampleConsumer { void accept(long frame,long generation,double millis); }
     private final int[] queries;
+    private final long[] frameTags,generationTags;
+    private final SampleConsumer taggedCompleted;
     private final boolean[] pending, valid;
     private int next, oldest, count, active=-1;
     private boolean sampled;
@@ -14,23 +17,28 @@ public final class GpuTimestampRing implements AutoCloseable {
     private final DoubleConsumer completed;
 
     public GpuTimestampRing(int slots) {
-        this(slots,null);
+        this(slots,(DoubleConsumer)null);
     }
     public GpuTimestampRing(int slots,DoubleConsumer completed) {
+        this(slots,completed,null);
+    }
+    public GpuTimestampRing(int slots,DoubleConsumer completed,SampleConsumer taggedCompleted) {
         if(slots<2)throw new IllegalArgumentException("GPU timer ring capacity");
         queries=new int[slots*2];pending=new boolean[slots];valid=new boolean[slots];
-        this.completed=completed;
+        this.completed=completed;this.taggedCompleted=taggedCompleted;
+        frameTags=new long[slots];generationTags=new long[slots];
     }
 
     public boolean begin() {
         return begin(true);
     }
-    public boolean begin(boolean pollCompleted) {
+    public boolean begin(boolean pollCompleted) {return begin(pollCompleted,-1,-1);}
+    public boolean begin(boolean pollCompleted,long frame,long generation) {
         if(active>=0)throw new IllegalStateException("GPU timestamp scope already active");
         if(queries[0]==0)GL15.glGenQueries(queries);
         if(pollCompleted)poll();
         if(count==pending.length)return false;
-        active=next;
+        active=next;frameTags[active]=frame;generationTags[active]=generation;
         GL33.glQueryCounter(queries[active*2],GL33.GL_TIMESTAMP);
         return true;
     }
@@ -55,6 +63,7 @@ public final class GpuTimestampRing implements AutoCloseable {
                 long finish=GL33.glGetQueryObjectui64(end,GL15.GL_QUERY_RESULT);
                 lastMs=Math.max(0,finish-begin)/1_000_000.0;sampled=true;
                 if(completed!=null)completed.accept(lastMs);
+                if(taggedCompleted!=null)taggedCompleted.accept(frameTags[oldest],generationTags[oldest],lastMs);
             }
             pending[oldest]=false;valid[oldest]=false;
             oldest=(oldest+1)%pending.length;count--;
@@ -63,6 +72,7 @@ public final class GpuTimestampRing implements AutoCloseable {
 
     public boolean sampled() { return sampled; }
     public int pending() { return count; }
+    public int validPending() {int result=0;for(int i=0;i<pending.length;i++)if(pending[i]&&valid[i])result++;return result;}
     public double lastMs() { return lastMs; }
     @Override public void close() {
         for(int query:queries)if(query!=0)GL15.glDeleteQueries(query);

@@ -30,9 +30,10 @@ class ModelProgramLifecycleTest {
         var compiler=new ShaderPackProgramCompiler();var owner=new Owner();var body=inertShader();var ghost=inertShader();var shadow=inertShader();
         owner.live.addAll(List.of(body,ghost,shadow));set(compiler,"owningPipeline",owner);
         set(compiler,"entitiesShader",body);set(compiler,"carrierShader",body);set(compiler,"ghostShader",ghost);set(compiler,"shadowShader",shadow);
-        set(compiler,"optimizationReport","old session");compiler.reset();
+        set(compiler,"optimizationReport","old session");set(compiler,"featherOptimization","old feather plan");compiler.reset();
         assertEquals(3,owner.retired);assertTrue(owner.live.isEmpty());assertFalse(compiler.isReady());assertNull(compiler.carrierShader());
         assertEquals(-1,compiler.carrierGtextureUnit());assertEquals("pending",compiler.optimizationReport());
+        assertEquals("shared entity program; pending",compiler.featherOptimization());
         compiler.reset();assertEquals(3,owner.retired);
     }
     @Test void failedCandidateReleasesAllSuccessfulPartialPrograms()throws Exception{

@@ -7,7 +7,10 @@ import org.lwjgl.opengl.*;
 
 /** Independent staging storage: simulation counters may be reused while a snapshot is pending. */
 final class ParticleReadbacks {
-    static final int STORM_OFFSET = 48;
+    static final int PROFILE_OFFSET = 48;
+    static final int PROFILE_LOD_OFFSET = PROFILE_OFFSET + ParticleBuffers.INDIRECT_COMMANDS * ParticleBuffers.INDIRECT_STRIDE;
+    static final int PROFILE_SIM_OFFSET = PROFILE_LOD_OFFSET + 40;
+    static final int STORM_OFFSET = PROFILE_SIM_OFFSET + 48;
     static final int WAVE_OFFSET = STORM_OFFSET + 4 + ParticleBuffers.STORMPOS_CAP * ParticleBuffers.STORMPOS_ENTRY_FLOATS * 4;
     static final int FEATHER_REQUEST_OFFSET = WAVE_OFFSET + 4 + ParticleBuffers.WAVECONTACT_CAP * ParticleBuffers.WAVECONTACT_ENTRY_FLOATS * 4;
     static final int GOLD_SURFACE_OFFSET=FEATHER_REQUEST_OFFSET + com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.READBACK_BYTES;
@@ -16,6 +19,8 @@ final class ParticleReadbacks {
         int buffer;
         GpuReadbackBuffer storage;
         long fence, generation, epoch, gameTime;
+        boolean profile,profileLod;
+        long profileFrame;
         boolean positions, waves,published,feathers,featherRequests,goldSurface;
         long goldSurfaceEpoch;
         ByteBuffer goldData;

@@ -50,6 +50,7 @@ allprojects {
                                     ? fingerprint(fileTree(findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') { include 'java/*.java','assets/**/*' }) : null,
                             baselineIdentity: file((findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') + '/commit.txt').exists()
                                     ? file((findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') + '/commit.txt').getText('UTF-8').trim() : null,
+                            particleBaselineManifest: name.contains("FeatherMerge") ? new groovy.json.JsonSlurper().parse(file(".local/particle-baselines/reference/feather-merge-20261031/manifest.json"),"UTF-8") : (name.contains("ShaderEfficiency") || name.contains("UpdateDomain")) ? new groovy.json.JsonSlurper().parse(file(".local/particle-baselines/reference/shader-efficiency-20261030-r2/manifest.json"),"UTF-8") : null,
                             commit: gitText(['git', 'rev-parse', 'HEAD']),
                             workingTree: gitText(['git', 'status', '--porcelain']),
                             javaVersion: javaLauncher.get().metadata.languageVersion.toString(),
@@ -70,6 +71,31 @@ allprojects {
         tasks.withType(Test).configureEach { if (project.hasProperty('domeDraft')) doFirst { classpath = files(project.property('domeDraft')) + classpath } }
         // The current workspace's independent Hex JIT sources import Kotlin directly.
         tasks.named('compileJava') { classpath += kotlin }
+        def simulationSnapshotHarness=tasks.register('compileSimulationReadbackHarness',JavaCompile){
+            dependsOn tasks.named('classes')
+            source=files('scripts/particles/SimulationReadbackGpuValidation.java')
+            classpath=sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            destinationDirectory=layout.buildDirectory.dir('simulation-readback-harness')
+            options.encoding='UTF-8'
+        }
+        tasks.register('validateSimulationReadbackGpu',JavaExec){
+            dependsOn simulationSnapshotHarness
+            classpath=files(layout.buildDirectory.dir('simulation-readback-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='com.iridium126.createmanaindustry.client.particles.engine.SimulationReadbackGpuValidation'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateModelNativeColorGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/ModelNativeColorGpuValidation.java'
+            workingDir = project.projectDir
+        }
+        tasks.register('validateModelDrawTelemetryGpu', JavaExec) {
+            dependsOn tasks.named('classes')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'scripts/particles/ModelDrawTelemetryGpuValidation.java'
+            workingDir = project.projectDir
+        }
         tasks.register('validateSceneFrameGpu', JavaExec) {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
@@ -194,7 +220,7 @@ allprojects {
         }
         tasks.register('compileStarfallHarness', JavaCompile) {
             dependsOn tasks.named('classes')
-            source = files('scripts/particles/ModelPopulationGpuValidation.java', 'scripts/particles/StarfallGpuValidation.java', 'scripts/particles/DomeGpuValidation.java', 'scripts/particles/DomePathGpuValidation.java', 'scripts/particles/DomePoseGpuValidation.java', 'scripts/particles/DomeExitGpuValidation.java', 'scripts/particles/HelixGpuValidation.java', 'scripts/particles/StarfallColumnGpuValidation.java', 'scripts/particles/StormMotionGpuValidation.java', 'scripts/particles/StormCollisionGpuValidation.java', 'scripts/particles/StormBenchmark.java')
+            source = files('scripts/particles/UpdateDomainGpuValidation.java','scripts/particles/ModelPopulationGpuValidation.java', 'scripts/particles/StarfallGpuValidation.java', 'scripts/particles/DomeGpuValidation.java', 'scripts/particles/DomePathGpuValidation.java', 'scripts/particles/DomePoseGpuValidation.java', 'scripts/particles/DomeExitGpuValidation.java', 'scripts/particles/HelixGpuValidation.java', 'scripts/particles/StarfallColumnGpuValidation.java', 'scripts/particles/StormMotionGpuValidation.java', 'scripts/particles/StormCollisionGpuValidation.java', 'scripts/particles/StormBenchmark.java')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             destinationDirectory = layout.buildDirectory.dir('starfall-harness')
             source 'scripts/particles/DomeTerrainGpuValidation.java'
@@ -223,6 +249,13 @@ allprojects {
             classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'ModelAnimationStorageGpuValidation'
             workingDir = project.projectDir
+        }
+        tasks.register('validateUpdateDomainGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='UpdateDomainGpuValidation'
+            if(project.hasProperty('updateDomainAa'))systemProperty 'cmi.update.domain.aa','true'
+            workingDir=project.projectDir
         }
         tasks.register('validateAllayAnimationGpu', JavaExec) {
             dependsOn 'compileStarfallHarness'
@@ -524,14 +557,14 @@ allprojects {
         // Archived comparison implementations live outside main sources/resources and the mod JAR.
         tasks.register('compilePackageIndexComparison', JavaCompile) {
             dependsOn tasks.named('classes')
-            source = files('scripts/particles/index-reference/PackagePhysicsGpu.java', 'scripts/particles/index-reference/PackageGpuValidation.java')
+            source = files('.local/particle-baselines/index-reference/PackagePhysicsGpu.java', '.local/particle-baselines/index-reference/PackageGpuValidation.java')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             destinationDirectory = layout.buildDirectory.dir('package-index-reference')
             options.encoding = 'UTF-8'
             options.release = 21
         }
         tasks.register('copyPackageIndexReferenceResources', Sync) {
-            from 'scripts/particles/index-reference/resources'
+            from '.local/particle-baselines/index-reference/resources'
             into layout.buildDirectory.dir('package-index-reference-resources')
         }
         tasks.register('benchmarkPackageIndexes', JavaExec) {
@@ -614,7 +647,7 @@ allprojects {
         }
         def modelMergeReferenceFile = layout.buildDirectory.file('model-merge-reference/FrozenModelProgramCompiler.java')
         def modelMergeReference = tasks.register('prepareModelMergeReference') {
-            def snapshot=file('scripts/particles/reference/model-merge/ShaderPackProgramCompiler.java.txt')
+            def snapshot=file('.local/particle-baselines/reference/model-merge/ShaderPackProgramCompiler.java.txt')
             inputs.file(snapshot); outputs.file(modelMergeReferenceFile)
             doLast {
                 def target=modelMergeReferenceFile.get().asFile
@@ -622,20 +655,74 @@ allprojects {
                 target.setText(snapshot.getText('UTF-8').replace('ShaderPackProgramCompiler','FrozenModelProgramCompiler'),'UTF-8')
             }
         }
+        def deliveredReferenceFile = layout.buildDirectory.file('model-draw-reference/DeliveredModelProgramCompiler.java')
+        def deliveredReference = tasks.register('prepareModelDrawReference') {
+            def snapshot=file('.local/particle-baselines/reference/model-draw-20261030/src/main/java/com/iridium126/createmanaindustry/client/particles/shaderpack/ShaderPackProgramCompiler.java.txt')
+            inputs.dir('.local/particle-baselines/reference/model-draw-20261030'); inputs.dir('scripts/particles/experiments/model-draw'); inputs.file(snapshot); inputs.file('scripts/particles/prepare_model_draw_variants.py'); inputs.file('src/main/java/com/iridium126/createmanaindustry/client/particles/shaderpack/ShaderPackProgramCompiler.java'); outputs.dir(layout.buildDirectory.dir('model-draw-reference'))
+            doLast {
+                def target=deliveredReferenceFile.get().asFile;target.parentFile.mkdirs()
+                target.setText(snapshot.getText('UTF-8').replace('ShaderPackProgramCompiler','DeliveredModelProgramCompiler'),'UTF-8')
+                def process=new ProcessBuilder('python','scripts/particles/prepare_model_draw_variants.py').directory(rootDir).inheritIO().start()
+                if(process.waitFor()!=0)throw new GradleException('Cannot prepare draw ablations')
+            }
+        }
+        def efficiencyReference = tasks.register('prepareShaderEfficiencyReference') {
+            def root=file('.local/particle-baselines/reference/shader-efficiency-20261030-r2')
+            inputs.dir(root);outputs.dir(layout.buildDirectory.dir('shader-efficiency-reference'))
+            doLast {
+                def manifest=new groovy.json.JsonSlurper().parse(new File(root,'manifest.json'))
+                manifest.files.each { path,expected ->
+                    def data=new File(root,path+'.txt').bytes
+                    if(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance('SHA-256').digest(data))!=expected)throw new GradleException('Frozen baseline changed: '+path)
+                }
+                def target=layout.buildDirectory.dir('shader-efficiency-reference').get().asFile;target.mkdirs()
+                ['ShaderPackProgramCompiler':'EfficiencyBaselineCompiler','ModelShaderOptimization':'EfficiencyBaselineOptimization'].each { original,replacement ->
+                    def input=new File(root,'src/main/java/com/iridium126/createmanaindustry/client/particles/shaderpack/'+original+'.java.txt')
+                    new File(target,replacement+'.java').setText(input.getText('UTF-8').replace(original,replacement),'UTF-8')
+                }
+            }
+        }
+        def featherReference = tasks.register('prepareFeatherMergeReference') {
+            def root=file('.local/particle-baselines/reference/feather-merge-20261031')
+            inputs.dir(root);inputs.file('scripts/particles/experiments/feather-merge/unconditional-overlay-optimizer.java.txt');outputs.dir(layout.buildDirectory.dir('feather-merge-reference'))
+            doLast {
+                def manifest=new groovy.json.JsonSlurper().parse(new File(root,'manifest.json'))
+                manifest.files.each { path,expected ->
+                    def data=new File(root,path+'.txt').bytes
+                    if(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance('SHA-256').digest(data))!=expected)throw new GradleException('Frozen feather baseline changed: '+path)
+                }
+                def target=layout.buildDirectory.dir('feather-merge-reference').get().asFile;target.mkdirs()
+                def input=new File(root,'src/main/java/com/iridium126/createmanaindustry/client/particles/shaderpack/ModelShaderOptimization.java.txt')
+                new File(target,'FeatherBaselineOptimization.java').setText(input.getText('UTF-8').replace('ModelShaderOptimization','FeatherBaselineOptimization'),'UTF-8')
+                new File(target,'FeatherExperimentOptimization.java').setText(file('scripts/particles/experiments/feather-merge/unconditional-overlay-optimizer.java.txt').getText('UTF-8').replace('ModelShaderOptimization','FeatherExperimentOptimization'),'UTF-8')
+            }
+        }
         def modelMergeHarness = tasks.register('compileModelMergeHarness', JavaCompile) {
-            dependsOn tasks.named('classes'), 'extractPackageIrisTransformer', modelMergeReference
-            source = files('scripts/particles/ModelMaterialGpuValidation.java', 'scripts/particles/ModelMergeGpuValidation.java', 'scripts/particles/ModelMergeProductionFixture.java', modelMergeReferenceFile)
+            dependsOn tasks.named('classes'), 'extractPackageIrisTransformer', modelMergeReference, deliveredReference, efficiencyReference, featherReference
+            source = files('scripts/particles/FeatherExperimentalSources.java','scripts/particles/FeatherMergeProductionFixture.java','scripts/particles/PackFixtureResources.java','scripts/particles/ModelMaterialGpuValidation.java', 'scripts/particles/ModelMergeGpuValidation.java', 'scripts/particles/ModelMergeProductionFixture.java', modelMergeReferenceFile, deliveredReferenceFile) + fileTree('build/model-draw-reference') { include '*ModelProgramCompiler.java' } + fileTree('build/shader-efficiency-reference') { include '*.java' } + fileTree('build/feather-merge-reference') { include '*.java' }
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin + files(packageIrisTransformer)
             destinationDirectory = layout.buildDirectory.dir('model-merge-harness')
             options.encoding = 'UTF-8'
         }
-        ['validateModelMergeGpu', 'benchmarkModelMergeGpu'].each { taskName ->
+        ['validateModelMergeGpu', 'benchmarkModelMergeGpu', 'validateModelDrawGpu', 'benchmarkModelDrawGpu', 'validateShaderEfficiencyGpu', 'benchmarkShaderEfficiencyGpu', 'validateFeatherMergeGpu', 'benchmarkFeatherMergeGpu'].each { taskName ->
             tasks.register(taskName, JavaExec) {
                 dependsOn modelMergeHarness, 'compilePackageIrisHarness'
                 classpath = files(layout.buildDirectory.dir('model-merge-harness'), layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter {
                     !it.name.startsWith('glsl-transformer-')
                 } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
                 mainClass = 'ModelMergeGpuValidation'
+                if(taskName.contains('ModelDraw')||taskName.contains('ShaderEfficiency')||taskName.contains('FeatherMerge')) systemProperty 'cmi.model.draw', 'true'
+                if(taskName.contains('FeatherMerge')) {systemProperty 'cmi.feather.merge','true';systemProperty 'cmi.feather.variant',project.findProperty('featherVariant') ?: 'branch'}
+                if(project.hasProperty('featherModelBench'))systemProperty 'cmi.feather.model.bench','true'
+                if(project.hasProperty('featherLoadRounds'))systemProperty 'cmi.feather.load.rounds',project.property('featherLoadRounds')
+                if(project.hasProperty('featherVariant'))systemProperty 'cmi.feather.variant',project.property('featherVariant')
+                if(project.hasProperty('featherDistance'))systemProperty 'cmi.feather.distance',project.property('featherDistance')
+                if(project.hasProperty('featherAa'))systemProperty 'cmi.feather.aa','true'
+                if(taskName.contains('ShaderEfficiency')||taskName.contains('FeatherMerge')) {systemProperty 'cmi.shader.round2', 'true';maxHeapSize='4g'}
+                if(project.hasProperty('modelLoadRounds')) systemProperty 'cmi.model.load.rounds',project.property('modelLoadRounds')
+                if(project.hasProperty('modelDrawQuick')) systemProperty 'cmi.model.draw.quick', 'true'
+                if(project.hasProperty('modelDrawPack')) systemProperty 'cmi.model.draw.pack', project.property('modelDrawPack')
+                if(project.hasProperty('modelDrawVariant')) systemProperty 'cmi.model.draw.variant', project.property('modelDrawVariant')
                 if(project.hasProperty('modelMergeExclude')) systemProperty 'cmi.model.merge.exclude', project.property('modelMergeExclude')
                 if (taskName.startsWith('benchmark')) args '--benchmark'
                 workingDir = project.projectDir

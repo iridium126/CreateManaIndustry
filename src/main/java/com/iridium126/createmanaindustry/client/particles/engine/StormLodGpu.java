@@ -93,6 +93,13 @@ public final class StormLodGpu implements AutoCloseable {
         GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
         candidateActive=true;
     }
+    /** Candidate indirect commands, copied before its publication fence. */
+    boolean copyProfile(ParticleReadbacks.Slot slot){
+        if(!slot.profile||!candidateActive||candidateGeneration!=slot.generation||commands[candidate]==0)return false;
+        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,commands[candidate]);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,slot.buffer);
+        GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,ParticleReadbacks.PROFILE_LOD_OFFSET,40);
+        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,0);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,0);return true;
+    }
     public void commit(long publishedGeneration){
         if(candidateGeneration!=publishedGeneration)throw new IllegalStateException("LOD generation mismatch");
         bank=candidate;generation=publishedGeneration;active=candidateActive;identity=StormLodClient.identity;nativeDrawn=false;
@@ -117,22 +124,22 @@ public final class StormLodGpu implements AutoCloseable {
     public Matrix4f projection(Matrix4fc original){return extended(original,StormLodRules.limit(StormLodClient.serverLimit,ClientConfig.stormLodDistance)+2);}
     public void drawNative(long publishedGeneration,Matrix4fc view,Matrix4fc projection,java.util.function.Consumer<Matrix4f> draw){
         if(!ready(publishedGeneration))return;
-        target.draw(projection,projection(projection),()->draw.accept(projection(projection)));
+        target.frameContext(ParticleDiagnostics.INSTANCE.lastFrame(),generation);target.draw(projection,projection(projection),()->draw.accept(projection(projection)));
         nativeDrawn=true;
     }
     /** Native variant reads the same buffers through the engine's existing texture-buffer views. */
     public void bindNative(){ParticleBuffers.INSTANCE.bindMergedTbos(10,records[bank],order[bank]);ParticleBuffers.INSTANCE.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,commands[bank]);}
     public void drawBody(){
-        bodyTiming.begin(ParticleDiagnostics.INSTANCE.enabled());
+        bodyTiming.begin(ParticleDiagnostics.INSTANCE.enabled(),ParticleDiagnostics.INSTANCE.enabled(),ParticleDiagnostics.INSTANCE.lastFrame(),generation);
         try{GL40.glDrawElementsIndirect(GL11.GL_TRIANGLES,GL11.GL_UNSIGNED_INT,0L);}finally{bodyTiming.end();}
     }
     public void drawPixel(){
-        pixelTiming.begin(ParticleDiagnostics.INSTANCE.enabled());
+        pixelTiming.begin(ParticleDiagnostics.INSTANCE.enabled(),ParticleDiagnostics.INSTANCE.enabled(),ParticleDiagnostics.INSTANCE.lastFrame(),generation);
         try{GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,20L);}finally{pixelTiming.end();}
     }
     public void fallback(long publishedGeneration,Matrix4fc view,Matrix4fc projection){
         if(nativeDrawn||!ready(publishedGeneration))return;
-        target.draw(projection,projection(projection),()->{
+        target.frameContext(ParticleDiagnostics.INSTANCE.lastFrame(),generation);target.draw(projection,projection(projection),()->{
             int program=ParticlePrograms.INSTANCE.lodRender();GL20.glUseProgram(program);
             setMat4Uniform(program,"ModelViewMat",view);setMat4Uniform(program,"ProjMat",projection(projection));setMat4Uniform(program,"cmi_LodInverseView",new Matrix4f(view).invert());
             ParticleBuffers.INSTANCE.bindVao();ParticleBuffers.INSTANCE.bindModelGeo();
@@ -147,7 +154,7 @@ public final class StormLodGpu implements AutoCloseable {
             setIntUniform(pixel,"uSprite",1);setIntUniform(pixel,"uMode",1);setIntUniform(pixel,"cmi_LodPass",2);drawPixel();
         });
     }
-    public String report(){return "Storm LOD: "+(active?"generation="+generation+", "+(nativeDrawn?"native allay MRT":"standalone opaque"):"inactive")+", buffers="+String.format(java.util.Locale.ROOT,"%.2f MiB",bytes()/1048576.0)+", "+target.report()+"\nLOD1: "+bodyTiming.report()+"; LOD2: "+pixelTiming.report();}
+    public String report(){return "Storm LOD: "+(active?"generation="+generation+", "+(nativeDrawn?"native allay MRT":"standalone opaque"):"inactive")+", buffers="+String.format(java.util.Locale.ROOT,"%.2f MiB",bytes()/1048576.0)+", "+target.report()+"\nLOD1: "+ParticleDiagnostics.INSTANCE.timing(bodyTiming,true)+"; LOD2: "+ParticleDiagnostics.INSTANCE.timing(pixelTiming,true);}
     public long bytes(){return (covered==0?0:MASK_WORDS*4L)+(dead==0?0:CAPACITY*96L+MASK_WORDS*4L+80);}
     @Override public void close(){
         for(int[] list:new int[][]{records,order,commands})for(int i=0;i<2;i++){if(list[i]!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(list[i]);list[i]=0;}

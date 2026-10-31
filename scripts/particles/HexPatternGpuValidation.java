@@ -446,7 +446,7 @@ public class HexPatternGpuValidation {
             setField(slots[i],"generation",(long)i);
             gpu.bindCounter(3,0);int buffer=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,3);
             ByteBuffer count=bytes(16);count.putInt(0,i+100);upload(buffer,count);
-            invoke(gpu,"copySnapshot",new Class<?>[]{int.class,slots[i].getClass()},0,slots[i]);
+            invoke(gpu,"copySnapshot",new Class<?>[]{int.class,int.class,long.class,slots[i].getClass()},0,0,(long)i,slots[i]);
             setField(slots[i],"fence",GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0));
         }
         for(int frame=0;frame<8;frame++)check(invoke(ring,"freeSlot",new Class<?>[]{})==null,"overwrote an unconsumed readback slot");
@@ -666,7 +666,7 @@ public class HexPatternGpuValidation {
         int[][] programs=new int[2][3];
         String[] names={"radix_hist.comp","radix_scan.comp","radix_scatter.comp"};
         for(int i=0;i<3;i++) {
-            programs[0][i]=link(stageText(names[i],GL43.GL_COMPUTE_SHADER,Files.readString(Path.of("scripts/particles/reference/"+names[i]))));
+            programs[0][i]=link(stageText(names[i],GL43.GL_COMPUTE_SHADER,Files.readString(Path.of(".local/particle-baselines/reference/"+names[i]))));
             programs[1][i]=compute(names[i]);
         }
         StringBuilder report=new StringBuilder("count,distribution,variant,trial,gpu_ms,cpu_submit_ms\n");

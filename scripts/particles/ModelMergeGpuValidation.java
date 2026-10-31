@@ -20,23 +20,39 @@ import java.util.regex.*;
  * Production CMI+pack stages are separately linked before fragment isolation. */
 public final class ModelMergeGpuValidation {
     static final int W=1920,H=1080;
-    static int checks;
+    static final List<String> firstDrawRows=new ArrayList<>(List.of("pack,width,height,count,workload,baseline_ms,candidate_ms,baseline_cpu_ms,candidate_cpu_ms"));
+    static final boolean FEATHER=Boolean.getBoolean("cmi.feather.merge");
+    static final boolean ROUND2=Boolean.getBoolean("cmi.shader.round2");
+    static long checks;
+    static final List<String> coverageRows=new ArrayList<>(List.of("pack,width,height,workload,scene,count,baseline_covered,candidate_covered"));
     static Path output;
     static final List<StringPair> DEFINES=ModelMaterialGpuValidation.DEFINES;
     static void check(boolean ok,String reason){checks++;if(!ok)throw new AssertionError(reason);}
     static void integer(int p,String name,int value){GL20.glUniform1i(GL20.glGetUniformLocation(p,name),value);}
     static void number(int p,String name,float value){GL20.glUniform1f(GL20.glGetUniformLocation(p,name),value);}
+    static String clientOptionHash(String pack)throws java.io.IOException{
+        Path log=Path.of("run/logs/debug.log");if(!Files.exists(log))return "unrecorded";
+        var pattern=Pattern.compile("Capture frames=\\d+\\.\\.\\d+; \\d+x\\d+; pack="+Pattern.quote(pack)+"; source=[^;]+; options=\\d+ options / ([0-9a-f]+);");
+        var matches=pattern.matcher(Files.readString(log));String latest="unrecorded";
+        while(matches.find())latest=matches.group(1);
+        return latest;
+    }
     static Map<PatchShaderType,String> transform(ModelShaderOptimization.Stages s,AlphaTest alpha,String name){
         return TransformPatcher.patchVanilla(name,s.vertex(),s.geometry(),s.tessControl(),s.tessEval(),s.fragment(),alpha,false,true,
                 new net.irisshaders.iris.gl.state.ShaderAttributeInputs(true,true,false,true,true),new it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap<>());
     }
     // Experiment-only exclusions; never read by the production optimizer.
     static ModelShaderOptimization.Plan candidate(ModelShaderOptimization.Stages input,int id){
+        if(ROUND2&&System.getProperty("cmi.model.draw.variant","full").equals("aa"))return new ModelShaderOptimization.Plan(oldPlan(input,id),List.of("A/A frozen optimizer"),List.of());
         Set<String> excluded=new HashSet<>(Arrays.asList(System.getProperty("cmi.model.merge.exclude","").split(",")));
         java.util.function.UnaryOperator<String> protect=s->{if(s==null)return null;for(String name:excluded)if(!name.isEmpty())s=s.replaceAll("\\b"+Pattern.quote(name)+"\\b","cmi_reference_"+name);return s;};
         java.util.function.UnaryOperator<String> restore=s->{if(s==null)return null;for(String name:excluded)if(!name.isEmpty())s=s.replace("cmi_reference_"+name,name);return s;};
         var plan=ModelShaderOptimization.prepare(map(input,protect),id,64,64);
         return new ModelShaderOptimization.Plan(map(plan.stages(),restore),plan.applied(),plan.skipped());
+    }
+    static ModelShaderOptimization.Stages oldPlan(ModelShaderOptimization.Stages s,int id){
+        var old=EfficiencyBaselineOptimization.prepare(new EfficiencyBaselineOptimization.Stages(s.vertex(),s.geometry(),s.tessControl(),s.tessEval(),s.fragment()),id,64,64).stages();
+        return new ModelShaderOptimization.Stages(old.vertex(),old.geometry(),old.tessControl(),old.tessEval(),old.fragment());
     }
     static ModelShaderOptimization.Stages map(ModelShaderOptimization.Stages s,java.util.function.UnaryOperator<String> f){return new ModelShaderOptimization.Stages(f.apply(s.vertex()),f.apply(s.geometry()),f.apply(s.tessControl()),f.apply(s.tessEval()),f.apply(s.fragment()));}
     static String rasterVertex(String f,int id){
@@ -145,10 +161,12 @@ public final class ModelMergeGpuValidation {
         public void close(){GL30.glDeleteFramebuffers(fbo);GL11.glDeleteTextures(colors);GL11.glDeleteTextures(depth);}
     }
     static final class Inputs implements AutoCloseable {
+        final PackFixtureResources realistic=new PackFixtureResources();
         final int atlas,flat,normal,depth,shadow,volume,cube;
         Inputs()throws Exception{
             var b=org.lwjgl.BufferUtils.createByteBuffer(64*64*4);
             for(int y=0;y<64;y++)for(int x=0;x<64;x++)b.put((byte)(40+x*3)).put((byte)(70+y*2)).put((byte)232).put((byte)((x+y)%4==0?0:((x+y)%4==1?25:((x+y)%4==2?160:255))));b.flip();
+            if(FEATHER)for(int at=0;at<b.capacity();at++)b.put(at,(byte)0);
             // Native body and sword art; unused pixels retain an alpha-edge fixture.
             var canvas=new java.awt.image.BufferedImage(64,64,java.awt.image.BufferedImage.TYPE_INT_ARGB);
             for(int frame=0;frame<7;frame++){
@@ -156,6 +174,16 @@ public final class ModelMergeGpuValidation {
                 var image=javax.imageio.ImageIO.read(Path.of("src/main/resources/assets/createmanaindustry/textures/particle/"+name+".png").toFile());
                 var rect=com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlasLayout.model(frame);
                 for(int y=0;y<rect.height();y++)for(int x=0;x<rect.width();x++){int c=image.getRGB(x,y),at=((rect.y()+y)*64+rect.x()+x)*4;b.put(at,(byte)(c>>16));b.put(at+1,(byte)(c>>8));b.put(at+2,(byte)c);b.put(at+3,(byte)(c>>24));}
+            }
+            if(FEATHER)for(int frame=0;frame<12;frame++){
+                var art=javax.imageio.ImageIO.read(Path.of("src/main/resources/assets/createmanaindustry/textures/particle/cherry_"+frame+".png").toFile());
+                for(int palette=0;palette<3;palette++){var rect=com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlasLayout.feather(frame+palette*12);
+                    for(int y=-1;y<=3;y++)for(int x=-1;x<=3;x++){
+                        int argb=art.getRGB(Math.clamp(x,0,2),Math.clamp(y,0,2));int rgba=(argb&0xff00ff00)|(argb>>>16&255)|(argb&255)<<16;
+                        int c=com.iridium126.createmanaindustry.client.particles.engine.AllayFeatherAppearance.recolor(rgba,palette),at=((rect.y()+y)*64+rect.x()+x)*4;
+                        b.put(at,(byte)c);b.put(at+1,(byte)(c>>>8));b.put(at+2,(byte)(c>>>16));b.put(at+3,(byte)(c>>>24));
+                    }
+                }
             }
             atlas=texture(GL11.GL_RGBA8,GL11.GL_UNSIGNED_BYTE,64,64,b);GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL12.GL_TEXTURE_MAX_LEVEL,4);GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MIN_FILTER,GL30.GL_NEAREST_MIPMAP_LINEAR);
             flat=ModelMaterialGpuValidation.texture(.3f,.6f,.2f,.4f);normal=ModelMaterialGpuValidation.texture(.5f,.5f,1,1);
@@ -187,8 +215,9 @@ public final class ModelMergeGpuValidation {
             GL20.glUniform2f(GL20.glGetUniformLocation(p,"texelSize"),1f/W,1f/H);
             GL20.glUniform3f(GL20.glGetUniformLocation(p,"sunPosition"),0,1,0);
             GL20.glUniform4f(GL20.glGetUniformLocation(p,"entityColor"),0,0,0,0);
+            if(ROUND2)realistic.bind(p,atlas);
         }
-        public void close(){GL11.glDeleteTextures(new int[]{atlas,flat,normal,depth,shadow,volume,cube});}
+        public void close(){realistic.close();GL11.glDeleteTextures(new int[]{atlas,flat,normal,depth,shadow,volume,cube});}
     }
     static void render(int p,Target t,Inputs inputs,int entityId,int count,int scene,boolean ghost,float overlay,float alpha,float threshold,boolean lod){
         prepareDraw(p,t,inputs,entityId,count,scene,ghost,overlay,alpha,threshold,lod);
@@ -205,11 +234,15 @@ public final class ModelMergeGpuValidation {
             int x=a[attachment][i],y=b[attachment][i];
             // Deliberately stricter than a color epsilon: floating-point MRT
             // channels may encode packed material bits. Compare every raw word.
-            check(x==y,label+" attachment="+attachment+" word="+i+" "+Integer.toHexString(x)+" != "+Integer.toHexString(y));
+            checks++;if(x!=y)throw new AssertionError(label+" attachment="+attachment+" word="+i+" "+Integer.toHexString(x)+" != "+Integer.toHexString(y));
         }
     }
     static void differential(int baseline,int candidate,Inputs inputs,int id,Path root)throws Exception{
         try(var target=new Target(baseline,64,64)){
+            if(ROUND2){
+                render(baseline,target,inputs,id,64,0,false,0,1,.1f,false);var repeat=target.read();
+                render(baseline,target,inputs,id,64,0,false,0,1,.1f,false);compare(repeat,target.read(),target,"Identical-program resource repeatability "+root);
+            }
             // Keep the same 1080p fixture geometry, inspecting its top-left region.
             for(boolean ghost:new boolean[]{false,true})for(int scene:new int[]{0,1,2})for(float overlay:new float[]{0,77f/255})for(float threshold:new float[]{0,.1f,.5f}){
                 render(baseline,target,inputs,id,64,scene,ghost,overlay,1,threshold,false);var a=target.read();
@@ -240,7 +273,7 @@ public final class ModelMergeGpuValidation {
             }
         }
     }
-    static void optionVariants(Path root,String base,int id,FrozenModelProgramCompiler compiler,java.lang.reflect.Method build,Inputs inputs,AlphaTest alpha)throws Exception{
+    static void optionVariants(Path root,String base,int id,Object compiler,java.lang.reflect.Method build,Inputs inputs,AlphaTest alpha)throws Exception{
         for(String[] variant:new String[][]{{"lib/common.glsl","#define RP_MODE 1","#define RP_MODE 2","custom-pbr"},
                 {"lib/settings.glsl","//#define ADVANCED_MATERIALS","#define ADVANCED_MATERIALS","advanced-materials"}}){
             Path file=root.resolve(variant[0]);if(!Files.exists(file))continue;String saved=Files.readString(file);if(!saved.contains(variant[1]))continue;
@@ -250,16 +283,61 @@ public final class ModelMergeGpuValidation {
                 var overlay=Pattern.compile("\\buniform\\s+vec4\\s+entityColor\\s*;");boolean exact=!overlay.matcher(v).replaceAll("").contains("entityColor");
                 v=new ParticleVertexInjector().patch(exact?overlay.matcher(v).replaceAll(""):v,(String)build.invoke(compiler,exact),"option-"+variant[3]);
                 v=net.irisshaders.iris.shaderpack.preprocessor.JcppProcessor.glslPreprocessSource(v,DEFINES);
-                var original=transform(new ModelShaderOptimization.Stages(v,null,null,null,exact?overlay.matcher(f).replaceAll("in vec4 entityColor;"):f),alpha,"option-original");
+                var raw=new ModelShaderOptimization.Stages(v,null,null,null,exact?overlay.matcher(f).replaceAll("in vec4 entityColor;"):f);
+                var original=transform(ROUND2?oldPlan(raw,id):raw,alpha,"option-original");
                 var plan=candidate(new ModelShaderOptimization.Stages(v,null,null,null,exact?overlay.matcher(f).replaceAll("in vec4 entityColor;"):f),id);
                 var optimized=transform(plan.stages(),alpha,"option-optimized");
                 int fullA=ModelMaterialGpuValidation.link(original,"option-"+variant[3]+"-baseline",root),fullB=ModelMaterialGpuValidation.link(optimized,"option-"+variant[3]+"-candidate",root);
                 int a=fixture(original.get(PatchShaderType.FRAGMENT),id,"option-raster-"+variant[3]+"-baseline",root),b=fixture(optimized.get(PatchShaderType.FRAGMENT),id,"option-raster-"+variant[3]+"-candidate",root);
-                try{differential(a,b,inputs,id,root.resolve(variant[3]));}
+                try{differential(a,b,inputs,id,root.resolve(variant[3]));if(ROUND2)try(var production=new ModelMergeProductionFixture(inputs,id)){production.validateFullFrame(new int[]{fullA,fullA,fullA},new int[]{fullB,fullB,fullB},variant[3]);}}
                 finally{for(int p:new int[]{fullA,fullB,a,b})GL20.glDeleteProgram(p);}
                 System.out.println(root.getFileName()+": "+variant[3]+" option exact MRT comparison passed");
             }finally{Files.writeString(file,saved);}
         }
+    }
+    static ModelShaderOptimization.Stages frozenFeatherPlan(ModelShaderOptimization.Stages raw,int id){
+        var frozen=FeatherBaselineOptimization.prepare(new FeatherBaselineOptimization.Stages(raw.vertex(),raw.geometry(),raw.tessControl(),raw.tessEval(),raw.fragment()),id,64,64).stages();
+        return new ModelShaderOptimization.Stages(frozen.vertex(),frozen.geometry(),frozen.tessControl(),frozen.tessEval(),frozen.fragment());
+    }
+    static ModelShaderOptimization.Plan experimentFeather(ModelShaderOptimization.Stages raw,boolean exact){
+        var plan=FeatherExperimentOptimization.prepareFeather(new FeatherExperimentOptimization.Stages(raw.vertex(),raw.geometry(),raw.tessControl(),raw.tessEval(),raw.fragment()),exact);
+        var stages=plan.stages();return new ModelShaderOptimization.Plan(new ModelShaderOptimization.Stages(stages.vertex(),stages.geometry(),stages.tessControl(),stages.tessEval(),stages.fragment()),plan.applied(),plan.skipped());
+    }
+    static boolean featherBranch(){return System.getProperty("cmi.feather.variant","branch").equals("branch");}
+    static ModelShaderOptimization.Stages thinFeather(java.util.function.Function<String,String> loader,String v,String g,String f,boolean exact,int id)throws Exception{
+        String adapted=new ParticleVertexInjector().patch(exact?Pattern.compile("\\buniform\\s+vec4\\s+entityColor\\s*;").matcher(v).replaceAll(""):v,FeatherExperimentalSources.buildFeatherSource(loader,exact),"feather-input");
+        adapted=net.irisshaders.iris.shaderpack.preprocessor.JcppProcessor.glslPreprocessSource(adapted,DEFINES);
+        var base=ModelShaderOptimization.prepare(new ModelShaderOptimization.Stages(adapted,g,null,null,null),id,64,64).stages();
+        return experimentFeather(new ModelShaderOptimization.Stages(base.vertex(),g,null,null,f),exact).stages();
+    }
+    static void featherLoadProbe(java.util.function.Function<String,String> loader,String v,String g,String f,boolean exact,int id,AlphaTest alpha,Path root,ModelShaderOptimization.Stages expectedBody,ModelShaderOptimization.Stages expectedCarrier,ModelShaderOptimization.Stages expectedFeather)throws Exception{
+        var rows=new ArrayList<String>();rows.add("round,baseline_ms,candidate_ms,baseline_programs,candidate_programs");
+        for(int round=-1;round<Integer.getInteger("cmi.feather.load.rounds",3);round++){
+            double[] cost=new double[2];int[] counts=new int[2];
+            for(int order=0;order<2;order++){
+                boolean extra=((round+order)&1)!=0&&!Boolean.getBoolean("cmi.feather.aa");int side=(round+order)&1;
+                var compiler=new ShaderPackProgramCompiler(loader);long start=System.nanoTime();
+                var builder=ShaderPackProgramCompiler.class.getDeclaredMethod("buildMergedSource",boolean.class);builder.setAccessible(true);
+                String merged=new ParticleVertexInjector().patch(exact?Pattern.compile("\\buniform\\s+vec4\\s+entityColor\\s*;").matcher(v).replaceAll(""):v,(String)builder.invoke(compiler,exact),"load-body");
+                merged=net.irisshaders.iris.shaderpack.preprocessor.JcppProcessor.glslPreprocessSource(merged,DEFINES);
+                var raw=new ModelShaderOptimization.Stages(merged,g,null,null,f);
+                try(var cache=extra?ModelShaderOptimization.batch():null){
+                var body=extra?ModelShaderOptimization.prepare(raw,id,64,64).stages():frozenFeatherPlan(raw,id);var carrier=extra?ModelShaderOptimization.prepare(raw,0,64,64).stages():frozenFeatherPlan(raw,0);
+                var ghostBody=body;
+                if(extra&&featherBranch()){boolean shared=body.equals(carrier);body=ModelShaderOptimization.prepareFeatherBranches(body,exact).stages();if(shared)carrier=body;}
+                if(extra){check(body.equals(expectedBody),"AST cache changed body source");check(carrier.equals(expectedCarrier),"AST cache changed carrier source");}
+                var programs=new ArrayList<Integer>();var bodyMap=transform(body,alpha,"load-body");
+                try{programs.add(ModelMaterialGpuValidation.link(bodyMap,"load-body",root));
+                    if(!body.equals(carrier))programs.add(ModelMaterialGpuValidation.link(transform(carrier,alpha,"load-carrier"),"load-carrier",root));
+                    programs.add(ModelMaterialGpuValidation.link(extra&&featherBranch()?transform(ghostBody,alpha,"load-native-ghost"):bodyMap,"load-ghost",root));
+                    if(extra&&!featherBranch()){var feather=thinFeather(loader,v,g,body.fragment(),exact,id);check(feather.equals(expectedFeather),"AST cache changed feather source");if(!feather.fragment().equals(body.fragment()))programs.add(ModelMaterialGpuValidation.link(transform(feather,alpha,"load-feather"),"load-feather",root));}
+                    cost[side]=(System.nanoTime()-start)/1e6;counts[side]=programs.size();
+                }finally{for(int p:programs)GL20.glDeleteProgram(p);}
+                }
+            }
+            if(round>=0)rows.add(round+","+cost[0]+","+cost[1]+","+counts[0]+","+counts[1]);
+        }
+        Files.write(root.resolve("feather-load.csv"),rows);
     }
     static void run(boolean benchmark)throws Exception{
         com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
@@ -268,16 +346,35 @@ public final class ModelMergeGpuValidation {
         output=Path.of(System.getProperty("cmi.benchmark.output","build/benchmarks/model-merge"));Files.createDirectories(output);
         var csv=new ArrayList<String>();csv.add("pack,segment,scene,count,round,sample,baseline_ms,candidate_ms");
         var compilation=new ArrayList<String>();compilation.add("pack,context,baseline_compile_ms,candidate_compile_ms,applied,skipped");
-        var productionCsv=new ArrayList<String>();productionCsv.add("pack,scene,count,round,sample,baseline_ms,candidate_ms,baseline_cpu_ms,candidate_cpu_ms");
+        var productionCsv=new ArrayList<String>();productionCsv.add("pack,scene,count,round,sample,baseline_ms,candidate_ms,baseline_cpu_ms,candidate_cpu_ms,width,height,workload,baseline_body_ms,candidate_body_ms,baseline_carrier_ms,candidate_carrier_ms,baseline_ghost_ms,candidate_ghost_ms");
         var startupCsv=new ArrayList<String>();startupCsv.add("pack,baseline_programs,candidate_programs,baseline_stages_ms,candidate_stages_ms,optimization_ms");
         java.util.function.Function<String,String> sourceLoader=name->com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{try{return Files.readString(Path.of("src/main/resources/assets/createmanaindustry",path));}catch(Exception e){throw new RuntimeException(e);}});
-        var compiler=new FrozenModelProgramCompiler(sourceLoader);
+        boolean drawOptimization=Boolean.getBoolean("cmi.model.draw");
+        java.util.function.Function<String,String> frozenLoader=name->com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{try{return Files.readString(Path.of(ROUND2?".local/particle-baselines/reference/shader-efficiency-20261030-r2/src/main/resources/assets/createmanaindustry":".local/particle-baselines/reference/model-draw-20261030/src/main/resources/assets/createmanaindustry",path+".txt"));}catch(Exception e){throw new RuntimeException(e);}});
+        java.util.function.Function<String,String> experimentLoader=name->{
+            Path source=Path.of("scripts/particles/experiments/model-draw",Path.of(name).getFileName()+".txt");
+            return com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{try{
+                Path experimentFile=Path.of("scripts/particles/experiments/model-draw",Path.of(path).getFileName()+".txt");
+                return Files.readString(Files.exists(experimentFile)?experimentFile:Path.of(ROUND2?".local/particle-baselines/reference/shader-efficiency-20261030-r2/src/main/resources/assets/createmanaindustry":".local/particle-baselines/reference/model-draw-20261030/src/main/resources/assets/createmanaindustry",path+".txt"));
+            }catch(Exception e){throw new RuntimeException(e);}});
+        };
+        var compiler=new FrozenModelProgramCompiler(frozenLoader);
+        Object delivered=ROUND2?new EfficiencyBaselineCompiler(frozenLoader):new DeliveredModelProgramCompiler(frozenLoader);
+        var deliveredBuild=delivered.getClass().getDeclaredMethod("buildMergedSource",boolean.class);deliveredBuild.setAccessible(true);
         var build=FrozenModelProgramCompiler.class.getDeclaredMethod("buildMergedSource",boolean.class);build.setAccessible(true);
-        var current=new ShaderPackProgramCompiler(sourceLoader);var currentBuild=ShaderPackProgramCompiler.class.getDeclaredMethod("buildMergedSource",boolean.class);currentBuild.setAccessible(true);
-        for(boolean exact:new boolean[]{false,true})check(build.invoke(compiler,exact).equals(currentBuild.invoke(current,exact)),"Frozen baseline vertex ABI differs from production");
+        String variant=System.getProperty("cmi.model.draw.variant","full");
+        Object current=new ShaderPackProgramCompiler(sourceLoader);
+        if(!variant.equals("full")&&!variant.equals("aa")){
+            Class<?> type=Class.forName("com.iridium126.createmanaindustry.client.particles.shaderpack."+variant+"ModelProgramCompiler");
+            current=type.getConstructor(java.util.function.Function.class).newInstance(variant.equals("Context")?experimentLoader:frozenLoader);
+        }
+        var currentBuild=current.getClass().getDeclaredMethod("buildMergedSource",boolean.class);currentBuild.setAccessible(true);
+
         var uniform=Pattern.compile("\\buniform\\s+vec4\\s+entityColor\\s*;");int packs=0,vao=GL30.glGenVertexArrays();GL30.glBindVertexArray(vao);
         try(var inputs=new Inputs();var samples=Files.list(Path.of("run/shaderpacks"))){for(var sample:samples.filter(p->p.toString().endsWith(".zip")).sorted().toList()){
-            String pack=sample.getFileName().toString().replace(',','_');var inventory=ShaderPackInventory.readPack(sample);Path root=output.resolve(inventory.digest().substring(0,12));Files.createDirectories(root);
+            String pack=sample.getFileName().toString().replace(',','_');
+            if(Arrays.stream(System.getProperty("cmi.model.draw.pack","").toLowerCase(Locale.ROOT).split(",")).noneMatch(token->pack.toLowerCase(Locale.ROOT).contains(token)))continue;
+            var inventory=ShaderPackInventory.readPack(sample);Path root=output.resolve(inventory.digest().substring(0,12));Files.createDirectories(root);
             for(var entry:inventory.sources().entrySet()){Path p=root.resolve(entry.getKey());Files.createDirectories(p.getParent());Files.writeString(p,entry.getValue());}
             String base=null;for(String c:List.of("gbuffers_entities","gbuffers_textured_lit","gbuffers_textured","gbuffers_basic")){String path=Files.exists(root.resolve("world0/"+c+".vsh"))?"world0/"+c:c;if(Files.exists(root.resolve(path+".vsh"))&&Files.exists(root.resolve(path+".fsh"))){base=path;break;}}check(base!=null,"Entities fallback");
             String v=ModelMaterialGpuValidation.preprocess(root,base+".vsh"),f=ModelMaterialGpuValidation.preprocess(root,base+".fsh"),g=Files.exists(root.resolve(base+".gsh"))?ModelMaterialGpuValidation.preprocess(root,base+".gsh"):null;
@@ -285,18 +382,40 @@ public final class ModelMergeGpuValidation {
             var options=new ShaderPackOptions(graph,Map.of());var constructor=net.irisshaders.iris.shaderpack.IdMap.class.getDeclaredConstructor(Path.class,ShaderPackOptions.class,Iterable.class);constructor.setAccessible(true);
             int allay=ModelEntityContext.resolve((net.irisshaders.iris.shaderpack.IdMap)constructor.newInstance(root,options,DEFINES)).allayId();
             var properties=new ShaderProperties(inventory.source("shaders.properties"),options,DEFINES);
+            if(ROUND2){
+                String shadowPath=Files.exists(root.resolve("world0/shadow.fsh"))?"world0/shadow.fsh":"shadow.fsh";
+                inputs.realistic.configure(properties,v+"\n"+f+(Files.exists(root.resolve(shadowPath))?ModelMaterialGpuValidation.preprocess(root,shadowPath):""));
+                var allRoots=ImmutableList.copyOf(inventory.sources().keySet().stream().filter(name->List.of(".vsh",".fsh",".gsh",".tcs",".tes",".csh").stream().anyMatch(name::endsWith)).map(name->AbsolutePackPath.fromAbsolutePath("/"+name)).toList());
+                var allOptions=new ShaderPackOptions(new IncludeGraph(root,allRoots,false),Map.of());var values=new TreeMap<String,String>();
+                allOptions.getOptionSet().getBooleanOptions().keySet().forEach(key->values.put(key,Boolean.toString(allOptions.getOptionValues().getBooleanValueOrDefault(key))));
+                allOptions.getOptionSet().getStringOptions().keySet().forEach(key->values.put(key,allOptions.getOptionValues().getStringValueOrDefault(key)));
+                String digest=java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(values.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))).substring(0,12);
+                String expected=FEATHER?clientOptionHash(pack):pack.toLowerCase(Locale.ROOT).contains("photon")?"8891f40a9e8c":pack.toLowerCase(Locale.ROOT).contains("complementary")?"2f845d3b8761":"unrecorded";
+                Files.writeString(output.resolve("options-"+inventory.digest().substring(0,12)+".json"),"{\"pack\":\""+pack+"\",\"option_count\":"+values.size()+",\"hash\":\""+digest+"\",\"expected\":\""+expected+"\",\"matched\":"+digest.equals(expected)+",\"shadow_resolution\":"+inputs.realistic.shadows.getResolution()+"}\n");
+            }
             AlphaTest alpha=properties.getAlphaTestOverrides().getOrDefault("gbuffers_entities",AlphaTests.ONE_TENTH_ALPHA);
             boolean exact=g==null&&!uniform.matcher(v).replaceAll("").contains("entityColor");
-            String merged=new ParticleVertexInjector().patch(exact?uniform.matcher(v).replaceAll(""):v,(String)build.invoke(compiler,exact),"model-merge-validation");
+            String merged=new ParticleVertexInjector().patch(exact?uniform.matcher(v).replaceAll(""):v,(String)(drawOptimization?deliveredBuild.invoke(delivered,exact):build.invoke(compiler,exact)),"model-merge-validation");
             merged=net.irisshaders.iris.shaderpack.preprocessor.JcppProcessor.glslPreprocessSource(merged,DEFINES);
             var stages=new ModelShaderOptimization.Stages(merged,g,null,null,exact?uniform.matcher(f).replaceAll("in vec4 entityColor;"):f);
+            String candidateMerged=new ParticleVertexInjector().patch(exact?uniform.matcher(v).replaceAll(""):v,(String)(variant.equals("aa")?deliveredBuild.invoke(delivered,exact):currentBuild.invoke(current,exact)),"model-draw-validation");
+            candidateMerged=net.irisshaders.iris.shaderpack.preprocessor.JcppProcessor.glslPreprocessSource(candidateMerged,DEFINES);
+            var candidateStages=new ModelShaderOptimization.Stages(candidateMerged,g,null,null,stages.fragment());
             int[] productionBaseline=new int[2],productionCandidate=new int[2];
             double[] baselineTimes=new double[2],candidateTimes=new double[2];double optimizationMs=0;
-            Map<PatchShaderType,String> candidateBody=null;ModelShaderOptimization.Stages bodyStages=null,carrierStages=null;
+            Map<PatchShaderType,String> baselineBody=null,candidateBody=null;
+            ModelShaderOptimization.Stages[] baselineStages=new ModelShaderOptimization.Stages[2];ModelShaderOptimization.Stages bodyStages=null,carrierStages=null,unguardedBodyStages=null;
             for(int context=0;context<2;context++){
-                int id=context==0?allay:0;long optimizeStart=System.nanoTime();var plan=candidate(stages,id);optimizationMs+=(System.nanoTime()-optimizeStart)/1e6;
-                long start=System.nanoTime();var original=transform(stages,alpha,"merge-baseline");productionBaseline[context]=ModelMaterialGpuValidation.link(original,"baseline-"+context,root);double baselineCompile=(System.nanoTime()-start)/1e6;
-                start=System.nanoTime();var optimized=transform(plan.stages(),alpha,"merge-candidate");productionCandidate[context]=ModelMaterialGpuValidation.link(optimized,"candidate-"+context,root);double optimizedCompile=(System.nanoTime()-start)/1e6;
+                int id=context==0?allay:0;long optimizeStart=System.nanoTime();var plan=candidate(candidateStages,id);optimizationMs+=(System.nanoTime()-optimizeStart)/1e6;
+                if(FEATHER){var frozen=FeatherBaselineOptimization.prepare(new FeatherBaselineOptimization.Stages(candidateStages.vertex(),candidateStages.geometry(),candidateStages.tessControl(),candidateStages.tessEval(),candidateStages.fragment()),id,64,64).stages();
+                    check(plan.stages().equals(new ModelShaderOptimization.Stages(frozen.vertex(),frozen.geometry(),frozen.tessControl(),frozen.tessEval(),frozen.fragment())),"Feather baseline body/carrier source drift");}
+                if(context==0)unguardedBodyStages=plan.stages();
+                if(FEATHER&&featherBranch()&&(context==0||plan.stages().equals(unguardedBodyStages))){
+                    var feather=ModelShaderOptimization.prepareFeatherBranches(plan.stages(),exact);
+                    plan=new ModelShaderOptimization.Plan(feather.stages(),java.util.stream.Stream.concat(plan.applied().stream(),feather.applied().stream()).toList(),java.util.stream.Stream.concat(plan.skipped().stream(),feather.skipped().stream()).toList());
+                }
+                baselineStages[context]=FEATHER?frozenFeatherPlan(stages,id):drawOptimization?(ROUND2?oldPlan(stages,id):candidate(stages,id).stages()):stages;long start=System.nanoTime();var original=transform(baselineStages[context],alpha,"merge-baseline");if(context==0)baselineBody=original;productionBaseline[context]=ModelMaterialGpuValidation.link(original,"baseline-"+context,root);double baselineCompile=(System.nanoTime()-start)/1e6;
+                start=System.nanoTime();var optimized=transform(plan.stages(),alpha,"merge-candidate");if(ROUND2&&variant.equals("aa"))check(baselineStages[context].equals(plan.stages()),"A/A stage sources differ");productionCandidate[context]=ModelMaterialGpuValidation.link(optimized,"candidate-"+context,root);double optimizedCompile=(System.nanoTime()-start)/1e6;
                 baselineTimes[context]=baselineCompile;candidateTimes[context]=optimizedCompile;
                 if(context==0){candidateBody=optimized;bodyStages=plan.stages();}else carrierStages=plan.stages();
                 if(context==0&&g==null){
@@ -305,26 +424,64 @@ public final class ModelMergeGpuValidation {
                 }
                 compilation.add(String.format(Locale.ROOT,"%s,%d,%.3f,%.3f,\"%s\",\"%s\"",pack,context,baselineCompile,optimizedCompile,String.join(";",plan.applied()),String.join(";",plan.skipped())));
                 int a=fixture(original.get(PatchShaderType.FRAGMENT),id,"raster-baseline-"+context,root),b=fixture(optimized.get(PatchShaderType.FRAGMENT),id,"raster-candidate-"+context,root);
-                try{differential(a,b,inputs,id,root);if(benchmark&&context==0)benchmark(pack,a,b,inputs,id,csv);}finally{GL20.glDeleteProgram(a);GL20.glDeleteProgram(b);}
+                try{differential(a,b,inputs,id,root);if(benchmark&&context==0&&!drawOptimization)benchmark(pack,a,b,inputs,id,csv);}finally{GL20.glDeleteProgram(a);GL20.glDeleteProgram(b);}
             }
-            long ghostStart=System.nanoTime();int candidateGhost=ModelMaterialGpuValidation.link(candidateBody,"candidate-ghost",root);double ghostMs=(System.nanoTime()-ghostStart)/1e6;
+            Files.write(output.resolve("compile.csv"),compilation);
+            long baselineGhostStart=System.nanoTime();int baselineGhost=drawOptimization?ModelMaterialGpuValidation.link(baselineBody,"baseline-ghost",root):0;
+            double baselineGhostMs=drawOptimization?(System.nanoTime()-baselineGhostStart)/1e6:0;
+            long ghostStart=System.nanoTime();int candidateGhost=ModelMaterialGpuValidation.link(FEATHER&&featherBranch()?transform(unguardedBodyStages,alpha,"native-ghost"):candidateBody,"candidate-ghost",root);double ghostMs=(System.nanoTime()-ghostStart)/1e6;
             boolean shared=bodyStages.equals(carrierStages);
-            startupCsv.add(String.format(Locale.ROOT,"%s,2,%d,%.3f,%.3f,%.3f",pack,shared?2:3,
-                    baselineTimes[0]+baselineTimes[1],candidateTimes[0]+(shared?0:candidateTimes[1])+ghostMs,optimizationMs));
-            int[] originalDraw={productionBaseline[0],productionBaseline[0],productionBaseline[1]};
+            startupCsv.add(String.format(Locale.ROOT,"%s,%d,%d,%.3f,%.3f,%.3f",pack,drawOptimization?(baselineStages[0].equals(baselineStages[1])?2:3):2,shared?2:3,
+                    baselineTimes[0]+(drawOptimization&&baselineStages[0].equals(baselineStages[1])?0:baselineTimes[1])+baselineGhostMs,candidateTimes[0]+(shared?0:candidateTimes[1])+ghostMs,optimizationMs));
+            if(ROUND2&&!FEATHER){
+                var loadRows=new ArrayList<String>();loadRows.add("round,order,baseline_ms,candidate_ms");
+                for(int loadRound=-1;loadRound<Integer.getInteger("cmi.model.load.rounds",3);loadRound++){
+                    double[] costs=new double[2];
+                    for(int order=0;order<2;order++){
+                        boolean old=((loadRound+order)&1)==0;long started=System.nanoTime();
+                        var body=old?oldPlan(stages,allay):candidate(candidateStages,allay).stages();
+                        var carrier=old?oldPlan(stages,0):candidate(candidateStages,0).stages();
+                        var bodyMap=transform(body,alpha,"load-body");var ids=new ArrayList<Integer>();
+                        ids.add(ModelMaterialGpuValidation.link(bodyMap,"load-body-"+old,root));
+                        if(!body.equals(carrier))ids.add(ModelMaterialGpuValidation.link(transform(carrier,alpha,"load-carrier"),"load-carrier-"+old,root));
+                        ids.add(ModelMaterialGpuValidation.link(bodyMap,"load-ghost-"+old,root));
+                        costs[old?0:1]=(System.nanoTime()-started)/1e6;for(int pid:ids)GL20.glDeleteProgram(pid);
+                    }
+                    if(loadRound>=0)loadRows.add(loadRound+","+(loadRound%2==0?"baseline-first":"candidate-first")+","+costs[0]+","+costs[1]);
+                }
+                Files.write(output.resolve("load-"+inventory.digest().substring(0,12)+".csv"),loadRows);
+            }
+            int[] originalDraw={productionBaseline[0],drawOptimization?(baselineStages[0].equals(baselineStages[1])?productionBaseline[0]:productionBaseline[1]):productionBaseline[0],drawOptimization?baselineGhost:productionBaseline[1]};
             int[] candidateDraw={productionCandidate[0],bodyStages.equals(carrierStages)?productionCandidate[0]:productionCandidate[1],candidateGhost};
-            try(var production=new ModelMergeProductionFixture(inputs,allay)){
-                production.validate(originalDraw,candidateDraw,pack);production.validateLod(originalDraw,candidateDraw,pack);
+            try{if(FEATHER){try(var feathers=new FeatherMergeProductionFixture(inputs,allay)){int dedicated=0;try{
+                    if(Set.of("thin","branch").contains(System.getProperty("cmi.feather.variant","branch")))featherLoadProbe(sourceLoader,v,g,candidateStages.fragment(),exact,allay,alpha,root,bodyStages,carrierStages,featherBranch()?null:thinFeather(sourceLoader,v,g,bodyStages.fragment(),exact,allay));
+                    if(Set.of("specialized","thin").contains(System.getProperty("cmi.feather.variant","indexed"))){
+                        long started=System.nanoTime();var featherBase=bodyStages;
+                        if(System.getProperty("cmi.feather.variant","indexed").equals("thin")){
+                            featherBase=thinFeather(sourceLoader,v,g,bodyStages.fragment(),exact,allay);
+                        }
+                        var featherPlan=experimentFeather(featherBase,exact);
+                        if(!featherPlan.stages().fragment().equals(bodyStages.fragment()))dedicated=ModelMaterialGpuValidation.link(transform(featherPlan.stages(),alpha,"feather-specialized"),"feather-specialized",root);
+                        Files.writeString(root.resolve("feather-compile-ms.txt"),Double.toString((System.nanoTime()-started)/1e6));
+                    }
+                    boolean changed=!baselineStages[0].equals(bodyStages);
+                    feathers.run(featherBranch()?productionBaseline[0]:productionCandidate[0],featherBranch()&&changed?productionCandidate[0]:dedicated,pack,benchmark,root);
+                    if(featherBranch())try(var models=new ModelMergeProductionFixture(inputs,allay)){models.validate(originalDraw,candidateDraw,pack);models.validateLod(originalDraw,candidateDraw,pack);
+                        if(Boolean.getBoolean("cmi.feather.model.bench")){String saved=System.getProperty("cmi.model.draw.quick");System.setProperty("cmi.model.draw.quick","true");try{models.benchmark(originalDraw,Boolean.getBoolean("cmi.feather.aa")?originalDraw:candidateDraw,pack,productionCsv);}finally{if(saved==null)System.clearProperty("cmi.model.draw.quick");else System.setProperty("cmi.model.draw.quick",saved);}}
+                    }
+                }finally{if(dedicated!=0)GL20.glDeleteProgram(dedicated);}}}
+            else try(var production=new ModelMergeProductionFixture(inputs,allay)){
+                production.validate(originalDraw,candidateDraw,pack);production.validateLod(originalDraw,candidateDraw,pack);if(ROUND2)production.validateFullFrame(originalDraw,candidateDraw,pack);
                 if(benchmark)production.benchmark(originalDraw,candidateDraw,pack,productionCsv);
             }
-            finally{for(int p:productionBaseline)GL20.glDeleteProgram(p);for(int p:productionCandidate)GL20.glDeleteProgram(p);GL20.glDeleteProgram(candidateGhost);GL30.glBindVertexArray(vao);}
-            if(g==null)optionVariants(root,base,allay,compiler,build,inputs,alpha);
+            }finally{if(baselineGhost!=0)GL20.glDeleteProgram(baselineGhost);for(int p:productionBaseline)GL20.glDeleteProgram(p);for(int p:productionCandidate)GL20.glDeleteProgram(p);GL20.glDeleteProgram(candidateGhost);GL30.glBindVertexArray(vao);}
+            if(!FEATHER&&g==null&&(!drawOptimization||ROUND2&&!benchmark))optionVariants(root,base,allay,ROUND2?delivered:compiler,ROUND2?deliveredBuild:build,inputs,alpha);
             packs++;System.out.println(pack+": original/candidate body+carrier stages and MRT differences passed");
             Files.write(output.resolve("compile.csv"),compilation);Files.write(output.resolve("draw.csv"),csv);
             Files.write(output.resolve("production.csv"),productionCsv);
-            Files.write(output.resolve("startup.csv"),startupCsv);
+            Files.write(output.resolve("startup.csv"),startupCsv);Files.write(output.resolve("coverage.csv"),coverageRows);Files.write(output.resolve("first-draw.csv"),firstDrawRows);
         }}finally{GL30.glDeleteVertexArrays(vao);}
-        check(packs>=8,"Eight pack matrix");check(GL11.glGetError()==0,"Final GL state");
+        check(packs>= (System.getProperty("cmi.model.draw.pack","").isEmpty()?8:1),"Pack matrix");check(GL11.glGetError()==0,"Final GL state");
         System.out.println("MODEL merge GPU: "+checks+" checks passed");
     }
     public static void main(String[] args)throws Exception{

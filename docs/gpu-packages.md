@@ -30,7 +30,7 @@
 - [锁链权威与坐标边界](gpu-chain-authority.md)、[锁链父姿态](gpu-package-chain-frames.md)
 - [代码清理后的边界与验证](gpu-package-repair-validation.md)
 - [200 tick/s 实机日志诊断](gpu-package-collision.md)
-- [空间索引比较报告](benchmarks/package-index-2026-10-02/comparison.md)；生产只保留 `linked`，基准工具见 [独立 benchmark 说明](../scripts/particles/index-reference/README.md)。
+- [空间索引比较报告](benchmarks/package-index-2026-10-02/comparison.md)；生产只保留 `linked`，本地冻结输入见 [基线目录说明](../scripts/particles/baselines.md)。
 
 真实游戏中的多人库存守恒、不同驱动的画面，以及高数量包裹完整服务器 tick 和客户端帧耗时仍需实机测量；GPU 组件回归不能替代这些验收。
 

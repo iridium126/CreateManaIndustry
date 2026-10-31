@@ -4,7 +4,7 @@
 
 ## 实现与适用范围
 
-运行时直接使用新的合并编译器，没有新旧路径开关，也不预编译两套实现。旧编译器冻结在 `scripts/particles/reference/model-merge/`，仅由验证任务编译，并检查生成的顶点输入与生产 ABI 一致。
+运行时直接使用新的合并编译器，没有新旧路径开关，也不预编译两套实现。旧编译器冻结在 `.local/particle-baselines/reference/model-merge/`，仅由验证任务编译，并检查生成的顶点输入与生产 ABI 一致。
 
 `ModelShaderOptimization` 用 GLSL AST 处理 Iris 已展开、预处理的源码，不重复运行包源码预处理器。固定上下文可转为常量；身体、羽毛、LOD 使用有效悦灵身份，持剑使用中性身份。两种上下文源码相同时复用程序及原有 apply 区间，不额外切换；不同时才编译独立持剑程序。
 

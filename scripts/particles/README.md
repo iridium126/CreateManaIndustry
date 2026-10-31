@@ -113,3 +113,78 @@ must not be reported as passing the nonblocking contract. See the
 Starfall两个工具分别覆盖独立星柱与共享旧路径，Dome、Helix、动画、阴影、
 真实ShaderInstance及传送恢复各有独立覆盖；不能仅按名称相近删除。
 不要并发启动重编译main输出的Gradle／GPU进程。
+
+### MODEL client-log optimization (2026-10-30)
+
+Use `validateModelDrawGpu`, `validateModelDrawTelemetryGpu`, and `validateModelNativeColorGpu` with `-I scripts/particles/validation.init.gradle --no-configuration-cache`.
+`benchmarkModelDrawGpu` measures the whole indexed model and its three segments against the immutable delivered baseline. `-PmodelDrawQuick -PmodelDrawVariant=aa` measures identical-source noise. The production runtime reads none of these switches.
+Run `python scripts/particles/summarize_model_draw.py OUTPUT --aa AA_OUTPUT --require-gate` to verify the full eight-pack matrix, three rounds, program counts, Photon heavy-load improvement and absence of stable regressions. See [the report](../../docs/benchmarks/model-draw-client-log-2026-10-30.md) for inputs and pending client acceptance.
+
+
+## Client-log shader efficiency R2
+
+Frozen inputs are local and ignored by Git; see [baseline locations and restore notes](baselines.md).
+
+The immutable `.local/particle-baselines/reference/shader-efficiency-20261030-r2/` baseline includes the
+previous staged keyframe change. It is checked before harness generation and
+never enters the runtime JAR. Historical snapshots remain intact.
+
+```powershell
+./gradlew.bat -I scripts/particles/validation.init.gradle benchmarkShaderEfficiencyGpu -PbenchmarkOutput=build/benchmarks/shader-efficiency-covered --no-configuration-cache
+./gradlew.bat -I scripts/particles/validation.init.gradle benchmarkShaderEfficiencyGpu -PmodelDrawVariant=aa -PbenchmarkOutput=build/benchmarks/shader-efficiency-covered-aa-full --no-configuration-cache
+./gradlew.bat -I scripts/particles/validation.init.gradle benchmarkShaderEfficiencyGpu -PmodelDrawPack=solas -PbenchmarkOutput=build/benchmarks/shader-efficiency-solas-repeat --no-configuration-cache
+./gradlew.bat -I scripts/particles/validation.init.gradle benchmarkShaderEfficiencyGpu -PmodelDrawPack=solas -PmodelDrawVariant=aa -PbenchmarkOutput=build/benchmarks/shader-efficiency-solas-repeat-aa --no-configuration-cache
+./gradlew.bat -I scripts/particles/validation.init.gradle validateShaderEfficiencyGpu '-PmodelDrawPack=bsl,complementary' -PmodelLoadRounds=9 -PbenchmarkOutput=build/benchmarks/shader-efficiency-load --no-configuration-cache
+./gradlew.bat -I scripts/particles/validation.init.gradle validateShaderEfficiencyGpu '-PmodelDrawPack=bsl,complementary' -PmodelDrawVariant=aa -PmodelLoadRounds=9 -PbenchmarkOutput=build/benchmarks/shader-efficiency-load-aa --no-configuration-cache
+python scripts/particles/summarize_shader_efficiency.py build/benchmarks/shader-efficiency-covered --aa build/benchmarks/shader-efficiency-covered-aa-full --aa-extra build/benchmarks/shader-efficiency-solas-repeat-aa --load-aa-extra build/benchmarks/shader-efficiency-load-aa --repeat build/benchmarks/shader-efficiency-solas-repeat --require-gate
+./gradlew.bat -I scripts/particles/validation.init.gradle validateUpdateDomainGpu -PbenchmarkOutput=build/benchmarks/update-domain-final --no-configuration-cache
+./gradlew.bat -I scripts/particles/validation.init.gradle validateUpdateDomainGpu -PupdateDomainAa -PbenchmarkOutput=build/benchmarks/update-domain-final-aa --no-configuration-cache
+```
+
+Draw measurements now assert actual raster coverage for every input cell and
+clear all particle lanes after LOD fixtures. The prior whole-model ~80% claim is
+withdrawn; its harness allowed invalid emitter indices. R2 compares all MRT/depth
+raw words using perspective projection, independent nonconstant sampler resources
+and native shadow size/filter settings. A/A asserts identical stage sources and
+covers the full A/B input matrix. It remains a synthetic fixture, not a recorded
+world replay; option JSON explicitly reports client-hash mismatches.
+
+`validateShaderEfficiencyGpu -PmodelDrawPack=bsl,complementary` also checks
+advanced-material/custom-PBR variants at full-frame coverage. For warm load
+rechecks use `-PmodelLoadRounds=9`; preserve these records separately from the
+original matrix. `validateSimulationReadbackGpu` checks the production fenced
+readback layout; `validateModelDrawTelemetryGpu` checks frame-window filtering.
+The domain candidate is validation-only and has not replaced the runtime update
+program; its two-dispatch screen excludes contacts/navigation/publication and
+cannot establish complete-update gains. See the [R2 report](../../docs/benchmarks/shader-efficiency-client-log-r2-2026-10-30.md).
+
+## Feather merge R3 (2026-10-31)
+
+The immutable `.local/particle-baselines/reference/feather-merge-20261031/` snapshot includes the delivered
+R2 changes and existing staged work. The default `branch` candidate keeps the
+shared six-vertex entity program and specializes only proven zero-overlay
+material branches in place. Eligibility follows AST structure, not pack names.
+
+```powershell
+python scripts/particles/extract_feather_client_profiles.py run/logs/debug.log build/benchmarks/feather-client-profiles.json
+./gradlew.bat --offline --no-configuration-cache -I scripts/particles/validation.init.gradle benchmarkFeatherMergeGpu -PfeatherVariant=branch -PfeatherDistance=all -PfeatherModelBench -PbenchmarkOutput=build/benchmarks/feather-shared-final
+./gradlew.bat --offline --no-configuration-cache -I scripts/particles/validation.init.gradle benchmarkFeatherMergeGpu -PfeatherVariant=branch -PfeatherDistance=all -PfeatherModelBench -PfeatherAa -PbenchmarkOutput=build/benchmarks/feather-shared-final-aa
+./gradlew.bat --offline --no-configuration-cache -I scripts/particles/validation.init.gradle benchmarkFeatherMergeGpu -PfeatherVariant=branch -PfeatherDistance=6 -PmodelDrawPack=photon -PbenchmarkOutput=build/benchmarks/feather-shared-photon-repeat
+./gradlew.bat --offline --no-configuration-cache -I scripts/particles/validation.init.gradle benchmarkFeatherMergeGpu -PfeatherVariant=branch -PfeatherDistance=6 -PmodelDrawPack=photon -PfeatherAa -PbenchmarkOutput=build/benchmarks/feather-shared-photon-repeat-aa
+python scripts/particles/summarize_feather_merge.py build/benchmarks/feather-shared-final --aa build/benchmarks/feather-shared-final-aa --aa-extra build/benchmarks/feather-shared-photon-repeat-aa --repeat build/benchmarks/feather-shared-photon-repeat
+./gradlew.bat --offline --no-configuration-cache -I scripts/particles/validation.init.gradle validateFeatherMergeGpu -PbenchmarkOutput=build/benchmarks/feather-final-validation
+```
+
+Both matrices include coverage checks, production feather atlas tiles with
+transparent unused regions, actual instance data, all MRT raw words and depth.
+`-PfeatherModelBench` adds whole-three-segment MODEL measurements. The initial
+Photon same-program anomaly and independent rechecks are retained separately.
+`-PfeatherLoadRounds=9` extends warm compile measurements; first-draw records are
+not cold game frames. Client option hashes are read as data from the supplied
+log; unmatched defaults are explicitly marked.
+
+`-PfeatherVariant=indexed` and `thin` reproduce withdrawn validation experiments;
+they are never runtime switches and their sources are never packaged. Early
+experiment atlas backgrounds differ from the corrected final fixture. Do not
+mix those results into the accepted benchmark. See the [R3 report](../../docs/benchmarks/feather-merge-client-log-2026-10-31.md)
+for the small scope of measured benefits and pending client acceptance.

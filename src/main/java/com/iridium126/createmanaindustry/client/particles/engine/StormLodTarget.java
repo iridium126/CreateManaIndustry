@@ -14,6 +14,8 @@ final class StormLodTarget implements AutoCloseable {
     private int fbo,depth,sceneDepth,width,height;
     private final com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry compositeTiming=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry();
     private boolean profiling;
+    private long profileFrame=-1,profileGeneration=-1;
+    void frameContext(long frame,long generation){profileFrame=frame;profileGeneration=generation;}
     void profiling(boolean enabled){profiling=enabled;compositeTiming.configure(enabled,enabled);compositeTiming.poll();}
     private final int[] colors=new int[8],formats=new int[8];
     private final float[] bounds={0,0,1,1};
@@ -86,7 +88,7 @@ final class StormLodTarget implements AutoCloseable {
             setIntUniform(composite,"uLodDepth",8);setIntUniform(composite,"uSceneDepth",9);
             setMat4Uniform(composite,"uInverseLodProjection",new Matrix4f(lodProjection).invert());setMat4Uniform(composite,"uInverseSceneProjection",new Matrix4f(sceneProjection).invert());setMat4Uniform(composite,"uSceneProjection",sceneProjection);
             RenderSystem.enableDepthTest();RenderSystem.depthFunc(GL11.GL_ALWAYS);RenderSystem.disableCull();
-            compositeTiming.begin(profiling);
+            compositeTiming.begin(profiling,profiling,profileFrame,profileGeneration);
             try{
                 // Copy encoded native outputs without fabricating main-scene depth.
                 setIntUniform(composite,"uDepthOnly",0);RenderSystem.depthMask(false);
@@ -101,7 +103,7 @@ final class StormLodTarget implements AutoCloseable {
             GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,indirect);GL20.glUseProgram(program);
         }
     }
-    String report(){return "target="+width+"x"+height+", color attachments="+Arrays.stream(colors).filter(id->id!=0).count()+", composite: "+compositeTiming.report();}
+    String report(){return "target="+width+"x"+height+", color attachments="+Arrays.stream(colors).filter(id->id!=0).count()+", composite: "+ParticleDiagnostics.INSTANCE.timing(compositeTiming,true);}
     @Override public void close(){
         if(fbo!=0)GL30.glDeleteFramebuffers(fbo);if(depth!=0)GL11.glDeleteTextures(depth);if(sceneDepth!=0)GL11.glDeleteTextures(sceneDepth);
         for(int i=0;i<8;i++){if(colors[i]!=0)GL11.glDeleteTextures(colors[i]);colors[i]=0;formats[i]=0;}

@@ -216,10 +216,18 @@ void main() {
     vDist = length(world - uCamPos);
 
     // colour keyframes as the fullbright tint (default presets stay white)
-    vec4 kfr[8];
-    for (int i = 0; i < 8; i++) kfr[i] = emitters.u[hb + 8u + uint(i)];
-    int cc = int(emitters.u[hb + 6u].z);
-    vColor = cmiKeyframeColor(kfr, cc, life).rgb * p2.rgb;
+    int cc = max(1, min(8, int(emitters.u[hb + 6u].z)));
+    vec4 tint;
+    if (cc <= 1) tint = emitters.u[hb + 8u];
+    else {
+        float x = life * float(cc - 1);
+        int i = min(cc - 2, int(floor(x)));
+        float f = fract(x);
+        vec4 c0 = emitters.u[hb + 8u + uint(i)];
+        vec4 c1 = emitters.u[hb + 8u + uint(min(cc - 1, i + 1))];
+        tint = mix(c0, c1, f);
+    }
+    vColor = tint.rgb * p2.rgb;
     // vanilla hurt overlay flag (model.fsh applies the exact post-diffuse mix):
     // active while the hurt timer runs (p2.w, set to 1 per hit, decays over
     // 0.5 s = vanilla hurtTime 10 ticks) or the corpse countdown runs (hp <= 0

@@ -1,2 +1,0 @@
-#define CMI_EXACT_RANGES
-#pragma cmi_include packages/predict.comp

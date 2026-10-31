@@ -142,6 +142,8 @@ public final class ShaderPackProgramCompiler {
     private ShaderInstance entitiesShader;
     private ShaderInstance ghostShader;
     private ShaderInstance carrierShader;
+    private String featherOptimization="pending";
+    public String featherOptimization(){return "shared entity program; "+featherOptimization;}
     private final java.util.Map<ShaderInstance,Uniform> placeholderUniforms=new java.util.IdentityHashMap<>();
     private int carrierGtextureUnit=-1;
     private String optimizationReport="pending";
@@ -295,8 +297,17 @@ public final class ShaderPackProgramCompiler {
             var stages=new ModelShaderOptimization.Stages(patched,refProgram.getGeometrySource().orElse(null),
                     refProgram.getTessControlSource().orElse(null),refProgram.getTessEvalSource().orElse(null),fragResolved);
             var atlas=com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY;
-            var bodyPlan=ModelShaderOptimization.prepare(stages,entityContext.allayId(),atlas.width(),atlas.height());
-            var carrierPlan=ModelShaderOptimization.prepare(stages,0,atlas.width(),atlas.height());
+            ModelShaderOptimization.Plan bodyPlan,carrierPlan;
+            ModelShaderOptimization.Stages ghostStages;
+            try(var batch=ModelShaderOptimization.batch()){
+                var body=ModelShaderOptimization.prepare(stages,entityContext.allayId(),atlas.width(),atlas.height());
+                var carrier=ModelShaderOptimization.prepare(stages,0,atlas.width(),atlas.height());
+                ghostStages=body.stages();
+                var feather=ModelShaderOptimization.prepareFeatherBranches(body.stages(),overlayExact);
+                featherOptimization=feather.report();
+                bodyPlan=combinePlans(body,feather);
+                carrierPlan=carrier.stages().equals(body.stages())?bodyPlan:carrier;
+            }
             optimizationReport=bodyPlan.report()+"; carrier="+(bodyPlan.applied().equals(carrierPlan.applied())&&bodyPlan.skipped().equals(carrierPlan.skipped())?"same rules, neutral identity":carrierPlan.report());
 
             // Route-A directive inheritance: the synthetic names never match
@@ -326,12 +337,12 @@ public final class ShaderPackProgramCompiler {
                     .withOverriddenDrawBuffers(refProgram.getDirectives().getDrawBuffers());
             blendPlan=ModelBlendPlan.resolve(ghostDirectives);
             this.ghostShader = this.compileMerged(accessor, programSet, properties,
-                    bodyPlan.stages(), refProgram, GHOST_SHADER_NAME, ghostDirectives, blendPlan.nativeAttachments()?null:GHOST_BLEND_OVERRIDE);
+                    ghostStages, refProgram, GHOST_SHADER_NAME, ghostDirectives, blendPlan.nativeAttachments()?null:GHOST_BLEND_OVERRIDE);
             if (this.ghostShader == null)
                 return fail("Iris returned no ghost shader instance");
             this.ghostGtextureUnit = findSamplerUnit(this.ghostShader);
 
-            // Third program: the S-track. Compiled last and fully isolated --
+            // Shadow track: compiled last and fully isolated --
             // any failure here only costs particle shadows, never the merge.
             this.compileShadow(accessor, programSet, properties, resolver);
 
@@ -385,9 +396,13 @@ public final class ShaderPackProgramCompiler {
         return this.ghostGtextureUnit;
     }
 
+    private static ModelShaderOptimization.Plan combinePlans(ModelShaderOptimization.Plan base,ModelShaderOptimization.Plan extra){
+        return new ModelShaderOptimization.Plan(extra.stages(),java.util.stream.Stream.concat(base.applied().stream(),extra.applied().stream()).toList(),java.util.stream.Stream.concat(base.skipped().stream(),extra.skipped().stream()).toList());
+    }
+
     /** Drops compiled state (pipeline changed, reload, or failure). */
     public void reset() {
-        releasePrograms();optimizationReport="pending";sourceProgram="pending";
+        releasePrograms();optimizationReport="pending";sourceProgram="pending";featherOptimization="pending";
         entityContext=ModelEntityContext.NEUTRAL;blendPlan=ModelBlendPlan.LEGACY;
         this.entitiesShader = null;
         this.ghostShader = null;
@@ -925,9 +940,19 @@ public final class ShaderPackProgramCompiler {
                     cmi_TexCoord0v = vec4(uv, 0.0, 1.0);
                     cmi_LightCoordv = vec4(240.0, 240.0, 0.0, 1.0); // block light 15 + full sky
 
-                    vec4 kfr[8];
-                    for (int i = 0; i < 8; i++) kfr[i] = gone ? vec4(1.0) : texelFetch(cmi_Emitters, int(hb + 8u + uint(i)));
-                    vec4 tint = cmiKeyframeColor(kfr, int(gone ? 1 : texelFetch(cmi_Emitters, int(hb + 6u)).z), life);
+                    int cc = max(1, min(8, int(gone ? 1 : texelFetch(cmi_Emitters, int(hb + 6u)).z)));
+                    vec4 tint = vec4(1.0);
+                    if (!gone) {
+                        if (cc <= 1) tint = texelFetch(cmi_Emitters, int(hb + 8u));
+                        else {
+                            float x = life * float(cc - 1);
+                            int i = min(cc - 2, int(floor(x)));
+                            float f = fract(x);
+                            vec4 c0 = texelFetch(cmi_Emitters, int(hb + 8u) + i);
+                            vec4 c1 = texelFetch(cmi_Emitters, int(hb + 8u) + min(cc - 1, i + 1));
+                            tint = mix(c0, c1, f);
+                        }
+                    }
                     vec3 baseTint = tint.rgb * p2.rgb;
                 """);
         if (withEntityColor) {

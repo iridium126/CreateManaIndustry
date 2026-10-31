@@ -184,3 +184,7 @@ void cmi_rising_spark_update(uint header,
 清空、换维度和成功重建使身份 epoch 失效。编译失败保留原程序及其待消费结果；成功编译整组程序后才替换。粒子池、排序排列和绘制命令按 generation 配对，阴影仍读取前一提交代。波次队列仅在成功复制后确认清除，位置快照不会在等待期间覆盖。
 
 测试说明见 [scripts/particles/README.md](../scripts/particles/README.md)。性能数据、显存成本和未验收事项见 [测量记录](particle-engine-performance.md)。
+
+本轮实机日志驱动的 MODEL 着色器优化、替换门槛与待验收清单见 [2026-10-30 测量报告](benchmarks/model-draw-client-log-2026-10-30.md)。
+
+下一轮实体比较折叠、计算子阶段诊断、旧性能结论更正及用户待验收项目见 [R2 测量报告](benchmarks/shader-efficiency-client-log-r2-2026-10-30.md)。

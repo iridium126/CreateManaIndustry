@@ -17,11 +17,11 @@
 - 透明排序保持三材质分区和 256 深度带；65536 项以下保留原 kernel，大负载采用每组 1024 项局部直方图与分组预留 scatter，全局单桶直接复制。不需要 subgroup 扩展。
 - Java 侧分出上传、调度准备、读回、统计组件以及绘制职责；GLSL 分出运动、碰撞、Storm、Hex、伤害和死亡链模块。类型注册表及编译期 hook 保留 64 字节粒子和 20 vec4 header。程序整组编译成功后才替换。
 
-工作有效树扫描候选实测较慢，保存在 `scripts/particles/reference/radix_scan_tree_candidate.comp` 供研究，未进入默认路径。默认扫描保留原算法并增加单桶识别，符合“未测得收益不默认启用”的门槛。
+工作有效树扫描候选实测较慢，保存在 `.local/particle-baselines/reference/radix_scan_tree_candidate.comp` 供研究，未进入默认路径。默认扫描保留原算法并增加单桶识别，符合“未测得收益不默认启用”的门槛。
 
 ## 测量环境与复现
 
-同一台 NVIDIA GeForce RTX 4070 Laptop GPU，OpenGL 4.5.0 NVIDIA 581.15。隐藏 GLFW 上下文运行实际生产 GLSL。旧排序来自本次修改前的 shader 快照，保存在 `scripts/particles/reference/`。
+同一台 NVIDIA GeForce RTX 4070 Laptop GPU，OpenGL 4.5.0 NVIDIA 581.15。隐藏 GLFW 上下文运行实际生产 GLSL。旧排序来自本次修改前的 shader 快照，保存在 `.local/particle-baselines/reference/`。
 
 ```powershell
 .\gradlew.bat validateHexGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
@@ -96,3 +96,9 @@ GPU 数值为异步最近完成样本，各阶段不保证来自同一帧；包�
 3. 执行 `profile off`，再次查询确认标记停止、历史值不再更新；重新开启确认新窗口开始采样。
 4. 在客户端配置中切换 `particles.autoThrottle`，分别检查四种组合；关闭时确认 `stats` 显示 `auto throttle=off` 且发射倍率恢复 100%。
 5. 换世界后确认旧统计与节流状态清除，并检查粒子、MODEL 阴影、包裹及碰撞/伤害反馈正常。
+
+本轮实机日志驱动的 MODEL 着色器优化、替换门槛与待验收清单见 [2026-10-30 测量报告](benchmarks/model-draw-client-log-2026-10-30.md)。
+
+下一轮实体比较折叠、计算子阶段诊断、旧性能结论更正及用户待验收项目见 [R2 测量报告](benchmarks/shader-efficiency-client-log-r2-2026-10-30.md)。
+
+当前未提交优化的证据分级、验证工具风险和后续优先级见 [2026-10-31 审阅](benchmarks/particle-uncommitted-review-2026-10-31.md)；冻结输入位置见 [本地基线说明](../scripts/particles/baselines.md)。

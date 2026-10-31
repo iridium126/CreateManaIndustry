@@ -6531,10 +6531,10 @@ public class PackageGpuValidation {
                 check(timing.pending()==0&&timing.poll()==0&&timing.gpuSamples()==0,"old lightweight query entered a new profile session");
                 timing.begin(true,true);timing.end(false);GL11.glFinish();
                 check(timing.poll()==0&&timing.cpuSamples()==0&&timing.gpuSamples()==0,"failed pass published profiling data");
-                timing.begin(true,true);timing.end();String lastReport=timing.report();
+                timing.begin(true,true);timing.end();String lastSummary=timing.summary();int lastCpuSamples=timing.cpuSamples();
                 timing.configure(false,false);GL11.glFinish();
                 check(timing.pending()==0&&timing.poll()==0,"stopped timing retained pending GPU work");
-                check(lastReport.equals(timing.report()),"stopping discarded the last CPU capture");
+                check(lastSummary.equals(timing.summary())&&timing.cpuSamples()==lastCpuSamples,"stopping discarded the last CPU capture");
                 timing.begin(true,true);check(timing.cpuSamples()==0&&timing.gpuSamples()==0,"restarting retained the previous profile window");
                 timing.end();timing.close();
                 check(timing.pending()==0&&timing.poll()==0,"world boundary retained old query cost");
