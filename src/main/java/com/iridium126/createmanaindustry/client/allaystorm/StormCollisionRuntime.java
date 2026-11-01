@@ -18,6 +18,8 @@ import static com.iridium126.createmanaindustry.client.allaystorm.StormCollision
 /** Complete active geometry demand; independent capacity and compact GPU storage. */
 @EventBusSubscriber(modid="createmanaindustry",value=Dist.CLIENT)
 public final class StormCollisionRuntime implements AutoCloseable {
+    /** Diagnostic generation of the atlas/table currently consumed by the shader. */
+    public static long profileResourceGeneration(){return current==null?-1:current.gpu.revision();}
     private static StormCollisionRuntime current;
     private final ClientLevel level;
     private final StormCollisionCache cache=new StormCollisionCache();

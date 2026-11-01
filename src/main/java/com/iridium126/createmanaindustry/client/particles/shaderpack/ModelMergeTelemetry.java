@@ -8,7 +8,7 @@ final class ModelMergeTelemetry implements AutoCloseable {
     enum Segment { BODY, CARRIER, GHOST, FEATHER, LOD1, LOD2 }
     private final EnumMap<Segment,GpuPassTelemetry> passes=new EnumMap<>(Segment.class);
     private boolean detailed;
-    ModelMergeTelemetry(){for(var segment:Segment.values())passes.put(segment,new GpuPassTelemetry());}
+    ModelMergeTelemetry(){for(var segment:Segment.values())passes.put(segment,new GpuPassTelemetry().named("model."+segment.name().toLowerCase(java.util.Locale.ROOT)));}
     void configure(boolean details){if(details)passes.values().forEach(GpuPassTelemetry::poll);if(detailed==details)return;detailed=details;passes.values().forEach(timer->timer.configure(details,details));}
     void begin(Segment segment){if(detailed){var timer=passes.get(segment);timer.poll();var scene=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE;
         timer.begin(true,true,scene.renderFrameToken(),scene.publication().generation());}}

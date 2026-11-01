@@ -771,6 +771,18 @@ public final class AllayStormRuntime {
     public boolean domeGather(int id){var w=findWaveById(id);return w!=null&&w.packet.dome();}
     com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket wavePacket(int id){var wave=findWaveById(id);return wave==null||!wave.alive||wave.packet.abort()?null:wave.packet;}
     public void gatherProgress(int id,int[] counts){var w=findWaveById(id);if(w!=null)w.gatherCounts=counts;}
+    /** CPU contract stage only; per-member GPU phase is preserved by profile capture. */
+    public String profileAttackStages(){
+        var out=new StringBuilder();
+        for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort()){
+            var p=w.packet;out.append(w.waveId).append(':');
+            if(p.helixAttack()){
+                var h=p.helix();float now=p.startSec()+com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.startSec());
+                out.append("helix/").append(now<p.assembleSec()?"assemble":!p.locked()?(now<h.charge()?"approach":"charge"):now<h.thrust()?"locked":now<h.finish()?"thrust":"return");
+            }else out.append(p.dome()?"dome/":"starfall/").append(p.locked()?"locked-contract":"assemble-contract");
+            out.append(';');
+        }return out.toString();
+    }
     public String starfallStatus(){
         int stars=0,domes=0,helices=0,members=0;
         var stages=new StringBuilder();

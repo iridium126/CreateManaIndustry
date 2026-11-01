@@ -47,6 +47,15 @@ class CMIParticleCommandTreeTest {
         accepts(dispatcher,"cmi particle profile");accepts(dispatcher,"cmi particle profile details");
         accepts(dispatcher,"cmi particle profile on");accepts(dispatcher,"cmi particle profile off");
         rejects(dispatcher,"cmi particle profile details on");
+        accepts(dispatcher,"cmi particle profile frames 30");accepts(dispatcher,"cmi particle profile frames 300");
+        rejects(dispatcher,"cmi particle profile frames 0");rejects(dispatcher,"cmi particle profile frames 301");
+        accepts(dispatcher,"cmi particle profile capture photon_dense_A");rejects(dispatcher,"cmi particle profile capture");
+        accepts(dispatcher,"cmi particle profile querysequence moving_A 16");accepts(dispatcher,"cmi particle profile querysequence moving_B 128");
+        rejects(dispatcher,"cmi particle profile querysequence moving_A 15");rejects(dispatcher,"cmi particle profile querysequence moving_A 129");rejects(dispatcher,"cmi particle profile querysequence moving_A");
+        // No experimental backend can be enabled before its qualification gates pass.
+        rejects(dispatcher,"cmi particle profile backend grid100");
+        accepts(dispatcher,"cmi particle profile hardware status");accepts(dispatcher,"cmi particle profile backend production");
+        for(String backend:new String[]{"rt-aabb","rt-triangle","tensor","tensor-control","cuda-control","copy"})rejects(dispatcher,"cmi particle profile backend "+backend);
     }
     @Test void shaderpackSummaryAndDetailsParse(){
         var dispatcher=dispatcher();accepts(dispatcher,"cmi particle shaderpack status");

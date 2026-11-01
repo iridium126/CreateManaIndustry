@@ -135,9 +135,9 @@ final class ModelMergeProductionFixture implements AutoCloseable {
         }
     }
     void validateFullFrame(int[] baseline,int[] candidate,String pack){
-        try(var target=new ModelMergeGpuValidation.Target(baseline[0],1920,1080)){
+        for(int[] size:new int[][]{{1920,1080},{2560,1506}})try(var target=new ModelMergeGpuValidation.Target(baseline[0],size[0],size[1])){
             inputs.realistic.viewport(target.w,target.h);workload=5;colorCount=8;
-            for(int scene:new int[]{0,1}){
+            for(int scene:new int[]{0,1,2}){
                 prepare(1000,scene,1,6);initialize(baseline,candidate);render(baseline,target,1000,scene);var original=target.read();
                 render(candidate,target,1000,scene);ModelMergeGpuValidation.compare(original,target.read(),target,pack+" full-frame scene="+scene);
             }
@@ -180,7 +180,7 @@ final class ModelMergeProductionFixture implements AutoCloseable {
     void benchmark(int[] baseline,int[] candidate,String pack,List<String> csv){
         boolean quick=Boolean.getBoolean("cmi.model.draw.quick");
         for(int[] size:quick?new int[][]{{1920,1080}}:new int[][]{{1920,1080},{2560,1506}}){
-          try(var target=new ModelMergeGpuValidation.Target(baseline[0],size[0],size[1])){
+          try(var target=new ModelMergeGpuValidation.Target(baseline[0],size[0],size[1],true)){
             int[] workloads=quick?new int[]{1,5}:new int[]{0,1,2,3,4,5};
             if(ModelMergeGpuValidation.ROUND2)inputs.realistic.viewport(target.w,target.h);
             for(int mode:workloads)for(int scene=0;scene<3;scene++)for(int count:quick?new int[]{50000}:new int[]{0,1000,10000,50000,131072}){
@@ -195,7 +195,7 @@ final class ModelMergeProductionFixture implements AutoCloseable {
                     ModelMergeGpuValidation.check(covered==(count>0&&scene!=2),"Benchmark coverage pack="+pack+" scene="+scene+" count="+count+" workload="+mode);
                 }
                 ModelMergeGpuValidation.coverageRows.add(pack+","+size[0]+","+size[1]+","+mode+","+scene+","+count+","+coverageResults[0]+","+coverageResults[1]);
-                for(int round=0;round<3;round++)for(int sample=0;sample<(quick?12:16);sample++){
+                for(int round=0;round<Integer.getInteger("cmi.draw.rounds",3);round++)for(int sample=0;sample<Integer.getInteger("cmi.draw.samples",quick?12:16);sample++){
                     double[] a,b;if((round+sample)%2==0){a=measure(baseline,target,count,scene);b=measure(candidate,target,count,scene);}
                     else{b=measure(candidate,target,count,scene);a=measure(baseline,target,count,scene);}
                     csv.add(String.format(Locale.ROOT,"%s,%d,%d,%d,%d,%.6f,%.6f,%.6f,%.6f,%d,%d,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f",pack,scene,count,round,sample,a[0],b[0],a[1],b[1],size[0],size[1],mode,a[2],b[2],a[3],b[3],a[4],b[4]));

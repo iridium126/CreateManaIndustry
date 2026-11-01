@@ -269,10 +269,13 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
 
     private ParticleRuntime() {
     }
-    public void reloadPrograms() { this.programs.requestRebuild(); }
+    public void reloadPrograms() { ClientFrameCapture.INSTANCE.invalidate("particle program reload");ParticleQuerySequence.INSTANCE.invalidate("particle program reload");this.programs.requestRebuild(); }
 
     /** Frees all GPU resources on client shutdown. Safe when never initialised. */
     public void closeResources() {
+        com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.close();
+        ClientFrameCapture.INSTANCE.invalidate("particle resources closed");
+        ParticleQuerySequence.INSTANCE.close();
         replayHexInputs();
         try {
             this.blockEmitters.free();
@@ -358,6 +361,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         frame.camera=camera;frame.view=view;frame.projectionMatrix=projection;frame.deltaTracker=delta;frame.frameCoordinator=coordinator;
         frame.snapshot=null;frame.committed=false;frame.step=0;
         this.scale=scale;
+        NeighborInputCapture.INSTANCE.beginChain(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),committedGeneration+1,java.util.Map.of("input_generation",committedGeneration,"identity_epoch",gpu.identityEpoch(),"capacity",gpu.capacity()));
         try {frame.hasWork=frame.input();return frame;}
         catch(RuntimeException|LinkageError failure){frame.close();throw failure;}
     }
@@ -365,6 +369,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         private Camera camera;private Matrix4fc view,projectionMatrix;private DeltaTracker deltaTracker;
         private com.iridium126.createmanaindustry.client.gpu.frame.GpuFrameCoordinator frameCoordinator;
         private boolean hasWork,committed;private int step;
+        private boolean hardwarePaused;private int hardwarePlayers;
+        private final com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState hardwareBindings=new com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState(false,true);
         private int slot;
         private int cap;
         private float dt;
@@ -426,7 +432,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         }
         if (ParticleRuntime.this.collisionBake.ready()) {
             // host texture writes must be visible to the compute pass
-            GL42.glMemoryBarrier(GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
         }
 
         // 1. Drain requests from client thread.
@@ -603,14 +609,25 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
 
             return true;
         }
-        public void simulate() {require(0);
-
+        public void simulate(){simulate(false);}
+        public boolean simulateUntilHardware(){return simulate(true);}
+        private boolean simulate(boolean allowHardwareYield) {require(0);
+            long updateFrame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),updateGeneration=committedGeneration+1;
+            ParticleChainCapture.INSTANCE.inputs(java.util.Map.of("dt",dt,"time",AllayStormRuntime.INSTANCE.timeSec(),"capacity",cap,"input_generation",committedGeneration,"identity_epoch",gpu.identityEpoch(),"previous_counter_slot",lastGoodSlot,"counter_slot",slot,"damage_count",damageCount,"frame_seed",frameSeed));
+            var hardware=com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE;
+            hardware.beginFrame(programs,updateFrame,updateGeneration);
+            ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.INPUT_PREPARE,updateFrame,updateGeneration);boolean inputPrepared=false;try{
+            ParticleDiagnostics.INSTANCE.beginPreparation(ParticleDiagnostics.UpdateStage.INPUT_STATE,updateFrame,updateGeneration);
             if(AllayStormRuntime.INSTANCE.active())ParticleRuntime.this.gpu.ensureStormIdentities();
             ParticleRuntime.this.gpu.ensureCarrierCapacity(AllayStormRuntime.INSTANCE.carrierCount());
             if(AllayStormRuntime.INSTANCE.active()||com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bytes()>0)com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.prepare(ParticleRuntime.this.committedGeneration+1);
+            ParticleDiagnostics.INSTANCE.endPreparation(true);
             ParticleDiagnostics.INSTANCE.mark("reset_grid");
+            ParticleDiagnostics.INSTANCE.beginPreparation(ParticleDiagnostics.UpdateStage.INPUT_ALLOCATOR,updateFrame,updateGeneration);
             ParticleRuntime.this.gpu.beginComputeFrame(dt);
             gpu.allayAnimation().prepareAllocator(programs.modelPrepare());
+            ParticleDiagnostics.INSTANCE.endPreparation(true);
+            ParticleDiagnostics.INSTANCE.beginPreparation(ParticleDiagnostics.UpdateStage.INPUT_RESET,updateFrame,updateGeneration);
             ParticleRuntime.this.gpu.bindDispatch();
             ParticleRuntime.this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING, ParticleRuntime.this.lastGoodSlot);
             ParticleRuntime.this.gpu.bindCounter(3, slot);
@@ -629,14 +646,17 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             // cleared 0..17 since last frame; an unbound write is silently
             // dropped, which latched the hit key after its first real hit)
             ParticleRuntime.this.gpu.bindHit();
-            GL43.glDispatchCompute(1, 1, 1);
-            GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1, 1, 1);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+            ParticleDiagnostics.INSTANCE.endPreparation(true);
 
             if(damageCount>0){
+                ParticleDiagnostics.INSTANCE.beginPreparation(ParticleDiagnostics.UpdateStage.INPUT_DAMAGE,updateFrame,updateGeneration);
                 int validation=programs.damagePrepare();GL20.glUseProgram(validation);
                 gpu.bindParticleRead(0);gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,lastGoodSlot);
                 gpu.bindEmitters(5);gpu.bindDamage();gpu.bindIdentities(validation);gpu.bindPopulationRead(validation);
-                GL43.glDispatchCompute(damageCount,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(damageCount,1,1);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                ParticleDiagnostics.INSTANCE.endPreparation(true);
             }
 
             // Boids spatial hash (storm swarms): built from the SAME committed
@@ -650,6 +670,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             // header slot 18 and never touch the structure, so skipping both the
             // heads clear and the dispatch on stormless frames is safe.
             if (AllayStormRuntime.INSTANCE.needsGridPass()) {
+                ParticleDiagnostics.INSTANCE.beginPreparation(ParticleDiagnostics.UpdateStage.INPUT_GRID,updateFrame,updateGeneration);
                 ParticleRuntime.this.gpu.clearGridHeads();
                 GL20.glUseProgram(ParticleRuntime.this.programs.grid());
                 ParticleRuntime.this.gpu.bindParticleRead(0);
@@ -658,10 +679,11 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 ParticleRuntime.this.gpu.bindGrid();
                 ParticleRuntime.this.gpu.bindPopulationRead(ParticleRuntime.this.programs.grid());
                 ParticleRuntime.this.gpu.dispatch(ParticleBuffers.STORM_DISPATCH);
-                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                ParticleDiagnostics.INSTANCE.endPreparation(true);
             }
             ParticleDiagnostics.INSTANCE.mark("update");
-            long updateFrame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),updateGeneration=committedGeneration+1;
+            inputPrepared=true;}finally{ParticleDiagnostics.INSTANCE.endUpdate(inputPrepared);}
             ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.PREPARE,updateFrame,updateGeneration);boolean prepareDone=false;int playerCount=0;
             try{
             playerCount=AllayStormRuntime.INSTANCE.needsGridPass()||gpu.allayAnimation().allocated()||feathers.needsPlayers()?AllayStormRuntime.INSTANCE.collectSyncedPlayers():0;
@@ -670,10 +692,11 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.prepare(ParticleRuntime.this.programs.update());
             prepareDone=true;}finally{ParticleDiagnostics.INSTANCE.endUpdate(prepareDone);}
             for(int pass=com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient.INSTANCE.restoring()?0:1;pass<2;pass++){
-                int updateProgram=pass==0?ParticleRuntime.this.programs.columnRecovery():ParticleRuntime.this.programs.update();
+                int updateProgram=pass==0?ParticleRuntime.this.programs.columnRecovery():hardware.updateProgram(ParticleQuerySequence.INSTANCE.updateProgram(ParticleRuntime.this.programs.update()));
                 ParticleDiagnostics.INSTANCE.beginUpdate(pass==0?ParticleDiagnostics.UpdateStage.RECOVERY:ParticleDiagnostics.UpdateStage.GENERIC,updateFrame,updateGeneration);boolean firstDone=false;
                 try{
                 GL20.glUseProgram(updateProgram);
+                ParticleRuntime.this.gpu.bindUpdateCapacity(updateProgram);
                 ParticleRuntime.this.gpu.bindIdentities(updateProgram);
                 ParticleRuntime.this.gpu.bindParticleRead(0);
                 ParticleRuntime.this.gpu.bindParticleWrite(1);
@@ -720,20 +743,36 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.uploadUniforms(updateProgram);
                 com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient.INSTANCE.bind(updateProgram);
                 if(pass==1)setUIntUniform(updateProgram,"uModelPass",1);
+                if(pass==1)ClientFrameCapture.INSTANCE.simulationInput(updateFrame,AllayStormRuntime.INSTANCE.timeSec(),dt);
+                if(pass==1)NeighborInputCapture.INSTANCE.freeze(updateProgram,updateFrame,updateGeneration);
+                if(pass==1)ParticleQuerySequence.INSTANCE.capture(updateFrame,updateGeneration,AllayStormRuntime.INSTANCE.timeSec(),dt);
                 ParticleRuntime.this.gpu.dispatch(0);
                 AllayAnimationGpu.barrier();
-                firstDone=true;}finally{ParticleDiagnostics.INSTANCE.endUpdate(firstDone);}
+                firstDone=true;}finally{if(pass==1&&!firstDone)ParticleQuerySequence.INSTANCE.endUpdate(false);ParticleDiagnostics.INSTANCE.endUpdate(firstDone);}
                 if(pass==1){
                     ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.MODEL,updateFrame,updateGeneration);boolean modelDone=false;try{
                     setUIntUniform(updateProgram,"uModelPass",2);
                     ParticleRuntime.this.gpu.dispatch(ParticleBuffers.MODEL_DISPATCH);
-                    AllayAnimationGpu.barrier();modelDone=true;}finally{ParticleDiagnostics.INSTANCE.endUpdate(modelDone);}
+                    if(hardware.active()){AllayAnimationGpu.barrier();if(allowHardwareYield)hardware.submitModels();else hardware.resumeModels(ParticleRuntime.this.gpu);}
+                    AllayAnimationGpu.barrier();modelDone=true;}finally{ParticleQuerySequence.INSTANCE.endUpdate(modelDone);ParticleDiagnostics.INSTANCE.endUpdate(modelDone);}
                 }
             }
+            if(allowHardwareYield&&hardware.active()){hardwarePlayers=playerCount;hardwarePaused=true;hardwareBindings.capture();hardwareBindings.suspend();hardware.overlapWindow();return true;}
+            finishSimulation(playerCount);return false;
+        }
+        public void resumeSimulation(){
+            require(0);if(!hardwarePaused)throw new IllegalStateException("No suspended hardware simulation");hardwarePaused=false;hardwareBindings.restore();
+            com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.resumeModels(ParticleRuntime.this.gpu);AllayAnimationGpu.barrier();finishSimulation(hardwarePlayers);
+        }
+        private void finishSimulation(int playerCount){
+            long updateFrame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),updateGeneration=committedGeneration+1;
+            var hardware=com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE;
             if(StarfallGpuBuffers.INSTANCE.hasDome()){
                 ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.DOME_CONTACTS,updateFrame,updateGeneration);boolean domeDone=false;try{
-                com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(ParticleRuntime.this.programs.domeContacts());
-                DomeBodyContacts.run(ParticleRuntime.this.programs.grid(),ParticleRuntime.this.programs.domeContacts(),ParticleRuntime.this.gpu.particleReadBufferId(),ParticleRuntime.this.gpu.counterBufferId(ParticleRuntime.this.lastGoodSlot),ParticleRuntime.this.gpu.particleWriteBufferId(),ParticleRuntime.this.gpu.counterBufferId(slot),ParticleRuntime.this.gpu.gridBufferId(),AllayStormRuntime.INSTANCE.timeSec(),dt,playerCount,StarfallGpuBuffers.INSTANCE);
+                hardware.prepareDome(ParticleRuntime.this.gpu.particleReadBufferId(),ParticleRuntime.this.gpu.counterBufferId(ParticleRuntime.this.lastGoodSlot),ParticleRuntime.this.gpu.particleWriteBufferId(),ParticleRuntime.this.gpu.counterBufferId(slot),AllayStormRuntime.INSTANCE.timeSec(),dt,playerCount,cap);
+                int domeProgram=ParticleQuerySequence.INSTANCE.domeProgram(hardware.domeProgram(ParticleRuntime.this.programs.domeContacts()));
+                if(hardware.active()){for(int part:DomeBodyContacts.related(domeProgram))com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(part);}else com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(domeProgram);
+                try{DomeBodyContacts.run(ParticleRuntime.this.programs.grid(),domeProgram,ParticleRuntime.this.gpu.particleReadBufferId(),ParticleRuntime.this.gpu.counterBufferId(ParticleRuntime.this.lastGoodSlot),ParticleRuntime.this.gpu.particleWriteBufferId(),ParticleRuntime.this.gpu.counterBufferId(slot),ParticleRuntime.this.gpu.gridBufferId(),AllayStormRuntime.INSTANCE.timeSec(),dt,playerCount,StarfallGpuBuffers.INSTANCE);}finally{hardware.finishDome();ParticleQuerySequence.INSTANCE.endDome();}
                 ParticleRuntime.this.gpu.bindParticleRead(0);ParticleRuntime.this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,ParticleRuntime.this.lastGoodSlot);domeDone=true;}finally{ParticleDiagnostics.INSTANCE.endUpdate(domeDone);}
             }
             ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.DEPENETRATION,updateFrame,updateGeneration);boolean depenDone=false;try{
@@ -751,7 +790,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             // untouched storm members would survive on a never-rebuilt grid.
 
 
-            step=1;
+            ParticleQuerySequence.INSTANCE.endSimulation(true);step=1;
         }
         public void generate() {require(1);
             feathers.emit(slot,cap,ParticleRuntime.this.frameSeed);
@@ -787,8 +826,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 setFloatUniform(ParticleRuntime.this.programs.emit(), "uStormRotPhase", AllayStormRuntime.INSTANCE.rotPhase());
                 setFloatUniform(ParticleRuntime.this.programs.emit(), "uStormConvPhase", AllayStormRuntime.INSTANCE.convPhase());
                 setFloatUniform(ParticleRuntime.this.programs.emit(), "uStormConvRate", AllayStormRuntime.INSTANCE.convRate());
-                GL43.glDispatchCompute(Math.max(1, (totalSpawn + 63) / 64), 1, 1);
-                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(Math.max(1, (totalSpawn + 63) / 64), 1, 1);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
             }
 
             if(directHexCount>0){
@@ -806,9 +845,9 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 setUIntUniform(program,"uDirectHexBatch",1);
                 setUIntUniform(program,"uHexCurrentTick",hexTick);
                 setIntUniform(program,"uHexTickReady",1);
-                try{GL43.glDispatchCompute((directHexCount+63)/64,1,1);}
+                try{com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((directHexCount+63)/64,1,1);}
                 finally{setUIntUniform(program,"uDirectHexBatch",0);}
-                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             }
 
             if (blockSpawnBound > 0) {
@@ -830,8 +869,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 float range = (float) renderDistanceBlocks();
                 setFloatUniform(be, "uRangeSquared", range * range);
                 GL20.glUniform4fv(loc(be, "uFrustum"), ParticleRuntime.this.frustumPlanes);
-                GL43.glDispatchCompute((ParticleRuntime.this.blockEmitters.dispatchSize() + 3) / 4, 1, 1);
-                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((ParticleRuntime.this.blockEmitters.dispatchSize() + 3) / 4, 1, 1);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
             }
 
             if (fateActive) {
@@ -942,10 +981,10 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 StormLodGpu.INSTANCE.keygen(kg);
                 setUIntUniform(kg,"uModelPass",1);
                 ParticleRuntime.this.gpu.dispatch(1);
-                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
                 setUIntUniform(kg,"uModelPass",2);
                 ParticleRuntime.this.gpu.dispatch(ParticleBuffers.CANDIDATE_MODEL_DISPATCH);
-                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT
                         | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT
                         | GL42.GL_COMMAND_BARRIER_BIT);
 
@@ -961,7 +1000,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                         int shift = RADIX_SHIFTS[pass];
 
                         ParticleRuntime.this.gpu.clearHist();
-                        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
 
                         GL20.glUseProgram(ParticleRuntime.this.programs.radixHist());
                         ParticleRuntime.this.gpu.bindIndirect(2);
@@ -969,13 +1008,13 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                         ParticleRuntime.this.gpu.bindHist();
                         setUIntUniform(ParticleRuntime.this.programs.radixHist(), "uShift", shift);
                         ParticleRuntime.this.gpu.dispatch(2);
-                        GL42.glMemoryBarrier(GL42.GL_ATOMIC_COUNTER_BARRIER_BIT | GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_ATOMIC_COUNTER_BARRIER_BIT | GL43.GL_SHADER_STORAGE_BARRIER_BIT);
 
                         GL20.glUseProgram(ParticleRuntime.this.programs.radixScan());
                         ParticleRuntime.this.gpu.bindHist();
                         ParticleRuntime.this.gpu.bindOffsets();
-                        GL43.glDispatchCompute(1, 1, 1);
-                        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+                        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1, 1, 1);
+                        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
 
                         GL20.glUseProgram(ParticleRuntime.this.programs.radixScatter());
                         ParticleRuntime.this.gpu.bindIndirect(2);
@@ -984,7 +1023,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                         ParticleRuntime.this.gpu.bindOffsets();
                         setUIntUniform(ParticleRuntime.this.programs.radixScatter(), "uShift", shift);
                         ParticleRuntime.this.gpu.dispatch(2);
-                        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
+                        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
 
                         int t = readId;
                         readId = writeId;
@@ -992,7 +1031,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                     }
                     finalPerm = readId; // last written buffer
 
-                    GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT
+                    com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT
                             | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT
                             | GL42.GL_COMMAND_BARRIER_BIT);
                 }
@@ -1059,8 +1098,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                     finalPerm >= 0 ? finalPerm : ParticleRuntime.this.gpu.sortBuffer(0));
             setIntUniform(ParticleRuntime.this.programs.capture(), "uMetaSlot", ParticleRuntime.this.gpu.metaSlotIndex());
             setIntUniform(ParticleRuntime.this.programs.capture(),"uHitResolved",1);
-            GL43.glDispatchCompute(1, 1, 1);
-            GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_COMMAND_BARRIER_BIT
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1, 1, 1);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_COMMAND_BARRIER_BIT
                     | GL42.GL_TEXTURE_FETCH_BARRIER_BIT | GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
 
 
@@ -1071,6 +1110,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             step=3;
         }
         public com.iridium126.createmanaindustry.client.gpu.frame.GpuFrameCoordinator.Publication preparePublication() {require(3);
+            ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.PUBLICATION,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),committedGeneration+1);boolean published=false;try{
             writes.requireCommittable();
             nextGeneration=Math.incrementExact(ParticleRuntime.this.committedGeneration);
             stormVersion=com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.candidateGeneration();
@@ -1094,7 +1134,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
 
             drawInput=new com.iridium126.createmanaindustry.client.render.scene.ParticleRenderFrame(
                     nextGeneration,frameAliveEstimate,frameEntryCount,frameSorted,frameFinalPerm);
-            step=4;return candidate;
+            step=4;published=true;return candidate;
+            }finally{ParticleDiagnostics.INSTANCE.endUpdate(published);}
         }
         public long packageVersion(){return packageVersion;}
         public com.iridium126.createmanaindustry.client.render.scene.ParticleRenderFrame commit() {require(4);
@@ -1160,6 +1201,9 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             if(packageStaged)com.iridium126.createmanaindustry.client.packages.authority.PackageAuthorityClient.committed(Integer.toUnsignedLong(ParticleRuntime.this.simFrame));
         }
         @Override public void close() {
+            ParticleChainCapture.INSTANCE.finish(committed);
+            if(!committed)ParticleQuerySequence.INSTANCE.endSimulation(false);
+            if(hardwarePaused){hardwarePaused=false;hardwareBindings.discard();com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.cancelModels();}
             if(!committed&&snapshot!=null&&snapshot.fence!=0)readbacks.release(snapshot);
             if(!committed) {
                 com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.submitted();
@@ -1237,9 +1281,9 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         setFloatUniform(hg, "uReach", (float) player.entityInteractionRange());
         setIntUniform(hg,"uHitResolve",0);
         this.gpu.dispatch(ParticleBuffers.MODEL_DISPATCH);
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         setIntUniform(hg,"uHitResolve",1);this.gpu.dispatch(ParticleBuffers.MODEL_DISPATCH);
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
 
     /**
@@ -1290,7 +1334,10 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                         data.getInt(ParticleReadbacks.PROFILE_OFFSET+ParticleBuffers.IDX_CNT_GHOST*4),
                         snapshot.feathers?data.getInt(44):0,
                         snapshot.profileLod?data.getInt(ParticleReadbacks.PROFILE_LOD_OFFSET+4):0,
-                        snapshot.profileLod?data.getInt(ParticleReadbacks.PROFILE_LOD_OFFSET+24):0);
+                        snapshot.profileLod?data.getInt(ParticleReadbacks.PROFILE_LOD_OFFSET+24):0,
+                        data.getInt(ParticleReadbacks.PROFILE_OFFSET+ParticleBuffers.IDX_CNT_ADD*4),
+                        data.getInt(ParticleReadbacks.PROFILE_OFFSET+ParticleBuffers.IDX_CNT_SPRITE*4),
+                        data.getInt(ParticleReadbacks.PROFILE_OFFSET+ParticleBuffers.IDX_CNT_ALPHA*4));
                 this.liveDisplay = Math.max(0, Math.min(cap, data.getInt(0)));
                 // Only an empty snapshot covering every subsequent creation proves idle.
                 this.poolMayBeAlive = this.liveDisplay > 0 || snapshot.generation < this.lastCreationGeneration;
@@ -1504,6 +1551,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                                        StarfallGpuBuffers state) {
         int program = programs.waveContact();
         if (program == 0) return false;
+        ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.FEEDBACK,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),committedGeneration+1);boolean completed=false;try{
         var pool = gpu;
         GL20.glUseProgram(program);
         pool.bindParticleWrite(ParticleBuffers.PARTICLE_BB_WRITE);
@@ -1518,14 +1566,15 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setFloatUniform(program, "uTimeSec", time);
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setFloatUniform(program, "uDt", dt);
         state.uploadUniforms(program);
-        if(localMask==0){ParticleDiagnostics.INSTANCE.call();GL43.glDispatchCompute(1,1,1);}
+        if(localMask==0){ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);}
         else {pool.bindDispatch();pool.dispatch(ParticleBuffers.STORM_DISPATCH);}
         feedbackBarrier();
-        return true;
+        completed=true;return true;
+        }finally{ParticleDiagnostics.INSTANCE.endUpdate(completed);}
     }
 
 
-    private static void feedbackBarrier(){GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);}
+    private static void feedbackBarrier(){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);}
     public boolean prepareResources() {
         if(disabled)return false;
         if (!this.initialized) {

@@ -8,6 +8,26 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ShaderPackSessionTest {
+    @Test void profilingRejectsAnInactiveOrReplacedPipeline()throws Exception{
+        var constructor=ShaderPackSession.class.getDeclaredConstructor(java.nio.file.Path.class,ShaderPackInventory.class,boolean.class);
+        constructor.setAccessible(true);
+        var session=constructor.newInstance(java.nio.file.Path.of("profile-fixture"),ShaderPackInventory.of(Map.of()),true);
+        var current=ShaderPackSession.class.getDeclaredField("current");current.setAccessible(true);
+        Object previous=current.get(null),pipeline=new Object();
+        try{
+            current.set(null,session);session.observe(pipeline,1920,1080);
+            assertTrue(session.ownsPipeline(pipeline));assertFalse(session.ownsPipeline(null));assertFalse(session.ownsPipeline(new Object()));
+            var oldPipeline=new RiftIrisPipeline(){
+                public long cmi$riftGeneration(){return session.generation()-1;}
+                public NativeSkyView cmi$targetSky(){return null;}
+                public String cmi$targetSkyReport(){return "fixture";}
+            };
+            session.observe(oldPipeline,1920,1080);assertFalse(session.ownsPipeline(oldPipeline),"An old pipeline cannot borrow a new source inventory");
+            var replacement=ShaderPackSession.candidate(ShaderPackInventory.of(Map.of()));current.set(null,replacement);
+            assertFalse(session.ownsPipeline(pipeline),"A source inventory from the old session must not label a new profile");
+            replacement.observe(pipeline,1920,1080);assertFalse(replacement.ownsPipeline(pipeline),"Rootless candidates are not loaded packs");
+        }finally{current.set(null,previous);}
+    }
     static BlockEntry block(String name){return new BlockEntry(new NamespacedId("minecraft",name),Map.of("lit","true"));}
     @Test void candidateMappingIsCopyOnSuccessAndUnchangedOnFailure(){
         var session=ShaderPackSession.candidate(ShaderPackInventory.of(ShaderPatchPlanTest.photon(48)));

@@ -1,0 +1,24 @@
+#version 450 core
+layout(local_size_x=256)in;
+layout(std430,binding=0)readonly buffer Pool{vec4 data[];}pool;
+layout(std430,binding=24)buffer Population{uint modelCount,stormCount,live,valid;uvec2 generation;uint modelCapacity,stormCapacity;uint slots[];}pop;
+layout(std430,binding=26)readonly buffer Attack{uint data[];}attack;
+layout(std430,binding=27)readonly buffer State{uint data[];}stateRead;
+layout(std430,binding=15)buffer Temp{uint words[];}tmp;
+uniform uint uPhase,uMode,uCapacity;uniform bool uHasAttack;
+shared uint values[256];
+const uint B=4096u,O=4096u,C=8193u,S=12289u,P=12352u;
+uint key(uint slot){vec4 p=pool.data[slot*4u];if(uMode==1u){ivec3 c=ivec3(floor(p.xyz/2.5));return (uint(c.x)*92837111u^uint(c.y)*689287499u^uint(c.z)*283923481u)&4095u;}
+ uint member=(uint(p.w+.5)&262143u)-1u,phase=uHasAttack&&member<131072u?stateRead.data[member*2u+1u]&255u:0u,a=uHasAttack&&member<131072u?attack.data[16u+member]:0u;
+ uint kind=(a&0x40000000u)!=0u?1u:a==0u?0u:2u;return (pool.data[slot*4u+3u].y<=0.?2048u:0u)+kind*256u+phase;}
+void main(){uint i=gl_GlobalInvocationID.x,t=gl_LocalInvocationID.x,block=gl_WorkGroupID.x;
+ if(uPhase==0u){if(i<B){tmp.words[i]=0u;tmp.words[C+i]=0u;}return;}
+ if(uPhase==2u){values[t]=tmp.words[i];barrier();for(uint step=1u;step<256u;step*=2u){uint v=t>=step?values[t-step]:0u;barrier();values[t]+=v;barrier();}tmp.words[O+i]=values[t]-tmp.words[i];if(t==255u)tmp.words[S+block]=values[t];return;}
+ if(uPhase==3u){if(i==0u){uint sum=0u;for(uint b=0u;b<16u;b++){uint n=tmp.words[S+b];tmp.words[S+b]=sum;sum+=n;}tmp.words[O+B]=sum;}return;}
+ if(uPhase==4u){tmp.words[O+i]+=tmp.words[S+block];return;}
+ if(pop.valid!=1u||pop.modelCount>uCapacity||i>=pop.modelCount)return;
+ if(uPhase==6u){pop.slots[i*2u]=tmp.words[P+i*2u];pop.slots[i*2u+1u]=tmp.words[P+i*2u+1u];return;}
+ uint slot=pop.slots[i*2u],bucket=key(slot);
+ if(uPhase==1u)atomicAdd(tmp.words[bucket],1u);
+ else if(uPhase==5u){uint rank=tmp.words[O+bucket]+atomicAdd(tmp.words[C+bucket],1u);tmp.words[P+rank*2u]=slot;tmp.words[P+rank*2u+1u]=pop.slots[i*2u+1u];}
+}

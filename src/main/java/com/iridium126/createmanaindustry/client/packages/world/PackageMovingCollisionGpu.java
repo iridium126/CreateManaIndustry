@@ -182,7 +182,7 @@ public final class PackageMovingCollisionGpu implements AutoCloseable {
         /** Readiness is pose coverage; an unavailable BVH is resolved per package after coarse bounds. */
         public boolean ready(){owner();return !ended&&poseAvailable&&(source==null||revision==source.revision()&&frame==source.poseFrame);}
         public void claimStep(PackagePhysicsGpu physics){owner();if(ended||submitted)throw new IllegalStateException("Moving view already submitted");submitted=true;if(poseAvailable&&source!=null&&revision==source.revision()&&frame==source.poseFrame)physics.claimMovingFrame(source,frame);}
-        public void bind(int readyLocation){owner();if(ended)throw new IllegalStateException("Moving view ended");GL42.glMemoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        public void bind(int readyLocation){owner();if(ended)throw new IllegalStateException("Moving view ended");com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,9,stack.ints(bank==null?empty:bank.buffer,bank==null||bank.geometry==null?empty:bank.geometry.buffer));}
             GL20.glUniform1i(readyLocation,poseAvailable&&(source==null||(revision==source.revision()&&frame==source.poseFrame))?1:0);
         }

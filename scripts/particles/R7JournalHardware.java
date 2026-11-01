@@ -1,0 +1,53 @@
+import java.nio.*;
+import java.nio.file.*;
+import java.util.*;
+import com.google.gson.*;
+import org.lwjgl.opengl.*;
+import com.iridium126.createmanaindustry.client.particles.engine.*;
+import com.iridium126.createmanaindustry.client.particles.engine.hardware.*;
+
+/** Offline adapter uses the same unified continuation and device handoff as the
+ * client. Requires actual captured sources, aliases and stage configurations. */
+final class R7JournalHardware extends ModelPopulationGpuValidation implements AutoCloseable {
+    final R7ChainReplayGpu.Replay replay;
+    final Map<String,String> names=new HashMap<>();
+    final Set<Integer> owned=new HashSet<>();
+    final HardwareUpdateSource.Variant variant;
+    final HardwareQueryStage stage;
+    final int backend,scratch,texture,domePrepare,ordinaryPrepare;
+    final Map<String,JsonObject> domeInputs=new HashMap<>();
+    HardwareQueryStage.Ticket domeTicket;
+    long nonce,inputGeneration;float time,dt;int players;
+    int ordinaryUsed,domeUsed,fallbacks;
+    R7JournalHardware(R7ChainReplayGpu.Replay replay,String name)throws Exception{
+        this.replay=replay;backend=Arrays.asList(R7HardwareGpu.BACKENDS).indexOf(name);check(backend>=0||name.equals("complete-reference"),"known journal backend");
+        var descriptions=replay.manifest.getAsJsonObject("programs");String update=null,dome=null;
+        for(var entry:descriptions.entrySet()){var d=entry.getValue().getAsJsonObject();String source=d.get("source_name").getAsString();names.put(entry.getKey(),source);if(d.has("prelude"))check(Files.readString(replay.root.resolve(d.get("prelude").getAsString())).equals(ParticlePrograms.commonPrelude()),"captured shader prelude/ABI differs; use matching diagnostic build");if(source.equals("update.comp")){check(d.has("plain"),"actual update source required");update=Files.readString(replay.root.resolve(d.get("plain").getAsString()));}if(source.startsWith("dome_contact")&&d.has("plain"))dome=Files.readString(replay.root.resolve(d.get("plain").getAsString())).replaceAll("#define CMI_DOME_PASS [0-5]","#define CMI_DOME_PASS 0");}
+        check(update!=null,"full journal contains unified update source");variant=HardwareUpdateSource.build(update);
+        HardwareDomeSource.Variant contact=dome==null?null:HardwareDomeSource.build(dome);
+        for(var entry:names.entrySet()){String source=entry.getValue(),plain=null;if(source.equals("update.comp"))plain=variant.source();else if(source.startsWith("dome_contact")){check(contact!=null,"actual Dome source required");int pass=source.equals("dome_contact_control.comp")?4:source.equals("dome_contact_apply.comp")?3:source.equals("dome_contact_audit.comp")?5:0;plain=contact.consumer().replace("#define CMI_DOME_PASS 0","#define CMI_DOME_PASS "+pass);}if(plain!=null){int p=R7ContinuationGpu.compileVariant(plain);owned.add(p);deleteProgram(replay.programs.put(entry.getKey(),p));}}
+        domePrepare=contact==null?0:R7ContinuationGpu.compileVariant(contact.prepare());if(domePrepare!=0)owned.add(domePrepare);
+        if(backend>=0){HardwareNative.load(Path.of(".gradle/hardware-offload/build"));var deps=JsonParser.parseString(Files.readString(Path.of(".gradle/neighbor-rt/dependencies.json"))).getAsJsonObject();
+        Path sourceRoot=Path.of(System.getProperty("cmi.benchmark.output")).resolve("journal-native-"+java.util.UUID.randomUUID());Files.createDirectories(sourceRoot);for(String file:List.of("Query.h","grid.cu","rt.cu","rt-triangle.cu","tensor.cu"))Files.copy(Path.of("native/offload",file),sourceRoot.resolve(file));stage=new HardwareQueryStage(131072,262144,16<<20,Files.readString(Path.of("src/main/resources/assets/createmanaindustry/shaders/particles/diagnostics/hardware_prepare.comp")),Path.of(deps.getAsJsonObject("cuda_cudart").get("root").getAsString()),Path.of(deps.getAsJsonObject("optix").get("root").getAsString()),sourceRoot.toAbsolutePath(),Path.of(deps.getAsJsonObject("cuda_nvcc").get("root").getAsString()),true,backend);ordinaryPrepare=stage.prepareProgram();}else{stage=null;ordinaryPrepare=0;}
+        scratch=buffer(bytes(16+262144*variant.strideWords()*4));texture=GL11.glGenTextures();GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,texture);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_R32UI,scratch);
+        for(var command:replay.manifest.getAsJsonArray("commands")){var e=command.getAsJsonObject();if(e.has("inputs")){var inputs=e.getAsJsonObject("inputs");if(names.get(inputs.get("program").getAsString()).equals("dome_contacts.comp"))domeInputs.put("solve",inputs);}}
+    }
+    static int bits(JsonObject uniforms,String key,int fallback){return uniforms.has(key)?uniforms.getAsJsonObject(key).getAsJsonArray("value").get(0).getAsInt():fallback;}
+    static void pair(int p,String key,long value){GL41.glProgramUniform2ui(p,GL20.glGetUniformLocation(p,key),(int)value,(int)(value>>>32));}
+    static void command(JsonObject e){var a=e.getAsJsonArray("args");if(e.get("op").getAsString().equals("dispatch-indirect"))GL43.glDispatchComputeIndirect(a.get(0).getAsLong());else GL43.glDispatchCompute(a.get(0).getAsInt(),a.get(1).getAsInt(),a.get(2).getAsInt());GL42.glMemoryBarrier(GL42.GL_ALL_BARRIER_BITS);}
+    void dispatch(JsonObject e){
+        var inputs=e.getAsJsonObject("inputs");String name=names.get(inputs.get("program").getAsString());int p=replay.inputs(inputs);if(e.has("indirect"))GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,replay.buffer(e.get("indirect").getAsString()));
+        if(name.equals("update.comp")){
+            var uniforms=inputs.getAsJsonObject("uniforms");int pass=bits(uniforms,"uModelPass",0);check(pass==1||pass==2,"recorded GENERIC -> MODEL dispatch domains required");
+            if(pass==1){nonce++;GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,scratch);GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,16,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);var generation=uniforms.getAsJsonObject("uPopulationGeneration").getAsJsonArray("value");inputGeneration=Integer.toUnsignedLong(generation.get(0).getAsInt())|(Integer.toUnsignedLong(generation.get(1).getAsInt())<<32);time=Float.intBitsToFloat(bits(uniforms,"uTimeSec",0));dt=Float.intBitsToFloat(bits(uniforms,"uDt",0));players=bits(uniforms,"uPlayerCount",0);}
+            GL42.glBindImageTexture(7,texture,0,false,0,GL15.GL_READ_WRITE,GL30.GL_R32UI);ui(p,"uR7Stage",stage==null?0:1);pair(p,"uR7Generation",nonce);bool(p,"uR7ResultsEnabled",false);command(e);
+            if(pass==2&&stage!=null){stage.selectPrepare(ordinaryPrepare);var ticket=stage.beginBound(texture,variant.strideWords(),inputGeneration,nonce,backend,131072,262144);boolean used=stage.consume(ticket,50_000_000L);if(used)ordinaryUsed++;else fallbacks++;replay.inputs(inputs);if(e.has("indirect"))GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,replay.buffer(e.get("indirect").getAsString()));GL42.glBindImageTexture(7,texture,0,false,0,GL15.GL_READ_WRITE,GL30.GL_R32UI);ui(p,"uR7Stage",2);pair(p,"uR7Generation",nonce);pair(p,"uR7ResourceEpoch",stage.resourceEpoch());bool(p,"uR7ResultsEnabled",used);command(e);stage.afterResume(ticket);}
+            return;
+        }
+        if(name.equals("dome_contact_control.comp")&&stage!=null&&bits(inputs.getAsJsonObject("uniforms"),"uMode",4)==4){
+            check(domeTicket==null,"previous Dome stage consumed");var solve=domeInputs.get("solve");check(solve!=null&&domePrepare!=0,"complete Dome configuration required");replay.inputs(solve);R7ChainReplayGpu.Replay.uniforms(domePrepare,solve.getAsJsonObject("uniforms"));f(domePrepare,"uTimeSec",time);f(domePrepare,"uDt",dt);GL41.glProgramUniform1i(domePrepare,GL20.glGetUniformLocation(domePrepare,"uPlayerCount"),players);stage.selectPrepare(domePrepare);int scan=(int)(replay.resources.getAsJsonObject(solve.getAsJsonObject("ssbo").getAsJsonObject("1").get("buffer").getAsString()).get("bytes").getAsLong()/64);nonce++;domeTicket=stage.beginBound(0,0,inputGeneration,nonce,backend,scan,scan);boolean used=stage.consume(domeTicket,50_000_000L);if(used)domeUsed++;else fallbacks++;for(var entry:names.entrySet())if(entry.getValue().startsWith("dome_contact")){int program=replay.programs.get(entry.getKey());bool(program,"uR7ResultsEnabled",used);pair(program,"uR7Generation",nonce);pair(program,"uR7ResourceEpoch",stage.resourceEpoch());}replay.inputs(inputs);
+        }
+        command(e);if(name.equals("dome_contact_audit.comp")&&stage!=null){stage.afterResume(domeTicket);domeTicket=null;}
+    }
+    @Override public void close(){if(stage!=null){if(domeTicket!=null){stage.afterResume(domeTicket);domeTicket=null;}GL11.glFlush();stage.close();long deadline=System.nanoTime()+10_000_000_000L;while(!stage.retired()){HardwareQueryStage.pollRetirement();check(System.nanoTime()<deadline,"journal native retirement");java.util.concurrent.locks.LockSupport.parkNanos(100_000);}}GL11.glDeleteTextures(texture);GL15.glDeleteBuffers(scratch);if(domePrepare!=0)deleteProgram(domePrepare);}
+}

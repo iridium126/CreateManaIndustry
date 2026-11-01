@@ -157,14 +157,14 @@ public final class ColumnSnapshotClient {
         if (selected.isEmpty()) return;
         if (target.buffer == null) target.buffer = new GpuReadbackBuffer(PER_FRAME * StarfallColumnSnapshot.BYTES);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, target.buffer.id());
-        GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32F, GL11.GL_RED, GL11.GL_FLOAT, new float[]{255});
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32F, GL11.GL_RED, GL11.GL_FLOAT, new float[]{255});
         GL20.glUseProgram(program); StarfallGpuBuffers.INSTANCE.bind(program, false);
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, 0, pool); GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, 3, count);
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, 5, emitters); GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, 22, target.buffer.id());
         GpuUniforms.setIntUniform(program, "uColumnCount", selected.size());
         GL41.glProgramUniform4iv(program, GpuUniforms.loc(program, "uColumnSlots"), selectedSlots);
-        GL43.glDispatchCompute(Math.max(1, (upper + 63) / 64), 1, 1);
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(Math.max(1, (upper + 63) / 64), 1, 1);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
         target.fence = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         if (target.fence == 0) throw new IllegalStateException("Starfall snapshot fence failed");
         inFlight++;

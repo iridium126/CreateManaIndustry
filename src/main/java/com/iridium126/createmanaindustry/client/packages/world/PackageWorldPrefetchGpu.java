@@ -32,11 +32,11 @@ public final class PackageWorldPrefetchGpu implements AutoCloseable {
             for(int i=0;i<UNIFORMS.length;i++)locations[i]=GL20.glGetUniformLocation(linked,UNIFORMS[i]);
             buffer=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,PackageCollisionRequests.BYTES,GL15.GL_DYNAMIC_DRAW);
-            GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
             try(var stack=MemoryStack.stackPush()) {
-                GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,PackageCollisionRequests.HEADER_BYTES,
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,PackageCollisionRequests.HEADER_BYTES,
                         GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
-                GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,PackageCollisionRequests.TOUCH_OFFSET,
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,PackageCollisionRequests.TOUCH_OFFSET,
                         PackageCollisionRequests.TOUCH_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
             }
             nextRing=new PackageReadbackRing(PackageCollisionRequests.BYTES);
@@ -56,15 +56,15 @@ public final class PackageWorldPrefetchGpu implements AutoCloseable {
             throw new IllegalArgumentException("Collision prefetch range");
         if(count==0)return false;
         if(ring.pending()==PackageReadbackRing.SLOTS){skipped++;return false;}
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,requests);
         try(var stack=MemoryStack.stackPush()) {
-            GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,PackageCollisionRequests.HEADER_BYTES,
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,PackageCollisionRequests.HEADER_BYTES,
                     GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
-            GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,PackageCollisionRequests.TOUCH_OFFSET,
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,PackageCollisionRequests.TOUCH_OFFSET,
                     PackageCollisionRequests.TOUCH_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
         }
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,bodyBuffer);
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,OUTPUT_BINDING,requests);
         GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,USAGE_BINDING,requests,PackageCollisionRequests.TOUCH_OFFSET,
@@ -79,9 +79,9 @@ public final class PackageWorldPrefetchGpu implements AutoCloseable {
             long tableVersion=ready?world.version():Long.MIN_VALUE;
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,8,stack.ints((int)tableVersion,(int)(tableVersion>>>32)));
         }
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        {PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((count+63)/64,1,1);}
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         if(!ring.submit(requests,epoch,sequence)) {skipped++;return false;}
         sequence++;submitted+=PackageCollisionRequests.BYTES;return true;
     }

@@ -18,13 +18,19 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
     private final long[] offsets=new long[BINDINGS],sizes=new long[BINDINGS];
     private final int[][] textures;
     private static final int[] IMAGE_STATE={GL42.GL_IMAGE_BINDING_NAME,GL42.GL_IMAGE_BINDING_LEVEL,GL42.GL_IMAGE_BINDING_LAYERED,GL42.GL_IMAGE_BINDING_LAYER,GL42.GL_IMAGE_BINDING_ACCESS,GL42.GL_IMAGE_BINDING_FORMAT};
-    private final int[][] images=new int[4][6];
+    private final int[][] images;
+    private final int[] samplerObjects;
     public GpuComputeState(){this(false);}
     public GpuComputeState(boolean shaderSamplers){
+        this(shaderSamplers,false);
+    }
+    public GpuComputeState(boolean shaderSamplers,boolean preserveSamplerObjects){
         units=shaderSamplers?Math.max(UNITS,GL11.glGetInteger(GL20.GL_MAX_TEXTURE_IMAGE_UNITS)):UNITS;
         targets=shaderSamplers?new int[]{GL11.GL_TEXTURE_2D,GL12.GL_TEXTURE_3D,GL31.GL_TEXTURE_BUFFER,GL11.GL_TEXTURE_1D,GL13.GL_TEXTURE_CUBE_MAP,GL30.GL_TEXTURE_2D_ARRAY,GL31.GL_TEXTURE_RECTANGLE}:new int[]{GL11.GL_TEXTURE_2D,GL12.GL_TEXTURE_3D,GL31.GL_TEXTURE_BUFFER};
         bindings=shaderSamplers?new int[]{GL11.GL_TEXTURE_BINDING_2D,GL12.GL_TEXTURE_BINDING_3D,GL31.GL_TEXTURE_BINDING_BUFFER,GL11.GL_TEXTURE_BINDING_1D,GL13.GL_TEXTURE_BINDING_CUBE_MAP,GL30.GL_TEXTURE_BINDING_2D_ARRAY,GL31.GL_TEXTURE_BINDING_RECTANGLE}:new int[]{GL11.GL_TEXTURE_BINDING_2D,GL12.GL_TEXTURE_BINDING_3D,GL31.GL_TEXTURE_BINDING_BUFFER};
         textures=new int[units][targets.length];
+        samplerObjects=preserveSamplerObjects?new int[units]:null;
+        images=new int[preserveSamplerObjects?8:4][6];
     }
     private int program,vao,array,element,storage,draw,dispatch,read,write,active,textureBuffer;
     private static final int[] UNPACK={GL11.GL_UNPACK_ALIGNMENT,GL11.GL_UNPACK_ROW_LENGTH,GL11.GL_UNPACK_SKIP_ROWS,GL11.GL_UNPACK_SKIP_PIXELS,GL12.GL_UNPACK_IMAGE_HEIGHT,GL12.GL_UNPACK_SKIP_IMAGES};
@@ -37,6 +43,7 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
         storage=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_BINDING);draw=GL11.glGetInteger(GL40.GL_DRAW_INDIRECT_BUFFER_BINDING);
         dispatch=GL11.glGetInteger(GL43.GL_DISPATCH_INDIRECT_BUFFER_BINDING);read=GL11.glGetInteger(GL31.GL_COPY_READ_BUFFER);write=GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER);
         active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);textureBuffer=GL11.glGetInteger(GL31.GL_TEXTURE_BUFFER);
+        if(samplerObjects!=null)for(int i=0;i<units;i++)samplerObjects[i]=GL30.glGetIntegeri(GL33.GL_SAMPLER_BINDING,i);
         for(int unit=0;unit<images.length;unit++)for(int i=0;i<6;i++)images[unit][i]=GL30.glGetIntegeri(IMAGE_STATE[i],unit);
         unpackBuffer=GL11.glGetInteger(GL21.GL_PIXEL_UNPACK_BUFFER_BINDING);for(int i=0;i<UNPACK.length;i++)unpack[i]=GL11.glGetInteger(UNPACK[i]);
         for(int i=0;i<BINDINGS;i++){ssbo[i]=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,i);offsets[i]=ssbo[i]==0?0:GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,i);sizes[i]=ssbo[i]==0?0:GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,i);}
@@ -80,6 +87,7 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
         else for(var state=activeBoundary;state!=null;state=state.parent)if(state.parent==this){state.parent=parent;break;}
         parent=null;
         for(int unit=0;unit<images.length;unit++){int[] image=images[unit];GL42.glBindImageTexture(unit,image[0],image[1],image[2]!=0,image[3],image[4],image[5]);}
+        if(samplerObjects!=null)for(int i=0;i<units;i++)GL33.glBindSampler(i,samplerObjects[i]);
         try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(ssbo));}
         for(int i=0;i<BINDINGS;i++)if(ssbo[i]!=0&&sizes[i]>0)GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,i,ssbo[i],offsets[i],sizes[i]);
         GL30.glBindVertexArray(vao);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,array);if(vao!=0)GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER,element);
@@ -89,4 +97,12 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
         GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER,unpackBuffer);for(int i=0;i<UNPACK.length;i++)GL11.glPixelStorei(UNPACK[i],unpack[i]);
         RenderSystem.activeTexture(active);GL13.glActiveTexture(active);GL20.glUseProgram(program);
     }
+    /** Keep an experimental transaction's bindings without leaving it on the
+     * active render-boundary stack while independent terrain commands run. */
+    public void suspend(){
+        if(!open||activeBoundary!=this)throw new IllegalStateException("Compute binding snapshot is not current");
+        activeBoundary=parent;parent=null;
+    }
+    /** Abort a suspended transaction without applying its bindings to Iris. */
+    public void discard(){if(!open)return;open=false;GpuBufferRetirement.restore(this);if(activeBoundary==this)activeBoundary=parent;parent=null;}
 }

@@ -37,7 +37,7 @@ public final class ParticleRenderer {
             poseTboState.capture();
             boolean queryActive = false;
             try {
-                if (drawTimer!=null&&drawTimer.begin())
+                if (drawTimer!=null&&drawTimer.begin(true,ClientGpuScene.INSTANCE.renderFrameToken(),publication.generation()))
                     queryActive = true;
 
                 ParticleDiagnostics.INSTANCE.mark("draw_storm_lod");
@@ -258,12 +258,14 @@ public final class ParticleRenderer {
                 RenderSystem.depthMask(false);
             }
 
-            if (mode == 0)
-                gpu.drawIndirect(0);
+            if(!com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.active())
+                gpu.drawIndirect(mode==0?0:mode==1?1:5);
+            else if (mode == 0)
+                com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("particles.additive",()->gpu.drawIndirect(0));
             else if (mode == 1)
-                gpu.drawIndirect(1);
+                com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("particles.sprites",()->gpu.drawIndirect(1));
             else
-                gpu.drawIndirect(5);
+                com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("particles.alpha",()->gpu.drawIndirect(5));
 
             RenderSystem.depthMask(true);
             RenderSystem.defaultBlendFunc();

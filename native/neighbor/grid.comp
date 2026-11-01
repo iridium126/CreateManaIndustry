@@ -1,0 +1,39 @@
+#version 460 core
+#extension GL_ARB_gpu_shader_int64 : require
+layout(local_size_x=256) in;
+layout(std430,binding=0) readonly buffer Points { vec4 points[]; };
+layout(std430,binding=1) buffer Result { uint64_t total,overflow;uint64_t offsets[]; };
+// IDs follow q+1 64-bit offsets, sharing the same output allocation via a second range binding.
+layout(std430,binding=6) buffer Ids { uint ids[]; };
+layout(std430,binding=2) buffer Heads { int heads[]; };
+layout(std430,binding=3) buffer Next { int next[]; };
+layout(std430,binding=4) buffer Counts { uint counts[]; };
+layout(std430,binding=5) buffer Sums { uint64_t sums[]; };
+uniform uint n,q,capacity,hashMask,stage;
+uniform float radius;
+shared uint64_t values[256];
+uint hashCell(ivec3 c){return (uint(c.x)*73856093u^uint(c.y)*19349663u^uint(c.z)*83492791u)&hashMask;}
+ivec3 cell(vec3 p){return ivec3(floor(p/radius));}
+void main(){
+    uint i=gl_GlobalInvocationID.x,t=gl_LocalInvocationID.x,block=gl_WorkGroupID.x;
+    if(stage==0u){if(i<=hashMask)heads[i]=-1;return;}
+    if(stage==1u){if(i<n)next[i]=atomicExchange(heads[hashCell(cell(points[i].xyz))],int(i));return;}
+    if(stage==3u){
+        values[t]=i<q?uint64_t(counts[i]):uint64_t(0);barrier();
+        for(uint step=1u;step<256u;step*=2u){uint64_t v=t>=step?values[t-step]:uint64_t(0);barrier();values[t]+=v;barrier();}
+        if(i<q)offsets[i]=values[t]-uint64_t(counts[i]);if(t==255u)sums[block]=values[t];return;
+    }
+    if(stage==4u){if(i==0u){uint64_t sum=uint64_t(0);for(uint b=0u;b<(q+255u)/256u;b++){uint64_t value=sums[b];sums[b]=sum;sum+=value;}total=sum;overflow=sum>uint64_t(capacity)?uint64_t(1):uint64_t(0);offsets[q]=sum;}return;}
+    if(stage==5u){if(i<q)offsets[i]+=sums[block];return;}
+    if(i>=q||stage==6u&&overflow!=uint64_t(0))return;
+    vec3 a=points[i].xyz;ivec3 c=cell(a);uint count=0u;
+    for(int z=-1;z<=1;z++)for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){
+        ivec3 key=c+ivec3(x,y,z);
+        for(int j=heads[hashCell(key)];j>=0;j=next[j]){
+            if(uint(j)==i)continue;vec3 b=points[j].xyz;if(any(notEqual(cell(b),key)))continue;
+            precise vec3 delta=a-b;precise float d2=(delta.x*delta.x+delta.y*delta.y)+delta.z*delta.z;
+            if(d2<=radius*radius){if(stage==6u)ids[uint(offsets[i])+count]=uint(j);count++;}
+        }
+    }
+    if(stage==2u)counts[i]=count;
+}

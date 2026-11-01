@@ -21,7 +21,7 @@ final class ParticleDispatch {
         GL20.glUseProgram(program);
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setUIntUniform(program, "uPhase", phase);
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setUIntUniform(program,"uPackageStaged",packageStaged?1:0);
-        GL43.glDispatchCompute(1, 1, 1);
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_COMMAND_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1, 1, 1);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_COMMAND_BARRIER_BIT);
     }
 }

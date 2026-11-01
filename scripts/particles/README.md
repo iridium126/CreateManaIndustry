@@ -1,5 +1,34 @@
 # Particle engine GPU validation
 
+R7 client backend switch fix: `docs/benchmarks/gpu-neighbor-r7-capacity-fix-20261101.md`.
+Use the `capacity-fix` diagnostic distribution; the earlier client integration
+left late-compiled update programs at `uCapacity=0`. Regression replay uses
+`validateR7RealContinuationGpu -Pr7ClientBindings=true` to clear that uniform
+and restore it through the actual client pool binding before dispatch.
+
+R7 continuation delivery (2026-11-01): see
+`docs/benchmarks/gpu-neighbor-r7-20261101.md` for implementation, correctness,
+costs and failures, and `docs/benchmarks/gpu-neighbor-r7-client-20261101.md` for
+installation and actual-client commands. This supersedes the historical R5/R6
+admission/capture limitations below: qualified diagnostic distributions expose
+explicit hardware backends; ordinary builds keep production only. Full capture
+is now schema 3 GPU-command-chain, and contiguous query sequences now include
+actual ordinary and post-MODEL Dome query boundaries. Older captures retain
+their declared scope. No client FPS gain or production replacement is claimed.
+
+```powershell
+python scripts/particles/validate_chain_capture.py '<capture-directory>'
+python scripts/particles/prepare_r7_actual_sequence.py '<sequence-directory>' '<new-output>' --stage dome-solve --queries 128
+.\gradlew.bat -I scripts/particles/validation.init.gradle validateR7SequenceGpu '-Pr7Inputs=<new-output>' -Pr7Samples=64 '-PbenchmarkOutput=<fresh-results-directory>' --no-configuration-cache
+python scripts/particles/summarize_r7_chain.py build/benchmarks/neighbor-r7-continuation-20261101/chain-measurements-v2
+python scripts/particles/summarize_r7_copy_chain.py build/benchmarks/neighbor-r7-continuation-20261101
+```
+
+The client ZIP contains the optional locked native runtime and installer. The
+development receipt overlay is opt-in with `scripts/particles/r7-client.init.gradle`;
+do not place the distribution JAR in development `run/mods`. Do not run the client
+or multiple GPU validations concurrently with these measurements.
+
 Run from the project root on a machine with an OpenGL 4.5 driver:
 
 ```powershell
@@ -188,3 +217,141 @@ they are never runtime switches and their sources are never packaged. Early
 experiment atlas backgrounds differ from the corrected final fixture. Do not
 mix those results into the accepted benchmark. See the [R3 report](../../docs/benchmarks/feather-merge-client-log-2026-10-31.md)
 for the small scope of measured benefits and pending client acceptance.
+
+## Read-only attack experiments R4 (2026-10-31)
+
+The [R4 report](../../docs/benchmarks/shader-efficiency-r4-2026-10-31.md)
+records rejected compute/draw candidates. No new runtime shader optimization
+was retained. Do not combine their local improvements with earlier accepted results.
+The immutable `.local/particle-baselines/reference/shader-efficiency-20261031-r4/`
+snapshot has a mandatory manifest; the evidence archive also contains its full inputs.
+Use new output directories for every run.
+
+```powershell
+python scripts/particles/prepare_shader_efficiency_candidates.py .local/particle-baselines/reference/shader-efficiency-20261031-r4 build/benchmarks/r4-reproduction-candidates
+./gradlew.bat --offline --no-configuration-cache -I scripts/particles/validation.init.gradle validateShaderEfficiencyUpdateGpu -PefficiencyBaseline=.local/particle-baselines/reference/shader-efficiency-20261031-r4/src/main/resources -PefficiencyCandidate=build/benchmarks/r4-reproduction-candidates/update '-PefficiencyCounts=1000,65536' '-PefficiencyScenes=column,recovery' -PefficiencyFull=true -PefficiencySamples=64 -PbenchmarkOutput=build/benchmarks/r4-reproduction-recovery
+python scripts/particles/run_readonly_draw_screen.py .local/particle-baselines/reference/shader-efficiency-20261031-r4/src/main/resources build/benchmarks/r4-reproduction-candidates/draw build/benchmarks/r4-reproduction-draw
+python -m unittest discover -s scripts/particles -p test_update_efficiency.py
+```
+
+Use `--draw-mode carry` with a separate candidate directory to reproduce the
+narrower withdrawn carry experiment. `efficiencyCandidate` can select `contacts`
+instead of `update`. Omitting `efficiencyFull` measures kernels only; full mode
+adds the production contact, depenetration, navigation, feedback and publication
+chain. The `recovery` case first generates a real column snapshot and checks
+that it contains valid state before replay. Each invocation is an independent
+process; use three A/B and three A/A runs (candidate path equal to baseline for
+A/A), with 64 samples per cell. `summarize_update_efficiency.py --help` describes
+the timing gate and explicit expected-cell JSON. Missing groups/samples, failed
+equivalence or kernel-only data cannot pass. Loading/resources/client acceptance
+are additional gates. The known Dome-gather A/A mismatch is retained as a failure.
+
+Detailed profiling exports active session snapshots under
+`run/logs/cmi-particle-profiles/`. For the R4 draw harness, pass
+`-PreadonlyDraw`, `-PreadonlyBaseline=<frozen resource root>`,
+`-PreadonlyCandidate=<candidate draw root>` and optionally
+`-PdrawSnapshots=<snapshot directory>` to `validateShaderEfficiencyGpu` or
+`benchmarkShaderEfficiencyGpu`. Snapshots replay option values and environment
+macros, and require matching pack/source/effective-option hash/main-world context
+before native attachment formats are used for performance measurements. Without
+snapshots, the fixture remains synthetic FP32 MRT. Correctness comparisons always
+use strict FP32 MRT. `drawRounds` and `drawSamples` control sampling; three separate
+processes with `drawRounds=1`, `drawSamples=64` provide independent rounds.
+
+`validateNativeAttachmentReplayGpu` checks effective option/macro replay, mismatch
+rejection, RGBA8/RGBA16F and D24S8 allocation using an explicitly synthetic test
+snapshot. It is not client capture evidence. Querying profile/status does not
+export snapshots or start compilation.
+
+### Neighbor R5: complete-query experiments and whole-client captures
+
+`/cmi particle profile frames 30` collects whole runTick intervals, CPU wall submission
+before display exchange, and non-blocking whole-frame GPU timestamps. Close chat/menus
+and keep dimension, window size, shader options, VSync and limiter fixed. JSON/CSV pairs
+are written under `run/logs/cmi-particle-frames`; invalid/short windows cannot pass the
+client gate. Delayed particle counts retain their source frame and generation; `-1`
+means unavailable. Contract stages are CPU packet stages, not inferred GPU member states.
+
+`/cmi particle profile capture photon_dense` freezes bound update inputs asynchronously
+under `run/logs/cmi-neighbor-inputs`. These are instrumented samples; overlapping frame
+windows are invalidated. A committed manifest includes SSBOs, samplers/images, uniforms,
+generations and file hashes. Above 512 MiB, the entire capture is rejected. Replay with:
+
+```powershell
+python scripts/particles/replay_neighbor_capture.py run/logs/cmi-neighbor-inputs/<capture> build/replay-new --radius 1 --queries 64
+```
+
+The replay tool supplies a complete conservative candidate oracle with bounded batches;
+it does not implement production attack/contact/event replay. `--contact` excludes corpses;
+ordinary separation retains them. Use the actual radius/sweep horizon required by the rule.
+
+The isolated native experiment is optional and never enters the ordinary Gradle graph:
+
+```powershell
+./scripts/particles/build-neighbor-rt.ps1
+./gradlew.bat -I scripts/particles/validation.init.gradle validateNeighborQueryGpu --no-configuration-cache
+./gradlew.bat -I scripts/particles/validation.init.gradle validateNeighborQueryGpu -PneighborBenchmark --no-configuration-cache
+./gradlew.bat -I scripts/particles/validation.init.gradle validateNeighborCaptureGpu --no-configuration-cache
+```
+
+MSVC x64/CMake/JDK are required. Checksum-locked OptiX 9.0 and CUDA 12.8 Update 1
+NVRTC/support headers are cached in `.gradle/neighbor-rt`; no driver/global install occurs.
+Repeat benchmark invocations in three separate processes. Raw output is UUID named under
+`build/benchmarks/neighbor-r5`. GL grid, CUDA grid, OptiX build and refit are complete radius
+queries with explicit capacity failure. Native output is temporary; no live physics backend
+or production switch is exposed. `summarize_neighbor_queries.py` only grants a query screen.
+
+`prepare_complete_neighbor_reference.py` generates an isolated streaming GL reference with
+no visit cap, hash-cell duplicate filtering and stable identity contact ties.
+`validateNeighborCompleteUpdateGpu` measures initial grid preparation, staged preparation,
+recovery, ordinary/MODEL updates, contacts, depenetration, navigation and feedback. It also
+records the existing production A/A state differences, without requiring new trajectories
+to reproduce old truncation. One-frame invariants are preliminary; no multi-frame or visual
+qualification is claimed. Run one Gradle process at a time against the shared build directory.
+
+`prepare_neighbor_clock.py` / `validateNeighborClockGpu` instrument detached production
+fixtures through an unused image unit. Ticks are invocation-local, categories may nest,
+and outputs/register pressure differ. Never convert them to milliseconds or FPS.
+`compare_client_frames.py` checks three independent controlled A/A and A/B rounds,
+30 seconds/1,000 frames per window, matched context and p50/p95/p99 thresholds; it cannot
+grant physics/visual qualification. Current production captures identify as `production-opengl`.
+
+R5 observations, rejection reasons and the remaining client tests are documented in
+`docs/benchmarks/neighbor-r5-2026-10-31.md`. Production shaders and default backend remain
+unchanged because no candidate passed all replacement gates.
+
+### R6 real-capture experiments (production unchanged)
+
+See `docs/benchmarks/neighbor-r6-2026-10-31.md` for results and the explicit remaining
+qualification gaps. Generate isolated unified candidates from the frozen R6 baseline:
+
+```powershell
+python scripts/particles/prepare_neighbor_r6.py build/benchmarks/neighbor-r6/baseline build/benchmarks/neighbor-r6/my-candidates
+.\gradlew.bat -I scripts/particles/validation.init.gradle validateR6CaptureReplayGpu -Pr6Candidates=build/benchmarks/neighbor-r6/my-candidates -Pr6Variant=grid100 -PbenchmarkOutput=build/benchmarks/neighbor-r6/my-update-run --no-configuration-cache
+.\gradlew.bat -I scripts/particles/validation.init.gradle validateR6FullChainGpu -Pr6Candidates=build/benchmarks/neighbor-r6/my-candidates -Pr6Variant=grid100 -PbenchmarkOutput=build/benchmarks/neighbor-r6/my-full-run --no-configuration-cache
+```
+
+The first task restores actual update inputs, GENERIC then MODEL; the second is a
+synthetic full-chain fixture. Never merge their scopes or overwrite output paths.
+Use `-Pr6Trace=true -Pr6Samples=0` for an instrumented query run, then
+`validate_r6_query_traces.py` (FP64 force reference) and
+`validate_r6_candidate_sets.py` (sampled exact sets and raw duplicate counts).
+`prepare_r6_capture_clock.py` is localization only; its clock outputs are not force
+traces or timing samples. Native GPU prototypes load only in explicit offline tasks.
+
+Client `profile frames` now exports tagged stage/submission sidecars. New command
+`/cmi particle profile querysequence <name> <frames>` accepts 16–128 frames and is
+mutually exclusive with FPS and single-input captures. Validate the entire segment:
+
+```powershell
+python scripts/particles/r6_query_sequence.py run/logs/cmi-particle-query-sequences/NAME-UUID
+python scripts/particles/export_r6_native_inputs.py run/logs/cmi-particle-query-sequences/NAME-UUID build/benchmarks/neighbor-r6/my-sequence --sequence
+.\gradlew.bat -I scripts/particles/validation.init.gradle validateR6NativeReplayGpu -Pr6NativeInputs=build/benchmarks/neighbor-r6/my-sequence -PbenchmarkOutput=build/benchmarks/neighbor-r6/my-native-run --no-configuration-cache
+```
+
+Periodic RT replay requires contiguous scene frames and generations with the same
+stable membership. Missing frames invalidate the segment; separated snapshots are
+static tests. Current compact sequence records are read-pool geometry, not all
+locally recovered query/physical state. Schema-2 single captures also declare their
+limited boundary coverage explicitly; real complete-chain capture is still pending.
+No experimental client backend is exposed because no candidate passed the gates.

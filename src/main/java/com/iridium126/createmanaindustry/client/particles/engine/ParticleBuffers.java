@@ -415,7 +415,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         }
         this.capacity = cap;
         this.identitySSBO = createBuffer(4L + cap * 8L+8L*DAMAGE_QUEUE_CAP, null);
-        GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
                 GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_INT, (java.nio.IntBuffer) null);
         this.waveStampSSBO = -1; // stable Storm identities, allocated only on first contact query
         this.maxEmitters = maxEmitters;
@@ -574,9 +574,9 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         int grown=Math.min(CARRIER_CAP+131072,Math.max(required,carrierCapacity+carrierCapacity/2));
         long oldBytes=(capacity+(long)carrierCapacity+1)*8,newBytes=(capacity+(long)grown+1)*8;
         int scratch=GL15.glGenBuffers();GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,scratch);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL31.GL_COPY_WRITE_BUFFER,oldBytes,GL15.GL_STREAM_COPY);
-        try{for(int buffer:sortSSBOs){GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,buffer);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,scratch);GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,oldBytes);
+        try{for(int buffer:sortSSBOs){GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,buffer);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,scratch);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,oldBytes);
             GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,buffer);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL31.GL_COPY_WRITE_BUFFER,newBytes,GL15.GL_DYNAMIC_DRAW);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,scratch);
-            GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,oldBytes-8);GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,oldBytes-8,newBytes-8,8);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,oldBytes-8);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,oldBytes-8,newBytes-8,8);
         }}finally{com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(scratch);}carrierCapacity=grown;
     }
     public int carrierBase() {
@@ -858,7 +858,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
 
     /** Zeroes the radix histogram (2 KiB) before each pass. */
     public void clearHist() {
-        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.histSSBO);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, this.zero2048);
     }
@@ -873,7 +873,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         int prefix=GRID_TABLE+capacity,base=alignGridWords(prefix);
         int next=createBuffer((long)(base+words)*4,null);
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,gridSSBO);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,next);
-        GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,(long)prefix*4);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,(long)prefix*4);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(gridSSBO);
         gridSSBO=next;gridExtraBase=base;gridExtraWords=words;beginBindings();return base;
     }
@@ -947,7 +947,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
 
     /** Zeroes the readback entry count ahead of a dispatch (4-byte write). */
     public void clearStormPosCount() {
-        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         this.tmp4.clear();
         this.tmp4.putInt(0);
         this.tmp4.flip();
@@ -970,9 +970,9 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     public void invalidateIdentities() {
         this.identityEpoch++;
         if (this.waveStampSSBO > 0) {
-            org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
             GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.waveStampSSBO);
-            GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
                     GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_INT, (java.nio.IntBuffer) null);
         }
         if(waveContactSSBO>0)clearWaveContactCount();
@@ -989,14 +989,14 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
 
     /** Binds the wave-contact staging buffer at its fixed binding. */
     public void bindWaveContact() {
-        if(waveStampSSBO<0){waveStampSSBO=createBuffer(131072L*16,null);GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(java.nio.IntBuffer)null);clearWaveContactCount();}
+        if(waveStampSSBO<0){waveStampSSBO=createBuffer(131072L*16,null);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(java.nio.IntBuffer)null);clearWaveContactCount();}
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER, WAVE_STAMP_BB, this.waveStampSSBO);
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER, WAVECONTACT_BB, this.waveContactSSBO);
     }
 
     /** Acknowledges wave events after a successful snapshot copy (4-byte write). */
     public void clearWaveContactCount() {
-        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         this.tmp4.clear();
         this.tmp4.putInt(0);
         this.tmp4.flip();
@@ -1011,12 +1011,12 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
      * every slot is written before it can be traversed.
      */
     public void clearGridHeads() {
-        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
             java.nio.IntBuffer zero = stack.mallocInt(1);
             zero.put(0).flip();
             GL30.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, this.gridSSBO);
-            GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
                     0, (long) GRID_TABLE * 4, GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_INT, zero);
         }
     }
@@ -1057,7 +1057,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     /** Instantly drops every particle (all counter slots + instance counts zeroed). */
     public void clearParticles() {
         allayAnimation.clear();clearModelPopulation();
-        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         this.tmp4.clear();
         this.tmp4.putInt(0).putInt(0);
         this.tmp4.flip();
@@ -1069,7 +1069,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         this.tmp4.clear();
         this.tmp4.putInt(0);
         this.tmp4.flip();
-        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         for (int id : this.indirectFrames) {
             GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, id);
             for (int i = 0; i < INDIRECT_COMMANDS; i++)
@@ -1103,11 +1103,11 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     }
 
     void copySnapshot(int counterSlot,int previousCounterSlot,long frameToken, ParticleReadbacks.Slot slot) {
-        org.lwjgl.opengl.GL42.glMemoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER, slot.buffer);
         copySnapshotPart(this.counterSSBOs[counterSlot], 0, 16);
         copySnapshotPart(this.hitSSBO, 16, 16);
-        slot.profile=ParticleDiagnostics.INSTANCE.enabled();
+        slot.profile=ParticleDiagnostics.INSTANCE.enabled()||com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.collecting();
         slot.profileFrame=frameToken;
         if(slot.profile){
             copySnapshotPart(this.indirectSSBO,ParticleReadbacks.PROFILE_OFFSET,INDIRECT_COMMANDS * INDIRECT_STRIDE);
@@ -1124,7 +1124,15 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
 
     private static void copySnapshotPart(int source, long offset, long bytes) {
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER, source);
-        GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER, GL31.GL_COPY_WRITE_BUFFER, 0, offset, bytes);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER, GL31.GL_COPY_WRITE_BUFFER, 0, offset, bytes);
+    }
+
+    /** Every selected update program needs this frame's actual pool limit.
+     * Late-compiled diagnostic programs do not receive configureStatic(). */
+    public void bindUpdateCapacity(int program) {
+        if (capacity <= 0) throw new IllegalStateException("Particle update has no allocated pool");
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,
+                com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uCapacity"),capacity);
     }
 
     public void bindIdentities(int program) {
@@ -1155,7 +1163,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     /** 0: committed pool, 1: current pool, 2: visible translucent items. */
     public void dispatch(int command) {
         ParticleDiagnostics.INSTANCE.call();
-        GL43.glDispatchComputeIndirect((long) command * DISPATCH_BYTES);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchComputeIndirect((long) command * DISPATCH_BYTES);
     }
 
     /** Complete inputs for a billboard pass; do not depend on another material's bindings. */
@@ -1204,6 +1212,12 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
      */
     public void drawModelSegments() {
         ParticleDiagnostics.INSTANCE.drawCall();
+        if(com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.active()){
+            ParticleDiagnostics.INSTANCE.drawCall();ParticleDiagnostics.INSTANCE.drawCall();
+            ParticleFrameStages.draw("native.model.body",()->GL43.glMultiDrawElementsIndirect(GL11.GL_TRIANGLES,GL11.GL_UNSIGNED_INT,2L*INDIRECT_STRIDE,1,INDIRECT_STRIDE));
+            ParticleFrameStages.draw("native.model.carrier",()->GL43.glMultiDrawElementsIndirect(GL11.GL_TRIANGLES,GL11.GL_UNSIGNED_INT,3L*INDIRECT_STRIDE,1,INDIRECT_STRIDE));
+            ParticleFrameStages.draw("native.model.ghost",()->GL43.glMultiDrawElementsIndirect(GL11.GL_TRIANGLES,GL11.GL_UNSIGNED_INT,4L*INDIRECT_STRIDE,1,INDIRECT_STRIDE));return;
+        }
         GL43.glMultiDrawElementsIndirect(GL11.GL_TRIANGLES, GL11.GL_UNSIGNED_INT,
                 2L * INDIRECT_STRIDE, 3, INDIRECT_STRIDE);
     }

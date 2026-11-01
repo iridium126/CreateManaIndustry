@@ -21,11 +21,50 @@ import java.util.regex.*;
 public final class ModelMergeGpuValidation {
     static final int W=1920,H=1080;
     static final List<String> firstDrawRows=new ArrayList<>(List.of("pack,width,height,count,workload,baseline_ms,candidate_ms,baseline_cpu_ms,candidate_cpu_ms"));
+    static final boolean R7=Boolean.getBoolean("cmi.r7.draw");
     static final boolean FEATHER=Boolean.getBoolean("cmi.feather.merge");
     static final boolean ROUND2=Boolean.getBoolean("cmi.shader.round2");
+    static final boolean READONLY_EXPERIMENT=Boolean.getBoolean("cmi.readonly.draw");
     static long checks;
     static final List<String> coverageRows=new ArrayList<>(List.of("pack,width,height,workload,scene,count,baseline_covered,candidate_covered"));
     static Path output;
+    static int[] nativeBenchmarkFormats;static int nativeBenchmarkDepth;
+    static void benchmarkEnvironment(String pack,String source)throws Exception{
+        ModelMaterialGpuValidation.OPTION_OVERRIDES=Map.of();
+        String directory=System.getProperty("cmi.draw.snapshots");if(directory==null)return;
+        try(var files=Files.list(Path.of(directory))){
+            for(Path file:files.filter(p->p.toString().endsWith(".json")).sorted().toList()){
+                var json=com.google.gson.JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+                if(!json.has("source_sha256")||!json.get("source_sha256").getAsString().equals(source)||!json.get("pack").getAsString().equals(pack)||!json.get("world").getAsString().equals("minecraft:overworld"))continue;
+                var macros=new ArrayList<StringPair>();
+                for(var entry:json.getAsJsonArray("model_environment_macros")){var macro=entry.getAsJsonObject();macros.add(new StringPair(macro.get("key").getAsString(),macro.get("value").getAsString()));}
+                var options=new TreeMap<String,String>();json.getAsJsonObject("options").entrySet().forEach(entry->options.put(entry.getKey(),entry.getValue().getAsString()));
+                ModelMaterialGpuValidation.OPTION_OVERRIDES=Map.copyOf(options);
+                DEFINES.clear();DEFINES.addAll(macros);return;
+            }
+        }
+        throw new IllegalStateException("No matching source/pack/overworld environment snapshot: "+pack);
+    }
+    static void benchmarkFormats(String pack,String source,String options)throws Exception{
+        nativeBenchmarkFormats=null;nativeBenchmarkDepth=GL30.GL_DEPTH_COMPONENT32F;
+        String directory=System.getProperty("cmi.draw.snapshots");
+        if(directory==null)return;
+        try(var files=Files.list(Path.of(directory))){
+            for(Path file:files.filter(p->p.toString().endsWith(".json")).sorted().toList()){
+                var json=com.google.gson.JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+                if(!json.has("pack")||!json.get("pack").getAsString().equals(pack)||!json.has("source_sha256")||!json.get("source_sha256").getAsString().equals(source))continue;
+                if(!json.get("options_available").getAsBoolean()||!json.get("options_hash").getAsString().equals(options)||!json.get("world").getAsString().equals("minecraft:overworld"))continue;
+                if(!json.get("model_environment_macros").equals(new com.google.gson.Gson().toJsonTree(DEFINES)))continue;
+                int[] formats=new int[8];Arrays.fill(formats,GL11.GL_RGBA8);
+                var buffers=json.getAsJsonArray("model_draw_buffers");var colors=json.getAsJsonObject("color_attachment_formats_gl");
+                check(buffers.size()<=8,"Snapshot MRT count");
+                for(int i=0;i<buffers.size();i++){String index=buffers.get(i).getAsString();check(colors.has(index),"Snapshot lacks a live MODEL attachment "+index);formats[i]=colors.get(index).getAsInt();}
+                nativeBenchmarkDepth=json.get("depth_format_gl").getAsInt();nativeBenchmarkFormats=formats;
+                Files.writeString(output.resolve("native-formats-"+source.substring(0,12)+".json"),json.toString()+"\n");return;
+            }
+        }
+        throw new IllegalStateException("No active snapshot matches pack/source/effective options/overworld/macros: "+pack);
+    }
     static final List<StringPair> DEFINES=ModelMaterialGpuValidation.DEFINES;
     static void check(boolean ok,String reason){checks++;if(!ok)throw new AssertionError(reason);}
     static void integer(int p,String name,int value){GL20.glUniform1i(GL20.glGetUniformLocation(p,name),value);}
@@ -51,6 +90,7 @@ public final class ModelMergeGpuValidation {
         return new ModelShaderOptimization.Plan(map(plan.stages(),restore),plan.applied(),plan.skipped());
     }
     static ModelShaderOptimization.Stages oldPlan(ModelShaderOptimization.Stages s,int id){
+        if(READONLY_EXPERIMENT)return ModelShaderOptimization.prepare(s,id,64,64).stages();
         var old=EfficiencyBaselineOptimization.prepare(new EfficiencyBaselineOptimization.Stages(s.vertex(),s.geometry(),s.tessControl(),s.tessEval(),s.fragment()),id,64,64).stages();
         return new ModelShaderOptimization.Stages(old.vertex(),old.geometry(),old.tessControl(),old.tessEval(),old.fragment());
     }
@@ -120,6 +160,9 @@ public final class ModelMergeGpuValidation {
     static final class Target implements AutoCloseable {
         final int fbo,depth;final int[] colors,types;final int w,h;
         Target(int p,int w,int h){
+            this(p,w,h,false);
+        }
+        Target(int p,int w,int h,boolean performance){
             this.w=w;this.h=h;types=new int[8];Arrays.fill(types,GL11.GL_FLOAT);
             int resources=GL43.glGetProgramInterfacei(p,GL43.GL_PROGRAM_OUTPUT,GL43.GL_ACTIVE_RESOURCES);
             for(int i=0;i<resources;i++){
@@ -132,11 +175,15 @@ public final class ModelMergeGpuValidation {
             for(int i=0;i<8;i++){
                 colors[i]=GL11.glGenTextures();GL11.glBindTexture(GL11.GL_TEXTURE_2D,colors[i]);
                 int internal=types[i]==GL11.GL_UNSIGNED_INT?GL30.GL_RGBA32UI:types[i]==GL11.GL_INT?GL30.GL_RGBA32I:GL30.GL_RGBA32F;
+                if(performance&&nativeBenchmarkFormats!=null)internal=nativeBenchmarkFormats[i];
                 GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,internal,w,h,0,types[i]==GL11.GL_FLOAT?GL11.GL_RGBA:GL30.GL_RGBA_INTEGER,types[i],(ByteBuffer)null);
                 GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0+i,GL11.GL_TEXTURE_2D,colors[i],0);
             }
             depth=GL11.glGenTextures();GL11.glBindTexture(GL11.GL_TEXTURE_2D,depth);
-            GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,GL30.GL_DEPTH_COMPONENT32F,w,h,0,GL11.GL_DEPTH_COMPONENT,GL11.GL_FLOAT,(ByteBuffer)null);
+            int depthFormat=performance&&nativeBenchmarkFormats!=null?nativeBenchmarkDepth:GL30.GL_DEPTH_COMPONENT32F;
+            boolean stencil=depthFormat==GL30.GL_DEPTH24_STENCIL8||depthFormat==GL30.GL_DEPTH32F_STENCIL8;
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,depthFormat,w,h,0,stencil?GL30.GL_DEPTH_STENCIL:GL11.GL_DEPTH_COMPONENT,
+                    stencil?(depthFormat==GL30.GL_DEPTH24_STENCIL8?GL30.GL_UNSIGNED_INT_24_8:GL30.GL_FLOAT_32_UNSIGNED_INT_24_8_REV):GL11.GL_FLOAT,(ByteBuffer)null);
             GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,GL11.GL_TEXTURE_2D,depth,0);
             GL20.glDrawBuffers(new int[]{GL30.GL_COLOR_ATTACHMENT0,GL30.GL_COLOR_ATTACHMENT1,GL30.GL_COLOR_ATTACHMENT2,GL30.GL_COLOR_ATTACHMENT3,GL30.GL_COLOR_ATTACHMENT4,GL30.GL_COLOR_ATTACHMENT5,GL30.GL_COLOR_ATTACHMENT6,GL30.GL_COLOR_ATTACHMENT7});
             check(GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER)==GL30.GL_FRAMEBUFFER_COMPLETE,"MRT framebuffer");
@@ -350,7 +397,7 @@ public final class ModelMergeGpuValidation {
         var startupCsv=new ArrayList<String>();startupCsv.add("pack,baseline_programs,candidate_programs,baseline_stages_ms,candidate_stages_ms,optimization_ms");
         java.util.function.Function<String,String> sourceLoader=name->com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{try{return Files.readString(Path.of("src/main/resources/assets/createmanaindustry",path));}catch(Exception e){throw new RuntimeException(e);}});
         boolean drawOptimization=Boolean.getBoolean("cmi.model.draw");
-        java.util.function.Function<String,String> frozenLoader=name->com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{try{return Files.readString(Path.of(ROUND2?".local/particle-baselines/reference/shader-efficiency-20261030-r2/src/main/resources/assets/createmanaindustry":".local/particle-baselines/reference/model-draw-20261030/src/main/resources/assets/createmanaindustry",path+".txt"));}catch(Exception e){throw new RuntimeException(e);}});
+        java.util.function.Function<String,String> frozenLoader=name->com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{try{return Files.readString(READONLY_EXPERIMENT?Path.of(System.getProperty("cmi.readonly.baseline"),"assets/createmanaindustry",path):Path.of(ROUND2?".local/particle-baselines/reference/shader-efficiency-20261030-r2/src/main/resources/assets/createmanaindustry":".local/particle-baselines/reference/model-draw-20261030/src/main/resources/assets/createmanaindustry",path+".txt"));}catch(Exception e){throw new RuntimeException(e);}});
         java.util.function.Function<String,String> experimentLoader=name->{
             Path source=Path.of("scripts/particles/experiments/model-draw",Path.of(name).getFileName()+".txt");
             return com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{try{
@@ -360,10 +407,16 @@ public final class ModelMergeGpuValidation {
         };
         var compiler=new FrozenModelProgramCompiler(frozenLoader);
         Object delivered=ROUND2?new EfficiencyBaselineCompiler(frozenLoader):new DeliveredModelProgramCompiler(frozenLoader);
+        if(READONLY_EXPERIMENT)delivered=Class.forName("com.iridium126.createmanaindustry.client.particles.shaderpack.ReadonlyBaselineCompiler").getConstructor(java.util.function.Function.class).newInstance(frozenLoader);
+        if(R7)delivered=new ShaderPackProgramCompiler(sourceLoader);
         var deliveredBuild=delivered.getClass().getDeclaredMethod("buildMergedSource",boolean.class);deliveredBuild.setAccessible(true);
         var build=FrozenModelProgramCompiler.class.getDeclaredMethod("buildMergedSource",boolean.class);build.setAccessible(true);
         String variant=System.getProperty("cmi.model.draw.variant","full");
         Object current=new ShaderPackProgramCompiler(sourceLoader);
+        if(READONLY_EXPERIMENT){
+            java.util.function.Function<String,String> readonlyLoader=name->com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{try{return Files.readString(Path.of(System.getProperty("cmi.readonly.candidate"),"assets/createmanaindustry",path));}catch(Exception e){throw new RuntimeException(e);}});
+            current=Class.forName("com.iridium126.createmanaindustry.client.particles.shaderpack.ReadonlyCandidateCompiler").getConstructor(java.util.function.Function.class).newInstance(readonlyLoader);
+        }
         if(!variant.equals("full")&&!variant.equals("aa")){
             Class<?> type=Class.forName("com.iridium126.createmanaindustry.client.particles.shaderpack."+variant+"ModelProgramCompiler");
             current=type.getConstructor(java.util.function.Function.class).newInstance(variant.equals("Context")?experimentLoader:frozenLoader);
@@ -375,21 +428,23 @@ public final class ModelMergeGpuValidation {
             String pack=sample.getFileName().toString().replace(',','_');
             if(Arrays.stream(System.getProperty("cmi.model.draw.pack","").toLowerCase(Locale.ROOT).split(",")).noneMatch(token->pack.toLowerCase(Locale.ROOT).contains(token)))continue;
             var inventory=ShaderPackInventory.readPack(sample);Path root=output.resolve(inventory.digest().substring(0,12));Files.createDirectories(root);
+            if(READONLY_EXPERIMENT)benchmarkEnvironment(pack,inventory.digest());
             for(var entry:inventory.sources().entrySet()){Path p=root.resolve(entry.getKey());Files.createDirectories(p.getParent());Files.writeString(p,entry.getValue());}
             String base=null;for(String c:List.of("gbuffers_entities","gbuffers_textured_lit","gbuffers_textured","gbuffers_basic")){String path=Files.exists(root.resolve("world0/"+c+".vsh"))?"world0/"+c:c;if(Files.exists(root.resolve(path+".vsh"))&&Files.exists(root.resolve(path+".fsh"))){base=path;break;}}check(base!=null,"Entities fallback");
             String v=ModelMaterialGpuValidation.preprocess(root,base+".vsh"),f=ModelMaterialGpuValidation.preprocess(root,base+".fsh"),g=Files.exists(root.resolve(base+".gsh"))?ModelMaterialGpuValidation.preprocess(root,base+".gsh"):null;
             var graph=new IncludeGraph(root,ImmutableList.of(AbsolutePackPath.fromAbsolutePath("/"+base+".vsh"),AbsolutePackPath.fromAbsolutePath("/"+base+".fsh")),false);
-            var options=new ShaderPackOptions(graph,Map.of());var constructor=net.irisshaders.iris.shaderpack.IdMap.class.getDeclaredConstructor(Path.class,ShaderPackOptions.class,Iterable.class);constructor.setAccessible(true);
+            var options=new ShaderPackOptions(graph,ModelMaterialGpuValidation.OPTION_OVERRIDES);var constructor=net.irisshaders.iris.shaderpack.IdMap.class.getDeclaredConstructor(Path.class,ShaderPackOptions.class,Iterable.class);constructor.setAccessible(true);
             int allay=ModelEntityContext.resolve((net.irisshaders.iris.shaderpack.IdMap)constructor.newInstance(root,options,DEFINES)).allayId();
             var properties=new ShaderProperties(inventory.source("shaders.properties"),options,DEFINES);
             if(ROUND2){
                 String shadowPath=Files.exists(root.resolve("world0/shadow.fsh"))?"world0/shadow.fsh":"shadow.fsh";
                 inputs.realistic.configure(properties,v+"\n"+f+(Files.exists(root.resolve(shadowPath))?ModelMaterialGpuValidation.preprocess(root,shadowPath):""));
                 var allRoots=ImmutableList.copyOf(inventory.sources().keySet().stream().filter(name->List.of(".vsh",".fsh",".gsh",".tcs",".tes",".csh").stream().anyMatch(name::endsWith)).map(name->AbsolutePackPath.fromAbsolutePath("/"+name)).toList());
-                var allOptions=new ShaderPackOptions(new IncludeGraph(root,allRoots,false),Map.of());var values=new TreeMap<String,String>();
+                var allOptions=new ShaderPackOptions(new IncludeGraph(root,allRoots,false),ModelMaterialGpuValidation.OPTION_OVERRIDES);var values=new TreeMap<String,String>();
                 allOptions.getOptionSet().getBooleanOptions().keySet().forEach(key->values.put(key,Boolean.toString(allOptions.getOptionValues().getBooleanValueOrDefault(key))));
                 allOptions.getOptionSet().getStringOptions().keySet().forEach(key->values.put(key,allOptions.getOptionValues().getStringValueOrDefault(key)));
                 String digest=java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(values.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))).substring(0,12);
+                if(READONLY_EXPERIMENT)benchmarkFormats(pack,inventory.digest(),digest);
                 String expected=FEATHER?clientOptionHash(pack):pack.toLowerCase(Locale.ROOT).contains("photon")?"8891f40a9e8c":pack.toLowerCase(Locale.ROOT).contains("complementary")?"2f845d3b8761":"unrecorded";
                 Files.writeString(output.resolve("options-"+inventory.digest().substring(0,12)+".json"),"{\"pack\":\""+pack+"\",\"option_count\":"+values.size()+",\"hash\":\""+digest+"\",\"expected\":\""+expected+"\",\"matched\":"+digest.equals(expected)+",\"shadow_resolution\":"+inputs.realistic.shadows.getResolution()+"}\n");
             }
@@ -410,11 +465,11 @@ public final class ModelMergeGpuValidation {
                 if(FEATHER){var frozen=FeatherBaselineOptimization.prepare(new FeatherBaselineOptimization.Stages(candidateStages.vertex(),candidateStages.geometry(),candidateStages.tessControl(),candidateStages.tessEval(),candidateStages.fragment()),id,64,64).stages();
                     check(plan.stages().equals(new ModelShaderOptimization.Stages(frozen.vertex(),frozen.geometry(),frozen.tessControl(),frozen.tessEval(),frozen.fragment())),"Feather baseline body/carrier source drift");}
                 if(context==0)unguardedBodyStages=plan.stages();
-                if(FEATHER&&featherBranch()&&(context==0||plan.stages().equals(unguardedBodyStages))){
+                if((R7||FEATHER&&featherBranch())&&(context==0||plan.stages().equals(unguardedBodyStages))){
                     var feather=ModelShaderOptimization.prepareFeatherBranches(plan.stages(),exact);
                     plan=new ModelShaderOptimization.Plan(feather.stages(),java.util.stream.Stream.concat(plan.applied().stream(),feather.applied().stream()).toList(),java.util.stream.Stream.concat(plan.skipped().stream(),feather.skipped().stream()).toList());
                 }
-                baselineStages[context]=FEATHER?frozenFeatherPlan(stages,id):drawOptimization?(ROUND2?oldPlan(stages,id):candidate(stages,id).stages()):stages;long start=System.nanoTime();var original=transform(baselineStages[context],alpha,"merge-baseline");if(context==0)baselineBody=original;productionBaseline[context]=ModelMaterialGpuValidation.link(original,"baseline-"+context,root);double baselineCompile=(System.nanoTime()-start)/1e6;
+                baselineStages[context]=R7?plan.stages():FEATHER?frozenFeatherPlan(stages,id):drawOptimization?(ROUND2?oldPlan(stages,id):candidate(stages,id).stages()):stages;long start=System.nanoTime();var original=transform(baselineStages[context],alpha,"merge-baseline");if(context==0)baselineBody=original;productionBaseline[context]=ModelMaterialGpuValidation.link(original,"baseline-"+context,root);double baselineCompile=(System.nanoTime()-start)/1e6;
                 start=System.nanoTime();var optimized=transform(plan.stages(),alpha,"merge-candidate");if(ROUND2&&variant.equals("aa"))check(baselineStages[context].equals(plan.stages()),"A/A stage sources differ");productionCandidate[context]=ModelMaterialGpuValidation.link(optimized,"candidate-"+context,root);double optimizedCompile=(System.nanoTime()-start)/1e6;
                 baselineTimes[context]=baselineCompile;candidateTimes[context]=optimizedCompile;
                 if(context==0){candidateBody=optimized;bodyStages=plan.stages();}else carrierStages=plan.stages();
@@ -427,13 +482,13 @@ public final class ModelMergeGpuValidation {
                 try{differential(a,b,inputs,id,root);if(benchmark&&context==0&&!drawOptimization)benchmark(pack,a,b,inputs,id,csv);}finally{GL20.glDeleteProgram(a);GL20.glDeleteProgram(b);}
             }
             Files.write(output.resolve("compile.csv"),compilation);
-            long baselineGhostStart=System.nanoTime();int baselineGhost=drawOptimization?ModelMaterialGpuValidation.link(baselineBody,"baseline-ghost",root):0;
+            long baselineGhostStart=System.nanoTime();int baselineGhost=drawOptimization?ModelMaterialGpuValidation.link(R7?transform(unguardedBodyStages,alpha,"r7-native-ghost"):baselineBody,"baseline-ghost",root):0;
             double baselineGhostMs=drawOptimization?(System.nanoTime()-baselineGhostStart)/1e6:0;
-            long ghostStart=System.nanoTime();int candidateGhost=ModelMaterialGpuValidation.link(FEATHER&&featherBranch()?transform(unguardedBodyStages,alpha,"native-ghost"):candidateBody,"candidate-ghost",root);double ghostMs=(System.nanoTime()-ghostStart)/1e6;
+            long ghostStart=System.nanoTime();int candidateGhost=ModelMaterialGpuValidation.link((R7||FEATHER&&featherBranch())?transform(unguardedBodyStages,alpha,"native-ghost"):candidateBody,"candidate-ghost",root);double ghostMs=(System.nanoTime()-ghostStart)/1e6;
             boolean shared=bodyStages.equals(carrierStages);
             startupCsv.add(String.format(Locale.ROOT,"%s,%d,%d,%.3f,%.3f,%.3f",pack,drawOptimization?(baselineStages[0].equals(baselineStages[1])?2:3):2,shared?2:3,
                     baselineTimes[0]+(drawOptimization&&baselineStages[0].equals(baselineStages[1])?0:baselineTimes[1])+baselineGhostMs,candidateTimes[0]+(shared?0:candidateTimes[1])+ghostMs,optimizationMs));
-            if(ROUND2&&!FEATHER){
+            if(ROUND2&&!FEATHER&&!R7){
                 var loadRows=new ArrayList<String>();loadRows.add("round,order,baseline_ms,candidate_ms");
                 for(int loadRound=-1;loadRound<Integer.getInteger("cmi.model.load.rounds",3);loadRound++){
                     double[] costs=new double[2];
@@ -475,7 +530,7 @@ public final class ModelMergeGpuValidation {
                 if(benchmark)production.benchmark(originalDraw,candidateDraw,pack,productionCsv);
             }
             }finally{if(baselineGhost!=0)GL20.glDeleteProgram(baselineGhost);for(int p:productionBaseline)GL20.glDeleteProgram(p);for(int p:productionCandidate)GL20.glDeleteProgram(p);GL20.glDeleteProgram(candidateGhost);GL30.glBindVertexArray(vao);}
-            if(!FEATHER&&g==null&&(!drawOptimization||ROUND2&&!benchmark))optionVariants(root,base,allay,ROUND2?delivered:compiler,ROUND2?deliveredBuild:build,inputs,alpha);
+            if(!R7&&!FEATHER&&g==null&&(!drawOptimization||ROUND2&&!benchmark))optionVariants(root,base,allay,ROUND2?delivered:compiler,ROUND2?deliveredBuild:build,inputs,alpha);
             packs++;System.out.println(pack+": original/candidate body+carrier stages and MRT differences passed");
             Files.write(output.resolve("compile.csv"),compilation);Files.write(output.resolve("draw.csv"),csv);
             Files.write(output.resolve("production.csv"),productionCsv);

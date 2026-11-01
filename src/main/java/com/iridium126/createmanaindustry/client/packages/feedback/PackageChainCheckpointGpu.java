@@ -78,20 +78,20 @@ public final class PackageChainCheckpointGpu implements AutoCloseable {
         for(int i=0;i<BANKS;i++){int b=(cursor+i)%BANKS;if(b!=latest && banks[b].fence==0){selected=b;break;}}
         if(selected<0){skipped++;return false;}
         var bank=banks[selected];int output=transfer==Transfer.DEVICE_COPY?scratch:bank.buffer;
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,
                 stack.ints(input.bodies(),input.chains(),input.metadata(),input.admission(),0,output,input.history()));}
         GL20.glUseProgram(program);GL30.glUniform1ui(countLocation,input.count());
         GL30.glUniform1ui(bodyLocation,input.bodyCount());GL30.glUniform1ui(capacityLocation,input.capacity());
-        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((input.count()+63)/64,1,1);}
+        {PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((input.count()+63)/64,1,1);}
         int length=input.count()*PackagePoseQueryGpu.RESULT_BYTES;
         if(transfer==Transfer.DEVICE_COPY) {
-            GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
             GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,scratch);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,bank.buffer);
-            GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,length);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,length);
         }
         // Coherent mapping still requires completion before the CPU can read any record.
-        GL42.glMemoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
         long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);
         if(fence==0)throw new IllegalStateException("Chain checkpoint fence allocation failed");
         bank.input=input;bank.submission=submission;bank.submittedNanos=System.nanoTime();bank.fence=fence;

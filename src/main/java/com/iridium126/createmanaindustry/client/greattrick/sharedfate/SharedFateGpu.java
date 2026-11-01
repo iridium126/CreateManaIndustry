@@ -59,7 +59,7 @@ public final class SharedFateGpu implements AutoCloseable {
             int next=buffer((long)slots*STATE_BYTES),nextWrite=buffer((long)slots*STATE_BYTES);
             if(read!=0){
                 GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,read);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,next);
-                GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,(long)stateCapacity*STATE_BYTES);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,(long)stateCapacity*STATE_BYTES);
                 com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(read);com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(write);
             }
             read=next;write=nextWrite;stateCapacity=slots;
@@ -104,7 +104,7 @@ public final class SharedFateGpu implements AutoCloseable {
         output.flushHeaders();
         // Preserve offscreen slots and only promote poses after the whole owner frame commits.
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,read);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,write);
-        GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,(long)stateCapacity*STATE_BYTES);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,(long)stateCapacity*STATE_BYTES);
         GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,input);GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,jobs);
         GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,2,read);GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,3,write);
         output.bind(output.reserveOutput(),counterSlot,4,5);
@@ -118,16 +118,16 @@ public final class SharedFateGpu implements AutoCloseable {
         scalar(prepare,"uViewportHeight",net.minecraft.client.Minecraft.getInstance().getWindow().getHeight());
         GL20.glUniform4fv(uniforms.location(prepare,"uFrustum"),frustum);
         ParticleDiagnostics.INSTANCE.mark("fate_prepare");
-        GL43.glDispatchCompute((frames.size()+63)/64,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((frames.size()+63)/64,1,1);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL20.glUseProgram(reserve);uint(reserve,"uCount",frames.size());uint(reserve,"uCapacity",output.capacity());
         uint(reserve,"uBudget",Math.max(0,(int)(ClientConfig.sameFateMaxParticles*Math.max(0,Math.min(1,throttle)))));
         ParticleDiagnostics.INSTANCE.mark("fate_reserve");
-        GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL20.glUseProgram(emit);uint(emit,"uEmitter",emitter);uint(emit,"uRibbonAlphaEmitter",alphaEmitter);uint(emit,"uRibbonEmitter",ribbonEmitter);uint(emit,"uDebrisSlots",debrisCapacity);scalar(emit,"uTime",SharedFateClient.now());
         matrix(emit,"uView",view);matrix(emit,"uProjection",projection);
         scalar(emit,"uViewportHeight",net.minecraft.client.Minecraft.getInstance().getWindow().getHeight());
         ParticleDiagnostics.INSTANCE.mark("fate_emit");
-        GL43.glDispatchCompute(frames.size(),1,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(frames.size(),1,1);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         ParticleDiagnostics.INSTANCE.mark("fate_handoff");
         staged=true;
     }
@@ -144,7 +144,7 @@ public final class SharedFateGpu implements AutoCloseable {
     public void reset(){staged=false;frames=List.of();debrisSlots.clear();if(read!=0)zero(read);if(write!=0)zero(write);if(debrisRead!=0)zero(debrisRead);if(debrisWrite!=0)zero(debrisWrite);}
     private static void copy(int source,int target,long bytes){
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,source);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,target);
-        GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,bytes);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,bytes);
     }
     private void initialize(){if(prepare!=0)return;try{if(debrisRead==0){debrisRead=buffer(64);debrisWrite=buffer(64);}prepare=compile("shared_fate_prepare.comp");reserve=compile("shared_fate_reserve.comp");emit=compile("shared_fate_emit.comp");}catch(RuntimeException failure){close();throw failure;}}
     static int compile(String path){
@@ -157,7 +157,7 @@ public final class SharedFateGpu implements AutoCloseable {
         int buffer=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);zero(buffer);return buffer;
     }
-    private static void zero(int buffer){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_RGBA32F,GL11.GL_RGBA,GL11.GL_FLOAT,(ByteBuffer)null);}
+    private static void zero(int buffer){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_RGBA32F,GL11.GL_RGBA,GL11.GL_FLOAT,(ByteBuffer)null);}
     private static int reallocate(int old,long bytes){int next=buffer(bytes);if(old!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(old);return next;}
     private void uint(int p,String name,int value){GL30.glUniform1ui(uniforms.location(p,name),value);}
     private void scalar(int p,String name,float value){GL20.glUniform1f(uniforms.location(p,name),value);}

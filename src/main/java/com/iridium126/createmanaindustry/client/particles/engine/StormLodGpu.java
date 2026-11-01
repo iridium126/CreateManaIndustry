@@ -45,7 +45,7 @@ public final class StormLodGpu implements AutoCloseable {
     public void keygen(int program){
         ensureCovered();
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,covered);
-        GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,new int[]{0});
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,new int[]{0});
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,21,covered);
         setIntUniform(program,"uLodCapture",StormLodClient.active()&&StormLodClient.identity.equals(AllayStormRuntime.INSTANCE.identity())?1:0);
         setFloatUniform(program,"uOpaqueCutoff",StormLodRules.near(ClientConfig.particleFadeDistance));
@@ -89,15 +89,15 @@ public final class StormLodGpu implements AutoCloseable {
         Vector4f plane=new Vector4f();
         for(int i=0;i<6;i++){vp.frustumPlane(i,plane);planes[i*4]=plane.x;planes[i*4+1]=plane.y;planes[i*4+2]=plane.z;planes[i*4+3]=plane.w;}
         GL20.glUniform4fv(loc(program,"uFrustum"),planes);
-        GL43.glDispatchCompute(Math.max(1,((int)sample.count()+63)/64),1,1);
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(Math.max(1,((int)sample.count()+63)/64),1,1);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
         candidateActive=true;
     }
     /** Candidate indirect commands, copied before its publication fence. */
     boolean copyProfile(ParticleReadbacks.Slot slot){
         if(!slot.profile||!candidateActive||candidateGeneration!=slot.generation||commands[candidate]==0)return false;
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,commands[candidate]);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,slot.buffer);
-        GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,ParticleReadbacks.PROFILE_LOD_OFFSET,40);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,ParticleReadbacks.PROFILE_LOD_OFFSET,40);
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,0);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,0);return true;
     }
     public void commit(long publishedGeneration){

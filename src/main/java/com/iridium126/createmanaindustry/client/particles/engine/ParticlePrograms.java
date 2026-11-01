@@ -309,10 +309,32 @@ public final class ParticlePrograms {
 
     private volatile boolean dirty = true;
     private Map<String,String> committedSources=Map.of();
+    private String committedDigest;
+    /** Published include-expanded source only. Experimental continuations must
+     * not combine a pending resource reload with the active program set. */
+    public String committedPlain(String file){String value=committedSources.get(GLSL_DIR+file);if(value==null)throw new IllegalStateException("Particle source is not published: "+file);return value;}
+    public String diagnosticProgramName(int id){
+        if(id==update)return "update.comp";if(id==grid)return "gridbuild.comp";if(id==prepareDispatch)return "prepare_dispatch.comp";if(id==reset)return "reset.comp";
+        if(id==domeContacts)return "dome_contacts.comp";if(id==domeControl)return "dome_contact_control.comp";if(id==domeApply)return "dome_contact_apply.comp";if(id==domeAudit)return "dome_contact_audit.comp";if(id==domePath)return "dome_path.comp";
+        if(id==depenetrationPrepare)return "storm_depenetration_prepare.comp";if(id==depenetrationSchedule)return "storm_depenetration_schedule.comp";if(id==depenetration)return "storm_depenetration.comp";if(id==columnRecovery)return "column_restore.comp";if(id==waveContact)return "wavecontact.comp";
+        return "external-program-binary";
+    }
+    /** Hash the actual published, include-expanded sources, rather than files awaiting reload. */
+    public String diagnosticSourceDigest(){
+        if(committedSources.isEmpty())return "unavailable";
+        if(committedDigest!=null)return committedDigest;
+        try{var digest=java.security.MessageDigest.getInstance("SHA-256");digest.update((VERSION+PRELUDE).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            for(var entry:new java.util.TreeMap<>(committedSources).entrySet()){digest.update(entry.getKey().getBytes(java.nio.charset.StandardCharsets.UTF_8));digest.update((byte)0);digest.update(entry.getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8));digest.update((byte)0);}
+            return committedDigest=java.util.HexFormat.of().formatHex(digest.digest());
+        }catch(java.security.NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}
+    }
     private Reload pendingReload;
 
     /** Marks the programs stale; {@link #rebuild()} is safe to call any time. */
     public void requestRebuild() {
+        ParticleChainCapture.INSTANCE.invalidate("resource reload requested");
+        ClientFrameCapture.INSTANCE.invalidate("resource reload requested");
+        ParticleQuerySequence.INSTANCE.invalidate("resource reload requested");
         this.dirty = true;
     }
 
@@ -341,7 +363,7 @@ public final class ParticlePrograms {
             Reload finished=pendingReload;pendingReload=null;
             try {
                 boolean published=rebuildWithCompiler(finished::take,(vertex,fragment)->finished.take(vertex+"|"+fragment));
-                if(published){committedSources=finished.sources;LOGGER.info("[CMI particles] shader set published atomically ({}ms)",(System.nanoTime()-finished.started)/1_000_000L);}
+                if(published){committedSources=finished.sources;committedDigest=null;LOGGER.info("[CMI particles] shader set published atomically ({}ms)",(System.nanoTime()-finished.started)/1_000_000L);}
                 return published;
             } finally {finished.close();}
         } catch(RuntimeException failure){
@@ -533,6 +555,7 @@ public final class ParticlePrograms {
         DomeBodyContacts.unregister(domeContacts);
         if(pendingReload!=null){pendingReload.close();pendingReload=null;}
         committedSources=Map.of();
+        committedDigest=null;
         for (int p : new int[] {
                 this.modelFilter,this.modelCompact,this.modelPrepare,this.allayAnimate,this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,

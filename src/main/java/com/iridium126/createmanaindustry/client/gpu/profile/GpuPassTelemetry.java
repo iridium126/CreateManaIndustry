@@ -9,7 +9,9 @@ public final class GpuPassTelemetry implements AutoCloseable {
     private static final int SAMPLES=240;
     private final double[] cpu=new double[SAMPLES],gpu=new double[SAMPLES];
     private final long[] cpuFrames=new long[SAMPLES];
-    private long activeFrame=-1;
+    private long activeFrame=-1,activeGeneration=-1;
+    private String observerLabel;
+    public GpuPassTelemetry named(String label){observerLabel=java.util.Objects.requireNonNull(label);return this;}
     private final long[] frames=new long[SAMPLES],generations=new long[SAMPLES];
     private int cpuCursor,gpuCursor,cpuSamples,gpuSamples;
     private long cpuStart,skipped,discarded,unpublished;
@@ -18,6 +20,7 @@ public final class GpuPassTelemetry implements AutoCloseable {
     private final GpuTimestampRing timer=new GpuTimestampRing(4,null,(frame,generation,ms)->{
         if(detailed){frames[gpuCursor]=frame;generations[gpuCursor]=generation;gpu[gpuCursor]=ms;gpuCursor=(gpuCursor+1)%SAMPLES;gpuSamples=Math.min(SAMPLES,gpuSamples+1);}
         completed+=ms;
+        GpuTimingObserver.sample(observerLabel,frame,generation,Double.NaN,ms);
     });
 
     /** Apply at a render boundary, including for owners that will not draw this frame.
@@ -40,7 +43,7 @@ public final class GpuPassTelemetry implements AutoCloseable {
         configure(gpuTiming,details);
         if(!timingEnabled)return;
         timed=timer.begin(false,frame,generation);if(!timed&&detailed)skipped++;
-        active=true;activeFrame=frame;if(detailed)cpuStart=System.nanoTime();
+        active=true;activeFrame=frame;activeGeneration=generation;if(detailed)cpuStart=System.nanoTime();
     }
     public void end(){end(true);}
     public void end(boolean publish) {
@@ -48,6 +51,7 @@ public final class GpuPassTelemetry implements AutoCloseable {
         active=false;
         if(!publish&&detailed)unpublished++;
         if(publish&&detailed) {
+            GpuTimingObserver.sample(observerLabel,activeFrame,activeGeneration,(System.nanoTime()-cpuStart)/1e6,Double.NaN);
             cpuFrames[cpuCursor]=activeFrame;cpu[cpuCursor]=(System.nanoTime()-cpuStart)/1e6;
             cpuCursor=(cpuCursor+1)%SAMPLES;cpuSamples=Math.min(SAMPLES,cpuSamples+1);
         }

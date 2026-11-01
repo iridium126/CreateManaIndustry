@@ -38,10 +38,13 @@ public final class ShaderPackSession {
     private boolean cloudProfiling;
     private final Map<Object,com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry> cloudTimers=new IdentityHashMap<>();
     public boolean beginCloudTiming(Object stage){
-        if(!cloudProfiling||com.iridium126.createmanaindustry.client.allaystorm.rift.SkyRenderScope.active())return false;
+        return beginCloudTiming(stage,"unknown");
+    }
+    public boolean beginCloudTiming(Object stage,String identity){
+        if((!cloudProfiling&&!com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.active())||com.iridium126.createmanaindustry.client.allaystorm.rift.SkyRenderScope.active())return false;
         var timer=cloudTimers.get(stage);
-        if(timer==null){if(cloudTimers.size()>=8)return false;timer=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry();cloudTimers.put(stage,timer);}
-        timer.poll();timer.begin(true,true);return true;
+        if(timer==null){if(cloudTimers.size()>=8)return false;timer=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry().named("iris.whole-stage."+identity);cloudTimers.put(stage,timer);}
+        timer.poll();timer.begin(true,true,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),-1);return true;
     }
     public void endCloudTiming(Object stage,boolean publish){var timer=cloudTimers.get(stage);if(timer!=null)timer.end(publish);}
     public void cloudProfiling(boolean enabled){com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.cloudProfiling(enabled);cloudTimers.values().forEach(com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry::close);cloudTimers.clear();cloudProfiling=enabled;}
@@ -105,6 +108,11 @@ public final class ShaderPackSession {
     }
     public PackCapabilities capabilities(){return capabilities;}
     public ShaderPackOptions options(){return options;}
+    /** A cached inventory is not evidence that its pipeline is still rendering. */
+    public boolean ownsPipeline(Object active){
+        return this==current&&active!=null&&pipeline==active&&root!=null
+                &&(!(active instanceof RiftIrisPipeline iris)||iris.cmi$riftGeneration()==generation);
+    }
     public void observe(Object pipeline,int width,int height) {
         if(this.pipeline!=pipeline||this.width!=width||this.height!=height){this.pipeline=pipeline;this.width=width;this.height=height;revision++;}
     }

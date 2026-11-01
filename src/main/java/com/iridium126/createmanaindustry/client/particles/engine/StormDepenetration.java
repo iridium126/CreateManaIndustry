@@ -22,14 +22,14 @@ public final class StormDepenetration {
     public static void dispatch(int prepare,int schedule,int search,StarfallGpuBuffers stars){
         int previousStorage=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,29);
         stars.bindPathDispatch();
-        GL20.glUseProgram(prepare);ParticleDiagnostics.INSTANCE.call();GL43.glDispatchCompute(1,1,1);
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL43.GL_COMMAND_BARRIER_BIT);
+        GL20.glUseProgram(prepare);ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL43.GL_COMMAND_BARRIER_BIT);
         int previous=GL11.glGetInteger(GL43.GL_DISPATCH_INDIRECT_BUFFER_BINDING);
         GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,stars.domePathDispatchBuffer());
-        try{GL20.glUseProgram(schedule);ParticleDiagnostics.INSTANCE.call();GL43.glDispatchComputeIndirect(0);}
+        try{GL20.glUseProgram(schedule);ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchComputeIndirect(0);}
         finally{GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,previous);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,29,previousStorage);}
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        GL20.glUseProgram(search);ParticleDiagnostics.INSTANCE.call();GL43.glDispatchCompute(16,1,1);
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        GL20.glUseProgram(search);ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(16,1,1);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
 }

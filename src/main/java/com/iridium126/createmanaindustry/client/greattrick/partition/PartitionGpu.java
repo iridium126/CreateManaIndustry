@@ -53,18 +53,18 @@ public final class PartitionGpu implements AutoCloseable {
         output.bind(output.reserveOutput(),slot,4,5);
         GL20.glUseProgram(prepare);uint(prepare,"uCount",fields.size());scalar(prepare,"uFadeDistance",ClientConfig.particleFadeDistance);
         GL20.glUniform4fv(uniforms.location(prepare,"uFrustum"),frustum);
-        GL43.glDispatchCompute((fields.size()*18+63)/64,1,1);barrier();
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((fields.size()*18+63)/64,1,1);barrier();
         GL20.glUseProgram(reserve);uint(reserve,"uCount",fields.size());uint(reserve,"uCapacity",output.capacity());
         uint(reserve,"uBudget",(int)(ClientConfig.partitionMaxParticles*Math.max(0,Math.min(1,throttle))));
-        GL43.glDispatchCompute(1,1,1);barrier();
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);barrier();
         GL20.glUseProgram(emit);uint(emit,"uEmitter",emitter);scalar(emit,"uFadeDistance",ClientConfig.particleFadeDistance);
         uniforms.matrix(emit,"uView",view);
         uniforms.matrix(emit,"uProjection",projection);
         scalar(emit,"uViewportHeight",net.minecraft.client.Minecraft.getInstance().getWindow().getHeight());
-        GL43.glDispatchCompute(fields.size()*18,1,1);barrier();
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(fields.size()*18,1,1);barrier();
     }
     private static int compile(String path){return com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute(path,"#version 450 core\n"+SOURCES.apply(path));}
-    private static void barrier(){GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
+    private static void barrier(){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
     private void uint(int p,String n,int v){GL30.glUniform1ui(uniforms.location(p,n),v);}
     private void scalar(int p,String n,float v){GL20.glUniform1f(uniforms.location(p,n),v);}
     private static int buffer(long size){int b=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,b);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,size,GL15.GL_DYNAMIC_COPY);return b;}

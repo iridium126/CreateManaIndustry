@@ -46,11 +46,13 @@ allprojects {
                             gpuJavaSha256: fingerprint(gpuJava), shaderSha256: fingerprint(gpuShaders),
                             packageServerJavaSha256: fingerprint(packageServerJava),
                             validationSha256: fingerprint(validationSources),
+                            hardwareNativeSha256: name.contains('R7') ? fingerprint(fileTree('native/offload')) : null,
+                            hardwareDllSha256: name.contains('R7') ? fingerprint(files('.gradle/hardware-offload/build/CmiHardwareOffload.dll')) : null,
                             baselineSha256: file((findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') + '/java').exists()
                                     ? fingerprint(fileTree(findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') { include 'java/*.java','assets/**/*' }) : null,
                             baselineIdentity: file((findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') + '/commit.txt').exists()
                                     ? file((findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') + '/commit.txt').getText('UTF-8').trim() : null,
-                            particleBaselineManifest: name.contains("FeatherMerge") ? new groovy.json.JsonSlurper().parse(file(".local/particle-baselines/reference/feather-merge-20261031/manifest.json"),"UTF-8") : (name.contains("ShaderEfficiency") || name.contains("UpdateDomain")) ? new groovy.json.JsonSlurper().parse(file(".local/particle-baselines/reference/shader-efficiency-20261030-r2/manifest.json"),"UTF-8") : null,
+                            particleBaselineManifest: (project.hasProperty('efficiencyBaseline') || project.hasProperty('readonlyDraw')) ? new groovy.json.JsonSlurper().parse(new File(file(project.findProperty('efficiencyBaseline') ?: project.property('readonlyBaseline')),'../../../manifest.json'),"UTF-8") : name.contains("FeatherMerge") ? new groovy.json.JsonSlurper().parse(file(".local/particle-baselines/reference/feather-merge-20261031/manifest.json"),"UTF-8") : (name.contains("ShaderEfficiency") || name.contains("UpdateDomain")) ? new groovy.json.JsonSlurper().parse(file(".local/particle-baselines/reference/shader-efficiency-20261030-r2/manifest.json"),"UTF-8") : null,
                             commit: gitText(['git', 'rev-parse', 'HEAD']),
                             workingTree: gitText(['git', 'status', '--porcelain']),
                             javaVersion: javaLauncher.get().metadata.languageVersion.toString(),
@@ -89,6 +91,7 @@ allprojects {
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/ModelNativeColorGpuValidation.java'
             workingDir = project.projectDir
+            ['baseline','candidate'].each { key -> if(project.hasProperty('native'+key.capitalize())) systemProperty 'cmi.native.'+key,project.property('native'+key.capitalize()) }
         }
         tasks.register('validateModelDrawTelemetryGpu', JavaExec) {
             dependsOn tasks.named('classes')
@@ -101,6 +104,27 @@ allprojects {
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'scripts/particles/SceneFrameGpuValidation.java'
             workingDir = project.projectDir
+        }
+        tasks.register('compileNeighborHarness',JavaCompile){
+            dependsOn tasks.named('classes')
+            source files('scripts/particles/NeighborNative.java','scripts/particles/NeighborQueryGpuValidation.java','scripts/particles/NeighborCaptureGpuValidation.java')
+            classpath=sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            destinationDirectory=layout.buildDirectory.dir('neighbor-harness')
+            options.encoding='UTF-8'
+        }
+        tasks.register('validateNeighborQueryGpu',JavaExec){
+            dependsOn tasks.named('compileNeighborHarness')
+            classpath=files(layout.buildDirectory.dir('neighbor-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='NeighborQueryGpuValidation'
+            if(project.hasProperty('neighborBenchmark')) args '--benchmark'
+            jvmArgs '-Xmx3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateNeighborCaptureGpu',JavaExec){
+            dependsOn tasks.named('compileNeighborHarness')
+            classpath=files(layout.buildDirectory.dir('neighbor-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='NeighborCaptureGpuValidation'
+            workingDir=project.projectDir
         }
         tasks.register('validateWorldEffectsGpu', JavaExec) {
             dependsOn tasks.named('classes')
@@ -255,6 +279,180 @@ allprojects {
             classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
             mainClass='UpdateDomainGpuValidation'
             if(project.hasProperty('updateDomainAa'))systemProperty 'cmi.update.domain.aa','true'
+            workingDir=project.projectDir
+        }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/ShaderEfficiencyUpdateGpuValidation.java' }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/NeighborClockGpuValidation.java' }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/NeighborCompleteUpdateGpuValidation.java' }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/R6Grid.java','scripts/particles/R6IndexOrder.java','scripts/particles/R6CaptureReplayGpu.java','scripts/particles/R6FullChainGpu.java' }
+        tasks.register('validateR6FullChainGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R6FullChainGpu'
+            ['variant','samples','aa','counts','scenes','modes'].each { key -> if(project.hasProperty('r6'+key.capitalize()))systemProperty 'cmi.r6.'+key,project.property('r6'+key.capitalize()) }
+            systemProperty 'cmi.r6.candidates',file(project.findProperty('r6Candidates') ?: 'build/benchmarks/neighbor-r6/candidates-v4').absolutePath
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/R6QuerySequenceGpu.java' }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/R7HardwareGpu.java' }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/R7CaptureGpu.java' }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/R7ContinuationGpu.java' }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/R7AsyncGpu.java' }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/R7DomeGpu.java' }
+          tasks.named('compileStarfallHarness') { source 'scripts/particles/R7CopyStateGpu.java' }
+          tasks.named('compileStarfallHarness') { source 'scripts/particles/R7MediaGpu.java' }
+          tasks.named('compileStarfallHarness') { source 'scripts/particles/R7RealContinuationGpu.java' }
+          tasks.named('compileStarfallHarness') { source 'scripts/particles/R7ChainReplayGpu.java', 'scripts/particles/R7JournalHardware.java', 'scripts/particles/R7FullChainJournalGpu.java' }
+          tasks.named('compileStarfallHarness') { source 'scripts/particles/R7ChainCaptureGpu.java', 'scripts/particles/R7CopyChainGpu.java', 'scripts/particles/R7AdmissionSources.java' }
+        tasks.register('validateR7AdmissionSources',JavaExec){ dependsOn 'compileStarfallHarness';classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin;mainClass='R7AdmissionSources';workingDir=project.projectDir }
+        tasks.register('benchmarkR7CopyChainGpu',JavaExec){ dependsOn 'compileStarfallHarness';classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin;mainClass='R7CopyChainGpu';maxHeapSize='4g';workingDir=project.projectDir }
+        tasks.register('validateR7FullChainJournalGpu',JavaExec){ dependsOn 'compileStarfallHarness';classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin;mainClass='R7FullChainJournalGpu';maxHeapSize='4g';workingDir=project.projectDir }
+        tasks.register('validateR7ChainCaptureGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R7ChainCaptureGpu'
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('replayR7ChainGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R7ChainReplayGpu';systemProperty 'cmi.benchmark.output',benchmarkDir.absolutePath
+            if(project.hasProperty('r7Capture'))systemProperty 'cmi.r7.capture',project.property('r7Capture');if(project.hasProperty('r7ReplayBackend'))systemProperty 'cmi.r7.replayBackend',project.property('r7ReplayBackend')
+            maxHeapSize='5g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateR7RealContinuationGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R7RealContinuationGpu'
+            ['captures','backends','clientBindings'].each { key -> if(project.hasProperty('r7'+key.capitalize()))systemProperty 'cmi.r7.'+key,project.property('r7'+key.capitalize()) }
+            maxHeapSize='5g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateR7MediaGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R7MediaGpu'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateR7CopyStateGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R7CopyStateGpu'
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateR7DomeGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R7DomeGpu'
+            ['counts','scenes','backendIndex'].each { key -> if(project.hasProperty('r7'+key.capitalize()))systemProperty 'cmi.r7.'+key,project.property('r7'+key.capitalize()) }
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateR7AsyncGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R7AsyncGpu'
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateR7ContinuationGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R7ContinuationGpu'
+            ['counts','scenes','backend','mutation','frames','modes','measure','slotBytes','layout'].each { key -> if(project.hasProperty('r7'+key.capitalize()))systemProperty 'cmi.r7.'+key,project.property('r7'+key.capitalize()) }
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/R7SequenceGpu.java' }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/R7CopyConcurrencyGpu.java' }
+        tasks.register('validateR7CopyConcurrencyGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R7CopyConcurrencyGpu'
+            if(project.hasProperty('r7CopyInput'))systemProperty 'cmi.r7.copyInput',project.property('r7CopyInput')
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateR7SequenceGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R7SequenceGpu'
+            ['inputs','samples','queries'].each { key -> if(project.hasProperty('r7'+key.capitalize()))systemProperty 'cmi.r7.'+key,project.property('r7'+key.capitalize()) }
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateR7CaptureGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R7CaptureGpu'
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateR7HardwareGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R7HardwareGpu'
+            if(project.hasProperty('r7Counts'))systemProperty 'cmi.r7.counts',project.property('r7Counts')
+            if(project.hasProperty('r7FullQueries'))systemProperty 'cmi.r7.fullQueries',project.property('r7FullQueries')
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateR6QuerySequenceGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R6QuerySequenceGpu'
+            workingDir=project.projectDir
+        }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/R6NativeReplayGpu.java','scripts/particles/NeighborQueryGpuValidation.java','scripts/particles/NeighborNative.java' }
+        tasks.register('validateR6NativeReplayGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R6NativeReplayGpu'
+            systemProperty 'cmi.r6.nativeInputs',file(project.findProperty('r6NativeInputs') ?: 'build/benchmarks/neighbor-r6/native-inputs').absolutePath
+            if(project.hasProperty('r6Samples'))systemProperty 'cmi.r6.samples',project.property('r6Samples')
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateR6CaptureReplayGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='R6CaptureReplayGpu'
+            ['variant','samples','trace','aa','capacity'].each { key -> if(project.hasProperty('r6'+key.capitalize()))systemProperty 'cmi.r6.'+key,project.property('r6'+key.capitalize()) }
+            systemProperty 'cmi.r6.candidates',file(project.findProperty('r6Candidates') ?: 'build/benchmarks/neighbor-r6/candidates-v4').absolutePath
+            systemProperty 'cmi.r6.captures',file('build/benchmarks/neighbor-r6/baseline/client/cmi-neighbor-inputs').absolutePath
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateNeighborCompleteUpdateGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='NeighborCompleteUpdateGpuValidation'
+            ['baseline','reference','counts','scenes','aa'].each { key -> if(project.hasProperty('neighbor'+key.capitalize()))systemProperty 'cmi.neighbor.'+key,project.property('neighbor'+key.capitalize()) }
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateNeighborClockGpu',JavaExec){
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='NeighborClockGpuValidation'
+            systemProperty 'cmi.clock.source',project.findProperty('neighborClockSource') ?: 'build/benchmarks/neighbor-r5/clock-source'
+            systemProperty 'cmi.clock.count',project.findProperty('neighborClockCount') ?: '65536'
+            if(project.hasProperty('neighborClockScenes'))systemProperty 'cmi.clock.scenes',project.property('neighborClockScenes')
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
+        tasks.register('validateShaderEfficiencyUpdateGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='ShaderEfficiencyUpdateGpuValidation'
+            ['baseline','candidate','counts','scenes','samples','full'].each { key ->
+                if(project.hasProperty('efficiency'+key.capitalize())) systemProperty 'cmi.efficiency.'+key,project.property('efficiency'+key.capitalize())
+            }
+            maxHeapSize='3g'
             workingDir=project.projectDir
         }
         tasks.register('validateAllayAnimationGpu', JavaExec) {
@@ -697,11 +895,23 @@ allprojects {
                 new File(target,'FeatherExperimentOptimization.java').setText(file('scripts/particles/experiments/feather-merge/unconditional-overlay-optimizer.java.txt').getText('UTF-8').replace('ModelShaderOptimization','FeatherExperimentOptimization'),'UTF-8')
             }
         }
+        def readonlyReference=tasks.register('prepareReadonlyDrawReference') {
+            onlyIf { project.hasProperty('readonlyDraw') }
+            doLast {
+                def target=file('build/readonly-draw-reference');target.mkdirs()
+                def baseline=file(project.property('readonlyBaseline')).toPath().resolve('../../../src/main/java/com/iridium126/createmanaindustry/client/particles/shaderpack/ShaderPackProgramCompiler.java').normalize().toFile()
+                new File(target,'ReadonlyBaselineCompiler.java').setText(baseline.getText('UTF-8').replace('ShaderPackProgramCompiler','ReadonlyBaselineCompiler'),'UTF-8')
+                new File(target,'ReadonlyCandidateCompiler.java').setText(new File(file(project.property('readonlyCandidate')),'ShaderPackProgramCompiler.java.txt').getText('UTF-8').replace('ShaderPackProgramCompiler','ReadonlyCandidateCompiler'),'UTF-8')
+            }
+        }
         def modelMergeHarness = tasks.register('compileModelMergeHarness', JavaCompile) {
+            dependsOn readonlyReference
             dependsOn tasks.named('classes'), 'extractPackageIrisTransformer', modelMergeReference, deliveredReference, efficiencyReference, featherReference
             source = files('scripts/particles/FeatherExperimentalSources.java','scripts/particles/FeatherMergeProductionFixture.java','scripts/particles/PackFixtureResources.java','scripts/particles/ModelMaterialGpuValidation.java', 'scripts/particles/ModelMergeGpuValidation.java', 'scripts/particles/ModelMergeProductionFixture.java', modelMergeReferenceFile, deliveredReferenceFile) + fileTree('build/model-draw-reference') { include '*ModelProgramCompiler.java' } + fileTree('build/shader-efficiency-reference') { include '*.java' } + fileTree('build/feather-merge-reference') { include '*.java' }
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin + files(packageIrisTransformer)
             destinationDirectory = layout.buildDirectory.dir('model-merge-harness')
+            source fileTree('build/readonly-draw-reference') { include '*.java' }
+            source 'scripts/particles/NativeAttachmentReplayGpuValidation.java'
             options.encoding = 'UTF-8'
         }
         ['validateModelMergeGpu', 'benchmarkModelMergeGpu', 'validateModelDrawGpu', 'benchmarkModelDrawGpu', 'validateShaderEfficiencyGpu', 'benchmarkShaderEfficiencyGpu', 'validateFeatherMergeGpu', 'benchmarkFeatherMergeGpu'].each { taskName ->
@@ -720,13 +930,28 @@ allprojects {
                 if(project.hasProperty('featherAa'))systemProperty 'cmi.feather.aa','true'
                 if(taskName.contains('ShaderEfficiency')||taskName.contains('FeatherMerge')) {systemProperty 'cmi.shader.round2', 'true';maxHeapSize='4g'}
                 if(project.hasProperty('modelLoadRounds')) systemProperty 'cmi.model.load.rounds',project.property('modelLoadRounds')
+                if(project.hasProperty('r7Draw'))systemProperty 'cmi.r7.draw','true'
                 if(project.hasProperty('modelDrawQuick')) systemProperty 'cmi.model.draw.quick', 'true'
                 if(project.hasProperty('modelDrawPack')) systemProperty 'cmi.model.draw.pack', project.property('modelDrawPack')
                 if(project.hasProperty('modelDrawVariant')) systemProperty 'cmi.model.draw.variant', project.property('modelDrawVariant')
+                if(project.hasProperty('readonlyDraw')) {
+                    systemProperty 'cmi.readonly.draw','true'
+                    systemProperty 'cmi.readonly.baseline',project.property('readonlyBaseline')
+                    systemProperty 'cmi.readonly.candidate',project.property('readonlyCandidate')
+                }
+                if(project.hasProperty('drawSamples'))systemProperty 'cmi.draw.samples',project.property('drawSamples')
+                if(project.hasProperty('drawRounds'))systemProperty 'cmi.draw.rounds',project.property('drawRounds')
+                if(project.hasProperty('drawSnapshots'))systemProperty 'cmi.draw.snapshots',project.property('drawSnapshots')
                 if(project.hasProperty('modelMergeExclude')) systemProperty 'cmi.model.merge.exclude', project.property('modelMergeExclude')
                 if (taskName.startsWith('benchmark')) args '--benchmark'
                 workingDir = project.projectDir
             }
+        }
+        tasks.register('validateNativeAttachmentReplayGpu', JavaExec) {
+            dependsOn modelMergeHarness, 'compilePackageIrisHarness'
+            doFirst { classpath=tasks.named('validateShaderEfficiencyGpu').get().classpath }
+            mainClass='NativeAttachmentReplayGpuValidation'
+            workingDir=project.projectDir
         }
         tasks.register('validateModelShadowIrisGpu', JavaExec) {
             dependsOn tasks.named('classes'), tasks.named('extractPackageIrisTransformer'), 'compilePackageIrisHarness'

@@ -11,6 +11,7 @@
 | `reference/model-draw-20261030/` | 关键帧、几何及动画实验的交付基线 |
 | `reference/shader-efficiency-20261030-r2/` | 实体比较折叠与计算域实验基线 |
 | `reference/feather-merge-20261031/` | 羽毛合并路径实验基线 |
+| `reference/shader-efficiency-20261031-r4/` | 只读攻击／邻居／绘制复用实验，1960 项冻结输入；本轮候选均未接入生产 |
 | `reference/radix_*.comp` | 历史排序与扫描候选 |
 | `index-reference/` | 包裹三模式索引比较输入 |
 
@@ -31,3 +32,10 @@
 本轮历史包裹索引 smoke 的编译和资源读取成功，但首个 `65/aligned_stack/linked`
 场景质量断言失败，有效数为 0。冻结文件未改写，根因尚未定位；该入口不能视为
 当前版本已验证的性能基准。详细记录见审阅文档与本地迁移验证日志。
+
+R5 邻居实验的新冻结基线位于 `.local/particle-baselines/reference/neighbor-r5-20261031`。
+`manifest.json` 保留实验开始时的工作区字节摘要；`initial-index-tree` 与对应 manifest
+保留原暂存树的 Git blob 表示，`initial-staged.patch` 用于核对暂存内容未改变。
+包含当前 5 窗口日志、上一份 13 窗口日志及 11 份实际光影上下文快照。
+实验结果单独位于 `build/benchmarks/neighbor-r5`，打包后进入新的 R5 分发文件；
+不覆盖 R4 的失败记录或任何历史基线。R5 的流式完整查询参考不以旧截断前缀作为正确性标准。

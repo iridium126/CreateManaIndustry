@@ -98,16 +98,16 @@ public final class AllayFeatherGpu implements AutoCloseable {
     }
     public void begin(){
         if(!enabled)return;
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer());
-        GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,offset(candidate),hasFeathers()?BYTES:HEADER*4,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,new int[]{0});
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,offset(candidate),hasFeathers()?BYTES:HEADER*4,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,new int[]{0});
         initial.clear();for(int i=0;i<HEADER;i++)initial.putInt(i*4,0);
         initial.putInt(9*4,1).putInt(10*4,1).putInt(11*4,6);
         for(int i=0;i<3;i++){initial.putInt((16+i)*4,Integer.MAX_VALUE);initial.putInt((19+i)*4,Integer.MIN_VALUE);}
         GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,offset(candidate),initial);
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,buffer());GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,buffer());
-        if(generation>0)GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,offset(bank),offset(candidate)+16,8);
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        if(generation>0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,offset(bank),offset(candidate)+16,8);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
     }
     public void bind(int program){
         if(!enabled){if(armedPrograms.remove(program)){setIntUniform(program,"uFeatherEnabled",0);setIntUniform(program,"uFeatherRequestFrame",0);}return;}
@@ -119,7 +119,7 @@ public final class AllayFeatherGpu implements AutoCloseable {
         if(!hasFeathers()||count==0)return;int p=ParticlePrograms.INSTANCE.featherTools();GL20.glUseProgram(p);bind(p);
         ParticleBuffers.INSTANCE.bindPlayers();setUIntUniform(p,"uPhase",1);setUIntUniform(p,"uPlayerCount",count);
         setUIntUniform(p,"uMovementBase",ParticleBuffers.INSTANCE.featherMovementBase());
-        GL43.glDispatchCompute((count+63)/64,1,1);barrier();
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((count+63)/64,1,1);barrier();
     }
     public void emit(int slot,int capacity,int seed){
         if(!enabled||spawn+goldSpawn==0)return;var gpu=ParticleBuffers.INSTANCE;
@@ -132,15 +132,15 @@ public final class AllayFeatherGpu implements AutoCloseable {
         setUIntUniform(p,"uEmitter",Math.max(0,featherId));setUIntUniform(p,"uGoldEmitter",Math.max(0,goldId));
         setFloatUniform(p,"uCenter",(float)origin.x,(float)origin.y,(float)origin.z);setFloatUniform(p,"uRadius",(float)radius);
         setUIntUniform(p,"uSeed",seed);setIntUniform(p,"uSurfaceReady",ready?1:0);if(ready)surface.bindEmitter(p);
-        GL43.glDispatchCompute((leaves+gold+63)/64,1,1);barrier();
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((leaves+gold+63)/64,1,1);barrier();
     }
     public void ground(){
         if(!hasFeathers())return;int p=ParticlePrograms.INSTANCE.featherTools();GL20.glUseProgram(p);bind(p);
         ParticleBuffers.INSTANCE.bindParticleWrite(1);StormCollisionRuntime.bindCurrent(p);
-        setUIntUniform(p,"uPhase",0);GL43.glDispatchCompute(1,1,1);barrier();
+        setUIntUniform(p,"uPhase",0);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);barrier();
         setUIntUniform(p,"uPhase",2);
         try{
-            GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,buffer());GL43.glDispatchComputeIndirect(offset(candidate)+8L*4);barrier();
+            GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,buffer());com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchComputeIndirect(offset(candidate)+8L*4);barrier();
         }finally{
             // The next Storm wave-contact pass consumes the engine's command buffer.
             // Grid head words are particle indices, never valid dispatch dimensions.
@@ -157,10 +157,10 @@ public final class AllayFeatherGpu implements AutoCloseable {
     public void copySnapshot(ParticleReadbacks.Slot slot){
         surface.copySnapshot(slot);slot.feathers=enabled;slot.featherRequests=requestFrame();if(!enabled)return;
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,buffer());GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,slot.buffer);
-        GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,offset(candidate),32,16);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,offset(candidate),32,16);
         if(slot.featherRequests){
-            GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,offset(candidate)+22L*4,ParticleReadbacks.FEATHER_REQUEST_OFFSET,16);
-            GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,offset(candidate)+REQUESTS*4L,ParticleReadbacks.FEATHER_REQUEST_OFFSET+16,MAX_REQUESTS*16L);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,offset(candidate)+22L*4,ParticleReadbacks.FEATHER_REQUEST_OFFSET,16);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,offset(candidate)+REQUESTS*4L,ParticleReadbacks.FEATHER_REQUEST_OFFSET+16,MAX_REQUESTS*16L);
         }
     }
     public void observe(ParticleReadbacks.Slot slot){
@@ -199,5 +199,5 @@ public final class AllayFeatherGpu implements AutoCloseable {
     }
     public void reset(){StormCollisionRuntime.releaseFeathers();surface.reset();mayFeathers=mayGold=manual=manualGold=enabled=candidateBirth=candidateGoldBirth=nativeDrawn=false;spawn=goldSpawn=0;remainder=candidateRemainder=goldRemainder=candidateGoldRemainder=0;lastCreationGeneration=lastGoldCreationGeneration=generation=0;warmRadius=-1;prewarmTick=Long.MIN_VALUE;frames=0;world=null;warmX=warmY=warmZ=warmLow=Integer.MAX_VALUE;prewarmKeys.clear();requests.clear();}
     @Override public void close(){state[0]=state[1]=0;reset();armedPrograms.clear();featherId=goldId=-1;surface.close();}
-    private static void barrier(){GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);}
+    private static void barrier(){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);}
 }

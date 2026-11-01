@@ -19,13 +19,13 @@ public final class DomeGatherNavigation {
     public static void dispatch(int program,int state,int previousIndirect) {
         GL20.glUseProgram(program);
         GL41.glProgramUniform1ui(program,GpuUniforms.loc(program,"uMode"),0);
-        ParticleDiagnostics.INSTANCE.call();GL43.glDispatchCompute(1,1,1);
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL43.GL_COMMAND_BARRIER_BIT);
+        ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL43.GL_COMMAND_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,state);
         try {
             GL41.glProgramUniform1ui(program,GpuUniforms.loc(program,"uMode"),1);
-            ParticleDiagnostics.INSTANCE.call();GL43.glDispatchComputeIndirect(0);
-            GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
+            ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchComputeIndirect(0);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
         } finally {GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,previousIndirect);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,29,previousIndirect);}
     }
 }

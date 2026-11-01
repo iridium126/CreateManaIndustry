@@ -51,11 +51,11 @@ public final class PackageReadbackRing implements AutoCloseable {
         if(sequence<0 || sequence<=lastSequence)throw new IllegalArgumentException("Snapshot sequence must increase");
         if(pending==SLOTS)return false;
         Slot slot=slots[next];
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         if(source!=slot.storage.id()) {
             GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,source);
             GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,slot.storage.id());
-            GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,sourceOffset,0,length);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,sourceOffset,0,length);
         } else if(sourceOffset!=0)throw new IllegalArgumentException("In-place capture offset");
         long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);
         if(fence==0)throw new IllegalStateException("Package snapshot fence allocation failed");

@@ -66,27 +66,29 @@ public final class CMIPackEntityMergeHook {
     private static final ShaderPackProgramCompiler COMPILER = new ShaderPackProgramCompiler();
 
     private static final com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing MERGE_TIMER=
-            new com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing(4,ms->com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.addExternalGpuMs(ms));
+            new com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing(4,ms->com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.addExternalGpuMs(ms),(frame,generation,ms)->com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.sample("draw.pack.merge",frame,generation,Double.NaN,ms));
 
     /** Uniform-location cache (program id -> name -> location). */
     private static boolean rebuildListenerRegistered = false;
 
     private static ModelShadowGpu MODEL_SHADOW;
     private static final PackageDrawCulling SHADOW_CULLING=new PackageDrawCulling();
-    private static final GpuPassTelemetry SHADOW_TIMING=new GpuPassTelemetry();
+    private static final GpuPassTelemetry SHADOW_TIMING=new GpuPassTelemetry().named("draw.pack.model-shadow");
+    private static final GpuPassTelemetry SHADOW_PREPARE=new GpuPassTelemetry().named("draw.pack.model-shadow.prepare");
+    private static final GpuPassTelemetry SHADOW_DRAW=new GpuPassTelemetry().named("draw.pack.model-shadow.draw");
     private static final ModelMergeTelemetry DRAW_TIMING=new ModelMergeTelemetry();
     private static boolean timingEnabled,detailed;
     public static void measurementMode(boolean timing,boolean details) {
         if(timingEnabled!=timing||detailed!=details)MERGE_TIMER.close();
-        timingEnabled=timing;detailed=details;SHADOW_TIMING.configure(timing,details);DRAW_TIMING.configure(details);
+        timingEnabled=timing;detailed=details;SHADOW_TIMING.configure(timing,details);SHADOW_PREPARE.configure(timing,details);SHADOW_DRAW.configure(timing,details);DRAW_TIMING.configure(details);
     }
     /** A pack/options/viewport change starts a fresh, internally consistent profile window. */
     public static void restartMeasurementWindow(){
-        MERGE_TIMER.close();SHADOW_TIMING.close();DRAW_TIMING.close();
-        SHADOW_TIMING.configure(timingEnabled,detailed);DRAW_TIMING.configure(detailed);
+        MERGE_TIMER.close();SHADOW_TIMING.close();SHADOW_PREPARE.close();SHADOW_DRAW.close();DRAW_TIMING.close();
+        SHADOW_TIMING.configure(timingEnabled,detailed);SHADOW_PREPARE.configure(timingEnabled,detailed);SHADOW_DRAW.configure(timingEnabled,detailed);DRAW_TIMING.configure(detailed);
     }
-    public static void resetMeasurements(){MERGE_TIMER.close();SHADOW_TIMING.close();DRAW_TIMING.close();timingEnabled=detailed=false;}
-    public static void discardPendingMeasurements(){MERGE_TIMER.close();SHADOW_TIMING.discardPending();DRAW_TIMING.discardPending();}
+    public static void resetMeasurements(){MERGE_TIMER.close();SHADOW_TIMING.close();SHADOW_PREPARE.close();SHADOW_DRAW.close();DRAW_TIMING.close();timingEnabled=detailed=false;}
+    public static void discardPendingMeasurements(){MERGE_TIMER.close();SHADOW_TIMING.discardPending();SHADOW_PREPARE.discardPending();SHADOW_DRAW.discardPending();DRAW_TIMING.discardPending();}
     public static String profilingReport(){return mergeReport(true);}
     public static String profilingSummary(){return mergeReport(false);}
     private static String mergeReport(boolean details){String draw=DRAW_TIMING.report(details);return draw+(SHADOW_TIMING.cpuSamples()==0?"":(draw.isEmpty()?"":"\n")+"MODEL shadow: "+(com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.timing(SHADOW_TIMING,details)));}
@@ -94,7 +96,7 @@ public final class CMIPackEntityMergeHook {
     private static PackageRenderState shadowDrawState;
     private static final com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState mergedTboState=
             new com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState(10,6);
-    public static void invalidateShadow(){if(MODEL_SHADOW!=null)MODEL_SHADOW.close();MODEL_SHADOW=null;SHADOW_TIMING.close();MERGE_TIMER.close();DRAW_TIMING.close();DRAW_TIMING.configure(detailed);}
+    public static void invalidateShadow(){if(MODEL_SHADOW!=null)MODEL_SHADOW.close();MODEL_SHADOW=null;SHADOW_TIMING.close();SHADOW_PREPARE.close();SHADOW_DRAW.close();MERGE_TIMER.close();DRAW_TIMING.close();DRAW_TIMING.configure(detailed);}
     public static void invalidatePrograms(){
         invalidateShadow();COMPILER.reset();com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clear();
         var renderer=com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE;
@@ -217,8 +219,12 @@ public final class CMIPackEntityMergeHook {
                 com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.addExternalGpuMs(SHADOW_TIMING.poll());
                 SHADOW_TIMING.begin(timingEnabled,detailed,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation());
                 boolean shadowSucceeded=false;
-                try{MODEL_SHADOW.starfall(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer());var p=camera.getPosition();MODEL_SHADOW.prepare(gpu.particleReadBufferId(),gpu.emitterBufferId(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().counter(),SHADOW_CULLING,
+                try{var scene=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE;SHADOW_PREPARE.poll();SHADOW_DRAW.poll();SHADOW_PREPARE.begin(timingEnabled,detailed,scene.renderFrameToken(),scene.publication().generation());boolean prepared=false;
+                    try{MODEL_SHADOW.starfall(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer());var p=camera.getPosition();MODEL_SHADOW.prepare(gpu.particleReadBufferId(),gpu.emitterBufferId(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().counter(),SHADOW_CULLING,
                         (float)p.x,(float)p.y,(float)p.z,EntityType.ALLAY.getWidth(),EntityType.ALLAY.getHeight(),(float)net.minecraft.world.entity.Entity.getViewScale(),com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec(),null,null,null,gpu.populationBufferId(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation()),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation());
+                    prepared=true;}finally{SHADOW_PREPARE.end(prepared);}
+                SHADOW_DRAW.begin(timingEnabled,detailed,scene.renderFrameToken(),scene.publication().generation());boolean drawn=false;
+                try{
                 gpu.bindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleReadBufferId(),MODEL_SHADOW.instances());gpu.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,MODEL_SHADOW.commands());
                 ShaderInstance shader=COMPILER.shadowShader();boolean applied=false;
                 try(var textures=com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.withSamplerRange(net.irisshaders.iris.gl.IrisRenderSystem::bindSamplerToUnit,net.irisshaders.iris.gl.sampler.SamplerLimits.get().getMaxTextureUnits(),0,1,2,COMPILER.shadowGtextureUnit())){
@@ -227,7 +233,9 @@ public final class CMIPackEntityMergeHook {
                     uploadSegmentMode(shader.getId(),0);gpu.drawModelCutout();uploadSegmentMode(shader.getId(),2);COMPILER.entityContext().upload(shader.getId(),true);gpu.drawModelCarrier();uploadSegmentMode(shader.getId(),0);COMPILER.entityContext().upload(shader.getId(),false);gpu.drawModelGhost();
                     }finally{if(applied)shader.clear();}
                 }
+                drawn=true;}finally{SHADOW_DRAW.end(drawn);}
                 shadowSucceeded=true;
+                com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.shadowSubmitted(scene.renderFrameToken(),scene.publication().generation(),MODEL_SHADOW.commands());
                 }finally{SHADOW_TIMING.end(shadowSucceeded);}
                 com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="active (current frame, age=0)";
             }finally{
@@ -508,7 +516,8 @@ public final class CMIPackEntityMergeHook {
     // ------------------------------------------------------------------
 
     private static boolean beginTimer() {
-        return timingEnabled&&MERGE_TIMER.begin();
+        var scene=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE;
+        return timingEnabled&&MERGE_TIMER.begin(true,scene.renderFrameToken(),scene.publication()==null?-1:scene.publication().generation());
     }
 
     private static void endTimer(boolean publish) {MERGE_TIMER.end(publish);}

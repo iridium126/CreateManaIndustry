@@ -248,11 +248,11 @@ public final class PackageDeltaChannel implements AutoCloseable {
     }
     private void copyJournal(Fragment fragment,long firstSequence) {
         int copied=0,first=(int)(firstSequence%journal.slotCapacity())*512*64,size=journal.slotCapacity()*512*64;
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,fragment.frame.capture.recordBuffer());GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,gpuJournal);
         while(copied<fragment.bytes) {
             int bytes=Math.min(fragment.bytes-copied,size-first);
-            GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,fragment.offset+copied,first,bytes);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,fragment.offset+copied,first,bytes);
             copied+=bytes;first=0;
         }
     }

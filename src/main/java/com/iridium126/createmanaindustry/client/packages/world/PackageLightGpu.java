@@ -103,7 +103,7 @@ public final class PackageLightGpu implements AutoCloseable {
         boolean complete=true;
         for(var resident:residents.values())if(resident.snapshot!=null && bank.revisions[resident.slot]!=resident.revision){complete=false;break;}
         bank.serial=complete?serial:-1;
-        GL42.glMemoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
         current=selected;cursor=(selected+1)%BANKS;return true;
     }
     public boolean covered(PackageCollisionCache.Section section,long revision) {
@@ -118,7 +118,7 @@ public final class PackageLightGpu implements AutoCloseable {
         private Bank bank;private boolean used;
         private View(Bank bank){this.bank=bank;}
         public void bind(int binding){open();if(bank==null)throw new IllegalStateException("Closed light view");
-            GL42.glMemoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,bank.buffer);used=true;}
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,bank.buffer);used=true;}
         public int tableSize(){return tableSize;}
         public int dataWordOffset(){return dataOffset/4;}
         @Override public void close(){if(bank==null)return;bank.leases--;if(used && !closed){

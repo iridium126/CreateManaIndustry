@@ -6,6 +6,8 @@ import java.nio.file.*;
 import java.util.*;
 public class ModelNativeColorGpuValidation {
     static String source(boolean frozen){
+        String override=System.getProperty(frozen?"cmi.native.baseline":"cmi.native.candidate");
+        if(override!=null)return ParticleShaderSource.loadParticle("model.vsh",path->{try{return Files.readString(Path.of(override,"assets/createmanaindustry",path));}catch(Exception e){throw new RuntimeException(e);}});
         return ParticleShaderSource.loadParticle("model.vsh",path->{try{return Files.readString(frozen?
             Path.of(".local/particle-baselines/reference/model-draw-20261030/src/main/resources/assets/createmanaindustry",path+".txt"):
             Path.of("src/main/resources/assets/createmanaindustry",path));}catch(Exception e){throw new RuntimeException(e);}});

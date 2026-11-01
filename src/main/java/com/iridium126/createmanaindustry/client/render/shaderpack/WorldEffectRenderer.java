@@ -27,7 +27,8 @@ public final class WorldEffectRenderer {
         if(shader==null||!shader.isValid())return unavailable("effect shader unavailable");
         if(!GL11.glIsTexture(main.getDepthTextureId()))return unavailable("main depth texture unavailable");
         boolean timed=false,completed=false;
-        var timer=timers.computeIfAbsent(pass.id(),id->new GpuTimestampRing(4));
+        var timer=timers.computeIfAbsent(pass.id(),id->new GpuTimestampRing(4,null,(frame,generation,ms)->com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.sample("world.effect."+id,frame,generation,Double.NaN,ms)));
+        long sourceFrame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken();long cpuBegan=com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.active()?System.nanoTime():0;
         try(var state=new WorldEffectState()) {
             int target=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
             if(target==0)return unavailable("draw target is the default framebuffer");
@@ -37,7 +38,7 @@ public final class WorldEffectRenderer {
             RenderSystem.activeTexture(GL13.GL_TEXTURE0);GL11.glBindTexture(GL11.GL_TEXTURE_2D,attachment);
             int w=GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D,0,GL11.GL_TEXTURE_WIDTH),h=GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D,0,GL11.GL_TEXTURE_HEIGHT);
             if(w!=main.width||h!=main.height)return unavailable("native target size "+w+"x"+h+" differs from main "+main.width+"x"+main.height);
-            timed=timer.begin();
+            timed=timer.begin(true,sourceFrame,-1);
             int exposure=-1;
             if(path==PackCapabilities.WorldPath.TRANSLUCENT){exposure=com.iridium126.createmanaindustry.client.render.mist.MistExposureSource.acquireExposureTexture(ShaderPackSession.current().capabilities().exposureBuffer());GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,target);if(!GL11.glIsTexture(exposure))return unavailable("native exposure texture unavailable");}
             RenderSystem.activeTexture(GL13.GL_TEXTURE0);int copy=sceneCopy.capture(w,h);
@@ -71,7 +72,7 @@ public final class WorldEffectRenderer {
             }
             pass.uniforms().accept(shader);VeilRenderSystem.drawScreenQuad();
             completed=true;return true;
-        } finally {if(timed)timer.end(completed);}
+        } finally {if(timed)timer.end(completed);if(completed&&cpuBegan!=0)com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.sample("world.effect."+pass.id(),sourceFrame,-1,(System.nanoTime()-cpuBegan)/1e6,Double.NaN);}
     }
     private static boolean unavailable(String reason){failure=reason;return false;}
     public static String failure(){return failure;}

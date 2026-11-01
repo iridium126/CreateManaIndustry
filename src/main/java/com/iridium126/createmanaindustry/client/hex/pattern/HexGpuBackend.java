@@ -79,7 +79,7 @@ public final class HexGpuBackend implements AutoCloseable {
     }
     private boolean grow(boolean source,int bytes){int old=source?resourceCapacity:pointCapacity;int size=Math.max(4096,old);while(size-old<bytes)size=Math.multiplyExact(size,2);
         int next=allocation(size);if(next==0)return false;
-        int prior=source?resource:points;if(prior!=0){GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,prior);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,next);GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,old);retired.add(new Retired(prior,old,GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0)));}
+        int prior=source?resource:points;if(prior!=0){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,prior);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,next);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,old);retired.add(new Retired(prior,old,GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0)));}
         if(source){resource=next;resourceCapacity=size;
             if(old==0){var permutation=BufferUtils.createByteBuffer(4096);var random=new java.util.Random(9001);random.nextDouble();random.nextDouble();random.nextDouble();int[] values=new int[256];for(int i=0;i<256;i++)values[i]=i;for(int i=0;i<256;i++){int j=i+random.nextInt(256-i),v=values[i];values[i]=values[j];values[j]=v;}for(int v:values)permutation.putFloat(v).putFloat(0).putFloat(0).putFloat(0);permutation.flip();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,resource);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,permutation);release(sourceFree,4096,size-4096);}
             else release(sourceFree,old,size-old);}else{points=next;pointCapacity=size;release(pointFree,old,size-old);}return true;
@@ -161,10 +161,10 @@ public final class HexGpuBackend implements AutoCloseable {
             GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,bank.commands);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,bank.draws);
             transferred+=bank.data.remaining()+bank.draws.remaining()+(jobs>0?bank.work.remaining():0);
             if(jobs>0){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,bank.jobs);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,bank.work);
-                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
                 GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,resource);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,points);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,2,bank.jobs);
-                GL20.glUseProgram(compute);GL43.glDispatchCompute(jobs,1,1);generated+=jobs;
-                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT);}
+                GL20.glUseProgram(compute);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(jobs,1,1);generated+=jobs;
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT);}
             for(var g:changed)g.generated=true;success=true;
             return new Prepared(bank,draws.size());
         }finally{if(!success){for(Geometry g:bank.pinned)g.pins--;bank.pinned.clear();bank.held=false;}}

@@ -149,6 +149,7 @@
     "allvr.AllvrEntityMixin"
   ],
   "client": [
+    "ParticleClientFrameMixin",
     "allaystorm.AllayScopedSkyTimeMixin",
     "allaystorm.AllayClientTimeMixin",
     "allaystorm.AllayTimePacketMixin",

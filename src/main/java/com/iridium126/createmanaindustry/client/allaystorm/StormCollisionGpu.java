@@ -100,7 +100,7 @@ public final class StormCollisionGpu implements AutoCloseable {
             GpuTransfers.texture3d(GL12.GL_TEXTURE_3D,0,(slot&31)*4,((slot>>>5)&31)*4,(slot>>>10)*8,4,4,8,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,pageUpload);
             residents.put(item.getKey(),new Resident(item.getValue(),slot));iterator.remove();changed(item.getKey());left-=BYTES;uploaded+=BYTES;
         }
-        GL42.glMemoryBarrier(GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);lastUpload=System.nanoTime()-began;if(lastUpload>nanos)overruns++;
     }
     public void bind(int program){

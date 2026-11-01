@@ -18,7 +18,7 @@ public final class TargetVanillaClouds implements AutoCloseable {
     }
     private Cache cache=new Cache(true,null,Integer.MIN_VALUE,Integer.MIN_VALUE,Integer.MIN_VALUE,Vec3.ZERO,null);
     private long draws,rebuilds,profileRevision=-1;
-    private final com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry timing=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry();
+    private final com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry timing=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry().named("sky.native.vanilla-clouds");
     public String report(){return "native vanilla clouds; independent VBO; draws="+draws+" rebuilds="+rebuilds+"; replay "+timing.report();}
     public void draw(Matrix4f view,Matrix4f projection,float partial,RenderTarget output){
         var mc=Minecraft.getInstance();
@@ -30,7 +30,7 @@ public final class TargetVanillaClouds implements AutoCloseable {
         cache.apply(access);if(output!=null)access.cmi$cloudsTarget(output);
         try{
             if(profileRevision!=AllaySkyProvider.cloudProfileRevision()){timing.close();profileRevision=AllaySkyProvider.cloudProfileRevision();}
-            timing.configure(AllaySkyProvider.cloudProfiling(),AllaySkyProvider.cloudProfiling());timing.poll();timing.begin(AllaySkyProvider.cloudProfiling());
+            boolean profiling=AllaySkyProvider.cloudProfiling()||com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.active();timing.configure(profiling,profiling);timing.poll();timing.begin(profiling,profiling,profiling?com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken():-1,-1);
             renderStock(access,view,projection,partial);
         }finally{
             timing.end();

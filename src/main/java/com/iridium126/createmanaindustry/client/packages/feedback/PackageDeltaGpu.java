@@ -89,7 +89,7 @@ public final class PackageDeltaGpu implements AutoCloseable {
         var view=meta.duplicate().order(ByteOrder.nativeOrder());
         Set<Identity> nextIdentities=new HashSet<>();Set<Integer> nextBodies=new HashSet<>();
         validateMetadata(view,count,nextIdentities,nextBodies);
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,meta);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,baselines);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,baseline);
         clear(flights);if(predictors!=0)clear(predictors);this.count=count;
@@ -118,14 +118,14 @@ public final class PackageDeltaGpu implements AutoCloseable {
         for(int body:nextBodies)if(bodyIndices.contains(body))
             throw new IllegalArgumentException("Duplicate existing package delta body");
         if(added==0)return;
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,(long)count*META_BYTES,meta);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,baselines);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,(long)count*BASELINE_BYTES,baseline);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,flights);
-        try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)count*4,(long)added*4,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
+        try(var stack=MemoryStack.stackPush()){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)count*4,(long)added*4,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
         if(predictors!=0) {
             GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,predictors);
-            try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)count*PREDICTOR_BYTES,(long)added*PREDICTOR_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
+            try(var stack=MemoryStack.stackPush()){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)count*PREDICTOR_BYTES,(long)added*PREDICTOR_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
         }
         trackPrepared(meta,count,added);
         reserveIdentities(meta,added,count);count+=added;bodyIndices.addAll(nextBodies);
@@ -145,7 +145,7 @@ public final class PackageDeltaGpu implements AutoCloseable {
     public void makeReusable(int candidate){
         open();if(!identities.retired(candidate))throw new IllegalArgumentException("Delta recycle fence");
         identities.reclaim(candidate);bodyIndices.remove(candidateBodies[candidate]);reusable.add(candidate);
-        for(int buffer:new int[]{flights,predictors})if(buffer!=0){int stride=buffer==flights?4:PREDICTOR_BYTES;GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)candidate*stride,stride,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}}
+        for(int buffer:new int[]{flights,predictors})if(buffer!=0){int stride=buffer==flights?4:PREDICTOR_BYTES;GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);try(var stack=MemoryStack.stackPush()){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)candidate*stride,stride,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}}
         while(count>0&&reusable.remove(count-1))count--;
     }
     public void write(int candidate,ByteBuffer meta,ByteBuffer baseline){
@@ -154,10 +154,10 @@ public final class PackageDeltaGpu implements AutoCloseable {
         var v=meta.duplicate().order(ByteOrder.nativeOrder());var ids=new HashSet<Identity>();var bodies=new HashSet<Integer>();validateMetadata(v,1,ids,bodies);
         long id=v.getLong(v.position()),generation=v.getLong(v.position()+8);int body=v.getInt(v.position()+16);
         if(identities.contains(id,generation)||bodyIndices.contains(body)||v.getInt(v.position()+24)!=0)throw new IllegalArgumentException("Delta replacement identity/body");
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,(long)candidate*META_BYTES,meta);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,baselines);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,(long)candidate*BASELINE_BYTES,baseline);
-        for(int buffer:new int[]{flights,predictors})if(buffer!=0){int stride=buffer==flights?4:PREDICTOR_BYTES;GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)candidate*stride,stride,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}}
+        for(int buffer:new int[]{flights,predictors})if(buffer!=0){int stride=buffer==flights?4:PREDICTOR_BYTES;GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);try(var stack=MemoryStack.stackPush()){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)candidate*stride,stride,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}}
         reserveIdentities(meta,1,candidate);trackPrepared(meta,candidate,1);bodyIndices.add(body);reusable.remove(candidate);
     }
     private void trackPrepared(ByteBuffer meta,int first,int length) {
@@ -174,18 +174,18 @@ public final class PackageDeltaGpu implements AutoCloseable {
         prepared(candidate);
         if(!baseline.isDirect() || baseline.remaining()!=BASELINE_BYTES)
             throw new IllegalArgumentException("Package final baseline layout");
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,baselines);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,(long)candidate*BASELINE_BYTES,baseline);
         if(predictors!=0) {
             GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,predictors);
-            try(var stack=MemoryStack.stackPush()){GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)candidate*PREDICTOR_BYTES,PREDICTOR_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
+            try(var stack=MemoryStack.stackPush()){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,(long)candidate*PREDICTOR_BYTES,PREDICTOR_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
         }
     }
     /** Call only after the matching server ACTIVE and committed admission are confirmed. */
     public void activate(int candidate) {
         prepared(candidate);
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,metadata);
         try(var stack=MemoryStack.stackPush()) {
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,(long)candidate*META_BYTES+24,stack.ints(1));
@@ -210,10 +210,10 @@ public final class PackageDeltaGpu implements AutoCloseable {
         var capture=new Capture(bank,(int)nextStamp++,headers[bank],records[bank],outputCapacity);captures[bank]=capture;
         clear(headers[bank]);
         bind(0,capture,bodyBuffer);ui(0,3,bodyCount);GL20.glUniform3f(locations[0][4],ox,oy,oz);
-        if(count>0){PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        bind(1,capture,bodyBuffer);{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute(1,1,1);}
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        if(count>0){PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((count+63)/64,1,1);}
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        bind(1,capture,bodyBuffer);{PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);}
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         return capture;
     }
     /** Exact server ACK subset, copied from the matching capture journal, never from current bodies. */
@@ -236,7 +236,7 @@ public final class PackageDeltaGpu implements AutoCloseable {
         if(stamp==0 && mode!=2 || !acknowledged.isDirect() || bytes%RECORD_BYTES!=0 || bytes/RECORD_BYTES>MAX_ACK_RECORDS)
             throw new IllegalArgumentException("Package delta ACK layout/stamp");
         int n=bytes/RECORD_BYTES;if(n==0)return;
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,ackRecords);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,acknowledged);
         acknowledgeRange(stamp,ackRecords,0,n,mode);
     }
@@ -247,19 +247,19 @@ public final class PackageDeltaGpu implements AutoCloseable {
             throw new IllegalArgumentException("Package GPU journal ACK range");
         if(n==0)return;
         var input=new Capture(-1,stamp,headers[0],source,n);bind(2,input,0);ui(2,5,n);ui(2,6,mode);ui(2,7,firstRecord);
-        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((n+63)/64,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        {PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((n+63)/64,1,1);}com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
     /** Transport failure: release flights without advancing any baseline. Events will be emitted again. */
     public void cancel(Capture capture) {
         owned(capture);bind(2,capture,0);ui(2,5,-1);ui(2,6,1);ui(2,7,0);
-        if(capture.capacity>0){PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((capture.capacity+63)/64,1,1);}
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);finish(capture);
+        if(capture.capacity>0){PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((capture.capacity+63)/64,1,1);}
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);finish(capture);
     }
     /** Caller must have enqueued all GPU copies, or copied records into its bounded ACK journal first. */
     public void finish(Capture capture){owned(capture);captures[capture.bank]=null;}
     private void owned(Capture capture){open();if(capture==null || capture.bank<0 || capture.bank>=BANKS || captures[capture.bank]!=capture)throw new IllegalArgumentException("Stale package capture");}
     private void bind(int program,Capture capture,int bodyBuffer) {
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL20.glUseProgram(programs[program]);
         try(var stack=MemoryStack.stackPush()) {
             GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(metadata,baselines,flights,capture.recordBuffer,capture.headerBuffer,bodyBuffer,predictors));
@@ -269,9 +269,9 @@ public final class PackageDeltaGpu implements AutoCloseable {
     private void ui(int p,int index,int value){GL30.glUniform1ui(locations[p][index],value);}
     private static int buffer(long bytes){int id=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_DRAW);return id;}
     private static void clear(int buffer) {
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
-        try(var stack=MemoryStack.stackPush()){GL43.glClearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
+        try(var stack=MemoryStack.stackPush()){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
     }
     private void open(){if(closed)throw new IllegalStateException("Package delta GPU closed");}
     @Override public void close() {

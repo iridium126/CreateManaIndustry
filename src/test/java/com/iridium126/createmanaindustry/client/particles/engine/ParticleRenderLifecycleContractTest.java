@@ -17,11 +17,31 @@ class ParticleRenderLifecycleContractTest {
         }
     }
     private static MethodNode method(ClassNode type,String name) {
-        return type.methods.stream().filter(m->m.name.equals(name)).findFirst().orElseThrow();
+        return type.methods.stream().filter(m->m.name.equals(name)).max(java.util.Comparator.comparingInt(m->m.instructions.size())).orElseThrow();
     }
     private static boolean calls(MethodNode method,String owner,String name) {
         for(var insn:method.instructions)if(insn instanceof MethodInsnNode call&&call.owner.equals(owner)&&call.name.equals(name))return true;
         return false;
+    }
+    @Test void selectedUpdateBindsActualPoolCapacityBeforeDispatch()throws IOException{
+        var simulate=method(read(ENGINE+"ParticleRuntime$FrameCandidate"),"simulate");
+        int selected=-1,capacity=-1,identities=-1,dispatch=-1;
+        for(int i=0;i<simulate.instructions.size();i++)if(simulate.instructions.get(i) instanceof MethodInsnNode call){
+            if(call.owner.equals("org/lwjgl/opengl/GL20")&&call.name.equals("glUseProgram"))selected=i;
+            if(call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("bindUpdateCapacity"))capacity=i;
+            if(capacity>=0&&call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("bindIdentities"))identities=i;
+            if(capacity>=0&&call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("dispatch")){dispatch=i;break;}
+        }
+        assertTrue(selected>=0&&selected<capacity&&capacity<identities&&identities<dispatch,
+                "Late-compiled update programs must not publish an empty pool with default uCapacity=0");
+    }
+    @Test void shadowEntrySubmitsWithoutJoiningAndFirstConsumerJoins()throws IOException{
+        var scene=read(SCENE+"ClientGpuScene");var entry=method(scene,"prepareCurrentFrame");
+        assertFalse(calls(entry,SCENE+"ClientGpuScene","currentFrameReady"),"Submission entry must not immediately consume its pending continuation");
+        assertFalse(calls(entry,SCENE+"ClientGpuScene","completePendingHardwareFrame"));
+        assertTrue(calls(entry,SCENE+"ClientGpuScene","preparedFrameReady"));
+        assertTrue(calls(method(scene,"currentFrameReady"),SCENE+"ClientGpuScene","completePendingHardwareFrame"));
+        assertTrue(calls(method(scene,"leaveLevelFrame"),SCENE+"ClientGpuScene","completePendingHardwareFrame"));
     }
     @Test void goldManualCommandsArmTheSharedAmbientOwner()throws IOException{
         var runtime=method(read(ENGINE+"ParticleRuntime"),"ensureEmitterRuntime");
@@ -89,12 +109,15 @@ class ParticleRenderLifecycleContractTest {
     @Test void irisShadowAccountingIncludesPreparationAndEveryDrawWithoutAddingTheDetailTwice()throws IOException {
         var shadow=method(read("com/iridium126/createmanaindustry/client/particles/shaderpack/CMIPackEntityMergeHook"),"renderShadow");
         int begin=-1,prepare=-1,lastDraw=-1,end=Integer.MAX_VALUE;
-        for(int i=0;i<shadow.instructions.size();i++)if(shadow.instructions.get(i) instanceof MethodInsnNode call) {
-            if(call.owner.endsWith("/GpuPassTelemetry")&&call.name.equals("begin"))begin=i;
+        String telemetry="";
+        for(int i=0;i<shadow.instructions.size();i++){
+            if(shadow.instructions.get(i) instanceof FieldInsnNode field&&field.owner.endsWith("/CMIPackEntityMergeHook")&&field.desc.endsWith("/GpuPassTelemetry;"))telemetry=field.name;
+            if(!(shadow.instructions.get(i) instanceof MethodInsnNode call))continue;
+            if(call.owner.endsWith("/GpuPassTelemetry")&&call.name.equals("begin")&&telemetry.equals("SHADOW_TIMING"))begin=i;
             if(call.owner.endsWith("/ModelShadowGpu")&&call.name.equals("prepare"))prepare=i;
             if(call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.startsWith("drawModel"))lastDraw=i;
             if(call.owner.endsWith("/GpuPassTelemetry")&&call.name.equals("end")) {
-                end=Math.min(end,i);assertEquals("(Z)V",call.desc,"Failed shadow samples must be discarded");
+                if(telemetry.equals("SHADOW_TIMING"))end=Math.min(end,i);assertEquals("(Z)V",call.desc,"Failed shadow samples must be discarded");
             }
         }
         assertTrue(begin>=0&&prepare>begin&&lastDraw>prepare&&end>lastDraw);
@@ -143,7 +166,10 @@ class ParticleRenderLifecycleContractTest {
     }
     @Test void aPublicationCanOnlyFollowPreflightAndAllResourceCommits() throws IOException {
         String coordinator="com/iridium126/createmanaindustry/client/gpu/frame/GpuFrameCoordinator";
-        var scene=read(SCENE+"ClientGpuScene");var compute=method(scene,"computeFrame");
+        var scene=read(SCENE+"ClientGpuScene");var compute=method(scene,"computeFrameInternal");
+        assertTrue(calls(compute,coordinator,"begin"));assertTrue(calls(compute,coordinator,"simulate"));
+        assertTrue(calls(compute,SCENE+"ClientGpuScene","finishComputedFrame"));
+        compute=method(scene,"finishComputedFrame");
         var phases=new ArrayList<String>();int validation=-1,commit=-1,publish=-1,consume=-1;
         for(int i=0;i<compute.instructions.size();i++)if(compute.instructions.get(i) instanceof MethodInsnNode call){
             if(call.owner.equals(coordinator)&&!call.name.equals("abort"))phases.add(call.name);
@@ -152,7 +178,7 @@ class ParticleRenderLifecycleContractTest {
             if(call.owner.equals(coordinator)&&call.name.equals("publish"))publish=i;
             if(call.owner.equals(ENGINE+"ParticleRuntime$FrameCandidate")&&call.name.equals("consumeInputs"))consume=i;
         }
-        assertEquals(java.util.List.of("begin","simulate","generate","cullSort","publish"),phases);
+        assertEquals(java.util.List.of("generate","cullSort","publish"),phases);
         assertTrue(validation>=0&&commit>validation&&publish>commit&&consume>publish);
         var candidate=read(ENGINE+"ParticleRuntime$FrameCandidate");
         assertTrue(calls(method(candidate,"preparePublication"),ENGINE+"ParticleBuffers","copySnapshot"));
@@ -167,9 +193,19 @@ class ParticleRenderLifecycleContractTest {
         assertTrue(swap>=0&&population>swap&&storm>population);
         assertFalse(calls(promotion,"com/iridium126/createmanaindustry/client/particles/interaction/ModelInteractionRuntime","commitInputs"));
         assertTrue(calls(method(candidate,"consumeInputs"),"com/iridium126/createmanaindustry/client/particles/interaction/ModelInteractionRuntime","commitInputs"));
-        assertTrue(calls(method(scene,"currentFrameReady"),coordinator,"publication"));
-        for(String entry:new String[]{"computeFrame","prepareCurrentFrame","close"})
+        assertTrue(calls(method(scene,"currentFrameReady"),SCENE+"ClientGpuScene","preparedFrameReady"));assertTrue(calls(method(scene,"preparedFrameReady"),coordinator,"publication"));
+        for(String entry:new String[]{"computeFrameInternal","prepareCurrentFrame","close"})
             assertTrue(calls(method(scene,entry),coordinator,"abort"),entry);
+    }
+    @Test void experimentalContinuationFinishesBeforeAnyCurrentPublicationConsumer()throws IOException{
+        var scene=read(SCENE+"ClientGpuScene");var ready=method(scene,"currentFrameReady");int resume=-1,publication=-1;
+        for(int i=0;i<ready.instructions.size();i++)if(ready.instructions.get(i) instanceof MethodInsnNode call){if(call.name.equals("completePendingHardwareFrame"))resume=i;if(call.name.equals("preparedFrameReady"))publication=i;}
+        assertTrue(resume>=0&&publication>resume);
+        var continuation=method(scene,"completePendingHardwareFrame");int simulation=-1,finish=-1;
+        for(int i=0;i<continuation.instructions.size();i++)if(continuation.instructions.get(i) instanceof MethodInsnNode call){if(call.name.equals("resumeSimulation"))simulation=i;if(call.name.equals("finishComputedFrame"))finish=i;}
+        assertTrue(simulation>=0&&finish>simulation);
+        assertTrue(calls(continuation,ENGINE+"ParticleRuntime$FrameCandidate","close"));
+        assertTrue(calls(method(scene,"close"),SCENE+"ClientGpuScene","abortPendingHardwareFrame"));
     }
 
     @Test void lateSharedFateHeaderIsUploadedBeforeItsFirstGpuDispatch() throws IOException {
@@ -179,7 +215,7 @@ class ParticleRenderLifecycleContractTest {
             if(!(generate.instructions.get(i) instanceof MethodInsnNode call))continue;
             if(call.owner.equals(ENGINE+"ParticleAppendTarget")&&call.name.equals("ensureEmitter"))allocation=i;
             if(call.owner.equals(ENGINE+"ParticleAppendTarget")&&call.name.equals("flushHeaders"))upload=i;
-            if(call.owner.equals("org/lwjgl/opengl/GL43")&&call.name.equals("glDispatchCompute")){dispatch=i;break;}
+            if((call.owner.equals("org/lwjgl/opengl/GL43")&&call.name.equals("glDispatchCompute"))||(call.owner.equals("com/iridium126/createmanaindustry/client/gpu/buffer/GpuReplayCommands")&&call.name.equals("dispatchCompute"))){dispatch=i;break;}
         }
         assertTrue(allocation>=0&&upload>allocation&&dispatch>upload,
                 "Shared Fate allocates after the ordinary header upload; its first frame must upload the new header before dispatch");

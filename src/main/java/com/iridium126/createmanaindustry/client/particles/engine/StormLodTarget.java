@@ -75,7 +75,7 @@ final class StormLodTarget implements AutoCloseable {
             for(int slot=0;slot<8;slot++)if(colors[slot]!=0)GL30.glClearBufferfv(GL11.GL_COLOR,slot,new float[]{0,0,0,0});
             GpuTexture2DState.bind(0,original0);GpuTexture2DState.bind(9,original9);
             geometry.run();
-            GL42.glMemoryBarrier(GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_FRAMEBUFFER_BARRIER_BIT);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_FRAMEBUFFER_BARRIER_BIT);
             GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,source);RenderSystem.viewport(viewport[0],viewport[1],width,height);RenderSystem.enableScissor(viewport[0]+x,viewport[1]+y,w,h);
             int composite=ParticlePrograms.INSTANCE.lodComposite();GL20.glUseProgram(composite);
             int fallback=Arrays.stream(colors).filter(id->id!=0).findFirst().orElseThrow();

@@ -85,10 +85,10 @@ public final class PackageChainFramesGpu implements AutoCloseable {
                 throw new IllegalStateException("Chain expanded frame storage unavailable");
         }
         chosen.mapped.clear();chosen.mapped.put(parents.duplicate());uploadedBytes+=parents.remaining();
-        GL42.glMemoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(chosen.parents,origins,chosen.frames));}
         GL20.glUseProgram(program);GL30.glUniform1ui(countLocation,count);GL30.glUniform1ui(parentsLocation,parentCount);
-        if(count>0){{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((count+63)/64,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
+        if(count>0){{PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((count+63)/64,1,1);}com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
         chosen.leased=true;return new View(chosen,count);
     }
     public final class View implements AutoCloseable {

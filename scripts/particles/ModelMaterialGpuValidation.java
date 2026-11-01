@@ -4,6 +4,7 @@ import com.google.common.collect.ImmutableList;
 import net.irisshaders.iris.helpers.StringPair;
 import net.irisshaders.iris.shaderpack.include.*;
 import net.irisshaders.iris.shaderpack.preprocessor.JcppProcessor;
+import net.irisshaders.iris.shaderpack.option.ShaderPackOptions;
 import net.irisshaders.iris.pipeline.transform.*;
 import java.nio.file.*;
 import java.util.*;
@@ -17,8 +18,10 @@ public final class ModelMaterialGpuValidation {
     static int layers=1;
     static void check(boolean ok,String label){checks++;if(!ok)throw new AssertionError(label);}
     static final List<StringPair> DEFINES=new ArrayList<>(List.of(new StringPair("MC_VERSION","12101"),new StringPair("IS_IRIS","1"),new StringPair("MC_GL_VERSION","450"),new StringPair("MC_GLSL_VERSION","450"),new StringPair("MC_RENDER_QUALITY","1.0"),new StringPair("MC_SHADOW_QUALITY","1.0"),new StringPair("MC_HAND_DEPTH","0.125")));
+    static Map<String,String> OPTION_OVERRIDES=Map.of();
     static String preprocess(Path root,String file){
         var path=AbsolutePackPath.fromAbsolutePath("/"+file);var graph=new IncludeGraph(root,ImmutableList.of(path),false);
+        if(!OPTION_OVERRIDES.isEmpty())graph=new ShaderPackOptions(graph,OPTION_OVERRIDES).getIncludes();
         check(graph.getFailures().isEmpty(),file+": "+graph.getFailures());return JcppProcessor.glslPreprocessSource(String.join("\n",new IncludeProcessor(graph).getIncludedFile(path)),DEFINES);
     }
     static int compile(String vertex,String geometry,String fragment,String label,Path root)throws Exception{

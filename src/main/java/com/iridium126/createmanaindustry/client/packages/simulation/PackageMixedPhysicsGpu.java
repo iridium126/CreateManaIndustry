@@ -163,7 +163,7 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
             if(observerRemaining()<0)throw new IllegalStateException("Observer exceeds shared package reservation");
         }
         if(published>=0 && publishedVersion==version)return;
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         int next=published<0?0:published^1;
         publicationCopyBytes=0;
         if(bankFreeVersion[next]!=freeVersion){
@@ -184,14 +184,14 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
             copy(observers.historyBuffer(),history[next],offset,observerCount(),PackageObserverGpu.HISTORY_BYTES);
             publicationCopyBytes+=(long)observerCount()*96;bankObserverVersion[next]=observerVersion;
         }
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         published=next;publishedVersion=version;publishedFreeVersion=freeVersion;publishedChainVersion=chainVersion;publishedBodyCount=bodyCount();
     }
     private static void copy(int source,int target,long first,int count,int stride) {
         if(count==0)return;
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,source);
         GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,target);
-        GL31.glCopyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,first*stride,(long)count*stride);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,first*stride,(long)count*stride);
     }
     public int freeBodyIndex(int local) {open();if(local<0 || local>=free.count())throw new IndexOutOfBoundsException();return local;}
     public int chainBodyIndex(int local) {open();if(local<0 || local>=chain.count())throw new IndexOutOfBoundsException();return freeCapacity+local;}

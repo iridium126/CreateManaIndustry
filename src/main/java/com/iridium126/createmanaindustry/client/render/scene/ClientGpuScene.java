@@ -38,11 +38,15 @@ public final class ClientGpuScene {
     private long frameStartNanos = 0;
     private long computeSubmitNanos;
     private boolean frameTiming,frameDetails,frameThrottle,cpuFallback;
+    private ParticleRuntime.FrameCandidate pendingHardwareFrame;
+    private final GpuComputeState continuationState=new GpuComputeState(false,true);
+    private final java.util.Map<Long,String> computeLabels=new java.util.HashMap<>();
+    private final com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry continuationTimer=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry().named("scene.compute.continuation");
 
     // Fixed owners keep independent clocks; this root sequences their render transaction.
     private long lastErrorTime = 0;
-    private final com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing computeTimer = new com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing(4,budgets::gpu);
-    private final com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing drawTimer = new com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing(4,budgets::gpu);
+    private final com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing computeTimer = new com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing(4,budgets::gpu,(frame,generation,ms)->{String label=computeLabels.remove(frame);com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.sample(label==null?"scene.compute":label,frame,generation,Double.NaN,ms);});
+    private final com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing drawTimer = new com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing(4,budgets::gpu,(frame,generation,ms)->com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.sample("scene.draw",frame,generation,Double.NaN,ms));
 
     /** Accumulates one completed hook-side timer query (GPU ms, lagged). */
     public synchronized void addExternalGpuMs(double ms) {
@@ -52,12 +56,14 @@ public final class ClientGpuScene {
 
     /** Latch all collection modes once, before primary world rendering. */
     private void measurementBoundary() {
+        budgets.gpu(continuationTimer.poll());
+        com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.sceneFrame(renderFrameToken());
         ParticleDiagnostics.INSTANCE.applyRequestedState();
         boolean details=ClientConfig.particleEnabled&&ParticleDiagnostics.INSTANCE.enabled();
         boolean throttle=ClientConfig.particleEnabled&&ClientConfig.particleAutoThrottle;
-        boolean timing=details||throttle;
+        boolean timing=details||throttle||com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.active();
         if(frameTiming!=timing||frameDetails!=details||frameThrottle!=throttle) {
-            computeTimer.close();drawTimer.close();externalHookGpuMs=0;
+            computeTimer.close();drawTimer.close();computeLabels.clear();externalHookGpuMs=0;
         }
         if(frameThrottle!=throttle) {
             profiler.reset();
@@ -83,6 +89,7 @@ public final class ClientGpuScene {
     private final com.iridium126.createmanaindustry.client.gpu.frame.GpuFrameCoordinator frameCoordinator =
             new com.iridium126.createmanaindustry.client.gpu.frame.GpuFrameCoordinator();
     private final GpuComputeState earlyComputeState = new GpuComputeState();
+    private final GpuComputeState hardwareComputeState = new GpuComputeState(false,true);
     private final org.joml.Matrix4f levelView = new org.joml.Matrix4f();
     private final org.joml.Matrix4f levelProjection = new org.joml.Matrix4f();
     private Camera levelCamera;
@@ -107,11 +114,13 @@ public final class ClientGpuScene {
         levelDelta = delta;
         levelView.set(view);
         levelProjection.set(projection);
+        ClientFrameCapture.INSTANCE.camera(renderFrameToken(),camera,projection);
     }
 
     public void leaveLevelFrame() {
         boolean primary = levelFrame.primary();
         try {
+            if(primary)completePendingHardwareFrame();
             if (primary && frameAttempted) {
                 ParticleDiagnostics.INSTANCE.resumeCpu();
                 ParticleDiagnostics.INSTANCE.end();
@@ -136,16 +145,17 @@ public final class ClientGpuScene {
         var camera=shader.getUniform("CmiWorldCamera.CameraPosition");var p=levelCamera.getPosition();if(camera!=null)camera.setVector((float)p.x,(float)p.y,(float)p.z);
         return true;
     }
-    public boolean currentFrameReady(){return levelFrame.ready()&&frameCoordinator.publication()!=null&&frameLevel==Minecraft.getInstance().level;}
+    private boolean preparedFrameReady(){return levelFrame.ready()&&frameCoordinator.publication()!=null&&frameLevel==Minecraft.getInstance().level;}
+    public boolean currentFrameReady(){completePendingHardwareFrame();return preparedFrameReady();}
     /** Called after Iris pipeline setup but before any shadow camera/state is installed. */
     public boolean prepareCurrentFrame(){
         if(!levelFrame.primary()||levelCamera==null||frameLevel!=Minecraft.getInstance().level)return false;
         if(!ClientConfig.shaderPackIntegration||!dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse())return false;
-        if(!levelFrame.claim())return currentFrameReady();
+        if(!levelFrame.claim())return preparedFrameReady();
         try {
             earlyComputeState.capture();
             try {
-                computeFrame(levelCamera, levelView, levelProjection, levelDelta);
+                computeFrame(levelCamera, levelView, levelProjection, levelDelta,true);
             } finally {
                 earlyComputeState.restore();
             }
@@ -154,19 +164,30 @@ public final class ClientGpuScene {
             frameCoordinator.abort();
             CreateManaIndustry.LOGGER.warn("[CMI particles] pre-shadow preparation failed", failure);
         }
-        levelFrame.complete(frameArmed);
-        return currentFrameReady();
+        if(pendingHardwareFrame==null)levelFrame.complete(frameArmed);
+        // This is a submission entry, not a particle consumer. In particular,
+        // do not immediately join a prefix just submitted for terrain overlap.
+        return preparedFrameReady();
     }
     public void beginFrame(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix, DeltaTracker deltaTracker) {
         if(camera!=Minecraft.getInstance().gameRenderer.getMainCamera())return;
         if(levelFrame.active()){
-            if(!levelFrame.claim())return;
+            if(!levelFrame.claim()){completePendingHardwareFrame();return;}
             computeFrame(levelCamera,levelView,levelProjection,levelDelta);levelFrame.complete(frameArmed);return;
         }
         measurementBoundary();
+        ClientFrameCapture.INSTANCE.camera(renderFrameToken(),camera,projectionMatrix);
         computeFrame(camera,view,projectionMatrix,deltaTracker);
     }
     private void computeFrame(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix, DeltaTracker deltaTracker) {
+        computeFrame(camera,view,projectionMatrix,deltaTracker,false);
+    }
+    private void computeFrame(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix, DeltaTracker deltaTracker,boolean allowHardwareOverlap) {
+        if(com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.productionOnly()){computeFrameInternal(camera,view,projectionMatrix,deltaTracker,allowHardwareOverlap);return;}
+        hardwareComputeState.capture();
+        try{computeFrameInternal(camera,view,projectionMatrix,deltaTracker,allowHardwareOverlap);}finally{hardwareComputeState.restore();}
+    }
+    private void computeFrameInternal(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix, DeltaTracker deltaTracker,boolean allowHardwareOverlap) {
         this.frameAttempted = false;
         this.frameArmed = false;
         this.frameCoordinator.abort();
@@ -174,33 +195,25 @@ public final class ClientGpuScene {
         if(!ClientConfig.particleEnabled) { particles.clearParticles();return; }
         if(Minecraft.getInstance().level==null)return;
         try(var accounting=budgets.prepare()){if(!particles.prepareResources())return;}
+        com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.prepareBoundary(ParticlePrograms.INSTANCE);
         profiler.setBudget((float)ClientConfig.particleBudgetMs);
         this.frameAttempted = true;
         this.cpuFallback=frameThrottle&&!computeTimer.sampled();
         if(cpuFallback)this.frameStartNanos = System.nanoTime();
         ParticleDiagnostics.INSTANCE.begin();
-        boolean timedCompute=frameTiming&&this.computeTimer.begin(), computeSucceeded=false;
+        boolean timedCompute=frameTiming&&this.computeTimer.begin(true,renderFrameToken(),ParticleRuntime.INSTANCE.currentGeneration()+1), computeSucceeded=false;
         try(var accounting=budgets.prepare()) {
             frameCoordinator.begin(renderFrameToken());
-            try(var work=particles.prepareInput(camera,view,projectionMatrix,deltaTracker,frameCoordinator,profiler.emissionScale())) {
+            var work=particles.prepareInput(camera,view,projectionMatrix,deltaTracker,frameCoordinator,profiler.emissionScale());
+            try {
                 if(work.hasWork()) {
-                    frameCoordinator.simulate();work.simulate();
-                    frameCoordinator.generate();work.generate();
-                    frameCoordinator.cullSort();work.cullSort();
-                    ParticleDiagnostics.INSTANCE.mark("storm_lod_compute");
-                    com.iridium126.createmanaindustry.client.particles.engine.StormLodGpu.INSTANCE.prepare(particles.currentGeneration()+1,camera,view,projectionMatrix,deltaTracker.getGameTimeDeltaPartialTick(false));
-                    ParticleDiagnostics.INSTANCE.mark("storm_lod_publish");
-                    com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers.INSTANCE.beginBindings();
-                    var publication=work.preparePublication();
-                    ScenePublicationPolicy.validate(publication,publication.generation(),
-                            com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.candidateGeneration(),work.packageVersion());
-                    renderInput=work.commit();
-                    com.iridium126.createmanaindustry.client.particles.engine.StormLodGpu.INSTANCE.commit(publication.generation());
-                    frameCoordinator.publish(publication);work.consumeInputs();
-                    com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualFrame.publish(AllayStormRuntime.INSTANCE.visualFrame(renderFrameToken(),publication.generation()));
-                    frameArmed=true;
+                    frameCoordinator.simulate();
+                    if(allowHardwareOverlap&&!frameThrottle){
+                        if(work.simulateUntilHardware()){pendingHardwareFrame=work;if(timedCompute)computeLabels.put(renderFrameToken(),"scene.compute.prefix");computeSucceeded=true;return;}
+                    }else work.simulate();
+                    finishComputedFrame(work,camera,view,projectionMatrix,deltaTracker);
                 } else frameCoordinator.abort();
-            }
+            }finally{if(work!=pendingHardwareFrame)work.close();}
             computeSucceeded=true;
         } catch (RuntimeException | LinkageError e) {
             this.frameArmed = false;
@@ -219,6 +232,28 @@ public final class ClientGpuScene {
             ParticleDiagnostics.INSTANCE.pauseCpu();
         }
     }
+    private void finishComputedFrame(ParticleRuntime.FrameCandidate work,Camera camera,Matrix4fc view,Matrix4fc projectionMatrix,DeltaTracker deltaTracker){
+        frameCoordinator.generate();work.generate();frameCoordinator.cullSort();work.cullSort();
+        ParticleDiagnostics.INSTANCE.mark("storm_lod_compute");StormLodGpu.INSTANCE.prepare(particles.currentGeneration()+1,camera,view,projectionMatrix,deltaTracker.getGameTimeDeltaPartialTick(false));
+        ParticleDiagnostics.INSTANCE.mark("storm_lod_publish");ParticleBuffers.INSTANCE.beginBindings();var publication=work.preparePublication();
+        ScenePublicationPolicy.validate(publication,publication.generation(),StarfallGpuBuffers.INSTANCE.candidateGeneration(),work.packageVersion());
+        com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.requireHealthy();renderInput=work.commit();StormLodGpu.INSTANCE.commit(publication.generation());frameCoordinator.publish(publication);work.consumeInputs();
+        ParticleChainCapture.INSTANCE.publication(publication);
+        com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualFrame.publish(AllayStormRuntime.INSTANCE.visualFrame(renderFrameToken(),publication.generation()));frameArmed=true;
+    }
+    /** Called by the first same-frame particle/shadow/publication consumer.
+     * Prefix and continuation clocks exclude intervening terrain commands. */
+    private void completePendingHardwareFrame(){
+        var work=pendingHardwareFrame;if(work==null||!levelFrame.primary())return;pendingHardwareFrame=null;boolean success=false,captured=false;
+        ParticleDiagnostics.INSTANCE.resumeCpu();continuationTimer.begin(frameTiming,frameDetails,renderFrameToken(),particles.currentGeneration()+1);
+        try(var accounting=budgets.prepare()){
+            continuationState.capture();captured=true;
+            if(frameLevel!=Minecraft.getInstance().level)throw new IllegalStateException("World changed during R7 continuation");
+            work.resumeSimulation();finishComputedFrame(work,levelCamera,levelView,levelProjection,levelDelta);success=true;
+        }catch(RuntimeException|LinkageError failure){frameArmed=false;frameCoordinator.abort();particles.recoverFailedInputs();com.iridium126.createmanaindustry.client.packages.authority.PackageAuthorityClient.closeAll("Particle continuation failed",true);CreateManaIndustry.LOGGER.error("[CMI R7] continuation failed; no particle publication",failure);}
+        finally{try{work.close();}finally{if(captured)continuationState.restore();continuationTimer.end(success);ParticleDiagnostics.INSTANCE.mark("world");ParticleDiagnostics.INSTANCE.pauseCpu();levelFrame.complete(success);}}
+    }
+    private void abortPendingHardwareFrame(){var work=pendingHardwareFrame;pendingHardwareFrame=null;if(work!=null){continuationState.capture();try{work.close();}finally{continuationState.restore();}}}
 
     /**
      * Phase D of the split frame: submits every draw pass (honouring the
@@ -227,6 +262,7 @@ public final class ClientGpuScene {
      * phase attempted, so throttle continuity survives aborted frames.
      */
     public void endFrame(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix) {
+        completePendingHardwareFrame();
         if(camera!=Minecraft.getInstance().gameRenderer.getMainCamera()||levelFrame.active()&&!levelFrame.primary())return;
         if (!particles.available() || !ClientConfig.particleEnabled || !this.frameAttempted)
             return;
@@ -274,6 +310,7 @@ public final class ClientGpuScene {
         return currentFrameReady()?frameCoordinator.publication():null;
     }
     public void requestProgramRebuild() {
+        abortPendingHardwareFrame();
         com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects.reload();
         frameCoordinator.abort();frameArmed=false;
         com.iridium126.createmanaindustry.client.greattrick.sharedfate.SharedFateGpu.INSTANCE.close();
@@ -285,6 +322,7 @@ public final class ClientGpuScene {
         particles.reloadPrograms();
     }
     public void onLevelChanged() {
+        abortPendingHardwareFrame();
         if(CreateManaIndustry.IRISVEIL_ACTIVE)com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.invalidatePrograms();
         com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects.clear();
         com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualFrame.clear();
@@ -299,6 +337,7 @@ public final class ClientGpuScene {
         particles.resetWorld();
     }
     public void close() {
+        abortPendingHardwareFrame();continuationTimer.close();computeLabels.clear();
         com.iridium126.createmanaindustry.client.render.shaderpack.IrisWorldEffects.clear();
         com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualFrame.clear();
         com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.clear();
@@ -318,6 +357,7 @@ public final class ClientGpuScene {
     }
 
     private void resetMeasurements() {
+        continuationTimer.close();computeLabels.clear();
         computeTimer.close();drawTimer.close();externalHookGpuMs=0;profiler.reset();
         frameTiming=frameDetails=frameThrottle=cpuFallback=false;
         budgets.reset();

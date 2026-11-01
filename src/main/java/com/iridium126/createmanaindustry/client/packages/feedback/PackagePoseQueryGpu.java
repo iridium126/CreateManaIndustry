@@ -107,10 +107,10 @@ public final class PackagePoseQueryGpu implements AutoCloseable {
         GL20.glUniform3f(locations[0][3],ray.x,ray.y,ray.z);GL20.glUniform3f(locations[0][4],ray.dx,ray.dy,ray.dz);
         GL30.glUniform1ui(locations[0][7],type);GL30.glUniform1ui(locations[0][8],bodyLimit);GL20.glUniform1f(locations[0][9],partial);
         GL30.glUniform1ui(locations[0][10],input.attachments>0?1:0);
-        if(count>0){{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute(count,1,1);}GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
+        if(count>0){{PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(count,1,1);}com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
         use(1,input);GL30.glUniform1ui(locations[1][5],count);
         GL30.glUniform1ui(locations[1][7],type);GL20.glUniform3f(locations[1][3],ray.x,ray.y,ray.z);GL20.glUniform3f(locations[1][4],ray.dx,ray.dy,ray.dz);
-        GL20.glUniform1f(locations[1][9],partial);{PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute(1,1,1);}
+        GL20.glUniform1f(locations[1][9],partial);{PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);}
         return capture(bank,submission,Kind.PICK,tag,input,List.of(),1);
     }
     public boolean poses(Input input,List<Request> requests,long submission,Object tag) {
@@ -123,10 +123,10 @@ public final class PackagePoseQueryGpu implements AutoCloseable {
             var r=copy.get(i);int p=i*REQUEST_BYTES;
             scratch.putLong(p,r.id).putLong(p+8,r.generation).putInt(p+16,r.candidate).putInt(p+20,r.allowRetired?1:0).putLong(p+24,0);
         }
-        GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,uploads[bank]);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,uploads[bank]);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,scratch);
         bind(input,uploads[bank],outputs[bank]);use(2,input);GL30.glUniform1ui(locations[2][6],copy.size());
-        {PackageCpuDiagnostics.dispatch();GL43.glDispatchCompute((copy.size()+63)/64,1,1);}
+        {PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((copy.size()+63)/64,1,1);}
         return capture(bank,submission,Kind.POSES,tag,input,copy,copy.size());
     }
     private void validate(Input input,long submission) {
@@ -134,7 +134,7 @@ public final class PackagePoseQueryGpu implements AutoCloseable {
             throw new IllegalArgumentException("Package query namespace/range");
     }
     private void bind(Input input,int scratch,int output) {
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,
                 stack.ints(input.bodies,input.chains,input.metadata,input.admission,scratch,output,input.history,input.attachments==0?input.history:input.attachments));}
     }
@@ -143,7 +143,7 @@ public final class PackagePoseQueryGpu implements AutoCloseable {
         GL30.glUniform1ui(locations[program][1],input.bodyCount);GL30.glUniform1ui(locations[program][2],input.capacity);
     }
     private boolean capture(int bank,long submission,Kind kind,Object tag,Input input,List<Request> requests,int count) {
-        GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         if(!ring.submit(outputs[bank],0,count*RESULT_BYTES,epoch,nextSequence))throw new IllegalStateException("Package query slot ownership mismatch");
         pending.addLast(new Pending(nextSequence++,submission,kind,tag,input,requests));capturedBytes+=(long)count*RESULT_BYTES;return true;
     }

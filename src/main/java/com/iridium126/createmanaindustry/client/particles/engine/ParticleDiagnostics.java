@@ -20,24 +20,39 @@ public final class ParticleDiagnostics {
     private final double[] cpu = new double[SAMPLES], allocations = new double[SAMPLES];
     private final Map<String, Double> gpu = new LinkedHashMap<>();
     private final com.sun.management.ThreadMXBean memory = ManagementFactory.getThreadMXBean() instanceof com.sun.management.ThreadMXBean m ? m : null;
-    public enum UpdateStage { PREPARE, RECOVERY, GENERIC, MODEL, DOME_CONTACTS, DEPENETRATION, NAVIGATION }
+    public enum UpdateStage { INPUT_PREPARE, INPUT_STATE, INPUT_ALLOCATOR, INPUT_RESET, INPUT_DAMAGE, INPUT_GRID, PREPARE, RECOVERY, GENERIC, MODEL, DOME_CONTACTS, DEPENETRATION, NAVIGATION, FEEDBACK, PUBLICATION }
     private final EnumMap<UpdateStage,com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry> updates=new EnumMap<>(UpdateStage.class);
     private UpdateStage activeUpdate;
-    public ParticleDiagnostics(){for(var stage:UpdateStage.values())updates.put(stage,new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry());}
+    private UpdateStage activePreparation;
+    private boolean frameSampling;
+    public ParticleDiagnostics(){for(var stage:UpdateStage.values())updates.put(stage,new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry().named("update."+stage.name().toLowerCase(Locale.ROOT)));}
+    public void frameSampling(boolean value){frameSampling=value;updates.values().forEach(timer->timer.configure(enabled||value,enabled||value));}
+    public void pollFrameSamples(){updates.values().forEach(com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry::poll);}
     public long firstFrame(){return firstFrame;}
     public long lastFrame(){return lastFrame;}
     public String timing(com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry timer,boolean details){return timer.report(firstFrame,lastFrame,details);}
     public void beginUpdate(UpdateStage stage,long frame,long generation){
-        if(!enabled)return;if(activeUpdate!=null)throw new IllegalStateException("Nested update diagnostic");
+        if(!enabled&&!frameSampling)return;if(activeUpdate!=null)throw new IllegalStateException("Nested update diagnostic");
         activeUpdate=stage;var timer=updates.get(stage);timer.poll();timer.begin(true,true,frame,generation);
     }
-    public void endUpdate(boolean success){if(activeUpdate!=null){updates.get(activeUpdate).end(success);activeUpdate=null;}}
+    public void beginPreparation(UpdateStage stage,long frame,long generation){
+        if(!enabled&&!frameSampling)return;
+        if(activeUpdate!=UpdateStage.INPUT_PREPARE||activePreparation!=null)throw new IllegalStateException("Invalid input preparation scope");
+        activePreparation=stage;var timer=updates.get(stage);timer.poll();timer.begin(true,true,frame,generation);
+    }
+    public void endPreparation(boolean success){if(activePreparation!=null){updates.get(activePreparation).end(success);activePreparation=null;}}
+    public void endUpdate(boolean success){endPreparation(false);if(activeUpdate!=null){updates.get(activeUpdate).end(success);activeUpdate=null;}}
     private String updateReport(){
         var result=new StringBuilder();for(var entry:updates.entrySet())result.append("\nUpdate ").append(entry.getKey().name().toLowerCase(Locale.ROOT)).append(": ").append(timing(entry.getValue(),true));return result.toString();
     }
     private int simulationLive=-1,simulationModel=-1;
     private long simulationFrame=-1,simulationGeneration=-1;
-    public void simulationCounts(long frame,long generation,int live,int models){if(enabled&&frame>=firstFrame){simulationLive=live;simulationModel=models;simulationFrame=frame;simulationGeneration=generation-1;}}
+    private int captureLive=-1,captureModels=-1;
+    private long captureCensusFrame=-1;
+    public void simulationCounts(long frame,long generation,int live,int models){
+        captureCensusFrame=frame;captureLive=live;captureModels=models;
+        if(enabled&&frame>=firstFrame){simulationLive=live;simulationModel=models;simulationFrame=frame;simulationGeneration=generation-1;}
+    }
     private int cursor, samples;
     private long firstFrame=-1,lastFrame=-1,countFrame=-1,countGeneration=-1;
     private int bodyCount,carrierCount,ghostCount,featherCount,lod1Count,lod2Count;
@@ -47,6 +62,10 @@ public final class ParticleDiagnostics {
     private String captureContext="unmeasured";
     private Object captureWorld;
     public void modelCounts(long frame,long generation,int body,int carrier,int ghost,int feather,int lod1,int lod2){
+        modelCounts(frame,generation,body,carrier,ghost,feather,lod1,lod2,-1,-1,-1);
+    }
+    public void modelCounts(long frame,long generation,int body,int carrier,int ghost,int feather,int lod1,int lod2,int additive,int sprite,int alpha){
+        if(captureCensusFrame==frame)com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.census(frame,generation,captureLive,captureModels,body,carrier,ghost,feather,lod1,lod2,additive,sprite,alpha);
         if(!enabled||frame<firstFrame)return;
         countFrame=frame;countGeneration=generation;bodyCount=body;carrierCount=carrier;ghostCount=ghost;featherCount=feather;lod1Count=lod1;lod2Count=lod2;
     }
@@ -55,7 +74,7 @@ public final class ParticleDiagnostics {
         lastFrame=scene.renderFrameToken();if(firstFrame<0)firstFrame=lastFrame;
         var window=net.minecraft.client.Minecraft.getInstance().getWindow();
         String nextContext=window.getWidth()+"x"+window.getHeight()+"; "+
-                (com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?irisCaptureContext():"pack=none; source=none; options=unavailable");
+                measurementContext();
         var level=net.minecraft.client.Minecraft.getInstance().level;
         nextContext+="; world="+(level==null?"none":level.dimension().location());
         if(captureContext(nextContext,lastFrame,level)&&com.iridium126.createmanaindustry.CreateManaIndustry.IRISVEIL_ACTIVE)
@@ -70,6 +89,10 @@ public final class ParticleDiagnostics {
     /** Kept behind the optional dependency guard; standalone profiling never resolves Iris types. */
     private String irisCaptureContext(){
         var session=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current();
+        var active=net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable();
+        if(!(active instanceof net.irisshaders.iris.pipeline.IrisRenderingPipeline))
+            return "pack=(off); source=none; options=unavailable";
+        if(!session.ownsPipeline(active))return "pack=pending; source=none; options=unavailable";
         if(optionsRevision!=session.revision()){
             optionsRevision=session.revision();var options=session.options();
             if(options==null)optionSummary="unavailable";
@@ -81,15 +104,24 @@ public final class ParticleDiagnostics {
                     optionSummary=values.size()+" options / "+java.util.HexFormat.of().formatHex(digest.digest(values.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))).substring(0,12);
                 }catch(java.security.NoSuchAlgorithmException impossible){throw new IllegalStateException(impossible);}
             }
+            if(com.iridium126.createmanaindustry.CreateManaIndustry.IRISVEIL_ACTIVE)
+                com.iridium126.createmanaindustry.client.particles.shaderpack.ParticleProfileSnapshot.write(session,active);
         }
         return "pack="+net.irisshaders.iris.Iris.getCurrentPackName()+"; source="+session.inventory().digest().substring(0,12)+"; options="+optionSummary+"; session="+session.revision();
     }
+    /** Explicit opt-in export, tied to the current owning pack session. */
+    public String exportActiveProfileContext(){
+        if(!com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE||!com.iridium126.createmanaindustry.CreateManaIndustry.IRISVEIL_ACTIVE)return "none";
+        var path=com.iridium126.createmanaindustry.client.particles.shaderpack.ParticleProfileSnapshot.write(com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current(),net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable());return path==null?"unavailable":path.toString();
+    }
+    /** Active pipeline identity for opt-in whole-frame captures; optional Iris remains guarded. */
+    public String measurementContext(){return (com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?irisCaptureContext():"pack=none; source=none; options=unavailable")+"; backend="+com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.identity()+"; engine="+ParticlePrograms.INSTANCE.diagnosticSourceDigest()+"; auto_throttle="+com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleAutoThrottle;}
     private Frame current;
     private long start, allocatedStart, cpuNanos, allocatedBytes, uploads, calls, draws, readbackLag;
     private long lastUploads, lastCalls, lastDraws, lastReadbackLag;
     private volatile boolean requested,enabled;
     public void enabled(boolean enabled) { requested=enabled; }
-    public boolean enabled() { return enabled; }
+    public boolean enabled() { return enabled||frameSampling; }
     public boolean hasSamples() { return samples>0; }
     /** Render-thread boundary: command changes cannot split an active measurement. */
     public void applyRequestedState() {
@@ -97,7 +129,7 @@ public final class ParticleDiagnostics {
         if(next==enabled)return;
         releaseQueries();
         if(next){samples=cursor=0;gpu.clear();firstFrame=lastFrame=countFrame=countGeneration=-1;captureContext="unmeasured";optionsRevision=Long.MIN_VALUE;simulationLive=simulationModel=-1;simulationFrame=simulationGeneration=-1;}
-        enabled=next;updates.values().forEach(timer->timer.configure(next,next));if(!next)captureWorld=null;
+        enabled=next;updates.values().forEach(timer->timer.configure(next||frameSampling,next||frameSampling));if(!next)captureWorld=null;
         com.iridium126.createmanaindustry.client.gpu.profile.GpuQueueAccounting.collecting(next);
         com.iridium126.createmanaindustry.client.packages.feedback.PackageCpuDiagnostics.enabled(next);
         com.iridium126.createmanaindustry.client.packages.world.PackageWorldRuntime.profiling(next);
@@ -201,7 +233,7 @@ public final class ParticleDiagnostics {
         return report.toString();
     }
     public void close() {
-        releaseQueries();updates.values().forEach(com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry::close);activeUpdate=null;samples=cursor=0;gpu.clear();captureWorld=null;captureContext="unmeasured";firstFrame=lastFrame=countFrame=countGeneration=-1;simulationLive=simulationModel=-1;simulationFrame=simulationGeneration=-1;optionsRevision=Long.MIN_VALUE;
+        releaseQueries();updates.values().forEach(com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry::close);activeUpdate=activePreparation=null;samples=cursor=0;gpu.clear();captureWorld=null;captureContext="unmeasured";firstFrame=lastFrame=countFrame=countGeneration=-1;simulationLive=simulationModel=-1;simulationFrame=simulationGeneration=-1;optionsRevision=Long.MIN_VALUE;
     }
     private void releaseQueries() {
         for(Frame f:frames) {
