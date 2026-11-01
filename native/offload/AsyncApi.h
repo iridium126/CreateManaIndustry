@@ -34,3 +34,7 @@ void enqueueDetachedQuery(void* query,const QueryView& view,int backend,bool ref
 CUresult detachedQueryReady(void* query);
 std::array<double,7> detachedQueryTiming(void* query);
 void destroyDetachedQuery(void* query);
+
+void configureDetachedQuery(void* query,unsigned policy,unsigned pageBytes);
+
+std::array<double,3> detachedQueryDetails(void* query);

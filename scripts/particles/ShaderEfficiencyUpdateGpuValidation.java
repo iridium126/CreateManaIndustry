@@ -88,6 +88,7 @@ public class ShaderEfficiencyUpdateGpuValidation extends HelixGpuValidation {
                         if(System.getProperty("cmi.r7.layout","").equals("paired-islands")){
                 var islands=read(d.q.pool,Math.max(1,n)*64);for(int i=0;i<n;i++){int pair=i/2,at=i*64;islands.putFloat(at,(scene.equals("ordinary")?1500:0)+(pair%128)*3f+(i%2)*.5f).putFloat(at+4,(scene.equals("ordinary")?128:40)+(pair/16384)*3f).putFloat(at+8,(scene.equals("ordinary")?-2300:0)+(pair/128%128)*3f);}d.q.build(islands,n);d.bindings();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,d.grid);GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,ParticleBuffers.GRID_TABLE*4L,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);dispatch(d.gridProgram,Math.max(1,(n+63)/64));
             }
+            if(System.getProperty("cmi.r7.layout","").equals("coincident")){var coincident=read(d.q.pool,Math.max(1,n)*64);for(int i=0;i<n;i++)coincident.putFloat(i*64,0).putFloat(i*64+4,128).putFloat(i*64+8,0);d.q.build(coincident,n);d.bindings();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,d.grid);GL43.glClearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,ParticleBuffers.GRID_TABLE*4L,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);dispatch(d.gridProgram,Math.max(1,(n+63)/64));}
             stars.prepare(7);readBank=READ.getInt(stars);stateBuffer=stars.candidateStateBuffer();
             stateSeed=stateBuffer==0?bytes(0):read(stateBuffer,size(stateBuffer));
             gridSeed=read(d.grid,size(d.grid));

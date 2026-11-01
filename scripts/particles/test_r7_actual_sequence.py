@@ -1,6 +1,6 @@
 import hashlib,json,struct,tempfile,unittest
 from pathlib import Path
-from prepare_r7_actual_sequence import export
+from prepare_r7_actual_sequence import export,export_all
 
 class ActualSequenceTests(unittest.TestCase):
     def fixture(self,root,schema=3):
@@ -22,4 +22,14 @@ class ActualSequenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);self.fixture(root,2)
             with self.assertRaises(ValueError):export(root,root/'out','dome-solve')
+    def test_all_keeps_variable_queries_instead_of_intersection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);source=root/'source';source.mkdir();self.fixture(source)
+            m=json.loads((source/'manifest.json').read_text())
+            for f in m['frames'][1:]:
+                p=source/f['file'];data=bytearray(p.read_bytes());struct.pack_into('<I',data,64+56,0);p.write_bytes(data);f['sha256']=hashlib.sha256(data).hexdigest()
+            (source/'manifest.json').write_text(json.dumps(m));r=export_all(source,root/'all')
+            self.assertEqual([x['queries'] for x in r['frames']],[1]+[0]*15)
+            self.assertTrue(r['periodic_rebuild_eligible']);self.assertEqual(r['schema'],2)
+            with self.assertRaises(ValueError):export(source,root/'intersection')
 if __name__=='__main__':unittest.main()

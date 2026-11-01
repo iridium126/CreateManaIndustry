@@ -9,6 +9,6 @@ public final class GpuPrograms {
         if(program==0)return;
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferRetirement.retiringProgram(program);
         GpuUniforms.clearUniformProgram(program);
-        GL20.glDeleteProgram(program);
+        GpuShaderCompiler.forget(program);GL20.glDeleteProgram(program);
     }
 }

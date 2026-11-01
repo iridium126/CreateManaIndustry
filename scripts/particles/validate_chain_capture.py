@@ -33,6 +33,7 @@ def load(directory):
         else:raise ValueError('unknown resource type')
     for program in data['programs'].values():
         if file(program['binary'])<=0:raise ValueError('empty program binary')
+        if 'compute_source' in program and file(program['compute_source'])<=0:raise ValueError('empty captured source')
     commands=data['commands']
     if not commands or len(commands)>4096:raise ValueError('unbounded/empty command stream')
     def span(name,at,count):

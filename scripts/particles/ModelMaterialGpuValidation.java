@@ -19,9 +19,10 @@ public final class ModelMaterialGpuValidation {
     static void check(boolean ok,String label){checks++;if(!ok)throw new AssertionError(label);}
     static final List<StringPair> DEFINES=new ArrayList<>(List.of(new StringPair("MC_VERSION","12101"),new StringPair("IS_IRIS","1"),new StringPair("MC_GL_VERSION","450"),new StringPair("MC_GLSL_VERSION","450"),new StringPair("MC_RENDER_QUALITY","1.0"),new StringPair("MC_SHADOW_QUALITY","1.0"),new StringPair("MC_HAND_DEPTH","0.125")));
     static Map<String,String> OPTION_OVERRIDES=Map.of();
+    static boolean STRICT_CAPTURE_OPTIONS;
     static String preprocess(Path root,String file){
         var path=AbsolutePackPath.fromAbsolutePath("/"+file);var graph=new IncludeGraph(root,ImmutableList.of(path),false);
-        if(!OPTION_OVERRIDES.isEmpty())graph=new ShaderPackOptions(graph,OPTION_OVERRIDES).getIncludes();
+        if(!OPTION_OVERRIDES.isEmpty()){var options=new ShaderPackOptions(graph,OPTION_OVERRIDES);if(STRICT_CAPTURE_OPTIONS){var effective=new TreeMap<String,String>();options.getOptionSet().getBooleanOptions().keySet().forEach(k->effective.put(k,Boolean.toString(options.getOptionValues().getBooleanValueOrDefault(k))));options.getOptionSet().getStringOptions().keySet().forEach(k->effective.put(k,options.getOptionValues().getStringValueOrDefault(k)));for(var entry:effective.entrySet())if(!entry.getValue().equals(OPTION_OVERRIDES.get(entry.getKey())))throw new IllegalStateException("Compiled root option is absent or differs from capture: "+file+" / "+entry);}graph=options.getIncludes();}
         check(graph.getFailures().isEmpty(),file+": "+graph.getFailures());return JcppProcessor.glslPreprocessSource(String.join("\n",new IncludeProcessor(graph).getIncludedFile(path)),DEFINES);
     }
     static int compile(String vertex,String geometry,String fragment,String label,Path root)throws Exception{

@@ -11,7 +11,7 @@ extern "C" __global__ void __raygen__query(){
 extern "C" __global__ void __intersection__point(){
     unsigned i=optixGetLaunchIndex().x,j=optixGetPrimitiveIndex();if(owner(params,i)==j)return;
     float4 a=origin(params,i),b=params.points[j];float dx=a.x-b.x,dy=a.y-b.y,dz=a.z-b.z;
-    if((dx*dx+dy*dy)+dz*dz<=queryRadius(params,i)*queryRadius(params,i)){unsigned count=optixGetPayload_0();if(params.write)params.ids[params.offsets[i]+count]=resultId(params,j);optixSetPayload_0(count+1);}
+    if((dx*dx+dy*dy)+dz*dz<=queryRadius(params,i)*queryRadius(params,i)){unsigned count=optixGetPayload_0();if(params.paged){if(!appendPage(params,i,count,j))return;}else if(params.write)params.ids[params.offsets[i]+count]=resultId(params,j);optixSetPayload_0(count+1);}
     // No reportIntersection: visit every conservative AABB, never terminate on the first hit.
 }
 extern "C" __global__ void __miss__noop(){}

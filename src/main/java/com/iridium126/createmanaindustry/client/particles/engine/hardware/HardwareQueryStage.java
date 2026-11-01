@@ -22,7 +22,7 @@ public final class HardwareQueryStage implements AutoCloseable {
     private boolean closing,released,quarantined,retirementFailed;
     private String lastReason="unmeasured";
     private final boolean diagnosticSort;
-    private int activePrepare;
+    private int activePrepare,policy;
     private static int aligned(int value){return (value+255)&~255;}
     public HardwareQueryStage(int points,int queries,int slotBytes,String prepareSource,Path cuda,Path optix,Path source,Path crt){
         this(points,queries,slotBytes,prepareSource,cuda,optix,source,crt,false);
@@ -51,6 +51,8 @@ public final class HardwareQueryStage implements AutoCloseable {
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,pool);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,5,emitters);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,14,previous);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,24,population);
         return beginBound(continuationTexture,strideWords,inputGeneration,nonce,backend,pointCapacity,queryCapacity);
     }
+    public void configure(int value,int pageBytes){HardwareNative.configureAsyncQuery(worker,value,pageBytes);policy=value;}
+    public double[] trace(Ticket ticket){slot(ticket);double[] trace=HardwareNative.asyncQueryTrace(worker,ticket.slot,ticket.nonce);if(trace.length<16||trace[0]!=8){trace=new double[16];java.util.Arrays.fill(trace,-1);trace[0]=8;trace[1]=policy;}return trace;}
     public int prepareProgram(){return program;}
     /** External program remains owned by the caller. Selection changes only GPU
      * preparation; native input and result slots retain their own stage identity. */
@@ -74,7 +76,7 @@ public final class HardwareQueryStage implements AutoCloseable {
             if(state==2){HardwareNative.consumeAsyncQuery(worker,ticket.slot,ticket.nonce);GL42.glBindImageTexture(6,slot.resultTexture,0,false,0,GL15.GL_READ_ONLY,GL30.GL_R32UI);slot.consumed=true;lastReason="current native result";return true;}
             if(state==3||state==4){lastReason=HardwareNative.asyncQueryError(worker,ticket.slot,ticket.nonce);quarantined|=state==4;return false;}
             if(System.nanoTime()>=deadline){lastReason="native query not ready at consumer; complete GL reference";return false;}
-            LockSupport.parkNanos(50_000);
+            if((policy&2)!=0)HardwareNative.waitAsyncQuery(worker,ticket.slot,ticket.nonce,(int)Math.max(1,Math.min(50,(deadline-System.nanoTime()+999_999)/1_000_000)));else LockSupport.parkNanos(50_000);
         }
     }
     private Slot slot(Ticket t){var s=slots[t.slot];if(!s.live||s.nonce!=t.nonce)throw new IllegalStateException("R7 ticket no longer owns this slot");return s;}
@@ -90,7 +92,7 @@ public final class HardwareQueryStage implements AutoCloseable {
     private void reap(){if(worker==0)return;for(int i=0;i<slots.length;i++){var s=slots[i];if(!s.live)continue;int state=HardwareNative.pollAsyncQuery(worker,i,s.nonce);quarantined|=state==4;if(state==1||state==4||state==5&&s.fence==0)continue;if(HardwareNative.recycleAsyncQuery(worker,i,s.nonce,s.fence)){if(s.fence!=0)GL32.glDeleteSync(s.fence);s.fence=0;s.live=false;s.consumed=false;}}}
     public boolean retired(){return released;}
     private boolean tryRelease(){reap();for(var s:slots)if(s.live&&s.consumed)return false;if(worker!=0&&!HardwareNative.closeAsyncQuery(worker))return false;worker=0;
-        for(var s:slots){if(s.sourceTexture!=0)GL11.glDeleteTextures(s.sourceTexture);if(s.resultTexture!=0)GL11.glDeleteTextures(s.resultTexture);s.sourceTexture=s.resultTexture=0;}if(bridge!=0)HardwareNative.closeCopy(bridge);bridge=0;GL20.glDeleteProgram(program);released=true;return true;
+        for(var s:slots){if(s.sourceTexture!=0)GL11.glDeleteTextures(s.sourceTexture);if(s.resultTexture!=0)GL11.glDeleteTextures(s.resultTexture);s.sourceTexture=s.resultTexture=0;}if(bridge!=0)HardwareNative.closeCopy(bridge);bridge=0;com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(program);released=true;return true;
     }
     private boolean releaseSafely(){if(retirementFailed)return false;try{return tryRelease();}catch(RuntimeException|LinkageError failure){retirementFailed=quarantined=true;lastReason="unretired native resources isolated after release failure: "+failure;com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn("[CMI R7] {}",lastReason);return false;}}
     @Override public void close(){if(released||closing)return;closing=true;if(!releaseSafely())RETIRING.add(this);}

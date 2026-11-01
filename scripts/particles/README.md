@@ -355,3 +355,32 @@ static tests. Current compact sequence records are read-pool geometry, not all
 locally recovered query/physical state. Schema-2 single captures also declare their
 limited boundary coverage explicitly; real complete-chain capture is still pending.
 No experimental client backend is exposed because no candidate passed the gates.
+
+
+### R8 dedicated hardware handoff and full actual queries
+
+Production GLSL and the default backend remain unchanged. See
+`docs/benchmarks/gpu-neighbor-r8-20261101.md` and the R8 client guide for results,
+qualification boundaries and the recovered original full capture.
+
+```powershell
+python scripts/particles/prepare_r7_actual_sequence.py CAPTURE OUTPUT --stage ordinary --queries all
+python scripts/particles/prepare_r7_actual_sequence.py CAPTURE OUTPUT_DOME --stage dome-solve --queries all
+.\gradlew.bat -I scripts/particles/validation.init.gradle validateR8SequenceGpu '-Pr8Sequence=OUTPUT' '-PbenchmarkOutput=FRESH_RESULTS' --no-configuration-cache
+.\gradlew.bat -I scripts/particles/validation.init.gradle validateR8RealChainGpu '-Pr7Capture=FULL_CAPTURE' '-PbenchmarkOutput=FRESH_FULL_CHAIN_RESULTS' --no-configuration-cache
+```
+
+Full sequence exports retain variable Q, actual origins/radii/dt and stage, not a
+cross-frame intersection. Geometry uses a common event wait to isolate algorithms;
+`-Pr8ConsumerStrategyWait=true` instead compares legacy poll/park with each fixed
+policy's event consumption. Never merge either scope with synthetic full physics
+or client FPS. `run_r8_release.py`, `run_r8_measurements.py`,
+`run_r8_completion.py`, `run_r8_notifications.py`, `run_r8_combinations.py` run
+serial fresh-process regressions; existing output directories are never replaced.
+
+ABI 8 binds native files, classes, source and fixed policy in the diagnostic
+receipt. Page pool / CSR overflow selects a complete reference for the whole phase.
+Detailed traces are versioned and unknown fields stay -1. New client variants are
+admitted only when the actual full-chain gate passes; the client receipt lists exactly the qualified fixed policies. The R8 packager
+without `--real-chain` delivers production capture tooling and offline candidates;
+ordinary builds contain no admission or mandatory CUDA/OptiX dependency.

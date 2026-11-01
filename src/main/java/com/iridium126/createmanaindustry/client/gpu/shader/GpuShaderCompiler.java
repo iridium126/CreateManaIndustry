@@ -8,6 +8,10 @@ import org.lwjgl.opengl.GL43;
 /** Compiles owned programs without depending on a particle engine or a business module. */
 public final class GpuShaderCompiler {
     private GpuShaderCompiler() {}
+    private static final java.util.Map<Integer,String> COMPUTE_SOURCES=new java.util.HashMap<>();
+    public static String computeSource(int program){return COMPUTE_SOURCES.get(program);}
+    public static void forget(int program){COMPUTE_SOURCES.remove(program);}
+
 
     public static final class Compilation implements AutoCloseable {
         private final String label;
@@ -61,6 +65,7 @@ public final class GpuShaderCompiler {
         }
         public int take() {
             if (closed || !complete || program == 0) throw new IllegalStateException("Shader compilation is incomplete: " + label);
+            if(types.length==1&&types[0]==GL43.GL_COMPUTE_SHADER)COMPUTE_SOURCES.put(program,sources[0]);
             int result = program;
             program = 0;
             return result;
@@ -89,7 +94,7 @@ public final class GpuShaderCompiler {
     public static int compute(String label, String source) {
         int shader = stage(label, GL43.GL_COMPUTE_SHADER, source);
         try {
-            return link(label, shader, 0);
+            int program=link(label,shader,0);COMPUTE_SOURCES.put(program,source);return program;
         } finally {
             GL20.glDeleteShader(shader);
         }

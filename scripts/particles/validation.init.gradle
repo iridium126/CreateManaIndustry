@@ -11,6 +11,7 @@ allprojects {
                 classpath=files(new File(baseline,'harness'),new File(baseline,'classes'),new File(baseline,'resources'))+classpath
             }
             if (name.startsWith('validate') || name.startsWith('benchmark')) {
+                ['policy','pageBytes','journalBackends','forceSource'].each{key->if(project.hasProperty('r8'+key.capitalize()))systemProperty 'cmi.r8.'+key,project.property('r8'+key.capitalize())}
                 systemProperty 'cmi.benchmark.output', benchmarkDir.absolutePath
                 if (project.hasProperty('stormFastNeighbors')) systemProperty 'cmi.storm.fastNeighbors', 'true'
                 if (project.hasProperty('domeDraft')) doFirst { classpath = files(project.property('domeDraft')) + classpath }
@@ -46,8 +47,8 @@ allprojects {
                             gpuJavaSha256: fingerprint(gpuJava), shaderSha256: fingerprint(gpuShaders),
                             packageServerJavaSha256: fingerprint(packageServerJava),
                             validationSha256: fingerprint(validationSources),
-                            hardwareNativeSha256: name.contains('R7') ? fingerprint(fileTree('native/offload')) : null,
-                            hardwareDllSha256: name.contains('R7') ? fingerprint(files('.gradle/hardware-offload/build/CmiHardwareOffload.dll')) : null,
+                            hardwareNativeSha256: (name.contains('R7')||name.contains('R8')) ? fingerprint(fileTree('native/offload')) : null,
+                            hardwareDllSha256: (name.contains('R7')||name.contains('R8')) ? fingerprint(files('.gradle/hardware-offload/build/CmiHardwareOffload.dll')) : null,
                             baselineSha256: file((findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') + '/java').exists()
                                     ? fingerprint(fileTree(findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') { include 'java/*.java','assets/**/*' }) : null,
                             baselineIdentity: file((findProperty('packageEnvironmentBaseline') ?: 'build/package-environment-baseline') + '/commit.txt').exists()
@@ -305,6 +306,13 @@ allprojects {
           tasks.named('compileStarfallHarness') { source 'scripts/particles/R7RealContinuationGpu.java' }
           tasks.named('compileStarfallHarness') { source 'scripts/particles/R7ChainReplayGpu.java', 'scripts/particles/R7JournalHardware.java', 'scripts/particles/R7FullChainJournalGpu.java' }
           tasks.named('compileStarfallHarness') { source 'scripts/particles/R7ChainCaptureGpu.java', 'scripts/particles/R7CopyChainGpu.java', 'scripts/particles/R7AdmissionSources.java' }
+        tasks.named('compileStarfallHarness'){source 'scripts/particles/R8BinaryProbe.java','scripts/particles/R8ForceOracle.java'}
+        tasks.named('compileStarfallHarness'){source 'scripts/particles/R8SequenceGpu.java','scripts/particles/R8SemanticState.java','scripts/particles/R8SemanticGpu.java','scripts/particles/R8RealChainGpu.java','scripts/particles/R8EdgeGpu.java','scripts/particles/R8NativeMismatch.java'}
+        ['R8RealChainGpu','R8EdgeGpu'].each{entry->tasks.register('validate'+entry,JavaExec){dependsOn 'compileStarfallHarness';classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin;mainClass=entry;if(project.hasProperty('r7Capture'))systemProperty 'cmi.r7.capture',project.property('r7Capture');workingDir=project.projectDir}}
+        tasks.register('validateR8NativeMismatch',JavaExec){dependsOn 'compileStarfallHarness';classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin;mainClass='R8NativeMismatch';systemProperty 'cmi.r8.oldNative',file('build/benchmarks/neighbor-r8-20261101/baseline/native').absolutePath;workingDir=project.projectDir}
+        tasks.register('validateR8SemanticGpu',JavaExec){dependsOn 'compileStarfallHarness';classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin;mainClass='R8SemanticGpu';workingDir=project.projectDir}
+        tasks.register('validateR8SequenceGpu',JavaExec){dependsOn 'compileStarfallHarness';classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin;mainClass='R8SequenceGpu';['sequence','paths','consumerStrategyWait'].each{key->if(project.hasProperty('r8'+key.capitalize()))systemProperty 'cmi.r8.'+key,project.property('r8'+key.capitalize())};maxHeapSize='4g';workingDir=project.projectDir}
+        tasks.register('validateR8BinaryProbe',JavaExec){dependsOn 'compileStarfallHarness';classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin;mainClass='R8BinaryProbe';systemProperty 'cmi.r7.capture',project.property('r7Capture');workingDir=project.projectDir}
         tasks.register('validateR7AdmissionSources',JavaExec){ dependsOn 'compileStarfallHarness';classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin;mainClass='R7AdmissionSources';workingDir=project.projectDir }
         tasks.register('benchmarkR7CopyChainGpu',JavaExec){ dependsOn 'compileStarfallHarness';classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin;mainClass='R7CopyChainGpu';maxHeapSize='4g';workingDir=project.projectDir }
         tasks.register('validateR7FullChainJournalGpu',JavaExec){ dependsOn 'compileStarfallHarness';classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin;mainClass='R7FullChainJournalGpu';maxHeapSize='4g';workingDir=project.projectDir }

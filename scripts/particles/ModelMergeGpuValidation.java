@@ -28,9 +28,9 @@ public final class ModelMergeGpuValidation {
     static long checks;
     static final List<String> coverageRows=new ArrayList<>(List.of("pack,width,height,workload,scene,count,baseline_covered,candidate_covered"));
     static Path output;
-    static int[] nativeBenchmarkFormats;static int nativeBenchmarkDepth;
+    static String replayOptionHash;static int[] nativeBenchmarkFormats;static int nativeBenchmarkDepth;
     static void benchmarkEnvironment(String pack,String source)throws Exception{
-        ModelMaterialGpuValidation.OPTION_OVERRIDES=Map.of();
+        ModelMaterialGpuValidation.OPTION_OVERRIDES=Map.of();replayOptionHash=null;ModelMaterialGpuValidation.STRICT_CAPTURE_OPTIONS=false;
         String directory=System.getProperty("cmi.draw.snapshots");if(directory==null)return;
         try(var files=Files.list(Path.of(directory))){
             for(Path file:files.filter(p->p.toString().endsWith(".json")).sorted().toList()){
@@ -39,7 +39,7 @@ public final class ModelMergeGpuValidation {
                 var macros=new ArrayList<StringPair>();
                 for(var entry:json.getAsJsonArray("model_environment_macros")){var macro=entry.getAsJsonObject();macros.add(new StringPair(macro.get("key").getAsString(),macro.get("value").getAsString()));}
                 var options=new TreeMap<String,String>();json.getAsJsonObject("options").entrySet().forEach(entry->options.put(entry.getKey(),entry.getValue().getAsString()));
-                ModelMaterialGpuValidation.OPTION_OVERRIDES=Map.copyOf(options);
+                String actual=com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.sha(options.toString()).substring(0,12);if(!json.get("options_available").getAsBoolean()||!actual.equals(json.get("options_hash").getAsString()))throw new IllegalStateException("Captured option map/hash unavailable or inconsistent: "+file);replayOptionHash=actual;ModelMaterialGpuValidation.OPTION_OVERRIDES=Map.copyOf(options);ModelMaterialGpuValidation.STRICT_CAPTURE_OPTIONS=true;
                 DEFINES.clear();DEFINES.addAll(macros);return;
             }
         }
@@ -428,7 +428,7 @@ public final class ModelMergeGpuValidation {
             String pack=sample.getFileName().toString().replace(',','_');
             if(Arrays.stream(System.getProperty("cmi.model.draw.pack","").toLowerCase(Locale.ROOT).split(",")).noneMatch(token->pack.toLowerCase(Locale.ROOT).contains(token)))continue;
             var inventory=ShaderPackInventory.readPack(sample);Path root=output.resolve(inventory.digest().substring(0,12));Files.createDirectories(root);
-            if(READONLY_EXPERIMENT)benchmarkEnvironment(pack,inventory.digest());
+            if(READONLY_EXPERIMENT||System.getProperty("cmi.draw.snapshots")!=null)benchmarkEnvironment(pack,inventory.digest());
             for(var entry:inventory.sources().entrySet()){Path p=root.resolve(entry.getKey());Files.createDirectories(p.getParent());Files.writeString(p,entry.getValue());}
             String base=null;for(String c:List.of("gbuffers_entities","gbuffers_textured_lit","gbuffers_textured","gbuffers_basic")){String path=Files.exists(root.resolve("world0/"+c+".vsh"))?"world0/"+c:c;if(Files.exists(root.resolve(path+".vsh"))&&Files.exists(root.resolve(path+".fsh"))){base=path;break;}}check(base!=null,"Entities fallback");
             String v=ModelMaterialGpuValidation.preprocess(root,base+".vsh"),f=ModelMaterialGpuValidation.preprocess(root,base+".fsh"),g=Files.exists(root.resolve(base+".gsh"))?ModelMaterialGpuValidation.preprocess(root,base+".gsh"):null;
@@ -444,9 +444,9 @@ public final class ModelMergeGpuValidation {
                 allOptions.getOptionSet().getBooleanOptions().keySet().forEach(key->values.put(key,Boolean.toString(allOptions.getOptionValues().getBooleanValueOrDefault(key))));
                 allOptions.getOptionSet().getStringOptions().keySet().forEach(key->values.put(key,allOptions.getOptionValues().getStringValueOrDefault(key)));
                 String digest=java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(values.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))).substring(0,12);
-                if(READONLY_EXPERIMENT)benchmarkFormats(pack,inventory.digest(),digest);
-                String expected=FEATHER?clientOptionHash(pack):pack.toLowerCase(Locale.ROOT).contains("photon")?"8891f40a9e8c":pack.toLowerCase(Locale.ROOT).contains("complementary")?"2f845d3b8761":"unrecorded";
-                Files.writeString(output.resolve("options-"+inventory.digest().substring(0,12)+".json"),"{\"pack\":\""+pack+"\",\"option_count\":"+values.size()+",\"hash\":\""+digest+"\",\"expected\":\""+expected+"\",\"matched\":"+digest.equals(expected)+",\"shadow_resolution\":"+inputs.realistic.shadows.getResolution()+"}\n");
+                if(READONLY_EXPERIMENT||System.getProperty("cmi.draw.snapshots")!=null)benchmarkFormats(pack,inventory.digest(),replayOptionHash);
+                String expected=replayOptionHash!=null?replayOptionHash:FEATHER?clientOptionHash(pack):pack.toLowerCase(Locale.ROOT).contains("photon")?"8891f40a9e8c":pack.toLowerCase(Locale.ROOT).contains("complementary")?"2f845d3b8761":"unrecorded";
+                var optionAudit=new TreeMap<String,Object>();optionAudit.put("pack",pack);optionAudit.put("hash",replayOptionHash==null?digest:replayOptionHash);optionAudit.put("option_count",replayOptionHash==null?values.size():ModelMaterialGpuValidation.OPTION_OVERRIDES.size());optionAudit.put("expected",expected);optionAudit.put("matched",(replayOptionHash==null?digest:replayOptionHash).equals(expected));optionAudit.put("reparsed_all_roots_hash",digest);optionAudit.put("reparsed_all_roots_count",values.size());optionAudit.put("reparsed_all_roots_values",values);optionAudit.put("context_options",ModelMaterialGpuValidation.OPTION_OVERRIDES);optionAudit.put("context_scope","captured complete option map is authoritative; actual compiled root options checked strictly; all-root discovery can include inactive Colorwheel and omit injected/Voxy guards");optionAudit.put("shadow_resolution",inputs.realistic.shadows.getResolution());Files.writeString(output.resolve("options-"+inventory.digest().substring(0,12)+".json"),new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(optionAudit)+"\n");
             }
             AlphaTest alpha=properties.getAlphaTestOverrides().getOrDefault("gbuffers_entities",AlphaTests.ONE_TENTH_ALPHA);
             boolean exact=g==null&&!uniform.matcher(v).replaceAll("").contains("entityColor");
@@ -540,7 +540,7 @@ public final class ModelMergeGpuValidation {
         System.out.println("MODEL merge GPU: "+checks+" checks passed");
     }
     public static void main(String[] args)throws Exception{
-        check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
+        check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,System.getProperty("cmi.draw.snapshots")==null?5:6);
         long window=GLFW.glfwCreateWindow(64,64,"Model merge differential",0,0);check(window!=0,"OpenGL context");
         try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));run(Arrays.asList(args).contains("--benchmark"));}
         finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}

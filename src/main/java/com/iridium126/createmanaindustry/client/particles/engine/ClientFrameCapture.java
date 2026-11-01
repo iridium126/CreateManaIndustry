@@ -59,11 +59,12 @@ public final class ClientFrameCapture {
     public boolean collecting(){return window!=null&&window.collecting;}
     public boolean busy(){return window!=null||requestedSeconds!=0;}
     /** Worker metadata for this exact ticket; -1 is unavailable, never a prior frame's count. */
-    public void hardware(long frame,long generation,String phase,long nonce,long[] stats,boolean consumed,String reason){
+    public void hardware(long frame,long generation,String phase,long nonce,long[] stats,boolean consumed,String reason){hardware(frame,generation,phase,nonce,stats,consumed,reason,-1,null);}
+    public void hardware(long frame,long generation,String phase,long nonce,long[] stats,boolean consumed,String reason,int slot,double[] trace){
         var w=window;if(w==null||!w.collecting||!w.indices.containsKey(frame))return;
         if(w.hardware.size()>=100_000){invalidate("hardware record capacity exceeded");return;}
         var row=new StringBuilder().append(frame).append(',').append(generation).append(',').append(phase).append(',').append(nonce);
-        for(long value:stats)row.append(',').append(value);row.append(',').append(consumed).append(',').append(reason.replace(',',';').replace('\n',' '));w.hardware.add(row.toString());
+        for(int i=0;i<7;i++)row.append(',').append(i<stats.length?stats[i]:-1);row.append(',').append(consumed).append(',').append(reason.replace(',',';').replace('\n',' '));for(int i=7;i<12;i++)row.append(',').append(i<stats.length?stats[i]:-1);row.append(',').append(slot);for(int i=0;i<16;i++)row.append(',').append(trace!=null&&i<trace.length?trace[i]:-1);w.hardware.add(row.toString());
     }
     public void invalidate(String reason){if(collecting()){window.invalid=reason;stop();}}
     public void close(){requestedSeconds=0;if(window!=null){window.invalid="client shutdown";finish();}}
@@ -201,7 +202,7 @@ public final class ClientFrameCapture {
                     out.write("frame,scene_frame,published_generation,feather,lod1,lod2,additive,sprite,alpha,shadow_body,shadow_carrier,shadow_ghost,shadow_generation\n");
                     for(int i=0;i<w.size;i++){out.write(w.frames[i]+","+w.sceneFrames[i]+","+w.generations[i]);for(var counts:w.submissions)out.write(","+counts[i]);out.write(","+w.shadowGenerations[i]+"\n");}
                 }
-                Files.write(directory.resolve(name+"-hardware.csv"),java.util.stream.Stream.concat(java.util.stream.Stream.of("scene_frame,generation,phase,nonce,points,queries,input_live,csr_capacity,position_stage,resource_epoch,overflow,consumed,reason"),w.hardware.stream()).toList(),StandardOpenOption.CREATE_NEW);try(var out=Files.newBufferedWriter(directory.resolve(name+"-camera.csv"),StandardOpenOption.CREATE_NEW)){
+                Files.write(directory.resolve(name+"-hardware.csv"),java.util.stream.Stream.concat(java.util.stream.Stream.of("scene_frame,generation,phase,nonce,points,queries,input_live,csr_capacity,position_stage,resource_epoch,overflow,consumed,reason,actual_neighbors,allocated_pages,page_capacity,policy,native_abi,slot,trace_version,trace_policy,queued_worker_ms,queued_input_validated_ms,queued_query_submitted_or_ready_ms,queued_output_ms,queued_notification_ms,queued_consumed_ms,queued_retire_begin_ms,queued_retired_ms,external_fence_gpu_ms,output_read_gpu_ms,input_read_gpu_ms,sort_gpu_ms,seal_gpu_ms,signal_gpu_ms"),w.hardware.stream()).toList(),StandardOpenOption.CREATE_NEW);try(var out=Files.newBufferedWriter(directory.resolve(name+"-camera.csv"),StandardOpenOption.CREATE_NEW)){
                     out.write("frame,scene_frame,x,y,z,yaw_degrees,pitch_degrees,vertical_fov_degrees\n");
                     for(int i=0;i<w.size;i++){out.write(w.frames[i]+","+w.sceneFrames[i]);for(var values:w.camera)out.write(","+values[i]);out.write("\n");}
                 }
