@@ -34,11 +34,11 @@ class AllayFeatherContractTest {
         var client=com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.SPEC;
         var field=com.iridium126.createmanaindustry.infrastructure.config.ServerConfig.class.getDeclaredField("STORM_LOD_MAX_DISTANCE");field.setAccessible(true);
         var server=(net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>)field.get(null);
-        assertEquals(4096,((net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>)client.getValues().get("particles.stormLodDistance")).getDefault());
+        assertEquals(4096,((net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>)client.getValues().get("allayStorm.stormLodDistance")).getDefault());
         assertEquals(4096,server.getDefault());
-        assertEquals(2000,((net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>)client.getValues().get("particles.allayGoldMaxSpawnPerSecond")).getDefault());
-        var gold=client.getSpec().get("particles.allayGoldMaxSpawnPerSecond");
-        var feather=client.getSpec().get("particles.allayFeatherMaxSpawnPerSecond");
+        assertEquals(2000,((net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>)client.getValues().get("allayStorm.allayGoldMaxSpawnPerSecond")).getDefault());
+        var gold=client.getSpec().get("allayStorm.allayGoldMaxSpawnPerSecond");
+        var feather=client.getSpec().get("allayStorm.allayFeatherMaxSpawnPerSecond");
         assertTrue(((net.neoforged.neoforge.common.ModConfigSpec.ValueSpec)gold).test(4000));
         assertFalse(((net.neoforged.neoforge.common.ModConfigSpec.ValueSpec)gold).test(4001));
         assertTrue(((net.neoforged.neoforge.common.ModConfigSpec.ValueSpec)feather).test(2000));

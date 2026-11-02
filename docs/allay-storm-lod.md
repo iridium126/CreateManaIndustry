@@ -18,8 +18,8 @@ LOD2固定采样`allay_0.png`左上角起零索引`(7,12)`，RGBA为`(40,179,232
 | 配置 | 侧别 | 默认／范围 | 作用 |
 | --- | --- | --- | --- |
 | `particles.fadeDistance` | 客户端 | 96／16～256 | ALPHA／ADDITIVE淡出起点；MODEL／OPAQUE在该值＋24整实例消失 |
-| `particles.stormLod1Distance` | 客户端 | 1024／120～8192 | LOD1结束、LOD2开始 |
-| `particles.stormLodDistance` | 客户端 | 4096／0～8192 | 本机LOD上限，0关闭 |
+| `allayStorm.stormLod1Distance` | 客户端 | 1024／120～8192 | LOD1结束、LOD2开始 |
+| `allayStorm.stormLodDistance` | 客户端 | 4096／0～8192 | 本机LOD上限，0关闭 |
 | `allay_storm.stormLodMaxDistance` | 服务端 | 4096／0～8192 | LOD订阅上限，0停止同步 |
 
 实际近界D0=`fadeDistance+24`；远界取服务端／客户端上限较小值，LOD1边界钳制其间，空区间跳过。粒子总开关关闭时取消LOD订阅。MODEL／OPAQUE保留纹理裁剪、披肩／翅膀自身透明度，以粒子中心整实例硬切；ALPHA／ADDITIVE继续淡出，独立阴影列表不受主视角距离影响。

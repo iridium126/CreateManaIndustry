@@ -31,6 +31,8 @@ public abstract class PackageIrisPipelineMixin implements CMIPackageIrisPipeline
         if(com.iridium126.createmanaindustry.CreateManaIndustry.HEX_ACTIVE)com.iridium126.createmanaindustry.client.hex.pattern.HexPatternService.prepareWorld();
     }
     @Override public ProgramSet cmi$packageProgramSet(){return cmi$packageProgramSet;}
+    @Inject(method="beginHand",at=@At("HEAD"))
+    private void cmi$observePreHandDepth(CallbackInfo ci){com.iridium126.createmanaindustry.client.particles.shaderpack.ShadowDepthResources.INSTANCE.preHand();}
     @Override public boolean cmi$packageHasShadows(){return !destroyed && shadowRenderTargets!=null;}
     @Override public void cmi$discardPackageShader(ShaderInstance shader) {
         // Iris owns successful creations. Remove before closing so its later destroy

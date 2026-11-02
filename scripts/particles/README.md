@@ -1,5 +1,33 @@
 # Particle engine GPU validation
 
+Seven-tier MODEL shadows: [behavior, decisions and client acceptance](../../docs/particle-shadow-quality.md).
+Completion candidates and explicitly unfinished requirements: [implementation matrix](../../docs/particle-shadow-completion.md).
+The depth tiers currently use explicit geometric fallback; unproven unshadowed materials retain native receiving.
+These tasks use hidden GLFW contexts and do not start Minecraft. Run sequentially on an idle GPU:
+
+```powershell
+foreach ($shadowRound in 0,1,2) {
+  .\gradlew.bat validateShadowQualityGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle "-PshadowRound=$shadowRound" "-PbenchmarkOutput=build/shadow-quality/qualified-$shadowRound"
+  if ($LASTEXITCODE -ne 0) { throw "quality probe failed" }
+  .\gradlew.bat validateShadowCollectGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle "-PshadowRound=$shadowRound" "-PbenchmarkOutput=build/shadow-quality/batch-$shadowRound"
+  if ($LASTEXITCODE -ne 0) { throw "reservation probe failed" }
+  .\gradlew.bat validateShadowDrawGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle '-PshadowDrawPacks=' "-PshadowRound=$shadowRound" "-PbenchmarkOutput=build/shadow-quality/draw-seven-$shadowRound"
+  if ($LASTEXITCODE -ne 0) { throw "native shadow probe failed" }
+}
+python scripts/particles/summarize_shadow_quality.py build/shadow-quality
+.\gradlew.bat validateUpdateStorageGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle -PbenchmarkOutput=build/shadow-quality/storage
+.\gradlew.bat test check build validateModelShadowGpu validateModelShadowIrisGpu validateParticleProgramsGpu validateModelPopulationGpu validateStormLodGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
+```
+
+Use fresh result directories on reproduction; preserve failed runs separately. The quality probe requires
+the immutable `reference/shadow-quality-20261102` snapshot listed in [baselines.md](baselines.md).
+The native draw matrix contains seven raster-tested packs; Solas retains its original image-side-effect
+context, links both programs and is explicitly excluded from raster/timing qualification. All eight
+shader-pack archives must be available locally. Extracted third-party sources stay in local results.
+The storage candidate has three exploratory windows in one process; its large kernel regression rejects
+it before CPU-upload integration or a full three-process qualification. No production update layout is changed.
+CPU snapshot and workgroup reservation candidates also remain offline because they did not pass the gate.
+
 R7 client backend switch fix: `docs/benchmarks/gpu-neighbor-r7-capacity-fix-20261101.md`.
 Use the `capacity-fix` diagnostic distribution; the earlier client integration
 left late-compiled update programs at `uCapacity=0`. Regression replay uses
@@ -50,7 +78,7 @@ dependencies are not already cached.
 In-game checks still needed when changing rendering integration: local player
 first/third-person switching, crouching, frozen ticks, pigment changes during a
 cast, multiple players, shader packs, resource reload and dimension changes.
-The default-enabled client setting is `particles.hexPatternRedirect`.
+The default-enabled client setting is `hexcasting.hexPatternRedirect`.
 Oversized stacks/paths or unavailable GPU programs use the original renderer.
 
 

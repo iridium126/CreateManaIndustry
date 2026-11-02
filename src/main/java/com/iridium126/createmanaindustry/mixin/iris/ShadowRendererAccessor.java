@@ -48,5 +48,5 @@ public abstract class ShadowRendererAccessor {
         IrisShadowTextures.setSunPathRotation(this.sunPathRotation);
     }
     @Inject(method="destroy",at=@At("HEAD"))
-    private void cmi$releaseShadowTextures(CallbackInfo ci){IrisShadowTextures.clearIfOwned(this.targets);}
+    private void cmi$releaseShadowTextures(CallbackInfo ci){IrisShadowTextures.clearIfOwned(this.targets);com.iridium126.createmanaindustry.client.particles.shaderpack.ShadowDepthResources.INSTANCE.releaseOwner(this.targets);}
 }

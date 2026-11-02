@@ -1,0 +1,47 @@
+layout(local_size_x=8,local_size_y=8)in;
+layout(binding=4)uniform sampler2D uCurrentDepth;
+layout(binding=5)uniform sampler2D uPreviousRaw;
+layout(binding=6)uniform sampler2D uStaticReceiverMask;
+layout(rg32f,binding=0)writeonly uniform image2D uNextRaw;
+layout(r32f,binding=1)writeonly uniform image2D uReliableDepth;
+uniform mat4 uCurrentInverse,uPreviousMatrix;
+uniform vec3 uOriginDelta;
+uniform bool uHasHistory;
+uniform float uDepthTolerance;
+bool finite4(vec4 v){return !any(isnan(v))&&!any(isinf(v));}
+void main(){
+    ivec2 pixel=ivec2(gl_GlobalInvocationID.xy),size=imageSize(uNextRaw);
+    if(any(greaterThanEqual(pixel,size)))return;
+    float depth=texelFetch(uCurrentDepth,pixel,0).r;
+    bool staticReceiver=texelFetch(uStaticReceiverMask,pixel,0).r>.999;
+    bool valid=staticReceiver&&depth>0.&&depth<1.&&!isnan(depth)&&!isinf(depth);
+    imageStore(uNextRaw,pixel,vec4(valid?depth:1.,valid?1.:0.,0.,0.));
+    bool reliable=valid&&uHasHistory&&all(greaterThan(pixel,ivec2(0)))&&all(lessThan(pixel,size-1));
+    // Current silhouette / confidence edges cannot provide rejection evidence.
+    if(reliable)for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){
+        float d=texelFetch(uCurrentDepth,pixel+ivec2(x,y),0).r;
+        reliable=reliable&&texelFetch(uStaticReceiverMask,pixel+ivec2(x,y),0).r>.999&&abs(d-depth)<=uDepthTolerance;
+    }
+    if(reliable){
+        vec2 uv=(vec2(pixel)+.5)/vec2(size);
+        vec4 position=uCurrentInverse*vec4(uv*2.-1.,depth*2.-1.,1.);
+        reliable=finite4(position)&&position.w>1e-5;
+        if(reliable){
+            vec4 previous=uPreviousMatrix*vec4(position.xyz/position.w+uOriginDelta,1.);
+            reliable=finite4(previous)&&previous.w>1e-5;
+            if(reliable){
+                vec3 coordinate=previous.xyz/previous.w*.5+.5;
+                vec2 border=1./vec2(size);
+                reliable=finite4(vec4(coordinate,1.))&&coordinate.z>0.&&coordinate.z<1.&&all(greaterThan(coordinate.xy,border))&&all(lessThan(coordinate.xy,1.-border));
+                if(reliable){
+                    ivec2 p=ivec2(floor(coordinate.xy*vec2(size)));
+                    for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){
+                        vec2 old=texelFetch(uPreviousRaw,p+ivec2(x,y),0).rg;
+                        reliable=reliable&&old.y>.999&&old.x>0.&&old.x<1.&&abs(old.x-coordinate.z)<=uDepthTolerance;
+                    }
+                }
+            }
+        }
+    }
+    imageStore(uReliableDepth,pixel,vec4(reliable?depth:1.));
+}

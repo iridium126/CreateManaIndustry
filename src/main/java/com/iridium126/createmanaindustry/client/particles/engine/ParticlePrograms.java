@@ -104,6 +104,7 @@ public final class ParticlePrograms {
         final boolean parallel=GL.getCapabilities().GL_ARB_parallel_shader_compile;
         final int previousThreads=parallel?GL11.glGetInteger(ARBParallelShaderCompile.GL_MAX_SHADER_COMPILER_THREADS_ARB):0;
         GpuShaderCompiler.Compilation current;
+        UpdateResourceInterface.Report updateInterface;
         int index;
         long programStarted,progress;
         boolean closed;
@@ -124,7 +125,10 @@ public final class ParticlePrograms {
             if(!current.poll()){
                 long now=System.nanoTime();if(now-progress>=5_000_000_000L){progress=now;LOGGER.info("[CMI particles] shader compilation still pending: {} ({}s); retaining active programs",specification.path(),(now-programStarted)/1_000_000_000L);}return false;
             }
-            completed.put(specification.key(),current.take());current.close();current=null;index++;
+            int linked=current.take();current.close();current=null;
+            try{if(specification.vertex.equals("update.comp"))updateInterface=UpdateResourceInterface.verify(linked,16);}
+            catch(RuntimeException invalid){com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(linked);throw invalid;}
+            completed.put(specification.key(),linked);index++;
             LOGGER.info("[CMI particles] shader compilation finished: {} ({}ms)",specification.path(),(System.nanoTime()-programStarted)/1_000_000L);
             return index==SPECIFICATIONS.size();
         }
@@ -363,7 +367,7 @@ public final class ParticlePrograms {
             Reload finished=pendingReload;pendingReload=null;
             try {
                 boolean published=rebuildWithCompiler(finished::take,(vertex,fragment)->finished.take(vertex+"|"+fragment));
-                if(published){committedSources=finished.sources;committedDigest=null;LOGGER.info("[CMI particles] shader set published atomically ({}ms)",(System.nanoTime()-finished.started)/1_000_000L);}
+                if(published){updateInterface=finished.updateInterface;committedSources=finished.sources;committedDigest=null;LOGGER.info("[CMI particles] shader set published atomically ({}ms)",(System.nanoTime()-finished.started)/1_000_000L);}
                 return published;
             } finally {finished.close();}
         } catch(RuntimeException failure){
@@ -440,6 +444,8 @@ public final class ParticlePrograms {
     public int update() {
         return this.update;
     }
+    private UpdateResourceInterface.Report updateInterface;
+    public String updateInterface(){return updateInterface==null?"not linked/verified":updateInterface.toString();}
 
     public int blockEmit() { return this.blockEmit; }
 
@@ -552,6 +558,7 @@ public final class ParticlePrograms {
 
     /** Deletes all program ids. Render-thread only. */
     public void delete() {
+        updateInterface=null;
         DomeBodyContacts.unregister(domeContacts);
         if(pendingReload!=null){pendingReload.close();pendingReload=null;}
         committedSources=Map.of();

@@ -7,7 +7,7 @@
 `config/createmanaindustry-client.toml`：
 
 ```toml
-[particles]
+[allayStorm]
 stormLodDistance = 4096
 allayFeatherMaxSpawnPerSecond = 1000
 allayGoldMaxSpawnPerSecond = 2000
@@ -25,7 +25,7 @@ allayGoldMaxSpawnPerSecond = 2000
 
 2R 圆盘内均匀采样，按权重接受；圆盘平均权重 7/12，因此候选速率是目标速率的 12/7。完整有效区域下目标总量与 R² 成正比，单位面积密度不随 R 改变。羽毛的 Y 在 `[中心 Y−8, 中心 Y]` 均匀采样；金色粒子用候选 XZ 查最高有效上表面。未知覆盖、实心出生位置、缺少表面或容量不足时直接丢弃该候选，不重试、不将名额集中到剩余有效区域、不补发欠额。失败候选帧不提交额度和小数余量。
 
-客户端 `particles.stormLodDistance` 和服务端 `[allay_storm] stormLodMaxDistance` 新默认值均为 4096，可配置上限仍为 8192。只改默认值，不重写已有 TOML 配置。
+客户端 `allayStorm.stormLodDistance` 和服务端 `[allay_storm] stormLodMaxDistance` 新默认值均为 4096，可配置上限仍为 8192。客户端分组为 allayStorm；旧键不迁移。
 
 ## 上表面缓存与成本边界
 

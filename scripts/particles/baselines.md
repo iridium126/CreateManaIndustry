@@ -7,6 +7,7 @@
 
 | 相对本地目录 | 用途 |
 |---|---|
+| `reference/shadow-quality-20261102/` | 七档阴影优化前的 2780 文件冻结基线，附逐文件 SHA-256 manifest |
 | `reference/model-merge/` | 原合并编译器与材质验证参考 |
 | `reference/model-draw-20261030/` | 关键帧、几何及动画实验的交付基线 |
 | `reference/shader-efficiency-20261030-r2/` | 实体比较折叠与计算域实验基线 |

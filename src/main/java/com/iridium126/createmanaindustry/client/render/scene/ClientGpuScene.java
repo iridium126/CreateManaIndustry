@@ -56,6 +56,8 @@ public final class ClientGpuScene {
 
     /** Latch all collection modes once, before primary world rendering. */
     private void measurementBoundary() {
+        if(ShadowQualityFrame.begin())
+            ClientFrameCapture.INSTANCE.invalidate("shadow quality changed at frame boundary");
         budgets.gpu(continuationTimer.poll());
         com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.sceneFrame(renderFrameToken());
         ParticleDiagnostics.INSTANCE.applyRequestedState();

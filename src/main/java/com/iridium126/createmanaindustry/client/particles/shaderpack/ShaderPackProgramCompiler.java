@@ -142,6 +142,11 @@ public final class ShaderPackProgramCompiler {
     private ShaderInstance entitiesShader;
     private ShaderInstance ghostShader;
     private ShaderInstance carrierShader;
+    private final ShaderInstance[] receiverShaders=new ShaderInstance[3];
+    private final int[] receiverSamplers=new int[3];
+    private String receiverStatus="effective material programs not checked";
+    private boolean unshadowed(){return !com.iridium126.createmanaindustry.client.particles.engine.ShadowQualityFrame.current().receivesShadows()&&receiverShaders[0]!=null&&sessionGeneration==com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().generation();}
+    public String receiverStatus(){return com.iridium126.createmanaindustry.client.particles.engine.ShadowQualityFrame.current().receivesShadows()?"native (FULL)":(unshadowed()?"unshadowed: ":"native receiving fallback: ")+receiverStatus;}
     private String featherOptimization="pending";
     public String featherOptimization(){return "shared entity program; "+featherOptimization;}
     private final java.util.Map<ShaderInstance,Uniform> placeholderUniforms=new java.util.IdentityHashMap<>();
@@ -157,6 +162,8 @@ public final class ShaderPackProgramCompiler {
     private ShaderInstance shadowShader;
     private int shadowGtextureUnit = -1;
     private String shadowLastError = "";
+    private String shadowOptimization = "pending";
+    public String shadowOptimization(){return shadowOptimization;}
     private Object owningPipeline; // identity of the pipeline the shaders belong to
     private long sessionGeneration=-1;
     /** Fired whenever compilation restarts: previously returned program ids go stale. */
@@ -193,8 +200,8 @@ public final class ShaderPackProgramCompiler {
     }
     public String optimizationReport(){return optimizationReport;}
     public String sourceProgram(){return sourceProgram;}
-    public ShaderInstance carrierShader(){return carrierShader;}
-    public int carrierGtextureUnit(){return carrierGtextureUnit;}
+    public ShaderInstance carrierShader(){return unshadowed()?receiverShaders[1]:carrierShader;}
+    public int carrierGtextureUnit(){return unshadowed()?receiverSamplers[1]:carrierGtextureUnit;}
 
     /**
      * Builds (or rebuilds, after a pipeline change) the merged program.
@@ -342,6 +349,20 @@ public final class ShaderPackProgramCompiler {
                 return fail("Iris returned no ghost shader instance");
             this.ghostGtextureUnit = findSamplerUnit(this.ghostShader);
 
+            var receiving=ShadowReceiverContract.resolve(com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().inventory());
+            receiverStatus=receiving.pack()+": "+receiving.reason();
+            if(receiving.forward())try{
+                var lowBody=receiving.adapt(bodyPlan.stages());var lowCarrier=receiving.adapt(carrierPlan.stages());var lowGhost=receiving.adapt(ghostStages);
+                receiverShaders[0]=compileMerged(accessor,programSet,properties,lowBody,refProgram,SHADER_NAME+"_unshadowed",refProgram.getDirectives(),null);
+                receiverShaders[1]=lowCarrier.equals(lowBody)?receiverShaders[0]:compileMerged(accessor,programSet,properties,lowCarrier,refProgram,CARRIER_SHADER_NAME+"_unshadowed",refProgram.getDirectives(),null);
+                receiverShaders[2]=compileMerged(accessor,programSet,properties,lowGhost,refProgram,GHOST_SHADER_NAME+"_unshadowed",ghostDirectives,blendPlan.nativeAttachments()?null:GHOST_BLEND_OVERRIDE);
+                for(int i=0;i<3;i++){if(receiverShaders[i]==null)throw new IllegalStateException("unshadowed shader missing");receiverSamplers[i]=findSamplerUnit(receiverShaders[i]);}
+            }catch(Exception|LinkageError materialFailure){
+                receiverStatus=receiving.pack()+": "+describeCompileFailure(materialFailure);
+                releaseReceiverPrograms();
+                CreateManaIndustry.LOGGER.warn("[CMI particles] no-receive contract failed; native receiving retained: {}",receiverStatus);
+            }
+
             // Shadow track: compiled last and fully isolated --
             // any failure here only costs particle shadows, never the merge.
             this.compileShadow(accessor, programSet, properties, resolver);
@@ -361,11 +382,11 @@ public final class ShaderPackProgramCompiler {
     }
 
     public ShaderInstance entitiesShader() {
-        return this.entitiesShader;
+        return unshadowed()?receiverShaders[0]:this.entitiesShader;
     }
 
     public ShaderInstance ghostShader() {
-        return this.ghostShader;
+        return unshadowed()?receiverShaders[2]:this.ghostShader;
     }
 
     /** The merged shadow-map program; null when the shadow track is down. */
@@ -389,11 +410,11 @@ public final class ShaderPackProgramCompiler {
     }
 
     public int gtextureUnit() {
-        return this.gtextureUnit;
+        return unshadowed()?receiverSamplers[0]:this.gtextureUnit;
     }
 
     public int ghostGtextureUnit() {
-        return this.ghostGtextureUnit;
+        return unshadowed()?receiverSamplers[2]:this.ghostGtextureUnit;
     }
 
     private static ModelShaderOptimization.Plan combinePlans(ModelShaderOptimization.Plan base,ModelShaderOptimization.Plan extra){
@@ -403,6 +424,7 @@ public final class ShaderPackProgramCompiler {
     /** Drops compiled state (pipeline changed, reload, or failure). */
     public void reset() {
         releasePrograms();optimizationReport="pending";sourceProgram="pending";featherOptimization="pending";
+        receiverStatus="effective material programs not checked";
         entityContext=ModelEntityContext.NEUTRAL;blendPlan=ModelBlendPlan.LEGACY;
         this.entitiesShader = null;
         this.ghostShader = null;
@@ -413,6 +435,7 @@ public final class ShaderPackProgramCompiler {
         this.shadowShader = null;
         this.shadowGtextureUnit = -1;
         this.shadowLastError = "";
+        this.shadowOptimization = "pending";
         this.owningPipeline = null;
         // The merged source embeds the allay_pose.glsl chunk text; a resource
         // reload may have changed it. Keeping the cache would short-circuit
@@ -425,6 +448,7 @@ public final class ShaderPackProgramCompiler {
     /** Iris owns successful instances. Remove them from its set before closing,
      * including same-pipeline session rebuilds; aliases are retired only once. */
     private void releasePrograms(){
+        releaseReceiverPrograms();
         var unique=java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<ShaderInstance,Boolean>());
         for(var shader:new ShaderInstance[]{entitiesShader,ghostShader,carrierShader,shadowShader})if(shader!=null)unique.add(shader);
         unique.addAll(placeholderUniforms.keySet());
@@ -436,6 +460,13 @@ public final class ShaderPackProgramCompiler {
             placeholderUniforms.values().forEach(Uniform::close);placeholderUniforms.clear();
             entitiesShader=ghostShader=carrierShader=shadowShader=null;carrierGtextureUnit=-1;
         }
+    }
+    private void releaseReceiverPrograms(){
+        var unique=java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<ShaderInstance,Boolean>());
+        for(var shader:receiverShaders)if(shader!=null)unique.add(shader);
+        if(owningPipeline instanceof com.iridium126.createmanaindustry.accessor.CMIPackageIrisPipeline owner)unique.forEach(owner::cmi$discardPackageShader);
+        for(var shader:unique){var placeholder=placeholderUniforms.remove(shader);if(placeholder!=null)placeholder.close();}
+        java.util.Arrays.fill(receiverShaders,null);java.util.Arrays.fill(receiverSamplers,-1);
     }
 
     /**
@@ -528,7 +559,11 @@ public final class ShaderPackProgramCompiler {
             // Plain overlay variant: shadows are depth-only and the shadow
             // program's own entityColor handling (if any) is left untouched —
             // our out declaration must not collide with its uniform include.
-            String patched = this.injector.patch(vertRef, this.buildMergedSource(false), SHADOW_SHADER_NAME);
+            var context = ShadowVertexContext.prepare(this.buildMergedSource(false), vertRef,
+                    refProgram.getGeometrySource().orElse(null), refProgram.getTessControlSource().orElse(null),
+                    refProgram.getTessEvalSource().orElse(null), fragRef);
+            this.shadowOptimization = context.reason();
+            String patched = this.injector.patch(vertRef, context.source(), SHADOW_SHADER_NAME);
             if (patched == vertRef)
                 { shadowDown("vertex injection failed"); return; }
             patched = JcppProcessor.glslPreprocessSource(patched,

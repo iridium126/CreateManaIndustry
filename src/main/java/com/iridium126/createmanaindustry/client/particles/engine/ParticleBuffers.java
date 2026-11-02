@@ -621,7 +621,10 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         java.util.Arrays.fill(populationGenerations,0);
     }
     int candidatePopulationBuffer(){return populationSSBOs[1-readIndex];}
-    public void commitPopulation(long generation){populationGenerations[readIndex]=generation;}
+    public final ModelShadowGroups shadowGroups=new ModelShadowGroups();
+    public void commitPopulation(long generation){populationGenerations[readIndex]=generation;shadowGroups.commit(readIndex,generation);}
+    public int shadowGroupsBuffer(long generation){return shadowGroups.buffer(readIndex,generation);}
+    public void beginShadowGroups(int program,long generation,StormShadowSnapshot snapshot,float[] planes,net.minecraft.world.phys.Vec3 camera){shadowGroups.begin(program,1-readIndex,modelIndexCapacity,generation,snapshot,planes,camera);bound[ModelShadowGroups.BINDING]=-1;}
     public int populationBufferId(long generation){return populationGenerations[readIndex]==generation?populationSSBOs[readIndex]:0;}
     public long populationStorageBytes(){return populationSSBOs[0]>0?2L*(POPULATION_HEADER_BYTES+4L*(2L*modelIndexCapacity+stormIndexCapacity)):0;}
     public void bindPopulationRead(int program){bindPopulationRead(program,false,Math.max(0,populationGenerations[readIndex]));}
@@ -1262,6 +1265,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         for (int id : this.particleSSBOs)
             if (id > 0)
                 com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(id);
+        shadowGroups.close();
         for(int texture:populationTextures)if(texture>0)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(texture);
         java.util.Arrays.fill(populationTextures,0);
         for(int id:populationSSBOs)if(id>0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(id);

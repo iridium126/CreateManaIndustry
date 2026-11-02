@@ -4,8 +4,8 @@
 
 ## 配置与范围
 
-- `particles.enabled` 与 `particles.hexPatternRedirect` 同时开启才接管。关闭任意一个，原生调用直接透传。
-- `particles.hexPatternGpuBudgetMiB` 默认 16，范围 1–256。计入 Hex 源描述、GPU 点缓存、实例、计算任务、间接命令、bank 和扩容后尚未释放的旧 buffer；TBO backing 只计一次，不计 shader program 和普通粒子池。
+- `particles.enabled` 与 `hexcasting.hexPatternRedirect` 同时开启才接管。关闭任意一个，原生调用直接透传。
+- `hexcasting.hexPatternGpuBudgetMiB` 默认 16，范围 1–256。计入 Hex 源描述、GPU 点缓存、实例、计算任务、间接命令、bank 和扩容后尚未释放的旧 buffer；TBO backing 只计一次，不计 shader program 和普通粒子池。
 - 阴影还遵守 `particles.shaderPackIntegration`、Iris 实体/仅玩家阴影开关及父实体准入。只安装 Iris 也可接入，不要求 iris-veil。
 - 覆盖玩家世界环绕图案、第一人称自身的阴影、玩家模型预览、施法 UI 历史/WIP 图案、节点及引导网格点。石板、卷轴、工具提示继续原生。
 

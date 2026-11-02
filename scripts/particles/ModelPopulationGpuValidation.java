@@ -37,10 +37,53 @@ public class ModelPopulationGpuValidation {
         Fixture(int n,int m,int s){cap=n;modelCap=m;stormCap=s;pool=alloc(bytes(Math.max(1,n)*64));emit=alloc(headers());counter=alloc(bytes(16));previous=alloc(bytes(16));pop=alloc(bytes(32+4*(m*2+s)+64));commands=alloc(bytes(ParticleBuffers.INDIRECT_UINTS*4));args=alloc(bytes(84));sorted=alloc(bytes((n+ParticleBuffers.CARRIER_CAP+1)*8));carriers=alloc(bytes((n+ParticleBuffers.CARRIER_CAP+1)*8));add=alloc(bytes(Math.max(1,n)*4));opaque=alloc(bytes(Math.max(1,n)*4));hit=alloc(bytes(16));
             for(int p:new int[]{reset,keygen,prepare}){ui(p,"uCapacity",n);bool(p,"uPopulationWriteEnabled",true);gen(p,"uPopulationWriteGeneration",7);ui(p,"uPopulationModelCapacity",m);ui(p,"uPopulationStormCapacity",s);}ui(keygen,"uUpper",n);ui(keygen,"uCarrierBase",n);f(keygen,"uMaxDepth",128);f(keygen,"uDepthLogRange",7);GL41.glProgramUniformMatrix4fv(keygen,GL20.glGetUniformLocation(keygen,"uView"),false,new org.joml.Matrix4f().get(new float[16]));}
         void bindings(){bind(0,pool);bind(1,pool);bind(2,commands);bind(3,counter);bind(5,emit);bind(7,sorted);bind(8,add);bind(15,opaque);bind(17,hit);bind(23,carriers);bind(24,pop);bind(25,pop);bind(29,args);bind(14,previous);}
+        void generation(int value){for(int p:new int[]{reset,keygen,prepare})gen(p,"uPopulationWriteGeneration",value);gen(prepare,"uPopulationGeneration",value);}
         void build(ByteBuffer data,int live){put(pool,data);bindings();dispatch(reset,1);put(counter,bytes(16).putInt(0,live));dispatch(keygen,(live+63)/64);bool(prepare,"uPopulationReadEnabled",true);gen(prepare,"uPopulationGeneration",7);ui(prepare,"uPhase",2);dispatch(prepare,1);}
         public void close(){GL20.glUseProgram(0);for(int id:resources)GL15.glDeleteBuffers(id);for(int p:new int[]{reset,keygen,prepare})deleteProgram(p);}
     }
-    static void lists(){for(int n:new int[]{0,1,63,64,65,4097})for(boolean overflow:new boolean[]{false,true})try(var q=new Fixture(Math.max(1,n),overflow?1:Math.max(1,n),overflow?1:Math.max(1,n))){
+    static void shadowGroups(){
+        try(var q=new Fixture(5,5,5)){
+            var data=bytes(5*64);particle(data,0,0,0,0,1);particle(data,1,2,0,0,-1);particle(data,2,1,0,0,1);particle(data,3,2,15,0,1);particle(data,4,2,8,0,1);
+            for(int capacity:new int[]{5,1}){
+                var header=bytes(64+capacity*8+64);header.putInt(8,capacity).putInt(12,1).putLong(16,7).putFloat(44,10).putFloat(48,-8).putFloat(52,8);
+                int groups=q.alloc(header);bind(30,groups);bool(q.keygen,"uShadowGroupsWrite",true);q.build(data,5);
+                var result=read(groups,header.capacity());check(result.getInt(0)==1&&result.getInt(4)==3,"keygen body/outside classification");check(result.getInt(12)==(capacity==5?1:0),"group overflow validity");
+                for(int i=64+capacity*8;i<result.capacity();i++)check(result.get(i)==0,"group overflow tail overwritten");
+                if(capacity==5){var seen=new BitSet();for(int i=0;i<4;i++){int at=64+(i==0?0:capacity-i)*8,slot=result.getInt(at);check(slot>0&&slot<5&&!seen.get(slot),"keygen group identity");check(result.getInt(at+4)==slot,"keygen stable animation slot");seen.set(slot);}
+                    try(var shadow=new ModelShadowGpu(5,ModelPopulationGpuValidation::source)){shadow.culling(new float[]{1,0,0,-20,-1,0,0,30,0,1,0,20,0,-1,0,20,0,0,1,20,0,0,-1,20},0,0,1,false,groups);var c=new PackageDrawCulling();c.clear();shadow.prepare(q.pool,q.emit,q.counter,c,0,0,0,.35f,.6f,1,0,new float[16],new float[16],new float[4],q.pop,7);check(read(shadow.commands(),(ParticleBuffers.INDIRECT_UINTS+4)*4).getInt(ParticleBuffers.IDX_CNT_MODELOP*4)==3,"actual keygen groups not consumed");}
+                }
+                bool(q.keygen,"uShadowGroupsWrite",false);q.build(data,5);check(result.equals(read(groups,header.capacity())),"disabled grouping wrote storage");
+            }
+        }
+    }
+    static void groupPublication()throws Exception{
+        var begin=ModelShadowGroups.class.getDeclaredMethod("beginCandidate",int.class,int.class,int.class,long.class,StormShadowSnapshot.class,boolean.class);begin.setAccessible(true);
+        var published=ModelShadowGroups.class.getDeclaredMethod("publishedBuffer",int.class,long.class);published.setAccessible(true);
+        try(var q=new Fixture(5,5,5);var groups=new ModelShadowGroups()){
+            var data=bytes(5*64);particle(data,0,0,0,0,1);particle(data,1,2,0,0,-1);particle(data,2,1,0,0,1);particle(data,3,2,15,0,1);particle(data,4,2,11.8f,0,1);
+            var input=StormShadowSnapshot.of(7,true,0,0,0,10);
+            begin.invoke(groups,q.keygen,1,5,7L,input,true);q.build(data,5);
+            check((int)published.invoke(groups,1,7L)==0,"group candidate published before pool commit");
+            groups.commit(1,7);int committed=(int)published.invoke(groups,1,7L);check(committed>0,"production group bank did not publish");
+            var old=read(committed,104);check(old.getLong(16)==7&&old.getFloat(44)==input.radius(),"published group input generation/cylinder");
+            check(old.getInt(0)==1&&old.getInt(4)==3,"production bank omitted boundary or foreign MODEL");
+            // A submitted-but-aborted candidate uses the other actual production bank.
+            begin.invoke(groups,q.keygen,0,5,8L,StormShadowSnapshot.of(8,true,100,0,0,10),true);q.generation(8);q.build(data,5);
+            check((int)published.invoke(groups,0,8L)==0,"failed update exposed candidate grouping");
+            check((int)published.invoke(groups,1,7L)==committed&&old.equals(read(committed,104)),"failed candidate changed committed group bank");
+            groups.commit(0,9);check((int)published.invoke(groups,0,9L)==0,"mismatched commit exposed group generation");
+            // FULL/OFF/no-pack policy disables writes and invalidates the candidate, then resumes cold.
+            begin.invoke(groups,q.keygen,0,5,10L,null,false);q.generation(10);q.build(data,5);groups.commit(0,10);
+            check(GL20.glGetUniformi(q.keygen,GL20.glGetUniformLocation(q.keygen,"uShadowGroupsWrite"))==0,"disabled quality kept group maintenance enabled");
+            check((int)published.invoke(groups,0,10L)==0,"disabled grouping reused a previous bank");
+            begin.invoke(groups,q.keygen,0,5,11L,StormShadowSnapshot.of(10,true,0,0,0,10),true);q.generation(11);q.build(data,5);groups.commit(0,11);
+            check((int)published.invoke(groups,0,11L)==0,"stale update input enabled grouping after quality change");
+            begin.invoke(groups,q.keygen,0,5,12L,StormShadowSnapshot.of(12,true,0,0,0,10),true);q.generation(12);q.build(data,5);
+            check((int)published.invoke(groups,0,12L)==0,"quality resume exposed incomplete group submission");groups.commit(0,12);
+            int resumed=(int)published.invoke(groups,0,12L);check(resumed>0&&read(resumed,104).getLong(16)==12,"quality resume failed to publish matching group bank");
+        }
+    }
+    static void lists(){shadowGroups();for(int n:new int[]{0,1,63,64,65,4097})for(boolean overflow:new boolean[]{false,true})try(var q=new Fixture(Math.max(1,n),overflow?1:Math.max(1,n),overflow?1:Math.max(1,n))){
         var data=bytes(Math.max(1,n)*64);int models=0,storm=0;for(int i=0;i<n;i++){int h=i%3;particle(data,i,h,i%2==0?5:-5,2,h==1?-.5f:20);if(h!=0)models++;if(h==2)storm++;}
         // Main frustum rejects every MODEL; population/shadow must retain them.
         GL41.glProgramUniform4fv(q.keygen,GL20.glGetUniformLocation(q.keygen,"uFrustum"),new float[]{1,0,0,-100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0});
@@ -100,5 +143,5 @@ public class ModelPopulationGpuValidation {
         }}}finally{GL20.glUseProgram(0);deleteProgram(liveProgram);}
         Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-population-benchmark.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-population-benchmark-samples.csv"),raw);
     }
-    public static void main(String[] args)throws Exception{GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"MODEL population validation",0,0);try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));lists();attack();stormQueries();if(Arrays.asList(args).contains("--benchmark"))benchmark();check(GL11.glGetError()==0,"final GL error");System.out.println("MODEL population GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}}
+    public static void main(String[] args)throws Exception{GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"MODEL population validation",0,0);try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));groupPublication();lists();attack();stormQueries();if(Arrays.asList(args).contains("--benchmark"))benchmark();check(GL11.glGetError()==0,"final GL error");System.out.println("MODEL population GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}}
 }

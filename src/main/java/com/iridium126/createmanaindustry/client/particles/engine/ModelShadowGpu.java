@@ -12,20 +12,40 @@ public final class ModelShadowGpu implements AutoCloseable {
     private final int capacity,meta,carrierCapacity;private int instances,commands;private final int[] programs=new int[3];
     private final int[][] locations=new int[3][14];private boolean closed;
     private final int[][] populationLocations=new int[3][2];
+    private final int[][] viewLocations=new int[2][5];
+    private final float[] viewPlanes=new float[24];
+    private float rayX,rayY,rayZ;
+    private boolean viewEnabled,memberView;
+    private int groupBuffer;
+    private boolean viewUploaded;
+    private int lastGroup;
+    private ShadowDepthContext shadowDepth,screenDepth;
+    private boolean depthUploaded;
+    private final int[] depthLocations=new int[13];
+    private final boolean depthPrograms;
     private static final String[] NAMES={"uCapacity","uCarrierBase","uNativeSize","uEntityViewScale","uCamera","uFrustum","uFrustumCount","uCullBounds","uTimeSec","uWave","uWaveTarget","uWaveTier","uMetaSlot","uCutout"};
     public ModelShadowGpu(int capacity,Function<String,String> source){this(capacity,ParticleBuffers.CARRIER_CAP,source);}
     public ModelShadowGpu(int capacity,int carrierCapacity,Function<String,String> source){
+        this(capacity,carrierCapacity,source,false);
+    }
+    /** Optional native-depth candidate is isolated from the qualified FULL kernel. */
+    public ModelShadowGpu(int capacity,int carrierCapacity,Function<String,String> source,boolean depthPrograms){
+        this.depthPrograms=depthPrograms;
         if(capacity<1)throw new IllegalArgumentException("Model shadow capacity");this.capacity=capacity;this.carrierCapacity=carrierCapacity;meta=capacity+carrierCapacity;
         try{
             instances=allocate((long)(meta+1)*8);commands=allocate((ParticleBuffers.INDIRECT_UINTS+4L)*4);
             for(int p=0;p<3;p++){
-                programs[p]=com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute("ModelShadowGpu", "#version 450 core\n"+ParticlePrograms.commonPrelude()+source.apply("model_shadow_"+new String[]{"prepare","collect","finish"}[p]+".comp"));
+                programs[p]=com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute("ModelShadowGpu", "#version 450 core\n#define CMI_SHADOW_DEPTH "+(depthPrograms?1:0)+"\n"+ParticlePrograms.commonPrelude()+source.apply("model_shadow_"+new String[]{"prepare","collect","finish"}[p]+".comp"));
                 populationLocations[p][0]=GL20.glGetUniformLocation(programs[p],"uPopulationReadEnabled");populationLocations[p][1]=GL20.glGetUniformLocation(programs[p],"uPopulationGeneration");
                 for(int i=0;i<NAMES.length;i++)locations[p][i]=GL20.glGetUniformLocation(programs[p],NAMES[i]);
+                if(p<2){String[] names={"uShadowViewEnabled","uShadowMemberView","uShadowViewPlanes","uShadowRay","uShadowGroupsRead"};
+                    for(int j=0;j<names.length;j++)viewLocations[p][j]=GL20.glGetUniformLocation(programs[p],names[j]);}
                 GL41.glProgramUniform1ui(programs[p],GL20.glGetUniformLocation(programs[p],"uCarrierLimit"),carrierCapacity);
                 GL41.glProgramUniform1ui(programs[p],locations[p][0],capacity);GL41.glProgramUniform1ui(programs[p],locations[p][1],capacity);GL41.glProgramUniform1ui(programs[p],locations[p][12],meta);
             }
             int finish=programs[2];GL41.glProgramUniform1ui(finish,GL20.glGetUniformLocation(finish,"uCutout"),AllayModelGeometry.BODY_OPAQUE_INDEX_COUNT);
+            String[] depthNames={"uShadowDepthEnabled","uScreenDepthEnabled","uShadowDepthReverse","uShadowDepthMatrix","uScreenDepthMatrix","uShadowDepthParams","uShadowDepthFilter","uScreenOriginDelta","uScreenDepthMargin","uShadowDepthSourceSize","uScreenDepthSourceSize","uShadowDepthHierarchy","uScreenDepthHierarchy"};
+            for(int i=0;i<depthNames.length;i++)depthLocations[i]=GL20.glGetUniformLocation(programs[1],depthNames[i]);
             GL41.glProgramUniform1ui(finish,GL20.glGetUniformLocation(finish,"uOpaque"),AllayModelGeometry.OPAQUE_INDEX_COUNT);
             GL41.glProgramUniform1ui(finish,GL20.glGetUniformLocation(finish,"uTotal"),AllayModelGeometry.INDICES.length);
         }catch(RuntimeException error){close();throw error;}
@@ -34,11 +54,41 @@ public final class ModelShadowGpu implements AutoCloseable {
         int id=GL15.glGenBuffers();try{GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);
             if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)throw new IllegalStateException("Shadow storage allocation");return id;
         }catch(RuntimeException error){com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(id);throw error;}}
+    /** Null planes preserve the original FULL semantics. No GL queries or allocations per submission. */
+    public void culling(float[] planes,float dx,float dy,float dz,boolean perMember,int groups){
+        viewEnabled=planes!=null;memberView=perMember;groupBuffer=groups;
+        if(planes!=null){if(planes.length!=24)throw new IllegalArgumentException("Shadow receiver planes");
+            for(float value:planes)if(!Float.isFinite(value))throw new IllegalArgumentException("Nonfinite shadow plane");
+            if(!Float.isFinite(dx)||!Float.isFinite(dy)||!Float.isFinite(dz)||dx*dx+dy*dy+dz*dz<.5f)throw new IllegalArgumentException("Shadow ray");
+            System.arraycopy(planes,0,viewPlanes,0,24);rayX=dx;rayY=dy;rayZ=dz;}
+    }
+    public void depth(ShadowDepthContext shadow,ShadowDepthContext screen){if(!depthPrograms&&(shadow!=null||screen!=null))throw new IllegalStateException("Native depth program is not qualified/selected");shadowDepth=shadow;screenDepth=screen;}
+    private void uploadDepth(){
+        if(shadowDepth==null&&screenDepth==null&&!depthUploaded)return;
+        int p=programs[1];GL41.glProgramUniform1i(p,depthLocations[0],shadowDepth!=null?1:0);GL41.glProgramUniform1i(p,depthLocations[1],screenDepth!=null&&viewEnabled?1:0);
+        if(shadowDepth!=null){var d=shadowDepth;GL45.glBindTextureUnit(4,d.texture());GL33.glBindSampler(4,d.sampler());
+            GL41.glProgramUniform1i(p,depthLocations[2],d.reversed()?1:0);GL41.glProgramUniformMatrix4fv(p,depthLocations[3],false,d.matrix());
+            GL41.glProgramUniform4f(p,depthLocations[5],d.distortion(),d.amount(),d.depthScale(),d.margin());GL41.glProgramUniform1f(p,depthLocations[6],d.filter());
+            GL41.glProgramUniform2i(p,depthLocations[9],d.width(),d.height());}
+        if(screenDepth!=null&&viewEnabled){var d=screenDepth;GL45.glBindTextureUnit(5,d.texture());GL33.glBindSampler(5,d.sampler());
+            GL41.glProgramUniformMatrix4fv(p,depthLocations[4],false,d.matrix());GL41.glProgramUniform3f(p,depthLocations[7],d.originX(),d.originY(),d.originZ());
+            GL41.glProgramUniform1f(p,depthLocations[8],d.margin());GL41.glProgramUniform2i(p,depthLocations[10],d.width(),d.height());}
+        depthUploaded=shadowDepth!=null||screenDepth!=null;
+    }
     public void prepare(int pool,int emitters,int counter,PackageDrawCulling culling,float x,float y,float z,float width,float height,float viewScale,float time,float[] waves,float[] targets,float[] tiers){
         prepare(pool,emitters,counter,culling,x,y,z,width,height,viewScale,time,waves,targets,tiers,0,0);
     }
     public void prepare(int pool,int emitters,int counter,PackageDrawCulling culling,float x,float y,float z,float width,float height,float viewScale,float time,float[] waves,float[] targets,float[] tiers,int population,long generation){
         if(closed)throw new IllegalStateException("Model shadows closed");if(culling.count<0||culling.count>13)throw new IllegalArgumentException("Shadow planes");
+        if(groupBuffer>0||lastGroup>0)GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ModelShadowGroups.BINDING,groupBuffer);
+        lastGroup=groupBuffer;
+        if(viewEnabled||viewUploaded)for(int p=0;p<2;p++){int id=programs[p];int[] v=viewLocations[p];
+            GL41.glProgramUniform1i(id,v[0],viewEnabled?1:0);GL41.glProgramUniform1i(id,v[1],memberView?1:0);
+            GL41.glProgramUniform1i(id,v[4],groupBuffer>0&&viewEnabled?1:0);
+            if(p==0)GL41.glProgramUniform3f(id,locations[p][4],x,y,z);
+            if(viewEnabled){GL41.glProgramUniform4fv(id,v[2],viewPlanes);GL41.glProgramUniform3f(id,v[3],rayX,rayY,rayZ);}}
+        viewUploaded=viewEnabled;
+        uploadDepth();
         GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,ParticleBuffers.POPULATION_READ_BB,population);
         for(int i=0;i<programs.length;i++){if(populationLocations[i][0]>=0)GL41.glProgramUniform1i(programs[i],populationLocations[i][0],population>0?1:0);
             if(populationLocations[i][1]>=0)GL41.glProgramUniform2ui(programs[i],populationLocations[i][1],(int)generation,(int)(generation>>>32));}

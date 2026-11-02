@@ -43,6 +43,7 @@ abstract class MixinIrisShadowRenderer {
     private boolean shouldRenderEntities;
 
     @Shadow private FrustumHolder entityFrustumHolder;
+    @Shadow private net.irisshaders.iris.shadows.ShadowRenderTargets targets;
 
     @Inject(method = "renderShadows",
             at = @At(value = "INVOKE_STRING",
@@ -53,6 +54,9 @@ abstract class MixinIrisShadowRenderer {
             return;
         if (!this.shouldRenderEntities)
             return; // pack disabled entity shadows: native allays cast none either
+        com.iridium126.createmanaindustry.client.particles.shaderpack.ShadowDepthResources.INSTANCE.shadowEntry(
+                targets,targets.getDepthTexture().getTextureId(),ShadowRenderer.RESOLUTION,
+                com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken());
         CMIPackEntityMergeHook.renderShadow(camera,entityFrustumHolder.getFrustum());
     }
 }

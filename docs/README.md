@@ -18,6 +18,7 @@
 | [hexcasting-trickster-interop-review-2026-10-16.md](hexcasting-trickster-interop-review-2026-10-16.md) | 全部整改条目、自动回归、真实专服重启与性能对照；客户端待用户验收 | 🟡 |
 | [hexcasting-trickster-interop-dev.md](hexcasting-trickster-interop-dev.md) | 来源、根预算、编解码及 adapter 契约，真实客户端验收清单 | 🟡 |
 | [particle-engine-dev.md](particle-engine-dev.md) | GPU 粒子池、发射器、排序、碰撞、Hexcasting 与 shaderpack | 🟡 |
+| [particle-shadow-quality.md](particle-shadow-quality.md) | 七档 MODEL 阴影、风暴整体剔除、深度回退、八包验证及性能候选决策 | 🟡 |
 | [gpu-hex-shared-takeover-2026-10-10.md](gpu-hex-shared-takeover-2026-10-10.md) | Hex 世界/阴影/玩家预览/施法 UI 独立 GPU 后端、预算、基准与用户验收 | 🟡 |
 | [gpu-package-model-pool-decision-2026-10-10.md](gpu-package-model-pool-decision-2026-10-10.md) | 包裹/MODEL 分池历史决策与测量范围 | 🟡 |
 | [gpu-hex-cleanup-model-efficiency-2026-10-10.md](gpu-hex-cleanup-model-efficiency-2026-10-10.md) | 旧 Hex 清理、保留实体行为的 MODEL/Storm GPU 优化路线与物理优先项 | 🟡 |
@@ -57,5 +58,5 @@
 - 一个事实只保留一个主文档；其他文档只链接过去。
 - “已实现”和“计划”必须分开写，计划不能描述成现状。
 - 改动文档时至少更新：状态、代码入口、配置/命令、验证结果。
-- 配置键以 `ClientConfig`/`ServerConfig` 和生成的 TOML 为准；`particles.hexParticleRedirect` 控制粒子接管，`particles.hexPatternRedirect` 控制图案渲染，两者是独立设置。
+- 配置键以 `ClientConfig`/`ServerConfig` 和生成的 TOML 为准；`hexcasting.hexParticleRedirect` 控制粒子接管，`hexcasting.hexPatternRedirect` 控制图案渲染，两者是独立设置。
 - 历史结论只在能解释现有约束时保留一句，不保留逐条问答和重复时间线。

@@ -7,7 +7,7 @@
 `config/createmanaindustry-client.toml`：
 
 ```toml
-[particles]
+[allayStorm]
 allayFeatherMaxSpawnPerSecond = 1000
 ```
 

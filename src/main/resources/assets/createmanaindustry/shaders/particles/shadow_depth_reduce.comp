@@ -1,0 +1,19 @@
+layout(local_size_x=8,local_size_y=8)in;
+layout(binding=4)uniform sampler2D uSourceDepth;
+layout(r32f,binding=0)writeonly uniform image2D uTargetDepth;
+uniform int uSourceLevel;
+uniform bool uReverseDepth;
+void main(){
+    ivec2 pixel=ivec2(gl_GlobalInvocationID.xy),targetSize=imageSize(uTargetDepth);
+    if(any(greaterThanEqual(pixel,targetSize)))return;
+    ivec2 sourceSize=textureSize(uSourceDepth,uSourceLevel);
+    ivec2 lo=pixel*sourceSize/targetSize,hi=(pixel+1)*sourceSize/targetSize;
+    float depth=uReverseDepth?1.:0.;
+    for(int y=lo.y;y<hi.y;y++)for(int x=lo.x;x<hi.x;x++){
+        float sampleDepth=texelFetch(uSourceDepth,ivec2(x,y),uSourceLevel).r;
+        // Invalid source data must never create an occluder.
+        if(isnan(sampleDepth)||isinf(sampleDepth)||sampleDepth<0.||sampleDepth>1.)sampleDepth=uReverseDepth?0.:1.;
+        depth=uReverseDepth?min(depth,sampleDepth):max(depth,sampleDepth);
+    }
+    imageStore(uTargetDepth,pixel,vec4(depth));
+}

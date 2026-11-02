@@ -91,17 +91,56 @@ public class ModelShadowGpuValidation {
             }finally{for(int id:new int[]{pool,emit,count})GL15.glDeleteBuffers(id);}
         }
     }
+    static float[] receiverBox(float minX,float maxX){return new float[]{1,0,0,-minX,-1,0,0,maxX,0,1,0,20,0,-1,0,20,0,0,1,20,0,0,-1,20};}
+    static void qualityGroups(){
+        var data=bytes(3*64);particle(data,0,0,0,0,1,1);particle(data,1,0,0,2,1,1);particle(data,2,9,0,0,1,1);
+        var population=bytes(32+3*8);population.putInt(0,3).putInt(8,3).putInt(12,1).putLong(16,7).putInt(24,3);
+        for(int i=0;i<3;i++)population.putInt(32+i*8,i).putInt(36+i*8,10+i);
+        var groups=bytes(64+3*8);groups.putInt(0,2).putInt(4,1).putInt(8,3).putInt(12,1).putLong(16,7);
+        groups.putFloat(44,3).putFloat(48,-3).putFloat(52,3);
+        for(int i=0;i<3;i++)groups.putInt(64+i*8,i).putInt(68+i*8,10+i);
+        int pool=buffer(data),emit=buffer(headers(2,.3f,false,false)),counter=buffer(bytes(16).putInt(0,3)),pop=buffer(population),group=buffer(groups);
+        try(var gpu=new ModelShadowGpu(3,ModelShadowGpuValidation::source)){
+            var c=new PackageDrawCulling();c.clear();
+            gpu.culling(receiverBox(8,12),0,0,1,false,group);
+            gpu.prepare(pool,emit,counter,c,0,0,0,.35f,.6f,1,0,new float[16],new float[16],new float[4],pop,7);
+            check(models(gpu)==1,"whole cylinder did not skip only its body rows");
+            check(read(gpu.commands(),commandBytes()).getInt(ParticleBuffers.INDIRECT_UINTS*4)==1,"outside dispatch count");
+            check(read(gpu.instances(),8).getInt(4)==8,"outside identity changed");
+            check(read(gpu.instances(),8).getInt(0)==(12<<9),"outside animation slot changed");
+            gpu.culling(receiverBox(-2,12),0,0,1,false,group);
+            gpu.prepare(pool,emit,counter,c,0,0,0,.35f,.6f,1,0,new float[16],new float[16],new float[4],pop,7);
+            check(models(gpu)==3,"partially visible cylinder was culled");
+            groups.putLong(16,6);put(group,groups);
+            gpu.culling(receiverBox(8,12),0,0,1,false,group);
+            gpu.prepare(pool,emit,counter,c,0,0,0,.35f,.6f,1,0,new float[16],new float[16],new float[4],pop,7);
+            check(models(gpu)==3,"stale grouping did not fall back");
+            gpu.culling(receiverBox(8,12),0,0,1,true,0);
+            gpu.prepare(pool,emit,counter,c,0,0,0,.35f,.6f,1,0,new float[16],new float[16],new float[4],pop,7);
+            check(models(gpu)==1,"per-member shadow-volume culling");
+            gpu.culling(receiverBox(8,12),1,0,0,true,0);
+            gpu.prepare(pool,emit,counter,c,0,0,0,.35f,.6f,1,0,new float[16],new float[16],new float[4],pop,7);
+            check(models(gpu)==3,"offscreen casters whose shadow enters view were removed");
+            gpu.culling(null,0,0,0,false,0);
+            prepare(gpu,pool,emit,counter,c);check(models(gpu)==3,"switching back to FULL retained culling");
+            groups.putLong(16,7).putInt(0,3).putInt(4,0);put(group,groups);
+            gpu.culling(receiverBox(8,12),0,0,1,false,group);
+            gpu.prepare(pool,emit,counter,c,0,0,0,.35f,.6f,1,0,new float[16],new float[16],new float[4],pop,7);
+            check(models(gpu)==0,"all-body reject retained output");
+            check(read(gpu.commands(),commandBytes()).getInt(ParticleBuffers.INDIRECT_UINTS*4)==0,"all-body reject dispatched members");
+        }finally{for(int id:new int[]{pool,emit,counter,pop,group})GL15.glDeleteBuffers(id);}
+    }
     static void stateBoundary(){
         com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
         var state=new GpuComputeState();int alignment=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
         int foreign=buffer(bytes(alignment+64)),vao=GL30.glGenVertexArrays(),pbo=buffer(bytes(64));GL30.glBindVertexArray(vao);
-        for(int binding:new int[]{15,26,27,28})GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,binding,foreign,alignment,64);int attackTexture=GL11.glGenTextures();GL13.glActiveTexture(GL13.GL_TEXTURE14);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,attackTexture);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_R32UI,foreign);GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,foreign);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,foreign);
+        for(int binding:new int[]{15,26,27,28,30})GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,binding,foreign,alignment,64);int attackTexture=GL11.glGenTextures();GL13.glActiveTexture(GL13.GL_TEXTURE14);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,attackTexture);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_R32UI,foreign);GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,foreign);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,foreign);
         GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER,pbo);GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH,17);GL13.glActiveTexture(GL13.GL_TEXTURE18);
         state.capture();check(GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE)==GL13.GL_TEXTURE0,"lazy compute initialization uses foreign texture unit");for(int binding:new int[]{15,26,27,28})GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,0);GL13.glActiveTexture(GL13.GL_TEXTURE14);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,0);GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,0);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,0);GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER,0);GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH,0);GL30.glBindVertexArray(0);state.restore();
         check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,15)==foreign&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,15)==alignment&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,15)==64,"compute state lost SSBO range");
         check(GL11.glGetInteger(GL43.GL_DISPATCH_INDIRECT_BUFFER_BINDING)==foreign&&GL11.glGetInteger(GL31.GL_COPY_READ_BUFFER)==foreign,"compute state lost indirect/copy binding");
         check(GL11.glGetInteger(GL21.GL_PIXEL_UNPACK_BUFFER_BINDING)==pbo&&GL11.glGetInteger(GL11.GL_UNPACK_ROW_LENGTH)==17,"compute state lost unpack state");check(GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING)==vao&&GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE)==GL13.GL_TEXTURE18,"compute state lost VAO/active texture");
-        for(int binding:new int[]{26,27,28})check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,binding)==foreign&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,binding)==alignment&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,binding)==64,"attack state lost SSBO range "+binding);
+        for(int binding:new int[]{26,27,28,30})check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,binding)==foreign&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,binding)==alignment&&GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,binding)==64,"attack state lost SSBO range "+binding);
         GL13.glActiveTexture(GL13.GL_TEXTURE14);check(GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER)==attackTexture,"attack TBO state not restored");GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,0);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(attackTexture);GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER,0);GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH,0);GL15.glDeleteBuffers(foreign);GL15.glDeleteBuffers(pbo);com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteVertexArray(vao);
     }
@@ -242,9 +281,9 @@ public class ModelShadowGpuValidation {
         var rows=new ArrayList<String>();var raw=new ArrayList<String>();rows.add("total_live,model_live,mode,run,gpu_p50_ms,gpu_p95_ms,cpu_submit_p50_ms,cpu_submit_p95_ms,index_bytes");raw.add("total_live,model_live,mode,run,sample,gpu_ms,cpu_submit_ms");
         var boundary=new GpuComputeState();float[] waves=new float[16],targets=new float[16],tiers=new float[4];
         for(int[] scenario:new int[][]{{100000,100},{100000,10000},{2000000,100},{2000000,10000},{2000000,2000000}}){
-            int n=Math.min(scenario[0],effectiveLimit()),m=Math.min(scenario[1],n),stride=n/m;var data=bytes(n*64);var list=bytes(32+m*4);list.putInt(0,m).putInt(8,n).putInt(12,1).putInt(16,1).putInt(24,m);
+            int n=Math.min(scenario[0],effectiveLimit()),m=Math.min(scenario[1],n),stride=n/m;var data=bytes(n*64);var list=bytes(32+m*8);list.putInt(0,m).putInt(8,n).putInt(12,1).putInt(16,1).putInt(24,m);
             for(int i=0;i<n;i++){particle(data,i,i%16-8,2,i/16%16-8,1,1);data.putInt(i*64+60,1);}
-            for(int i=0;i<m;i++){int slot=i*stride;data.putInt(slot*64+60,0);list.putInt(32+i*4,slot);}
+            for(int i=0;i<m;i++){int slot=i*stride;data.putInt(slot*64+60,0);list.putInt(32+i*8,slot).putInt(36+i*8,slot);}
             var h=bytes(ParticleBuffers.VEC4_PER_EMITTER*32);h.put(headers(2,.3f,false,false)).put(headers(0,.3f,false,false)).flip();
             int pool=buffer(data),emit=buffer(h),counter=buffer(bytes(16).putInt(0,n)),index=buffer(list);var culling=new PackageDrawCulling();culling.clear();
             try{for(String mode:new String[]{"full_pool","prebuilt_index"})try(var gpu=new ModelShadowGpu(n,ModelShadowGpuValidation::source)){
@@ -267,7 +306,7 @@ public class ModelShadowGpuValidation {
     public static void main(String[] args)throws Exception {
         var callback=GLFWErrorCallback.createPrint(System.err);callback.set();check(GLFW.glfwInit(),"GLFW init");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
         long window=GLFW.glfwCreateWindow(64,64,"Model shadow validation",0,0);check(window!=0,"GL context");
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));validation();sizeBoundaries();stateBoundary();if(Arrays.asList(args).contains("--iris-transform"))mergedVertices();if(Arrays.asList(args).contains("--benchmark"))benchmark();if(Arrays.asList(args).contains("--index-probe"))indexProbe();check(GL11.glGetError()==GL11.GL_NO_ERROR,"shadow GL error");System.out.println("MODEL shadow GPU: "+checks+" assertions passed");}
+        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));validation();sizeBoundaries();qualityGroups();stateBoundary();if(Arrays.asList(args).contains("--iris-transform"))mergedVertices();if(Arrays.asList(args).contains("--benchmark"))benchmark();if(Arrays.asList(args).contains("--index-probe"))indexProbe();check(GL11.glGetError()==GL11.GL_NO_ERROR,"shadow GL error");System.out.println("MODEL shadow GPU: "+checks+" assertions passed");}
         finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();callback.free();}
     }
 }

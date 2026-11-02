@@ -10,42 +10,29 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 /**
  * Client-only rendering and spell drawing config ({@code createmanaindustry-client.toml}).
  * <p>
- * Not loaded on dedicated servers; these values are only read from client-side
- * render code ({@code MistClientHandler}, {@code MistIrisHook}).
+ * Local rendering/resource choices; gameplay authority belongs to ServerConfig.
+ * Legacy configuration keys are intentionally not migrated during development.
  */
 @EventBusSubscriber(modid = CreateManaIndustry.MODID)
 public final class ClientConfig {
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
-    // ---- rendering ---------------------------------------------------------
-
-    private static ModConfigSpec.DoubleValue MIST_GLOW_STRENGTH;
+    // Definition order matches the generated TOML and the configuration screen.
+    private static ModConfigSpec.DoubleValue MIST_GLOW_STRENGTH, FUEL_ROD_BLOOM_RING_STRENGTH;
     private static ModConfigSpec.BooleanValue MIST_DEBUG_SHADOW;
-    private static ModConfigSpec.DoubleValue FUEL_ROD_BLOOM_RING_STRENGTH;
-    private static ModConfigSpec.DoubleValue GRID_SNAP_THRESHOLD;
-
-    // ---- particles -------------------------------------------------------
-
-    private static ModConfigSpec.BooleanValue PARTICLE_ENABLED;
-    private static ModConfigSpec.IntValue PARTICLE_MAX_COUNT;
-    private static ModConfigSpec.IntValue SAME_FATE_MAX_PARTICLES;
-    private static ModConfigSpec.IntValue PARTITION_MAX_PARTICLES;
+    private static ModConfigSpec.BooleanValue PARTICLE_ENABLED, PARTICLE_AUTO_THROTTLE, PARTICLE_SHADER_PACK_INTEGRATION;
+    private static ModConfigSpec.IntValue PARTICLE_MAX_COUNT, PARTICLE_FADE_DISTANCE;
     private static ModConfigSpec.DoubleValue PARTICLE_BUDGET_MS;
-    private static ModConfigSpec.BooleanValue PARTICLE_AUTO_THROTTLE;
-    private static ModConfigSpec.IntValue PARTICLE_FADE_DISTANCE;
-    private static ModConfigSpec.IntValue ALLAY_FEATHER_RATE,ALLAY_GOLD_RATE;
-    private static ModConfigSpec.IntValue STORM_LOD_1_DISTANCE, STORM_LOD_DISTANCE;
-    private static ModConfigSpec.BooleanValue PARTICLE_SHADER_PACK_INTEGRATION;
-    private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT;
-    private static ModConfigSpec.BooleanValue PARTICLE_HEX_PATTERN_REDIRECT;
+    private static ModConfigSpec.EnumValue<ParticleShadowQuality> STORM_SHADOW_QUALITY;
+    private static ModConfigSpec.IntValue ALLAY_FEATHER_RATE, ALLAY_GOLD_RATE, STORM_LOD_1_DISTANCE, STORM_LOD_DISTANCE;
+    private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT, PARTICLE_HEX_PATTERN_REDIRECT;
     private static ModConfigSpec.IntValue HEX_PATTERN_GPU_BUDGET;
     private static ModConfigSpec.BooleanValue PACKAGE_GPU_AUTHORITY;
     private static ModConfigSpec.DoubleValue PACKAGE_MAIN_THREAD_BUDGET_MS;
     private static ModConfigSpec.IntValue PACKAGE_COLLISION_MAX_SECTIONS;
-
-    // ---- allay dimension (ALLVR) -------------------------------------------
-
+    private static ModConfigSpec.DoubleValue GRID_SNAP_THRESHOLD;
+    private static ModConfigSpec.IntValue PARTITION_MAX_PARTICLES, SAME_FATE_MAX_PARTICLES;
     private static ModConfigSpec.BooleanValue ALLVR_LOD;
 
     static {
@@ -61,25 +48,14 @@ public final class ClientConfig {
                 .defineInRange("fuelRodBloomRingStrength", 1.0, 0.0, 100.0);
         BUILDER.pop();
 
-        BUILDER.comment("Great-trick spell drawing options.").push("greatTricks");
-        GRID_SNAP_THRESHOLD = BUILDER
-                .comment("Fraction of one grid spacing to travel before snapping to the next dot. Capture radius is (1 - value) times grid spacing; 0.75 leaves the final 25%. 点阵吸附阈值：默认走过点间距的 75% 才吸附，捕获半径为剩余的 25%。")
-                .defineInRange("gridSnapThreshold", 0.75, 0.0, 1.0);
-        BUILDER.pop();
 
         BUILDER.comment("GPU particle engine options.").push("particles");
         PARTICLE_ENABLED = BUILDER
                 .comment("Master switch for GPU particles.")
                 .define("enabled", true);
-        ALLAY_FEATHER_RATE = BUILDER.comment("Allay feather total spawn rate per second at R=32; scales with (R/32)^2. 0 stops new feathers; existing feathers finish their 60-second lifetime.")
-                .defineInRange("allayFeatherMaxSpawnPerSecond", 1000, 0, 2000);
-        ALLAY_GOLD_RATE=BUILDER.comment("Allay gold total spawn rate at R=32; scales with (R/32)^2. Reuses voxel surfaces with bounded loaded-terrain height capture for missing columns.").defineInRange("allayGoldMaxSpawnPerSecond",2000,0,4000);
         PARTICLE_MAX_COUNT = BUILDER
                 .comment("Maximum live particles allocated.")
                 .defineInRange("maxParticles", 2_000_000, 1_000, 4_000_000);
-        PARTITION_MAX_PARTICLES = BUILDER.comment("Maximum GPU conjure samples for Partition membranes and edges.").defineInRange("partitionMaxParticles",131072,0,1048576);
-        SAME_FATE_MAX_PARTICLES = BUILDER.comment("Maximum Shared Fate render records (ribbon body/glow segments, stars and dissolution particles), within the shared GPU pool.")
-                .defineInRange("sameFateMaxParticles", 131072, 256, 1048576);
         PARTICLE_BUDGET_MS = BUILDER
                 .comment("Frame-time budget (ms) for particles.")
                 .defineInRange("frameBudgetMs", 15.0, 1.0, 50.0);
@@ -89,17 +65,37 @@ public final class ClientConfig {
         PARTICLE_FADE_DISTANCE = BUILDER
                 .comment("ALPHA/ADDITIVE fade starts here; MODEL/OPAQUE disappear as whole particles 24 blocks farther away.")
                 .defineInRange("fadeDistance", 96, 16, 256);
-        STORM_LOD_1_DISTANCE = BUILDER.comment("Storm opaque body LOD ends here; world-sized square billboard LOD starts here.").defineInRange("stormLod1Distance",1024,120,8192);
-        STORM_LOD_DISTANCE = BUILDER.comment("Storm LOD display and subscription limit. 0 disables distant members.").defineInRange("stormLodDistance",4096,0,8192);
         PARTICLE_SHADER_PACK_INTEGRATION = BUILDER
                 .comment("Enable shader pack integration for model particles.")
                 .define("shaderPackIntegration", true);
+        BUILDER.pop();
+
+        BUILDER.comment("Allay Storm visuals; these options do not change combat or simulation.").push("allayStorm");
+        STORM_SHADOW_QUALITY = BUILDER.comment("FULL preserves existing shadow casting and receiving. Lower modes request no receiving where a native material contract is proven.",
+                "COARSE skips cylinder members only when the whole cylinder shadow cannot enter the main view.",
+                "FRUSTUM adds per-member shadow-volume tests. SHADOW_HIZ uses current-light depth; SCREEN_HIZ uses historical main depth.",
+                "COMBINED_HIZ requests both; unavailable or unqualified stages fall back to geometric tests. OFF disables all MODEL shadow submissions.",
+                "Lower modes can affect voxelization/GI/volumetrics. Unproven no-receiving contracts preserve native rendering and receiving, never force self-drawing.",
+                "Feathers and distant LOD never cast shadows. Changes apply at a frame boundary.")
+                .defineEnum("shaderPackShadowQuality", ParticleShadowQuality.FULL);
+        ALLAY_FEATHER_RATE = BUILDER.comment("Feathers per second at R=32, scaled by (R/32)^2. 0 stops new feathers; existing ones finish their 60-second lifetime.")
+                .defineInRange("allayFeatherMaxSpawnPerSecond",1000,0,2000);
+        ALLAY_GOLD_RATE = BUILDER.comment("Gold particles per second at R=32, scaled by (R/32)^2. 0 stops new particles.")
+                .defineInRange("allayGoldMaxSpawnPerSecond",2000,0,4000);
+        STORM_LOD_1_DISTANCE = BUILDER.comment("Distance in blocks where opaque body LOD ends and billboard LOD begins.").defineInRange("stormLod1Distance",1024,120,8192);
+        STORM_LOD_DISTANCE = BUILDER.comment("Distant display/subscription limit in blocks, also capped by the server. 0 disables distant members.").defineInRange("stormLodDistance",4096,0,8192);
+        BUILDER.pop();
+
+        BUILDER.comment("Hexcasting GPU rendering.").push("hexcasting");
         PARTICLE_HEX_REDIRECT = BUILDER
                 .comment("Redirect Hexcasting conjure particles and sprays to GPU engine.")
                 .define("hexParticleRedirect", true);
         PARTICLE_HEX_PATTERN_REDIRECT = BUILDER.comment("Render Hexcasting world/shadow/player-preview and spellcasting UI patterns with the shared GPU backend.").define("hexPatternRedirect", true);
         HEX_PATTERN_GPU_BUDGET = BUILDER.comment("Maximum Hex-specific GPU buffer allocation, including geometry, commands and in-flight parameter banks, in MiB. Overflow preserves native rendering.")
                 .defineInRange("hexPatternGpuBudgetMiB", 16, 1, 256);
+        BUILDER.pop();
+
+        BUILDER.comment("Create package GPU resources.").push("packages");
         PACKAGE_GPU_AUTHORITY = BUILDER.comment("Experimental Create package authority opt-in. Requires matching server opt-in and complete GPU collision/render resources; visual validation is pending. Further bandwidth optimization is deferred.")
                 .define("packageGpuAuthority", false);
         PACKAGE_MAIN_THREAD_BUDGET_MS = BUILDER
@@ -108,6 +104,16 @@ public final class ClientConfig {
         PACKAGE_COLLISION_MAX_SECTIONS = BUILDER
                 .comment("Maximum resident GPU package collision sections for this client. Independent of other players; changes apply on re-entering the world. Clamped to the device SSBO limit; light capacity is separate.")
                 .defineInRange("packageCollisionMaxSections", 256, 1, 1024);
+        BUILDER.pop();
+
+        BUILDER.comment("Great-trick spell drawing options.").push("greatTricks");
+        GRID_SNAP_THRESHOLD = BUILDER
+                .comment("Fraction of one grid spacing to travel before snapping to the next dot. Capture radius is (1 - value) times grid spacing; 0.75 leaves the final 25%. 点阵吸附阈值：默认走过点间距的 75% 才吸附，捕获半径为剩余的 25%。")
+                .defineInRange("gridSnapThreshold", 0.75, 0.0, 1.0);
+        PARTITION_MAX_PARTICLES = BUILDER.comment("Maximum Partition membrane/edge samples within the shared GPU pool; 0 disables samples.")
+                .defineInRange("partitionMaxParticles",131072,0,1048576);
+        SAME_FATE_MAX_PARTICLES = BUILDER.comment("Maximum Shared Fate ribbon, star and dissolution records within the shared GPU pool.")
+                .defineInRange("sameFateMaxParticles",131072,256,1048576);
         BUILDER.pop();
 
         BUILDER.comment("Allay dimension (ALLVR) options.").push("allvr");
@@ -119,26 +125,24 @@ public final class ClientConfig {
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 
-    public static double mistGlowStrength = 0.5;
+    public static double mistGlowStrength = .5, fuelRodBloomRingStrength = 1.;
     public static boolean mistDebugShadow = false;
-    public static double fuelRodBloomRingStrength = 1.0;
-    public static double gridSnapThreshold = 0.75;
     public static boolean particleEnabled = true;
     public static int particleMaxCount = 2_000_000;
-    public static int partitionMaxParticles = 131072;
-    public static int sameFateMaxParticles = 131072;
-    public static double particleBudgetMs = 15.0;
+    public static double particleBudgetMs = 15.;
     public static boolean particleAutoThrottle = true;
     public static int particleFadeDistance = 96;
-    public static int allayFeatherMaxSpawnPerSecond = 1000,allayGoldMaxSpawnPerSecond=2000;
-    public static int stormLod1Distance=1024, stormLodDistance=4096;
     public static boolean shaderPackIntegration = true;
-    public static boolean hexParticleRedirect = true;
-    public static boolean hexPatternRedirect = true;
+    public static ParticleShadowQuality shaderPackShadowQuality = ParticleShadowQuality.FULL;
+    public static int allayFeatherMaxSpawnPerSecond = 1000, allayGoldMaxSpawnPerSecond = 2000;
+    public static int stormLod1Distance = 1024, stormLodDistance = 4096;
+    public static boolean hexParticleRedirect = true, hexPatternRedirect = true;
     public static int hexPatternGpuBudgetMiB = 16;
     public static boolean packageGpuAuthority = false;
-    public static double packageMainThreadBudgetMs = 10.0;
+    public static double packageMainThreadBudgetMs = 10.;
     public static int packageCollisionMaxSections = 256;
+    public static double gridSnapThreshold = .75;
+    public static int partitionMaxParticles = 131072, sameFateMaxParticles = 131072;
     public static boolean allvrLod = true;
 
     private ClientConfig() {}
@@ -148,26 +152,28 @@ public final class ClientConfig {
         if (event.getConfig().getSpec() == SPEC
                 && (event instanceof ModConfigEvent.Loading || event instanceof ModConfigEvent.Reloading)) {
             mistGlowStrength = MIST_GLOW_STRENGTH.get();
-            mistDebugShadow = MIST_DEBUG_SHADOW.get();
             fuelRodBloomRingStrength = FUEL_ROD_BLOOM_RING_STRENGTH.get();
-            gridSnapThreshold = GRID_SNAP_THRESHOLD.get();
+            mistDebugShadow = MIST_DEBUG_SHADOW.get();
             particleEnabled = PARTICLE_ENABLED.get();
-            allayFeatherMaxSpawnPerSecond = ALLAY_FEATHER_RATE.get();
-            allayGoldMaxSpawnPerSecond=ALLAY_GOLD_RATE.get();
             particleMaxCount = PARTICLE_MAX_COUNT.get();
-            partitionMaxParticles = PARTITION_MAX_PARTICLES.get();
-            sameFateMaxParticles = SAME_FATE_MAX_PARTICLES.get();
             particleBudgetMs = PARTICLE_BUDGET_MS.get();
             particleAutoThrottle = PARTICLE_AUTO_THROTTLE.get();
             particleFadeDistance = PARTICLE_FADE_DISTANCE.get();
-            stormLod1Distance=STORM_LOD_1_DISTANCE.get();stormLodDistance=STORM_LOD_DISTANCE.get();
             shaderPackIntegration = PARTICLE_SHADER_PACK_INTEGRATION.get();
+            shaderPackShadowQuality = STORM_SHADOW_QUALITY.get();
+            allayFeatherMaxSpawnPerSecond = ALLAY_FEATHER_RATE.get();
+            allayGoldMaxSpawnPerSecond = ALLAY_GOLD_RATE.get();
+            stormLod1Distance = STORM_LOD_1_DISTANCE.get();
+            stormLodDistance = STORM_LOD_DISTANCE.get();
             hexParticleRedirect = PARTICLE_HEX_REDIRECT.get();
             hexPatternRedirect = PARTICLE_HEX_PATTERN_REDIRECT.get();
             hexPatternGpuBudgetMiB = HEX_PATTERN_GPU_BUDGET.get();
             packageGpuAuthority = PACKAGE_GPU_AUTHORITY.get();
             packageMainThreadBudgetMs = PACKAGE_MAIN_THREAD_BUDGET_MS.get();
             packageCollisionMaxSections = PACKAGE_COLLISION_MAX_SECTIONS.get();
+            gridSnapThreshold = GRID_SNAP_THRESHOLD.get();
+            partitionMaxParticles = PARTITION_MAX_PARTICLES.get();
+            sameFateMaxParticles = SAME_FATE_MAX_PARTICLES.get();
             allvrLod = ALLVR_LOD.get();
         }
     }

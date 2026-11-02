@@ -57,6 +57,7 @@ public final class ParticleDiagnostics {
     private long firstFrame=-1,lastFrame=-1,countFrame=-1,countGeneration=-1;
     private int bodyCount,carrierCount,ghostCount,featherCount,lod1Count,lod2Count;
     private long optionsRevision=Long.MIN_VALUE;
+    private com.iridium126.createmanaindustry.infrastructure.config.ParticleShadowQuality optionsShadowQuality;
     private String optionSummary="unavailable";
     private final long[] sampleFrames=new long[SAMPLES];
     private String captureContext="unmeasured";
@@ -93,7 +94,8 @@ public final class ParticleDiagnostics {
         if(!(active instanceof net.irisshaders.iris.pipeline.IrisRenderingPipeline))
             return "pack=(off); source=none; options=unavailable";
         if(!session.ownsPipeline(active))return "pack=pending; source=none; options=unavailable";
-        if(optionsRevision!=session.revision()){
+        if(optionsRevision!=session.revision()||optionsShadowQuality!=ShadowQualityFrame.current()){
+            optionsShadowQuality=ShadowQualityFrame.current();
             optionsRevision=session.revision();var options=session.options();
             if(options==null)optionSummary="unavailable";
             else{
@@ -115,7 +117,7 @@ public final class ParticleDiagnostics {
         var path=com.iridium126.createmanaindustry.client.particles.shaderpack.ParticleProfileSnapshot.write(com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current(),net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable());return path==null?"unavailable":path.toString();
     }
     /** Active pipeline identity for opt-in whole-frame captures; optional Iris remains guarded. */
-    public String measurementContext(){return (com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?irisCaptureContext():"pack=none; source=none; options=unavailable")+"; backend="+com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.identity()+"; engine="+ParticlePrograms.INSTANCE.diagnosticSourceDigest()+"; auto_throttle="+com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleAutoThrottle;}
+    public String measurementContext(){return (com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?irisCaptureContext():"pack=none; source=none; options=unavailable")+"; backend="+com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.identity()+"; engine="+ParticlePrograms.INSTANCE.diagnosticSourceDigest()+"; shadow_quality="+ShadowQualityFrame.current().label()+"; auto_throttle="+com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleAutoThrottle;}
     private Frame current;
     private long start, allocatedStart, cpuNanos, allocatedBytes, uploads, calls, draws, readbackLag;
     private long lastUploads, lastCalls, lastDraws, lastReadbackLag;
@@ -220,6 +222,7 @@ public final class ParticleDiagnostics {
         if(details){
             report.append("\nCapture frames=").append(firstFrame).append("..").append(lastFrame).append("; ").append(captureContext);
             report.append(updateReport());
+            report.append("\nUpdate linked resources: ").append(ParticlePrograms.INSTANCE.updateInterface());
             report.append("\nSimulation input counts: ");
             if(simulationLive<0)report.append("unmeasured");
             else report.append("live=").append(simulationLive).append("; MODEL=").append(simulationModel<0?"unavailable":Integer.toString(simulationModel))

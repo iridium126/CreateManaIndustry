@@ -45,14 +45,14 @@ GPU 资源由 `ParticleBuffers` 管理，程序由 `ParticlePrograms` 管理，s
 
 ### 3.1 Hexcasting 覆盖范围
 
-`particles.hexParticleRedirect` 开启且 GPU 引擎可用时，以下两个入口都重定向：
+`hexcasting.hexParticleRedirect` 开启且 GPU 引擎可用时，以下两个入口都重定向：
 
 - `HexConjureParticleRedirectMixin` 覆盖 `ClientLevel.addParticle` 的普通和 limiter-aware 两个 overload，识别 `ConjureParticleOptions`，对应直接 `conjure_particle`。
 - `HexSprayRedirectMixin` 覆盖 `MsgCastParticleS2C.Handler.handle`，把 `ParticleSpray` 采样后交给 GPU；服务端施法、法术阵、mishap 和 CMI 自己的 spray 共用此入口。
 
 引擎未初始化、GL/shader 失败或配置关闭时保留原版路径。Mixin 回调必须使用真实 `CallbackInfo`；不要手动调用注入方法或把回调参数设成可空，否则会重现 `ci == null` 崩溃。
 
-图案绘制使用独立 `particles.hexPatternRedirect`：世界环绕、Iris 阴影、玩家模型预览及施法 UI 历史/WIP/节点/引导点由共享 Hex GPU 后端处理，已迁出普通粒子池。默认 Hex buffer 预算 16 MiB，超限完整回退原生。当前行为、基准和用户实机验收清单见 [Hex 接管报告](gpu-hex-shared-takeover-2026-10-10.md)。
+图案绘制使用独立 `hexcasting.hexPatternRedirect`：世界环绕、Iris 阴影、玩家模型预览及施法 UI 历史/WIP/节点/引导点由共享 Hex GPU 后端处理，已迁出普通粒子池。默认 Hex buffer 预算 16 MiB，超限完整回退原生。当前行为、基准和用户实机验收清单见 [Hex 接管报告](gpu-hex-shared-takeover-2026-10-10.md)。
 
 ### 3.2 Hex 视觉契约
 
@@ -86,6 +86,8 @@ Allay Storm 的成员使用 `MODEL` 粒子表示，身份、生命值、姿态�
 
 任何合并失败都必须回退到本项目 MODEL shader，并在 `/cmi particle shaderpack status` 暴露状态。
 
+七档阴影的剔除、材质契约回退及性能记录见 [阴影质量](particle-shadow-quality.md)。无法证明免接收阴影契约时继续原生合并与接收路径，不因此退回自绘。
+
 ## 6. 配置与调试
 
 客户端文件为 `config/createmanaindustry-client.toml`：
@@ -98,9 +100,12 @@ Allay Storm 的成员使用 `MODEL` 粒子表示，身份、生命值、姿态�
 | `particles.autoThrottle` | `true` | 超预算时降低发射 |
 | `particles.fadeDistance` | `96` | 距离淡出起点 |
 | `particles.shaderPackIntegration` | `true` | MODEL shaderpack 接入 |
-| `particles.hexParticleRedirect` | `true` | Hexcasting 两类入口重定向 |
-| `particles.hexPatternRedirect` | `true` | Hex 世界/阴影/玩家预览/施法 UI 图案接管 |
-| `particles.hexPatternGpuBudgetMiB` | `16` | Hex 专属 buffer 总预算，范围 1–256 MiB |
+| `allayStorm.shaderPackShadowQuality` | `FULL` | 七档 MODEL 合并阴影 |
+| `greatTricks.partitionMaxParticles` | `131072` | 分割容量 |
+| `greatTricks.sameFateMaxParticles` | `131072` | 同命容量 |
+| `hexcasting.hexParticleRedirect` | `true` | Hexcasting 两类入口重定向 |
+| `hexcasting.hexPatternRedirect` | `true` | Hex 世界/阴影/玩家预览/施法 UI 图案接管 |
+| `hexcasting.hexPatternGpuBudgetMiB` | `16` | Hex 专属 buffer 总预算，范围 1–256 MiB |
 
 客户端粒子命令：
 

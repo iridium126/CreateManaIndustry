@@ -243,6 +243,42 @@ allprojects {
             if (project.hasProperty('modelIndexProbe')) args '--index-probe'
             workingDir = project.projectDir
         }
+        tasks.register('compileShadowQualityHarness', JavaCompile) {
+            dependsOn tasks.named('classes')
+            source = files('scripts/particles/ModelShadowGpuValidation.java','scripts/particles/ShadowQualityGpuValidation.java','scripts/particles/ShadowCollectGpuValidation.java', 'scripts/particles/ModelPopulationGpuValidation.java', 'scripts/particles/UpdateDomainGpuValidation.java','scripts/particles/UpdateStorageGpuValidation.java','scripts/particles/UpdateInputsGpuValidation.java','scripts/particles/NativeShadowDepthGpuValidation.java')
+            classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            destinationDirectory = layout.buildDirectory.dir('shadow-quality/harness')
+            options.release = 21
+        }
+        tasks.register('validateShadowQualityGpu', JavaExec) {
+            dependsOn 'compileShadowQualityHarness'
+            classpath = files(layout.buildDirectory.dir('shadow-quality/harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'ShadowQualityGpuValidation'
+            if(project.hasProperty('shadowRound'))systemProperty 'cmi.shadow.round', project.property('shadowRound')
+            workingDir = project.projectDir
+        }
+        tasks.register('validateUpdateStorageGpu', JavaExec) {
+            dependsOn 'compileShadowQualityHarness'
+            classpath = files(layout.buildDirectory.dir('shadow-quality/harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'UpdateStorageGpuValidation'
+            workingDir = project.projectDir
+        }
+        ['validateUpdateInputsGpu':'UpdateInputsGpuValidation','validateNativeShadowDepthGpu':'NativeShadowDepthGpuValidation'].each { taskName, entry ->
+            tasks.register(taskName, JavaExec) {
+                dependsOn 'compileShadowQualityHarness'
+                classpath = files(layout.buildDirectory.dir('shadow-quality/harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+                mainClass = entry
+                if(project.hasProperty('shadowRound'))systemProperty 'cmi.shadow.round',project.property('shadowRound')
+                workingDir = project.projectDir
+            }
+        }
+        tasks.register('validateShadowCollectGpu', JavaExec) {
+            dependsOn 'compileShadowQualityHarness'
+            classpath = files(layout.buildDirectory.dir('shadow-quality/harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
+            mainClass = 'ShadowCollectGpuValidation'
+            if(project.hasProperty('shadowRound'))systemProperty 'cmi.shadow.round', project.property('shadowRound')
+            workingDir = project.projectDir
+        }
         tasks.register('compileStarfallHarness', JavaCompile) {
             dependsOn tasks.named('classes')
             source = files('scripts/particles/UpdateDomainGpuValidation.java','scripts/particles/ModelPopulationGpuValidation.java', 'scripts/particles/StarfallGpuValidation.java', 'scripts/particles/DomeGpuValidation.java', 'scripts/particles/DomePathGpuValidation.java', 'scripts/particles/DomePoseGpuValidation.java', 'scripts/particles/DomeExitGpuValidation.java', 'scripts/particles/HelixGpuValidation.java', 'scripts/particles/StarfallColumnGpuValidation.java', 'scripts/particles/StormMotionGpuValidation.java', 'scripts/particles/StormCollisionGpuValidation.java', 'scripts/particles/StormBenchmark.java')
@@ -920,7 +956,16 @@ allprojects {
             destinationDirectory = layout.buildDirectory.dir('model-merge-harness')
             source fileTree('build/readonly-draw-reference') { include '*.java' }
             source 'scripts/particles/NativeAttachmentReplayGpuValidation.java'
+            source 'scripts/particles/ShadowDrawGpuValidation.java'
             options.encoding = 'UTF-8'
+        }
+        tasks.register('validateShadowDrawGpu', JavaExec) {
+            dependsOn modelMergeHarness, 'compilePackageIrisHarness'
+            classpath = files(layout.buildDirectory.dir('model-merge-harness'),layout.buildDirectory.dir('package-iris-validation/harness')) + (sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin).filter { !it.name.startsWith('glsl-transformer-') } + files(packageIrisTransformer,layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
+            mainClass='ShadowDrawGpuValidation'
+            if(project.hasProperty('shadowRound'))systemProperty 'cmi.shadow.round',project.property('shadowRound')
+            if(project.hasProperty('shadowDrawPacks'))systemProperty 'cmi.shadow.draw.packs',project.property('shadowDrawPacks')
+            workingDir=project.projectDir
         }
         ['validateModelMergeGpu', 'benchmarkModelMergeGpu', 'validateModelDrawGpu', 'benchmarkModelDrawGpu', 'validateShaderEfficiencyGpu', 'benchmarkShaderEfficiencyGpu', 'validateFeatherMergeGpu', 'benchmarkFeatherMergeGpu'].each { taskName ->
             tasks.register(taskName, JavaExec) {

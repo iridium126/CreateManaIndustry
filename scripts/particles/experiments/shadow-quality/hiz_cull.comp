@@ -1,0 +1,27 @@
+#version 450 core
+layout(local_size_x=64)in;
+layout(std430,binding=0)readonly buffer Bounds {vec4 bounds[];};
+layout(std430,binding=1)buffer Count {uint visible;};
+layout(binding=4)uniform sampler2D hierarchy;
+uniform mat4 projection;
+uniform uint count;
+uniform float margin;
+bool occluded(uint i){
+    vec3 lo=bounds[i*2u].xyz,hi=bounds[i*2u+1u].xyz;
+    vec3 minimum=vec3(1e20),maximum=vec3(-1e20);
+    for(int corner=0;corner<8;corner++){
+        vec4 clip=projection*vec4((corner&1)==0?lo.x:hi.x,(corner&2)==0?lo.y:hi.y,(corner&4)==0?lo.z:hi.z,1);
+        if(clip.w<=1e-5)return false;
+        vec3 ndc=clip.xyz/clip.w;minimum=min(minimum,ndc);maximum=max(maximum,ndc);
+    }
+    if(any(lessThan(minimum,vec3(-1)))||any(greaterThan(maximum,vec3(1))))return false;
+    vec2 size=vec2(textureSize(hierarchy,0));
+    vec2 start=(minimum.xy*.5+.5)*size-2.,end=(maximum.xy*.5+.5)*size+2.;
+    if(any(lessThan(start,vec2(0)))||any(greaterThanEqual(end,size)))return false;
+    int level=min(textureQueryLevels(hierarchy)-1,int(ceil(log2(max(1.,max(end.x-start.x,end.y-start.y))))));
+    ivec2 first=ivec2(start)>>level,last=ivec2(end)>>level;
+    float farthest=0.;
+    for(int y=first.y;y<=last.y;y++)for(int x=first.x;x<=last.x;x++)farthest=max(farthest,texelFetch(hierarchy,ivec2(x,y),level).r);
+    return minimum.z*.5+.5>farthest+margin;
+}
+void main(){uint i=gl_GlobalInvocationID.x;if(i<count&&!occluded(i))atomicAdd(visible,1u);}

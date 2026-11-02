@@ -389,6 +389,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         private int finalPerm;
         private long nextGeneration;
         private long stormVersion;
+        private StormShadowSnapshot shadowInput;
         private long packageVersion;
         private com.iridium126.createmanaindustry.client.gpu.frame.GpuFrameCoordinator.Publication candidate;
         private ParticleReadbacks.Slot snapshot;
@@ -616,6 +617,11 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             ParticleChainCapture.INSTANCE.inputs(java.util.Map.of("dt",dt,"time",AllayStormRuntime.INSTANCE.timeSec(),"capacity",cap,"input_generation",committedGeneration,"identity_epoch",gpu.identityEpoch(),"previous_counter_slot",lastGoodSlot,"counter_slot",slot,"damage_count",damageCount,"frame_seed",frameSeed));
             var hardware=com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE;
             hardware.beginFrame(programs,updateFrame,updateGeneration);
+            shadowInput=null;
+            if(ModelShadowGroups.requested()){
+                var shadowStorm=AllayStormRuntime.INSTANCE;var shadowCenter=shadowStorm.center();
+                shadowInput=StormShadowSnapshot.of(updateGeneration,true,shadowCenter.x,shadowCenter.y,shadowCenter.z,shadowStorm.radius());
+            }
             ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.INPUT_PREPARE,updateFrame,updateGeneration);boolean inputPrepared=false;try{
             ParticleDiagnostics.INSTANCE.beginPreparation(ParticleDiagnostics.UpdateStage.INPUT_STATE,updateFrame,updateGeneration);
             if(AllayStormRuntime.INSTANCE.active())ParticleRuntime.this.gpu.ensureStormIdentities();
@@ -978,6 +984,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 int frustumLoc = loc(kg, "uFrustum");
                 if (frustumLoc >= 0)
                     GL20.glUniform4fv(frustumLoc, ParticleRuntime.this.frustumPlanes);
+                gpu.beginShadowGroups(kg,committedGeneration+1,shadowInput,ParticleRuntime.this.frustumPlanes,camPos);
                 StormLodGpu.INSTANCE.keygen(kg);
                 setUIntUniform(kg,"uModelPass",1);
                 ParticleRuntime.this.gpu.dispatch(1);

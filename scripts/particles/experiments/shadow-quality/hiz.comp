@@ -1,0 +1,15 @@
+#version 450 core
+layout(local_size_x=8,local_size_y=8)in;
+layout(binding=4)uniform sampler2D sourceDepth;
+layout(r32f,binding=0)writeonly uniform image2D targetDepth;
+uniform int sourceLevel;
+void main(){
+    ivec2 target=ivec2(gl_GlobalInvocationID.xy),size=imageSize(targetDepth);
+    if(any(greaterThanEqual(target,size)))return;
+    ivec2 sourceSize=textureSize(sourceDepth,sourceLevel);
+    ivec2 lo=target*sourceSize/size,hi=(target+1)*sourceSize/size;
+    float farthest=0.;
+    // Integer interval partitioning includes the last row/column of NPOT images.
+    for(int y=lo.y;y<hi.y;y++)for(int x=lo.x;x<hi.x;x++)farthest=max(farthest,texelFetch(sourceDepth,ivec2(x,y),sourceLevel).r);
+    imageStore(targetDepth,target,vec4(farthest));
+}

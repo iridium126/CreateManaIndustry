@@ -21,9 +21,9 @@ public class UpdateDomainGpuValidation extends ModelPopulationGpuValidation {
     static final class DomainFixture implements AutoCloseable {
         final Fixture q;final int n,models,grid,output,damage,correction,map;final int[] programs;final int gridProgram;final ByteBuffer zero=bytes(16);
         DomainFixture(int n,int mode,int[] programs)throws Exception{
-            this.n=n;models=mode==0?0:mode==1?n:(n+1)/2;this.programs=programs;q=new Fixture(Math.max(1,n),Math.max(1,n),Math.max(1,n));gridProgram=compile("gridbuild.comp");var data=bytes(Math.max(1,n)*64);
+            this.n=n;models=mode==0?0:mode==1||mode>=3?n:(n+1)/2;this.programs=programs;q=new Fixture(Math.max(1,n),Math.max(1,n),Math.max(1,n));gridProgram=compile("gridbuild.comp");var data=bytes(Math.max(1,n)*64);
             for(int i=0;i<n;i++){
-                int header=mode==0?0:mode==1?2:i%2==0?2:0;
+                int header=mode==0?0:mode==1?2:mode==3?1:mode==4?(i&1)+1:i%2==0?2:0;
                 particle(data,i,header,1500+(i%256-128)*.2f,-2300+((i/256)%256-128)*.2f,header==0?100:20);
                 data.putFloat(i*64+4,128+(i/65536)*2f).putFloat(i*64+12,header==2?i+1:1).putInt(i*64+56,0x3f000000+i);
             }

@@ -13,7 +13,11 @@ public final class PackageRenderState implements GpuBufferRetirement.Snapshot {
     private final boolean[] blendEnabled;
     private int program,vao,array,indirect,storage,active,patchVertices;
     private boolean cull,depth,depthMask,open;
-    public PackageRenderState() {
+    private final boolean resources;
+    public PackageRenderState() {this(true);}
+    /** False only when an enclosing GpuComputeState already owns every buffer and texture binding. */
+    public PackageRenderState(boolean resources) {
+        this.resources=resources;
         int n=GL11.glGetInteger(GL20.GL_MAX_DRAW_BUFFERS);blend=new int[n][6];blendEnabled=new boolean[n];
     }
     public void capture() {
@@ -24,15 +28,15 @@ public final class PackageRenderState implements GpuBufferRetirement.Snapshot {
         active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
         patchVertices=GL11.glGetInteger(GL40.GL_PATCH_VERTICES);
         cull=GL11.glIsEnabled(GL11.GL_CULL_FACE);depth=GL11.glIsEnabled(GL11.GL_DEPTH_TEST);depthMask=GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
-        for(int i=0;i<ssbo.length;i++) {
+        if(resources)for(int i=0;i<ssbo.length;i++) {
             ssbo[i]=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,i);
             offsets[i]=ssbo[i]==0?0:GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,i);
             sizes[i]=ssbo[i]==0?0:GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,i);
         }
-        for(int i=0;i<3;i++) {
+        if(resources)for(int i=0;i<3;i++) {
             GL13.glActiveTexture(GL13.GL_TEXTURE0+i);textures[i]=GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
         }
-        for(int i=0;i<tbo.length;i++){
+        if(resources)for(int i=0;i<tbo.length;i++){
             GL13.glActiveTexture(GL13.GL_TEXTURE10+i);tbo[i]=GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER);
         }
         GL13.glActiveTexture(active);
@@ -51,10 +55,18 @@ public final class PackageRenderState implements GpuBufferRetirement.Snapshot {
     @Override public void forgetProgram(int id){if(program==id)program=0;}
     @Override public void forgetTexture(int id){for(int i=0;i<tbo.length;i++)if(tbo[i]==id)tbo[i]=0;for(int i=0;i<textures.length;i++)if(textures[i]==id)textures[i]=0;}
     @Override public void forgetVertexArray(int id){if(vao==id)vao=0;}
+    /** Restore vanilla's caches before restoring each attachment's exact GL state. Uses the saved snapshot. */
+    public void restoreVanillaState(){
+        com.mojang.blaze3d.systems.RenderSystem.depthMask(depthMask);
+        if(depth)com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();else com.mojang.blaze3d.systems.RenderSystem.disableDepthTest();
+        if(cull)com.mojang.blaze3d.systems.RenderSystem.enableCull();else com.mojang.blaze3d.systems.RenderSystem.disableCull();
+        if(blendEnabled[0])com.mojang.blaze3d.systems.RenderSystem.enableBlend();else com.mojang.blaze3d.systems.RenderSystem.disableBlend();
+        com.mojang.blaze3d.systems.RenderSystem.blendFuncSeparate(blend[0][0],blend[0][1],blend[0][2],blend[0][3]);
+    }
     public void restore() {
         if(!open)return;open=false;
         GpuBufferRetirement.restore(this);
-        try(var stack=MemoryStack.stackPush()) {
+        if(resources)try(var stack=MemoryStack.stackPush()) {
             // Base bindings report SIZE=0: they follow future buffer resizes.
             // Passing these to BindBuffersRange is invalid and would lose that
             // behavior even if replaced with today's allocation size.
@@ -63,10 +75,10 @@ public final class PackageRenderState implements GpuBufferRetirement.Snapshot {
                 GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,i,ssbo[i],offsets[i],sizes[i]);
         }
         GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,storage);
-        for(int i=0;i<3;i++) {
+        if(resources)for(int i=0;i<3;i++) {
             GL13.glActiveTexture(GL13.GL_TEXTURE0+i);GL11.glBindTexture(GL11.GL_TEXTURE_2D,textures[i]);
         }
-        for(int i=0;i<tbo.length;i++){
+        if(resources)for(int i=0;i<tbo.length;i++){
             // Restore our TBO targets through unit 15 without disturbing foreign texture targets.
             GL13.glActiveTexture(GL13.GL_TEXTURE10+i);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,tbo[i]);
         }

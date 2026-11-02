@@ -16,7 +16,7 @@ class PackageCollisionCapacityTest {
         assertEquals(0,PackageCollisionGpu.deviceCapacity(256,1024,0));
     }
     @Test void configIsLocalAndPreservesExistingDefault(){
-        var value=ClientConfig.SPEC.getValues().get("particles.packageCollisionMaxSections");
+        var value=ClientConfig.SPEC.getValues().get("packages.packageCollisionMaxSections");
         assertNotNull(value);assertEquals(256,((net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>)value).getDefault());
         assertThrows(IllegalArgumentException.class,()->PackageCollisionGpu.deviceCapacity(0,1024,Long.MAX_VALUE));
         assertThrows(IllegalArgumentException.class,()->PackageCollisionGpu.deviceCapacity(1025,1024,Long.MAX_VALUE));

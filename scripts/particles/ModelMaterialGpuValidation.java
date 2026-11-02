@@ -16,6 +16,10 @@ import org.lwjgl.glfw.GLFW;
 public final class ModelMaterialGpuValidation {
     static int checks;
     static int layers=1;
+    static int receiverShadow=-1;
+    static int receiverNoise=-1;
+    static float receiverNormalY=1;
+    static final List<String> receiverSamples=new ArrayList<>(List.of("options,stage,attachment,component,native_a,native_b,cmi_a,cmi_b"));
     static void check(boolean ok,String label){checks++;if(!ok)throw new AssertionError(label);}
     static final List<StringPair> DEFINES=new ArrayList<>(List.of(new StringPair("MC_VERSION","12101"),new StringPair("IS_IRIS","1"),new StringPair("MC_GL_VERSION","450"),new StringPair("MC_GLSL_VERSION","450"),new StringPair("MC_RENDER_QUALITY","1.0"),new StringPair("MC_SHADOW_QUALITY","1.0"),new StringPair("MC_HAND_DEPTH","0.125")));
     static Map<String,String> OPTION_OVERRIDES=Map.of();
@@ -71,6 +75,8 @@ public final class ModelMaterialGpuValidation {
         integer(p,"specular",1);integer(p,"normals",2);GL20.glUniform2i(GL20.glGetUniformLocation(p,"atlasSize"),128,64);GL20.glUniform1f(GL20.glGetUniformLocation(p,"viewWidth"),4);GL20.glUniform1f(GL20.glGetUniformLocation(p,"viewHeight"),4);GL20.glUniform1f(GL20.glGetUniformLocation(p,"far"),256);GL20.glUniform1f(GL20.glGetUniformLocation(p,"near"),.1f);GL20.glUniform1f(GL20.glGetUniformLocation(p,"sunAngle"),.25f);GL20.glUniform1f(GL20.glGetUniformLocation(p,"timeAngle"),.25f);
         GL11.glDisable(GL11.GL_DEPTH_TEST);GL11.glDisable(GL11.GL_CULL_FACE);
         for(int i=0;i<textures.length;i++){GL13.glActiveTexture(GL13.GL_TEXTURE0+i);GL11.glBindTexture(GL11.GL_TEXTURE_2D,textures[i]);}
+        if(receiverShadow>=0){for(String name:List.of("shadowtex0","shadowtex1"))integer(p,name,4);GL20.glUniform1f(GL20.glGetUniformLocation(p,"shadowFade"),1);GL20.glUniform1f(GL20.glGetUniformLocation(p,"timeBrightness"),1);GL13.glActiveTexture(GL13.GL_TEXTURE4);GL11.glBindTexture(GL11.GL_TEXTURE_2D,receiverShadow);}
+        if(receiverNoise>=0){integer(p,"noisetex",5);GL13.glActiveTexture(GL13.GL_TEXTURE5);GL11.glBindTexture(GL11.GL_TEXTURE_2D,receiverNoise);GL20.glUniform1f(GL20.glGetUniformLocation(p,"cmiProbeNormalY"),receiverNormalY);}
         for(int i=0;i<3;i++)GL30.glClearBufferfv(GL11.GL_COLOR,i,new float[]{background,background,background,background});
         GL11.glDisable(GL11.GL_BLEND);if(broken){GL11.glEnable(GL11.GL_BLEND);GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA,GL11.GL_ONE_MINUS_SRC_ALPHA,GL11.GL_ONE,GL11.GL_ONE_MINUS_SRC_ALPHA);}
         GL30.glEnablei(GL11.GL_BLEND,0);GL40.glBlendFuncSeparatei(0,GL11.GL_SRC_ALPHA,GL11.GL_ONE_MINUS_SRC_ALPHA,GL11.GL_ZERO,GL11.GL_ONE);
@@ -99,6 +105,55 @@ public final class ModelMaterialGpuValidation {
                 float[][] neutral=draw(p,textures,0,false,true,0),allay=draw(p,textures,0,false,true,allayId);boolean differs=false;for(int a=0;a<3;a++)for(int i=0;i<3;i++)differs|=Math.abs(neutral[a][i]-allay[a][i])>.001;if(nativeEmission)check(differs,"native allay branch must affect output");
             }
         }finally{for(int t:targets)GL11.glDeleteTextures(t);for(int t:textures)GL11.glDeleteTextures(t);GL30.glDeleteFramebuffers(fbo);GL30.glDeleteVertexArrays(vao);GL20.glDeleteProgram(p);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clear();}
+    }
+    static void receiverOutputs(String fragment,ShadowReceiverContract contract,Path root)throws Exception{
+        String low=contract.adapt(new ModelShaderOptimization.Stages("",null,null,null,fragment)).fragment();
+        int[] programs=new int[2];int fbo=GL30.glGenFramebuffers(),vao=GL30.glGenVertexArrays();GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,fbo);GL30.glBindVertexArray(vao);
+        int[] targets=new int[3];for(int i=0;i<3;i++){targets[i]=GL11.glGenTextures();GL11.glBindTexture(GL11.GL_TEXTURE_2D,targets[i]);GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,GL30.GL_RGBA32F,4,4,0,GL11.GL_RGBA,GL11.GL_FLOAT,(java.nio.ByteBuffer)null);GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0+i,GL11.GL_TEXTURE_2D,targets[i],0);}
+        GL20.glDrawBuffers(new int[]{GL30.GL_COLOR_ATTACHMENT0,GL30.GL_COLOR_ATTACHMENT1,GL30.GL_COLOR_ATTACHMENT2});GL11.glViewport(0,0,4,4);
+        int[] textures={texture(.8f,.7f,.6f,.35f),texture(.3f,.6f,.2f,.4f),texture(.5f,.5f,1,1)};
+        int shadow=GL11.glGenTextures();receiverShadow=shadow;
+        GL13.glActiveTexture(GL13.GL_TEXTURE5);int noise=texture(0,0,0,1);receiverNoise=noise;
+        try{
+            for(int i=0;i<2;i++){
+                String frag=i==0?fragment:low;var stages=TransformPatcher.patchVanilla("receiver-output",samplingVertex(frag.replaceAll("\\bvarying\\b","in")),null,null,null,frag,net.irisshaders.iris.gl.blending.AlphaTests.ONE_TENTH_ALPHA,false,true,new net.irisshaders.iris.gl.state.ShaderAttributeInputs(true,true,false,true,true),new it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap<>());
+                String f=stages.get(PatchShaderType.FRAGMENT),v=samplingVertex(f);
+                v=v.replace("void main(){","uniform float cmiProbeNormalY;\nvoid main(){").replace("lightVec=vec3(0);","lightVec=vec3(0,1,0);").replace("normal=vec3(0,0,1);","normal=vec3(0,cmiProbeNormalY,sqrt(max(1.-cmiProbeNormalY*cmiProbeNormalY,0.)));");
+                programs[i]=link(Map.of(PatchShaderType.VERTEX,v,PatchShaderType.FRAGMENT,f),"receiver-output-"+i,root);
+            }
+            float[][][] nativeValues=new float[2][][],lowValues=new float[2][][];
+            for(int d=0;d<2;d++){
+                GL13.glActiveTexture(GL13.GL_TEXTURE4);GL11.glBindTexture(GL11.GL_TEXTURE_2D,shadow);GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,GL30.GL_DEPTH_COMPONENT32F,1,1,0,GL11.GL_DEPTH_COMPONENT,GL11.GL_FLOAT,new float[]{d});
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MIN_FILTER,GL11.GL_NEAREST);GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MAG_FILTER,GL11.GL_NEAREST);GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL14.GL_TEXTURE_COMPARE_MODE,GL30.GL_COMPARE_REF_TO_TEXTURE);
+                nativeValues[d]=draw(programs[0],textures,.2f,false,false,0);lowValues[d]=draw(programs[1],textures,.2f,false,false,0);
+            }
+            boolean witness=false;for(int a=0;a<3;a++)for(int k=0;k<4;k++){
+                check(Float.isFinite(lowValues[0][a][k]),"finite unshadowed native material");
+                check(Math.abs(lowValues[0][a][k]-lowValues[1][a][k])<1e-5,"unshadowed output depends on scene shadow depth");
+                check(Math.abs(lowValues[1][a][k]-nativeValues[1][a][k])<1e-5,"unshadowed material differs from unoccluded native lighting");
+                witness|=Math.abs(nativeValues[0][a][k]-nativeValues[1][a][k])>1e-5;
+                receiverSample("scene",a,k,nativeValues[0][a][k],nativeValues[1][a][k],lowValues[0][a][k],lowValues[1][a][k]);
+            }
+            check(witness==!"false".equals(OPTION_OVERRIDES.get("SHADOW")),"native lighting probe scene-shadow witness disagrees with effective options");
+            if("true".equals(OPTION_OVERRIDES.get("SHADOW_CLOUD"))){
+                float[][] cloudNative=draw(programs[0],textures,.2f,false,false,0),cloudLow=draw(programs[1],textures,.2f,false,false,0);
+                // Opposite constant noise endpoints alter only cloud density; albedo and light stay fixed.
+                GL13.glActiveTexture(GL13.GL_TEXTURE5);GL11.glBindTexture(GL11.GL_TEXTURE_2D,noise);GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D,0,0,0,1,1,GL11.GL_RGBA,GL11.GL_FLOAT,new float[]{1,1,1,0});
+                float[][] denseNative=draw(programs[0],textures,.2f,false,false,0),denseLow=draw(programs[1],textures,.2f,false,false,0);boolean cloudWitness=false;
+                for(int a=0;a<3;a++)for(int k=0;k<4;k++){check(Math.abs(cloudLow[a][k]-denseLow[a][k])<1e-5,"cloud shadow still attenuates CMI");cloudWitness|=Math.abs(cloudNative[a][k]-denseNative[a][k])>1e-5;receiverSample("cloud",a,k,cloudNative[a][k],denseNative[a][k],cloudLow[a][k],denseLow[a][k]);}
+                check(cloudWitness,"native cloud branch must visibly respond to noise perturbation");
+            }
+            if(!"false".equals(OPTION_OVERRIDES.get("SHADOW"))){
+                receiverNormalY=.25f;float[][] angled=draw(programs[1],textures,.2f,false,false,0);boolean directional=false;
+                for(int a=0;a<3;a++)for(int k=0;k<4;k++){check(Float.isFinite(angled[a][k]),"finite angled native light");directional|=Math.abs(angled[a][k]-lowValues[1][a][k])>1e-5;}
+                check(directional,"unshadowed material must retain directional response");
+            }
+            Files.write(root.resolve("receiver-samples.csv"),receiverSamples);
+        }finally{receiverShadow=receiverNoise=-1;receiverNormalY=1;for(int p:programs)if(p!=0)GL20.glDeleteProgram(p);for(int t:textures)GL11.glDeleteTextures(t);for(int t:targets)GL11.glDeleteTextures(t);GL11.glDeleteTextures(shadow);GL11.glDeleteTextures(noise);GL30.glDeleteFramebuffers(fbo);GL30.glDeleteVertexArrays(vao);}
+    }
+    static void receiverSample(String stage,int attachment,int component,float nativeA,float nativeB,float lowA,float lowB){
+        String options=OPTION_OVERRIDES.isEmpty()?"default":new TreeMap<>(OPTION_OVERRIDES).entrySet().stream().map(e->e.getKey()+"="+e.getValue()).collect(java.util.stream.Collectors.joining(";"));
+        receiverSamples.add(options+","+stage+","+attachment+","+component+","+nativeA+","+nativeB+","+lowA+","+lowB);
     }
     static void atlasBindings()throws Exception{
         var atlas=com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY;
@@ -167,6 +222,20 @@ public final class ModelMaterialGpuValidation {
             var inventory=ShaderPackInventory.readPack(sample);Path root=Path.of("build/model-material-validation",inventory.digest().substring(0,12));Files.createDirectories(root);for(var e:inventory.sources().entrySet()){Path f=root.resolve(e.getKey());Files.createDirectories(f.getParent());Files.writeString(f,e.getValue());}
             String base=null;for(String candidate:List.of("gbuffers_entities","gbuffers_textured_lit","gbuffers_textured","gbuffers_basic")){String path=Files.exists(root.resolve("world0/"+candidate+".vsh"))?"world0/"+candidate:candidate;if(Files.exists(root.resolve(path+".vsh"))&&Files.exists(root.resolve(path+".fsh"))){base=path;break;}}check(base!=null,"entity fallback "+sample);
             String v=preprocess(root,base+".vsh"),f=preprocess(root,base+".fsh"),g=Files.exists(root.resolve(base+".gsh"))?preprocess(root,base+".gsh"):null;
+            var receiver=ShadowReceiverContract.resolve(inventory);
+            check(!receiver.pack().equals("unknown/modified"),"fixed receiver inventory "+sample);
+            if(receiver.forward()){
+                var adapted=receiver.adapt(new ModelShaderOptimization.Stages(v,g,null,null,f));
+                int low=compile(adapted.vertex(),adapted.geometry(),adapted.fragment(),"unshadowed-native",root);GL20.glDeleteProgram(low);
+                receiverOutputs(f,receiver,root);
+                int optionCase=0;
+                try{for(var options:List.of(Map.of("SHADOW","false"),Map.of("SHADOW_FILTER","false"),Map.of("SHADOW_COLOR","false"),Map.of("SHADOW_CLOUD","true"),Map.of("ADVANCED_MATERIALS","true"),Map.of("ADVANCED_MATERIALS","true","SHADOW_CLOUD","true"))){
+                    OPTION_OVERRIDES=options;String ov=preprocess(root,base+".vsh"),of=preprocess(root,base+".fsh");var variant=receiver.adapt(new ModelShaderOptimization.Stages(ov,null,null,null,of));
+                    int optionProgram=compile(variant.vertex(),null,variant.fragment(),"unshadowed-options-"+(optionCase++),root);GL20.glDeleteProgram(optionProgram);
+                    receiverOutputs(of,receiver,root);
+                }}finally{OPTION_OVERRIDES=Map.of();}
+                Files.writeString(root.resolve("receiver-status.txt"),receiver.pack()+": native fragment scene/cloud perturbation and directional response passed for default + six option cases; production segment/deferred/postprocessing/cost matrix still required\n");
+            }else Files.writeString(root.resolve("receiver-status.txt"),receiver.pack()+": INCOMPLETE: "+receiver.reason()+"\n");
             int nativeProgram=compile(v,g,f,"native",root);GL20.glDeleteProgram(nativeProgram);
             boolean exact=g==null&&!uniform.matcher(v).replaceAll("").contains("entityColor");String own=(String)method.invoke(compiler,exact);String merged=new ParticleVertexInjector().patch(exact?uniform.matcher(v).replaceAll(""):v,own,"model-material");check(merged.contains("cmi_ShadowPass"),"CMI injection succeeded "+sample);merged=JcppProcessor.glslPreprocessSource(merged,DEFINES);
             int model=compile(merged,g,exact?uniform.matcher(f).replaceAll("in vec4 entityColor;"):f,"model",root);GL20.glDeleteProgram(model);

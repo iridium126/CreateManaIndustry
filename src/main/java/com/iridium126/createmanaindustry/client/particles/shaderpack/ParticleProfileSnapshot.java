@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.shaderpack;
 
+import com.iridium126.createmanaindustry.client.particles.engine.ShadowQualityFrame;
+
 import com.google.gson.GsonBuilder;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession;
@@ -24,6 +26,7 @@ public final class ParticleProfileSnapshot {
                 options.getOptionSet().getStringOptions().keySet().forEach(k->values.put(k,options.getOptionValues().getStringValueOrDefault(k)));
             }
             var data=new TreeMap<String,Object>();
+            data.put("shadow_quality",ShadowQualityFrame.current().label());
             data.put("schema",1);data.put("pack",Iris.getCurrentPackName());data.put("session",session.revision());
             data.put("source_sha256",session.inventory().digest());data.put("options_available",options!=null);data.put("options",values);
             data.put("options_hash",HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(values.toString().getBytes(StandardCharsets.UTF_8))).substring(0,12));
