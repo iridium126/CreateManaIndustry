@@ -30,7 +30,9 @@ neoForge {
         minecraftVersion = parchment_minecraft_version
     }
     runs {
-        client { client() }
+        client {
+            client()
+        }
         server {
             server()
             programArgument '--nogui'

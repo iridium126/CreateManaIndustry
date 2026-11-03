@@ -15,6 +15,7 @@ public final class VanillaSkyView {
     public static String clockReport(){return !clockObserved?"awaiting vanilla replay":
             "source="+sourceClock+" target="+replayClock+" expected="+expectedClock+(replayClock==expectedClock?" (scoped)":" (clock mismatch)");}
     public static boolean ready(RiftRenderFrame frame){return frame!=null&&published==frame&&target!=null&&frame.matches(0,target.width,target.height);}
+    public static boolean qualifiedDepth(int width,int height){return target!=null&&target.width==width&&target.height==height;}
     private static final TargetVanillaClouds clouds=new TargetVanillaClouds();
     private VanillaSkyView() {}
     public static String cloudReport(){return clouds.report();}
@@ -36,6 +37,7 @@ public final class VanillaSkyView {
             if(target==null)target=new TextureTarget(w,h,true,Minecraft.ON_OSX);
             else if(target.width!=w||target.height!=h)target.resize(w,h,Minecraft.ON_OSX);
             target.setClearColor(0,0,0,1);target.clear(Minecraft.ON_OSX);target.bindWrite(true);
+            RiftVisibility.scissor(w,h);
             sourceClock=mc.level.dayTime();
             SkyRenderScope.enter(rift.sky(),Math.max(0,mc.level.getGameTime()-rift.sky().gameTime()));
             replayClock=mc.level.dayTime();expectedClock=SkyRenderScope.dayTime();clockObserved=true;

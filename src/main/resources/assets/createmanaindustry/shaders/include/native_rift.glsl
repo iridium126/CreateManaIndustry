@@ -1,6 +1,7 @@
 #ifndef CMI_NATIVE_RIFT
 #define CMI_NATIVE_RIFT
 uniform sampler2D CmiTargetSky;
+uniform int CmiSkyClipSampling;
 uniform vec4 CmiRift;
 uniform vec4 CmiSkyContext;
 uniform int CmiSkyDimension;
@@ -69,7 +70,18 @@ float cmiCloudLimit(vec3 direction, float maximum) {
 vec3 cmiNativeSky(vec3 original, vec3 direction, float gamma, float radianceScale) {
     if (!cmiRayActive(direction)) return original;
     vec4 clip=CmiSkyViewProjection*vec4(direction,0.0);
-    vec3 nativeSky=texture(CmiTargetSky,clip.xy/clip.w*.5+.5).rgb;
+    vec2 uv=clip.xy/clip.w*.5+.5;
+    vec3 nativeSky;
+    if(CmiSkyClipSampling!=0){
+        ivec2 size=textureSize(CmiTargetSky,0);
+        vec2 pixel=uv*vec2(size)-0.5,weight=fract(pixel);
+        ivec2 at=ivec2(floor(pixel)),limit=size-1;
+        vec3 a=texelFetch(CmiTargetSky,clamp(at,ivec2(0),limit),0).rgb;
+        vec3 b=texelFetch(CmiTargetSky,clamp(at+ivec2(1,0),ivec2(0),limit),0).rgb;
+        vec3 c=texelFetch(CmiTargetSky,clamp(at+ivec2(0,1),ivec2(0),limit),0).rgb;
+        vec3 d=texelFetch(CmiTargetSky,clamp(at+ivec2(1),ivec2(0),limit),0).rgb;
+        nativeSky=mix(mix(a,b,weight.x),mix(c,d,weight.x),weight.y);
+    }else nativeSky=texture(CmiTargetSky,uv).rgb;
     return pow(max(nativeSky,vec3(0.0)),vec3(1.0/gamma))*radianceScale;
 }
 #endif

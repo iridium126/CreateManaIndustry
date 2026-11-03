@@ -22,8 +22,10 @@ public final class SkyRenderState implements AutoCloseable {
     private final int[][] blendState=new int[buffers][6];
     private final boolean[] blendEnabled=new boolean[buffers];
     private final int[] viewport=new int[4];
+    private final int[] scissorBox=new int[4];
     public SkyRenderState(){
         GL11.glGetIntegerv(GL11.GL_VIEWPORT,viewport);
+        GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX,scissorBox);
         int[] names={GL14.GL_BLEND_SRC_RGB,GL14.GL_BLEND_DST_RGB,GL14.GL_BLEND_SRC_ALPHA,GL14.GL_BLEND_DST_ALPHA,GL20.GL_BLEND_EQUATION_RGB,GL20.GL_BLEND_EQUATION_ALPHA};
         for(int i=0;i<buffers;i++){
             color.position(i*4);GL30.glGetBooleani_v(GL11.GL_COLOR_WRITEMASK,i,color);
@@ -48,6 +50,7 @@ public final class SkyRenderState implements AutoCloseable {
             if(blendEnabled[i])GL30.glEnablei(GL11.GL_BLEND,i);else GL30.glDisablei(GL11.GL_BLEND,i);
             if(independentBlend){var b=blendState[i];GL40.glBlendFuncSeparatei(i,b[0],b[1],b[2],b[3]);GL40.glBlendEquationSeparatei(i,b[4],b[5]);}
         }
+        GL11.glScissor(scissorBox[0],scissorBox[1],scissorBox[2],scissorBox[3]);
         if(scissor)GlStateManager._enableScissorTest();else GlStateManager._disableScissorTest();
         if(stencil)GL11.glEnable(GL11.GL_STENCIL_TEST);else GL11.glDisable(GL11.GL_STENCIL_TEST);
     }

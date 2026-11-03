@@ -145,6 +145,12 @@ allprojects {
             mainClass = 'scripts/particles/RiftSkyGpuValidation.java'
             workingDir = project.projectDir
         }
+        tasks.register('validateRiftVisibilityGpu',JavaExec){
+            dependsOn tasks.named('classes')
+            classpath=sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='scripts/particles/RiftVisibilityGpuValidation.java'
+            workingDir=project.projectDir
+        }
         tasks.register('validateVanillaRiftHighLevel', JavaExec) {
             dependsOn tasks.named('classes')
             classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
@@ -319,6 +325,7 @@ allprojects {
             workingDir=project.projectDir
         }
         tasks.named('compileStarfallHarness') { source 'scripts/particles/ShaderEfficiencyUpdateGpuValidation.java' }
+        tasks.named('compileStarfallHarness') { source 'scripts/particles/ShaderEfficiencyTraceGpuValidation.java' }
         tasks.named('compileStarfallHarness') { source 'scripts/particles/NeighborClockGpuValidation.java' }
         tasks.named('compileStarfallHarness') { source 'scripts/particles/NeighborCompleteUpdateGpuValidation.java' }
         tasks.named('compileStarfallHarness') { source 'scripts/particles/R6Grid.java','scripts/particles/R6IndexOrder.java','scripts/particles/R6CaptureReplayGpu.java','scripts/particles/R6FullChainGpu.java' }
@@ -489,11 +496,20 @@ allprojects {
             maxHeapSize='3g'
             workingDir=project.projectDir
         }
+        tasks.register('traceShaderEfficiencyUpdateGpu', JavaExec) {
+            dependsOn 'compileStarfallHarness'
+            classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='ShaderEfficiencyTraceGpuValidation'
+            systemProperty 'cmi.benchmark.output',file(project.findProperty('benchmarkOutput') ?: 'build/benchmarks/phase-trace').absolutePath
+            systemProperty 'cmi.efficiency.baseline',project.findProperty('efficiencyBaseline') ?: 'src/main/resources'
+            maxHeapSize='3g'
+            workingDir=project.projectDir
+        }
         tasks.register('validateShaderEfficiencyUpdateGpu', JavaExec) {
             dependsOn 'compileStarfallHarness'
             classpath=files(layout.buildDirectory.dir('starfall-harness'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
             mainClass='ShaderEfficiencyUpdateGpuValidation'
-            ['baseline','candidate','counts','scenes','samples','full'].each { key ->
+            ['baseline','candidate','counts','scenes','samples','full','rules'].each { key ->
                 if(project.hasProperty('efficiency'+key.capitalize())) systemProperty 'cmi.efficiency.'+key,project.property('efficiency'+key.capitalize())
             }
             maxHeapSize='3g'
@@ -956,6 +972,7 @@ allprojects {
             destinationDirectory = layout.buildDirectory.dir('model-merge-harness')
             source fileTree('build/readonly-draw-reference') { include '*.java' }
             source 'scripts/particles/NativeAttachmentReplayGpuValidation.java'
+            source 'scripts/particles/TargetSkyMaskReplayGpuValidation.java'
             source 'scripts/particles/ShadowDrawGpuValidation.java'
             options.encoding = 'UTF-8'
         }
@@ -999,6 +1016,14 @@ allprojects {
                 if (taskName.startsWith('benchmark')) args '--benchmark'
                 workingDir = project.projectDir
             }
+        }
+        tasks.register('validateTargetSkyMaskReplayGpu', JavaExec) {
+            dependsOn modelMergeHarness, 'compilePackageIrisHarness'
+            doFirst { classpath=tasks.named('validateShaderEfficiencyGpu').get().classpath }
+            mainClass='TargetSkyMaskReplayGpuValidation'
+            if(project.hasProperty('riftR6'))systemProperty 'cmi.rift.r6','true'
+            systemProperty 'cmi.draw.snapshots',file(project.findProperty('nativeSkySnapshots') ?: 'build/analysis/frame-attribution-20261103-r5/inputs').absolutePath
+            workingDir=project.projectDir
         }
         tasks.register('validateNativeAttachmentReplayGpu', JavaExec) {
             dependsOn modelMergeHarness, 'compilePackageIrisHarness'

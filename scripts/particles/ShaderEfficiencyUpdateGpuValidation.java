@@ -32,6 +32,7 @@ public class ShaderEfficiencyUpdateGpuValidation extends HelixGpuValidation {
         boolean measureGridPreparation;
         // Offline R6 boundaries. Setup rewind is excluded; callbacks are inside the full-chain timer.
         Runnable resetExtra=()->{};
+        java.util.function.Consumer<String> checkpoint=label->{};
         java.util.function.Consumer<Programs> beforeUpdate=p->{},beforeContacts=p->{},afterContacts=p->{};
         // Experimental continuation driver; default retains the production two dispatches.
         java.util.function.Consumer<Programs> updateDispatch=this::dispatchDefault;
@@ -122,16 +123,19 @@ public class ShaderEfficiencyUpdateGpuValidation extends HelixGpuValidation {
             d.bindings();stars.bind(p.update,true);
             if(full&&scene.equals("recovery")){bind(22,restore);stars.bind(p.recovery,true);dispatch(p.recovery,Math.max(1,(d.n+63)/64));stars.bind(p.update,true);}
             beforeUpdate.accept(p);d.bindings();stars.bind(p.update,true);
+            checkpoint.accept("prepared");
             updateDispatch.accept(p);
+            checkpoint.accept("updated");
             if(full){
                 beforeContacts.accept(p);
-                DomeBodyContacts.run(d.gridProgram,p.contacts,d.q.pool,d.q.previous,d.output,d.q.counter,d.grid,time,dt,0,stars);afterContacts.accept(p);
+                DomeBodyContacts.run(d.gridProgram,p.contacts,d.q.pool,d.q.previous,d.output,d.q.counter,d.grid,time,dt,0,stars);afterContacts.accept(p);checkpoint.accept("contacts");
                 bind(0,d.q.pool);bind(1,d.output);bind(14,d.q.previous);
-                StormDepenetration.run(p.prepare,p.schedule,p.depen,time,stars);
+                StormDepenetration.run(p.prepare,p.schedule,p.depen,time,stars);checkpoint.accept("depenetrated");
                 if(stars.navigationReady())DomeGatherNavigation.run(p.path,time,stars,d.q.args);
+                checkpoint.accept("navigated");
                 d.bindings();bind(1,d.output);bind(22,feedback);bind(30,stamps);stars.bind(p.feedback,true);
                 dispatch(p.feedback,Math.max(1,(d.n+63)/64));
-                stars.commit();
+                stars.commit();checkpoint.accept("published");
             }
             }finally{GL15.glEndQuery(GL33.GL_TIME_ELAPSED);}
             double cpu=(System.nanoTime()-began)/1e6;
@@ -159,6 +163,18 @@ public class ShaderEfficiencyUpdateGpuValidation extends HelixGpuValidation {
     record Snapshot(Map<Integer,int[]> particles,int[] state,List<String> events) {}
     static int[] words(ByteBuffer data){int[] result=new int[data.capacity()/4];data.asIntBuffer().get(result);return result;}
     static void equal(Snapshot a,Snapshot b,String cell){
+        if(Boolean.getBoolean("cmi.efficiency.rules")){
+            check(a.particles.keySet().equals(b.particles.keySet()),cell+" identity set");
+            for(var entry:b.particles.entrySet()){
+                int[] row=entry.getValue(),original=a.particles.get(entry.getKey());
+                for(int word:new int[]{0,1,2,4,5,6})check(Float.isFinite(Float.intBitsToFloat(row[word])),cell+" finite position/velocity");
+                check(row[15]==original[15],cell+" material/type preserved");
+                check(row[3]==original[3],cell+" attack member identity preserved");
+                check(row[13]==original[13],cell+" fixture health/death state preserved");
+            }
+            check(new HashSet<>(b.events).size()==b.events.size(),cell+" no duplicate feedback rows");
+            return; // Dedicated gameplay regressions remain necessary before adopting a timed candidate.
+        }
         check(a.particles.keySet().equals(b.particles.keySet()),cell+" identity set");
         for(int key:a.particles.keySet())if(!Arrays.equals(a.particles.get(key),b.particles.get(key))){
             int word=Arrays.mismatch(a.particles.get(key),b.particles.get(key));
@@ -196,12 +212,13 @@ public class ShaderEfficiencyUpdateGpuValidation extends HelixGpuValidation {
                             Result b,c;if(sample%2==0){b=frame.run(baseline,full);c=frame.run(candidate,full);}else{c=frame.run(candidate,full);b=frame.run(baseline,full);}
                             rows.add(cell+","+sample+","+b.gpu+","+c.gpu+","+b.cpu+","+c.cpu);
                         }
-                        Files.write(out.resolve("samples.csv"),rows);System.out.println("Exact + timed "+cell);
+                        Files.write(out.resolve("samples.csv"),rows);System.out.println((Boolean.getBoolean("cmi.efficiency.rules")?"Rule smoke (not gameplay qualification) + timed ":"Exact + timed ")+cell);
                     }
                 }
             }
+            Files.writeString(out.resolve("gate-mode.txt"),Boolean.getBoolean("cmi.efficiency.rules")?"rule smoke only: identities, finite kinematics, type, member, health/death, duplicate event rows; dedicated gameplay regressions required before adoption\n":"strict canonical equality\n");
             check(GL11.glGetError()==0,"final GL state");Files.writeString(out.resolve("finished.txt"),"checks="+checks+"\n");
-            if(failures.isEmpty())Files.writeString(out.resolve("complete.txt"),"checks="+checks+"\n");
+            if(failures.isEmpty())Files.writeString(out.resolve(Boolean.getBoolean("cmi.efficiency.rules")?"rule-smoke-complete.txt":"complete.txt"),"checks="+checks+"\n");
         }finally{
             Files.write(out.resolve("samples.csv"),rows);Files.write(out.resolve("validation-failures.txt"),failures);
             GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();

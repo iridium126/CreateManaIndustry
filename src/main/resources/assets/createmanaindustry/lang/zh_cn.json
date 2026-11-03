@@ -636,5 +636,12 @@
   "createmanaindustry.configuration.stormLodDistance": "远景成员距离上限",
   "createmanaindustry.configuration.stormLodDistance.tooltip": "显示与订阅距离，单位为格，受服务端上限约束。0 关闭远景成员。",
   "createmanaindustry.configuration.sameFateMaxParticles": "同命粒子容量",
-  "createmanaindustry.configuration.sameFateMaxParticles.tooltip": "共享 GPU 池内飘带、星点与消散记录的最大数量。"
+  "createmanaindustry.configuration.sameFateMaxParticles.tooltip": "共享 GPU 池内飘带、星点与消散记录的最大数量。",
+  "createmanaindustry.configuration.riftSkyClipping": "裂口天空裁剪",
+  "createmanaindustry.configuration.riftSkyClipping.tooltip": "裁剪目标天空；光照和历史累积可能不同。",
+  "createmanaindustry.configuration.riftCulling": "裂口剔除",
+  "createmanaindustry.configuration.riftCulling.tooltip": "跳过不可见裂口的视觉工作。战斗继续运行；深度不可用时回退主视锥。",
+  "createmanaindustry.configuration.riftCulling.NONE": "不剔除",
+  "createmanaindustry.configuration.riftCulling.FRUSTUM": "主视锥",
+  "createmanaindustry.configuration.riftCulling.FRUSTUM_DEPTH": "主视锥＋深度"
 }

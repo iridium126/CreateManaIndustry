@@ -15,6 +15,7 @@ public abstract class JuliaSamplerMixin {
     @Inject(method="addCompositeSamplers",at=@At("TAIL"))
     private static void cmi$julia(SamplerHolder samplers,RenderTargets targets,CallbackInfo ci) {
         samplers.addDynamicSampler(JuliaProjection::texture,"CmiJuliaHit");
+        samplers.addDynamicSampler(com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility::texture,"CmiRiftVisibility");
         samplers.addDynamicSampler(()->{
             var pipeline=net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable();
             if(pipeline instanceof com.iridium126.createmanaindustry.client.render.shaderpack.RiftIrisPipeline rift&&rift.cmi$targetSky()!=null)return rift.cmi$targetSky().texture();

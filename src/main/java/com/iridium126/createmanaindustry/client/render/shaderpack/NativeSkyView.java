@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.client.render.shaderpack;
 import com.google.common.collect.*;
 import com.iridium126.createmanaindustry.client.allaystorm.rift.*;
 import com.iridium126.createmanaindustry.mixin.iris.NativeSkyPipelineAccess;
+import com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import it.unimi.dsi.fastutil.objects.Object2ObjectMaps;
@@ -53,8 +54,16 @@ public final class NativeSkyView {
     private final ImmutableSet<Integer> flipped;
     private CenterDepthSampler centerDepth;
     private int width,height,depthVersion;
-    private boolean initialized,rendered;
+    private boolean initialized,rendered,conditionalTransfersSafe,clipContract,lastClipping;
+    private static boolean clippingFrame;
+    public static boolean clippingFrame(){return clippingFrame;}
+    public boolean qualifiedDepth(int w,int h){return initialized&&width==w&&height==h&&conditionalTransfersSafe;}
     private RiftRenderFrame published;
+    public Map<String,Object> visibilityMetadata(){
+        boolean requested=com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.riftSkyClipping;
+        String reason=!requested?"disabled":!clipContract?"pack/viewport clipping not qualified":!conditionalTransfersSafe?"mipmap input ownership/format not qualified":!lastClipping?"full initialization or resized replay":"terminal mask with protected global history pixels; execution GPU-conditional";
+        return Map.of("requested",requested,"effective",ready()&&lastClipping,"reason",reason,"conditional_transfers_qualified",conditionalTransfersSafe,"visibility",com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.metadata());
+    }
 
     public static ShaderInstance override(ShaderKey key){return active==null?null:active.skyShaders.get(key);}
     public boolean ready(){var frame=RiftRenderFrame.current();return rendered&&frame!=null&&published==frame&&frame.matches(((RiftIrisPipeline)pipeline).cmi$riftGeneration(),width,height)&&JuliaProjection.ready(frame);}
@@ -80,6 +89,8 @@ public final class NativeSkyView {
         }
         if(main==null)throw new IOException("No effective native sky program");
         output=main.getDirectives().getDrawBuffers()[0];
+        var viewportContract=main.getDirectives().getViewportScale();
+        clipContract=family.equals("complementary")&&viewportContract.scale()==1&&viewportContract.viewportX()==0&&viewportContract.viewportY()==0;
         var keys=List.of(ShaderKey.SKY_BASIC,ShaderKey.SKY_BASIC_COLOR,ShaderKey.SKY_TEXTURED,ShaderKey.SKY_TEXTURED_COLOR);
         for(var key:keys)for(int buffer:resolver.resolve(key.getProgram()).orElseThrow(()->new IOException("Missing native "+key)).getDirectives().getDrawBuffers()){writes.add(buffer);skyWrites.add(buffer);}
         vanillaClouds=programs.getPackDirectives().getCloudSetting()!=net.irisshaders.iris.shaderpack.properties.CloudSetting.OFF;
@@ -90,6 +101,9 @@ public final class NativeSkyView {
         try(var textureState=new SkyTextureState();var state=new SkyRenderState()) {
         depth=new DepthTexture("cmi_target_sky_depth",width,height,DepthBufferFormat.DEPTH24);
         targets=new NativeSkyTargets(width,height,depth.getTextureId(),programs.getPackDirectives(),access.cmi$targets(),access.cmi$sourceFlips(),writes);
+        conditionalTransfersSafe=family.equals("complementary");
+        for(var array:selected.values())for(var source:array)if(source!=null)for(int mip:source.getDirectives().getMipmappedBuffers())
+            if(!writes.contains(mip)||targets.getOrCreate(mip).getInternalFormat().getPixelFormat().isInteger())conditionalTransfersSafe=false;
         centerDepth=new CenterDepthSampler(targets::getDepthTexture,programs.getPackDirectives().getCenterDepthHalfLife());
         uniforms=programs.getPack().customUniforms.build(holder->CommonUniforms.addNonDynamicUniforms(holder,programs.getPack().getIdMap(),programs.getPackDirectives(),notifier));
         skyFramebuffer=targets.createFramebufferWritingToMain(new int[]{skyWrites.stream().min(Integer::compare).orElseThrow()});
@@ -140,63 +154,95 @@ public final class NativeSkyView {
     }
 
     public void draw(float partial) {
-        var mc=Minecraft.getInstance();var snapshot=AllaySkyProvider.rift();
-        if(snapshot==null||snapshot.state()!=com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftSnapshot.OPEN)return;
-        var captured=CapturedRenderingState.INSTANCE;view.set(captured.getGbufferModelView());projection.set(captured.getGbufferProjection());
-        int framebuffer=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING),read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING),program=GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
-        int[] viewport=new int[4];GL11.glGetIntegerv(GL11.GL_VIEWPORT,viewport);
-        var shader=RenderSystem.getShader();
-        boolean depthTest=GL11.glIsEnabled(GL11.GL_DEPTH_TEST),mask=GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK),blend=GL11.glIsEnabled(GL11.GL_BLEND),cull=GL11.glIsEnabled(GL11.GL_CULL_FACE);
-        int depthFunction=GL11.glGetInteger(GL11.GL_DEPTH_FUNC);
-        var phase=pipeline.getPhase();
-        float[] shaderColor=RenderSystem.getShaderColor().clone();
-        var textureState=new SkyTextureState();
-        try(var state=new SkyRenderState()) {
-            state.prepare();
-            resize();
-            {
-                for(var clear:clears) {
-                    if(initialized&&(!skyWrites.contains(clear.buffer())||clear.main()==skyFlips.contains(clear.buffer())))continue;
-                    clear.framebuffer().bind();
-                    var c=clear.color();
-                    if(clear.unsigned())GL30.glClearBufferuiv(GL11.GL_COLOR,0,new int[]{(int)c.x,(int)c.y,(int)c.z,(int)c.w});
-                    else if(clear.integer())GL30.glClearBufferiv(GL11.GL_COLOR,0,new int[]{(int)c.x,(int)c.y,(int)c.z,(int)c.w});
-                    else GL30.glClearBufferfv(GL11.GL_COLOR,0,new float[]{c.x,c.y,c.z,c.w});
-                }
-                initialized=true;
+        try(var whole=ParticleFrameStages.begin("rift.target.whole")) {
+            var mc=Minecraft.getInstance();var snapshot=AllaySkyProvider.rift();
+            if(snapshot==null||snapshot.state()!=com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftSnapshot.OPEN)return;
+            clippingFrame=clipContract&&qualifiedDepth(mc.getMainRenderTarget().width,mc.getMainRenderTarget().height)&&targets.getOrCreate(output).getWidth()==width&&targets.getOrCreate(output).getHeight()==height&&com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.clipping();
+            lastClipping=clippingFrame;
+            var captured=CapturedRenderingState.INSTANCE;view.set(captured.getGbufferModelView());projection.set(captured.getGbufferProjection());
+            int framebuffer=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING),read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING),program=GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            int[] viewport=new int[4];GL11.glGetIntegerv(GL11.GL_VIEWPORT,viewport);
+            var shader=RenderSystem.getShader();
+            boolean depthTest=GL11.glIsEnabled(GL11.GL_DEPTH_TEST),mask=GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK),blend=GL11.glIsEnabled(GL11.GL_BLEND),cull=GL11.glIsEnabled(GL11.GL_CULL_FACE);
+            int depthFunction=GL11.glGetInteger(GL11.GL_DEPTH_FUNC);
+            var phase=pipeline.getPhase();
+            float[] shaderColor=RenderSystem.getShaderColor().clone();
+            var textureState=new SkyTextureState();
+            // Start before automatic resource closure so the restoration range includes it.
+            ParticleFrameStages.Scope restoration=null;
+            try(var state=new SkyRenderState()) {
+                try {
+                  try(var preparation=ParticleFrameStages.begin("rift.target.prepare")) {
+                      state.prepare();
+                      resize();
+                      {
+                          for(var clear:clears) {
+                              if(initialized&&(!skyWrites.contains(clear.buffer())||clear.main()==skyFlips.contains(clear.buffer())))continue;
+                              clear.framebuffer().bind();
+                              var c=clear.color();
+                              if(clear.unsigned())GL30.glClearBufferuiv(GL11.GL_COLOR,0,new int[]{(int)c.x,(int)c.y,(int)c.z,(int)c.w});
+                              else if(clear.integer())GL30.glClearBufferiv(GL11.GL_COLOR,0,new int[]{(int)c.x,(int)c.y,(int)c.z,(int)c.w});
+                              else GL30.glClearBufferfv(GL11.GL_COLOR,0,new float[]{c.x,c.y,c.z,c.w});
+                          }
+                          initialized=true;
+                      }
+                      skyFramebuffer.bind();RenderSystem.viewport(0,0,width,height);RenderSystem.depthMask(true);GL30.glClearBufferfv(GL11.GL_DEPTH,0,new float[]{1});
+                      SkyRenderScope.enter(snapshot.sky(),Math.max(0,mc.level.getGameTime()-snapshot.sky().gameTime()));
+                      notifier.onNewFrame();uniforms.update();
+                  }
+                  try(var sky=ParticleFrameStages.begin("rift.target.sky")) {
+                      active=this;
+                      // renderSky's FIRST dome uses RenderSystem.getShader(), unlike its later sun/stars.
+                      // Reusing the incoming terrain/entity shader would write the dome into SOURCE gbuffers.
+                      pipeline.setPhase(WorldRenderingPhase.SKY);
+                      RenderSystem.setShader(()->skyShaders.get(ShaderKey.SKY_BASIC));
+                      mc.levelRenderer.renderSky(view,projection,partial,mc.gameRenderer.getMainCamera(),false,()->{});
+                      active=null;
+                      pipeline.setPhase(phase);
+                  }
+                  try(var copies=ParticleFrameStages.begin("rift.target.depth-copy")) {
+                      if(RiftVisibility.conditional()){
+                          RiftTargetTransfer.copy(targets.getDepthTexture(),targets.getDepthTextureNoHand().getTextureId(),width,height,true);
+                          RiftTargetTransfer.copy(targets.getDepthTexture(),targets.getDepthTextureNoTranslucents().getTextureId(),width,height,true);
+                      }else{targets.copyPreHandDepth();targets.copyPreTranslucentDepth();}
+                  }
+                  if(deferredCount>0)try(var deferred=ParticleFrameStages.begin("rift.target.deferred")) {
+                      for(int i=0;i<deferredCount;i++)renderers.get(i).renderAll();
+                  }
+                  if(vanillaClouds)try(var cloud=ParticleFrameStages.begin("rift.target.clouds")){active=this;pipeline.setPhase(WorldRenderingPhase.CLOUDS);clouds.draw(view,projection,partial,null);active=null;pipeline.setPhase(phase);}
+                  if(deferredCount<renderers.size())try(var composite=ParticleFrameStages.begin("rift.target.composite")) {
+                      for(int i=deferredCount;i<renderers.size();i++)renderers.get(i).renderAll();
+                  }
+                  // Iris final-pass semantics: persistent flipped results become next frame's main history.
+                  try(var publication=ParticleFrameStages.begin("rift.target.history-publish")) {
+                      for(var history:histories) {
+                          var target=targets.getOrCreate(history.buffer());history.source().bind();
+                          if(RiftVisibility.conditional()){
+                              int source=GL30.glGetFramebufferAttachmentParameteri(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+                              RiftTargetTransfer.copy(source,target.getMainTexture(),target.getWidth(),target.getHeight(),false);
+                          }else{
+                              RenderSystem.bindTexture(target.getMainTexture());
+                              GlStateManager._glCopyTexSubImage2D(GL11.GL_TEXTURE_2D,0,0,0,0,0,target.getWidth(),target.getHeight());
+                          }
+                      }
+                      rendered=true;published=RiftRenderFrame.current();
+                  }
+                } finally {restoration=ParticleFrameStages.begin("rift.target.restore");}
+            } finally {
+                if(restoration==null)restoration=ParticleFrameStages.begin("rift.target.restore");
+                try {
+                    clippingFrame=false;active=null;SkyRenderScope.leave();
+                    pipeline.setPhase(phase);
+                    net.irisshaders.iris.gl.program.ProgramUniforms.clearActiveUniforms();
+                    net.irisshaders.iris.gl.program.ProgramSamplers.clearActiveSamplers();
+                    GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,framebuffer);GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,read);RenderSystem.viewport(viewport[0],viewport[1],viewport[2],viewport[3]);
+                    RenderSystem.setShader(()->shader);GlStateManager._glUseProgram(program);RenderSystem.setShaderColor(shaderColor[0],shaderColor[1],shaderColor[2],shaderColor[3]);
+                    RenderSystem.depthMask(mask);RenderSystem.depthFunc(depthFunction);
+                    if(depthTest)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();
+                    if(cull)RenderSystem.enableCull();else RenderSystem.disableCull();
+                    textureState.close();
+                } finally {if(restoration!=null)restoration.close();}
             }
-            skyFramebuffer.bind();RenderSystem.viewport(0,0,width,height);RenderSystem.depthMask(true);GL30.glClearBufferfv(GL11.GL_DEPTH,0,new float[]{1});
-            SkyRenderScope.enter(snapshot.sky(),Math.max(0,mc.level.getGameTime()-snapshot.sky().gameTime()));
-            notifier.onNewFrame();uniforms.update();active=this;
-            // renderSky's FIRST dome uses RenderSystem.getShader(), unlike its later sun/stars.
-            // Reusing the incoming terrain/entity shader would write the dome into SOURCE gbuffers.
-            pipeline.setPhase(WorldRenderingPhase.SKY);
-            RenderSystem.setShader(()->skyShaders.get(ShaderKey.SKY_BASIC));
-            mc.levelRenderer.renderSky(view,projection,partial,mc.gameRenderer.getMainCamera(),false,()->{});
-            active=null;
-            pipeline.setPhase(phase);
-            targets.copyPreHandDepth();targets.copyPreTranslucentDepth();
-            for(int i=0;i<deferredCount;i++)renderers.get(i).renderAll();
-            if(vanillaClouds){active=this;pipeline.setPhase(WorldRenderingPhase.CLOUDS);clouds.draw(view,projection,partial,null);active=null;pipeline.setPhase(phase);}
-            for(int i=deferredCount;i<renderers.size();i++)renderers.get(i).renderAll();
-            // Iris final-pass semantics: persistent flipped results become next frame's main history.
-            for(var history:histories) {
-                var target=targets.getOrCreate(history.buffer());history.source().bind();
-                RenderSystem.bindTexture(target.getMainTexture());
-                GlStateManager._glCopyTexSubImage2D(GL11.GL_TEXTURE_2D,0,0,0,0,0,target.getWidth(),target.getHeight());
-            }
-            rendered=true;published=RiftRenderFrame.current();
-        } finally {
-            active=null;SkyRenderScope.leave();
-            pipeline.setPhase(phase);
-            net.irisshaders.iris.gl.program.ProgramUniforms.clearActiveUniforms();
-            net.irisshaders.iris.gl.program.ProgramSamplers.clearActiveSamplers();
-            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,framebuffer);GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,read);RenderSystem.viewport(viewport[0],viewport[1],viewport[2],viewport[3]);
-            RenderSystem.setShader(()->shader);GlStateManager._glUseProgram(program);RenderSystem.setShaderColor(shaderColor[0],shaderColor[1],shaderColor[2],shaderColor[3]);
-            RenderSystem.depthMask(mask);RenderSystem.depthFunc(depthFunction);
-            if(depthTest)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();
-            if(cull)RenderSystem.enableCull();else RenderSystem.disableCull();
-            textureState.close();
         }
     }
     private void resize() {

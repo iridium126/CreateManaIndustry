@@ -149,6 +149,11 @@
     "allvr.AllvrEntityMixin"
   ],
   "client": [
+    "render.ParticleSubmissionTimingMixin",
+    "render.BatchSubmissionTimingMixin",
+    "iris.TranslucentBoundaryTimingMixin",
+    "irisveil.BeforeDeferredTimingMixin",
+    "render.WorldFrameTimingMixin",
     "ParticleClientFrameMixin",
     "allaystorm.AllayScopedSkyTimeMixin",
     "allaystorm.AllayClientTimeMixin",
@@ -213,6 +218,7 @@
     "iris.NativeSkyShaderMapMixin",
     "iris.StormCloudProgramMixin",
     "iris.StormCloudTimingMixin",
+    "iris.RiftMipmapMixin",
     "iris.RiftCommonUniformsMixin",
     "iris.RiftDimensionProgramsMixin",
     "irisveil.MixinIrisShadowRenderer",

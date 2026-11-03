@@ -638,5 +638,12 @@
   "createmanaindustry.configuration.stormLodDistance": "Distant member limit",
   "createmanaindustry.configuration.stormLodDistance.tooltip": "Display/subscription distance in blocks, capped by the server. 0 disables distant members.",
   "createmanaindustry.configuration.sameFateMaxParticles": "Shared Fate particle capacity",
-  "createmanaindustry.configuration.sameFateMaxParticles.tooltip": "Maximum ribbon, star and dissolution records within the shared GPU pool."
+  "createmanaindustry.configuration.sameFateMaxParticles.tooltip": "Maximum ribbon, star and dissolution records within the shared GPU pool.",
+  "createmanaindustry.configuration.riftSkyClipping": "Clip rift sky",
+  "createmanaindustry.configuration.riftSkyClipping.tooltip": "Clip target sky; lighting and history may differ.",
+  "createmanaindustry.configuration.riftCulling": "Rift culling",
+  "createmanaindustry.configuration.riftCulling.tooltip": "Skip hidden portal visuals. Combat continues; unavailable depth falls back to frustum.",
+  "createmanaindustry.configuration.riftCulling.NONE": "None",
+  "createmanaindustry.configuration.riftCulling.FRUSTUM": "Main frustum",
+  "createmanaindustry.configuration.riftCulling.FRUSTUM_DEPTH": "Main frustum + depth"
 }

@@ -13,12 +13,20 @@ import statistics
 from collections import Counter
 
 
-def load(path):
+def yaw_delta(a,b):
+    return (a-b+180)%360-180
+
+
+def camera_matches(a,b):
+    return len(a)==len(b)==6 and all(abs(yaw_delta(x,y) if i==3 else x-y)<=.001 for i,(x,y) in enumerate(zip(a,b)))
+
+
+def load(path, production_builds=False):
     path=Path(path);meta=json.loads(path.read_text())
     with path.with_suffix('.csv').open(newline='') as stream:rows=list(csv.DictReader(stream))
     for key in ('dimension','size','fps_limit','vsync','gpu','driver','context','engine_source_sha256','diagnostic_receipt_sha256','auto_throttle'):
         if key not in meta:raise ValueError('missing capture context: '+key)
-    if meta['engine_source_sha256']=='unavailable' or meta['diagnostic_receipt_sha256'] in ('none','unavailable'):raise ValueError('unqualified/missing diagnostic source receipt')
+    if meta['engine_source_sha256']=='unavailable' or (not production_builds and meta['diagnostic_receipt_sha256'] in ('none','unavailable')):raise ValueError('unqualified/missing diagnostic source receipt')
     if meta.get('invalid_reason') or len(rows)<1000 or meta.get('measured_seconds',0)<30:
         raise ValueError(f'{path}: invalid/short capture; requires 30 seconds and 1000 frames')
     values=[float(row['interval_ms']) for row in rows]
@@ -31,8 +39,11 @@ def load(path):
     signature=[]
     for key in ('x','y','z','yaw_degrees','pitch_degrees','vertical_fov_degrees'):
         axis=[float(p[key]) for p in poses]
+        if key=='yaw_degrees' and all(math.isfinite(x) for x in axis):
+            axis=[yaw_delta(x,axis[0]) for x in axis]
+            origin=float(poses[0][key])
         if not all(math.isfinite(x) for x in axis) or max(axis)-min(axis)>.001:raise ValueError('camera moved or camera/FOV unavailable')
-        signature.append(statistics.median(axis))
+        signature.append(yaw_delta(origin+statistics.median(axis),0) if key=='yaw_degrees' else statistics.median(axis))
     for a,b in zip(rows,poses):
         if a['scene_frame']!=b['scene_frame']:raise ValueError('camera frame mismatch')
     counts={}
@@ -45,6 +56,8 @@ def load(path):
 
 
 def compare(manifest):
+    if manifest.get('comparison') == 'production-builds':
+        return compare_builds(manifest)
     rounds=manifest.get('rounds',[]);out=[];processes=set();fixed_context=None;fixed_camera=None
     for index,round in enumerate(rounds):
         aa=[load(p) for p in round['aa']];ab=[load(p) for p in round['ab']];candidate_aa=[load(p) for p in round.get('candidate_aa',[])]
@@ -58,7 +71,7 @@ def compare(manifest):
         if fixed_context is not None and current_context!=fixed_context:raise ValueError('three process rounds must use the same fixed scene context')
         fixed_context=current_context
         if fixed_camera is None:fixed_camera=aa[0]['camera']
-        if any(any(abs(a-b)>.001 for a,b in zip(c['camera'],fixed_camera)) for c in captures):raise ValueError('camera poses differ; never compare orientations')
+        if any(not camera_matches(c['camera'],fixed_camera) for c in captures):raise ValueError('camera poses differ; never compare orientations')
         for c in captures:
             if any(abs(c['counts'][k]-aa[0]['counts'][k])>max(1,aa[0]['counts'][k]*.001) for k in ('live','model_input')):raise ValueError('unmatched simulated population')
             if any(abs(c['attack_distribution'].get(k,0)-aa[0]['attack_distribution'].get(k,0))>.05 for k in set(c['attack_distribution'])|set(aa[0]['attack_distribution'])):raise ValueError('unmatched attack stages')
@@ -76,6 +89,66 @@ def compare(manifest):
         out.append(dict(round=index+1,aa=aa,candidate_aa=candidate_aa,ab=ab,p50_gain_ms=gain,threshold_ms=threshold,passed=gain>threshold and tails))
     return dict(rounds=out,frame_gate_pass=len(out)>=3 and all(r['passed'] for r in out),
                 production_replacement=False,reason='Frame gate only. Candidate still requires full physics/event, visual, compatibility and lifecycle qualification.')
+
+
+def compare_builds(manifest):
+    """Explicit source-build pairing; hardware admission receipts do not qualify production GL."""
+    expected=manifest['builds']
+    def identity(c):
+        m=c['metadata']
+        return {k:m.get(k) for k in ('build_sha256','engine_source_sha256')}
+    for side in ('baseline','candidate'):
+        for key in ('build_sha256','engine_source_sha256'):
+            if not re.fullmatch(r'[0-9a-f]{64}',expected[side].get(key,'')):
+                raise ValueError('explicit SHA-256 build/source identities required')
+    if expected['baseline']['build_sha256']==expected['candidate']['build_sha256']:
+        raise ValueError('same build cannot establish optimization gain')
+    def context(c):
+        m=c['metadata']
+        # Only build identity and session may differ; retain pack source/options and shadow quality.
+        return tuple(str(m.get(k,'unavailable')) for k in ('dimension','size','fps_limit','vsync','gpu','driver','auto_throttle','measurement_mode','shadow_quality'))+(re.sub(r'; (?:session|backend|engine)=[^;]*','',m['context']),)
+    out=[];seen=set();fixed_context=None;fixed_camera=None;rift_configs={}
+    for index,group in enumerate(manifest.get('rounds',[])):
+        captures={k:[load(p,True) for p in group.get(k,[])] for k in ('aa','candidate_aa','ab')}
+        if any(len(v)!=2 for v in captures.values()):raise ValueError('baseline AA, candidate AA and AB pairs required')
+        aa,ca,ab=(captures[k] for k in ('aa','candidate_aa','ab'))
+        if any(pair[0]['path']==pair[1]['path'] for pair in (aa,ca)):
+            raise ValueError('A/A requires two distinct windows')
+        for c in aa+[ab[0]]:
+            if identity(c)!=expected['baseline']:raise ValueError('baseline build/source mismatch')
+        for c in ca+[ab[1]]:
+            if identity(c)!=expected['candidate']:raise ValueError('candidate build/source mismatch')
+        all_c=aa+ca+ab
+        if fixed_context is None:fixed_context=context(aa[0]);fixed_camera=aa[0]['camera']
+        ids=set()
+        for c in all_c:
+            m=c['metadata']
+            config=json.dumps(m.get('rift_config','unavailable'),sort_keys=True)
+            build=m['build_sha256']
+            if build in rift_configs and config!=rift_configs[build]:raise ValueError('rift configuration changed within a production build')
+            rift_configs[build]=config
+            if m.get('backend')!='production-opengl' or m.get('auto_throttle') is not False:raise ValueError('production OpenGL with auto throttle off required')
+            if m.get('vsync') is not False or m.get('fps_limit')!=260:raise ValueError('VSync off and Minecraft unlimited (260) required')
+            if m.get('measurement_mode')!='instrumented-frame-window' or m.get('shadow_quality')!='FULL':raise ValueError('matched FULL instrumented frame windows required')
+            if context(c)!=fixed_context:raise ValueError('unmatched scene/settings/measurement context')
+            if not camera_matches(c['camera'],fixed_camera):raise ValueError('camera poses differ')
+            if any(abs(c['counts'][k]-aa[0]['counts'][k])>max(1,aa[0]['counts'][k]*.001) for k in ('live','model_input')):raise ValueError('unmatched simulated population')
+            if any(abs(c['attack_distribution'].get(k,0)-aa[0]['attack_distribution'].get(k,0))>.05 for k in set(c['attack_distribution'])|set(aa[0]['attack_distribution'])):raise ValueError('unmatched attack stages')
+            pid=(m.get('process_id'),m.get('process_started'))
+            if None in pid or 'unavailable' in pid:raise ValueError('process identity unavailable')
+            ids.add(pid)
+        baseline_ids={(c['metadata']['process_id'],c['metadata']['process_started']) for c in aa+[ab[0]]}
+        candidate_ids={(c['metadata']['process_id'],c['metadata']['process_started']) for c in ca+[ab[1]]}
+        if baseline_ids&candidate_ids:raise ValueError('different production builds require separate client processes')
+        if seen&ids:raise ValueError('rounds require independent client processes')
+        seen.update(ids)
+        gain=ab[1]['average_fps']/ab[0]['average_fps']-1
+        noise=max(abs(pair[1]['average_fps']/pair[0]['average_fps']-1) for pair in (aa,ca))
+        tails=all(ab[1]['times'][p]-ab[0]['times'][p]<=max(abs(pair[1]['times'][p]-pair[0]['times'][p]) for pair in (aa,ca)) for p in ('p95','p99'))
+        out.append(dict(round=index+1,**captures,average_fps_gain=gain,aa_noise=noise,tails_pass=tails,
+                        required_saving_ms=1000/ab[0]['average_fps']/6,passed=gain>=.20 and gain>noise and tails))
+    return dict(rounds=out,frame_gate_pass=len(out)>=3 and all(r['passed'] for r in out),production_replacement=False,
+                reason='20% average FPS gate for matched instrumented windows; user visual/physics/lifecycle acceptance still required.')
 
 
 if __name__=='__main__':

@@ -10,6 +10,10 @@
 
 ## 文档索引
 
+GPU 粒子最近三次提交归因、新诊断采集及 +20% FPS 验收见 [2026-11-03 整帧归因](benchmarks/particle-frame-attribution-2026-11-03.md)。
+
+当前裂口裁剪／三档剔除、计算缓存复测结果和 `runClient` 定向采集见 [R6 实施报告](benchmarks/particle-frame-attribution-r6-2026-11-03.md)。历史严格等价标准下的拒绝证据及计算链首次分歧见 [R5 报告](benchmarks/particle-frame-attribution-r5-2026-11-03.md)。
+
 | 文档 | 内容 | 状态 |
 | --- | --- | --- |
 | [building.md](building.md) | Gradle职责、依赖范围、缓存、重映射、打包与验证 | ✅ |

@@ -33,7 +33,8 @@ public final class ClientConfig {
     private static ModConfigSpec.IntValue PACKAGE_COLLISION_MAX_SECTIONS;
     private static ModConfigSpec.DoubleValue GRID_SNAP_THRESHOLD;
     private static ModConfigSpec.IntValue PARTITION_MAX_PARTICLES, SAME_FATE_MAX_PARTICLES;
-    private static ModConfigSpec.BooleanValue ALLVR_LOD;
+    private static ModConfigSpec.BooleanValue ALLVR_LOD, RIFT_SKY_CLIPPING;
+    private static ModConfigSpec.EnumValue<RiftCulling> RIFT_CULLING;
 
     static {
         BUILDER.comment("Volumetric mist rendering options.").push("rendering");
@@ -78,6 +79,8 @@ public final class ClientConfig {
                 "Lower modes can affect voxelization/GI/volumetrics. Unproven no-receiving contracts preserve native rendering and receiving, never force self-drawing.",
                 "Feathers and distant LOD never cast shadows. Changes apply at a frame boundary.")
                 .defineEnum("shaderPackShadowQuality", ParticleShadowQuality.FULL);
+        RIFT_SKY_CLIPPING=BUILDER.comment("Clip target sky to the current portal; sky history and lighting may differ.").define("riftSkyClipping",true);
+        RIFT_CULLING=BUILDER.comment("NONE, FRUSTUM, FRUSTUM_DEPTH. Unqualified depth falls back to frustum. Combat continues.").defineEnum("riftCulling",RiftCulling.FRUSTUM_DEPTH);
         ALLAY_FEATHER_RATE = BUILDER.comment("Feathers per second at R=32, scaled by (R/32)^2. 0 stops new feathers; existing ones finish their 60-second lifetime.")
                 .defineInRange("allayFeatherMaxSpawnPerSecond",1000,0,2000);
         ALLAY_GOLD_RATE = BUILDER.comment("Gold particles per second at R=32, scaled by (R/32)^2. 0 stops new particles.")
@@ -143,7 +146,8 @@ public final class ClientConfig {
     public static int packageCollisionMaxSections = 256;
     public static double gridSnapThreshold = .75;
     public static int partitionMaxParticles = 131072, sameFateMaxParticles = 131072;
-    public static boolean allvrLod = true;
+    public static boolean allvrLod = true, riftSkyClipping=true;
+    public static RiftCulling riftCulling=RiftCulling.FRUSTUM_DEPTH;
 
     private ClientConfig() {}
 
@@ -175,6 +179,7 @@ public final class ClientConfig {
             partitionMaxParticles = PARTITION_MAX_PARTICLES.get();
             sameFateMaxParticles = SAME_FATE_MAX_PARTICLES.get();
             allvrLod = ALLVR_LOD.get();
+            riftSkyClipping=RIFT_SKY_CLIPPING.get();riftCulling=RIFT_CULLING.get();
         }
     }
 

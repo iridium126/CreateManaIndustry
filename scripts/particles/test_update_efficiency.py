@@ -33,6 +33,10 @@ class ReplacementGateTest(unittest.TestCase):
         self.assertTrue(evaluate(self.ab, self.aa, {self.cell})['passed'])
         self.ab[2] = self.make('no-gain', 1)
         self.assertFalse(evaluate(self.ab, self.aa, {self.cell})['passed'])
+    def test_rule_smoke_cannot_authorize_production_replacement(self):
+        (self.ab[0]/'rule-smoke-complete.txt').write_text('checks=100')
+        with self.assertRaisesRegex(ValueError, 'not gameplay qualification'):
+            evaluate(self.ab,self.aa,{self.cell})
 
     def test_tail_regression_blocks_an_apparent_median_win(self):
         for directory in self.ab:

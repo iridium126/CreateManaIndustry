@@ -19,7 +19,8 @@ public record RiftRenderFrame(long number,long generation,int width,int height,f
         static boolean active(){return foundry.veil.api.client.render.VeilLevelPerspectiveRenderer.isRenderingPerspective();}
     }
     public static RiftRenderFrame begin(long generation,int width,int height,float partial,Vec3 camera,Matrix4fc view,Matrix4fc projection){
-        return current=new RiftRenderFrame(++counter,generation,width,height,partial,camera,view,projection,new Matrix4f(projection).mul(view).invert());
+        current=new RiftRenderFrame(++counter,generation,width,height,partial,camera,view,projection,new Matrix4f(projection).mul(view).invert());
+        return current;
     }
     public static void clear(){current=null;}
     public boolean matches(long generation,int width,int height){return this.generation==generation&&this.width==width&&this.height==height;}

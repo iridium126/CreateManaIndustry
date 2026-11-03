@@ -13,7 +13,7 @@ import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
 
-/** Sky color is replaced before terrain, without hiding terrain on the far side of the plane. */
+/** Compose after opaque depth is complete, before translucent consumers. */
 @EventBusSubscriber(modid=CreateManaIndustry.MODID, value=Dist.CLIENT)
 public final class VanillaRiftRenderer {
     private static String status="awaiting vanilla sky stage";
@@ -25,14 +25,17 @@ public final class VanillaRiftRenderer {
                 &&net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable() instanceof net.irisshaders.iris.pipeline.IrisRenderingPipeline; }
     }
     @SubscribeEvent public static void stage(RenderLevelStageEvent event) {
-        if (event.getStage()!=RenderLevelStageEvent.Stage.AFTER_SKY || nativePack() || AllaySkyProvider.dimension() || RiftRenderFrame.auxiliary()) return;
+        if (event.getStage()!=RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES || nativePack() || AllaySkyProvider.dimension() || RiftRenderFrame.auxiliary()) return;
         var mc=Minecraft.getInstance();var main=mc.getMainRenderTarget();float partial=event.getPartialTick().getGameTimeDeltaPartialTick(false);
         var frame=RiftRenderFrame.begin(0,main.width,main.height,partial,event.getCamera().getPosition(),event.getModelViewMatrix(),event.getProjectionMatrix());
+        RiftVisibility.begin(frame);if(!RiftVisibility.visible())return;
+        try(var visual=com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.begin("rift.visual.whole");var visibility=RiftVisibility.depth(VanillaSkyView.qualifiedDepth(main.width,main.height),main.getDepthTextureId())){
         JuliaProjection.draw(event.getModelViewMatrix(),event.getProjectionMatrix(),event.getPartialTick().getGameTimeDeltaPartialTick(false));
         if(!JuliaProjection.ready(frame)){status="vanilla mask not ready (no open summary or Julia resource)";return;}
         VanillaSkyView.draw(event.getModelViewMatrix(),event.getProjectionMatrix(),event.getPartialTick().getGameTimeDeltaPartialTick(false));
         if(!VanillaSkyView.ready(frame)){status="vanilla target sky not published for current frame";return;}
         status=draw(event.getModelViewMatrix(), event.getProjectionMatrix(), event.getCamera(), partial)?"vanilla composed frame="+frame.number():"vanilla composite shader/summary unavailable";
+        }catch(Exception error){throw new IllegalStateException("Rift visibility scope",error);}
     }
     private static boolean draw(Matrix4f view, Matrix4f projection, Camera camera, float partial) {
         var shader=AllaySkyShaders.shader;
@@ -54,6 +57,7 @@ public final class VanillaRiftRenderer {
             shader.safeGetUniform("CmiRift").set(rift);
             shader.safeGetUniform("CmiSkyContext").set(AllaySkyProvider.sky(partial));
             shader.setSampler("CmiJuliaHit",JuliaProjection.texture());
+            shader.setSampler("CmiRiftVisibility",RiftVisibility.texture());shader.safeGetUniform("CmiVisibilityGuard").set(RiftVisibility.guarded()?1:0);
             shader.setSampler("CmiTargetSky",VanillaSkyView.texture());
             shader.safeGetUniform("CmiSkyViewProjection").set(JuliaProjection.viewProjection());
             RiftVanillaComposite.draw(shader);
@@ -76,6 +80,7 @@ public final class VanillaRiftRenderer {
         shader.safeGetUniform("CmiInverseCameraView").set(new Matrix4f(cameraView).invert());
         shader.safeGetUniform("CmiRift").set(AllaySkyProvider.rift(Minecraft.getInstance().gameRenderer.getMainCamera().getPosition(),partial));
         shader.setSampler("CmiJuliaHit",JuliaProjection.texture());
+        shader.setSampler("CmiRiftVisibility",RiftVisibility.texture());shader.safeGetUniform("CmiVisibilityGuard").set(RiftVisibility.guarded()?1:0);
         shader.safeGetUniform("CmiSkyViewProjection").set(JuliaProjection.viewProjection());
     }
     public static net.minecraft.client.renderer.ShaderInstance clouds() {

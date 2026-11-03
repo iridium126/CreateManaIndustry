@@ -26,6 +26,8 @@
 
 无包使用`VanillaSkyView`及真实ShaderInstance合成链；Iris使用独立`NativeSkyView`程序、uniform图、附件、天空缓存和云历史，不创建第二客户端世界或渲染远处地形。目标基础着色器在首块几何前绑定，沿用Iris附件交换及alt→main历史；Bliss保留原生云合成，iterationT输出倍率还原，来源曝光／镜头效果只应用一次。CMI uniform在程序实际绑定时更新，局部窗口不写入来源sky-map、SH或反射缓存；来源只读附件禁止作为目标写入。重载／切包／尺寸变化重建所属资源，并恢复纹理、sampler、混合、写入掩码、scissor、深度、viewport及pipeline phase。
 
+客户端新增 `allayStorm.riftSkyClipping=true` 与 `allayStorm.riftCulling=FRUSTUM_DEPTH`，在主视图帧边界生效。剔除三档为 NONE、FRUSTUM、FRUSTUM_DEPTH；深度契约不可用时回退主视锥，辅助视图不复用主视图结果。裂口投影及目标回放在不透明深度完成后执行，同帧 GPU 条件标志同时保护回放和主场景消费；剔除不暂停战斗或传送。Complementary 使用末级掩码裁剪，无光影使用保守包围矩形，其他包暂保留完整回放。允许天空光照／云／历史差异，真实画面及性能仍待用户验收；配置、回退条件、验证边界及采集方法见 [R6 报告](benchmarks/particle-frame-attribution-r6-2026-11-03.md)。
+
 ## 原生云与光影契约
 
 只修改有效光影包已有云的密度；无包／无云／关云不补云墙。原生噪声坐标、风向、质量、占用判定、云高及历史保留。`StormCloudFrame`每个规范时间样本缓存中心、R、开口锥和强度，不新增网络或成员模拟；实际悦灵维度与目标天空作用域不施加来源云墙。

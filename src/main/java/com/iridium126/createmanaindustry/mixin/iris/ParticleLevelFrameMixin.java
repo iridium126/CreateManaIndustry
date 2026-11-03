@@ -18,9 +18,13 @@ public abstract class ParticleLevelFrameMixin {
     private void cmi$particleRenderScope(DeltaTracker delta, Operation<Void> original) {
         var engine = com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE;
         engine.enterLevelFrame((Object)this == Minecraft.getInstance().gameRenderer);
+        var timing=com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.begin("world.render");
+        boolean success=false;
         try {
             original.call(delta);
+            success=true;
         } finally {
+            if(timing!=null)timing.end(success);
             engine.leaveLevelFrame();
         }
     }

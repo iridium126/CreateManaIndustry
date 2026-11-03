@@ -7,13 +7,15 @@ import java.nio.charset.StandardCharsets;
 /** Immutable offline boundary of q²-.5. All radial intervals are retained, including tiny gaps. */
 public final class JuliaShape {
     public final float[] segments;
+    public final double xHalfExtent,radialHalfExtent;
     private final double frontRadius;
     private final double longHalfAxis;
     public final double entranceScale;
     public record ProjectionStyle(float weak,float gain) {}
     private JuliaShape(float[] segments,double frontRadius,double entranceScale) {
         this.segments=segments;this.frontRadius=frontRadius;this.entranceScale=entranceScale;
-        double extent=0;for(int i=0;i<segments.length;i+=2)extent=Math.max(extent,Math.abs(segments[i]));
+        double extent=0,radial=0;for(int i=0;i<segments.length;i+=2){extent=Math.max(extent,Math.abs(segments[i]));radial=Math.max(radial,Math.abs(segments[i+1]));}
+        xHalfExtent=extent;radialHalfExtent=radial;
         longHalfAxis=extent;
     }
     private static InputStream open(String name) throws IOException {

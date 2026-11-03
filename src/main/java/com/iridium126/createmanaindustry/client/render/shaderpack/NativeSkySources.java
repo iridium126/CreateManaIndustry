@@ -29,6 +29,7 @@ public final class NativeSkySources {
     }
     public static String isolate(String source,String family) {
         String next=readOnly(source);
+        if(family.equals("complementary")&&source.contains("cmiRiftMain_complementary"))next=clipTerminal(next);
         next=body(next,"cmiStormCloudActive","return false;");
         next=body(next,"cmiRayActive","return false;");
         next=body(next,"cmiCloudVisible","return true;");
@@ -45,6 +46,23 @@ public final class NativeSkySources {
         }
         if(family.equals("iteration"))next=next.replaceAll("\\bLinearToCurve\\s*\\(\\s*finalComposite\\s*\\)","finalComposite");
         return next;
+    }
+    public static String clipTerminal(String source){
+        var main=ShaderPatchPlan.unique(ShaderPackInventory.code(source),"void\\s+main\\s*\\(\\s*(?:void)?\\s*\\)");
+        String declaration="\nuniform int CmiTargetClip;\n";
+        return source.substring(0,main.start())+declaration+"void cmiTargetUnclipped()"+source.substring(main.end())+"""
+
+void main(){
+ if(CmiTargetClip!=0){
+  ivec2 size=textureSize(CmiJuliaHit,0),pixel=ivec2(gl_FragCoord.xy),q=(pixel/2)*2;
+  bool keep=all(greaterThanEqual(q,((size-2)/2)*2));
+  for(int y=-1;y<=2;y++)for(int x=-1;x<=2;x++)
+   keep=keep||texelFetch(CmiJuliaHit,clamp(q+ivec2(x,y),ivec2(0),size-1),0).r>0.;
+  if(!keep)discard;
+ }
+ cmiTargetUnclipped();
+}
+""";
     }
     private static String body(String source,String name,String body) {
         String code=ShaderPackInventory.code(source);

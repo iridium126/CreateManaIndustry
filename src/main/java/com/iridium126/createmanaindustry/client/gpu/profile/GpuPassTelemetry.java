@@ -17,11 +17,13 @@ public final class GpuPassTelemetry implements AutoCloseable {
     private long cpuStart,skipped,discarded,unpublished;
     private boolean active,timed,timingEnabled,detailed;
     private double completed;
-    private final GpuTimestampRing timer=new GpuTimestampRing(4,null,(frame,generation,ms)->{
+    public GpuPassTelemetry(){this(4);}
+    public GpuPassTelemetry(int timestampSlots){timer=new GpuTimestampRing(timestampSlots,null,(frame,generation,ms)->{
         if(detailed){frames[gpuCursor]=frame;generations[gpuCursor]=generation;gpu[gpuCursor]=ms;gpuCursor=(gpuCursor+1)%SAMPLES;gpuSamples=Math.min(SAMPLES,gpuSamples+1);}
         completed+=ms;
         GpuTimingObserver.sample(observerLabel,frame,generation,Double.NaN,ms);
-    });
+    });}
+    private final GpuTimestampRing timer;
 
     /** Apply at a render boundary, including for owners that will not draw this frame.
      * Old in-flight samples are discarded on mode changes, so a lightweight sample

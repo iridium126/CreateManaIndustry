@@ -30,7 +30,7 @@ public abstract class RiftPipelineMixin implements RiftIrisPipeline {
         var mc=net.minecraft.client.Minecraft.getInstance();var main=mc.getMainRenderTarget();
         com.iridium126.createmanaindustry.client.allaystorm.rift.RiftRenderFrame.begin(cmi$riftGeneration,main.width,main.height,state.getTickDelta(),
                 mc.gameRenderer.getMainCamera().getPosition(),state.getGbufferModelView(),state.getGbufferProjection());
-        com.iridium126.createmanaindustry.client.allaystorm.rift.JuliaProjection.draw(state.getGbufferModelView(),state.getGbufferProjection(),state.getTickDelta());
+        com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.begin(com.iridium126.createmanaindustry.client.allaystorm.rift.RiftRenderFrame.current());
     }
     @Inject(method="beginTranslucents",at=@At("HEAD"))
     private void cmi$projection(CallbackInfo ci) {
@@ -39,9 +39,11 @@ public abstract class RiftPipelineMixin implements RiftIrisPipeline {
         var snapshot=com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.rift();
         if(com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.dimension()||snapshot==null
                 ||snapshot.state()!=com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftSnapshot.OPEN
-                ||!com.iridium126.createmanaindustry.client.allaystorm.rift.JuliaProjection.ready(com.iridium126.createmanaindustry.client.allaystorm.rift.RiftRenderFrame.current())
+                ||!com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.visible()
                 ||!ShaderPackSession.current().riftReady()||!cmi$skyFailure.isEmpty())return;
-        try {
+        var frame=com.iridium126.createmanaindustry.client.allaystorm.rift.RiftRenderFrame.current();
+        try(var visual=com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.begin("rift.visual.whole");var visibility=com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.depth(cmi$targetSky!=null&&cmi$targetSky.qualifiedDepth(frame.width(),frame.height()),((com.iridium126.createmanaindustry.mixin.iris.NativeSkyPipelineAccess)(Object)this).cmi$targets().getDepthTexture())) {
+            com.iridium126.createmanaindustry.client.allaystorm.rift.JuliaProjection.draw(state.getGbufferModelView(),state.getGbufferProjection(),state.getTickDelta());
             if(cmi$targetSky==null)cmi$targetSky=new com.iridium126.createmanaindustry.client.render.shaderpack.NativeSkyView((IrisRenderingPipeline)(Object)this,cmi$programs,ShaderPackSession.current().rift());
             cmi$targetSky.draw(state.getTickDelta());
         } catch(Exception error) {

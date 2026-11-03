@@ -2,9 +2,12 @@
 #define CMI_ALLAY_SKY
 // The complete quadratic Julia projection is rasterized once. No orbit loop runs in cloud samples.
 uniform sampler2D CmiJuliaHit;
+uniform sampler2D CmiRiftVisibility;
+uniform int CmiVisibilityGuard;
 uniform mat4 CmiSkyViewProjection;
 float cmiJuliaDistance=-2.0;
 float cmiRiftDistance(vec3 worldDirection,vec4 cameraRelativeRift) {
+    if(CmiVisibilityGuard!=0 && texelFetch(CmiRiftVisibility,ivec2(0),0).r<0.5)return -1.0;
     if(cameraRelativeRift.w<0.0)return -1.0;
     if(cmiJuliaDistance>=-1.0)return cmiJuliaDistance;
     vec4 clip=CmiSkyViewProjection*vec4(worldDirection,0.0);

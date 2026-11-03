@@ -29,6 +29,21 @@ public class ModelDrawTelemetryGpuValidation {
                 pass.configure(false,false);if(!pass.report(10,11,true).contains("samples CPU/GPU=2/2"))throw new AssertionError("Stopped capture changed");
                 pass.configure(true,true);if(!pass.report(100,339,true).startsWith("unmeasured"))throw new AssertionError("Reload retained old samples");
             }
+            // The targeted batch scope can execute many times before the GPU
+            // retires any query. Preserve every call and flag saturation.
+            try(var pass=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry(128).named("repeat")){
+                var counts=new int[2];
+                com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.install((label,frame,generation,cpu,gpu)->{
+                    if(!label.equals("repeat")||frame!=20||generation!=-1)throw new AssertionError("Repeated scope tags");
+                    if(Double.isFinite(cpu))counts[0]++;
+                    if(Double.isFinite(gpu))counts[1]++;
+                });
+                try{
+                    for(int call=0;call<129;call++){pass.begin(true,true,20,-1);pass.end();}
+                    GL11.glFinish();pass.poll();
+                    if(counts[0]!=129||counts[1]!=128||pass.skipped()!=1)throw new AssertionError("Repeated call saturation lost: "+Arrays.toString(counts));
+                }finally{com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.install(null);}
+            }
             if(GL11.glGetError()!=0)throw new AssertionError("GL error");
             System.out.println("MODEL draw telemetry GPU: tags, saturation, abort and slot reuse passed");
         }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}

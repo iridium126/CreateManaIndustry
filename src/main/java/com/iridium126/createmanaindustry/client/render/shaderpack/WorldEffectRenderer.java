@@ -21,6 +21,10 @@ public final class WorldEffectRenderer {
         return shader!=null&&shader.isValid();
     }
     public static boolean draw(WorldEffectPass pass,PackCapabilities.WorldPath path) {
+        var scope=com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.begin("world.effect.whole."+pass.id());boolean success=false;
+        try{boolean result=drawInternal(pass,path);success=true;return result;}finally{if(scope!=null)scope.end(success);}
+    }
+    private static boolean drawInternal(WorldEffectPass pass,PackCapabilities.WorldPath path) {
         failure="";
         ShaderProgram shader=VeilRenderSystem.renderer().getShaderManager().getShader(CreateManaIndustry.modLoc(pass.shader()));
         var main=Minecraft.getInstance().getMainRenderTarget();

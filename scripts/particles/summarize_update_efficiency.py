@@ -12,6 +12,12 @@ def percentile(values, fraction):
 
 
 def load(directory, expected, samples):
+    if (directory / 'rule-smoke-complete.txt').exists():
+        raise ValueError(f'Rule smoke is not gameplay qualification: {directory}')
+    for metadata in directory.glob('validateShaderEfficiencyUpdateGpu-*-metadata.json'):
+        properties = json.loads(metadata.read_text())['properties']
+        if str(properties.get('efficiencyRules', '')).lower() == 'true':
+            raise ValueError(f'Rule smoke is not gameplay qualification: {directory}')
     if not (directory / 'complete.txt').is_file():
         raise ValueError(f'Incomplete/failed run: {directory}')
     groups = {}

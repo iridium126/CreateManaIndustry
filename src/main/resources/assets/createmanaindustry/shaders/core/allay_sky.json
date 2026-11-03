@@ -2,8 +2,9 @@
   "vertex": "createmanaindustry:allay_sky",
   "fragment": "createmanaindustry:allay_sky",
   "attributes": ["Position"],
-  "samplers": [{"name":"CmiJuliaHit"},{"name":"CmiTargetSky"}],
+  "samplers": [{"name":"CmiJuliaHit"},{"name":"CmiRiftVisibility"},{"name":"CmiTargetSky"}],
   "uniforms": [
+    {"name":"CmiVisibilityGuard","type":"int","count":1,"values":[0]},
     {"name":"CmiView","type":"matrix4x4","count":16,"values":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},
     {"name":"CmiProjection","type":"matrix4x4","count":16,"values":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},
     {"name":"CmiInverseView","type":"matrix4x4","count":16,"values":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},

@@ -11,6 +11,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(value=ShadowRenderer.class,remap=false)
 public abstract class PackageShadowRenderMixin {
+    @com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod(method="renderShadows")
+    private void cmi$wholeShadow(LevelRendererAccessor renderer,Camera camera,com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original){
+        var timing=com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.begin("iris.shadow.whole");boolean success=false;
+        try{original.call(renderer,camera);success=true;}finally{if(timing!=null)timing.end(success);}
+    }
     @Shadow @Final private boolean shouldRenderEntities;
     @Shadow @Final private boolean shouldRenderBlockEntities;
     @Shadow private FrustumHolder entityFrustumHolder;

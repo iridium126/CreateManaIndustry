@@ -148,7 +148,7 @@ public final class CMIPackEntityMergeHook {
 
     /** Called from {@code LevelRendererBlockEntitiesMixin} inside renderLevel. */
     public static void render() {
-
+        try(var diagnostic=com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.begin("submission.pack.merge-whole")) {
         try(var accounting=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.budgets.prepare()) {
             if (!ClientConfig.shaderPackIntegration
                     || !IrisVeilCompat.isShaderPackInUse()
@@ -180,6 +180,7 @@ public final class CMIPackEntityMergeHook {
         } catch (RuntimeException | LinkageError e) {
             CreateManaIndustry.LOGGER.warn("[CMI particles] pack entity merge draw failed", e);
             com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackErrorStatus = String.valueOf(e);
+        }
         }
     }
 
@@ -304,6 +305,11 @@ public final class CMIPackEntityMergeHook {
     private static String depthFallback(){
         var q=ShadowQualityFrame.current();
         return q.shadowDepth()||q.screenDepth()?"; depth=geometric fallback; "+ShadowDepthResources.INSTANCE.report():"";
+    }
+    /** Read-only capture metadata; does not compile programs or query GL state. */
+    public static String performanceShadowPath(){
+        return "casting="+com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus
+                +"; receiving="+COMPILER.receiverStatus()+depthFallback();
     }
     private static void configureShadowCulling(ParticleBuffers gpu){
         geometricFallback="";

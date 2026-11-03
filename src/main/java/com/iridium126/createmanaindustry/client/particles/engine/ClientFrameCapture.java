@@ -24,12 +24,18 @@ public final class ClientFrameCapture {
     private String context;
     private int width,height,limit;
     private boolean vsync;
+    private static String buildIdentity(){
+        try(var input=ClientFrameCapture.class.getResourceAsStream("/cmi-performance-build.sha256")){
+            return input==null?"unavailable":new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8).trim();
+        }catch(java.io.IOException failure){return "unavailable";}
+    }
     private static final class ShadowSlot {com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer storage;long fence,frame,generation;Window owner;}
     private final ShadowSlot[] shadowSlots={new ShadowSlot(),new ShadowSlot(),new ShadowSlot()};
     private static final class Window {
         static final class Stage {long generation;double cpu,gpu;int cpuSamples,gpuSamples;Stage(long generation){this.generation=generation;}}
         final Map<Long,Integer> indices=new HashMap<>();
         final Map<Integer,Map<String,Stage>> stages=new TreeMap<>();
+        final Map<Integer,Map<String,Object>> riftVisibility=new TreeMap<>();
         final List<String> hardware=new ArrayList<>();
         int draining,stageEntries;
         final long[] frames=new long[CAPACITY],sceneFrames=new long[CAPACITY],generations=new long[CAPACITY];
@@ -84,10 +90,21 @@ public final class ClientFrameCapture {
             context=ParticleDiagnostics.INSTANCE.measurementContext();
             var m=window.metadata;m.put("auto_throttle",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleAutoThrottle);m.put("schema",4);m.put("started",Instant.now().toString());m.put("context",context);
             m.put("camera_scope","current primary level camera and projection; FOV is vertical degrees derived from the actual projection; unavailable values are NaN; compare each orientation independently");
+            m.put("build_sha256",buildIdentity());
+            m.put("measurement_mode","instrumented-frame-window");
+            m.put("shadow_quality",ShadowQualityFrame.current().label());
+            m.put("rift_visibility_at_start",com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.metadata());
+            m.put("rift_config",Map.of("clipping",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.riftSkyClipping,"culling",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.riftCulling.name()));
+            m.put("rift_stage_hierarchy","rift.visibility.prepare is at the main frame boundary, outside rift.visual.whole; rift.visual.whole contains rift.visibility.depth, Julia projection and rift.target.whole; Iris places the visual whole inside iris.translucents.begin; CPU submission counts do not establish GPU conditional execution; depth result remains GPU-only/unknown on CPU");
+            m.put("target_sky_visibility_at_start",com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE
+                    ?com.iridium126.createmanaindustry.client.render.shaderpack.RiftIrisUniforms.visibilityMetadata()
+                    :java.util.Map.of("requested",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.riftSkyClipping,"effective",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.riftSkyClipping,"reason","vanilla conservative bounds clipping"));
+            m.put("shadow_path_at_start",com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.performanceShadowPath():"Iris unavailable");
             m.put("engine_source_sha256",ParticlePrograms.INSTANCE.diagnosticSourceDigest());m.put("diagnostic_receipt_sha256",com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.receiptIdentity());
             m.put("profile_context_file",ParticleDiagnostics.INSTANCE.exportActiveProfileContext());
             m.put("gold_visible","unavailable: additive command combines materials; no same-generation material census");
             m.put("stage_scope","same scene-frame tagged asynchronous ranges; ranges may nest and must not be summed; absent stages are unavailable/inactive, not zero");
+            m.put("stage_hierarchy","world.render contains world.section.*, world.terrain.*, iris.shadow.whole and integrated CMI work; world.section.* are sequential submission sections (may include batch flushes and CMI hooks), terrain and effects are children, never add them to sections; iris.shadow.whole contains draw.pack.model-shadow; submission.pack.merge-whole contains draw.pack.merge and state capture/restore; iris.translucents.begin contains rift.target.whole, iris.translucents.depth-copy and existing deferred; rift.target.whole contains rift.target.prepare/sky/depth-copy/deferred/clouds/composite/history-publish/restore; missing optional children remain unknown; irisveil.before-deferred.callbacks contains registered bridge callbacks (placement depends on bridge); solid_particles.native.* are children of world.section.solid_particles only; batch.type may be nested in batch.all; update.input_state contains starfall.prepare.*; world.effect.whole.<id> contains world.effect.<id>. cpu_ranges/gpu_ranges count repeated executions; when CPU calls are recorded, unequal counts make GPU totals unknown; GPU-only producers have no CPU count; missing ranges remain unknown.");
             com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.install(this::stageSample);ParticleDiagnostics.INSTANCE.frameSampling(true);
             m.put("process_id",ProcessHandle.current().pid());m.put("process_started",ProcessHandle.current().info().startInstant().map(Object::toString).orElse("unavailable"));m.put("backend",com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.identity());
             m.put("hardware",com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.description());
@@ -124,6 +141,8 @@ public final class ClientFrameCapture {
     }
     public void beforeDisplay(){
         if(active<0)return;
+        window.riftVisibility.put(active,com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.metadata());
+        if(!window.metadata.get("rift_config").equals(Map.of("clipping",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.riftSkyClipping,"culling",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.riftCulling.name())))invalidate("rift configuration changed during capture");
         window.cpu[active]=(System.nanoTime()-head)/1e6;
         if(timing){timer.end(true,false);timing=false;}
     }
@@ -180,6 +199,9 @@ public final class ClientFrameCapture {
         window.terrainGeneration[active]=com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.profileResourceGeneration();
     }
     private void finish(){
+        if(window!=null)window.metadata.put("rift_visibility_at_end",com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.metadata());
+        if(window!=null)window.metadata.put("shadow_path_at_end",com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.performanceShadowPath():"Iris unavailable");
+        if(window!=null&&com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE)window.metadata.put("target_sky_visibility_at_end",com.iridium126.createmanaindustry.client.render.shaderpack.RiftIrisUniforms.visibilityMetadata());
         Window w=window;pollShadow();closeShadow();com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.install(null);ParticleDiagnostics.INSTANCE.frameSampling(false);ParticleFrameStages.close();window=null;timer.close();timer=null;level=null;
         Path directory=Minecraft.getInstance().gameDirectory.toPath().resolve("logs/cmi-particle-frames");
         w.metadata.put("invalid_reason",w.invalid);w.metadata.put("samples",w.size);w.metadata.put("requested_seconds",w.seconds);w.metadata.put("skipped_gpu",w.skippedGpu);
@@ -196,7 +218,11 @@ public final class ClientFrameCapture {
                 }
                 try(var out=Files.newBufferedWriter(directory.resolve(name+"-stages.csv"),StandardOpenOption.CREATE_NEW)){
                     out.write("frame,scene_frame,stage,generation,cpu_submit_ms,gpu_ms,cpu_ranges,gpu_ranges\n");
-                    for(var row:w.stages.entrySet())for(var item:row.getValue().entrySet()){int i=row.getKey();var s=item.getValue();out.write(w.frames[i]+","+w.sceneFrames[i]+","+item.getKey()+","+s.generation+","+(s.cpuSamples==0?Double.NaN:s.cpu)+","+(s.gpuSamples==0?Double.NaN:s.gpu)+","+s.cpuSamples+","+s.gpuSamples+"\n");}
+                    for(var row:w.stages.entrySet())for(var item:row.getValue().entrySet()){int i=row.getKey();var s=item.getValue();out.write(w.frames[i]+","+w.sceneFrames[i]+","+item.getKey()+","+s.generation+","+(s.cpuSamples==0?Double.NaN:s.cpu)+","+(s.gpuSamples==0||(s.cpuSamples>0&&s.gpuSamples!=s.cpuSamples)?Double.NaN:s.gpu)+","+s.cpuSamples+","+s.gpuSamples+"\n");}
+                }
+                try(var out=Files.newBufferedWriter(directory.resolve(name+"-rift-visibility.jsonl"),StandardOpenOption.CREATE_NEW)){
+                    var gson=new com.google.gson.Gson();
+                    for(var row:w.riftVisibility.entrySet())out.write(gson.toJson(Map.of("frame",w.frames[row.getKey()],"scene_frame",w.sceneFrames[row.getKey()],"visibility",row.getValue()))+"\n");
                 }
                 try(var out=Files.newBufferedWriter(directory.resolve(name+"-submissions.csv"),StandardOpenOption.CREATE_NEW)){
                     out.write("frame,scene_frame,published_generation,feather,lod1,lod2,additive,sprite,alpha,shadow_body,shadow_carrier,shadow_ghost,shadow_generation\n");

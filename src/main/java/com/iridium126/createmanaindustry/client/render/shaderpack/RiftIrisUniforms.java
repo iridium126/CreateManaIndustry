@@ -18,11 +18,19 @@ public final class RiftIrisUniforms {
         return Iris.getPipelineManager().getPipelineNullable() instanceof RiftIrisPipeline pipeline
                 &&pipeline.cmi$riftGeneration()==session.generation()&&session.riftReady()&&pipeline.cmi$targetSky()!=null&&pipeline.cmi$targetSky().ready();
     }
+    public static java.util.Map<String,Object> visibilityMetadata(){
+        var pipeline=Iris.getPipelineManager().getPipelineNullable();
+        return pipeline instanceof RiftIrisPipeline rift&&rift.cmi$targetSky()!=null
+                ?rift.cmi$targetSky().visibilityMetadata():TargetSkyMaskPreflight.inactiveMetadata();
+    }
     public static void bind(UniformHolder uniforms) {
         // Exclude CustomUniformFixedInputUniformsHolder: its early input graph would overwrite
         // the current matrix/dimension after Program.use(), including during target replay.
         if(!(uniforms instanceof DynamicUniformHolder dynamic))return;
         net.irisshaders.iris.gl.state.ValueUpdateNotifier use=listener->{};
+        dynamic.uniform1i("CmiVisibilityGuard",()->!net.irisshaders.iris.shadows.ShadowRenderingState.areShadowsCurrentlyBeingRendered()&&com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.guarded()?1:0,use);
+        dynamic.uniform1i("CmiTargetClip",()->NativeSkyView.clippingFrame()?1:0,use);
+        dynamic.uniform1i("CmiSkyClipSampling",()->{var contract=ShaderPackSession.current().rift();return com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.clipping()&&contract!=null&&contract.family().equals("complementary")?1:0;},use);
         dynamic.uniformMatrix("CmiSkyViewProjection",com.iridium126.createmanaindustry.client.allaystorm.rift.JuliaProjection::viewProjection,use);
         dynamic.uniformMatrix("CmiTargetInverseViewProjection",()->{var f=RiftRenderFrame.current();return f==null?com.iridium126.createmanaindustry.client.allaystorm.rift.JuliaProjection.viewProjection():f.inverseViewProjection();},use);
         dynamic.uniform4f("CmiRift",()->AllaySkyProvider.rift(camera(),partial()),use);

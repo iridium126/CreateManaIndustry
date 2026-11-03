@@ -39,7 +39,7 @@ public final class JuliaProjection {
     }
     public static void draw(org.joml.Matrix4fc view,org.joml.Matrix4fc projection,float partial) {
         published=null;
-        if(shape==null||program==0)return;
+        if(shape==null||program==0||!RiftVisibility.visible())return;
         var mc=Minecraft.getInstance();var state=AllaySkyProvider.rift();
         if(mc.level==null||state==null||state.state()!=com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftSnapshot.OPEN||AllaySkyProvider.dimension())return;
         VIEW_PROJECTION.set(projection).mul(view);
@@ -93,6 +93,7 @@ public final class JuliaProjection {
         if(GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER)!=GL30.GL_FRAMEBUFFER_COMPLETE)throw new IllegalStateException("Julia projection framebuffer");
     }
     public static void destroy() {
+        RiftVisibility.close();RiftTargetTransfer.close();
         if(program!=0)GL20.glDeleteProgram(program);if(segments!=0)GL15.glDeleteBuffers(segments);if(segmentTexture!=0)GL11.glDeleteTextures(segmentTexture);
         if(vao!=0)GL30.glDeleteVertexArrays(vao);if(fbo!=0)GL30.glDeleteFramebuffers(fbo);if(color!=0)GL11.glDeleteTextures(color);if(depth!=0)GL30.glDeleteRenderbuffers(depth);
         program=segments=segmentTexture=vao=fbo=color=depth=width=height=0;shape=null;
